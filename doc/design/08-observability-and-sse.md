@@ -55,7 +55,10 @@
 | `subagent.*` | `spawned / event / completed` | 子 Agent 树（经 pi-subagents） |
 | `skill.*` | `activated / loaded / revoked_in_run` | Skill 使用 |
 | `sandbox.*` | `created / exec / limit_exceeded / destroyed / recovered` | 隔离与资源 |
-| `permission.*` | `prompted / decided` | 审批往返 |
+| `permission.*` | `prompted / decided / escalated / timeout` | 审批往返 + 升级链（见 [16](./16-notification-system.md) §3） |
+| `notification.*` | `delivered / failed / bounced / read` | 通知投递状态追踪（见 [16](./16-notification-system.md) §6.3） |
+| `prompt.*` | `version_created / rollout_changed / guardrail_violation` | Prompt 版本管理与护栏（见 [15](./15-prompt-management-and-evaluation.md) §A） |
+| `evaluation.*` | `auto_evaluated / benchmark_completed / feedback_received` | Agent 评估与用户反馈（见 [15](./15-prompt-management-and-evaluation.md) §B–§C） |
 | `security.*` | `flagged`（risk Low/Med/High，含理由） | 安全监控 |
 | `audit.*` | `publish / approve / grant / revoke / login / token_issued` | 不可篡改审计 |
 
@@ -113,4 +116,4 @@ flowchart LR
 
 ## 7. 与需求对应
 - 需求 9（SSE 全链路可观测）：全文。
-- 关联：事件源自 [04](./04-pi-integration-and-multi-llm.md) pi 事件；治理事件源自 [05](./05-rbac-and-governance.md)/[06](./06-capabilities-skills-mcp-subagents.md)；沙箱事件源自 [07](./07-sandbox-isolation.md)；API 出口见 [09](./09-api-clients-and-data-model.md)。
+- 关联：事件源自 [04](./04-pi-integration-and-multi-llm.md) pi 事件；治理事件源自 [05](./05-rbac-and-governance.md)/[06](./06-capabilities-skills-mcp-subagents.md)；沙箱事件源自 [07](./07-sandbox-isolation.md)；API 出口见 [09](./09-api-clients-and-data-model.md)；通知投递事件见 [16](./16-notification-system.md)；Prompt 与评估事件见 [15](./15-prompt-management-and-evaluation.md)。

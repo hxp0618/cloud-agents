@@ -149,7 +149,104 @@ sequenceDiagram
 
 ---
 
-## 4. 技术栈建议
+## 4. Agent 任务队列与优先级
+
+当并发 Run 请求超过沙箱池容量时，需要一个明确的排队与调度策略。
+
+### 4.1 排队模型
+
+```mermaid
+flowchart LR
+    Submit["POST /runs"] --> Admit["准入控制<br/>配额/权限/限流"]
+    Admit -->|通过| Classify["分类<br/>交互式 / 后台 / 自动触发"]
+    Admit -->|拒绝| Reject["429/402/403"]
+    Classify --> Enqueue["入队<br/>按优先级 + 到达时间"]
+    Enqueue --> Wait["等待调度"]
+    Wait --> Dispatch["分配沙箱槽位"]
+    Dispatch --> Run["sandbox_creating → running"]
+```
+
+### 4.2 优先级定义
+
+| 优先级 | 名称 | 适用场景 | QoS |
+|---|---|---|---|
+| **P0 (Critical)** | 紧急审批响应 | 管理员触发的 `extension_ui_response`（审批返回） | 抢占式（可抢占 P3 的沙箱槽位） |
+| **P1 (High)** | 交互式 Run | 用户在 Web/桌面端发起的实时 Agent 任务 | 优先排队（权重 4×） |
+| **P2 (Normal)** | 后台 Run | API/SDK 发起的异步任务、CI 触发的 Run | 默认（权重 1×） |
+| **P3 (Low)** | 批量/定时 Run | 定期安全扫描、批量代码审查 | 尽力而为（权重 0.25×），可被 P0 抢占 |
+| **P4 (Best-effort)** | 后台非紧急 | 子 Agent 的独立 Run（可降级到 P3） | 最低优先，使用闲置容量 |
+
+### 4.3 排队策略
+
+```yaml
+queueConfig:
+  maxQueueDepth: 100          # 全局最大排队 Run 数
+  maxQueueTime: 600s          # 最大排队等待时间（超时 → rejected）
+  
+  priorityWeights:
+    interactive: 4            # P1 权重
+    background: 1             # P2 权重
+    batch: 0.25               # P3 权重
+  
+  preemption:
+    enabled: true
+    preemptiblePriorities: [P3, P4]   # 可被抢占的优先级
+    preemptingPriorities: [P0]        # 可执行抢占的优先级
+    gracefulShutdown: 30s             # 抢占前给 30s 保存现场
+  
+  fairness:
+    maxConsecutiveDispatches: 10      # 同一用户连续分配上限
+    starvationTimeout: 300s           # P3 排太久自动升权到 P2
+```
+
+### 4.4 准入控制
+
+```
+准入检查（入队前）:
+  1. 用户级并发限制: 单用户最多 N 个 running Run (默认 5)
+  2. 项目级并发限制: 单项目最多 M 个 running Run (默认 20)
+  3. 全局并发限制: 系统总 running Run ≤ 沙箱池最大容量 × 1.2 (允许排队)
+  4. 配额检查: 用户/项目信用余额 > 0
+  5. 速率限制: 单用户每 10s 最多创建 3 个 Run
+
+排队等待检查（分配前）:
+  1. 沙箱池有空闲槽位
+  2. 项目/用户配额仍然充足 (排队期间可能已被消费)
+  3. 等待超时未到
+```
+
+### 4.5 队列满的行为
+
+| 条件 | 行为 | HTTP 状态码 |
+|---|---|---|
+| 队列满 (≥100 等待) | 返回 `Retry-After` header + 建议稍后重试 | 503 |
+| 用户并发超限 | 返回当前 running 列表 + 等待数 | 429 |
+| 项目并发超限 | 返回项目当前 running 数 + 限制值 | 429 |
+| 配额不足 | 返回剩余配额 + 建议充值 | 402 |
+| 等待超时 | 返回等待时间 + 建议增大超时或降低优先级 | 408 |
+
+### 4.6 子 Agent 的特殊处理
+
+| 场景 | 策略 |
+|---|---|
+| 父 Agent 派生子 Agent | 子 Agent 默认继承父的优先级；不经过全局队列（父已持有资源） |
+| 独立沙箱子 Agent | 若需独立沙箱 → 走正常队列（优先级=父优先级-1），单独排队 |
+| 扇出上限 | 父 Agent 同时最多派生 N 个子 Agent（默认 5），超限排队 |
+| 成本保护 | 子 Agent 派生前，Orchestrator 检查配额（token+沙箱时长），不足则拒绝派生 |
+
+### 4.7 监控指标
+
+| 指标 | 说明 |
+|---|---|
+| `queue_depth` | 当前排队 Run 数（按优先级分桶） |
+| `queue_wait_time_p95` | 各优先级排队等待时间 p95 |
+| `preemption_count` | 抢占次数（按小时） |
+| `starvation_count` | 饥饿自动升级次数 |
+| `reject_rate` | 因队列满/超限/配额的拒绝率 |
+
+---
+
+## 5. 技术栈建议
 
 | 层 | 选型 | 备注 |
 |---|---|---|
@@ -171,7 +268,7 @@ sequenceDiagram
 
 ---
 
-## 5. 部署拓扑
+## 6. 部署拓扑
 
 ```mermaid
 flowchart LR
@@ -213,13 +310,14 @@ flowchart LR
 
 ---
 
-## 6. 与需求的对应
+## 7. 与需求的对应
 
 - 控制面/数据面分离 + 瘦客户端 → 需求 10（不依赖本地、统一管理）、11（多端）。
 - 平台扩展（闸门/上报）+ 受控官方包（MCP/子 Agent）→ 需求 2/3/5/9。
 - LLM Gateway → 需求 1。
 - 每 Agent 沙箱 + egress 白名单 → 需求 8。
+- 任务队列与优先级调度 → 需求 7/9。
 - Event Hub 事件溯源 → 需求 9。
 - Catalog + IAM + Review → 需求 4/5/6。
 
-> 下钻：pi 集成与多 LLM 见 [04](./04-pi-integration-and-multi-llm.md)；RBAC/治理见 [05](./05-rbac-and-governance.md)；能力层见 [06](./06-capabilities-skills-mcp-subagents.md)；沙箱见 [07](./07-sandbox-isolation.md)；可观测见 [08](./08-observability-and-sse.md)。
+> 下钻：pi 集成与多 LLM 见 [04](./04-pi-integration-and-multi-llm.md)；RBAC/治理见 [05](./05-rbac-and-governance.md)；能力层见 [06](./06-capabilities-skills-mcp-subagents.md)；沙箱见 [07](./07-sandbox-isolation.md)；可观测见 [08](./08-observability-and-sse.md)；Run 生命周期见 [21](./21-run-lifecycle-state-machine.md)；安全与威胁模型见 [11](./11-security-and-threat-model.md)；运维与恢复见 [13](./13-operations-manual.md)；成本优化见 [17](./17-cost-optimization.md)；容量规划见 [18](./18-capacity-planning.md)；多区域部署见 [19](./19-multi-region-deployment.md)；IDE 集成见 [20](./20-ide-integration-protocol.md)。

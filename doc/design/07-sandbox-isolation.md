@@ -138,4 +138,4 @@ stateDiagram-v2
 
 ## 8. 与需求对应
 - 需求 8（独立沙箱）：全文。
-- 关联：闸门见 [04](./04-pi-integration-and-multi-llm.md)/[05](./05-rbac-and-governance.md)；能力清单见 [06](./06-capabilities-skills-mcp-subagents.md)；事件见 [08](./08-observability-and-sse.md)。
+- 关联：闸门见 [04](./04-pi-integration-and-multi-llm.md)/[05](./05-rbac-and-governance.md)；能力清单见 [06](./06-capabilities-skills-mcp-subagents.md)；事件见 [08](./08-observability-and-sse.md)；安全加固的理论依据见 [11](./11-security-and-threat-model.md)（威胁模型 §3.3 B3 边界 + 控制矩阵）；沙箱生命周期运维见 [13](./13-operations-manual.md)（§1.1 恢复 + §3 资源治理）；容量估算见 [18](./18-capacity-planning.md)。

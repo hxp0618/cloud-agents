@@ -2,7 +2,9 @@
 
 覆盖需求 2、3、6。本文先确立**信任边界**，再分别设计 Skill 生命周期与安全评估、MCP 接入治理、子 Agent 编排。
 
-> 重要更正：MCP 与 sub-agent **不需要从零自建**——pi 生态已有官方包 **`pi-mcp-adapter`**（v2.8.0）与 **`pi-subagents`**（v0.27.0）。本平台的工作是**复用它们并套上企业治理**（目录、可见域、闸门、能力清单、审计、配额）。
+> 重要更正：MCP 与 sub-agent **不需要从零自建**——pi 生态已有官方包 **`pi-mcp-adapter`**（v2.8.0，调研时版本）与 **`pi-subagents`**（v0.27.0，调研时版本）。本平台的工作是**复用它们并套上企业治理**（目录、可见域、闸门、能力清单、审计、配额）。
+>
+> ⚠️ **版本声明**：以上版本号为 2026-06-02 调研时的最新版本。实施前需确认最新版本（`npm view pi-mcp-adapter pi-subagents version`），并核定其变更是否影响集成方案。版本锁定策略见 [10 §4.4](./10-roadmap-and-open-questions.md)。
 
 ---
 
@@ -182,4 +184,4 @@ flowchart TD
 - 需求 2（sub-agent）：§4（复用 `pi-subagents` + 治理）。
 - 需求 3（MCP + Skill）：§2（Skill）、§3（MCP via `pi-mcp-adapter`）。
 - 需求 6（用户自定义 Skill + 发布需安全评估）：§2.2–§2.5（**本平台自建的护城河**）。
-- 关联：信任边界贯穿 [04](./04-pi-integration-and-multi-llm.md)/[05](./05-rbac-and-governance.md)/[07](./07-sandbox-isolation.md)。
+- 关联：信任边界贯穿 [04](./04-pi-integration-and-multi-llm.md)/[05](./05-rbac-and-governance.md)/[07](./07-sandbox-isolation.md)；安全评估对抗测试见 [12](./12-testing-strategy.md)（§5.3 安审对抗样本）；LLM 风险判定与评估框架见 [15](./15-prompt-management-and-evaluation.md)；安审通知与审批升级见 [16](./16-notification-system.md)。

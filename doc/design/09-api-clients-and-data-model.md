@@ -154,6 +154,11 @@ erDiagram
 | **ModelProvider / ModelAllowlist** | 接入的厂商与各作用域可用模型 |
 | **Secret** | 密钥引用（明文存 Vault，库中只存引用） |
 | **UsageRecord / AuditEvent / ApprovalRequest** | 计量、不可篡改审计、审批工单 |
+| **PromptTemplate / PromptVersion** | Prompt 版本化：不可变版本、模板变量、A/B 配置、护栏策略（[15](./15-prompt-management-and-evaluation.md) §A） |
+| **Evaluation / Feedback** | Agent 自动评估记录 + 用户满意度反馈（[15](./15-prompt-management-and-evaluation.md) §B–§C） |
+| **NotificationPreference / DeliveryRecord** | 用户通知偏好（渠道/静默时段/digest）+ 投递状态追踪（[16](./16-notification-system.md) §5–§6） |
+| **ApprovalEscalation** | 审批升级链状态（级别/超时/受理人）（[16](./16-notification-system.md) §3） |
+| **WebhookConfig** | 自定义 Webhook 配置（URL/密钥/事件订阅）（[16](./16-notification-system.md) §4.4） |
 
 ### 4.2 存储落位
 - PostgreSQL：上述结构化实体（RBAC/目录/审计索引）。
@@ -166,4 +171,4 @@ erDiagram
 ## 5. 与需求对应
 - 需求 4（完整页面管理）：§2 信息架构（11 大模块）。
 - 需求 11（API/桌面端/多端）：§1、§3。
-- 关联：API 鉴权依赖 [05](./05-rbac-and-governance.md)；事件 SSE 依赖 [08](./08-observability-and-sse.md)；Run 编排依赖 [03](./03-system-architecture.md)/[04](./04-pi-integration-and-multi-llm.md)。
+- 关联：API 鉴权依赖 [05](./05-rbac-and-governance.md)；事件 SSE 依赖 [08](./08-observability-and-sse.md)；Run 编排依赖 [03](./03-system-architecture.md)/[04](./04-pi-integration-and-multi-llm.md)；通知 API（审批/Webhook）见 [16](./16-notification-system.md)；IDE 插件集成协议见 [20](./20-ide-integration-protocol.md)；数据留存与脱敏见 [14](./14-data-retention-and-privacy.md)。

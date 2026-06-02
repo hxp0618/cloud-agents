@@ -7,6 +7,8 @@
 ## A. pi 能力深挖
 
 > 来源：pi 官方文档（`packages/coding-agent/docs/*.md`）、pi.dev 包页面与源码包结构。pi = "AI agent toolkit: coding agent CLI, unified LLM API, TUI & web UI libraries, Slack bot, vLLM pods"，MIT 许可、活跃维护。核心包：`pi-ai`（多 provider LLM 抽象）、`pi-agent-core`（Agent 循环 + 消息类型）、`pi-coding-agent`（CLI + interactive/print/rpc/json 四种模式）、`pi-tui`。
+>
+> ⚠️ **版本声明**：文中 `pi-mcp-adapter` v2.8.0 与 `pi-subagents` v0.27.0 为 **2026-06-02 调研时的最新版本**。实施前需 `npm view pi-mcp-adapter pi-subagents version` 确认最新版本，并核定其变更是否影响集成方案。
 
 ### A.1 直接复用 ✅
 
