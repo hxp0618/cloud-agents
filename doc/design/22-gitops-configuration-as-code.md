@@ -205,7 +205,7 @@ sequenceDiagram
 
 ### 3.3 锁定与受管配置
 
-借鉴 [05 §3](./05-rbac-and-governance.md) 的 `managed:true` 语义：
+借鉴 [05 §4](./05-rbac-and-governance.md) 的 `managed:true` 语义：
 
 ```yaml
 # 上级管理员可锁定某些资源，禁止子级通过 Git 或 UI 覆盖

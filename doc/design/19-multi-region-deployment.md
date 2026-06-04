@@ -2,7 +2,7 @@
 
 本文定义跨区域（Multi-Region）部署策略：数据主权、就近接入、灾难恢复。适用于有全球分支或数据驻留要求的企业。
 
-> ⚠️ 本文属 P5+ 扩展参考，P0–P4 默认为单区域自托管/VPC 部署（见 [03 §5](./03-system-architecture.md)）；多区域部署在企业规模化阶段引入。
+> ⚠️ 本文属 P5+ 扩展参考，P0–P4 默认为单区域自托管/VPC 部署（见 [03 §6](./03-system-architecture.md)）；多区域部署在企业规模化阶段引入。
 
 ---
 
@@ -31,8 +31,10 @@ flowchart TB
         Egress2["出网代理<br/>(APAC 合规)"]
     end
 
-    Hub --> Spoke1 & Spoke2
-    PG_Primary -. "异步复制" .-> PG_Replica1 & PG_Replica2
+    Hub --> Spoke1
+    Hub --> Spoke2
+    PG_Primary -. "异步复制" .-> PG_Replica1
+    PG_Primary -. "异步复制" .-> PG_Replica2
 ```
 
 **关键决策**：

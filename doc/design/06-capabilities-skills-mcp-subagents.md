@@ -32,6 +32,7 @@
 # SKILL.md frontmatter（含 Polaris 扩展字段）
 name: gen-api-docs
 description: 按公司模板从代码生成接口文档
+version: 1.2.3                     # SemVer，发布时由安审流水线确定
 allowed-tools: [read, write, bash]
 x-polaris:
   capabilities:
@@ -41,35 +42,87 @@ x-polaris:
     mcp:      []                              # 需要的 MCP
     secrets:  []                              # 需要的密钥引用
   scripts: ["scripts/render.sh"]             # 随 Skill 的脚本（受扫描）
+  minAgentVersion: ">=1.0.0"                 # 最低兼容的 Polaris 平台版本（可选）
 ```
 
-### 2.2 可见域与是否需要评估
+### 2.2 版本控制策略
+
+已发布 Skill 的版本控制解决四个问题：**可追溯**（每个 Run 记录精确 Skill 版本）、**渐进升级**（下游自主决定升级时机）、**安全响应**（按版本精确熔断，不影响其他安全版本）、**可对比**（多版本并存，同一 Agent 不同 Run 可指不同版本做 A/B 对比）。
+
+#### 版本号约定 —— SemVer
+
+采用 SemVer（`major.minor.patch`），版本号在通过安审时由流水线确定（非用户自填）：
+
+| 变更级别 | 触发条件 | 安审范围 | 示例 |
+|---|---|---|---|
+| **major** | 能力清单变化（新增/删减工具、出网域名、MCP、secrets） | 完整评估（静态+LLM+能力清单核对），强制人审 | `1.2.0 → 2.0.0` |
+| **minor** | prompt/指令/脚本变化，能力清单不变 | 轻量评估（静态扫描 + 能力清单核对），自动化为主，可配强制人审 | `1.2.0 → 1.3.0` |
+| **patch** | 拼写修正、文档调整、不影响行为和能力的变更 | 免审自动通过（仅静态扫描确认无代码变化） | `1.2.0 → 1.2.1` |
+
+**版本不可变**：任何已发布的版本永远不可修改。改一个字符 = 新版本。版本号在首次发布时由系统分配（按同一 Skill 的最大现有版本递增），不依赖用户声明。
+
+#### Agent 引用 Skill 的版本策略
+
+```yaml
+# Agent 定义中
+skills:
+  - name: gen-api-docs
+    version: "1.2.3"           # 锁定精确版本（生产推荐，可审计、可回滚）
+    # version: "^1.2"          # 兼容范围（允许 patch 自动升级，适合开发）
+    # version: "latest"        # 始终最新（仅适合个人使用，不推荐生产）
+```
+
+- `latest` 策略不推荐用于共享 Agent——静默升级不可追溯、不可审计
+- 组织可配置策略强制生产 Agent 必须 `pin` 精确版本
+- Run 创建时解析引用的精确版本，记录到 Run 元数据与审计日志
+
+#### 版本生命周期
+
+```
+draft → published(active) → deprecated → retired
+```
+
+| 状态 | 含义 | 能否加载 | 说明 |
+|---|---|---|---|
+| **draft** | 创作中，未发布 | ❌（仅作者自己可用） | 私有作用域内的草稿 |
+| **published (active)** | 已发布，正常可用 | ✅ | 通过安审、不可变 |
+| **deprecated** | 已弃用，不推荐使用 | ✅（告警提示） | 建议迁移到替代版本；每次 Run 打 warning 事件 |
+| **retired** | 已退役 | ❌（拒绝加载） | 旧 Agent 引用了 retired 版本 → Run 创建时直接拒绝，提示升级；比 revoked（紧急熔断）温和 |
+| **revoked** | 安全熔断 | ❌（立即拒绝） | 紧急响应，实时传播到运行中 Agent（见 §2.6） |
+
+deprecated → retired 之间有**宽限期**（默认 30 天，组织可配），给下游 Agent 迁移时间。
+
+### 2.3 可见域与是否需要评估
 
 | 操作 | 是否需评估 | 说明 |
 |---|---|---|
 | 在**私有**作用域创作并在**自己的** Agent 中用 | ❌ 不需要 | 仍在沙箱内、受能力清单约束、产生审计 |
-| 发布到 **项目 / 业务组 / 组织** | ✅ **必经安全评估流水线** | 因为会被他人加载执行 |
+| 发布到 项目/业务组/组织 | ✅ **必经安全评估流水线** | 因为会被他人加载执行 |
 | 升级已发布 Skill 的版本 | ✅ 重新评估该版本 | 版本不可变，逐版本审 |
 
-### 2.3 安全评估状态机
+### 2.4 安全评估状态机
 
 ```mermaid
 stateDiagram-v2
     [*] --> draft: 创作
-    draft --> submitted: 提交发布(选目标可见域)
-    submitted --> auto_scan: 自动扫描
+    draft --> submitted: 提交发布(选目标可见域, 变更级别)
+    submitted --> auto_scan: 自动扫描(major→完整/minor→轻量/patch→免审)
     auto_scan --> approved: 低风险且通过
     auto_scan --> human_review: 命中风险/策略要求
     auto_scan --> rejected: 明确违规
     human_review --> approved: 人审通过
     human_review --> rejected: 人审拒绝
-    approved --> published: 按可见域发布@版本(不可变)
+    approved --> published: 按可见域发布@版本(不可变, 版本号由流水线分配)
+    published --> deprecated: 弃用(宽限期开始)
     published --> revoked: 撤销/熔断(实时传播)
+    deprecated --> retired: 退役(宽限期到期或管理员提前)
+    deprecated --> published: 恢复(撤销弃用)
     rejected --> draft: 修改后重提
     revoked --> [*]
+    retired --> [*]
 ```
 
-### 2.4 自动扫描阶段（auto_scan）做什么
+### 2.5 自动扫描阶段（auto_scan）做什么
 对 `SKILL.md` + 随附脚本 + 能力清单做多重检查：
 
 1. **静态分析**：扫描脚本中的危险模式——`rm -rf`、`sudo`、`curl|sh`、反弹 shell、混淆/编码执行、读写敏感路径（`.ssh`、`.env`、凭据）、未声明出网。
@@ -80,14 +133,17 @@ stateDiagram-v2
 
 **判定路由**：全绿且低风险 → 自动 `approved`；命中任一红旗或策略要求 → `human_review`；明确恶意 → `rejected`。组织可配"任何写权限/出网/MCP 的 Skill 一律人审"。
 
-### 2.5 人审、批准、发布、撤销
+### 2.6 人审、批准、发布、弃用、撤销
+
 - **人审**：Auditor/Security 或对应作用域 Admin 看扫描报告 + Diff，决定通过/拒绝，留痕。
-- **批准@版本**：通过后该版本**不可变**；管理员可做版本白名单（`allowedVersions`）。
-- **发布**：按目标可见域进入 Catalog，成员零配置可见可用。
-- **撤销/熔断**：一键撤销某版本，**实时传播**到运行中的 Agent（下次工具调用/加载即拒绝），产生 `audit` + `security.flagged` 事件。
+- **批准@版本**：通过后该版本**不可变**，系统按同一 Skill 的最大现有版本自动递增分配版本号（major→major、minor→minor、patch→patch）。管理员可做版本白名单（`allowedVersions`）。
+- **发布**：按目标可见域进入 Catalog，成员在该作用域内零配置可见可用（版本 pin 策略见 §2.2）。
+- **弃用（deprecate）**：标记某版本不推荐使用。Agent 仍可加载但每次 Run 打 warning 事件。进入宽限期倒计时（默认 30 天，组织可配）；宽限期内可恢复为 active。
+- **退役（retire）**：宽限期到期或管理员提前触发 → 版本退役。Agent 引用了 retired 版本 → Run 创建时直接拒绝并提示升级。退役不可逆（不同于 deprecated 可恢复）。
+- **撤销/熔断（revoke）**：紧急安全响应，一键撤销某版本，**实时传播**到运行中的 Agent（下次工具调用/加载即拒绝），产生 `audit` + `security.flagged` 事件。revoke 不同于 retire——前者是紧急响应，后者是计划内淘汰。
 - **运行时强制**：即便已批准，沙箱仍按能力清单约束（capability-based），声明外的访问被闸门拦截——**纵深防御，不只信审。**
 
-> 差异化：这条"用户发布 Skill → 自动扫描 + 能力清单 + LLM 判定 + 人审 → 不可变版本 + 可熔断 + 运行时能力强制"流水线，是竞品普遍缺失的（见 [01 §D](./01-research-and-landscape.md)）。**注意：这是本平台真正自建、且最具差异化的部分；MCP/子 Agent 是复用官方包，而 Skill 安审是我们的护城河。**
+> 差异化：这条"用户发布 Skill → 自动扫描 + 能力清单 + LLM 判定 + 人审 → 不可变版本 + 版本生命周期管理（deprecate/retire/revoke）+ 可熔断 + 运行时能力强制"流水线，是竞品普遍缺失的（见 [01 §D](./01-research-and-landscape.md)）。**注意：这是本平台真正自建、且最具差异化的部分；MCP/子 Agent 是复用官方包，而 Skill 安审 + 版本治理是我们的护城河。**
 
 ---
 
@@ -108,7 +164,8 @@ flowchart LR
     Adp -->|stdio| MS1["MCP sidecar (沙箱内)"]
     Adp -->|HTTP+OAuth/Bearer| MS2["远程 MCP 端点(经出网代理)"]
     Adp -->|mcp 代理工具调用| Gate["tool_call 闸门"]
-    Gate --> MS1 & MS2
+    Gate --> MS1
+    Gate --> MS2
 ```
 
 - **配置来源 = 控制面，不是本地文件**：平台**注入** adapter 的 server 配置（来自 Catalog 的 effective config），**不读**沙箱内的 `.mcp.json`——避免用户私自接入未审 MCP。

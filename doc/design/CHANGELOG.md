@@ -21,6 +21,7 @@ All notable changes to the Polaris design documents (`doc/design/`).
   - MITRE ATT&CK 关键 Tactic/Technique 映射（13 条）
   - 合规成熟度总览表（5 框架 + 覆盖度 + 缺口 + 认证建议阶段）
 - 📝 **16-notification-system.md §4.4** — Webhook 签名验证全面展开：HMAC-SHA256 签名生成/验证流程（含 TypeScript 示例代码）、防重放机制（timestamp + delivery ID 缓存）、与 GitHub/GitLab webhook 格式的兼容性说明
+- 🔧 修复 03 新增 §4（任务队列）导致的跨文档 section 引用漂移：19 (`03 §5→§6`)、22 (`05 §3→§4`)、23（Q6.11/Q7.8/Q8.4/Q8.5/Q8.9/Q9.7/Q11.3/Q14.11/Q14.12/Q14.14 共 12 处）；第二轮核查修复 23 中 27 处语义错位（05 §3→§4 可见域/继承、05 §2→§3.1 权限矩阵、06 §2.x 子节漂移、08 §2→§3/§5 等）
 - 📝 **README.md**:
   - 版本号 v0.5 → v0.6
   - §6 需求覆盖矩阵从 11 项扩充为 27 项（4 个子表：原始需求/安全合规/运维可靠性/平台工程化）
