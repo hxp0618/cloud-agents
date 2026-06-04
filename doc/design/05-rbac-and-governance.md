@@ -14,8 +14,10 @@ flowchart TD
     P1["项目 Project A1"]
     P2["项目 Project A2"]
     U["用户 / Agent / Run"]
-    Org --> G1 & G2
-    G1 --> P1 & P2
+    Org --> G1
+    Org --> G2
+    G1 --> P1
+    G1 --> P2
     P1 --> U
 ```
 

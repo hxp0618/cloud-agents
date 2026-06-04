@@ -22,11 +22,13 @@
 ## 2. 功能需求（FR）
 
 ### FR-1 多 LLM（需求 1）
-- FR-1.1 平台集中接入并托管多家 LLM provider（Anthropic/OpenAI/Gemini/Bedrock/Vertex/Azure/国产模型/自建 vLLM 等），复用 `pi-ai` 的统一抽象。
+- FR-1.1 平台集中接入多家 LLM provider（Anthropic/OpenAI/Gemini/Bedrock/Vertex/Azure/国产模型/自建 vLLM 等），复用 `pi-ai` 的统一抽象。
 - FR-1.2 管理员可在 **组织/业务组/项目** 级设置可用模型白名单与默认模型；下级可在允许范围内细化，被"锁定"的不可覆盖。
 - FR-1.3 运行中可切换模型（RPC `set_model/cycle_model`）；切换受白名单校验。
-- FR-1.4 模型密钥**集中托管**，开发者与客户端永不接触明文（经内部 LLM Gateway）。
-- FR-1.5 记录每次模型调用的 token / 成本 / 时延，进入计量与可观测。
+- FR-1.4 **每个自然人向平台申请自己的 API Key**（平台签发，非 provider 裸 key）。用户用自己的 key 发起 LLM 调用，经内部 LLM Gateway 鉴权后代理到 provider。调用链路可追溯到具体自然人，满足审计归因需求。
+- FR-1.5 provider 裸 key 由平台管理员在 LLM Gateway 集中配置，普通用户不可见、不可获取。
+- FR-1.6 记录每次模型调用的 token / 成本 / 时延，关联到具体用户 key，进入计量与可观测。
+- FR-1.7 用户 key 可在**任意第三方 CLI/工具**中使用（如 Claude Code、Codex CLI、Continue 等）。LLM Gateway 对外暴露 **OpenAI 兼容 API**（`/v1/chat/completions`）与 Anthropic 兼容 API（`/v1/messages`），第三方客户端只需将 `base_url` 指向 Polaris Gateway 并配置用户自己的 API Key 即可使用。所有调用仍经 LLM Gateway 鉴权、审计、计量——用户无需感知 provider 裸 key，企业不丢审计覆盖。
 
 ### FR-2 Sub-agent（需求 2）
 - FR-2.1 Agent 可派生子 Agent（复用 `pi-subagents`），子 Agent 拥有**独立上下文窗口**。
@@ -37,14 +39,15 @@
 ### FR-3 MCP 与 Skill（需求 3）
 - FR-3.1 平台经 `pi-mcp-adapter` **接入并治理** MCP：支持 stdio/HTTP MCP server，自动发现其工具并暴露给 Agent；支持 OAuth/Bearer 鉴权。
 - FR-3.2 MCP server 在沙箱内以 sidecar 运行，能力受清单约束；**破坏性 MCP 工具默认强制审批**。
-- FR-3.3 支持 Agent Skills 标准（`SKILL.md`），渐进式披露；中央 Skill 库按可见域挂载进沙箱。
-- FR-3.4 Skill/MCP 均为带版本的目录资源，可被 Agent 定义引用。
+- FR-3.3 Skill 直接复用 pi 原生的 **Agent Skills 标准**（`SKILL.md`，YAML frontmatter + Markdown 指令；多目录发现、渐进式披露——启动只注入名称+描述，模型按需 `read` 全文；`/skill:name` 强制触发）。pi 内核已提供完整的 Skill 解析与运行时，无需自建 Skill 引擎。
+- FR-3.4 中央 Skill 库按可见域挂载进沙箱（pi 原生只识别本地目录，平台在沙箱创建时将中央库中授权 Skill 以只读卷注入）。
+- FR-3.5 Skill/MCP 均为带版本的目录资源，可被 Agent 定义引用。
 
 ### FR-4 完整页面管理（需求 4）
 Web 控制台覆盖**全部功能**，信息架构（详见 [09](./09-api-clients-and-data-model.md)）至少包含：
 - FR-4.1 工作台/对话：发起任务、实时事件流、文件树与 Diff、终端输出、人工审批弹窗。
 - FR-4.2 Agent 管理：定义的增删改查、版本、发布可见域、试运行。
-- FR-4.3 模型管理：provider 接入、模型白名单、默认模型、成本看板。
+- FR-4.3 模型管理：provider 接入、provider 裸 key 配置（仅管理员可见）、模型白名单、默认模型、成本看板。
 - FR-4.4 MCP 管理：server 接入与健康、工具清单、能力清单、审批。
 - FR-4.5 Skill 市场与管理：浏览/搜索、创作、版本、**发布与安全评估工作流**、撤销/熔断。
 - FR-4.6 运行与可观测：运行列表、事件回放、会话树、沙箱资源、日志检索。
@@ -52,7 +55,8 @@ Web 控制台覆盖**全部功能**，信息架构（详见 [09](./09-api-client
 - FR-4.8 权限与角色：角色定义、权限矩阵、策略规则、可见域与锁定。
 - FR-4.9 审计与合规：审计日志检索与导出、安全告警。
 - FR-4.10 计量与配额：用量、成本、配额、预算告警。
-- FR-4.11 设置：SSO/SCIM、密钥、出网白名单、沙箱画像、品牌化。
+- FR-4.11 **个人 API Key 管理**：每个自然人查看自己的 Key 列表、创建新 Key、设置过期时间/用途标签、撤销/轮转；Key 明文仅在创建时展示一次（`sk-...` 格式），后续不可再次查看。管理员可查看组织内所有 Key 的元数据（创建者、用途、创建/过期时间、最近使用时间），但不可查看 Key 明文。
+- FR-4.12 设置：SSO/SCIM、出网白名单、沙箱画像、品牌化、通知偏好。
 
 ### FR-5 用户权限体系（需求 5）
 - FR-5.1 四级作用域：**组织 → 业务组 → 项目 → 用户/Agent**。
@@ -61,6 +65,7 @@ Web 控制台覆盖**全部功能**，信息架构（详见 [09](./09-api-client
 - FR-5.4 资源**可见域继承**（上级默认流向下级）+ **托管锁定**（不可覆盖）+ 冲突裁决（显式 deny 优先、更具体作用域优先除非被锁定）。
 - FR-5.5 运行时**工具级策略** allow/deny/ask（前缀/模式匹配），在 pi `tool_call` 闸门强制。
 - FR-5.6 SSO（SAML/OIDC）登录、SCIM 自动开通/回收、可选桌面端 MDM 强制。
+- FR-5.7 管理员可配置注册管控策略：**开放注册**（任何人均可注册）/ **关闭注册**（仅管理员手动创建或 SCIM 同步）；**注册白名单**——支持按邮箱域名（如 `@corp.com`）或精确邮箱地址白名单，仅白名单内的用户可注册或被邀请加入；白名单变更即时生效，不影响已注册用户。
 
 ### FR-6 统一治理 + 用户 Skill + 安全评估（需求 6）
 - FR-6.1 管理员/项目管理员可统一管理"默认" Agent/MCP/Skill，下发到对应作用域。

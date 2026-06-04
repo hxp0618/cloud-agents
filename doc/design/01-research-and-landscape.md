@@ -111,7 +111,7 @@ pi 及其生态包都不解决的企业能力：
 
 没有任何一家把下面这些**同时**做好——这就是 Polaris 的核心楔子：
 
-1. **组织级"共享运行中的 Agent"**（不止共享配置）。Continue/Claude Code 共享的是"定义"；Devin 按组织隔离但无 Skill/MCP 市场；Dify 偏应用编排。**把"受治理的 Agent+MCP+Skill 目录"+"每 Agent 沙箱"+"完整 RBAC"+"项目/业务组作用域"四件事捏在一起，无人做过。**
+1. **组织级"共享可运行的 Agent 能力"**（不止共享配置）。Continue/Claude Code 共享的是"定义"；Devin 按组织隔离但无 Skill/MCP 市场；Dify 偏应用编排。**Polaris 共享的是受治理的 Agent+MCP+Skill 目录——同项目成员可见同一套 Agent 定义，各自发起独立 Run（一 Run 一沙箱，不存在多人共用同一会话导致上下文交叉）。把"能力目录"+"每 Agent 沙箱"+"完整 RBAC"+"项目/业务组作用域"四件事捏在一起，无人做过。**
 2. **用户发布 Skill 的安全评估**。Continue Hub / Claude plugin 市场只有可见性与版本白名单；Goose 警告外部 recipe 不安全；pi 包是全权限任意代码。**没人在"用户发布的 Skill 进入组织可见前跑自动安全扫描+人审"。这是我们独占。**
 3. **多租户中"每 Agent"（而非每用户）沙箱**。OpenHands 用血泪证明共享容器=邻居噪声崩溃；Devin 每组织 VM 但闭源。开源 + 基于 pi + 每 Agent 微沙箱 + 配额计量 = 差异化。
 4. **与 RBAC 绑定的统一 SSE 可观测**。把 OpenHands 事件溯源 + Continue 审计治理合一。

@@ -106,7 +106,7 @@ flowchart LR
 ```mermaid
 stateDiagram-v2
     [*] --> Provisioning: Run 创建,从预热池取
-    Provisioning --> Ready: 注入config/密钥/Skill
+    Provisioning --> Ready: 注入config/密钥/Skill/记忆
     Ready --> Running: 启动 pi, prompt
     Running --> Idle: 任务空闲
     Idle --> Running: 后续 prompt
@@ -115,13 +115,46 @@ stateDiagram-v2
     Running --> Crashed: 异常
     Crashed --> Recovering: 由会话文件恢复(续跑)
     Recovering --> Running
-    Reclaiming --> [*]: 同步会话/产物到对象存储后销毁
+    Reclaiming --> [*]: 同步会话/产物/记忆摘要到对象存储后销毁
 ```
 
 - **冷启动**：维护**预热池**降低启动延迟；镜像分层缓存。
 - **崩溃恢复**：会话 JSONL 实时同步对象存储；崩溃后可 `--fork/--session` 恢复到最近叶子续跑（见 [04 §3](./04-pi-integration-and-multi-llm.md)）。
-- **回收**：空闲超时/结束即同步产物与会话后销毁，释放资源；不留残留数据。
+- **回收**：空闲超时/结束即同步产物与会话后销毁，释放资源；不留残留数据。销毁前触发 pi 的 auto-compaction，产出摘要追加到 Agent 记忆（见下文 §6.1）。
 - **隔离故障域**：单沙箱崩溃/超限不影响控制面与其它沙箱。
+
+### 6.1 跨 Run 记忆与沙箱
+
+沙箱内 Agent 会话是临时的（随沙箱销毁而消失），但**记忆是持久的**——它属于 Agent 定义，存放在沙箱外的对象存储中：
+
+```
+沙箱内 (临时，存活于 Run 期间)         对象存储 (持久，跨 Run)
+─────────────────────────────────      ─────────────────────────
+pi 会话 JSONL                          ✓ 会话归档 (按 Run)
+pi auto-compaction → 记忆摘要          ✓ Agent 记忆 (按 user/project/agent)
+工作区产物                             ✓ 产物 (按 Run)
+```
+
+**记忆加载**（Run 启动时，Provisioning → Ready 阶段）：
+
+1. Orchestrator 查对象存储 `memories/{user_id}/{project_id}/{agent_id}/memory.jsonl`
+2. 取最近 N 条摘要（按 token 预算截断，默认 ≤ 2000 tokens）
+3. 注入 pi 的系统提示或首个 user message 的 preamble
+
+**记忆回写**（Run 结束时，Reclaiming 阶段）：
+
+1. pi auto-compaction 产出本次会话摘要
+2. 追加到对象存储的 memory.jsonl（一行一条）
+3. 用户显式的"记住 X"也追加为 `type: manual`
+
+**记忆清除**（用户操作，不依赖沙箱生命周期）：
+
+1. 用户在控制台对某个 Agent 执行"清除全部记忆"
+2. 对象存储中该 Key 的 memory.jsonl 被清空（软删除归档 7 天，可恢复）
+3. 产生审计事件 `memory.cleared`，记录 (user, project, agent, timestamp)
+4. 下一次 Run 启动时加载的记忆为空——Agent 从零开始
+
+详见 [04 §3.1](./04-pi-integration-and-multi-llm.md)。
 
 ---
 

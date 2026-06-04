@@ -11,9 +11,10 @@ flowchart TB
     subgraph Clients["客户端层 Clients（瘦客户端，不依赖本地环境）"]
         Web["Web 控制台<br/>(管理 + 工作台)"]
         Desktop["桌面端<br/>(Tauri/Electron)"]
-        CLI["CLI"]
+        CLI["Polaris CLI"]
         SDKc["SDK (TS/Python)"]
         Ext["IDE / Slack / CI 集成"]
+        ThirdCLI["第三方 CLI/工具<br/>(Claude Code/Codex CLI/Continue…)"]
     end
 
     subgraph Control["控制面 Control Plane（无状态、可水平扩展）"]
@@ -25,7 +26,7 @@ flowchart TB
         EventHub["事件中枢 Event Hub<br/>事件溯源 + SSE 扇出"]
         Audit["审计 + 计量服务"]
         Secrets["密钥服务 (Vault/KMS)"]
-        LLMGW["LLM Gateway<br/>密钥托管/模型白名单/成本计量"]
+        LLMGW["LLM Gateway<br/>Polaris GW (鉴权+白名单+审计)<br/>+ LiteLLM 引擎 (协议适配+代理)"]
     end
 
     subgraph Data["数据面 Data Plane（隔离执行）"]
@@ -50,9 +51,16 @@ flowchart TB
     Providers["外部/自建 LLM Providers"]
 
     Clients -->|HTTPS| GW
-    GW --> IAM & Catalog & Review & Orch & EventHub & Audit
+    ThirdCLI -->|HTTPS (OpenAI/Anthropic 兼容 API)| LLMGW
+    GW --> IAM
+    GW --> Catalog
+    GW --> Review
+    GW --> Orch
+    GW --> EventHub
+    GW --> Audit
     Orch --> Pool
-    Pool --> Sandbox1 & SandboxN
+    Pool --> Sandbox1
+    Pool --> SandboxN
     Orch <-->|RPC stdin/stdout| Pi1
     Pi1 --- PExt1 --- WS1
     PExt1 --- MCP1
@@ -64,8 +72,11 @@ flowchart TB
     EventHub -->|SSE| GW
     LLMGW --> Audit
     Catalog --> OS
-    IAM & Catalog & Audit --> PG
-    EventHub & Orch --> Redis
+    IAM --> PG
+    Catalog --> PG
+    Audit --> PG
+    EventHub --> Redis
+    Orch --> Redis
     Secrets -.间接下发.-> Sandbox1
     Review --> Catalog
 ```
@@ -73,7 +84,8 @@ flowchart TB
 **三面职责一句话**：
 - **控制面**：决定"谁能用什么、跑什么、看什么"，编排但不亲自执行 Agent 逻辑。无状态，水平扩展。
 - **数据面**：真正跑 Agent 的隔离沙箱；pi 进程在此，平台扩展与受控官方包（`pi-mcp-adapter`/`pi-subagents`）在此，工具在此执行。
-- **客户端**：瘦客户端，只通过 REST+SSE 与控制面对话；无本地密钥/算力/环境依赖。
+- **客户端**：瘦客户端，只通过 REST+SSE 与控制面对话；无本地密钥/算力/环境依赖。桌面端/CLI 是遥控器而非引擎——Agent 永远在云端沙箱中执行，本地不做 Agent 运行时。
+- **第三方 CLI/工具**：Claude Code、Codex CLI、Continue 等工具可将 `base_url` 指向 LLM Gateway 的 OpenAI/Anthropic 兼容端点，配合用户自己的 API Key 直接调用 LLM（纯模型调用，无 Agent/Run 能力）。调用全量经 Gateway 审计。
 
 ---
 
@@ -91,7 +103,7 @@ flowchart TB
 | **事件中枢 (Event Hub)** | 收敛 pi 事件 + 平台事件 → append-only 日志 → SSE 扇出 / 审计 / 计量 / 安全监控 | 事件溯源唯一事实源（见 [08](./08-observability-and-sse.md)） |
 | **审计 + 计量** | 不可篡改审计；token+沙箱时长归一计费；配额/预算告警 | 从事件流派生 |
 | **密钥服务** | provider key、MCP 凭据、用户/项目密钥的托管与间接下发 | 明文绝不过客户端/会话 |
-| **LLM Gateway** | 所有模型流量的统一出口；密钥托管、模型白名单校验、成本/延迟计量、合规路由、缓存 | pi 经自定义 provider 指向它 |
+| **LLM Gateway** | 所有模型流量的统一出口。双层架构：**Polaris Gateway** 负责用户 Key 鉴权 + 模型白名单校验（四级作用域继承）+ 审计日志；**LiteLLM 引擎**（内嵌）负责 100+ provider 协议适配、流式代理、故障切换/重试、速率限制、成本追踪。对外暴露 OpenAI `/v1/chat/completions` 与 Anthropic `/v1/messages` 兼容 API | pi 经自定义 provider 指向它；第三方 CLI 可直接接入。LiteLLM 不直接面向用户——Polaris Gateway 是唯一入口 |
 
 ### 数据面（单个 Agent 沙箱内部）
 
@@ -258,7 +270,7 @@ queueConfig:
 | **对象存储** | **S3 兼容**（MinIO 自托管） | 会话 JSONL、Skill 包、运行产物 |
 | **密钥** | **HashiCorp Vault / 云 KMS** | 间接下发、轮转 |
 | **沙箱编排** | **Kubernetes + gVisor / Kata / Firecracker**；小规模/自托管用 Docker | 见 [07](./07-sandbox-isolation.md) |
-| **LLM Gateway** | LiteLLM 或自研，前置 `pi-ai` | 统一密钥/白名单/计量 |
+| **LLM Gateway** | **Polaris Gateway（自研，BFF 层）+ LiteLLM（内嵌代理引擎）**；前置 `pi-ai` | Polaris 负责鉴权/白名单/审计；LiteLLM 负责 provider 适配/流式代理/故障切换/成本追踪 |
 | **前端** | React + TypeScript + Tailwind + shadcn/ui | 控制台 + 工作台 |
 | **桌面端** | **Tauri**（轻）或 Electron | 瘦客户端 |
 | **可观测基建** | OpenTelemetry + Prometheus + Grafana + Loki | 与业务事件流并存 |

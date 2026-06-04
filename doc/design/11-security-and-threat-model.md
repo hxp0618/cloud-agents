@@ -60,17 +60,25 @@ flowchart TB
 
     User -->|"B1: HTTPS+TLS"| GW
     IdP -->|"B1: OIDC/SAML"| GW
-    GW -->|"B2: 内部 mTLS"| IAM & Catalog & Review & Orch & EventHub & Audit
+    GW -->|"B2: 内部 mTLS"| IAM
+    GW -->|"B2: 内部 mTLS"| Catalog
+    GW -->|"B2: 内部 mTLS"| Review
+    GW -->|"B2: 内部 mTLS"| Orch
+    GW -->|"B2: 内部 mTLS"| EventHub
+    GW -->|"B2: 内部 mTLS"| Audit
     Orch <-->|"B3: RPC stdin/stdout"| Pi
     PExt -->|"B4: 进程内 API"| Pi
     PExt -->|"B4: 进程内 API"| MCP
     PExt -->|"B5: egress"| Egress
-    Egress -->|"B5: 白名单"| LLM & Internet
+    Egress -->|"B5: 白名单"| LLM
+    Egress -->|"B5: 白名单"| Internet
     LLMGW -->|"B5: 白名单"| LLM
     Secrets -.->|"B6: 间接引用"| SBX
     PExt -->|"B7: 事件上报"| EventHub
     EventHub --> EvtLog
-    IAM & Catalog & Audit --> PG
+    IAM --> PG
+    Catalog --> PG
+    Audit --> PG
     Catalog --> OS
     Review --> Catalog
 ```
