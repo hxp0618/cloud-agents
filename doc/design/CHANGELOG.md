@@ -7,13 +7,20 @@ All notable changes to the Polaris design documents (`doc/design/`).
 ## v0.6 (2026-06-02)
 
 ### Added
-- 🆕 **21-run-lifecycle-state-machine.md** — Run 生命周期状态机：UML 状态图（9 种状态 + 15 条转换）、状态定义表、各状态合法操作矩阵、6 个计时器、终态回收策略、事件映射、客户端 UI 状态映射
+- 🆕 **21-run-lifecycle-state-machine.md** — Run 生命周期状态机：UML 状态图（11 种状态 + 15 条转换）、状态定义表、各状态合法操作矩阵、6 个计时器、终态回收策略、事件映射、客户端 UI 状态映射
 - 🆕 **22-gitops-configuration-as-code.md** — GitOps / Configuration as Code：仓库结构约定、Agent/MCP/Skill/策略 YAML Schema、双向同步架构（Webhook + Dry Run + 轮询）、冲突裁决规则（Git 优先）、CI Pre-Merge 校验流水线、导出与迁移、审计与回滚、与非 GitOps 模式共存策略
 - 🆕 **23-requirements-traceability-matrix.md** — 需求追溯矩阵：原始需求调研稿 §5–§15 共 114 个开放问题逐条映射到设计文档决策与章节，含统计总表（15 个需求域全覆盖）
 - 🆕 **24-delivery-and-integration-catalog.md** — 交付物与外部集成目录：10 类交付物清单与生命周期、L1–L5 五级集成（GitHub/GitLab → Jira/Slack/飞书 → CI/CD → 知识库）、集成安全控制、优先级路线图
 
 ### Changed
-- 📝 **03-system-architecture.md** — 新增 §4 Agent 任务队列与优先级：排队模型（Mermaid）、P0–P4 五级优先级与 QoS、队列策略（权重/抢占/公平性）、准入控制、队列满行为、子 Agent 特殊处理、监控指标；原 §4–§6 顺延为 §5–§7
+- 📝 **03-system-architecture.md** — 新增 §4 Agent 任务队列与优先级：排队模型（Mermaid）、P0–P4 五级优先级与 QoS、队列策略（权重/抢占/公平性）、准入控制、队列满行为、子 Agent 特殊处理、监控指标；原 §4–§6 顺延为 §5–§7；三面职责描述精确化（控制面"无状态"限定、客户端"无 provider 裸 key"限定）
+- 📝 **04-pi-integration-and-multi-llm.md** — 密钥流向统一：provider 裸 key 只在 LiteLLM/Vault 侧解析，Polaris Gateway 只传 virtual key + 路由元数据
+- 📝 **08-observability-and-sse.md** — 事件 taxonomy 新增 `run.*` 命名空间；`permission.*` 事件与 21 对齐（新增 `allowed/denied/resolved`）
+- 📝 **09-api-clients-and-data-model.md** — API 代理模式端点补全（`/v1/chat/completions`、`/v1/messages`、`/v1/api-keys`）；cancel/abort 统一为 cancel
+- 📝 **11-security-and-threat-model.md** — K8s PodSecurityPolicy → Pod Security Admission（PSP 已在 v1.25 移除）；README 链接修正（`../README.md` → `./README.md`）
+- 📝 **06-capabilities-skills-mcp-subagents.md** — 修复 [10 §4.4] 断链（10 无 §4.4）
+- 📝 **README.md** — 状态机数量修正（9 状态 → 11 状态）
+- 🔧 修复 03 新增 §4（任务队列）导致的跨文档 section 引用漂移：19 (`03 §5→§6`)、22 (`05 §3→§4`)、23（Q6.11/Q7.8/Q8.4/Q8.5/Q8.9/Q9.7/Q11.3/Q14.11/Q14.12/Q14.14 共 12 处）；第二轮核查修复 23 中 27 处语义错位（05 §3→§4 可见域/继承、05 §2→§3.1 权限矩阵、06 §2.x 子节漂移、08 §2→§3/§5 等）
 - 📝 **11-security-and-threat-model.md §9** — 合规映射全面深化：
   - SOC 2 TSC 逐条映射（CC1–CC9 + A/C/PI/P 共 22 条）
   - ISO 27001:2022 附录 A 技术控制映射（20 条 + 成熟度评估）
@@ -21,7 +28,6 @@ All notable changes to the Polaris design documents (`doc/design/`).
   - MITRE ATT&CK 关键 Tactic/Technique 映射（13 条）
   - 合规成熟度总览表（5 框架 + 覆盖度 + 缺口 + 认证建议阶段）
 - 📝 **16-notification-system.md §4.4** — Webhook 签名验证全面展开：HMAC-SHA256 签名生成/验证流程（含 TypeScript 示例代码）、防重放机制（timestamp + delivery ID 缓存）、与 GitHub/GitLab webhook 格式的兼容性说明
-- 🔧 修复 03 新增 §4（任务队列）导致的跨文档 section 引用漂移：19 (`03 §5→§6`)、22 (`05 §3→§4`)、23（Q6.11/Q7.8/Q8.4/Q8.5/Q8.9/Q9.7/Q11.3/Q14.11/Q14.12/Q14.14 共 12 处）；第二轮核查修复 23 中 27 处语义错位（05 §3→§4 可见域/继承、05 §2→§3.1 权限矩阵、06 §2.x 子节漂移、08 §2→§3/§5 等）
 - 📝 **README.md**:
   - 版本号 v0.5 → v0.6
   - §6 需求覆盖矩阵从 11 项扩充为 27 项（4 个子表：原始需求/安全合规/运维可靠性/平台工程化）

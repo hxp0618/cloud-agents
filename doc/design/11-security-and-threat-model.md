@@ -131,7 +131,7 @@ flowchart TB
 | **事件伪造** | Spoofing | 沙箱内恶意代码伪造低风险事件掩盖高危操作 | 控制面侧对事件做基本合法性校验（事件 type 白名单、字段 schema）；审计事件由控制面独立生成（不依赖沙箱自报） | 完全伪造检测需行为侧写（P4+） |
 | **沙箱阻止事件上报** | DoS | 恶意 Skill 杀掉事件上报线程 | 事件上报由平台扩展在 pi 进程内同步执行（非独立线程）；平台扩展自身不可被 Skill 卸载；Orchestrator 侧有心跳检测——长时间无事件+沙箱仍在 → 标记异常 | 心跳间隔内的操作可能缺失 |
 | **RPC 连接劫持** | EoP | 沙箱内进程尝试连接 Orchestrator 端口 | RPC 是 stdin/stdout（不是网络端口），由容器运行时绑定；沙箱内无 Orchestrator 网络可达 | — |
-| **沙箱逃逸** | EoP | 通过内核漏洞从容器逃逸到 host | gVisor/Firecracker 内核级隔离；seccomp/Landlock 系统调用过滤；K8s PodSecurityPolicy；定期 CVE 扫描 | 内核 0day；缓解：非 root 运行、最小 capabilities |
+| **沙箱逃逸** | EoP | 通过内核漏洞从容器逃逸到 host | gVisor/Firecracker 内核级隔离；seccomp/Landlock 系统调用过滤；K8s Pod Security Admission；定期 CVE 扫描 | 内核 0day；缓解：非 root 运行、最小 capabilities |
 
 ### 3.4 B4：沙箱内部
 
@@ -299,7 +299,7 @@ flowchart TD
 | **开发** | IDE SAST 插件、pre-commit 密钥扫描、依赖审计 |
 | **构建** | CI 中 SCA（`npm audit`、Snyk/Trivy）、容器镜像 CVE 扫描、SBOM 生成、签名 |
 | **测试** | 安全测试用例（见 [12](./12-testing-strategy.md)）、闸门策略组合测试、沙箱逃逸测试、渗透测试（P2+） |
-| **部署** | 镜像签名验证、K8s PodSecurityPolicy/NetworkPolicy、密钥轮转 |
+| **部署** | 镜像签名验证、K8s Pod Security Admission/NetworkPolicy、密钥轮转 |
 | **运维** | 持续 CVE 监控、审计日志监控、异常检测、定期渗透测试与红队演练（P4+） |
 
 ---
@@ -350,7 +350,7 @@ SOC 2 的五个 Trust Services Criteria 与本平台安全控制的对应关系�
 
 | 附录 A 控制 | 描述 | Polaris 对应控制 | 成熟度 |
 |---|---|---|---|
-| **A.5.1** | 信息安全策略 | 安全设计原则（§1）+ 三层信任边界（[README §3](../README.md)） | ✅ 已设计 |
+| **A.5.1** | 信息安全策略 | 安全设计原则（§1）+ 三层信任边界（[README §3](./README.md)） | ✅ 已设计 |
 | **A.5.15** | 访问控制 | RBAC（[05](./05-rbac-and-governance.md)）+ 四级作用域 + 可见域继承锁定 | ✅ |
 | **A.5.17** | 认证信息 | SSO/OIDC + SCIM + 令牌管理（[05](./05-rbac-and-governance.md)） | ✅ |
 | **A.5.23** | 云服务中的信息安全 | 自托管/VPC 部署优先（[03 §6](./03-system-architecture.md)）+ 数据驻留（[19](./19-multi-region-deployment.md)） | ✅ |

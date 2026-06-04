@@ -45,7 +45,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 ## 4. 设计原则
 
 1. **以 pi 为依赖，不 fork**（MIT、活跃维护）；增量以"平台扩展 + 受控官方包 + 外围服务"实现，必要时向上游回馈。
-2. **控制面 / 数据面分离**：治理与编排（无状态、可水平扩展）vs. 真正跑 Agent 的隔离沙箱。
+2. **控制面 / 数据面分离**：治理与编排（大部分服务无状态、可水平扩展；Orchestrator 持有可恢复的短生命周期运行状态）vs. 真正跑 Agent 的隔离沙箱。
 3. **能力即目录（Capability-as-Catalog）**：Agent / 模型 / MCP / Skill 全部是带版本、带可见域（私有→项目→业务组→组织）、可继承可锁定的目录资源。
 4. **双层防御**：进程内策略闸门（pi `tool_call` 钩子）+ 内核级沙箱（gVisor/microVM + 出网白名单）。
 5. **事件溯源即可观测**：一条 append-only 事件流是唯一事实源，SSE 是它的实时投影；审计、计量、安全监控都从同一条流派生。
@@ -142,7 +142,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 | [`18-capacity-planning.md`](./18-capacity-planning.md) | 🔮 P3+ 容量规划：单沙箱资源画像、数据面/控制面节点估算公式、Orchestrator 瓶颈分析、自建 vLLM 容量、快速参考卡（POC→企业）|
 | [`19-multi-region-deployment.md`](./19-multi-region-deployment.md) | 🔮 P5+ 多区域部署：中心辐射拓扑、数据驻留、跨区域一致性（CP/AP）、DR 策略、合规路由（EU/APAC）、延迟预算 |
 | [`20-ide-integration-protocol.md`](./20-ide-integration-protocol.md) | 🔮 P5+ IDE 集成：VS Code/JetBrains 插件架构、OAuth PKCE 认证、对话面板/内联 Diff/审批对话框、本地目录桥接、与 Continue/Cursor 对比 |
-| [`21-run-lifecycle-state-machine.md`](./21-run-lifecycle-state-machine.md) | 🆕 Run 生命周期状态机：UML 状态图、9 种状态+15 条转换、各状态合法操作表、计时器、事件映射、UI 映射 |
+| [`21-run-lifecycle-state-machine.md`](./21-run-lifecycle-state-machine.md) | 🆕 Run 生命周期状态机：UML 状态图、11 种状态+15 条转换、各状态合法操作表、计时器、事件映射、UI 映射 |
 | [`22-gitops-configuration-as-code.md`](./22-gitops-configuration-as-code.md) | 🆕 GitOps / Configuration as Code：仓库结构、YAML Schema、双向同步架构、冲突裁决、CI Pre-Merge 校验、回滚 |
 | [`23-requirements-traceability-matrix.md`](./23-requirements-traceability-matrix.md) | 🆕 需求追溯矩阵：114 条需求开放问题 → 设计决策的逐条对照（15 个需求域全覆盖） |
 | [`24-delivery-and-integration-catalog.md`](./24-delivery-and-integration-catalog.md) | 🆕 交付物与集成目录：10 类交付物、L1–L5 五级集成（GitHub/Jira/Slack/CI/知识库）、安全控制、优先级路线图 |
@@ -197,7 +197,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
-| **v0.6** | 2026-06-02 | 🆕 新增 [21](./21-run-lifecycle-state-machine.md)（Run 生命周期状态机：UML 状态图/9 状态+15 转换/合法操作矩阵）；🆕 新增 [22](./22-gitops-configuration-as-code.md)（GitOps：仓库结构/YAML Schema/双向同步/冲突裁决/CI 校验）；🆕 新增 [23](./23-requirements-traceability-matrix.md)（需求追溯矩阵：114 条需求开放问题→设计决策逐条对照）；🆕 新增 [24](./24-delivery-and-integration-catalog.md)（交付物与集成目录：10 类交付物/L1–L5 五级集成/安全控制）；📝 [03](./03-system-architecture.md) 新增 §4 Agent 任务队列与优先级策略；📝 [11 §9](./11-security-and-threat-model.md) 合规映射深化（SOC 2 TSC/ISO 27001 附录 A/等保 2.0/MITRE ATT&CK 映射）；📝 [16 §4.4](./16-notification-system.md) 补充 Webhook HMAC 签名验证细节；📝 README §6 覆盖矩阵扩充（11→27 项）；📝 README §8 术语表扩充（沙箱/sandbox、产物/artifact/交付物、熔断/撤销、GitOps/CaC）；📝 全文档交叉引用新增 21–24 的引用路径 |
+| **v0.6** | 2026-06-02 | 🆕 新增 [21](./21-run-lifecycle-state-machine.md)（Run 生命周期状态机：UML 状态图/11 状态+15 转换/合法操作矩阵）；🆕 新增 [22](./22-gitops-configuration-as-code.md)（GitOps：仓库结构/YAML Schema/双向同步/冲突裁决/CI 校验）；🆕 新增 [23](./23-requirements-traceability-matrix.md)（需求追溯矩阵：114 条需求开放问题→设计决策逐条对照）；🆕 新增 [24](./24-delivery-and-integration-catalog.md)（交付物与集成目录：10 类交付物/L1–L5 五级集成/安全控制）；📝 [03](./03-system-architecture.md) 新增 §4 Agent 任务队列与优先级策略；📝 [11 §9](./11-security-and-threat-model.md) 合规映射深化（SOC 2 TSC/ISO 27001 附录 A/等保 2.0/MITRE ATT&CK 映射）；📝 [16 §4.4](./16-notification-system.md) 补充 Webhook HMAC 签名验证细节；📝 README §6 覆盖矩阵扩充（11→27 项）；📝 README §8 术语表扩充（沙箱/sandbox、产物/artifact/交付物、熔断/撤销、GitOps/CaC）；📝 全文档交叉引用新增 21–24 的引用路径 |
 | **v0.5** | 2026-06-02 | 🆕 新增 [17](./17-cost-optimization.md)（成本优化：缓存/路由/预热池/Spot/分层存储/成本模型）；🆕 新增 [18](./18-capacity-planning.md)（容量规划：沙箱画像/节点估算/Orchestrator 瓶颈/参考配置）；🆕 新增 [19](./19-multi-region-deployment.md)（多区域部署：拓扑/数据驻留/一致性/DR/合规路由）；🆕 新增 [20](./20-ide-integration-protocol.md)（IDE 集成：VS Code/JetBrains 插件/本地桥接）；📝 新增 [CHANGELOG.md](./CHANGELOG.md)（独立变更日志）；📝 README 新增 §8 术语约定（安审/作用域/闸门等统一）；🔧 `pi-mcp-adapter`/`pi-subagents` 版本标注为调研时版本；✅ 全文档交叉引用审核通过（35/35 有效） |
 | **v0.4** | 2026-06-02 | 🆕 新增 [13](./13-operations-manual.md)（运维手册：故障恢复、备份 RPO/RTO、沙箱治理、升级策略、SLO 告警）；🆕 新增 [14](./14-data-retention-and-privacy.md)（数据留存与隐私：分类/保留期、GDPR 被遗忘权、跨域隔离、审计防篡改、脱敏规则全集、合规映射）；🆕 新增 [15](./15-prompt-management-and-evaluation.md)（Prompt 版本化/A-B/护栏、Agent 评估框架、LLM-as-Judge、反馈闭环）；🆕 新增 [16](./16-notification-system.md)（多渠道通知、审批升级链、Digest 聚合、用户偏好） |
 | **v0.3** | 2026-06-02 | 🆕 新增 [11](./11-security-and-threat-model.md)（安全架构与威胁模型：STRIDE、攻击面、控制矩阵、残余风险、事件响应、SDL）；🆕 新增 [12](./12-testing-strategy.md)（测试策略：金字塔、安全测试用例、兼容性、性能、混沌工程）；📝 [02](./02-product-requirements.md) §3 NFR 全面量化（T/M/S 三级指标 + 阶段绑定） |

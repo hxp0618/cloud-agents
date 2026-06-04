@@ -13,11 +13,13 @@
 | 资源 | 端点（示例） |
 |---|---|
 | 认证 | `POST /v1/auth/token`、`/v1/auth/sso/*` |
+| 用户 API Key | `GET/POST/DELETE /v1/api-keys`（用户自管 sk-xxx，含作用域/过期/吊销） |
+| LLM 代理 | `POST /v1/chat/completions`（OpenAI 兼容）、`POST /v1/messages`（Anthropic 兼容） |
 | 组织/组/项目 | `GET/POST /v1/orgs`、`/v1/groups`、`/v1/projects` |
 | 用户/角色/策略 | `/v1/users`、`/v1/roles`、`/v1/policies`、`/v1/memberships` |
 | 模型/Provider | `/v1/providers`、`/v1/models`（含白名单解析） |
 | Agent 定义 | `GET/POST/PUT /v1/agents`、`/v1/agents/{id}/versions` |
-| **运行 Run** | `POST /v1/runs`、`GET /v1/runs/{id}`、`POST /v1/runs/{id}/prompt`、`/abort`、`/fork` |
+| **运行 Run** | `POST /v1/runs`、`GET /v1/runs/{id}`、`POST /v1/runs/{id}/prompt`、`POST /v1/runs/{id}/cancel`、`/fork` |
 | **事件流** | `GET /v1/runs/{id}/events` (SSE)、`GET /v1/projects/{id}/events` (SSE) |
 | 审批 | `POST /v1/runs/{id}/approvals/{reqId}`（allow/deny） |
 | MCP | `/v1/mcp-servers`（CRUD + 接入审批 + 健康） |

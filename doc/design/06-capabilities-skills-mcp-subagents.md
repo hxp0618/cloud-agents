@@ -4,7 +4,7 @@
 
 > 重要更正：MCP 与 sub-agent **不需要从零自建**——pi 生态已有官方包 **`pi-mcp-adapter`**（v2.8.0，调研时版本）与 **`pi-subagents`**（v0.27.0，调研时版本）。本平台的工作是**复用它们并套上企业治理**（目录、可见域、闸门、能力清单、审计、配额）。
 >
-> ⚠️ **版本声明**：以上版本号为 2026-06-02 调研时的最新版本。实施前需确认最新版本（`npm view pi-mcp-adapter pi-subagents version`），并核定其变更是否影响集成方案。版本锁定策略见 [10 §4.4](./10-roadmap-and-open-questions.md)。
+> ⚠️ **版本声明**：以上版本号为 2026-06-02 调研时的最新版本。实施前需确认最新版本（`npm view pi-mcp-adapter pi-subagents version`），并核定其变更是否影响集成方案。版本锁定策略见 [10](./10-roadmap-and-open-questions.md)。
 
 ---
 

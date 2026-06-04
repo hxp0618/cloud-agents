@@ -91,7 +91,7 @@ export default (pi: ExtensionAPI) => {
     if (decision === "ask") {
       // 走 pi 原生 UI 往返 → Event Hub → 客户端 SSE 审批
       const ok = await ctx.ui.confirm({ title: `允许执行 ${event.toolName}？`, timeout: 120000 });
-      emit("permission.decided", { tool: event.toolName, approved: ok });
+      emit(ok ? "permission.resolved" : "permission.denied", { tool: event.toolName, approved: ok });
       if (!ok) return { block: true, reason: "用户拒绝" };
     }
     // allow → 放行
@@ -237,7 +237,7 @@ pi-ai 本身已支持 20+ provider 与统一 schema、密钥解析（`--api-key`
 flowchart LR
     Pi["pi 进程<br/>(Agent Run 模式)"] -->|polaris-gateway provider| PolGW["Polaris Gateway<br/>鉴权 + 白名单 + 审计"]
     ThirdCLI["第三方 CLI<br/>(API 代理模式)"] -->|OpenAI/Anthropic 兼容 API<br/>+ 用户 Key| PolGW
-    PolGW -->|鉴权后转发<br/>+ provider 裸 key| LiteLLM["LiteLLM 引擎<br/>协议适配 / 流式代理<br/>故障切换 / 速率限制"]
+    PolGW -->|鉴权后转发<br/>+ virtual key + 路由元数据| LiteLLM["LiteLLM 引擎<br/>协议适配 / 流式代理<br/>故障切换 / 速率限制"]
     LiteLLM --> P1["Anthropic"]
     LiteLLM --> P2["OpenAI"]
     LiteLLM --> P3["自建 vLLM"]
@@ -245,7 +245,7 @@ flowchart LR
     PolGW -->|审计/计量事件| EVT[(Event Hub)]
     LiteLLM -->|成本数据 交叉校验| EVT
     PolGW -->|查白名单| Pol[(Catalog 模型策略)]
-    PolGW -->|取 provider key| V[(Vault)]
+    LiteLLM -->|取 provider key| V[(Vault)]
 ```
 
 ### 4.3 模型治理数据流
@@ -268,7 +268,7 @@ Polaris Gateway
   ├── 鉴权：验证 API Key（sk-xxx）→ 解析出用户身份与作用域
   ├── 白名单：查 Catalog 获取该用户在该项目下的有效模型集
   ├── 审计：记录 (user, source=api, model, tokens, cost, timestamp)
-  └── 转发：通过后转给 LiteLLM 引擎（携带 provider 裸 key）
+  └── 转发：通过后转给 LiteLLM 引擎（携带 virtual key + 路由决策）
       │
       ▼
   LiteLLM 引擎

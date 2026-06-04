@@ -292,7 +292,7 @@ POST /v1/projects/{id}/webhooks
 {
   "url": "https://my-system.com/polaris-hook",
   "description": "通知 CI 系统 Run 完成",
-  "events": ["run.completed", "run.failed", "approval.requested"],
+  "events": ["run.completed", "run.failed", "permission.prompted"],
   "active": true,
   "secret": "whsec_..."   // 自动生成或自定义
 }
@@ -510,9 +510,9 @@ interface DeliveryRecord {
 |---|---|---|
 | `run.completed` | Run 完成 | `{runId, agentName, duration, cost, artifacts}` |
 | `run.failed` | Run 失败 | `{runId, agentName, error, duration}` |
-| `approval.requested` | 审批请求 | `{runId, tool, command, dangerLevel, timeout}` |
-| `approval.escalated` | 审批升级 | `{runId, tool, level, remainingTime}` |
-| `approval.resolved` | 审批完成 | `{runId, tool, decision}` |
+| `permission.prompted` | 审批请求 | `{runId, tool, command, dangerLevel, timeout}` |
+| `permission.escalated` | 审批升级 | `{runId, tool, level, remainingTime}` |
+| `permission.resolved` | 审批完成 | `{runId, tool, decision}` |
 | `budget.warning` | 预算告警 | `{project, current, budget, percentage}` |
 | `quota.exhausted` | 配额耗尽 | `{project, quotaType, resetAt}` |
 | `skill.reviewed` | Skill 安审结果 | `{skillName, version, result, reviewer}` |
@@ -535,7 +535,7 @@ customTemplate:
     ├ 模型: {{modelName}}
     ├ 产物: {{artifactCount}} 个文件
     └ 成本: {{cost}}
-    [查看详情]({{detailUrl}})
+    [查看详情]&#x28;{{detailUrl}}&#x29;
 ```
 
 ---

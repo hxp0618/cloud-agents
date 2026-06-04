@@ -17,7 +17,7 @@ flowchart TB
         ThirdCLI["第三方 CLI/工具<br/>(Claude Code/Codex CLI/Continue…)"]
     end
 
-    subgraph Control["控制面 Control Plane（无状态、可水平扩展）"]
+    subgraph Control["控制面 Control Plane（大部分无状态、可水平扩展）"]
         GW["API Gateway / BFF<br/>(REST + SSE 出口)"]
         IAM["身份与 RBAC 服务<br/>Org/Group/Project/User/Role/Policy"]
         Catalog["目录服务 Catalog<br/>Agent/Model/MCP/Skill 定义+版本+可见域"]
@@ -82,9 +82,9 @@ flowchart TB
 ```
 
 **三面职责一句话**：
-- **控制面**：决定"谁能用什么、跑什么、看什么"，编排但不亲自执行 Agent 逻辑。无状态，水平扩展。
+- **控制面**：决定"谁能用什么、跑什么、看什么"，编排但不亲自执行 Agent 逻辑。大部分服务无状态，水平扩展；Orchestrator 持有可恢复的短生命周期运行状态（RPC 子进程会话）。
 - **数据面**：真正跑 Agent 的隔离沙箱；pi 进程在此，平台扩展与受控官方包（`pi-mcp-adapter`/`pi-subagents`）在此，工具在此执行。
-- **客户端**：瘦客户端，只通过 REST+SSE 与控制面对话；无本地密钥/算力/环境依赖。桌面端/CLI 是遥控器而非引擎——Agent 永远在云端沙箱中执行，本地不做 Agent 运行时。
+- **客户端**：瘦客户端，只通过 REST+SSE 与控制面对话；无 provider 裸 key、无本地算力/环境依赖。Polaris 官方客户端默认不落盘长期凭据；桌面端/CLI 是遥控器而非引擎——Agent 永远在云端沙箱中执行，本地不做 Agent 运行时。
 - **第三方 CLI/工具**：Claude Code、Codex CLI、Continue 等工具可将 `base_url` 指向 LLM Gateway 的 OpenAI/Anthropic 兼容端点，配合用户自己的 API Key 直接调用 LLM（纯模型调用，无 Agent/Run 能力）。调用全量经 Gateway 审计。
 
 ---

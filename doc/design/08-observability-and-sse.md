@@ -46,7 +46,8 @@
 
 | 命名空间 | 事件（示例） | 用途 |
 |---|---|---|
-| `session.*` | `started / ended / forked` | 运行边界 |
+| `run.*` | `started / completed / failed / timeout / cancelled / recovering / recovered / crashed / rejected` | Run 生命周期状态转换（见 [21 §7](./21-run-lifecycle-state-machine.md)） |
+| `session.*` | `started / ended / forked` | 会话边界（pi 会话级） |
 | `turn.*` | `started / completed / failed` | 回合 |
 | `message.*` | `delta / completed` | 流式文本（映射 pi `message_update.text_delta`） |
 | `model.*` | `request / response`（含 tokens/cost/latency/provider/model） | 成本计量 |
@@ -55,7 +56,7 @@
 | `subagent.*` | `spawned / event / completed` | 子 Agent 树（经 pi-subagents） |
 | `skill.*` | `activated / loaded / revoked_in_run` | Skill 使用 |
 | `sandbox.*` | `created / exec / limit_exceeded / destroyed / recovered` | 隔离与资源 |
-| `permission.*` | `prompted / decided / escalated / timeout` | 审批往返 + 升级链（见 [16](./16-notification-system.md) §3） |
+| `permission.*` | `prompted / resolved / denied / escalated / timeout` | 审批往返 + 升级链（见 [16](./16-notification-system.md) §3） |
 | `notification.*` | `delivered / failed / bounced / read` | 通知投递状态追踪（见 [16](./16-notification-system.md) §6.3） |
 | `prompt.*` | `version_created / rollout_changed / guardrail_violation` | Prompt 版本管理与护栏（见 [15](./15-prompt-management-and-evaluation.md) §A） |
 | `evaluation.*` | `auto_evaluated / benchmark_completed / feedback_received` | Agent 评估与用户反馈（见 [15](./15-prompt-management-and-evaluation.md) §B–§C） |
