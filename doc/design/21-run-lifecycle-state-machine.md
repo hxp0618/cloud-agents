@@ -23,9 +23,9 @@ stateDiagram-v2
     running --> timeout: 墙钟超时
     running --> cancelled: 用户/管理员主动取消
 
-    paused_for_approval --> running: 审批允许 (extension_ui_response)
-    paused_for_approval --> failed: 审批拒绝 or 审批超时(策略=deny)
-    paused_for_approval --> cancelled: 用户取消等待中的 Run
+    paused_for_approval --> running: 审批允许(执行该工具)
+    paused_for_approval --> running: 审批拒绝(挡此工具,走替代路径)/超时策略=deny
+    paused_for_approval --> cancelled: 用户取消等待中的 Run / deny_and_abort(中止整个 Run)
 
     recovering --> running: 从会话 JSONL 续跑成功
     recovering --> crashed: 续跑失败或会话不可恢复
@@ -63,9 +63,9 @@ stateDiagram-v2
 | T3 | `sandbox_creating` | `running` | 沙箱就绪 + pi RPC 握手成功 | 沙箱创建成功 + 配置注入完成 + pi 进程启动 | 发射 `run.started`、开始计时 |
 | T4 | `sandbox_creating` | `failed` | 沙箱创建超时（默认 60s）或资源不足 | 超时 or K8s 调度失败 | 回收残资源、通知用户、记审计 |
 | T5 | `running` | `paused_for_approval` | 闸门 `tool_call` 钩子返回 `ask` | 策略决定需要人工审批 | 发射 `permission.prompted`、暂停墙钟计时（可选） |
-| T6 | `paused_for_approval` | `running` | 审批人 `allow` | — | 发射 `permission.resolved`、恢复执行 |
-| T7 | `paused_for_approval` | `failed` | 审批人 `deny` 或审批超时策略为 `deny` | — | 发射 `permission.denied`、Agent 可走替代路径或终止 |
-| T8 | `paused_for_approval` | `cancelled` | 用户主动取消等待中的 Run | — | 发射 `run.cancelled`、资源回收 |
+| T6 | `paused_for_approval` | `running` | 审批人 `allow` | — | 发射 `permission.resolved`、执行该工具并恢复运行 |
+| T7 | `paused_for_approval` | `running` | 审批人 `deny`（仅挡此工具）或审批超时策略为 `deny` | — | 发射 `permission.denied`、对该工具返回 `{block:true}`，Agent 走替代路径继续运行（**不终止整个 Run**） |
+| T8 | `paused_for_approval` | `cancelled` | 用户主动取消等待中的 Run，或审批人选择 `deny_and_abort` | — | 发射 `run.cancelled`、SIGTERM→SIGKILL pi、资源回收 |
 | T9 | `running` | `completed` | pi 发射 `session.ended` | 正常结束（exit code 0） | 发射 `run.completed`、flush 会话 JSONL、启动回收计时器 |
 | T10 | `running` | `failed` | pi 异常退出或平台扩展检测到不可恢复错误 | exit code ≠ 0 or 平台扩展错误 | 发射 `run.failed`、保留沙箱现场（可配保留时长） |
 | T11 | `running` | `timeout` | 墙钟计时器到期 | `wallClockTimeout` 耗尽 | 发射 `run.timeout`、SIGTERM → SIGKILL pi、回收沙箱 |
@@ -88,6 +88,8 @@ stateDiagram-v2
 | **下载产物** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **事件回放** | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 
+> ⚠️ **关于 `pause`/`resume`**：二者是 **P3+ 规划能力**，当前 v1 状态机（§1，11 状态 / 15 转换）**未建模**用户主动的 `paused` 状态——P3+ 引入时将补充对应状态与转换。`failed` 行的 `resume`（"部分场景"）实为 **fork 重跑**（基于会话 JSONL 新建 Run，见 §8「重试」入口），而非原 Run 原地恢复；区别于 `recovering`（Orchestrator 崩溃后的自动续跑，T13–T14）。
+
 ## 5. 计时器与超时
 
 ```
@@ -106,10 +108,10 @@ Run 涉及的计时器:
    - 超时: SIGTERM (graceful 30s) → SIGKILL
    - 即将超时 (剩余 5min): 发射 run.timeout_warning → 通知用户
 
-4. 审批超时 (paused_for_approval → failed):
+4. 审批超时 (paused_for_approval → running，按超时策略处置该工具):
    - 见 [16 §3](./16-notification-system.md)
    - 多级升级链
-   - 最终超时策略: deny (默认) or allow_once (可配)
+   - 最终超时策略: deny(挡此工具，默认) or allow_once(执行该工具，可配)——两者均回到 running，不终止 Run；仅 deny_and_abort → cancelled
 
 5. 沙箱保留计时器 (completed/failed/timeout/cancelled → 沙箱回收):
    - 保留现场: 5min (默认，可配 0-60min)
@@ -140,7 +142,7 @@ Run 涉及的计时器:
 | T3 (→ running) | `run.started` | `{runId, sandboxId, effectiveConfig}` |
 | T5 (→ paused) | `permission.prompted` | `{runId, tool, command, dangerLevel, timeout}` |
 | T6 (→ running) | `permission.resolved` | `{runId, decision: "allow", by}` |
-| T7 (→ failed) | `permission.denied` | `{runId, decision: "deny", by, reason}` |
+| T7 (→ running) | `permission.denied` | `{runId, decision: "deny", by, reason}`（仅挡此工具，Run 继续） |
 | T9 (→ completed) | `run.completed` | `{runId, duration, tokenUsage, cost, artifactSummary}` |
 | T10 (→ failed) | `run.failed` | `{runId, error, lastTurn, exitCode}` |
 | T11 (→ timeout) | `run.timeout` | `{runId, wallClockLimit, duration}` |
@@ -169,3 +171,5 @@ Run 涉及的计时器:
 ---
 
 > 📎 **相关文档**：沙箱生命周期见 [07 §5](./07-sandbox-isolation.md)；故障恢复细节见 [13 §1](./13-operations-manual.md)；审批超时见 [16 §3](./16-notification-system.md)；事件 schema 见 [08 §2](./08-observability-and-sse.md)。
+
+> 💡 **如何阅读**：架构师看 §1（状态机总图）+ §3（状态定义）+ §4（合法操作矩阵）；前端开发者看 §8（UI 状态映射）；SRE 看 §5（6 个计时器）+ §6（终态回收策略）；集成工程师看 §7（事件映射）。

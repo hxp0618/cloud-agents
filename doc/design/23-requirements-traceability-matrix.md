@@ -1,6 +1,6 @@
 # 23 · 需求追溯矩阵
 
-本文把 [`requirements/cloud-agent-requirements-discovery.md`](../requirements/cloud-agent-requirements-discovery.md) 中提出的 ~50 个开放问题，逐一映射到设计文档中的决策与落点。用于需求评审时的逐条确认与合规审计时的追溯。
+本文把 [`requirements/cloud-agent-requirements-discovery.md`](../requirements/cloud-agent-requirements-discovery.md) 中提出的 114 个开放问题，逐一映射到设计文档中的决策与落点。用于需求评审时的逐条确认与合规审计时的追溯。
 
 ---
 
@@ -108,7 +108,7 @@
 | Q9.5 | 是否保留原始事件？ | **是**——脱敏后的事件进入实时流 + 用户可见；原始事件保留在不可变审计存储（仅审计员可查） | [08 §3](./08-observability-and-sse.md) |
 | Q9.6 | SSE 是否只是页面实时展示，还是也给 API 用户消费？ | **两者皆是**——SSE 同时服务于 Web 工作台和 API/SDK 用户（同一端点，RBAC 过滤） | [08 §2](./08-observability-and-sse.md)；[09](./09-api-clients-and-data-model.md) |
 | Q9.7 | 断线重连是否必须恢复历史事件？ | **是**——`Last-Event-ID` 实现断点续传，窗口 ≥24h | [08 §4.1](./08-observability-and-sse.md) |
-| Q9.8 | 是否需要跨 Sub-agent 的统一 trace？ | **是**——`parentRunId` / `subagentId` 构建运行树 | [08 §2](./08-observability-and-sse.md) 事件字段 |
+| Q9.8 | 是否需要跨 Sub-agent 的统一 trace？ | **是**——`parentSessionId` / `subagentId` 构建运行树 | [08 §2](./08-observability-and-sse.md) 事件字段 |
 
 ## 10. Sub-agent（需求稿 §10）
 
@@ -221,3 +221,5 @@
 ---
 
 > 📎 **相关文档**：原始需求调研稿见 [`../requirements/cloud-agent-requirements-discovery.md`](../requirements/cloud-agent-requirements-discovery.md)；各决策的详细展开见对应落点文档。
+
+> 💡 **如何阅读**：所有角色看 §16（统计总表，15 个需求域 114 条全覆盖）；产品经理反向追溯需求→决策；架构师正向验证设计覆盖；QA/测试验证需求可追溯性。

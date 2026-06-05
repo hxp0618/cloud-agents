@@ -46,7 +46,7 @@
 
 | 命名空间 | 事件（示例） | 用途 |
 |---|---|---|
-| `run.*` | `started / completed / failed / timeout / cancelled / recovering / recovered / crashed / rejected` | Run 生命周期状态转换（见 [21 §7](./21-run-lifecycle-state-machine.md)） |
+| `run.*` | `started / completed / failed / timeout / timeout_warning / cancelled / recovering / recovered / crashed / rejected` | Run 生命周期状态转换与超时预警（见 [21 §5/§7](./21-run-lifecycle-state-machine.md)） |
 | `session.*` | `started / ended / forked` | 会话边界（pi 会话级） |
 | `turn.*` | `started / completed / failed` | 回合 |
 | `message.*` | `delta / completed` | 流式文本（映射 pi `message_update.text_delta`） |
@@ -55,9 +55,11 @@
 | `mcp.*` | `server_started / tool_invoked / error` | MCP（经 pi-mcp-adapter） |
 | `subagent.*` | `spawned / event / completed` | 子 Agent 树（经 pi-subagents） |
 | `skill.*` | `activated / loaded / revoked_in_run` | Skill 使用 |
+| `memory.*` | `loaded / appended / cleared` | 跨 Run 记忆生命周期（见 [04 §3.1](./04-pi-integration-and-multi-llm.md)）；`cleared` 同时落审计 |
 | `sandbox.*` | `created / exec / limit_exceeded / destroyed / recovered` | 隔离与资源 |
 | `permission.*` | `prompted / resolved / denied / escalated / timeout` | 审批往返 + 升级链（见 [16](./16-notification-system.md) §3） |
 | `notification.*` | `delivered / failed / bounced / read` | 通知投递状态追踪（见 [16](./16-notification-system.md) §6.3） |
+| `delivery.*` | `pr_created / comment_posted / issue_updated` | 交付物与外部集成产出（见 [24](./24-delivery-and-integration-catalog.md) §3–§4） |
 | `prompt.*` | `version_created / rollout_changed / guardrail_violation` | Prompt 版本管理与护栏（见 [15](./15-prompt-management-and-evaluation.md) §A） |
 | `evaluation.*` | `auto_evaluated / benchmark_completed / feedback_received` | Agent 评估与用户反馈（见 [15](./15-prompt-management-and-evaluation.md) §B–§C） |
 | `security.*` | `flagged`（risk Low/Med/High，含理由） | 安全监控 |
@@ -118,3 +120,7 @@ flowchart LR
 ## 7. 与需求对应
 - 需求 9（SSE 全链路可观测）：全文。
 - 关联：事件源自 [04](./04-pi-integration-and-multi-llm.md) pi 事件；治理事件源自 [05](./05-rbac-and-governance.md)/[06](./06-capabilities-skills-mcp-subagents.md)；沙箱事件源自 [07](./07-sandbox-isolation.md)；API 出口见 [09](./09-api-clients-and-data-model.md)；通知投递事件见 [16](./16-notification-system.md)；Prompt 与评估事件见 [15](./15-prompt-management-and-evaluation.md)。
+
+---
+
+> 💡 **如何阅读**：架构师看 §1（设计基线）+ §2（事件信封）+ §3（事件分类 taxonomy）；前端/客户端看 §4.1（SSE 实时 UI + 断点续传）；SRE 看 §4.2（审计计量）+ §4.3（安全监控）+ §6（APM 关联）；审计/合规看 §4.2（不可篡改审计）+ §5（回放与运行树）。

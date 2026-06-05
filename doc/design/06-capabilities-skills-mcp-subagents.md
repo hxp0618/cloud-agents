@@ -242,3 +242,7 @@ flowchart TD
 - 需求 3（MCP + Skill）：§2（Skill）、§3（MCP via `pi-mcp-adapter`）。
 - 需求 6（用户自定义 Skill + 发布需安全评估）：§2.2–§2.5（**本平台自建的护城河**）。
 - 关联：信任边界贯穿 [04](./04-pi-integration-and-multi-llm.md)/[05](./05-rbac-and-governance.md)/[07](./07-sandbox-isolation.md)；安全评估对抗测试见 [12](./12-testing-strategy.md)（§5.3 安审对抗样本）；LLM 风险判定与评估框架见 [15](./15-prompt-management-and-evaluation.md)；安审通知与审批升级见 [16](./16-notification-system.md)。
+
+---
+
+> 💡 **如何阅读**：架构师看 §1（三层信任边界）+ §4（子 Agent 编排）；安全评审看 §2（Skill 安审流水线）+ §3（MCP 治理）；平台工程师看 §2.4（SemVer 版本策略）+ §3.2（MCP 接入审批流程）；产品经理看 §2.2–§2.3（Skill 发布工作流）。

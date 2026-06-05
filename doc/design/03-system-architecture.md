@@ -333,3 +333,5 @@ flowchart LR
 - Catalog + IAM + Review → 需求 4/5/6。
 
 > 下钻：pi 集成与多 LLM 见 [04](./04-pi-integration-and-multi-llm.md)；RBAC/治理见 [05](./05-rbac-and-governance.md)；能力层见 [06](./06-capabilities-skills-mcp-subagents.md)；沙箱见 [07](./07-sandbox-isolation.md)；可观测见 [08](./08-observability-and-sse.md)；Run 生命周期见 [21](./21-run-lifecycle-state-machine.md)；安全与威胁模型见 [11](./11-security-and-threat-model.md)；运维与恢复见 [13](./13-operations-manual.md)；成本优化见 [17](./17-cost-optimization.md)；容量规划见 [18](./18-capacity-planning.md)；多区域部署见 [19](./19-multi-region-deployment.md)；IDE 集成见 [20](./20-ide-integration-protocol.md)。
+
+> 💡 **如何阅读**：架构师看 §1（三面架构图）+ §2（组件职责表）+ §3（端到端时序）+ §4（任务队列与优先级）；SRE/DevOps 看 §3（时序）+ §4（队列）+ §5（技术栈）+ §6（部署拓扑）；安全评审看 §2（组件隔离边界）+ §3（审批往返）。

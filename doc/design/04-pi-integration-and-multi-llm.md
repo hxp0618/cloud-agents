@@ -123,7 +123,7 @@ export default (pi: ExtensionAPI) => {
 
 ### 3.1 跨 Run 记忆（Agent Memory）
 
-#### 归归属模型 —— 三级主键
+#### 归属模型 —— 三级主键
 
 ```
 记忆归属 = (user_id, project_id, agent_id)
@@ -311,3 +311,5 @@ Polaris Gateway
 - [ ] 兜底：危险工具默认策略、`set_model` 白名单、密钥路径保护、子 Agent 深度/扇出/成本上限。
 
 > 关联：闸门策略来源见 [05](./05-rbac-and-governance.md)；MCP/子 Agent/Skill 见 [06](./06-capabilities-skills-mcp-subagents.md)；事件 schema 见 [08](./08-observability-and-sse.md)。
+
+> 💡 **如何阅读**：架构师看 §1（RPC 驱动 + 三种嵌入模式）+ §2（平台扩展与闸门）+ §4（LLM Gateway 双层架构）；平台工程师看 §5（实施清单）；安全评审看 §2.1（闸门 PEP）+ §4（密钥流向：裸 key 只在 LiteLLM/Vault 侧）；集成工程师看 §4.4（API 代理模式）+ §1（SDK/JSON 模式）。
