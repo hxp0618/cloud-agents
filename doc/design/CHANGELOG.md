@@ -4,6 +4,32 @@ All notable changes to the Polaris design documents (`doc/design/`).
 
 ---
 
+## v0.6.2 (2026-06-05)
+
+> 沙箱与凭据层设计增补（源自对 LAP / `kubernetes-sigs/agent-sandbox` 的调研对标），**无新增文档、无破坏性改动**。两项增补：K8s 沙箱后端改为 reconcile 上游 `Sandbox` CR；出网代理与密钥下发合并为「凭据代理 sidecar + 桩凭据」模型。
+
+### Changed
+- 📝 **07-sandbox-isolation.md §2** — Workspace 后端抽象新增 §2.1「K8s 后端：reconcile `Sandbox` CR」：`ContainerWorkspace`/`MicroVMWorkspace` 不再自建 K8s 编排，改为复用上游 [`kubernetes-sigs/agent-sandbox`](https://github.com/kubernetes-sigs/agent-sandbox)（SIG Apps，`agents.x-k8s.io/v1alpha1`）的 `Sandbox` CRD + 控制器；`Workspace` 接口映射到 CR 操作；原生能力映射表（`runtimeClassName` gVisor/Kata、`SandboxTemplate`=沙箱画像、`SandboxWarmPool`=预热池冷启<1s、定时删除=回收、pause/resume=[21 §4] P3+ 缺口）；附 `Sandbox` CR 示意 YAML；标注 `v1alpha1` 成熟度核定（直接依赖 vs 借鉴 CR 设计）
+- 📝 **07-sandbox-isolation.md §3** — 新增 §3.1「凭据代理 sidecar」：将原本分开的「出网白名单代理」与「密钥间接下发」**合并为一个 sidecar**，采用更强的**桩凭据**模型——harness 只持 `stub_*`，真凭据仅活于 sidecar 进程内存、出网时换值，Agent 永不持有真凭据（即便 bypass-permissions 也偷不到）；明确与 [04 §4.2] LLM Gateway 短令牌路径的关系（推广到 git/MCP/包仓库等所有出网凭据）；凭据分轨（`GIT_TOKEN` 用后抹除 vs `GITHUB_TOKEN` 持续）+ 保留环境变量；⚠️ 待核定 HTTPS 在 wire 上换值的 TLS 终止（MITM/内部 CA）机制。同步 §3 解剖图、§1 原则表、§5 画像→`SandboxTemplate`、§6 生命周期（warm pool/定时删除/pause-resume）、§7 加固清单、§8 交叉引用
+- 📝 **11-security-and-threat-model.md** — 凭据外泄控制全面升级 + 新增「外部内容注入」攻击面：
+  - §2 信任边界图 + 表：B5/B6 收敛到「凭据代理 sidecar」（egress + 桩→真换值；真 key 仅注入 sidecar）
+  - §3.4 新增 STRIDE 行「间接提示注入（外部内容）」——Agent 抓取的网页/仓库/issue/MCP 结果/文档携带面向 LLM 的注入指令
+  - §3.5 数据外泄控制补「凭据零持有——外传也带不走真 key」
+  - §3.6 B6 凭据子表重写（桩凭据模型 / 凭据外泄 / 凭据残留进程隔离 / 凭据映射滥用）
+  - §4.2 内部攻击面新增「外部内容注入」行
+  - §5 控制矩阵：「密钥泄露」控制升级为「桩凭据 + sidecar wire 换值」；新增「间接提示注入（外部内容）」行
+  - §6 残余风险：R2 拓宽到 Agent 主动抓取的外部内容；新增 **R9「凭据代理 sidecar 被攻破」**（桩模型集中化的代价）
+  - §9.4 MITRE T1552 缓解更新为「桩凭据（Agent 无真 key）+ sidecar 换值」
+  - §10 需求对应补凭据零持有 / 外部内容注入条目
+- 📝 **03-system-architecture.md §5** — 技术栈表「沙箱编排」行补注 K8s 后端复用 `kubernetes-sigs/agent-sandbox`（`Sandbox` CRD + 控制器），转交指向 [07 §2.1](./07-sandbox-isolation.md)
+- 📝 **09-api-clients-and-data-model.md §1.3** — 新增「Run 创建输入校验（per-session env）」：≤50 keys / ≤16KB / key 正则 / 保留键名单 → 400（落实 [07 §3.1] 的前向引用，借鉴 LAP per-session env 约束）
+- 📝 **README.md** — 版本号 v0.6.1 → v0.6.2；§7 文档导航 07 词条更新（Workspace 后端 reconcile `Sandbox` CR + 凭据代理 sidecar）；§10 变更日志新增 v0.6.2
+
+### Note
+- 本轮源自对 LAP（LiteLLM Agent Platform）文档与 `kubernetes-sigs/agent-sandbox` 上游的调研对标。**安全提示**：调研中发现 LAP 文档页内嵌面向 LLM 的注入指令（要求 fetch 外部 `llms.txt`），已抽象为「外部内容注入」威胁纳入 §3.4 / §4.2 / R2——这正是本平台 Agent 自身会遇到的攻击面。
+
+---
+
 ## v0.6.1 (2026-06-05)
 
 > 评审修订：对 v0.6 文档套件做内部一致性与正确性修复，**无新增文档**。

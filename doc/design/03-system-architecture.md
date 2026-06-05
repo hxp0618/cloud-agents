@@ -269,7 +269,7 @@ queueConfig:
 | **事件日志** | Redis Streams → 规模化换 **Kafka/NATS JetStream** | 事件溯源持久层 |
 | **对象存储** | **S3 兼容**（MinIO 自托管） | 会话 JSONL、Skill 包、运行产物 |
 | **密钥** | **HashiCorp Vault / 云 KMS** | 间接下发、轮转 |
-| **沙箱编排** | **Kubernetes + gVisor / Kata / Firecracker**；小规模/自托管用 Docker | 见 [07](./07-sandbox-isolation.md) |
+| **沙箱编排** | **Kubernetes + gVisor / Kata / Firecracker**（K8s 后端复用 `kubernetes-sigs/agent-sandbox` 的 `Sandbox` CRD + 控制器）；小规模/自托管用 Docker | 见 [07 §2.1](./07-sandbox-isolation.md) |
 | **LLM Gateway** | **Polaris Gateway（自研，BFF 层）+ LiteLLM（内嵌代理引擎）**；前置 `pi-ai` | Polaris 负责鉴权/白名单/审计；LiteLLM 负责 provider 适配/流式代理/故障切换/成本追踪 |
 | **前端** | React + TypeScript + Tailwind + shadcn/ui | 控制台 + 工作台 |
 | **桌面端** | **Tauri**（轻）或 Electron | 瘦客户端 |

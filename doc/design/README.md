@@ -2,7 +2,7 @@
 
 > 代号 **Polaris**（北极星）—— 一个企业级、统一治理的云端 AI Agent 平台，基于开源项目 [pi (earendil-works)](https://github.com/earendil-works/pi) 构建。
 >
-> 文档版本：v0.6.1（草案） · 日期：2026-06-05 · [变更日志](#10-变更日志)
+> 文档版本：v0.6.2（草案） · 日期：2026-06-05 · [变更日志](#10-变更日志)
 
 > 📎 **与需求调研稿的关系**：本目录（`doc/design/`）是**设计方案**，对"该怎么做"给出一版可落地的提案；第一轮**需求调研与开放问题**见 [`../requirements/cloud-agent-requirements-discovery.md`](../requirements/cloud-agent-requirements-discovery.md)。两者互补——调研稿提出问题，本方案给出一种答案；最终以需求确认后的迭代为准。
 
@@ -128,7 +128,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 | [`04-pi-integration-and-multi-llm.md`](./04-pi-integration-and-multi-llm.md) | 如何驱动 pi（RPC/SDK/JSON）、平台扩展、权限闸门、LLM Gateway、会话 |
 | [`05-rbac-and-governance.md`](./05-rbac-and-governance.md) | 组织/业务组/项目/用户层级、角色与权限矩阵、可见域继承与锁定、统一治理、SSO/SCIM |
 | [`06-capabilities-skills-mcp-subagents.md`](./06-capabilities-skills-mcp-subagents.md) | 信任模型、Skill 生命周期与安全评估流水线、MCP 接入治理、子 Agent 编排 |
-| [`07-sandbox-isolation.md`](./07-sandbox-isolation.md) | 每 Agent 沙箱、Workspace 后端抽象、资源/网络/密钥模型、双层防御、生命周期 |
+| [`07-sandbox-isolation.md`](./07-sandbox-isolation.md) | 每 Agent 沙箱、Workspace 后端（K8s reconcile `Sandbox` CR）、凭据代理 sidecar（egress+桩换值）、双层防御、生命周期 |
 | [`08-observability-and-sse.md`](./08-observability-and-sse.md) | 事件溯源、事件信封与分类、SSE 传输与断点续传、审计、计量 |
 | [`09-api-clients-and-data-model.md`](./09-api-clients-and-data-model.md) | REST/SSE API 面、Agent Run API、SDK/CLI/桌面端、控制台信息架构、数据模型 ER |
 | [`10-roadmap-and-open-questions.md`](./10-roadmap-and-open-questions.md) | 分阶段路线图、MVP 定义、风险、待决策项（含建议）、成功指标 |
@@ -198,6 +198,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| **v0.6.2** | 2026-06-05 | 🔧 沙箱与凭据层设计增补（无新增文档，详见 [CHANGELOG](./CHANGELOG.md)）：[07](./07-sandbox-isolation.md) K8s 后端改为 reconcile 上游 `Sandbox` CR（`kubernetes-sigs/agent-sandbox`）+ 出网代理与密钥下发合并为「凭据代理 sidecar + 桩凭据」模型（Agent 永不持有真凭据）；[11](./11-security-and-threat-model.md) 新增「外部内容注入」攻击面（§3.4/§4.2/R2）+ 凭据外泄控制升级为桩凭据模型 + 新增残余风险 R9；[03](./03-system-architecture.md) §5 / [09](./09-api-clients-and-data-model.md) §1.3 配套（agent-sandbox 指引 + per-session env 校验） |
 | **v0.6.1** | 2026-06-05 | 🔧 评审修订（无新增文档，详见 [CHANGELOG](./CHANGELOG.md)）：[08](./08-observability-and-sse.md) 事件分类补 `memory.*`/`delivery.*`/`run.timeout_warning`；[21](./21-run-lifecycle-state-machine.md) 审批拒绝语义修正（T7 → `running`，`deny` 仅挡此工具不终止 Run；状态 11/转换 15 不变）+ §4 标注 pause/resume 为 P3+ 未建模；[22](./22-gitops-configuration-as-code.md) 可见域字段 `scope`→`visibility`、`organization`→`org`、ToolPolicy `defaultMode` YAML 结构修正；[23](./23-requirements-traceability-matrix.md) `parentRunId`→`parentSessionId`、引言「~50」→「114」；[20](./20-ide-integration-protocol.md)+README IDE 阶段 `P5+`→`P3+`；[07](./07-sandbox-isolation.md) 阅读指南 §编号、[04](./04-pi-integration-and-multi-llm.md)/[24](./24-delivery-and-integration-catalog.md) 错别字修正 |
 | **v0.6** | 2026-06-02 | 🆕 新增 [21](./21-run-lifecycle-state-machine.md)（Run 生命周期状态机：UML 状态图/11 状态+15 转换/合法操作矩阵）；🆕 新增 [22](./22-gitops-configuration-as-code.md)（GitOps：仓库结构/YAML Schema/双向同步/冲突裁决/CI 校验）；🆕 新增 [23](./23-requirements-traceability-matrix.md)（需求追溯矩阵：114 条需求开放问题→设计决策逐条对照）；🆕 新增 [24](./24-delivery-and-integration-catalog.md)（交付物与集成目录：10 类交付物/L1–L5 五级集成/安全控制）；📝 [03](./03-system-architecture.md) 新增 §4 Agent 任务队列与优先级策略；📝 [11 §9](./11-security-and-threat-model.md) 合规映射深化（SOC 2 TSC/ISO 27001 附录 A/等保 2.0/MITRE ATT&CK 映射）；📝 [16 §4.4](./16-notification-system.md) 补充 Webhook HMAC 签名验证细节；📝 README §6 覆盖矩阵扩充（11→27 项）；📝 README §8 术语表扩充（沙箱/sandbox、产物/artifact/交付物、熔断/撤销、GitOps/CaC）；📝 全文档交叉引用新增 21–24 的引用路径 |
 | **v0.5** | 2026-06-02 | 🆕 新增 [17](./17-cost-optimization.md)（成本优化：缓存/路由/预热池/Spot/分层存储/成本模型）；🆕 新增 [18](./18-capacity-planning.md)（容量规划：沙箱画像/节点估算/Orchestrator 瓶颈/参考配置）；🆕 新增 [19](./19-multi-region-deployment.md)（多区域部署：拓扑/数据驻留/一致性/DR/合规路由）；🆕 新增 [20](./20-ide-integration-protocol.md)（IDE 集成：VS Code/JetBrains 插件/本地桥接）；📝 新增 [CHANGELOG.md](./CHANGELOG.md)（独立变更日志）；📝 README 新增 §8 术语约定（安审/作用域/闸门等统一）；🔧 `pi-mcp-adapter`/`pi-subagents` 版本标注为调研时版本；✅ 全文档交叉引用审核通过（35/35 有效） |

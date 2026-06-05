@@ -45,6 +45,27 @@ POST /v1/runs
 - 然后 SSE 订阅 `eventsUrl` 实时拿进度，或轮询 `GET /v1/runs/{id}` 拿最终结果与产物。
 - 与 pi 的 JSON 模式语义对齐，但**全程受 RBAC/策略/沙箱/审计治理**——这正是与本地 codex/claude code 的差异。
 
+### 1.3 Run 创建输入校验（per-session env）
+
+`POST /v1/runs` 可携带**会话级临时环境变量**（注入 harness，作为桩凭据或非敏感配置；真凭据由凭据代理 sidecar 换值，见 [07 §3.1](./07-sandbox-isolation.md)）：
+
+```jsonc
+POST /v1/runs
+{ "agentId": "...", "projectId": "...", "input": "...",
+  "env": { "FEATURE_FLAG": "on", "GITHUB_TOKEN": "stub_gh_a8f1" } }
+```
+
+注入前强制校验，违反任一项返回 **400**：
+
+| 约束 | 规则 |
+|---|---|
+| 键数量 | ≤ 50 个 |
+| 总大小 | ≤ 16 KB（所有 key+value 之和） |
+| 键命名 | 匹配 `^[A-Za-z_][A-Za-z0-9_]*$` |
+| 保留键 | 不得与保留环境变量名单重叠（如 `LITELLM_API_KEY`/`LITELLM_API_BASE`/`REPO_URL`/`BRANCH`/`GIT_TOKEN`/`PORT`/`AGENT_PROMPT` 等，见 [07 §3.1](./07-sandbox-isolation.md)）——这些由平台/凭据代理 sidecar 接管，用户/Skill 不可覆盖 |
+
+> 借鉴 LAP 的 per-session env 约束。目的：防止注入超大/畸形 env 撑爆 harness，或借同名 env 覆盖平台保留键（如把 `LITELLM_API_BASE` 指向外部以绕过 Gateway）。
+
 ---
 
 ## 2. Web 控制台信息架构（完整页面管理，需求 4）
