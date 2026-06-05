@@ -2,7 +2,7 @@
 
 > 代号 **Polaris**（北极星）—— 一个企业级、统一治理的云端 AI Agent 平台，基于开源项目 [pi (earendil-works)](https://github.com/earendil-works/pi) 构建。
 >
-> 文档版本：v0.6（草案） · 日期：2026-06-02 · [变更日志](#10-变更日志)
+> 文档版本：v0.6.1（草案） · 日期：2026-06-05 · [变更日志](#10-变更日志)
 
 > 📎 **与需求调研稿的关系**：本目录（`doc/design/`）是**设计方案**，对"该怎么做"给出一版可落地的提案；第一轮**需求调研与开放问题**见 [`../requirements/cloud-agent-requirements-discovery.md`](../requirements/cloud-agent-requirements-discovery.md)。两者互补——调研稿提出问题，本方案给出一种答案；最终以需求确认后的迭代为准。
 
@@ -141,7 +141,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 | [`17-cost-optimization.md`](./17-cost-optimization.md) | 🔮 P3+ 成本优化：Prompt Caching、语义缓存、模型分层路由（haiku/sonnet/opus）、沙箱预热池/复用/Spot 实例、存储分层、综合成本模型 |
 | [`18-capacity-planning.md`](./18-capacity-planning.md) | 🔮 P3+ 容量规划：单沙箱资源画像、数据面/控制面节点估算公式、Orchestrator 瓶颈分析、自建 vLLM 容量、快速参考卡（POC→企业）|
 | [`19-multi-region-deployment.md`](./19-multi-region-deployment.md) | 🔮 P5+ 多区域部署：中心辐射拓扑、数据驻留、跨区域一致性（CP/AP）、DR 策略、合规路由（EU/APAC）、延迟预算 |
-| [`20-ide-integration-protocol.md`](./20-ide-integration-protocol.md) | 🔮 P5+ IDE 集成：VS Code/JetBrains 插件架构、OAuth PKCE 认证、对话面板/内联 Diff/审批对话框、本地目录桥接、与 Continue/Cursor 对比 |
+| [`20-ide-integration-protocol.md`](./20-ide-integration-protocol.md) | 🔮 P3+ IDE 集成：VS Code/JetBrains 插件架构、OAuth PKCE 认证、对话面板/内联 Diff/审批对话框、本地目录桥接、与 Continue/Cursor 对比 |
 | [`21-run-lifecycle-state-machine.md`](./21-run-lifecycle-state-machine.md) | 🆕 Run 生命周期状态机：UML 状态图、11 种状态+15 条转换、各状态合法操作表、计时器、事件映射、UI 映射 |
 | [`22-gitops-configuration-as-code.md`](./22-gitops-configuration-as-code.md) | 🆕 GitOps / Configuration as Code：仓库结构、YAML Schema、双向同步架构、冲突裁决、CI Pre-Merge 校验、回滚 |
 | [`23-requirements-traceability-matrix.md`](./23-requirements-traceability-matrix.md) | 🆕 需求追溯矩阵：114 条需求开放问题 → 设计决策的逐条对照（15 个需求域全覆盖） |
@@ -179,7 +179,8 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 | **会话 (Session)** | pi 的 JSONL 树状对话状态，支持 fork/clone/branch |
 | **平台扩展 (Platform Extension)** | 平台注入每个 pi 进程的核心 TS 扩展，承载权限闸门 / 事件上报 / Gateway provider，并受控装载 `pi-mcp-adapter`、`pi-subagents` |
 | **能力清单 (Capability Manifest)** | Skill/MCP 声明其所需工具、路径、出网域名、密钥等的清单；沙箱据此做能力约束（capability-based enforcement） |
-| **可见域 (Scope)** | 资源的可见/可用范围：私有 → 项目 → 业务组 → 组织 |
+| **可见域 (Visibility Scope)** | 资源的可见/可用范围：私有 → 项目 → 业务组 → 组织 |
+| **作用域 (Governance Scope)** | RBAC 治理层级：组织 → 业务组 → 项目 → 用户；决定权限策略的作用边界 |
 | **托管锁定 (Managed/Locked)** | 上级设定且下级不可覆盖的配置（借鉴 OpenCode MDM 语义） |
 | **LLM Gateway** | 内部统一大模型网关，集中托管密钥、做模型白名单与成本计量 |
 | **Run 状态机** | Agent Run 从 `created` 到终态（`completed/failed/timeout/cancelled/crashed/rejected`）的完整状态模型 | 见 [21](./21-run-lifecycle-state-machine.md) |
@@ -197,6 +198,7 @@ pi 的扩展能力有三种载体，**安全等级与可发布性完全不同**�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| **v0.6.1** | 2026-06-05 | 🔧 评审修订（无新增文档，详见 [CHANGELOG](./CHANGELOG.md)）：[08](./08-observability-and-sse.md) 事件分类补 `memory.*`/`delivery.*`/`run.timeout_warning`；[21](./21-run-lifecycle-state-machine.md) 审批拒绝语义修正（T7 → `running`，`deny` 仅挡此工具不终止 Run；状态 11/转换 15 不变）+ §4 标注 pause/resume 为 P3+ 未建模；[22](./22-gitops-configuration-as-code.md) 可见域字段 `scope`→`visibility`、`organization`→`org`、ToolPolicy `defaultMode` YAML 结构修正；[23](./23-requirements-traceability-matrix.md) `parentRunId`→`parentSessionId`、引言「~50」→「114」；[20](./20-ide-integration-protocol.md)+README IDE 阶段 `P5+`→`P3+`；[07](./07-sandbox-isolation.md) 阅读指南 §编号、[04](./04-pi-integration-and-multi-llm.md)/[24](./24-delivery-and-integration-catalog.md) 错别字修正 |
 | **v0.6** | 2026-06-02 | 🆕 新增 [21](./21-run-lifecycle-state-machine.md)（Run 生命周期状态机：UML 状态图/11 状态+15 转换/合法操作矩阵）；🆕 新增 [22](./22-gitops-configuration-as-code.md)（GitOps：仓库结构/YAML Schema/双向同步/冲突裁决/CI 校验）；🆕 新增 [23](./23-requirements-traceability-matrix.md)（需求追溯矩阵：114 条需求开放问题→设计决策逐条对照）；🆕 新增 [24](./24-delivery-and-integration-catalog.md)（交付物与集成目录：10 类交付物/L1–L5 五级集成/安全控制）；📝 [03](./03-system-architecture.md) 新增 §4 Agent 任务队列与优先级策略；📝 [11 §9](./11-security-and-threat-model.md) 合规映射深化（SOC 2 TSC/ISO 27001 附录 A/等保 2.0/MITRE ATT&CK 映射）；📝 [16 §4.4](./16-notification-system.md) 补充 Webhook HMAC 签名验证细节；📝 README §6 覆盖矩阵扩充（11→27 项）；📝 README §8 术语表扩充（沙箱/sandbox、产物/artifact/交付物、熔断/撤销、GitOps/CaC）；📝 全文档交叉引用新增 21–24 的引用路径 |
 | **v0.5** | 2026-06-02 | 🆕 新增 [17](./17-cost-optimization.md)（成本优化：缓存/路由/预热池/Spot/分层存储/成本模型）；🆕 新增 [18](./18-capacity-planning.md)（容量规划：沙箱画像/节点估算/Orchestrator 瓶颈/参考配置）；🆕 新增 [19](./19-multi-region-deployment.md)（多区域部署：拓扑/数据驻留/一致性/DR/合规路由）；🆕 新增 [20](./20-ide-integration-protocol.md)（IDE 集成：VS Code/JetBrains 插件/本地桥接）；📝 新增 [CHANGELOG.md](./CHANGELOG.md)（独立变更日志）；📝 README 新增 §8 术语约定（安审/作用域/闸门等统一）；🔧 `pi-mcp-adapter`/`pi-subagents` 版本标注为调研时版本；✅ 全文档交叉引用审核通过（35/35 有效） |
 | **v0.4** | 2026-06-02 | 🆕 新增 [13](./13-operations-manual.md)（运维手册：故障恢复、备份 RPO/RTO、沙箱治理、升级策略、SLO 告警）；🆕 新增 [14](./14-data-retention-and-privacy.md)（数据留存与隐私：分类/保留期、GDPR 被遗忘权、跨域隔离、审计防篡改、脱敏规则全集、合规映射）；🆕 新增 [15](./15-prompt-management-and-evaluation.md)（Prompt 版本化/A-B/护栏、Agent 评估框架、LLM-as-Judge、反馈闭环）；🆕 新增 [16](./16-notification-system.md)（多渠道通知、审批升级链、Digest 聚合、用户偏好） |

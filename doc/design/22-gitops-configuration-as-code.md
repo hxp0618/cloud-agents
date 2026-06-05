@@ -54,8 +54,8 @@ apiVersion: polaris/v1
 kind: AgentDefinition
 metadata:
   name: code-reviewer
-  scope: project                    # private | project | group | organization
-  project: checkout                 # scope=project 时必填
+  visibility: project               # private | project | group | org
+  project: checkout                 # visibility=project 时必填
   labels:
     team: platform
     language: typescript
@@ -83,7 +83,7 @@ apiVersion: polaris/v1
 kind: MCPServer
 metadata:
   name: github-enterprise
-  scope: organization
+  visibility: org
 spec:
   transport:
     type: http
@@ -111,7 +111,7 @@ kind: Skill
 metadata:
   name: gen-api-docs
   version: 1.0.0
-  scope: project
+  visibility: project
 spec:
   entrypoint: SKILL.md
   capabilityManifest:
@@ -131,7 +131,7 @@ apiVersion: polaris/v1
 kind: ToolPolicy
 metadata:
   name: code-review-tool-policy
-  scope: project
+  visibility: project
 spec:
   rules:
     - pattern: "bash rm -rf *"
@@ -145,7 +145,7 @@ spec:
       reason: "推送操作需确认"
     - pattern: "mcp:* destructive"
       mode: ask
-    - defaultMode: allow
+  defaultMode: allow
 ```
 
 ## 3. 同步架构
@@ -211,7 +211,7 @@ sequenceDiagram
 # 上级管理员可锁定某些资源，禁止子级通过 Git 或 UI 覆盖
 metadata:
   managed: true              # 由上级设定，下级不可覆盖
-  managedBy: organization    # 设定来源
+  managedBy: org             # 设定来源（治理作用域：org | group | project）
 ```
 
 当 Git 中的配置与 Catalog 中的 `managed:true` 定义冲突时，Catalog 中的锁定优先（管理链路不因 GitOps 而短路）。
@@ -316,3 +316,5 @@ polaris bootstrap --repo git@github.com:corp/polaris-config.git --branch main
 ---
 
 > 📎 **相关文档**：RBAC 与治理见 [05](./05-rbac-and-governance.md)；能力层与 Skill 管理见 [06](./06-capabilities-skills-mcp-subagents.md)；Prompt 版本管理见 [15](./15-prompt-management-and-evaluation.md)；运维变更管理见 [13](./13-operations-manual.md)。
+
+> 💡 **如何阅读**：平台工程师看 §1（仓库结构）+ §2（YAML Schema）+ §3（双向同步架构）；DevOps 看 §4（CI Pre-Merge 校验）+ §6（审计与回滚）；管理员看 §7（与非 GitOps 共存策略）；安全评审看 §8（安全考量）。

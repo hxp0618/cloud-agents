@@ -258,7 +258,7 @@ Agent 可通过 MCP server（如 `confluence-mcp`、`notion-mcp`）搜索和引�
 
 ## 9. 集成优先级与路线图
 
-| 集成 | 优先級 | 阶段 | 理由 |
+| 集成 | 优先级 | 阶段 | 理由 |
 |---|---|---|---|
 | **GitHub** (Git 操作 + PR + Webhook) | P0 | MVP | 核心代码工作流依赖 |
 | **GitLab** (Git 操作 + MR + Webhook) | P1 | P1 | 企业常用自托管 GitLab |
@@ -274,3 +274,5 @@ Agent 可通过 MCP server（如 `confluence-mcp`、`notion-mcp`）搜索和引�
 ---
 
 > 📎 **相关文档**：API 面见 [09](./09-api-clients-and-data-model.md)；通知系统见 [16](./16-notification-system.md)；MCP 接入治理见 [06 §3](./06-capabilities-skills-mcp-subagents.md)；GitOps 配置管理见 [22](./22-gitops-configuration-as-code.md)；IDE 集成见 [20](./20-ide-integration-protocol.md)。
+
+> 💡 **如何阅读**：产品/项目经理看 §1（10 类交付物清单）+ §9（优先级路线图）；集成工程师看 §3–§7（L1–L5 五级集成）；安全评审看 §8（集成安全控制）；平台工程师看 §2（交付物生命周期管理）。

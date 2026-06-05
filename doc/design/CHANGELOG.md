@@ -4,6 +4,22 @@ All notable changes to the Polaris design documents (`doc/design/`).
 
 ---
 
+## v0.6.1 (2026-06-05)
+
+> 评审修订：对 v0.6 文档套件做内部一致性与正确性修复，**无新增文档**。
+
+### Fixed
+- 🔧 **08-observability-and-sse.md §3** — 事件分类（taxonomy）补全为名副其实的"共同 schema"：新增 `memory.*`（`loaded/appended/cleared`，跨 Run 记忆生命周期）与 `delivery.*`（`pr_created/comment_posted/issue_updated`，交付物与外部集成产出），并给 `run.*` 补 `timeout_warning`——消除 04/07/21/24 已引用但 08 未登记的事件缺口
+- 🔧 **21-run-lifecycle-state-machine.md** — 修正审批拒绝语义：T7 由 `paused_for_approval → failed` 改为 `→ running`（普通 `deny` 仅挡此工具、返回 `{block:true}`，Agent 走替代路径继续运行）；`deny_and_abort` 与用户取消 → `cancelled`。同步 §1 状态图、§3 转换表、§5 计时器、§7 事件映射。与 [02 用户故事7]、[03 时序]、[04 §2.1 闸门]、[16 §3.3 deny vs deny_and_abort] 对齐。**状态数（11）与转换数（15）保持不变**
+- 🔧 **21 §4** — 标注 `pause`/`resume` 为 P3+ 规划能力且当前 v1 状态机未建模 `paused` 状态；澄清 `failed` 行的 `resume` 实为 fork 重跑而非原地恢复
+- 🔧 **22-gitops-configuration-as-code.md** — 可见域字段统一：`scope` → `visibility`、`organization` → `org`（含 `managedBy`），对齐 RBAC 源头文档 [05](./05-rbac-and-governance.md)，消除与 README §8「作用域(Governance Scope) vs 可见域(Visibility Scope)」的二义性；§2.1 ToolPolicy 的 `defaultMode` 从 `rules` 列表项移至与 `rules` 同级
+- 🔧 **23-requirements-traceability-matrix.md** — Q9.8 `parentRunId` → `parentSessionId`（与 02/06/12 统一）；引言「~50 个开放问题」→「114 个」（与 §16 统计一致）
+- 🔧 **20-ide-integration-protocol.md / README.md** — IDE 集成阶段标签 `P5+` → `P3+`，与文档 20 §9 路线图（P3 原型 / P4 完整 / P5 JetBrains）一致
+- 🔧 **07-sandbox-isolation.md** — "如何阅读"角色导航 §编号错位修正（架构师/平台工程师路径 §1/§2 → §2/§3）
+- 🔧 **04 / 24** — 错别字：04 §3.1「归归属模型」→「归属模型」；24 §9 表头繁体「优先級」→「优先级」
+
+---
+
 ## v0.6 (2026-06-02)
 
 ### Added
@@ -15,7 +31,7 @@ All notable changes to the Polaris design documents (`doc/design/`).
 ### Changed
 - 📝 **03-system-architecture.md** — 新增 §4 Agent 任务队列与优先级：排队模型（Mermaid）、P0–P4 五级优先级与 QoS、队列策略（权重/抢占/公平性）、准入控制、队列满行为、子 Agent 特殊处理、监控指标；原 §4–§6 顺延为 §5–§7；三面职责描述精确化（控制面"无状态"限定、客户端"无 provider 裸 key"限定）
 - 📝 **04-pi-integration-and-multi-llm.md** — 密钥流向统一：provider 裸 key 只在 LiteLLM/Vault 侧解析，Polaris Gateway 只传 virtual key + 路由元数据
-- 📝 **08-observability-and-sse.md** — 事件 taxonomy 新增 `run.*` 命名空间；`permission.*` 事件与 21 对齐（新增 `allowed/denied/resolved`）
+- 📝 **08-observability-and-sse.md** — 事件 taxonomy 新增 `run.*` 命名空间；`permission.*` 事件与 21 对齐（新增 `prompted/resolved/denied`）
 - 📝 **09-api-clients-and-data-model.md** — API 代理模式端点补全（`/v1/chat/completions`、`/v1/messages`、`/v1/api-keys`）；cancel/abort 统一为 cancel
 - 📝 **11-security-and-threat-model.md** — K8s PodSecurityPolicy → Pod Security Admission（PSP 已在 v1.25 移除）；README 链接修正（`../README.md` → `./README.md`）
 - 📝 **06-capabilities-skills-mcp-subagents.md** — 修复 [10 §4.4] 断链（10 无 §4.4）
@@ -35,7 +51,9 @@ All notable changes to the Polaris design documents (`doc/design/`).
   - §8 术语约定新增 6 条（沙箱/sandbox、产物/artifact/交付物、熔断/撤销、GitOps/CaC）
   - §9 名词表新增 2 条（Run 状态机、GitOps 同步）
   - 阅读指南更新（新增架构师/产品经理/平台工程师路径）
+  - §9 名词表术语修正：`可见域 (Scope)` → `可见域 (Visibility Scope)`，新增 `作用域 (Governance Scope)` 条目，消除"Scope"一词的二义性
   - §10 变更日志新增 v0.6
+- 🔧 全文档（01–10、21–24）新增 `💡 如何阅读` 角色导航：每篇文档末尾补充按角色（架构师/安全评审/SRE/产品/前端/平台工程师/集成工程师）的推荐阅读路径，与 11–20 风格一致
 
 ---
 

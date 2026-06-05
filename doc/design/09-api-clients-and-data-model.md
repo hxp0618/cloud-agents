@@ -174,3 +174,7 @@ erDiagram
 - 需求 4（完整页面管理）：§2 信息架构（11 大模块）。
 - 需求 11（API/桌面端/多端）：§1、§3。
 - 关联：API 鉴权依赖 [05](./05-rbac-and-governance.md)；事件 SSE 依赖 [08](./08-observability-and-sse.md)；Run 编排依赖 [03](./03-system-architecture.md)/[04](./04-pi-integration-and-multi-llm.md)；通知 API（审批/Webhook）见 [16](./16-notification-system.md)；IDE 插件集成协议见 [20](./20-ide-integration-protocol.md)；数据留存与脱敏见 [14](./14-data-retention-and-privacy.md)。
+
+---
+
+> 💡 **如何阅读**：前端/客户端开发者看 §1（API 面 REST+SSE）+ §2（控制台 IA）；架构师看 §4（ER 数据模型）+ §1（Agent Run API）；集成工程师看 §1（API）+ §3（多端客户端：CLI/SDK/桌面）；安全评审看 §1（鉴权）+ §4（数据模型字段安全）。

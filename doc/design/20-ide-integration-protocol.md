@@ -2,7 +2,7 @@
 
 本文定义 IDE 插件（VS Code / JetBrains）与 Polaris 平台的集成协议。让开发者在自己熟悉的 IDE 中发起 Agent Run、审批操作、查看结果——Agent 跑在云端，交互留在 IDE。
 
-> ⚠️ 本文属 P5+ 扩展参考。插件架构参考 codex CLI 的 IDE 集成、Claude Code 的 VS Code 插件、Continue.dev 的 IDE 扩展。
+> ⚠️ 本文属 P3+ 扩展参考（VS Code 插件原型 P3 起步、完整版 P4、JetBrains P5——见 §9）。插件架构参考 codex CLI 的 IDE 集成、Claude Code 的 VS Code 插件、Continue.dev 的 IDE 扩展。
 
 ---
 
