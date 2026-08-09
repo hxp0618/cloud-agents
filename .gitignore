@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.mise.local.toml
+.reports/
+.tmp/
+coverage/
+dist/
+node_modules/
+*.tsbuildinfo
