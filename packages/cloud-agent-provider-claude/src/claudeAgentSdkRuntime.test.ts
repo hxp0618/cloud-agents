@@ -14,9 +14,22 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { ClaudeQueryFactory, ClaudeQueryRuntime } from "./claudeAgentSdkRuntime";
-import type { RunnerInput, RunnerMessage } from "@synara/cloud-agent-provider-api/internal";
+import type {
+  ProviderRunController,
+  ProviderRunOptions,
+  RunnerCredential,
+  RunnerInput,
+  RunnerMessage,
+} from "@synara/cloud-agent-provider-api/internal";
 import { PROVIDER_OUTER_SANDBOX_PROFILE_ENV } from "@synara/cloud-agent-provider-api/internal";
-import { startClaudeProviderRun as startProviderHostRun } from "./index";
+import { startClaudeProviderRun } from "./index";
+
+const startProviderHostRun = startClaudeProviderRun as (
+  input: RunnerInput,
+  credential: RunnerCredential | null,
+  emit: (message: RunnerMessage) => void,
+  options?: ProviderRunOptions & { readonly claudeQueryFactory?: ClaudeQueryFactory },
+) => ProviderRunController;
 
 process.env[PROVIDER_OUTER_SANDBOX_PROFILE_ENV] = "single-tenant-trusted-v1";
 

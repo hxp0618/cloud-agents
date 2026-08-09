@@ -28,6 +28,12 @@ export function startClaudeProviderRun(
   input: RunnerInput,
   credential: RunnerCredential | null,
   emit: (message: RunnerMessage) => void,
+  options?: ProviderRunOptions,
+): ProviderRunController;
+export function startClaudeProviderRun(
+  input: RunnerInput,
+  credential: RunnerCredential | null,
+  emit: (message: RunnerMessage) => void,
   options: ClaudeProviderRunOptions = {},
 ): ProviderRunController {
   validateRunnerInput(input, { allowEmptyInputText: options.operation !== undefined });

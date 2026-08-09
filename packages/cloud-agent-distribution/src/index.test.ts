@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
 
 import claudePackage from "../../cloud-agent-provider-claude/package.json";
 import codexPackage from "../../cloud-agent-provider-codex/package.json";
 import runtimePackage from "../../cloud-agent-runtime/package.json";
 import distributionPackage from "../package.json";
-import { CLOUD_AGENT_DISTRIBUTION_MANIFEST, createDefaultCloudAgentRuntime } from "./index";
+import {
+  CLOUD_AGENT_DISTRIBUTION_MANIFEST,
+  createDefaultCloudAgentRuntime,
+  resolveCloudAgentRuntimeLaunch,
+} from "./index";
 import { CLOUD_AGENT_ENVELOPE_V2_SCHEMA } from "./schemas";
 
 describe("cloud-agent distribution", () => {
@@ -50,5 +55,16 @@ describe("cloud-agent distribution", () => {
       "https://schemas.synara.dev/cloud-agent/envelope-v2.schema.json",
     );
     expect(Object.isFrozen(CLOUD_AGENT_ENVELOPE_V2_SCHEMA)).toBe(true);
+  });
+
+  it("launches the bundled module through an explicit Node executable", () => {
+    const packageRoot = resolve("packed-cloud-agent-distribution");
+    expect(resolveCloudAgentRuntimeLaunch(packageRoot, process.execPath)).toEqual({
+      executable: process.execPath,
+      args: [resolve(packageRoot, "dist/stdio.mjs")],
+    });
+    expect(() => resolveCloudAgentRuntimeLaunch(packageRoot, "node")).toThrow(
+      "Node executable path must be absolute",
+    );
   });
 });

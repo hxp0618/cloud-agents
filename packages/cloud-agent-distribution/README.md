@@ -12,9 +12,13 @@ external-import shim. Its Provider allowlist is declared by `manifest.json` and
 must match the explicitly composed Runtime registry before a candidate is
 accepted.
 
-Hosts start the NDJSON protocol with `cloud-agent-runtime --protocol-v2`. The
-bin accepts only the Codex and Claude plugins pinned by the manifest; an
-unknown or disabled Provider returns `provider_not_installed`.
+Shell hosts start the NDJSON protocol with `cloud-agent-runtime --protocol-v2`.
+Programmatic hosts use `resolveCloudAgentRuntimeLaunch(packageRoot,
+nodeExecutable)` and pass its `executable` and `args` to the public stdio
+client. This launches the bundled `.mjs` through an explicit Node 24 binary on
+Windows as well as Unix; Electron hosts must supply a real Node executable.
+The Runtime accepts only the Codex and Claude plugins pinned by the manifest;
+an unknown or disabled Provider returns `provider_not_installed`.
 
 Release validation is tarball-first:
 

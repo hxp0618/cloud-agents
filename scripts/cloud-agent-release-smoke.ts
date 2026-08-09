@@ -365,7 +365,44 @@ function runDistributionBinSmoke(externalRoot: string): PackedBinConformanceRepo
     externalRoot,
     `${describes.join("\n")}\n`,
   );
-  const messages = binOutput
+  assertDistributionDescribeOutput(binOutput, "packed bin");
+
+  const distributionRoot = join(
+    externalRoot,
+    "node_modules",
+    "@synara",
+    "cloud-agent-distribution",
+  );
+  const distribution = requireModule(join(distributionRoot, "dist", "index.cjs")) as {
+    resolveCloudAgentRuntimeLaunch?: (
+      packageRoot: string,
+      nodeExecutable: string,
+    ) => { readonly executable: string; readonly args: ReadonlyArray<string> };
+  };
+  if (typeof distribution.resolveCloudAgentRuntimeLaunch !== "function") {
+    throw new Error("Packed Distribution omitted the cross-platform Runtime launch helper.");
+  }
+  const launch = distribution.resolveCloudAgentRuntimeLaunch(distributionRoot, process.execPath);
+  const launchOutput = run(
+    launch.executable,
+    [...launch.args, "--protocol-v2"],
+    externalRoot,
+    `${describes.join("\n")}\n`,
+  );
+  assertDistributionDescribeOutput(launchOutput, "Node module launch descriptor");
+
+  const testkit = requireBuiltTestkit();
+  const report = testkit.runCloudAgentPackedBinConformance({
+    executable: join(externalRoot, "node_modules", ".bin", "cloud-agent-runtime"),
+  });
+  return {
+    ...report,
+    passed: [...report.passed, "node-module-launch-descriptor"],
+  };
+}
+
+function assertDistributionDescribeOutput(output: string, label: string): void {
+  const messages = output
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as JSONRecord);
@@ -376,13 +413,11 @@ function runDistributionBinSmoke(externalRoot: string): PackedBinConformanceRepo
         message.messageType === "Result",
     );
     if (!terminal) {
-      throw new Error(`Packed cloud-agent-runtime bin did not answer ${provider} Describe.`);
+      throw new Error(`${label} did not answer ${provider} Describe.`);
     }
     const descriptor = isRecord(terminal.payload) ? terminal.payload.descriptor : undefined;
     if (!isRecord(descriptor) || descriptor.providerKind !== provider) {
-      throw new Error(
-        `Packed cloud-agent-runtime Describe did not use the explicit ${provider} registry.`,
-      );
+      throw new Error(`${label} Describe did not use the explicit ${provider} registry.`);
     }
     if (provider === "claudeAgent") {
       const runtimeDescriptor = isRecord(descriptor.runtime) ? descriptor.runtime : undefined;
@@ -391,14 +426,10 @@ function runDistributionBinSmoke(externalRoot: string): PackedBinConformanceRepo
         runtimeDescriptor.compatible !== true ||
         runtimeDescriptor.version !== "0.3.207"
       ) {
-        throw new Error("Packed Claude Provider descriptor does not match its pinned SDK.");
+        throw new Error(`${label} Claude descriptor does not match its pinned SDK.`);
       }
     }
   }
-  const testkit = requireBuiltTestkit();
-  return testkit.runCloudAgentPackedBinConformance({
-    executable: join(externalRoot, "node_modules", ".bin", "cloud-agent-runtime"),
-  });
 }
 
 function requireBuiltTestkit(): {

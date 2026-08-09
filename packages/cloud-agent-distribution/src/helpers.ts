@@ -60,6 +60,13 @@ export type CloudAgentDistributionClientOptions = Omit<CloudAgentStdioClientOpti
   readonly executable: string;
 };
 
+export interface CloudAgentRuntimeLaunchDescriptor {
+  /** Absolute Node.js 24 executable selected by the host. */
+  readonly executable: string;
+  /** The bundled Runtime module; the stdio client appends `--protocol-v2`. */
+  readonly args: readonly [string];
+}
+
 /** Creates a client for a packed runtime executable without host-private parsing. */
 export function createCloudAgentDistributionClient(
   options: CloudAgentDistributionClientOptions,
@@ -77,6 +84,24 @@ export function resolveCloudAgentRuntimeExecutable(packageRoot: string): string 
     throw new Error("Cloud Agent Distribution package root must be absolute.");
   }
   return resolve(packageRoot, "dist/stdio.mjs");
+}
+
+/**
+ * Resolves a cross-platform launch descriptor for the bundled Runtime module.
+ * Hosts embedding Electron must pass a real Node.js 24 executable rather than
+ * Electron's `process.execPath`.
+ */
+export function resolveCloudAgentRuntimeLaunch(
+  packageRoot: string,
+  nodeExecutable: string,
+): CloudAgentRuntimeLaunchDescriptor {
+  if (!isAbsolute(nodeExecutable)) {
+    throw new Error("Cloud Agent Runtime Node executable path must be absolute.");
+  }
+  return {
+    executable: nodeExecutable,
+    args: [resolveCloudAgentRuntimeExecutable(packageRoot)],
+  };
 }
 
 function isExactSemver(value: string): boolean {
