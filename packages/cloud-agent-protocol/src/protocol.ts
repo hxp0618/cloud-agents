@@ -132,10 +132,12 @@ export type CloudAgentPayloadMessageType =
   | "Result"
   | "Progress";
 
-export interface CloudAgentPayloadMessage extends CloudAgentMessageBase {
-  readonly messageType: CloudAgentPayloadMessageType;
-  readonly payload: Readonly<Record<string, unknown>>;
-}
+export type CloudAgentPayloadMessage = {
+  readonly [MessageType in CloudAgentPayloadMessageType]: CloudAgentMessageBase & {
+    readonly messageType: MessageType;
+    readonly payload: Readonly<Record<string, unknown>>;
+  };
+}[CloudAgentPayloadMessageType];
 
 export interface CloudAgentEventMessage extends CloudAgentMessageBase {
   readonly messageType: "Event";

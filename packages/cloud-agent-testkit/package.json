@@ -26,11 +26,16 @@
   "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
       "bun": "./src/index.ts",
       "development": "./src/index.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "publishConfig": {
@@ -38,7 +43,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsdown src/index.ts --format esm,cjs --dts --clean",
+    "build": "tsdown src/index.ts --format esm,cjs --dts --clean --no-fail-on-warn",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -256,6 +256,7 @@ function runExternalNode24Smoke(
       run(process.execPath, ["smoke.mjs"], externalRoot);
       writeFileSync(join(externalRoot, "smoke.cjs"), cjsSmoke.join("\n"));
       run(process.execPath, ["smoke.cjs"], externalRoot);
+      runExternalTypeScriptSmoke(externalRoot, specifiers);
 
       if (target === "@synara/cloud-agent-distribution") {
         packedBinConformance = runDistributionBinSmoke(externalRoot);
@@ -266,6 +267,68 @@ function runExternalNode24Smoke(
   }
   if (!packedBinConformance) throw new Error("Packed bin conformance did not run.");
   return packedBinConformance;
+}
+
+function runExternalTypeScriptSmoke(externalRoot: string, specifiers: ReadonlyArray<string>): void {
+  const esmNamespaces = specifiers.map((specifier, index) => ({
+    name: `CloudAgentEsmPackage${String(index)}`,
+    specifier,
+  }));
+  const cjsNamespaces = specifiers.map((specifier, index) => ({
+    name: `CloudAgentCjsPackage${String(index)}`,
+    specifier,
+  }));
+  writeFileSync(
+    join(externalRoot, "types-smoke.mts"),
+    `${[
+      ...esmNamespaces.map(
+        ({ name, specifier }) => `import type * as ${name} from ${JSON.stringify(specifier)};`,
+      ),
+      `export type CloudAgentEsmSurface = ${esmNamespaces
+        .map(({ name }) => `keyof typeof ${name}`)
+        .join(" | ")};`,
+    ].join("\n")}\n`,
+  );
+  writeFileSync(
+    join(externalRoot, "types-smoke.cts"),
+    `${[
+      ...cjsNamespaces.map(
+        ({ name, specifier }) => `import ${name} = require(${JSON.stringify(specifier)});`,
+      ),
+      `export type CloudAgentCjsSurface = ${cjsNamespaces
+        .map(({ name }) => `keyof typeof ${name}`)
+        .join(" | ")};`,
+    ].join("\n")}\n`,
+  );
+  writeFileSync(
+    join(externalRoot, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: "ES2022",
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          strict: true,
+          noEmit: true,
+          skipLibCheck: false,
+          types: ["node"],
+          typeRoots: [join(repositoryRoot, "node_modules", "@types")],
+        },
+        files: ["types-smoke.mts", "types-smoke.cts"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  run(
+    process.execPath,
+    [
+      join(repositoryRoot, "node_modules", "typescript", "bin", "tsc"),
+      "--project",
+      "tsconfig.json",
+    ],
+    externalRoot,
+  );
 }
 
 function assertInstalledCloudAgentClosure(

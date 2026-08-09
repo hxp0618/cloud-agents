@@ -1,6 +1,6 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import envelopeSchema from "../schemas/cloud-agent-envelope-v2.schema.json";
 
@@ -14,6 +14,7 @@ import {
   CLOUD_AGENT_RUNTIME_EVENT_TYPES,
   CLOUD_AGENT_RUNTIME_EVENT_VERSION,
 } from "./index";
+import type { CloudAgentMessageEnvelope, CloudAgentPayloadMessageType } from "./index";
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
@@ -62,6 +63,19 @@ describe("cloud-agent protocol constants", () => {
     ]) {
       expect(new Set(values).size).toBe(values.length);
     }
+  });
+
+  it("exposes every payload message as a discriminated union branch", () => {
+    type MissingDiscriminator = {
+      [MessageType in CloudAgentPayloadMessageType]: Extract<
+        CloudAgentMessageEnvelope,
+        { readonly messageType: MessageType }
+      > extends never
+        ? MessageType
+        : never;
+    }[CloudAgentPayloadMessageType];
+
+    expectTypeOf<MissingDiscriminator>().toEqualTypeOf<never>();
   });
 
   it("keeps every public command, error, and Runtime Event vocabulary valid in JSON Schema", () => {

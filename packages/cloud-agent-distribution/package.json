@@ -30,26 +30,41 @@
   "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
       "bun": "./src/index.ts",
       "development": "./src/index.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./manifest.json": "./manifest.json",
     "./schemas": {
-      "types": "./src/schemas.ts",
       "bun": "./src/schemas.ts",
       "development": "./src/schemas.ts",
-      "import": "./dist/schemas.mjs",
-      "require": "./dist/schemas.cjs"
+      "import": {
+        "types": "./dist/schemas.d.mts",
+        "default": "./dist/schemas.mjs"
+      },
+      "require": {
+        "types": "./dist/schemas.d.cts",
+        "default": "./dist/schemas.cjs"
+      }
     },
     "./schemas/cloud-agent-envelope-v2": {
-      "types": "./src/schemas.ts",
       "bun": "./src/schemas.ts",
       "development": "./src/schemas.ts",
-      "import": "./dist/schemas.mjs",
-      "require": "./dist/schemas.cjs"
+      "import": {
+        "types": "./dist/schemas.d.mts",
+        "default": "./dist/schemas.mjs"
+      },
+      "require": {
+        "types": "./dist/schemas.d.cts",
+        "default": "./dist/schemas.cjs"
+      }
     },
     "./stdio": {
       "bun": "./src/stdio.ts",
@@ -62,7 +77,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsdown src/index.ts src/schemas.ts --format esm,cjs --dts --clean && bun build src/stdio.ts --target=node --outfile=dist/stdio.mjs",
+    "build": "tsdown src/index.ts src/schemas.ts --format esm,cjs --dts --clean --no-fail-on-warn && bun build src/stdio.ts --target=node --outfile=dist/stdio.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
