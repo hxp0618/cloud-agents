@@ -25,6 +25,6 @@ jobs:
       - run: bun run test
       - run: bun run build
       - run: bun run secret:scan
-      - run: bun run release:smoke -- --output candidate
+      - run: bun run release:smoke -- --output-dir candidate
         env:
           CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER: github-actions
