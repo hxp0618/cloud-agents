@@ -17,6 +17,8 @@ The seven packages keep their `@synara/cloud-agent-*` names for first-RC wire an
 
 Portable `CLOUD_AGENT_*` environment names take precedence over legacy `SYNARA_*` names. If both names are supplied with different values, the runtime fails closed. Credential metadata written to a child is temporarily written under both names with the same value.
 
+The coordinated RC keeps every internal package edge as an exact peer pin. Consumers install the required tarball closure as top-level GitHub Release URLs from `cloud-agent-candidate.lock.json`; no unpublished `@synara/*` package is resolved through npm, and no package-manager security switch needs to be relaxed.
+
 ## Verification
 
 ```sh
