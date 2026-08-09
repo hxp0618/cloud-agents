@@ -10,5 +10,6 @@
 - Added packed-bin conformance, seven-tarball release smoke, standalone runtime, checksums, SPDX SBOM, provenance, and tracked-history secret scanning.
 - Published NodeNext-safe ESM/CJS declaration conditions and discriminated payload-message types, with external consumer typechecking in the release smoke.
 - Added an explicit Node-module launch descriptor for Windows/Electron hosts and removed the ESM-only Claude SDK from the public CommonJS declaration surface.
+- Kept clean-worktree package typechecks source-based through the explicit `development` export condition while packed consumers resolve only built declarations.
 
 This is a GitHub release-candidate line only. Nothing in this changelog represents npm publication, production deployment, public-beta approval, or GA.
