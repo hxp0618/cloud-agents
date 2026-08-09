@@ -29,8 +29,9 @@ import {
   type ProviderRunExecutor,
 } from "./internalExecution";
 import { normalizeRuntimeEventV2 } from "./runtimeEventV2";
+import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./compatEnvironment";
 
-const HOST_BUILD_VERSION = "0.1.0";
+const HOST_BUILD_VERSION = "0.1.0-rc.1";
 const SUSPEND_TURN_CHECKPOINT_PROTOCOL = "provider-host-suspend-terminal-v1";
 const MAX_IN_FLIGHT_COMMANDS = 128;
 const MAX_TERMINAL_RECEIPTS = 4_096;
@@ -266,7 +267,9 @@ function experimentalProviderAllowlist(
   environment: Readonly<Record<string, string | undefined>>,
 ): ReadonlySet<ProviderHostProviderKind> {
   const providers = new Set<ProviderHostProviderKind>();
-  for (const token of (environment.SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS ?? "").split(",")) {
+  const configured =
+    readCloudAgentEnvironment(environment, CLOUD_AGENT_ENVIRONMENT.experimentalProviders) ?? "";
+  for (const token of configured.split(",")) {
     const normalized = token.trim().toLowerCase();
     const match = PROVIDER_CAPABILITY_CATALOG.providers.find(
       (entry) => entry.provider.toLowerCase() === normalized,

@@ -1,11 +1,15 @@
 {
   "name": "@synara/cloud-agent-protocol",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "description": "App-neutral Cloud Agent protocol constants and plain JavaScript/TypeScript types",
+  "homepage": "https://github.com/hxp0618/cloud-agents#readme",
+  "bugs": {
+    "url": "https://github.com/hxp0618/cloud-agents/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hxp0618/synara.git",
+    "url": "git+https://github.com/hxp0618/cloud-agents.git",
     "directory": "packages/cloud-agent-protocol"
   },
   "files": [
@@ -16,6 +20,7 @@
     "schemas",
     "fixtures",
     "provider-capability-catalog.json",
+    "LICENSE",
     "README.md"
   ],
   "type": "module",
@@ -46,9 +51,9 @@
   "devDependencies": {
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "tsdown": "^0.20.3",
-    "typescript": "^5.7.3",
-    "vitest": "^4.1.10"
+    "tsdown": "0.20.3",
+    "typescript": "5.7.3",
+    "vitest": "4.1.10"
   },
   "engines": {
     "node": ">=20.3.0"

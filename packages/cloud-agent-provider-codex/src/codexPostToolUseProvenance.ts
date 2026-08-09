@@ -1,16 +1,26 @@
 import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
+import {
+  CLOUD_AGENT_ENVIRONMENT,
+  readCloudAgentEnvironment,
+} from "@synara/cloud-agent-provider-api";
 import { classifySensitiveAction } from "./sensitiveActionPolicy";
 import {
+  LEGACY_PROVIDER_PROVENANCE_IDENTITY,
   providerPendingUntrustedToolResultContext,
   providerToolResultRequiresTrustEnvelope,
   providerUntrustedToolResultContext,
+  type ProviderProvenanceIdentity,
 } from "./providerContentTrustPolicy";
 
 export const CODEX_TOOL_POLICY_HOOK_ARGUMENT = "--synara-codex-tool-policy-hook";
 export const CODEX_TOOL_POLICY_HOOK_INPUT_LIMIT_BYTES = 1024 * 1024;
-export const CODEX_NO_TOOL_OPERATION_ENV = "SYNARA_CODEX_NO_TOOL_OPERATION";
+export const CLOUD_AGENT_CODEX_NO_TOOL_OPERATION_ENV =
+  CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation.name;
+/** @deprecated Use CLOUD_AGENT_CODEX_NO_TOOL_OPERATION_ENV. */
+export const CODEX_NO_TOOL_OPERATION_ENV = CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation.legacyName;
+export const LEGACY_CODEX_NO_TOOL_OPERATION_ENV = CODEX_NO_TOOL_OPERATION_ENV;
 
 type HookResponse =
   | Record<string, never>
@@ -28,7 +38,10 @@ type HookResponse =
       };
     };
 
-export function codexPreToolUseSensitiveActionHookResponse(input: unknown): HookResponse {
+export function codexPreToolUseSensitiveActionHookResponse(
+  input: unknown,
+  identity: ProviderProvenanceIdentity = LEGACY_PROVIDER_PROVENANCE_IDENTITY,
+): HookResponse {
   const event = asRecord(input);
   const toolName = safeToolName(event?.tool_name) ?? "unknown";
   const assessment = classifySensitiveAction({
@@ -40,7 +53,7 @@ export function codexPreToolUseSensitiveActionHookResponse(input: unknown): Hook
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Synara blocked a sensitive action because this Codex permission mode cannot provide a fresh Host approval. Sensitive categories: ${assessment.categories.join(", ")}. Retry in approval-required mode.`,
+        permissionDecisionReason: `${identity.displayName} blocked a sensitive action because this Codex permission mode cannot provide a fresh Host approval. Sensitive categories: ${assessment.categories.join(", ")}. Retry in approval-required mode.`,
       },
     };
   }
@@ -48,25 +61,37 @@ export function codexPreToolUseSensitiveActionHookResponse(input: unknown): Hook
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      additionalContext: providerPendingUntrustedToolResultContext(boundedToolName(toolName)),
+      additionalContext: providerPendingUntrustedToolResultContext(
+        boundedToolName(toolName),
+        identity,
+      ),
     },
   };
 }
-export function codexPostToolUseProvenanceHookResponse(input: unknown): HookResponse {
+export function codexPostToolUseProvenanceHookResponse(
+  input: unknown,
+  identity: ProviderProvenanceIdentity = LEGACY_PROVIDER_PROVENANCE_IDENTITY,
+): HookResponse {
   const toolName = safeToolName(asRecord(input)?.tool_name);
   if (toolName && !providerToolResultRequiresTrustEnvelope(toolName)) return {};
   return {
     hookSpecificOutput: {
       hookEventName: "PostToolUse",
-      additionalContext: providerUntrustedToolResultContext(boundedToolName(toolName ?? "unknown")),
+      additionalContext: providerUntrustedToolResultContext(
+        boundedToolName(toolName ?? "unknown"),
+        identity,
+      ),
     },
   };
 }
-export function codexToolPolicyHookResponse(input: unknown): HookResponse {
+export function codexToolPolicyHookResponse(
+  input: unknown,
+  identity: ProviderProvenanceIdentity = LEGACY_PROVIDER_PROVENANCE_IDENTITY,
+): HookResponse {
   return asRecord(input)?.hook_event_name === "PreToolUse"
-    ? codexPreToolUseSensitiveActionHookResponse(input)
+    ? codexPreToolUseSensitiveActionHookResponse(input, identity)
     : asRecord(input)?.hook_event_name === "PostToolUse"
-      ? codexPostToolUseProvenanceHookResponse(input)
+      ? codexPostToolUseProvenanceHookResponse(input, identity)
       : {};
 }
 export async function runCodexPostToolUseProvenanceHook(
@@ -98,7 +123,12 @@ export async function runCodexNoToolAwarePolicyHook(
     readonly environment?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<void> {
-  if ((input.environment ?? process.env)[CODEX_NO_TOOL_OPERATION_ENV] === "1") {
+  if (
+    readCloudAgentEnvironment(
+      input.environment ?? process.env,
+      CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation,
+    ) === "1"
+  ) {
     (input.output ?? process.stdout).write(
       `${JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "GenerateText does not permit Provider tools." } })}\n`,
     );

@@ -15,7 +15,7 @@ import {
 
 function packed(
   name: (typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number],
-  version = name === "@synara/cloud-agent-runtime" ? "0.2.0" : "0.1.0",
+  version = name === "@synara/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
 ): PackedCloudAgentPackage {
   return {
     name,
@@ -35,7 +35,7 @@ function validManifests(): TestManifest[] {
   const versions = Object.fromEntries(
     CLOUD_AGENT_PUBLIC_PACKAGES.map((name) => [
       name,
-      name === "@synara/cloud-agent-runtime" ? "0.2.0" : "0.1.0",
+      name === "@synara/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
     ]),
   ) as Record<(typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number], string>;
   const dependencies = {
@@ -214,7 +214,7 @@ describe("Cloud Agent packed release validation", () => {
     expect(() =>
       validatePackedCloudAgentSet(
         replaceDependencies(manifests, "@synara/cloud-agent-runtime", {
-          "@synara/cloud-agent-protocol": "0.1.0",
+          "@synara/cloud-agent-protocol": "0.1.0-rc.1",
         }),
       ),
     ).toThrow(/internal dependencies must be exactly/);

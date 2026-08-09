@@ -11,6 +11,8 @@ import {
   type CloudAgentProviderDescriptor,
 } from "@synara/cloud-agent-provider-api";
 
+export * from "./packedBinConformance";
+
 export function assertCloudAgentDescriptor(descriptor: CloudAgentProviderDescriptor): void {
   if (descriptor.abiVersion !== CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION) {
     throw new Error(`Unexpected Provider Plugin ABI ${descriptor.abiVersion}.`);

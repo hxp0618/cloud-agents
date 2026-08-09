@@ -13,6 +13,11 @@ import {
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
 } from "@synara/cloud-agent-protocol";
+import {
+  CLOUD_AGENT_ENVIRONMENT,
+  readCloudAgentEnvironment,
+  writeCloudAgentEnvironment,
+} from "@synara/cloud-agent-provider-api";
 
 const CLOUD_AGENT_MAX_IN_FLIGHT_COMMANDS = 128;
 const CLOUD_AGENT_CREDENTIAL_CHILD_FD = 3;
@@ -24,6 +29,8 @@ export interface CloudAgentStdioClientOptions {
   readonly args?: ReadonlyArray<string>;
   readonly cwd?: string;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  /** Inherit the parent environment before applying `environment`. Defaults to true. */
+  readonly extendEnvironment?: boolean;
   readonly credentialFd?: number;
   readonly gracefulStopTimeoutMs?: number;
   readonly spawnProcess?: typeof spawn;
@@ -35,7 +42,11 @@ export interface CloudAgentStdioClient {
     command: CloudAgentCommandEnvelope,
     signal?: AbortSignal,
   ): Promise<CloudAgentMessageEnvelope>;
-  subscribe(listener: (message: CloudAgentMessageEnvelope) => void): () => void;
+  /**
+   * Subscribes to correlated frames. A returned Promise acknowledges durable
+   * receipt and blocks the next frame and terminal resolution until settled.
+   */
+  subscribe(listener: (message: CloudAgentMessageEnvelope) => unknown): () => void;
   close(): Promise<void>;
 }
 
@@ -55,7 +66,7 @@ export function createCloudAgentStdioClient(
   const spawnProcess = options.spawnProcess ?? spawn;
   const spawnOptions: SpawnOptions = {
     cwd: options.cwd,
-    env: environmentForChild(options.environment, credentialFd),
+    env: environmentForChild(options.environment, credentialFd, options.extendEnvironment ?? true),
     stdio:
       credentialFd === undefined
         ? ["pipe", "pipe", "pipe"]
@@ -74,11 +85,12 @@ export function createCloudAgentStdioClient(
   const process = child as ChildProcessWithoutNullStreams;
   const processExit = new Promise<void>((resolve) => process.once("exit", () => resolve()));
   const pending = new Map<string, PendingCommand>();
-  const listeners = new Set<(message: CloudAgentMessageEnvelope) => void>();
+  const listeners = new Set<(message: CloudAgentMessageEnvelope) => unknown>();
   let stdoutBuffer = Buffer.alloc(0);
   let stderrTail = "";
   let closed = false;
   let closePromise: Promise<void> | undefined;
+  let consumePromise = Promise.resolve();
 
   const rejectAll = (error: Error) => {
     for (const command of pending.values()) {
@@ -95,12 +107,14 @@ export function createCloudAgentStdioClient(
   });
   process.stdout.on("data", (chunk: Buffer) => {
     stdoutBuffer = Buffer.concat([stdoutBuffer, Buffer.from(chunk)]);
-    consumeLines();
+    scheduleConsume();
   });
   process.stdout.on("end", () => {
-    if (stdoutBuffer.length > 0) {
-      failProtocol("Cloud Agent Runtime closed stdout with an incomplete NDJSON frame.");
-    }
+    consumePromise = consumePromise.then(() => {
+      if (stdoutBuffer.length > 0) {
+        failProtocol("Cloud Agent Runtime closed stdout with an incomplete NDJSON frame.");
+      }
+    });
   });
   process.once("error", (cause) => {
     closed = true;
@@ -108,16 +122,24 @@ export function createCloudAgentStdioClient(
     void reapProcess().catch(() => undefined);
   });
   process.once("exit", (code, signal) => {
-    closed = true;
-    const diagnostics = stderrTail.trim();
-    rejectAll(
-      new Error(
-        `Cloud Agent Runtime exited (code=${code ?? "none"}, signal=${signal ?? "none"})${diagnostics ? `: ${diagnostics}` : "."}`,
-      ),
-    );
+    consumePromise = consumePromise.then(() => {
+      closed = true;
+      const diagnostics = stderrTail.trim();
+      rejectAll(
+        new Error(
+          `Cloud Agent Runtime exited (code=${code ?? "none"}, signal=${signal ?? "none"})${diagnostics ? `: ${diagnostics}` : "."}`,
+        ),
+      );
+    });
   });
 
-  function consumeLines(): void {
+  function scheduleConsume(): void {
+    consumePromise = consumePromise.then(consumeLines).catch((cause) => {
+      failProtocol("Cloud Agent Runtime listener failed to acknowledge a message.", cause);
+    });
+  }
+
+  async function consumeLines(): Promise<void> {
     while (true) {
       const newline = stdoutBuffer.indexOf(0x0a);
       if (newline < 0) {
@@ -172,7 +194,7 @@ export function createCloudAgentStdioClient(
         }
         continue;
       }
-      for (const listener of listeners) listener(parsed);
+      for (const listener of listeners) await listener(parsed);
       if (parsed.messageType !== "Result" && parsed.messageType !== "Error") continue;
       pending.delete(parsed.commandId);
       if (command.tombstoneTimer) clearTimeout(command.tombstoneTimer);
@@ -234,7 +256,10 @@ export function createCloudAgentStdioClient(
 
     try {
       if (!process.stdin.write(frame)) {
-        await new Promise<void>((resolve) => process.stdin.once("drain", resolve));
+        await Promise.race([
+          new Promise<void>((resolve) => process.stdin.once("drain", resolve)),
+          terminal.then(() => undefined),
+        ]);
       }
     } catch (cause) {
       const current = pending.get(command.commandId);
@@ -287,7 +312,7 @@ export function createCloudAgentStdioClient(
       return process.pid;
     },
     execute,
-    subscribe(listener: (message: CloudAgentMessageEnvelope) => void) {
+    subscribe(listener: (message: CloudAgentMessageEnvelope) => unknown) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
@@ -308,22 +333,30 @@ function decodeRuntimeFrame(frame: Uint8Array): string {
 function environmentForChild(
   overrides: Readonly<Record<string, string | undefined>> | undefined,
   credentialFd: number | undefined,
+  extendEnvironment: boolean,
 ): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = { ...process.env };
+  const environment: NodeJS.ProcessEnv = extendEnvironment ? { ...process.env } : {};
   for (const [name, value] of Object.entries(overrides ?? {})) {
     if (value === undefined) delete environment[name];
     else environment[name] = value;
   }
+  const configuredFd = readCloudAgentEnvironment(
+    overrides ?? {},
+    CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
+  );
   if (credentialFd !== undefined) {
-    const configuredFd = overrides?.SYNARA_PROVIDER_CREDENTIAL_FD;
     if (configuredFd !== undefined && configuredFd !== String(CLOUD_AGENT_CREDENTIAL_CHILD_FD)) {
       throw new Error(
-        `credentialFd is exposed to the Runtime as fd ${CLOUD_AGENT_CREDENTIAL_CHILD_FD}; remove the conflicting SYNARA_PROVIDER_CREDENTIAL_FD override.`,
+        `credentialFd is exposed to the Runtime as fd ${CLOUD_AGENT_CREDENTIAL_CHILD_FD}; remove the conflicting CLOUD_AGENT_PROVIDER_CREDENTIAL_FD override.`,
       );
     }
     // Node maps the caller-owned descriptor into the fourth stdio slot, so
     // the child must always read fd 3 rather than the caller's descriptor id.
-    environment.SYNARA_PROVIDER_CREDENTIAL_FD = String(CLOUD_AGENT_CREDENTIAL_CHILD_FD);
+    writeCloudAgentEnvironment(
+      environment,
+      CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
+      String(CLOUD_AGENT_CREDENTIAL_CHILD_FD),
+    );
   }
   return environment;
 }

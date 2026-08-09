@@ -1,11 +1,15 @@
 {
   "name": "@synara/cloud-agent-runtime",
-  "version": "0.2.0",
+  "version": "0.2.0-rc.1",
   "description": "Portable Cloud Agent runtime and Provider Host Protocol v2 implementation",
+  "homepage": "https://github.com/hxp0618/cloud-agents#readme",
+  "bugs": {
+    "url": "https://github.com/hxp0618/cloud-agents/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hxp0618/synara.git",
+    "url": "git+https://github.com/hxp0618/cloud-agents.git",
     "directory": "packages/cloud-agent-runtime"
   },
   "files": [
@@ -13,7 +17,8 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*.spec.ts",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "type": "module",
   "main": "./dist/index.cjs",
@@ -45,14 +50,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@synara/cloud-agent-protocol": "0.1.0",
-    "@synara/cloud-agent-provider-api": "0.1.0"
+    "@synara/cloud-agent-protocol": "0.1.0-rc.1",
+    "@synara/cloud-agent-provider-api": "0.1.0-rc.1"
   },
   "devDependencies": {
-    "@types/node": "^24.10.13",
-    "tsdown": "^0.20.3",
-    "typescript": "^5.7.3",
-    "vitest": "^4.1.10"
+    "@types/node": "24.10.13",
+    "tsdown": "0.20.3",
+    "typescript": "5.7.3",
+    "vitest": "4.1.10"
   },
   "engines": {
     "node": ">=24.13.1 <25"

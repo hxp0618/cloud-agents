@@ -13,6 +13,10 @@ import type {
   CloudAgentHostServices,
   CloudAgentProviderSession,
 } from "@synara/cloud-agent-provider-api";
+import {
+  CLOUD_AGENT_ENVIRONMENT,
+  readCloudAgentEnvironment,
+} from "@synara/cloud-agent-provider-api";
 
 import { createBoundedNdjsonWriter } from "./ndjsonWriter";
 import type { CloudAgentRuntimeV1 } from "./runtime";
@@ -432,11 +436,14 @@ async function pumpSessionEvents(
 function readCredentialFd(
   environment: Readonly<Record<string, string | undefined>>,
 ): number | undefined {
-  const value = environment.SYNARA_PROVIDER_CREDENTIAL_FD?.trim();
+  const value = readCloudAgentEnvironment(
+    environment,
+    CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
+  )?.trim();
   if (!value) return undefined;
   const fd = Number(value);
   if (!Number.isSafeInteger(fd) || fd < 3 || fd > 1_024) {
-    throw new Error("SYNARA_PROVIDER_CREDENTIAL_FD is invalid.");
+    throw new Error("CLOUD_AGENT_PROVIDER_CREDENTIAL_FD is invalid.");
   }
   return fd;
 }

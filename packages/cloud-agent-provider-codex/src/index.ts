@@ -3,6 +3,10 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import type { CloudAgentProviderPluginV1 } from "@synara/cloud-agent-provider-api";
 import {
+  CLOUD_AGENT_ENVIRONMENT,
+  writeCloudAgentEnvironment,
+} from "@synara/cloud-agent-provider-api";
+import {
   createProviderPlugin,
   hasAuthoritativeResumeData,
   nativeResumeContinuationPrompt,
@@ -19,19 +23,24 @@ import {
   type RunnerMessage,
 } from "@synara/cloud-agent-provider-api/internal";
 import { startCodexAppServerRun } from "./codexAppServerRuntime";
-import {
+import { buildInlineCodexToolPolicyHookCommand } from "./codexPostToolUseProvenance";
+
+export {
+  CLOUD_AGENT_CODEX_NO_TOOL_OPERATION_ENV,
   CODEX_NO_TOOL_OPERATION_ENV,
   CODEX_TOOL_POLICY_HOOK_ARGUMENT,
   buildCodexToolPolicyHookCommand,
-  buildInlineCodexToolPolicyHookCommand,
+  codexPostToolUseProvenanceHookResponse,
+  codexPreToolUseSensitiveActionHookResponse,
+  codexToolPolicyHookResponse,
   runCodexNoToolAwarePolicyHook,
 } from "./codexPostToolUseProvenance";
-
 export {
-  CODEX_TOOL_POLICY_HOOK_ARGUMENT,
-  buildCodexToolPolicyHookCommand,
-  runCodexNoToolAwarePolicyHook,
-};
+  LEGACY_PROVIDER_PROVENANCE_IDENTITY,
+  providerPendingUntrustedToolResultContext,
+  providerUntrustedToolResultContext,
+  type ProviderProvenanceIdentity,
+} from "./providerContentTrustPolicy";
 export const CODEX_PROVIDER_KIND = "codex" as const;
 
 type CodexProviderRunOptions = ProviderRunOptions & {
@@ -66,15 +75,18 @@ export function startCodexProviderRun(
       );
   }
   if (options.operation?.commandType === "GenerateText")
-    environment[CODEX_NO_TOOL_OPERATION_ENV] = "1";
+    writeCloudAgentEnvironment(environment, CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation, "1");
   const durable = hasAuthoritativeResumeData(input.workload, input.memoryDocuments);
   return startCodexAppServerRun({
     input,
     environment,
     redact,
     emit,
-    authoritativePrompt: durable ? reconstructedPrompt(input) : input.workload.inputText,
-    nativeResumePrompt: nativeResumeContinuationPrompt(input) ?? input.workload.inputText,
+    authoritativePrompt: durable
+      ? reconstructedPrompt(input, options.hostIdentity)
+      : input.workload.inputText,
+    nativeResumePrompt:
+      nativeResumeContinuationPrompt(input, options.hostIdentity) ?? input.workload.inputText,
     interactive: options.interactive ?? true,
     ...(options.codexToolPolicyHookCommand
       ? { toolPolicyHookCommand: options.codexToolPolicyHookCommand }

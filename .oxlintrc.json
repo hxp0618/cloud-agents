@@ -1,0 +1,9 @@
+{
+  "ignorePatterns": ["candidate/**", "packages/*/dist/**"],
+  "rules": {
+    "no-console": "error",
+    "no-control-regex": "off",
+    "no-unsafe-optional-chaining": "off",
+    "require-yield": "off"
+  }
+}

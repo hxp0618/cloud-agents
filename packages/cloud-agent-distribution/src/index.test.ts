@@ -14,7 +14,7 @@ describe("cloud-agent distribution", () => {
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.protocol).toBe("2.3");
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.runtime).toEqual({
       package: "@synara/cloud-agent-runtime",
-      version: "0.2.0",
+      version: "0.2.0-rc.1",
     });
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.releaseDigest).toBeNull();
   });

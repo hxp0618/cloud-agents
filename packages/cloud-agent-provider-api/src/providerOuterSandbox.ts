@@ -1,4 +1,9 @@
-export const PROVIDER_OUTER_SANDBOX_PROFILE_ENV = "SYNARA_PROVIDER_OUTER_SANDBOX_PROFILE";
+import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./compatEnvironment";
+
+export const PROVIDER_OUTER_SANDBOX_PROFILE_ENV =
+  CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile.name;
+export const LEGACY_PROVIDER_OUTER_SANDBOX_PROFILE_ENV =
+  CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile.legacyName;
 
 export const PROVIDER_OUTER_SANDBOX_PROFILES = [
   "kubernetes-restricted-v1",
@@ -12,7 +17,10 @@ export type ProviderOuterSandboxProfile = (typeof PROVIDER_OUTER_SANDBOX_PROFILE
 export function requireProviderOuterSandboxProfile(
   environment: NodeJS.ProcessEnv,
 ): ProviderOuterSandboxProfile {
-  const value = environment[PROVIDER_OUTER_SANDBOX_PROFILE_ENV]?.trim();
+  const value = readCloudAgentEnvironment(
+    environment,
+    CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile,
+  )?.trim();
   if (PROVIDER_OUTER_SANDBOX_PROFILES.includes(value as ProviderOuterSandboxProfile)) {
     return value as ProviderOuterSandboxProfile;
   }

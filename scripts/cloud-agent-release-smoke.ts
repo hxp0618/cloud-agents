@@ -1,8 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 
 import {
   assertSameCloudAgentBits,
@@ -16,10 +25,14 @@ import {
   sha256File,
   validatePackedCloudAgentSet,
 } from "./lib/cloud-agent-release.ts";
-
 type JSONRecord = Record<string, unknown>;
+type PackedBinConformanceReport = {
+  readonly passed: ReadonlyArray<string>;
+  readonly realProviderGates: ReadonlyArray<string>;
+};
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
+const requireModule = createRequire(import.meta.url);
 const packageDirectories: ReadonlyArray<readonly [CloudAgentPublicPackageName, string]> = [
   ["@synara/cloud-agent-protocol", "packages/cloud-agent-protocol"],
   ["@synara/cloud-agent-provider-api", "packages/cloud-agent-provider-api"],
@@ -92,7 +105,7 @@ validateDistributionManifest(packedManifests);
 const distributionArtifacts = distributionArtifactDigests();
 
 const beforeSmoke = packedPackages.toSorted((left, right) => left.name.localeCompare(right.name));
-runExternalNode24Smoke(options.outputDirectory, beforeSmoke);
+const packedBinConformance = runExternalNode24Smoke(options.outputDirectory, beforeSmoke);
 const afterSmoke = beforeSmoke.map((item) => ({
   ...item,
   sha256: sha256File(join(options.outputDirectory, item.filename)),
@@ -102,7 +115,7 @@ for (const item of afterSmoke) chmodSync(join(options.outputDirectory, item.file
 
 const candidate = {
   schemaVersion: 1,
-  kind: "synara-cloud-agent-m1-source-candidate",
+  kind: "cloud-agent-portable-runtime-rc-candidate",
   candidateDigest: cloudAgentCandidateDigest(afterSmoke),
   sourceCommit: run("git", ["rev-parse", "HEAD"], repositoryRoot).trim(),
   sourceDirty: sourceStatus.trim() !== "",
@@ -111,7 +124,9 @@ const candidate = {
   bunVersion: run("bun", ["--version"], repositoryRoot).trim(),
   platform: `${process.platform}-${process.arch}`,
   sameBitsVerified: true,
+  packedBinConformance,
   distributionArtifacts,
+  standaloneRuntime: standaloneRuntimeArtifact(options.outputDirectory),
   packages: afterSmoke,
 };
 writeFileSync(
@@ -119,13 +134,72 @@ writeFileSync(
   `${JSON.stringify(candidate, null, 2)}\n`,
   { mode: 0o444 },
 );
+writeFileSync(
+  join(options.outputDirectory, "checksums.sha256"),
+  `${[
+    ...afterSmoke.map((item) => `${item.sha256.slice("sha256:".length)}  ${item.filename}`),
+    `${candidate.standaloneRuntime.sha256.slice("sha256:".length)}  ${candidate.standaloneRuntime.filename}`,
+  ]
+    .toSorted()
+    .join("\n")}\n`,
+  { mode: 0o444 },
+);
+run(
+  process.execPath,
+  ["scripts/generate-sbom.ts", "--output-dir", options.outputDirectory],
+  repositoryRoot,
+);
+writeFileSync(
+  join(options.outputDirectory, "provenance.json"),
+  `${JSON.stringify(
+    {
+      _type: "https://in-toto.io/Statement/v1",
+      predicateType: "https://slsa.dev/provenance/v1",
+      subject: afterSmoke.map((item) => ({
+        name: item.filename,
+        digest: { sha256: item.sha256.slice("sha256:".length) },
+      })),
+      predicate: {
+        buildDefinition: {
+          buildType: "https://github.com/hxp0618/cloud-agents/release-smoke/v1",
+          externalParameters: { sourceCommit: candidate.sourceCommit },
+          internalParameters: { sourceDirty: candidate.sourceDirty },
+          resolvedDependencies: [],
+        },
+        runDetails: {
+          builder: {
+            id:
+              process.env.CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER ??
+              "local-cloud-agent-release-smoke",
+          },
+          metadata: { invocationId: candidate.candidateDigest },
+        },
+      },
+    },
+    null,
+    2,
+  )}\n`,
+  { mode: 0o444 },
+);
 process.stdout.write(`${JSON.stringify(candidate, null, 2)}\n`);
+
+function standaloneRuntimeArtifact(outputDirectory: string): {
+  readonly filename: string;
+  readonly sha256: string;
+} {
+  const filename = "cloud-agent-runtime-standalone.mjs";
+  const target = join(outputDirectory, filename);
+  copyFileSync(join(repositoryRoot, "packages/cloud-agent-distribution/dist/stdio.mjs"), target);
+  chmodSync(target, 0o555);
+  return { filename, sha256: sha256File(target) };
+}
 
 function runExternalNode24Smoke(
   candidateDirectory: string,
   packages: ReadonlyArray<PackedCloudAgentPackage>,
-): void {
+): PackedBinConformanceReport {
   const packagesByName = new Map(packages.map((item) => [item.name, item]));
+  let packedBinConformance: PackedBinConformanceReport | undefined;
   for (const target of CLOUD_AGENT_PUBLIC_PACKAGES) {
     const externalRoot = mkdtempSync(join(tmpdir(), "synara-cloud-agent-external-smoke-"));
     try {
@@ -184,12 +258,14 @@ function runExternalNode24Smoke(
       run(process.execPath, ["smoke.cjs"], externalRoot);
 
       if (target === "@synara/cloud-agent-distribution") {
-        runDistributionBinSmoke(externalRoot);
+        packedBinConformance = runDistributionBinSmoke(externalRoot);
       }
     } finally {
       rmSync(externalRoot, { recursive: true, force: true });
     }
   }
+  if (!packedBinConformance) throw new Error("Packed bin conformance did not run.");
+  return packedBinConformance;
 }
 
 function assertInstalledCloudAgentClosure(
@@ -207,7 +283,7 @@ function assertInstalledCloudAgentClosure(
   }
 }
 
-function runDistributionBinSmoke(externalRoot: string): void {
+function runDistributionBinSmoke(externalRoot: string): PackedBinConformanceReport {
   const describes = ["codex", "claudeAgent"].map((provider) =>
     JSON.stringify({
       requestId: `release-smoke-describe-${provider}`,
@@ -256,6 +332,27 @@ function runDistributionBinSmoke(externalRoot: string): void {
       }
     }
   }
+  const testkit = requireBuiltTestkit();
+  return testkit.runCloudAgentPackedBinConformance({
+    executable: join(externalRoot, "node_modules", ".bin", "cloud-agent-runtime"),
+  });
+}
+
+function requireBuiltTestkit(): {
+  runCloudAgentPackedBinConformance(input: {
+    readonly executable: string;
+  }): PackedBinConformanceReport;
+} {
+  const modulePath = join(repositoryRoot, "packages/cloud-agent-testkit/dist/index.cjs");
+  const loaded = requireModule(modulePath) as {
+    runCloudAgentPackedBinConformance?: (input: {
+      readonly executable: string;
+    }) => PackedBinConformanceReport;
+  };
+  if (typeof loaded.runCloudAgentPackedBinConformance !== "function") {
+    throw new Error("Built Cloud Agent Testkit omitted packed-bin conformance.");
+  }
+  return { runCloudAgentPackedBinConformance: loaded.runCloudAgentPackedBinConformance };
 }
 
 function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): void {
@@ -394,7 +491,7 @@ function assertPackedFileAllowlist(tarball: string): void {
       throw new Error(`${tarball} unexpectedly contains test source ${path}.`);
     }
     if (
-      !/^package\/(?:README\.md|package\.json|manifest\.json|provider-capability-catalog\.json|(?:dist|src|schemas|fixtures)\/)/u.test(
+      !/^package\/(?:LICENSE|README\.md|package\.json|manifest\.json|provider-capability-catalog\.json|(?:dist|src|schemas|fixtures)\/)/u.test(
         path,
       )
     ) {

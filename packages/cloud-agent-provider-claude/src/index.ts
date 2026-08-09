@@ -45,8 +45,11 @@ export function startClaudeProviderRun(
     usesAmbientAuthentication: credential === null,
     redact,
     emit,
-    authoritativePrompt: hasDurableHistory ? reconstructedPrompt(input) : input.workload.inputText,
-    nativeResumePrompt: nativeResumeContinuationPrompt(input) ?? input.workload.inputText,
+    authoritativePrompt: hasDurableHistory
+      ? reconstructedPrompt(input, options.hostIdentity)
+      : input.workload.inputText,
+    nativeResumePrompt:
+      nativeResumeContinuationPrompt(input, options.hostIdentity) ?? input.workload.inputText,
     interactive: options.interactive ?? true,
     ...(options.operation ? { operation: options.operation } : {}),
     ...(options.claudeQueryFactory ? { queryFactory: options.claudeQueryFactory } : {}),

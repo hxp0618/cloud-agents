@@ -5,6 +5,7 @@ import { createCloudAgentRuntime, createCloudAgentStdioClient } from "@synara/cl
 import manifest from "../manifest.json";
 
 export { createCloudAgentStdioClient };
+export * from "./helpers";
 export const CLOUD_AGENT_DISTRIBUTION_MANIFEST = deepFreeze(manifest);
 
 export function createDefaultCloudAgentRuntime(

@@ -61,7 +61,7 @@ const readline = require("node:readline");
 const lines = readline.createInterface({ input: process.stdin });
 lines.once("line", (line) => {
   const command = JSON.parse(line);
-  const credentialFd = Number(process.env.SYNARA_PROVIDER_CREDENTIAL_FD);
+  const credentialFd = Number(process.env.CLOUD_AGENT_PROVIDER_CREDENTIAL_FD);
   process.stdout.write(JSON.stringify({
     requestId: command.requestId,
     protocolVersion: command.protocolVersion,
@@ -101,6 +101,15 @@ const command = (commandId: string): CloudAgentCommandEnvelope => ({
 });
 
 describe("createCloudAgentStdioClient", () => {
+  it("rejects execute promptly when the executable does not exist", async () => {
+    const client = createCloudAgentStdioClient({
+      command: join(tmpdir(), "missing-cloud-agent-runtime-executable"),
+      gracefulStopTimeoutMs: 25,
+    });
+    await expect(client.execute(command("spawn-enoent"))).rejects.toThrow("failed to start");
+    await client.close();
+  });
+
   it("multiplexes events and terminal results by command id", async () => {
     const client = createCloudAgentStdioClient({
       command: process.execPath,
@@ -119,6 +128,78 @@ describe("createCloudAgentStdioClient", () => {
     expect(messages).toEqual(["Progress", "Result", "Progress", "Result"]);
     unsubscribe();
     await client.close();
+  });
+
+  it("waits for listener acknowledgement before delivering the next frame or terminal", async () => {
+    const client = createCloudAgentStdioClient({
+      command: process.execPath,
+      args: ["-e", RESPONDING_RUNTIME, "--"],
+    });
+    let acknowledge!: () => void;
+    const receipt = new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+    let observe!: () => void;
+    const observed = new Promise<void>((resolve) => {
+      observe = resolve;
+    });
+    const messages: string[] = [];
+    client.subscribe(async (message) => {
+      messages.push(message.messageType);
+      if (message.messageType === "Progress") {
+        observe();
+        await receipt;
+      }
+    });
+
+    let settled = false;
+    const execution = client.execute(command("acknowledged-command")).then((value) => {
+      settled = true;
+      return value;
+    });
+    await observed;
+    expect(messages).toEqual(["Progress"]);
+    expect(settled).toBe(false);
+    acknowledge();
+    await expect(execution).resolves.toMatchObject({ messageType: "Result" });
+    expect(messages).toEqual(["Progress", "Result"]);
+    await client.close();
+  });
+
+  it("fully replaces the child environment when extendEnvironment is false", async () => {
+    process.env.CLOUD_AGENT_TEST_AMBIENT_TRUST = "must-not-be-inherited";
+    const environmentRuntime = String.raw`
+const readline = require("node:readline");
+readline.createInterface({ input: process.stdin }).once("line", (line) => {
+  const command = JSON.parse(line);
+  process.stdout.write(JSON.stringify({
+    requestId: command.requestId,
+    protocolVersion: command.protocolVersion,
+    executionId: command.executionId,
+    generation: command.generation,
+    commandId: command.commandId,
+    occurredAt: command.occurredAt,
+    messageType: "Result",
+    payload: {
+      ambientTrust: process.env.CLOUD_AGENT_TEST_AMBIENT_TRUST ?? null,
+      explicit: process.env.CLOUD_AGENT_TEST_EXPLICIT ?? null,
+    },
+  }) + "\n");
+});`;
+    const client = createCloudAgentStdioClient({
+      command: process.execPath,
+      args: ["-e", environmentRuntime, "--"],
+      extendEnvironment: false,
+      environment: { CLOUD_AGENT_TEST_EXPLICIT: "present" },
+    });
+    try {
+      await expect(client.execute(command("replace-environment"))).resolves.toMatchObject({
+        payload: { ambientTrust: null, explicit: "present" },
+      });
+    } finally {
+      delete process.env.CLOUD_AGENT_TEST_AMBIENT_TRUST;
+      await client.close();
+    }
   });
 
   it("rejects duplicate in-flight command ids", async () => {
@@ -313,7 +394,19 @@ describe("createCloudAgentStdioClient", () => {
         credentialFd: 7,
         environment: { SYNARA_PROVIDER_CREDENTIAL_FD: "7" },
       }),
-    ).toThrow("conflicting SYNARA_PROVIDER_CREDENTIAL_FD override");
+    ).toThrow("conflicting CLOUD_AGENT_PROVIDER_CREDENTIAL_FD override");
+  });
+
+  it("fails closed when portable and legacy credential metadata conflict", () => {
+    expect(() =>
+      createCloudAgentStdioClient({
+        command: process.execPath,
+        environment: {
+          CLOUD_AGENT_PROVIDER_CREDENTIAL_FD: "3",
+          SYNARA_PROVIDER_CREDENTIAL_FD: "7",
+        },
+      }),
+    ).toThrow("Conflicting CLOUD_AGENT_PROVIDER_CREDENTIAL_FD");
   });
 });
 
