@@ -16,9 +16,11 @@ Shell hosts start the NDJSON protocol with `cloud-agent-runtime --protocol-v2`.
 Programmatic hosts use `resolveCloudAgentRuntimeLaunch(packageRoot,
 nodeExecutable)` and pass its `executable` and `args` to the public stdio
 client. This launches the bundled `.mjs` through an explicit Node 24 binary on
-Windows as well as Unix; Electron hosts must supply a real Node executable.
-The Runtime accepts only the Codex and Claude plugins pinned by the manifest;
-an unknown or disabled Provider returns `provider_not_installed`.
+Windows as well as Unix. Electron hosts may use `process.execPath` only when
+the child has `ELECTRON_RUN_AS_NODE=1` and Electron's embedded Node satisfies
+the package engine range. The Runtime accepts only the Codex and Claude
+plugins pinned by the manifest; an unknown or disabled Provider returns
+`provider_not_installed`.
 
 Release validation is tarball-first:
 

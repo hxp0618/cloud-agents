@@ -88,8 +88,9 @@ export function resolveCloudAgentRuntimeExecutable(packageRoot: string): string 
 
 /**
  * Resolves a cross-platform launch descriptor for the bundled Runtime module.
- * Hosts embedding Electron must pass a real Node.js 24 executable rather than
- * Electron's `process.execPath`.
+ * Hosts embedding Electron may pass Electron's `process.execPath` only when
+ * the child environment sets `ELECTRON_RUN_AS_NODE=1` and the embedded Node
+ * version satisfies this package's Node 24 engine range.
  */
 export function resolveCloudAgentRuntimeLaunch(
   packageRoot: string,
