@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -105,7 +106,12 @@ validateDistributionManifest(packedManifests);
 const distributionArtifacts = distributionArtifactDigests();
 
 const beforeSmoke = packedPackages.toSorted((left, right) => left.name.localeCompare(right.name));
-const packedBinConformance = runExternalNode24Smoke(options.outputDirectory, beforeSmoke);
+const nodeConformance = runExternalNode24Smoke(options.outputDirectory, beforeSmoke);
+runExternalPnpm11Smoke(options.outputDirectory, beforeSmoke);
+const packedBinConformance = {
+  ...nodeConformance,
+  passed: [...nodeConformance.passed, "pnpm-11-coordinated-peer-install"],
+};
 const afterSmoke = beforeSmoke.map((item) => ({
   ...item,
   sha256: sha256File(join(options.outputDirectory, item.filename)),
@@ -267,6 +273,59 @@ function runExternalNode24Smoke(
   }
   if (!packedBinConformance) throw new Error("Packed bin conformance did not run.");
   return packedBinConformance;
+}
+
+function runExternalPnpm11Smoke(
+  candidateDirectory: string,
+  packages: ReadonlyArray<PackedCloudAgentPackage>,
+): void {
+  const externalRoot = mkdtempSync(join(tmpdir(), "synara-cloud-agent-pnpm-smoke-"));
+  try {
+    const packagesByName = new Map(packages.map((item) => [item.name, item]));
+    const dependencies = Object.fromEntries(
+      cloudAgentTarballClosure("@synara/cloud-agent-distribution").map((name) => {
+        const item = packagesByName.get(name);
+        if (!item) throw new Error(`pnpm smoke is missing tarball ${name}.`);
+        return [name, `file:${join(candidateDirectory, item.filename)}`];
+      }),
+    );
+    writeFileSync(
+      join(externalRoot, "package.json"),
+      `${JSON.stringify(
+        {
+          name: "cloud-agent-pnpm-external-smoke",
+          private: true,
+          type: "module",
+          packageManager: "pnpm@11.10.0",
+          dependencies,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const pnpm = join(repositoryRoot, "node_modules", ".bin", "pnpm");
+    if (run(pnpm, ["--version"], externalRoot).trim() !== "11.10.0") {
+      throw new Error("Cloud Agent release smoke did not use pnpm 11.10.0.");
+    }
+    run(
+      pnpm,
+      [
+        "install",
+        "--ignore-scripts",
+        "--no-frozen-lockfile",
+        "--registry=https://registry.npmjs.org/",
+        "--store-dir=.pnpm-store",
+      ],
+      externalRoot,
+    );
+    assertInstalledCloudAgentClosure(externalRoot, "@synara/cloud-agent-distribution");
+    const lock = readFileSync(join(externalRoot, "pnpm-lock.yaml"), "utf8");
+    if (/registry\.npmjs\.org\/@synara(?:%2f|\/)/iu.test(lock)) {
+      throw new Error("pnpm resolved an unpublished Cloud Agent package through npm.");
+    }
+  } finally {
+    rmSync(externalRoot, { recursive: true, force: true });
+  }
 }
 
 function runExternalTypeScriptSmoke(externalRoot: string, specifiers: ReadonlyArray<string>): void {

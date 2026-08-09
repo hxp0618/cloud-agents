@@ -11,5 +11,6 @@
 - Published NodeNext-safe ESM/CJS declaration conditions and discriminated payload-message types, with external consumer typechecking in the release smoke.
 - Added an explicit Node-module launch descriptor for Windows/Electron hosts and removed the ESM-only Claude SDK from the public CommonJS declaration surface.
 - Kept clean-worktree package typechecks source-based through the explicit `development` export condition while packed consumers resolve only built declarations.
+- Declared internal RC edges as exact peers and added a pnpm 11 packed-consumer gate so GitHub tarballs never fall back to unpublished npm packages or require disabling exotic-subdependency protection.
 
 This is a GitHub release-candidate line only. Nothing in this changelog represents npm publication, production deployment, public-beta approval, or GA.

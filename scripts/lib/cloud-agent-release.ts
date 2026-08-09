@@ -184,12 +184,17 @@ export function validatePackedCloudAgentSet(manifests: ReadonlyArray<JSONRecord>
   }
   for (const manifest of manifests) {
     const name = requireString(manifest.name, "package name");
-    const dependencies = isRecord(manifest.dependencies) ? manifest.dependencies : {};
-    for (const [dependency, expectedVersion] of versions) {
-      if (dependencies[dependency] !== undefined && dependencies[dependency] !== expectedVersion) {
-        throw new Error(
-          `${name} pins ${dependency} to ${String(dependencies[dependency])}; packed version is ${expectedVersion}.`,
-        );
+    for (const section of ["dependencies", "peerDependencies"] as const) {
+      const dependencies = dependencyRecord(manifest[section]);
+      for (const [dependency, expectedVersion] of versions) {
+        if (
+          dependencies[dependency] !== undefined &&
+          dependencies[dependency] !== expectedVersion
+        ) {
+          throw new Error(
+            `${name} ${section} pins ${dependency} to ${String(dependencies[dependency])}; packed version is ${expectedVersion}.`,
+          );
+        }
       }
     }
   }
@@ -198,8 +203,8 @@ export function validatePackedCloudAgentSet(manifests: ReadonlyArray<JSONRecord>
   );
   for (const name of CLOUD_AGENT_PUBLIC_PACKAGES) {
     const manifest = byName.get(name)!;
-    const dependencies = dependencyRecord(manifest.dependencies);
-    const actualInternal = Object.keys(dependencies)
+    const peerDependencies = dependencyRecord(manifest.peerDependencies);
+    const actualInternal = Object.keys(peerDependencies)
       .filter((dependency) => PUBLIC_PACKAGE_SET.has(dependency))
       .toSorted();
     const expectedInternal = [...EXPECTED_INTERNAL_DEPENDENCIES[name]].toSorted();
@@ -210,23 +215,19 @@ export function validatePackedCloudAgentSet(manifests: ReadonlyArray<JSONRecord>
     }
     for (const dependency of expectedInternal) {
       const expectedVersion = versions.get(dependency)!;
-      if (dependencies[dependency] !== expectedVersion) {
+      if (peerDependencies[dependency] !== expectedVersion) {
         throw new Error(
-          `${name} must pin ${dependency} to packed version ${expectedVersion}, found ${String(dependencies[dependency])}.`,
+          `${name} must peer-pin ${dependency} to packed version ${expectedVersion}, found ${String(peerDependencies[dependency])}.`,
         );
       }
     }
-    for (const section of [
-      "optionalDependencies",
-      "peerDependencies",
-      "devDependencies",
-    ] as const) {
+    for (const section of ["dependencies", "optionalDependencies", "devDependencies"] as const) {
       const misplacedInternal = Object.keys(dependencyRecord(manifest[section])).find(
         (dependency) => PUBLIC_PACKAGE_SET.has(dependency),
       );
       if (misplacedInternal) {
         throw new Error(
-          `${name} must declare internal dependency ${misplacedInternal} in dependencies, not ${section}.`,
+          `${name} must declare internal dependency ${misplacedInternal} in peerDependencies, not ${section}.`,
         );
       }
     }

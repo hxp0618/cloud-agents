@@ -29,6 +29,7 @@ type TestManifest = {
   name: (typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number];
   version: string;
   dependencies: Record<string, string>;
+  peerDependencies: Record<string, string>;
 };
 
 function validManifests(): TestManifest[] {
@@ -38,7 +39,7 @@ function validManifests(): TestManifest[] {
       name === "@synara/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
     ]),
   ) as Record<(typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number], string>;
-  const dependencies = {
+  const peerDependencies = {
     "@synara/cloud-agent-protocol": {},
     "@synara/cloud-agent-provider-api": {
       "@synara/cloud-agent-protocol": versions["@synara/cloud-agent-protocol"],
@@ -51,7 +52,6 @@ function validManifests(): TestManifest[] {
       "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
     },
     "@synara/cloud-agent-provider-claude": {
-      "@anthropic-ai/claude-agent-sdk": "0.3.207",
       "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
     },
     "@synara/cloud-agent-testkit": {
@@ -69,7 +69,11 @@ function validManifests(): TestManifest[] {
   return CLOUD_AGENT_PUBLIC_PACKAGES.map((name) => ({
     name,
     version: versions[name],
-    dependencies: dependencies[name],
+    dependencies:
+      name === "@synara/cloud-agent-provider-claude"
+        ? { "@anthropic-ai/claude-agent-sdk": "0.3.207" }
+        : {},
+    peerDependencies: peerDependencies[name],
   }));
 }
 
@@ -79,9 +83,17 @@ function replaceDependencies(
   dependencies: Record<string, string>,
 ): TestManifest[] {
   return manifests.map((manifest) =>
-    manifest.name === name
-      ? { name: manifest.name, version: manifest.version, dependencies }
-      : manifest,
+    manifest.name === name ? { ...manifest, dependencies } : manifest,
+  );
+}
+
+function replacePeerDependencies(
+  manifests: ReadonlyArray<TestManifest>,
+  name: TestManifest["name"],
+  peerDependencies: Record<string, string>,
+): TestManifest[] {
+  return manifests.map((manifest) =>
+    manifest.name === name ? { ...manifest, peerDependencies } : manifest,
   );
 }
 
@@ -175,9 +187,9 @@ describe("Cloud Agent packed release validation", () => {
     expect(() => validatePackedCloudAgentSet(manifests)).not.toThrow();
     expect(() =>
       validatePackedCloudAgentSet(
-        replaceDependencies(manifests, "@synara/cloud-agent-distribution", {
+        replacePeerDependencies(manifests, "@synara/cloud-agent-distribution", {
           ...manifests.find((manifest) => manifest.name === "@synara/cloud-agent-distribution")!
-            .dependencies,
+            .peerDependencies,
           "@synara/cloud-agent-runtime": "^0.2.0",
         }),
       ),
@@ -201,8 +213,8 @@ describe("Cloud Agent packed release validation", () => {
     );
     expect(() =>
       validatePackedCloudAgentSet(
-        replaceDependencies(manifests, source, {
-          ...manifests.find((manifest) => manifest.name === source)!.dependencies,
+        replacePeerDependencies(manifests, source, {
+          ...manifests.find((manifest) => manifest.name === source)!.peerDependencies,
           [target]: versions[target]!,
         }),
       ),
@@ -213,14 +225,14 @@ describe("Cloud Agent packed release validation", () => {
     const manifests = validManifests();
     expect(() =>
       validatePackedCloudAgentSet(
-        replaceDependencies(manifests, "@synara/cloud-agent-runtime", {
+        replacePeerDependencies(manifests, "@synara/cloud-agent-runtime", {
           "@synara/cloud-agent-protocol": "0.1.0-rc.1",
         }),
       ),
     ).toThrow(/internal dependencies must be exactly/);
   });
 
-  it("rejects internal runtime edges hidden outside dependencies", () => {
+  it("rejects internal runtime edges outside peerDependencies", () => {
     const manifests = validManifests();
     expect(() =>
       validatePackedCloudAgentSet(
@@ -238,12 +250,12 @@ describe("Cloud Agent packed release validation", () => {
         manifests.map((manifest) =>
           manifest.name === "@synara/cloud-agent-provider-api"
             ? Object.assign({}, manifest, {
-                peerDependencies: { "@synara/cloud-agent-runtime": "0.2.0" },
+                dependencies: { "@synara/cloud-agent-runtime": "0.2.0-rc.1" },
               })
             : manifest,
         ),
       ),
-    ).toThrow(/not peerDependencies/);
+    ).toThrow(/not dependencies/);
     expect(() =>
       validatePackedCloudAgentSet(
         manifests.map((manifest) =>

@@ -8,6 +8,7 @@
         "@types/node": "24.10.13",
         "oxfmt": "0.62.0",
         "oxlint": "1.77.0",
+        "pnpm": "11.10.0",
         "tsdown": "0.20.3",
         "typescript": "5.7.3",
         "vitest": "4.1.10",
@@ -19,17 +20,17 @@
       "bin": {
         "cloud-agent-runtime": "./dist/stdio.mjs",
       },
-      "dependencies": {
+      "devDependencies": {
+        "tsdown": "0.20.3",
+        "typescript": "5.7.3",
+        "vitest": "4.1.10",
+      },
+      "peerDependencies": {
         "@synara/cloud-agent-protocol": "0.1.0-rc.1",
         "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
         "@synara/cloud-agent-provider-claude": "0.1.0-rc.1",
         "@synara/cloud-agent-provider-codex": "0.1.0-rc.1",
         "@synara/cloud-agent-runtime": "0.2.0-rc.1",
-      },
-      "devDependencies": {
-        "tsdown": "0.20.3",
-        "typescript": "5.7.3",
-        "vitest": "4.1.10",
       },
     },
     "packages/cloud-agent-protocol": {
@@ -46,13 +47,13 @@
     "packages/cloud-agent-provider-api": {
       "name": "@synara/cloud-agent-provider-api",
       "version": "0.1.0-rc.1",
-      "dependencies": {
-        "@synara/cloud-agent-protocol": "0.1.0-rc.1",
-      },
       "devDependencies": {
         "tsdown": "0.20.3",
         "typescript": "5.7.3",
         "vitest": "4.1.10",
+      },
+      "peerDependencies": {
+        "@synara/cloud-agent-protocol": "0.1.0-rc.1",
       },
     },
     "packages/cloud-agent-provider-claude": {
@@ -60,51 +61,54 @@
       "version": "0.1.0-rc.1",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.207",
-        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
       },
       "devDependencies": {
         "tsdown": "0.20.3",
         "typescript": "5.7.3",
         "vitest": "4.1.10",
+      },
+      "peerDependencies": {
+        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
       },
     },
     "packages/cloud-agent-provider-codex": {
       "name": "@synara/cloud-agent-provider-codex",
       "version": "0.1.0-rc.1",
-      "dependencies": {
-        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
-      },
       "devDependencies": {
         "tsdown": "0.20.3",
         "typescript": "5.7.3",
         "vitest": "4.1.10",
       },
+      "peerDependencies": {
+        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
+      },
     },
     "packages/cloud-agent-runtime": {
       "name": "@synara/cloud-agent-runtime",
       "version": "0.2.0-rc.1",
-      "dependencies": {
-        "@synara/cloud-agent-protocol": "0.1.0-rc.1",
-        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
-      },
       "devDependencies": {
         "@types/node": "24.10.13",
         "tsdown": "0.20.3",
         "typescript": "5.7.3",
         "vitest": "4.1.10",
       },
+      "peerDependencies": {
+        "@synara/cloud-agent-protocol": "0.1.0-rc.1",
+        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
+      },
     },
     "packages/cloud-agent-testkit": {
       "name": "@synara/cloud-agent-testkit",
       "version": "0.1.0-rc.1",
-      "dependencies": {
-        "@synara/cloud-agent-protocol": "0.1.0-rc.1",
-        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
-      },
       "devDependencies": {
+        "@types/node": "24.10.13",
         "tsdown": "0.20.3",
         "typescript": "5.7.3",
         "vitest": "4.1.10",
+      },
+      "peerDependencies": {
+        "@synara/cloud-agent-protocol": "0.1.0-rc.1",
+        "@synara/cloud-agent-provider-api": "0.1.0-rc.1",
       },
     },
   },
@@ -528,6 +532,8 @@
     "picomatch": ["picomatch@4.0.5", "https://registry.npmmirror.com/picomatch/-/picomatch-4.0.5.tgz", {}, "sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A=="],
 
     "pkce-challenge": ["pkce-challenge@5.0.1", "https://registry.npmmirror.com/pkce-challenge/-/pkce-challenge-5.0.1.tgz", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
+
+    "pnpm": ["pnpm@11.10.0", "https://registry.npmmirror.com/pnpm/-/pnpm-11.10.0.tgz", { "bin": { "pnpm": "bin/pnpm.mjs", "pnpx": "bin/pnpx.mjs", "pn": "bin/pnpm.mjs", "pnx": "bin/pnpx.mjs" } }, "sha512-C3+LmAYAMZBMAX46QesYehbUDuuCm5XE+MsDaBdh/Eq1PdIZEVubRH9NzhoFohR2RGHn03AzkqnzL5URzoyGyA=="],
 
     "postcss": ["postcss@8.5.26", "https://registry.npmmirror.com/postcss/-/postcss-8.5.26.tgz", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ=="],
 
