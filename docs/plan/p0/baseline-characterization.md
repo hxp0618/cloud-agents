@@ -1,10 +1,10 @@
 # Platform P0 baseline characterization
 
-- Status：IN PROGRESS
+- Status：VERIFIED
 - Phase Gate：`G-BASELINE-P0`
 - Aggregate Gate：`G-BASELINE` OPEN（仍缺 `G-BASELINE-M1`）
 - Real Provider execution：NOT RUN（M1 remains paused）
-- Conclusion：existing evidence indexed；closure gaps remain
+- Conclusion：`CAG-G-BASELINE-P0-20260810-R2` closes the P0 phase only
 
 ## Frozen reference profiles
 
@@ -85,12 +85,12 @@ Synara 的 `FAIL_KNOWN_PRECONDITION` 是固定源码的实际 characterization�
 既不能记成 PASS，也不会被补丁修改后伪装成重构前 baseline。P1 必须把它们作为已知输入缺口继承，并在
 新公共实现的同一 criterion 上提供独立正向/负向 evidence。
 
-## Closure gaps
+## Closure boundary
 
-`G-BASELINE-P0` 目前只剩 phase closure 程序尚未完成：
+`G-BASELINE-P0` 已由独立 reviewer 在固定 evidence commit `66e2f127...` 上签署 R2：
 
-1. 三份 normalized machine record 尚未提交到固定 Git commit；
-2. 独立 reviewer 尚未签署新的 phase closure record；
+1. 三份 normalized machine record 与 Synara 21-entry evidence index 已 Git-bound；
+2. 本地 audit v3 与远端 index verification 均通过；
 3. greenfield Managed Host 在 P0 只要求 Git-bound spec/negative/reference-host oracle，生产实现与真实
    create→ready→terminate 属 P3，不得反向伪装成 P0 缺陷或 P0 已实现。
 

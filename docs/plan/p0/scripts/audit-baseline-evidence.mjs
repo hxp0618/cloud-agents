@@ -130,12 +130,12 @@ for (const manifest of [synara, t3, referenceHost]) {
   );
   equal(
     manifest.platformP0CharacterizationClosure.complete,
-    false,
+    true,
     `${manifest.profile} Platform P0 characterization closure`,
   );
   equal(
     manifest.platformP0CharacterizationClosure.status,
-    "INCOMPLETE",
+    "COMPLETE",
     `${manifest.profile} Platform P0 characterization status`,
   );
   equal(
@@ -178,7 +178,7 @@ process.stdout.write(
         t3: t3Linux.status,
         runtime: runtimeLinux.status,
       },
-      platformP0CharacterizationClosure: false,
+      platformP0CharacterizationClosure: true,
       m1BehaviorClosure: false,
       m1BehaviorStatus: "NOT_RUN",
       aggregateGateDecision: "NOT_CLAIMED",

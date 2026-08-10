@@ -4,8 +4,8 @@
   "profile": "t3-embedded-and-cloud-agent-consumer",
   "status": "CHARACTERIZED_EXECUTED_ON_FIXED_LINUX_SOURCES",
   "platformP0CharacterizationClosure": {
-    "complete": false,
-    "status": "INCOMPLETE",
+    "complete": true,
+    "status": "COMPLETE",
     "scope": "embedded authority, auth/proof/revoke and thin consumer mechanisms at fixed source refs",
     "doesNotDecideAggregateGate": true
   },

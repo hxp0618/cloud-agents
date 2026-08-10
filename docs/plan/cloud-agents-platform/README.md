@@ -2,7 +2,7 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 IN PROGRESS；M1/P1–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 NOT STARTED（Entry satisfied）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
 - 关联 ADR：[`../adr/0006-public-cloud-agents-platform.md`](../adr/0006-public-cloud-agents-platform.md)
@@ -22,10 +22,12 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 ## 当前执行边界
 
 用户已于 2026-08-10 批准 ADR-0006、D-001～D-021 并解除 P0 暂停；P0 执行期间又记录了应用既有
-fail-closed 原则与 local-first 验证策略的 D-022～D-024。当前只授权 freeze、inventory、provenance、baseline characterization、
-evidence 与计划分支推送。仍不授权：
+fail-closed 原则与 local-first 验证策略的 D-022～D-024。P0 已由 `G-INVENTORY` R2 和
+`G-BASELINE-P0` R2 关闭，因此 P1 Entry 满足；下一步只允许在公共仓实施 P1 contracts、Go/TS SDK、
+数据模型、authority 与安全基础。仍不授权：
 
-- 修改 Runtime、Go、Synara 或 T3Code 源码；
+- 修改 Runtime M1 行为、Synara 或 T3Code 源码；
+- 提前实施 P2–P6 Managed Agent/Host、Standalone 或宿主 cutover；
 - 提交/推送当前未完成的 Codex attestation 修复；
 - 重打或替换 immutable `cloud-agent-m1-rc.1`；
 - 创建数据库、Go module、container image、Release 或部署；
@@ -87,7 +89,7 @@ evidence 与计划分支推送。仍不授权：
 | 里程碑      | 目标                                                                | 当前状态    |
 | ----------- | ------------------------------------------------------------------- | ----------- |
 | M1          | Portable Runtime 七包与 embedded 双宿主；真实 Provider/M1 Gate open | PAUSED      |
-| P0          | 公共 Go 代码 inventory、provenance、authority/contract freeze       | IN PROGRESS |
+| P0          | 公共 Go 代码 inventory、provenance、authority/contract freeze       | VERIFIED    |
 | P1          | 公共 CP foundation：auth/project、Postgres/outbox、API/SDK          | NOT STARTED |
 | P2          | Managed Agent Plane：Session/Turn/Execution/Worker/Workspace        | NOT STARTED |
 | P3          | Managed Host core：CloudEnvironmentLease + public reference host    | NOT STARTED |

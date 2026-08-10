@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 IN PROGRESS；M1/P1–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 NOT STARTED（Entry satisfied）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -49,9 +49,10 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 ## 执行边界
 
-当前只执行 P0 freeze、inventory、provenance、baseline characterization 和 evidence。不得由本次批准外推：
+P0 已按两个 independently reviewed closure record 完成；P1 Entry 已满足但尚未开始实现。P1 仅允许在公共
+仓实施 contracts、Go/TS SDK、数据模型、authority 与安全基础；不得由 P0 结论外推：
 
-- Go/TS 实现迁移；
+- P2–P6 Managed Agent/Host、Standalone 或 Synara/T3 cutover；
 - M1 rc.2 或真实 Provider E2E；
 - 数据库、module、image、Release、npm/Registry；
 - 部署、Beta、GA；

@@ -4,8 +4,8 @@
   "profile": "reference-host-negative-and-public-runtime",
   "status": "NEGATIVE_ORACLES_EXECUTED_ON_FIXED_LINUX_SOURCE",
   "platformP0CharacterizationClosure": {
-    "complete": false,
-    "status": "INCOMPLETE",
+    "complete": true,
+    "status": "COMPLETE",
     "scope": "greenfield lifecycle spec, protocol golden and negative/reference-host fixtures",
     "doesNotDecideAggregateGate": true
   },

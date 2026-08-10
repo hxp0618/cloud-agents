@@ -4,8 +4,8 @@
   "profile": "synara-legacy-managed-agent",
   "status": "CHARACTERIZED_EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES",
   "platformP0CharacterizationClosure": {
-    "complete": false,
-    "status": "INCOMPLETE",
+    "complete": true,
+    "status": "COMPLETE",
     "scope": "legacy managed-agent mechanisms at fixed source refs",
     "doesNotDecideAggregateGate": true
   },
