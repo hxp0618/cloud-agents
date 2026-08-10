@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T05:06:04.013Z",
+  "scope": "Platform P0 freeze only; no implementation, publication, deployment, or data mutation",
+  "worktrees": [
+    {
+      "id": "synara-primary-concurrent",
+      "path": "/Users/huang/devel/project/huang/business/synara",
+      "role": "concurrent source; excluded from P0 extraction while dirty",
+      "branch": "codex/saas-tenancy-user",
+      "head": "b86d30b1aa6f383cf3a8453e6944abeaefe2db65",
+      "tree": "b1831be993942dd36ae1faac2fe3ebb5f72c48fc",
+      "upstream": "origin/codex/saas-tenancy-user",
+      "upstreamOid": "b86d30b1aa6f383cf3a8453e6944abeaefe2db65",
+      "origin": "git@github.com:hxp0618/synara.git",
+      "status": {
+        "clean": false,
+        "counts": {
+          "staged": 1,
+          "unstaged": 1,
+          "untracked": 2
+        },
+        "entries": [
+          "M .oxfmtrc.json",
+          " M TODO.md",
+          "?? docs/plans/stage-6-external-authority-inputs.md",
+          "?? docs/reports/stage-6-github-release-environment-readiness-20260804.md"
+        ]
+      }
+    },
+    {
+      "id": "synara-external-runtime-source",
+      "path": "/Users/huang/devel/project/huang/business/synara-cloud-agent-external-runtime",
+      "role": "authoritative clean P0 extraction source",
+      "branch": "codex/cloud-agent-external-runtime",
+      "head": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+      "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+      "upstream": "origin/codex/cloud-agent-external-runtime",
+      "upstreamOid": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+      "origin": "git@github.com:hxp0618/synara.git",
+      "status": {
+        "clean": true,
+        "counts": {
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0
+        },
+        "entries": []
+      }
+    },
+    {
+      "id": "synara-stage8-concurrent",
+      "path": "/Users/huang/devel/project/huang/business/synara-stage-8",
+      "role": "concurrent product work; excluded from P0 extraction",
+      "branch": "codex/stage-8-org-collaboration-mentions",
+      "head": "fc9f63ac74eeb04cf201506972878ac15307a0e4",
+      "tree": "cae847f560361f49f198e8b11a6a72e237a3e81a",
+      "upstream": null,
+      "upstreamOid": null,
+      "origin": "git@github.com:hxp0618/synara.git",
+      "status": {
+        "clean": false,
+        "counts": {
+          "staged": 1,
+          "unstaged": 60,
+          "untracked": 34
+        },
+        "entries": [
+          "M TODO.md",
+          " M apps/web/index.html",
+          " M apps/web/src/components/ChatView.browser.tsx",
+          " M apps/web/src/components/ChatView.tsx",
+          " M apps/web/src/components/chat/ComposerCommandMenu.tsx",
+          " M apps/web/src/components/chat/MentionChipIcon.tsx",
+          " M apps/web/src/components/settings/DesktopSettingsPanels.browser.tsx",
+          " M apps/web/src/components/settings/DesktopSettingsPanels.tsx",
+          " M apps/web/src/components/settings/ProjectSessionSettingsSection.test.tsx",
+          " M apps/web/src/controlPlaneContext.tsx",
+          " M apps/web/src/diffRouteSearch.test.ts",
+          " M apps/web/src/diffRouteSearch.ts",
+          " M apps/web/src/lib/composerMentions.test.ts",
+          " M apps/web/src/lib/composerMentions.ts",
+          " M apps/web/src/lib/controlPlaneTestFixtures.ts",
+          " M apps/web/src/routes/_chat.settings.tsx",
+          " M deploy/kubernetes/config.example.yaml",
+          " M deploy/kubernetes/deployment.yaml",
+          " M deploy/kubernetes/secret.example.yaml",
+          " M deploy/personal/.env.example",
+          " M deploy/personal/docker-compose.yml",
+          " M deploy/saas/.env.example",
+          " M deploy/saas/docker-compose.yml",
+          " M docs/api/openapi.yaml",
+          " M docs/contracts/runtime-event-v2.schema.json",
+          " M packages/contracts/src/providerRuntime.test.ts",
+          " M packages/contracts/src/providerRuntime.ts",
+          " M packages/control-plane-client/src/index.test.ts",
+          " M packages/control-plane-client/src/index.ts",
+          " M services/control-plane/cmd/api/main.go",
+          " M services/control-plane/internal/agentd/provider_host_v2_test.go",
+          " M services/control-plane/internal/config/config.go",
+          " M services/control-plane/internal/config/config_test.go",
+          " M services/control-plane/internal/database/kms_rewrap_sqlite.go",
+          " M services/control-plane/internal/database/store.go",
+          " M services/control-plane/internal/desktopenrollment/service_test.go",
+          " M services/control-plane/internal/developerwebhooks/projector.go",
+          " M services/control-plane/internal/developerwebhooks/service.go",
+          " M services/control-plane/internal/executions/events.go",
+          " M services/control-plane/internal/executions/events_test.go",
+          " M services/control-plane/internal/executions/executions_integration_test.go",
+          " M services/control-plane/internal/executions/interactions.go",
+          " M services/control-plane/internal/httpapi/server.go",
+          " M services/control-plane/internal/kmsrotation/service.go",
+          " M services/control-plane/internal/kmsrotation/service_test.go",
+          " M services/control-plane/internal/observability/metrics.go",
+          " M services/control-plane/internal/observability/metrics_test.go",
+          " M services/control-plane/internal/persistence/kms_rewrap_models.go",
+          " M services/control-plane/internal/persistence/schema.go",
+          " M services/control-plane/internal/persistence/session_models.go",
+          " M services/control-plane/internal/privacy/erasure.go",
+          " M services/control-plane/internal/privacy/export.go",
+          " M services/control-plane/internal/privacy/service_test.go",
+          " M services/control-plane/internal/privacy/tenant_export.go",
+          " M services/control-plane/internal/retention/service.go",
+          " M services/control-plane/internal/sessions/advanced_history.go",
+          " M services/control-plane/internal/sessions/idempotency_test.go",
+          " M services/control-plane/internal/sessions/logical_history.go",
+          " M services/control-plane/internal/sessions/logical_history_test.go",
+          " M services/control-plane/internal/sessions/models.go",
+          " M services/control-plane/internal/sessions/service.go",
+          "?? apps/web/src/components/chat/SessionCollaborationBar.tsx",
+          "?? docs/contracts/unified-interaction-mentions-v1.md",
+          "?? docs/plans/stage-8-organization-collaboration-unified-mentions.md",
+          "?? docs/reports/stage-8-real-feishu-collaboration-acceptance-20260809.md",
+          "?? docs/runbooks/stage-8-real-collaboration-acceptance.md",
+          "?? services/control-plane/internal/collaborationnotifications/callback.go",
+          "?? services/control-plane/internal/collaborationnotifications/http_safety.go",
+          "?? services/control-plane/internal/collaborationnotifications/publisher.go",
+          "?? services/control-plane/internal/collaborationnotifications/router.go",
+          "?? services/control-plane/internal/collaborationnotifications/schedule.go",
+          "?? services/control-plane/internal/collaborationnotifications/service.go",
+          "?? services/control-plane/internal/collaborationnotifications/service_test.go",
+          "?? services/control-plane/internal/collaborationnotifications/smtp.go",
+          "?? services/control-plane/internal/collaborationnotifications/teams_oidc.go",
+          "?? services/control-plane/internal/collaborationnotifications/teams_oidc_test.go",
+          "?? services/control-plane/internal/collaborationvcs/service.go",
+          "?? services/control-plane/internal/collaborationvcs/service_test.go",
+          "?? services/control-plane/internal/httpapi/collaboration_notifications_api.go",
+          "?? services/control-plane/internal/httpapi/collaboration_notifications_api_test.go",
+          "?? services/control-plane/internal/httpapi/collaboration_vcs_api.go",
+          "?? services/control-plane/internal/httpapi/session_collaboration_api.go",
+          "?? services/control-plane/internal/persistence/collaboration_models.go",
+          "?? services/control-plane/internal/persistence/collaboration_notification_models.go",
+          "?? services/control-plane/internal/sessions/collaboration.go",
+          "?? services/control-plane/internal/sessions/collaboration_postgres_integration_test.go",
+          "?? services/control-plane/internal/sessions/collaboration_test.go",
+          "?? services/control-plane/migrations/000168_stage8_session_driver_authority.sql",
+          "?? services/control-plane/migrations/000169_stage8_unified_interaction_root.sql",
+          "?? services/control-plane/migrations/000170_stage8_session_collaborator_grants.sql",
+          "?? services/control-plane/migrations/000171_stage8_session_handoffs.sql",
+          "?? services/control-plane/migrations/000172_stage8_fork_redacted_snapshots.sql",
+          "?? services/control-plane/migrations/000173_stage8_collaboration_notifications.sql",
+          "?? services/control-plane/migrations/000174_stage8_agent_delegation_runtime.sql",
+          "?? services/control-plane/migrations/000175_stage8_notification_endpoint_revocation.sql"
+        ]
+      }
+    },
+    {
+      "id": "t3-main",
+      "path": "/Users/huang/devel/project/huang/business/t3code",
+      "role": "fresh-main embedded baseline",
+      "branch": "main",
+      "head": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "tree": "e98f5650379f428bf5dcc6e7cae287c68fb8b080",
+      "upstream": "origin/main",
+      "upstreamOid": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "origin": "git@github.com:hxp0618/t3code.git",
+      "status": {
+        "clean": true,
+        "counts": {
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0
+        },
+        "entries": []
+      }
+    },
+    {
+      "id": "t3-cloud-agent-fresh",
+      "path": "/Users/huang/devel/project/huang/business/t3code-cloud-agent-fresh",
+      "role": "Cloud Agents embedded consumer baseline",
+      "branch": "feat/cloud-agent",
+      "head": "9584a266e91fa94354e8c07f79af3a5e01755d16",
+      "tree": "171624a2dbfb68f1d91f0a67175cbaf68f2947c2",
+      "upstream": "origin/feat/cloud-agent",
+      "upstreamOid": "9584a266e91fa94354e8c07f79af3a5e01755d16",
+      "origin": "git@github.com:hxp0618/t3code.git",
+      "status": {
+        "clean": true,
+        "counts": {
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0
+        },
+        "entries": []
+      }
+    },
+    {
+      "id": "cloud-agents-platform",
+      "path": "/Users/huang/devel/project/huang/business/cloud-agents",
+      "role": "public source-of-truth and P0 plan branch",
+      "branch": "codex/cloud-agents-platform-p0",
+      "head": "9698605cc5d2f3f0fb8e89d422d7bd20a49e1c64",
+      "tree": "052ff47317bbce2b54402cd1f4301247995aa5bd",
+      "upstream": null,
+      "upstreamOid": null,
+      "origin": "git@github.com:hxp0618/cloud-agents.git",
+      "status": {
+        "clean": false,
+        "counts": {
+          "staged": 5,
+          "unstaged": 1,
+          "untracked": 2
+        },
+        "entries": [
+          "M .gitignore",
+          "A  .idea/.gitignore",
+          "A  .idea/ApifoxUploaderProjectSetting.xml",
+          "A  .idea/checkstyle-idea.xml",
+          "AM .idea/misc.xml",
+          "?? docs/plan/p0/README.md",
+          "?? docs/plan/p0/scripts/generate-frozen-baseline.mjs"
+        ]
+      }
+    },
+    {
+      "id": "cloud-agents-codex-fix",
+      "path": "/Users/huang/devel/project/huang/business/cloud-agents-portable-runtime",
+      "role": "uncommitted M1 fix; excluded from P0 baseline",
+      "branch": "fix/codex-runtime-isolation-null-policy",
+      "head": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+      "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8",
+      "upstream": "origin/main",
+      "upstreamOid": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+      "origin": "git@github.com:hxp0618/cloud-agents.git",
+      "status": {
+        "clean": false,
+        "counts": {
+          "staged": 1,
+          "unstaged": 1,
+          "untracked": 3
+        },
+        "entries": [
+          "M packages/cloud-agent-provider-codex/src/codexAppServerRuntime.test.ts",
+          " M packages/cloud-agent-provider-codex/src/codexRuntimeIsolation.ts",
+          "?? packages/cloud-agent-provider-codex/src/codexRuntimeIsolation.test.ts",
+          "?? packages/cloud-agent-provider-codex/test-fixtures/README.md",
+          "?? packages/cloud-agent-provider-codex/test-fixtures/codex-0.145.0-config-read.json"
+        ]
+      }
+    }
+  ],
+  "repositoryWorktreeRegistries": {
+    "synara": "worktree /Users/huang/devel/project/huang/business/synara\nHEAD b86d30b1aa6f383cf3a8453e6944abeaefe2db65\nbranch refs/heads/codex/saas-tenancy-user\n\nworktree /Users/huang/devel/project/huang/business/synara-cloud-agent-control-plane-plan\nHEAD 4433ebfcff882458822e90d9d79edb076c7ccc91\nbranch refs/heads/codex/cloud-agent-control-plane-plan\n\nworktree /Users/huang/devel/project/huang/business/synara-cloud-agent-external-runtime\nHEAD 2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0\nbranch refs/heads/codex/cloud-agent-external-runtime\n\nworktree /Users/huang/devel/project/huang/business/synara-cloud-agent-fresh\nHEAD 2f15f7437ef193057d73ac00c588a5019ab286fe\nbranch refs/heads/feat/cloud-agent\n\nworktree /Users/huang/devel/project/huang/business/synara-cloud-agent-hardening\nHEAD f9fb3d695c3188a1878475986133ffee64d8befc\nbranch refs/heads/codex/cloud-agent-runtime-hardening\n\nworktree /Users/huang/devel/project/huang/business/synara-stage-8\nHEAD fc9f63ac74eeb04cf201506972878ac15307a0e4\nbranch refs/heads/codex/stage-8-org-collaboration-mentions\n\nworktree /Users/huang/devel/project/huang/business/synara-t3-cloud-agent\nHEAD 8e96a57478aade96e53b11f55ae8fd08cb618a1c\nbranch refs/heads/codex/synara-t3-cloud-agent-integration",
+    "t3code": "worktree /Users/huang/devel/project/huang/business/t3code\nHEAD 8101cd044911c7dc2a2adf7c7a9ba7962abf57b6\nbranch refs/heads/main\n\nworktree /Users/huang/devel/project/huang/business/t3code-cloud-agent\nHEAD 98da34152ef79865db614aec20e406a311985f87\nbranch refs/heads/codex/cloud-agent-runtime-integration\n\nworktree /Users/huang/devel/project/huang/business/t3code-cloud-agent-fresh\nHEAD 9584a266e91fa94354e8c07f79af3a5e01755d16\nbranch refs/heads/feat/cloud-agent\n\nworktree /Users/huang/devel/project/huang/business/t3code-cloud-agent-hardening\nHEAD 6c4871416271a0a10f667f0a14881b1516834ebd\nbranch refs/heads/codex/cloud-agent-runtime-hardening\n\nworktree /Users/huang/devel/project/huang/business/t3code-cloud-agent-target\nHEAD 6b5b4a501a084efb2b7e3b5a110e2196238336a6\nbranch refs/heads/codex/saas-tenancy-user",
+    "cloudAgents": "worktree /Users/huang/devel/project/huang/business/cloud-agents\nHEAD 9698605cc5d2f3f0fb8e89d422d7bd20a49e1c64\nbranch refs/heads/codex/cloud-agents-platform-p0\n\nworktree /Users/huang/devel/project/huang/business/cloud-agents-portable-runtime\nHEAD 49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a\nbranch refs/heads/fix/codex-runtime-isolation-null-policy"
+  },
+  "sourceTrees": {
+    "synaraRoot": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+    "synaraControlPlane": "4d32d26bf32b8ebd62188961d0dffff92da4cf0c",
+    "synaraDeploy": "1d0369f6029f85bf0d3d14ddc81c235205169b45",
+    "synaraScripts": "999769dde39fced4a1711fd2e42fcc5ca2b00029"
+  },
+  "localRefs": {
+    "synara": [
+      {
+        "ref": "refs/heads/main",
+        "oid": "ce8728c47c853a6420adca0ce0925bfed67a0d7c",
+        "tree": "bd7d22c1cd4684ec81d8a3ede127fb9da27e1ae6"
+      },
+      {
+        "ref": "refs/heads/codex/saas-tenancy-user",
+        "oid": "b86d30b1aa6f383cf3a8453e6944abeaefe2db65",
+        "tree": "b1831be993942dd36ae1faac2fe3ebb5f72c48fc"
+      },
+      {
+        "ref": "refs/heads/codex/cloud-agent-external-runtime",
+        "oid": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+        "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc"
+      },
+      {
+        "ref": "refs/remotes/origin/main",
+        "oid": "95cd068a9f3b1ec3a80b50e4551eae1957aa26ea",
+        "tree": "109c31b6ae2460fc5c95975416155a302996c491"
+      },
+      {
+        "ref": "refs/remotes/origin/codex/saas-tenancy-user",
+        "oid": "b86d30b1aa6f383cf3a8453e6944abeaefe2db65",
+        "tree": "b1831be993942dd36ae1faac2fe3ebb5f72c48fc"
+      },
+      {
+        "ref": "refs/remotes/origin/codex/cloud-agent-external-runtime",
+        "oid": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+        "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc"
+      }
+    ],
+    "t3code": [
+      {
+        "ref": "refs/heads/main",
+        "oid": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+        "tree": "e98f5650379f428bf5dcc6e7cae287c68fb8b080"
+      },
+      {
+        "ref": "refs/heads/feat/cloud-agent",
+        "oid": "9584a266e91fa94354e8c07f79af3a5e01755d16",
+        "tree": "171624a2dbfb68f1d91f0a67175cbaf68f2947c2"
+      },
+      {
+        "ref": "refs/remotes/origin/main",
+        "oid": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+        "tree": "e98f5650379f428bf5dcc6e7cae287c68fb8b080"
+      },
+      {
+        "ref": "refs/remotes/origin/feat/cloud-agent",
+        "oid": "9584a266e91fa94354e8c07f79af3a5e01755d16",
+        "tree": "171624a2dbfb68f1d91f0a67175cbaf68f2947c2"
+      }
+    ],
+    "cloudAgents": [
+      {
+        "ref": "refs/heads/main",
+        "oid": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+        "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8"
+      },
+      {
+        "ref": "refs/heads/feat/portable-runtime",
+        "oid": "617f4f79e0441fd54346540e7f0290cb72e0f39e",
+        "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8"
+      },
+      {
+        "ref": "refs/heads/codex/cloud-agents-platform-p0",
+        "oid": "9698605cc5d2f3f0fb8e89d422d7bd20a49e1c64",
+        "tree": "052ff47317bbce2b54402cd1f4301247995aa5bd"
+      },
+      {
+        "ref": "refs/remotes/origin/main",
+        "oid": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+        "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8"
+      },
+      {
+        "ref": "refs/remotes/origin/feat/portable-runtime",
+        "oid": "617f4f79e0441fd54346540e7f0290cb72e0f39e",
+        "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8"
+      },
+      {
+        "ref": "refs/remotes/origin/codex/cloud-agents-platform-p0",
+        "oid": null
+      },
+      {
+        "ref": "refs/tags/cloud-agent-m1-rc.1",
+        "oid": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+        "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8"
+      }
+    ]
+  },
+  "liveRemotes": [
+    {
+      "repository": "synara",
+      "queriedRefs": [
+        "refs/heads/main",
+        "refs/heads/codex/saas-tenancy-user",
+        "refs/heads/codex/cloud-agent-external-runtime"
+      ],
+      "status": "unavailable",
+      "values": {},
+      "error": "spawnSync git ETIMEDOUT"
+    },
+    {
+      "repository": "t3code",
+      "queriedRefs": ["refs/heads/main", "refs/heads/feat/cloud-agent"],
+      "status": "unavailable",
+      "values": {},
+      "error": "spawnSync git ETIMEDOUT"
+    },
+    {
+      "repository": "cloud-agents",
+      "queriedRefs": [
+        "refs/heads/main",
+        "refs/heads/feat/portable-runtime",
+        "refs/heads/codex/cloud-agents-platform-p0",
+        "refs/tags/cloud-agent-m1-rc.1"
+      ],
+      "status": "unavailable",
+      "values": {},
+      "error": "spawnSync git ETIMEDOUT"
+    }
+  ],
+  "toolchains": {
+    "git": "git version 2.55.0",
+    "node": "v24.13.1",
+    "bun": "1.3.14",
+    "go": "go version go1.26.5 darwin/arm64"
+  }
+}

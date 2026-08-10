@@ -75,6 +75,7 @@ const liveRemoteQueries = [
       "refs/heads/feat/portable-runtime",
       "refs/heads/codex/cloud-agents-platform-p0",
       "refs/tags/cloud-agent-m1-rc.1",
+      "refs/tags/cloud-agent-m1-rc.1^{}",
     ],
   },
 ];
@@ -151,10 +152,23 @@ function localRefSnapshot(path, ref) {
     : { ref, oid: null };
 }
 
+function liveRemoteUrl(path) {
+  const origin = optionalGit(path, "remote", "get-url", "origin");
+  if (!origin) return null;
+  const githubScp = origin.match(/^git@github\.com:(.+)$/);
+  if (githubScp) return `https://github.com/${githubScp[1]}`;
+  const githubSsh = origin.match(/^ssh:\/\/git@github\.com\/(.+)$/);
+  if (githubSsh) return `https://github.com/${githubSsh[1]}`;
+  return origin;
+}
+
 function liveRemoteSnapshot(spec) {
-  const result = command("git", ["-C", spec.path, "ls-remote", "origin", ...spec.refs], {
-    timeout: 15_000,
-  });
+  const remote = liveRemoteUrl(spec.path);
+  const result = remote
+    ? command("git", ["-C", spec.path, "ls-remote", remote, ...spec.refs], {
+        timeout: 15_000,
+      })
+    : { ok: false, stdout: "", stderr: "origin remote is not configured", error: null };
   const values = {};
   if (result.ok) {
     for (const line of result.stdout.split("\n").filter(Boolean)) {
@@ -164,6 +178,7 @@ function liveRemoteSnapshot(spec) {
   }
   return {
     repository: spec.repository,
+    queriedRemote: remote,
     queriedRefs: spec.refs,
     status: result.ok ? "verified" : "unavailable",
     values,
