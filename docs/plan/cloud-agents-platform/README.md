@@ -21,8 +21,9 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 
 ## 当前执行边界
 
-用户已于 2026-08-10 批准 ADR-0006、D-001～D-021 并解除 P0 暂停。当前只授权 freeze、inventory、
-provenance、baseline characterization、evidence 与计划分支推送。仍不授权：
+用户已于 2026-08-10 批准 ADR-0006、D-001～D-021 并解除 P0 暂停；P0 执行期间又记录了应用既有
+fail-closed 原则的 D-022～D-023。当前只授权 freeze、inventory、provenance、baseline characterization、
+evidence 与计划分支推送。仍不授权：
 
 - 修改 Runtime、Go、Synara 或 T3Code 源码；
 - 提交/推送当前未完成的 Codex attestation 修复；
@@ -86,7 +87,7 @@ provenance、baseline characterization、evidence 与计划分支推送。仍不
 | 里程碑      | 目标                                                                | 当前状态    |
 | ----------- | ------------------------------------------------------------------- | ----------- |
 | M1          | Portable Runtime 七包与 embedded 双宿主；真实 Provider/M1 Gate open | PAUSED      |
-| P0          | 公共 Go 代码 inventory、provenance、authority/contract freeze       | PROPOSED    |
+| P0          | 公共 Go 代码 inventory、provenance、authority/contract freeze       | IN PROGRESS |
 | P1          | 公共 CP foundation：auth/project、Postgres/outbox、API/SDK          | NOT STARTED |
 | P2          | Managed Agent Plane：Session/Turn/Execution/Worker/Workspace        | NOT STARTED |
 | P3          | Managed Host core：CloudEnvironmentLease + public reference host    | NOT STARTED |

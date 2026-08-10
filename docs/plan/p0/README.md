@@ -9,19 +9,19 @@
 
 | Artifact                                                                                   | Purpose                                                     | Current state                                           |
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------- |
-| [`frozen-baseline.json`](frozen-baseline.json)                                             | 三仓 refs/tree/worktree/dirty/toolchain 与 live remote 查询 | generated；remote 可能因网络标 unavailable              |
+| [`frozen-baseline.json`](frozen-baseline.json)                                             | 三仓 refs/tree/worktree/dirty/toolchain 初始快照            | generated；live refs 由后续 verification 补齐           |
 | [`synara-file-inventory.tsv`](synara-file-inventory.tsv)                                   | frozen Synara 全 tracked tree metadata/seed classification  | generated；8,625 rows，含完整 root build context        |
 | [`synara-inventory-decisions.tsv`](synara-inventory-decisions.tsv)                         | owner/target/authority/license/secret/review final decision | generated；8,625 rows，exact secret triage bound        |
 | [`synara-inventory-graph.json`](synara-inventory-graph.json)                               | binary/image/deploy/external artifact nodes + edges         | generated；25 nodes/26 edges，no dangling/orphans       |
-| [`synara-inventory-summary.md`](synara-inventory-summary.md)                               | 数量、能力映射、混合包与生成链风险                          | R1 generated；`G-INVENTORY` open                        |
+| [`synara-inventory-summary.md`](synara-inventory-summary.md)                               | 数量、能力映射、混合包与生成链风险                          | R2 reviewed；`G-INVENTORY` verified                     |
 | [`baseline-characterization.md`](baseline-characterization.md)                             | spec/negative/reference-host 已有与缺失证据                 | corpus Git-bound；`G-BASELINE-P0` open                  |
 | [`provenance/runtime-supply-chain-audit.json`](provenance/runtime-supply-chain-audit.json) | immutable rc.1 Runtime dependency/license/secret audit      | complete audit；7 blockers，release unauthorized        |
 | [`provenance-summary.md`](provenance-summary.md)                                           | license/secret/dependency/build input provenance            | extraction PASS with restrictions；release unauthorized |
 
 Gate records：
 
-- [`G-INVENTORY` P0 R1](../cloud-agents-platform/evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R1.md)；
-- [`G-BASELINE` P0 R1](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R1.md)。
+- [`G-INVENTORY` P0 R2](../cloud-agents-platform/evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R2.md)（VERIFIED）；
+- [`G-BASELINE` P0 R1](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R1.md)（INVALIDATED；R2 pending）。
 
 ## Frozen-source rule
 

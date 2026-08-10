@@ -5,7 +5,7 @@
 | Gate                 | 阻塞                | 退出证据                                                                                                                             |
 | -------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `G-INVENTORY`        | P0                  | frozen ref 的全量 code/SQL/schema/build/deploy/generated manifest、分类、source/tree hash、authority、license/secret provenance 完整 |
-| `G-BASELINE`         | P0/M1               | legacy Synara managed-agent、T3 embedded、可复用机制 characterization；Managed Host 用 spec/negative/reference-host fixtures         |
+| `G-BASELINE`         | P0/M1 phase records | P0 characterization 与 M1 真实 Provider baseline 分别关闭；aggregate 只在两个 record 同时有效时关闭                                  |
 | `G-CONTRACT`         | P1                  | OpenAPI/JSON Schema、TS/Go SDK、server validator、API reliability、golden/negative fixture 同源                                      |
 | `G-DATA`             | P1                  | Postgres expand/contract、idempotency、outbox、leader、backup/restore、N/N-1                                                         |
 | `G-AUTHORITY`        | P1–P6 phase records | 三种模式 owner 唯一；无 Session/Turn/Lease/Workspace 双写                                                                            |
@@ -29,6 +29,7 @@ record 同时有效时标记 `VERIFIED`：
 
 | Aggregate Gate     | Required phase records                         |
 | ------------------ | ---------------------------------------------- |
+| `G-BASELINE`       | `G-BASELINE-P0`、`G-BASELINE-M1`               |
 | `G-AUTHORITY`      | `G-AUTHORITY-P1` … `G-AUTHORITY-P6`            |
 | `G-SECURITY`       | `G-SECURITY-P1` … `G-SECURITY-P6`              |
 | `G-ADAPTER`        | `G-ADAPTER-P2`、`G-ADAPTER-P3`、`G-ADAPTER-P4` |
@@ -38,6 +39,12 @@ phase record 状态只允许 `NOT STARTED`、`IN PROGRESS`、`VERIFIED`、`INVAL
 record、authority scope、source/dirty/toolchain、contract/module/SDK/image/migration/manifest digest、原样命令、
 逐项结果、DRI/独立 reviewer 与 downstream invalidation rule。阶段 Exit 只依赖该阶段 record，不声称未来阶段
 已验证；Platform RC 才验证上述 aggregate Gate。
+
+`G-BASELINE-P0` 只验证固定 ref 的 Synara legacy managed-agent、T3 embedded、可复用机制实际
+characterization，以及 greenfield Managed Host 的 immutable spec/negative/reference-host oracle；它不得要求或
+声称真实 Codex/Claude M1 行为。`G-BASELINE-M1` 才验证 Protocol 2.2/2.3、真实 Codex/Claude
+happy/auth/rate-limit/unavailable/resume、SendTurn/workspace/checkpoint/reconnect 的同输入基线。P0 Exit 只依赖
+`G-BASELINE-P0`；M1/Platform RC 才要求 aggregate `G-BASELINE`。
 
 失效规则至少为：contract/core/store 改动使 P1–P6 record 失效；Worker/adapter 改动使相关 P2–P6 record
 失效；Standalone/security/ops 改动使 P4–P6 record 失效；Synara adapter/cutover 改动使 P5–P6 record

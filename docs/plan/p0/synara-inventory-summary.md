@@ -105,8 +105,9 @@ artifacts` 是跨语言、跨镜像边。
    `COPY . .`，并以独立 public workspace/lock 和 allowlisted image context 替代，不能把 Synara-only blob 带入。
 7. migration 与 worker image cache 耦合，不能用“文件进入镜像层”推断 Runtime authority。
 
-当前 final decision 的 adapter/core 不变量、full-tree completeness 与 source/secret provenance 可重放；
-`G-INVENTORY` 仍因独立终审与 R2 closure record 未完成而为 `IN PROGRESS`，P1 不得开始。
+当前 final decision 的 adapter/core 不变量、full-tree completeness 与 source/secret provenance 已由独立终审
+复核，并以 `CAG-G-INVENTORY-P0-20260810-R2` 将 `G-INVENTORY` 标为 `VERIFIED`。Platform P0 仍缺
+`G-BASELINE-P0`，因此 P1 仍不得开始。
 
 ## Reproduce
 

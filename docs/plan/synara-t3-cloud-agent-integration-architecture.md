@@ -116,7 +116,7 @@ M1 Portable Runtime RC + Embedded 验收（当前暂停）
 | ---------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
 | M0 基线                            | golden frames、真实 Codex/Claude happy/failure path、前后行为可比较            | 未完成真实 Provider 路径                  |
 | M1：Phase 1–3                      | 七个包 + T3 thin bridge + Synara 兼容壳 + 双宿主进程级 conformance + 不可变 RC | source implementation in progress，未验收 |
-| P0：Inventory                      | frozen-ref 全量输入分类、authority、characterization、provenance               | 计划修订中，未实施                        |
+| P0：Inventory                      | frozen-ref 全量输入分类、authority、characterization、provenance               | 执行中；Gate 尚未关闭                     |
 | P1：Public Foundation              | contracts/SDK、basic tenancy/RBAC、Postgres/outbox/reconciler                  | 未开始                                    |
 | P2：Managed Agent                  | Session/Turn/Execution/Worker/Workspace/Artifact/Credential                    | 未开始                                    |
 | P3：Managed Host                   | Lease、同 Workspace、proof connection、generation/broker                       | 未开始                                    |
@@ -1882,11 +1882,11 @@ event 或 text-generation operation 时都视为 live；只有 Runtime 明确 qu
 
 | 工程阶段    | 所属里程碑/轨道    | 当前判定 | 阶段关闭所需 Gate                                                                                     | 进入下一步前仍缺少的决定性证据                                                 |
 | ----------- | ------------------ | -------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Phase 0     | M0                 | 未完成   | `G-BASELINE`                                                                                          | 真实 Codex/Claude happy/failure characterization                               |
+| Phase 0     | M0                 | 未完成   | `G-BASELINE-M1`                                                                                       | 真实 Codex/Claude happy/failure characterization                               |
 | Phase 1     | M1                 | 部分完成 | `G-SCHEMA`                                                                                            | schema → TS/runtime decoder 单一来源与完整 golden compatibility                |
 | Phase 2     | M1                 | 部分完成 | `G-PKG`、`G-REGISTRY`                                                                                 | 公开发布后的独立升级/回滚、固定 clean ref 的 RC same-bits 复跑                 |
 | Phase 3     | M1                 | 部分完成 | `G-ARCH`、`G-CONFORMANCE`、`G-T3-DRAIN`、`G-E2E`                                                      | 同制品双宿主 suite、真实 Provider Turn、process restart/soak E2E               |
-| Platform P0 | Inventory          | 进行中   | `G-INVENTORY`、`G-BASELINE`                                                                           | frozen-ref 全量 manifest、authority/provenance、baseline evidence              |
+| Platform P0 | Inventory          | 进行中   | `G-INVENTORY`、`G-BASELINE-P0`                                                                        | frozen-ref 全量 manifest、authority/provenance、baseline evidence              |
 | Platform P1 | Foundation         | 未开始   | `G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1`                                             | contracts、SDK、basic RBAC、Postgres/outbox/reconciler                         |
 | Platform P2 | Managed Agent      | 未开始   | `G-MANAGED-AGENT`、`G-WORKER-FENCING-P2`、`G-AUTHORITY-P2`、`G-ADAPTER-P2`、`G-SECURITY-P2`           | Session/Turn/Execution/Worker/Workspace/Artifact/Credential                    |
 | Platform P3 | Managed Host       | 未开始   | `G-MANAGED-HOST`、`G-WORKER-FENCING-P3`、`G-AUTHORITY-P3`、`G-ADAPTER-P3`、`G-SECURITY-P3`            | CloudEnvironmentLease、reference host、signed workload descriptor              |
@@ -2086,7 +2086,7 @@ D4 只按已批准子项目逐项关闭，不存在用一个市场/Provider smok
 反向带入。Gate 的 owner、状态和退出证据以第 19 节的唯一表格为准。每次执行必须固定 Synara/T3 commit、
 toolchain 和 Distribution/Provider 版本，并把命令、CI job、日志与制品 digest 写入该 Gate 的 closure record。
 
-### 18.1 G-BASELINE：重构前 characterization
+### 18.1 G-BASELINE-P0 / G-BASELINE-M1：重构前 characterization
 
 - 固定 Synara/T3 commit、Provider 工具版本和 capability matrix；
 - 保存 Provider Host Protocol v2.2 golden frames；
@@ -2095,7 +2095,10 @@ toolchain 和 Distribution/Provider 版本，并把命令、CI job、日志与�
   workspace/broker/release/pairing 机制；Managed Host 是 greenfield，只能建立 spec/negative/reference-host
   baseline，不要求不存在的 legacy managed-host 证据；
 - 重构后使用同一输入和断言复跑，不用新实现结果倒推旧基线；
-- 输出：版本化 golden/characterization artifact、脱敏日志与前后差异报告，登记到 G-BASELINE closure record。
+- `G-BASELINE-P0` 只关闭 legacy Synara/T3 mechanisms 与 greenfield reference-host 基线；
+  `G-BASELINE-M1` 才关闭真实 Provider/SendTurn/reconnect 行为。两个 phase record 同时有效后才能关闭
+  aggregate `G-BASELINE`；
+- 输出：版本化 golden/characterization artifact、脱敏日志与前后差异报告，登记到对应 phase closure record。
 
 ### 18.2 G-ARCH：公共边界与单一 authority
 
@@ -2281,35 +2284,37 @@ D1 Lease Lifecycle DRI、D2 T3 Upstream DRI、D3 Polaris Backend DRI、D4 Provid
 下表是 M1/M2 的**唯一权威完成口径**。`open` 表示已有部分源码或本地验证证据但退出条件尚未全部满足；
 `not started` 表示对应产品面尚未实施。focused test、build、pack dry-run 或一次握手都不能单独改变状态。
 
-| Gate               | DRI（责任角色）              | 阻塞里程碑  | 当前状态    | 必须同时满足的退出证据                                                                                                                                                                                       |
-| ------------------ | ---------------------------- | ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| G-BASELINE         | Cloud Agent Integration DRI  | M0、M1、P0  | open        | 固定 commit 上保存 v2.2 golden + 真实 Codex/Claude characterization；Platform P0 保存 legacy managed-agent、T3 embedded、可复用机制，并为 greenfield Managed Host 建立 spec/negative/reference-host baseline |
-| G-ARCH             | Cloud Agent Architecture DRI | M1          | open        | 公共 ABI/依赖保持 app-neutral；Runtime、Host Adapter 与 Workspace/Checkpoint authority 单一；Provider Host v2 无破坏；Instance 状态隔离                                                                      |
-| G-PKG              | Provider Packaging DRI       | M1          | open        | Codex/Claude 实现、probe 与 upstream 依赖物理迁入各自 Provider 包；两包可独立安装、发布和回滚，且不会互相拉入另一 Provider 的 SDK                                                                            |
-| G-REGISTRY         | Distribution DRI             | M1          | open        | Distribution stdio 从显式默认 Plugin registry 启动；实际 bin 的 allowlist、Describe 与禁用行为由同一 registry 控制，不再进入 legacy handler                                                                  |
-| G-SCHEMA           | Protocol DRI                 | M1          | open        | Protocol schema、TypeScript 与 runtime decoder 由一个可审计来源生成/校验；真实 v2.2 handler golden 与 additive v2.3 兼容门禁通过                                                                             |
-| G-CONFORMANCE      | Conformance DRI              | M1          | open        | 两宿主共同消费进程级 suite，覆盖 correlation、取消/迟到帧、背压、crash/resume、Stop outcome、GenerateText、secret、path/symlink 与 capability 一致性                                                         |
-| G-T3-DRAIN         | T3 Bridge DRI                | M1          | open        | terminal/event pump 有显式 ACK/drain barrier；server/process restart 后 durable history 可恢复，`turn.completed` 不早于全部事件投影                                                                          |
-| G-RELEASE-M1       | Release Engineering DRI      | M1          | open        | packed dependency 已改写为精确 semver；Distribution 暴露 manifest/schema；外部 install/import/bin smoke、digest/provenance/SBOM、upgrade/rollback 通过；同 digest 的 G-E2E 已关闭                            |
-| G-E2E              | Integration Acceptance DRI   | M1          | open        | 对 G-RELEASE-M1 生成的同一不可变 candidate digest 完成真实 Codex/Claude Turn、文件/checkpoint/rollback、双 Provider soak、Synara 回归与 T3 crash/reconnect E2E                                               |
-| G-INVENTORY        | Platform Architecture DRI    | P0          | not started | frozen ref 的全量 code/SQL/schema/build/deploy/generated manifest、分类、source/tree hash、authority、license/secret provenance 完整                                                                         |
-| G-CONTRACT         | Platform Protocol DRI        | P1          | not started | Managed Agent/Host/Worker/Adapter contracts、TS/Go SDK、server validators 与 golden/negative fixtures 同源                                                                                                   |
-| G-DATA             | Platform Data DRI            | P1          | not started | basic org/project/RBAC、Postgres expand/contract、idempotency/outbox/leader、backup/restore 与 N/N-1                                                                                                         |
-| G-AUTHORITY        | Platform Architecture DRI    | P1–P6       | not started | P1–P6 phase records 全部有效；embedded/managed-agent/managed-host 的 Session/Turn/Lease/Workspace writer 唯一                                                                                                |
-| G-MANAGED-AGENT    | Managed Agent DRI            | P2          | not started | Session/Turn/Execution/Worker/Workspace/Artifact/Credential 的真实 Provider E2E                                                                                                                              |
-| G-WORKER-FENCING   | Worker Security DRI          | P2/P3       | not started | P2/P3 phase records 全部有效；stale generation 无法 heartbeat/ready/取密/发 endpoint/提交终态；revoke/reap 完整                                                                                              |
-| G-MANAGED-HOST     | Managed Host DRI             | P3          | not started | Reference host 的 Lease/Generation/workload/volume/endpoint/grant/cleanup 与 signed descriptor conformance                                                                                                   |
-| G-ADAPTER          | Platform Adapter DRI         | P2–P4       | not started | P2–P4 phase records 全部有效；built-in 与 out-of-process adapter protocol 的 mTLS/capability/幂等/deadline/receipt conformance                                                                               |
-| G-SECURITY         | Platform Security DRI        | P1–P6       | not started | P1–P6 phase records全部有效；tenant isolation、五类身份、SSRF/DNS、secret/cache/log、path/symlink、rate limit、downgrade、host cutover负向测试                                                               |
-| G-OPS              | Platform Operations DRI      | P4          | not started | DB/leader/outbox/retry/orphan/partial create、HA、backup/restore、upgrade/rollback、SLO/runbook                                                                                                              |
-| G-STANDALONE       | Platform Release DRI         | P4          | not started | 无 Synara 私有依赖的 fresh Compose/Helm 完成真实 Codex/Claude Turn 与 cleanup                                                                                                                                |
-| G-SYNARA-CUTOVER   | Synara Migration DRI         | P5          | not started | shadow/canary/single-writer/failback、legacy drain、重复公共源码删除                                                                                                                                         |
-| G-T3-INTEGRATION   | T3 Managed DRI               | P6          | not started | embedded 不回归；managed direct/relay proof-bound、Bearer 拒绝、真实 T3 E2E/soak                                                                                                                             |
-| G-SUPPLY-CHAIN     | Platform Release DRI         | Release     | not started | module/tag/image/chart/SDK/host descriptor digest、SBOM/provenance/signature/license/secret/CVE/VEX/base-image gate                                                                                          |
-| G-PLATFORM-RELEASE | Release Engineering DRI      | Platform RC | not started | 全部 phase/aggregate Gate 与 G-SUPPLY-CHAIN 有效；同 platform manifest 的 standalone/Synara/T3 E2E、install/upgrade/rollback 全闭合                                                                          |
-| G-EXPOSURE         | Product Release DRI          | 对外发布    | not started | 分 channel 批准目标用户范围、支持等级、Registry、升级/回滚与事故响应；未批准的 Platform module/image/chart/channel 不得开放，不反向否认既有 Runtime source/prerelease                                        |
+| Gate               | DRI（责任角色）              | 阻塞里程碑  | 当前状态    | 必须同时满足的退出证据                                                                                                                                                            |
+| ------------------ | ---------------------------- | ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G-BASELINE-P0      | Platform Architecture DRI    | P0          | open        | 固定 ref 实际执行 legacy Synara/T3 mechanism characterization，并保存 greenfield Managed Host immutable spec/negative/reference-host baseline；不声称真实 Provider 行为           |
+| G-BASELINE-M1      | Cloud Agent Integration DRI  | M0、M1      | not started | 固定 commit/candidate 上保存 v2.2/2.3 golden 与真实 Codex/Claude happy/auth/rate-limit/unavailable/resume、SendTurn/workspace/checkpoint/reconnect 同输入 baseline                |
+| G-BASELINE         | Cloud Agent Integration DRI  | M1/RC       | open        | `G-BASELINE-P0` 与 `G-BASELINE-M1` 两个 phase record 同时有效                                                                                                                     |
+| G-ARCH             | Cloud Agent Architecture DRI | M1          | open        | 公共 ABI/依赖保持 app-neutral；Runtime、Host Adapter 与 Workspace/Checkpoint authority 单一；Provider Host v2 无破坏；Instance 状态隔离                                           |
+| G-PKG              | Provider Packaging DRI       | M1          | open        | Codex/Claude 实现、probe 与 upstream 依赖物理迁入各自 Provider 包；两包可独立安装、发布和回滚，且不会互相拉入另一 Provider 的 SDK                                                 |
+| G-REGISTRY         | Distribution DRI             | M1          | open        | Distribution stdio 从显式默认 Plugin registry 启动；实际 bin 的 allowlist、Describe 与禁用行为由同一 registry 控制，不再进入 legacy handler                                       |
+| G-SCHEMA           | Protocol DRI                 | M1          | open        | Protocol schema、TypeScript 与 runtime decoder 由一个可审计来源生成/校验；真实 v2.2 handler golden 与 additive v2.3 兼容门禁通过                                                  |
+| G-CONFORMANCE      | Conformance DRI              | M1          | open        | 两宿主共同消费进程级 suite，覆盖 correlation、取消/迟到帧、背压、crash/resume、Stop outcome、GenerateText、secret、path/symlink 与 capability 一致性                              |
+| G-T3-DRAIN         | T3 Bridge DRI                | M1          | open        | terminal/event pump 有显式 ACK/drain barrier；server/process restart 后 durable history 可恢复，`turn.completed` 不早于全部事件投影                                               |
+| G-RELEASE-M1       | Release Engineering DRI      | M1          | open        | packed dependency 已改写为精确 semver；Distribution 暴露 manifest/schema；外部 install/import/bin smoke、digest/provenance/SBOM、upgrade/rollback 通过；同 digest 的 G-E2E 已关闭 |
+| G-E2E              | Integration Acceptance DRI   | M1          | open        | 对 G-RELEASE-M1 生成的同一不可变 candidate digest 完成真实 Codex/Claude Turn、文件/checkpoint/rollback、双 Provider soak、Synara 回归与 T3 crash/reconnect E2E                    |
+| G-INVENTORY        | Platform Architecture DRI    | P0          | verified    | `CAG-G-INVENTORY-P0-20260810-R2`：8,625-row full-tree manifest、authority/classification、source/license/secret provenance 与 referential graph 可重放                            |
+| G-CONTRACT         | Platform Protocol DRI        | P1          | not started | Managed Agent/Host/Worker/Adapter contracts、TS/Go SDK、server validators 与 golden/negative fixtures 同源                                                                        |
+| G-DATA             | Platform Data DRI            | P1          | not started | basic org/project/RBAC、Postgres expand/contract、idempotency/outbox/leader、backup/restore 与 N/N-1                                                                              |
+| G-AUTHORITY        | Platform Architecture DRI    | P1–P6       | not started | P1–P6 phase records 全部有效；embedded/managed-agent/managed-host 的 Session/Turn/Lease/Workspace writer 唯一                                                                     |
+| G-MANAGED-AGENT    | Managed Agent DRI            | P2          | not started | Session/Turn/Execution/Worker/Workspace/Artifact/Credential 的真实 Provider E2E                                                                                                   |
+| G-WORKER-FENCING   | Worker Security DRI          | P2/P3       | not started | P2/P3 phase records 全部有效；stale generation 无法 heartbeat/ready/取密/发 endpoint/提交终态；revoke/reap 完整                                                                   |
+| G-MANAGED-HOST     | Managed Host DRI             | P3          | not started | Reference host 的 Lease/Generation/workload/volume/endpoint/grant/cleanup 与 signed descriptor conformance                                                                        |
+| G-ADAPTER          | Platform Adapter DRI         | P2–P4       | not started | P2–P4 phase records 全部有效；built-in 与 out-of-process adapter protocol 的 mTLS/capability/幂等/deadline/receipt conformance                                                    |
+| G-SECURITY         | Platform Security DRI        | P1–P6       | not started | P1–P6 phase records全部有效；tenant isolation、五类身份、SSRF/DNS、secret/cache/log、path/symlink、rate limit、downgrade、host cutover负向测试                                    |
+| G-OPS              | Platform Operations DRI      | P4          | not started | DB/leader/outbox/retry/orphan/partial create、HA、backup/restore、upgrade/rollback、SLO/runbook                                                                                   |
+| G-STANDALONE       | Platform Release DRI         | P4          | not started | 无 Synara 私有依赖的 fresh Compose/Helm 完成真实 Codex/Claude Turn 与 cleanup                                                                                                     |
+| G-SYNARA-CUTOVER   | Synara Migration DRI         | P5          | not started | shadow/canary/single-writer/failback、legacy drain、重复公共源码删除                                                                                                              |
+| G-T3-INTEGRATION   | T3 Managed DRI               | P6          | not started | embedded 不回归；managed direct/relay proof-bound、Bearer 拒绝、真实 T3 E2E/soak                                                                                                  |
+| G-SUPPLY-CHAIN     | Platform Release DRI         | Release     | not started | module/tag/image/chart/SDK/host descriptor digest、SBOM/provenance/signature/license/secret/CVE/VEX/base-image gate                                                               |
+| G-PLATFORM-RELEASE | Release Engineering DRI      | Platform RC | not started | 全部 phase/aggregate Gate 与 G-SUPPLY-CHAIN 有效；同 platform manifest 的 standalone/Synara/T3 E2E、install/upgrade/rollback 全闭合                                               |
+| G-EXPOSURE         | Product Release DRI          | 对外发布    | not started | 分 channel 批准目标用户范围、支持等级、Registry、升级/回滚与事故响应；未批准的 Platform module/image/chart/channel 不得开放，不反向否认既有 Runtime source/prerelease             |
 
-G-BASELINE 关闭是进入 M1 验收的前置条件；G-ARCH、G-PKG、G-REGISTRY、G-SCHEMA、G-CONFORMANCE、
+`G-BASELINE-P0` 关闭后才可进入 Platform P1；aggregate `G-BASELINE` 关闭是进入 M1 验收的前置条件；G-ARCH、G-PKG、G-REGISTRY、G-SCHEMA、G-CONFORMANCE、
 G-T3-DRAIN、G-RELEASE-M1 与 G-E2E 也全部关闭后，M1 工程里程碑才完成并形成 RC。Platform 的
 全部单阶段 Gate 和 `G-AUTHORITY/G-WORKER-FENCING/G-ADAPTER/G-SECURITY` aggregate Gate 验证有效、
 `G-SUPPLY-CHAIN` 关闭，且同一 platform manifest 关闭 `G-PLATFORM-RELEASE` 后，
