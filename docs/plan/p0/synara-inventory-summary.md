@@ -1,6 +1,6 @@
 # Synara Control Plane P0 inventory summary
 
-- Status：IN PROGRESS
+- Status：VERIFIED
 - Frozen source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Root tree：`ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc`
 - Control Plane tree：`4d32d26bf32b8ebd62188961d0dffff92da4cf0c`
@@ -106,8 +106,11 @@ artifacts` 是跨语言、跨镜像边。
 7. migration 与 worker image cache 耦合，不能用“文件进入镜像层”推断 Runtime authority。
 
 当前 final decision 的 adapter/core 不变量、full-tree completeness 与 source/secret provenance 已由独立终审
-复核，并以 `CAG-G-INVENTORY-P0-20260810-R2` 将 `G-INVENTORY` 标为 `VERIFIED`。Platform P0 仍缺
-`G-BASELINE-P0`，因此 P1 仍不得开始。
+复核。P1 contract review 随后发现 R2 的 24 个 legacy helper 与 42 个 legacy contract target 违反公开 SDK 与
+正式 wire authority 边界；R3 只纠正这 66 个 target，不改变 classification、owner、capability、source、license
+或 secret triage，并新增对应 fail-closed invariant。`CAG-G-INVENTORY-P0-20260810-R3` 已 supersede R2，将
+`G-INVENTORY` 保持为 `VERIFIED`；`G-BASELINE-P0` R3 已将未变化的行为证据重绑定到 Inventory R3，因此
+P1 Entry satisfied。
 
 ## Reproduce
 

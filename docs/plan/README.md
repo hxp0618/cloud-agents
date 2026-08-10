@@ -49,8 +49,10 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 ## 执行边界
 
-P0 已按两个 independently reviewed closure record 完成；P1 Entry 已满足但尚未开始实现。P1 仅允许在公共
-仓实施 contracts、Go/TS SDK、数据模型、authority 与安全基础；不得由 P0 结论外推：
+P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R3 两个 independently reviewed closure record 完成；
+P1 Entry 已满足但尚未开始实现。Inventory R2 因 66 个公开 target 的 ABI/authority 方向冲突被 R3 supersede，
+任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS SDK、数据模型、
+authority 与安全基础；不得由 P0 结论外推：
 
 - P2–P6 Managed Agent/Host、Standalone 或 Synara/T3 cutover；
 - M1 rc.2 或真实 Provider E2E；

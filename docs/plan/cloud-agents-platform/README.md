@@ -22,9 +22,11 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 ## 当前执行边界
 
 用户已于 2026-08-10 批准 ADR-0006、D-001～D-021 并解除 P0 暂停；P0 执行期间又记录了应用既有
-fail-closed 原则与 local-first 验证策略的 D-022～D-024。P0 已由 `G-INVENTORY` R2 和
-`G-BASELINE-P0` R2 关闭，因此 P1 Entry 满足；下一步只允许在公共仓实施 P1 contracts、Go/TS SDK、
-数据模型、authority 与安全基础。仍不授权：
+fail-closed 原则与 local-first 验证策略的 D-022～D-024。P0 当前由 `G-INVENTORY` R3 和
+`G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
+helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
+decision digest 的下游证据不得继承。下一步只允许在公共仓实施 P1 contracts、Go/TS SDK、数据模型、
+authority 与安全基础。仍不授权：
 
 - 修改 Runtime M1 行为、Synara 或 T3Code 源码；
 - 提前实施 P2–P6 Managed Agent/Host、Standalone 或宿主 cutover；
