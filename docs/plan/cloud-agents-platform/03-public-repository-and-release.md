@@ -8,13 +8,16 @@ cloud-agents/
 ├── packages/                              # 现有七个 TS Runtime 包
 ├── contracts/
 │   ├── runtime/v2/
+│   ├── common/v1alpha1/                   # JSON Schema primitives + fixtures
+│   ├── platform/v1alpha1/                 # tenant/RBAC/authority JSON Schema
 │   ├── managed-agent/v1alpha1/
 │   ├── managed-host/v1alpha1/
-│   ├── worker/v1alpha1/
-│   └── platform-adapter/v1alpha1/
+│   ├── worker/v1alpha1/                   # Proto3/ConnectRPC
+│   ├── platform-adapter/v1alpha1/         # Proto3/ConnectRPC
+│   └── generation.lock.json               # generator version/digest/args
 ├── sdk/
-│   ├── typescript/
-│   └── go/                                # 独立 go.mod：generated contracts/client
+│   ├── typescript/                        # generated HTTP/optional Connect clients
+│   └── go/                                # go.mod：generated contracts/client
 ├── services/
 │   ├── control-plane/                     # 独立 go.mod；含 CP/CLI cmd
 │   │   └── adapters/postgres|oidc|otlp/
@@ -34,42 +37,54 @@ cloud-agents/
 ## 2. Module 与 import 规则
 
 - TS Runtime 七包保持独立 semver；
+- P1 Go toolchain 固定为 `1.26.5`；根 `.mise.toml`、三个 module 的 `toolchain go1.26.5`、generator、CI 与
+  release provenance 必须记录同一完整 patch version，不能退化成 `1.26` 或 `latest`；变更 toolchain 需要
+  新的决策与 same-bits 证据；
 - Go SDK module：`github.com/hxp0618/cloud-agents/sdk/go`，tag `sdk/go/vX.Y.Z`；
 - Go Control Plane module：`github.com/hxp0618/cloud-agents/services/control-plane`，tag
   `services/control-plane/vX.Y.Z`；
 - Go Worker module：`github.com/hxp0618/cloud-agents/services/worker`，tag `services/worker/vX.Y.Z`；
 - `cloud-agent-control-plane` 与 `cloud-agent-cli` command 归 Control Plane module；Supervisor/Worker command
   归 Worker module；
-- import DAG 固定为 `contracts -> sdk/go -> control-plane|worker`；Control Plane 与 Worker 不互相 import
-  service/internal，只通过 Worker wire/SDK 通信；
-- `go.work` 仅用于仓内开发，发布 module 不得依赖 workspace replace；
+- authority/generation/consumer flow 固定为 `contracts -> sdk/go -> services/control-plane|services/worker`；Go
+  import direction 则是 `services/control-plane|services/worker -> sdk/go`。`sdk/go` 不 import 任一 service，
+  Control Plane 与 Worker 不互相 import service/internal，只通过 generated Worker wire 通信；
+- `go.work` 仅用于仓内开发，三个 module 的 `go.mod`/`go.sum` 必须各自可在 `GOWORK=off` 下下载、构建与测试；
+  禁止提交任何 local/path `replace`，candidate/release gate 必须扫描并拒绝 `replace`；
 - 对外 Go ABI 只承诺 generated contracts/client SDK；server domain/service/database model 全部 internal；
 - Platform Adapter 是版本化 out-of-process wire，不是宿主 import service package；
-- contracts 是唯一 wire source，SDK/server validator/fixtures 必须生成或校验一致；
+- HTTP JSON data model 以 JSON Schema 为唯一 source，OpenAPI 拥有 HTTP operation 并引用 schema；Worker/
+  Adapter RPC 以 Proto3 为唯一 source。SDK/server validator/fixtures 必须从对应 authority 生成或校验一致；
 - contracts、TS SDK、Go SDK 各自固定 semver 与 immutable digest；SDK manifest 绑定 contract digest、
-  generator name/version，CP/Worker 精确 pin SDK/contract，发布检查禁止 `replace`、`workspace:`、`file:`；
-- v1alpha1 支持 N/N-1 reader 与 unknown-field preservation；breaking field/semantic change 必须新 API major，
+  generator name/version、generator image-or-binary digest、参数与输出 tree digest，CP/Worker 精确 pin
+  SDK/contract，发布检查禁止 `replace`、`workspace:`、`file:`；
+- `contracts/generation.lock.json` 是生成器锁；TS SDK 与 Go SDK 各自提交 generated manifest。CI 必须使用锁定
+  generator 在 clean tree 重生成并 byte-identical diff-check，禁止以开发机 PATH 上的浮动 generator 发布；
+- 旧 Synara Go helper、server/domain model、旧 `docs/contracts` prose 和迁移说明只能作为 provenance-bound
+  legacy oracle，不得复制进 `sdk/go`、生成 manifest 或 public compatibility promise；
+- v1alpha1 一般资源支持 N/N-1 reader 与 unknown-field preservation；`NamespaceRef` 等参与签名、授权、路由和
+  canonical digest 的安全原语是严格例外，必须拒绝额外字段。breaking field/semantic change 必须新 API major，
   deprecated surface 至少保留一个已发布 minor 与明确 removal date；
 - Runtime workflow 不隐式构建 Go 服务，平台 workflow 不重打 Runtime tag；
-- Go toolchain 在 P0 固定；服务/Worker 首批只支持 Linux amd64/arm64，CLI 支持 Linux/macOS/Windows
+- 服务/Worker 首批只支持 Linux amd64/arm64，CLI 支持 Linux/macOS/Windows
   amd64/arm64；默认 `CGO_ENABLED=0`，任何例外单独登记 SBOM/OS matrix。
 
 ## 3. 公共制品
 
-| 制品                   | 内容                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------- |
-| Runtime release        | 七 tarball、standalone、schema、manifest、checksums、SBOM、provenance                 |
-| Contract release       | OpenAPI/JSON Schema bundle、golden/negative fixtures、checksums/signature             |
-| TS SDK release         | `@synara/cloud-agent-platform-sdk` packed ESM/CJS/types、validators/client            |
-| Go SDK release         | generated contracts/client module                                                     |
-| Control Plane release  | Go module、Linux amd64/arm64 binary/OCI image、signed migration bundle                |
-| CLI assets (CP train)  | Linux/macOS/Windows amd64/arm64 binary、checksums/signature                           |
-| Worker release         | Linux amd64/arm64 Supervisor/Worker binary/images、runtime compatibility、attestation |
-| Adapter release        | built-in adapter 随 CP/Worker；外部 adapter 使用独立 signed descriptor/image          |
-| Deployment release     | signed Compose bundle、Helm chart、values schema、SBOM、upgrade/rollback docs         |
-| Platform manifest      | 固定 CP/Worker/Runtime/contract/adapter/image digest matrix                           |
-| Reference host release | P3 Managed Host conformance 的公开 reference workload image/descriptor                |
-| T3 workload descriptor | 来自 T3 repo 的 signed descriptor，固定 public image/bundle digest                    |
+| 制品                   | 内容                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| Runtime release        | 七 tarball、standalone、schema、manifest、checksums、SBOM、provenance                           |
+| Contract release       | OpenAPI/JSON Schema bundle、Proto descriptor set、golden/negative fixtures、checksums/signature |
+| TS SDK release         | `@synara/cloud-agent-platform-sdk` packed ESM/CJS/types、validators/client                      |
+| Go SDK release         | generated contracts/client module                                                               |
+| Control Plane release  | Go module、Linux amd64/arm64 binary/OCI image、signed migration bundle                          |
+| CLI assets (CP train)  | Linux/macOS/Windows amd64/arm64 binary、checksums/signature                                     |
+| Worker release         | Linux amd64/arm64 Supervisor/Worker binary/images、runtime compatibility、attestation           |
+| Adapter release        | built-in adapter 随 CP/Worker；外部 adapter 使用独立 signed descriptor/image                    |
+| Deployment release     | signed Compose bundle、Helm chart、values schema、SBOM、upgrade/rollback docs                   |
+| Platform manifest      | 固定 CP/Worker/Runtime/contract/adapter/image digest matrix                                     |
+| Reference host release | P3 Managed Host conformance 的公开 reference workload image/descriptor                          |
+| T3 workload descriptor | 来自 T3 repo 的 signed descriptor，固定 public image/bundle digest                              |
 
 ## 4. Release train
 

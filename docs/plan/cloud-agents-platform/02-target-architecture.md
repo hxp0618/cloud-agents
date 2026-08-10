@@ -38,6 +38,29 @@ flowchart TB
 Synara/T3/其他宿主都不 import Control Plane 的私有 Go 包；它们消费公共 OpenAPI/TS/Go SDK、CLI 或
 immutable service image。公共仓自身必须能在 Compose 和 Kubernetes profile 中完成部署。
 
+### 1.1 P1 contract 与 transport authority
+
+P1 不用一个 IDL 模糊覆盖所有链路。每条公开 wire 的唯一 source of truth 固定如下；详细 rationale 由
+[ADR-0007](../adr/0007-p1-contract-data-toolchain-foundation.md) 记录，冻结 digest 进入 P1 contract evidence。
+
+| Surface                                 | Transport                             | Wire source of truth                                                                                                                      | 生成/消费规则                                                                                                                    |
+| --------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Management、Managed Agent、Managed Host | OpenAPI 3.1 HTTP/JSON                 | domain/common/platform JSON Schema 是 JSON data model authority；OpenAPI 只拥有 path、operation、status、header/security 并 `$ref` schema | 生成 TS/Go HTTP client、server interface 和 validator；禁止从 Go/TS struct 反向生成 schema                                       |
+| Worker/Supervisor、Platform Adapter     | Proto3 + ConnectRPC；仓外 HTTP/2 mTLS | `.proto` 是该 RPC message/service 的唯一 wire authority                                                                                   | 生成 Go message/Connect client/server 并保持声明的 gRPC compatibility；需要 TS consumer 时从同一 descriptor 生成，不手写平行 DTO |
+| Portable Runtime/Provider process       | 现有 stdio/event protocol             | `contracts/runtime/v2` 与七包既有 schema                                                                                                  | P1 不改 wire identity；平台只按 immutable Runtime contract digest 引用                                                           |
+
+公共 `contracts/common/v1alpha1` 保存 `NamespaceRef`、stable error、cursor、idempotency 等跨 domain JSON
+primitive；`contracts/platform/v1alpha1` 保存 tenant/organization/project、neutral RBAC 与 authority facts。
+managed-agent/managed-host 的 OpenAPI 只能引用这些公共 JSON Schema，不得复制 field definition。
+worker/platform-adapter 的共用 RPC message 放在其 Proto import graph 中，不得以 OpenAPI component 作为 RPC
+descriptor。
+
+JSON Schema 不从 OpenAPI 或语言类型生成；OpenAPI bundle 解析并校验所有 `$ref` 后再驱动 HTTP client/server
+生成。Proto 与 JSON Schema 也不互相生成：同一语义跨两条 transport 出现时，以显式 mapping、共同
+`NamespaceRef` canonical rule 和 golden/negative semantic fixture 检验等价，不制造两个 writer。所有生成
+命令必须读取仓内 generator lock，产物 manifest 绑定输入 digest、generator name/version/image-or-binary
+digest、参数和输出 digest；CI 在 clean tree 重生成并要求 byte-identical。
+
 ## 2. Control Plane 的两条业务平面
 
 ### 2.1 Managed Agent API
@@ -152,6 +175,10 @@ Synara 专属能力通过版本化、out-of-process Platform Adapter Protocol �
 
 Adapter protocol 使用 mTLS/workload identity、capability negotiation、lease/generation/operationId/fencing token、
 bounded deadline 和 idempotent receipt。公共 deployment 不配置任何 Synara adapter 时仍必须完整可运行。
+
+这里的 adapter wire 固定为 [ADR-0007](../adr/0007-p1-contract-data-toolchain-foundation.md) 所述
+Proto3/ConnectRPC/mTLS；HTTP/JSON management API 不作为私有 adapter 的旁路。mTLS 只建立 workload
+identity，仍须逐请求校验 capability、scope、lease/generation、fencing token 与 deadline。
 
 ## 7. 五类身份
 

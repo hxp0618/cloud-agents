@@ -86,6 +86,9 @@ out-of-process adapters or APIs.
 
 ## Status boundary
 
-This ADR was accepted by the user on 2026-08-10. Only Platform P0 freeze/inventory/provenance/baseline work is active;
-implementation, packaging, publication, deployment, database migration, and real-provider work remain paused until
-their phase entry criteria are separately satisfied.
+This ADR was accepted by the user on 2026-08-10. Platform P0 is verified by independently reviewed inventory and
+baseline phase records, so P1 entry is satisfied. P1 may implement public contracts, generated TS/Go SDKs, foundation
+data/authority/security code, source modules, and local ephemeral database tests under
+[`ADR-0007`](0007-p1-contract-data-toolchain-foundation.md)；M1 and P2–P6 implementation, package/module/image
+publication, deployment, production database migration and real-provider work remain paused until their own phase
+entry criteria are satisfied.

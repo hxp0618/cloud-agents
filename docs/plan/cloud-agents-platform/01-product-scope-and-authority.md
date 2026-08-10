@@ -104,6 +104,27 @@ HTTP/RPC/WebSocket。紧急 revoke/terminate 还要先 fence ingress，再通过
 撤销 link/session。正常网络下目标撤销收敛不超过 30 秒，任何分区下硬上限为 60 秒；超限即 endpoint
 fenced/不可用，而不是继续使用 stale authorization。
 
+### 3.2 跨 namespace 引用与中立授权
+
+P1 的跨系统引用统一使用公共 `NamespaceRef`，而不是把 Synara/T3 的表主键或 slug 提升为平台 ID。其
+wire identity 固定为必填 `{namespace, kind, id}`；generation、版本、显示名和 endpoint 不属于 identity，
+必须作为独立字段传递。`namespace`/`kind` 的 lowercase grammar、`id` 的 UTF-8/NFC 规则、RFC 8785 canonical
+bytes、SHA-256 digest、派生 URN 与跨语言 fixture 以
+[ADR-0007](../adr/0007-p1-contract-data-toolchain-foundation.md) 为唯一规范。解析器不得静默 lowercase/trim、
+猜测前缀，或把外部 ref 当成本地聚合。
+
+公共 CP 的 neutral RBAC contract 只定义 `SubjectRef`、versioned `Role`、`RoleBinding`、scope 与显式
+permission，不携带 Synara 套餐、T3 workspace role 或企业 entitlement 名称，也不允许 wildcard/implicit
+owner 扩权。公共 CP 是这些 binding 的 durable writer 和 management/admission PEP；外部 IdP/PDP 只能提供
+identity/provisioning 或收紧授权，不能扩大公共 RBAC 结果。跨 namespace 映射是显式、版本化且可审计的
+mapping，不改变任一侧 writer。
+
+Postgres 行级隔离与 RBAC 是两道独立防线：所有 tenant-owned 表必须有 `tenant_id` 和 tenant-scoped
+composite foreign key；在线 application role 对这些表启用并 `FORCE ROW LEVEL SECURITY`，每个事务先设置
+并验证 tenant context。migration/maintenance owner 与在线 role 分离，不得服务请求；缺失、未知或不匹配的
+tenant context 一律 fail closed。RLS 不能替代 API authorization，API RBAC 也不能绕过 RLS。字段、canonical
+encoding、permission vocabulary 和 policy fixture 的正式冻结由 ADR-0007 与 P1 contract bundle 共同记录。
+
 ## 4. 公共与 Synara 专属的分类规则
 
 ### 必须进入公共仓
@@ -138,6 +159,8 @@ fenced/不可用，而不是继续使用 stale authorization。
 
 - T3 内部 Effect SPI、SQLite、Thread/Turn/Git/Checkpoint；
 - Synara UI/Effect contract；
+- 旧 Synara Go helper、server/domain/database struct 或旧 `docs/contracts` prose；它们只能作为迁移 oracle，
+  不能成为 public wire/SDK ABI；
 - 真实 tenant、credential、pairing token、内部 endpoint 或生产数据库 dump。
 
 ## 5. 旧 Go Control Plane 的最终去向

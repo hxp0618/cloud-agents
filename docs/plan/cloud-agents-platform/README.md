@@ -2,10 +2,10 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 NOT STARTED（Entry satisfied）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（Decision Freeze / Contract Kernel）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
-- 关联 ADR：[`../adr/0006-public-cloud-agents-platform.md`](../adr/0006-public-cloud-agents-platform.md)
+- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md) / [`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)
 
 ## 固定追踪根
 
@@ -25,14 +25,15 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 fail-closed 原则与 local-first 验证策略的 D-022～D-024。P0 当前由 `G-INVENTORY` R3 和
 `G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
 helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
-decision digest 的下游证据不得继承。下一步只允许在公共仓实施 P1 contracts、Go/TS SDK、数据模型、
-authority 与安全基础。仍不授权：
+decision digest 的下游证据不得继承。P1 现从 Decision Freeze / Contract Kernel 开始，只允许在公共仓实施
+contracts、Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral
+Postgres 测试。仍不授权：
 
 - 修改 Runtime M1 行为、Synara 或 T3Code 源码；
 - 提前实施 P2–P6 Managed Agent/Host、Standalone 或宿主 cutover；
 - 提交/推送当前未完成的 Codex attestation 修复；
 - 重打或替换 immutable `cloud-agent-m1-rc.1`；
-- 创建数据库、Go module、container image、Release 或部署；
+- 写入生产数据库，或发布 Go module、container image、Release，或执行部署；
 - 恢复真实 Provider E2E。
 
 当前代码现场：
@@ -63,7 +64,7 @@ authority 与安全基础。仍不授权：
 
 发生冲突时按以下顺序解释：
 
-1. 已批准的 ADR-0006；
+1. 已批准的 ADR-0006 与 ADR-0007；
 2. 本目录的 `01`–`06`；
 3. 总设计中标记为 2026-08-10 Revision 的章节；
 4. 总设计附录中的历史实现证据；
@@ -92,7 +93,7 @@ authority 与安全基础。仍不授权：
 | ----------- | ------------------------------------------------------------------- | ----------- |
 | M1          | Portable Runtime 七包与 embedded 双宿主；真实 Provider/M1 Gate open | PAUSED      |
 | P0          | 公共 Go 代码 inventory、provenance、authority/contract freeze       | VERIFIED    |
-| P1          | 公共 CP foundation：auth/project、Postgres/outbox、API/SDK          | NOT STARTED |
+| P1          | 公共 CP foundation：auth/project、Postgres/outbox、API/SDK          | IN PROGRESS |
 | P2          | Managed Agent Plane：Session/Turn/Execution/Worker/Workspace        | NOT STARTED |
 | P3          | Managed Host core：CloudEnvironmentLease + public reference host    | NOT STARTED |
 | P4          | Standalone deploy：Compose/Helm、upgrade/rollback/ops               | NOT STARTED |
