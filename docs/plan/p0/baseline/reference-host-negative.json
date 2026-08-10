@@ -23,13 +23,13 @@
     },
     {
       "criterion": "protocol-2.2-golden-corpus",
-      "result": "LOCAL_PASS_NOT_BOUND",
-      "evidence": "local p0-protocol-golden-v3 corpus consumed by protocol, testkit and Runtime stdio tests"
+      "result": "LOCAL_PASS_BOUND",
+      "evidence": "p0-protocol-golden-v3 corpus is bound to commit 0a984d02 and consumed by protocol, testkit and Runtime stdio tests"
     },
     {
       "criterion": "raw-evidence-retained-immutable",
-      "result": "NOT_BOUND",
-      "evidence": "fixture content hashes exist locally but are not bound to a fixture commit/tree/blob set"
+      "result": "BOUND",
+      "evidence": "fixture commit/tree/blob map and content SHA-256 are verified from Git objects"
     }
   ],
   "realProviderExecution": "NOT_RUN",
@@ -80,8 +80,28 @@
     "version": "p0-protocol-golden-v3",
     "root": "packages/cloud-agent-protocol/fixtures/p0",
     "sourceBinding": {
-      "status": "NOT_BOUND",
-      "reason": "Phase A fixtures are uncommitted workspace evidence; no commit, tree, or blob binding is claimed."
+      "status": "BOUND",
+      "repository": "hxp0618/cloud-agents",
+      "commit": "0a984d02bda3c64f7dca1e9da7bed60e4d3f02f6",
+      "tree": "28cd7fd50d107ae169f1444364faa8fa3fd40562",
+      "blobs": [
+        { "path": "corpus-manifest.json", "blob": "8429c22ac805e5a660fb08744c3e00c010187da3" },
+        { "path": "v2.2/commands.jsonl", "blob": "6489917ea10f7dccad225cf43971c742e03a7be6" },
+        { "path": "v2.2/messages.jsonl", "blob": "2be57a064f75195fa4c217d2be53d71feaf71caa" },
+        { "path": "v2.3/commands.jsonl", "blob": "52f4896c3310c5019714b689e7b64ac2b2e2654d" },
+        { "path": "v2.3/messages.jsonl", "blob": "aa9879ba2476a6b39e7338df21506aa926cbe452" },
+        { "path": "negative/frames.jsonl", "blob": "c233bdcc2b82239c5cd407dcf89eca88a63ff543" },
+        {
+          "path": "negative/invalid-ndjson.txt",
+          "blob": "73c0cc57dc66d172126d2154c5a61f90a00828cb"
+        },
+        { "path": "transcripts.json", "blob": "97d7be8b360bd947037448f8c40b73a3b44ae3d2" },
+        { "path": "semantic-oracles.json", "blob": "076c343f6e5fd9c01785515e575cf9028b9d1d75" },
+        {
+          "path": "reference-host-lifecycle-v1.json",
+          "blob": "c855eb2dcde2a79250a63e1c22dbed297e0ae360"
+        }
+      ]
     },
     "files": [
       {

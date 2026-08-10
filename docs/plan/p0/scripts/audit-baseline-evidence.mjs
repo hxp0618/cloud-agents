@@ -74,8 +74,8 @@ const requiredCriterionMapping = {
   },
   "reference-host-negative-and-public-runtime": {
     "managed-host-greenfield-baseline": "SPEC_ONLY",
-    "protocol-2.2-golden-corpus": "LOCAL_PASS_NOT_BOUND",
-    "raw-evidence-retained-immutable": "NOT_BOUND",
+    "protocol-2.2-golden-corpus": "LOCAL_PASS_BOUND",
+    "raw-evidence-retained-immutable": "BOUND",
   },
 };
 
@@ -87,22 +87,35 @@ for (const repository of repositories) {
 }
 
 const fixtureRoot = resolve(root, referenceHost.fixtureCorpus.root);
+const fixtureBinding = referenceHost.fixtureCorpus.sourceBinding;
+equal(fixtureBinding.status, "BOUND", "fixture corpus source binding");
+equal(
+  gitText(root, ["rev-parse", `${fixtureBinding.commit}^{commit}`]),
+  fixtureBinding.commit,
+  "fixture binding commit",
+);
+equal(
+  gitText(root, ["rev-parse", `${fixtureBinding.commit}^{tree}`]),
+  fixtureBinding.tree,
+  "fixture binding tree",
+);
+requireArray(fixtureBinding.blobs, "fixture corpus blob map");
+equalSet(
+  fixtureBinding.blobs.map((value) => value.path),
+  referenceHost.fixtureCorpus.files.map((value) => value.path),
+  "fixture corpus blob paths",
+);
+const boundBlobs = new Map(fixtureBinding.blobs.map((value) => [value.path, value.blob]));
 for (const fixture of referenceHost.fixtureCorpus.files) {
   const path = resolveContained(fixtureRoot, fixture.path);
   const bytes = readFileSync(path);
+  const spec = `${fixtureBinding.commit}:${referenceHost.fixtureCorpus.root}/${fixture.path}`;
+  equal(gitText(root, ["rev-parse", spec]), boundBlobs.get(fixture.path), `fixture blob ${spec}`);
+  const committedBytes = gitBytes(root, ["show", spec]);
+  equal(sha256(committedBytes), fixture.sha256, `committed fixture SHA-256 ${fixture.path}`);
   equal(sha256(bytes), fixture.sha256, `fixture SHA-256 ${fixture.path}`);
 }
 auditFixtureCoverage(fixtureRoot, referenceHost.fixtureCorpus.version);
-equal(
-  referenceHost.fixtureCorpus.sourceBinding.status,
-  "NOT_BOUND",
-  "fixture corpus source binding",
-);
-for (const forbidden of ["commit", "tree", "blob", "blobs", "blobMap"]) {
-  if (Object.hasOwn(referenceHost.fixtureCorpus.sourceBinding, forbidden)) {
-    fail(`NOT_BOUND fixture sourceBinding must not claim ${forbidden}`);
-  }
-}
 
 for (const manifest of [synara, t3, referenceHost]) {
   equal(

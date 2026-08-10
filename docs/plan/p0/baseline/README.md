@@ -54,8 +54,10 @@ bun run --filter '@synara/cloud-agent-testkit' test
 覆盖集和 criterion mapping。
 任一固定输入缺失或漂移都会非零退出。它不会 fetch、写入其他仓库或执行真实 Provider。
 
-Phase A fixture 仅有 workspace content digest，`fixtureCorpus.sourceBinding.status=NOT_BOUND`；未伪造或声明
-fixture commit/tree/blob pin。提交后的不可变绑定需由后续授权阶段生成并复核。
+Phase A fixture 已固定到 `0a984d02bda3c64f7dca1e9da7bed60e4d3f02f6`，
+`fixtureCorpus.sourceBinding.status=BOUND` 同时记录 tree 与十个 blob；审计从 Git object 重读并与 workspace
+内容 SHA-256 对照。该绑定只证明 fixture immutable，不把未执行的 Synara/T3/真实 Provider criterion 升级为
+PASS。
 
 ## 证据边界
 
