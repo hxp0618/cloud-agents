@@ -108,6 +108,7 @@ const checks = {
   secretScanningEnabled: repo.security_and_analysis?.secret_scanning?.status === "enabled",
   pushProtectionEnabled:
     repo.security_and_analysis?.secret_scanning_push_protection?.status === "enabled",
+  candidateBranchPushed: remoteHead === head,
   candidateCodeownersPresent: sha256File(localCodeownersPath).length === 64,
   workflowActionsPinned:
     actionUses.length > 0 && actionUses.every((value) => /@[0-9a-f]{40}$/.test(value)),

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-08-10T06:22:53.516Z",
+  "repository": {
+    "nameWithOwner": "hxp0618/cloud-agents",
+    "visibility": "public",
+    "archived": false,
+    "defaultBranch": "main",
+    "defaultBranchSha": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a"
+  },
+  "candidate": {
+    "branch": "codex/cloud-agents-platform-p0",
+    "localHead": "0750f9cea5d069bbd00e77be1abd8f977da7c4b9",
+    "remoteHead": "0750f9cea5d069bbd00e77be1abd8f977da7c4b9",
+    "codeownersSha256": "9faad26a6191b27b309b10a9d753346ace7bae10cb1912b90fa5b19a82e7c5cc",
+    "workflowSha256": "d0258f1f969de0983aaf063d5c526eb90444866148cc81cca4241609e4c202a3",
+    "actionUses": [
+      "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+      "jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db"
+    ],
+    "runnerLabels": ["ubuntu-24.04"]
+  },
+  "defaultBranchContent": {
+    "codeowners": {
+      "path": ".github/CODEOWNERS",
+      "present": false,
+      "sha": null,
+      "size": null
+    },
+    "rootCodeowners": {
+      "path": "CODEOWNERS",
+      "present": false,
+      "sha": null,
+      "size": null
+    },
+    "securityPolicy": {
+      "path": "SECURITY.md",
+      "present": true,
+      "sha": "b7bd7e1a975eead688d924c31170010c4472572e",
+      "size": 999
+    }
+  },
+  "protection": {
+    "requiredStatusChecks": ["verify"],
+    "strict": true,
+    "enforceAdmins": true,
+    "requiredApprovingReviewCount": 0,
+    "requireCodeOwnerReviews": false,
+    "allowForcePushes": false,
+    "allowDeletions": false,
+    "requiredSignatures": false
+  },
+  "rulesets": [
+    {
+      "id": 20608699,
+      "name": "Protect Cloud Agent RC tags",
+      "target": "tag",
+      "enforcement": "active",
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": ["refs/tags/cloud-agent-m1-rc.*"]
+        }
+      },
+      "rules": [
+        {
+          "type": "deletion",
+          "parameters": null
+        },
+        {
+          "type": "non_fast_forward",
+          "parameters": null
+        }
+      ],
+      "bypassActorCount": 0
+    }
+  ],
+  "actionsPermissions": {
+    "enabled": true,
+    "allowedActions": "all",
+    "shaPinningRequired": false
+  },
+  "security": {
+    "vulnerabilityAlerts": {
+      "enabled": true,
+      "status": 0,
+      "error": null
+    },
+    "privateVulnerabilityReportingEnabled": true,
+    "securityAndAnalysis": {
+      "secret_scanning": {
+        "status": "enabled"
+      },
+      "secret_scanning_push_protection": {
+        "status": "enabled"
+      },
+      "dependabot_security_updates": {
+        "status": "enabled"
+      },
+      "secret_scanning_non_provider_patterns": {
+        "status": "disabled"
+      },
+      "secret_scanning_validity_checks": {
+        "status": "disabled"
+      }
+    }
+  },
+  "checks": {
+    "mainStatusCheckStrict": true,
+    "mainAdminEnforced": true,
+    "mainForcePushDisabled": true,
+    "mainDeletionDisabled": true,
+    "rcTagRewriteProtected": true,
+    "vulnerabilityAlertsEnabled": true,
+    "privateVulnerabilityReportingEnabled": true,
+    "secretScanningEnabled": true,
+    "pushProtectionEnabled": true,
+    "candidateBranchPushed": true,
+    "candidateCodeownersPresent": true,
+    "workflowActionsPinned": true,
+    "workflowRunnerNotLatest": true
+  },
+  "result": "PASS",
+  "limitations": [
+    "The CODEOWNERS and workflow hardening are candidate-branch state until reviewed and merged separately.",
+    "GitHub-hosted runner image labels are versioned but not immutable OCI digests.",
+    "A PASS here records repository governance only; it does not close license, provenance, or release Gates."
+  ]
+}
