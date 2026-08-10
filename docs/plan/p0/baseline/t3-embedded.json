@@ -1,0 +1,189 @@
+{
+  "schemaVersion": "cloud-agents.p0.baseline-manifest/v2",
+  "manifestVersion": 2,
+  "profile": "t3-embedded-and-cloud-agent-consumer",
+  "status": "CHARACTERIZED_NOT_EXECUTED",
+  "platformP0CharacterizationClosure": {
+    "complete": true,
+    "scope": "embedded authority, auth/proof/revoke and thin consumer mechanisms at fixed source refs",
+    "doesNotDecideAggregateGate": true
+  },
+  "m1BehaviorClosure": {
+    "complete": false,
+    "status": "NOT_RUN",
+    "scope": "real Provider SendTurn, workspace mutation, checkpoint/rollback and reconnect"
+  },
+  "aggregateGateDecision": "NOT_CLAIMED",
+  "realProviderExecution": "NOT_RUN",
+  "evidenceStrength": "SOURCE_AND_CHECKED_IN_TEST_ORACLE",
+  "repositories": [
+    {
+      "role": "embedded-authority",
+      "repository": "hxp0618/t3code",
+      "ref": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "tree": "e98f5650379f428bf5dcc6e7cae287c68fb8b080",
+      "repoCandidates": [
+        "/Users/huang/devel/project/huang/business/t3code",
+        "/Users/huang/devel/project/huang/business/t3code-cloud-agent"
+      ],
+      "files": [
+        {
+          "path": "docs/internals/environment-auth.md",
+          "blob": "5f4f5b6e9607ebb15b08a00c4b3b6ee25f192649",
+          "sha256": "a7eaf43be2bdda0efed14e6639389094cffa4314c407f02b6c72fca38e524eff",
+          "bytes": 6903
+        },
+        {
+          "path": "apps/server/src/auth/PairingGrantStore.test.ts",
+          "blob": "5242dd738b89b2085c8fda065c74387b0b3e8175",
+          "sha256": "1ebdd0976a478b06edd2231fe97c30b2354ed967e75e662a736e767aeff8342c",
+          "bytes": 9849
+        },
+        {
+          "path": "apps/server/src/auth/dpop.test.ts",
+          "blob": "fa75c407b0c62de7a6da500424ed3bfc6a2b2cdf",
+          "sha256": "ba8ea0f79d09c03656b5037ccb920bf0e2d33f1a9ad81e5007a064086c2ca307",
+          "bytes": 1293
+        },
+        {
+          "path": "infra/relay/src/auth/DpopProofs.verifyAndConsume.test.ts",
+          "blob": "7663e874879b53d1ac65f4583bef1888834da820",
+          "sha256": "456007fad3344ae299b6ea735dcc4c492a3c0828787e00c795be6df0ee977e7f",
+          "bytes": 7247
+        },
+        {
+          "path": "infra/relay/src/environments/ManagedEndpointAllocations.test.ts",
+          "blob": "ebf51de100c162ffeb01910c36d3b3eb2bc7f185",
+          "sha256": "efed4badb09ade30cd358550d122a8f913176992407f75eb39b8af4690843b1e",
+          "bytes": 5006
+        },
+        {
+          "path": "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts",
+          "blob": "ff639797179f493e3ce8bfb4644f391b11475d90",
+          "sha256": "c76c8ac1af4beecebedce4b3f0af4da345ee8dcd9b043d69db671de8d91502aa",
+          "bytes": 53501
+        },
+        {
+          "path": "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts",
+          "blob": "2b4d3771605a10c1138d0a7c6a5900358fab92c6",
+          "sha256": "6bb055e48738caf2f464f1b97f01b3e40c9fd3f5717031bfa03aebcb6272da0a",
+          "bytes": 105656
+        },
+        {
+          "path": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+          "blob": "95adee0cf7f8b86f057a335748e3563038498a6d",
+          "sha256": "bedace26ff485da7ac5adb1baeda8a9f25422e19350cf4364655d689857797cd",
+          "bytes": 32389
+        },
+        {
+          "path": "apps/server/src/checkpointing/CheckpointStore.ts",
+          "blob": "f13aa4572c1711363712ee4889bdaa8864449c18",
+          "sha256": "b780c62f588c0c83f6f896c3b5e556db2c372d3a3cf91ad4f7ac072888701d3e",
+          "bytes": 5855
+        },
+        {
+          "path": "apps/server/src/checkpointing/CheckpointStore.test.ts",
+          "blob": "bf332d20d0dac0bc3a2be6a7d2b33a099b74a34e",
+          "sha256": "66d968b36d3aead05f9f21b9847cbd87046de09f2c11155ed07b829c26d43a57",
+          "bytes": 7772
+        },
+        {
+          "path": "apps/server/src/workspace/WorkspaceFileSystem.ts",
+          "blob": "e2dc9cbbb3904e934b0a67da7475977018dd1dcb",
+          "sha256": "2ae9a16b48988d39d6bfce4dd04215d3095f1d32410caa70ae7592a0480441f4",
+          "bytes": 10147
+        },
+        {
+          "path": "apps/server/src/workspace/WorkspaceFileSystem.test.ts",
+          "blob": "cecffbc1993d0c585d1a8f3d6aa3ffdb7920b84e",
+          "sha256": "ccc35844df6d01a21ebaaac0aee7b75a8d64a4582d0a8ad47a52a4631ee4f276",
+          "bytes": 10018
+        },
+        {
+          "path": "apps/server/src/git/GitManager.ts",
+          "blob": "553eda7bb9c36d76beae8e4a3624ae6a128be6b1",
+          "sha256": "73e488a33ca10bc20863320360779bb180adf6ef001e3105b41d4221b687bea6",
+          "bytes": 77917
+        },
+        {
+          "path": "apps/server/src/git/GitManager.test.ts",
+          "blob": "5d95ea5f62f98c7c6606eba058e19465a1121763",
+          "sha256": "ee746f150a3ff2cffdbea75b782fe0beaa3d81b5f40461cc678abd82267e27fd",
+          "bytes": 149900
+        }
+      ]
+    },
+    {
+      "role": "cloud-agent-consumer",
+      "repository": "hxp0618/t3code",
+      "ref": "9584a266e91fa94354e8c07f79af3a5e01755d16",
+      "tree": "171624a2dbfb68f1d91f0a67175cbaf68f2947c2",
+      "repoCandidates": [
+        "/Users/huang/devel/project/huang/business/t3code-cloud-agent",
+        "/Users/huang/devel/project/huang/business/t3code"
+      ],
+      "files": [
+        {
+          "path": "apps/server/src/provider/cloudAgent/CloudAgentsAdapter.ts",
+          "blob": "9f64ee7f5615b7b2b26d87bd06052716649dcd9b",
+          "sha256": "c6f48b7b3687c2bf78f36803ddae3aa7e8b7897da2022a393a2f2ddc5f231509",
+          "bytes": 38008
+        },
+        {
+          "path": "apps/server/src/provider/cloudAgent/CloudAgentsAdapter.test.ts",
+          "blob": "8f2b36f7548b640a1f7e7308aee6c8120f60cc54",
+          "sha256": "e6929748f9eb0693a7ac0e933e7ddd4fdd5a51299d55f7750a682aaa4d8cd597",
+          "bytes": 43600
+        },
+        {
+          "path": "apps/server/src/provider/cloudAgent/CloudAgentsAdapter.integration.test.ts",
+          "blob": "28f821148ff75dde3a316aadb582c8f77afc0cef",
+          "sha256": "10611f3a3d5bd946fe6fe38def78c95e0b1a9c623158bdb8d995ea5f103b34a8",
+          "bytes": 1910
+        },
+        {
+          "path": "apps/server/src/provider/cloudAgent/CloudAgentsClientEffect.test.ts",
+          "blob": "d8a08c959c06dfeea346c7c5b2c8e4c2e7c230fa",
+          "sha256": "86ff9c3f78cf342c93f3eec00d8951718724ddccad91a09769e2a8c14a8e9be6",
+          "bytes": 3458
+        },
+        {
+          "path": "apps/server/src/provider/cloudAgent/CloudAgentsRuntimeProbe.test.ts",
+          "blob": "b9b60ae8a2143604a321f86825f751134e94fb68",
+          "sha256": "96037e8ce11264733a31e6029c52809a71ce6531701ce64b248d066c10e134d3",
+          "bytes": 3591
+        },
+        {
+          "path": "apps/server/src/provider/Drivers/CloudAgentsDriver.test.ts",
+          "blob": "54d2ba74183801809fb5adc17e3000102a520a3a",
+          "sha256": "b498078e2fe642df20a22220f9fe917a5680c93872d0e141f19da8b96b849bc4",
+          "bytes": 15489
+        },
+        {
+          "path": "apps/server/src/textGeneration/CloudAgentsTextGeneration.test.ts",
+          "blob": "8ea5393295285bea457c13e535d3e49389de77f0",
+          "sha256": "fce80f0a57f30322e08866cca7fccd9ed730f3b8a7c3959a28d32ca15d80dd7e",
+          "bytes": 12512
+        }
+      ]
+    }
+  ],
+  "coverage": [
+    "t3-thread-and-provider-command-authority",
+    "workspace-filesystem-authority",
+    "git-hidden-ref-diff-revert-authority",
+    "checkpoint-store-and-reactor",
+    "pairing-session-proof-revoke-spec",
+    "pairing-grant-store-single-use-and-revoke-tests",
+    "dpop-proof-verify-consume-and-replay-tests",
+    "relay-managed-endpoint-allocation-tests",
+    "digest-and-runtime-probe-fail-close",
+    "adapter-correlation-drain-and-text-generation-unit-oracles"
+  ],
+  "limitations": [
+    "Fresh integration evidence proves only Describe -> ready -> StartSession -> StopSession.",
+    "No real SendTurn, workspace mutation, checkpoint/rollback, or process/browser reconnect.",
+    "No same-input before/after run against immutable public candidate bits.",
+    "Environment auth documentation and unit tests do not prove a managed sandbox."
+  ]
+}

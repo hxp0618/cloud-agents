@@ -1,0 +1,45 @@
+{
+  "corpusVersion": "p0-protocol-golden-v2",
+  "cases": [
+    {
+      "id": "v22-generate-text-capability-unsupported",
+      "coverage": "capability-negotiation",
+      "status": "NOT_ENFORCED",
+      "reason": "Protocol v2.2 predates GenerateText and the protocol package has no public command-to-capability negotiation parser. Provider/host conformance must reject it with capability_unsupported.",
+      "advertisedProtocol": { "major": 2, "minor": 2 },
+      "commandType": "GenerateText",
+      "expectedTerminal": {
+        "messageType": "Error",
+        "code": "capability_unsupported"
+      }
+    },
+    {
+      "id": "unadvertised-send-turn",
+      "coverage": "capability-negotiation",
+      "status": "NOT_ENFORCED",
+      "reason": "The structural frame parser cannot prove that a Provider descriptor agrees with runtime behavior.",
+      "advertisedCapabilities": { "send-turn": "unsupported" },
+      "commandType": "SendTurn",
+      "expectedTerminal": {
+        "messageType": "Error",
+        "code": "capability_unsupported"
+      }
+    },
+    {
+      "id": "real-provider-lifecycle",
+      "coverage": "real-provider-lifecycle",
+      "status": "NOT_RUN",
+      "reason": "P0 has no authorized authenticated Codex or Claude execution against immutable candidate bits.",
+      "required": [
+        "StartSession",
+        "ResumeSession",
+        "SendTurn",
+        "StopSession",
+        "late terminal after interrupt or crash",
+        "workspace mutation",
+        "checkpoint and rollback",
+        "process and browser reconnect"
+      ]
+    }
+  ]
+}

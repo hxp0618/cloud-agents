@@ -1,0 +1,269 @@
+{
+  "schemaVersion": "cloud-agents.reference-host-lifecycle-trace/v1",
+  "oracleType": "GREENFIELD_SPEC_ORACLE",
+  "implementationStatus": "NOT_IMPLEMENTED_BY_FIXTURE",
+  "productionExecution": "NOT_RUN",
+  "cases": [
+    {
+      "id": "create-admit-provision-ready-terminate-reap",
+      "coverage": ["create", "admit", "provision", "ready", "terminate", "reap"],
+      "leaseId": "lease-lifecycle-1",
+      "generation": 1,
+      "trace": [
+        {
+          "sequence": 1,
+          "event": "create.requested",
+          "state": "pending",
+          "operationId": "create-1"
+        },
+        {
+          "sequence": 2,
+          "event": "admission.accepted",
+          "state": "admitted",
+          "operationId": "create-1"
+        },
+        {
+          "sequence": 3,
+          "event": "provision.started",
+          "state": "provisioning",
+          "operationId": "create-1"
+        },
+        {
+          "sequence": 4,
+          "event": "workload.ready",
+          "state": "ready",
+          "operationId": "create-1",
+          "receiptId": "receipt-ready-1"
+        },
+        {
+          "sequence": 5,
+          "event": "terminate.requested",
+          "state": "terminating",
+          "operationId": "terminate-1"
+        },
+        {
+          "sequence": 6,
+          "event": "ingress.fenced",
+          "state": "terminating",
+          "operationId": "terminate-1"
+        },
+        {
+          "sequence": 7,
+          "event": "sessions.revoked",
+          "state": "terminating",
+          "operationId": "terminate-1",
+          "receiptId": "receipt-revoke-1"
+        },
+        {
+          "sequence": 8,
+          "event": "cleanup.completed",
+          "state": "terminated",
+          "operationId": "terminate-1",
+          "receiptId": "receipt-cleanup-1"
+        },
+        {
+          "sequence": 9,
+          "event": "lease.reaped",
+          "state": "reaped",
+          "operationId": "reap-1",
+          "receiptId": "receipt-reap-1"
+        }
+      ],
+      "expected": {
+        "terminalState": "reaped",
+        "ingressFencedBeforeCleanup": true,
+        "revokeReceiptBeforeUnfence": true
+      }
+    },
+    {
+      "id": "failed-provision-cleanup-reap",
+      "coverage": ["failed-cleanup"],
+      "leaseId": "lease-failed-1",
+      "generation": 1,
+      "trace": [
+        {
+          "sequence": 1,
+          "event": "create.requested",
+          "state": "pending",
+          "operationId": "create-failed-1"
+        },
+        {
+          "sequence": 2,
+          "event": "admission.accepted",
+          "state": "admitted",
+          "operationId": "create-failed-1"
+        },
+        {
+          "sequence": 3,
+          "event": "provision.started",
+          "state": "provisioning",
+          "operationId": "create-failed-1"
+        },
+        {
+          "sequence": 4,
+          "event": "provision.failed",
+          "state": "failed",
+          "operationId": "create-failed-1",
+          "errorCode": "adapter_unavailable"
+        },
+        {
+          "sequence": 5,
+          "event": "cleanup.requested",
+          "state": "cleaning",
+          "operationId": "cleanup-failed-1"
+        },
+        {
+          "sequence": 6,
+          "event": "cleanup.completed",
+          "state": "failed-cleaned",
+          "operationId": "cleanup-failed-1",
+          "receiptId": "receipt-failed-cleanup-1"
+        },
+        {
+          "sequence": 7,
+          "event": "lease.reaped",
+          "state": "reaped",
+          "operationId": "reap-failed-1",
+          "receiptId": "receipt-failed-reap-1"
+        }
+      ],
+      "expected": { "terminalState": "reaped", "cleanupRequired": true, "orphanedResources": 0 }
+    },
+    {
+      "id": "stale-generation-rejected",
+      "coverage": ["stale-generation", "fence-negative"],
+      "leaseId": "lease-generation-1",
+      "currentGeneration": 2,
+      "input": {
+        "event": "workload.ready",
+        "generation": 1,
+        "operationId": "create-generation-1",
+        "receiptId": "receipt-stale-1"
+      },
+      "expected": {
+        "decision": "REJECT",
+        "errorCode": "stale_generation",
+        "stateMutation": false,
+        "endpointPublished": false
+      }
+    },
+    {
+      "id": "duplicate-receipt-idempotency",
+      "coverage": ["duplicate-receipt", "idempotency"],
+      "leaseId": "lease-idempotency-1",
+      "generation": 3,
+      "operationId": "create-idempotency-1",
+      "receipts": [
+        {
+          "receiptId": "receipt-idempotency-1",
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "decision": "APPLY"
+        },
+        {
+          "receiptId": "receipt-idempotency-1",
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "decision": "DEDUPLICATE"
+        },
+        {
+          "receiptId": "receipt-idempotency-1",
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "decision": "REJECT_CONFLICT"
+        }
+      ],
+      "expected": {
+        "durableMutations": 1,
+        "duplicateSideEffects": 0,
+        "conflictingReceiptRejected": true
+      }
+    },
+    {
+      "id": "pairing-secret-ephemeral-only",
+      "coverage": ["pairing-secret-not-persisted"],
+      "leaseId": "lease-pairing-1",
+      "generation": 4,
+      "ephemeralDelivery": {
+        "cacheControl": "no-store",
+        "pairingUrl": "<ephemeral-url-not-retained>",
+        "pairingToken": "<ephemeral-token-not-retained>"
+      },
+      "durableReceipt": {
+        "pairingRef": "pairing-ref-1",
+        "leaseId": "lease-pairing-1",
+        "generation": 4,
+        "subjectRef": "subject-1",
+        "scopeDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expiresAt": "2026-08-10T02:10:00.000Z",
+        "status": "delivery-attempted"
+      },
+      "forbiddenDurableKeys": [
+        "pairingUrl",
+        "pairingToken",
+        "token",
+        "tokenHash",
+        "secret",
+        "secretHash"
+      ],
+      "expected": {
+        "ephemeralResponsePersisted": false,
+        "receiptDoesNotProveDelivery": true,
+        "receiptDoesNotProveReady": true
+      }
+    },
+    {
+      "id": "dpop-replay-revoke-fence",
+      "coverage": ["dpop-negative", "revoke-negative", "fence-negative"],
+      "leaseId": "lease-dpop-1",
+      "generation": 5,
+      "trace": [
+        {
+          "sequence": 1,
+          "event": "pairing.consumed",
+          "proofThumbprint": "thumbprint-1",
+          "jti": "jti-1",
+          "decision": "ACCEPT"
+        },
+        {
+          "sequence": 2,
+          "event": "proof.replayed",
+          "proofThumbprint": "thumbprint-1",
+          "jti": "jti-1",
+          "decision": "REJECT",
+          "errorCode": "dpop_replay"
+        },
+        {
+          "sequence": 3,
+          "event": "revocation.requested",
+          "revocationEpoch": 2,
+          "decision": "FENCE_ENDPOINT"
+        },
+        {
+          "sequence": 4,
+          "event": "old-session.requested",
+          "sessionEpoch": 1,
+          "decision": "REJECT",
+          "errorCode": "session_revoked"
+        },
+        {
+          "sequence": 5,
+          "event": "generation-heartbeat",
+          "generation": 4,
+          "decision": "REJECT",
+          "errorCode": "stale_generation"
+        },
+        {
+          "sequence": 6,
+          "event": "revocation.acknowledged",
+          "revocationEpoch": 2,
+          "receiptId": "receipt-revoke-dpop-1",
+          "decision": "KEEP_FENCED_UNTIL_TERMINATE"
+        }
+      ],
+      "expected": {
+        "proofReplayAccepted": false,
+        "oldSessionAccepted": false,
+        "staleGenerationAccepted": false,
+        "endpointUnfenced": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,379 @@
+{
+  "corpusVersion": "p0-protocol-golden-v2",
+  "cases": [
+    {
+      "id": "v22-valid-event-progress-result",
+      "version": "2.2",
+      "expected": "ACCEPT",
+      "coverage": ["correlation", "generation", "ordering"],
+      "commands": [
+        {
+          "requestId": "request:valid-v22",
+          "protocolVersion": { "major": 2, "minor": 2 },
+          "executionId": "execution:valid-v22",
+          "generation": 2,
+          "commandType": "SendTurn",
+          "commandId": "valid-v22",
+          "occurredAt": "2026-08-10T01:00:00.000Z",
+          "payload": { "inputText": "hello" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:valid-v22",
+          "protocolVersion": { "major": 2, "minor": 2 },
+          "executionId": "execution:valid-v22",
+          "generation": 2,
+          "commandId": "valid-v22",
+          "occurredAt": "2026-08-10T01:00:01.000Z",
+          "messageType": "Event",
+          "payload": { "eventVersion": 2, "eventType": "turn.started", "payload": {} }
+        },
+        {
+          "requestId": "request:valid-v22",
+          "protocolVersion": { "major": 2, "minor": 2 },
+          "executionId": "execution:valid-v22",
+          "generation": 2,
+          "commandId": "valid-v22",
+          "occurredAt": "2026-08-10T01:00:02.000Z",
+          "messageType": "Progress",
+          "payload": { "phase": "running" }
+        },
+        {
+          "requestId": "request:valid-v22",
+          "protocolVersion": { "major": 2, "minor": 2 },
+          "executionId": "execution:valid-v22",
+          "generation": 2,
+          "commandId": "valid-v22",
+          "occurredAt": "2026-08-10T01:00:03.000Z",
+          "messageType": "Result",
+          "payload": { "status": "completed" }
+        }
+      ]
+    },
+    {
+      "id": "v23-stop-four-outcomes",
+      "version": "2.3",
+      "expected": "ACCEPT",
+      "coverage": ["stop-quiesced", "stop-forced", "stop-timed-out", "stop-failed"],
+      "commands": [
+        {
+          "requestId": "request:stop-quiesced",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandType": "StopSession",
+          "commandId": "stop-quiesced",
+          "occurredAt": "2026-08-10T01:01:00.000Z",
+          "payload": {}
+        },
+        {
+          "requestId": "request:stop-forced",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandType": "StopSession",
+          "commandId": "stop-forced",
+          "occurredAt": "2026-08-10T01:01:01.000Z",
+          "payload": {}
+        },
+        {
+          "requestId": "request:stop-timed-out",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandType": "StopSession",
+          "commandId": "stop-timed-out",
+          "occurredAt": "2026-08-10T01:01:02.000Z",
+          "payload": {}
+        },
+        {
+          "requestId": "request:stop-failed",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandType": "StopSession",
+          "commandId": "stop-failed",
+          "occurredAt": "2026-08-10T01:01:03.000Z",
+          "payload": {}
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:stop-quiesced",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandId": "stop-quiesced",
+          "occurredAt": "2026-08-10T01:01:10.000Z",
+          "messageType": "Result",
+          "payload": { "outcome": "quiesced", "quiesced": true, "graceful": true }
+        },
+        {
+          "requestId": "request:stop-forced",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandId": "stop-forced",
+          "occurredAt": "2026-08-10T01:01:11.000Z",
+          "messageType": "Result",
+          "payload": { "outcome": "forced", "quiesced": false, "graceful": false }
+        },
+        {
+          "requestId": "request:stop-timed-out",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandId": "stop-timed-out",
+          "occurredAt": "2026-08-10T01:01:12.000Z",
+          "messageType": "Result",
+          "payload": { "outcome": "timed-out", "quiesced": false, "graceful": false }
+        },
+        {
+          "requestId": "request:stop-failed",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop",
+          "generation": 3,
+          "commandId": "stop-failed",
+          "occurredAt": "2026-08-10T01:01:13.000Z",
+          "messageType": "Result",
+          "payload": { "outcome": "failed", "quiesced": false, "graceful": false }
+        }
+      ]
+    },
+    {
+      "id": "message-before-command",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "unknown command",
+      "coverage": ["message-before-command"],
+      "commands": [],
+      "messages": [
+        {
+          "requestId": "request:orphan",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:orphan",
+          "generation": 1,
+          "commandId": "orphan",
+          "occurredAt": "2026-08-10T01:02:00.000Z",
+          "messageType": "Result",
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "id": "request-correlation-mismatch",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "requestId",
+      "coverage": ["correlation"],
+      "commands": [
+        {
+          "requestId": "request:expected",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:correlation",
+          "generation": 1,
+          "commandType": "Describe",
+          "commandId": "correlation",
+          "occurredAt": "2026-08-10T01:03:00.000Z",
+          "payload": { "provider": "codex" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:wrong",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:correlation",
+          "generation": 1,
+          "commandId": "correlation",
+          "occurredAt": "2026-08-10T01:03:01.000Z",
+          "messageType": "Result",
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "id": "generation-correlation-mismatch",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "generation",
+      "coverage": ["generation"],
+      "commands": [
+        {
+          "requestId": "request:generation",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:generation",
+          "generation": 9,
+          "commandType": "Describe",
+          "commandId": "generation",
+          "occurredAt": "2026-08-10T01:04:00.000Z",
+          "payload": { "provider": "codex" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:generation",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:generation",
+          "generation": 8,
+          "commandId": "generation",
+          "occurredAt": "2026-08-10T01:04:01.000Z",
+          "messageType": "Result",
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "id": "frame-after-terminal",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "frame after terminal",
+      "coverage": ["ordering", "late-terminal"],
+      "commands": [
+        {
+          "requestId": "request:late",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:late",
+          "generation": 1,
+          "commandType": "SendTurn",
+          "commandId": "late",
+          "occurredAt": "2026-08-10T01:05:00.000Z",
+          "payload": { "inputText": "hello" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:late",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:late",
+          "generation": 1,
+          "commandId": "late",
+          "occurredAt": "2026-08-10T01:05:01.000Z",
+          "messageType": "Result",
+          "payload": {}
+        },
+        {
+          "requestId": "request:late",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:late",
+          "generation": 1,
+          "commandId": "late",
+          "occurredAt": "2026-08-10T01:05:02.000Z",
+          "messageType": "Event",
+          "payload": { "eventVersion": 2, "eventType": "turn.completed", "payload": {} }
+        }
+      ]
+    },
+    {
+      "id": "duplicate-terminal",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "frame after terminal",
+      "coverage": ["duplicate-terminal", "late-terminal"],
+      "commands": [
+        {
+          "requestId": "request:duplicate",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:duplicate",
+          "generation": 1,
+          "commandType": "Describe",
+          "commandId": "duplicate",
+          "occurredAt": "2026-08-10T01:06:00.000Z",
+          "payload": { "provider": "codex" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:duplicate",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:duplicate",
+          "generation": 1,
+          "commandId": "duplicate",
+          "occurredAt": "2026-08-10T01:06:01.000Z",
+          "messageType": "Result",
+          "payload": {}
+        },
+        {
+          "requestId": "request:duplicate",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:duplicate",
+          "generation": 1,
+          "commandId": "duplicate",
+          "occurredAt": "2026-08-10T01:06:02.000Z",
+          "messageType": "Error",
+          "error": {
+            "code": "internal_error",
+            "message": "duplicate",
+            "retryable": false,
+            "requiresNewExecution": false,
+            "requiresUserAction": false,
+            "canReconstructFromHistory": false,
+            "canMoveWorker": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "missing-terminal",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "omitted terminal",
+      "coverage": ["missing-terminal"],
+      "commands": [
+        {
+          "requestId": "request:missing-terminal",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:missing-terminal",
+          "generation": 1,
+          "commandType": "SendTurn",
+          "commandId": "missing-terminal",
+          "occurredAt": "2026-08-10T01:07:00.000Z",
+          "payload": { "inputText": "hello" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:missing-terminal",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:missing-terminal",
+          "generation": 1,
+          "commandId": "missing-terminal",
+          "occurredAt": "2026-08-10T01:07:01.000Z",
+          "messageType": "Progress",
+          "payload": { "phase": "running" }
+        }
+      ]
+    },
+    {
+      "id": "message-version-older-than-command",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "Protocol version",
+      "coverage": ["ordering"],
+      "commands": [
+        {
+          "requestId": "request:version-order",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:version-order",
+          "generation": 1,
+          "commandType": "Describe",
+          "commandId": "version-order",
+          "occurredAt": "2026-08-10T01:08:00.000Z",
+          "payload": { "provider": "codex" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:version-order",
+          "protocolVersion": { "major": 2, "minor": 2 },
+          "executionId": "execution:version-order",
+          "generation": 1,
+          "commandId": "version-order",
+          "occurredAt": "2026-08-10T01:08:01.000Z",
+          "messageType": "Result",
+          "payload": {}
+        }
+      ]
+    }
+  ]
+}

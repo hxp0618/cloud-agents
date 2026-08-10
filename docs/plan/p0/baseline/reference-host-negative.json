@@ -1,0 +1,122 @@
+{
+  "schemaVersion": "cloud-agents.p0.baseline-manifest/v2",
+  "manifestVersion": 2,
+  "profile": "reference-host-negative-and-public-runtime",
+  "status": "NEGATIVE_ORACLES_ONLY",
+  "platformP0CharacterizationClosure": {
+    "complete": true,
+    "scope": "greenfield lifecycle spec, protocol golden and negative/reference-host fixtures",
+    "doesNotDecideAggregateGate": true
+  },
+  "m1BehaviorClosure": {
+    "complete": false,
+    "status": "NOT_RUN",
+    "scope": "production reference-host and authenticated Provider behavior"
+  },
+  "aggregateGateDecision": "NOT_CLAIMED",
+  "realProviderExecution": "NOT_RUN",
+  "evidenceStrength": "SOURCE_TEST_AND_GOLDEN_FIXTURE_ORACLE",
+  "repository": "hxp0618/cloud-agents",
+  "ref": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+  "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8",
+  "repoCandidates": ["/Users/huang/devel/project/huang/business/cloud-agents"],
+  "files": [
+    {
+      "path": "packages/cloud-agent-protocol/src/protocol.test.ts",
+      "blob": "444fe17e406d38c13a5c12da2ef4ee72f8cc4812",
+      "sha256": "ae4822579de5c7f1a3d50a191032a82e302f158f27a7a0045eb8db8846d2396a",
+      "bytes": 4676
+    },
+    {
+      "path": "packages/cloud-agent-testkit/src/index.test.ts",
+      "blob": "651546ee214dd4dab96154803850ff40f9696246",
+      "sha256": "4ba86f0f7b8ef86bf4a02aacd85aa10ed9b781d9e10410779bd24e5977200882",
+      "bytes": 3337
+    },
+    {
+      "path": "packages/cloud-agent-testkit/src/packedBinConformance.ts",
+      "blob": "881a8f4cfc2ae3183a828ecda10954cdac7cd6b7",
+      "sha256": "90e25251544702872bc1c4f83c9ec8e2bfe4f25c2097724dd60add78955db2cb",
+      "bytes": 5571
+    },
+    {
+      "path": "packages/cloud-agent-provider-api/src/providerProtocol.test.ts",
+      "blob": "88135910576a2b94f96b60bd861f173b00f39297",
+      "sha256": "aacc72077a61c779b377b4cacc38e7da4bffb012a881549d408dd709fde59664",
+      "bytes": 48486
+    },
+    {
+      "path": "packages/cloud-agent-runtime/src/runtimeStdio.test.ts",
+      "blob": "87d5504f5d4130c26d5dd1c7e15ec40a7536cfb2",
+      "sha256": "6f00a972d0bd8cade194abba375f90e81136975f2eb7e2f3c0e260ad60aa29cc",
+      "bytes": 21236
+    },
+    {
+      "path": "packages/cloud-agent-distribution/src/runStdio.test.ts",
+      "blob": "34040f9917100b7a2bfb01df49e0eccf7b78d9dd",
+      "sha256": "3ff8c29e97833bf16436dca10fdfa59566720ade17be409b809cd51f5612b72d",
+      "bytes": 2227
+    }
+  ],
+  "fixtureCorpus": {
+    "version": "p0-protocol-golden-v2",
+    "root": "packages/cloud-agent-protocol/fixtures/p0",
+    "files": [
+      {
+        "path": "corpus-manifest.json",
+        "sha256": "a147cea6ab79894daf2c73414799433490748985a274eb43314c43191093bd2d"
+      },
+      {
+        "path": "v2.2/commands.jsonl",
+        "sha256": "c0e531d2553c2d8a69bfa99161fdf28ca2a58bedba06ffde85ad56625cadf699"
+      },
+      {
+        "path": "v2.2/messages.jsonl",
+        "sha256": "b95534960572a89e4427157d0397e2c25796bff70201d257121d43b281cb368c"
+      },
+      {
+        "path": "v2.3/commands.jsonl",
+        "sha256": "4888fc8d6bea32e985faf500c9983fa98925b0d90121448f341570b54c18c611"
+      },
+      {
+        "path": "v2.3/messages.jsonl",
+        "sha256": "7d748428824a6e092874b2a6dbaab7935633fc18b722940aa1e667d7dd4969f8"
+      },
+      {
+        "path": "negative/frames.jsonl",
+        "sha256": "d0d64208e9c9af2f5f122271eaf8c358ed4bb7f71bc0c3f70c4282737448473f"
+      },
+      {
+        "path": "negative/invalid-ndjson.txt",
+        "sha256": "d9e11ce0a37abf6d70c003be3a04a2dcf82b4da9d423bd714544a439a3b94995"
+      },
+      {
+        "path": "transcripts.json",
+        "sha256": "d4a63542c4320423abd948528344af2c177abce78da528f2cfe9de9df62dde13"
+      },
+      {
+        "path": "semantic-oracles.json",
+        "sha256": "de2a3f80da232daa4cb7fb0c2edad7158d909ca042bf10cc806732de0f6189fc"
+      },
+      {
+        "path": "reference-host-lifecycle-v1.json",
+        "sha256": "0e30f975ebefbee587355a6f0e036a927d173452a3d6cacd17573fc10c755972"
+      }
+    ]
+  },
+  "coverage": [
+    "protocol-2.2/2.3-frame-characterization",
+    "all-command-and-message-variant-coverage",
+    "correlation-and-generation-negative-oracles",
+    "ordering-late-and-duplicate-terminal-negative-oracles",
+    "four-stop-outcome-oracles",
+    "packed-binary-illegal-frame-and-bounded-multiplexing-source-oracles",
+    "greenfield-reference-host-lifecycle-spec-oracle"
+  ],
+  "limitations": [
+    "This is not a Managed Host create -> ready -> terminate reference run.",
+    "Capability negotiation is recorded as NOT_ENFORCED because the protocol parser has no command-to-capability checker.",
+    "Authenticated Codex/Claude lifecycle, late terminal, workspace containment, and sustained backpressure are NOT_RUN.",
+    "Protocol 2.2 parser/schema and future-minor parser/schema behavior disagree and require a P1 contract decision."
+  ]
+}

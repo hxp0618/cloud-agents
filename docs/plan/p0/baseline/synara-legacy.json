@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "cloud-agents.p0.baseline-manifest/v2",
+  "manifestVersion": 2,
+  "profile": "synara-legacy-managed-agent",
+  "status": "CHARACTERIZED_NOT_EXECUTED",
+  "platformP0CharacterizationClosure": {
+    "complete": true,
+    "scope": "legacy managed-agent mechanisms at fixed source refs",
+    "doesNotDecideAggregateGate": true
+  },
+  "m1BehaviorClosure": {
+    "complete": false,
+    "status": "NOT_RUN",
+    "scope": "authenticated Provider, SendTurn, workspace mutation, checkpoint, reconnect and same-bits behavior"
+  },
+  "aggregateGateDecision": "NOT_CLAIMED",
+  "repository": "hxp0618/synara",
+  "ref": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+  "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+  "repoCandidates": [
+    "/Users/huang/devel/project/huang/business/synara-cloud-agent-external-runtime",
+    "/Users/huang/devel/project/huang/business/synara"
+  ],
+  "evidenceStrength": "SOURCE_AND_CHECKED_IN_TEST_ORACLE",
+  "realProviderExecution": "NOT_RUN",
+  "coverage": [
+    "provider-host-protocol-2.2/2.3-history",
+    "execution-generation-fencing",
+    "worker-claim-concurrency",
+    "workspace-restore-generation",
+    "workspace-lifecycle-and-containment",
+    "kubernetes-allocation-backend",
+    "provider-credential-broker",
+    "leadership-write-fence",
+    "kubernetes-pod-deletion-fence",
+    "candidate-and-worker-image-identity"
+  ],
+  "files": [
+    {
+      "path": "docs/contracts/provider-host-v2.md",
+      "blob": "7d3badc1bf38d538bbadf2927a8f81228815dda4",
+      "sha256": "676ce83a2782eee04b62b54015fad9bfbe7333fb82e330407ab840e2517cd70a",
+      "bytes": 19297
+    },
+    {
+      "path": "services/control-plane/internal/agentd/provider_host_v2.go",
+      "blob": "6b1ffac607bfe6a05b447d963e546385050911cb",
+      "sha256": "9087acada50e281fa0b2c6add15f24c0c07730b345dd05ad7ba125c341896fae",
+      "bytes": 68378
+    },
+    {
+      "path": "services/control-plane/internal/agentd/provider_host_v2_test.go",
+      "blob": "1c8aa04f4bf6e46bd3c53f95d02cceedccb4633b",
+      "sha256": "4b1f57da9365ed78ee2e05bcc015c1831de2c0e5a6f574dc0691868ddeb03ac4",
+      "bytes": 69483
+    },
+    {
+      "path": "services/control-plane/internal/agentd/workspace_restore_generation_test.go",
+      "blob": "be7cda661ba1ba4bc8bf5e4b2d0a3f5248062bbf",
+      "sha256": "c59f22bbbc9d3fe6ece8b95badd1ec9e5b7977a6c088dcf3502eab7ad07adb5a",
+      "bytes": 32457
+    },
+    {
+      "path": "services/control-plane/internal/agentd/workspace_test.go",
+      "blob": "b1323c0eec4bae956a91cb3f5fb8ab31e46fceec",
+      "sha256": "ff0137a1e4a1f11cc8baaba7b264eca6a9bae5e922f379e66e75056e243baf5e",
+      "bytes": 15463
+    },
+    {
+      "path": "services/control-plane/internal/agentd/provider_credential_broker_test.go",
+      "blob": "fb87700c1d05190904314532462982014cee1fa5",
+      "sha256": "9e76f41b40352a4b76174bb508308cc500aeb9ba5da05aa5f36b80d3e1108eb3",
+      "bytes": 3507
+    },
+    {
+      "path": "services/control-plane/internal/executions/worker_claim_concurrency_test.go",
+      "blob": "4f30385537aadf08700fcce0ca4912cf58acfcd0",
+      "sha256": "bd4caedbbc6b3897432207350ab54bf24a54656474d9b00afbb44133a31ec770",
+      "bytes": 16319
+    },
+    {
+      "path": "services/control-plane/internal/executiontargets/kubernetes_allocation_backend_test.go",
+      "blob": "ee7015c20c7c9763dfa2bd74db921e3edff659a1",
+      "sha256": "e69705090670cd402217f0e64476d84db6e2c015736353468191698bc163a871",
+      "bytes": 7349
+    },
+    {
+      "path": "services/control-plane/internal/leadership/write_fence_test.go",
+      "blob": "8616517307fed939b1e4f82e3c6586b4e985bec0",
+      "sha256": "1730b8a9a16a8de4ce2e7ca6084e5c7e6364fdff8d4505edb6d7ea6c5e1d6171",
+      "bytes": 2137
+    },
+    {
+      "path": "services/control-plane/internal/database/kubernetes_pod_deletion_fence_sqlite_test.go",
+      "blob": "7e51d488279f61ec2faaa59000c289d1c4d19c6c",
+      "sha256": "fe03558563787120cea1653786a348ede261f90f0281933f1574623e18b72fe5",
+      "bytes": 4101
+    },
+    {
+      "path": "cloud-agent-candidate.lock.json",
+      "blob": "cdf86c0a073468c9d722f3133e9874912046677f",
+      "sha256": "c37167d88426c71042bfa53a511f07a3988643370da4aade4303cf3925895829",
+      "bytes": 2706
+    },
+    {
+      "path": "deploy/worker/worker-image-manifest.mjs",
+      "blob": "bf4d0d653b0730b7022b7dfbe14c6c4d7f05277e",
+      "sha256": "fc7e28a26a70d934c15690f7b282a978e16f5f99f5d7e341599faa6b04f562ae",
+      "bytes": 15654
+    }
+  ],
+  "limitations": [
+    "No same-input before/after run against public Platform bits.",
+    "No authenticated Codex or Claude failure/resume run retained by P0.",
+    "Session/Turn/Execution foreign keys are not a reusable Environment Lease model.",
+    "Checked-in tests and reports are case oracles, not replayed closure evidence."
+  ]
+}

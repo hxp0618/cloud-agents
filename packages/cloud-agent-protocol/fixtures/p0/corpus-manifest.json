@@ -1,0 +1,132 @@
+{
+  "corpusVersion": "p0-protocol-golden-v2",
+  "status": "CHARACTERIZATION",
+  "wireVersions": ["2.2", "2.3"],
+  "profiles": {
+    "2.2": {
+      "parserExpectation": "ACCEPT",
+      "schemaExpectation": "REJECT",
+      "reason": "The public structural validator negotiates 2.0-2.3, while the checked-in JSON Schema currently requires minor >= 3."
+    },
+    "2.3": {
+      "parserExpectation": "ACCEPT",
+      "schemaExpectation": "ACCEPT"
+    }
+  },
+  "files": [
+    "v2.2/commands.jsonl",
+    "v2.2/messages.jsonl",
+    "v2.3/commands.jsonl",
+    "v2.3/messages.jsonl",
+    "negative/frames.jsonl",
+    "negative/invalid-ndjson.txt",
+    "transcripts.json",
+    "semantic-oracles.json",
+    "reference-host-lifecycle-v1.json"
+  ],
+  "requiredCoverage": {
+    "commandsV22": [
+      "Describe",
+      "StartSession",
+      "ResumeSession",
+      "SendTurn",
+      "SteerTurn",
+      "InterruptTurn",
+      "SuspendTurn",
+      "ResolveApproval",
+      "ResolveUserInput",
+      "CompactSession",
+      "RollbackSession",
+      "ForkSession",
+      "StartReview",
+      "StopSession"
+    ],
+    "commandsV23": [
+      "Describe",
+      "StartSession",
+      "ResumeSession",
+      "SendTurn",
+      "SteerTurn",
+      "InterruptTurn",
+      "SuspendTurn",
+      "ResolveApproval",
+      "ResolveUserInput",
+      "CompactSession",
+      "RollbackSession",
+      "ForkSession",
+      "StartReview",
+      "GenerateText",
+      "StopSession"
+    ],
+    "messageVariants": [
+      "Event",
+      "InteractionRequest",
+      "ArtifactCandidate",
+      "Checkpoint",
+      "Progress",
+      "Result",
+      "Error"
+    ],
+    "negativeCategories": [
+      "missing-field",
+      "unknown-command",
+      "major-version",
+      "future-minor",
+      "generation",
+      "timestamp",
+      "payload-shape",
+      "unknown-message",
+      "terminal-error",
+      "runtime-event-version"
+    ],
+    "transcriptSemantics": [
+      "correlation",
+      "generation",
+      "message-before-command",
+      "ordering",
+      "late-terminal",
+      "duplicate-terminal",
+      "missing-terminal",
+      "stop-quiesced",
+      "stop-forced",
+      "stop-timed-out",
+      "stop-failed"
+    ],
+    "characterizationOnly": ["capability-negotiation", "real-provider-lifecycle"],
+    "referenceHostLifecycle": [
+      "create",
+      "admit",
+      "provision",
+      "ready",
+      "terminate",
+      "reap",
+      "failed-cleanup",
+      "stale-generation",
+      "duplicate-receipt",
+      "idempotency",
+      "pairing-secret-not-persisted",
+      "dpop-negative",
+      "revoke-negative",
+      "fence-negative"
+    ]
+  },
+  "knownCompatibilityGaps": [
+    {
+      "id": "schema-rejects-2.2",
+      "status": "OPEN",
+      "parser": "ACCEPT",
+      "schema": "REJECT"
+    },
+    {
+      "id": "schema-accepts-future-minor",
+      "status": "OPEN",
+      "parser": "REJECT",
+      "schema": "ACCEPT"
+    },
+    {
+      "id": "capability-command-enforcement-not-in-protocol-parser",
+      "status": "NOT_ENFORCED",
+      "evidence": "semantic-oracles.json"
+    }
+  ]
+}
