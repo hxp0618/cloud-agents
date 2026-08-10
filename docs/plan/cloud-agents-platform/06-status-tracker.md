@@ -129,13 +129,13 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 
 ## 5. 暂停现场问题
 
-| ID    | 观察                                                                      | 状态                             | 恢复后动作                                            |
-| ----- | ------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------- |
-| R-001 | Codex 0.145 null `exclude` 被 rc.1 attestor 误拒                          | OPEN / uncommitted fix preserved | 独立 rc.2 修复窗口                                    |
-| R-002 | Claude SDK-managed SendTurn unsuccessful without details                  | OPEN / diagnosis interrupted     | 独立诊断，不与 CP 混合                                |
-| R-003 | Full Worker image Alpine package lock drift                               | OPEN                             | 宿主供应链 refresh Gate                               |
-| R-004 | app.asar/完整 cross-host/soak                                             | OPEN                             | M1 E2E closure                                        |
-| R-005 | pgx v5.10.0 default closure 的 x/text v0.29.0 命中 reachable GO-2026-5970 | OPEN / dependency BLOCKED        | 审查 x/text >= v0.39.0 与最终 MVS 闭包后再进入 go.mod |
+| ID    | 观察                                                                      | 状态                                 | 恢复后动作                                                                                     |
+| ----- | ------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| R-001 | Codex 0.145 null `exclude` 被 rc.1 attestor 误拒                          | OPEN / uncommitted fix preserved     | 独立 rc.2 修复窗口                                                                             |
+| R-002 | Claude SDK-managed SendTurn unsuccessful without details                  | OPEN / diagnosis interrupted         | 独立诊断，不与 CP 混合                                                                         |
+| R-003 | Full Worker image Alpine package lock drift                               | OPEN                                 | 宿主供应链 refresh Gate                                                                        |
+| R-004 | app.asar/完整 cross-host/soak                                             | OPEN                                 | M1 E2E closure                                                                                 |
+| R-005 | pgx v5.10.0 default closure 的 x/text v0.29.0 命中 reachable GO-2026-5970 | REMEDIATION APPROVED / not installed | ordinary exact x/text v0.39.0 pin + 最终 Control Plane closure 重放后 supersede BLOCKED record |
 
 ## 6. 恢复实施 checklist
 

@@ -21,6 +21,8 @@ Platform RC、Beta 或 GA。
 - [`ajv-8.20.0.md`](dependency-reviews/ajv-8.20.0.md)：P1 JSON Schema 2020-12 validator direct edge；APPROVED
 - [`pgx-v5.10.0.md`](dependency-reviews/pgx-v5.10.0.md)：P1 PostgreSQL driver target；**BLOCKED**（default
   `x/text v0.29.0` 存在 reachable `GO-2026-5970`，等待安全闭包独立复核）
+- [`x-text-v0.39.0.md`](dependency-reviews/x-text-v0.39.0.md)：pgx remediation exact direct pin 与最终 MVS
+  delta；**APPROVED**（仍需在真实 Control Plane `go.mod/go.sum` 落盘并重放后 supersede pgx BLOCKED record）
 
 ## Data kernel decisions
 
