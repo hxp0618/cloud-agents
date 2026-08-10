@@ -1,66 +1,63 @@
 # Platform P0 provenance, license, and secret baseline
 
 - Status：BLOCKED
-- Scope：source/RC/consumer evidence only
+- Runtime audit：complete、fail closed
+- Synara extraction audit：PASS WITH RESTRICTIONS
 - Publication/attestation mutation：NOT AUTHORIZED
-- Conclusion：source lineage and artifact hashes are largely reproducible；license/provenance/secret Gate not closed
 
-## Positive evidence
+## Runtime fixed-input audit
 
-- `SOURCE_PROVENANCE.md` 的 7 个包、3 个 release helper 与 root config 共 11 个 Git object，和 Synara
-  `f9fb3d695` 逐对象 11/11 一致；后续 protocol object 也与 `b86d30b1` 一致；
-- source 与七个 tgz 内 MIT LICENSE 内容一致；
-- `cloud-agent-m1-rc.1` annotated tag 指向 `49e8cdc6...`；本地七 tgz + standalone SHA-256 与 candidate
-  lock 一致；六个已安装生产包 SHA-512 与 `bun.lock` 一致；
-- Synara external runtime offline candidate verifier 当前通过；
-- `bun run secret:scan` 已通过；补充文件名/计数扫描未发现 PEM、AWS、GitHub、Slack 或 Google token；
-  bundle 中 generic `missing access_token` 是错误文本，不是 credential。
+机器记录：[`provenance/runtime-supply-chain-audit.json`](provenance/runtime-supply-chain-audit.json)；中文摘要：
+[`provenance/runtime-supply-chain-audit.zh-CN.md`](provenance/runtime-supply-chain-audit.zh-CN.md)。
 
-这些正项只证明来源/哈希链的一部分，不等于 trusted attestation、完整 license closure 或全历史 secret
-closure。
+已验证：
 
-## Blocking findings
+- source `49e8cdc6...`、tree `952996e...`、annotated tag object `ac64d6f2...`；
+- `SOURCE_PROVENANCE.md` 11/11 declared Git objects；
+- 七个 tgz 与 standalone 的 candidate/checksum/same-bits；
+- Node 24.13.1、Bun 1.3.14 与 scanner binary/archive digest；
+- 107 个外部生产依赖节点、175 条边；SPDX 114 packages、194 relationships；
+- Gitleaks 对 fixed source tree、解包制品、local Git refs 零发现；raw report 未入库；
+- Syft 识别 7/7 公共包；OSV 2.5.0 snapshot 为零已知漏洞。
 
-### SBOM/license
+Runtime 结论仍为 **BLOCKED**，且明确 `releaseAuthorization=false`：
 
-- 当前 SBOM 只列 8 个自有 manifest、0 relationships，未覆盖 peer/optional/transitive；
-- standalone 实际 bundle `@anthropic-ai/claude-agent-sdk@0.3.207`，但没有可审计 THIRD_PARTY_NOTICES/
-  license text hash；
-- 本机缺 Syft/license scanner，无法关闭 unknown/NOASSERTION/blocked license policy。
+1. Anthropic SDK/native package 的外部 Legal Agreements/All rights reserved 没有记录重分发授权；
+2. 8 项 license text 缺失、10 项 package license policy blocked；
+3. standalone 没有保留 bundler metafile；
+4. fixed rc.1 workflow 未完整 SHA pin/OIDC attest + immediate verify；
+5. source commit/tag unsigned；
+6. legacy provenance 只覆盖七个 tarball，遗漏 standalone/metadata，`resolvedDependencies=[]`；
+7. 8/8 GitHub artifact attestation 不存在或不可验证。
 
-### Provenance/signature
+这些是旧 immutable rc.1 的历史事实；当前 P0 分支的 workflow hardening 不会反向改变旧 candidate。
 
-- `provenance.json` 是未签名 local builder 声明，`resolvedDependencies=[]`；
-- subjects 只覆盖七 tgz，不含 standalone、SBOM、checksums、candidate manifest；
-- candidate digest 只绑定七 tgz，不绑定 standalone 和 evidence；
-- main commits/tag 无受信 signature/attestation；CI 没有 OIDC attestation + immediate verify；
-- mutable action tags/`ubuntu-latest` 仍在使用。
+## Synara extraction source
 
-### Secret scanning
+全量 inventory 已扩为 frozen ref `2c50b1eb...` 的 8,625 个 tracked blob，并为 public candidate 记录同一
+MIT source license object：`LICENSE` blob `960499...`、内容 SHA-256 `305724...`。这只证明 source
+license provenance，不替代第三方 dependency/license owner 的批准。
 
-- 现有 scanner 规则较窄，且整类跳过 `**/*.test.ts` 与 `fixtures/**`；published fixtures 不能整目录豁免；
-- 本机缺 Gitleaks，尚未完成 full-history、current tree 和安全解包 artifact scan；
-- Synara external source 中 PEM/generic 命中只完成规则级初筛，必须用 redacted scanner + exact fingerprint
-  allowlist 复核。
+机器记录：[`provenance/synara-extraction-source-audit.json`](provenance/synara-extraction-source-audit.json)；
+中文摘要：[`provenance/synara-extraction-source-audit.zh-CN.md`](provenance/synara-extraction-source-audit.zh-CN.md)。
 
-### Consumer closure
+固定 Gitleaks 8.30.1 对 fixed source tree、reachable history 与 1,129-row selected extraction source 实际扫描，
+得到 `17 + 33 + 6 = 56` 条 finding。独立只读复核按 canonical path/rule/line/commit identity 逐条裁决：
 
-- offline verifier 跳过 testkit 安装核验，只对 Distribution stdio 做文件 SHA-256；
-- frozen lock 可证明六个安装包 integrity，但不能替代八个 release artifact 的逐项验证；
-- Synara external source 另含 Bun/npm/Go lock、GitHub/pkg.pr.new URL 与 tag-only image，没有综合 license report。
+- 48 条为 exact context false positive；
+- 6 条属于同一静态测试私钥来源，必须删除或改为运行时生成，禁止直接复制到公共提交；
+- 2 条位于历史日志；即使当前命中上下文是枚举，也禁止把 Synara Git history graft 到公共仓；
+- possible real secret 与 cannot-determine 均为 0；没有整目录、整规则或全测试文件 allowlist；
+- triage SHA-256 `2936cb8e...`，finding set SHA-256 `5f74f2af...`；决策有 owner/expiry，任何漂移或到期均
+  fail closed。
 
-## Required P0 evidence before closure
+因此 source/secret provenance 已完整，但这是 inventory closure，不是直接复制或公开授权：
+`sourceHistoryImportAuthorized=false`、`selectedSourceDirectCopyAuthorized=false`、
+`publicationAuthorized=false`。P1 只能创建新的公共历史，并在重写后重新扫描 extracted tree 与 artifact。
 
-1. 固定 scanner/SBOM/license tool version + binary/OCI digest；
-2. Gitleaks full-history/tree/extracted-artifact `--redact`；只保存删除 Secret/Match/raw line 后的 sanitized report；
-3. 对七 tgz 的生产 closure 生成 SPDX/CycloneDX；standalone 结合 Bun metafile 还原 bundled dependency；
-4. 生成 THIRD_PARTY_NOTICES 和 license text SHA-256；unknown/NOASSERTION fail closed；
-5. canonical `artifact-set.json` 覆盖七 tgz、standalone、SBOM、NOTICE、sanitized scan/license reports；
-6. provenance subjects/materials 覆盖 artifact set、source commit/tree、locks、external dependency integrity、
-   workflow/action SHA 和 tool digests；
-7. GitHub OIDC attestation 后在同一 workflow 立即 verify；
-8. consumer 对八个 release artifacts 逐项 digest verify；testkit 明确属于 release-set 或 install closure；
-9. waiver 使用 exact finding/digest + justification/owner/expiry，禁止整目录跳过。
+## Claim boundary
 
-在这些 evidence 完成前，不得把当前 RC 称为 license/provenance/secret cleared，也不得关闭
-`G-INVENTORY` 的 provenance 子项或 `G-SUPPLY-CHAIN`。
+当前证据可支持“Runtime 供应链清单已完整审计并如实发现 blocker”，以及“Synara extraction 的 source/license/
+secret provenance 已完成并带强制 rewrite/history quarantine 限制”。它不能支持：third-party license cleared、
+trusted provenance/attestation、直接复制、已发布、已部署、Platform RC、Beta 或 GA。`G-SUPPLY-CHAIN`、
+Runtime release 与 Platform exposure 均保持未关闭。

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "kind": "cloud-agent-p0-synara-extraction-source-provenance-audit",
+  "generatedAt": "2026-08-10T09:20:43.222Z",
+  "status": "PASS",
+  "fixedInput": {
+    "sourceCommit": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+    "sourceTree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+    "inventoryRows": 8625,
+    "inventorySha256": "bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5",
+    "decisionSha256": "4e8e92cfb48a2d272c4b025c815a8afb9f85ec7ab6be65a160f4893c85fc429d"
+  },
+  "source": {
+    "status": "PASS",
+    "commit": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+    "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+    "clean": true,
+    "shallow": false,
+    "reachableHistoryCommitCount": 3075
+  },
+  "inventory": {
+    "status": "PASS",
+    "rows": 8625,
+    "sha256": "bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5",
+    "trackedPathSetEqualsInventoryPathSet": true,
+    "everyBlobOidVerified": true,
+    "everyContentSha256Verified": true,
+    "everyByteCountVerified": true
+  },
+  "decisions": {
+    "status": "PASS",
+    "rows": 8625,
+    "sha256": "4e8e92cfb48a2d272c4b025c815a8afb9f85ec7ab6be65a160f4893c85fc429d",
+    "uniquePaths": true,
+    "uniqueTargets": true,
+    "completeClassificationAndProvenance": true,
+    "selectedCandidateRows": 1129,
+    "classifications": {
+      "synara-only": 7491,
+      "rewrite-public": 940,
+      "adapter": 96,
+      "deferred-public-extension": 67,
+      "retire": 5,
+      "move": 26
+    }
+  },
+  "license": {
+    "status": "PASS",
+    "spdxExpression": "MIT",
+    "path": "LICENSE",
+    "blobOid": "960499447d8ea8f6ce86017893f132f0c3885fef",
+    "textSha256": "305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b",
+    "provenance": "MIT@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0:LICENSE#blob=960499447d8ea8f6ce86017893f132f0c3885fef;sha256=305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b",
+    "scope": "fixed Synara extraction source only",
+    "thirdPartyDependencyLicenseCleared": false
+  },
+  "secretScanning": {
+    "status": "PASS_WITH_RESTRICTIONS",
+    "scanner": {
+      "name": "gitleaks",
+      "version": "8.30.1",
+      "sha256": "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302"
+    },
+    "scopeCount": 3,
+    "totalFindingCount": 56,
+    "triage": {
+      "sha256": "2936cb8e883b296d13cd99f2ac4ba474c06e79dad4bce0cfdf9b4e76083b61b6",
+      "reviewer": "Codex P0 secret-triage explorer (independent read-only review)",
+      "reviewedAt": "2026-08-10",
+      "decisionCount": 56,
+      "dispositionCounts": {
+        "ACCEPT_EXACT_CONTEXT_FALSE_POSITIVE": 48,
+        "REWRITE_REQUIRED_BEFORE_PUBLICATION": 6,
+        "SOURCE_HISTORY_QUARANTINE": 2
+      },
+      "missingTriageCount": 0,
+      "unobservedTriageCount": 0
+    },
+    "rawReportsPersisted": false
+  },
+  "checks": [
+    {
+      "name": "toolchain",
+      "status": "PASS",
+      "detail": "Node v24.13.1 and Gitleaks 8.30.1 verified."
+    },
+    {
+      "name": "source-identity",
+      "status": "PASS",
+      "detail": "Fixed source HEAD/tree and clean non-shallow checkout verified."
+    },
+    {
+      "name": "secret-triage",
+      "status": "PASS",
+      "detail": "56 exact sanitized finding hashes have reviewed dispositions."
+    },
+    {
+      "name": "inventory-blob-closure",
+      "status": "PASS",
+      "detail": "8625 tracked paths and every blob OID/SHA-256/byte count verified."
+    },
+    {
+      "name": "decision-closure",
+      "status": "PASS",
+      "detail": "8625 unique paths/targets and 1129 selected candidates verified."
+    },
+    {
+      "name": "source-license",
+      "status": "PASS",
+      "detail": "Fixed source LICENSE blob and MIT text SHA-256 verified."
+    },
+    {
+      "name": "secret-provenance",
+      "status": "PASS",
+      "detail": "All required Gitleaks scopes completed and every exact finding has an unexpired disposition."
+    }
+  ],
+  "blockers": [],
+  "restrictions": [
+    "Never graft or publish the Synara source Git history.",
+    "Rewrite or delete static test private-key bytes before any selected source is published.",
+    "Re-run extracted-tree and artifact scans after P1 rewrites; exact decisions expire on their recorded dates."
+  ],
+  "claimBoundary": {
+    "sourceLicenseProvenanceComplete": true,
+    "secretProvenanceComplete": true,
+    "sourceHistoryImportAuthorized": false,
+    "selectedSourceDirectCopyAuthorized": false,
+    "thirdPartyDependencyLicenseCleared": false,
+    "publicationAuthorized": false
+  }
+}

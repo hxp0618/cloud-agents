@@ -41,22 +41,12 @@ if (dirty) {
   throw new Error(`P0 source is dirty; refusing inventory generation:\n${dirty}`);
 }
 const snapshotTree = runGit("rev-parse", "HEAD^{tree}").trim();
+const sourceCommitTimestamp = runGit("show", "-s", "--format=%cI", "HEAD").trim();
 
-const scopes = [
-  "services/control-plane",
-  "deploy",
-  "scripts",
-  ".github",
-  "apps/provider-host",
-  "docs/contracts",
-  "Dockerfile",
-  "package.json",
-  "bun.lock",
-  "cloud-agent-candidate.lock.json",
-  "cloud-agent-candidate.lock.schema.json",
-];
-
-const treeOutput = runGit("ls-tree", "-r", "-z", "HEAD", "--", ...scopes);
+// The legacy root Dockerfile contains `COPY . .`.  A selected-directory inventory
+// therefore cannot prove the complete build context.  Freeze every tracked blob;
+// rows outside the extraction surface are retained as Synara-only provenance.
+const treeOutput = runGit("ls-tree", "-r", "-z", "HEAD");
 const entries = treeOutput
   .split("\0")
   .filter(Boolean)
@@ -79,10 +69,28 @@ function scopeFor(path) {
   if (path.startsWith(".github/")) return "ci";
   if (path.startsWith("apps/provider-host/")) return "provider-host-compat";
   if (path.startsWith("docs/contracts/")) return "contract-reference";
-  return "root-supply-chain";
+  if (
+    [
+      ".dockerignore",
+      "Dockerfile",
+      "bun.lock",
+      "bunfig.toml",
+      "cloud-agent-candidate.lock.json",
+      "cloud-agent-candidate.lock.schema.json",
+      "package.json",
+      "tsconfig.base.json",
+      "turbo.json",
+    ].includes(path) ||
+    path.startsWith("patches/") ||
+    /^(?:apps|packages)\/[^/]+\/package\.json$/u.test(path)
+  ) {
+    return "root-supply-chain";
+  }
+  return "legacy-build-context";
 }
 
-function capabilityFor(path) {
+function capabilityFor(path, scope) {
+  if (scope === "legacy-build-context") return "legacy-build-context";
   const rules = [
     [/services\/control-plane\/cmd\/api|internal\/httpapi/, "management-api"],
     [/internal\/(executions|sessions|executiontargets|persistence)/, "execution-authority"],
@@ -107,7 +115,8 @@ function capabilityFor(path) {
   return rules.find(([pattern]) => pattern.test(path))?.[1] ?? "unclassified";
 }
 
-function classificationFor(path, capability) {
+function classificationFor(path, capability, scope) {
+  if (scope === "legacy-build-context") return "synara-only";
   if (/provider[-_]?host[-_]?v1/i.test(path)) return "retire";
   if (capability === "billing-commercial") return "synara-only";
   if (/saml|scim|legalhold|privacyexport|advancedretention/i.test(path)) {
@@ -133,7 +142,12 @@ function classificationFor(path, capability) {
   return "unclassified";
 }
 
-function phaseRelation(path) {
+function phaseRelation(path, scope) {
+  if (scope === "legacy-build-context") {
+    return path.startsWith(".vscode/")
+      ? ["evidence", "dockerignore-excluded-tracked-input"]
+      : ["image-copy", "legacy-root-context"];
+  }
   if (/_test\.go$|\.test\.[cm]?[jt]sx?$/.test(path)) return ["validate", "test-input"];
   if (/\/migrations\/\d{6}_.+\.sql$/.test(path)) return ["embed", "embedded-file"];
   if (/Dockerfile/.test(basename(path))) return ["image-build", "build-context"];
@@ -173,9 +187,9 @@ function riskFor(path, capability, generatedStateValue) {
 const rows = entries.map((entry) => {
   const buffer = fileBuffer(entry.path);
   const scope = scopeFor(entry.path);
-  const capability = capabilityFor(entry.path);
-  const classification = classificationFor(entry.path, capability);
-  const [phase, relation] = phaseRelation(entry.path);
+  const capability = capabilityFor(entry.path, scope);
+  const classification = classificationFor(entry.path, capability, scope);
+  const [phase, relation] = phaseRelation(entry.path, scope);
   const generatedStateValue = generatedState(entry.path);
   const risk = riskFor(entry.path, capability, generatedStateValue);
   const manualReview =
@@ -202,7 +216,11 @@ const rows = entries.map((entry) => {
     notes:
       generatedStateValue === "orphaned-source"
         ? "checked-in output exists but configured source path is absent at frozen ref"
-        : "",
+        : scope === "legacy-build-context"
+          ? entry.path.startsWith(".vscode/")
+            ? "tracked for conservative full-tree provenance but excluded from the legacy Docker context by .dockerignore"
+            : "tracked by the legacy root Docker COPY context; outside the approved public extraction surface"
+          : "",
   };
 });
 
@@ -246,18 +264,111 @@ const artifacts = [
     ...value,
   })),
 ];
+const inventoryRelativePath = relative(process.cwd(), tsvPath).split(sep).join("/");
+const controlPlaneTree = runGit("rev-parse", "HEAD:services/control-plane").trim();
+const deployTree = runGit("rev-parse", "HEAD:deploy").trim();
+const scriptsTree = runGit("rev-parse", "HEAD:scripts").trim();
+const inventorySha256 = sha256(tsvText);
+const graphNodes = [
+  {
+    id: "source:synara-control-plane",
+    kind: "fixed-source-tree",
+    path: "services/control-plane",
+    gitTree: controlPlaneTree,
+  },
+  {
+    id: "inventory:synara-file-inventory",
+    kind: "inventory-manifest",
+    path: inventoryRelativePath,
+    sha256: inventorySha256,
+  },
+  {
+    id: "lock:cloud-agent-candidate",
+    kind: "immutable-candidate-lock",
+    path: "cloud-agent-candidate.lock.json",
+    candidateDigest: candidateLock.candidateDigest,
+    sourceCommit: candidateLock.sourceCommit,
+  },
+  ...commandNodes.map((id) => ({
+    id: `command:${id}`,
+    kind: id === "generate" ? "generator" : "go-command",
+    path: `services/control-plane/cmd/${id}`,
+  })),
+  ...deployScopes.map((id) => ({
+    id: `deployment:${id}`,
+    kind: "deployment-scope",
+    path: `deploy/${id}`,
+  })),
+  ...artifacts,
+];
+const graphEdges = [
+  {
+    from: "source:synara-control-plane",
+    to: "inventory:synara-file-inventory",
+    relation: "described-by",
+    count: rows.length,
+  },
+  ...commandNodes.map((id) => ({
+    from: "inventory:synara-file-inventory",
+    to: `command:${id}`,
+    relation: "indexes-command",
+  })),
+  ...deployScopes.map((id) => ({
+    from: "inventory:synara-file-inventory",
+    to: `deployment:${id}`,
+    relation: "indexes-deployment-scope",
+  })),
+  {
+    from: "inventory:synara-file-inventory",
+    to: "lock:cloud-agent-candidate",
+    relation: "indexes-external-release-input",
+  },
+  ...artifacts.map((artifact) => ({
+    from: "lock:cloud-agent-candidate",
+    to: artifact.id,
+    relation: "pins-external-artifact",
+    digest: artifact.sha256,
+  })),
+  {
+    from: "command:agentd",
+    to: "lock:cloud-agent-candidate",
+    relation: "launches-via-provider-host-bundle",
+  },
+  {
+    from: "deployment:worker",
+    to: "command:agentd",
+    relation: "packages",
+  },
+];
+const graphNodeIds = new Set(graphNodes.map((node) => node.id));
+if (graphNodeIds.size !== graphNodes.length)
+  throw new Error("inventory graph has duplicate node IDs");
+for (const edge of graphEdges) {
+  if (!graphNodeIds.has(edge.from) || !graphNodeIds.has(edge.to)) {
+    throw new Error(`inventory graph edge has missing endpoint: ${edge.from} -> ${edge.to}`);
+  }
+}
+const connectedNodeIds = new Set(graphEdges.flatMap((edge) => [edge.from, edge.to]));
+const isolatedNodeIds = graphNodes
+  .map((node) => node.id)
+  .filter((nodeId) => !connectedNodeIds.has(nodeId));
+if (isolatedNodeIds.length !== 0) {
+  throw new Error(`inventory graph has isolated nodes: ${isolatedNodeIds.join(", ")}`);
+}
 
 const graph = {
   schemaVersion: 1,
-  generatedAt: new Date().toISOString(),
+  // Bind generated metadata to the immutable source commit so replaying the
+  // inventory does not mutate the evidence digest merely because wall time moved.
+  generatedAt: sourceCommitTimestamp,
   snapshot: {
     head,
     tree: rows[0].snapshotTree,
-    controlPlaneTree: runGit("rev-parse", "HEAD:services/control-plane").trim(),
-    deployTree: runGit("rev-parse", "HEAD:deploy").trim(),
-    scriptsTree: runGit("rev-parse", "HEAD:scripts").trim(),
-    inventoryPath: relative(process.cwd(), tsvPath).split(sep).join("/"),
-    inventorySha256: sha256(tsvText),
+    controlPlaneTree,
+    deployTree,
+    scriptsTree,
+    inventoryPath: inventoryRelativePath,
+    inventorySha256,
   },
   counts: {
     files: rows.length,
@@ -268,48 +379,16 @@ const graph = {
     migrations: rows.filter((row) => row.phase === "embed").length,
     commands: commandNodes.length,
     externalArtifacts: artifacts.length,
+    graphNodes: graphNodes.length,
+    graphEdges: graphEdges.length,
   },
-  nodes: [
-    ...commandNodes.map((id) => ({
-      id: `command:${id}`,
-      kind: id === "generate" ? "generator" : "go-command",
-      path: `services/control-plane/cmd/${id}`,
-    })),
-    ...deployScopes.map((id) => ({
-      id: `deployment:${id}`,
-      kind: "deployment-scope",
-      path: `deploy/${id}`,
-    })),
-    ...artifacts,
-  ],
-  edges: [
-    {
-      from: "source:synara-control-plane",
-      to: "inventory:synara-file-inventory",
-      relation: "described-by",
-      count: rows.length,
-    },
-    ...artifacts.map((artifact) => ({
-      from: "lock:cloud-agent-candidate",
-      to: artifact.id,
-      relation: "pins-external-artifact",
-      digest: artifact.sha256,
-    })),
-    {
-      from: "command:agentd",
-      to: "lock:cloud-agent-candidate",
-      relation: "launches-via-provider-host-bundle",
-    },
-    {
-      from: "deployment:worker",
-      to: "command:agentd",
-      relation: "packages",
-    },
-  ],
+  nodes: graphNodes,
+  edges: graphEdges,
   limitations: [
     "classificationSeed is heuristic and is not a final P0 authority decision",
     "command import closure is recorded separately from this file/build-context inventory",
-    "Docker COPY context can include tests and migrations without semantic runtime dependency",
+    "all tracked blobs are frozen as a conservative superset because the legacy root Dockerfile uses COPY . .; .dockerignore can exclude individual rows, and legacy-build-context remains provenance-only/default-deny",
+    "Docker COPY context can include tests, docs and migrations without semantic runtime dependency",
   ],
 };
 writeFileSync(

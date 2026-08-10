@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-10T05:29:52.842Z",
+  "generatedAt": "2026-08-10T10:03:18+08:00",
   "snapshot": {
     "head": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
     "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
@@ -8,17 +8,18 @@
     "deployTree": "1d0369f6029f85bf0d3d14ddc81c235205169b45",
     "scriptsTree": "999769dde39fced4a1711fd2e42fcc5ca2b00029",
     "inventoryPath": "docs/plan/p0/synara-file-inventory.tsv",
-    "inventorySha256": "f3858852538ef67ec6879a6db101246f7b3bf65ba6301f9e5e9274200d716aa1"
+    "inventorySha256": "bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5"
   },
   "counts": {
-    "files": 1607,
+    "files": 8625,
     "byScope": {
       "ci": 10,
       "contract-reference": 62,
       "control-plane": 1174,
       "deploy": 117,
+      "legacy-build-context": 7002,
       "provider-host-compat": 4,
-      "root-supply-chain": 5,
+      "root-supply-chain": 21,
       "scripts": 235
     },
     "byCapability": {
@@ -32,13 +33,14 @@
       "identity-tenancy": 40,
       "kms-secret-rotation": 15,
       "kubernetes-deployment": 74,
+      "legacy-build-context": 7002,
       "management-api": 99,
       "metadata-migration": 4,
       "postgres-schema": 301,
       "product-composition": 18,
       "provider-catalog-generation": 5,
       "routing-ingress": 12,
-      "unclassified": 477,
+      "unclassified": 493,
       "worker-agentd-workspace-provider-host": 108,
       "worker-image-supply-chain": 21,
       "workspace-artifact": 29
@@ -49,15 +51,34 @@
       "move": 22,
       "retire": 1,
       "rewrite-public": 1017,
-      "synara-only": 43,
-      "unclassified": 229
+      "synara-only": 7045,
+      "unclassified": 245
     },
-    "manualReview": 339,
+    "manualReview": 355,
     "migrations": 167,
     "commands": 8,
-    "externalArtifacts": 8
+    "externalArtifacts": 8,
+    "graphNodes": 25,
+    "graphEdges": 26
   },
   "nodes": [
+    {
+      "id": "source:synara-control-plane",
+      "kind": "fixed-source-tree",
+      "path": "services/control-plane",
+      "gitTree": "4d32d26bf32b8ebd62188961d0dffff92da4cf0c"
+    },
+    {
+      "id": "inventory:synara-file-inventory",
+      "kind": "inventory-manifest",
+      "path": "docs/plan/p0/synara-file-inventory.tsv",
+      "sha256": "bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5"
+    },
+    {
+      "id": "lock:cloud-agent-candidate",
+      "kind": "immutable-candidate-lock",
+      "path": "cloud-agent-candidate.lock.json"
+    },
     {
       "id": "command:agentd",
       "kind": "go-command",
@@ -189,7 +210,82 @@
       "from": "source:synara-control-plane",
       "to": "inventory:synara-file-inventory",
       "relation": "described-by",
-      "count": 1607
+      "count": 8625
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:agentd",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:api",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:cocoon-provider-transport",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:cocoon-supervisor",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:gvisor-node-attestor",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:kms-worker",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:metadata",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "command:routing-authority-sign",
+      "relation": "indexes-command"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "deployment:billing",
+      "relation": "indexes-deployment-scope"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "deployment:kubernetes",
+      "relation": "indexes-deployment-scope"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "deployment:personal",
+      "relation": "indexes-deployment-scope"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "deployment:remote",
+      "relation": "indexes-deployment-scope"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "deployment:saas",
+      "relation": "indexes-deployment-scope"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "deployment:worker",
+      "relation": "indexes-deployment-scope"
+    },
+    {
+      "from": "inventory:synara-file-inventory",
+      "to": "lock:cloud-agent-candidate",
+      "relation": "indexes-external-release-input"
     },
     {
       "from": "lock:cloud-agent-candidate",
@@ -253,6 +349,7 @@
   "limitations": [
     "classificationSeed is heuristic and is not a final P0 authority decision",
     "command import closure is recorded separately from this file/build-context inventory",
-    "Docker COPY context can include tests and migrations without semantic runtime dependency"
+    "all tracked blobs are frozen as a conservative superset because the legacy root Dockerfile uses COPY . .; .dockerignore can exclude individual rows, and legacy-build-context remains provenance-only/default-deny",
+    "Docker COPY context can include tests, docs and migrations without semantic runtime dependency"
   ]
 }

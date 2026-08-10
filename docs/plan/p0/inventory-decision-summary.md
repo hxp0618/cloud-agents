@@ -5,16 +5,18 @@
 - Source：`2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source tree：`ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc`
 - Inventory：`docs/plan/p0/synara-file-inventory.tsv`
-- Inventory SHA-256：`f3858852538ef67ec6879a6db101246f7b3bf65ba6301f9e5e9274200d716aa1`
-- Inventory rows：1607
-- Manual-review input rows：339
-- Decision rows：1607
-- Decision TSV SHA-256：`a259ddf7f01e72e0bf6577d2ed754a8ec2837c17b78d28c8baa5b78f78cd3a08`
+- Inventory SHA-256：`bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5`
+- Inventory rows：8625
+- Manual-review input rows：355
+- Decision rows：8625
+- Decision TSV SHA-256：`4e8e92cfb48a2d272c4b025c815a8afb9f85ec7ab6be65a160f4893c85fc429d`
 - Unresolved/duplicate/missing decisions：**0**
+- Source license provenance：`MIT@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0:LICENSE#blob=960499447d8ea8f6ce86017893f132f0c3885fef;sha256=305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b`
+- Public-candidate secret provenance：**AUDITED exact-finding triage**；静态测试私钥来源文件为 **REWRITE REQUIRED**
 
 ## 最终分类
 
-人工复核的 339 条：
+`manualReview=true` 的 355 条均由 executor explicit semantic rule 决策；该字段不代表人工 owner 已签署 Gate：
 
 | Classification              | Count |
 | --------------------------- | ----: |
@@ -22,28 +24,28 @@
 | `deferred-public-extension` |     6 |
 | `move`                      |     2 |
 | `rewrite-public`            |   127 |
-| `synara-only`               |   185 |
+| `synara-only`               |   201 |
 
-完整 1,607 条 final manifest（seed 仅作输入提示，已逐行写入 final 字段）：
+完整 8,625 条 final manifest（含 legacy root `COPY . .` 的完整 tracked build context；seed 仅作输入提示）：
 
 | Classification              | Count |
 | --------------------------- | ----: |
-| `adapter`                   |   230 |
+| `adapter`                   |    96 |
 | `deferred-public-extension` |    67 |
 | `move`                      |    26 |
 | `retire`                    |     5 |
-| `rewrite-public`            |   820 |
-| `synara-only`               |   459 |
+| `rewrite-public`            |   940 |
+| `synara-only`               |  7491 |
 
 ## Owner
 
 | Owner                     | Count |
 | ------------------------- | ----: |
 | `deferred`                |    67 |
-| `public-core`             |   809 |
-| `public-platform-adapter` |   216 |
-| `runtime-release`         |    47 |
-| `synara-host`             |   468 |
+| `public-core`             |   876 |
+| `public-platform-adapter` |    92 |
+| `runtime-release`         |    90 |
+| `synara-host`             |  7500 |
 
 ## 输入 scope
 
@@ -53,8 +55,9 @@
 | `contract-reference`   |    62 |
 | `control-plane`        |  1174 |
 | `deploy`               |   117 |
+| `legacy-build-context` |  7002 |
 | `provider-host-compat` |     4 |
-| `root-supply-chain`    |     5 |
+| `root-supply-chain`    |    21 |
 | `scripts`              |   235 |
 
 ## Final capability
@@ -97,9 +100,10 @@
 | `identity-tenancy`                      |    51 |
 | `kms-secret-rotation`                   |    15 |
 | `kubernetes-deployment`                 |    74 |
+| `legacy-build-context`                  |  7002 |
 | `management-api`                        |   109 |
 | `metadata-migration`                    |     4 |
-| `module-supply-chain`                   |     5 |
+| `module-supply-chain`                   |    16 |
 | `observability`                         |    17 |
 | `platform-contract`                     |     2 |
 | `postgres-schema`                       |   301 |
@@ -109,7 +113,7 @@
 | `repository-governance`                 |    10 |
 | `routing-ingress`                       |    12 |
 | `synara-build-release`                  |     1 |
-| `synara-product-operations`             |    42 |
+| `synara-product-operations`             |    47 |
 | `synara-release-governance`             |   155 |
 | `worker-agentd-workspace-provider-host` |   108 |
 | `worker-capacity`                       |    13 |
@@ -126,14 +130,16 @@
 4. Synara desktop/mac、Polaris SDK、Stage 6 产品治理和私有运维脚本留在 Synara。公共 Worker 生命周期、隔离、manifest/registry/supply-chain/security conformance 有独立公共目标，Vault oracle 延后到外部 adapter extension。
 5. Synara 根 `package.json`/`bun.lock` 只作为旧镜像 provenance 留在 Synara；根 Dockerfile 不能复制，必须重写为最小、digest-pinned 的 `deploy/images/worker/Dockerfile`。
 6. 每条 provenance 同时固定 `source ref:path`、Git blob OID 和内容 SHA-256；生成器会对 source HEAD/tree/dirty、inventory SHA/行数、blob、重复、缺项和空/unknown 决策 fail closed。
+7. Adapter 不得拥有 migration、durable model、routing/KMS lifecycle、HTTP authority 或 receipt truth；混合文件先标 `rewrite-public` 并要求 core/port 拆分，直接 Docker/filesystem/webhook/live-cluster effects 单独标 adapter。
+8. 旧根 Dockerfile 使用 `COPY . .`，所以 inventory 冻结全部 8,625 个 tracked blob；不在批准 extraction surface 的 7,002 项统一 default-deny 留在 Synara，不能进入新的 public image context。
 
 ## 全量覆盖
 
-- Deploy：117 条全部进入 final manifest；Kubernetes -> Helm/adapter、personal/remote -> public Compose rewrite、Worker -> independent image train、SaaS/billing -> Synara、Vault production policy -> deferred extension。
+- Deploy：117 条全部进入 final manifest；Synara Admin/Developer Docs/Stage 6 组合留在宿主，公共 CP/Worker Helm 重写，gVisor/Cocoon/Kubernetes actuator 独立 adapter，personal/remote -> public Compose rewrite，Vault production policy -> deferred extension。
 - Scripts：235 条全部进入 final manifest；公共 conformance/release 工具与 Synara desktop/Stage 6/Polaris/product release 工具分开 owner/target。
 - Contracts：62 条按 Runtime/Worker/Managed Agent/Platform Adapter、Synara product 或 deferred enterprise extension 分域，不把旧 prose 当新 wire authority。
 - Go/SQL：Control Plane/Worker/adapter/Synara/deferred/retire 逐文件写入 target；167 个旧 migration 只映射到新 lineage 的 semantic target 或保留面，不继承编号/table identity。
-- Root supply chain：5 条全部进入 final manifest；candidate lock/schema 映射公共 release contract/tooling，Dockerfile 重写，Synara root manifests 留在宿主。
+- Root supply chain：21 条显式 root/workspace inputs 与全部 tracked build context 均进入 final manifest；candidate lock/schema 映射公共 release contract/tooling，Dockerfile 重写，Synara root manifests/patches/config 留在宿主。
 - CI：10 条全部标记 Synara-owned；公共仓 workflow 必须在 P1 重新设计，不能复制 Synara 权限和发布语义。
 - Cross-package edge：固定验证 `cmd/api/main.go` 对 `agentd.RunGitAskPassHelperFromEnvironment`、`LocalSupervisor` 的直接依赖；迁移时必须用 command composition/SDK seam 消除此 internal import。
 

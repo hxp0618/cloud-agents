@@ -4,6 +4,10 @@
 
 - 先 inventory 和 characterization，后搬代码；
 - 按能力迁移，不按目录整仓复制；
+- 只把逐 blob 固定、复核并按目标语义重写后的内容提交到新的公共历史；禁止 subtree/filter-repo/cherry-pick
+  等方式把 Synara Git 历史 graft 到公共仓；
+- secret triage 标记为 `REWRITE_REQUIRED_BEFORE_PUBLICATION` 的来源只能作为行为 oracle，静态测试私钥必须
+  删除或改为运行时生成后再进入公共提交；
 - 公共 schema/API 先于数据库和实现；
 - 新旧 authority 不双写；
 - 活动资源由创建它的 writer drain 到终态；

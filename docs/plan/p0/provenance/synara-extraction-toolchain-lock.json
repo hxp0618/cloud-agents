@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "requiredRuntime": {
+    "node": "v24.13.1",
+    "gitleaks": "8.30.1"
+  },
+  "tools": {
+    "node": {
+      "status": "PASS",
+      "version": "v24.13.1",
+      "sha256": "d36b3d980963d44bd2c5e844fac4cfeee26a167b744287a4e74a9575af9d0559"
+    },
+    "git": {
+      "status": "PASS",
+      "version": "git version 2.55.0",
+      "sha256": "9048038886ac36210fbb616b49b0707465f63683cb04e33a2013baf95f746938"
+    },
+    "gitleaks": {
+      "status": "PASS",
+      "version": "8.30.1",
+      "sha256": "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302",
+      "binaryDistribution": {
+        "sha256": "f414bc2fb952be6c9072b75cb411e3368614ef4b16d48dbd9ad238034afd2302",
+        "distribution": "homebrew-core/arm64_tahoe",
+        "containerSha256": "ea543daa28d39acc7af3aab4491ef53d62c0402b540d087008ff4dce7e2484b3"
+      },
+      "expectedArchiveSha256": "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
+      "verifiedArchiveSha256": null,
+      "acquisition": "P0_GITLEAKS_BIN",
+      "source": "P0_GITLEAKS_BIN",
+      "platform": "darwin-arm64"
+    }
+  }
+}

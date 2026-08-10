@@ -12,23 +12,27 @@
 
 ## Inventory coverage
 
-| Scope                    | Tracked inputs |
-| ------------------------ | -------------: |
-| `services/control-plane` |          1,174 |
-| `deploy`                 |            117 |
-| `scripts`                |            235 |
-| `.github`                |             10 |
-| `docs/contracts`         |             62 |
-| `apps/provider-host`     |              4 |
-| root supply-chain inputs |              5 |
-| **Total**                |      **1,607** |
+| Scope                     | Tracked inputs |
+| ------------------------- | -------------: |
+| `services/control-plane`  |          1,174 |
+| `deploy`                  |            117 |
+| `scripts`                 |            235 |
+| `.github`                 |             10 |
+| `docs/contracts`          |             62 |
+| `apps/provider-host`      |              4 |
+| root supply-chain inputs  |             21 |
+| legacy root build context |          7,002 |
+| **Total**                 |      **8,625** |
 
 Control Plane 的 1,174 个文件包括 517 个非测试 Go、477 个 `_test.go`、167 个连续编号 SQL migration
 （`000001`–`000167`，无 gap）和 13 个 Dockerfile/module/fixture 等输入。全部 migration 由
 `migrations/embed.go` 嵌入。
 
-逐文件 TSV 固定 Git blob OID、SHA-256、bytes、scope、capability、phase/relation、seed classification、
-generated state、risk 与 manual-review 标志。它是 P0 初始分类，不是最终 authority decision。
+旧根 Dockerfile 含 `COPY . .`，因此逐文件 TSV 以保守超集方式固定 frozen ref 的全部 8,625 个 tracked
+blob，而不是只列 1,607 个候选目录。额外 7,002 项标记 `legacy-build-context`，默认不进入公共提取；其中
+两个 `.vscode/*` tracked input 已明确标为被 `.dockerignore` 排除，不声称实际进入镜像 context。TSV 固定 Git blob
+OID、SHA-256、bytes、scope、capability、phase/relation、seed classification、generated state、risk 与
+manual-review 标志；最终裁决见 [`synara-inventory-decisions.tsv`](synara-inventory-decisions.tsv)。
 
 ## Go command closure
 
@@ -75,14 +79,15 @@ Linux amd64/arm64 的本地源数量一致；Linux/Darwin/Windows 四组矩阵�
 | rewrite-public            | 1,017 |
 | adapter                   |   287 |
 | move                      |    22 |
-| synara-only               |    43 |
+| synara-only               | 7,045 |
 | deferred-public-extension |     8 |
 | retire                    |     1 |
-| unclassified              |   229 |
+| unclassified              |   245 |
 
-339 个文件必须人工复核，包括 229 个未分类输入、`internal/agentd` mixed package，以及缺失生成源的
-Provider catalog chain。只有人工复核完成、逐文件 owner/target/provenance 冻结后，seed 才能提升为最终
-classification。
+355 个输入带 `manualReview=true`，包括 245 个未分类输入、`internal/agentd` mixed package，以及缺失生成源的
+Provider catalog chain。finalizer 已为全部 8,625 项写入 owner/target/authority/license/secret/review provenance。
+56 条 Gitleaks finding 已完成 exact-finding triage：48 条上下文误报、6 条静态测试私钥来源要求公开前重写、
+2 条历史日志要求禁止导入 Synara Git history；没有整目录或整规则豁免。
 
 ## P0 blockers and P1 risks
 
@@ -96,11 +101,12 @@ artifacts` 是跨语言、跨镜像边。
    Host v2 与 local supervisor，不能整包 move。
 5. `cmd/api` 直接调用 `agentd.RunGitAskPassHelperFromEnvironment` 和 `agentd.LocalSupervisor`，API/agentd
    当前并非独立 capability island。
-6. Control Plane 与 Worker Docker stage 使用宽 `COPY`，把测试和 migration 带入 cache/build context；必须
-   区分 semantic compile/embed 与 build-context/copy relation。
+6. Control Plane 与 Worker Docker stage 的宽 `COPY` 已由 8,625-row manifest 完整冻结；P1 必须删除
+   `COPY . .`，并以独立 public workspace/lock 和 allowlisted image context 替代，不能把 Synara-only blob 带入。
 7. migration 与 worker image cache 耦合，不能用“文件进入镜像层”推断 Runtime authority。
 
-因此 `G-INVENTORY` 仍为 `IN PROGRESS`，P1 不得开始。
+当前 final decision 的 adapter/core 不变量、full-tree completeness 与 source/secret provenance 可重放；
+`G-INVENTORY` 仍因独立终审与 R2 closure record 未完成而为 `IN PROGRESS`，P1 不得开始。
 
 ## Reproduce
 

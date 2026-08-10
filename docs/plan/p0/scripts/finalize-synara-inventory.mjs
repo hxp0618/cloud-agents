@@ -7,9 +7,13 @@ import { spawnSync } from "node:child_process";
 
 const expectedSourceHead = "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0";
 const expectedSourceTree = "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc";
-const expectedInventorySha256 = "f3858852538ef67ec6879a6db101246f7b3bf65ba6301f9e5e9274200d716aa1";
-const expectedInventoryRows = 1607;
-const expectedManualRows = 339;
+const expectedInventorySha256 = "bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5";
+const expectedInventoryRows = 8625;
+const expectedManualRows = 355;
+const reviewedAt = "2026-08-10";
+const secretTriageReference = "docs/plan/p0/provenance/synara-extraction-secret-triage.json";
+const sourceLicenseProvenance =
+  "MIT@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0:LICENSE#blob=960499447d8ea8f6ce86017893f132f0c3885fef;sha256=305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b";
 
 const sourceRoot =
   process.env.SYNARA_P0_SOURCE ??
@@ -98,6 +102,14 @@ function publicDecision(finalClassification, owner, target, reason) {
 
 function retainedInSynara(path, reason) {
   return publicDecision("synara-only", "synara-host", `hxp0618/synara:${path}`, reason);
+}
+
+function secretProvenanceFor(path, publicCandidate) {
+  if (!publicCandidate) return "not-imported; fixed source hash retained only";
+  if (path === "scripts/stage3-provider-acceptance/test_vault_audit_acceptance_sink.py") {
+    return `REWRITE_REQUIRED_BEFORE_PUBLICATION: static test private-key bytes; ${secretTriageReference}`;
+  }
+  return `AUDITED_EXACT_FINDINGS: ${secretTriageReference}`;
 }
 
 function targetWithSameName(root, path) {
@@ -322,6 +334,18 @@ function stage3ProviderAcceptanceDecision(path) {
       "runtime-release",
       targetWithSameName("conformance/worker/supply-chain/legacy", path),
       "Worker manifest/registry rollout checks are public release evidence; rewrite Synara schema names to the Worker and Platform manifest contracts.",
+    );
+  }
+  if (
+    /^(?:test_)?(?:acceptance_runner|controlled_remote_release_gate|docker_release_gate|docker_worker_release_rollout_gate|local_release_gate|registry_release_gate|release_gate_common|worker_release_rollout_common)\.py$/u.test(
+      file,
+    )
+  ) {
+    return publicDecision(
+      "rewrite-public",
+      "runtime-release",
+      targetWithSameName("conformance/worker/supply-chain/legacy", path),
+      "This script drives external Docker/remote/Registry release conformance. Keep it in the release train with explicit adapter endpoints and sanitized evidence; it is not Control Plane core authority.",
     );
   }
   return publicDecision(
@@ -663,6 +687,22 @@ function contractDecision(row) {
       "Provider Host v1 is a legacy Synara contract retained only for bounded read/rollback compatibility and is not migrated to public source.",
     );
   }
+  if (
+    new Set([
+      "credential-kms-rotation-v1.md",
+      "global-target-routing-dr-v1.md",
+      "kubernetes-allocation-backend-v1.md",
+      "kubernetes-resilience-acceptance-v1.md",
+      "self-hosted-kms-worker-v1.md",
+    ]).has(file)
+  ) {
+    return publicDecision(
+      "rewrite-public",
+      "public-core",
+      `contracts/managed-agent/v1alpha1/legacy-${file}`,
+      "This mixed document defines durable authority/state-machine behavior plus environment-specific mechanics. Rewrite the authority as a public core contract and split provider-specific effects into a separate adapter annex.",
+    );
+  }
   if (row.classificationSeed === "adapter") {
     return publicDecision(
       "adapter",
@@ -703,13 +743,38 @@ function deployDecision(row) {
       "The Synara Vault production configuration is a future external adapter oracle; do not publish private roles/policies as built-in defaults.",
     );
   }
-  if (path.startsWith("deploy/kubernetes/")) {
+  if (
+    /^deploy\/kubernetes\/(?:admin-(?:deployment|service)\.yaml|developer-docs\/)/u.test(path) ||
+    new Set([
+      "deploy/kubernetes/README.md",
+      "deploy/kubernetes/acceptance.sh",
+      "deploy/kubernetes/config.example.yaml",
+      "deploy/kubernetes/deployment.yaml",
+      "deploy/kubernetes/kustomization.yaml",
+      "deploy/kubernetes/remote-stage6-acceptance.sh",
+    ]).has(path)
+  ) {
+    return retainedInSynara(
+      path,
+      "This manifest/script deploys Synara Admin, Developer Docs, or the private Stage 6 acceptance profile; it is not a public Control Plane/Worker adapter input.",
+    );
+  }
+  if (/^deploy\/kubernetes\/(?:gvisor|sandbox-operator|vk-cocoon)\//u.test(path)) {
     const suffix = path.slice("deploy/kubernetes/".length);
     return publicDecision(
       "adapter",
       "public-platform-adapter",
+      `deploy/adapters/kubernetes/${suffix}`,
+      "This file installs or characterizes an optional Kubernetes isolation actuator; keep it behind the public adapter boundary and do not grant it Control Plane state authority.",
+    );
+  }
+  if (path.startsWith("deploy/kubernetes/")) {
+    const suffix = path.slice("deploy/kubernetes/".length);
+    return publicDecision(
+      "rewrite-public",
+      "runtime-release",
       `deploy/helm/cloud-agents/legacy-kubernetes/${suffix}`,
-      "Rewrite this Kubernetes/Kustomize input into the public Helm and Kubernetes adapter profile with neutral names, receipts, security context and digest pins.",
+      "This is public Helm/control-plane/Worker/operations/release composition, not an adapter implementation; rewrite Synara product wiring to neutral images, contracts, security context and digest pins.",
     );
   }
   if (path.startsWith("deploy/personal/")) {
@@ -799,8 +864,150 @@ function seededScriptDecision(row) {
   throw new Error(`seeded script has no final decision: ${path}`);
 }
 
+const publicStateAuthorityPrefixes = [
+  "services/control-plane/migrations/",
+  "services/control-plane/internal/config/",
+  "services/control-plane/internal/database/",
+  "services/control-plane/internal/executions/",
+  "services/control-plane/internal/httpapi/",
+  "services/control-plane/internal/kmsrotation/",
+  "services/control-plane/internal/kmsworker/",
+  "services/control-plane/internal/observability/",
+  "services/control-plane/internal/persistence/",
+  "services/control-plane/internal/placement/",
+  "services/control-plane/internal/routing/",
+  "services/control-plane/internal/sessions/",
+];
+
+function isPublicStateAuthority(path) {
+  return (
+    publicStateAuthorityPrefixes.some((prefix) => path.startsWith(prefix)) ||
+    /^services\/control-plane\/internal\/kms\/(?:envelope|factory)(?:_test)?\.go$/u.test(path)
+  );
+}
+
+function publicStateAuthorityDecision(path) {
+  return publicDecision(
+    "rewrite-public",
+    "public-core",
+    controlPlaneCoreTarget(path, "rewrite-public"),
+    "This file defines or validates durable Control Plane state, admission, API, projection, migration, receipt, or fencing authority. Keep it in public core and inject environment effects through ports; an adapter must not own this state.",
+  );
+}
+
+function isDockerExecutionTargetEffect(path) {
+  return /^services\/control-plane\/internal\/(?:executions\/docker_runtime_isolation|executiontargets\/docker_reconciler)/u.test(
+    path,
+  );
+}
+
+const executionTargetCoreOrSplitPattern = new RegExp(
+  [
+    "kubernetes_allocation_backend",
+    "kubernetes_foundation_cache",
+    "kubernetes_pod_spec",
+    "kubernetes_priority",
+    "kubernetes_reconciler",
+    "kubernetes_resource_quantity",
+    "kubernetes_sandbox_materializer",
+    "kubernetes_target_capacity",
+    "kubernetes_target_lifecycle",
+    "kubernetes_warm_pool",
+    "kubernetes_workload_identity",
+    "managed_kubernetes_routing_publisher",
+    "managed_kubernetes_target_capacity_publisher",
+    "managed_kubernetes_warm_capacity_publisher",
+    "ssh_provisioner",
+    "ssh_provisioning_executor",
+  ].join("|"),
+  "u",
+);
+
+function isExecutionTargetCoreOrSplit(path) {
+  return (
+    path.startsWith("services/control-plane/internal/executiontargets/") &&
+    executionTargetCoreOrSplitPattern.test(basename(path))
+  );
+}
+
+function executionTargetCoreOrSplitDecision(path) {
+  return publicDecision(
+    "rewrite-public",
+    "public-core",
+    controlPlaneCoreTarget(path, "rewrite-public"),
+    "This mixed target file contains scheduling/reconciliation/fencing/identity authority as well as environment I/O. Rewrite the authority in public core and inject Kubernetes/SSH clients through adapter ports; never move the file wholesale into an adapter.",
+  );
+}
+
+function dockerExecutionTargetDecision(path) {
+  return publicDecision(
+    "adapter",
+    "public-platform-adapter",
+    `services/worker/adapters/container/docker/legacy/${packageName(path)}/${basename(path)}`,
+    "This implementation directly actuates or inspects Docker Engine/runtime isolation. Move it behind the public container actuator contract; durable scheduling and lifecycle state remain in Control Plane core.",
+  );
+}
+
+const explicitPlatformEffectTargets = new Map([
+  [
+    "services/control-plane/internal/artifacts/local_store.go",
+    "services/control-plane/adapters/storage/filesystem/local_store.go",
+  ],
+  [
+    "services/control-plane/internal/developerwebhooks/publisher.go",
+    "services/control-plane/adapters/webhook/developer/publisher.go",
+  ],
+  [
+    "services/control-plane/internal/outbox/incident_webhook_publisher.go",
+    "services/control-plane/adapters/webhook/incident/publisher.go",
+  ],
+  [
+    "services/control-plane/internal/outbox/incident_webhook_publisher_test.go",
+    "services/control-plane/adapters/webhook/incident/publisher_test.go",
+  ],
+]);
+
+function explicitPlatformEffectDecision(path) {
+  const target = explicitPlatformEffectTargets.get(path);
+  if (!target) return null;
+  return publicDecision(
+    "adapter",
+    "public-platform-adapter",
+    target,
+    "This file directly performs filesystem or outbound HTTP effects. Move the effect behind the public adapter contract; policy, idempotency and durable outbox authority stay in public core.",
+  );
+}
+
+const liveAdapterConformancePaths = new Set([
+  "services/control-plane/internal/executions/sandbox_operator_orbstack_integration_test.go",
+  "services/control-plane/internal/executions/worker_tenant_isolation_orbstack_integration_test.go",
+  "services/control-plane/internal/executiontargets/stage5_runtime_isolation_orbstack_integration_test.go",
+]);
+
+function liveAdapterConformanceDecision(path) {
+  if (
+    !liveAdapterConformancePaths.has(path) &&
+    !/^services\/control-plane\/internal\/executiontargets\/.*(?:orbstack|kubernetes_reconciler)_integration_test\.go$/u.test(
+      path,
+    )
+  )
+    return null;
+  return publicDecision(
+    "adapter",
+    "public-platform-adapter",
+    `conformance/platform-adapter/kubernetes/legacy/${basename(path)}`,
+    "This integration test invokes a live Kubernetes/OrbStack actuator. Preserve it as adapter conformance; it cannot serve as portable Control Plane core evidence.",
+  );
+}
+
 function seededDecision(row) {
   const { path, scope } = row;
+  if (scope === "legacy-build-context") {
+    return retainedInSynara(
+      path,
+      "This tracked blob is frozen because the legacy root image used a broad COPY context, but it is outside the approved Control Plane/Worker extraction surface and remains Synara-owned.",
+    );
+  }
   if (scope === "contract-reference") return contractDecision(row);
   if (scope === "deploy") return deployDecision(row);
   if (scope === "scripts") return seededScriptDecision(row);
@@ -821,11 +1028,17 @@ function seededDecision(row) {
         "Rewrite the candidate lock schema as a neutral public Runtime release contract with canonical digest rules.",
       );
     }
-    return publicDecision(
-      "rewrite-public",
-      "runtime-release",
-      "tools/release/candidates/legacy-synara-candidate.lock.json",
-      "Retain the legacy lock as immutable provenance/compatibility input; public releases generate a new same-bits candidate manifest.",
+    if (path === "cloud-agent-candidate.lock.json") {
+      return publicDecision(
+        "rewrite-public",
+        "runtime-release",
+        "tools/release/candidates/legacy-synara-candidate.lock.json",
+        "Retain the legacy lock as immutable provenance/compatibility input; public releases generate a new same-bits candidate manifest.",
+      );
+    }
+    return retainedInSynara(
+      path,
+      "This root/workspace build input belongs to the legacy Synara monorepo. The public platform must own a new minimal manifest, lock, patch set and build configuration instead of copying it.",
     );
   }
   if (scope !== "control-plane") throw new Error(`unsupported seeded scope: ${scope}:${path}`);
@@ -861,6 +1074,13 @@ function seededDecision(row) {
       "This low-dependency mechanism can move with provenance after import/license normalization and focused characterization tests.",
     );
   }
+  const explicitEffect = explicitPlatformEffectDecision(path);
+  if (explicitEffect) return explicitEffect;
+  const liveAdapterConformance = liveAdapterConformanceDecision(path);
+  if (liveAdapterConformance) return liveAdapterConformance;
+  if (isDockerExecutionTargetEffect(path)) return dockerExecutionTargetDecision(path);
+  if (isPublicStateAuthority(path)) return publicStateAuthorityDecision(path);
+  if (isExecutionTargetCoreOrSplit(path)) return executionTargetCoreOrSplitDecision(path);
   if (row.classificationSeed === "adapter") {
     const target = path.startsWith("services/control-plane/migrations/")
       ? controlPlaneCoreTarget(path, "adapter")
@@ -964,6 +1184,12 @@ function decisionFor(row) {
       "The Synara root workspace manifest/lock is provenance input for the legacy Worker image only; cloud-agents must generate and own independent manifests and locks.",
     );
   }
+  if (scope === "root-supply-chain") {
+    return retainedInSynara(
+      path,
+      "This explicit legacy root-image/workspace input remains Synara-owned. The public platform will create an independent minimal workspace, lock, patch set and build configuration rather than copy this monorepo input.",
+    );
+  }
   throw new Error(`manual-review row has no decision rule: ${path}`);
 }
 
@@ -1063,7 +1289,8 @@ const expectedScopeAudit = new Map([
   ["deploy", { rows: 117, manual: 0, seeds: { adapter: 115, "synara-only": 2 } }],
   ["scripts", { rows: 235, manual: 216, seeds: { adapter: 19, unclassified: 216 } }],
   ["ci", { rows: 10, manual: 10, seeds: { unclassified: 10 } }],
-  ["root-supply-chain", { rows: 5, manual: 3, seeds: { adapter: 2, unclassified: 3 } }],
+  ["root-supply-chain", { rows: 21, manual: 19, seeds: { adapter: 2, unclassified: 19 } }],
+  ["legacy-build-context", { rows: 7002, manual: 0, seeds: { "synara-only": 7002 } }],
 ]);
 for (const [scope, expected] of expectedScopeAudit) {
   const scopedRows = rows.filter((row) => row.scope === scope);
@@ -1154,17 +1381,44 @@ const decisions = rows.map((row) => {
     throw new Error(`invalid final capability for ${row.path}: ${finalCapability}`);
   }
   const provenance = `${expectedSourceHead}:${row.path}#blob=${row.gitBlobOid};sha256=${row.sha256}`;
+  const decisionSource =
+    row.manualReview === "true"
+      ? "explicit-semantic-rule"
+      : row.scope === "legacy-build-context"
+        ? "full-tree-default-deny"
+        : decision.finalClassification !== row.classificationSeed
+          ? "semantic-authority-override"
+          : "reviewed-seed-rule";
+  const publicCandidate = !["synara-only", "retire"].includes(decision.finalClassification);
+  const authorityDisposition =
+    decision.finalClassification === "adapter"
+      ? "environment effect or conformance only; durable authority remains public core"
+      : decision.finalClassification === "synara-only" || decision.finalClassification === "retire"
+        ? "not a public platform writer or import candidate"
+        : decision.owner === "public-core"
+          ? "public core candidate; external effects must be injected through ports"
+          : "public release/deferred candidate; no Control Plane durable authority";
   return {
     snapshotHead: expectedSourceHead,
     snapshotTree: expectedSourceTree,
     path: row.path,
     scope: row.scope,
     manualReview: row.manualReview,
+    classificationSeed: row.classificationSeed,
     finalCapability,
     finalClassification: decision.finalClassification,
     owner: decision.owner,
     target: decision.target,
     provenance,
+    authorityDisposition,
+    licenseProvenance: publicCandidate
+      ? sourceLicenseProvenance
+      : "not-imported; retained in hxp0618/synara",
+    secretProvenance: secretProvenanceFor(row.path, publicCandidate),
+    decisionSource,
+    reviewStatus: "executor-reviewed",
+    reviewer: "Codex P0 executor",
+    reviewedAt,
     reason: decision.reason,
   };
 });
@@ -1177,6 +1431,59 @@ if (decisionPaths.size !== expectedInventoryRows) {
 }
 for (const row of rows) {
   if (!decisionPaths.has(row.path)) throw new Error(`missing decision: ${row.path}`);
+}
+const adapterAuthorityViolations = decisions.filter(
+  (decision) =>
+    decision.finalClassification === "adapter" &&
+    (/^services\/control-plane\/migrations\/.*\.sql$/u.test(decision.path) ||
+      /^services\/control-plane\/internal\/(?:database|httpapi|kmsrotation|kmsworker|persistence|routing|sessions)\//u.test(
+        decision.path,
+      ) ||
+      new Set([
+        "docs/contracts/credential-kms-rotation-v1.md",
+        "docs/contracts/global-target-routing-dr-v1.md",
+        "docs/contracts/kubernetes-allocation-backend-v1.md",
+        "docs/contracts/kubernetes-resilience-acceptance-v1.md",
+        "docs/contracts/self-hosted-kms-worker-v1.md",
+      ]).has(decision.path)),
+);
+if (adapterAuthorityViolations.length !== 0) {
+  throw new Error(
+    `adapter owns durable/API authority: ${adapterAuthorityViolations.map((item) => item.path).join(", ")}`,
+  );
+}
+const publicCoreEffectViolations = decisions.filter(
+  (decision) =>
+    decision.owner === "public-core" &&
+    (isDockerExecutionTargetEffect(decision.path) ||
+      explicitPlatformEffectTargets.has(decision.path) ||
+      liveAdapterConformancePaths.has(decision.path) ||
+      /^services\/control-plane\/internal\/executiontargets\/.*(?:orbstack|kubernetes_reconciler)_integration_test\.go$/u.test(
+        decision.path,
+      )),
+);
+if (publicCoreEffectViolations.length !== 0) {
+  throw new Error(
+    `public core directly retains explicit environment effects: ${publicCoreEffectViolations.map((item) => item.path).join(", ")}`,
+  );
+}
+const synaraKubernetesAdapterViolations = decisions.filter(
+  (decision) =>
+    decision.finalClassification === "adapter" &&
+    (/^deploy\/kubernetes\/(?:admin-|developer-docs\/)/u.test(decision.path) ||
+      new Set([
+        "deploy/kubernetes/README.md",
+        "deploy/kubernetes/acceptance.sh",
+        "deploy/kubernetes/config.example.yaml",
+        "deploy/kubernetes/deployment.yaml",
+        "deploy/kubernetes/kustomization.yaml",
+        "deploy/kubernetes/remote-stage6-acceptance.sh",
+      ]).has(decision.path)),
+);
+if (synaraKubernetesAdapterViolations.length !== 0) {
+  throw new Error(
+    `Synara product deployment is still classified as adapter: ${synaraKubernetesAdapterViolations.map((item) => item.path).join(", ")}`,
+  );
 }
 const decisionTargets = new Set(decisions.map((decision) => decision.target));
 if (decisionTargets.size !== expectedInventoryRows) {
@@ -1197,11 +1504,19 @@ const decisionHeaders = [
   "path",
   "scope",
   "manualReview",
+  "classificationSeed",
   "finalCapability",
   "finalClassification",
   "owner",
   "target",
   "provenance",
+  "authorityDisposition",
+  "licenseProvenance",
+  "secretProvenance",
+  "decisionSource",
+  "reviewStatus",
+  "reviewer",
+  "reviewedAt",
   "reason",
 ];
 const encodedDecisions = `${decisionHeaders.join("\t")}\n${decisions
@@ -1217,6 +1532,13 @@ const unresolved = decisions.filter(
     !decision.owner ||
     !decision.target ||
     !decision.provenance ||
+    !decision.authorityDisposition ||
+    !decision.licenseProvenance ||
+    !decision.secretProvenance ||
+    !decision.decisionSource ||
+    !decision.reviewStatus ||
+    !decision.reviewer ||
+    !decision.reviewedAt ||
     !decision.reason,
 );
 if (unresolved.length !== 0) throw new Error(`unresolved decisions remain: ${unresolved.length}`);
@@ -1235,14 +1557,16 @@ const summary = `# P0 Synara inventory 最终裁决摘要
 - Decision rows：${decisions.length}
 - Decision TSV SHA-256：\`${decisionsSha}\`
 - Unresolved/duplicate/missing decisions：**0**
+- Source license provenance：\`${sourceLicenseProvenance}\`
+- Public-candidate secret provenance：**AUDITED exact-finding triage**；静态测试私钥来源文件为 **REWRITE REQUIRED**
 
 ## 最终分类
 
-人工复核的 339 条：
+\`manualReview=true\` 的 ${manualDecisions.length} 条均由 executor explicit semantic rule 决策；该字段不代表人工 owner 已签署 Gate：
 
 ${markdownTable(countBy(manualDecisions, "finalClassification"), "Classification")}
 
-完整 1,607 条 final manifest（seed 仅作输入提示，已逐行写入 final 字段）：
+完整 ${decisions.length.toLocaleString("en-US")} 条 final manifest（含 legacy root \`COPY . .\` 的完整 tracked build context；seed 仅作输入提示）：
 
 ${markdownTable(countBy(decisions, "finalClassification"), "Classification")}
 
@@ -1266,14 +1590,16 @@ ${markdownTable(countBy(decisions, "finalCapability"), "Capability")}
 4. Synara desktop/mac、Polaris SDK、Stage 6 产品治理和私有运维脚本留在 Synara。公共 Worker 生命周期、隔离、manifest/registry/supply-chain/security conformance 有独立公共目标，Vault oracle 延后到外部 adapter extension。
 5. Synara 根 \`package.json\`/\`bun.lock\` 只作为旧镜像 provenance 留在 Synara；根 Dockerfile 不能复制，必须重写为最小、digest-pinned 的 \`deploy/images/worker/Dockerfile\`。
 6. 每条 provenance 同时固定 \`source ref:path\`、Git blob OID 和内容 SHA-256；生成器会对 source HEAD/tree/dirty、inventory SHA/行数、blob、重复、缺项和空/unknown 决策 fail closed。
+7. Adapter 不得拥有 migration、durable model、routing/KMS lifecycle、HTTP authority 或 receipt truth；混合文件先标 \`rewrite-public\` 并要求 core/port 拆分，直接 Docker/filesystem/webhook/live-cluster effects 单独标 adapter。
+8. 旧根 Dockerfile 使用 \`COPY . .\`，所以 inventory 冻结全部 ${decisions.length.toLocaleString("en-US")} 个 tracked blob；不在批准 extraction surface 的 ${decisions.filter((item) => item.scope === "legacy-build-context").length.toLocaleString("en-US")} 项统一 default-deny 留在 Synara，不能进入新的 public image context。
 
 ## 全量覆盖
 
-- Deploy：117 条全部进入 final manifest；Kubernetes -> Helm/adapter、personal/remote -> public Compose rewrite、Worker -> independent image train、SaaS/billing -> Synara、Vault production policy -> deferred extension。
+- Deploy：117 条全部进入 final manifest；Synara Admin/Developer Docs/Stage 6 组合留在宿主，公共 CP/Worker Helm 重写，gVisor/Cocoon/Kubernetes actuator 独立 adapter，personal/remote -> public Compose rewrite，Vault production policy -> deferred extension。
 - Scripts：235 条全部进入 final manifest；公共 conformance/release 工具与 Synara desktop/Stage 6/Polaris/product release 工具分开 owner/target。
 - Contracts：62 条按 Runtime/Worker/Managed Agent/Platform Adapter、Synara product 或 deferred enterprise extension 分域，不把旧 prose 当新 wire authority。
 - Go/SQL：Control Plane/Worker/adapter/Synara/deferred/retire 逐文件写入 target；167 个旧 migration 只映射到新 lineage 的 semantic target 或保留面，不继承编号/table identity。
-- Root supply chain：5 条全部进入 final manifest；candidate lock/schema 映射公共 release contract/tooling，Dockerfile 重写，Synara root manifests 留在宿主。
+- Root supply chain：21 条显式 root/workspace inputs 与全部 tracked build context 均进入 final manifest；candidate lock/schema 映射公共 release contract/tooling，Dockerfile 重写，Synara root manifests/patches/config 留在宿主。
 - CI：10 条全部标记 Synara-owned；公共仓 workflow 必须在 P1 重新设计，不能复制 Synara 权限和发布语义。
 - Cross-package edge：固定验证 \`cmd/api/main.go\` 对 \`agentd.RunGitAskPassHelperFromEnvironment\`、\`LocalSupervisor\` 的直接依赖；迁移时必须用 command composition/SDK seam 消除此 internal import。
 

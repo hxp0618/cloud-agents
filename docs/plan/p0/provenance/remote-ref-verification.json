@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "cloud-agents.p0.remote-ref-verification/v1",
+  "observedAt": "2026-08-10T17:03:12+08:00",
+  "observedAtUtc": "2026-08-10T09:03:12Z",
+  "transport": "GitHub SSH port 443 through root@103.217.189.80 jump host",
+  "result": "PASS",
+  "repositories": {
+    "hxp0618/cloud-agents": {
+      "refs/heads/main": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+      "refs/heads/codex/cloud-agents-platform-p0": "bf3171139ef30f1fcc7e449ea8b9a8a1449999fc",
+      "refs/tags/cloud-agent-m1-rc.1^{}": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a"
+    },
+    "hxp0618/synara": {
+      "refs/heads/main": "95cd068a9f3b1ec3a80b50e4551eae1957aa26ea",
+      "refs/heads/codex/cloud-agent-external-runtime": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+      "refs/heads/codex/saas-tenancy-user": "b86d30b1aa6f383cf3a8453e6944abeaefe2db65"
+    },
+    "hxp0618/t3code": {
+      "refs/heads/main": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "refs/heads/feat/cloud-agent": "9584a266e91fa94354e8c07f79af3a5e01755d16"
+    }
+  },
+  "claimBoundary": {
+    "fetchPerformed": false,
+    "remoteMutationPerformed": false,
+    "productionDeploymentObserved": false
+  }
+}
