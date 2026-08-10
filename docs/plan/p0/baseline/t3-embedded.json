@@ -4,7 +4,8 @@
   "profile": "t3-embedded-and-cloud-agent-consumer",
   "status": "CHARACTERIZED_NOT_EXECUTED",
   "platformP0CharacterizationClosure": {
-    "complete": true,
+    "complete": false,
+    "status": "INCOMPLETE",
     "scope": "embedded authority, auth/proof/revoke and thin consumer mechanisms at fixed source refs",
     "doesNotDecideAggregateGate": true
   },
@@ -14,6 +15,18 @@
     "scope": "real Provider SendTurn, workspace mutation, checkpoint/rollback and reconnect"
   },
   "aggregateGateDecision": "NOT_CLAIMED",
+  "criterionMapping": [
+    {
+      "criterion": "t3-embedded-authority-indexed",
+      "result": "PASS",
+      "evidence": "fixed embedded-authority and cloud-agent-consumer source refs listed by this manifest"
+    },
+    {
+      "criterion": "real-t3-turn-workspace-checkpoint-restart",
+      "result": "NOT_RUN",
+      "evidence": "fresh integration evidence stops at Describe, StartSession and StopSession"
+    }
+  ],
   "realProviderExecution": "NOT_RUN",
   "evidenceStrength": "SOURCE_AND_CHECKED_IN_TEST_ORACLE",
   "repositories": [

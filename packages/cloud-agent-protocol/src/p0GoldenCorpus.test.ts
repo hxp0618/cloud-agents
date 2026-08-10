@@ -26,6 +26,7 @@ type FrameCase = {
 
 type TranscriptCase = {
   readonly id: string;
+  readonly expected: "ACCEPT" | "REJECT";
   readonly coverage: ReadonlyArray<string>;
   readonly commands: ReadonlyArray<CloudAgentCommandEnvelope>;
   readonly messages: ReadonlyArray<CloudAgentMessageEnvelope>;
@@ -39,6 +40,7 @@ const manifest = readJson<{
     readonly commandsV23: ReadonlyArray<string>;
     readonly messageVariants: ReadonlyArray<string>;
     readonly negativeCategories: ReadonlyArray<string>;
+    readonly correlationFields: ReadonlyArray<string>;
     readonly transcriptSemantics: ReadonlyArray<string>;
     readonly characterizationOnly: ReadonlyArray<string>;
     readonly referenceHostLifecycle: ReadonlyArray<string>;
@@ -64,6 +66,11 @@ const referenceHostLifecycle = readJson<{
     readonly id: string;
     readonly coverage: ReadonlyArray<string>;
     readonly trace?: ReadonlyArray<{ readonly sequence: number }>;
+    readonly resourceLifecycles?: ReadonlyArray<{
+      readonly resourceKind: string;
+      readonly lifecycleId: string;
+      readonly states: ReadonlyArray<string>;
+    }>;
     readonly durableReceipt?: Readonly<Record<string, unknown>>;
     readonly forbiddenDurableKeys?: ReadonlyArray<string>;
   }>;
@@ -75,7 +82,7 @@ const validateSchema = ajv.compile(envelopeSchema);
 
 describe("P0 Protocol 2.2/2.3 golden corpus", () => {
   it("is versioned and covers every 2.2/2.3 command and message variant", () => {
-    expect(manifest.corpusVersion).toBe("p0-protocol-golden-v2");
+    expect(manifest.corpusVersion).toBe("p0-protocol-golden-v3");
     expect(values(v22Commands, "commandType")).toEqual(
       sorted(manifest.requiredCoverage.commandsV22),
     );
@@ -160,6 +167,33 @@ describe("P0 Protocol 2.2/2.3 golden corpus", () => {
     );
   });
 
+  it("includes a positive Error terminal and a negative for every correlation field", () => {
+    expect(
+      transcripts.cases.some(
+        (fixture) =>
+          fixture.expected === "ACCEPT" &&
+          fixture.coverage.includes("error-terminal") &&
+          fixture.messages.some((message) => message.messageType === "Error"),
+      ),
+    ).toBe(true);
+    expect(manifest.requiredCoverage.correlationFields).toEqual([
+      "requestId",
+      "executionId",
+      "generation",
+      "commandId",
+    ]);
+    for (const field of manifest.requiredCoverage.correlationFields) {
+      expect(
+        transcripts.cases.some(
+          (fixture) =>
+            fixture.expected === "REJECT" &&
+            fixture.coverage.includes(`correlation-${correlationCoverageName(field)}`),
+        ),
+        field,
+      ).toBe(true);
+    }
+  });
+
   it("keeps capability and authenticated Provider gaps explicitly non-closed", () => {
     expect(
       [...new Set(semanticOracles.cases.map((fixture) => fixture.coverage))].toSorted(),
@@ -192,7 +226,24 @@ describe("P0 Protocol 2.2/2.3 golden corpus", () => {
           );
         }
       }
+      if (fixture.resourceLifecycles) {
+        expect(
+          fixture.resourceLifecycles.map((resource) => resource.resourceKind).toSorted(),
+          fixture.id,
+        ).toEqual(["endpoint", "grant", "volume", "workload"]);
+        expect(
+          new Set(fixture.resourceLifecycles.map((resource) => resource.lifecycleId)).size,
+          fixture.id,
+        ).toBe(fixture.resourceLifecycles.length);
+        for (const resource of fixture.resourceLifecycles) {
+          expect(resource.states.at(-1), `${fixture.id}: ${resource.resourceKind}`).toBe("deleted");
+        }
+      }
     }
+    const byId = new Map(referenceHostLifecycle.cases.map((fixture) => [fixture.id, fixture]));
+    expect(byId.get("controller-restart-replays-durable-receipts")?.trace).toHaveLength(5);
+    expect(byId.get("partial-allocation-reconciles-orphans")?.trace).toHaveLength(7);
+    expect(byId.get("resources-have-independent-lifecycles")?.resourceLifecycles).toHaveLength(4);
   });
 });
 
@@ -220,4 +271,8 @@ function values(
 
 function sorted(values: ReadonlyArray<string>) {
   return [...values].toSorted();
+}
+
+function correlationCoverageName(field: string): string {
+  return field.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
 }

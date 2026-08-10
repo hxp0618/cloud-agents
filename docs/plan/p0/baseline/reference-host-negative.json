@@ -4,7 +4,8 @@
   "profile": "reference-host-negative-and-public-runtime",
   "status": "NEGATIVE_ORACLES_ONLY",
   "platformP0CharacterizationClosure": {
-    "complete": true,
+    "complete": false,
+    "status": "INCOMPLETE",
     "scope": "greenfield lifecycle spec, protocol golden and negative/reference-host fixtures",
     "doesNotDecideAggregateGate": true
   },
@@ -14,6 +15,23 @@
     "scope": "production reference-host and authenticated Provider behavior"
   },
   "aggregateGateDecision": "NOT_CLAIMED",
+  "criterionMapping": [
+    {
+      "criterion": "managed-host-greenfield-baseline",
+      "result": "SPEC_ONLY",
+      "evidence": "versioned negative and lifecycle spec fixtures; production execution NOT_RUN"
+    },
+    {
+      "criterion": "protocol-2.2-golden-corpus",
+      "result": "LOCAL_PASS_NOT_BOUND",
+      "evidence": "local p0-protocol-golden-v3 corpus consumed by protocol, testkit and Runtime stdio tests"
+    },
+    {
+      "criterion": "raw-evidence-retained-immutable",
+      "result": "NOT_BOUND",
+      "evidence": "fixture content hashes exist locally but are not bound to a fixture commit/tree/blob set"
+    }
+  ],
   "realProviderExecution": "NOT_RUN",
   "evidenceStrength": "SOURCE_TEST_AND_GOLDEN_FIXTURE_ORACLE",
   "repository": "hxp0618/cloud-agents",
@@ -59,12 +77,16 @@
     }
   ],
   "fixtureCorpus": {
-    "version": "p0-protocol-golden-v2",
+    "version": "p0-protocol-golden-v3",
     "root": "packages/cloud-agent-protocol/fixtures/p0",
+    "sourceBinding": {
+      "status": "NOT_BOUND",
+      "reason": "Phase A fixtures are uncommitted workspace evidence; no commit, tree, or blob binding is claimed."
+    },
     "files": [
       {
         "path": "corpus-manifest.json",
-        "sha256": "a147cea6ab79894daf2c73414799433490748985a274eb43314c43191093bd2d"
+        "sha256": "f5d0bbc2330623142ed6e0df6629eafc20e60b080213f00ca8167fb49f77d766"
       },
       {
         "path": "v2.2/commands.jsonl",
@@ -92,7 +114,7 @@
       },
       {
         "path": "transcripts.json",
-        "sha256": "d4a63542c4320423abd948528344af2c177abce78da528f2cfe9de9df62dde13"
+        "sha256": "3c9b52979761e8d73f3da07acd605a8e4f69a6ad23ceed77140a272f691427da"
       },
       {
         "path": "semantic-oracles.json",
@@ -100,7 +122,7 @@
       },
       {
         "path": "reference-host-lifecycle-v1.json",
-        "sha256": "0e30f975ebefbee587355a6f0e036a927d173452a3d6cacd17573fc10c755972"
+        "sha256": "4bf3d0abdba7e1cfe3345e0a77b11a38a08c0fe0113782e5654605968d702c3c"
       }
     ]
   },

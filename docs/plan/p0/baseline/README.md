@@ -2,13 +2,14 @@
 
 本目录把两个不同的 closure 明确拆开：
 
-- `platformP0CharacterizationClosure=true`：只表示固定 ref 上的 Synara legacy、T3 embedded 机制，以及
-  greenfield spec/negative/reference-host fixture 已形成完整、可审计的 P0 characterization；
+- `platformP0CharacterizationClosure=false`：固定 ref 上的 Synara legacy、T3 embedded 机制与本地
+  greenfield spec/negative/reference-host fixture 已形成可审计输入，但 criterion 仍有 `NOT_RUN`、
+  `SPEC_ONLY` 与 `NOT_BOUND`，不能声称 closure；
 - `m1BehaviorClosure=false`：真实 Provider、SendTurn、Workspace 修改、checkpoint/rollback、重连和 same-bits
   行为仍为 `NOT_RUN`，由 M1 单独关闭。
 
-P0 characterization 完整不反向要求先执行 M1；本目录也不直接声明 aggregate `G-BASELINE` 为
-`VERIFIED`，最终 Gate 状态由 canonical tracker/closure record 的主流程裁决。
+本目录不直接声明 aggregate `G-BASELINE` 为 `VERIFIED`。三份 manifest 的 criterion mapping 合并后仍有
+未执行或未绑定项，最终 Gate 状态由 canonical tracker/closure record 的主流程裁决。
 
 ## 固定清单
 
@@ -22,10 +23,11 @@ structural validator、当前 JSON Schema 和公共 testkit 测试读取。它�
 
 - Protocol 2.2 的 14 个既有命令以及 2.3 的 15 个命令；
 - 七种 message variant、`Result`/`Error` terminal；
-- 非法帧、版本、payload、correlation、generation、ordering、late/duplicate/missing terminal；
-- `quiesced`、`forced`、`timed-out`、`failed` 四种 Stop outcome。
+- 非法帧、版本、payload、四个 correlation 字段、generation、ordering、late/duplicate/missing terminal；
+- `quiesced`、`forced`、`timed-out`、`failed` 四种 Stop outcome，以及非法 outcome/矛盾布尔负例；
 - 版本化 reference-host lifecycle spec trace：create→admit→provision→ready→terminate→reap、
-  failed→cleanup、stale generation、duplicate receipt/idempotency、pairing secret 不持久化，以及
+  failed→cleanup、restart/replay、partial allocation/orphan reconciliation、workload/volume/endpoint/grant
+  独立生命周期、stale generation、duplicate receipt/idempotency、pairing secret 不持久化，以及
   DPoP/revoke/fence 负向路径。
 
 [`reference-host-lifecycle-v1.json`](../../../../packages/cloud-agent-protocol/fixtures/p0/reference-host-lifecycle-v1.json)
@@ -48,12 +50,16 @@ bun run --filter '@synara/cloud-agent-protocol' test
 bun run --filter '@synara/cloud-agent-testkit' test
 ```
 
-审计脚本逐项校验本地 Git object 中的 commit、tree、path、blob、内容 SHA-256、长度、fixture digest 和覆盖集。
+审计脚本逐项校验已固定 source 输入的 Git commit/tree/path/blob/内容 SHA-256/长度，以及本地 fixture digest、
+覆盖集和 criterion mapping。
 任一固定输入缺失或漂移都会非零退出。它不会 fetch、写入其他仓库或执行真实 Provider。
+
+Phase A fixture 仅有 workspace content digest，`fixtureCorpus.sourceBinding.status=NOT_BOUND`；未伪造或声明
+fixture commit/tree/blob pin。提交后的不可变绑定需由后续授权阶段生成并复核。
 
 ## 证据边界
 
-- 三份 manifest 均固定 `platformP0CharacterizationClosure.complete=true`、
+- 三份 manifest 均固定 `platformP0CharacterizationClosure.complete=false/status=INCOMPLETE`、
   `m1BehaviorClosure.complete=false/status=NOT_RUN`、`aggregateGateDecision=NOT_CLAIMED`；
 - 历史 source/test 只能证明已存在机制和负向 oracle，不能证明同一不可变 candidate 的真实行为；
 - lifecycle trace 证明规范覆盖完整，但没有生产 Managed Host create→ready→terminate 执行；

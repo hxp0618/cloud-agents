@@ -85,6 +85,7 @@ export function assertTerminalCorrelation(
     if (expected !== actual) throw new Error(`Terminal ${field} does not match its command.`);
   }
   assertMessageMetadata(command, terminal);
+  assertStopSessionResult(command, terminal);
 }
 
 /**
@@ -117,6 +118,7 @@ export function assertCloudAgentTranscript(
       }
     }
     if (message.messageType === "Result" || message.messageType === "Error") {
+      assertStopSessionResult(command, message);
       terminalCommandIds.add(message.commandId);
     }
   }
@@ -125,6 +127,31 @@ export function assertCloudAgentTranscript(
     if (!terminalCommandIds.has(command.commandId)) {
       throw new Error(`Transcript omitted terminal command ${command.commandId}.`);
     }
+  }
+}
+
+function assertStopSessionResult(
+  command: CloudAgentCommandEnvelope,
+  terminal: CloudAgentMessageEnvelope,
+): void {
+  if (command.commandType !== "StopSession" || terminal.messageType !== "Result") return;
+
+  const expectedByOutcome = {
+    quiesced: { quiesced: true, graceful: true },
+    forced: { quiesced: false, graceful: false },
+    "timed-out": { quiesced: false, graceful: false },
+    failed: { quiesced: false, graceful: false },
+  } as const;
+  const outcome = terminal.payload.outcome;
+  if (typeof outcome !== "string" || !Object.hasOwn(expectedByOutcome, outcome)) {
+    throw new Error("StopSession Result has an invalid outcome.");
+  }
+  const expected = expectedByOutcome[outcome as keyof typeof expectedByOutcome];
+  if (
+    terminal.payload.quiesced !== expected.quiesced ||
+    terminal.payload.graceful !== expected.graceful
+  ) {
+    throw new Error(`StopSession Result contradicts outcome '${outcome}'.`);
   }
 }
 

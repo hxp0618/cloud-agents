@@ -264,6 +264,160 @@
         "staleGenerationAccepted": false,
         "endpointUnfenced": false
       }
+    },
+    {
+      "id": "controller-restart-replays-durable-receipts",
+      "coverage": ["restart-replay"],
+      "leaseId": "lease-restart-1",
+      "generation": 6,
+      "trace": [
+        {
+          "sequence": 1,
+          "event": "controller.stopped",
+          "state": "reconciling",
+          "operationId": "controller-restart-1"
+        },
+        {
+          "sequence": 2,
+          "event": "controller.started",
+          "state": "reconciling",
+          "operationId": "controller-restart-1"
+        },
+        {
+          "sequence": 3,
+          "event": "journal.replayed",
+          "state": "reconciling",
+          "operationId": "controller-restart-1",
+          "receiptId": "receipt-ready-before-restart-1"
+        },
+        {
+          "sequence": 4,
+          "event": "receipt.deduplicated",
+          "state": "reconciling",
+          "operationId": "controller-restart-1",
+          "receiptId": "receipt-ready-before-restart-1"
+        },
+        {
+          "sequence": 5,
+          "event": "reconciliation.completed",
+          "state": "ready",
+          "operationId": "controller-restart-1",
+          "receiptId": "receipt-reconciled-restart-1"
+        }
+      ],
+      "expected": {
+        "terminalState": "ready",
+        "durableMutationsAfterReplay": 0,
+        "duplicateSideEffects": 0,
+        "generationPreserved": true
+      }
+    },
+    {
+      "id": "partial-allocation-reconciles-orphans",
+      "coverage": ["partial-allocation", "orphan-reconciliation"],
+      "leaseId": "lease-partial-1",
+      "generation": 7,
+      "trace": [
+        {
+          "sequence": 1,
+          "event": "workload.allocated",
+          "state": "provisioning",
+          "operationId": "create-partial-1",
+          "resourceId": "workload-partial-1"
+        },
+        {
+          "sequence": 2,
+          "event": "volume.allocated",
+          "state": "provisioning",
+          "operationId": "create-partial-1",
+          "resourceId": "volume-partial-1"
+        },
+        {
+          "sequence": 3,
+          "event": "allocation.failed",
+          "state": "failed",
+          "operationId": "create-partial-1",
+          "errorCode": "endpoint_allocation_failed"
+        },
+        {
+          "sequence": 4,
+          "event": "orphan.scan.completed",
+          "state": "cleaning",
+          "operationId": "reconcile-partial-1",
+          "orphanResourceIds": ["workload-partial-1", "volume-partial-1"]
+        },
+        {
+          "sequence": 5,
+          "event": "volume.deleted",
+          "state": "cleaning",
+          "operationId": "reconcile-partial-1",
+          "resourceId": "volume-partial-1"
+        },
+        {
+          "sequence": 6,
+          "event": "workload.deleted",
+          "state": "cleaning",
+          "operationId": "reconcile-partial-1",
+          "resourceId": "workload-partial-1"
+        },
+        {
+          "sequence": 7,
+          "event": "reconciliation.completed",
+          "state": "failed-cleaned",
+          "operationId": "reconcile-partial-1",
+          "receiptId": "receipt-partial-cleanup-1"
+        }
+      ],
+      "expected": {
+        "terminalState": "failed-cleaned",
+        "allocatedBeforeFailure": ["workload", "volume"],
+        "neverAllocated": ["endpoint", "grant"],
+        "orphanedResources": 0
+      }
+    },
+    {
+      "id": "resources-have-independent-lifecycles",
+      "coverage": [
+        "workload-lifecycle",
+        "volume-lifecycle",
+        "endpoint-lifecycle",
+        "grant-lifecycle"
+      ],
+      "leaseId": "lease-resource-lifecycles-1",
+      "generation": 8,
+      "resourceLifecycles": [
+        {
+          "resourceKind": "workload",
+          "resourceId": "workload-lifecycle-1",
+          "lifecycleId": "lifecycle-workload-1",
+          "states": ["requested", "allocated", "ready", "stopped", "deleted"]
+        },
+        {
+          "resourceKind": "volume",
+          "resourceId": "volume-lifecycle-1",
+          "lifecycleId": "lifecycle-volume-1",
+          "states": ["requested", "allocated", "attached", "detached", "deleted"]
+        },
+        {
+          "resourceKind": "endpoint",
+          "resourceId": "endpoint-lifecycle-1",
+          "lifecycleId": "lifecycle-endpoint-1",
+          "states": ["requested", "allocated", "published", "fenced", "withdrawn", "deleted"]
+        },
+        {
+          "resourceKind": "grant",
+          "resourceId": "grant-lifecycle-1",
+          "lifecycleId": "lifecycle-grant-1",
+          "states": ["requested", "issued", "active", "revoked", "deleted"]
+        }
+      ],
+      "expected": {
+        "independentAuthority": true,
+        "sharedTerminalStateRequired": false,
+        "distinctLifecycleIds": true,
+        "endpointFencedBeforeDeletion": true,
+        "grantRevokedBeforeDeletion": true
+      }
     }
   ]
 }

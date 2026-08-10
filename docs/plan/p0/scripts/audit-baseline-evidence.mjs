@@ -62,6 +62,22 @@ const requiredFixedPaths = {
     "infra/relay/src/environments/ManagedEndpointAllocations.test.ts",
   ],
 };
+const requiredCriterionMapping = {
+  "synara-legacy-managed-agent": {
+    "legacy-synara-mechanisms-indexed": "PASS",
+    "same-input-before-after-characterization": "NOT_RUN",
+    "real-provider-failure-resume-immutable": "NOT_RUN",
+  },
+  "t3-embedded-and-cloud-agent-consumer": {
+    "t3-embedded-authority-indexed": "PASS",
+    "real-t3-turn-workspace-checkpoint-restart": "NOT_RUN",
+  },
+  "reference-host-negative-and-public-runtime": {
+    "managed-host-greenfield-baseline": "SPEC_ONLY",
+    "protocol-2.2-golden-corpus": "LOCAL_PASS_NOT_BOUND",
+    "raw-evidence-retained-immutable": "NOT_BOUND",
+  },
+};
 
 const repositories = [synara, ...t3.repositories, referenceHost];
 let gitFiles = 0;
@@ -77,6 +93,16 @@ for (const fixture of referenceHost.fixtureCorpus.files) {
   equal(sha256(bytes), fixture.sha256, `fixture SHA-256 ${fixture.path}`);
 }
 auditFixtureCoverage(fixtureRoot, referenceHost.fixtureCorpus.version);
+equal(
+  referenceHost.fixtureCorpus.sourceBinding.status,
+  "NOT_BOUND",
+  "fixture corpus source binding",
+);
+for (const forbidden of ["commit", "tree", "blob", "blobs", "blobMap"]) {
+  if (Object.hasOwn(referenceHost.fixtureCorpus.sourceBinding, forbidden)) {
+    fail(`NOT_BOUND fixture sourceBinding must not claim ${forbidden}`);
+  }
+}
 
 for (const manifest of [synara, t3, referenceHost]) {
   equal(
@@ -86,8 +112,13 @@ for (const manifest of [synara, t3, referenceHost]) {
   );
   equal(
     manifest.platformP0CharacterizationClosure.complete,
-    true,
+    false,
     `${manifest.profile} Platform P0 characterization closure`,
+  );
+  equal(
+    manifest.platformP0CharacterizationClosure.status,
+    "INCOMPLETE",
+    `${manifest.profile} Platform P0 characterization status`,
   );
   equal(
     manifest.platformP0CharacterizationClosure.doesNotDecideAggregateGate,
@@ -105,6 +136,7 @@ for (const manifest of [synara, t3, referenceHost]) {
     requiredProfileCoverage[manifest.profile],
     `${manifest.profile} complete coverage`,
   );
+  auditCriterionMapping(manifest);
 }
 
 process.stdout.write(
@@ -115,7 +147,7 @@ process.stdout.write(
       repositories: repositories.length,
       gitFiles,
       fixtureFiles: referenceHost.fixtureCorpus.files.length,
-      platformP0CharacterizationClosure: true,
+      platformP0CharacterizationClosure: false,
       m1BehaviorClosure: false,
       m1BehaviorStatus: "NOT_RUN",
       aggregateGateDecision: "NOT_CLAIMED",
@@ -208,6 +240,48 @@ function auditFixtureCoverage(fixtureRoot, expectedVersion) {
     transcripts.cases.flatMap((value) => value.coverage),
     manifest.requiredCoverage.transcriptSemantics,
     "transcript semantics",
+  );
+  equalSet(
+    manifest.requiredCoverage.correlationFields,
+    ["requestId", "executionId", "generation", "commandId"],
+    "correlation fields",
+  );
+  const transcriptById = new Map(transcripts.cases.map((value) => [value.id, value]));
+  for (const [id, coverage] of [
+    ["request-correlation-mismatch", "correlation-request-id"],
+    ["execution-correlation-mismatch", "correlation-execution-id"],
+    ["generation-correlation-mismatch", "correlation-generation"],
+    ["command-correlation-mismatch", "correlation-command-id"],
+  ]) {
+    const fixture = requiredCase(transcriptById, id);
+    equal(fixture.expected, "REJECT", `${id} decision`);
+    if (!fixture.coverage.includes(coverage)) fail(`${id} omitted ${coverage}`);
+  }
+  const errorTerminal = requiredCase(transcriptById, "v23-valid-error-terminal");
+  equal(errorTerminal.expected, "ACCEPT", "positive Error terminal decision");
+  if (!errorTerminal.messages.some((value) => value.messageType === "Error")) {
+    fail("positive Error terminal case omitted Error message");
+  }
+  const stopOutcomes = requiredCase(transcriptById, "v23-stop-four-outcomes");
+  equal(
+    JSON.stringify(stopOutcomes.messages.map((value) => value.payload)),
+    JSON.stringify([
+      { outcome: "quiesced", quiesced: true, graceful: true },
+      { outcome: "forced", quiesced: false, graceful: false },
+      { outcome: "timed-out", quiesced: false, graceful: false },
+      { outcome: "failed", quiesced: false, graceful: false },
+    ]),
+    "StopSession outcome matrix",
+  );
+  equal(
+    requiredCase(transcriptById, "stop-invalid-outcome").expected,
+    "REJECT",
+    "invalid StopSession outcome",
+  );
+  equal(
+    requiredCase(transcriptById, "stop-contradictory-flags").expected,
+    "REJECT",
+    "contradictory StopSession flags",
   );
   equalSet(
     semanticOracles.cases.map((value) => value.coverage),
@@ -304,6 +378,45 @@ function auditReferenceHostLifecycle(lifecycle, expectedCoverage) {
   equal(dpop.expected.staleGenerationAccepted, false, "stale heartbeat decision");
   equal(dpop.expected.endpointUnfenced, false, "endpoint fence decision");
 
+  const restart = requiredCase(byId, "controller-restart-replays-durable-receipts");
+  requireEvents(restart, [
+    "controller.stopped",
+    "controller.started",
+    "journal.replayed",
+    "receipt.deduplicated",
+    "reconciliation.completed",
+  ]);
+  equal(restart.expected.durableMutationsAfterReplay, 0, "restart replay durable mutations");
+  equal(restart.expected.duplicateSideEffects, 0, "restart replay duplicate side effects");
+
+  const partial = requiredCase(byId, "partial-allocation-reconciles-orphans");
+  requireEvents(partial, [
+    "workload.allocated",
+    "volume.allocated",
+    "allocation.failed",
+    "orphan.scan.completed",
+    "volume.deleted",
+    "workload.deleted",
+    "reconciliation.completed",
+  ]);
+  equal(partial.expected.orphanedResources, 0, "partial allocation orphan count");
+
+  const resources = requiredCase(byId, "resources-have-independent-lifecycles");
+  requireArray(resources.resourceLifecycles, "independent resource lifecycles");
+  equalSet(
+    resources.resourceLifecycles.map((value) => value.resourceKind),
+    ["workload", "volume", "endpoint", "grant"],
+    "independent resource kinds",
+  );
+  equal(
+    new Set(resources.resourceLifecycles.map((value) => value.lifecycleId)).size,
+    resources.resourceLifecycles.length,
+    "independent resource lifecycle ids",
+  );
+  for (const resource of resources.resourceLifecycles) {
+    equal(resource.states.at(-1), "deleted", `${resource.resourceKind} terminal lifecycle state`);
+  }
+
   for (const fixture of lifecycle.cases) {
     if (!fixture.trace) continue;
     equal(
@@ -312,6 +425,23 @@ function auditReferenceHostLifecycle(lifecycle, expectedCoverage) {
       `contiguous lifecycle sequence ${fixture.id}`,
     );
   }
+}
+
+function auditCriterionMapping(manifest) {
+  requireArray(manifest.criterionMapping, `${manifest.profile} criterion mapping`);
+  const observed = Object.fromEntries(
+    manifest.criterionMapping.map((value) => {
+      requireString(value.criterion, `${manifest.profile} criterion`);
+      requireString(value.result, `${manifest.profile} criterion ${value.criterion} result`);
+      requireString(value.evidence, `${manifest.profile} criterion ${value.criterion} evidence`);
+      return [value.criterion, value.result];
+    }),
+  );
+  equal(
+    JSON.stringify(observed),
+    JSON.stringify(requiredCriterionMapping[manifest.profile]),
+    `${manifest.profile} criterion mapping`,
+  );
 }
 
 function requiredCase(byId, id) {

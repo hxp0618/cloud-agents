@@ -52,6 +52,44 @@
       ]
     },
     {
+      "id": "v23-valid-error-terminal",
+      "version": "2.3",
+      "expected": "ACCEPT",
+      "coverage": ["error-terminal"],
+      "commands": [
+        {
+          "requestId": "request:error-terminal",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:error-terminal",
+          "generation": 4,
+          "commandType": "SendTurn",
+          "commandId": "error-terminal",
+          "occurredAt": "2026-08-10T01:00:10.000Z",
+          "payload": { "inputText": "fail as characterized" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:error-terminal",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:error-terminal",
+          "generation": 4,
+          "commandId": "error-terminal",
+          "occurredAt": "2026-08-10T01:00:11.000Z",
+          "messageType": "Error",
+          "error": {
+            "code": "provider_unavailable",
+            "message": "Provider is unavailable.",
+            "retryable": true,
+            "requiresNewExecution": false,
+            "requiresUserAction": false,
+            "canReconstructFromHistory": true,
+            "canMoveWorker": true
+          }
+        }
+      ]
+    },
+    {
       "id": "v23-stop-four-outcomes",
       "version": "2.3",
       "expected": "ACCEPT",
@@ -142,6 +180,68 @@
       ]
     },
     {
+      "id": "stop-invalid-outcome",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "invalid outcome",
+      "coverage": ["stop-invalid-outcome"],
+      "commands": [
+        {
+          "requestId": "request:stop-invalid",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop-invalid",
+          "generation": 3,
+          "commandType": "StopSession",
+          "commandId": "stop-invalid",
+          "occurredAt": "2026-08-10T01:01:20.000Z",
+          "payload": {}
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:stop-invalid",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop-invalid",
+          "generation": 3,
+          "commandId": "stop-invalid",
+          "occurredAt": "2026-08-10T01:01:21.000Z",
+          "messageType": "Result",
+          "payload": { "outcome": "cancelled", "quiesced": false, "graceful": false }
+        }
+      ]
+    },
+    {
+      "id": "stop-contradictory-flags",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "contradicts outcome",
+      "coverage": ["stop-contradictory-flags"],
+      "commands": [
+        {
+          "requestId": "request:stop-contradiction",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop-contradiction",
+          "generation": 3,
+          "commandType": "StopSession",
+          "commandId": "stop-contradiction",
+          "occurredAt": "2026-08-10T01:01:22.000Z",
+          "payload": {}
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:stop-contradiction",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:stop-contradiction",
+          "generation": 3,
+          "commandId": "stop-contradiction",
+          "occurredAt": "2026-08-10T01:01:23.000Z",
+          "messageType": "Result",
+          "payload": { "outcome": "quiesced", "quiesced": false, "graceful": true }
+        }
+      ]
+    },
+    {
       "id": "message-before-command",
       "version": "2.3",
       "expected": "REJECT",
@@ -166,7 +266,7 @@
       "version": "2.3",
       "expected": "REJECT",
       "errorIncludes": "requestId",
-      "coverage": ["correlation"],
+      "coverage": ["correlation", "correlation-request-id"],
       "commands": [
         {
           "requestId": "request:expected",
@@ -193,11 +293,42 @@
       ]
     },
     {
+      "id": "execution-correlation-mismatch",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "executionId",
+      "coverage": ["correlation-execution-id"],
+      "commands": [
+        {
+          "requestId": "request:execution-correlation",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:expected",
+          "generation": 1,
+          "commandType": "Describe",
+          "commandId": "execution-correlation",
+          "occurredAt": "2026-08-10T01:03:10.000Z",
+          "payload": { "provider": "codex" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:execution-correlation",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:wrong",
+          "generation": 1,
+          "commandId": "execution-correlation",
+          "occurredAt": "2026-08-10T01:03:11.000Z",
+          "messageType": "Result",
+          "payload": {}
+        }
+      ]
+    },
+    {
       "id": "generation-correlation-mismatch",
       "version": "2.3",
       "expected": "REJECT",
       "errorIncludes": "generation",
-      "coverage": ["generation"],
+      "coverage": ["generation", "correlation-generation"],
       "commands": [
         {
           "requestId": "request:generation",
@@ -218,6 +349,37 @@
           "generation": 8,
           "commandId": "generation",
           "occurredAt": "2026-08-10T01:04:01.000Z",
+          "messageType": "Result",
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "id": "command-correlation-mismatch",
+      "version": "2.3",
+      "expected": "REJECT",
+      "errorIncludes": "unknown command",
+      "coverage": ["correlation-command-id"],
+      "commands": [
+        {
+          "requestId": "request:command-correlation",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:command-correlation",
+          "generation": 1,
+          "commandType": "Describe",
+          "commandId": "command-expected",
+          "occurredAt": "2026-08-10T01:04:10.000Z",
+          "payload": { "provider": "codex" }
+        }
+      ],
+      "messages": [
+        {
+          "requestId": "request:command-correlation",
+          "protocolVersion": { "major": 2, "minor": 3 },
+          "executionId": "execution:command-correlation",
+          "generation": 1,
+          "commandId": "command-wrong",
+          "occurredAt": "2026-08-10T01:04:11.000Z",
           "messageType": "Result",
           "payload": {}
         }

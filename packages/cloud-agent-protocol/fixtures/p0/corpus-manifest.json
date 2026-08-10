@@ -1,5 +1,5 @@
 {
-  "corpusVersion": "p0-protocol-golden-v2",
+  "corpusVersion": "p0-protocol-golden-v3",
   "status": "CHARACTERIZATION",
   "wireVersions": ["2.2", "2.3"],
   "profiles": {
@@ -79,18 +79,26 @@
       "terminal-error",
       "runtime-event-version"
     ],
+    "correlationFields": ["requestId", "executionId", "generation", "commandId"],
     "transcriptSemantics": [
       "correlation",
       "generation",
+      "correlation-request-id",
+      "correlation-execution-id",
+      "correlation-generation",
+      "correlation-command-id",
       "message-before-command",
       "ordering",
       "late-terminal",
       "duplicate-terminal",
       "missing-terminal",
+      "error-terminal",
       "stop-quiesced",
       "stop-forced",
       "stop-timed-out",
-      "stop-failed"
+      "stop-failed",
+      "stop-invalid-outcome",
+      "stop-contradictory-flags"
     ],
     "characterizationOnly": ["capability-negotiation", "real-provider-lifecycle"],
     "referenceHostLifecycle": [
@@ -104,6 +112,13 @@
       "stale-generation",
       "duplicate-receipt",
       "idempotency",
+      "restart-replay",
+      "partial-allocation",
+      "orphan-reconciliation",
+      "workload-lifecycle",
+      "volume-lifecycle",
+      "endpoint-lifecycle",
+      "grant-lifecycle",
       "pairing-secret-not-persisted",
       "dpop-negative",
       "revoke-negative",

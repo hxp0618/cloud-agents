@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 
 import { CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION } from "@synara/cloud-agent-provider-api";
@@ -41,6 +42,29 @@ const sendCommand = {
 };
 
 describe("runCloudAgentRuntimeStdio", () => {
+  it("consumes every Protocol 2.2 and 2.3 golden command through the stdio decoder", async () => {
+    const fixtures = [
+      ...readGoldenCommands("v2.2/commands.jsonl"),
+      ...readGoldenCommands("v2.3/commands.jsonl"),
+    ];
+
+    for (const fixture of fixtures) {
+      const output = captureOutput();
+      await expect(
+        runCloudAgentRuntimeStdio(fakeRuntime(), {
+          source: Readable.from([`${JSON.stringify(fixture.frame)}\n`]),
+          output: output.stream,
+          diagnostics: captureOutput().stream,
+        }),
+        fixture.id,
+      ).resolves.toBeUndefined();
+      expect(JSON.parse(output.text()), fixture.id).toMatchObject({
+        commandId: fixture.frame.commandId,
+      });
+    }
+    expect(fixtures).toHaveLength(29);
+  });
+
   it("routes Describe through the explicit Plugin registry", async () => {
     const output = captureOutput();
     await runCloudAgentRuntimeStdio(fakeRuntime(), {
@@ -669,4 +693,21 @@ function captureOutput(): { stream: Writable; text: () => string } {
     }),
     text: () => value.trim(),
   };
+}
+
+function readGoldenCommands(path: string): ReadonlyArray<{
+  readonly id: string;
+  readonly frame: { readonly commandId: string };
+}> {
+  const fixtureRoot = new URL("../../cloud-agent-protocol/fixtures/p0/", import.meta.url);
+  return readFileSync(new URL(path, fixtureRoot), "utf8")
+    .trim()
+    .split("\n")
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          readonly id: string;
+          readonly frame: { readonly commandId: string };
+        },
+    );
 }

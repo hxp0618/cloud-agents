@@ -4,7 +4,8 @@
   "profile": "synara-legacy-managed-agent",
   "status": "CHARACTERIZED_NOT_EXECUTED",
   "platformP0CharacterizationClosure": {
-    "complete": true,
+    "complete": false,
+    "status": "INCOMPLETE",
     "scope": "legacy managed-agent mechanisms at fixed source refs",
     "doesNotDecideAggregateGate": true
   },
@@ -14,6 +15,23 @@
     "scope": "authenticated Provider, SendTurn, workspace mutation, checkpoint, reconnect and same-bits behavior"
   },
   "aggregateGateDecision": "NOT_CLAIMED",
+  "criterionMapping": [
+    {
+      "criterion": "legacy-synara-mechanisms-indexed",
+      "result": "PASS",
+      "evidence": "fixed source refs and checked-in test oracles listed by this manifest"
+    },
+    {
+      "criterion": "same-input-before-after-characterization",
+      "result": "NOT_RUN",
+      "evidence": "no immutable same-input before/after execution record"
+    },
+    {
+      "criterion": "real-provider-failure-resume-immutable",
+      "result": "NOT_RUN",
+      "evidence": "M1 real Codex/Claude execution is outside this source-only baseline"
+    }
+  ],
   "repository": "hxp0618/synara",
   "ref": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
   "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
