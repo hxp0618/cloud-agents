@@ -6,6 +6,8 @@
       "name": "cloud-agents-portable-runtime",
       "devDependencies": {
         "@types/node": "24.10.13",
+        "ajv": "8.20.0",
+        "ajv-formats": "3.0.1",
         "oxfmt": "0.62.0",
         "oxlint": "1.77.0",
         "pnpm": "11.10.0",

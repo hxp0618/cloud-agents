@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/platform-tenant.schema.json",
+  "title": "PlatformTenant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "PlatformTenant"
+    },
+    "metadata": {
+      "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayName", "state"],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "state": {
+          "type": "string",
+          "enum": ["active", "suspended"]
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata.tenantRef.namespace == 'cloud-agents'",
+    "metadata.tenantRef.kind == 'tenant'",
+    "metadata.tenantRef.id == metadata.uid"
+  ]
+}

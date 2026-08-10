@@ -1,0 +1,102 @@
+{
+  "version": "v1alpha1",
+  "cases": [
+    {
+      "name": "platform-tenant",
+      "schema": "../schemas/platform-tenant.schema.json",
+      "instance": "golden/platform-tenant.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "organization",
+      "schema": "../schemas/organization.schema.json",
+      "instance": "golden/organization.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "project",
+      "schema": "../schemas/project.schema.json",
+      "instance": "golden/project.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "project-create-request",
+      "schema": "../schemas/project-create-request.schema.json",
+      "instance": "golden/project-create-request.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "project-create-server-owned-field",
+      "schema": "../schemas/project-create-request.schema.json",
+      "instance": "negative/project-create-server-owned-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "membership",
+      "schema": "../schemas/membership.schema.json",
+      "instance": "golden/membership.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "role",
+      "schema": "../schemas/role.schema.json",
+      "instance": "golden/role.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "role-binding",
+      "schema": "../schemas/role-binding.schema.json",
+      "instance": "golden/role-binding.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "cross-tenant-project",
+      "schema": "../schemas/project.schema.json",
+      "document": "negative/cross-tenant-project.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CROSS_TENANT_REFERENCE"
+    },
+    {
+      "name": "organization-tenant-ref-mismatch",
+      "schema": "../schemas/organization.schema.json",
+      "instance": "negative/organization-tenant-ref-mismatch.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "NAMESPACE_REF_MISMATCH"
+    },
+    {
+      "name": "role-binding-scope-mismatch",
+      "schema": "../schemas/role-binding.schema.json",
+      "instance": "negative/role-binding-scope-mismatch.json",
+      "expectedSchemaValid": false,
+      "expectedSemanticValid": false,
+      "expectedError": "ROLE_SCOPE_MISMATCH"
+    },
+    {
+      "name": "role-binding-unknown-role",
+      "schema": "../schemas/role-binding.schema.json",
+      "instance": "negative/role-binding-unknown-role.json",
+      "expectedSchemaValid": false,
+      "expectedSemanticValid": false,
+      "expectedError": "UNKNOWN_ROLE"
+    },
+    {
+      "name": "role-wildcard-permission",
+      "schema": "../schemas/role.schema.json",
+      "instance": "negative/role-wildcard-permission.json",
+      "expectedSchemaValid": false,
+      "expectedSemanticValid": false,
+      "expectedError": "WILDCARD_PERMISSION_FORBIDDEN"
+    }
+  ]
+}

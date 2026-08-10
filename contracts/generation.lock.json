@@ -1,0 +1,153 @@
+{
+  "lockVersion": 1,
+  "status": "BOOTSTRAP_VALIDATED",
+  "notGateClosure": true,
+  "sourceContract": {
+    "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+    "manifestSha256": "sha256:927bed268ca433af008fa6256e3663f9bb403456a95a86818c20627b42ad31a2",
+    "sourceTreeBinding": "REQUIRED_AT_GATE",
+    "excludes": [
+      "contracts/generation.lock.json",
+      "contracts/generated/**"
+    ]
+  },
+  "dialects": {
+    "jsonSchema": {
+      "identity": "https://json-schema.org/draft/2020-12/schema",
+      "semanticValidation": "BOOTSTRAP_AJV_AND_IN_REPO_SEMANTIC_FIXTURES"
+    },
+    "openapi": {
+      "documentVersion": "3.1.1",
+      "semanticValidation": "BOOTSTRAP_FAIL_CLOSED_SUBSET"
+    },
+    "proto": {
+      "syntax": "proto3",
+      "descriptorStatus": "NOT_GENERATED",
+      "sourceValidation": "BOOTSTRAP_FAIL_CLOSED_SUBSET"
+    }
+  },
+  "runtimes": {
+    "node": "24.13.1",
+    "bun": "1.3.14",
+    "go": "1.26.5"
+  },
+  "toolchainAuthority": {
+    "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+    "manifestSha256": "sha256:bda04002ef99f87d69eb3a69ee8b8c3759f5f027ac84f4dcb45f764d7176f46f",
+    "sources": [
+      ".mise.toml",
+      "package.json"
+    ],
+    "actualRuntimeVerified": true
+  },
+  "dependencyLock": {
+    "path": "bun.lock",
+    "sha256": "sha256:d9133ff11196e8ce92377038ae1b683cc104841bde2396dfd4ba8caf0cb77c5d"
+  },
+  "tools": [
+    {
+      "id": "platform-contract-bootstrap-checker",
+      "kind": "in-repo-typescript-ajv",
+      "entrypoint": "scripts/check-platform-contracts.ts",
+      "sourceManifestSha256": "sha256:6ab4d6101983a35724deba9a87aa716a161e54837ca067ac5dbdae1711948426",
+      "sources": [
+        "scripts/check-platform-contracts.ts",
+        "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-go-module-boundary-checker",
+      "kind": "in-repo-typescript-go-ast",
+      "entrypoint": "scripts/check-platform-go-modules.ts",
+      "sourceManifestSha256": "sha256:a55620632d37812d299b6329b670fb6b4a8626bbc65ae5b35100a4020154f4fa",
+      "sources": [
+        "scripts/check-platform-go-modules.ts",
+        "scripts/go/importcheck/main.go",
+        "scripts/lib/platform-go-modules.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-contract-lock-writer",
+      "kind": "in-repo-typescript",
+      "entrypoint": "scripts/generate-platform-contract-lock.ts",
+      "sourceManifestSha256": "sha256:aee42f931ce9975f20865717fa91ff99349ec7dfd34e612f0afbe3ddbb0c672b",
+      "sources": [
+        "scripts/generate-platform-contract-lock.ts",
+        "scripts/lib/platform-contract-lock.ts",
+        "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-go-modules.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "ajv-2020",
+      "kind": "npm",
+      "version": "8.20.0",
+      "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+      "license": "MIT",
+      "reviewEvidence": {
+        "path": "docs/plan/p1/dependency-reviews/ajv-8.20.0.md",
+        "sha256": "sha256:bf24bb46a408732dfcabf1c3bb5f9b3d1d55c424817abf77d311227089dae534",
+        "status": "APPROVED"
+      }
+    },
+    {
+      "id": "ajv-formats",
+      "kind": "npm",
+      "version": "3.0.1",
+      "integrity": "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==",
+      "registeredFormats": [
+        "date-time",
+        "uri"
+      ],
+      "license": "MIT",
+      "reviewEvidence": {
+        "path": "docs/plan/p1/dependency-reviews/ajv-8.20.0.md",
+        "sha256": "sha256:bf24bb46a408732dfcabf1c3bb5f9b3d1d55c424817abf77d311227089dae534",
+        "status": "APPROVED"
+      }
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "bootstrap-contract-validation",
+      "inputManifestSha256": "sha256:927bed268ca433af008fa6256e3663f9bb403456a95a86818c20627b42ad31a2",
+      "outputStatus": "BOOTSTRAP_VALIDATED",
+      "generatedOutputs": []
+    },
+    {
+      "id": "go-module-boundary-validation",
+      "modules": [
+        "github.com/hxp0618/cloud-agents/sdk/go",
+        "github.com/hxp0618/cloud-agents/services/control-plane",
+        "github.com/hxp0618/cloud-agents/services/worker"
+      ],
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:1b2d9065177e589f6663cd48bbfac0f0734df5644c86933272feecffb287a576",
+      "inputs": [
+        "go.work",
+        "sdk/go/go.mod",
+        "sdk/go/doc.go",
+        "services/control-plane/go.mod",
+        "services/control-plane/doc.go",
+        "services/worker/go.mod",
+        "services/worker/doc.go"
+      ],
+      "generatedOutputs": []
+    }
+  ],
+  "missing": [
+    "json-schema-2020-12-official-test-suite",
+    "openapi-3.1-semantic-validation",
+    "proto-descriptor-and-breaking",
+    "generated-sdk-replay",
+    "n-minus-one-compatibility",
+    "response-watch-unknown-field-preservation",
+    "server-path-and-tenant-authority-validation",
+    "remaining-generator-supply-chain-review"
+  ]
+}

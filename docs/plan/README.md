@@ -35,6 +35,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`05-gates-and-acceptance.md`](cloud-agents-platform/05-gates-and-acceptance.md)                         | Gate、same-bits、安全与验收                   |
 | [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md)                                     | 决策、阶段、record 与暂停现场                 |
 | [`p0/README.md`](p0/README.md)                                                                           | P0 freeze、inventory、baseline 与 provenance  |
+| [`p1/README.md`](p1/README.md)                                                                           | P1 Contract Kernel 与 dependency review 证据  |
 | [`synara-t3-cloud-agent-integration-architecture.md`](synara-t3-cloud-agent-integration-architecture.md) | Runtime + Platform + 双宿主总设计             |
 | [`ADR-0005`](adr/0005-cloud-agent-external-runtime-candidate.md)                                         | immutable external Runtime candidate 历史决定 |
 | [`ADR-0006`](adr/0006-public-cloud-agents-platform.md)                                                   | 完整公共 Go Control Plane 平台决定            |

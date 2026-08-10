@@ -1,0 +1,21 @@
+{
+  "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+  "kind": "Role",
+  "metadata": {
+    "uid": "role-project-viewer-v1",
+    "name": "role-project-viewer-v1",
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "resourceVersion": "5",
+    "createdAt": "2026-08-10T10:04:00Z"
+  },
+  "spec": {
+    "name": "project.viewer",
+    "version": 1,
+    "permissions": ["projects.get", "projects.list", "projects.watch"],
+    "state": "active"
+  }
+}

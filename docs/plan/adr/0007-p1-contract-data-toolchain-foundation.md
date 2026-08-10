@@ -66,8 +66,11 @@ JSON Schema 2020-12 model
 - Synara legacy schema、prose、Go struct、handler 和测试只可放在 `conformance/**/legacy-oracles` 或 inventory
   指定的 `internal` 候选位置，用于语义比对和 characterization；它们不是新 wire authority，不可被正式
   schema、SDK 或 server import 为生产 contract。
-- breaking change 必须遵守新 API major/新 schema identity；v1alpha1 reader 保持 N/N-1 与 unknown-field
-  preservation，不原地重解释已发布字段。
+- breaking change 必须遵守新 API major/新 schema identity。mutation request 直接按 strict schema 校验并拒绝未知字段；
+  response/watch reader 则先把 raw object 中未知字段按原始 JSON value 保存到独立 sidecar，再对 known projection
+  运行同一 strict schema，重新编码时合并未冲突的 sidecar。unknown-field preservation 是 generated reader seam，
+  不是让 mutation schema 接受任意属性，也不得原地重解释已发布字段；P1 后续仍须用 N/N-1 generated-reader
+  fixtures 证明该行为。
 
 ### 3. 三个 Go module 与 import DAG
 

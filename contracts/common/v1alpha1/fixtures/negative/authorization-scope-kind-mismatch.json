@@ -1,0 +1,8 @@
+{
+  "level": "project",
+  "ref": {
+    "namespace": "cloud-agents",
+    "kind": "organization",
+    "id": "organization-alpha"
+  }
+}

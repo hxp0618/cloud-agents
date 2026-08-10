@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/subject-ref.schema.json",
+  "title": "SubjectRef",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "issuer", "subject"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["user", "serviceAccount", "workload"]
+    },
+    "issuer": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 512
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

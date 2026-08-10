@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project-create-request.schema.json",
+  "title": "ProjectCreateRequest",
+  "description": "Strict client-authored fields for project creation. tenantId is authoritative only in the request path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "organizationRef", "displayName"],
+  "properties": {
+    "name": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "organizationRef": {
+      "$ref": "../../../common/v1alpha1/schemas/organization-ref.schema.json"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "resolved organization tenant equals path tenantId",
+    "path tenantId is the only tenant authority",
+    "server assigns uid, tenantRef, resourceVersion, state, createdAt, and updatedAt"
+  ]
+}

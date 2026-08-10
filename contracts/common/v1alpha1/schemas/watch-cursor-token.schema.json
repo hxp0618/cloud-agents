@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/watch-cursor-token.schema.json",
+  "title": "WatchCursorToken",
+  "type": "string",
+  "minLength": 16,
+  "maxLength": 2048,
+  "pattern": "^[A-Za-z0-9_-]+$"
+}

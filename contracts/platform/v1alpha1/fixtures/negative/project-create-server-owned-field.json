@@ -1,0 +1,14 @@
+{
+  "name": "project-alpha",
+  "organizationRef": {
+    "namespace": "cloud-agents",
+    "kind": "organization",
+    "id": "organization-alpha"
+  },
+  "displayName": "Project Alpha",
+  "tenantRef": {
+    "namespace": "cloud-agents",
+    "kind": "tenant",
+    "id": "tenant-alpha"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/fixture-manifest.schema.json",
+  "title": "ContractFixtureManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "const": "v1alpha1" },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "schema", "expectedSchemaValid"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "schema": { "$ref": "#/$defs/relativeJsonPath" },
+        "instance": { "$ref": "#/$defs/relativeJsonPath" },
+        "document": { "$ref": "#/$defs/relativeJsonPath" },
+        "instancePointer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*$"
+        },
+        "expectedSchemaValid": { "type": "boolean" },
+        "expectedSemanticValid": { "type": "boolean" },
+        "expectedError": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 96,
+          "pattern": "^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["instance"],
+          "properties": { "instance": true },
+          "not": {
+            "anyOf": [
+              { "properties": { "document": true }, "required": ["document"] },
+              { "properties": { "instancePointer": true }, "required": ["instancePointer"] }
+            ]
+          }
+        },
+        {
+          "properties": { "document": true, "instancePointer": true },
+          "required": ["document", "instancePointer"],
+          "not": { "properties": { "instance": true }, "required": ["instance"] }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              { "properties": { "expectedSchemaValid": { "const": false } } },
+              {
+                "required": ["expectedSemanticValid"],
+                "properties": { "expectedSemanticValid": { "const": false } }
+              }
+            ]
+          },
+          "then": { "properties": { "expectedError": true }, "required": ["expectedError"] }
+        }
+      ]
+    },
+    "relativeJsonPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?:\\.\\./schemas/[a-z0-9]+(?:-[a-z0-9]+)*\\.schema|(?:golden|negative)/[a-z0-9]+(?:-[a-z0-9]+)*)\\.json$"
+    }
+  }
+}

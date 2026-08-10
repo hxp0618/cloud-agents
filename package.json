@@ -18,7 +18,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run --filter '@synara/*' build",
-    "check": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && bun run build",
+    "check": "bun run fmt:check && bun run lint && bun run platform:contracts:check && bun run platform:go:check && bun run typecheck && bun run test && bun run build",
     "fmt": "oxfmt . --write",
     "fmt:check": "oxfmt . --check",
     "lint": "oxlint . --deny-warnings",
@@ -26,10 +26,14 @@
     "test": "bun run --filter '@synara/*' test && vitest run scripts",
     "release:smoke": "node scripts/cloud-agent-release-smoke.ts",
     "release:sbom": "node scripts/generate-sbom.ts",
-    "secret:scan": "bun scripts/secret-scan.ts"
+    "secret:scan": "bun scripts/secret-scan.ts",
+    "platform:contracts:check": "bun scripts/check-platform-contracts.ts && bun scripts/generate-platform-contract-lock.ts --check",
+    "platform:go:check": "bun scripts/check-platform-go-modules.ts"
   },
   "devDependencies": {
     "@types/node": "24.10.13",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "pnpm": "11.10.0",

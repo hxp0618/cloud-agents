@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/organization.schema.json",
+  "title": "Organization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Organization"
+    },
+    "metadata": {
+      "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantRef", "displayName", "state"],
+      "properties": {
+        "tenantRef": {
+          "$ref": "../../../common/v1alpha1/schemas/tenant-ref.schema.json"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "state": {
+          "type": "string",
+          "enum": ["active", "suspended"]
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata.tenantRef == spec.tenantRef",
+    "spec.tenantRef.namespace == 'cloud-agents'",
+    "spec.tenantRef.kind == 'tenant'"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "namespace": "cloud-agents",
+  "kind": "project",
+  "id": "project-alpha",
+  "tenantId": "tenant-secret"
+}

@@ -1,0 +1,101 @@
+{
+  "fixtureVersion": 1,
+  "authority": "proto3",
+  "generationStatus": "NOT_GENERATED",
+  "package": "cloudagents.platformadapter.v1alpha1",
+  "sources": ["contracts/platform-adapter/v1alpha1/platform_adapter.proto"],
+  "imports": ["contracts/worker/v1alpha1/kernel.proto", "google/protobuf/timestamp.proto"],
+  "services": {
+    "PlatformAdapterRegistryService": [
+      {
+        "name": "Negotiate",
+        "input": "cloudagents.worker.v1alpha1.NegotiationRequest",
+        "output": "cloudagents.worker.v1alpha1.NegotiationResponse",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "RegisterAdapter",
+        "input": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+        "output": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "GetAdapterRegistrationReceipt",
+        "input": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationReceiptRequest",
+        "output": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      }
+    ],
+    "PlatformAdapterExecutionService": [
+      {
+        "name": "Negotiate",
+        "input": "cloudagents.worker.v1alpha1.NegotiationRequest",
+        "output": "cloudagents.worker.v1alpha1.NegotiationResponse",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "GetCapabilities",
+        "input": "cloudagents.platformadapter.v1alpha1.AdapterCapabilitiesRequest",
+        "output": "cloudagents.platformadapter.v1alpha1.AdapterCapabilitiesResponse",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "CheckHealth",
+        "input": "cloudagents.platformadapter.v1alpha1.AdapterHealthRequest",
+        "output": "cloudagents.platformadapter.v1alpha1.AdapterHealthResponse",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "ExecuteOperation",
+        "input": "cloudagents.platformadapter.v1alpha1.AdapterOperationRequest",
+        "output": "cloudagents.worker.v1alpha1.DurableReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "GetOperationReceipt",
+        "input": "cloudagents.platformadapter.v1alpha1.AdapterReceiptRequest",
+        "output": "cloudagents.worker.v1alpha1.DurableReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      }
+    ]
+  },
+  "requiredMessages": [
+    "AdapterRegistrationRequest",
+    "AdapterRegistrationReceipt",
+    "AdapterRegistrationReceiptRequest",
+    "AdapterEndpoint",
+    "AdapterCapabilitiesRequest",
+    "AdapterCapabilitiesResponse",
+    "AdapterHealthRequest",
+    "AdapterHealthResponse",
+    "AdapterOperationRequest",
+    "AdapterReceiptRequest"
+  ],
+  "sharedKernelTypes": [
+    "cloudagents.worker.v1alpha1.NamespaceRef",
+    "cloudagents.worker.v1alpha1.ProtocolVersion",
+    "cloudagents.worker.v1alpha1.ProtocolDescriptor",
+    "cloudagents.worker.v1alpha1.NegotiationBinding",
+    "cloudagents.worker.v1alpha1.WorkloadIdentity",
+    "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+    "cloudagents.worker.v1alpha1.DurableReceipt"
+  ],
+  "invariants": [
+    "registry is Supervisor-hosted and authenticates adapter clients",
+    "execution is adapter-hosted and authenticates Supervisor or Control Plane clients",
+    "registration and every post-negotiation request bind version, negotiation id, expiry, and mTLS identities",
+    "registration key plus canonical digest provide conflict detection and response-loss receipt recovery",
+    "generation and fencing never replace workload identity",
+    "unknown required capability fails closed",
+    "operation admission enforces deadline, idempotency, and current generation",
+    "adapter receipts use the shared fixed durable receipt envelope"
+  ]
+}

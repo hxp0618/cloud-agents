@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/resource-metadata.schema.json",
+  "title": "ResourceMetadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uid", "name", "tenantRef", "resourceVersion", "createdAt"],
+  "properties": {
+    "uid": {
+      "$ref": "identifier.schema.json"
+    },
+    "name": {
+      "$ref": "identifier.schema.json"
+    },
+    "tenantRef": {
+      "$ref": "tenant-ref.schema.json"
+    },
+    "resourceVersion": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)$",
+      "maxLength": 20
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 64
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 64
+    }
+  }
+}

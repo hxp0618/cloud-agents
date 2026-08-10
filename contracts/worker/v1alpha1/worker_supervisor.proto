@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: MIT
+
+syntax = "proto3";
+
+package cloudagents.worker.v1alpha1;
+
+import "contracts/worker/v1alpha1/kernel.proto";
+
+option go_package = "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1;workerv1alpha1";
+
+// WorkerExecutionService is hosted by the Worker executor. The Supervisor is
+// the mTLS-authenticated client and MUST verify the Worker server identity.
+// P1-A supplies this contract only; it does not authorize an implementation to
+// materialize a workspace, fetch a secret, or mutate a workload.
+service WorkerExecutionService {
+  rpc Negotiate(NegotiationRequest) returns (NegotiationResponse);
+  rpc CheckHealth(HealthRequest) returns (HealthResponse);
+  rpc ExecuteOperation(OperationAttemptEnvelope) returns (DurableReceipt);
+  rpc GetOperationReceipt(ReceiptRequest) returns (DurableReceipt);
+}

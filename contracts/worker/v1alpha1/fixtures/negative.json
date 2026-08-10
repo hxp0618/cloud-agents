@@ -1,0 +1,347 @@
+{
+  "fixtureVersion": 1,
+  "wireAuthority": "contracts/worker/v1alpha1/*.proto",
+  "cases": [
+    {
+      "id": "namespace-ref-uppercase-namespace",
+      "contractMessage": "cloudagents.worker.v1alpha1.NamespaceRef",
+      "protoJson": { "namespace": "Cloud-Agents", "kind": "project", "id": "project-123" },
+      "expected": { "decision": "REJECT", "code": "invalid_namespace_ref" }
+    },
+    {
+      "id": "namespace-ref-overlong-id",
+      "contractMessage": "cloudagents.worker.v1alpha1.NamespaceRef",
+      "syntheticProtoValue": {
+        "namespace": "cloud-agents",
+        "kind": "project",
+        "idUnicodeCodePoints": 257
+      },
+      "expected": { "decision": "REJECT", "code": "invalid_namespace_ref" }
+    },
+    {
+      "id": "unknown-protocol-major",
+      "contractMessage": "cloudagents.worker.v1alpha1.NegotiationRequest",
+      "protoJson": { "supportedVersions": [{ "major": 99, "minor": 0 }] },
+      "expected": { "decision": "REJECT", "code": "unsupported_protocol_version" }
+    },
+    {
+      "id": "unknown-required-capability",
+      "contractMessage": "cloudagents.worker.v1alpha1.NegotiationRequest",
+      "protoJson": {
+        "supportedVersions": [{ "major": 1, "minor": 0 }],
+        "requiredCapabilities": [32767]
+      },
+      "expected": { "decision": "REJECT", "code": "unknown_required_capability" }
+    },
+    {
+      "id": "missing-negotiation-binding",
+      "contractMessage": "cloudagents.worker.v1alpha1.HealthRequest",
+      "protoJson": {
+        "requiredCapabilities": ["CAPABILITY_HEALTH"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        }
+      },
+      "expected": { "decision": "REJECT", "code": "negotiation_required" }
+    },
+    {
+      "id": "expired-negotiation-binding",
+      "contractMessage": "cloudagents.worker.v1alpha1.HealthRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-expired",
+          "expiresAt": "2026-08-10T07:59:59Z"
+        },
+        "requiredCapabilities": ["CAPABILITY_HEALTH"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        }
+      },
+      "admissionState": { "now": "2026-08-10T08:00:00Z" },
+      "expected": { "decision": "REJECT", "code": "negotiation_expired" }
+    },
+    {
+      "id": "wrong-negotiated-protocol-version",
+      "contractMessage": "cloudagents.worker.v1alpha1.HealthRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 1 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "requiredCapabilities": ["CAPABILITY_HEALTH"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        }
+      },
+      "admissionState": { "selectedVersion": { "major": 1, "minor": 0 } },
+      "expected": { "decision": "REJECT", "code": "negotiated_version_mismatch" }
+    },
+    {
+      "id": "capability-not-in-negotiated-set",
+      "contractMessage": "cloudagents.worker.v1alpha1.HealthRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "requiredCapabilities": ["CAPABILITY_FINALIZERS"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        }
+      },
+      "admissionState": { "negotiatedCapabilities": ["CAPABILITY_HEALTH"] },
+      "expected": { "decision": "REJECT", "code": "capability_not_negotiated" }
+    },
+    {
+      "id": "stale-generation",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+      "protoJson": {
+        "operation": {
+          "operationId": "operation-stale",
+          "idempotencyKey": "idem-operation-stale",
+          "scope": {
+            "namespace": "cloud-agents",
+            "kind": "project",
+            "id": "project-123"
+          },
+          "fencing": { "leaseId": "lease-001", "generation": "41", "token": "c3RhbGU=" },
+          "deadline": "2026-08-10T08:00:30Z",
+          "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+          "command": { "probe": { "probeName": "must-not-run" } },
+          "canonicalRequestSha256": "uH3LmWzErz/Vksj+Z8RzW2yIGzWQ1i7EyvMREa3DtqQ="
+        },
+        "attemptId": "attempt-stale",
+        "attemptNumber": 1,
+        "expectedExecutorIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "now": "2026-08-10T08:00:00Z",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "stale_generation", "sideEffect": false }
+    },
+    {
+      "id": "missing-operation-id",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+      "protoJson": {
+        "operation": {
+          "idempotencyKey": "idem-missing-id",
+          "scope": {
+            "namespace": "cloud-agents",
+            "kind": "project",
+            "id": "project-123"
+          },
+          "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+          "deadline": "2026-08-10T08:00:30Z",
+          "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+          "command": { "probe": { "probeName": "must-not-run" } },
+          "canonicalRequestSha256": "JeN9/tLgDHcmDhzgVNynh6gR3kQ8iZC3xc6qJo0/img="
+        },
+        "attemptId": "attempt-missing-id",
+        "attemptNumber": 1,
+        "expectedExecutorIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "now": "2026-08-10T08:00:00Z",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "operation_id_required", "sideEffect": false }
+    },
+    {
+      "id": "missing-deadline",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+      "protoJson": {
+        "operation": {
+          "operationId": "operation-missing-deadline",
+          "idempotencyKey": "idem-missing-deadline",
+          "scope": {
+            "namespace": "cloud-agents",
+            "kind": "project",
+            "id": "project-123"
+          },
+          "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+          "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+          "command": { "probe": { "probeName": "must-not-run" } },
+          "canonicalRequestSha256": "TfZ4RIUNG8DTSe8lYVXcStsDPnr/Als4gvkCcRyY0W0="
+        },
+        "attemptId": "attempt-missing-deadline",
+        "attemptNumber": 1,
+        "expectedExecutorIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "now": "2026-08-10T08:00:00Z",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "deadline_required", "sideEffect": false }
+    },
+    {
+      "id": "expired-deadline",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+      "protoJson": {
+        "operation": {
+          "operationId": "operation-expired",
+          "idempotencyKey": "idem-operation-expired",
+          "scope": {
+            "namespace": "cloud-agents",
+            "kind": "project",
+            "id": "project-123"
+          },
+          "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+          "deadline": "2026-08-10T07:59:59Z",
+          "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+          "command": { "probe": { "probeName": "must-not-run" } },
+          "canonicalRequestSha256": "MkzI35ZvWs2KQylet0p8BLihgjXkK/nwoD24P5lPLGQ="
+        },
+        "attemptId": "attempt-expired",
+        "attemptNumber": 1,
+        "expectedExecutorIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "now": "2026-08-10T08:00:00Z",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "deadline_exceeded", "sideEffect": false }
+    },
+    {
+      "id": "secret-in-durable-receipt",
+      "contractMessage": "cloudagents.worker.v1alpha1.DurableReceipt",
+      "protoJson": {
+        "receiptId": "receipt-secret",
+        "operationId": "operation-secret",
+        "attemptId": "attempt-secret",
+        "idempotencyKey": "idem-secret",
+        "sequence": "1",
+        "fencing": {
+          "leaseId": "lease-001",
+          "generation": "42",
+          "tokenSha256": "qt+wMCKl+X13Xm9F+Aa9SifPIIg5m1K15VwnkSHOTHE="
+        },
+        "outcome": "OPERATION_OUTCOME_FAILED",
+        "observedAt": "2026-08-10T08:00:01Z",
+        "redactedSummary": "Authorization: Bearer durable-secret-value"
+      },
+      "expected": { "decision": "REJECT", "code": "durable_receipt_contains_secret" }
+    },
+    {
+      "id": "unbounded-extension-payload",
+      "contractMessage": "cloudagents.worker.v1alpha1.BoundedPayload",
+      "syntheticProtoValue": {
+        "mediaType": "application/octet-stream",
+        "declaredSizeBytes": 65537,
+        "actualSizeBytes": 65537
+      },
+      "admissionState": { "negotiatedMaxPayloadBytes": 65536 },
+      "expected": { "decision": "REJECT", "code": "payload_too_large", "sideEffect": false }
+    },
+    {
+      "id": "idempotency-key-reused-with-different-content",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationEnvelope",
+      "protoJson": {
+        "operationId": "operation-replay-mutated",
+        "idempotencyKey": "idem-operation-001",
+        "scope": {
+          "namespace": "cloud-agents",
+          "kind": "project",
+          "id": "project-123"
+        },
+        "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+        "deadline": "2026-08-10T08:00:30Z",
+        "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+        "command": { "probe": { "probeName": "different-content" } },
+        "canonicalRequestSha256": "KIaLTLEbfP/V5rbFMUD0e+QWgPpJc4x6fxm3OOZ9T4E="
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "now": "2026-08-10T08:00:00Z",
+        "idempotencyRecord": "PRESENT_WITH_DIFFERENT_DIGEST"
+      },
+      "expected": { "decision": "REJECT", "code": "idempotency_conflict", "sideEffect": false }
+    },
+    {
+      "id": "canonical-request-digest-mismatch",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationEnvelope",
+      "protoJson": {
+        "operationId": "operation-digest-mismatch",
+        "idempotencyKey": "idem-digest-mismatch",
+        "scope": { "namespace": "cloud-agents", "kind": "project", "id": "project-123" },
+        "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+        "deadline": "2026-08-10T08:00:30Z",
+        "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+        "command": { "probe": { "probeName": "must-not-run" } },
+        "canonicalRequestSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      },
+      "expected": { "decision": "REJECT", "code": "canonical_request_digest_mismatch" }
+    },
+    {
+      "id": "canonical-request-digest-missing",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationEnvelope",
+      "syntheticProtoValue": { "canonicalRequestSha256Length": 0 },
+      "expected": { "decision": "REJECT", "code": "canonical_request_digest_required" }
+    },
+    {
+      "id": "too-many-finalizers",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationEnvelope",
+      "syntheticProtoValue": { "finalizerCount": 65 },
+      "admissionState": { "hardMaxRepeatedItems": 64 },
+      "expected": { "decision": "REJECT", "code": "repeated_field_limit_exceeded" }
+    },
+    {
+      "id": "wire-message-over-hard-limit",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+      "syntheticProtoValue": { "serializedSizeBytes": 1048577 },
+      "admissionState": { "hardMaxWireMessageBytes": 1048576 },
+      "expected": {
+        "decision": "REJECT_BEFORE_PROTOBUF_DECODE",
+        "code": "wire_message_too_large",
+        "sideEffect": false
+      }
+    }
+  ]
+}

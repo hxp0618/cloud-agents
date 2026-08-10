@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/namespace-ref.schema.json",
+  "title": "NamespaceRef",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["namespace", "kind", "id"],
+  "properties": {
+    "namespace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "x-cloud-agents-normalization": "NFC"
+    }
+  },
+  "x-cloud-agents-canonicalization": {
+    "algorithm": "RFC8785",
+    "digest": "SHA-256",
+    "digestText": "sha256:<64-lowercase-hex>",
+    "urn": "urn:cloud-agents:ref:sha256:<64-lowercase-hex>"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/platform-authorization-scope.schema.json",
+  "title": "PlatformAuthorizationScope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["level"],
+  "properties": { "level": { "const": "platform" } }
+}

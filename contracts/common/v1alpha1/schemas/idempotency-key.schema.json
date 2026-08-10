@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/idempotency-key.schema.json",
+  "title": "IdempotencyKey",
+  "type": "string",
+  "minLength": 16,
+  "maxLength": 128,
+  "pattern": "^[A-Za-z0-9._~-]+$"
+}

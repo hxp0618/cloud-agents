@@ -1,0 +1,10 @@
+{
+  "instance": {
+    "namespace": "cloud-agents",
+    "kind": "project",
+    "id": "café"
+  },
+  "canonicalUtf8": "{\"id\":\"café\",\"kind\":\"project\",\"namespace\":\"cloud-agents\"}",
+  "digest": "sha256:6d83dc9f2b6a14c4249c81e09852e43dd3caffc9a856bb92aa886e02139a3b1e",
+  "urn": "urn:cloud-agents:ref:sha256:6d83dc9f2b6a14c4249c81e09852e43dd3caffc9a856bb92aa886e02139a3b1e"
+}
