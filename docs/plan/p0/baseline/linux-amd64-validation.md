@@ -1,6 +1,7 @@
-# P0 Linux amd64 validation
+# Historical P0 Linux amd64 validation
 
-- Status: PASS
+- Status: SUPERSEDED
+- Superseded by: [`runtime-linux-amd64-execution.json`](runtime-linux-amd64-execution.json)
 - Observed at: 2026-08-10 Asia/Shanghai
 - Profile: operator-selected primary Linux validation host
 - OS: Debian 12, Linux 6.1.0-15-amd64, x86_64
@@ -43,5 +44,7 @@ bun run fmt:check
 bun run lint
 ```
 
-This record proves the committed P0 corpus on Linux amd64. It does not prove authenticated Provider behavior,
-production deployment, or any Platform P1 implementation.
+This historical record proves only commit `585af58c...`; it predates the complete `p0-protocol-golden-v3` corpus and
+must not be used as the current `G-BASELINE-P0` Linux result. The superseding machine record fixes commit `c2c0358...`
+and includes Protocol, testkit, Runtime, typecheck and audit results. Neither record proves authenticated Provider
+behavior, production deployment, or any Platform P1 implementation.

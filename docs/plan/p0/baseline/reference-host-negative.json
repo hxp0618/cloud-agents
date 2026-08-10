@@ -2,7 +2,7 @@
   "schemaVersion": "cloud-agents.p0.baseline-manifest/v2",
   "manifestVersion": 2,
   "profile": "reference-host-negative-and-public-runtime",
-  "status": "NEGATIVE_ORACLES_ONLY",
+  "status": "NEGATIVE_ORACLES_EXECUTED_ON_FIXED_LINUX_SOURCE",
   "platformP0CharacterizationClosure": {
     "complete": false,
     "status": "INCOMPLETE",
@@ -27,13 +27,26 @@
       "evidence": "p0-protocol-golden-v3 corpus is bound to commit 0a984d02 and consumed by protocol, testkit and Runtime stdio tests"
     },
     {
+      "criterion": "fixed-linux-characterization",
+      "result": "PASS",
+      "evidence": "current P0 commit archive passed Protocol, testkit, Runtime, three typechecks, baseline audit, format and lint on Linux"
+    },
+    {
       "criterion": "raw-evidence-retained-immutable",
       "result": "BOUND",
       "evidence": "fixture commit/tree/blob map and content SHA-256 are verified from Git objects"
     }
   ],
   "realProviderExecution": "NOT_RUN",
-  "evidenceStrength": "SOURCE_TEST_AND_GOLDEN_FIXTURE_ORACLE",
+  "evidenceStrength": "SOURCE_TEST_GOLDEN_FIXTURE_AND_FIXED_LINUX_EXECUTION",
+  "linuxExecutionEvidence": {
+    "path": "docs/plan/p0/baseline/runtime-linux-amd64-execution.json",
+    "sha256": "1a94f7903dee9a22e10f0cda44ea815e4ff5d6658bb9742da25eb8012ecdbc48",
+    "status": "PASS",
+    "fixedCommit": "c2c03584656a0db04de2f6b84113ac932459eae6",
+    "passingCharacterization": "Protocol 13; testkit 5; Runtime 33; three package typechecks; baseline audit; format and lint",
+    "rawLogsCommitted": false
+  },
   "repository": "hxp0618/cloud-agents",
   "ref": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
   "tree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8",

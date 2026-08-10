@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "cloud-agents.p0.runtime-linux-characterization/v1",
+  "observedAt": "2026-08-10",
+  "status": "PASS",
+  "environment": {
+    "host": "root@103.217.189.80",
+    "role": "cloud-final Linux validation environment under D-024",
+    "os": "Debian 12",
+    "architecture": "amd64",
+    "cpu": "7ES-1005",
+    "node": "v24.13.1",
+    "bun": "1.3.14",
+    "bunVariant": "baseline"
+  },
+  "fixedSource": {
+    "repository": "hxp0618/cloud-agents",
+    "commit": "c2c03584656a0db04de2f6b84113ac932459eae6",
+    "tree": "2b3e3dbded35d97565f387abff497e31cc498126",
+    "archiveSha256": "640f4a4fe01c4abf643b277ec69695b73f152ef8854af7f2e454ef5848933cbf",
+    "archiveBytes": 14940160,
+    "fileCount": 209,
+    "fileSetSha256": "5d97582220beda7f5ad357eb1597b0bd3ff9b840bf94b46882b6c80c6c937d52",
+    "remoteMaterialization": "/root/cloud-agents-p0-runtime-current",
+    "remoteMaterializationHasGitMetadata": false,
+    "sourceCleanEquivalent": true
+  },
+  "install": {
+    "result": "PASS",
+    "frozenLockfile": true,
+    "ignoreScripts": true,
+    "networkConcurrency": 1,
+    "packages": 402,
+    "lockAndPackageManifestsUnchanged": true,
+    "logSha256": "901a2c74c7f4a91b482a39d269ccb1c63a2445707dd2dacad01f5f00ed401f35"
+  },
+  "runs": [
+    {
+      "id": "protocol-tests",
+      "result": "PASS",
+      "passedFiles": 2,
+      "passedTests": 13,
+      "logSha256": "f40f0df0a0f7742ee5ad666e7c7746613732271bc6cbba8f631d3ebd540ea7ca"
+    },
+    {
+      "id": "testkit-tests",
+      "result": "PASS",
+      "passedFiles": 2,
+      "passedTests": 5,
+      "logSha256": "689794ba253d481a4539d54723975a0a686f42a59ce729165579959f34a6510c"
+    },
+    {
+      "id": "runtime-tests",
+      "result": "PASS",
+      "passedFiles": 4,
+      "passedTests": 33,
+      "logSha256": "e1352421bfc111ed91a591d557edeff6e64d6fb4afe46facfca80e148c0eef62"
+    },
+    {
+      "id": "protocol-typecheck",
+      "result": "PASS",
+      "logSha256": "b0482e9c3c346295258dc94312c1c55c2efcd428725c226f0c9a628098246409"
+    },
+    {
+      "id": "testkit-typecheck",
+      "result": "PASS",
+      "logSha256": "8a70e4c0ff56dfa967da6dcb5b874c107689ed195b3d915487ea0b31a45186ed"
+    },
+    {
+      "id": "runtime-typecheck",
+      "result": "PASS",
+      "logSha256": "1316449e55462ed40fdade7ef0a48d17b7d251328b1ff8b878885b53fe0d5b37"
+    },
+    {
+      "id": "baseline-evidence-audit-v2",
+      "result": "PASS",
+      "repositories": 4,
+      "gitFiles": 39,
+      "fixtureFiles": 10,
+      "m1BehaviorStatus": "NOT_RUN",
+      "aggregateGateDecision": "NOT_CLAIMED",
+      "logSha256": "76c5a5dbdc83be1ecd5c36f9a1c8b58f52412b531bc99a7d54351526b3461d41"
+    },
+    {
+      "id": "format-check",
+      "result": "PASS",
+      "files": 186,
+      "logSha256": "ce6a4061f0a8b349eb1e8f3b84f50eddc3de8d93e97f37e5360361b7d467f58a"
+    },
+    {
+      "id": "lint",
+      "result": "PASS",
+      "files": 81,
+      "warnings": 0,
+      "errors": 0,
+      "logSha256": "2f01b988eb1971743cb3411eff08131fdceb7d902ac2327921e5446f0aeae354"
+    }
+  ],
+  "evidence": {
+    "rawEvidenceLocation": "/root/cloud-agents-p0-evidence/runtime-current",
+    "rawLogsCommitted": false,
+    "commandsSha256": "da6341dad94d606fae425d115aa0b0e5f2a8c419cce1f00dec3aa4a33d6f4a51",
+    "logIndexSha256": "5de6d7361a41ababd53e0589a7660ef9c6739a3634740bafb8741c9282bb7f36",
+    "remoteSummarySha256": "ec6e6483935fe42f0bb8f5beb668935766c55090ca3fae3daaa8507d1aee73a4",
+    "supersededDiagnostic": "The first clean-diff check excluded only root node_modules and observed three package-local Vitest caches. The corrected check excluded every node_modules tree and revalidated all 209 fixed files."
+  },
+  "claimBoundary": {
+    "realProviderExecuted": false,
+    "publishExecuted": false,
+    "existingRemoteCloudAgentsP0Modified": false,
+    "platformP0BaselineClosed": false,
+    "m1BaselineClosed": false
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "cloud-agents.p0.t3-linux-characterization/v1",
+  "observedAt": "2026-08-10",
+  "status": "PASS_CHARACTERIZATION_ONLY",
+  "environment": {
+    "host": "root@103.217.189.80",
+    "role": "cloud-final Linux validation environment under D-024",
+    "os": "linux",
+    "architecture": "amd64",
+    "node": "v24.13.1",
+    "corepack": "0.34.6",
+    "pnpm": "11.10.0"
+  },
+  "fixedSources": {
+    "main": {
+      "repository": "hxp0618/t3code",
+      "commit": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "tree": "e98f5650379f428bf5dcc6e7cae287c68fb8b080",
+      "archiveSha256": "87d78b9d2e9631ba10b84bad697afe271a0dac37d2b950aecc440577e61be1c2",
+      "fileCount": 15799,
+      "canonicalFilesSha256": "ecf9942646061ed404950600d3735537a5637e9ec70d021247704437eaee8eb1",
+      "canonicalModesSha256": "9ca46397f7e49a3d16633ca7b3072dd175eb7ecdca379867e2f505e6d70ce573",
+      "canonicalLinksSha256": "22723ab4700c603a24c4e8c7c4ae81ef028231008d9d20fe0db7540a501c7a0c",
+      "canonicalShapeSha256": "b31c19a1b5948770f2d58279a5d50a33e5a470f419d6230cc2b99a7b04396d25",
+      "packageJsonSha256": "5fb29d19245ff419463aa6c56cdd9082489283d543f53326f3b9d91db23992bd",
+      "pnpmLockSha256": "d95087747fa534f752790b4d56a79d112e69ddd5b44c35f1dde8cf8f506cf956",
+      "pnpmWorkspaceSha256": "19472b88d6fde7479818659ba0fbe55faea5e64222f1bab5a896d026f78d44fc",
+      "remoteMaterialization": "/root/cloud-agents-p0-baseline-t3-main",
+      "finalSourceMatchesArchiveExcludingNodeModules": true
+    },
+    "feature": {
+      "repository": "hxp0618/t3code",
+      "commit": "9584a266e91fa94354e8c07f79af3a5e01755d16",
+      "tree": "171624a2dbfb68f1d91f0a67175cbaf68f2947c2",
+      "archiveSha256": "dd9d7ab0c174dcf82ca377d96b8a5531e3dd166b401c414ad490bcfa97bc4dc1",
+      "fileCount": 15820,
+      "canonicalFilesSha256": "ed31fd59a6d6945e3d159fa5b5208370b940bd23a433a16c44443ff54fe762f4",
+      "canonicalModesSha256": "a782c4cb255aa98cd3c09dff8f66b280bdae6effa458ac246c161fe5b10a577b",
+      "canonicalLinksSha256": "22723ab4700c603a24c4e8c7c4ae81ef028231008d9d20fe0db7540a501c7a0c",
+      "canonicalShapeSha256": "06db6b16dd1e22fdc4e4659821817c3020e89aa1098d8eb19810e66c73b72e01",
+      "packageJsonSha256": "d2275733e07768ec5abc3661ed4af8fed403af92d4a26606c3c7d1e40db450fd",
+      "pnpmLockSha256": "94a14a5a1093a7a9f2dddbd04b308f0653d19a7381dba76d8189387b53be1ee3",
+      "pnpmWorkspaceSha256": "19472b88d6fde7479818659ba0fbe55faea5e64222f1bab5a896d026f78d44fc",
+      "candidateLockSha256": "75ee56a91f96eaec1a8abe211f1ace1b69299d4fa7bbc3d429dff297deabd0c0",
+      "remoteMaterialization": "/root/cloud-agents-p0-baseline-t3-cloud",
+      "finalSourceMatchesArchiveExcludingNodeModules": true
+    }
+  },
+  "install": {
+    "main": {
+      "result": "PASS",
+      "packages": 1782,
+      "frozenLockfile": true,
+      "ignoreScripts": true,
+      "registry": "https://registry.npmjs.org",
+      "logSha256": "6ed478a7df5cae7899e4598e073108316a0aa9d3d89baf8df03284cd216f1b1a"
+    },
+    "feature": {
+      "result": "PASS",
+      "packages": 1790,
+      "frozenLockfile": true,
+      "ignoreScripts": true,
+      "registry": "https://registry.npmjs.org",
+      "logSha256": "49d5935cb278a68afe2c8165f23231c214c2267620eb13186a4fda3a693e3c2d"
+    },
+    "retryBoundary": "Official-registry timeouts, mirror attempts, exact-PID termination and integrity-checked tarball prewarming are retained in command history. Only the final exit-zero frozen installs decide PASS."
+  },
+  "runs": {
+    "mainFocusedTests": {
+      "result": "PASS",
+      "files": 7,
+      "tests": 30,
+      "criterionMapping": {
+        "serverPairingGrantStore": 8,
+        "serverDpop": 2,
+        "mobileDpop": 5,
+        "webDpop": 1,
+        "sharedDpop": 6,
+        "relayDpopProof": 4,
+        "managedEndpointAllocations": 4
+      },
+      "logSha256": [
+        "845680af4aad6b087c4c460e9fe02682d07eb21f34f7643d50c00f18ab3df048",
+        "70abac74ef8be268a0601e0f8cc4ba4d27ceedf35b6a2b03280c48184e29007e",
+        "401a44ac607e1d62133f5278376c6fabea4323b3c7cc44459be47d6687812dce",
+        "6ba662207a75bf5f0b134bf5db64cbdb7e8590e0628abaa2fc84a4436071dce5",
+        "e08c2742865ca8d73d86822f045eaba378204058a2d5a5db367f02958a61f4b8",
+        "0fe7468500ebc2ac35ffc3c93309591d5864bffe8fe8622f67c62bfb3bb701f1",
+        "e1409a10d498c593db1eab177efb3bad935296325ce23062782cd588f9f910dc"
+      ]
+    },
+    "mainTypecheck": {
+      "result": "PASS",
+      "filters": ["t3", "@t3tools/mobile", "@t3tools/web", "@t3tools/shared", "t3code-relay"],
+      "logSha256": [
+        "1efcf325f61fd3dfed7b5fd8322a281a7c693f0178d0f89c56e65b0e6a747073",
+        "af8a65c8175c9446493f4c6b57e168ab39c261a88e5bdf942574fa897a6ceb04",
+        "023c017c5be5f680ceedc678c9a82146e1b0e3af064ee739a57e125c8f8e7766",
+        "964f6827f5d13ba43ea1752acb4cf5ca231c36da3d2450cd860982b649d4f2ef",
+        "449e147a20c36df8cd69e24fc5086c49a8e6b871fe88fc970956537b16f1b1a3"
+      ]
+    },
+    "featureFocusedTests": {
+      "result": "PASS",
+      "files": 5,
+      "tests": 39,
+      "criterionMapping": {
+        "cloudAgentsAdapter": 18,
+        "cloudAgentsClientEffect": 1,
+        "cloudAgentsRuntimeProbe": 5,
+        "cloudAgentsDriver": 10,
+        "cloudAgentsTextGeneration": 5
+      },
+      "logSha256": [
+        "8c4124a9225c75951a4a470234157cc7f6de4243f16decca0e0f1ed34980d091",
+        "dee6570864802505cff0699d7b94f4c98edaf25e203659ddb6a842aa5b55bbd3",
+        "ae9d9a200ed70dbaafc684e919d7c6452feb9e1a10c6febaad89f903bfaf5e6b",
+        "3de2df87c91aac17979c873bd6ea069f88e77832a2a8497473d338fb1d8f7d78",
+        "3b95c8a12bd3f01837e82e4f5d9171d902f4c653ecdcefe2ee81df5ad9dcb1c1"
+      ]
+    },
+    "featureTypecheck": {
+      "result": "PASS",
+      "filters": ["t3"],
+      "logSha256": ["56b2c35f9103ab63f240f1364a38c65f7816a5d796c3002519b6958eeb623318"]
+    }
+  },
+  "evidence": {
+    "rawEvidenceLocation": "/root/cloud-agents-p0-evidence/t3",
+    "rawLogsCommitted": false,
+    "remoteResultsSha256": "f422e509df62c9f3fe799030186829b7b0e42e93125d7f2c67c818c9bf0a3d7a",
+    "commandResultsSha256": "0576cafcca1c640c7d20d7865af75cd8c1ddabb87faaba90c37a38c79eab6559",
+    "logIndexSha256": "eaba621976ed17c8adc073dc0f9a926380362cc2c3f32d8e26d9d49070343a51",
+    "reportSha256": "60ab240d3f313901b049ef25035c1c571aa58af6427199d7003b26f2bec47d12",
+    "finalEvidenceValidationLogSha256": "65607e615e012a4e7a0fa43146cf01bd6824c4359297e19f9e2d8420198e094b"
+  },
+  "claimBoundary": {
+    "characterizationOnly": true,
+    "realProviderExecuted": false,
+    "credentialsUsed": false,
+    "publishExecuted": false,
+    "deploymentExecuted": false,
+    "workspaceMutationProven": false,
+    "checkpointRestartBrowserE2EProven": false,
+    "soakProven": false,
+    "platformP0BaselineClosed": false,
+    "m1BaselineClosed": false
+  }
+}

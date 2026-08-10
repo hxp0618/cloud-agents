@@ -13,6 +13,9 @@ const baselineDirectory = resolve(scriptDirectory, "../baseline");
 const synara = readJson(join(baselineDirectory, "synara-legacy.json"));
 const t3 = readJson(join(baselineDirectory, "t3-embedded.json"));
 const referenceHost = readJson(join(baselineDirectory, "reference-host-negative.json"));
+const synaraLinux = readJson(join(baselineDirectory, "synara-linux-amd64-execution.json"));
+const t3Linux = readJson(join(baselineDirectory, "t3-linux-amd64-execution.json"));
+const runtimeLinux = readJson(join(baselineDirectory, "runtime-linux-amd64-execution.json"));
 const requiredProfileCoverage = {
   "synara-legacy-managed-agent": [
     "provider-host-protocol-2.2/2.3-history",
@@ -65,16 +68,18 @@ const requiredFixedPaths = {
 const requiredCriterionMapping = {
   "synara-legacy-managed-agent": {
     "legacy-synara-mechanisms-indexed": "PASS",
-    "same-input-before-after-characterization": "NOT_RUN",
+    "fixed-linux-characterization": "EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES",
     "real-provider-failure-resume-immutable": "NOT_RUN",
   },
   "t3-embedded-and-cloud-agent-consumer": {
     "t3-embedded-authority-indexed": "PASS",
+    "fixed-linux-characterization": "PASS",
     "real-t3-turn-workspace-checkpoint-restart": "NOT_RUN",
   },
   "reference-host-negative-and-public-runtime": {
     "managed-host-greenfield-baseline": "SPEC_ONLY",
     "protocol-2.2-golden-corpus": "LOCAL_PASS_BOUND",
+    "fixed-linux-characterization": "PASS",
     "raw-evidence-retained-immutable": "BOUND",
   },
 };
@@ -152,14 +157,27 @@ for (const manifest of [synara, t3, referenceHost]) {
   auditCriterionMapping(manifest);
 }
 
+auditExecutionBinding(synara, synaraLinux);
+auditExecutionBinding(t3, t3Linux);
+auditExecutionBinding(referenceHost, runtimeLinux);
+auditSynaraLinuxExecution(synaraLinux);
+auditT3LinuxExecution(t3Linux);
+auditRuntimeLinuxExecution(runtimeLinux);
+
 process.stdout.write(
   `${JSON.stringify(
     {
       status: "PASS",
-      audit: "p0-baseline-evidence-v2",
+      audit: "p0-baseline-evidence-v3",
       repositories: repositories.length,
       gitFiles,
       fixtureFiles: referenceHost.fixtureCorpus.files.length,
+      linuxExecutionReports: 3,
+      fixedLinuxCharacterization: {
+        synara: synaraLinux.status,
+        t3: t3Linux.status,
+        runtime: runtimeLinux.status,
+      },
       platformP0CharacterizationClosure: false,
       m1BehaviorClosure: false,
       m1BehaviorStatus: "NOT_RUN",
@@ -169,6 +187,232 @@ process.stdout.write(
     2,
   )}\n`,
 );
+
+function auditExecutionBinding(manifest, execution) {
+  const binding = manifest.linuxExecutionEvidence;
+  if (!binding) fail(`${manifest.profile} omitted linuxExecutionEvidence`);
+  const path = resolveContained(root, binding.path);
+  equal(
+    sha256(readFileSync(path)),
+    binding.sha256,
+    `${manifest.profile} execution evidence SHA-256`,
+  );
+  equal(execution.status, binding.status, `${manifest.profile} execution evidence status`);
+  equal(binding.rawLogsCommitted, false, `${manifest.profile} raw log retention boundary`);
+  equal(execution.environment.host, "root@103.217.189.80", `${manifest.profile} Linux host`);
+  equal(execution.environment.architecture, "amd64", `${manifest.profile} Linux architecture`);
+  equal(
+    execution.claimBoundary.realProviderExecuted,
+    false,
+    `${manifest.profile} Provider boundary`,
+  );
+  equal(
+    execution.claimBoundary.platformP0BaselineClosed,
+    false,
+    `${manifest.profile} pre-review P0 closure boundary`,
+  );
+  equal(execution.claimBoundary.m1BaselineClosed, false, `${manifest.profile} M1 closure boundary`);
+}
+
+function auditSynaraLinuxExecution(execution) {
+  equal(
+    execution.schemaVersion,
+    "cloud-agents.p0.synara-linux-characterization/v1",
+    "Synara Linux schema",
+  );
+  equal(execution.status, "EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES", "Synara Linux status");
+  equal(
+    execution.fixedSource.commit,
+    "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+    "Synara Linux commit",
+  );
+  equal(
+    execution.fixedSource.tree,
+    "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+    "Synara Linux tree",
+  );
+  equal(
+    execution.fixedSource.archiveSha256,
+    "cdcd4dd2d9571d45ab73f9cce36d43b4560f94d41aabc1291a7606d4d7427380",
+    "Synara Linux archive",
+  );
+  equal(execution.fixedSource.remoteMaterializationHasGitMetadata, false, "Synara archive tree");
+  equal(execution.fixedSourceModified, undefined, "Synara top-level mutation marker omitted");
+  equal(
+    execution.claimBoundary.fixedSourceModified,
+    false,
+    "Synara fixed source mutation boundary",
+  );
+  equal(execution.claimBoundary.temporaryPostgresSchemasRemaining, 0, "Synara database cleanup");
+  const evidenceIndexPath = resolveContained(root, execution.claimBoundary.evidenceIndexPath);
+  const evidenceIndexBytes = readFileSync(evidenceIndexPath);
+  equal(
+    sha256(evidenceIndexBytes),
+    execution.claimBoundary.rawEvidenceIndexSha256,
+    "Synara raw evidence index",
+  );
+  equal(execution.claimBoundary.remoteIndexVerified, true, "Synara remote evidence verification");
+  const evidenceIndex = parseSha256Index(evidenceIndexBytes.toString("utf8"));
+  equal(evidenceIndex.size, 21, "Synara evidence index entries");
+  requireArray(execution.runs, "Synara Linux runs");
+  const byId = new Map(execution.runs.map((value) => [value.id, value]));
+  equal(byId.size, execution.runs.length, "Synara Linux unique run ids");
+  for (const [id, passedTests] of [
+    ["agentd-characterization", 118],
+    ["kubernetes-allocation", 18],
+    ["leadership-write-fence", 1],
+    ["sqlite-deletion-fence", 1],
+  ]) {
+    const run = requiredCase(byId, id);
+    equal(run.result, "PASS", `${id} result`);
+    equal(run.passedTests, passedTests, `${id} passed tests`);
+    equal(run.failedTests, 0, `${id} failed tests`);
+    requireSha256(run.logSha256, `${id} log`);
+    requireIndexedDigest(evidenceIndex, run.logSha256, `${id} log`);
+  }
+  const broad = requiredCase(byId, "legacy-broad-five-package-suite");
+  equal(broad.result, "FAIL_KNOWN_PRECONDITION", "Synara broad suite result");
+  equal(broad.passedTests, 934, "Synara broad suite passed tests");
+  equal(broad.failedTests, 1, "Synara broad suite failed tests");
+  requireIndexedDigest(evidenceIndex, broad.logSha256, "Synara broad suite log");
+  for (const id of [
+    "concurrent-claim-single-winner",
+    "workspace-cleanup-concurrent-fence",
+    "tenant-pinned-worker-claim",
+    "suspend-completion-concurrent-single-winner",
+  ]) {
+    const run = requiredCase(byId, id);
+    equal(run.result, "FAIL_KNOWN_PRECONDITION", `${id} result`);
+    equal(run.passedTests, 0, `${id} passed tests`);
+    equal(run.failedTests, 1, `${id} failed tests`);
+    requireString(run.failure, `${id} failure boundary`);
+    requireSha256(run.logSha256, `${id} log`);
+    requireIndexedDigest(evidenceIndex, run.logSha256, `${id} log`);
+  }
+  requireIndexedDigest(
+    evidenceIndex,
+    requiredCase(byId, "tenant-pinned-worker-claim").postgresDiagnosticSha256,
+    "Synara Postgres diagnostic",
+  );
+}
+
+function auditT3LinuxExecution(execution) {
+  equal(execution.schemaVersion, "cloud-agents.p0.t3-linux-characterization/v1", "T3 Linux schema");
+  equal(execution.status, "PASS_CHARACTERIZATION_ONLY", "T3 Linux status");
+  equal(execution.environment.node, "v24.13.1", "T3 Linux Node");
+  equal(execution.environment.pnpm, "11.10.0", "T3 Linux pnpm");
+  for (const [role, expected] of Object.entries({
+    main: {
+      commit: "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      tree: "e98f5650379f428bf5dcc6e7cae287c68fb8b080",
+      archive: "87d78b9d2e9631ba10b84bad697afe271a0dac37d2b950aecc440577e61be1c2",
+      packages: 1782,
+    },
+    feature: {
+      commit: "9584a266e91fa94354e8c07f79af3a5e01755d16",
+      tree: "171624a2dbfb68f1d91f0a67175cbaf68f2947c2",
+      archive: "dd9d7ab0c174dcf82ca377d96b8a5531e3dd166b401c414ad490bcfa97bc4dc1",
+      packages: 1790,
+    },
+  })) {
+    const source = execution.fixedSources[role];
+    equal(source.commit, expected.commit, `T3 ${role} commit`);
+    equal(source.tree, expected.tree, `T3 ${role} tree`);
+    equal(source.archiveSha256, expected.archive, `T3 ${role} archive`);
+    equal(
+      source.finalSourceMatchesArchiveExcludingNodeModules,
+      true,
+      `T3 ${role} final source identity`,
+    );
+    for (const field of [
+      "canonicalFilesSha256",
+      "canonicalModesSha256",
+      "canonicalLinksSha256",
+      "canonicalShapeSha256",
+      "packageJsonSha256",
+      "pnpmLockSha256",
+      "pnpmWorkspaceSha256",
+    ]) {
+      requireSha256(source[field], `T3 ${role} ${field}`);
+    }
+    equal(execution.install[role].result, "PASS", `T3 ${role} install`);
+    equal(execution.install[role].packages, expected.packages, `T3 ${role} install packages`);
+    equal(execution.install[role].frozenLockfile, true, `T3 ${role} frozen install`);
+    equal(execution.install[role].ignoreScripts, true, `T3 ${role} install scripts`);
+    requireSha256(execution.install[role].logSha256, `T3 ${role} install log`);
+  }
+  equal(execution.runs.mainFocusedTests.result, "PASS", "T3 main focused tests");
+  equal(execution.runs.mainFocusedTests.files, 7, "T3 main focused files");
+  equal(execution.runs.mainFocusedTests.tests, 30, "T3 main focused tests count");
+  equal(execution.runs.mainTypecheck.result, "PASS", "T3 main typecheck");
+  equal(execution.runs.mainTypecheck.filters.length, 5, "T3 main typecheck filters");
+  equal(execution.runs.featureFocusedTests.result, "PASS", "T3 feature focused tests");
+  equal(execution.runs.featureFocusedTests.files, 5, "T3 feature focused files");
+  equal(execution.runs.featureFocusedTests.tests, 39, "T3 feature focused tests count");
+  equal(execution.runs.featureTypecheck.result, "PASS", "T3 feature typecheck");
+  for (const run of Object.values(execution.runs)) {
+    requireArray(run.logSha256, `T3 ${run.result} log hashes`);
+    for (const digest of run.logSha256) requireSha256(digest, "T3 run log");
+  }
+  equal(execution.claimBoundary.characterizationOnly, true, "T3 characterization boundary");
+  equal(execution.claimBoundary.credentialsUsed, false, "T3 credential boundary");
+  for (const field of [
+    "remoteResultsSha256",
+    "commandResultsSha256",
+    "logIndexSha256",
+    "reportSha256",
+    "finalEvidenceValidationLogSha256",
+  ]) {
+    requireSha256(execution.evidence[field], `T3 ${field}`);
+  }
+}
+
+function auditRuntimeLinuxExecution(execution) {
+  equal(
+    execution.schemaVersion,
+    "cloud-agents.p0.runtime-linux-characterization/v1",
+    "Runtime Linux schema",
+  );
+  equal(execution.status, "PASS", "Runtime Linux status");
+  equal(execution.environment.node, "v24.13.1", "Runtime Linux Node");
+  equal(execution.environment.bun, "1.3.14", "Runtime Linux Bun");
+  equal(
+    execution.fixedSource.commit,
+    "c2c03584656a0db04de2f6b84113ac932459eae6",
+    "Runtime Linux commit",
+  );
+  equal(
+    execution.fixedSource.tree,
+    "2b3e3dbded35d97565f387abff497e31cc498126",
+    "Runtime Linux tree",
+  );
+  equal(
+    gitText(root, ["rev-parse", `${execution.fixedSource.commit}^{tree}`]),
+    execution.fixedSource.tree,
+    "Runtime Linux local Git binding",
+  );
+  equal(execution.fixedSource.fileCount, 209, "Runtime Linux file count");
+  equal(execution.fixedSource.sourceCleanEquivalent, true, "Runtime Linux source identity");
+  equal(execution.install.result, "PASS", "Runtime Linux install");
+  equal(execution.install.frozenLockfile, true, "Runtime Linux frozen install");
+  equal(execution.install.ignoreScripts, true, "Runtime Linux install scripts");
+  const byId = new Map(execution.runs.map((value) => [value.id, value]));
+  equal(requiredCase(byId, "protocol-tests").passedTests, 13, "Runtime protocol tests");
+  equal(requiredCase(byId, "testkit-tests").passedTests, 5, "Runtime testkit tests");
+  equal(requiredCase(byId, "runtime-tests").passedTests, 33, "Runtime tests");
+  for (const run of execution.runs) {
+    equal(run.result, "PASS", `Runtime ${run.id} result`);
+    requireSha256(run.logSha256, `Runtime ${run.id} log`);
+  }
+  equal(
+    execution.claimBoundary.existingRemoteCloudAgentsP0Modified,
+    false,
+    "Runtime remote worktree boundary",
+  );
+  for (const field of ["commandsSha256", "logIndexSha256", "remoteSummarySha256"]) {
+    requireSha256(execution.evidence[field], `Runtime ${field}`);
+  }
+}
 
 function auditRepository(manifest) {
   requireString(manifest.ref, `${manifest.profile ?? manifest.role} ref`);
@@ -481,6 +725,23 @@ function jsonLines(path) {
     .map((line) => JSON.parse(line));
 }
 
+function parseSha256Index(text) {
+  const entries = new Map();
+  for (const line of text.trim().split("\n")) {
+    const match = /^([0-9a-f]{64}) {2}(.+)$/.exec(line);
+    if (!match) fail(`invalid SHA-256 index line: ${line}`);
+    const [, digest, path] = match;
+    if (entries.has(path)) fail(`duplicate SHA-256 index path: ${path}`);
+    entries.set(path, digest);
+  }
+  return entries;
+}
+
+function requireIndexedDigest(index, digest, label) {
+  requireSha256(digest, label);
+  if (![...index.values()].includes(digest)) fail(`${label} is absent from the SHA-256 index`);
+}
+
 function resolveContained(base, path) {
   const resolved = resolve(base, path);
   if (resolved !== base && !resolved.startsWith(`${base}/`))
@@ -528,6 +789,12 @@ function requireArray(value, label) {
 
 function requireString(value, label) {
   if (typeof value !== "string" || value.length === 0) fail(`${label} must be a non-empty string`);
+}
+
+function requireSha256(value, label) {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+    fail(`${label} must be a lowercase SHA-256 digest`);
+  }
 }
 
 function fail(message) {

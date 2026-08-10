@@ -2,7 +2,7 @@
   "schemaVersion": "cloud-agents.p0.baseline-manifest/v2",
   "manifestVersion": 2,
   "profile": "synara-legacy-managed-agent",
-  "status": "CHARACTERIZED_NOT_EXECUTED",
+  "status": "CHARACTERIZED_EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES",
   "platformP0CharacterizationClosure": {
     "complete": false,
     "status": "INCOMPLETE",
@@ -22,9 +22,9 @@
       "evidence": "fixed source refs and checked-in test oracles listed by this manifest"
     },
     {
-      "criterion": "same-input-before-after-characterization",
-      "result": "NOT_RUN",
-      "evidence": "no immutable same-input before/after execution record"
+      "criterion": "fixed-linux-characterization",
+      "result": "EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES",
+      "evidence": "fixed archive executed on Linux: focused mechanisms passed; catalog and tenant-plan fixture defects stopped specified concurrency cases before their semantic assertions"
     },
     {
       "criterion": "real-provider-failure-resume-immutable",
@@ -39,8 +39,16 @@
     "/Users/huang/devel/project/huang/business/synara-cloud-agent-external-runtime",
     "/Users/huang/devel/project/huang/business/synara"
   ],
-  "evidenceStrength": "SOURCE_AND_CHECKED_IN_TEST_ORACLE",
+  "evidenceStrength": "SOURCE_TEST_ORACLE_AND_FIXED_LINUX_EXECUTION",
   "realProviderExecution": "NOT_RUN",
+  "linuxExecutionEvidence": {
+    "path": "docs/plan/p0/baseline/synara-linux-amd64-execution.json",
+    "sha256": "a3783d9132620df822271f9c18915777f256c49986f47df7566a46f8ec63b93c",
+    "status": "EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES",
+    "passingCharacterization": "agentd 118; Kubernetes allocation 18; leadership fence 1; SQLite deletion fence 1",
+    "preconditionFailures": "provider capability catalog source absent; tenant fixture references unseeded SaaS plan",
+    "rawLogsCommitted": false
+  },
   "coverage": [
     "provider-host-protocol-2.2/2.3-history",
     "execution-generation-fencing",
@@ -131,6 +139,7 @@
     "No same-input before/after run against public Platform bits.",
     "No authenticated Codex or Claude failure/resume run retained by P0.",
     "Session/Turn/Execution foreign keys are not a reusable Environment Lease model.",
-    "Checked-in tests and reports are case oracles, not replayed closure evidence."
+    "Several concurrency oracles were executed but did not reach their assertions because the fixed source has documented fixture/generated-source precondition defects.",
+    "Raw JSONL logs currently remain only on the operator-selected Linux host; this manifest binds their SHA-256 values through the checked-in normalized execution record."
   ]
 }

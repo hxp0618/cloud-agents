@@ -2,7 +2,7 @@
   "schemaVersion": "cloud-agents.p0.baseline-manifest/v2",
   "manifestVersion": 2,
   "profile": "t3-embedded-and-cloud-agent-consumer",
-  "status": "CHARACTERIZED_NOT_EXECUTED",
+  "status": "CHARACTERIZED_EXECUTED_ON_FIXED_LINUX_SOURCES",
   "platformP0CharacterizationClosure": {
     "complete": false,
     "status": "INCOMPLETE",
@@ -22,13 +22,25 @@
       "evidence": "fixed embedded-authority and cloud-agent-consumer source refs listed by this manifest"
     },
     {
+      "criterion": "fixed-linux-characterization",
+      "result": "PASS",
+      "evidence": "main and feature fixed archives passed frozen install, focused tests and targeted typechecks on Linux"
+    },
+    {
       "criterion": "real-t3-turn-workspace-checkpoint-restart",
       "result": "NOT_RUN",
       "evidence": "fresh integration evidence stops at Describe, StartSession and StopSession"
     }
   ],
   "realProviderExecution": "NOT_RUN",
-  "evidenceStrength": "SOURCE_AND_CHECKED_IN_TEST_ORACLE",
+  "evidenceStrength": "SOURCE_TEST_ORACLE_AND_FIXED_LINUX_EXECUTION",
+  "linuxExecutionEvidence": {
+    "path": "docs/plan/p0/baseline/t3-linux-amd64-execution.json",
+    "sha256": "d2fcd7c26bcb8ac1f9897096066f639a0460bfa038b6de8e943933a96e9280ee",
+    "status": "PASS_CHARACTERIZATION_ONLY",
+    "passingCharacterization": "main 7 files/30 tests and five targeted typechecks; feature 5 files/39 tests and server typecheck",
+    "rawLogsCommitted": false
+  },
   "repositories": [
     {
       "role": "embedded-authority",

@@ -22,7 +22,7 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 ## 当前执行边界
 
 用户已于 2026-08-10 批准 ADR-0006、D-001～D-021 并解除 P0 暂停；P0 执行期间又记录了应用既有
-fail-closed 原则的 D-022～D-023。当前只授权 freeze、inventory、provenance、baseline characterization、
+fail-closed 原则与 local-first 验证策略的 D-022～D-024。当前只授权 freeze、inventory、provenance、baseline characterization、
 evidence 与计划分支推送。仍不授权：
 
 - 修改 Runtime、Go、Synara 或 T3Code 源码；

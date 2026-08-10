@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "cloud-agents.p0.synara-linux-characterization/v1",
+  "observedAt": "2026-08-10",
+  "status": "EXECUTED_WITH_KNOWN_PRECONDITION_FAILURES",
+  "environment": {
+    "host": "root@103.217.189.80",
+    "role": "cloud-final Linux validation environment under D-024",
+    "os": "linux",
+    "architecture": "amd64",
+    "go": "go1.26.5",
+    "goProxy": "https://goproxy.cn,direct",
+    "postgres": "15.18",
+    "databaseEncoding": "UTF8",
+    "databaseDsn": "postgresql:///synara_p0_baseline?host=/var/run/postgresql&sslmode=disable"
+  },
+  "fixedSource": {
+    "repository": "hxp0618/synara",
+    "commit": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+    "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+    "archiveSha256": "cdcd4dd2d9571d45ab73f9cce36d43b4560f94d41aabc1291a7606d4d7427380",
+    "goModSha256": "acb3ab85cfc62ecb7770a449b14e43bd085fa7a267bd946eceeeb731716106da",
+    "goSumSha256": "b2ac351ac5dde986a66f2c6943b5d6629ef8f8d7d6d93852a23f09f68bdac98c",
+    "remoteMaterialization": "/root/cloud-agents-p0-baseline-synara",
+    "remoteMaterializationHasGitMetadata": false
+  },
+  "runs": [
+    {
+      "id": "agentd-characterization",
+      "scope": "./internal/agentd",
+      "result": "PASS",
+      "passedTests": 118,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "logSha256": "536ce7511787f302decfca6d28a3aff8d0e649567a3d29afdf5637b7d74676a9"
+    },
+    {
+      "id": "legacy-broad-five-package-suite",
+      "scope": "agentd, executions, executiontargets, leadership, database",
+      "result": "FAIL_KNOWN_PRECONDITION",
+      "passedTests": 934,
+      "failedTests": 1,
+      "skippedTests": 97,
+      "failure": "TestActiveTurnSuspendExplicitResumeBindsReceiptOnce could not load the absent packages/contracts/src/providerCapabilityCatalog.json source referenced by the frozen test helper.",
+      "logSha256": "90d517e18229359042c04cdecb51c417ca46d181897d54ae452b25d3df8496c0"
+    },
+    {
+      "id": "kubernetes-allocation",
+      "result": "PASS",
+      "passedTests": 18,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "logSha256": "a89093fdd0f743a8d2f7e2a86cfc88a46b7eafdecf6871b17f1ae6ca7855516c"
+    },
+    {
+      "id": "leadership-write-fence",
+      "result": "PASS",
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "logSha256": "3a3bfcf5692ae9aee7e0f1d46ee70c5e52eb38b693a5a9f3fed0a32ba336c0ee"
+    },
+    {
+      "id": "sqlite-deletion-fence",
+      "result": "PASS",
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "logSha256": "356f470cb26d075468ba6ef4a8754679205d71701aaa3d496fa56d7f6742121a"
+    },
+    {
+      "id": "concurrent-claim-single-winner",
+      "result": "FAIL_KNOWN_PRECONDITION",
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "failure": "Provider capability catalog source is absent; panic occurred before claim semantics.",
+      "logSha256": "9d7f66330f2fdf145cd198477c11b57ca5810bd63df113f5123533816a8762d6"
+    },
+    {
+      "id": "workspace-cleanup-concurrent-fence",
+      "result": "FAIL_KNOWN_PRECONDITION",
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "failure": "Provider capability catalog source is absent; panic occurred before cleanup-claim semantics.",
+      "logSha256": "715d389b6b84f223528fd355085fe7857e7c7e82938715f48aea0ef03f2ceede"
+    },
+    {
+      "id": "tenant-pinned-worker-claim",
+      "result": "FAIL_KNOWN_PRECONDITION",
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "failure": "Fixture plan_code=test violates fk_tenants_plan_code because the frozen fixture did not seed saas_plans; no claim assertion ran.",
+      "logSha256": "58cde83c0af3f74f3f2600c51d98ee9088d00886e82964bc157f2246b46469a8",
+      "postgresDiagnosticSha256": "19f2b2c7dc11286d8b2ede659353f3014d0b2bbf6969f0fef2ce3075df281d84"
+    },
+    {
+      "id": "suspend-completion-concurrent-single-winner",
+      "result": "FAIL_KNOWN_PRECONDITION",
+      "passedTests": 0,
+      "failedTests": 1,
+      "skippedTests": 0,
+      "failure": "Provider capability catalog source is absent; panic occurred before suspend-completion semantics.",
+      "logSha256": "c00a8ebc6c1ef1bceef4e313ff3ca240814dc3cdce47a0e23ef5858409986923",
+      "criterionBoundary": "This only targets concurrent CompleteResourceSuspend single-winner and lease/generation fencing; it does not prove explicit resume, Recovery Bundle receipt/provider cursor binding, or replay-once."
+    }
+  ],
+  "claimBoundary": {
+    "realProviderExecuted": false,
+    "fixedSourceModified": false,
+    "temporaryPostgresSchemasRemaining": 0,
+    "rawLogsCommitted": false,
+    "rawEvidenceLocation": "/root/cloud-agents-p0-evidence/synara",
+    "evidenceIndexPath": "docs/plan/p0/baseline/synara-evidence-index.sha256",
+    "rawEvidenceIndexSha256": "4dab2c69c991bbad6b7855e68901679e8086b61d1b199426a4c6417544f78f3f",
+    "remoteIndexVerified": true,
+    "platformP0BaselineClosed": false,
+    "m1BaselineClosed": false
+  }
+}

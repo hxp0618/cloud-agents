@@ -31,6 +31,7 @@
 | D-021 | 跨 PEP 使用短 TTL signed auth snapshot + revocation epoch/fence | APPROVED | 分区时最多 60 秒后 fail closed             |
 | D-022 | Baseline 使用 P0/M1 phase records，最终再关闭 aggregate Gate    | APPROVED | 应用 D-020，避免暂停中的 M1 反向阻塞 P0    |
 | D-023 | Go 提取只创建新公共历史，禁止 graft Synara Git history          | APPROVED | 历史日志隔离；静态测试私钥必须先重写       |
+| D-024 | 开发与 focused Gate 本地优先；固定 SHA 接近收口后再做云端终验   | APPROVED | 避免开发循环反复占用云主机并混淆证据层级   |
 
 ## 2. 阶段追踪
 
@@ -123,3 +124,4 @@ D-022 的 P0/M1 phase-record 语义，也没有固定环境的实际 test-run ev
 - [x] M1 rc.2 与 Platform P0 保持两个独立执行窗口；本次不恢复 M1；
 - [x] P0 允许只读外部 ref/metadata 查询与计划分支 push；不授权发布、部署或数据库写入；
 - [x] 用户明确解除 P0 的 `PAUSED`；M1/P1–P6 保持暂停。
+- [x] 执行环境采用 local-first：本地完成实现、focused tests 与静态 Gate；云服务器只对接近收口的固定 SHA 做一次 Linux/amd64 终验。
