@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T04:59:48.276Z",
+  "source": {
+    "repository": "https://github.com/hxp0618/synara",
+    "baseCommit": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+    "planCommit": "4433ebfcff882458822e90d9d79edb076c7ccc91",
+    "workingTreeHadActivationEdits": true
+  },
+  "target": {
+    "repository": "https://github.com/hxp0618/cloud-agents",
+    "baseCommit": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+    "canonicalRoot": "docs/plan"
+  },
+  "notes": [
+    "Target links were rewritten for the public repository layout.",
+    "Historical Synara-only report and contract links are pinned to the source base commit.",
+    "No Stage 4-8 report, credential, endpoint, database dump, or private deployment configuration was copied."
+  ],
+  "files": [
+    {
+      "source": "docs/plans/synara-t3-cloud-agent-integration-architecture.md",
+      "target": "docs/plan/synara-t3-cloud-agent-integration-architecture.md",
+      "sourceSha256": "8b02d3a81da84efe9b1ba5b62ab58dc4a3261fc0a74182612c1b02b7106f7684",
+      "targetSha256": "0d0ed7cca42c2b104403dcd956e8c9b8da450e1488a1971c2fcc6a59831cd334"
+    },
+    {
+      "source": "docs/adr/0005-cloud-agent-external-runtime-candidate.md",
+      "target": "docs/plan/adr/0005-cloud-agent-external-runtime-candidate.md",
+      "sourceSha256": "a89e3c98b39c6d491b04a65e2cbe13c5650ab02a7b34ab2851b5d2175ea0c0cb",
+      "targetSha256": "a89e3c98b39c6d491b04a65e2cbe13c5650ab02a7b34ab2851b5d2175ea0c0cb"
+    },
+    {
+      "source": "docs/adr/0006-public-cloud-agents-platform.md",
+      "target": "docs/plan/adr/0006-public-cloud-agents-platform.md",
+      "sourceSha256": "3fa9943ea6fe2bcbcb77ba18aaf4d96719b4baf9ba78a311c09869828a77ec2b",
+      "targetSha256": "3fa9943ea6fe2bcbcb77ba18aaf4d96719b4baf9ba78a311c09869828a77ec2b"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/01-product-scope-and-authority.md",
+      "target": "docs/plan/cloud-agents-platform/01-product-scope-and-authority.md",
+      "sourceSha256": "0874aeeddd5639cc407e73995ba0eaab6b76fab26e2607ce1a8ff00366242f95",
+      "targetSha256": "0874aeeddd5639cc407e73995ba0eaab6b76fab26e2607ce1a8ff00366242f95"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/02-target-architecture.md",
+      "target": "docs/plan/cloud-agents-platform/02-target-architecture.md",
+      "sourceSha256": "da08baaf820ec728005468be5784f66238b71dd90f8dac98e46c1ca3c34d4d7a",
+      "targetSha256": "da08baaf820ec728005468be5784f66238b71dd90f8dac98e46c1ca3c34d4d7a"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/03-public-repository-and-release.md",
+      "target": "docs/plan/cloud-agents-platform/03-public-repository-and-release.md",
+      "sourceSha256": "15e75af7884977c1a1f114dec285d17779dc20ce30707399e4813006e1de1c22",
+      "targetSha256": "15e75af7884977c1a1f114dec285d17779dc20ce30707399e4813006e1de1c22"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/04-extraction-and-migration.md",
+      "target": "docs/plan/cloud-agents-platform/04-extraction-and-migration.md",
+      "sourceSha256": "05d74df4f615d81d9480564f7973cf3337c4973ccea56a48b20579641bfb1440",
+      "targetSha256": "05d74df4f615d81d9480564f7973cf3337c4973ccea56a48b20579641bfb1440"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/05-gates-and-acceptance.md",
+      "target": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+      "sourceSha256": "dca8215ca647ff418b62aaea2713c29fb0eb1709afb170d39399e55f16b071d1",
+      "targetSha256": "dca8215ca647ff418b62aaea2713c29fb0eb1709afb170d39399e55f16b071d1"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/06-status-tracker.md",
+      "target": "docs/plan/cloud-agents-platform/06-status-tracker.md",
+      "sourceSha256": "3829c639668c2fbe7b9592c8566629421d103c2d9bbf31bfa64cde2bac0a865f",
+      "targetSha256": "3829c639668c2fbe7b9592c8566629421d103c2d9bbf31bfa64cde2bac0a865f"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/README.md",
+      "target": "docs/plan/cloud-agents-platform/README.md",
+      "sourceSha256": "10e10e3b5c9d29f485cbdebf33c0333cb8a3cd48aae9001b1d7661fd35a46b31",
+      "targetSha256": "c0e2c05d9e8ee97c2e63cdac61bad8eca1be2ddbef084af945a63f71275e2462"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/evidence/README.md",
+      "target": "docs/plan/cloud-agents-platform/evidence/README.md",
+      "sourceSha256": "8edef3eefff7fe1f9b20f0565050dce0cc5cddb85651924d2d16aa2853a36eb5",
+      "targetSha256": "8edef3eefff7fe1f9b20f0565050dce0cc5cddb85651924d2d16aa2853a36eb5"
+    },
+    {
+      "source": "docs/plans/cloud-agents-platform/templates/gate-closure-record.md",
+      "target": "docs/plan/cloud-agents-platform/templates/gate-closure-record.md",
+      "sourceSha256": "394bee66eab1d05347825d85a9383f77c4e8257682706904418bb395b28700fb",
+      "targetSha256": "394bee66eab1d05347825d85a9383f77c4e8257682706904418bb395b28700fb"
+    },
+    {
+      "source": "docs/plans/cloud-agent-competitive-assessment-20260726.md",
+      "target": "docs/plan/legacy/cloud-agent-competitive-assessment-20260726.md",
+      "sourceSha256": "5ecdaad62e737a4a422bdc6930883be285343a471943997fc65d6de997e47256",
+      "targetSha256": "98dd4b9fdfcfcc585151a0dbd3a4628cc6e357a2ceadb829c5f112eac4d04835"
+    },
+    {
+      "source": "docs/plans/cloud-agent-direction-assessment-20260726.md",
+      "target": "docs/plan/legacy/cloud-agent-direction-assessment-20260726.md",
+      "sourceSha256": "ce982bf9b13315b77b76e113ad18e08f0ee1282b165f74c7980053c302d97b6b",
+      "targetSha256": "639e7b59cae4a5c3e1f7cb051a0d1c6afbdec0b5942df2e475e3589380f21faa"
+    },
+    {
+      "source": "docs/plans/external-sdk-developer-platform.md",
+      "target": "docs/plan/legacy/external-sdk-developer-platform.md",
+      "sourceSha256": "c4e6a4d37e4671393228093a987cdaf98e55a549e219e1e7d7cec5be51b82e31",
+      "targetSha256": "e7796f50096161376c0f43e3e98c5f664979d7208569a478be2113e50fab2d0e"
+    },
+    {
+      "source": "docs/plans/fast-cloud-agents-implementation.md",
+      "target": "docs/plan/legacy/fast-cloud-agents-implementation.md",
+      "sourceSha256": "9962a64123c308ef49b56d9067e90d2f1620aa1cf6d30aaf0008efa27f8e7c3a",
+      "targetSha256": "d664396ef6c508375c8f885956cb66e1935a02a0f1009636114a3324af7a3f5c"
+    },
+    {
+      "source": "docs/plans/fast-provision-runtime-proposal-v0.md",
+      "target": "docs/plan/legacy/fast-provision-runtime-proposal-v0.md",
+      "sourceSha256": "5ae25597f8cbf5febc8137989c296ce2cdbddcac381c604a158d57e78a5c5f28",
+      "targetSha256": "5ae25597f8cbf5febc8137989c296ce2cdbddcac381c604a158d57e78a5c5f28"
+    },
+    {
+      "source": "docs/plans/gvisor-runtime-isolation-tier-v0.md",
+      "target": "docs/plan/legacy/gvisor-runtime-isolation-tier-v0.md",
+      "sourceSha256": "9500be96a171c63ecd7cd95b8e6df44734899ee8a1b00c1b67c5122d17b33bdc",
+      "targetSha256": "50d0bb62207e32aeaead0240bb4994777d14a88e0ae561f848c2645d119cb882"
+    },
+    {
+      "source": "docs/plans/stage-2-go-control-plane-productionization.md",
+      "target": "docs/plan/legacy/stage-2-go-control-plane-productionization.md",
+      "sourceSha256": "0d8201f7535c31ebdf1402178852055a93defefe5135dfebdd90f1b098ee3caf",
+      "targetSha256": "0d8201f7535c31ebdf1402178852055a93defefe5135dfebdd90f1b098ee3caf"
+    },
+    {
+      "source": "docs/plans/stage-5-provider-sandbox-runtime-isolation.md",
+      "target": "docs/plan/legacy/stage-5-provider-sandbox-runtime-isolation.md",
+      "sourceSha256": "58ffbbfad58bfb3b1632019d6c0a5f8ef224eefe0f1c83ad6a956ff6d8b9ccdf",
+      "targetSha256": "7224bd4c4cf689cd3b6538ed2b0326b1f103361bb9b4c375654248ae692f8875"
+    },
+    {
+      "source": "docs/contracts/provider-host-v2.md",
+      "target": "docs/plan/references/contracts/provider-host-v2.md",
+      "sourceSha256": "676ce83a2782eee04b62b54015fad9bfbe7333fb82e330407ab840e2517cd70a",
+      "targetSha256": "676ce83a2782eee04b62b54015fad9bfbe7333fb82e330407ab840e2517cd70a"
+    },
+    {
+      "source": "docs/contracts/runtime-event-v2.md",
+      "target": "docs/plan/references/contracts/runtime-event-v2.md",
+      "sourceSha256": "b07c0ed308362fd3e999004fd078e34f9cba5f5b66ad3ce85373cbead95bbc4f",
+      "targetSha256": "b07c0ed308362fd3e999004fd078e34f9cba5f5b66ad3ce85373cbead95bbc4f"
+    },
+    {
+      "source": "docs/contracts/runtime-event-v2.schema.json",
+      "target": "docs/plan/references/contracts/runtime-event-v2.schema.json",
+      "sourceSha256": "d2d335dc125f52e33429eb07313c2f8f290fd6a70d2ee88869584a5e22fba29a",
+      "targetSha256": "d2d335dc125f52e33429eb07313c2f8f290fd6a70d2ee88869584a5e22fba29a"
+    },
+    {
+      "source": "docs/contracts/worker-protocol-v1.md",
+      "target": "docs/plan/references/contracts/worker-protocol-v1.md",
+      "sourceSha256": "a3621625cff93ab7c9fef0bcd436f290485b4999217dc02423b8541ba1a85e83",
+      "targetSha256": "a3621625cff93ab7c9fef0bcd436f290485b4999217dc02423b8541ba1a85e83"
+    },
+    {
+      "source": "docs/contracts/worker-protocol-v2.md",
+      "target": "docs/plan/references/contracts/worker-protocol-v2.md",
+      "sourceSha256": "2e9ec9207f725245030876a22d396d807993720bf5eaa5c1ebdb7aa7b7da28c5",
+      "targetSha256": "2e9ec9207f725245030876a22d396d807993720bf5eaa5c1ebdb7aa7b7da28c5"
+    }
+  ]
+}

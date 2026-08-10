@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synara.dev/schemas/runtime-event-v2.schema.json",
+  "title": "Synara Runtime Event v2 Persisted Session Event Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventVersion",
+    "tenantId",
+    "organizationId",
+    "projectId",
+    "sessionId",
+    "executionId",
+    "workerId",
+    "generation",
+    "sequence",
+    "eventType",
+    "actorType",
+    "actorId",
+    "occurredAt",
+    "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventVersion": { "const": 2 },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "projectId": { "type": "string", "format": "uuid" },
+    "sessionId": { "type": "string", "format": "uuid" },
+    "executionId": {
+      "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+    },
+    "workerId": {
+      "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+    },
+    "generation": {
+      "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+    },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "eventType": {
+      "enum": [
+        "session.started",
+        "session.configured",
+        "session.state.changed",
+        "session.exited",
+        "thread.started",
+        "thread.state.changed",
+        "thread.metadata.updated",
+        "thread.token-usage.updated",
+        "thread.realtime.started",
+        "thread.realtime.item-added",
+        "thread.realtime.audio.delta",
+        "thread.realtime.error",
+        "thread.realtime.closed",
+        "turn.started",
+        "turn.completed",
+        "turn.aborted",
+        "turn.tasks.updated",
+        "turn.proposed.delta",
+        "turn.proposed.completed",
+        "turn.diff.updated",
+        "turn.steered",
+        "item.started",
+        "item.updated",
+        "item.completed",
+        "content.delta",
+        "request.opened",
+        "request.resolved",
+        "user-input.requested",
+        "user-input.resolved",
+        "task.started",
+        "task.progress",
+        "task.updated",
+        "task.completed",
+        "hook.started",
+        "hook.progress",
+        "hook.completed",
+        "tool.progress",
+        "tool.summary",
+        "auth.status",
+        "account.updated",
+        "account.rate-limits.updated",
+        "mcp.status.updated",
+        "mcp.oauth.completed",
+        "model.rerouted",
+        "config.warning",
+        "deprecation.notice",
+        "files.persisted",
+        "vcs.state.changed",
+        "runtime.warning",
+        "runtime.error"
+      ]
+    },
+    "actorType": {
+      "enum": ["user", "service_account", "worker", "system"]
+    },
+    "actorId": {
+      "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "description": "Canonical ProviderRuntimeEventV2 payload plus documented Control Plane correlation extensions such as requestId. Serialized JSON is limited to 65536 bytes; larger content must use an Artifact reference."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "eventType": { "const": "turn.diff.updated" } },
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": { "payload": { "$ref": "#/$defs/turnDiffUpdatedPayload" } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "eventType": { "const": "content.delta" } },
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": { "payload": { "$ref": "#/$defs/contentDeltaPayload" } }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "enum": ["item.started", "item.updated", "item.completed"]
+          }
+        },
+        "required": ["eventType"]
+      },
+      "then": {
+        "properties": { "payload": { "$ref": "#/$defs/itemLifecyclePayload" } }
+      }
+    }
+  ],
+  "$defs": {
+    "nonNegativeInteger": { "type": "integer", "minimum": 0 },
+    "turnDiffArtifactReference": {
+      "type": "object",
+      "required": [
+        "artifactId",
+        "contentType",
+        "sizeBytes",
+        "sha256",
+        "fileCount",
+        "additions",
+        "deletions"
+      ],
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1 },
+        "contentType": { "const": "text/x-diff; charset=utf-8" },
+        "sizeBytes": { "$ref": "#/$defs/nonNegativeInteger" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "fileCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "additions": { "$ref": "#/$defs/nonNegativeInteger" },
+        "deletions": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "turnDiffUpdatedPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["unifiedDiff"],
+          "not": { "required": ["artifact"] },
+          "properties": { "unifiedDiff": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["artifact"],
+          "not": { "required": ["unifiedDiff"] },
+          "properties": {
+            "artifact": { "$ref": "#/$defs/turnDiffArtifactReference" }
+          }
+        }
+      ]
+    },
+    "terminalEncoding": { "enum": ["utf-8", "binary"] },
+    "strictBase64": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$"
+    },
+    "contentDeltaPayload": {
+      "type": "object",
+      "required": ["streamKind", "delta"],
+      "properties": {
+        "streamKind": {
+          "enum": [
+            "assistant_text",
+            "reasoning_text",
+            "reasoning_summary_text",
+            "plan_text",
+            "command_output",
+            "file_change_output",
+            "unknown"
+          ]
+        },
+        "delta": { "type": "string" },
+        "contentIndex": { "type": "integer" },
+        "summaryIndex": { "type": "integer" },
+        "terminalId": { "type": "string", "minLength": 1 },
+        "encoding": { "$ref": "#/$defs/terminalEncoding" },
+        "byteOffset": { "$ref": "#/$defs/nonNegativeInteger" },
+        "byteLength": { "$ref": "#/$defs/nonNegativeInteger" },
+        "truncated": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "streamKind": { "const": "command_output" } },
+            "required": ["streamKind"]
+          },
+          "then": {
+            "required": ["terminalId", "encoding", "byteOffset", "byteLength"],
+            "properties": {
+              "terminalId": { "type": "string", "minLength": 1 },
+              "encoding": { "$ref": "#/$defs/terminalEncoding" },
+              "byteOffset": { "$ref": "#/$defs/nonNegativeInteger" },
+              "byteLength": { "$ref": "#/$defs/nonNegativeInteger" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "encoding": { "const": "binary" } },
+            "required": ["encoding"]
+          },
+          "then": {
+            "required": ["byteLength"],
+            "properties": {
+              "delta": { "$ref": "#/$defs/strictBase64" },
+              "byteLength": { "$ref": "#/$defs/nonNegativeInteger" }
+            }
+          }
+        }
+      ]
+    },
+    "terminalLifecycleCommon": {
+      "type": "object",
+      "required": ["terminalId", "eventType"],
+      "properties": {
+        "terminalId": { "type": "string", "minLength": 1 },
+        "eventType": {
+          "enum": [
+            "terminal.started",
+            "terminal.output.reference",
+            "terminal.exited",
+            "terminal.failed"
+          ]
+        },
+        "commandSummary": { "type": "string", "minLength": 1 },
+        "cwdLabel": { "type": "string", "minLength": 1 }
+      }
+    },
+    "terminalCompletion": {
+      "allOf": [
+        { "$ref": "#/$defs/terminalLifecycleCommon" },
+        {
+          "type": "object",
+          "required": ["totalBytes", "previewBytes", "segmentCount", "truncated"],
+          "properties": {
+            "totalBytes": { "$ref": "#/$defs/nonNegativeInteger" },
+            "previewBytes": { "$ref": "#/$defs/nonNegativeInteger" },
+            "segmentCount": { "$ref": "#/$defs/nonNegativeInteger" },
+            "truncated": { "type": "boolean" },
+            "exitCode": { "type": "integer" },
+            "signal": { "type": "string", "minLength": 1 },
+            "failureKind": {
+              "enum": ["exit", "signal", "timeout", "oom", "provider_error"]
+            }
+          }
+        }
+      ]
+    },
+    "providerRuntimeTerminalData": {
+      "oneOf": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/terminalLifecycleCommon" },
+            {
+              "type": "object",
+              "properties": { "eventType": { "const": "terminal.started" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/terminalLifecycleCommon" },
+            {
+              "type": "object",
+              "required": ["artifactId", "offset", "length", "segmentIndex", "encoding"],
+              "properties": {
+                "eventType": { "const": "terminal.output.reference" },
+                "artifactId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                },
+                "offset": { "$ref": "#/$defs/nonNegativeInteger" },
+                "length": { "$ref": "#/$defs/nonNegativeInteger" },
+                "segmentIndex": { "$ref": "#/$defs/nonNegativeInteger" },
+                "encoding": { "$ref": "#/$defs/terminalEncoding" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/terminalCompletion" },
+            {
+              "type": "object",
+              "properties": { "eventType": { "const": "terminal.exited" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/terminalCompletion" },
+            {
+              "type": "object",
+              "properties": { "eventType": { "const": "terminal.failed" } }
+            }
+          ]
+        }
+      ]
+    },
+    "itemLifecyclePayload": {
+      "type": "object",
+      "required": ["itemType"],
+      "properties": {
+        "itemType": {
+          "enum": [
+            "user_message",
+            "assistant_message",
+            "reasoning",
+            "plan",
+            "command_execution",
+            "file_change",
+            "mcp_tool_call",
+            "dynamic_tool_call",
+            "collab_agent_tool_call",
+            "web_search",
+            "image_view",
+            "image_generation",
+            "review_entered",
+            "review_exited",
+            "context_compaction",
+            "error",
+            "unknown"
+          ]
+        },
+        "status": { "enum": ["inProgress", "completed", "failed", "declined"] },
+        "title": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string", "minLength": 1 },
+        "data": {
+          "if": {
+            "type": "object",
+            "required": ["terminal"],
+            "properties": { "terminal": {} }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "terminal": { "$ref": "#/$defs/providerRuntimeTerminalData" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": ["terminal"],
+                "properties": { "terminal": {} }
+              }
+            },
+            "required": ["data"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "itemType": { "const": "command_execution" } }
+          }
+        }
+      ]
+    }
+  }
+}

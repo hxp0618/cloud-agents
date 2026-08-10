@@ -1,0 +1,111 @@
+# 06. 状态与决策追踪
+
+- 最后更新：2026-08-10
+- Plan status：APPROVED
+- Implementation status：P0 IN PROGRESS；M1/P1–P6 PAUSED
+
+## 1. 决策表
+
+| ID    | 决策                                                            | 状态     | 依据/待确认                                |
+| ----- | --------------------------------------------------------------- | -------- | ------------------------------------------ |
+| D-001 | Cloud Agents 是 Runtime + 完整公共 Go Control Plane 平台        | APPROVED | 用户于 2026-08-10 批准 ADR-0006            |
+| D-002 | Public CP 同时提供 managed-agent 与 managed-host 两平面         | APPROVED | 解决 Synara/T3 不同 authority              |
+| D-003 | T3 embedded 不强依赖 Go CP                                      | APPROVED | 保留轻量本地路径                           |
+| D-004 | Public CP 必须无 Synara 私有依赖直接 Compose/Helm 部署          | APPROVED | 用户要求直接部署                           |
+| D-005 | Synara/T3 通过公共 API/SDK 接入，不编译私有 CP fork             | APPROVED | 单一公共 source/bits                       |
+| D-006 | 旧 Go CP 按 move/rewrite/adapter/synara-only/retire 分类        | APPROVED | 禁止 994-file 机械复制                     |
+| D-007 | Public CP owns production Postgres/outbox/reconciler            | APPROVED | 独立部署与原子 authority                   |
+| D-008 | 新 T3 `ManagedConnectionTarget`，direct/relay proof-bound       | APPROVED | 当前 direct 仍是 Bearer                    |
+| D-009 | Runtime 与 Platform 同仓但独立 module/release train             | APPROVED | contract/conformance 原子，release 解耦    |
+| D-010 | Public tenancy 固定 Tenant → Organization → Project             | APPROVED | 中立隔离根；Synara 一对一映射              |
+| D-011 | Go SDK/CP/Worker 三个 module；go.work 仅开发                    | APPROVED | 标准子模块 tag 与无 workspace 依赖         |
+| D-012 | P3 用 reference host；P6 消费 T3 signed workload descriptor     | APPROVED | 避免 P3/P6 Gate 循环                       |
+| D-013 | pairing token/link/session 由 lease 内 T3 auth 写入             | APPROVED | CP 只写 lease admission 与 opaque ref      |
+| D-014 | Platform RC 必须 API+CLI；公共管理 Web UI deferred              | APPROVED | 直接部署不依赖 Synara/T3 UI                |
+| D-015 | Contracts、TS SDK、Go SDK 各自使用 immutable release train      | APPROVED | consumer exact pin；发布 channel 独立批准  |
+| D-016 | Public CP 是 management PEP；T3 auth 是 lease data PEP          | APPROVED | membership/generation/scope 为上游约束     |
+| D-017 | Pairing secret response 与 durable receipt/outbox 完全分离      | APPROVED | 丢失后 revoke + remint，禁止 secret replay |
+| D-018 | Host descriptor/artifact/provenance 使用固定签名 trust domain   | APPROVED | descriptor 不替代 image/bundle 验签        |
+| D-019 | 供应链实施 CVE/VEX/waiver/base-image revocation policy          | APPROVED | Platform RC 不继承历史 RC 的安全结论       |
+| D-020 | 跨阶段 Gate 使用 phase record，最终再关闭 aggregate Gate        | APPROVED | 消除 P1 提前证明 P2–P6 的循环              |
+| D-021 | 跨 PEP 使用短 TTL signed auth snapshot + revocation epoch/fence | APPROVED | 分区时最多 60 秒后 fail closed             |
+
+## 2. 阶段追踪
+
+| Stage             | Status      | DRI                         | Entry                                 | Exit Gate                                                                                       | Evidence                                 |
+| ----------------- | ----------- | --------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| M1 Runtime        | PAUSED      | TBD                         | 当前 rc.1/fresh branches              | 原 M1 gates                                                                                     | rc.1 + host refs；真实 Provider open     |
+| P0 Inventory      | IN PROGRESS | hxp0618 / Codex P0 executor | ADR accepted 2026-08-10               | G-INVENTORY/G-BASELINE                                                                          | activation + frozen-ref evidence pending |
+| P1 Foundation     | NOT STARTED | TBD                         | P0 verified                           | G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1                                                  | none                                     |
+| P2 Managed Agent  | NOT STARTED | TBD                         | P1 verified                           | G-MANAGED-AGENT/G-WORKER-FENCING-P2/G-AUTHORITY-P2/G-ADAPTER-P2/G-SECURITY-P2                   | none                                     |
+| P3 Managed Host   | NOT STARTED | TBD                         | P1 + Runtime digest                   | G-MANAGED-HOST/G-WORKER-FENCING-P3/G-AUTHORITY-P3/G-ADAPTER-P3/G-SECURITY-P3                    | none                                     |
+| P4 Standalone     | NOT STARTED | TBD                         | P2/P3 verified                        | G-STANDALONE/G-OPS/G-AUTHORITY-P4/G-ADAPTER-P4/G-SECURITY-P4                                    | none                                     |
+| P5 Synara Cutover | NOT STARTED | TBD                         | P2/P4 candidate                       | G-SYNARA-CUTOVER/G-AUTHORITY-P5/G-SECURITY-P5                                                   | none                                     |
+| P6 T3 Managed     | NOT STARTED | TBD                         | P3/P4 candidate                       | G-T3-INTEGRATION/G-AUTHORITY-P6/G-SECURITY-P6                                                   | none                                     |
+| Platform RC       | BLOCKED     | TBD                         | all phase records + engineering gates | aggregate G-AUTHORITY/G-WORKER-FENCING/G-ADAPTER/G-SECURITY + G-SUPPLY-CHAIN/G-PLATFORM-RELEASE | none                                     |
+
+## 3. Progressive Gate record registry
+
+| Gate / phase        | Current record ID | Status      | Fixed input digest | Evidence | Last reviewed |
+| ------------------- | ----------------- | ----------- | ------------------ | -------- | ------------- |
+| G-AUTHORITY-P1      | none              | NOT STARTED | none               | none     | none          |
+| G-AUTHORITY-P2      | none              | NOT STARTED | none               | none     | none          |
+| G-AUTHORITY-P3      | none              | NOT STARTED | none               | none     | none          |
+| G-AUTHORITY-P4      | none              | NOT STARTED | none               | none     | none          |
+| G-AUTHORITY-P5      | none              | NOT STARTED | none               | none     | none          |
+| G-AUTHORITY-P6      | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY-P1       | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY-P2       | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY-P3       | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY-P4       | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY-P5       | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY-P6       | none              | NOT STARTED | none               | none     | none          |
+| G-ADAPTER-P2        | none              | NOT STARTED | none               | none     | none          |
+| G-ADAPTER-P3        | none              | NOT STARTED | none               | none     | none          |
+| G-ADAPTER-P4        | none              | NOT STARTED | none               | none     | none          |
+| G-WORKER-FENCING-P2 | none              | NOT STARTED | none               | none     | none          |
+| G-WORKER-FENCING-P3 | none              | NOT STARTED | none               | none     | none          |
+| G-AUTHORITY         | none              | NOT STARTED | none               | none     | none          |
+| G-SECURITY          | none              | NOT STARTED | none               | none     | none          |
+| G-ADAPTER           | none              | NOT STARTED | none               | none     | none          |
+| G-WORKER-FENCING    | none              | NOT STARTED | none               | none     | none          |
+| G-SUPPLY-CHAIN      | none              | NOT STARTED | none               | none     | none          |
+| G-PLATFORM-RELEASE  | none              | NOT STARTED | none               | none     | none          |
+
+### 3.1 Immutable record history
+
+| Record ID | Gate / phase | Status | Fixed input digest | Evidence | Supersedes | Last reviewed |
+| --------- | ------------ | ------ | ------------------ | -------- | ---------- | ------------- |
+
+首次执行即向 history 追加 immutable record，并把上表 current pointer 指向它。record 失效时保留原 history 行并
+标 `INVALIDATED`；新 revision 使用新 Record ID 追加一行，在 `Supersedes` 建链。不得覆盖或删除历史 evidence。
+
+## 4. 当前 open questions
+
+| ID    | 问题                                                  | 推荐默认                                                                        | 必须在何时关闭     |
+| ----- | ----------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------ |
+| Q-002 | Platform Adapter Protocol 使用 Connect/gRPC 还是 HTTP | Connect/gRPC over mTLS；先写 wire requirements                                  | P1 contract        |
+| Q-004 | Local credential store 与 production broker           | local encrypted store + Vault/KMS protocol                                      | P2 security design |
+| Q-005 | Synara 现有活跃 Session 如何 drain                    | 新 Session 分 cohort；旧 writer drain，不 live migrate                          | P5 cutover         |
+| Q-006 | Managed Agent checkpoint primitive                    | public Worker 写物理 snapshot；public CP 写 metadata/ref；managed-host 由 T3 写 | P2 contract        |
+| Q-007 | Public Artifact store baseline                        | filesystem + S3-compatible                                                      | P2 adapter freeze  |
+| Q-008 | Go/public package许可证 owner                         | repo owner + legal/license reviewer                                             | P0 provenance      |
+
+## 5. 暂停现场问题
+
+| ID    | 观察                                                     | 状态                             | 恢复后动作              |
+| ----- | -------------------------------------------------------- | -------------------------------- | ----------------------- |
+| R-001 | Codex 0.145 null `exclude` 被 rc.1 attestor 误拒         | OPEN / uncommitted fix preserved | 独立 rc.2 修复窗口      |
+| R-002 | Claude SDK-managed SendTurn unsuccessful without details | OPEN / diagnosis interrupted     | 独立诊断，不与 CP 混合  |
+| R-003 | Full Worker image Alpine package lock drift              | OPEN                             | 宿主供应链 refresh Gate |
+| R-004 | app.asar/完整 cross-host/soak                            | OPEN                             | M1 E2E closure          |
+
+## 6. 恢复实施 checklist
+
+- [x] 用户于 2026-08-10 批准 ADR-0006 与 D-001～D-021；
+- [x] P0 DRI 暂定为 hxp0618（owner），Codex 为 evidence executor；P1 前重新确认长期 DRI；
+- [x] 目标公共 repo 固定为 `hxp0618/cloud-agents`；CODEOWNERS/security advisory 在 P0 inventory 登记；
+- [x] 先执行 P0 inventory，不直接搬代码；
+- [x] M1 rc.2 与 Platform P0 保持两个独立执行窗口；本次不恢复 M1；
+- [x] P0 允许只读外部 ref/metadata 查询与计划分支 push；不授权发布、部署或数据库写入；
+- [x] 用户明确解除 P0 的 `PAUSED`；M1/P1–P6 保持暂停。
