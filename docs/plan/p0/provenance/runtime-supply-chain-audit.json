@@ -1,0 +1,2215 @@
+{
+  "schemaVersion": 1,
+  "kind": "cloud-agent-runtime-p0-supply-chain-audit",
+  "generatedAt": "2026-08-10T07:08:17.688Z",
+  "status": "BLOCKED",
+  "fixedInput": {
+    "repository": "hxp0618/cloud-agents",
+    "sourceCommit": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+    "sourceTree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8",
+    "tag": "cloud-agent-m1-rc.1",
+    "tagObject": "ac64d6f2fd29f3a1b9d2e514efe2c72eb6118d62",
+    "candidateDigest": "sha256:b9931233d46aeaf1392197095483c2e3409f628a47b2ba92c8e57bb38b444676",
+    "releaseDirectoryLabel": "cloud-agent-m1-rc.1-49e8cdc",
+    "releaseDirectorySha256": "2f2634a6af5252934f158614d37e638ff1a8e056367ab8fb41021d7c18270eb9"
+  },
+  "tools": {
+    "schemaVersion": 1,
+    "status": "PASS",
+    "tools": {
+      "node": {
+        "status": "PASS",
+        "version": "v24.13.1",
+        "sha256": "d36b3d980963d44bd2c5e844fac4cfeee26a167b744287a4e74a9575af9d0559"
+      },
+      "bun": {
+        "status": "PASS",
+        "version": "1.3.14",
+        "sha256": "e0c90ec15d33363e6b70713d56bc3b2c7585c17f40a0fe0f8fd9305901d4e233"
+      },
+      "git": {
+        "status": "PASS",
+        "version": "git version 2.55.0",
+        "sha256": "9048038886ac36210fbb616b49b0707465f63683cb04e33a2013baf95f746938"
+      },
+      "gh": {
+        "status": "PASS",
+        "version": "gh version 2.97.0 (2026-07-31)",
+        "sha256": "6a2ab5fa89553eac1f0df50a26a5eaeea9a665d8971f5a51b32487b72c708f5c"
+      },
+      "oxfmt": {
+        "status": "PASS",
+        "version": "Version: 0.62.0",
+        "sha256": "ecab4e2f1bebaab1a3306620bee562ec16e8cb83dd5fb739b94a5aae3c9e34bd"
+      },
+      "gitleaks": {
+        "status": "PASS",
+        "version": "8.30.1",
+        "sha256": "ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f",
+        "archiveSha256": "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
+        "source": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_arm64.tar.gz",
+        "acquisition": "pinned-download"
+      },
+      "syft": {
+        "status": "PASS",
+        "version": "1.50.0",
+        "sha256": "5d59c9e6fa641793ddb48bc90b5b7ad63bf7303a52835b75b1beee3757463998",
+        "archiveSha256": "e32fdb9d47823fa633748a1efca2528fd77c37469ea93c9e40ab835da44e4cce",
+        "source": "https://github.com/anchore/syft/releases/download/v1.50.0/syft_1.50.0_darwin_arm64.tar.gz",
+        "acquisition": "pinned-download"
+      },
+      "osv": {
+        "status": "PASS",
+        "version": "2.5.0",
+        "sha256": "fff5a2e351b7f0a60001e87cbf862e82fb82e2792d368b533fec7a5865a73da2",
+        "archiveSha256": "fff5a2e351b7f0a60001e87cbf862e82fb82e2792d368b533fec7a5865a73da2",
+        "source": "https://github.com/google/osv-scanner/releases/download/v2.5.0/osv-scanner_darwin_arm64",
+        "acquisition": "pinned-download"
+      }
+    }
+  },
+  "source": {
+    "status": "PASS",
+    "sourceCommit": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+    "sourceTree": "952996e6847f67c8ad9f5986f960c645d0b9c8f8",
+    "tag": "cloud-agent-m1-rc.1",
+    "tagType": "tag",
+    "tagObject": "ac64d6f2fd29f3a1b9d2e514efe2c72eb6118d62",
+    "peeledCommit": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+    "sourceArchiveSha256": "695898adc22f7f373c7cdf7f2f6642fcc549e58e77a254736f1e321f2ea58d80",
+    "localRefCount": 9,
+    "provenanceObjectsDeclared": 11,
+    "provenanceObjectsVerified": 11
+  },
+  "release": {
+    "status": "PASS",
+    "candidateManifestSha256": "d05baef616fb08a1e566a078362ea340c9f77e43144ac8574858fa5421afe155",
+    "checksumsSha256": "38d4ece0b10fc0417ffc19bc9e021a6099ba8935b9b7b24d5bcd47f4800ef8b4",
+    "provenanceSha256": "be8924899cab9c5c8020383bb6e046d61ef229605689aeefa0ee8b87b00c197f",
+    "existingSbomSha256": "8a2b2fc0eece1e1dbb31ac3852b5af31a9510512b7432f049d4dd2102d31220d",
+    "artifactCount": 8,
+    "artifacts": [
+      {
+        "filename": "synara-cloud-agent-distribution-0.1.0-rc.1.tgz",
+        "sha256": "0326203b90a5be4f566b3d4282aea5fda8532753855a8a6b4b449776a966e29c",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "synara-cloud-agent-protocol-0.1.0-rc.1.tgz",
+        "sha256": "e46c5a639482ac8af5c9794cda2c03e93779ce7d10cd1aac52761d6ec3cb2ac2",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "synara-cloud-agent-provider-api-0.1.0-rc.1.tgz",
+        "sha256": "88737cda1b0cef0922f50509acb154e2112a2d78acf219a1a5568edf3d731a59",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "synara-cloud-agent-provider-claude-0.1.0-rc.1.tgz",
+        "sha256": "e6a3058fe21fc9799d242bd8c3ae7d8e7bcf7674f2003319d493d4afdda636fd",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "synara-cloud-agent-provider-codex-0.1.0-rc.1.tgz",
+        "sha256": "8715b6c9d116d8b229c810903d1d7da16aaa6fed327020a06e0bd48813f49ec8",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "synara-cloud-agent-runtime-0.2.0-rc.1.tgz",
+        "sha256": "89aaa8bc42b2527fee584dfa9bccbc3e994dc1c67b99166989ca20be9fcf6488",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "synara-cloud-agent-testkit-0.1.0-rc.1.tgz",
+        "sha256": "5e4031c8bc449a78e0d5dff6721c7ab708361a5c1b7efa5dfd833752d5add21c",
+        "kind": "npm-tarball"
+      },
+      {
+        "filename": "cloud-agent-runtime-standalone.mjs",
+        "sha256": "c24a1c23f89f62e714e3465b59a4be12e1b5cb75387a2d0d6de9811803064521",
+        "kind": "standalone-runtime"
+      }
+    ],
+    "directoryFiles": [
+      "candidate-manifest.json",
+      "checksums.sha256",
+      "cloud-agent-runtime-standalone.mjs",
+      "provenance.json",
+      "sbom.spdx.json",
+      "synara-cloud-agent-distribution-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-protocol-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-provider-api-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-provider-claude-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-provider-codex-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-runtime-0.2.0-rc.1.tgz",
+      "synara-cloud-agent-testkit-0.1.0-rc.1.tgz"
+    ],
+    "directoryDigest": "2f2634a6af5252934f158614d37e638ff1a8e056367ab8fb41021d7c18270eb9",
+    "bundledAnthropicSdk": true,
+    "candidateBuildToolchain": {
+      "node": "v24.13.1",
+      "npm": "11.8.0",
+      "bun": "1.3.14",
+      "platform": "darwin-arm64",
+      "sourceDirty": false
+    }
+  },
+  "dependency": {
+    "status": "PASS",
+    "sourceLockSha256": "f020af11710a943ca9516c70eff119ee25cd7335f8aff379d50ab9ed3f222f9f",
+    "externalRoots": ["@anthropic-ai/claude-agent-sdk"],
+    "externalPackageCount": 107,
+    "externalRelationshipCount": 175,
+    "internalPackageCount": 7,
+    "materializedPackageCount": 100,
+    "unmaterializedPlatformPackages": [
+      "@anthropic-ai/claude-agent-sdk-darwin-x64",
+      "@anthropic-ai/claude-agent-sdk-linux-arm64",
+      "@anthropic-ai/claude-agent-sdk-linux-arm64-musl",
+      "@anthropic-ai/claude-agent-sdk-linux-x64",
+      "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
+      "@anthropic-ai/claude-agent-sdk-win32-arm64",
+      "@anthropic-ai/claude-agent-sdk-win32-x64"
+    ],
+    "frozenInstall": {
+      "bunVersion": "1.3.14",
+      "ignoreScripts": true,
+      "production": true,
+      "status": "PASS"
+    },
+    "packages": [
+      {
+        "name": "@anthropic-ai/claude-agent-sdk",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.3.207.tgz",
+        "integrity": "sha512-y0PkQRmQBi96MHiN5Xzfq+GaddxCZCqI/cXEQBLYBLXGa4i1nDSlulQqkMBj2RorrrSGQJ6Wdw+uhu6OfHNPzA==",
+        "materialized": true
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.207.tgz",
+        "integrity": "sha512-08xSo1FDx8h0aLhL5tvcRxa2SMmcUV3aDWeZiEJVTclyiDAs61BgTjAxCg+SZcu1CndjJO8cfO0yM5dhamxz3g==",
+        "materialized": true
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-darwin-x64",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.207.tgz",
+        "integrity": "sha512-1o7K4EYqyCixZ/oeOZSh7AzSy6TM86xoOuf4VuORjPSS31hBnoqY0NGZd27+2VDs9LGtsdksmsTqcNGx9xd1hA==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-linux-arm64",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-linux-arm64/-/claude-agent-sdk-linux-arm64-0.3.207.tgz",
+        "integrity": "sha512-X4uezYOifDiNTTmmugfRCdg3nNamrr1LFRY9hg30vWYTShL+bbN+nfC3KaFfSYCl4GTtsEEUbYdOTC2F3bBpcA==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-linux-arm64-musl",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-linux-arm64-musl/-/claude-agent-sdk-linux-arm64-musl-0.3.207.tgz",
+        "integrity": "sha512-oPj+g2DslhH4Y9nCTs7al4t9wZv78FZwLFQwOCg99BXuz1o0ZOpKmxyvR7J9eBR+GPszeMMS8gYplQTiZC9o2w==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-linux-x64",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-linux-x64/-/claude-agent-sdk-linux-x64-0.3.207.tgz",
+        "integrity": "sha512-Kg6BPH8Ee0ny/oEUWJmvT1jCRBne4jVpRSOMsJcYp1Fav1rMEgpU219oJJs+LWwx4ifuuLtNWedqJNnVw7mnKg==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-linux-x64-musl/-/claude-agent-sdk-linux-x64-musl-0.3.207.tgz",
+        "integrity": "sha512-uRv+D5oG/7EYr41FAJ9IPo2pZYBe2ZMaA6nSHCeizsgPxCSMtl5bNppmU21+jZJvo4hivObEgkGFERAhdGqygg==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-win32-arm64",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-win32-arm64/-/claude-agent-sdk-win32-arm64-0.3.207.tgz",
+        "integrity": "sha512-9fWpUzfkXlPAg2tf8JpQe7w9avFaomAUbfAwyAmykQgSIf66LwaJjvI5hNqhNqczRKyfsXPn3ei2S5HKlmFP+Q==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/claude-agent-sdk-win32-x64",
+        "version": "0.3.207",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-win32-x64/-/claude-agent-sdk-win32-x64-0.3.207.tgz",
+        "integrity": "sha512-YPjVT0q6aXEM2MgN4CI6/9fqiTXwETji+4NoPOzCYuqAkhXZqp30Jsk7/NHqYGNNSfURKrsuAoliKB0rsbpbjg==",
+        "materialized": false
+      },
+      {
+        "name": "@anthropic-ai/sdk",
+        "version": "0.116.0",
+        "downloadLocation": "https://registry.npmmirror.com/@anthropic-ai/sdk/-/sdk-0.116.0.tgz",
+        "integrity": "sha512-4UEapYQ+epLEMsAuLZDvW8ExVSOtHD8a7zTyLzhw0H9RXJ1eilPgmqhjwgcdg22diwx13spw6fJ4rONZ+bS7Ww==",
+        "materialized": true
+      },
+      {
+        "name": "@babel/runtime",
+        "version": "7.29.7",
+        "downloadLocation": "https://registry.npmmirror.com/@babel/runtime/-/runtime-7.29.7.tgz",
+        "integrity": "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==",
+        "materialized": true
+      },
+      {
+        "name": "@hono/node-server",
+        "version": "2.1.0",
+        "downloadLocation": "https://registry.npmmirror.com/@hono/node-server/-/node-server-2.1.0.tgz",
+        "integrity": "sha512-XovyyCCnBzW+zKu+z/zq8hwNs4KOR5rEMAOxo2f40Q5xoOI37IMm6MIg2COOUtUApo0i6850MTBKH2u4QLGIqg==",
+        "materialized": true
+      },
+      {
+        "name": "@modelcontextprotocol/sdk",
+        "version": "1.30.0",
+        "downloadLocation": "https://registry.npmmirror.com/@modelcontextprotocol/sdk/-/sdk-1.30.0.tgz",
+        "integrity": "sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==",
+        "materialized": true
+      },
+      {
+        "name": "@stablelib/base64",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/@stablelib/base64/-/base64-1.0.1.tgz",
+        "integrity": "sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==",
+        "materialized": true
+      },
+      {
+        "name": "accepts",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/accepts/-/accepts-2.0.0.tgz",
+        "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
+        "materialized": true
+      },
+      {
+        "name": "ajv",
+        "version": "8.20.0",
+        "downloadLocation": "https://registry.npmmirror.com/ajv/-/ajv-8.20.0.tgz",
+        "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+        "materialized": true
+      },
+      {
+        "name": "ajv-formats",
+        "version": "3.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/ajv-formats/-/ajv-formats-3.0.1.tgz",
+        "integrity": "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==",
+        "materialized": true
+      },
+      {
+        "name": "body-parser",
+        "version": "2.3.0",
+        "downloadLocation": "https://registry.npmmirror.com/body-parser/-/body-parser-2.3.0.tgz",
+        "integrity": "sha512-2cGmJupaNgg+QUwVLAucDuWuoMZ6EX9iHDRswZ5lsNYEmwPaRknMPCLZz07yTzVq/83p4o/wzbDZbBrTvGGTIw==",
+        "materialized": true
+      },
+      {
+        "name": "bytes",
+        "version": "3.1.2",
+        "downloadLocation": "https://registry.npmmirror.com/bytes/-/bytes-3.1.2.tgz",
+        "integrity": "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==",
+        "materialized": true
+      },
+      {
+        "name": "call-bind-apply-helpers",
+        "version": "1.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz",
+        "integrity": "sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==",
+        "materialized": true
+      },
+      {
+        "name": "call-bound",
+        "version": "1.0.4",
+        "downloadLocation": "https://registry.npmmirror.com/call-bound/-/call-bound-1.0.4.tgz",
+        "integrity": "sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==",
+        "materialized": true
+      },
+      {
+        "name": "content-disposition",
+        "version": "1.1.0",
+        "downloadLocation": "https://registry.npmmirror.com/content-disposition/-/content-disposition-1.1.0.tgz",
+        "integrity": "sha512-5jRCH9Z/+DRP7rkvY83B+yGIGX96OYdJmzngqnw2SBSxqCFPd0w2km3s5iawpGX8krnwSGmF0FW5Nhr0Hfai3g==",
+        "materialized": true
+      },
+      {
+        "name": "content-type",
+        "version": "1.0.5",
+        "downloadLocation": "https://registry.npmmirror.com/content-type/-/content-type-1.0.5.tgz",
+        "integrity": "sha512-nTjqfcBFEipKdXCv4YDQWCfmcLZKm81ldF0pAopTvyrFGVbcR6P/VAAd5G7N+0tTr8QqiU0tFadD6FK4NtJwOA==",
+        "materialized": true
+      },
+      {
+        "name": "cookie",
+        "version": "0.7.2",
+        "downloadLocation": "https://registry.npmmirror.com/cookie/-/cookie-0.7.2.tgz",
+        "integrity": "sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==",
+        "materialized": true
+      },
+      {
+        "name": "cookie-signature",
+        "version": "1.2.2",
+        "downloadLocation": "https://registry.npmmirror.com/cookie-signature/-/cookie-signature-1.2.2.tgz",
+        "integrity": "sha512-D76uU73ulSXrD1UXF4KE2TMxVVwhsnCgfAyTg9k8P6KGZjlXKrOLe4dJQKI3Bxi5wjesZoFXJWElNWBjPZMbhg==",
+        "materialized": true
+      },
+      {
+        "name": "cors",
+        "version": "2.8.6",
+        "downloadLocation": "https://registry.npmmirror.com/cors/-/cors-2.8.6.tgz",
+        "integrity": "sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw==",
+        "materialized": true
+      },
+      {
+        "name": "cross-spawn",
+        "version": "7.0.6",
+        "downloadLocation": "https://registry.npmmirror.com/cross-spawn/-/cross-spawn-7.0.6.tgz",
+        "integrity": "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==",
+        "materialized": true
+      },
+      {
+        "name": "debug",
+        "version": "4.4.3",
+        "downloadLocation": "https://registry.npmmirror.com/debug/-/debug-4.4.3.tgz",
+        "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+        "materialized": true
+      },
+      {
+        "name": "depd",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/depd/-/depd-2.0.0.tgz",
+        "integrity": "sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==",
+        "materialized": true
+      },
+      {
+        "name": "dunder-proto",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/dunder-proto/-/dunder-proto-1.0.1.tgz",
+        "integrity": "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
+        "materialized": true
+      },
+      {
+        "name": "ee-first",
+        "version": "1.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/ee-first/-/ee-first-1.1.1.tgz",
+        "integrity": "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==",
+        "materialized": true
+      },
+      {
+        "name": "encodeurl",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/encodeurl/-/encodeurl-2.0.0.tgz",
+        "integrity": "sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==",
+        "materialized": true
+      },
+      {
+        "name": "es-define-property",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/es-define-property/-/es-define-property-1.0.1.tgz",
+        "integrity": "sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==",
+        "materialized": true
+      },
+      {
+        "name": "es-errors",
+        "version": "1.3.0",
+        "downloadLocation": "https://registry.npmmirror.com/es-errors/-/es-errors-1.3.0.tgz",
+        "integrity": "sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==",
+        "materialized": true
+      },
+      {
+        "name": "es-object-atoms",
+        "version": "1.1.2",
+        "downloadLocation": "https://registry.npmmirror.com/es-object-atoms/-/es-object-atoms-1.1.2.tgz",
+        "integrity": "sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==",
+        "materialized": true
+      },
+      {
+        "name": "escape-html",
+        "version": "1.0.3",
+        "downloadLocation": "https://registry.npmmirror.com/escape-html/-/escape-html-1.0.3.tgz",
+        "integrity": "sha512-NiSupZ4OeuGwr68lGIeym/ksIZMJodUGOSCZ/FSnTxcrekbvqrgdUxlJOMpijaKZVjAJrWrGs/6Jy8OMuyj9ow==",
+        "materialized": true
+      },
+      {
+        "name": "etag",
+        "version": "1.8.1",
+        "downloadLocation": "https://registry.npmmirror.com/etag/-/etag-1.8.1.tgz",
+        "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==",
+        "materialized": true
+      },
+      {
+        "name": "eventsource",
+        "version": "3.0.7",
+        "downloadLocation": "https://registry.npmmirror.com/eventsource/-/eventsource-3.0.7.tgz",
+        "integrity": "sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==",
+        "materialized": true
+      },
+      {
+        "name": "eventsource-parser",
+        "version": "3.1.0",
+        "downloadLocation": "https://registry.npmmirror.com/eventsource-parser/-/eventsource-parser-3.1.0.tgz",
+        "integrity": "sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg==",
+        "materialized": true
+      },
+      {
+        "name": "express",
+        "version": "5.2.1",
+        "downloadLocation": "https://registry.npmmirror.com/express/-/express-5.2.1.tgz",
+        "integrity": "sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==",
+        "materialized": true
+      },
+      {
+        "name": "express-rate-limit",
+        "version": "8.6.2",
+        "downloadLocation": "https://registry.npmmirror.com/express-rate-limit/-/express-rate-limit-8.6.2.tgz",
+        "integrity": "sha512-YH4ru+eOJxQABscKFfRCy9R7x9QFGdezclVMwwgFFndzS2Xnm0uo6B0ABZsLhcpeptGv2qvuJVWlQr9gQZoC3A==",
+        "materialized": true
+      },
+      {
+        "name": "fast-deep-equal",
+        "version": "3.1.3",
+        "downloadLocation": "https://registry.npmmirror.com/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz",
+        "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+        "materialized": true
+      },
+      {
+        "name": "fast-sha256",
+        "version": "1.3.0",
+        "downloadLocation": "https://registry.npmmirror.com/fast-sha256/-/fast-sha256-1.3.0.tgz",
+        "integrity": "sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==",
+        "materialized": true
+      },
+      {
+        "name": "fast-uri",
+        "version": "3.1.5",
+        "downloadLocation": "https://registry.npmmirror.com/fast-uri/-/fast-uri-3.1.5.tgz",
+        "integrity": "sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==",
+        "materialized": true
+      },
+      {
+        "name": "finalhandler",
+        "version": "2.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/finalhandler/-/finalhandler-2.1.1.tgz",
+        "integrity": "sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==",
+        "materialized": true
+      },
+      {
+        "name": "forwarded",
+        "version": "0.2.0",
+        "downloadLocation": "https://registry.npmmirror.com/forwarded/-/forwarded-0.2.0.tgz",
+        "integrity": "sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==",
+        "materialized": true
+      },
+      {
+        "name": "fresh",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/fresh/-/fresh-2.0.0.tgz",
+        "integrity": "sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==",
+        "materialized": true
+      },
+      {
+        "name": "function-bind",
+        "version": "1.1.2",
+        "downloadLocation": "https://registry.npmmirror.com/function-bind/-/function-bind-1.1.2.tgz",
+        "integrity": "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==",
+        "materialized": true
+      },
+      {
+        "name": "get-intrinsic",
+        "version": "1.3.0",
+        "downloadLocation": "https://registry.npmmirror.com/get-intrinsic/-/get-intrinsic-1.3.0.tgz",
+        "integrity": "sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==",
+        "materialized": true
+      },
+      {
+        "name": "get-proto",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/get-proto/-/get-proto-1.0.1.tgz",
+        "integrity": "sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==",
+        "materialized": true
+      },
+      {
+        "name": "gopd",
+        "version": "1.2.0",
+        "downloadLocation": "https://registry.npmmirror.com/gopd/-/gopd-1.2.0.tgz",
+        "integrity": "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==",
+        "materialized": true
+      },
+      {
+        "name": "has-symbols",
+        "version": "1.1.0",
+        "downloadLocation": "https://registry.npmmirror.com/has-symbols/-/has-symbols-1.1.0.tgz",
+        "integrity": "sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==",
+        "materialized": true
+      },
+      {
+        "name": "hasown",
+        "version": "2.0.4",
+        "downloadLocation": "https://registry.npmmirror.com/hasown/-/hasown-2.0.4.tgz",
+        "integrity": "sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==",
+        "materialized": true
+      },
+      {
+        "name": "hono",
+        "version": "4.13.1",
+        "downloadLocation": "https://registry.npmmirror.com/hono/-/hono-4.13.1.tgz",
+        "integrity": "sha512-kdJoFVv2xmayw6cY09H7AbMJMt8Jn5jdlEdXsP7AGBdF2DIptVlKlOLKXP41yPip4/a3yQPv9gVcJYI8YY04dw==",
+        "materialized": true
+      },
+      {
+        "name": "http-errors",
+        "version": "2.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/http-errors/-/http-errors-2.0.1.tgz",
+        "integrity": "sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==",
+        "materialized": true
+      },
+      {
+        "name": "iconv-lite",
+        "version": "0.7.3",
+        "downloadLocation": "https://registry.npmmirror.com/iconv-lite/-/iconv-lite-0.7.3.tgz",
+        "integrity": "sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==",
+        "materialized": true
+      },
+      {
+        "name": "inherits",
+        "version": "2.0.4",
+        "downloadLocation": "https://registry.npmmirror.com/inherits/-/inherits-2.0.4.tgz",
+        "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==",
+        "materialized": true
+      },
+      {
+        "name": "ip-address",
+        "version": "10.4.0",
+        "downloadLocation": "https://registry.npmmirror.com/ip-address/-/ip-address-10.4.0.tgz",
+        "integrity": "sha512-oSK96Grm3aP6OrS263xVxbNDGVL7rzBtYdpGqlDG8iQdoenDoTs/nkki+DflYbAEE8Xl6o5YxhxlrKvI3nqKXQ==",
+        "materialized": true
+      },
+      {
+        "name": "ipaddr.js",
+        "version": "1.9.1",
+        "downloadLocation": "https://registry.npmmirror.com/ipaddr.js/-/ipaddr.js-1.9.1.tgz",
+        "integrity": "sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==",
+        "materialized": true
+      },
+      {
+        "name": "is-promise",
+        "version": "4.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/is-promise/-/is-promise-4.0.0.tgz",
+        "integrity": "sha512-hvpoI6korhJMnej285dSg6nu1+e6uxs7zG3BYAm5byqDsgJNWwxzM6z6iZiAgQR4TJ30JmBTOwqZUw3WlyH3AQ==",
+        "materialized": true
+      },
+      {
+        "name": "isexe",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/isexe/-/isexe-2.0.0.tgz",
+        "integrity": "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==",
+        "materialized": true
+      },
+      {
+        "name": "jose",
+        "version": "6.2.8",
+        "downloadLocation": "https://registry.npmmirror.com/jose/-/jose-6.2.8.tgz",
+        "integrity": "sha512-Bsdjwm3Qsd/P0jR+BHDe3LytDfY7WBq2HmCCLIwuVRHMuEC9ae7/R474GIUdF1NgCyZjzVo/A9DOiOBtXq8ZoQ==",
+        "materialized": true
+      },
+      {
+        "name": "json-schema-to-ts",
+        "version": "3.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/json-schema-to-ts/-/json-schema-to-ts-3.1.1.tgz",
+        "integrity": "sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==",
+        "materialized": true
+      },
+      {
+        "name": "json-schema-traverse",
+        "version": "1.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz",
+        "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
+        "materialized": true
+      },
+      {
+        "name": "json-schema-typed",
+        "version": "8.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/json-schema-typed/-/json-schema-typed-8.0.2.tgz",
+        "integrity": "sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA==",
+        "materialized": true
+      },
+      {
+        "name": "math-intrinsics",
+        "version": "1.1.0",
+        "downloadLocation": "https://registry.npmmirror.com/math-intrinsics/-/math-intrinsics-1.1.0.tgz",
+        "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==",
+        "materialized": true
+      },
+      {
+        "name": "media-typer",
+        "version": "1.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/media-typer/-/media-typer-1.1.1.tgz",
+        "integrity": "sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==",
+        "materialized": true
+      },
+      {
+        "name": "merge-descriptors",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/merge-descriptors/-/merge-descriptors-2.0.0.tgz",
+        "integrity": "sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g==",
+        "materialized": true
+      },
+      {
+        "name": "mime-db",
+        "version": "1.54.0",
+        "downloadLocation": "https://registry.npmmirror.com/mime-db/-/mime-db-1.54.0.tgz",
+        "integrity": "sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==",
+        "materialized": true
+      },
+      {
+        "name": "mime-types",
+        "version": "3.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/mime-types/-/mime-types-3.0.2.tgz",
+        "integrity": "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==",
+        "materialized": true
+      },
+      {
+        "name": "ms",
+        "version": "2.1.3",
+        "downloadLocation": "https://registry.npmmirror.com/ms/-/ms-2.1.3.tgz",
+        "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+        "materialized": true
+      },
+      {
+        "name": "negotiator",
+        "version": "1.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/negotiator/-/negotiator-1.0.0.tgz",
+        "integrity": "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==",
+        "materialized": true
+      },
+      {
+        "name": "object-assign",
+        "version": "4.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/object-assign/-/object-assign-4.1.1.tgz",
+        "integrity": "sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==",
+        "materialized": true
+      },
+      {
+        "name": "object-inspect",
+        "version": "1.13.4",
+        "downloadLocation": "https://registry.npmmirror.com/object-inspect/-/object-inspect-1.13.4.tgz",
+        "integrity": "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==",
+        "materialized": true
+      },
+      {
+        "name": "on-finished",
+        "version": "2.4.1",
+        "downloadLocation": "https://registry.npmmirror.com/on-finished/-/on-finished-2.4.1.tgz",
+        "integrity": "sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg==",
+        "materialized": true
+      },
+      {
+        "name": "once",
+        "version": "1.4.0",
+        "downloadLocation": "https://registry.npmmirror.com/once/-/once-1.4.0.tgz",
+        "integrity": "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==",
+        "materialized": true
+      },
+      {
+        "name": "parseurl",
+        "version": "1.3.3",
+        "downloadLocation": "https://registry.npmmirror.com/parseurl/-/parseurl-1.3.3.tgz",
+        "integrity": "sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==",
+        "materialized": true
+      },
+      {
+        "name": "path-key",
+        "version": "3.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/path-key/-/path-key-3.1.1.tgz",
+        "integrity": "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==",
+        "materialized": true
+      },
+      {
+        "name": "path-to-regexp",
+        "version": "8.4.2",
+        "downloadLocation": "https://registry.npmmirror.com/path-to-regexp/-/path-to-regexp-8.4.2.tgz",
+        "integrity": "sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA==",
+        "materialized": true
+      },
+      {
+        "name": "pkce-challenge",
+        "version": "5.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/pkce-challenge/-/pkce-challenge-5.0.1.tgz",
+        "integrity": "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==",
+        "materialized": true
+      },
+      {
+        "name": "proxy-addr",
+        "version": "2.0.7",
+        "downloadLocation": "https://registry.npmmirror.com/proxy-addr/-/proxy-addr-2.0.7.tgz",
+        "integrity": "sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==",
+        "materialized": true
+      },
+      {
+        "name": "qs",
+        "version": "6.15.3",
+        "downloadLocation": "https://registry.npmmirror.com/qs/-/qs-6.15.3.tgz",
+        "integrity": "sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==",
+        "materialized": true
+      },
+      {
+        "name": "range-parser",
+        "version": "1.3.0",
+        "downloadLocation": "https://registry.npmmirror.com/range-parser/-/range-parser-1.3.0.tgz",
+        "integrity": "sha512-hek2mFQpPuI4E1BBKrSto+BU3e3x4xuarsbiwr3+lf7p44juvFMV0XFWQAP3xUyqXA4RrXLIoaSUGbSt056ZMw==",
+        "materialized": true
+      },
+      {
+        "name": "raw-body",
+        "version": "3.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/raw-body/-/raw-body-3.0.2.tgz",
+        "integrity": "sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==",
+        "materialized": true
+      },
+      {
+        "name": "require-from-string",
+        "version": "2.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/require-from-string/-/require-from-string-2.0.2.tgz",
+        "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==",
+        "materialized": true
+      },
+      {
+        "name": "router",
+        "version": "2.2.0",
+        "downloadLocation": "https://registry.npmmirror.com/router/-/router-2.2.0.tgz",
+        "integrity": "sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==",
+        "materialized": true
+      },
+      {
+        "name": "safer-buffer",
+        "version": "2.1.2",
+        "downloadLocation": "https://registry.npmmirror.com/safer-buffer/-/safer-buffer-2.1.2.tgz",
+        "integrity": "sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==",
+        "materialized": true
+      },
+      {
+        "name": "send",
+        "version": "1.2.1",
+        "downloadLocation": "https://registry.npmmirror.com/send/-/send-1.2.1.tgz",
+        "integrity": "sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==",
+        "materialized": true
+      },
+      {
+        "name": "serve-static",
+        "version": "2.2.1",
+        "downloadLocation": "https://registry.npmmirror.com/serve-static/-/serve-static-2.2.1.tgz",
+        "integrity": "sha512-xRXBn0pPqQTVQiC8wyQrKs2MOlX24zQ0POGaj0kultvoOCstBQM5yvOhAVSUwOMjQtTvsPWoNCHfPGwaaQJhTw==",
+        "materialized": true
+      },
+      {
+        "name": "setprototypeof",
+        "version": "1.2.0",
+        "downloadLocation": "https://registry.npmmirror.com/setprototypeof/-/setprototypeof-1.2.0.tgz",
+        "integrity": "sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==",
+        "materialized": true
+      },
+      {
+        "name": "shebang-command",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/shebang-command/-/shebang-command-2.0.0.tgz",
+        "integrity": "sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==",
+        "materialized": true
+      },
+      {
+        "name": "shebang-regex",
+        "version": "3.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/shebang-regex/-/shebang-regex-3.0.0.tgz",
+        "integrity": "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==",
+        "materialized": true
+      },
+      {
+        "name": "side-channel",
+        "version": "1.1.1",
+        "downloadLocation": "https://registry.npmmirror.com/side-channel/-/side-channel-1.1.1.tgz",
+        "integrity": "sha512-6x6dK6zJdpTzF4sQeNYxwtvBzf6Eg4GtlesS94HOvTudUeyK2WXAaIfmDgsyslYrRBeFIlsi54AYsFGUuhmvrQ==",
+        "materialized": true
+      },
+      {
+        "name": "side-channel-list",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/side-channel-list/-/side-channel-list-1.0.1.tgz",
+        "integrity": "sha512-mjn/0bi/oUURjc5Xl7IaWi/OJJJumuoJFQJfDDyO46+hBWsfaVM65TBHq2eoZBhzl9EchxOijpkbRC8SVBQU0w==",
+        "materialized": true
+      },
+      {
+        "name": "side-channel-map",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/side-channel-map/-/side-channel-map-1.0.1.tgz",
+        "integrity": "sha512-VCjCNfgMsby3tTdo02nbjtM/ewra6jPHmpThenkTYh8pG9ucZ/1P8So4u4FGBek/BjpOVsDCMoLA/iuBKIFXRA==",
+        "materialized": true
+      },
+      {
+        "name": "side-channel-weakmap",
+        "version": "1.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/side-channel-weakmap/-/side-channel-weakmap-1.0.2.tgz",
+        "integrity": "sha512-WPS/HvHQTYnHisLo9McqBHOJk2FkHO/tlpvldyrnem4aeQp4hai3gythswg6p01oSoTl58rcpiFAjF2br2Ak2A==",
+        "materialized": true
+      },
+      {
+        "name": "standardwebhooks",
+        "version": "1.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/standardwebhooks/-/standardwebhooks-1.0.0.tgz",
+        "integrity": "sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==",
+        "materialized": true
+      },
+      {
+        "name": "statuses",
+        "version": "2.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/statuses/-/statuses-2.0.2.tgz",
+        "integrity": "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==",
+        "materialized": true
+      },
+      {
+        "name": "toidentifier",
+        "version": "1.0.1",
+        "downloadLocation": "https://registry.npmmirror.com/toidentifier/-/toidentifier-1.0.1.tgz",
+        "integrity": "sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==",
+        "materialized": true
+      },
+      {
+        "name": "ts-algebra",
+        "version": "2.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/ts-algebra/-/ts-algebra-2.0.0.tgz",
+        "integrity": "sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==",
+        "materialized": true
+      },
+      {
+        "name": "type-is",
+        "version": "2.1.0",
+        "downloadLocation": "https://registry.npmmirror.com/type-is/-/type-is-2.1.0.tgz",
+        "integrity": "sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==",
+        "materialized": true
+      },
+      {
+        "name": "unpipe",
+        "version": "1.0.0",
+        "downloadLocation": "https://registry.npmmirror.com/unpipe/-/unpipe-1.0.0.tgz",
+        "integrity": "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==",
+        "materialized": true
+      },
+      {
+        "name": "vary",
+        "version": "1.1.2",
+        "downloadLocation": "https://registry.npmmirror.com/vary/-/vary-1.1.2.tgz",
+        "integrity": "sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==",
+        "materialized": true
+      },
+      {
+        "name": "which",
+        "version": "2.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/which/-/which-2.0.2.tgz",
+        "integrity": "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==",
+        "materialized": true
+      },
+      {
+        "name": "wrappy",
+        "version": "1.0.2",
+        "downloadLocation": "https://registry.npmmirror.com/wrappy/-/wrappy-1.0.2.tgz",
+        "integrity": "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==",
+        "materialized": true
+      },
+      {
+        "name": "zod",
+        "version": "4.4.3",
+        "downloadLocation": "https://registry.npmmirror.com/zod/-/zod-4.4.3.tgz",
+        "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
+        "materialized": true
+      },
+      {
+        "name": "zod-to-json-schema",
+        "version": "3.25.2",
+        "downloadLocation": "https://registry.npmmirror.com/zod-to-json-schema/-/zod-to-json-schema-3.25.2.tgz",
+        "integrity": "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==",
+        "materialized": true
+      }
+    ],
+    "relationships": [
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-darwin-arm64",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-darwin-x64",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-linux-arm64",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-linux-arm64-musl",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-linux-x64",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-win32-arm64",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/claude-agent-sdk-win32-x64",
+        "section": "optionalDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@anthropic-ai/sdk",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "@modelcontextprotocol/sdk",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@anthropic-ai/claude-agent-sdk",
+        "to": "zod",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@anthropic-ai/sdk",
+        "to": "json-schema-to-ts",
+        "section": "dependencies"
+      },
+      {
+        "from": "@anthropic-ai/sdk",
+        "to": "standardwebhooks",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "@hono/node-server",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "ajv",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "ajv-formats",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "content-type",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "cors",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "cross-spawn",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "eventsource",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "eventsource-parser",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "express",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "express-rate-limit",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "hono",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "jose",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "json-schema-typed",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "pkce-challenge",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "raw-body",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "zod",
+        "section": "dependencies"
+      },
+      {
+        "from": "@modelcontextprotocol/sdk",
+        "to": "zod-to-json-schema",
+        "section": "dependencies"
+      },
+      {
+        "from": "json-schema-to-ts",
+        "to": "@babel/runtime",
+        "section": "dependencies"
+      },
+      {
+        "from": "json-schema-to-ts",
+        "to": "ts-algebra",
+        "section": "dependencies"
+      },
+      {
+        "from": "standardwebhooks",
+        "to": "@stablelib/base64",
+        "section": "dependencies"
+      },
+      {
+        "from": "standardwebhooks",
+        "to": "fast-sha256",
+        "section": "dependencies"
+      },
+      {
+        "from": "@hono/node-server",
+        "to": "hono",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "ajv",
+        "to": "fast-deep-equal",
+        "section": "dependencies"
+      },
+      {
+        "from": "ajv",
+        "to": "fast-uri",
+        "section": "dependencies"
+      },
+      {
+        "from": "ajv",
+        "to": "json-schema-traverse",
+        "section": "dependencies"
+      },
+      {
+        "from": "ajv",
+        "to": "require-from-string",
+        "section": "dependencies"
+      },
+      {
+        "from": "ajv-formats",
+        "to": "ajv",
+        "section": "dependencies"
+      },
+      {
+        "from": "cors",
+        "to": "object-assign",
+        "section": "dependencies"
+      },
+      {
+        "from": "cors",
+        "to": "vary",
+        "section": "dependencies"
+      },
+      {
+        "from": "cross-spawn",
+        "to": "path-key",
+        "section": "dependencies"
+      },
+      {
+        "from": "cross-spawn",
+        "to": "shebang-command",
+        "section": "dependencies"
+      },
+      {
+        "from": "cross-spawn",
+        "to": "which",
+        "section": "dependencies"
+      },
+      {
+        "from": "eventsource",
+        "to": "eventsource-parser",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "accepts",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "body-parser",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "content-disposition",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "content-type",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "cookie",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "cookie-signature",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "debug",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "depd",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "encodeurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "escape-html",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "etag",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "finalhandler",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "fresh",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "http-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "merge-descriptors",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "mime-types",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "on-finished",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "once",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "parseurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "proxy-addr",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "qs",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "range-parser",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "router",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "send",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "serve-static",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "statuses",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "type-is",
+        "section": "dependencies"
+      },
+      {
+        "from": "express",
+        "to": "vary",
+        "section": "dependencies"
+      },
+      {
+        "from": "express-rate-limit",
+        "to": "debug",
+        "section": "dependencies"
+      },
+      {
+        "from": "express-rate-limit",
+        "to": "ip-address",
+        "section": "dependencies"
+      },
+      {
+        "from": "express-rate-limit",
+        "to": "express",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "raw-body",
+        "to": "bytes",
+        "section": "dependencies"
+      },
+      {
+        "from": "raw-body",
+        "to": "http-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "raw-body",
+        "to": "iconv-lite",
+        "section": "dependencies"
+      },
+      {
+        "from": "raw-body",
+        "to": "unpipe",
+        "section": "dependencies"
+      },
+      {
+        "from": "zod-to-json-schema",
+        "to": "zod",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "shebang-command",
+        "to": "shebang-regex",
+        "section": "dependencies"
+      },
+      {
+        "from": "which",
+        "to": "isexe",
+        "section": "dependencies"
+      },
+      {
+        "from": "accepts",
+        "to": "mime-types",
+        "section": "dependencies"
+      },
+      {
+        "from": "accepts",
+        "to": "negotiator",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "bytes",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "content-type",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "debug",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "http-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "iconv-lite",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "on-finished",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "qs",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "raw-body",
+        "section": "dependencies"
+      },
+      {
+        "from": "body-parser",
+        "to": "type-is",
+        "section": "dependencies"
+      },
+      {
+        "from": "debug",
+        "to": "ms",
+        "section": "dependencies"
+      },
+      {
+        "from": "finalhandler",
+        "to": "debug",
+        "section": "dependencies"
+      },
+      {
+        "from": "finalhandler",
+        "to": "encodeurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "finalhandler",
+        "to": "escape-html",
+        "section": "dependencies"
+      },
+      {
+        "from": "finalhandler",
+        "to": "on-finished",
+        "section": "dependencies"
+      },
+      {
+        "from": "finalhandler",
+        "to": "parseurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "finalhandler",
+        "to": "statuses",
+        "section": "dependencies"
+      },
+      {
+        "from": "http-errors",
+        "to": "depd",
+        "section": "dependencies"
+      },
+      {
+        "from": "http-errors",
+        "to": "inherits",
+        "section": "dependencies"
+      },
+      {
+        "from": "http-errors",
+        "to": "setprototypeof",
+        "section": "dependencies"
+      },
+      {
+        "from": "http-errors",
+        "to": "statuses",
+        "section": "dependencies"
+      },
+      {
+        "from": "http-errors",
+        "to": "toidentifier",
+        "section": "dependencies"
+      },
+      {
+        "from": "mime-types",
+        "to": "mime-db",
+        "section": "dependencies"
+      },
+      {
+        "from": "on-finished",
+        "to": "ee-first",
+        "section": "dependencies"
+      },
+      {
+        "from": "once",
+        "to": "wrappy",
+        "section": "dependencies"
+      },
+      {
+        "from": "proxy-addr",
+        "to": "forwarded",
+        "section": "dependencies"
+      },
+      {
+        "from": "proxy-addr",
+        "to": "ipaddr.js",
+        "section": "dependencies"
+      },
+      {
+        "from": "qs",
+        "to": "es-define-property",
+        "section": "dependencies"
+      },
+      {
+        "from": "qs",
+        "to": "side-channel",
+        "section": "dependencies"
+      },
+      {
+        "from": "router",
+        "to": "debug",
+        "section": "dependencies"
+      },
+      {
+        "from": "router",
+        "to": "depd",
+        "section": "dependencies"
+      },
+      {
+        "from": "router",
+        "to": "is-promise",
+        "section": "dependencies"
+      },
+      {
+        "from": "router",
+        "to": "parseurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "router",
+        "to": "path-to-regexp",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "debug",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "encodeurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "escape-html",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "etag",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "fresh",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "http-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "mime-types",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "ms",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "on-finished",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "range-parser",
+        "section": "dependencies"
+      },
+      {
+        "from": "send",
+        "to": "statuses",
+        "section": "dependencies"
+      },
+      {
+        "from": "serve-static",
+        "to": "encodeurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "serve-static",
+        "to": "escape-html",
+        "section": "dependencies"
+      },
+      {
+        "from": "serve-static",
+        "to": "parseurl",
+        "section": "dependencies"
+      },
+      {
+        "from": "serve-static",
+        "to": "send",
+        "section": "dependencies"
+      },
+      {
+        "from": "type-is",
+        "to": "content-type",
+        "section": "dependencies"
+      },
+      {
+        "from": "type-is",
+        "to": "media-typer",
+        "section": "dependencies"
+      },
+      {
+        "from": "type-is",
+        "to": "mime-types",
+        "section": "dependencies"
+      },
+      {
+        "from": "iconv-lite",
+        "to": "safer-buffer",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel",
+        "to": "object-inspect",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel",
+        "to": "side-channel-list",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel",
+        "to": "side-channel-map",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel",
+        "to": "side-channel-weakmap",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-list",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-list",
+        "to": "object-inspect",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-map",
+        "to": "call-bound",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-map",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-map",
+        "to": "get-intrinsic",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-map",
+        "to": "object-inspect",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-weakmap",
+        "to": "call-bound",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-weakmap",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-weakmap",
+        "to": "get-intrinsic",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-weakmap",
+        "to": "object-inspect",
+        "section": "dependencies"
+      },
+      {
+        "from": "side-channel-weakmap",
+        "to": "side-channel-map",
+        "section": "dependencies"
+      },
+      {
+        "from": "call-bound",
+        "to": "call-bind-apply-helpers",
+        "section": "dependencies"
+      },
+      {
+        "from": "call-bound",
+        "to": "get-intrinsic",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "call-bind-apply-helpers",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "es-define-property",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "es-object-atoms",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "function-bind",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "get-proto",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "gopd",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "has-symbols",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "hasown",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-intrinsic",
+        "to": "math-intrinsics",
+        "section": "dependencies"
+      },
+      {
+        "from": "call-bind-apply-helpers",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "call-bind-apply-helpers",
+        "to": "function-bind",
+        "section": "dependencies"
+      },
+      {
+        "from": "es-object-atoms",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-proto",
+        "to": "dunder-proto",
+        "section": "dependencies"
+      },
+      {
+        "from": "get-proto",
+        "to": "es-object-atoms",
+        "section": "dependencies"
+      },
+      {
+        "from": "hasown",
+        "to": "function-bind",
+        "section": "dependencies"
+      },
+      {
+        "from": "dunder-proto",
+        "to": "call-bind-apply-helpers",
+        "section": "dependencies"
+      },
+      {
+        "from": "dunder-proto",
+        "to": "es-errors",
+        "section": "dependencies"
+      },
+      {
+        "from": "dunder-proto",
+        "to": "gopd",
+        "section": "dependencies"
+      }
+    ],
+    "publicRelationships": [
+      {
+        "from": "@synara/cloud-agent-distribution",
+        "to": "@synara/cloud-agent-protocol",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-distribution",
+        "to": "@synara/cloud-agent-provider-api",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-distribution",
+        "to": "@synara/cloud-agent-provider-claude",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-distribution",
+        "to": "@synara/cloud-agent-provider-codex",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-distribution",
+        "to": "@synara/cloud-agent-runtime",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-provider-api",
+        "to": "@synara/cloud-agent-protocol",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-provider-claude",
+        "to": "@synara/cloud-agent-provider-api",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-provider-codex",
+        "to": "@synara/cloud-agent-provider-api",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-runtime",
+        "to": "@synara/cloud-agent-protocol",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-runtime",
+        "to": "@synara/cloud-agent-provider-api",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-testkit",
+        "to": "@synara/cloud-agent-protocol",
+        "section": "peerDependencies"
+      },
+      {
+        "from": "@synara/cloud-agent-testkit",
+        "to": "@synara/cloud-agent-provider-api",
+        "section": "peerDependencies"
+      }
+    ]
+  },
+  "licenses": {
+    "status": "BLOCKED",
+    "packageCount": 114,
+    "blockedPackageCount": 10,
+    "missingLicenseTextCount": 8,
+    "thirdPartyNoticeGenerated": true
+  },
+  "sbom": {
+    "status": "PASS",
+    "packageCount": 114,
+    "relationshipCount": 194,
+    "existingCandidatePackageCount": 8,
+    "existingCandidateRelationshipCount": 0,
+    "standaloneCompositionStatus": "BLOCKED"
+  },
+  "secretScanning": {
+    "schemaVersion": 1,
+    "status": "PASS",
+    "scanner": {
+      "name": "gitleaks",
+      "version": "8.30.1",
+      "binarySha256": "ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f",
+      "configuration": "embedded-default; no path allowlist"
+    },
+    "scopes": [
+      {
+        "name": "fixed-source-tree",
+        "status": "PASS",
+        "findingCount": 0,
+        "findings": []
+      },
+      {
+        "name": "extracted-release-artifacts",
+        "status": "PASS",
+        "findingCount": 0,
+        "findings": []
+      },
+      {
+        "name": "all-local-git-refs",
+        "status": "PASS",
+        "findingCount": 0,
+        "findings": []
+      }
+    ],
+    "rawReportsPersisted": false,
+    "redaction": 100
+  },
+  "independentInventory": {
+    "status": "PASS",
+    "scanner": "syft",
+    "version": "1.50.0",
+    "binarySha256": "5d59c9e6fa641793ddb48bc90b5b7ad63bf7303a52835b75b1beee3757463998",
+    "packageCount": 7,
+    "publicPackagesDetected": [
+      "@synara/cloud-agent-distribution",
+      "@synara/cloud-agent-protocol",
+      "@synara/cloud-agent-provider-api",
+      "@synara/cloud-agent-provider-claude",
+      "@synara/cloud-agent-provider-codex",
+      "@synara/cloud-agent-runtime",
+      "@synara/cloud-agent-testkit"
+    ],
+    "standaloneSdkDetected": false
+  },
+  "vulnerabilities": {
+    "status": "PASS",
+    "scanner": "osv-scanner",
+    "version": "2.5.0",
+    "binarySha256": "fff5a2e351b7f0a60001e87cbf862e82fb82e2792d368b533fec7a5865a73da2",
+    "databaseMode": "online OSV API snapshot",
+    "vulnerabilityCount": 0,
+    "vulnerabilities": []
+  },
+  "workflow": {
+    "actionPinningStatus": "BLOCKED",
+    "trustedAttestationStatus": "BLOCKED",
+    "workflowFiles": [
+      {
+        "filename": "ci.yml",
+        "sha256": "1aa7214f734f9485fe9c736bb86da7a8f7c886197c2a81c6a69cd97d488e9b9b"
+      }
+    ],
+    "uses": [
+      {
+        "filename": "ci.yml",
+        "specifier": "actions/checkout@v4",
+        "pinnedToFullCommit": false
+      },
+      {
+        "filename": "ci.yml",
+        "specifier": "jdx/mise-action@v3",
+        "pinnedToFullCommit": false
+      }
+    ],
+    "oidcIdTokenWrite": false,
+    "attestationStep": false,
+    "immediateVerificationStep": false
+  },
+  "signatures": {
+    "status": "BLOCKED",
+    "commitVerified": false,
+    "tagVerified": false,
+    "commitFailureClass": "NO_SIGNATURE",
+    "tagFailureClass": "NO_SIGNATURE"
+  },
+  "provenance": {
+    "status": "BLOCKED",
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "subjectCount": 7,
+    "subjectNames": [
+      "synara-cloud-agent-distribution-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-protocol-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-provider-api-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-provider-claude-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-provider-codex-0.1.0-rc.1.tgz",
+      "synara-cloud-agent-runtime-0.2.0-rc.1.tgz",
+      "synara-cloud-agent-testkit-0.1.0-rc.1.tgz"
+    ],
+    "missingEightBitSubjects": ["cloud-agent-runtime-standalone.mjs"],
+    "missingMetadataSubjects": [
+      "candidate-manifest.json",
+      "checksums.sha256",
+      "sbom.spdx.json",
+      "provenance.json",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "resolvedDependencyCount": 0,
+    "builderId": "local-cloud-agent-release-smoke",
+    "signatureFiles": [],
+    "candidateDigestCoversStandalone": false
+  },
+  "attestations": {
+    "status": "BLOCKED",
+    "verifier": {
+      "name": "gh",
+      "version": "gh version 2.97.0 (2026-07-31)",
+      "binarySha256": "6a2ab5fa89553eac1f0df50a26a5eaeea9a665d8971f5a51b32487b72c708f5c"
+    },
+    "artifacts": [
+      {
+        "filename": "synara-cloud-agent-distribution-0.1.0-rc.1.tgz",
+        "sha256": "0326203b90a5be4f566b3d4282aea5fda8532753855a8a6b4b449776a966e29c",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "synara-cloud-agent-protocol-0.1.0-rc.1.tgz",
+        "sha256": "e46c5a639482ac8af5c9794cda2c03e93779ce7d10cd1aac52761d6ec3cb2ac2",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "synara-cloud-agent-provider-api-0.1.0-rc.1.tgz",
+        "sha256": "88737cda1b0cef0922f50509acb154e2112a2d78acf219a1a5568edf3d731a59",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "synara-cloud-agent-provider-claude-0.1.0-rc.1.tgz",
+        "sha256": "e6a3058fe21fc9799d242bd8c3ae7d8e7bcf7674f2003319d493d4afdda636fd",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "synara-cloud-agent-provider-codex-0.1.0-rc.1.tgz",
+        "sha256": "8715b6c9d116d8b229c810903d1d7da16aaa6fed327020a06e0bd48813f49ec8",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "synara-cloud-agent-runtime-0.2.0-rc.1.tgz",
+        "sha256": "89aaa8bc42b2527fee584dfa9bccbc3e994dc1c67b99166989ca20be9fcf6488",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "synara-cloud-agent-testkit-0.1.0-rc.1.tgz",
+        "sha256": "5e4031c8bc449a78e0d5dff6721c7ab708361a5c1b7efa5dfd833752d5add21c",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      },
+      {
+        "filename": "cloud-agent-runtime-standalone.mjs",
+        "sha256": "c24a1c23f89f62e714e3465b59a4be12e1b5cb75387a2d0d6de9811803064521",
+        "verified": false,
+        "resultClass": "NO_ATTESTATION_FOUND",
+        "apiStatus": 404
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "tool-node",
+      "status": "PASS",
+      "detail": "node v24.13.1 binary digest is pinned."
+    },
+    {
+      "id": "tool-bun",
+      "status": "PASS",
+      "detail": "bun 1.3.14 binary digest is pinned."
+    },
+    {
+      "id": "tool-git",
+      "status": "PASS",
+      "detail": "git git version 2.55.0 binary digest is pinned."
+    },
+    {
+      "id": "tool-gh",
+      "status": "PASS",
+      "detail": "gh gh version 2.97.0 (2026-07-31) binary digest is pinned."
+    },
+    {
+      "id": "tool-oxfmt",
+      "status": "PASS",
+      "detail": "oxfmt Version: 0.62.0 binary digest is pinned."
+    },
+    {
+      "id": "tool-gitleaks",
+      "status": "PASS",
+      "detail": "gitleaks 8.30.1 binary and archive digests are pinned."
+    },
+    {
+      "id": "tool-syft",
+      "status": "PASS",
+      "detail": "syft 1.50.0 binary and archive digests are pinned."
+    },
+    {
+      "id": "tool-osv",
+      "status": "PASS",
+      "detail": "osv 2.5.0 binary and archive digests are pinned."
+    },
+    {
+      "id": "source-identity",
+      "status": "PASS",
+      "detail": "Fixed source 49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a and annotated tag object are present."
+    },
+    {
+      "id": "source-provenance-objects",
+      "status": "PASS",
+      "detail": "All 11 declared import objects exist in the Synara object store."
+    },
+    {
+      "id": "first-party-license",
+      "status": "PASS",
+      "detail": "All seven tarballs carry the exact source MIT LICENSE bytes."
+    },
+    {
+      "id": "bundled-anthropic-sdk",
+      "status": "PASS",
+      "detail": "Standalone embeds the @anthropic-ai/claude-agent-sdk@0.3.207 module marker."
+    },
+    {
+      "id": "standalone-bundle-composition",
+      "status": "BLOCKED",
+      "detail": "The RC has no retained bundler metafile, so the exact file-level standalone bundle closure cannot be proven."
+    },
+    {
+      "id": "release-asset-integrity",
+      "status": "PASS",
+      "detail": "Seven tarballs and standalone Runtime match manifest/checksum/same-bits inputs."
+    },
+    {
+      "id": "production-dependency-closure",
+      "status": "PASS",
+      "detail": "Exact bun.lock resolves 107 external production packages and 175 required/optional edges."
+    },
+    {
+      "id": "third-party-license",
+      "status": "BLOCKED",
+      "detail": "Anthropic Claude Agent SDK uses external Legal Agreements/All rights reserved and no redistribution authorization is recorded; non-host native package license texts are not materialized."
+    },
+    {
+      "id": "production-sbom",
+      "status": "PASS",
+      "detail": "Generated SPDX 2.3 covers seven public packages plus 107 external production nodes."
+    },
+    {
+      "id": "secret-full-scan",
+      "status": "PASS",
+      "detail": "Gitleaks scanned fixed source, safely extracted artifacts, and all local Git refs with zero findings."
+    },
+    {
+      "id": "syft-independent-inventory",
+      "status": "PASS",
+      "detail": "Syft independently identifies all seven extracted public packages."
+    },
+    {
+      "id": "dependency-vulnerability-snapshot",
+      "status": "PASS",
+      "detail": "OSV found no known vulnerabilities in the production SBOM snapshot."
+    },
+    {
+      "id": "workflow-action-pinning",
+      "status": "BLOCKED",
+      "detail": "One or more GitHub Actions are not pinned to a full commit SHA."
+    },
+    {
+      "id": "workflow-trusted-attestation",
+      "status": "BLOCKED",
+      "detail": "Fixed source workflow lacks the complete OIDC attest plus immediate verification chain."
+    },
+    {
+      "id": "git-signatures",
+      "status": "BLOCKED",
+      "detail": "Source commit and/or RC tag has no trusted verifiable signature."
+    },
+    {
+      "id": "provenance-coverage",
+      "status": "BLOCKED",
+      "detail": "Existing local unsigned provenance covers only seven tarballs, has resolvedDependencies=[], and omits standalone/metadata evidence."
+    },
+    {
+      "id": "github-attestation-verification",
+      "status": "BLOCKED",
+      "detail": "8/8 local artifact attestations are absent or unverifiable."
+    }
+  ],
+  "blockers": [
+    "git-signatures: Source commit and/or RC tag has no trusted verifiable signature.",
+    "github-attestation-verification: 8/8 local artifact attestations are absent or unverifiable.",
+    "provenance-coverage: Existing local unsigned provenance covers only seven tarballs, has resolvedDependencies=[], and omits standalone/metadata evidence.",
+    "standalone-bundle-composition: The RC has no retained bundler metafile, so the exact file-level standalone bundle closure cannot be proven.",
+    "third-party-license: Anthropic Claude Agent SDK uses external Legal Agreements/All rights reserved and no redistribution authorization is recorded; non-host native package license texts are not materialized.",
+    "workflow-action-pinning: One or more GitHub Actions are not pinned to a full commit SHA.",
+    "workflow-trusted-attestation: Fixed source workflow lacks the complete OIDC attest plus immediate verification chain."
+  ],
+  "warnings": [],
+  "claimBoundary": {
+    "runtimeSupplyChainInventoryComplete": true,
+    "sourceAndEightLocalArtifactHashesVerified": true,
+    "productionDependencyGraphResolved": true,
+    "hostPlatformExternalPackagesMaterialized": true,
+    "licenseCleared": false,
+    "trustedAttestationVerified": false,
+    "publicationOrDeploymentAuthorized": false,
+    "releaseAuthorization": false
+  }
+}

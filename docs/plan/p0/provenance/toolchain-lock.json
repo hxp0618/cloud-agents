@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "tools": {
+    "node": {
+      "status": "PASS",
+      "version": "v24.13.1",
+      "sha256": "d36b3d980963d44bd2c5e844fac4cfeee26a167b744287a4e74a9575af9d0559"
+    },
+    "bun": {
+      "status": "PASS",
+      "version": "1.3.14",
+      "sha256": "e0c90ec15d33363e6b70713d56bc3b2c7585c17f40a0fe0f8fd9305901d4e233"
+    },
+    "git": {
+      "status": "PASS",
+      "version": "git version 2.55.0",
+      "sha256": "9048038886ac36210fbb616b49b0707465f63683cb04e33a2013baf95f746938"
+    },
+    "gh": {
+      "status": "PASS",
+      "version": "gh version 2.97.0 (2026-07-31)",
+      "sha256": "6a2ab5fa89553eac1f0df50a26a5eaeea9a665d8971f5a51b32487b72c708f5c"
+    },
+    "oxfmt": {
+      "status": "PASS",
+      "version": "Version: 0.62.0",
+      "sha256": "ecab4e2f1bebaab1a3306620bee562ec16e8cb83dd5fb739b94a5aae3c9e34bd"
+    },
+    "gitleaks": {
+      "status": "PASS",
+      "version": "8.30.1",
+      "sha256": "ba52fb1bfabbcde42f032afad3d6e0b19dff8ed105229a16e7caa338bbc0e84f",
+      "archiveSha256": "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5",
+      "source": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_arm64.tar.gz",
+      "acquisition": "pinned-download"
+    },
+    "syft": {
+      "status": "PASS",
+      "version": "1.50.0",
+      "sha256": "5d59c9e6fa641793ddb48bc90b5b7ad63bf7303a52835b75b1beee3757463998",
+      "archiveSha256": "e32fdb9d47823fa633748a1efca2528fd77c37469ea93c9e40ab835da44e4cce",
+      "source": "https://github.com/anchore/syft/releases/download/v1.50.0/syft_1.50.0_darwin_arm64.tar.gz",
+      "acquisition": "pinned-download"
+    },
+    "osv": {
+      "status": "PASS",
+      "version": "2.5.0",
+      "sha256": "fff5a2e351b7f0a60001e87cbf862e82fb82e2792d368b533fec7a5865a73da2",
+      "archiveSha256": "fff5a2e351b7f0a60001e87cbf862e82fb82e2792d368b533fec7a5865a73da2",
+      "source": "https://github.com/google/osv-scanner/releases/download/v2.5.0/osv-scanner_darwin_arm64",
+      "acquisition": "pinned-download"
+    }
+  }
+}
