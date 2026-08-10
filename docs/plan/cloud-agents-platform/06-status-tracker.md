@@ -32,50 +32,54 @@
 
 ## 2. 阶段追踪
 
-| Stage             | Status      | DRI                         | Entry                                 | Exit Gate                                                                                       | Evidence                                 |
-| ----------------- | ----------- | --------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| M1 Runtime        | PAUSED      | TBD                         | 当前 rc.1/fresh branches              | 原 M1 gates                                                                                     | rc.1 + host refs；真实 Provider open     |
-| P0 Inventory      | IN PROGRESS | hxp0618 / Codex P0 executor | ADR accepted 2026-08-10               | G-INVENTORY/G-BASELINE                                                                          | activation + frozen-ref evidence pending |
-| P1 Foundation     | NOT STARTED | TBD                         | P0 verified                           | G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1                                                  | none                                     |
-| P2 Managed Agent  | NOT STARTED | TBD                         | P1 verified                           | G-MANAGED-AGENT/G-WORKER-FENCING-P2/G-AUTHORITY-P2/G-ADAPTER-P2/G-SECURITY-P2                   | none                                     |
-| P3 Managed Host   | NOT STARTED | TBD                         | P1 + Runtime digest                   | G-MANAGED-HOST/G-WORKER-FENCING-P3/G-AUTHORITY-P3/G-ADAPTER-P3/G-SECURITY-P3                    | none                                     |
-| P4 Standalone     | NOT STARTED | TBD                         | P2/P3 verified                        | G-STANDALONE/G-OPS/G-AUTHORITY-P4/G-ADAPTER-P4/G-SECURITY-P4                                    | none                                     |
-| P5 Synara Cutover | NOT STARTED | TBD                         | P2/P4 candidate                       | G-SYNARA-CUTOVER/G-AUTHORITY-P5/G-SECURITY-P5                                                   | none                                     |
-| P6 T3 Managed     | NOT STARTED | TBD                         | P3/P4 candidate                       | G-T3-INTEGRATION/G-AUTHORITY-P6/G-SECURITY-P6                                                   | none                                     |
-| Platform RC       | BLOCKED     | TBD                         | all phase records + engineering gates | aggregate G-AUTHORITY/G-WORKER-FENCING/G-ADAPTER/G-SECURITY + G-SUPPLY-CHAIN/G-PLATFORM-RELEASE | none                                     |
+| Stage             | Status      | DRI                         | Entry                                 | Exit Gate                                                                                       | Evidence                                                                                                                                         |
+| ----------------- | ----------- | --------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M1 Runtime        | PAUSED      | TBD                         | 当前 rc.1/fresh branches              | 原 M1 gates                                                                                     | rc.1 + host refs；真实 Provider open                                                                                                             |
+| P0 Inventory      | IN PROGRESS | hxp0618 / Codex P0 executor | ADR accepted 2026-08-10               | G-INVENTORY/G-BASELINE                                                                          | [G-INVENTORY R1](evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R1.md) / [G-BASELINE R1](evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R1.md) |
+| P1 Foundation     | NOT STARTED | TBD                         | P0 verified                           | G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1                                                  | none                                                                                                                                             |
+| P2 Managed Agent  | NOT STARTED | TBD                         | P1 verified                           | G-MANAGED-AGENT/G-WORKER-FENCING-P2/G-AUTHORITY-P2/G-ADAPTER-P2/G-SECURITY-P2                   | none                                                                                                                                             |
+| P3 Managed Host   | NOT STARTED | TBD                         | P1 + Runtime digest                   | G-MANAGED-HOST/G-WORKER-FENCING-P3/G-AUTHORITY-P3/G-ADAPTER-P3/G-SECURITY-P3                    | none                                                                                                                                             |
+| P4 Standalone     | NOT STARTED | TBD                         | P2/P3 verified                        | G-STANDALONE/G-OPS/G-AUTHORITY-P4/G-ADAPTER-P4/G-SECURITY-P4                                    | none                                                                                                                                             |
+| P5 Synara Cutover | NOT STARTED | TBD                         | P2/P4 candidate                       | G-SYNARA-CUTOVER/G-AUTHORITY-P5/G-SECURITY-P5                                                   | none                                                                                                                                             |
+| P6 T3 Managed     | NOT STARTED | TBD                         | P3/P4 candidate                       | G-T3-INTEGRATION/G-AUTHORITY-P6/G-SECURITY-P6                                                   | none                                                                                                                                             |
+| Platform RC       | BLOCKED     | TBD                         | all phase records + engineering gates | aggregate G-AUTHORITY/G-WORKER-FENCING/G-ADAPTER/G-SECURITY + G-SUPPLY-CHAIN/G-PLATFORM-RELEASE | none                                                                                                                                             |
 
 ## 3. Progressive Gate record registry
 
-| Gate / phase        | Current record ID | Status      | Fixed input digest | Evidence | Last reviewed |
-| ------------------- | ----------------- | ----------- | ------------------ | -------- | ------------- |
-| G-AUTHORITY-P1      | none              | NOT STARTED | none               | none     | none          |
-| G-AUTHORITY-P2      | none              | NOT STARTED | none               | none     | none          |
-| G-AUTHORITY-P3      | none              | NOT STARTED | none               | none     | none          |
-| G-AUTHORITY-P4      | none              | NOT STARTED | none               | none     | none          |
-| G-AUTHORITY-P5      | none              | NOT STARTED | none               | none     | none          |
-| G-AUTHORITY-P6      | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY-P1       | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY-P2       | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY-P3       | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY-P4       | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY-P5       | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY-P6       | none              | NOT STARTED | none               | none     | none          |
-| G-ADAPTER-P2        | none              | NOT STARTED | none               | none     | none          |
-| G-ADAPTER-P3        | none              | NOT STARTED | none               | none     | none          |
-| G-ADAPTER-P4        | none              | NOT STARTED | none               | none     | none          |
-| G-WORKER-FENCING-P2 | none              | NOT STARTED | none               | none     | none          |
-| G-WORKER-FENCING-P3 | none              | NOT STARTED | none               | none     | none          |
-| G-AUTHORITY         | none              | NOT STARTED | none               | none     | none          |
-| G-SECURITY          | none              | NOT STARTED | none               | none     | none          |
-| G-ADAPTER           | none              | NOT STARTED | none               | none     | none          |
-| G-WORKER-FENCING    | none              | NOT STARTED | none               | none     | none          |
-| G-SUPPLY-CHAIN      | none              | NOT STARTED | none               | none     | none          |
-| G-PLATFORM-RELEASE  | none              | NOT STARTED | none               | none     | none          |
+| Gate / phase        | Current record ID              | Status      | Fixed input digest            | Evidence                                                     | Last reviewed |
+| ------------------- | ------------------------------ | ----------- | ----------------------------- | ------------------------------------------------------------ | ------------- |
+| G-INVENTORY         | CAG-G-INVENTORY-P0-20260810-R1 | IN PROGRESS | `2c50b1e / f385885`           | [R1](evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R1.md) | 2026-08-10    |
+| G-BASELINE          | CAG-G-BASELINE-P0-20260810-R1  | IN PROGRESS | `2c50b1e / 9584a26 / 49e8cdc` | [R1](evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R1.md)   | 2026-08-10    |
+| G-AUTHORITY-P1      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-AUTHORITY-P2      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-AUTHORITY-P3      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-AUTHORITY-P4      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-AUTHORITY-P5      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-AUTHORITY-P6      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY-P1       | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY-P2       | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY-P3       | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY-P4       | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY-P5       | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY-P6       | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-ADAPTER-P2        | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-ADAPTER-P3        | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-ADAPTER-P4        | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-WORKER-FENCING-P2 | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-WORKER-FENCING-P3 | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-AUTHORITY         | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SECURITY          | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-ADAPTER           | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-WORKER-FENCING    | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-SUPPLY-CHAIN      | none                           | NOT STARTED | none                          | none                                                         | none          |
+| G-PLATFORM-RELEASE  | none                           | NOT STARTED | none                          | none                                                         | none          |
 
 ### 3.1 Immutable record history
 
-| Record ID | Gate / phase | Status | Fixed input digest | Evidence | Supersedes | Last reviewed |
-| --------- | ------------ | ------ | ------------------ | -------- | ---------- | ------------- |
+| Record ID                      | Gate / phase | Status      | Fixed input digest            | Evidence                                                         | Supersedes | Last reviewed |
+| ------------------------------ | ------------ | ----------- | ----------------------------- | ---------------------------------------------------------------- | ---------- | ------------- |
+| CAG-G-INVENTORY-P0-20260810-R1 | G-INVENTORY  | IN PROGRESS | `2c50b1e / f385885`           | [record](evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R1.md) | none       | 2026-08-10    |
+| CAG-G-BASELINE-P0-20260810-R1  | G-BASELINE   | IN PROGRESS | `2c50b1e / 9584a26 / 49e8cdc` | [record](evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R1.md)   | none       | 2026-08-10    |
 
 首次执行即向 history 追加 immutable record，并把上表 current pointer 指向它。record 失效时保留原 history 行并
 标 `INVALIDATED`；新 revision 使用新 Record ID 追加一行，在 `Supersedes` 建链。不得覆盖或删除历史 evidence。

@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T05:29:52.842Z",
+  "snapshot": {
+    "head": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+    "tree": "ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc",
+    "controlPlaneTree": "4d32d26bf32b8ebd62188961d0dffff92da4cf0c",
+    "deployTree": "1d0369f6029f85bf0d3d14ddc81c235205169b45",
+    "scriptsTree": "999769dde39fced4a1711fd2e42fcc5ca2b00029",
+    "inventoryPath": "docs/plan/p0/synara-file-inventory.tsv",
+    "inventorySha256": "f3858852538ef67ec6879a6db101246f7b3bf65ba6301f9e5e9274200d716aa1"
+  },
+  "counts": {
+    "files": 1607,
+    "byScope": {
+      "ci": 10,
+      "contract-reference": 62,
+      "control-plane": 1174,
+      "deploy": 117,
+      "provider-host-compat": 4,
+      "root-supply-chain": 5,
+      "scripts": 235
+    },
+    "byCapability": {
+      "billing-commercial": 43,
+      "cocoon-isolation": 14,
+      "credential-broker": 37,
+      "execution-authority": 277,
+      "external-runtime-candidate": 14,
+      "governance-retention": 16,
+      "gvisor-attestation": 3,
+      "identity-tenancy": 40,
+      "kms-secret-rotation": 15,
+      "kubernetes-deployment": 74,
+      "management-api": 99,
+      "metadata-migration": 4,
+      "postgres-schema": 301,
+      "product-composition": 18,
+      "provider-catalog-generation": 5,
+      "routing-ingress": 12,
+      "unclassified": 477,
+      "worker-agentd-workspace-provider-host": 108,
+      "worker-image-supply-chain": 21,
+      "workspace-artifact": 29
+    },
+    "byClassificationSeed": {
+      "adapter": 287,
+      "deferred-public-extension": 8,
+      "move": 22,
+      "retire": 1,
+      "rewrite-public": 1017,
+      "synara-only": 43,
+      "unclassified": 229
+    },
+    "manualReview": 339,
+    "migrations": 167,
+    "commands": 8,
+    "externalArtifacts": 8
+  },
+  "nodes": [
+    {
+      "id": "command:agentd",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/agentd"
+    },
+    {
+      "id": "command:api",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/api"
+    },
+    {
+      "id": "command:cocoon-provider-transport",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/cocoon-provider-transport"
+    },
+    {
+      "id": "command:cocoon-supervisor",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/cocoon-supervisor"
+    },
+    {
+      "id": "command:gvisor-node-attestor",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/gvisor-node-attestor"
+    },
+    {
+      "id": "command:kms-worker",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/kms-worker"
+    },
+    {
+      "id": "command:metadata",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/metadata"
+    },
+    {
+      "id": "command:routing-authority-sign",
+      "kind": "go-command",
+      "path": "services/control-plane/cmd/routing-authority-sign"
+    },
+    {
+      "id": "deployment:billing",
+      "kind": "deployment-scope",
+      "path": "deploy/billing"
+    },
+    {
+      "id": "deployment:kubernetes",
+      "kind": "deployment-scope",
+      "path": "deploy/kubernetes"
+    },
+    {
+      "id": "deployment:personal",
+      "kind": "deployment-scope",
+      "path": "deploy/personal"
+    },
+    {
+      "id": "deployment:remote",
+      "kind": "deployment-scope",
+      "path": "deploy/remote"
+    },
+    {
+      "id": "deployment:saas",
+      "kind": "deployment-scope",
+      "path": "deploy/saas"
+    },
+    {
+      "id": "deployment:worker",
+      "kind": "deployment-scope",
+      "path": "deploy/worker"
+    },
+    {
+      "id": "standalone-runtime",
+      "kind": "external-artifact",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/cloud-agent-runtime-standalone.mjs",
+      "sha256": "sha256:c24a1c23f89f62e714e3465b59a4be12e1b5cb75387a2d0d6de9811803064521"
+    },
+    {
+      "id": "@synara/cloud-agent-protocol",
+      "kind": "external-artifact",
+      "version": "0.1.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-protocol-0.1.0-rc.1.tgz",
+      "sha256": "sha256:e46c5a639482ac8af5c9794cda2c03e93779ce7d10cd1aac52761d6ec3cb2ac2"
+    },
+    {
+      "id": "@synara/cloud-agent-provider-api",
+      "kind": "external-artifact",
+      "version": "0.1.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-provider-api-0.1.0-rc.1.tgz",
+      "sha256": "sha256:88737cda1b0cef0922f50509acb154e2112a2d78acf219a1a5568edf3d731a59"
+    },
+    {
+      "id": "@synara/cloud-agent-runtime",
+      "kind": "external-artifact",
+      "version": "0.2.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-runtime-0.2.0-rc.1.tgz",
+      "sha256": "sha256:89aaa8bc42b2527fee584dfa9bccbc3e994dc1c67b99166989ca20be9fcf6488"
+    },
+    {
+      "id": "@synara/cloud-agent-provider-codex",
+      "kind": "external-artifact",
+      "version": "0.1.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-provider-codex-0.1.0-rc.1.tgz",
+      "sha256": "sha256:8715b6c9d116d8b229c810903d1d7da16aaa6fed327020a06e0bd48813f49ec8"
+    },
+    {
+      "id": "@synara/cloud-agent-provider-claude",
+      "kind": "external-artifact",
+      "version": "0.1.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-provider-claude-0.1.0-rc.1.tgz",
+      "sha256": "sha256:e6a3058fe21fc9799d242bd8c3ae7d8e7bcf7674f2003319d493d4afdda636fd"
+    },
+    {
+      "id": "@synara/cloud-agent-testkit",
+      "kind": "external-artifact",
+      "version": "0.1.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-testkit-0.1.0-rc.1.tgz",
+      "sha256": "sha256:5e4031c8bc449a78e0d5dff6721c7ab708361a5c1b7efa5dfd833752d5add21c"
+    },
+    {
+      "id": "@synara/cloud-agent-distribution",
+      "kind": "external-artifact",
+      "version": "0.1.0-rc.1",
+      "url": "https://github.com/hxp0618/cloud-agents/releases/download/cloud-agent-m1-rc.1/synara-cloud-agent-distribution-0.1.0-rc.1.tgz",
+      "sha256": "sha256:0326203b90a5be4f566b3d4282aea5fda8532753855a8a6b4b449776a966e29c"
+    }
+  ],
+  "edges": [
+    {
+      "from": "source:synara-control-plane",
+      "to": "inventory:synara-file-inventory",
+      "relation": "described-by",
+      "count": 1607
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "standalone-runtime",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:c24a1c23f89f62e714e3465b59a4be12e1b5cb75387a2d0d6de9811803064521"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-protocol",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:e46c5a639482ac8af5c9794cda2c03e93779ce7d10cd1aac52761d6ec3cb2ac2"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-provider-api",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:88737cda1b0cef0922f50509acb154e2112a2d78acf219a1a5568edf3d731a59"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-runtime",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:89aaa8bc42b2527fee584dfa9bccbc3e994dc1c67b99166989ca20be9fcf6488"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-provider-codex",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:8715b6c9d116d8b229c810903d1d7da16aaa6fed327020a06e0bd48813f49ec8"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-provider-claude",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:e6a3058fe21fc9799d242bd8c3ae7d8e7bcf7674f2003319d493d4afdda636fd"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-testkit",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:5e4031c8bc449a78e0d5dff6721c7ab708361a5c1b7efa5dfd833752d5add21c"
+    },
+    {
+      "from": "lock:cloud-agent-candidate",
+      "to": "@synara/cloud-agent-distribution",
+      "relation": "pins-external-artifact",
+      "digest": "sha256:0326203b90a5be4f566b3d4282aea5fda8532753855a8a6b4b449776a966e29c"
+    },
+    {
+      "from": "command:agentd",
+      "to": "lock:cloud-agent-candidate",
+      "relation": "launches-via-provider-host-bundle"
+    },
+    {
+      "from": "deployment:worker",
+      "to": "command:agentd",
+      "relation": "packages"
+    }
+  ],
+  "limitations": [
+    "classificationSeed is heuristic and is not a final P0 authority decision",
+    "command import closure is recorded separately from this file/build-context inventory",
+    "Docker COPY context can include tests and migrations without semantic runtime dependency"
+  ]
+}
