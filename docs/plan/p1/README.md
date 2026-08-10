@@ -1,8 +1,11 @@
 # Platform P1 execution evidence
 
 - Status：IN PROGRESS
-- Fixed decision：[`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)
-- Current slice：P1-A Contract Kernel
+- Fixed decisions：[`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)、
+  [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)
+- Completed slice：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)
+- Current slice：P1-A2 Data Kernel decision freeze
+- Remaining P1 slice：P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
@@ -16,3 +19,10 @@ Platform RC、Beta 或 GA。
 ## Dependency reviews
 
 - [`ajv-8.20.0.md`](dependency-reviews/ajv-8.20.0.md)：P1 JSON Schema 2020-12 validator direct edge；APPROVED
+- [`pgx-v5.10.0.md`](dependency-reviews/pgx-v5.10.0.md)：P1 PostgreSQL driver target；**BLOCKED**（default
+  `x/text v0.29.0` 存在 reachable `GO-2026-5970`，等待安全闭包独立复核）
+
+## Data kernel decisions
+
+- [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)：global-table allowlist、bootstrap authority、tenant
+  context ABI、migration lineage/checksum 与 P1-A2.1～P1-A2.4 execution slices。
