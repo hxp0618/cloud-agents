@@ -67,8 +67,50 @@ type databaseState struct {
 	catalog CatalogProjection
 }
 
+// Run is the public production gate. Until the impl-3 evidence journal and
+// projector wiring exist, a successfully admitted exact plan still fails
+// closed before advisory-lock derivation or any database side effect.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
-	if err := runner.validateDependencies(request); err != nil {
+	if err := runner.validateAdmissionDependencies(request); err != nil {
+		return RunResult{}, err
+	}
+	runner.transition(StateVerifyTrust)
+	decision, err := runner.Trust.Verify(ctx, request.Candidate)
+	if err != nil {
+		return RunResult{}, fail(CodeUntrusted, "trust", "candidate verification failed", err)
+	}
+	if err := decision.validate(); err != nil {
+		return RunResult{}, err
+	}
+	runner.transition(StateLoadBundle)
+	raw, err := request.Artifact.Read(ctx, decision.OuterArtifactDigest())
+	if err != nil {
+		return RunResult{}, fail(CodeInvalidArtifact, "read", "cannot read verified runtime artifact", err)
+	}
+	bundle, err := LoadRuntimeBundle(raw, decision)
+	if err != nil {
+		return RunResult{}, err
+	}
+	bindings, err := decision.runnerProjectionBindings()
+	if err != nil {
+		return RunResult{}, err
+	}
+	plans, err := buildExactStatementPlans(bundle, bindings, time.Now())
+	if err != nil {
+		return RunResult{}, err
+	}
+	for _, plan := range plans {
+		if _, err := plan.exactSQLBytes(); err != nil {
+			return RunResult{}, err
+		}
+	}
+	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-evidence-journal", "exact plans admitted but evidence journal and projector wiring are not implemented", nil)
+}
+
+// runLegacyCharacterization preserves the ADR-0009 state-machine tests while
+// impl-3 is assembled. Production Run has no call edge to this function.
+func (runner *Runner) runLegacyCharacterization(ctx context.Context, request RunRequest) (RunResult, error) {
+	if err := runner.validateLegacyDependencies(request); err != nil {
 		return RunResult{}, err
 	}
 	runner.transition(StateVerifyTrust)
@@ -251,7 +293,14 @@ func validateExecutionClosure(bundle *RuntimeBundle, classifier StatementClassif
 	return nil
 }
 
-func (runner *Runner) validateDependencies(request RunRequest) error {
+func (runner *Runner) validateAdmissionDependencies(request RunRequest) error {
+	if runner.Trust == nil || request.Artifact == nil || request.TargetDSN == "" {
+		return fail(CodeUnsupported, "runner", "trust verifier, artifact source, or target is missing", nil)
+	}
+	return nil
+}
+
+func (runner *Runner) validateLegacyDependencies(request RunRequest) error {
 	if runner.Trust == nil || runner.Connector == nil || runner.Ledger == nil || runner.Authority == nil || runner.Catalog == nil || runner.Intermediate == nil || request.Artifact == nil || request.TargetDSN == "" {
 		return fail(CodeUnsupported, "runner", "runner dependencies, artifact source, or target are missing", nil)
 	}

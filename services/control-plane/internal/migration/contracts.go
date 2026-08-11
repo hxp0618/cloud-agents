@@ -1,10 +1,13 @@
 package migration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
+	"time"
 )
 
 type SQLClassificationDescriptor struct {
@@ -379,6 +382,216 @@ func NewDescriptorClassifier(bundle *RuntimeBundle) (*DescriptorClassifier, erro
 		}
 	}
 	return classifier, nil
+}
+
+// buildExactStatementPlans is the impl-3 pre-connect admission boundary. It
+// accepts only an already verified runtime bundle and its exact opaque
+// projection bindings; no connector, queryer, transaction, ledger, or SQL
+// executor is reachable from this pure function.
+func buildExactStatementPlans(bundle *RuntimeBundle, bindings RunnerProjectionBindings, now time.Time) ([]StatementPlan, error) {
+	if bundle == nil || bundle.Manifest == nil {
+		return nil, fail(CodeInvalidManifest, "statement-plan", "verified runtime bundle is absent", nil)
+	}
+	if err := bindings.validateAt(now); err != nil {
+		return nil, err
+	}
+	authorityRecord := bundle.Manifest.ExecutionPolicy.AuthorityContract
+	if authorityRecord.SHA256 != bindings.authorityProfileDigest || bindings.verifiedAuthorityProfile.artifactDigest != bindings.authorityProfileDigest {
+		return nil, fail(CodeUntrusted, "authority-profile", "manifest authority descriptor differs from projection bindings", nil)
+	}
+	if !runtimeDescriptorExact(bundle.Manifest.RuntimeArtifacts, authorityRecord) {
+		return nil, fail(CodeInvalidManifest, "authority-profile", "authority descriptor is not exact and unique in runtime_artifacts", nil)
+	}
+	authorityRaw, err := exactRuntimeArtifact(bundle.Files, authorityRecord)
+	if err != nil {
+		return nil, err
+	}
+	authorityContract, err := DecodeAuthorityContract(authorityRaw)
+	if err != nil {
+		return nil, err
+	}
+	if authorityContract.PublicationStatus != "PUBLISHED_IMMUTABLE" || authorityContract.RuntimeIntrospectionStatus != "IMPLEMENTED" {
+		return nil, fail(CodeProjectionNotImplemented, "authority-profile", "authority profile is not executable", nil)
+	}
+	authorityCanonical, canonicalErr := canonicalContractKey(*authorityContract)
+	if canonicalErr != nil || authorityCanonical != bindings.verifiedAuthorityProfile.contractCanonical ||
+		!bytes.Equal(authorityRaw, bindings.verifiedAuthorityProfile.raw) ||
+		!runnerCanonicalEqual(*authorityContract, bindings.verifiedAuthorityProfile.contract) {
+		return nil, fail(CodeUntrusted, "authority-profile", "runtime authority profile differs from its complete verified binding", canonicalErr)
+	}
+	if bundle.Manifest.SchemaBundleDigest != bindings.schemaBundleDigest {
+		return nil, fail(CodeUntrusted, "statement-plan", "runtime schema bundle differs from projection bindings", nil)
+	}
+	if len(bundle.Manifest.SchemaBundle.Migrations) == 0 {
+		return nil, fail(CodeInvalidManifest, "statement-plan", "migration closure is empty", nil)
+	}
+	projectionAuthority := bundle.Manifest.SchemaBundle.ProjectionScopeAuthority
+	if !reflect.DeepEqual(projectionAuthority.DefaultACLOwnersCopy(), bindings.initialSchemaScope.DefaultACLOwners()) ||
+		!reflect.DeepEqual(projectionAuthority.ObjectCreatorClosureCopy(), bindings.initialSchemaScope.ObjectCreatorClosure()) ||
+		bindings.initialSchemaScope.subjectDigest != bundle.Manifest.SchemaBundleDigest ||
+		!reflect.DeepEqual(bindings.initialSchemaScope.BoundPrecondition(), bundle.Manifest.SchemaBundle.Migrations[0].PredecessorCatalogContract) {
+		return nil, fail(CodeUntrusted, "statement-plan", "initial schema scope differs from exact signed schema bundle authority", nil)
+	}
+	if len(bindings.executableCatalogs) != len(bundle.Manifest.SchemaBundle.Migrations) {
+		return nil, fail(CodeUntrusted, "statement-plan", "executable catalog closure differs from migration closure", nil)
+	}
+
+	plans := make([]StatementPlan, 0)
+	usedHeads := make(map[string]struct{}, len(bindings.executableCatalogs))
+	for _, entry := range bundle.Manifest.SchemaBundle.Migrations {
+		catalogBinding, ok := exactCatalogBindingForHead(bindings.executableCatalogs, entry.ID)
+		if !ok {
+			return nil, fail(CodeUntrusted, entry.ID, "schema head has no exact executable catalog binding", nil)
+		}
+		if _, duplicate := usedHeads[entry.ID]; duplicate {
+			return nil, fail(CodeUntrusted, entry.ID, "schema head is duplicated in migration closure", nil)
+		}
+		usedHeads[entry.ID] = struct{}{}
+		if catalogBinding.catalogContractDigest != entry.CatalogContract.SHA256 {
+			return nil, fail(CodeUntrusted, entry.ID, "catalog binding digest differs from manifest descriptor", nil)
+		}
+		if !runtimeDescriptorExact(bundle.Manifest.RuntimeArtifacts, entry.CatalogContract) {
+			return nil, fail(CodeInvalidManifest, entry.ID, "catalog descriptor is not exact in runtime_artifacts", nil)
+		}
+		catalogRaw, err := exactRuntimeArtifact(bundle.Files, entry.CatalogContract)
+		if err != nil {
+			return nil, err
+		}
+		contract, err := DecodeCatalogContract(catalogRaw)
+		if err != nil {
+			return nil, err
+		}
+		if contract.PublicationStatus != "PUBLISHED_IMMUTABLE" || contract.RuntimeIntrospectionStatus != "IMPLEMENTED" || contract.bootstrapShape {
+			return nil, fail(CodeProjectionNotImplemented, entry.ID, "catalog contract is not executable", nil)
+		}
+		if contract.SchemaHead != entry.ID || catalogBinding.schemaHead != entry.ID || catalogBinding.verifiedCatalog.expected.SchemaHead != entry.ID {
+			return nil, fail(CodeUntrusted, entry.ID, "catalog head differs from migration and verified binding", nil)
+		}
+		contractCanonical, canonicalErr := canonicalContractKey(*contract)
+		if canonicalErr != nil || contractCanonical != catalogBinding.catalogCanonical ||
+			!reflect.DeepEqual(catalogBinding.catalogContract, *contract) ||
+			!reflect.DeepEqual(catalogBinding.verifiedCatalog.expected, contract.ExpectedProjection) ||
+			!equalProjectionScopes(catalogBinding.verifiedCatalog.scope, ProjectionScope{ScopeKind: "final", SchemaHead: &contract.SchemaHead, DeclaredObjects: cloneObjectIdentities(contract.DeclaredObjectIdentities)}) {
+			return nil, fail(CodeUntrusted, entry.ID, "catalog contract differs from its complete verified binding", canonicalErr)
+		}
+
+		source, err := exactMigrationSource(contract.SourceDescriptors, entry.ID)
+		if err != nil {
+			return nil, err
+		}
+		if source.SQLSHA256 != entry.SQLArtifact.SHA256 {
+			return nil, fail(CodeInvalidManifest, entry.ID, "catalog source SQL digest differs from manifest descriptor", nil)
+		}
+		if !runtimeDescriptorExact(bundle.Manifest.RuntimeArtifacts, entry.SQLArtifact) {
+			return nil, fail(CodeInvalidManifest, entry.ID, "SQL descriptor is not exact in runtime_artifacts", nil)
+		}
+		sqlRaw, err := exactRuntimeArtifact(bundle.Files, entry.SQLArtifact)
+		if err != nil {
+			return nil, err
+		}
+		statements, err := SplitPostgreSQLStatements(sqlRaw)
+		if err != nil {
+			return nil, err
+		}
+		if len(statements) != len(source.Statements) || len(statements) == 0 {
+			return nil, fail(CodeInvalidManifest, entry.ID, "statement closure differs from signed source descriptor", nil)
+		}
+		narrow := NarrowDDLClassifier{SpecialDO: make(map[SpecialStatementIdentity]Digest)}
+		for _, descriptor := range source.Statements {
+			if descriptor.Classification.Command == "DO" && descriptor.Classification.SpecialCase != nil {
+				expectedSpecial := fmt.Sprintf("%s:%d:%s", entry.ID, descriptor.Index, descriptor.SHA256)
+				if *descriptor.Classification.SpecialCase != expectedSpecial {
+					return nil, fail(CodeInvalidManifest, entry.ID, "DO special-case identity differs from exact statement", nil)
+				}
+				narrow.SpecialDO[SpecialStatementIdentity{MigrationID: entry.ID, StatementIndex: int(descriptor.Index)}] = descriptor.SHA256
+			} else if descriptor.Classification.SpecialCase != nil {
+				return nil, fail(CodeInvalidManifest, entry.ID, "non-DO statement has a special-case identity", nil)
+			}
+		}
+		for index, statement := range statements {
+			descriptor := source.Statements[index]
+			if descriptor.Index != uint64(index) || descriptor.Start != uint64(statement.Start) || descriptor.End != uint64(statement.End) || descriptor.SHA256 != statement.SHA256 ||
+				descriptor.End > entry.SQLArtifact.SizeBytes || descriptor.Classification.Profile != "postgresql-ddl-v1" {
+				return nil, fail(CodeInvalidSQL, entry.ID, "statement offset, digest, or profile differs from signed descriptor", nil)
+			}
+			structural, err := narrow.Classify(entry, statement)
+			if err != nil {
+				return nil, err
+			}
+			if !classificationMatchesStructural(descriptor.Classification, structural) {
+				return nil, fail(CodeInvalidSQL, entry.ID, "structural classification differs from signed descriptor", nil)
+			}
+			plan, err := freezeExactStatementPlan(structural, entry, statement, descriptor)
+			if err != nil {
+				return nil, err
+			}
+			plans = append(plans, plan)
+		}
+	}
+	if len(usedHeads) != len(bindings.executableCatalogs) {
+		return nil, fail(CodeUntrusted, "statement-plan", "projection bindings contain an unknown catalog head", nil)
+	}
+	return plans, nil
+}
+
+func runtimeDescriptorExact(records []ArtifactRecord, expected ArtifactRecord) bool {
+	matches := 0
+	for _, record := range records {
+		if record.Path != expected.Path {
+			continue
+		}
+		if !reflect.DeepEqual(record, expected) {
+			return false
+		}
+		matches++
+	}
+	return matches == 1
+}
+
+func exactCatalogBindingForHead(catalogs []ExecutableCatalogBinding, head string) (ExecutableCatalogBinding, bool) {
+	index := sort.Search(len(catalogs), func(index int) bool { return catalogs[index].schemaHead >= head })
+	if index >= len(catalogs) || catalogs[index].schemaHead != head {
+		return ExecutableCatalogBinding{}, false
+	}
+	return catalogs[index], true
+}
+
+func exactRuntimeArtifact(files map[string][]byte, record ArtifactRecord) ([]byte, error) {
+	if err := record.Validate(); err != nil {
+		return nil, err
+	}
+	raw, ok := files[record.Path]
+	if !ok || uint64(len(raw)) != record.SizeBytes || DigestBytes(raw) != record.SHA256 {
+		return nil, fail(CodeInvalidArtifact, record.Path, "runtime member differs from its exact descriptor", nil)
+	}
+	return raw, nil
+}
+
+func exactMigrationSource(sources []SQLSourceDescriptor, migrationID string) (SQLSourceDescriptor, error) {
+	var found *SQLSourceDescriptor
+	for index := range sources {
+		if sources[index].MigrationID != migrationID {
+			continue
+		}
+		if found != nil {
+			return SQLSourceDescriptor{}, fail(CodeInvalidManifest, migrationID, "catalog contains duplicate migration source descriptors", nil)
+		}
+		owned := cloneProjectionValue(sources[index])
+		found = &owned
+	}
+	if found == nil {
+		return SQLSourceDescriptor{}, fail(CodeInvalidManifest, migrationID, "catalog lacks the exact migration source descriptor", nil)
+	}
+	return *found, nil
+}
+
+func classificationMatchesStructural(expected SQLClassificationDescriptor, plan StatementPlan) bool {
+	kind := normalizeObjectKind(plan.ObjectKind)
+	if plan.Command == "DO" && kind == "SCHEMA" {
+		kind = "SCHEMA_BOOTSTRAP"
+	}
+	return expected.Profile == "postgresql-ddl-v1" && expected.Command == plan.Command && expected.ObjectKind == kind &&
+		expected.TargetIdentity == plan.TargetIdentity && equalOptionalString(expected.Grantee, plan.Grantee)
 }
 
 func (classifier *DescriptorClassifier) Classify(entry MigrationEntry, statement SQLStatement) (StatementPlan, error) {

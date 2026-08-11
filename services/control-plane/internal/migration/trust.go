@@ -31,7 +31,9 @@ type VerifiedTrustDecision struct {
 	expectedRunnerReleaseDigest   Digest
 	repositoryIdentity            string
 	releaseIdentity               string
+	expiresAt                     time.Time
 	securityEpoch                 uint64
+	projectionBindings            *RunnerProjectionBindings
 }
 
 func (decision VerifiedTrustDecision) validate() error {
@@ -52,11 +54,42 @@ func (decision VerifiedTrustDecision) validate() error {
 	if decision.repositoryIdentity == "" || decision.releaseIdentity == "" || decision.securityEpoch == 0 {
 		return fail(CodeUntrusted, "trust", "verified decision is missing release identity", nil)
 	}
+	if decision.projectionBindings != nil {
+		bindings := decision.projectionBindings
+		if err := bindings.validateAt(time.Now()); err != nil {
+			return err
+		}
+		if bindings.schemaBundleDigest != decision.expectedSchemaBundleDigest ||
+			bindings.releaseSubject.RepositoryIdentity != decision.repositoryIdentity ||
+			bindings.releaseSubject.ReleaseIdentity != decision.releaseIdentity ||
+			bindings.releaseSubject.BootstrapBundleDigest != decision.expectedBootstrapBundleDigest ||
+			bindings.releaseSubject.ManifestDigest != decision.expectedManifestDigest ||
+			bindings.releaseSubject.OuterArtifactDigest != decision.expectedOuterArtifactDigest ||
+			bindings.releaseSubject.RunnerReleaseDigest != decision.expectedRunnerReleaseDigest ||
+			!bindings.releaseExpiresAt.Equal(decision.expiresAt) || bindings.releaseSecurityEpoch != decision.securityEpoch {
+			return fail(CodeUntrusted, "trust", "projection bindings differ from their release decision", nil)
+		}
+	}
 	return nil
 }
 
 func (decision VerifiedTrustDecision) exactlyMatches(other VerifiedTrustDecision) bool {
-	return decision == other
+	if decision.verified != other.verified ||
+		decision.expectedSchemaBundleDigest != other.expectedSchemaBundleDigest ||
+		decision.expectedBootstrapBundleDigest != other.expectedBootstrapBundleDigest ||
+		decision.expectedManifestDigest != other.expectedManifestDigest ||
+		decision.expectedOuterArtifactDigest != other.expectedOuterArtifactDigest ||
+		decision.expectedRunnerReleaseDigest != other.expectedRunnerReleaseDigest ||
+		decision.repositoryIdentity != other.repositoryIdentity ||
+		decision.releaseIdentity != other.releaseIdentity ||
+		!decision.expiresAt.Equal(other.expiresAt) ||
+		decision.securityEpoch != other.securityEpoch {
+		return false
+	}
+	if decision.projectionBindings == nil || other.projectionBindings == nil {
+		return decision.projectionBindings == nil && other.projectionBindings == nil
+	}
+	return decision.projectionBindings.exactlyMatches(*other.projectionBindings)
 }
 
 func (decision VerifiedTrustDecision) SchemaBundleDigest() Digest {
@@ -75,6 +108,19 @@ func (decision VerifiedTrustDecision) RunnerReleaseDigest() Digest {
 func (decision VerifiedTrustDecision) RepositoryIdentity() string { return decision.repositoryIdentity }
 func (decision VerifiedTrustDecision) ReleaseIdentity() string    { return decision.releaseIdentity }
 func (decision VerifiedTrustDecision) SecurityEpoch() uint64      { return decision.securityEpoch }
+
+// runnerProjectionBindings returns an owned copy of the opaque projection
+// decision. It is deliberately package-private: callers outside the verified
+// runner path cannot supply or overlay deployment projection subjects.
+func (decision VerifiedTrustDecision) runnerProjectionBindings() (RunnerProjectionBindings, error) {
+	if decision.projectionBindings == nil {
+		return RunnerProjectionBindings{}, fail(CodeUntrusted, "runner-projection-bindings", "verified release decision has no projection bindings", nil)
+	}
+	if err := decision.projectionBindings.validateAt(time.Now()); err != nil {
+		return RunnerProjectionBindings{}, err
+	}
+	return decision.projectionBindings.ownedCopy(), nil
+}
 
 // RejectingTrustVerifier is the production-safe default until detached
 // signature and deployment trust-root wiring is supplied.

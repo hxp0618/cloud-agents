@@ -6,6 +6,8 @@ import (
 )
 
 type StatementPlan struct {
+	// Legacy structural classifier output. These fields remain for the ADR-0009
+	// runner compatibility seam but are insufficient for impl-3 admission.
 	Command             string
 	ObjectKind          string
 	TargetIdentity      string
@@ -13,10 +15,137 @@ type StatementPlan struct {
 	MayChangeSchemaACL  bool
 	MayChangeDefaultACL bool
 	MayChangeOwner      bool
+
+	// Impl-3 exact plan. Only buildExactStatementPlans may set exact and freeze
+	// exactCanonical after binding the verified runtime and catalog descriptor.
+	MigrationID              string
+	StatementIndex           uint32
+	SQLArtifactPath          string
+	SQLArtifactSHA256        Digest
+	SQLArtifactSizeBytes     uint64
+	StartOffset              uint64
+	EndOffset                uint64
+	StatementSHA256          Digest
+	Classification           SQLClassificationDescriptor
+	ExpectedTransition       ExpectedStatementTransition
+	ExpectedTransitionDigest Digest
+	exact                    bool
+	exactCanonical           string
+	sqlBytes                 []byte
 }
 
 type StatementClassifier interface {
 	Classify(entry MigrationEntry, statement SQLStatement) (StatementPlan, error)
+}
+
+type exactStatementPlanSentinel struct {
+	Command                  string                      `json:"command"`
+	ObjectKind               string                      `json:"object_kind"`
+	TargetIdentity           string                      `json:"target_identity"`
+	Grantee                  *string                     `json:"grantee"`
+	MayChangeSchemaACL       bool                        `json:"may_change_schema_acl"`
+	MayChangeDefaultACL      bool                        `json:"may_change_default_acl"`
+	MayChangeOwner           bool                        `json:"may_change_owner"`
+	MigrationID              string                      `json:"migration_id"`
+	StatementIndex           uint32                      `json:"statement_index"`
+	SQLArtifactPath          string                      `json:"sql_artifact_path"`
+	SQLArtifactSHA256        Digest                      `json:"sql_artifact_sha256"`
+	SQLArtifactSizeBytes     uint64                      `json:"sql_artifact_size_bytes"`
+	StartOffset              uint64                      `json:"start_offset"`
+	EndOffset                uint64                      `json:"end_offset"`
+	StatementSHA256          Digest                      `json:"statement_sha256"`
+	Classification           SQLClassificationDescriptor `json:"classification"`
+	ExpectedTransition       ExpectedStatementTransition `json:"expected_transition"`
+	ExpectedTransitionDigest Digest                      `json:"expected_transition_digest"`
+}
+
+func (plan StatementPlan) exactSentinel() exactStatementPlanSentinel {
+	return exactStatementPlanSentinel{
+		Command: plan.Command, ObjectKind: plan.ObjectKind, TargetIdentity: plan.TargetIdentity,
+		Grantee: cloneProjectionValue(plan.Grantee), MayChangeSchemaACL: plan.MayChangeSchemaACL,
+		MayChangeDefaultACL: plan.MayChangeDefaultACL, MayChangeOwner: plan.MayChangeOwner,
+		MigrationID: plan.MigrationID, StatementIndex: plan.StatementIndex,
+		SQLArtifactPath: plan.SQLArtifactPath, SQLArtifactSHA256: plan.SQLArtifactSHA256,
+		SQLArtifactSizeBytes: plan.SQLArtifactSizeBytes, StartOffset: plan.StartOffset, EndOffset: plan.EndOffset,
+		StatementSHA256: plan.StatementSHA256, Classification: cloneProjectionValue(plan.Classification),
+		ExpectedTransition: cloneProjectionValue(plan.ExpectedTransition), ExpectedTransitionDigest: plan.ExpectedTransitionDigest,
+	}
+}
+
+func (plan StatementPlan) validateExact() error {
+	if !plan.exact || plan.exactCanonical == "" || !migrationIDPattern.MatchString(plan.MigrationID) || plan.EndOffset <= plan.StartOffset || plan.SQLArtifactPath == "" {
+		return fail(CodeInvalidManifest, "statement-plan", "statement plan is not an exact verified plan", nil)
+	}
+	if err := requireDigest("statement-plan.sql-artifact", plan.SQLArtifactSHA256); err != nil {
+		return err
+	}
+	if err := requireDigest("statement-plan.statement", plan.StatementSHA256); err != nil {
+		return err
+	}
+	if plan.EndOffset > plan.SQLArtifactSizeBytes || plan.EndOffset-plan.StartOffset != uint64(len(plan.sqlBytes)) || DigestBytes(plan.sqlBytes) != plan.StatementSHA256 {
+		return fail(CodeInvalidArtifact, "statement-plan", "owned statement bytes differ from exact offsets or digest", nil)
+	}
+	wantTransitionDigest, err := plan.ExpectedTransition.ComputeDigest()
+	if err != nil || wantTransitionDigest != plan.ExpectedTransitionDigest {
+		return fail(CodeInvalidManifest, "statement-plan", "expected transition digest differs from its exact transition", err)
+	}
+	kind := normalizeObjectKind(plan.ObjectKind)
+	if plan.Command == "DO" && kind == "SCHEMA" {
+		kind = "SCHEMA_BOOTSTRAP"
+	}
+	if plan.Classification.Profile != "postgresql-ddl-v1" || plan.Command != plan.Classification.Command || kind != plan.Classification.ObjectKind ||
+		plan.TargetIdentity != plan.Classification.TargetIdentity || !equalOptionalString(plan.Grantee, plan.Classification.Grantee) {
+		return fail(CodeInvalidSQL, "statement-plan", "structural plan differs from its signed classification", nil)
+	}
+	canonical, err := canonicalContractKey(plan.exactSentinel())
+	if err != nil || canonical != plan.exactCanonical {
+		return fail(CodeUntrusted, "statement-plan", "statement plan differs from its immutable sentinel", err)
+	}
+	return nil
+}
+
+func freezeExactStatementPlan(structural StatementPlan, entry MigrationEntry, statement SQLStatement, descriptor SQLStatementDescriptor) (StatementPlan, error) {
+	if descriptor.Index > uint64(^uint32(0)) {
+		return StatementPlan{}, fail(CodeInvalidManifest, entry.ID, "statement index exceeds uint32", nil)
+	}
+	transitionDigest, err := descriptor.ExpectedTransition.ComputeDigest()
+	if err != nil {
+		return StatementPlan{}, err
+	}
+	plan := structural
+	plan.MigrationID = entry.ID
+	plan.StatementIndex = uint32(descriptor.Index)
+	plan.SQLArtifactPath = entry.SQLArtifact.Path
+	plan.SQLArtifactSHA256 = entry.SQLArtifact.SHA256
+	plan.SQLArtifactSizeBytes = entry.SQLArtifact.SizeBytes
+	plan.StartOffset = descriptor.Start
+	plan.EndOffset = descriptor.End
+	plan.StatementSHA256 = descriptor.SHA256
+	plan.Classification = cloneProjectionValue(descriptor.Classification)
+	plan.ExpectedTransition = cloneProjectionValue(descriptor.ExpectedTransition)
+	plan.ExpectedTransitionDigest = transitionDigest
+	plan.exact = true
+	plan.sqlBytes = append([]byte(nil), statement.Raw...)
+	canonical, err := canonicalContractKey(plan.exactSentinel())
+	if err != nil {
+		return StatementPlan{}, fail(CodeInvalidManifest, entry.ID, "exact statement plan cannot be canonicalized", err)
+	}
+	plan.exactCanonical = canonical
+	if err := plan.validateExact(); err != nil {
+		return StatementPlan{}, err
+	}
+	return plan, nil
+}
+
+func exactStatementPlanEqual(left, right StatementPlan) bool {
+	return left.validateExact() == nil && right.validateExact() == nil && left.exactCanonical == right.exactCanonical
+}
+
+func (plan StatementPlan) exactSQLBytes() ([]byte, error) {
+	if err := plan.validateExact(); err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), plan.sqlBytes...), nil
 }
 
 type SpecialStatementIdentity struct {

@@ -2,12 +2,192 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// runLegacyCharacterizationForTest is the only call edge into the retired
+// ADR-0009 execution state machine. Production Runner.Run cannot reach it.
+func runLegacyCharacterizationForTest(runner *Runner, ctx context.Context, request RunRequest) (RunResult, error) {
+	return runner.runLegacyCharacterization(ctx, request)
+}
+
+func TestPublicRunnerRejectsCheckedInMutableContractsWithZeroSideEffects(t *testing.T) {
+	raw, manifest := buildCheckedInRuntimeTar(t)
+	backend := &fakeBackend{}
+	connector := &fakeConnector{backend: backend}
+	verifier := &sequenceTrustVerifier{fallback: testTrustDecision(raw, manifest)}
+	source := &memoryArtifactSource{data: raw}
+	observer := &recordingStateObserver{}
+	runner := Runner{
+		Trust: verifier, Connector: connector, Observer: observer,
+		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+	}
+	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	if !IsCode(err, CodeUntrusted) {
+		t.Fatalf("public runner accepted a release decision without exact projection bindings: %v", err)
+	}
+	assertPublicAdmissionCounts(t, verifier, source, observer)
+	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestPublicRunnerExactAdmissionStopsAtUnwiredJournalWithZeroSideEffects(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	backend := &fakeBackend{}
+	connector := &fakeConnector{backend: backend}
+	verifier := &sequenceTrustVerifier{fallback: decision}
+	source := &memoryArtifactSource{data: raw}
+	observer := &recordingStateObserver{}
+	runner := Runner{
+		Trust: verifier, Connector: connector, Observer: observer,
+		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+	}
+	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	var migrationErr *Error
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-evidence-journal" {
+		t.Fatalf("exact admission did not stop at the unwired journal boundary: %v", err)
+	}
+	assertPublicAdmissionCounts(t, verifier, source, observer)
+	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+type recordingStateObserver struct{ transitions []RunnerState }
+
+func (observer *recordingStateObserver) Transition(state RunnerState) {
+	observer.transitions = append(observer.transitions, state)
+}
+
+func assertPublicAdmissionCounts(t *testing.T, verifier *sequenceTrustVerifier, source *memoryArtifactSource, observer *recordingStateObserver) {
+	t.Helper()
+	wantTransitions := []RunnerState{StateVerifyTrust, StateLoadBundle}
+	if verifier.calls != 1 || source.reads != 1 || !reflect.DeepEqual(observer.transitions, wantTransitions) {
+		t.Fatalf("public admission ordering/reverify mismatch: verify=%d read=%d transitions=%v want=%v", verifier.calls, source.reads, observer.transitions, wantTransitions)
+	}
+}
+
+func assertNoRunnerSideEffects(t *testing.T, connector *fakeConnector, backend *fakeBackend) {
+	t.Helper()
+	if connector.attempts != 0 || connector.connections != 0 || backend.queryCalls != 0 || backend.beginCalls != 0 ||
+		backend.executeCalls != 0 || backend.ledgerReadCalls != 0 || backend.ledgerInsertCalls != 0 || backend.commitCalls != 0 {
+		t.Fatalf("public runner crossed the pre-connect gate: connect=%d/%d query=%d begin=%d execute=%d ledger=%d/%d commit=%d",
+			connector.attempts, connector.connections, backend.queryCalls, backend.beginCalls, backend.executeCalls,
+			backend.ledgerReadCalls, backend.ledgerInsertCalls, backend.commitCalls)
+	}
+}
+
+func buildExactAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
+	t.Helper()
+	fixture := newRunnerBindingFixture(t, []string{"000001"})
+	direct, catalog := exactPlanBundle(t, fixture.decision.expectedSchemaBundleDigest, fixture.initialScope.BoundPrecondition(), fixture.authorityProfile)
+	entry := direct.Manifest.SchemaBundle.Migrations[0]
+	entry.Name = "test exact admission"
+	entry.Phase = "expand"
+	entry.SchemaFrom = "absent"
+	entry.SchemaTo = "000001"
+	entry.CompatibleControlPlaneMin = "0.1.0-alpha.1"
+	entry.CompatibleControlPlaneMax = "0.2.0-0"
+	entry.CompatibleWorkerMin = "0.1.0-alpha.1"
+	entry.CompatibleWorkerMax = "0.2.0-0"
+	entry.TransactionMode = "transactional"
+	entry.Reentrancy = "ledger_guarded"
+	entry.RollbackBoundary = "point_in_time_restore"
+
+	checkedRaw := mustRead(t, filepath.Join(migrationRoot(t), "manifest.json"))
+	checkedManifest, _, err := DecodeManifest(checkedRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	globalRecord := checkedManifest.SchemaBundle.GlobalTableAuthority
+	globalRaw := mustRead(t, modulePathForRuntimeArtifact(t, globalRecord.Path))
+	schemaBundle := SchemaBundle{
+		Lineage: "cloud-agents-platform", SchemaHead: "000001", AdvisoryLock: checkedManifest.SchemaBundle.AdvisoryLock,
+		GlobalTableAuthority: globalRecord, ProjectionScopeAuthority: ProjectionScopeAuthority{
+			DefaultACLOwners: []string{MigrationOwnerRole}, ObjectCreatorClosure: []string{MigrationOwnerRole},
+		},
+		Migrations: []MigrationEntry{entry},
+	}
+	schemaDigest := schemaBundleDigestForTest(t, schemaBundle)
+	schemaDocumentRaw := mustJSON(t, SchemaBundleDocument{FormatVersion: SchemaBundleFormatVersion, SchemaBundle: schemaBundle, SchemaBundleDigest: schemaDigest})
+	schemaRecord := ArtifactRecord{Path: RuntimeSchemaBundlePath, Mode: "100644", SizeBytes: uint64(len(schemaDocumentRaw)), SHA256: DigestBytes(schemaDocumentRaw)}
+
+	authorityRecord := direct.Manifest.ExecutionPolicy.AuthorityContract
+	authorityRaw := append([]byte(nil), direct.Files[authorityRecord.Path]...)
+	catalogRaw := mustJSON(t, catalog)
+	catalogRecord := entry.CatalogContract
+	if catalogRecord.SizeBytes != uint64(len(catalogRaw)) || catalogRecord.SHA256 != DigestBytes(catalogRaw) {
+		t.Fatal("exact catalog helper descriptor drifted")
+	}
+	sqlRaw := append([]byte(nil), direct.Files[entry.SQLArtifact.Path]...)
+	runtimeRecords := []ArtifactRecord{entry.SQLArtifact, authorityRecord, globalRecord, catalogRecord, schemaRecord}
+	sort.Slice(runtimeRecords, func(i, j int) bool { return runtimeRecords[i].Path < runtimeRecords[j].Path })
+	policy := checkedManifest.ExecutionPolicy
+	policy.AuthorityContract = authorityRecord
+	manifest := &Manifest{
+		FormatVersion: ManifestFormatVersion, SchemaBundle: schemaBundle, SchemaBundleDigest: schemaDigest,
+		BootstrapBundle: checkedManifest.BootstrapBundle, BootstrapBundleDigest: checkedManifest.BootstrapBundleDigest,
+		ExecutionPolicy: policy, RuntimeArtifacts: runtimeRecords,
+	}
+	manifestRaw := encodeTestManifest(t, manifest)
+	files := map[string][]byte{
+		entry.SQLArtifact.Path: sqlRaw, authorityRecord.Path: authorityRaw, globalRecord.Path: globalRaw,
+		catalogRecord.Path: catalogRaw, RuntimeSchemaBundlePath: schemaDocumentRaw, RuntimeManifestPath: manifestRaw,
+	}
+	members := make([]tarMember, 0, len(files))
+	for path, data := range files {
+		members = append(members, tarMember{Path: path, Data: data})
+	}
+	sort.Slice(members, func(i, j int) bool { return members[i].Path < members[j].Path })
+	raw := writeTestUSTAR(t, members)
+
+	fixture.decision.expectedSchemaBundleDigest = schemaDigest
+	fixture.decision.expectedBootstrapBundleDigest = manifest.BootstrapBundleDigest
+	fixture.decision.expectedManifestDigest = manifest.ManifestDigest
+	fixture.decision.expectedOuterArtifactDigest = DigestBytes(raw)
+	fixture.initialScope, err = bindVerifiedSchemaBundleScope(
+		schemaDigest, fixture.initialScope.Scope(), fixture.initialScope.BoundPrecondition(),
+		fixture.initialScope.DefaultACLOwners(), fixture.initialScope.ObjectCreatorClosure(), fixture.decision.expiresAt, fixture.decision.securityEpoch,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogSubject, err := bindVerifiedExecutableCatalogSubject(catalogRaw, catalogRecord.SHA256, fixture.expiresAt.Add(time.Hour), 1, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := bindVerifiedRunnerProjectionDecision(
+		fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority,
+		fixture.initialScope, []verifiedExecutableCatalogSubject{catalogSubject}, fixture.now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw, decision
+}
+
+func schemaBundleDigestForTest(t *testing.T, bundle SchemaBundle) Digest {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"schema_bundle": bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := ParseStrictJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := digestDomainObject(SchemaBundleDomain, "schema_bundle", value.(map[string]JSONValue)["schema_bundle"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
 
 func TestRunnerRecoversAmbiguousCommitByExactLedgerReplay(t *testing.T) {
 	raw, manifest := buildCheckedInRuntimeTar(t)
@@ -22,7 +202,7 @@ func TestRunnerRecoversAmbiguousCommitByExactLedgerReplay(t *testing.T) {
 		Catalog:      acceptingCatalog{},
 		Intermediate: acceptingIntermediate{},
 	}
-	result, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +218,7 @@ func TestRunnerRetriesOnlyExactPendingStateAfterAmbiguousCommit(t *testing.T) {
 		Trust: testTrustVerifier{decision: testTrustDecision(raw, manifest)}, Connector: &fakeConnector{backend: backend},
 		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
 	}
-	result, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+	result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +234,7 @@ func TestRunnerRejectsDivergentLedgerAfterAmbiguousCommit(t *testing.T) {
 		Trust: testTrustVerifier{decision: testTrustDecision(raw, manifest)}, Connector: &fakeConnector{backend: backend},
 		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
 	}
-	_, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+	_, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 	if !IsCode(err, CodeInvalidLedger) {
 		t.Fatalf("divergent ambiguous ledger was not rejected: %v", err)
 	}
@@ -69,7 +249,7 @@ func TestAmbiguousReconnectReverifiesExactTrustBeforeConnect(t *testing.T) {
 	connector := &fakeConnector{backend: &fakeBackend{ambiguousCommits: 1, ambiguousApplies: true}}
 	source := &memoryArtifactSource{data: raw}
 	runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
-	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	_, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	if !IsCode(err, CodeUntrusted) || verifier.calls != 2 || connector.attempts != 1 || source.reads != 1 {
 		t.Fatalf("reverify ordering/exact comparison failed: err=%v trust=%d connect=%d reads=%d", err, verifier.calls, connector.attempts, source.reads)
 	}
@@ -82,7 +262,7 @@ func TestConnectRetryIsBoundedAndReverifiesWithoutRereadingArtifact(t *testing.T
 	connector := &fakeConnector{backend: &fakeBackend{}, connectErrors: []error{io.EOF}}
 	source := &memoryArtifactSource{data: raw}
 	runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
-	result, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +290,7 @@ func TestConnectRetryExhaustionAndTerminalError(t *testing.T) {
 			connector := &fakeConnector{backend: &fakeBackend{}, connectErrors: append([]error(nil), test.errors...)}
 			source := &memoryArtifactSource{data: raw}
 			runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
-			_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+			_, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 			if err == nil || connector.attempts != test.wantAttempts || verifier.calls != test.wantTrust || source.reads != 1 {
 				t.Fatalf("connect retry was not bounded: err=%v attempts=%d trust=%d reads=%d", err, connector.attempts, verifier.calls, source.reads)
 			}
@@ -127,7 +307,7 @@ func TestTransactionRetryExhaustionIsBounded(t *testing.T) {
 	}}
 	connector := &fakeConnector{backend: backend}
 	runner := Runner{Trust: &sequenceTrustVerifier{fallback: decision}, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
-	_, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+	_, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 	if err == nil || len(backend.rows) != 0 || connector.attempts != 1 || len(backend.executeErrors) != 0 {
 		t.Fatalf("transaction retry was not bounded to three: err=%v rows=%d attempts=%d remaining=%d", err, len(backend.rows), connector.attempts, len(backend.executeErrors))
 	}
@@ -155,7 +335,7 @@ func TestTransactionRetryClassification(t *testing.T) {
 			backend := &fakeBackend{executeErrors: []error{test.err}}
 			connector := &fakeConnector{backend: backend}
 			runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
-			result, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+			result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			if test.wantSuccess {
 				if err != nil || result.FinalHead != "000002" || len(backend.rows) != 2 {
 					t.Fatalf("classified retry failed: result=%+v rows=%d err=%v", result, len(backend.rows), err)
@@ -192,7 +372,7 @@ func TestCommitErrorClassification(t *testing.T) {
 			connector := &fakeConnector{backend: backend}
 			verifier := &sequenceTrustVerifier{fallback: decision}
 			runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
-			result, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+			result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			if test.wantSuccess {
 				if err != nil || result.FinalHead != "000002" || len(backend.rows) != 2 || connector.attempts != 1 || verifier.calls != 1 {
 					t.Fatalf("confirmed commit abort was not locally retried: result=%+v rows=%d connect=%d trust=%d err=%v", result, len(backend.rows), connector.attempts, verifier.calls, err)
@@ -211,6 +391,12 @@ type fakeBackend struct {
 	mutateAmbiguousRow bool
 	executeErrors      []error
 	commitErrors       []error
+	queryCalls         int
+	beginCalls         int
+	executeCalls       int
+	ledgerReadCalls    int
+	ledgerInsertCalls  int
+	commitCalls        int
 }
 
 type backendCarrier interface{ migrationBackend() *fakeBackend }
@@ -254,6 +440,7 @@ func (session *fakeSession) Boundary(context.Context, int64) (BoundaryState, err
 	return BoundaryState{TxStatus: 'I', CurrentUser: MigrationOwnerRole, LockHeld: session.locked}, nil
 }
 func (session *fakeSession) BeginMigration(context.Context) (MigrationTransaction, error) {
+	session.backend.beginCalls++
 	return &fakeTx{backend: session.backend, active: true}, nil
 }
 func (session *fakeSession) UnlockAndReset(context.Context, int64) error {
@@ -268,9 +455,15 @@ func (session *fakeSession) Close(context.Context) error {
 
 type fakeQueryer struct{ backend *fakeBackend }
 
-func (queryer fakeQueryer) migrationBackend() *fakeBackend              { return queryer.backend }
-func (fakeQueryer) Query(context.Context, string, ...any) (Rows, error) { return fakeRows{}, nil }
-func (fakeQueryer) QueryRow(context.Context, string, ...any) Row        { return fakeRow{} }
+func (queryer fakeQueryer) migrationBackend() *fakeBackend { return queryer.backend }
+func (queryer fakeQueryer) Query(context.Context, string, ...any) (Rows, error) {
+	queryer.backend.queryCalls++
+	return fakeRows{}, nil
+}
+func (queryer fakeQueryer) QueryRow(context.Context, string, ...any) Row {
+	queryer.backend.queryCalls++
+	return fakeRow{}
+}
 
 type fakeRows struct{}
 
@@ -298,6 +491,7 @@ func (transaction *fakeTx) Exec(context.Context, string, ...any) (CommandTag, er
 	return fakeTag(1), nil
 }
 func (transaction *fakeTx) ExecuteStatement(context.Context, []byte) error {
+	transaction.backend.executeCalls++
 	if len(transaction.backend.executeErrors) == 0 {
 		return nil
 	}
@@ -309,6 +503,7 @@ func (transaction *fakeTx) Boundary(context.Context, int64) (BoundaryState, erro
 	return BoundaryState{TxStatus: 'T', CurrentUser: MigrationOwnerRole, LockHeld: true}, nil
 }
 func (transaction *fakeTx) Commit(context.Context) error {
+	transaction.backend.commitCalls++
 	if !transaction.active {
 		return errors.New("transaction closed")
 	}
@@ -351,6 +546,7 @@ func (*fakeLedgerStore) Read(_ context.Context, queryer Queryer) ([]LedgerRow, e
 	if !ok {
 		return nil, errors.New("missing fake backend")
 	}
+	carrier.migrationBackend().ledgerReadCalls++
 	return append([]LedgerRow(nil), carrier.migrationBackend().rows...), nil
 }
 func (*fakeLedgerStore) Insert(_ context.Context, executor CommandExecutor, entry MigrationEntry, digest Digest) error {
@@ -358,6 +554,7 @@ func (*fakeLedgerStore) Insert(_ context.Context, executor CommandExecutor, entr
 	if !ok {
 		return errors.New("not fake transaction")
 	}
+	tx.backend.ledgerInsertCalls++
 	row := ledgerRowFor(entry, digest)
 	tx.pending = &row
 	return nil
