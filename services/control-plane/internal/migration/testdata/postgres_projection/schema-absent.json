@@ -1,0 +1,11 @@
+{
+  "state": "schema_absent",
+  "scope": {
+    "scope_kind": "predecessor",
+    "schema_head": null,
+    "migration_id": "000001",
+    "through_statement_index": null,
+    "declared_objects": []
+  },
+  "schema": "cloud_agents"
+}

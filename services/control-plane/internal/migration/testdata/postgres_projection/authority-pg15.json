@@ -1,0 +1,530 @@
+{
+  "connected_session": {
+    "phase": "connected_session",
+    "session_user": "cag_migration",
+    "current_user": "cag_migration",
+    "database_name": "cag_projection",
+    "database_owner": "cag_db_owner",
+    "database_encoding": "UTF8",
+    "locale_provider": "libc",
+    "datcollate": "C",
+    "datctype": "C",
+    "icu_locale": null,
+    "icu_rules": null,
+    "collation_version": null,
+    "database_acl": {
+      "catalog_value": "explicit",
+      "entries": [
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "PUBLIC",
+          "privileges": ["CONNECT"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        },
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "cag_db_owner",
+          "privileges": ["CONNECT", "CREATE", "TEMPORARY"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        },
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "cloud_agents_migration_owner",
+          "privileges": ["CREATE"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        }
+      ]
+    },
+    "roles": [
+      {
+        "name": "cag_db_owner",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cag_migration",
+        "login": true,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_bootstrap_admin",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_migration_owner",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_runtime",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "postgres",
+        "login": true,
+        "inherit": true,
+        "superuser": true,
+        "create_role": true,
+        "create_db": true,
+        "replication": true,
+        "bypass_rls": true,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      }
+    ],
+    "direct_memberships": [
+      {
+        "role": "cloud_agents_migration_owner",
+        "member": "cag_migration",
+        "grantor": "postgres",
+        "admin_option": false,
+        "inherit_option": true,
+        "set_option": true
+      }
+    ],
+    "membership_reachability": [
+      {
+        "role": "cloud_agents_migration_owner",
+        "member": "cag_migration",
+        "privileges": [
+          {
+            "privilege_kind": "member",
+            "reachable": true,
+            "min_depth": 1,
+            "canonical_witness": ["cag_migration", "cloud_agents_migration_owner"],
+            "edge_count": 1
+          },
+          {
+            "privilege_kind": "usage",
+            "reachable": false,
+            "min_depth": null,
+            "canonical_witness": null,
+            "edge_count": 1
+          },
+          {
+            "privilege_kind": "set",
+            "reachable": true,
+            "min_depth": 1,
+            "canonical_witness": ["cag_migration", "cloud_agents_migration_owner"],
+            "edge_count": 1
+          }
+        ]
+      }
+    ],
+    "database_role_settings": [],
+    "effective_create": {
+      "cag_db_owner": true,
+      "cag_migration": false,
+      "cloud_agents_bootstrap_admin": false,
+      "cloud_agents_migration_owner": true,
+      "cloud_agents_runtime": false,
+      "postgres": true
+    },
+    "effective_temporary": {
+      "cag_db_owner": true,
+      "cag_migration": false,
+      "cloud_agents_bootstrap_admin": false,
+      "cloud_agents_migration_owner": false,
+      "cloud_agents_runtime": false,
+      "postgres": true
+    }
+  },
+  "migration_role": {
+    "phase": "migration_role",
+    "session_user": "cag_migration",
+    "current_user": "cloud_agents_migration_owner",
+    "database_name": "cag_projection",
+    "database_owner": "cag_db_owner",
+    "database_encoding": "UTF8",
+    "locale_provider": "libc",
+    "datcollate": "C",
+    "datctype": "C",
+    "icu_locale": null,
+    "icu_rules": null,
+    "collation_version": null,
+    "database_acl": {
+      "catalog_value": "explicit",
+      "entries": [
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "PUBLIC",
+          "privileges": ["CONNECT"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        },
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "cag_db_owner",
+          "privileges": ["CONNECT", "CREATE", "TEMPORARY"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        },
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "cloud_agents_migration_owner",
+          "privileges": ["CREATE"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        }
+      ]
+    },
+    "roles": [
+      {
+        "name": "cag_db_owner",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cag_migration",
+        "login": true,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_bootstrap_admin",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_migration_owner",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_runtime",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "postgres",
+        "login": true,
+        "inherit": true,
+        "superuser": true,
+        "create_role": true,
+        "create_db": true,
+        "replication": true,
+        "bypass_rls": true,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      }
+    ],
+    "direct_memberships": [
+      {
+        "role": "cloud_agents_migration_owner",
+        "member": "cag_migration",
+        "grantor": "postgres",
+        "admin_option": false,
+        "inherit_option": true,
+        "set_option": true
+      }
+    ],
+    "membership_reachability": [
+      {
+        "role": "cloud_agents_migration_owner",
+        "member": "cag_migration",
+        "privileges": [
+          {
+            "privilege_kind": "member",
+            "reachable": true,
+            "min_depth": 1,
+            "canonical_witness": ["cag_migration", "cloud_agents_migration_owner"],
+            "edge_count": 1
+          },
+          {
+            "privilege_kind": "usage",
+            "reachable": false,
+            "min_depth": null,
+            "canonical_witness": null,
+            "edge_count": 1
+          },
+          {
+            "privilege_kind": "set",
+            "reachable": true,
+            "min_depth": 1,
+            "canonical_witness": ["cag_migration", "cloud_agents_migration_owner"],
+            "edge_count": 1
+          }
+        ]
+      }
+    ],
+    "database_role_settings": [],
+    "effective_create": {
+      "cag_db_owner": true,
+      "cag_migration": false,
+      "cloud_agents_bootstrap_admin": false,
+      "cloud_agents_migration_owner": true,
+      "cloud_agents_runtime": false,
+      "postgres": true
+    },
+    "effective_temporary": {
+      "cag_db_owner": true,
+      "cag_migration": false,
+      "cloud_agents_bootstrap_admin": false,
+      "cloud_agents_migration_owner": false,
+      "cloud_agents_runtime": false,
+      "postgres": true
+    }
+  },
+  "migration_transaction": {
+    "phase": "migration_transaction",
+    "session_user": "cag_migration",
+    "current_user": "cloud_agents_migration_owner",
+    "database_name": "cag_projection",
+    "database_owner": "cag_db_owner",
+    "database_encoding": "UTF8",
+    "locale_provider": "libc",
+    "datcollate": "C",
+    "datctype": "C",
+    "icu_locale": null,
+    "icu_rules": null,
+    "collation_version": null,
+    "database_acl": {
+      "catalog_value": "explicit",
+      "entries": [
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "PUBLIC",
+          "privileges": ["CONNECT"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        },
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "cag_db_owner",
+          "privileges": ["CONNECT", "CREATE", "TEMPORARY"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        },
+        {
+          "grantor": "cag_db_owner",
+          "grantee": "cloud_agents_migration_owner",
+          "privileges": ["CREATE"],
+          "grantable": [],
+          "origin": "catalog_explicit"
+        }
+      ]
+    },
+    "roles": [
+      {
+        "name": "cag_db_owner",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cag_migration",
+        "login": true,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_bootstrap_admin",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_migration_owner",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "cloud_agents_runtime",
+        "login": false,
+        "inherit": false,
+        "superuser": false,
+        "create_role": false,
+        "create_db": false,
+        "replication": false,
+        "bypass_rls": false,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      },
+      {
+        "name": "postgres",
+        "login": true,
+        "inherit": true,
+        "superuser": true,
+        "create_role": true,
+        "create_db": true,
+        "replication": true,
+        "bypass_rls": true,
+        "connection_limit_int32_decimal": "-1",
+        "valid_until": null,
+        "config": []
+      }
+    ],
+    "direct_memberships": [
+      {
+        "role": "cloud_agents_migration_owner",
+        "member": "cag_migration",
+        "grantor": "postgres",
+        "admin_option": false,
+        "inherit_option": true,
+        "set_option": true
+      }
+    ],
+    "membership_reachability": [
+      {
+        "role": "cloud_agents_migration_owner",
+        "member": "cag_migration",
+        "privileges": [
+          {
+            "privilege_kind": "member",
+            "reachable": true,
+            "min_depth": 1,
+            "canonical_witness": ["cag_migration", "cloud_agents_migration_owner"],
+            "edge_count": 1
+          },
+          {
+            "privilege_kind": "usage",
+            "reachable": false,
+            "min_depth": null,
+            "canonical_witness": null,
+            "edge_count": 1
+          },
+          {
+            "privilege_kind": "set",
+            "reachable": true,
+            "min_depth": 1,
+            "canonical_witness": ["cag_migration", "cloud_agents_migration_owner"],
+            "edge_count": 1
+          }
+        ]
+      }
+    ],
+    "database_role_settings": [],
+    "effective_create": {
+      "cag_db_owner": true,
+      "cag_migration": false,
+      "cloud_agents_bootstrap_admin": false,
+      "cloud_agents_migration_owner": true,
+      "cloud_agents_runtime": false,
+      "postgres": true
+    },
+    "effective_temporary": {
+      "cag_db_owner": true,
+      "cag_migration": false,
+      "cloud_agents_bootstrap_admin": false,
+      "cloud_agents_migration_owner": false,
+      "cloud_agents_runtime": false,
+      "postgres": true
+    }
+  }
+}
