@@ -2,7 +2,7 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.1a-impl-2 PG adapters）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.1a-impl-3 runner wiring）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
 - 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)
@@ -25,9 +25,10 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 `G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
 helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
 decision digest 的下游证据不得继承。P1-A2.1a-impl-1 strict projection contract/fixture 已由 `b36f45a`
-完成；当前只进入 P1-A2.1a-impl-2 PG15/16/17 authority + namespace/schema/default-ACL projectors 与
-snapshot adapters。P1 仍只允许在公共仓实施 contracts、Go/TS SDK、数据模型、authority 与安全基础，并允许
-创建三个 source module 与本地 ephemeral Postgres 测试。仍不授权：
+完成；P1-A2.1a-impl-2 PG15/16/17 adapters 与本地矩阵已由 `e2541c5` / `a0eac37` 完成。当前只进入
+P1-A2.1a-impl-3 runner wiring、`ControlPlaneStates` 与 intermediate chain；P1 仍只允许在公共仓实施 contracts、
+Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
+仍不授权：
 
 - 修改 Runtime M1 行为、Synara 或 T3Code 源码；
 - 提前实施 P2–P6 Managed Agent/Host、Standalone 或宿主 cutover；
