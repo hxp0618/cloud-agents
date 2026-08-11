@@ -42,30 +42,60 @@
           "accepted_states": [
             {
               "state": "schema_absent",
+              "scope": {
+                "scope_kind": "predecessor",
+                "schema_head": null,
+                "migration_id": "000001",
+                "through_statement_index": null,
+                "declared_objects": []
+              },
               "schema": "cloud_agents"
             },
             {
-              "state": "empty_schema",
-              "schema": "cloud_agents",
-              "owner": "cloud_agents_migration_owner",
-              "effective_acl": [
-                {
-                  "grantee": "cloud_agents_migration_owner",
-                  "privileges": ["CREATE", "USAGE"],
-                  "grantable": ["CREATE", "USAGE"]
-                }
-              ],
-              "object_count": 0,
-              "comment": null,
-              "security_labels": []
+              "state": "schema_present",
+              "scope": {
+                "scope_kind": "predecessor",
+                "schema_head": null,
+                "migration_id": "000001",
+                "through_statement_index": null,
+                "declared_objects": []
+              },
+              "body": {
+                "schema": {
+                  "name": "cloud_agents",
+                  "owner": "cloud_agents_migration_owner",
+                  "explicit_acl": {
+                    "catalog_value": "null",
+                    "entries": []
+                  },
+                  "effective_acl": [
+                    {
+                      "grantor": "cloud_agents_migration_owner",
+                      "grantee": "cloud_agents_migration_owner",
+                      "privileges": ["CREATE", "USAGE"],
+                      "grantable": ["CREATE", "USAGE"],
+                      "origin": "owner_implicit"
+                    }
+                  ],
+                  "comment": null,
+                  "security_labels": []
+                },
+                "default_acl": [],
+                "relations": [],
+                "functions": [],
+                "dependencies": [],
+                "object_count": 0,
+                "declared_objects": [],
+                "denied_objects": []
+              }
             }
           ]
         },
         "catalog_contract": {
           "path": "services/control-plane/migrations/catalog/schema-000001.json",
           "mode": "100644",
-          "size_bytes": 12808,
-          "sha256": "sha256:fc8b12702413845a71bbdbcfae22a19002d623b1f52d8f902fb8a1e95d81178b"
+          "size_bytes": 12074,
+          "sha256": "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f"
         }
       },
       {
@@ -93,17 +123,17 @@
         "predecessor_catalog_contract": {
           "path": "services/control-plane/migrations/catalog/schema-000001.json",
           "mode": "100644",
-          "size_bytes": 12808,
-          "sha256": "sha256:fc8b12702413845a71bbdbcfae22a19002d623b1f52d8f902fb8a1e95d81178b"
+          "size_bytes": 12074,
+          "sha256": "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f"
         },
         "catalog_contract": {
           "path": "services/control-plane/migrations/catalog/schema-000002.json",
           "mode": "100644",
-          "size_bytes": 51298,
-          "sha256": "sha256:30ec7547ce9d7f435914f8105cf7d6b64b87aabd07b18f9232ba3b15c481c5c2"
+          "size_bytes": 54747,
+          "sha256": "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9"
         }
       }
     ]
   },
-  "schema_bundle_digest": "sha256:fcee7ae5b7c5cf55a24c36b256832055b2d8831a9d8b5c137fa6d3284fda7adf"
+  "schema_bundle_digest": "sha256:c368480bf7df1f620a41165e3565f972fcce2fddc631addc619bcdb7b45b2114"
 }

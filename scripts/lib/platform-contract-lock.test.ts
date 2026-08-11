@@ -1,11 +1,13 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  listRegularMigrationInputFiles,
   normalizedSourceManifestDigest,
+  platformMigrationInputs,
   serializePlatformContractLock,
 } from "./platform-contract-lock";
 
@@ -50,5 +52,40 @@ describe("Platform contract generation lock", () => {
     const initial = normalizedSourceManifestDigest(root, ["module.go"]);
     writeFileSync(source, "package changed\n");
     expect(normalizedSourceManifestDigest(root, ["module.go"])).not.toBe(initial);
+  });
+
+  it("recursively binds every catalog and fixture file", () => {
+    const repositoryRoot = join(import.meta.dirname, "../..");
+    const inputs = platformMigrationInputs(repositoryRoot);
+    expect(inputs).toEqual(inputs.toSorted());
+    expect(new Set(inputs).size).toBe(inputs.length);
+    expect(inputs).toContain("docs/plan/adr/0010-p1-postgres-projection-contract.md");
+    expect(inputs).toContain("scripts/lib/platform-migration-projection.ts");
+    expect(inputs).toContain("scripts/lib/platform-migration-projection.test.ts");
+    expect(inputs).toContain("services/control-plane/migrations/catalog/authority-v1.json");
+    expect(inputs).toContain(
+      "services/control-plane/migrations/fixtures/bundle/negative/ancestor-descriptor-cases.json",
+    );
+  });
+
+  it("rejects symbolic links in recursive migration inputs", () => {
+    const root = temporaryRoot();
+    mkdirSync(join(root, "catalog"));
+    writeFileSync(join(root, "outside.json"), "{}\n");
+    symlinkSync(join(root, "outside.json"), join(root, "catalog", "linked.json"));
+    expect(() => listRegularMigrationInputFiles(root, "catalog")).toThrow(/symbolic links/u);
+  });
+
+  it("sorts nested migration inputs and rejects an escaping root", () => {
+    const root = temporaryRoot();
+    mkdirSync(join(root, "fixtures", "z"), { recursive: true });
+    mkdirSync(join(root, "fixtures", "a"), { recursive: true });
+    writeFileSync(join(root, "fixtures", "z", "second.json"), "{}\n");
+    writeFileSync(join(root, "fixtures", "a", "first.json"), "{}\n");
+    expect(listRegularMigrationInputFiles(root, "fixtures")).toEqual([
+      "fixtures/a/first.json",
+      "fixtures/z/second.json",
+    ]);
+    expect(() => listRegularMigrationInputFiles(root, "../outside")).toThrow(/escapes/u);
   });
 });

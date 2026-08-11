@@ -293,110 +293,69 @@
     }
   ],
   "projection_model": {
-    "schema_fields": ["name", "owner", "effective_acl", "comment", "security_labels"],
-    "default_acl_fields": ["owner", "schema", "object_kind", "grantee", "privileges", "grantable"],
-    "relation_fields": [
-      "identity",
-      "relkind",
-      "persistence",
-      "access_method",
+    "projection_slice": "A2.1a_namespace_only",
+    "catalog_projection_fields": ["schema_head", "body"],
+    "body_fields": [
+      "schema",
+      "default_acl",
+      "relations",
+      "functions",
+      "dependencies",
+      "object_count",
+      "declared_objects",
+      "denied_objects"
+    ],
+    "schema_fields": [
+      "name",
       "owner",
-      "acl",
-      "reloptions",
-      "replica_identity",
-      "rls_enabled",
-      "rls_forced"
+      "explicit_acl",
+      "effective_acl",
+      "comment",
+      "security_labels"
     ],
-    "column_fields": [
-      "attnum",
-      "name",
-      "type",
-      "typmod",
-      "collation",
-      "nullable",
-      "identity",
-      "generated",
-      "default",
-      "storage",
-      "compression"
-    ],
-    "constraint_fields": [
-      "name",
-      "type",
-      "columns",
-      "referenced_relation",
-      "referenced_columns",
-      "match",
-      "update",
-      "delete",
-      "deferrable",
-      "deferred",
-      "validated",
-      "expression"
-    ],
-    "index_fields": [
-      "name",
-      "access_method",
-      "keys",
-      "includes",
-      "opclass",
-      "collation",
-      "order",
-      "nulls",
-      "unique",
-      "primary",
-      "valid",
-      "ready",
-      "live",
-      "predicate",
-      "expression"
-    ],
-    "policy_fields": ["name", "permissive", "command", "roles", "using", "with_check"],
-    "trigger_fields": [
-      "identity",
-      "function",
-      "enabled",
-      "type",
-      "columns",
-      "arguments",
-      "when",
-      "internal"
-    ],
-    "function_fields": [
-      "identity",
-      "kind",
-      "language",
-      "arguments",
-      "returns",
-      "owner",
-      "acl",
-      "security_definer",
-      "volatility",
-      "parallel",
-      "leakproof",
-      "strict",
-      "config",
-      "cost",
-      "rows",
-      "prosrc_sha256",
-      "probin"
-    ],
-    "expression_profile": "cloud-agents-sql-expression/v1",
-    "denied_object_kinds": [
-      "sequence",
-      "view",
-      "materialized_view",
-      "foreign_table",
-      "partition",
-      "operator",
-      "cast",
-      "extension"
+    "default_acl_fields": ["owner", "schema", "object_kind", "acl"],
+    "acl_set_fields": ["catalog_value", "entries"],
+    "acl_entry_fields": ["grantor", "grantee", "privileges", "grantable", "origin"],
+    "deferred_to_a2_1b": [
+      "relation_projection",
+      "function_projection",
+      "dependency_projection",
+      "expression_projection"
     ]
   },
   "declared_object_identities": [
-    "schema:unquoted:cloud_agents",
-    "table:unquoted:cloud_agents/unquoted:schema_migrations",
-    "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
-    "function:unquoted:cloud_agents/unquoted:require_tenant_id()"
-  ]
+    {
+      "kind": "function",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "require_tenant_id",
+        "arguments": []
+      }
+    },
+    {
+      "kind": "function",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "is_valid_identifier",
+        "arguments": [
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "schema_migrations"
+      }
+    },
+    {
+      "kind": "schema",
+      "name": "cloud_agents"
+    }
+  ],
+  "executable_expected_projection_status": "NOT_IMPLEMENTED_A2_1B_REQUIRED"
 }

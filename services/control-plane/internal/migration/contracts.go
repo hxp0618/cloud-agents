@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
@@ -16,11 +17,12 @@ type SQLClassificationDescriptor struct {
 }
 
 type SQLStatementDescriptor struct {
-	Index          uint64                      `json:"index"`
-	Start          uint64                      `json:"start"`
-	End            uint64                      `json:"end"`
-	SHA256         Digest                      `json:"sha256"`
-	Classification SQLClassificationDescriptor `json:"classification"`
+	Index              uint64                      `json:"index"`
+	Start              uint64                      `json:"start"`
+	End                uint64                      `json:"end"`
+	SHA256             Digest                      `json:"sha256"`
+	Classification     SQLClassificationDescriptor `json:"classification"`
+	ExpectedTransition ExpectedStatementTransition `json:"expected_transition"`
 }
 
 type SQLSourceDescriptor struct {
@@ -44,14 +46,81 @@ type CatalogProjectionModel struct {
 }
 
 type CatalogContract struct {
-	FormatVersion              string                 `json:"format_version"`
-	ContractKind               string                 `json:"contract_kind"`
-	SchemaHead                 string                 `json:"schema_head"`
-	PublicationStatus          string                 `json:"publication_status"`
-	RuntimeIntrospectionStatus string                 `json:"runtime_introspection_status"`
-	SourceDescriptors          []SQLSourceDescriptor  `json:"source_descriptors"`
-	ProjectionModel            CatalogProjectionModel `json:"projection_model"`
-	DeclaredObjectIdentities   []string               `json:"declared_object_identities"`
+	FormatVersion              string                     `json:"format_version"`
+	ContractKind               string                     `json:"contract_kind"`
+	SchemaHead                 string                     `json:"schema_head"`
+	PublicationStatus          string                     `json:"publication_status"`
+	RuntimeIntrospectionStatus string                     `json:"runtime_introspection_status"`
+	SourceDescriptors          []SQLSourceDescriptor      `json:"source_descriptors"`
+	ProjectionModel            CatalogProjectionModel     `json:"projection_model"`
+	DeclaredObjectIdentities   []ObjectIdentityProjection `json:"declared_object_identities"`
+	ExpectedProjection         CatalogProjection          `json:"expected_projection"`
+	bootstrapShape             bool
+	bootstrapExecutableStatus  string
+	bootstrapProjectionModel   bootstrapCatalogProjectionModel
+}
+
+func (contract CatalogContract) MarshalJSON() ([]byte, error) {
+	if !contract.bootstrapShape {
+		type plainCatalogContract CatalogContract
+		return json.Marshal(plainCatalogContract(contract))
+	}
+	bootstrap := bootstrapCatalogContract{
+		FormatVersion: contract.FormatVersion, ContractKind: contract.ContractKind,
+		SchemaHead: contract.SchemaHead, PublicationStatus: contract.PublicationStatus,
+		RuntimeIntrospectionStatus:         contract.RuntimeIntrospectionStatus,
+		ProjectionModel:                    contract.bootstrapProjectionModel,
+		DeclaredObjectIdentities:           cloneObjectIdentities(contract.DeclaredObjectIdentities),
+		ExecutableExpectedProjectionStatus: contract.bootstrapExecutableStatus,
+		SourceDescriptors:                  make([]bootstrapSQLSourceDescriptor, len(contract.SourceDescriptors)),
+	}
+	for sourceIndex, source := range contract.SourceDescriptors {
+		bootstrap.SourceDescriptors[sourceIndex] = bootstrapSQLSourceDescriptor{MigrationID: source.MigrationID, SQLSHA256: source.SQLSHA256, Statements: make([]bootstrapSQLStatementDescriptor, len(source.Statements))}
+		for statementIndex, statement := range source.Statements {
+			bootstrap.SourceDescriptors[sourceIndex].Statements[statementIndex] = bootstrapSQLStatementDescriptor{Index: statement.Index, Start: statement.Start, End: statement.End, SHA256: statement.SHA256, Classification: statement.Classification}
+		}
+	}
+	return json.Marshal(bootstrap)
+}
+
+// bootstrapCatalogContract is the only compatibility shape retained for the
+// checked-in NOT_IMPLEMENTED/UNPUBLISHED artifacts. It cannot become an
+// executable projection contract because it has no typed expected authority.
+type bootstrapCatalogContract struct {
+	FormatVersion                      string                          `json:"format_version"`
+	ContractKind                       string                          `json:"contract_kind"`
+	SchemaHead                         string                          `json:"schema_head"`
+	PublicationStatus                  string                          `json:"publication_status"`
+	RuntimeIntrospectionStatus         string                          `json:"runtime_introspection_status"`
+	SourceDescriptors                  []bootstrapSQLSourceDescriptor  `json:"source_descriptors"`
+	ProjectionModel                    bootstrapCatalogProjectionModel `json:"projection_model"`
+	DeclaredObjectIdentities           []ObjectIdentityProjection      `json:"declared_object_identities"`
+	ExecutableExpectedProjectionStatus string                          `json:"executable_expected_projection_status"`
+}
+
+type bootstrapCatalogProjectionModel struct {
+	ProjectionSlice         string   `json:"projection_slice"`
+	CatalogProjectionFields []string `json:"catalog_projection_fields"`
+	BodyFields              []string `json:"body_fields"`
+	SchemaFields            []string `json:"schema_fields"`
+	DefaultACLFields        []string `json:"default_acl_fields"`
+	ACLSetFields            []string `json:"acl_set_fields"`
+	ACLEntryFields          []string `json:"acl_entry_fields"`
+	DeferredToA21b          []string `json:"deferred_to_a2_1b"`
+}
+
+type bootstrapSQLSourceDescriptor struct {
+	MigrationID string                            `json:"migration_id"`
+	SQLSHA256   Digest                            `json:"sql_sha256"`
+	Statements  []bootstrapSQLStatementDescriptor `json:"statements"`
+}
+
+type bootstrapSQLStatementDescriptor struct {
+	Index          uint64                      `json:"index"`
+	Start          uint64                      `json:"start"`
+	End            uint64                      `json:"end"`
+	SHA256         Digest                      `json:"sha256"`
+	Classification SQLClassificationDescriptor `json:"classification"`
 }
 
 type AuthorityDatabaseContract struct {
@@ -65,6 +134,17 @@ type AuthorityDatabaseContract struct {
 }
 
 type AuthorityContract struct {
+	FormatVersion              string                    `json:"format_version"`
+	ContractKind               string                    `json:"contract_kind"`
+	PublicationStatus          string                    `json:"publication_status"`
+	RuntimeIntrospectionStatus string                    `json:"runtime_introspection_status"`
+	Database                   AuthorityDatabaseContract `json:"database"`
+	GroupRoles                 []string                  `json:"group_roles"`
+	RequiredProjectionFields   []string                  `json:"required_projection_fields"`
+	RequiredBindingFields      []string                  `json:"required_binding_fields"`
+}
+
+type bootstrapAuthorityContract struct {
 	FormatVersion              string                    `json:"format_version"`
 	ContractKind               string                    `json:"contract_kind"`
 	PublicationStatus          string                    `json:"publication_status"`
@@ -89,13 +169,51 @@ type GlobalTableAuthorityContract struct {
 
 func DecodeCatalogContract(data []byte) (*CatalogContract, error) {
 	var contract CatalogContract
-	if _, err := DecodeStrict(data, &contract); err != nil {
+	value, err := ParseStrictJSON(data)
+	if err != nil {
 		return nil, err
+	}
+	object, ok := value.(map[string]JSONValue)
+	if !ok {
+		return nil, fail(CodeInvalidJSON, "catalog-contract", "catalog contract must be an object", nil)
+	}
+	publication, _ := object["publication_status"].(string)
+	introspection, _ := object["runtime_introspection_status"].(string)
+	_, hasExpectedProjection := object["expected_projection"]
+	fullShape := hasExpectedProjection || publication != "UNPUBLISHED_BOOTSTRAP_MUTABLE" || introspection != "NOT_IMPLEMENTED"
+	if fullShape {
+		if _, err := DecodeStrict(data, &contract); err != nil {
+			return nil, err
+		}
+	} else {
+		var bootstrap bootstrapCatalogContract
+		if _, err := DecodeStrict(data, &bootstrap); err != nil {
+			return nil, err
+		}
+		contract = CatalogContract{
+			FormatVersion: bootstrap.FormatVersion, ContractKind: bootstrap.ContractKind,
+			SchemaHead: bootstrap.SchemaHead, PublicationStatus: bootstrap.PublicationStatus,
+			RuntimeIntrospectionStatus: bootstrap.RuntimeIntrospectionStatus,
+			bootstrapProjectionModel:   bootstrap.ProjectionModel,
+			DeclaredObjectIdentities:   cloneObjectIdentities(bootstrap.DeclaredObjectIdentities),
+			bootstrapShape:             true,
+			bootstrapExecutableStatus:  bootstrap.ExecutableExpectedProjectionStatus,
+		}
+		contract.SourceDescriptors = make([]SQLSourceDescriptor, len(bootstrap.SourceDescriptors))
+		for sourceIndex, source := range bootstrap.SourceDescriptors {
+			contract.SourceDescriptors[sourceIndex] = SQLSourceDescriptor{MigrationID: source.MigrationID, SQLSHA256: source.SQLSHA256, Statements: make([]SQLStatementDescriptor, len(source.Statements))}
+			for statementIndex, statement := range source.Statements {
+				contract.SourceDescriptors[sourceIndex].Statements[statementIndex] = SQLStatementDescriptor{Index: statement.Index, Start: statement.Start, End: statement.End, SHA256: statement.SHA256, Classification: statement.Classification}
+			}
+		}
 	}
 	if contract.FormatVersion != "cloud-agents-platform-catalog/v1" || contract.ContractKind != "cumulative_schema_catalog" || !migrationIDPattern.MatchString(contract.SchemaHead) {
 		return nil, fail(CodeInvalidManifest, "catalog-contract", "invalid catalog contract identity", nil)
 	}
 	for _, source := range contract.SourceDescriptors {
+		if !migrationIDPattern.MatchString(source.MigrationID) {
+			return nil, fail(CodeInvalidManifest, "catalog-contract", "source descriptor migration ID is invalid", nil)
+		}
 		if err := requireDigest("catalog.source.sql_sha256", source.SQLSHA256); err != nil {
 			return nil, err
 		}
@@ -106,6 +224,36 @@ func DecodeCatalogContract(data []byte) (*CatalogContract, error) {
 			if err := requireDigest("catalog.statement.sha256", statement.SHA256); err != nil {
 				return nil, err
 			}
+			if fullShape {
+				if err := statement.ExpectedTransition.Validate(); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	if !fullShape {
+		if contract.bootstrapExecutableStatus != "NOT_IMPLEMENTED_A2_1B_REQUIRED" {
+			return nil, fail(CodeInvalidManifest, "catalog-contract", "bootstrap catalog must declare the A2.1b executable projection boundary", nil)
+		}
+		if err := contract.bootstrapProjectionModel.Validate(); err != nil {
+			return nil, err
+		}
+		if err := validateObjectIdentityClosure(contract.DeclaredObjectIdentities); err != nil {
+			return nil, err
+		}
+	}
+	if fullShape {
+		if err := validateObjectIdentityClosure(contract.DeclaredObjectIdentities); err != nil {
+			return nil, err
+		}
+		if contract.ExpectedProjection.SchemaHead != contract.SchemaHead {
+			return nil, fail(CodeInvalidManifest, "catalog-contract", "expected projection head differs from catalog head", nil)
+		}
+		if err := contract.ExpectedProjection.Validate(); err != nil {
+			return nil, err
+		}
+		if err := validateExecutableCatalogBindings(contract); err != nil {
+			return nil, err
 		}
 	}
 	return &contract, nil
@@ -113,11 +261,39 @@ func DecodeCatalogContract(data []byte) (*CatalogContract, error) {
 
 func DecodeAuthorityContract(data []byte) (*AuthorityContract, error) {
 	var contract AuthorityContract
-	if _, err := DecodeStrict(data, &contract); err != nil {
+	value, err := ParseStrictJSON(data)
+	if err != nil {
 		return nil, err
+	}
+	object, ok := value.(map[string]JSONValue)
+	if !ok {
+		return nil, fail(CodeInvalidJSON, "authority-contract", "authority contract must be an object", nil)
+	}
+	publication, _ := object["publication_status"].(string)
+	introspection, _ := object["runtime_introspection_status"].(string)
+	_, hasBindingFields := object["required_binding_fields"]
+	fullShape := hasBindingFields || publication != "UNPUBLISHED_BOOTSTRAP_MUTABLE" || introspection != "NOT_IMPLEMENTED"
+	if fullShape {
+		if _, err := DecodeStrict(data, &contract); err != nil {
+			return nil, err
+		}
+	} else {
+		var bootstrap bootstrapAuthorityContract
+		if _, err := DecodeStrict(data, &bootstrap); err != nil {
+			return nil, err
+		}
+		contract = AuthorityContract{
+			FormatVersion: bootstrap.FormatVersion, ContractKind: bootstrap.ContractKind,
+			PublicationStatus: bootstrap.PublicationStatus, RuntimeIntrospectionStatus: bootstrap.RuntimeIntrospectionStatus,
+			Database: bootstrap.Database, GroupRoles: bootstrap.GroupRoles,
+			RequiredProjectionFields: bootstrap.RequiredProjectionFields,
+		}
 	}
 	if contract.FormatVersion != "cloud-agents-platform-authority-contract/v1" || contract.ContractKind != "database_role_authority" {
 		return nil, fail(CodeInvalidManifest, "authority-contract", "invalid authority contract identity", nil)
+	}
+	if err := contract.Validate(); err != nil {
+		return nil, err
 	}
 	return &contract, nil
 }
@@ -250,186 +426,6 @@ type Rows interface {
 
 type Row interface{ Scan(...any) error }
 
-type SQLIdentity struct {
-	Schema    string   `json:"schema"`
-	Name      string   `json:"name"`
-	Arguments []string `json:"arguments,omitempty"`
-}
-
-type ExpressionNode struct {
-	Kind     string            `json:"kind"`
-	Type     *SQLIdentity      `json:"type,omitempty"`
-	Identity *SQLIdentity      `json:"identity,omitempty"`
-	Value    JSONValue         `json:"value,omitempty"`
-	Fields   map[string]string `json:"fields,omitempty"`
-	Children []ExpressionNode  `json:"children,omitempty"`
-}
-
-type ACLProjection struct {
-	Grantee    string
-	Privileges []string
-	Grantable  []string
-}
-
-type ColumnProjection struct {
-	Attnum      int16
-	Name        string
-	Type        SQLIdentity
-	Typmod      int32
-	Collation   *SQLIdentity
-	Nullable    bool
-	Identity    string
-	Generated   string
-	Default     *ExpressionNode
-	Storage     string
-	Compression string
-}
-
-type ConstraintProjection struct {
-	Name               string
-	Type               string
-	Columns            []string
-	ReferencedRelation *SQLIdentity
-	ReferencedColumns  []string
-	Match              string
-	Update             string
-	Delete             string
-	Deferrable         bool
-	Deferred           bool
-	Validated          bool
-	Expression         *ExpressionNode
-}
-
-type IndexProjection struct {
-	Name         string
-	AccessMethod string
-	Keys         []string
-	Includes     []string
-	Opclass      []SQLIdentity
-	Collation    []*SQLIdentity
-	Order        []string
-	Nulls        []string
-	Unique       bool
-	Primary      bool
-	Valid        bool
-	Ready        bool
-	Live         bool
-	Predicate    *ExpressionNode
-	Expression   *ExpressionNode
-}
-
-type PolicyProjection struct {
-	Name       string
-	Permissive bool
-	Command    string
-	Roles      []string
-	Using      *ExpressionNode
-	WithCheck  *ExpressionNode
-}
-
-type TriggerProjection struct {
-	Identity  string
-	Function  SQLIdentity
-	Enabled   string
-	Type      uint16
-	Columns   []string
-	Arguments []string
-	When      *ExpressionNode
-	Internal  bool
-}
-
-type FunctionProjection struct {
-	Identity        SQLIdentity
-	Kind            string
-	Language        string
-	ArgumentModes   []string
-	Returns         SQLIdentity
-	Owner           string
-	ACL             []ACLProjection
-	SecurityDefiner bool
-	Volatility      string
-	Parallel        string
-	Leakproof       bool
-	Strict          bool
-	Config          []string
-	Cost            float64
-	Rows            float64
-	ProsrcSHA256    Digest
-	Probin          *string
-}
-
-type RelationProjection struct {
-	Identity        SQLIdentity
-	Relkind         string
-	Persistence     string
-	AccessMethod    *string
-	Owner           string
-	ACL             []ACLProjection
-	Reloptions      []string
-	ReplicaIdentity string
-	RLSEnabled      bool
-	RLSForced       bool
-	Columns         []ColumnProjection
-	Constraints     []ConstraintProjection
-	Indexes         []IndexProjection
-	Policies        []PolicyProjection
-	Triggers        []TriggerProjection
-}
-
-type CatalogProjection struct {
-	SchemaHead    string
-	SchemaOwner   string
-	SchemaACL     []ACLProjection
-	DefaultACL    []ACLProjection
-	Relations     []RelationProjection
-	Functions     []FunctionProjection
-	DeniedObjects []SQLIdentity
-}
-
-type RoleProjection struct {
-	Name            string
-	Login           bool
-	Inherit         bool
-	Superuser       bool
-	CreateRole      bool
-	CreateDB        bool
-	Replication     bool
-	BypassRLS       bool
-	ConnectionLimit int32
-	ValidUntil      *string
-	Config          []string
-}
-
-type MembershipProjection struct {
-	Role          string
-	Member        string
-	Grantor       string
-	AdminOption   bool
-	InheritOption bool
-	SetOption     bool
-}
-
-type AuthorityProjection struct {
-	SessionUser          string
-	CurrentUser          string
-	DatabaseName         string
-	DatabaseOwner        string
-	DatabaseEncoding     string
-	LocaleProvider       string
-	Datcollate           string
-	Datctype             string
-	ICULocale            *string
-	ICURules             *string
-	CollationVersion     *string
-	DatabaseACL          []ACLProjection
-	Roles                []RoleProjection
-	DirectMemberships    []MembershipProjection
-	RecursiveMemberships []MembershipProjection
-	DatabaseRoleSettings map[string][]string
-	EffectiveCreate      map[string]bool
-	EffectiveTemporary   map[string]bool
-}
-
 type AuthorityProjector interface {
 	ProjectAuthority(context.Context, Queryer, int) (AuthorityProjection, error)
 }
@@ -460,7 +456,7 @@ func (validator FailClosedAuthorityValidator) ValidateAuthority(ctx context.Cont
 	if contract.PublicationStatus != "PUBLISHED_IMMUTABLE" || contract.RuntimeIntrospectionStatus != "IMPLEMENTED" || validator.Projector == nil {
 		return AuthorityProjection{}, fail(CodeUnsupported, "authority-projection", "signed authority contract is not executable yet", nil)
 	}
-	return validator.Projector.ProjectAuthority(ctx, queryer, major)
+	return AuthorityProjection{}, fail(CodeUntrusted, "authority-projection", "verified authority profile and deployment binding are unavailable", nil)
 }
 
 type FailClosedCatalogValidator struct{ Projector CatalogProjector }
@@ -473,7 +469,7 @@ func (validator FailClosedCatalogValidator) ValidateCatalog(ctx context.Context,
 	if contract.PublicationStatus != "PUBLISHED_IMMUTABLE" || contract.RuntimeIntrospectionStatus != "IMPLEMENTED" || validator.Projector == nil || contract.SchemaHead != head {
 		return CatalogProjection{}, fail(CodeUnsupported, "catalog-projection", "signed catalog contract is not executable for this head yet", nil)
 	}
-	return validator.Projector.ProjectCatalog(ctx, queryer, major, head)
+	return CatalogProjection{}, fail(CodeUntrusted, "catalog-projection", "verified catalog contract is unavailable", nil)
 }
 
 func (validator FailClosedCatalogValidator) ValidatePredecessor(ctx context.Context, queryer Queryer, major int, condition CatalogPrecondition, files map[string][]byte) (CatalogProjection, error) {
@@ -488,10 +484,7 @@ func (validator FailClosedCatalogValidator) ValidatePredecessor(ctx context.Cont
 		}
 		return validator.ValidateCatalog(ctx, queryer, major, raw, contract.SchemaHead)
 	}
-	if validator.Projector == nil {
-		return CatalogProjection{}, fail(CodeUnsupported, "catalog-projection", "initial catalog projector is not implemented", nil)
-	}
-	return validator.Projector.ProjectInitial(ctx, queryer, major, condition)
+	return CatalogProjection{}, fail(CodeUntrusted, "catalog-projection", "verified schema bundle scope is unavailable", nil)
 }
 
 type IntermediateValidator interface {

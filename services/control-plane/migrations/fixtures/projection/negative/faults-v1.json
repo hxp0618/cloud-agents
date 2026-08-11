@@ -1,0 +1,197 @@
+{
+  "format_version": "cloud-agents-platform-projection-faults/v1",
+  "cases": [
+    {
+      "name": "authority_unknown",
+      "target": "authority_binding",
+      "mutation": "unknown_field",
+      "expected_error": "UNKNOWN_OR_MISSING_FIELD"
+    },
+    {
+      "name": "authority_missing",
+      "target": "authority_binding",
+      "mutation": "missing_expires_at",
+      "expected_error": "UNKNOWN_OR_MISSING_FIELD"
+    },
+    {
+      "name": "authority_duplicate",
+      "target": "authority_binding_raw",
+      "mutation": "duplicate_format_version",
+      "expected_error": "DUPLICATE_JSON_KEY"
+    },
+    {
+      "name": "authority_phase",
+      "target": "authority_binding",
+      "mutation": "phase_mismatch",
+      "expected_error": "AUTHORITY_PHASE"
+    },
+    {
+      "name": "authority_digest",
+      "target": "authority_binding",
+      "mutation": "bad_profile_digest",
+      "expected_error": "DIGEST_FORMAT"
+    },
+    {
+      "name": "authority_acl",
+      "target": "authority_binding",
+      "mutation": "null_acl_with_entries",
+      "expected_error": "ACL_NULL_ENTRIES"
+    },
+    {
+      "name": "catalog_scope",
+      "target": "catalog_state",
+      "mutation": "final_without_head",
+      "expected_error": "PROJECTION_SCOPE"
+    },
+    {
+      "name": "predecessor_scope_head",
+      "target": "catalog_state",
+      "mutation": "predecessor_with_head",
+      "expected_error": "PROJECTION_SCOPE"
+    },
+    {
+      "name": "absent_schema",
+      "target": "catalog_state",
+      "mutation": "wrong_schema_name",
+      "expected_error": "UNEXPECTED_VALUE"
+    },
+    {
+      "name": "present_closure",
+      "target": "catalog_state",
+      "mutation": "scope_body_declared_mismatch",
+      "expected_error": "CATALOG_STATE_DECLARED_CLOSURE"
+    },
+    {
+      "name": "a21a_relation",
+      "target": "catalog_body",
+      "mutation": "relation_nonempty",
+      "expected_error": "A21A_RELATIONS_NOT_IMPLEMENTED"
+    },
+    {
+      "name": "dependency_duplicate",
+      "target": "catalog_body",
+      "mutation": "duplicate_dependency",
+      "expected_error": "DUPLICATE_OR_UNSORTED"
+    },
+    {
+      "name": "denied_duplicate",
+      "target": "catalog_body",
+      "mutation": "duplicate_denied_object",
+      "expected_error": "DUPLICATE_OR_UNSORTED"
+    },
+    {
+      "name": "trigger_owner_variant",
+      "target": "object_identity",
+      "mutation": "trigger_owner_not_constraint",
+      "expected_error": "TRIGGER_OWNING_CONSTRAINT"
+    },
+    {
+      "name": "transition_digest",
+      "target": "expected_transition",
+      "mutation": "bad_after_digest",
+      "expected_error": "DIGEST_FORMAT"
+    },
+    {
+      "name": "transition_unknown",
+      "target": "expected_transition",
+      "mutation": "unknown_field",
+      "expected_error": "UNKNOWN_OR_MISSING_FIELD"
+    },
+    {
+      "name": "transition_object",
+      "target": "expected_transition",
+      "mutation": "open_object_identity",
+      "expected_error": "UNKNOWN_OR_MISSING_FIELD"
+    },
+    {
+      "name": "numeric_signed",
+      "target": "numeric",
+      "mutation": "signed_overflow",
+      "expected_error": "SIGNED_INT64_OUT_OF_RANGE"
+    },
+    {
+      "name": "uint32_overflow",
+      "target": "intermediate",
+      "mutation": "statement_index_overflow",
+      "expected_error": "UINT32_RANGE"
+    },
+    {
+      "name": "numeric_exact",
+      "target": "numeric",
+      "mutation": "numeric_exponent",
+      "expected_error": "NUMERIC_FORMAT"
+    },
+    {
+      "name": "numeric_float",
+      "target": "numeric",
+      "mutation": "float_nan",
+      "expected_error": "FLOAT_FORMAT"
+    },
+    {
+      "name": "intermediate_digest",
+      "target": "intermediate",
+      "mutation": "bad_digest",
+      "expected_error": "INTERMEDIATE_DIGEST"
+    },
+    {
+      "name": "intermediate_attempt_link",
+      "target": "intermediate",
+      "mutation": "attempt_two_without_previous_terminal",
+      "expected_error": "INTERMEDIATE_ATTEMPT_LINK"
+    },
+    {
+      "name": "intermediate_statement_link",
+      "target": "intermediate",
+      "mutation": "statement_one_without_previous_intermediate",
+      "expected_error": "INTERMEDIATE_STATEMENT_LINK"
+    },
+    {
+      "name": "advisory_identity",
+      "target": "intermediate",
+      "mutation": "wrong_advisory_domain",
+      "expected_error": "UNEXPECTED_VALUE"
+    },
+    {
+      "name": "attempt_outcome",
+      "target": "attempt_terminal",
+      "mutation": "illegal_combination",
+      "expected_error": "ATTEMPT_TERMINAL_COMBINATION"
+    },
+    {
+      "name": "attempt_link",
+      "target": "attempt_terminal",
+      "mutation": "attempt_two_without_previous_terminal",
+      "expected_error": "ATTEMPT_TERMINAL_LINK"
+    },
+    {
+      "name": "ambiguous_committed_last_digest",
+      "target": "attempt_terminal",
+      "mutation": "ambiguous_committed_without_last_digest",
+      "expected_error": "ATTEMPT_TERMINAL_COMBINATION"
+    },
+    {
+      "name": "authority_icu",
+      "target": "authority_profile",
+      "mutation": "icu_locale_nonnull",
+      "expected_error": "UNEXPECTED_VALUE"
+    },
+    {
+      "name": "acl_surface_origin",
+      "target": "catalog_body",
+      "mutation": "default_acl_catalog_explicit_origin",
+      "expected_error": "ACL_ORIGIN"
+    },
+    {
+      "name": "acl_surface_privilege",
+      "target": "catalog_body",
+      "mutation": "schema_select_privilege",
+      "expected_error": "ACL_PRIVILEGE"
+    },
+    {
+      "name": "role_config_secret",
+      "target": "authority_binding",
+      "mutation": "password_setting",
+      "expected_error": "ROLE_CONFIG_UNSAFE"
+    }
+  ]
+}

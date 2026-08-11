@@ -783,7 +783,10 @@ introspection 未实现前继续 `NOT_IMPLEMENTED`/`UNPUBLISHED`。
 
 1. **A2.1a-impl-1：contract/fixture**：把本 ADR 的 union、AuthorityProjection、schema/default ACL 和
    `ControlPlaneStates` 固化为 strict fixture/schema；补齐 `empty_schema -> schema_present` 的 manifest
-   regeneration 计划，保留 source SHA、tree/digest provenance。
+   regeneration 计划，保留 source SHA、tree/digest provenance。当前 schema-000001/000002 在 1b 前仍是
+   `NOT_IMPLEMENTED/UNPUBLISHED` legacy bootstrap contract：decoder 可在且仅在这两个状态下接受 executable
+   expected fields 缺失，但 validator 必须拒绝执行；禁止把 namespace-only 1a fixture 写成这两个 head 的完整
+   `expected_projection`。任何 `IMPLEMENTED` 或 `PUBLISHED_IMMUTABLE` contract 必须包含本 ADR 的完整 fields。
 2. **A2.1a-impl-2：PG adapters**：实现 PG15/16/17 capability probes、authority projector、schema/default ACL
    projector、idle/migration snapshot adapter；所有 unknown/missing field fail closed。
 3. **A2.1a-impl-3：runner wiring**：在 statement 前/后和 ledger insert 前记录

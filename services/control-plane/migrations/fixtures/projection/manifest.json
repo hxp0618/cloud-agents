@@ -1,0 +1,58 @@
+{
+  "format_version": "cloud-agents-platform-projection-fixtures/v1",
+  "runtime_authority": false,
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "files": [
+    {
+      "path": "golden/attempt-terminal-state-v1.json",
+      "size_bytes": 807,
+      "sha256": "sha256:5d2fbaa85f6def4095389b9af74845ab55b7ecf2b5fd3339d7cc1a0af0378206"
+    },
+    {
+      "path": "golden/authority-binding-v1.json",
+      "size_bytes": 16703,
+      "sha256": "sha256:757f79dc4f530650f13855da764087edf271b689ebd60295f335253b6a383227"
+    },
+    {
+      "path": "golden/catalog-projection-body-v1.json",
+      "size_bytes": 4132,
+      "sha256": "sha256:5fc33b2e2f8861260cd480db5b94ccc5b99253407ad37279fefbb903107a2e2f"
+    },
+    {
+      "path": "golden/catalog-state-schema-absent-v1.json",
+      "size_bytes": 229,
+      "sha256": "sha256:1860716de1fe843958619df836ad16de40fd42028f5128ccbdc001ed61354724"
+    },
+    {
+      "path": "golden/catalog-state-schema-present-v1.json",
+      "size_bytes": 909,
+      "sha256": "sha256:5c2547711d2f320bbee68d2f49fab52dabe095835fd0bb930d170d540432fe1b"
+    },
+    {
+      "path": "golden/expected-statement-transition-v1.json",
+      "size_bytes": 1070,
+      "sha256": "sha256:6fdbd591267bedfaf5778bdc5648380ef3319a1bc071ba5149336713a8073b8c"
+    },
+    {
+      "path": "golden/intermediate-state-v1.json",
+      "size_bytes": 2168,
+      "sha256": "sha256:e3ef7ca016f6223adc6634017dd9e3ab648b4fd2d0ba52c7ffcde99702740bdc"
+    },
+    {
+      "path": "golden/numeric-v1.json",
+      "size_bytes": 3069,
+      "sha256": "sha256:bc3c7fb2b551e6c99d3975139a99c165a5f20f07e5515bf29c6a851784ebe1f5"
+    },
+    {
+      "path": "negative/authority-binding-duplicate.raw",
+      "size_bytes": 16769,
+      "sha256": "sha256:805a744a44db42cd18f5125ad83cb278badeccc1103f5f881a32c6774c774cef"
+    },
+    {
+      "path": "negative/faults-v1.json",
+      "size_bytes": 5613,
+      "sha256": "sha256:61b5d6159564aa7528f42c1377acf331cd1c095845d2822b37393567cc294237"
+    }
+  ]
+}

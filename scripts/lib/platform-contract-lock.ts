@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
@@ -20,14 +20,17 @@ const PLATFORM_GO_INPUTS = [
   "services/worker/go.mod",
   "services/worker/doc.go",
 ] as const;
-const PLATFORM_MIGRATION_INPUTS = [
+const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0009-p1-migration-bundle-runner.md",
+  "docs/plan/adr/0010-p1-postgres-projection-contract.md",
   "scripts/check-platform-migration-bundle.ts",
   "scripts/generate-platform-migration-bundle.ts",
   "scripts/lib/platform-migration-bundle.test.ts",
   "scripts/lib/platform-migration-bundle.ts",
   "scripts/lib/platform-migration-json.test.ts",
   "scripts/lib/platform-migration-json.ts",
+  "scripts/lib/platform-migration-projection.test.ts",
+  "scripts/lib/platform-migration-projection.ts",
   "scripts/lib/platform-migration-sql.test.ts",
   "scripts/lib/platform-migration-sql.ts",
   "scripts/lib/platform-migration-ustar.ts",
@@ -36,27 +39,12 @@ const PLATFORM_MIGRATION_INPUTS = [
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
-  "services/control-plane/migrations/catalog/authority-v1.json",
-  "services/control-plane/migrations/catalog/global-table-authority-v1.json",
-  "services/control-plane/migrations/catalog/schema-000001.json",
-  "services/control-plane/migrations/catalog/schema-000002.json",
-  "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
-  "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
-  "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
-  "services/control-plane/migrations/fixtures/bundle/golden/sql-split.json",
-  "services/control-plane/migrations/fixtures/bundle/golden/ustar.json",
-  "services/control-plane/migrations/fixtures/bundle/manifest.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/ancestor-cycle.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/ancestor-descriptor-cases.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/duplicate-key.case.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/duplicate-key.raw",
-  "services/control-plane/migrations/fixtures/bundle/negative/escaped-equivalent-key.case.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/escaped-equivalent-key.raw",
-  "services/control-plane/migrations/fixtures/bundle/negative/ledger-rollback.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/unicode-whitespace.case.json",
-  "services/control-plane/migrations/fixtures/bundle/negative/unicode-whitespace.raw",
   "services/control-plane/migrations/manifest.json",
   "services/control-plane/migrations/schema-bundle.json",
+] as const;
+const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
+  "services/control-plane/migrations/catalog",
+  "services/control-plane/migrations/fixtures",
 ] as const;
 const NORMALIZED_MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 
@@ -93,18 +81,13 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-json-semantics.ts",
     ],
   },
-  {
-    id: "platform-migration-bundle-checker",
-    kind: "in-repo-typescript-strict-postgresql-bundle",
-    entrypoint: "scripts/check-platform-migration-bundle.ts",
-    sources: [...PLATFORM_MIGRATION_INPUTS],
-  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
   const summary = validatePlatformContractTree(root);
   const runtimes = validatePlatformToolchains(root);
   const migration = validateCheckedInMigrationBundle(root);
+  const migrationInputs = platformMigrationInputs(root);
   return {
     lockVersion: 1,
     status: "BOOTSTRAP_VALIDATED",
@@ -151,6 +134,14 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         license: "MIT",
       })),
       {
+        id: "platform-migration-bundle-checker",
+        kind: "in-repo-typescript-strict-postgresql-bundle",
+        entrypoint: "scripts/check-platform-migration-bundle.ts",
+        sourceManifestSha256: sourceManifestDigest(root, migrationInputs),
+        sources: migrationInputs,
+        license: "MIT",
+      },
+      {
         id: "ajv-2020",
         kind: "npm",
         version: "8.20.0",
@@ -188,8 +179,8 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
       {
         id: "platform-migration-bundle-validation",
         inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
-        inputManifestSha256: normalizedSourceManifestDigest(root, PLATFORM_MIGRATION_INPUTS),
-        inputs: [...PLATFORM_MIGRATION_INPUTS],
+        inputManifestSha256: normalizedSourceManifestDigest(root, migrationInputs),
+        inputs: migrationInputs,
         outputStatus: "BOOTSTRAP_VALIDATED",
         notGateClosure: true,
         generatedOutputs: [...migration.files.keys()].toSorted().map((path) => ({
@@ -243,6 +234,46 @@ export function assertPlatformContractLockCurrent(root: string): void {
       "contracts/generation.lock.json is stale; run bun scripts/generate-platform-contract-lock.ts --write.",
     );
   }
+}
+
+export function platformMigrationInputs(root: string): string[] {
+  const discovered = PLATFORM_MIGRATION_INPUT_DIRECTORIES.flatMap((directory) =>
+    listRegularMigrationInputFiles(root, directory),
+  );
+  const inputs = [...PLATFORM_MIGRATION_FIXED_INPUTS, ...discovered].toSorted();
+  if (new Set(inputs).size !== inputs.length) {
+    throw new Error("Platform migration inputs must have unique repository-relative paths.");
+  }
+  return inputs;
+}
+
+export function listRegularMigrationInputFiles(root: string, directory: string): string[] {
+  const target = resolve(root, directory);
+  const normalizedDirectory = relative(root, target).split(sep).join("/");
+  if (
+    normalizedDirectory === ".." ||
+    normalizedDirectory.startsWith("../") ||
+    normalizedDirectory.startsWith("/")
+  ) {
+    throw new Error(`Migration input directory escapes the repository root: ${directory}.`);
+  }
+  const stat = lstatSync(target);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`Migration input root must be a real directory: ${directory}.`);
+  }
+
+  const files: string[] = [];
+  for (const entry of readdirSync(target).toSorted()) {
+    const path = `${normalizedDirectory}/${entry}`;
+    const entryStat = lstatSync(resolve(root, path));
+    if (entryStat.isSymbolicLink()) {
+      throw new Error(`Migration input closure rejects symbolic links: ${path}.`);
+    }
+    if (entryStat.isDirectory()) files.push(...listRegularMigrationInputFiles(root, path));
+    else if (entryStat.isFile()) files.push(path);
+    else throw new Error(`Migration input closure only accepts regular files: ${path}.`);
+  }
+  return files;
 }
 
 export function normalizedSourceManifestDigest(root: string, files: ReadonlyArray<string>): string {

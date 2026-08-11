@@ -11,6 +11,22 @@ import {
   parseSignedInt64Decimal,
   parseStrictMigrationJson,
 } from "./platform-migration-json";
+import {
+  authorityProjectionDigest,
+  catalogStateDigest,
+  type JsonObject,
+  objectIdentityKey,
+  rawSha256,
+  validateAttemptTerminalState,
+  validateAuthorityBinding,
+  validateAuthorityProfile,
+  validateCatalogProjectionBody,
+  validateCatalogState,
+  validateExpectedStatementTransition,
+  validateIntermediateState,
+  validateNumericFixture,
+  validateObjectIdentity,
+} from "./platform-migration-projection";
 import { classifyMigrationStatement, splitPostgresStatements } from "./platform-migration-sql";
 import {
   createDeterministicUstar,
@@ -18,7 +34,6 @@ import {
   type UstarEntry,
 } from "./platform-migration-ustar";
 
-type JsonObject = { [key: string]: MigrationJson };
 export type GeneratedMigrationBundle = {
   readonly files: ReadonlyMap<string, Uint8Array>;
   readonly manifest: JsonObject;
@@ -45,6 +60,20 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000001.json`,
   `${ROOT}/catalog/schema-000002.json`,
 ] as const;
+const PROJECTION_FIXTURE_ROOT = `${ROOT}/fixtures/projection`;
+const PROJECTION_FIXTURE_PATHS = [
+  `${PROJECTION_FIXTURE_ROOT}/manifest.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/authority-binding-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/catalog-state-schema-absent-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/catalog-state-schema-present-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/catalog-projection-body-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/expected-statement-transition-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/numeric-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/intermediate-state-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/attempt-terminal-state-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/negative/faults-v1.json`,
+] as const;
+const AUTHORITY_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/authority-binding-duplicate.raw`;
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const REQUIRED_FIXTURES = [
   "ancestor-cycle",
@@ -122,8 +151,14 @@ const DECLARED_IDENTITIES_000002 = [
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
-  const catalogDocuments = buildCatalogDocuments(sqlBytes);
-  for (const [path, document] of catalogDocuments) files.set(path, prettyJson(document));
+  const generatedProjection = buildProjectionDocuments(sqlBytes);
+  for (const [path, document] of generatedProjection.catalogDocuments) {
+    files.set(path, prettyJson(document));
+  }
+  for (const [path, document] of generatedProjection.fixtureDocuments) {
+    files.set(path, prettyJson(document));
+  }
+  files.set(AUTHORITY_DUPLICATE_RAW_PATH, generatedProjection.duplicateAuthorityBinding);
 
   const sqlArtifacts = new Map(
     SQL_PATHS.map((path) => [path, artifactRecord(path, sqlBytes.get(path)!)] as const),
@@ -240,6 +275,7 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
     throw new MigrationValidationError("SCHEMA_BUNDLE_PROJECTION", "manifest/file mismatch");
   }
   validateSharedFixtureInventory(root);
+  validateProjectionFixtureInventory(root, expected.files);
   validateAdvisoryLock(requiredObject(expected.manifest.schema_bundle).advisory_lock);
   const checkedInSql = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
   for (const path of CATALOG_PATHS.slice(2)) {
@@ -264,6 +300,9 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
   if (!Buffer.from(bootstrapReplay).equals(Buffer.from(expected.bootstrapTar))) {
     throw new MigrationValidationError("USTAR_SAME_BITS", "bootstrap producer/consumer mismatch");
   }
+  if (expected.runtimeTar.length > 64 * 1024 * 1024) {
+    throw new MigrationValidationError("USTAR_SIZE", String(expected.runtimeTar.length));
+  }
   return expected;
 }
 
@@ -272,9 +311,10 @@ export function validateCatalogStatementBindings(
   sqlBytes: ReadonlyMap<string, Uint8Array>,
 ): void {
   const head = requiredString(catalog.schema_head, "catalog schema_head");
+  const generatedCatalogs = buildProjectionDocuments(sqlBytes).catalogDocuments;
   const expectedSourcesByHead = new Map<string, MigrationJson>([
-    ["000001", migrationStatementSourceDescriptors(sqlBytes).slice(0, 1)],
-    ["000002", migrationStatementSourceDescriptors(sqlBytes)],
+    ["000001", generatedCatalogs.get(CATALOG_PATHS[2])!.source_descriptors!],
+    ["000002", generatedCatalogs.get(CATALOG_PATHS[3])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -293,15 +333,18 @@ export function validateCatalogStatementBindings(
     throw new MigrationValidationError("CATALOG_STATEMENT_DESCRIPTOR_MISMATCH", head);
   }
   const declared = requiredArray(catalog.declared_object_identities).map((identity) =>
-    requiredString(identity, "catalog declared identity"),
+    requiredObject(identity),
   );
-  if (new Set(declared).size !== declared.length) {
+  declared.forEach((identity) => validateObjectIdentity(identity));
+  const declaredKeys = declared.map(objectIdentityKey);
+  if (new Set(declaredKeys).size !== declaredKeys.length) {
     throw new MigrationValidationError("CATALOG_DECLARED_IDENTITY_DUPLICATE", head);
   }
-  if (canonicalText(declared) !== canonicalText(expectedDeclared)) {
+  const expectedTyped = typedIdentities(expectedDeclared);
+  if (canonicalText(declared) !== canonicalText(expectedTyped)) {
     throw new MigrationValidationError("CATALOG_DECLARED_IDENTITIES_MISMATCH", head);
   }
-  const allowlist = new Set(declared);
+  const allowlist = new Set(expectedDeclared);
   for (const source of requiredArray(actualSources).map(requiredObject)) {
     for (const statement of requiredArray(source.statements).map(requiredObject)) {
       const classificationDocument = requiredObject(statement.classification);
@@ -313,6 +356,14 @@ export function validateCatalogStatementBindings(
         throw new MigrationValidationError("CATALOG_TARGET_NOT_DECLARED", target);
       }
     }
+  }
+  if (
+    Object.hasOwn(catalog, "expected_projection") ||
+    catalog.executable_expected_projection_status !== "NOT_IMPLEMENTED_A2_1B_REQUIRED" ||
+    catalog.runtime_introspection_status !== "NOT_IMPLEMENTED" ||
+    catalog.publication_status !== "UNPUBLISHED_BOOTSTRAP_MUTABLE"
+  ) {
+    throw new MigrationValidationError("CATALOG_EXECUTABLE_PROJECTION_BOUNDARY", head);
   }
 }
 
@@ -418,6 +469,83 @@ function validateSharedFixtureInventory(root: string): void {
       throw new MigrationValidationError("FIXTURE_EXPECTED_REJECT", relative);
     }
   }
+}
+
+function validateProjectionFixtureInventory(
+  root: string,
+  generatedFiles: ReadonlyMap<string, Uint8Array>,
+): void {
+  const manifest = requiredObject(
+    parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[0])),
+  );
+  assertKeys(manifest, [
+    "format_version",
+    "runtime_authority",
+    "publication_status",
+    "runtime_introspection_status",
+    "files",
+  ]);
+  if (
+    manifest.format_version !== "cloud-agents-platform-projection-fixtures/v1" ||
+    manifest.runtime_authority !== false ||
+    manifest.publication_status !== "UNPUBLISHED_BOOTSTRAP_MUTABLE" ||
+    manifest.runtime_introspection_status !== "NOT_IMPLEMENTED"
+  ) {
+    throw new MigrationValidationError("PROJECTION_FIXTURE_BOUNDARY", "status");
+  }
+  const records = requiredArray(manifest.files).map(requiredObject);
+  const paths = records.map((record) => requiredString(record.path, "projection fixture path"));
+  if (new Set(paths).size !== paths.length || paths.join("\0") !== paths.toSorted().join("\0")) {
+    throw new MigrationValidationError("PROJECTION_FIXTURE_INVENTORY", paths.join(","));
+  }
+  for (const record of records) {
+    assertKeys(record, ["path", "size_bytes", "sha256"]);
+    const relative = requiredString(record.path, "projection fixture path");
+    if (relative.startsWith("/") || relative.split("/").some((part) => part === "..")) {
+      throw new MigrationValidationError("PROJECTION_FIXTURE_PATH", relative);
+    }
+    const path = `${PROJECTION_FIXTURE_ROOT}/${relative}`;
+    const bytes = readExactFile(root, path);
+    if (
+      record.size_bytes !== bytes.length ||
+      record.sha256 !== rawSha256(bytes) ||
+      !generatedFiles.has(path)
+    ) {
+      throw new MigrationValidationError("PROJECTION_FIXTURE_DIGEST", relative);
+    }
+  }
+  const binding = requiredObject(
+    parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[1])),
+  );
+  validateAuthorityBinding(binding);
+  validateCatalogState(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[2]))),
+  );
+  validateCatalogState(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[3]))),
+  );
+  validateCatalogProjectionBody(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[4]))),
+  );
+  validateExpectedStatementTransition(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[5]))),
+  );
+  validateNumericFixture(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[6]))),
+  );
+  validateIntermediateState(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[7]))),
+  );
+  validateAttemptTerminalState(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[8]))),
+  );
+  try {
+    parseStrictMigrationJson(readExactFile(root, AUTHORITY_DUPLICATE_RAW_PATH));
+  } catch (error) {
+    if (error instanceof MigrationValidationError && error.code === "DUPLICATE_JSON_KEY") return;
+    throw error;
+  }
+  throw new MigrationValidationError("PROJECTION_DUPLICATE_FIXTURE", "accepted");
 }
 
 export function validateSchemaAncestorChain(
@@ -608,112 +736,99 @@ export function migrationStatementSourceDescriptors(
   }));
 }
 
-function buildCatalogDocuments(
-  sqlBytes: ReadonlyMap<string, Uint8Array>,
-): ReadonlyMap<string, JsonObject> {
-  const statementSources = migrationStatementSourceDescriptors(sqlBytes);
-  const projectionModel: JsonObject = {
-    schema_fields: ["name", "owner", "effective_acl", "comment", "security_labels"],
-    default_acl_fields: ["owner", "schema", "object_kind", "grantee", "privileges", "grantable"],
-    relation_fields: [
-      "identity",
-      "relkind",
-      "persistence",
-      "access_method",
-      "owner",
-      "acl",
-      "reloptions",
-      "replica_identity",
-      "rls_enabled",
-      "rls_forced",
-    ],
-    column_fields: [
-      "attnum",
-      "name",
-      "type",
-      "typmod",
-      "collation",
-      "nullable",
-      "identity",
-      "generated",
-      "default",
-      "storage",
-      "compression",
-    ],
-    constraint_fields: [
-      "name",
-      "type",
-      "columns",
-      "referenced_relation",
-      "referenced_columns",
-      "match",
-      "update",
-      "delete",
-      "deferrable",
-      "deferred",
-      "validated",
-      "expression",
-    ],
-    index_fields: [
-      "name",
-      "access_method",
-      "keys",
-      "includes",
-      "opclass",
-      "collation",
-      "order",
-      "nulls",
-      "unique",
-      "primary",
-      "valid",
-      "ready",
-      "live",
-      "predicate",
-      "expression",
-    ],
-    policy_fields: ["name", "permissive", "command", "roles", "using", "with_check"],
-    trigger_fields: [
-      "identity",
-      "function",
-      "enabled",
-      "type",
-      "columns",
-      "arguments",
-      "when",
-      "internal",
-    ],
-    function_fields: [
-      "identity",
-      "kind",
-      "language",
-      "arguments",
-      "returns",
-      "owner",
-      "acl",
-      "security_definer",
-      "volatility",
-      "parallel",
-      "leakproof",
-      "strict",
-      "config",
-      "cost",
-      "rows",
-      "prosrc_sha256",
-      "probin",
-    ],
-    expression_profile: "cloud-agents-sql-expression/v1",
-    denied_object_kinds: [
-      "sequence",
-      "view",
-      "materialized_view",
-      "foreign_table",
-      "partition",
-      "operator",
-      "cast",
-      "extension",
+type ProjectionDocuments = {
+  readonly catalogDocuments: ReadonlyMap<string, JsonObject>;
+  readonly fixtureDocuments: ReadonlyMap<string, JsonObject>;
+  readonly duplicateAuthorityBinding: Uint8Array;
+};
+
+function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): ProjectionDocuments {
+  const rawSources = migrationStatementSourceDescriptors(sqlBytes);
+  const declared000001 = typedIdentities(DECLARED_IDENTITIES_000001);
+  const declared000002 = typedIdentities(DECLARED_IDENTITIES_000002);
+  const initialAbsent = initialCatalogState("schema_absent");
+  const initialPresent = initialCatalogState("schema_present");
+  const namespaceBody = namespaceProjectionBody([
+    legacyIdentityToTyped("schema:unquoted:cloud_agents"),
+  ]);
+  const namespaceAfter: JsonObject = {
+    state: "schema_present",
+    scope: projectionScope("statement_prefix", null, "000001", 0, [
+      legacyIdentityToTyped("schema:unquoted:cloud_agents"),
+    ]),
+    body: namespaceBody,
+  };
+  validateCatalogState(namespaceAfter);
+  const namespaceTransition: JsonObject = {
+    profile: "cloud-agents-platform-statement-transition/v1",
+    catalog_before: catalogStateRef(initialAbsent),
+    catalog_after: catalogStateRef(namespaceAfter),
+    authority_relation: "unchanged_relative_to_verified_binding",
+    control_plane_delta: [
+      {
+        change_kind: "create",
+        object: legacyIdentityToTyped("schema:unquoted:cloud_agents"),
+        grantee: null,
+      },
     ],
   };
-  const authority: JsonObject = {
+  validateExpectedStatementTransition(namespaceTransition);
+  const authority = authorityProfile();
+  const authorityDigest = migrationDigest(authority);
+  const binding = authorityBindingFixture(authorityDigest);
+  const projectionModel = catalogProjectionModel();
+  const contract = (
+    head: string,
+    sources: ReadonlyArray<MigrationJson>,
+    objects: ReadonlyArray<JsonObject>,
+  ): JsonObject => ({
+    format_version: "cloud-agents-platform-catalog/v1",
+    contract_kind: "cumulative_schema_catalog",
+    schema_head: head,
+    publication_status: "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+    runtime_introspection_status: "NOT_IMPLEMENTED",
+    source_descriptors: sources,
+    projection_model: projectionModel,
+    declared_object_identities: objects,
+    executable_expected_projection_status: "NOT_IMPLEMENTED_A2_1B_REQUIRED",
+  });
+  const schema000001 = contract("000001", rawSources.slice(0, 1), declared000001);
+  const schema000002 = contract("000002", rawSources, declared000002);
+  validateAuthorityProfile(authority);
+  validateAuthorityBinding(binding);
+
+  const intermediate = intermediateFixture(authority, binding, namespaceTransition);
+  const terminal = terminalFixture(intermediate);
+  const numeric = numericFixture();
+  validateNumericFixture(numeric);
+  validateIntermediateState(intermediate);
+  validateAttemptTerminalState(terminal);
+  const duplicateAuthorityBinding = duplicateBindingBytes(binding);
+  const faults = projectionFaultFixture();
+  const fixtureDocuments = new Map<string, JsonObject>([
+    [PROJECTION_FIXTURE_PATHS[1], binding],
+    [PROJECTION_FIXTURE_PATHS[2], initialAbsent],
+    [PROJECTION_FIXTURE_PATHS[3], initialPresent],
+    [PROJECTION_FIXTURE_PATHS[4], namespaceBody],
+    [PROJECTION_FIXTURE_PATHS[5], namespaceTransition],
+    [PROJECTION_FIXTURE_PATHS[6], numeric],
+    [PROJECTION_FIXTURE_PATHS[7], intermediate],
+    [PROJECTION_FIXTURE_PATHS[8], terminal],
+    [PROJECTION_FIXTURE_PATHS[9], faults],
+  ]);
+  const manifest = projectionFixtureManifest(fixtureDocuments, duplicateAuthorityBinding);
+  fixtureDocuments.set(PROJECTION_FIXTURE_PATHS[0], manifest);
+  const catalogDocuments = new Map<string, JsonObject>([
+    [CATALOG_PATHS[0], authority],
+    [CATALOG_PATHS[1], globalAuthorityContract()],
+    [CATALOG_PATHS[2], schema000001],
+    [CATALOG_PATHS[3], schema000002],
+  ]);
+  return { catalogDocuments, fixtureDocuments, duplicateAuthorityBinding };
+}
+
+function authorityProfile(): JsonObject {
+  return {
     format_version: "cloud-agents-platform-authority-contract/v1",
     contract_kind: "database_role_authority",
     publication_status: "UNPUBLISHED_BOOTSTRAP_MUTABLE",
@@ -733,21 +848,328 @@ function buildCatalogDocuments(
       "cloud_agents_bootstrap_admin",
     ],
     required_projection_fields: [
+      "phase",
       "session_user",
       "current_user",
-      "role_attributes",
-      "direct_membership",
-      "recursive_membership",
-      "membership_grantor_options",
-      "role_config",
+      "database_name",
       "database_owner",
+      "database_encoding",
+      "locale_provider",
+      "datcollate",
+      "datctype",
+      "icu_locale",
+      "icu_rules",
+      "collation_version",
       "database_acl",
+      "roles",
+      "direct_memberships",
+      "membership_reachability",
       "database_role_settings",
       "effective_create",
       "effective_temporary",
     ],
+    required_binding_fields: [
+      "authority_profile_digest",
+      "deployment_id",
+      "issued_at",
+      "expires_at",
+      "security_epoch",
+      "expected_projections",
+    ],
   };
-  const globalAuthority: JsonObject = {
+}
+
+function authorityBindingFixture(authorityProfileDigest: string): JsonObject {
+  const expectedProjections: JsonObject = {};
+  for (const phase of ["connected_session", "migration_role", "migration_transaction"] as const) {
+    expectedProjections[phase] = authorityProjectionFixture(phase);
+  }
+  return {
+    format_version: "cloud-agents-platform-authority-binding/v1",
+    authority_profile_digest: authorityProfileDigest,
+    deployment_id: "fixture_pg15_17",
+    issued_at: "2026-08-11T00:00:00Z",
+    expires_at: "2036-08-11T00:00:00Z",
+    security_epoch: 1,
+    expected_projections: expectedProjections,
+  };
+}
+
+function authorityProjectionFixture(phase: string): JsonObject {
+  const session = "cloud_agents_migration_login_fixture";
+  const owner = "cloud_agents_database_owner_fixture";
+  const migration = "cloud_agents_migration_owner";
+  const current = phase === "connected_session" ? session : migration;
+  const role = (name: string, login: boolean, inherit: boolean, superuser = false): JsonObject => ({
+    name,
+    login,
+    inherit,
+    superuser,
+    create_role: false,
+    create_db: false,
+    replication: false,
+    bypass_rls: false,
+    connection_limit_int32_decimal: "-1",
+    valid_until: null,
+    config: [],
+  });
+  const roles = [
+    role("cloud_agents_bootstrap_admin", false, true),
+    role(owner, false, true),
+    role(session, true, false),
+    role(migration, false, true),
+    role("cloud_agents_runtime", false, true),
+    role("fixture_cluster_superuser", true, true, true),
+  ];
+  const effectiveCreate: JsonObject = {
+    cloud_agents_bootstrap_admin: false,
+    cloud_agents_database_owner_fixture: true,
+    cloud_agents_migration_login_fixture: false,
+    cloud_agents_migration_owner: true,
+    cloud_agents_runtime: false,
+  };
+  const effectiveTemporary: JsonObject = {
+    cloud_agents_bootstrap_admin: false,
+    cloud_agents_database_owner_fixture: true,
+    cloud_agents_migration_login_fixture: false,
+    cloud_agents_migration_owner: false,
+    cloud_agents_runtime: false,
+  };
+  return {
+    phase,
+    session_user: session,
+    current_user: current,
+    database_name: "cloud_agents_fixture",
+    database_owner: owner,
+    database_encoding: "UTF8",
+    locale_provider: "libc",
+    datcollate: "C",
+    datctype: "C",
+    icu_locale: null,
+    icu_rules: null,
+    collation_version: null,
+    database_acl: {
+      catalog_value: "explicit",
+      entries: [
+        aclEntry(
+          owner,
+          owner,
+          ["CONNECT", "CREATE", "TEMPORARY"],
+          ["CONNECT", "CREATE", "TEMPORARY"],
+        ),
+        aclEntry(owner, migration, ["CREATE"], []),
+      ],
+    },
+    roles,
+    direct_memberships: [
+      {
+        role: migration,
+        member: session,
+        grantor: "fixture_cluster_superuser",
+        admin_option: false,
+        inherit_option: false,
+        set_option: true,
+      },
+    ],
+    membership_reachability: [
+      {
+        role: migration,
+        member: session,
+        privileges: [
+          reachabilityPrivilege("member", true, session, migration),
+          reachabilityPrivilege("usage", false, session, migration),
+          reachabilityPrivilege("set", true, session, migration),
+        ],
+      },
+    ],
+    database_role_settings: [],
+    effective_create: effectiveCreate,
+    effective_temporary: effectiveTemporary,
+  };
+}
+
+function reachabilityPrivilege(
+  kind: string,
+  reachable: boolean,
+  member: string,
+  role: string,
+): JsonObject {
+  return {
+    privilege_kind: kind,
+    reachable,
+    min_depth: reachable ? 1 : null,
+    canonical_witness: reachable ? [member, role] : null,
+    edge_count: reachable ? 1 : 0,
+  };
+}
+
+function aclEntry(
+  grantor: string,
+  grantee: string,
+  privileges: ReadonlyArray<string>,
+  grantable: ReadonlyArray<string>,
+  origin = "catalog_explicit",
+): JsonObject {
+  return { grantor, grantee, privileges, grantable, origin };
+}
+
+function initialCatalogState(kind: "schema_absent" | "schema_present"): JsonObject {
+  const scope = projectionScope("predecessor", null, "000001", null, []);
+  if (kind === "schema_absent") {
+    return { state: kind, scope, schema: "cloud_agents" };
+  }
+  return {
+    state: kind,
+    scope,
+    body: {
+      schema: {
+        name: "cloud_agents",
+        owner: "cloud_agents_migration_owner",
+        explicit_acl: { catalog_value: "null", entries: [] },
+        effective_acl: [
+          aclEntry(
+            "cloud_agents_migration_owner",
+            "cloud_agents_migration_owner",
+            ["CREATE", "USAGE"],
+            ["CREATE", "USAGE"],
+            "owner_implicit",
+          ),
+        ],
+        comment: null,
+        security_labels: [],
+      },
+      default_acl: [],
+      relations: [],
+      functions: [],
+      dependencies: [],
+      object_count: 0,
+      declared_objects: [],
+      denied_objects: [],
+    },
+  };
+}
+
+function namespaceProjectionBody(declared: ReadonlyArray<JsonObject>): JsonObject {
+  const owner = "cloud_agents_migration_owner";
+  return {
+    schema: {
+      name: "cloud_agents",
+      owner,
+      explicit_acl: {
+        catalog_value: "explicit",
+        entries: [
+          aclEntry(owner, "cloud_agents_bootstrap_admin", ["USAGE"], []),
+          aclEntry(owner, owner, ["CREATE", "USAGE"], ["CREATE", "USAGE"]),
+          aclEntry(owner, "cloud_agents_runtime", ["USAGE"], []),
+        ],
+      },
+      effective_acl: [
+        aclEntry(owner, "cloud_agents_bootstrap_admin", ["USAGE"], []),
+        aclEntry(owner, owner, ["CREATE", "USAGE"], ["CREATE", "USAGE"], "owner_implicit"),
+        aclEntry(owner, "cloud_agents_runtime", ["USAGE"], []),
+      ],
+      comment: null,
+      security_labels: [],
+    },
+    default_acl: [
+      defaultACLProjection("function", [
+        aclEntry(owner, "cloud_agents_bootstrap_admin", ["EXECUTE"], []),
+        aclEntry(owner, owner, ["EXECUTE"], ["EXECUTE"], "default_acl_catalog"),
+      ]),
+      defaultACLProjection("sequence", [
+        aclEntry(
+          owner,
+          owner,
+          ["SELECT", "UPDATE", "USAGE"],
+          ["SELECT", "UPDATE", "USAGE"],
+          "default_acl_catalog",
+        ),
+      ]),
+      defaultACLProjection("table", [
+        aclEntry(
+          owner,
+          owner,
+          ["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"],
+          ["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"],
+          "default_acl_catalog",
+        ),
+        aclEntry(owner, "cloud_agents_runtime", ["SELECT"], []),
+      ]),
+    ],
+    relations: [],
+    functions: [],
+    dependencies: [],
+    object_count: declared.length,
+    declared_objects: declared,
+    denied_objects: [],
+  };
+}
+
+function defaultACLProjection(kind: string, entries: ReadonlyArray<JsonObject>): JsonObject {
+  return {
+    owner: "cloud_agents_migration_owner",
+    schema: "cloud_agents",
+    object_kind: kind,
+    acl: {
+      catalog_value: "explicit",
+      entries: entries.map((entry) => ({ ...entry, origin: "default_acl_catalog" })),
+    },
+  };
+}
+
+function projectionScope(
+  kind: "predecessor" | "statement_prefix" | "final",
+  head: string | null,
+  migration: string | null,
+  index: number | null,
+  declared: ReadonlyArray<JsonObject>,
+): JsonObject {
+  return {
+    scope_kind: kind,
+    schema_head: head,
+    migration_id: migration,
+    through_statement_index: index,
+    declared_objects: declared,
+  };
+}
+
+function catalogStateRef(state: JsonObject): JsonObject {
+  return {
+    scope: requiredObject(state.scope),
+    state_kind: state.state!,
+    digest: catalogStateDigest(state),
+  };
+}
+
+function catalogProjectionModel(): JsonObject {
+  return {
+    projection_slice: "A2.1a_namespace_only",
+    catalog_projection_fields: ["schema_head", "body"],
+    body_fields: [
+      "schema",
+      "default_acl",
+      "relations",
+      "functions",
+      "dependencies",
+      "object_count",
+      "declared_objects",
+      "denied_objects",
+    ],
+    schema_fields: ["name", "owner", "explicit_acl", "effective_acl", "comment", "security_labels"],
+    default_acl_fields: ["owner", "schema", "object_kind", "acl"],
+    acl_set_fields: ["catalog_value", "entries"],
+    acl_entry_fields: ["grantor", "grantee", "privileges", "grantable", "origin"],
+    deferred_to_a2_1b: [
+      "relation_projection",
+      "function_projection",
+      "dependency_projection",
+      "expression_projection",
+    ],
+  };
+}
+
+function globalAuthorityContract(): JsonObject {
+  return {
     format_version: "cloud-agents-platform-global-table-authority/v1",
     contract_kind: "global_table_writer_authority",
     publication_status: "UNPUBLISHED_BOOTSTRAP_MUTABLE",
@@ -759,29 +1181,455 @@ function buildCatalogDocuments(
       { name: "builtin_role_permissions", writers: ["cloud_agents_migration_owner"] },
     ],
   };
-  const contract = (
-    head: string,
-    sources: ReadonlyArray<MigrationJson>,
-    objects: ReadonlyArray<string>,
-  ): JsonObject => ({
-    format_version: "cloud-agents-platform-catalog/v1",
-    contract_kind: "cumulative_schema_catalog",
-    schema_head: head,
+}
+
+function typedIdentities(identities: ReadonlyArray<string>): JsonObject[] {
+  return identities
+    .map(legacyIdentityToTyped)
+    .toSorted((left, right) =>
+      Buffer.compare(
+        Buffer.from(objectIdentityKey(left), "utf8"),
+        Buffer.from(objectIdentityKey(right), "utf8"),
+      ),
+    );
+}
+
+function legacyIdentityToTyped(value: string): JsonObject {
+  const parsed = /^(?<kind>schema|table|function|index|policy):unquoted:(?<payload>.+)$/u.exec(
+    value,
+  );
+  if (!parsed?.groups) throw new MigrationValidationError("OBJECT_IDENTITY", value);
+  const kind = parsed.groups.kind!;
+  const payload = parsed.groups.payload!;
+  if (kind === "schema") return { kind: "schema", name: stripLegacyName(payload) };
+  const parts = payload.split("/unquoted:");
+  const schema = stripLegacyName(parts[0]!);
+  const nameWithSignature = parts[1]!;
+  if (kind === "table") {
+    return { kind: "relation", identity: { schema, name: nameWithSignature } };
+  }
+  if (kind === "function") {
+    const match = /^(?<name>[a-z0-9_]+)\((?<arguments>.*)\)$/u.exec(nameWithSignature);
+    if (!match?.groups) throw new MigrationValidationError("OBJECT_IDENTITY", value);
+    const argumentsText = match.groups.arguments!;
+    return {
+      kind: "function",
+      identity: {
+        schema,
+        name: match.groups.name!,
+        arguments:
+          argumentsText.length === 0
+            ? []
+            : argumentsText.split(",unquoted:").map((argument) => ({
+                schema: "pg_catalog",
+                name: stripLegacyName(argument),
+              })),
+      },
+    };
+  }
+  if (kind === "index") {
+    const relation = indexOwningRelation(nameWithSignature);
+    return {
+      kind: "index",
+      identity: { schema, name: nameWithSignature },
+      relation: { schema, name: relation },
+    };
+  }
+  if (kind === "policy") {
+    const relation = nameWithSignature.replace(/_(?:runtime_tenant|migration_owner)$/u, "");
+    return { kind: "policy", relation: { schema, name: relation }, name: nameWithSignature };
+  }
+  throw new MigrationValidationError("OBJECT_IDENTITY", value);
+}
+
+function stripLegacyName(value: string): string {
+  return value.replace(/^unquoted:/u, "");
+}
+
+function indexOwningRelation(index: string): string {
+  const prefixes = [
+    "tenant_resource_versions",
+    "resource_changes",
+    "audit_facts",
+    "platform_tenants",
+    "organizations",
+    "projects",
+  ];
+  const relation = prefixes.find((prefix) => index.startsWith(`${prefix}_`));
+  if (!relation) throw new MigrationValidationError("INDEX_OWNING_RELATION", index);
+  return relation;
+}
+
+function numericFixture(): JsonObject {
+  return {
+    format_version: "cloud-agents-platform-projection-numeric-fixtures/v1",
+    signed_integer: [
+      numericCase({ bits: 16, input: "-32768", expected: "-32768" }),
+      numericCase({ bits: 16, input: "32767", expected: "32767" }),
+      numericCase({ bits: 32, input: "-2147483648", expected: "-2147483648" }),
+      numericCase({ bits: 32, input: "2147483647", expected: "2147483647" }),
+      numericCase({ bits: 64, input: "-9223372036854775808", expected: "-9223372036854775808" }),
+      numericCase({ bits: 64, input: "0", expected: "0" }),
+      numericCase({ bits: 64, input: "9223372036854775807", expected: "9223372036854775807" }),
+      numericCase({
+        bits: 64,
+        input: "9223372036854775808",
+        expected_error: "SIGNED_INT64_OUT_OF_RANGE",
+      }),
+      numericCase({ bits: 64, input: "-0", expected_error: "INVALID_SIGNED_INT64" }),
+    ],
+    exact_numeric: [
+      numericCase({ input: "0", expected: "0" }),
+      numericCase({ input: "0.0", expected: "0" }),
+      numericCase({ input: "123.4500", expected: "123.45" }),
+      numericCase({ input: "-19.125", expected: "-19.125" }),
+      numericCase({ input: "-0.125", expected: "-0.125" }),
+      numericCase({ input: "1e3", expected_error: "NUMERIC_FORMAT" }),
+      numericCase({ input: "-0.0", expected_error: "NUMERIC_NEGATIVE_ZERO" }),
+    ],
+    float: [
+      numericCase({ kind: "float4", input: "0", expected: "0" }),
+      numericCase({ kind: "float4", input: "0.1", expected: "0.1" }),
+      numericCase({ kind: "float4", input: "1.1754944e-38", expected: "1.1754944e-38" }),
+      numericCase({ kind: "float8", input: "5e-324", expected: "5e-324" }),
+      numericCase({ kind: "float8", input: "1.0000000000000002", expected: "1.0000000000000002" }),
+      numericCase({
+        kind: "float8",
+        input: "1.7976931348623157e308",
+        expected: "1.7976931348623157e308",
+      }),
+      numericCase({ kind: "float8", input: "1e+21", expected_error: "FLOAT_FORMAT" }),
+      numericCase({ kind: "float8", input: "-0", expected_error: "FLOAT_VALUE" }),
+      numericCase({ kind: "float8", input: "NaN", expected_error: "FLOAT_FORMAT" }),
+    ],
+  };
+}
+
+function numericCase(input: JsonObject): JsonObject {
+  return {
+    ...input,
+    expected: input.expected ?? null,
+    expected_error: input.expected_error ?? null,
+  };
+}
+
+function intermediateFixture(
+  authority: JsonObject,
+  binding: JsonObject,
+  transition: JsonObject,
+): JsonObject {
+  const migrationDigestPlaceholder = `sha256:${"1".repeat(64)}`;
+  const catalogDigestPlaceholder = `sha256:${"2".repeat(64)}`;
+  const authorityProfileDigest = migrationDigest(authority);
+  const authorityBindingDigest = migrationDigest(binding);
+  const projections = requiredObject(binding.expected_projections);
+  const authorityDigest = authorityProjectionDigest(
+    requiredObject(projections.migration_transaction),
+  );
+  const before = requiredObject(transition.catalog_before);
+  const after = requiredObject(transition.catalog_after);
+  const body = namespaceProjectionBody([]);
+  const stateWithoutDigest: JsonObject = {
+    schema_bundle_digest: migrationDigestPlaceholder,
+    catalog_contract_digest: catalogDigestPlaceholder,
+    authority_profile_digest: authorityProfileDigest,
+    authority_binding_digest: authorityBindingDigest,
+    migration_id: "000001",
+    attempt_index: 1,
+    statement_index: 0,
+    statement_sha256: `sha256:${"3".repeat(64)}`,
+    previous_attempt_terminal_digest: null,
+    previous_intermediate_state_digest: null,
+    control_plane_states: {
+      tx_status: "T",
+      session_user: "cloud_agents_migration_login_fixture",
+      current_user: "cloud_agents_migration_owner",
+      migration_role: "cloud_agents_migration_owner",
+      advisory_lock: {
+        domain: "cloud-agents-platform:migrations:v1",
+        key_int64_decimal: "-1047838957622507638",
+        held: true,
+      },
+      verified_authority_decision_digest: `sha256:${"4".repeat(64)}`,
+      schema_owner: "cloud_agents_migration_owner",
+      schema_explicit_acl_digest: migrationDigest(
+        requiredObject(requiredObject(body.schema).explicit_acl),
+      ),
+      schema_effective_acl_digest: migrationDigest(requiredObject(body.schema).effective_acl!),
+      default_acl_digest: migrationDigest(body.default_acl!),
+      expected_transition_digest: migrationDigest(transition),
+    },
+    authority_before_digest: authorityDigest,
+    authority_after_digest: authorityDigest,
+    catalog_before_digest: before.digest!,
+    catalog_after_digest: after.digest!,
+  };
+  return {
+    ...stateWithoutDigest,
+    intermediate_state_digest: migrationDigest({
+      domain: "cloud-agents-platform-intermediate-state/v1",
+      ...stateWithoutDigest,
+    }),
+  };
+}
+
+function terminalFixture(intermediate: JsonObject): JsonObject {
+  const withoutDigest: JsonObject = {
+    schema_bundle_digest: intermediate.schema_bundle_digest!,
+    catalog_contract_digest: intermediate.catalog_contract_digest!,
+    authority_profile_digest: intermediate.authority_profile_digest!,
+    authority_binding_digest: intermediate.authority_binding_digest!,
+    migration_id: "000001",
+    attempt_index: 1,
+    previous_attempt_terminal_digest: null,
+    last_intermediate_state_digest: intermediate.intermediate_state_digest!,
+    outcome: "committed",
+    stable_error_code: null,
+    reconcile_result: "not_run",
+  };
+  return {
+    ...withoutDigest,
+    terminal_digest: migrationDigest({
+      domain: "cloud-agents-platform-attempt-terminal/v1",
+      ...withoutDigest,
+    }),
+  };
+}
+
+function duplicateBindingBytes(binding: JsonObject): Uint8Array {
+  const valid = new TextDecoder().decode(prettyJson(binding));
+  return new TextEncoder().encode(
+    valid.replace(
+      '  "format_version": "cloud-agents-platform-authority-binding/v1",',
+      '  "format_version": "cloud-agents-platform-authority-binding/v1",\n  "format_version": "cloud-agents-platform-authority-binding/v1",',
+    ),
+  );
+}
+
+function projectionFaultFixture(): JsonObject {
+  return {
+    format_version: "cloud-agents-platform-projection-faults/v1",
+    cases: [
+      {
+        name: "authority_unknown",
+        target: "authority_binding",
+        mutation: "unknown_field",
+        expected_error: "UNKNOWN_OR_MISSING_FIELD",
+      },
+      {
+        name: "authority_missing",
+        target: "authority_binding",
+        mutation: "missing_expires_at",
+        expected_error: "UNKNOWN_OR_MISSING_FIELD",
+      },
+      {
+        name: "authority_duplicate",
+        target: "authority_binding_raw",
+        mutation: "duplicate_format_version",
+        expected_error: "DUPLICATE_JSON_KEY",
+      },
+      {
+        name: "authority_phase",
+        target: "authority_binding",
+        mutation: "phase_mismatch",
+        expected_error: "AUTHORITY_PHASE",
+      },
+      {
+        name: "authority_digest",
+        target: "authority_binding",
+        mutation: "bad_profile_digest",
+        expected_error: "DIGEST_FORMAT",
+      },
+      {
+        name: "authority_acl",
+        target: "authority_binding",
+        mutation: "null_acl_with_entries",
+        expected_error: "ACL_NULL_ENTRIES",
+      },
+      {
+        name: "catalog_scope",
+        target: "catalog_state",
+        mutation: "final_without_head",
+        expected_error: "PROJECTION_SCOPE",
+      },
+      {
+        name: "predecessor_scope_head",
+        target: "catalog_state",
+        mutation: "predecessor_with_head",
+        expected_error: "PROJECTION_SCOPE",
+      },
+      {
+        name: "absent_schema",
+        target: "catalog_state",
+        mutation: "wrong_schema_name",
+        expected_error: "UNEXPECTED_VALUE",
+      },
+      {
+        name: "present_closure",
+        target: "catalog_state",
+        mutation: "scope_body_declared_mismatch",
+        expected_error: "CATALOG_STATE_DECLARED_CLOSURE",
+      },
+      {
+        name: "a21a_relation",
+        target: "catalog_body",
+        mutation: "relation_nonempty",
+        expected_error: "A21A_RELATIONS_NOT_IMPLEMENTED",
+      },
+      {
+        name: "dependency_duplicate",
+        target: "catalog_body",
+        mutation: "duplicate_dependency",
+        expected_error: "DUPLICATE_OR_UNSORTED",
+      },
+      {
+        name: "denied_duplicate",
+        target: "catalog_body",
+        mutation: "duplicate_denied_object",
+        expected_error: "DUPLICATE_OR_UNSORTED",
+      },
+      {
+        name: "trigger_owner_variant",
+        target: "object_identity",
+        mutation: "trigger_owner_not_constraint",
+        expected_error: "TRIGGER_OWNING_CONSTRAINT",
+      },
+      {
+        name: "transition_digest",
+        target: "expected_transition",
+        mutation: "bad_after_digest",
+        expected_error: "DIGEST_FORMAT",
+      },
+      {
+        name: "transition_unknown",
+        target: "expected_transition",
+        mutation: "unknown_field",
+        expected_error: "UNKNOWN_OR_MISSING_FIELD",
+      },
+      {
+        name: "transition_object",
+        target: "expected_transition",
+        mutation: "open_object_identity",
+        expected_error: "UNKNOWN_OR_MISSING_FIELD",
+      },
+      {
+        name: "numeric_signed",
+        target: "numeric",
+        mutation: "signed_overflow",
+        expected_error: "SIGNED_INT64_OUT_OF_RANGE",
+      },
+      {
+        name: "uint32_overflow",
+        target: "intermediate",
+        mutation: "statement_index_overflow",
+        expected_error: "UINT32_RANGE",
+      },
+      {
+        name: "numeric_exact",
+        target: "numeric",
+        mutation: "numeric_exponent",
+        expected_error: "NUMERIC_FORMAT",
+      },
+      {
+        name: "numeric_float",
+        target: "numeric",
+        mutation: "float_nan",
+        expected_error: "FLOAT_FORMAT",
+      },
+      {
+        name: "intermediate_digest",
+        target: "intermediate",
+        mutation: "bad_digest",
+        expected_error: "INTERMEDIATE_DIGEST",
+      },
+      {
+        name: "intermediate_attempt_link",
+        target: "intermediate",
+        mutation: "attempt_two_without_previous_terminal",
+        expected_error: "INTERMEDIATE_ATTEMPT_LINK",
+      },
+      {
+        name: "intermediate_statement_link",
+        target: "intermediate",
+        mutation: "statement_one_without_previous_intermediate",
+        expected_error: "INTERMEDIATE_STATEMENT_LINK",
+      },
+      {
+        name: "advisory_identity",
+        target: "intermediate",
+        mutation: "wrong_advisory_domain",
+        expected_error: "UNEXPECTED_VALUE",
+      },
+      {
+        name: "attempt_outcome",
+        target: "attempt_terminal",
+        mutation: "illegal_combination",
+        expected_error: "ATTEMPT_TERMINAL_COMBINATION",
+      },
+      {
+        name: "attempt_link",
+        target: "attempt_terminal",
+        mutation: "attempt_two_without_previous_terminal",
+        expected_error: "ATTEMPT_TERMINAL_LINK",
+      },
+      {
+        name: "ambiguous_committed_last_digest",
+        target: "attempt_terminal",
+        mutation: "ambiguous_committed_without_last_digest",
+        expected_error: "ATTEMPT_TERMINAL_COMBINATION",
+      },
+      {
+        name: "authority_icu",
+        target: "authority_profile",
+        mutation: "icu_locale_nonnull",
+        expected_error: "UNEXPECTED_VALUE",
+      },
+      {
+        name: "acl_surface_origin",
+        target: "catalog_body",
+        mutation: "default_acl_catalog_explicit_origin",
+        expected_error: "ACL_ORIGIN",
+      },
+      {
+        name: "acl_surface_privilege",
+        target: "catalog_body",
+        mutation: "schema_select_privilege",
+        expected_error: "ACL_PRIVILEGE",
+      },
+      {
+        name: "role_config_secret",
+        target: "authority_binding",
+        mutation: "password_setting",
+        expected_error: "ROLE_CONFIG_UNSAFE",
+      },
+    ],
+  };
+}
+
+function projectionFixtureManifest(
+  documents: ReadonlyMap<string, JsonObject>,
+  duplicateRaw: Uint8Array,
+): JsonObject {
+  const cases = [...documents.entries()]
+    .map(([path, document]) => ({
+      path: path.slice(`${PROJECTION_FIXTURE_ROOT}/`.length),
+      size_bytes: prettyJson(document).length,
+      sha256: rawSha256(prettyJson(document)),
+    }))
+    .toSorted((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  cases.push({
+    path: AUTHORITY_DUPLICATE_RAW_PATH.slice(`${PROJECTION_FIXTURE_ROOT}/`.length),
+    size_bytes: duplicateRaw.length,
+    sha256: rawSha256(duplicateRaw),
+  });
+  cases.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  return {
+    format_version: "cloud-agents-platform-projection-fixtures/v1",
+    runtime_authority: false,
     publication_status: "UNPUBLISHED_BOOTSTRAP_MUTABLE",
     runtime_introspection_status: "NOT_IMPLEMENTED",
-    source_descriptors: sources,
-    projection_model: projectionModel,
-    declared_object_identities: objects,
-  });
-  return new Map([
-    [CATALOG_PATHS[0], authority],
-    [CATALOG_PATHS[1], globalAuthority],
-    [
-      CATALOG_PATHS[2],
-      contract("000001", statementSources.slice(0, 1), DECLARED_IDENTITIES_000001),
-    ],
-    [CATALOG_PATHS[3], contract("000002", statementSources, DECLARED_IDENTITIES_000002)],
-  ]);
+    files: cases,
+  };
 }
 
 function migrationEntry(input: {
@@ -817,24 +1665,7 @@ function migrationEntry(input: {
 
 function initialPredecessorContract(): JsonObject {
   return {
-    accepted_states: [
-      { state: "schema_absent", schema: "cloud_agents" },
-      {
-        state: "empty_schema",
-        schema: "cloud_agents",
-        owner: "cloud_agents_migration_owner",
-        effective_acl: [
-          {
-            grantee: "cloud_agents_migration_owner",
-            privileges: ["CREATE", "USAGE"],
-            grantable: ["CREATE", "USAGE"],
-          },
-        ],
-        object_count: 0,
-        comment: null,
-        security_labels: [],
-      },
-    ],
+    accepted_states: [initialCatalogState("schema_absent"), initialCatalogState("schema_present")],
   };
 }
 

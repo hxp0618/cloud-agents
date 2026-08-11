@@ -1293,141 +1293,368 @@
     }
   ],
   "projection_model": {
-    "schema_fields": ["name", "owner", "effective_acl", "comment", "security_labels"],
-    "default_acl_fields": ["owner", "schema", "object_kind", "grantee", "privileges", "grantable"],
-    "relation_fields": [
-      "identity",
-      "relkind",
-      "persistence",
-      "access_method",
+    "projection_slice": "A2.1a_namespace_only",
+    "catalog_projection_fields": ["schema_head", "body"],
+    "body_fields": [
+      "schema",
+      "default_acl",
+      "relations",
+      "functions",
+      "dependencies",
+      "object_count",
+      "declared_objects",
+      "denied_objects"
+    ],
+    "schema_fields": [
+      "name",
       "owner",
-      "acl",
-      "reloptions",
-      "replica_identity",
-      "rls_enabled",
-      "rls_forced"
+      "explicit_acl",
+      "effective_acl",
+      "comment",
+      "security_labels"
     ],
-    "column_fields": [
-      "attnum",
-      "name",
-      "type",
-      "typmod",
-      "collation",
-      "nullable",
-      "identity",
-      "generated",
-      "default",
-      "storage",
-      "compression"
-    ],
-    "constraint_fields": [
-      "name",
-      "type",
-      "columns",
-      "referenced_relation",
-      "referenced_columns",
-      "match",
-      "update",
-      "delete",
-      "deferrable",
-      "deferred",
-      "validated",
-      "expression"
-    ],
-    "index_fields": [
-      "name",
-      "access_method",
-      "keys",
-      "includes",
-      "opclass",
-      "collation",
-      "order",
-      "nulls",
-      "unique",
-      "primary",
-      "valid",
-      "ready",
-      "live",
-      "predicate",
-      "expression"
-    ],
-    "policy_fields": ["name", "permissive", "command", "roles", "using", "with_check"],
-    "trigger_fields": [
-      "identity",
-      "function",
-      "enabled",
-      "type",
-      "columns",
-      "arguments",
-      "when",
-      "internal"
-    ],
-    "function_fields": [
-      "identity",
-      "kind",
-      "language",
-      "arguments",
-      "returns",
-      "owner",
-      "acl",
-      "security_definer",
-      "volatility",
-      "parallel",
-      "leakproof",
-      "strict",
-      "config",
-      "cost",
-      "rows",
-      "prosrc_sha256",
-      "probin"
-    ],
-    "expression_profile": "cloud-agents-sql-expression/v1",
-    "denied_object_kinds": [
-      "sequence",
-      "view",
-      "materialized_view",
-      "foreign_table",
-      "partition",
-      "operator",
-      "cast",
-      "extension"
+    "default_acl_fields": ["owner", "schema", "object_kind", "acl"],
+    "acl_set_fields": ["catalog_value", "entries"],
+    "acl_entry_fields": ["grantor", "grantee", "privileges", "grantable", "origin"],
+    "deferred_to_a2_1b": [
+      "relation_projection",
+      "function_projection",
+      "dependency_projection",
+      "expression_projection"
     ]
   },
   "declared_object_identities": [
-    "schema:unquoted:cloud_agents",
-    "table:unquoted:cloud_agents/unquoted:schema_migrations",
-    "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
-    "function:unquoted:cloud_agents/unquoted:require_tenant_id()",
-    "table:unquoted:cloud_agents/unquoted:platform_tenants",
-    "table:unquoted:cloud_agents/unquoted:tenant_resource_versions",
-    "index:unquoted:cloud_agents/unquoted:tenant_resource_versions_tenant_fk_idx",
-    "table:unquoted:cloud_agents/unquoted:resource_changes",
-    "index:unquoted:cloud_agents/unquoted:resource_changes_resource_history_idx",
-    "index:unquoted:cloud_agents/unquoted:resource_changes_tenant_fk_idx",
-    "table:unquoted:cloud_agents/unquoted:audit_facts",
-    "index:unquoted:cloud_agents/unquoted:audit_facts_resource_idx",
-    "index:unquoted:cloud_agents/unquoted:audit_facts_tenant_fk_idx",
-    "index:unquoted:cloud_agents/unquoted:audit_facts_change_fk_idx",
-    "table:unquoted:cloud_agents/unquoted:organizations",
-    "table:unquoted:cloud_agents/unquoted:projects",
-    "index:unquoted:cloud_agents/unquoted:platform_tenants_change_fk_idx",
-    "index:unquoted:cloud_agents/unquoted:organizations_tenant_fk_idx",
-    "index:unquoted:cloud_agents/unquoted:organizations_change_fk_idx",
-    "index:unquoted:cloud_agents/unquoted:projects_tenant_fk_idx",
-    "index:unquoted:cloud_agents/unquoted:projects_organization_fk_idx",
-    "index:unquoted:cloud_agents/unquoted:projects_change_fk_idx",
-    "policy:unquoted:cloud_agents/unquoted:platform_tenants_runtime_tenant",
-    "policy:unquoted:cloud_agents/unquoted:platform_tenants_migration_owner",
-    "policy:unquoted:cloud_agents/unquoted:tenant_resource_versions_runtime_tenant",
-    "policy:unquoted:cloud_agents/unquoted:tenant_resource_versions_migration_owner",
-    "policy:unquoted:cloud_agents/unquoted:resource_changes_runtime_tenant",
-    "policy:unquoted:cloud_agents/unquoted:resource_changes_migration_owner",
-    "policy:unquoted:cloud_agents/unquoted:audit_facts_runtime_tenant",
-    "policy:unquoted:cloud_agents/unquoted:audit_facts_migration_owner",
-    "policy:unquoted:cloud_agents/unquoted:organizations_runtime_tenant",
-    "policy:unquoted:cloud_agents/unquoted:organizations_migration_owner",
-    "policy:unquoted:cloud_agents/unquoted:projects_runtime_tenant",
-    "policy:unquoted:cloud_agents/unquoted:projects_migration_owner",
-    "function:unquoted:cloud_agents/unquoted:bootstrap_platform_tenant(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)"
-  ]
+    {
+      "kind": "function",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "require_tenant_id",
+        "arguments": []
+      }
+    },
+    {
+      "kind": "function",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "bootstrap_platform_tenant",
+        "arguments": [
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          },
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          },
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          },
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          },
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "function",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "is_valid_identifier",
+        "arguments": [
+          {
+            "schema": "pg_catalog",
+            "name": "text"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "audit_facts"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "audit_facts_change_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "audit_facts"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "audit_facts_resource_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "audit_facts"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "audit_facts_tenant_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "audit_facts"
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "organizations"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "organizations_change_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "organizations"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "organizations_tenant_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "organizations"
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "platform_tenants"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "platform_tenants_change_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "platform_tenants"
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "projects"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "projects_change_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "projects"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "projects_organization_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "projects"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "projects_tenant_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "projects"
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "resource_changes"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "resource_changes_resource_history_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "resource_changes"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "resource_changes_tenant_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "resource_changes"
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "schema_migrations"
+      }
+    },
+    {
+      "kind": "relation",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "tenant_resource_versions"
+      }
+    },
+    {
+      "kind": "index",
+      "identity": {
+        "schema": "cloud_agents",
+        "name": "tenant_resource_versions_tenant_fk_idx"
+      },
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "tenant_resource_versions"
+      }
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "audit_facts"
+      },
+      "name": "audit_facts_migration_owner"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "audit_facts"
+      },
+      "name": "audit_facts_runtime_tenant"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "organizations"
+      },
+      "name": "organizations_migration_owner"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "organizations"
+      },
+      "name": "organizations_runtime_tenant"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "platform_tenants"
+      },
+      "name": "platform_tenants_migration_owner"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "platform_tenants"
+      },
+      "name": "platform_tenants_runtime_tenant"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "projects"
+      },
+      "name": "projects_migration_owner"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "projects"
+      },
+      "name": "projects_runtime_tenant"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "resource_changes"
+      },
+      "name": "resource_changes_migration_owner"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "resource_changes"
+      },
+      "name": "resource_changes_runtime_tenant"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "tenant_resource_versions"
+      },
+      "name": "tenant_resource_versions_migration_owner"
+    },
+    {
+      "kind": "policy",
+      "relation": {
+        "schema": "cloud_agents",
+        "name": "tenant_resource_versions"
+      },
+      "name": "tenant_resource_versions_runtime_tenant"
+    },
+    {
+      "kind": "schema",
+      "name": "cloud_agents"
+    }
+  ],
+  "executable_expected_projection_status": "NOT_IMPLEMENTED_A2_1B_REQUIRED"
 }

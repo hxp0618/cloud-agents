@@ -93,37 +93,11 @@ func (p PredecessorSchemaBundle) Artifact() ArtifactRecord {
 	return ArtifactRecord{Path: p.Path, Mode: p.Mode, SizeBytes: p.SizeBytes, SHA256: p.SHA256}
 }
 
-type EffectiveACL struct {
-	Grantee    string   `json:"grantee"`
-	Privileges []string `json:"privileges"`
-	Grantable  []string `json:"grantable"`
-}
-
-// CatalogPrecondition is an exact discriminated union: an artifact descriptor,
-// schema_absent, or the ADR-0009 initial empty_schema state.
+// CatalogPrecondition is an exact discriminated union: an artifact descriptor
+// or the ADR-0010 scoped schema_absent/schema_present predecessor pair.
 type CatalogPrecondition struct {
 	Artifact       *ArtifactRecord
-	AcceptedStates []InitialCatalogState
-}
-
-type InitialCatalogState struct {
-	Absent *SchemaAbsent
-	Empty  *EmptySchema
-}
-
-type SchemaAbsent struct {
-	State  string `json:"state"`
-	Schema string `json:"schema"`
-}
-
-type EmptySchema struct {
-	State          string         `json:"state"`
-	Schema         string         `json:"schema"`
-	Owner          string         `json:"owner"`
-	EffectiveACL   []EffectiveACL `json:"effective_acl"`
-	ObjectCount    uint64         `json:"object_count"`
-	Comment        *string        `json:"comment"`
-	SecurityLabels []string       `json:"security_labels"`
+	AcceptedStates []CatalogStateProjection
 }
 
 func (condition *CatalogPrecondition) UnmarshalJSON(data []byte) error {
@@ -138,7 +112,7 @@ func (condition *CatalogPrecondition) UnmarshalJSON(data []byte) error {
 	if accepted, hasAccepted := object["accepted_states"]; hasAccepted {
 		array, ok := accepted.([]JSONValue)
 		if !ok || len(array) != 2 {
-			return fail(CodeInvalidManifest, "catalog_precondition", "accepted_states must contain exactly absent and empty states", nil)
+			return fail(CodeInvalidManifest, "catalog_precondition", "accepted_states must contain exactly scoped absent and present states", nil)
 		}
 		var envelope struct {
 			AcceptedStates []json.RawMessage `json:"accepted_states"`
@@ -146,35 +120,17 @@ func (condition *CatalogPrecondition) UnmarshalJSON(data []byte) error {
 		if _, err := decodeStrictShape(data, &envelope); err != nil {
 			return err
 		}
+		condition.Artifact = nil
+		condition.AcceptedStates = make([]CatalogStateProjection, 0, len(envelope.AcceptedStates))
 		for _, raw := range envelope.AcceptedStates {
-			parsed, err := ParseStrictJSON(raw)
-			if err != nil {
+			var state CatalogStateProjection
+			if _, err := decodeStrictShape(raw, &state); err != nil {
 				return err
 			}
-			stateObject, ok := parsed.(map[string]JSONValue)
-			if !ok {
-				return fail(CodeInvalidManifest, "catalog_precondition", "accepted state must be an object", nil)
+			if err := state.Validate(); err != nil {
+				return err
 			}
-			state, ok := stateObject["state"].(string)
-			if !ok {
-				return fail(CodeInvalidManifest, "catalog_precondition", "accepted state discriminator is missing", nil)
-			}
-			switch state {
-			case "schema_absent":
-				var decoded SchemaAbsent
-				if _, err := decodeStrictShape(raw, &decoded); err != nil {
-					return err
-				}
-				condition.AcceptedStates = append(condition.AcceptedStates, InitialCatalogState{Absent: &decoded})
-			case "empty_schema":
-				var decoded EmptySchema
-				if _, err := decodeStrictShape(raw, &decoded); err != nil {
-					return err
-				}
-				condition.AcceptedStates = append(condition.AcceptedStates, InitialCatalogState{Empty: &decoded})
-			default:
-				return fail(CodeInvalidManifest, "catalog_precondition", "unknown accepted state", nil)
-			}
+			condition.AcceptedStates = append(condition.AcceptedStates, state)
 		}
 		return nil
 	}
@@ -191,19 +147,9 @@ func (condition CatalogPrecondition) MarshalJSON() ([]byte, error) {
 	case condition.Artifact != nil && len(condition.AcceptedStates) == 0:
 		return json.Marshal(condition.Artifact)
 	case condition.Artifact == nil && len(condition.AcceptedStates) == 2:
-		states := make([]any, 0, 2)
-		for _, state := range condition.AcceptedStates {
-			if state.Absent != nil && state.Empty == nil {
-				states = append(states, state.Absent)
-			} else if state.Empty != nil && state.Absent == nil {
-				states = append(states, state.Empty)
-			} else {
-				return nil, fail(CodeInvalidManifest, "catalog_precondition", "invalid accepted state union", nil)
-			}
-		}
 		return json.Marshal(struct {
-			AcceptedStates []any `json:"accepted_states"`
-		}{AcceptedStates: states})
+			AcceptedStates []CatalogStateProjection `json:"accepted_states"`
+		}{AcceptedStates: condition.AcceptedStates})
 	default:
 		return nil, fail(CodeInvalidManifest, "catalog_precondition", "union must contain exactly one branch", nil)
 	}
@@ -423,11 +369,7 @@ func (entry MigrationEntry) Validate(index int, entries []MigrationEntry) error 
 			return err
 		}
 	} else if entry.PredecessorCatalogContract.Artifact == nil && len(entry.PredecessorCatalogContract.AcceptedStates) == 2 {
-		absent := entry.PredecessorCatalogContract.AcceptedStates[0].Absent
-		empty := entry.PredecessorCatalogContract.AcceptedStates[1].Empty
-		seenAbsent := absent != nil && entry.PredecessorCatalogContract.AcceptedStates[0].Empty == nil && absent.State == "schema_absent" && absent.Schema == "cloud_agents"
-		seenEmpty := empty != nil && entry.PredecessorCatalogContract.AcceptedStates[1].Absent == nil && empty.State == "empty_schema" && empty.Schema == "cloud_agents" && empty.Owner == MigrationOwnerRole && empty.ObjectCount == 0 && empty.Comment == nil && len(empty.SecurityLabels) == 0 && validInitialACL(empty.EffectiveACL)
-		if !seenAbsent || !seenEmpty {
+		if !validInitialCatalogStates(entry.ID, entry.PredecessorCatalogContract.AcceptedStates) {
 			return fail(CodeInvalidManifest, entry.ID, "invalid initial catalog predecessor states", nil)
 		}
 	} else {
@@ -436,8 +378,28 @@ func (entry MigrationEntry) Validate(index int, entries []MigrationEntry) error 
 	return nil
 }
 
-func validInitialACL(acls []EffectiveACL) bool {
-	return len(acls) == 1 && acls[0].Grantee == MigrationOwnerRole && len(acls[0].Privileges) == 2 && acls[0].Privileges[0] == "CREATE" && acls[0].Privileges[1] == "USAGE" && len(acls[0].Grantable) == 2 && acls[0].Grantable[0] == "CREATE" && acls[0].Grantable[1] == "USAGE"
+func validInitialCatalogStates(migrationID string, states []CatalogStateProjection) bool {
+	if len(states) != 2 || states[0].Absent == nil || states[0].Present != nil || states[1].Absent != nil || states[1].Present == nil {
+		return false
+	}
+	absent, present := states[0].Absent, states[1].Present
+	if absent.State != "schema_absent" || absent.Schema != "cloud_agents" || !validInitialProjectionScope(absent.Scope, migrationID) || present.State != "schema_present" || !validInitialProjectionScope(present.Scope, migrationID) {
+		return false
+	}
+	body := present.Body
+	return body.Schema.Name == "cloud_agents" && body.Schema.Owner == MigrationOwnerRole && body.Schema.ExplicitACL.CatalogValue == "null" && len(body.Schema.ExplicitACL.Entries) == 0 && validInitialACL(body.Schema.EffectiveACL) && body.Schema.Comment == nil && len(body.Schema.SecurityLabels) == 0 && len(body.DefaultACL) == 0 && len(body.Relations) == 0 && len(body.Functions) == 0 && len(body.Dependencies) == 0 && body.ObjectCount == 0 && len(body.DeclaredObjects) == 0 && len(body.DeniedObjects) == 0
+}
+
+func validInitialProjectionScope(scope ProjectionScope, migrationID string) bool {
+	return scope.ScopeKind == "predecessor" && scope.SchemaHead == nil && scope.MigrationID != nil && *scope.MigrationID == migrationID && scope.ThroughStatementIndex == nil && scope.DeclaredObjects != nil && len(scope.DeclaredObjects) == 0
+}
+
+func validInitialACL(acls []ACLProjection) bool {
+	if len(acls) != 1 {
+		return false
+	}
+	acl := acls[0]
+	return acl.Grantor == MigrationOwnerRole && acl.Grantee == MigrationOwnerRole && acl.Origin == "owner_implicit" && equalStrings(acl.Privileges, []string{"CREATE", "USAGE"}) && equalStrings(acl.Grantable, []string{"CREATE", "USAGE"})
 }
 
 func (policy ExecutionPolicy) Validate() error {

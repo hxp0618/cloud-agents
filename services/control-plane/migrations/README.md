@@ -133,6 +133,28 @@ current files must therefore not be consumed as an immutable release
 candidate; consumers pin a digest only after a published candidate manifest
 exists.
 
+## P1-A2.1a projection fixtures
+
+`fixtures/projection/` freezes the strict authority/profile, deployment-binding,
+namespace/default-ACL, catalog-state, statement-transition, intermediate-state,
+attempt-terminal, and numeric shapes from ADR-0010. The deployment binding is a
+deterministic fixture only: it has no detached signature, issuer decision,
+trust-root proof, expiry/revocation verification, or production identity.
+
+The initial migration predecessor now uses only the closed
+`schema_absent | schema_present` union. `schema_present` preserves the catalog
+`NULL` versus explicit ACL distinction, ACL grantor provenance, and the full
+typed namespace body; the legacy `empty_schema` spelling is rejected.
+
+The A2.1a namespace body and one digest-ref-only transition are reviewer/test
+fixtures, not executable cumulative contracts for schema heads `000001` or
+`000002`. Those runtime catalog artifacts deliberately omit
+`expected_projection` and per-statement `expected_transition`, and carry
+`executable_expected_projection_status = NOT_IMPLEMENTED_A2_1B_REQUIRED`.
+Relation/function/expression projection and the complete 91-statement expected
+state chain remain A2.1b work. The production runtime therefore remains fail
+closed and must not treat these fixtures as signed authority or Gate evidence.
+
 Do not hand-run these files against an existing database, reuse an existing
 container or volume for validation, or infer a release/deployment/G-DATA Gate
 closure from successful local replay.

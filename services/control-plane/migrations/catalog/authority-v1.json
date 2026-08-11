@@ -18,17 +18,32 @@
     "cloud_agents_bootstrap_admin"
   ],
   "required_projection_fields": [
+    "phase",
     "session_user",
     "current_user",
-    "role_attributes",
-    "direct_membership",
-    "recursive_membership",
-    "membership_grantor_options",
-    "role_config",
+    "database_name",
     "database_owner",
+    "database_encoding",
+    "locale_provider",
+    "datcollate",
+    "datctype",
+    "icu_locale",
+    "icu_rules",
+    "collation_version",
     "database_acl",
+    "roles",
+    "direct_memberships",
+    "membership_reachability",
     "database_role_settings",
     "effective_create",
     "effective_temporary"
+  ],
+  "required_binding_fields": [
+    "authority_profile_digest",
+    "deployment_id",
+    "issued_at",
+    "expires_at",
+    "security_epoch",
+    "expected_projections"
   ]
 }
