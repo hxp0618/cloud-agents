@@ -5,6 +5,7 @@ import { relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
 import { PLATFORM_GO_TOOLCHAIN } from "./platform-go-modules";
+import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
 
 const NODE_VERSION = "24.13.1";
 const BUN_VERSION = "1.3.14";
@@ -18,6 +19,44 @@ const PLATFORM_GO_INPUTS = [
   "services/control-plane/doc.go",
   "services/worker/go.mod",
   "services/worker/doc.go",
+] as const;
+const PLATFORM_MIGRATION_INPUTS = [
+  "docs/plan/adr/0009-p1-migration-bundle-runner.md",
+  "scripts/check-platform-migration-bundle.ts",
+  "scripts/generate-platform-migration-bundle.ts",
+  "scripts/lib/platform-migration-bundle.test.ts",
+  "scripts/lib/platform-migration-bundle.ts",
+  "scripts/lib/platform-migration-json.test.ts",
+  "scripts/lib/platform-migration-json.ts",
+  "scripts/lib/platform-migration-sql.test.ts",
+  "scripts/lib/platform-migration-sql.ts",
+  "scripts/lib/platform-migration-ustar.ts",
+  "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+  "services/control-plane/migrations/000002_expand_tenancy.sql",
+  "services/control-plane/migrations/README.md",
+  "services/control-plane/migrations/bootstrap/database.sql",
+  "services/control-plane/migrations/bootstrap/roles.sql",
+  "services/control-plane/migrations/catalog/authority-v1.json",
+  "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+  "services/control-plane/migrations/catalog/schema-000001.json",
+  "services/control-plane/migrations/catalog/schema-000002.json",
+  "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
+  "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
+  "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
+  "services/control-plane/migrations/fixtures/bundle/golden/sql-split.json",
+  "services/control-plane/migrations/fixtures/bundle/golden/ustar.json",
+  "services/control-plane/migrations/fixtures/bundle/manifest.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/ancestor-cycle.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/ancestor-descriptor-cases.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/duplicate-key.case.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/duplicate-key.raw",
+  "services/control-plane/migrations/fixtures/bundle/negative/escaped-equivalent-key.case.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/escaped-equivalent-key.raw",
+  "services/control-plane/migrations/fixtures/bundle/negative/ledger-rollback.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/unicode-whitespace.case.json",
+  "services/control-plane/migrations/fixtures/bundle/negative/unicode-whitespace.raw",
+  "services/control-plane/migrations/manifest.json",
+  "services/control-plane/migrations/schema-bundle.json",
 ] as const;
 const NORMALIZED_MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 
@@ -54,11 +93,18 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-json-semantics.ts",
     ],
   },
+  {
+    id: "platform-migration-bundle-checker",
+    kind: "in-repo-typescript-strict-postgresql-bundle",
+    entrypoint: "scripts/check-platform-migration-bundle.ts",
+    sources: [...PLATFORM_MIGRATION_INPUTS],
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
   const summary = validatePlatformContractTree(root);
   const runtimes = validatePlatformToolchains(root);
+  const migration = validateCheckedInMigrationBundle(root);
   return {
     lockVersion: 1,
     status: "BOOTSTRAP_VALIDATED",
@@ -138,6 +184,35 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         inputManifestSha256: summary.contractManifestSha256,
         outputStatus: "BOOTSTRAP_VALIDATED",
         generatedOutputs: [],
+      },
+      {
+        id: "platform-migration-bundle-validation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, PLATFORM_MIGRATION_INPUTS),
+        inputs: [...PLATFORM_MIGRATION_INPUTS],
+        outputStatus: "BOOTSTRAP_VALIDATED",
+        notGateClosure: true,
+        generatedOutputs: [...migration.files.keys()].toSorted().map((path) => ({
+          path,
+          sha256: fileSha256(root, path),
+          sizeBytes: readFileSync(resolve(root, path)).byteLength,
+        })),
+        outputSummary: {
+          schemaBundleDigest: migration.manifest.schema_bundle_digest,
+          bootstrapBundleDigest: migration.manifest.bootstrap_bundle_digest,
+          manifestDigest: migration.manifest.manifest_digest,
+          runtimeTar: {
+            sizeBytes: migration.runtimeTar.byteLength,
+            sha256: digestBytes(migration.runtimeTar),
+          },
+          bootstrapTar: {
+            sizeBytes: migration.bootstrapTar.byteLength,
+            sha256: digestBytes(migration.bootstrapTar),
+          },
+          schemaPublicationStatus: "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+          runtimeIntrospectionStatus: "NOT_IMPLEMENTED",
+          signingAndPublication: "NOT_IMPLEMENTED",
+        },
       },
       {
         id: "go-module-boundary-validation",
@@ -279,4 +354,8 @@ function fileSha256(root: string, file: string): string {
   return `sha256:${createHash("sha256")
     .update(readFileSync(resolve(root, file)))
     .digest("hex")}`;
+}
+
+function digestBytes(bytes: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }

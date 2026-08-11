@@ -22,7 +22,9 @@ jobs:
       - run: bun run fmt:check
       - run: bun run lint
       - run: bun run platform:contracts:check
+      - run: bun run platform:migrations:check
       - run: bun run platform:go:check
+      - run: bun run platform:go:test
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build

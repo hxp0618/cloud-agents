@@ -1,0 +1,9 @@
+{
+  "input": {
+    "z": 0,
+    "a": "é"
+  },
+  "canonical_utf8": "{\"a\":\"é\",\"z\":0}",
+  "digest": "sha256:00a8f7276186277fe8c5732bb29fa49bb271d59c2aeac7f9cd52ec2b3f6f5506",
+  "nfc_equivalent_is_identical": false
+}

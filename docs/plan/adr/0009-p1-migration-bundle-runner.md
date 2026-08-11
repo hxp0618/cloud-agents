@@ -155,7 +155,9 @@ initial bundle 的 `migrations` 为按 ID 升序的 `000001`、`000002`。每个
 - `predecessor_catalog_contract`（执行前 cumulative state；`000001` 为 absent/empty bootstrap state）；
 - `catalog_contract`（该 head 的 relation/function/policy/ACL postcondition）。
 
-`000001.predecessor_catalog_contract` 是 exact discriminated union，只有：
+`000001.predecessor_catalog_contract` 的静态序列化形状固定为
+`{ "accepted_states": [<schema_absent>, <empty_schema>] }`，数组顺序固定且恰好包含下面两个
+exact discriminated-union branch：
 
 - `{ "state": "schema_absent", "schema": "cloud_agents" }`；
 - `{ "state": "empty_schema", "schema": "cloud_agents", "owner": "cloud_agents_migration_owner",

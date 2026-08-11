@@ -1,0 +1,109 @@
+{
+  "format_version": "cloud-agents-platform-schema-bundle/v1",
+  "schema_bundle": {
+    "lineage": "cloud-agents-platform",
+    "schema_head": "000002",
+    "advisory_lock": {
+      "domain": "cloud-agents-platform:migrations:v1",
+      "derivation": "sha256-first-8-bytes-signed-big-endian-int64",
+      "key_int64_decimal": "-1047838957622507638"
+    },
+    "global_table_authority": {
+      "path": "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+      "mode": "100644",
+      "size_bytes": 658,
+      "sha256": "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d"
+    },
+    "predecessor_schema_bundle": null,
+    "migrations": [
+      {
+        "id": "000001",
+        "name": "expand_migration_kernel",
+        "predecessor_id": null,
+        "phase": "expand",
+        "schema_from": "absent",
+        "schema_to": "000001",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+          "mode": "100644",
+          "size_bytes": 5161,
+          "sha256": "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "accepted_states": [
+            {
+              "state": "schema_absent",
+              "schema": "cloud_agents"
+            },
+            {
+              "state": "empty_schema",
+              "schema": "cloud_agents",
+              "owner": "cloud_agents_migration_owner",
+              "effective_acl": [
+                {
+                  "grantee": "cloud_agents_migration_owner",
+                  "privileges": ["CREATE", "USAGE"],
+                  "grantable": ["CREATE", "USAGE"]
+                }
+              ],
+              "object_count": 0,
+              "comment": null,
+              "security_labels": []
+            }
+          ]
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000001.json",
+          "mode": "100644",
+          "size_bytes": 12808,
+          "sha256": "sha256:fc8b12702413845a71bbdbcfae22a19002d623b1f52d8f902fb8a1e95d81178b"
+        }
+      },
+      {
+        "id": "000002",
+        "name": "expand_tenancy",
+        "predecessor_id": "000001",
+        "phase": "expand",
+        "schema_from": "000001",
+        "schema_to": "000002",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000002_expand_tenancy.sql",
+          "mode": "100644",
+          "size_bytes": 30896,
+          "sha256": "sha256:d084f003928c1122da7bb88727c12a3e298548514f5da19cb3da14a3a754827a"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000001.json",
+          "mode": "100644",
+          "size_bytes": 12808,
+          "sha256": "sha256:fc8b12702413845a71bbdbcfae22a19002d623b1f52d8f902fb8a1e95d81178b"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000002.json",
+          "mode": "100644",
+          "size_bytes": 51298,
+          "sha256": "sha256:30ec7547ce9d7f435914f8105cf7d6b64b87aabd07b18f9232ba3b15c481c5c2"
+        }
+      }
+    ]
+  },
+  "schema_bundle_digest": "sha256:fcee7ae5b7c5cf55a24c36b256832055b2d8831a9d8b5c137fa6d3284fda7adf"
+}

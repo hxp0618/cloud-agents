@@ -117,10 +117,21 @@ tenant revision atomically through a forward migration and typed store path.
 
 Applied SQL is immutable exact-byte input (UTF-8, LF, no BOM, Git mode
 `100644`). Fixes are new consecutive forward migrations; there are no edited
-checksums or down-migration claims. `manifest.json` is intentionally absent
-from this SQL-only slice: the strict runner/generator must derive exact sizes,
-SHA-256 values, source-closure hashes, and the RFC 8785 bundle digest. A
-placeholder or manually maintained digest is forbidden.
+checksums or down-migration claims. `manifest.json`, `schema-bundle.json`, and
+the catalog projections are generated from the SQL, bootstrap, and fixture
+inputs by the checked-in migration generator. The checker validates exact
+artifact sizes, SHA-256 values, source-closure inputs, deterministic runtime
+and bootstrap archives, ancestor/ledger projections, and the RFC 8785 bundle
+digests. A placeholder or manually maintained digest is forbidden.
+
+The checked-in bundle is currently `UNPUBLISHED_BOOTSTRAP_MUTABLE`: runtime
+catalog introspection and signing/publication are `NOT_IMPLEMENTED`, and this
+status is not a Gate-closure or release claim. Until the catalog adapter,
+security review, signing, and publication gates close, any regeneration may
+legitimately change the schema, bootstrap, manifest, or archive digests. The
+current files must therefore not be consumed as an immutable release
+candidate; consumers pin a digest only after a published candidate manifest
+exists.
 
 Do not hand-run these files against an existing database, reuse an existing
 container or volume for validation, or infer a release/deployment/G-DATA Gate

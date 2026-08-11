@@ -1,0 +1,120 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+import { classifyMigrationStatement, splitPostgresStatements } from "./platform-migration-sql";
+
+const root = resolve(import.meta.dirname, "../..");
+
+describe("postgresql-lex-v1 bootstrap", () => {
+  it("splits and classifies every current exact SQL statement", () => {
+    const counts: number[] = [];
+    for (const [index, file] of [
+      "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+      "services/control-plane/migrations/000002_expand_tenancy.sql",
+    ].entries()) {
+      const bytes = readFileSync(resolve(root, file));
+      const statements = splitPostgresStatements(bytes);
+      counts.push(statements.length);
+      expect(statements.at(-1)?.end).toBeLessThanOrEqual(bytes.length);
+      for (const statement of statements) {
+        expect(statement.bytes.at(-1)).toBe(0x3b);
+        expect(
+          classifyMigrationStatement(statement, String(index + 1).padStart(6, "0")).profile,
+        ).toBe("postgresql-ddl-v1");
+      }
+    }
+    expect(counts).toEqual([20, 71]);
+  });
+
+  it("ignores semicolons in comments, strings, identifiers and dollar bodies", () => {
+    const sql = new TextEncoder().encode(
+      "-- lead ;\nCREATE FUNCTION cloud_agents.f() RETURNS text LANGUAGE sql AS $body$ SELECT ';'; $body$;/* ; */ REVOKE ALL ON FUNCTION cloud_agents.f() FROM PUBLIC;",
+    );
+    const statements = splitPostgresStatements(sql);
+    expect(statements).toHaveLength(2);
+    expect(statements[0]?.start).toBe(0);
+    expect(new TextDecoder().decode(statements[0]?.bytes).startsWith("-- lead ;")).toBe(true);
+  });
+
+  it("distinguishes standard, escape and Unicode strings and rejects numeric dollar tags", () => {
+    expect(
+      splitPostgresStatements(
+        new TextEncoder().encode("CREATE TABLE cloud_agents.x(a text DEFAULT '\\';"),
+      ),
+    ).toHaveLength(1);
+    for (const prefix of ["E", "U&"]) {
+      expect(() =>
+        splitPostgresStatements(
+          new TextEncoder().encode(`CREATE TABLE cloud_agents.x(a text DEFAULT ${prefix}'\\';`),
+        ),
+      ).toThrow(/UNTERMINATED_SQL_LEXEME/);
+    }
+    const numericTag = splitPostgresStatements(
+      new TextEncoder().encode("CREATE TABLE cloud_agents.x(a text); $1$ SELECT 1; $1$;"),
+    );
+    expect(numericTag.length).toBeGreaterThan(1);
+  });
+
+  it("rejects nested-comment, multi-subcommand and broad GRANT/REVOKE bypasses", () => {
+    const rejected = [
+      "ALTER TABLE cloud_agents.x DROP COLUMN y, ADD CONSTRAINT ok CHECK (true);",
+      "ALTER TABLE cloud_agents.x DROP COLUMN y /* outer /* ADD CONSTRAINT hidden */ still */;",
+      "ALTER FUNCTION cloud_agents.f() DROP ATTRIBUTE x OWNER TO cloud_agents_migration_owner;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE cloud_agents_migration_owner IN SCHEMA cloud_agents GRANT ALL ON TABLES TO PUBLIC;",
+      "GRANT SELECT ON TABLE cloud_agents.x, cloud_agents.y TO cloud_agents_runtime;",
+      "GRANT SELECT ON TABLE cloud_agents.x TO cloud_agents_runtime, PUBLIC;",
+      "GRANT SELECT ON TABLE other.x TO cloud_agents_runtime;",
+      "GRANT SELECT ON TABLE cloud_agents.x TO cloud_agents_runtime WITH GRANT OPTION;",
+      "CREATE TABLE cloud_agents.x AS SELECT 1;",
+      "CREATE TABLE cloud_agents.x(a text) TABLESPACE unsafe;",
+      "CREATE TABLE cloud_agents.x(a text) WITH (fillfactor = 50);",
+      "CREATE TABLE cloud_agents.x(a text), cloud_agents.y(b text);",
+      "CREATE INDEX bad ON cloud_agents.x(a) TABLESPACE unsafe;",
+      "CREATE FUNCTION cloud_agents.f() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$ EXTRA;",
+      "CREATE FUNCTION cloud_agents.f() RETURNS void LANGUAGE sql TABLESPACE unsafe AS $$ SELECT 1 $$;",
+      "CREATE FUNCTION cloud_agents.f() RETURNS void LANGUAGE sql WITH unsafe AS $$ SELECT 1 $$;",
+    ];
+    for (const sql of rejected) {
+      const statement = splitPostgresStatements(new TextEncoder().encode(sql))[0]!;
+      expect(() => classifyMigrationStatement(statement, "000002"), sql).toThrow(
+        /SQL_STATEMENT_PROFILE_REJECTED/,
+      );
+    }
+  });
+
+  it("rejects unterminated, empty, transaction, DML and mutated DO inputs", () => {
+    expect(() =>
+      splitPostgresStatements(new TextEncoder().encode("CREATE TABLE x(a text)")),
+    ).toThrow(/SQL_TERMINATOR_REQUIRED/);
+    expect(() => splitPostgresStatements(new TextEncoder().encode(";"))).toThrow(
+      /EMPTY_SQL_STATEMENT/,
+    );
+    for (const sql of ["BEGIN;", "SELECT 1;", "CREATE ROLE attacker;"]) {
+      const statement = splitPostgresStatements(new TextEncoder().encode(sql))[0]!;
+      expect(() => classifyMigrationStatement(statement, "000002")).toThrow(
+        /SQL_STATEMENT_PROFILE_REJECTED/,
+      );
+    }
+    const doStatement = splitPostgresStatements(
+      new TextEncoder().encode("DO $$ BEGIN NULL; END $$;"),
+    )[0]!;
+    expect(() => classifyMigrationStatement(doStatement, "000001")).toThrow(
+      /SQL_DO_SPECIAL_CASE_MISMATCH/,
+    );
+  });
+
+  it("preserves quoted identity spelling while folding unquoted identifiers", () => {
+    const classify = (sql: string) =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        "000002",
+      ).target_identity;
+    expect(classify("GRANT SELECT ON TABLE cloud_agents.MixedCase TO cloud_agents_runtime;")).toBe(
+      "table:unquoted:cloud_agents/unquoted:mixedcase",
+    );
+    expect(
+      classify('GRANT SELECT ON TABLE cloud_agents."MixedCase" TO cloud_agents_runtime;'),
+    ).toBe('table:unquoted:cloud_agents/quoted:"MixedCase"');
+  });
+});

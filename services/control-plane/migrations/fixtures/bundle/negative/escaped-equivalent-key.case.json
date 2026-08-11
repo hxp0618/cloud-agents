@@ -1,0 +1,6 @@
+{
+  "payload": "escaped-equivalent-key.raw",
+  "raw_sha256": "sha256:2acadd914efa11612b3bc685a53b8a01b9be840d7ab5930d69d25669a37d0283",
+  "expected": "reject",
+  "expected_error": "DUPLICATE_JSON_KEY"
+}

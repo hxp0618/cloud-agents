@@ -1,0 +1,17 @@
+{
+  "schema_bundle_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "schema_bundle": {
+    "predecessor_schema_bundle": {
+      "schema_bundle_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "migrations": [
+      {
+        "id": "000001"
+      },
+      {
+        "id": "000002"
+      }
+    ]
+  },
+  "expected_error": "ANCESTOR_CYCLE"
+}

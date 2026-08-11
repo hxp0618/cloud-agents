@@ -1,0 +1,402 @@
+{
+  "format_version": "cloud-agents-platform-catalog/v1",
+  "contract_kind": "cumulative_schema_catalog",
+  "schema_head": "000001",
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "source_descriptors": [
+    {
+      "migration_id": "000001",
+      "sql_sha256": "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4",
+      "statements": [
+        {
+          "index": 0,
+          "start": 0,
+          "end": 1049,
+          "sha256": "sha256:4cce367246af1fe1e08191df7d48bf8b9dad7ee2696b754f6c2df9f66c559281",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "DO",
+            "object_kind": "SCHEMA_BOOTSTRAP",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": null,
+            "special_case": "000001:0:sha256:4cce367246af1fe1e08191df7d48bf8b9dad7ee2696b754f6c2df9f66c559281"
+          }
+        },
+        {
+          "index": 1,
+          "start": 1049,
+          "end": 1097,
+          "sha256": "sha256:7db08cb1ae53d23a8f6058e31bc41360791c723f3365c0e38c08618f6a031be2",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "REVOKE",
+            "object_kind": "SCHEMA",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 2,
+          "start": 1097,
+          "end": 1157,
+          "sha256": "sha256:1460a321149d9f4ac32a9158574b9afe1517d055234a57e9cc656a46a292f20a",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "GRANT",
+            "object_kind": "SCHEMA",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": "CLOUD_AGENTS_RUNTIME",
+            "special_case": null
+          }
+        },
+        {
+          "index": 3,
+          "start": 1157,
+          "end": 1225,
+          "sha256": "sha256:3643f874e93b65716022740c5db036a51f652925a40b0ab556d650a7adbcc7c9",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "GRANT",
+            "object_kind": "SCHEMA",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
+            "special_case": null
+          }
+        },
+        {
+          "index": 4,
+          "start": 1225,
+          "end": 1350,
+          "sha256": "sha256:3db4c73f6640dcd64aa52eab63b4ea673ab07e603a537dae2fa8dacc6288f1c0",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "ALTER",
+            "object_kind": "DEFAULT_PRIVILEGES",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 5,
+          "start": 1350,
+          "end": 1477,
+          "sha256": "sha256:9aaec9121f741f3e57c6673ae57dcb419475ae57f44726970ce93f89e40a302b",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "ALTER",
+            "object_kind": "DEFAULT_PRIVILEGES",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 6,
+          "start": 1477,
+          "end": 1608,
+          "sha256": "sha256:ddec5dade89486f083f44a1c208a66e3180a73187c76d5844ae603c6aa9a8ff9",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "ALTER",
+            "object_kind": "DEFAULT_PRIVILEGES",
+            "target_identity": "schema:unquoted:cloud_agents",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 7,
+          "start": 1608,
+          "end": 3361,
+          "sha256": "sha256:0d5189e45ad3ebfd7b99895dbad22f05e4d7104890eb4d9d4a5d859c730ee17b",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "CREATE",
+            "object_kind": "TABLE",
+            "target_identity": "table:unquoted:cloud_agents/unquoted:schema_migrations",
+            "grantee": null,
+            "special_case": null
+          }
+        },
+        {
+          "index": 8,
+          "start": 3361,
+          "end": 3444,
+          "sha256": "sha256:16c6756990137a94e58ce5b31ba1e564d539a136979d67e013d2159b28c7c00b",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "ALTER",
+            "object_kind": "TABLE",
+            "target_identity": "table:unquoted:cloud_agents/unquoted:schema_migrations",
+            "grantee": null,
+            "special_case": null
+          }
+        },
+        {
+          "index": 9,
+          "start": 3444,
+          "end": 3508,
+          "sha256": "sha256:e33a7bdd876d94cbc8f08975ab78d20b32beb333433a9908f9176c03798d7338",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "REVOKE",
+            "object_kind": "TABLE",
+            "target_identity": "table:unquoted:cloud_agents/unquoted:schema_migrations",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 10,
+          "start": 3508,
+          "end": 3594,
+          "sha256": "sha256:465bd7f35f946c2872d9b7e374c6cc2963cadb3f69b79e66387eb2ade6f97ad5",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "REVOKE",
+            "object_kind": "TABLE",
+            "target_identity": "table:unquoted:cloud_agents/unquoted:schema_migrations",
+            "grantee": "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
+            "special_case": null
+          }
+        },
+        {
+          "index": 11,
+          "start": 3594,
+          "end": 3672,
+          "sha256": "sha256:84b81a2dc1900acb3167d60c6dd6b8402453ea8722ad0036d2b88c4a35da5878",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "GRANT",
+            "object_kind": "TABLE",
+            "target_identity": "table:unquoted:cloud_agents/unquoted:schema_migrations",
+            "grantee": "CLOUD_AGENTS_RUNTIME",
+            "special_case": null
+          }
+        },
+        {
+          "index": 12,
+          "start": 3672,
+          "end": 4061,
+          "sha256": "sha256:a90a6ea3d46fda65e5d4e818dcf47fa68787cd3be2965622c2a14d5b220a5fb4",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "CREATE",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
+            "grantee": null,
+            "special_case": null
+          }
+        },
+        {
+          "index": 13,
+          "start": 4061,
+          "end": 4159,
+          "sha256": "sha256:19846622cd19ca5bdacac843797195f82ec79130cf720cc8f952f945f893a849",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "ALTER",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
+            "grantee": null,
+            "special_case": null
+          }
+        },
+        {
+          "index": 14,
+          "start": 4159,
+          "end": 4234,
+          "sha256": "sha256:35fa4777ad8209c1c4ede48228ba6d33ee98505d490ff37d967b568791bde2e4",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "REVOKE",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 15,
+          "start": 4234,
+          "end": 4328,
+          "sha256": "sha256:4d17e3268673932c60f11b5cddfc744567d0c81662075726f9b0c5b09060be74",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "GRANT",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
+            "grantee": "CLOUD_AGENTS_RUNTIME",
+            "special_case": null
+          }
+        },
+        {
+          "index": 16,
+          "start": 4328,
+          "end": 4911,
+          "sha256": "sha256:52eb73b63cdcf19eec3900d314acf740a475de6b22f308bbf49b6b625eea6d20",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "CREATE",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:require_tenant_id()",
+            "grantee": null,
+            "special_case": null
+          }
+        },
+        {
+          "index": 17,
+          "start": 4911,
+          "end": 5003,
+          "sha256": "sha256:91fdbc0538f0a518fa645e1c7f6260da22f16381e11f3ee8423a072d1d87235a",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "ALTER",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:require_tenant_id()",
+            "grantee": null,
+            "special_case": null
+          }
+        },
+        {
+          "index": 18,
+          "start": 5003,
+          "end": 5072,
+          "sha256": "sha256:cf1908e049a2c573b9fd8ad5fd4f6ae23a6423304a722355c7744cfa559d8a7a",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "REVOKE",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:require_tenant_id()",
+            "grantee": "PUBLIC",
+            "special_case": null
+          }
+        },
+        {
+          "index": 19,
+          "start": 5072,
+          "end": 5160,
+          "sha256": "sha256:0df31327777523f58dc9e2418d3bc1aba8e6001e61c568246c1c8d6aa885fbcd",
+          "classification": {
+            "profile": "postgresql-ddl-v1",
+            "command": "GRANT",
+            "object_kind": "FUNCTION",
+            "target_identity": "function:unquoted:cloud_agents/unquoted:require_tenant_id()",
+            "grantee": "CLOUD_AGENTS_RUNTIME",
+            "special_case": null
+          }
+        }
+      ]
+    }
+  ],
+  "projection_model": {
+    "schema_fields": ["name", "owner", "effective_acl", "comment", "security_labels"],
+    "default_acl_fields": ["owner", "schema", "object_kind", "grantee", "privileges", "grantable"],
+    "relation_fields": [
+      "identity",
+      "relkind",
+      "persistence",
+      "access_method",
+      "owner",
+      "acl",
+      "reloptions",
+      "replica_identity",
+      "rls_enabled",
+      "rls_forced"
+    ],
+    "column_fields": [
+      "attnum",
+      "name",
+      "type",
+      "typmod",
+      "collation",
+      "nullable",
+      "identity",
+      "generated",
+      "default",
+      "storage",
+      "compression"
+    ],
+    "constraint_fields": [
+      "name",
+      "type",
+      "columns",
+      "referenced_relation",
+      "referenced_columns",
+      "match",
+      "update",
+      "delete",
+      "deferrable",
+      "deferred",
+      "validated",
+      "expression"
+    ],
+    "index_fields": [
+      "name",
+      "access_method",
+      "keys",
+      "includes",
+      "opclass",
+      "collation",
+      "order",
+      "nulls",
+      "unique",
+      "primary",
+      "valid",
+      "ready",
+      "live",
+      "predicate",
+      "expression"
+    ],
+    "policy_fields": ["name", "permissive", "command", "roles", "using", "with_check"],
+    "trigger_fields": [
+      "identity",
+      "function",
+      "enabled",
+      "type",
+      "columns",
+      "arguments",
+      "when",
+      "internal"
+    ],
+    "function_fields": [
+      "identity",
+      "kind",
+      "language",
+      "arguments",
+      "returns",
+      "owner",
+      "acl",
+      "security_definer",
+      "volatility",
+      "parallel",
+      "leakproof",
+      "strict",
+      "config",
+      "cost",
+      "rows",
+      "prosrc_sha256",
+      "probin"
+    ],
+    "expression_profile": "cloud-agents-sql-expression/v1",
+    "denied_object_kinds": [
+      "sequence",
+      "view",
+      "materialized_view",
+      "foreign_table",
+      "partition",
+      "operator",
+      "cast",
+      "extension"
+    ]
+  },
+  "declared_object_identities": [
+    "schema:unquoted:cloud_agents",
+    "table:unquoted:cloud_agents/unquoted:schema_migrations",
+    "function:unquoted:cloud_agents/unquoted:is_valid_identifier(unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:require_tenant_id()"
+  ]
+}

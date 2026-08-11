@@ -18,7 +18,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run --filter '@synara/*' build",
-    "check": "bun run fmt:check && bun run lint && bun run platform:contracts:check && bun run platform:go:check && bun run typecheck && bun run test && bun run build",
+    "check": "bun run fmt:check && bun run lint && bun run platform:contracts:check && bun run platform:migrations:check && bun run platform:go:check && bun run platform:go:test && bun run typecheck && bun run test && bun run build",
     "fmt": "oxfmt . --write",
     "fmt:check": "oxfmt . --check",
     "lint": "oxlint . --deny-warnings",
@@ -28,7 +28,9 @@
     "release:sbom": "node scripts/generate-sbom.ts",
     "secret:scan": "bun scripts/secret-scan.ts",
     "platform:contracts:check": "bun scripts/check-platform-contracts.ts && bun scripts/generate-platform-contract-lock.ts --check",
-    "platform:go:check": "bun scripts/check-platform-go-modules.ts"
+    "platform:migrations:check": "bun scripts/check-platform-migration-bundle.ts && bun scripts/generate-platform-migration-bundle.ts --check",
+    "platform:go:check": "bun scripts/check-platform-go-modules.ts",
+    "platform:go:test": "GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test -race ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane vet ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod tidy -diff && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod verify"
   },
   "devDependencies": {
     "@types/node": "24.10.13",

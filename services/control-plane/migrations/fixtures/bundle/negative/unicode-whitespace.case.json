@@ -1,0 +1,6 @@
+{
+  "payload": "unicode-whitespace.raw",
+  "raw_sha256": "sha256:108f6606fe54bfafe5a0bf5ce81e44b42fe648999cb00806dd93cb038bba5d85",
+  "expected": "reject",
+  "expected_error": "INVALID_JSON"
+}

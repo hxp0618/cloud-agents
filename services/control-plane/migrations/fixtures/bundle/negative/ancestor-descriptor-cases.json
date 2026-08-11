@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "name": "path-traversal",
+      "field": "path",
+      "value": "../evil",
+      "expected_error": "ANCESTOR_DESCRIPTOR"
+    },
+    {
+      "name": "noncanonical-archive-name",
+      "field": "path",
+      "value": "services/control-plane/migrations/archive/777777.schema-bundle.json",
+      "expected_error": "ANCESTOR_DESCRIPTOR"
+    },
+    {
+      "name": "bogus-size",
+      "field": "size_bytes",
+      "value": 777777,
+      "expected_error": "ANCESTOR_DESCRIPTOR"
+    },
+    {
+      "name": "bogus-sha",
+      "field": "sha256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_error": "ANCESTOR_DESCRIPTOR"
+    },
+    {
+      "name": "extra-field",
+      "field": "extra",
+      "value": true,
+      "expected_error": "UNKNOWN_OR_MISSING_FIELD"
+    }
+  ]
+}
