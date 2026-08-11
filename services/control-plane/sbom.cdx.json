@@ -1,0 +1,444 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-08-11T07:04:31Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "Go",
+          "version": "1.26.5"
+        },
+        {
+          "type": "application",
+          "name": "govulncheck",
+          "version": "1.6.0"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "group": "github.com/hxp0618/cloud-agents/services",
+      "name": "control-plane",
+      "version": "99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "purl": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "properties": [
+        {
+          "name": "cloud-agents:go-mod-sha256",
+          "value": "be3b52ada42aee131f5ab650ecd9d17aa65b779d52615cd3b607df83507b4f5e"
+        },
+        {
+          "name": "cloud-agents:go-sum-sha256",
+          "value": "f65654519c652388e9f315cef1ef299e86fdc964d8d18332c05dbdb51a40c7fb"
+        },
+        {
+          "name": "cloud-agents:source-commit",
+          "value": "99106e8a77b6318830c63b4a4c294fa7ff8f1de4"
+        },
+        {
+          "name": "cloud-agents:source-commit-tree-oid",
+          "value": "606ab156439e6b30129f7738c646f1b4a3c6d70a"
+        },
+        {
+          "name": "cloud-agents:control-plane-tree-oid",
+          "value": "ad47c98dba6bebdbaaa612d7e9a5500f833db8ee"
+        },
+        {
+          "name": "cloud-agents:control-plane-tracked-manifest-sha256",
+          "value": "65ae44316bfc02d5bf4980d73c1a521518dc499dc2e5cd68f4b58d3c50a3e173"
+        },
+        {
+          "name": "cloud-agents:control-plane-go-source-manifest-sha256",
+          "value": "ae5178f70c74dcd75ee530d4e44325bb19ec1c5d1769ce7f08ac574d0293cc05"
+        },
+        {
+          "name": "cloud-agents:non-test-production-package-list-sha256",
+          "value": "07d05153aff50a4db408a9e4d34c4a298a21f5ccd5615b9940e4e8521e0de354"
+        },
+        {
+          "name": "cloud-agents:source-tree-committed",
+          "value": "true"
+        },
+        {
+          "name": "cloud-agents:graph-model",
+          "value": "production-linked components are root dependencies; graph-only components are inventory-only and not distributed"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+      "group": "github.com/jackc",
+      "name": "pgpassfile",
+      "version": "v1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "1cc79fb0b80f54b568afd3f4648dd1c349f746ad7c379df8d7f9e0eb1cac938b"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
+        { "name": "cloud-agents:distribution-scope", "value": "linked-and-noticed" },
+        {
+          "name": "cloud-agents:module-sum",
+          "value": "h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM="
+        },
+        {
+          "name": "cloud-agents:go-mod-sum",
+          "value": "h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg="
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+      "group": "github.com/jackc",
+      "name": "pgservicefile",
+      "version": "v0.0.0-20240606120523-5a60cdf6a761",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c9e31c91aebf96eb246bd410d1849cc7666d955a1e20ca2eba1c30b4eb89335f"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
+        { "name": "cloud-agents:distribution-scope", "value": "linked-and-noticed" },
+        {
+          "name": "cloud-agents:module-sum",
+          "value": "h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo="
+        },
+        {
+          "name": "cloud-agents:go-mod-sum",
+          "value": "h1:5TJZWKEWniPve33vlWYSoGYefn3gLQRzjfDlhSJ9ZKM="
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgx/v5@v5.10.0",
+      "group": "github.com/jackc/pgx",
+      "name": "v5",
+      "version": "v5.10.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "bfc29f3326851fb4fc12bfa5678ea804e09ef01810948688e49dae3c62d23359"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/jackc/pgx/v5@v5.10.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
+        { "name": "cloud-agents:distribution-scope", "value": "linked-and-noticed" },
+        {
+          "name": "cloud-agents:module-sum",
+          "value": "h1:VhSvgU2jSli8o3AqIEOTJr7rZwAEUVo4E4XhR94Zfr0="
+        },
+        {
+          "name": "cloud-agents:go-mod-sum",
+          "value": "h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4="
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+      "group": "github.com/jackc/puddle",
+      "name": "v2",
+      "version": "v2.2.2",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f1f0789098a0bcb5ff3c7024f9ee387a6748446e1bc6713b13a63d763a9fb11e"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
+        { "name": "cloud-agents:distribution-scope", "value": "linked-and-noticed" },
+        {
+          "name": "cloud-agents:module-sum",
+          "value": "h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo="
+        },
+        {
+          "name": "cloud-agents:go-mod-sum",
+          "value": "h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4="
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/sync@v0.21.0",
+      "group": "golang.org/x",
+      "name": "sync",
+      "version": "v0.21.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ee65459023de7f24836f6e2123144b5329bd0a4d05a87c3c448509378e2e6be7"
+        }
+      ],
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "purl": "pkg:golang/golang.org/x/sync@v0.21.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
+        { "name": "cloud-agents:distribution-scope", "value": "linked-and-noticed" },
+        {
+          "name": "cloud-agents:module-sum",
+          "value": "h1:HLII4xRRTtCRkxYp4HNFF0Js/Og6q2i++KXbg0gHCwM="
+        },
+        {
+          "name": "cloud-agents:go-mod-sum",
+          "value": "h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0="
+        },
+        {
+          "name": "cloud-agents:additional-ip-rights-grant-path",
+          "value": "PATENTS"
+        },
+        {
+          "name": "cloud-agents:additional-ip-rights-grant-title",
+          "value": "Additional IP Rights Grant (Patents)"
+        },
+        {
+          "name": "cloud-agents:additional-ip-rights-grant-sha256",
+          "value": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/text@v0.39.0",
+      "group": "golang.org/x",
+      "name": "text",
+      "version": "v0.39.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "cbfa33111dfa6cbafef63103b82c544d35df425824ac94ea19629a12bdbf0523"
+        }
+      ],
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "purl": "pkg:golang/golang.org/x/text@v0.39.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
+        { "name": "cloud-agents:distribution-scope", "value": "linked-and-noticed" },
+        {
+          "name": "cloud-agents:module-sum",
+          "value": "h1:UbZz4pLOvn600D6Oh6GGEI6VAmndrEBLv8/6BEXzyus="
+        },
+        {
+          "name": "cloud-agents:go-mod-sum",
+          "value": "h1:3UwRclnC2g0TU9x8PZiyfOajCd1zaUNHF9cvqcQZ+ZM="
+        },
+        {
+          "name": "cloud-agents:additional-ip-rights-grant-path",
+          "value": "PATENTS"
+        },
+        {
+          "name": "cloud-agents:additional-ip-rights-grant-title",
+          "value": "Additional IP Rights Grant (Patents)"
+        },
+        {
+          "name": "cloud-agents:additional-ip-rights-grant-sha256",
+          "value": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/davecgh/go-spew@v1.1.1",
+      "group": "github.com/davecgh",
+      "name": "go-spew",
+      "version": "v1.1.1",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6b44a843951f371b7010c754ecc3cabefe815d5ced1c5b9409fb2d697e8a890d"
+        }
+      ],
+      "licenses": [{ "license": { "id": "ISC" } }],
+      "purl": "pkg:golang/github.com/davecgh/go-spew@v1.1.1",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/kr/pretty@v0.3.0",
+      "group": "github.com/kr",
+      "name": "pretty",
+      "version": "v0.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3ac65e185f956d889d77485173fadcc30e959b6bcfdaa8acafaec5f4dac5cd48"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/kr/pretty@v0.3.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/pmezard/go-difflib@v1.0.0",
+      "group": "github.com/pmezard",
+      "name": "go-difflib",
+      "version": "v1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "de04cecc1a4b8d53e4357051026794bcbc54f2e6a260cfac508ce69d5d6457a0"
+        }
+      ],
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "purl": "pkg:golang/github.com/pmezard/go-difflib@v1.0.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/stretchr/objx@v0.1.0",
+      "group": "github.com/stretchr",
+      "name": "objx",
+      "version": "v0.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "1fa10dab404ed7fc8ed2a033f8784187d5df3513ced3841ce39e46d37850eb1d"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/stretchr/objx@v0.1.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/stretchr/testify@v1.11.1",
+      "group": "github.com/stretchr",
+      "name": "testify",
+      "version": "v1.11.1",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "b7325b561ead5304b72b9f32aebc871ff49b3823667d530a49fd6c8f3adfc96e"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:golang/github.com/stretchr/testify@v1.11.1",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/mod@v0.37.0",
+      "group": "golang.org/x",
+      "name": "mod",
+      "version": "v0.37.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "91e8e4e9b74a8706dae808b66538d4ab22befd00c11f34134eb97ff572d52e85"
+        }
+      ],
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "purl": "pkg:golang/golang.org/x/mod@v0.37.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/tools@v0.47.0",
+      "group": "golang.org/x",
+      "name": "tools",
+      "version": "v0.47.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "143d132b519da1454db967febb65241796805d7c9d4752034341c1376fd3d7f1"
+        }
+      ],
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "purl": "pkg:golang/golang.org/x/tools@v0.47.0",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/gopkg.in/check.v1@v1.0.0-20201130134442-10cb98267c6c",
+      "group": "gopkg.in",
+      "name": "check.v1",
+      "version": "v1.0.0-20201130134442-10cb98267c6c",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f555684e5c5dacc2850dddb345fef1b8f93f546b72685589789da6d2b062710e"
+        }
+      ],
+      "licenses": [{ "license": { "id": "BSD-2-Clause" } }],
+      "purl": "pkg:golang/gopkg.in/check.v1@v1.0.0-20201130134442-10cb98267c6c",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
+      "group": "gopkg.in",
+      "name": "yaml.v3",
+      "version": "v3.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "aab8fbc4e6300ea08e6afe1caea18a21c90c79f489f52c53e2f20431f1a9a015"
+        }
+      ],
+      "licenses": [{ "expression": "MIT AND Apache-2.0" }],
+      "purl": "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
+      "properties": [
+        { "name": "cloud-agents:dependency-classification", "value": "graph-only" },
+        { "name": "cloud-agents:distribution-scope", "value": "not-linked-not-distributed" }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "dependsOn": [
+        "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+        "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+        "pkg:golang/github.com/jackc/pgx/v5@v5.10.0",
+        "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+        "pkg:golang/golang.org/x/sync@v0.21.0",
+        "pkg:golang/golang.org/x/text@v0.39.0"
+      ]
+    }
+  ]
+}
