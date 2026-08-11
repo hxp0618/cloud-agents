@@ -6,9 +6,13 @@ import (
 )
 
 const (
-	releaseTrustDecisionDomain     = "cloud-agents-platform-release-trust-decision/v1"
-	runnerProjectionDecisionDomain = "cloud-agents-platform-runner-projection-decision/v1"
-	executionLineageDomain         = "cloud-agents-platform-execution-lineage/v1"
+	releaseTrustDecisionDomain                   = "cloud-agents-platform-release-trust-decision/v1"
+	runnerProjectionDecisionDomain               = "cloud-agents-platform-runner-projection-decision/v1"
+	executionLineageDomain                       = "cloud-agents-platform-execution-lineage/v1"
+	recoveryPolicySubjectDomain                  = "cloud-agents-platform-recovery-policy-subject/v1"
+	decisionRecoveryArtifactProfileDomain        = "cloud-agents-platform-decision-recovery-artifact-profile/v1"
+	decisionRecoveryArtifactFormatVersion        = "cloud-agents-platform-decision-recovery-artifact/v1"
+	decisionRecoveryArtifactProfileDigest Digest = "sha256:3f3f8f82796d2cf33128ddafaab49e7f565ee8ca1807ee02a91f22e780fe36ae"
 )
 
 // RunnerProjectionBindings is an opaque, package-owned projection decision.
@@ -16,28 +20,84 @@ const (
 // DSN overlays. A trust verifier may bind it only after all signed subjects
 // have been promoted through the existing verified wrapper seam.
 type RunnerProjectionBindings struct {
-	verified                           bool
-	releaseTrustDecisionDigest         Digest
-	runnerProjectionDecisionDigest     Digest
-	executionLineageDigest             Digest
-	schemaBundleDigest                 Digest
-	authorityProfileDigest             Digest
-	authorityBindingDigest             Digest
-	authorityBinding                   AuthorityBinding
-	authorityBindingCanonical          string
-	verifiedAuthorityProfile           verifiedAuthorityProfileSubject
-	verifiedAuthority                  VerifiedAuthorityContract
-	initialSchemaScope                 VerifiedSchemaBundleScope
-	initialSchemaScopeBindingCanonical string
-	executableCatalogs                 []ExecutableCatalogBinding
-	releaseExpiresAt                   time.Time
-	releaseSecurityEpoch               uint64
-	authorityExpiresAt                 time.Time
-	authoritySecurityEpoch             uint64
-	releaseSubject                     releaseTrustDecisionSubject
-	deploymentID                       string
-	expectedDatabaseName               string
-	expectedCanonical                  string
+	verified                              bool
+	releaseTrustDecisionDigest            Digest
+	runnerProjectionDecisionDigest        Digest
+	executionLineageDigest                Digest
+	schemaBundleDigest                    Digest
+	authorityProfileDigest                Digest
+	authorityBindingDigest                Digest
+	recoveryPolicySubjectDigest           Digest
+	decisionRecoveryArtifactProfileDigest Digest
+	authorityBinding                      AuthorityBinding
+	authorityBindingCanonical             string
+	verifiedAuthorityProfile              verifiedAuthorityProfileSubject
+	verifiedAuthority                     VerifiedAuthorityContract
+	verifiedRecoveryPolicy                verifiedRecoveryPolicySubject
+	initialSchemaScope                    VerifiedSchemaBundleScope
+	initialSchemaScopeBindingCanonical    string
+	executableCatalogs                    []ExecutableCatalogBinding
+	releaseExpiresAt                      time.Time
+	releaseSecurityEpoch                  uint64
+	authorityExpiresAt                    time.Time
+	authoritySecurityEpoch                uint64
+	releaseSubject                        releaseTrustDecisionSubject
+	deploymentID                          string
+	expectedDatabaseName                  string
+	expectedCanonical                     string
+}
+
+type oldDecisionAuthorization struct {
+	OldRunnerProjectionDecisionDigest Digest `json:"old_runner_projection_decision_digest"`
+	AllowExpired                      bool   `json:"allow_expired"`
+	AllowRevoked                      bool   `json:"allow_revoked"`
+	AllowCompromised                  bool   `json:"allow_compromised"`
+}
+
+// recoveryPolicySignedSubject is the closed signed body accepted by the
+// verifier-owned promotion seam. There is deliberately no JSON decoder or
+// caller-facing constructor for this subject.
+type recoveryPolicySignedSubject struct {
+	Domain                    string                     `json:"domain"`
+	IssuerKeyIdentityDigest   Digest                     `json:"issuer_key_identity_digest"`
+	ExpiresAt                 string                     `json:"expires_at"`
+	SecurityEpoch             uint64                     `json:"security_epoch"`
+	MinimumOldSecurityEpoch   uint64                     `json:"minimum_old_security_epoch"`
+	OldRevocationPolicyDigest Digest                     `json:"old_revocation_policy_digest"`
+	OldDecisionAuthorizations []oldDecisionAuthorization `json:"old_decision_authorizations"`
+}
+
+// verifiedRecoveryPolicySubject is verifier-owned opaque state. In addition
+// to the exact signed body, it freezes the current minimum epoch against which
+// that body was accepted so a weaker valid wrapper cannot be swapped in later.
+type verifiedRecoveryPolicySubject struct {
+	verified                    bool
+	subject                     recoveryPolicySignedSubject
+	subjectDigest               Digest
+	expiresAt                   time.Time
+	securityEpoch               uint64
+	currentMinimumSecurityEpoch uint64
+	subjectCanonical            string
+	expectedCanonical           string
+}
+
+type recoveryPolicyBindingSentinel struct {
+	SubjectDigest               Digest `json:"subject_digest"`
+	SubjectCanonical            string `json:"subject_canonical"`
+	CurrentMinimumSecurityEpoch uint64 `json:"current_minimum_security_epoch"`
+}
+
+type decisionRecoveryArtifactProfile struct {
+	Domain               string   `json:"domain"`
+	FormatVersion        string   `json:"format_version"`
+	Canonicalization     string   `json:"canonicalization"`
+	Base64URL            string   `json:"base64url"`
+	IdentityMaxBytes     uint64   `json:"identity_max_bytes"`
+	EncodedFieldMaxBytes uint64   `json:"encoded_field_max_bytes"`
+	ProjectionInputsMax  uint64   `json:"projection_inputs_max"`
+	CatalogInputsMax     uint64   `json:"catalog_inputs_max"`
+	KindRank             []string `json:"kind_rank"`
+	MaxSizeBytes         uint64   `json:"max_size_bytes"`
 }
 
 // verifiedAuthorityProfileSubject freezes the complete release-level
@@ -94,14 +154,16 @@ type runnerCatalogDecisionSubject struct {
 }
 
 type runnerProjectionDecisionSubject struct {
-	Domain                     string                         `json:"domain"`
-	ReleaseTrustDecisionDigest Digest                         `json:"release_trust_decision_digest"`
-	SchemaBundleDigest         Digest                         `json:"schema_bundle_digest"`
-	AuthorityProfileDigest     Digest                         `json:"authority_profile_digest"`
-	AuthorityBindingDigest     Digest                         `json:"authority_binding_digest"`
-	AuthorityExpiresAt         string                         `json:"authority_expires_at"`
-	AuthoritySecurityEpoch     uint64                         `json:"authority_security_epoch"`
-	CatalogContracts           []runnerCatalogDecisionSubject `json:"catalog_contracts"`
+	Domain                                string                         `json:"domain"`
+	ReleaseTrustDecisionDigest            Digest                         `json:"release_trust_decision_digest"`
+	SchemaBundleDigest                    Digest                         `json:"schema_bundle_digest"`
+	AuthorityProfileDigest                Digest                         `json:"authority_profile_digest"`
+	AuthorityBindingDigest                Digest                         `json:"authority_binding_digest"`
+	AuthorityExpiresAt                    string                         `json:"authority_expires_at"`
+	AuthoritySecurityEpoch                uint64                         `json:"authority_security_epoch"`
+	RecoveryPolicySubjectDigest           Digest                         `json:"recovery_policy_subject_digest"`
+	DecisionRecoveryArtifactProfileDigest Digest                         `json:"decision_recovery_artifact_profile_digest"`
+	CatalogContracts                      []runnerCatalogDecisionSubject `json:"catalog_contracts"`
 }
 
 type executionLineageSubject struct {
@@ -116,32 +178,172 @@ type expectedDatabaseIdentity struct {
 }
 
 type runnerProjectionBindingSentinel struct {
-	ReleaseTrustDecisionDigest         Digest                         `json:"release_trust_decision_digest"`
-	RunnerProjectionDecisionDigest     Digest                         `json:"runner_projection_decision_digest"`
-	ExecutionLineageDigest             Digest                         `json:"execution_lineage_digest"`
-	SchemaBundleDigest                 Digest                         `json:"schema_bundle_digest"`
-	AuthorityProfileDigest             Digest                         `json:"authority_profile_digest"`
-	AuthorityBindingDigest             Digest                         `json:"authority_binding_digest"`
-	AuthorityBindingCanonical          string                         `json:"authority_binding_canonical"`
-	InitialSchemaScopeBindingCanonical string                         `json:"initial_schema_scope_binding_canonical"`
-	ReleaseExpiresAt                   string                         `json:"release_expires_at"`
-	ReleaseSecurityEpoch               uint64                         `json:"release_security_epoch"`
-	AuthorityExpiresAt                 string                         `json:"authority_expires_at"`
-	AuthoritySecurityEpoch             uint64                         `json:"authority_security_epoch"`
-	CatalogContracts                   []runnerCatalogDecisionSubject `json:"catalog_contracts"`
-	DeploymentID                       string                         `json:"deployment_id"`
-	ExpectedDatabaseName               string                         `json:"expected_database_name"`
+	ReleaseTrustDecisionDigest            Digest                         `json:"release_trust_decision_digest"`
+	RunnerProjectionDecisionDigest        Digest                         `json:"runner_projection_decision_digest"`
+	ExecutionLineageDigest                Digest                         `json:"execution_lineage_digest"`
+	SchemaBundleDigest                    Digest                         `json:"schema_bundle_digest"`
+	AuthorityProfileDigest                Digest                         `json:"authority_profile_digest"`
+	AuthorityBindingDigest                Digest                         `json:"authority_binding_digest"`
+	RecoveryPolicySubjectDigest           Digest                         `json:"recovery_policy_subject_digest"`
+	DecisionRecoveryArtifactProfileDigest Digest                         `json:"decision_recovery_artifact_profile_digest"`
+	RecoveryPolicyBindingCanonical        string                         `json:"recovery_policy_binding_canonical"`
+	AuthorityBindingCanonical             string                         `json:"authority_binding_canonical"`
+	InitialSchemaScopeBindingCanonical    string                         `json:"initial_schema_scope_binding_canonical"`
+	ReleaseExpiresAt                      string                         `json:"release_expires_at"`
+	ReleaseSecurityEpoch                  uint64                         `json:"release_security_epoch"`
+	AuthorityExpiresAt                    string                         `json:"authority_expires_at"`
+	AuthoritySecurityEpoch                uint64                         `json:"authority_security_epoch"`
+	CatalogContracts                      []runnerCatalogDecisionSubject `json:"catalog_contracts"`
+	DeploymentID                          string                         `json:"deployment_id"`
+	ExpectedDatabaseName                  string                         `json:"expected_database_name"`
+}
+
+func fixedDecisionRecoveryArtifactProfile() decisionRecoveryArtifactProfile {
+	return decisionRecoveryArtifactProfile{
+		Domain:               decisionRecoveryArtifactProfileDomain,
+		FormatVersion:        decisionRecoveryArtifactFormatVersion,
+		Canonicalization:     "RFC8785",
+		Base64URL:            "unpadded-canonical",
+		IdentityMaxBytes:     1024,
+		EncodedFieldMaxBytes: 1048576,
+		ProjectionInputsMax:  4099,
+		CatalogInputsMax:     4096,
+		KindRank:             []string{"release", "authority_profile", "authority_binding", "catalog"},
+		MaxSizeBytes:         4194304,
+	}
+}
+
+func validateDecisionRecoveryArtifactProfileDigest(digest Digest) error {
+	computed, err := digestRunnerProjectionCanonical(fixedDecisionRecoveryArtifactProfile())
+	if err != nil || computed != decisionRecoveryArtifactProfileDigest || digest != decisionRecoveryArtifactProfileDigest {
+		return fail(CodeUntrusted, "runner-projection-bindings", "decision recovery artifact profile differs from the fixed profile", err)
+	}
+	return nil
+}
+
+// bindVerifiedRecoveryPolicySubject is a package-private promotion seam for a
+// signed subject already verified by the release trust verifier. It accepts a
+// closed typed body, never loose JSON, and owns every nested authorization.
+func bindVerifiedRecoveryPolicySubject(subject recoveryPolicySignedSubject, currentMinimumSecurityEpoch uint64, now time.Time) (verifiedRecoveryPolicySubject, error) {
+	expiresAt, err := parseCanonicalUTCTime(subject.ExpiresAt)
+	if err != nil {
+		return verifiedRecoveryPolicySubject{}, fail(CodeUntrusted, "recovery-policy", "recovery policy expiry is not canonical UTC", err)
+	}
+	ownedSubject := cloneRecoveryPolicySignedSubject(subject)
+	canonical, digest, err := canonicalVerifiedBinding(ownedSubject)
+	if err != nil || canonical == "" {
+		return verifiedRecoveryPolicySubject{}, fail(CodeUntrusted, "recovery-policy", "recovery policy subject cannot be canonically identified", err)
+	}
+	verified := verifiedRecoveryPolicySubject{
+		verified:                    true,
+		subject:                     ownedSubject,
+		subjectDigest:               digest,
+		expiresAt:                   expiresAt,
+		securityEpoch:               subject.SecurityEpoch,
+		currentMinimumSecurityEpoch: currentMinimumSecurityEpoch,
+		subjectCanonical:            canonical,
+	}
+	verified.expectedCanonical, _, err = canonicalVerifiedBinding(verified.sentinel())
+	if err != nil {
+		return verifiedRecoveryPolicySubject{}, fail(CodeUntrusted, "recovery-policy", "recovery policy sentinel cannot be canonicalized", err)
+	}
+	if err := verified.validateAt(now); err != nil {
+		return verifiedRecoveryPolicySubject{}, err
+	}
+	return verified, nil
+}
+
+func (subject verifiedRecoveryPolicySubject) validateAt(now time.Time) error {
+	if !subject.verified || subject.subjectCanonical == "" || subject.expectedCanonical == "" {
+		return fail(CodeUntrusted, "recovery-policy", "recovery policy was not produced by the trust verifier", nil)
+	}
+	if subject.subject.Domain != recoveryPolicySubjectDomain {
+		return fail(CodeUntrusted, "recovery-policy", "recovery policy subject domain is invalid", nil)
+	}
+	for field, digest := range map[string]Digest{
+		"subject":               subject.subjectDigest,
+		"issuer_key_identity":   subject.subject.IssuerKeyIdentityDigest,
+		"old_revocation_policy": subject.subject.OldRevocationPolicyDigest,
+	} {
+		if err := requireDigest("recovery-policy."+field, digest); err != nil {
+			return fail(CodeUntrusted, "recovery-policy", "recovery policy contains an invalid digest", err)
+		}
+	}
+	parsedExpiry, err := parseCanonicalUTCTime(subject.subject.ExpiresAt)
+	if err != nil || !parsedExpiry.Equal(subject.expiresAt) || subject.expiresAt.IsZero() || !now.Before(subject.expiresAt) {
+		return fail(CodeUntrusted, "recovery-policy", "recovery policy is expired or its expiry differs from the signed subject", err)
+	}
+	if subject.securityEpoch == 0 || subject.currentMinimumSecurityEpoch == 0 || subject.securityEpoch < subject.currentMinimumSecurityEpoch ||
+		subject.subject.SecurityEpoch != subject.securityEpoch || subject.subject.MinimumOldSecurityEpoch == 0 {
+		return fail(CodeUntrusted, "recovery-policy", "recovery policy epoch is invalid or below the current minimum", nil)
+	}
+	if subject.subject.OldDecisionAuthorizations == nil {
+		return fail(CodeUntrusted, "recovery-policy", "old decision authorizations must be a closed array", nil)
+	}
+	for index, authorization := range subject.subject.OldDecisionAuthorizations {
+		if err := requireDigest("recovery-policy.old-decision", authorization.OldRunnerProjectionDecisionDigest); err != nil {
+			return fail(CodeUntrusted, "recovery-policy", "old decision authorization contains an invalid digest", err)
+		}
+		if index > 0 && subject.subject.OldDecisionAuthorizations[index-1].OldRunnerProjectionDecisionDigest >= authorization.OldRunnerProjectionDecisionDigest {
+			return fail(CodeUntrusted, "recovery-policy", "old decision authorizations are duplicate or not canonically sorted", nil)
+		}
+	}
+	canonical, digest, err := canonicalVerifiedBinding(subject.subject)
+	if err != nil || canonical != subject.subjectCanonical || digest != subject.subjectDigest {
+		return fail(CodeUntrusted, "recovery-policy", "recovery policy differs from its immutable signed subject", err)
+	}
+	expectedCanonical, _, err := canonicalVerifiedBinding(subject.sentinel())
+	if err != nil || expectedCanonical != subject.expectedCanonical {
+		return fail(CodeUntrusted, "recovery-policy", "recovery policy differs from its immutable verifier binding", err)
+	}
+	return nil
+}
+
+func (subject verifiedRecoveryPolicySubject) sentinel() recoveryPolicyBindingSentinel {
+	return recoveryPolicyBindingSentinel{
+		SubjectDigest: subject.subjectDigest, SubjectCanonical: subject.subjectCanonical,
+		CurrentMinimumSecurityEpoch: subject.currentMinimumSecurityEpoch,
+	}
+}
+
+func (subject verifiedRecoveryPolicySubject) ownedCopy() verifiedRecoveryPolicySubject {
+	owned := subject
+	owned.subject = cloneRecoveryPolicySignedSubject(subject.subject)
+	return owned
+}
+
+func cloneRecoveryPolicySignedSubject(subject recoveryPolicySignedSubject) recoveryPolicySignedSubject {
+	owned := subject
+	if subject.OldDecisionAuthorizations != nil {
+		owned.OldDecisionAuthorizations = append([]oldDecisionAuthorization{}, subject.OldDecisionAuthorizations...)
+	}
+	return owned
+}
+
+func rejectCurrentRecoveryAuthorization(policy verifiedRecoveryPolicySubject, current Digest) error {
+	for _, authorization := range policy.subject.OldDecisionAuthorizations {
+		if authorization.OldRunnerProjectionDecisionDigest == current {
+			return fail(CodeUntrusted, "runner-projection-bindings", "recovery policy authorizes its current combined decision instead of a strict historical decision", nil)
+		}
+	}
+	return nil
 }
 
 // bindVerifiedRunnerProjectionDecision is the package-private trust-verifier
 // seam. verifiedAuthorityProfile and authorityBinding are distinct, already
 // signature-verified subjects; every projection body must independently match
 // its opaque verified wrapper.
-func bindVerifiedRunnerProjectionDecision(decision VerifiedTrustDecision, verifiedAuthorityProfile verifiedAuthorityProfileSubject, authorityBinding AuthorityBinding, verifiedAuthority VerifiedAuthorityContract, initialSchemaScope VerifiedSchemaBundleScope, verifiedCatalogs []verifiedExecutableCatalogSubject, now time.Time) (VerifiedTrustDecision, error) {
+func bindVerifiedRunnerProjectionDecision(decision VerifiedTrustDecision, verifiedAuthorityProfile verifiedAuthorityProfileSubject, authorityBinding AuthorityBinding, verifiedAuthority VerifiedAuthorityContract, verifiedRecoveryPolicy verifiedRecoveryPolicySubject, initialSchemaScope VerifiedSchemaBundleScope, verifiedCatalogs []verifiedExecutableCatalogSubject, now time.Time) (VerifiedTrustDecision, error) {
 	if err := decision.validate(); err != nil {
 		return VerifiedTrustDecision{}, err
 	}
 	if err := verifiedAuthorityProfile.validate(); err != nil {
+		return VerifiedTrustDecision{}, err
+	}
+	if err := validateDecisionRecoveryArtifactProfileDigest(decisionRecoveryArtifactProfileDigest); err != nil {
+		return VerifiedTrustDecision{}, err
+	}
+	if err := verifiedRecoveryPolicy.validateAt(now); err != nil {
 		return VerifiedTrustDecision{}, err
 	}
 	if decision.expiresAt.IsZero() || !now.Before(decision.expiresAt) || decision.securityEpoch == 0 {
@@ -218,10 +420,16 @@ func bindVerifiedRunnerProjectionDecision(decision VerifiedTrustDecision, verifi
 		Domain: runnerProjectionDecisionDomain, ReleaseTrustDecisionDigest: releaseDigest,
 		SchemaBundleDigest: decision.expectedSchemaBundleDigest, AuthorityProfileDigest: authorityBinding.AuthorityProfileDigest,
 		AuthorityBindingDigest: authorityBindingDigest, AuthorityExpiresAt: authorityBinding.ExpiresAt,
-		AuthoritySecurityEpoch: uint64(authorityBinding.SecurityEpoch), CatalogContracts: catalogSubjects,
+		AuthoritySecurityEpoch:                uint64(authorityBinding.SecurityEpoch),
+		RecoveryPolicySubjectDigest:           verifiedRecoveryPolicy.subjectDigest,
+		DecisionRecoveryArtifactProfileDigest: decisionRecoveryArtifactProfileDigest,
+		CatalogContracts:                      catalogSubjects,
 	}
 	combinedDigest, err := digestRunnerProjectionCanonical(combinedSubject)
 	if err != nil {
+		return VerifiedTrustDecision{}, err
+	}
+	if err := rejectCurrentRecoveryAuthorization(verifiedRecoveryPolicy, combinedDigest); err != nil {
 		return VerifiedTrustDecision{}, err
 	}
 	lineageSubject := executionLineageSubject{
@@ -237,9 +445,12 @@ func bindVerifiedRunnerProjectionDecision(decision VerifiedTrustDecision, verifi
 		verified: true, releaseTrustDecisionDigest: releaseDigest, runnerProjectionDecisionDigest: combinedDigest,
 		executionLineageDigest: lineageDigest, schemaBundleDigest: decision.expectedSchemaBundleDigest,
 		authorityProfileDigest: authorityBinding.AuthorityProfileDigest, authorityBindingDigest: authorityBindingDigest,
-		authorityBinding: cloneProjectionValue(authorityBinding), authorityBindingCanonical: authorityBindingCanonical,
+		recoveryPolicySubjectDigest:           verifiedRecoveryPolicy.subjectDigest,
+		decisionRecoveryArtifactProfileDigest: decisionRecoveryArtifactProfileDigest,
+		authorityBinding:                      cloneProjectionValue(authorityBinding), authorityBindingCanonical: authorityBindingCanonical,
 		verifiedAuthorityProfile: verifiedAuthorityProfile.ownedCopy(),
-		verifiedAuthority:        cloneVerifiedAuthorityContract(verifiedAuthority), initialSchemaScope: cloneVerifiedSchemaBundleScope(initialSchemaScope),
+		verifiedAuthority:        cloneVerifiedAuthorityContract(verifiedAuthority),
+		verifiedRecoveryPolicy:   verifiedRecoveryPolicy.ownedCopy(), initialSchemaScope: cloneVerifiedSchemaBundleScope(initialSchemaScope),
 		initialSchemaScopeBindingCanonical: initialSchemaScope.bindingCanonical,
 		executableCatalogs:                 catalogs, releaseExpiresAt: decision.expiresAt, releaseSecurityEpoch: decision.securityEpoch,
 		authorityExpiresAt: authorityExpiry, authoritySecurityEpoch: uint64(authorityBinding.SecurityEpoch),
@@ -267,6 +478,8 @@ func (bindings RunnerProjectionBindings) validateAt(now time.Time) error {
 		"release_decision": bindings.releaseTrustDecisionDigest, "runner_projection_decision": bindings.runnerProjectionDecisionDigest,
 		"execution_lineage": bindings.executionLineageDigest, "schema_bundle": bindings.schemaBundleDigest,
 		"authority_profile": bindings.authorityProfileDigest, "authority_binding": bindings.authorityBindingDigest,
+		"recovery_policy_subject":            bindings.recoveryPolicySubjectDigest,
+		"decision_recovery_artifact_profile": bindings.decisionRecoveryArtifactProfileDigest,
 	} {
 		if err := requireDigest("runner-projection-bindings."+field, digest); err != nil {
 			return fail(CodeUntrusted, "runner-projection-bindings", "projection bindings contain an invalid digest", err)
@@ -275,6 +488,15 @@ func (bindings RunnerProjectionBindings) validateAt(now time.Time) error {
 	if bindings.releaseExpiresAt.IsZero() || !now.Before(bindings.releaseExpiresAt) || bindings.releaseSecurityEpoch == 0 ||
 		bindings.authorityExpiresAt.IsZero() || !now.Before(bindings.authorityExpiresAt) || bindings.authoritySecurityEpoch == 0 {
 		return fail(CodeUntrusted, "runner-projection-bindings", "projection binding expiry or epoch is invalid", nil)
+	}
+	if err := validateDecisionRecoveryArtifactProfileDigest(bindings.decisionRecoveryArtifactProfileDigest); err != nil {
+		return err
+	}
+	if err := bindings.verifiedRecoveryPolicy.validateAt(now); err != nil {
+		return err
+	}
+	if bindings.verifiedRecoveryPolicy.subjectDigest != bindings.recoveryPolicySubjectDigest {
+		return fail(CodeUntrusted, "runner-projection-bindings", "verified recovery policy differs from the total recovery policy binding", nil)
 	}
 	if err := bindings.verifiedAuthority.validateAt(now); err != nil {
 		return err
@@ -346,10 +568,16 @@ func (bindings RunnerProjectionBindings) validateAt(now time.Time) error {
 		Domain: runnerProjectionDecisionDomain, ReleaseTrustDecisionDigest: bindings.releaseTrustDecisionDigest,
 		SchemaBundleDigest: bindings.schemaBundleDigest, AuthorityProfileDigest: bindings.authorityProfileDigest,
 		AuthorityBindingDigest: bindings.authorityBindingDigest, AuthorityExpiresAt: canonicalProjectionExpiry(bindings.authorityExpiresAt),
-		AuthoritySecurityEpoch: bindings.authoritySecurityEpoch, CatalogContracts: catalogDecisionSubjects(bindings.executableCatalogs),
+		AuthoritySecurityEpoch:                bindings.authoritySecurityEpoch,
+		RecoveryPolicySubjectDigest:           bindings.recoveryPolicySubjectDigest,
+		DecisionRecoveryArtifactProfileDigest: bindings.decisionRecoveryArtifactProfileDigest,
+		CatalogContracts:                      catalogDecisionSubjects(bindings.executableCatalogs),
 	})
 	if err != nil || combinedDigest != bindings.runnerProjectionDecisionDigest {
 		return fail(CodeUntrusted, "runner-projection-bindings", "combined projection decision digest differs from its canonical subject", err)
+	}
+	if err := rejectCurrentRecoveryAuthorization(bindings.verifiedRecoveryPolicy, bindings.runnerProjectionDecisionDigest); err != nil {
+		return err
 	}
 	lineageDigest, err := digestRunnerProjectionCanonical(executionLineageSubject{
 		Domain: executionLineageDomain, DeploymentID: bindings.deploymentID,
@@ -376,9 +604,12 @@ func (bindings RunnerProjectionBindings) sentinel() runnerProjectionBindingSenti
 		ReleaseTrustDecisionDigest: bindings.releaseTrustDecisionDigest, RunnerProjectionDecisionDigest: bindings.runnerProjectionDecisionDigest,
 		ExecutionLineageDigest: bindings.executionLineageDigest, SchemaBundleDigest: bindings.schemaBundleDigest,
 		AuthorityProfileDigest: bindings.authorityProfileDigest, AuthorityBindingDigest: bindings.authorityBindingDigest,
-		AuthorityBindingCanonical:          bindings.authorityBindingCanonical,
-		InitialSchemaScopeBindingCanonical: bindings.initialSchemaScopeBindingCanonical,
-		ReleaseExpiresAt:                   canonicalProjectionExpiry(bindings.releaseExpiresAt), ReleaseSecurityEpoch: bindings.releaseSecurityEpoch,
+		RecoveryPolicySubjectDigest:           bindings.recoveryPolicySubjectDigest,
+		DecisionRecoveryArtifactProfileDigest: bindings.decisionRecoveryArtifactProfileDigest,
+		RecoveryPolicyBindingCanonical:        bindings.verifiedRecoveryPolicy.expectedCanonical,
+		AuthorityBindingCanonical:             bindings.authorityBindingCanonical,
+		InitialSchemaScopeBindingCanonical:    bindings.initialSchemaScopeBindingCanonical,
+		ReleaseExpiresAt:                      canonicalProjectionExpiry(bindings.releaseExpiresAt), ReleaseSecurityEpoch: bindings.releaseSecurityEpoch,
 		AuthorityExpiresAt: canonicalProjectionExpiry(bindings.authorityExpiresAt), AuthoritySecurityEpoch: bindings.authoritySecurityEpoch,
 		CatalogContracts: catalogDecisionSubjects(bindings.executableCatalogs), DeploymentID: bindings.deploymentID,
 		ExpectedDatabaseName: bindings.expectedDatabaseName,
@@ -390,6 +621,7 @@ func (bindings RunnerProjectionBindings) ownedCopy() RunnerProjectionBindings {
 	owned.authorityBinding = cloneProjectionValue(bindings.authorityBinding)
 	owned.verifiedAuthorityProfile = bindings.verifiedAuthorityProfile.ownedCopy()
 	owned.verifiedAuthority = cloneVerifiedAuthorityContract(bindings.verifiedAuthority)
+	owned.verifiedRecoveryPolicy = bindings.verifiedRecoveryPolicy.ownedCopy()
 	owned.initialSchemaScope = cloneVerifiedSchemaBundleScope(bindings.initialSchemaScope)
 	owned.executableCatalogs = make([]ExecutableCatalogBinding, len(bindings.executableCatalogs))
 	for index, catalog := range bindings.executableCatalogs {

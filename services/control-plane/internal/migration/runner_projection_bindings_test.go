@@ -13,13 +13,14 @@ type runnerBindingFixture struct {
 	authorityProfile verifiedAuthorityProfileSubject
 	authorityBinding AuthorityBinding
 	authority        VerifiedAuthorityContract
+	recoveryPolicy   verifiedRecoveryPolicySubject
 	initialScope     VerifiedSchemaBundleScope
 	catalogs         []verifiedExecutableCatalogSubject
 }
 
 func TestRunnerProjectionBindingsCanonicalDecisionsAndLineageExclusions(t *testing.T) {
 	fixture := newRunnerBindingFixture(t, []string{"000001"})
-	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.initialScope, fixture.catalogs, fixture.now)
+	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, fixture.catalogs, fixture.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestRunnerProjectionBindingsCanonicalDecisionsAndLineageExclusions(t *testi
 			t.Fatal(err)
 		}
 	}
-	rotatedBound, err := bindVerifiedRunnerProjectionDecision(rotated.decision, rotated.authorityProfile, rotated.authorityBinding, rotated.authority, rotated.initialScope, rotated.catalogs, rotated.now)
+	rotatedBound, err := bindVerifiedRunnerProjectionDecision(rotated.decision, rotated.authorityProfile, rotated.authorityBinding, rotated.authority, rotated.recoveryPolicy, rotated.initialScope, rotated.catalogs, rotated.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,15 +75,15 @@ func TestRunnerProjectionBindingsCanonicalDecisionsAndLineageExclusions(t *testi
 func TestRunnerProjectionBindingsRejectCatalogOrderDuplicateAndMutation(t *testing.T) {
 	fixture := newRunnerBindingFixture(t, []string{"000001", "000002"})
 	reordered := []verifiedExecutableCatalogSubject{fixture.catalogs[1], fixture.catalogs[0]}
-	if _, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.initialScope, reordered, fixture.now); !IsCode(err, CodeUntrusted) {
+	if _, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, reordered, fixture.now); !IsCode(err, CodeUntrusted) {
 		t.Fatalf("reordered catalog subjects were accepted: %v", err)
 	}
 	duplicated := []verifiedExecutableCatalogSubject{fixture.catalogs[0], fixture.catalogs[0]}
-	if _, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.initialScope, duplicated, fixture.now); !IsCode(err, CodeUntrusted) {
+	if _, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, duplicated, fixture.now); !IsCode(err, CodeUntrusted) {
 		t.Fatalf("duplicate catalog subjects were accepted: %v", err)
 	}
 
-	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.initialScope, fixture.catalogs, fixture.now)
+	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, fixture.catalogs, fixture.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +224,7 @@ func TestExactStatementPlanBindsArtifactClassificationAndTransition(t *testing.T
 		t.Fatal(err)
 	}
 	fixture.catalogs = []verifiedExecutableCatalogSubject{catalogSubject}
-	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.initialScope, fixture.catalogs, fixture.now)
+	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, fixture.catalogs, fixture.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +281,7 @@ func TestExactStatementPlanBindsArtifactClassificationAndTransition(t *testing.T
 			localBundle, localCatalog := exactPlanBundle(t, localFixture.decision.expectedSchemaBundleDigest, localFixture.initialScope.BoundPrecondition(), localFixture.authorityProfile)
 			mutate(&localCatalog.SourceDescriptors[0].Statements[0])
 			localSubject := installExactCatalog(t, localBundle, localCatalog, localFixture.expiresAt.Add(time.Hour), localFixture.now)
-			localBound, err := bindVerifiedRunnerProjectionDecision(localFixture.decision, localFixture.authorityProfile, localFixture.authorityBinding, localFixture.authority, localFixture.initialScope, []verifiedExecutableCatalogSubject{localSubject}, localFixture.now)
+			localBound, err := bindVerifiedRunnerProjectionDecision(localFixture.decision, localFixture.authorityProfile, localFixture.authorityBinding, localFixture.authority, localFixture.recoveryPolicy, localFixture.initialScope, []verifiedExecutableCatalogSubject{localSubject}, localFixture.now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -313,7 +314,7 @@ func TestVerifiedAuthorityProfileTotalBindingFaults(t *testing.T) {
 	}
 	wrongBinding := fixture.authorityBinding
 	wrongBinding.AuthorityProfileDigest = testDigest("other-authority-profile")
-	if _, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, wrongBinding, fixture.authority, fixture.initialScope, fixture.catalogs, fixture.now); !IsCode(err, CodeUntrusted) {
+	if _, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, wrongBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, fixture.catalogs, fixture.now); !IsCode(err, CodeUntrusted) {
 		t.Fatalf("authority binding/profile digest mismatch was accepted: %v", err)
 	}
 	mutated := fixture.authorityProfile.ownedCopy()
@@ -349,7 +350,7 @@ func TestExactPlanRejectsAuthorityProfileDescriptorAndRuntimeFaults(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.initialScope, []verifiedExecutableCatalogSubject{catalogSubject}, fixture.now)
+	bound, err := bindVerifiedRunnerProjectionDecision(fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority, fixture.recoveryPolicy, fixture.initialScope, []verifiedExecutableCatalogSubject{catalogSubject}, fixture.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,6 +415,14 @@ func newRunnerBindingFixture(t *testing.T, heads []string) runnerBindingFixture 
 	if err != nil {
 		t.Fatal(err)
 	}
+	recoveryPolicy, err := bindVerifiedRecoveryPolicySubject(recoveryPolicySignedSubject{
+		Domain: recoveryPolicySubjectDomain, IssuerKeyIdentityDigest: testDigest("recovery-policy-issuer"),
+		ExpiresAt: expiresAt.Format(time.RFC3339), SecurityEpoch: 1, MinimumOldSecurityEpoch: 1,
+		OldRevocationPolicyDigest: testDigest("old-revocation-policy"), OldDecisionAuthorizations: []oldDecisionAuthorization{},
+	}, 1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	migrationID := "000001"
 	scope := ProjectionScope{ScopeKind: "predecessor", MigrationID: &migrationID, DeclaredObjects: []ObjectIdentityProjection{}}
 	condition := CatalogPrecondition{AcceptedStates: []CatalogStateProjection{
@@ -433,7 +442,7 @@ func newRunnerBindingFixture(t *testing.T, heads []string) runnerBindingFixture 
 			t.Fatal(err)
 		}
 	}
-	return runnerBindingFixture{now: now, expiresAt: expiresAt, decision: decision, authorityProfile: authorityProfile, authorityBinding: authorityBinding, authority: authority, initialScope: initialScope, catalogs: catalogs}
+	return runnerBindingFixture{now: now, expiresAt: expiresAt, decision: decision, authorityProfile: authorityProfile, authorityBinding: authorityBinding, authority: authority, recoveryPolicy: recoveryPolicy, initialScope: initialScope, catalogs: catalogs}
 }
 
 func executableAuthorityProfile() AuthorityContract {

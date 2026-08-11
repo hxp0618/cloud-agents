@@ -164,7 +164,7 @@ func buildExactAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
 	}
 	decision, err := bindVerifiedRunnerProjectionDecision(
 		fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority,
-		fixture.initialScope, []verifiedExecutableCatalogSubject{catalogSubject}, fixture.now,
+		fixture.recoveryPolicy, fixture.initialScope, []verifiedExecutableCatalogSubject{catalogSubject}, fixture.now,
 	)
 	if err != nil {
 		t.Fatal(err)
