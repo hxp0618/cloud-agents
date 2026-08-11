@@ -14,6 +14,10 @@
       "size_bytes": 658,
       "sha256": "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d"
     },
+    "projection_scope_authority": {
+      "default_acl_owners": ["cloud_agents_migration_owner"],
+      "object_creator_closure": ["cloud_agents_migration_owner"]
+    },
     "predecessor_schema_bundle": null,
     "migrations": [
       {
@@ -135,7 +139,7 @@
       }
     ]
   },
-  "schema_bundle_digest": "sha256:c368480bf7df1f620a41165e3565f972fcce2fddc631addc619bcdb7b45b2114",
+  "schema_bundle_digest": "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d",
   "bootstrap_bundle": {
     "artifacts": [
       {
@@ -211,9 +215,9 @@
     {
       "path": "services/control-plane/migrations/schema-bundle.json",
       "mode": "100644",
-      "size_bytes": 5286,
-      "sha256": "sha256:bc75f58f3486d578a9d7a5aa40f6ee4e6b79f49e3eed8b11c289025db23660b9"
+      "size_bytes": 5456,
+      "sha256": "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae"
     }
   ],
-  "manifest_digest": "sha256:f1fb6d4be3a6038111c656e306191ee5999b14ce71e20b185c78f4a841a98d22"
+  "manifest_digest": "sha256:8004dc400a6fcce45d32082c8f9537d772f278a84224edabb07e9f83a489561a"
 }

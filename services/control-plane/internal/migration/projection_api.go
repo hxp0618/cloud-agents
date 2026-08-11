@@ -579,19 +579,49 @@ func verifiedCatalogStateScope(state CatalogStateProjection) ProjectionScope {
 	return ProjectionScope{}
 }
 
-func validateVerifiedPrincipalClosure(path string, principals []string) error {
+type principalClosureShapeViolation uint8
+
+const (
+	principalClosureValid principalClosureShapeViolation = iota
+	principalClosureEmpty
+	principalClosureLimit
+	principalClosureInvalidIdentity
+	principalClosureNonCanonicalOrder
+)
+
+func checkPrincipalClosureShape(principals []string) principalClosureShapeViolation {
+	if len(principals) == 0 {
+		return principalClosureEmpty
+	}
 	if uint64(len(principals)) > projectionMaxPrincipals {
-		return projectionFailure(CodeProjectionLimitExceeded, "verified-schema-bundle", path, 0, false, "signed principal closure exceeds the fixed limit")
+		return principalClosureLimit
 	}
 	for index, principal := range principals {
 		if principal == "" || !utf8.ValidString(principal) || strings.ContainsRune(principal, '\x00') {
-			return fail(CodeInvalidManifest, "verified-schema-bundle."+path, "signed principal closure contains an invalid identity", nil)
+			return principalClosureInvalidIdentity
 		}
 		if index > 0 && strings.Compare(principals[index-1], principal) >= 0 {
-			return fail(CodeInvalidManifest, "verified-schema-bundle."+path, "signed principal closure is duplicate or unsorted", nil)
+			return principalClosureNonCanonicalOrder
 		}
 	}
-	return nil
+	return principalClosureValid
+}
+
+func validateVerifiedPrincipalClosure(path string, principals []string) error {
+	switch checkPrincipalClosureShape(principals) {
+	case principalClosureValid:
+		return nil
+	case principalClosureEmpty:
+		return projectionFailure(CodeUntrusted, "verified-schema-bundle", path, 0, false, "verified signed principal closure is empty")
+	case principalClosureLimit:
+		return projectionFailure(CodeProjectionLimitExceeded, "verified-schema-bundle", path, 0, false, "signed principal closure exceeds the fixed limit")
+	case principalClosureInvalidIdentity:
+		return fail(CodeInvalidManifest, "verified-schema-bundle."+path, "signed principal closure contains an invalid identity", nil)
+	case principalClosureNonCanonicalOrder:
+		return fail(CodeInvalidManifest, "verified-schema-bundle."+path, "signed principal closure is duplicate or unsorted", nil)
+	default:
+		return fail(CodeInvalidManifest, "verified-schema-bundle."+path, "signed principal closure shape is unknown", nil)
+	}
 }
 
 func validateProjectionTrustDecision(phase string, expiresAt time.Time, securityEpoch uint64, now time.Time) error {

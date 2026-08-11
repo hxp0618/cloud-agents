@@ -177,12 +177,65 @@ type MigrationEntry struct {
 }
 
 type SchemaBundle struct {
-	Lineage                 string                   `json:"lineage"`
-	SchemaHead              string                   `json:"schema_head"`
-	AdvisoryLock            AdvisoryLock             `json:"advisory_lock"`
-	GlobalTableAuthority    ArtifactRecord           `json:"global_table_authority"`
-	PredecessorSchemaBundle *PredecessorSchemaBundle `json:"predecessor_schema_bundle"`
-	Migrations              []MigrationEntry         `json:"migrations"`
+	Lineage                  string                   `json:"lineage"`
+	SchemaHead               string                   `json:"schema_head"`
+	AdvisoryLock             AdvisoryLock             `json:"advisory_lock"`
+	GlobalTableAuthority     ArtifactRecord           `json:"global_table_authority"`
+	ProjectionScopeAuthority ProjectionScopeAuthority `json:"projection_scope_authority"`
+	PredecessorSchemaBundle  *PredecessorSchemaBundle `json:"predecessor_schema_bundle"`
+	Migrations               []MigrationEntry         `json:"migrations"`
+}
+
+// ProjectionScopeAuthority is an exact signed member of schema_bundle. Its
+// slices must only cross the verified-schema-bundle seam through the copy
+// accessors below so callers cannot mutate the decoded signed subject.
+type ProjectionScopeAuthority struct {
+	DefaultACLOwners     []string `json:"default_acl_owners"`
+	ObjectCreatorClosure []string `json:"object_creator_closure"`
+}
+
+func (authority ProjectionScopeAuthority) DefaultACLOwnersCopy() []string {
+	return append([]string(nil), authority.DefaultACLOwners...)
+}
+
+func (authority ProjectionScopeAuthority) ObjectCreatorClosureCopy() []string {
+	return append([]string(nil), authority.ObjectCreatorClosure...)
+}
+
+func (authority ProjectionScopeAuthority) Validate() error {
+	if err := validateProjectionScopeRoles("default_acl_owners", authority.DefaultACLOwners); err != nil {
+		return err
+	}
+	if err := validateProjectionScopeRoles("object_creator_closure", authority.ObjectCreatorClosure); err != nil {
+		return err
+	}
+	creators := make(map[string]struct{}, len(authority.ObjectCreatorClosure))
+	for _, role := range authority.ObjectCreatorClosure {
+		creators[role] = struct{}{}
+	}
+	for _, owner := range authority.DefaultACLOwners {
+		if _, ok := creators[owner]; !ok {
+			return fail(CodeInvalidManifest, "projection_scope_authority.default_acl_owners", "default ACL owner is outside object creator closure", nil)
+		}
+	}
+	return nil
+}
+
+func validateProjectionScopeRoles(field string, roles []string) error {
+	switch checkPrincipalClosureShape(roles) {
+	case principalClosureValid:
+		return nil
+	case principalClosureEmpty:
+		return fail(CodeInvalidManifest, "projection_scope_authority."+field, "signed principal closure must be nonempty", nil)
+	case principalClosureLimit:
+		return fail(CodeInvalidManifest, "projection_scope_authority."+field, "signed principal closure exceeds the fixed limit", nil)
+	case principalClosureInvalidIdentity:
+		return fail(CodeInvalidManifest, "projection_scope_authority."+field, "signed principal closure contains an invalid identity", nil)
+	case principalClosureNonCanonicalOrder:
+		return fail(CodeInvalidManifest, "projection_scope_authority."+field, "signed principal closure is duplicate or unsorted", nil)
+	default:
+		return fail(CodeInvalidManifest, "projection_scope_authority."+field, "signed principal closure shape is unknown", nil)
+	}
 }
 
 type BootstrapBundle struct {
@@ -308,6 +361,9 @@ func (bundle SchemaBundle) Validate() error {
 		return err
 	}
 	if err := bundle.GlobalTableAuthority.Validate(); err != nil {
+		return err
+	}
+	if err := bundle.ProjectionScopeAuthority.Validate(); err != nil {
 		return err
 	}
 	if bundle.PredecessorSchemaBundle != nil {

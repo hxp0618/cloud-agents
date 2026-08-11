@@ -114,6 +114,191 @@ func TestManifestV1FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	}
 }
 
+func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
+	t.Parallel()
+	if projectionMaxPrincipals != 256 {
+		t.Fatalf("projection principal limit drifted from ADR-0010: %d", projectionMaxPrincipals)
+	}
+	valid := ProjectionScopeAuthority{
+		DefaultACLOwners:     []string{MigrationOwnerRole},
+		ObjectCreatorClosure: []string{MigrationOwnerRole},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	faults := []struct {
+		name      string
+		authority ProjectionScopeAuthority
+	}{
+		{name: "empty-owner", authority: ProjectionScopeAuthority{ObjectCreatorClosure: []string{MigrationOwnerRole}}},
+		{name: "empty-creator", authority: ProjectionScopeAuthority{DefaultACLOwners: []string{MigrationOwnerRole}}},
+		{name: "duplicate", authority: ProjectionScopeAuthority{DefaultACLOwners: []string{MigrationOwnerRole}, ObjectCreatorClosure: []string{MigrationOwnerRole, MigrationOwnerRole}}},
+		{name: "unsorted", authority: ProjectionScopeAuthority{DefaultACLOwners: []string{"a_owner"}, ObjectCreatorClosure: []string{MigrationOwnerRole, "a_owner"}}},
+		{name: "outside-closure", authority: ProjectionScopeAuthority{DefaultACLOwners: []string{"another_owner"}, ObjectCreatorClosure: []string{MigrationOwnerRole}}},
+		{name: "invalid-principal", authority: ProjectionScopeAuthority{DefaultACLOwners: []string{MigrationOwnerRole}, ObjectCreatorClosure: []string{"role\x00name"}}},
+	}
+	bounded := make([]string, int(projectionMaxPrincipals)+1)
+	for index := range bounded {
+		bounded[index] = fmt.Sprintf("role_%03d", index)
+	}
+	faults = append(faults, struct {
+		name      string
+		authority ProjectionScopeAuthority
+	}{name: "bounded", authority: ProjectionScopeAuthority{DefaultACLOwners: []string{bounded[0]}, ObjectCreatorClosure: bounded}})
+	for _, fault := range faults {
+		if err := fault.authority.Validate(); err == nil {
+			t.Fatalf("%s accepted: %v", fault.name, err)
+		}
+	}
+
+	owners := valid.DefaultACLOwnersCopy()
+	creators := valid.ObjectCreatorClosureCopy()
+	owners[0] = "mutated_owner"
+	creators[0] = "mutated_creator"
+	if valid.DefaultACLOwners[0] != MigrationOwnerRole || valid.ObjectCreatorClosure[0] != MigrationOwnerRole {
+		t.Fatal("projection scope authority copy accessors aliased the signed subject")
+	}
+
+	raw := mustRead(t, filepath.Join(migrationRoot(t), "schema-bundle.json"))
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	schema := document["schema_bundle"].(map[string]any)
+	scope := schema["projection_scope_authority"].(map[string]any)
+	strictFaults := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{name: "missing", mutate: func(value map[string]any) { delete(value, "default_acl_owners") }},
+		{name: "unknown", mutate: func(value map[string]any) { value["unknown"] = true }},
+		{name: "alias", mutate: func(value map[string]any) {
+			value["defaultAclOwners"] = value["default_acl_owners"]
+			delete(value, "default_acl_owners")
+		}},
+	}
+	for _, fault := range strictFaults {
+		clone := map[string]any{}
+		for key, value := range scope {
+			clone[key] = value
+		}
+		fault.mutate(clone)
+		schema["projection_scope_authority"] = clone
+		mutated, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DecodeSchemaBundleDocument(mutated); !IsCode(err, CodeInvalidJSON) {
+			t.Fatalf("%s shape accepted: %v", fault.name, err)
+		}
+	}
+	schema["projection_scope_authority"] = scope
+	schema["projection_scope_authority"] = nil
+	bundleValue, err := ParseStrictJSON(mustJSON(t, schema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nullDigest, err := digestDomainObject(SchemaBundleDomain, "schema_bundle", bundleValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document["schema_bundle_digest"] = nullDigest
+	nullRaw := mustJSON(t, document)
+	if _, err := DecodeSchemaBundleDocument(nullRaw); err == nil {
+		t.Fatal("null projection_scope_authority was accepted")
+	}
+	schema["projection_scope_authority"] = scope
+	duplicate := bytes.Replace(raw, []byte(`"default_acl_owners": [`), []byte(`"default_acl_owners": ["cloud_agents_migration_owner"], "default_acl_owners": [`), 1)
+	if bytes.Equal(duplicate, raw) {
+		t.Fatal("duplicate-key fault did not mutate checked-in schema bundle")
+	}
+	if _, err := DecodeSchemaBundleDocument(duplicate); !IsCode(err, CodeInvalidJSON) {
+		t.Fatalf("duplicate nested key accepted: %v", err)
+	}
+}
+
+func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
+	t.Parallel()
+	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
+	if manifest.SchemaBundleDigest != "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d" {
+		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
+	}
+	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
+		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
+	}
+	if manifest.ManifestDigest != "sha256:8004dc400a6fcce45d32082c8f9537d772f278a84224edabb07e9f83a489561a" {
+		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
+	}
+	if DigestBytes(runtimeTar) != "sha256:81480333ef2aafe4169ec2656af137479d94e7c6c986a2202c21754495296f07" {
+		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
+	}
+	authority := manifest.SchemaBundle.ProjectionScopeAuthority
+	if !equalStrings(authority.DefaultACLOwners, []string{MigrationOwnerRole}) || !equalStrings(authority.ObjectCreatorClosure, []string{MigrationOwnerRole}) {
+		t.Fatalf("checked-in projection scope authority is not the frozen initial closure: %+v", authority)
+	}
+	for _, record := range manifest.RuntimeArtifacts {
+		if strings.Contains(record.Path, "authority-binding") || strings.Contains(record.Path, "/fixtures/") || strings.Contains(record.Path, "secret") || strings.Contains(record.Path, "credential") {
+			t.Fatalf("runtime tar closure contains deployment authority or secret material: %s", record.Path)
+		}
+	}
+	files := make(map[string][]byte, len(manifest.RuntimeArtifacts)+2)
+	for _, record := range manifest.RuntimeArtifacts {
+		relative := record.Path[len("services/control-plane/"):]
+		files[record.Path] = mustRead(t, filepath.Join(moduleRoot(t), filepath.FromSlash(relative)))
+	}
+	files[RuntimeManifestPath] = mustRead(t, filepath.Join(migrationRoot(t), "manifest.json"))
+	bindingPath := "services/control-plane/migrations/catalog/authority-binding-v1.json"
+	bindingRaw := mustRead(t, filepath.Join(migrationRoot(t), "fixtures", "projection", "golden", "authority-binding-v1.json"))
+	files[bindingPath] = bindingRaw
+	mutatedManifest := *manifest
+	mutatedManifest.RuntimeArtifacts = append(append([]ArtifactRecord(nil), manifest.RuntimeArtifacts...), ArtifactRecord{Path: bindingPath, Mode: "100644", SizeBytes: uint64(len(bindingRaw)), SHA256: DigestBytes(bindingRaw)})
+	sort.Slice(mutatedManifest.RuntimeArtifacts, func(i, j int) bool {
+		return mutatedManifest.RuntimeArtifacts[i].Path < mutatedManifest.RuntimeArtifacts[j].Path
+	})
+	if !allowedRuntimePath(bindingPath) {
+		t.Fatalf("fault path did not pass the runtime path allowlist: %s", bindingPath)
+	}
+	if err := validateRuntimeRecords(&mutatedManifest, files); err != nil {
+		t.Fatalf("detached authority fault did not pass runtime record validation: %v", err)
+	}
+	schemaDocument, err := DecodeSchemaBundleDocument(files[RuntimeSchemaBundlePath])
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage, err := validateSchemaLineage(schemaDocument, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRuntimeClosure(&mutatedManifest, lineage); !IsCode(err, CodeInvalidArtifact) {
+		t.Fatalf("detached authority binding entered the complete runtime closure: %v", err)
+	}
+
+	bootstrapEntries := make([]tarMember, 0, len(manifest.BootstrapBundle.Artifacts))
+	for _, record := range manifest.BootstrapBundle.Artifacts {
+		relative := record.Path[len("services/control-plane/"):]
+		bootstrapEntries = append(bootstrapEntries, tarMember{Path: record.Path, Data: mustRead(t, filepath.Join(moduleRoot(t), filepath.FromSlash(relative)))})
+	}
+	bootstrapTar := writeTestUSTAR(t, bootstrapEntries)
+	if DigestBytes(bootstrapTar) != "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175" {
+		t.Fatalf("bootstrap tar digest drifted: %s", DigestBytes(bootstrapTar))
+	}
+
+	unchanged := map[string]Digest{
+		"000001_expand_migration_kernel.sql":                   "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4",
+		"000002_expand_tenancy.sql":                            "sha256:d084f003928c1122da7bb88727c12a3e298548514f5da19cb3da14a3a754827a",
+		"catalog/authority-v1.json":                            "sha256:eb8c4ad607dc3443471fa376a9da9bf49e17788ffcc9cda6d2ccecd982327ccd",
+		"catalog/global-table-authority-v1.json":               "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d",
+		"catalog/schema-000001.json":                           "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f",
+		"catalog/schema-000002.json":                           "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9",
+		"fixtures/projection/golden/authority-binding-v1.json": "sha256:02550b2ad4da6a57fe98be1e9ecbea3924f2fd34f9ad99cebf3e674deae81468",
+	}
+	for relative, digest := range unchanged {
+		if actual := DigestBytes(mustRead(t, filepath.Join(migrationRoot(t), filepath.FromSlash(relative)))); actual != digest {
+			t.Fatalf("unchanged artifact %s drifted: %s", relative, actual)
+		}
+	}
+}
+
 func TestAuthorityContractsStrictDecodeBeforeDatabaseConnect(t *testing.T) {
 	t.Parallel()
 	root := migrationRoot(t)
@@ -365,6 +550,50 @@ func TestAncestorDescriptorAndRawIdentityFailClosed(t *testing.T) {
 	files := map[string][]byte{archivePath: olderRaw}
 	if _, err := validateSchemaLineage(current, files); err != nil {
 		t.Fatalf("valid ancestor rejected: %v", err)
+	}
+
+	ancestorShapeFaults := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{name: "missing-projection-scope-authority", mutate: func(schema map[string]any) {
+			delete(schema, "projection_scope_authority")
+		}},
+		{name: "unknown-projection-scope-authority-member", mutate: func(schema map[string]any) {
+			scope := schema["projection_scope_authority"].(map[string]any)
+			scope["unknown"] = true
+		}},
+	}
+	for _, fault := range ancestorShapeFaults {
+		var ancestorDocument map[string]any
+		if err := json.Unmarshal(olderRaw, &ancestorDocument); err != nil {
+			t.Fatal(err)
+		}
+		ancestorSchema := ancestorDocument["schema_bundle"].(map[string]any)
+		fault.mutate(ancestorSchema)
+		ancestorValue, err := ParseStrictJSON(mustJSON(t, ancestorSchema))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ancestorDigest, err := digestDomainObject(SchemaBundleDomain, "schema_bundle", ancestorValue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ancestorDocument["schema_bundle_digest"] = ancestorDigest
+		malformedRaw := mustJSON(t, ancestorDocument)
+		malformedPath := "services/control-plane/migrations/archive/" + ancestorDigest.Hex() + ".schema-bundle.json"
+		faultCurrentBundle := currentBundle
+		faultCurrentBundle.PredecessorSchemaBundle = &PredecessorSchemaBundle{
+			SchemaBundleDigest: ancestorDigest,
+			Path:               malformedPath,
+			Mode:               "100644",
+			SizeBytes:          uint64(len(malformedRaw)),
+			SHA256:             DigestBytes(malformedRaw),
+		}
+		faultCurrent, _ := makeSchemaDocument(t, faultCurrentBundle)
+		if _, err := validateSchemaLineage(faultCurrent, map[string][]byte{malformedPath: malformedRaw}); !IsCode(err, CodeInvalidJSON) {
+			t.Fatalf("%s did not reach strict ancestor decode: %v", fault.name, err)
+		}
 	}
 
 	badRaw := append(bytes.Clone(olderRaw), '\n')

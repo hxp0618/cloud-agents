@@ -10,6 +10,8 @@ import {
   validateCatalogStatementBindings,
   validateCheckedInMigrationBundle,
   validateLedgerPrefix,
+  validateProjectionScopeAuthority,
+  validateRuntimeArtifactSafety,
   validateSchemaAncestorChain,
 } from "./platform-migration-bundle";
 import { migrationDigest } from "./platform-migration-json";
@@ -34,10 +36,155 @@ describe("migration bundle bootstrap", () => {
     const second = buildMigrationBundle(root);
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
+    expect(first.manifest.schema_bundle_digest).toBe(
+      "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d",
+    );
+    expect(first.manifest.bootstrap_bundle_digest).toBe(
+      "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
+    );
+    expect(first.manifest.manifest_digest).toBe(
+      "sha256:8004dc400a6fcce45d32082c8f9537d772f278a84224edabb07e9f83a489561a",
+    );
+    expect(sha256(first.runtimeTar)).toBe(
+      "sha256:81480333ef2aafe4169ec2656af137479d94e7c6c986a2202c21754495296f07",
+    );
+    expect(sha256(first.bootstrapTar)).toBe(
+      "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
+    );
     expect(readDeterministicUstar(first.bootstrapTar).map((entry) => entry.path)).toEqual([
       "services/control-plane/migrations/bootstrap/database.sql",
       "services/control-plane/migrations/bootstrap/roles.sql",
     ]);
+    const runtimePaths = readDeterministicUstar(first.runtimeTar).map((entry) => entry.path);
+    expect(
+      runtimePaths.some((path) => /authority-binding|fixtures|secret|credential/iu.test(path)),
+    ).toBe(false);
+    const unchangedArtifacts = new Map([
+      [
+        "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+        "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4",
+      ],
+      [
+        "services/control-plane/migrations/000002_expand_tenancy.sql",
+        "sha256:d084f003928c1122da7bb88727c12a3e298548514f5da19cb3da14a3a754827a",
+      ],
+      [
+        "services/control-plane/migrations/catalog/authority-v1.json",
+        "sha256:eb8c4ad607dc3443471fa376a9da9bf49e17788ffcc9cda6d2ccecd982327ccd",
+      ],
+      [
+        "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+        "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d",
+      ],
+      [
+        "services/control-plane/migrations/catalog/schema-000001.json",
+        "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f",
+      ],
+      [
+        "services/control-plane/migrations/catalog/schema-000002.json",
+        "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9",
+      ],
+      [
+        "services/control-plane/migrations/fixtures/projection/golden/authority-binding-v1.json",
+        "sha256:02550b2ad4da6a57fe98be1e9ecbea3924f2fd34f9ad99cebf3e674deae81468",
+      ],
+    ]);
+    for (const [path, digest] of unchangedArtifacts) {
+      expect(sha256(readFileSync(resolve(root, path))), path).toBe(digest);
+    }
+  });
+
+  it("validates the signed projection scope authority as a closed bounded role closure", () => {
+    const valid = {
+      default_acl_owners: ["cloud_agents_migration_owner"],
+      object_creator_closure: ["cloud_agents_migration_owner"],
+    };
+    expect(() => validateProjectionScopeAuthority(valid)).not.toThrow();
+    const faults: Array<{ name: string; value: unknown; error: RegExp }> = [
+      {
+        name: "missing",
+        value: { object_creator_closure: ["cloud_agents_migration_owner"] },
+        error: /UNKNOWN_OR_MISSING_FIELD/u,
+      },
+      {
+        name: "null",
+        value: null,
+        error: /EXPECTED_OBJECT/u,
+      },
+      {
+        name: "unknown",
+        value: { ...valid, unknown: true },
+        error: /UNKNOWN_OR_MISSING_FIELD/u,
+      },
+      {
+        name: "alias",
+        value: {
+          defaultAclOwners: ["cloud_agents_migration_owner"],
+          object_creator_closure: ["cloud_agents_migration_owner"],
+        },
+        error: /UNKNOWN_OR_MISSING_FIELD/u,
+      },
+      {
+        name: "duplicate",
+        value: {
+          ...valid,
+          object_creator_closure: ["cloud_agents_migration_owner", "cloud_agents_migration_owner"],
+        },
+        error: /PROJECTION_SCOPE_AUTHORITY_ORDER/u,
+      },
+      {
+        name: "unsorted",
+        value: {
+          default_acl_owners: ["a_owner"],
+          object_creator_closure: ["cloud_agents_migration_owner", "a_owner"],
+        },
+        error: /PROJECTION_SCOPE_AUTHORITY_ORDER/u,
+      },
+      {
+        name: "empty",
+        value: { ...valid, default_acl_owners: [] },
+        error: /PROJECTION_SCOPE_AUTHORITY_LIMIT/u,
+      },
+      {
+        name: "outside closure",
+        value: { ...valid, default_acl_owners: ["another_owner"] },
+        error: /PROJECTION_SCOPE_AUTHORITY_CLOSURE/u,
+      },
+      {
+        name: "invalid principal",
+        value: { ...valid, object_creator_closure: ["role\0name"] },
+        error: /PROJECTION_SCOPE_AUTHORITY_ROLE/u,
+      },
+      {
+        name: "bounded",
+        value: {
+          default_acl_owners: ["role_000"],
+          object_creator_closure: Array.from(
+            { length: 257 },
+            (_, index) => `role_${String(index).padStart(3, "0")}`,
+          ),
+        },
+        error: /PROJECTION_SCOPE_AUTHORITY_LIMIT/u,
+      },
+    ];
+    for (const fault of faults) {
+      expect(() => validateProjectionScopeAuthority(fault.value as never), fault.name).toThrow(
+        fault.error,
+      );
+    }
+  });
+
+  it("rejects detached deployment authority from the runtime artifact closure", () => {
+    expect(() =>
+      validateRuntimeArtifactSafety([
+        {
+          path: "services/control-plane/migrations/fixtures/projection/golden/authority-binding-v1.json",
+          mode: "100644",
+          size_bytes: 1,
+          sha256: `sha256:${"0".repeat(64)}`,
+        },
+      ]),
+    ).toThrow(/RUNTIME_TAR_DEPLOYMENT_AUTHORITY/u);
   });
 
   it("binds every catalog statement descriptor to exact SQL classification", () => {
@@ -142,6 +289,32 @@ describe("migration bundle bootstrap", () => {
       ]),
     );
     expect(chain).toHaveLength(2);
+
+    const unknownInner = structuredClone(current.document) as {
+      schema_bundle: Record<string, unknown>;
+      schema_bundle_digest: string;
+    };
+    unknownInner.schema_bundle.unknown = true;
+    unknownInner.schema_bundle_digest = migrationDigest({
+      domain: "cloud-agents-platform-schema-bundle/v1",
+      schema_bundle: unknownInner.schema_bundle,
+    });
+    expect(() => validateSchemaAncestorChain(unknownInner, new Map())).toThrow(
+      /UNKNOWN_OR_MISSING_FIELD/u,
+    );
+
+    const missingScope = structuredClone(current.document) as {
+      schema_bundle: Record<string, unknown>;
+      schema_bundle_digest: string;
+    };
+    delete missingScope.schema_bundle.projection_scope_authority;
+    missingScope.schema_bundle_digest = migrationDigest({
+      domain: "cloud-agents-platform-schema-bundle/v1",
+      schema_bundle: missingScope.schema_bundle,
+    });
+    expect(() => validateSchemaAncestorChain(missingScope, new Map())).toThrow(
+      /UNKNOWN_OR_MISSING_FIELD/u,
+    );
   });
 
   it("rejects noncanonical ancestor descriptors and raw artifact drift", () => {
@@ -174,6 +347,55 @@ describe("migration bundle bootstrap", () => {
       expect(() => validateSchemaAncestorChain(current.document, artifact)).toThrow(
         new RegExp(fault.expected_error),
       );
+    }
+    const ancestorShapeFaults = [
+      {
+        name: "missing projection scope authority",
+        mutate(schema: Record<string, unknown>) {
+          delete schema.projection_scope_authority;
+        },
+      },
+      {
+        name: "unknown projection scope authority member",
+        mutate(schema: Record<string, unknown>) {
+          (schema.projection_scope_authority as Record<string, unknown>).unknown = true;
+        },
+      },
+    ];
+    for (const fault of ancestorShapeFaults) {
+      const malformedDocument = structuredClone(oldest.document) as {
+        schema_bundle: Record<string, unknown>;
+        schema_bundle_digest: string;
+      };
+      fault.mutate(malformedDocument.schema_bundle);
+      malformedDocument.schema_bundle_digest = migrationDigest({
+        domain: "cloud-agents-platform-schema-bundle/v1",
+        schema_bundle: malformedDocument.schema_bundle,
+      });
+      const malformedBytes = new TextEncoder().encode(
+        `${JSON.stringify(malformedDocument, null, 2)}\n`,
+      );
+      const malformedDigest = malformedDocument.schema_bundle_digest;
+      const malformedPath = `services/control-plane/migrations/archive/${malformedDigest.slice("sha256:".length)}.schema-bundle.json`;
+      const malformedDescriptor = {
+        schema_bundle_digest: malformedDigest,
+        path: malformedPath,
+        mode: "100644",
+        size_bytes: malformedBytes.length,
+        sha256: sha256(malformedBytes),
+      };
+      const malformedCurrent = schemaBundleFile(
+        [{ id: "000001" }, { id: "000002" }],
+        malformedDescriptor,
+      );
+      expect(
+        () =>
+          validateSchemaAncestorChain(
+            malformedCurrent.document,
+            new Map([[malformedDigest, { path: malformedPath, bytes: malformedBytes }]]),
+          ),
+        fault.name,
+      ).toThrow(/UNKNOWN_OR_MISSING_FIELD/u);
     }
     const tamperedDocument = structuredClone(oldest.document) as {
       schema_bundle: { migrations: Array<Record<string, unknown>> };
@@ -280,11 +502,35 @@ function rewriteFirstHeaderChecksum(archive: Uint8Array): void {
   archive.set(new TextEncoder().encode(field), 148);
 }
 
+function sha256(bytes: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
 function schemaBundleFile(
   migrations: Array<Record<string, unknown>>,
   predecessor: Record<string, unknown> | null,
 ): { document: Record<string, unknown>; bytes: Uint8Array } {
-  const schemaBundle = { predecessor_schema_bundle: predecessor, migrations };
+  const schemaBundle = {
+    lineage: "cloud-agents-platform",
+    schema_head: String(migrations.at(-1)?.id ?? "000000"),
+    advisory_lock: {
+      domain: "cloud-agents-platform:migrations:v1",
+      derivation: "sha256-first-8-bytes-signed-big-endian-int64",
+      key_int64_decimal: "-1047838957622507638",
+    },
+    global_table_authority: {
+      path: "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+      mode: "100644",
+      size_bytes: 1,
+      sha256: `sha256:${"0".repeat(64)}`,
+    },
+    projection_scope_authority: {
+      default_acl_owners: ["cloud_agents_migration_owner"],
+      object_creator_closure: ["cloud_agents_migration_owner"],
+    },
+    predecessor_schema_bundle: predecessor,
+    migrations,
+  };
   const document = {
     format_version: "cloud-agents-platform-schema-bundle/v1",
     schema_bundle: schemaBundle,

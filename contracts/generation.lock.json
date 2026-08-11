@@ -87,7 +87,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:49220925ecae156901c8e3f415b8117ba629268183fe288edeb14609edd6662f",
+      "sourceManifestSha256": "sha256:a50cf57965c8bc14d8dfef7b7becaf02acf8330fec9b1566cb99587ef662b613",
       "sources": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -182,7 +182,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:49220925ecae156901c8e3f415b8117ba629268183fe288edeb14609edd6662f",
+      "inputManifestSha256": "sha256:a50cf57965c8bc14d8dfef7b7becaf02acf8330fec9b1566cb99587ef662b613",
       "inputs": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -321,22 +321,22 @@
         },
         {
           "path": "services/control-plane/migrations/manifest.json",
-          "sha256": "sha256:511e18646b5b7fe111204529f53d8e722c024cd053a3163363a194ce85dedc4b",
-          "sizeBytes": 8338
+          "sha256": "sha256:03fa6835f94820df261a61695689306a3efb75a811ac84477e40add4321518ba",
+          "sizeBytes": 8508
         },
         {
           "path": "services/control-plane/migrations/schema-bundle.json",
-          "sha256": "sha256:bc75f58f3486d578a9d7a5aa40f6ee4e6b79f49e3eed8b11c289025db23660b9",
-          "sizeBytes": 5286
+          "sha256": "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae",
+          "sizeBytes": 5456
         }
       ],
       "outputSummary": {
-        "schemaBundleDigest": "sha256:c368480bf7df1f620a41165e3565f972fcce2fddc631addc619bcdb7b45b2114",
+        "schemaBundleDigest": "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d",
         "bootstrapBundleDigest": "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
-        "manifestDigest": "sha256:f1fb6d4be3a6038111c656e306191ee5999b14ce71e20b185c78f4a841a98d22",
+        "manifestDigest": "sha256:8004dc400a6fcce45d32082c8f9537d772f278a84224edabb07e9f83a489561a",
         "runtimeTar": {
           "sizeBytes": 125952,
-          "sha256": "sha256:fd26b9bcd5a523387ea9a35a9ec53be6878039b0c119adb12c439923f1e5adbd"
+          "sha256": "sha256:81480333ef2aafe4169ec2656af137479d94e7c6c986a2202c21754495296f07"
         },
         "bootstrapTar": {
           "sizeBytes": 32256,

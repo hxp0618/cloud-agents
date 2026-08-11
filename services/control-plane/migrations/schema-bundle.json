@@ -14,6 +14,10 @@
       "size_bytes": 658,
       "sha256": "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d"
     },
+    "projection_scope_authority": {
+      "default_acl_owners": ["cloud_agents_migration_owner"],
+      "object_creator_closure": ["cloud_agents_migration_owner"]
+    },
     "predecessor_schema_bundle": null,
     "migrations": [
       {
@@ -135,5 +139,5 @@
       }
     ]
   },
-  "schema_bundle_digest": "sha256:c368480bf7df1f620a41165e3565f972fcce2fddc631addc619bcdb7b45b2114"
+  "schema_bundle_digest": "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d"
 }

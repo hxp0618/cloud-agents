@@ -77,6 +77,11 @@ const PROJECTION_FIXTURE_PATHS = [
 ] as const;
 const AUTHORITY_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/authority-binding-duplicate.raw`;
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
+const MAX_PROJECTION_SCOPE_PRINCIPALS = 256;
+const INITIAL_PROJECTION_SCOPE_AUTHORITY = {
+  default_acl_owners: ["cloud_agents_migration_owner"],
+  object_creator_closure: ["cloud_agents_migration_owner"],
+} as const;
 const REQUIRED_FIXTURES = [
   "ancestor-cycle",
   "ancestor-descriptor-cases",
@@ -177,6 +182,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
       key_int64_decimal: "-1047838957622507638",
     },
     global_table_authority: catalogArtifacts.get(CATALOG_PATHS[1])!,
+    projection_scope_authority: INITIAL_PROJECTION_SCOPE_AUTHORITY,
     predecessor_schema_bundle: null,
     migrations: [
       migrationEntry({
@@ -624,12 +630,23 @@ function validateSchemaBundleSelf(bundleFile: JsonObject): void {
     );
   }
   const digest = requiredString(bundleFile.schema_bundle_digest, "schema bundle self digest");
+  const schemaBundle = requiredObject(bundleFile.schema_bundle);
+  assertKeys(schemaBundle, [
+    "lineage",
+    "schema_head",
+    "advisory_lock",
+    "global_table_authority",
+    "projection_scope_authority",
+    "predecessor_schema_bundle",
+    "migrations",
+  ]);
+  validateProjectionScopeAuthority(schemaBundle.projection_scope_authority);
   if (
     !DIGEST.test(digest) ||
     digest !==
       migrationDigest({
         domain: "cloud-agents-platform-schema-bundle/v1",
-        schema_bundle: requiredObject(bundleFile.schema_bundle),
+        schema_bundle: schemaBundle,
       })
   ) {
     throw new MigrationValidationError("ANCESTOR_SELF_DIGEST", digest);
@@ -1831,6 +1848,16 @@ function validateManifestShape(manifest: JsonObject): void {
   if (manifest.manifest_digest !== migrationDigest(withoutDigest))
     throw new MigrationValidationError("MANIFEST_DIGEST", "mismatch");
   const schema = requiredObject(manifest.schema_bundle);
+  assertKeys(schema, [
+    "lineage",
+    "schema_head",
+    "advisory_lock",
+    "global_table_authority",
+    "projection_scope_authority",
+    "predecessor_schema_bundle",
+    "migrations",
+  ]);
+  validateProjectionScopeAuthority(schema.projection_scope_authority);
   if (
     manifest.schema_bundle_digest !==
     migrationDigest({ domain: "cloud-agents-platform-schema-bundle/v1", schema_bundle: schema })
@@ -1847,10 +1874,64 @@ function validateManifestShape(manifest: JsonObject): void {
     throw new MigrationValidationError("BOOTSTRAP_BUNDLE_DIGEST", "mismatch");
   }
   const runtime = requiredArray(manifest.runtime_artifacts).map(requiredObject);
+  validateRuntimeArtifactSafety(runtime);
   const paths = runtime.map((record) => requiredString(record.path, "artifact path"));
   if (paths.join("\0") !== [...paths].toSorted().join("\0") || new Set(paths).size !== paths.length)
     throw new MigrationValidationError("RUNTIME_ARTIFACT_ORDER", paths.join(","));
   runtime.forEach(validateArtifactShape);
+}
+
+export function validateRuntimeArtifactSafety(records: ReadonlyArray<JsonObject>): void {
+  for (const record of records) {
+    const path = requiredString(record.path, "runtime path");
+    if (/authority-binding|\/fixtures\/|secret|credential/iu.test(path)) {
+      throw new MigrationValidationError(
+        "RUNTIME_TAR_DEPLOYMENT_AUTHORITY",
+        `deployment authority or secret material is forbidden: ${path}`,
+      );
+    }
+  }
+}
+
+export function validateProjectionScopeAuthority(value: MigrationJson): void {
+  const authority = requiredObject(value);
+  assertKeys(authority, ["default_acl_owners", "object_creator_closure"]);
+  const owners = validateProjectionScopeRoles(
+    authority.default_acl_owners,
+    "projection_scope_authority.default_acl_owners",
+  );
+  const creators = validateProjectionScopeRoles(
+    authority.object_creator_closure,
+    "projection_scope_authority.object_creator_closure",
+  );
+  const creatorSet = new Set(creators);
+  for (const owner of owners) {
+    if (!creatorSet.has(owner)) {
+      throw new MigrationValidationError(
+        "PROJECTION_SCOPE_AUTHORITY_CLOSURE",
+        `${owner} is outside object_creator_closure`,
+      );
+    }
+  }
+}
+
+function validateProjectionScopeRoles(value: MigrationJson, label: string): string[] {
+  const roles = requiredArray(value).map((role) => requiredString(role, label));
+  if (roles.length === 0 || roles.length > MAX_PROJECTION_SCOPE_PRINCIPALS) {
+    throw new MigrationValidationError("PROJECTION_SCOPE_AUTHORITY_LIMIT", label);
+  }
+  for (const role of roles) {
+    if (role.length === 0 || !role.isWellFormed() || role.includes("\0")) {
+      throw new MigrationValidationError("PROJECTION_SCOPE_AUTHORITY_ROLE", `${label}:${role}`);
+    }
+  }
+  const sorted = [...roles].toSorted((left, right) =>
+    Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")),
+  );
+  if (new Set(roles).size !== roles.length || roles.join("\0") !== sorted.join("\0")) {
+    throw new MigrationValidationError("PROJECTION_SCOPE_AUTHORITY_ORDER", label);
+  }
+  return roles;
 }
 
 function validateAdvisoryLock(value: MigrationJson): void {
