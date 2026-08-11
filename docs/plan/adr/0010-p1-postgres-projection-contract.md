@@ -177,12 +177,21 @@ SQLIdentity       = { schema, name, arguments: TypeIdentity[] }
 ACLProjection     = { grantor, grantee, privileges[], grantable[], origin }
 ACLSetProjection  = { catalog_value: "null" | "explicit", entries: ACLProjection[] }
 DatabaseRoleSettingProjection = { database, role, settings[] }
-ReachabilityPrivilegeProjection = { privilege_kind: "member" | "usage" | "set", reachable, min_depth?, canonical_witness?, edge_count }
+ReachabilityPrivilegeProjection = { privilege_kind: "member" | "usage" | "set", reachable, min_depth: uint32 | null, canonical_witness: string[] | null, edge_count: uint32 }
 IndexTermProjection = { ordinal, term_kind: "column" | "expression", column?, expression?, opclass?, opclass_options[], collation?, order, nulls, exclusion_operator? }
 FunctionArgumentProjection = { ordinal, name?, mode, type, default? }
 DeniedObjectProjection = { object: ObjectIdentityProjection, owner?, dependency_kind?, depended_on?, reason_code }
 ExpressionNode    = { kind, type?, identity?, value?, fields?, children[] }
 ```
+
+该 projection 的两个 branch 是 closed：
+
+```text
+{ privilege_kind, reachable: true,  min_depth: uint32, canonical_witness: string[], edge_count }
+{ privilege_kind, reachable: false, min_depth: null,   canonical_witness: null,    edge_count }
+```
+
+不得用缺失字段、空数组或 `0` 代替上述 nullable distinction。
 
 `ObjectIdentityProjection` 是以下 closed tagged union，不是 `{kind, any}`：
 
@@ -297,9 +306,20 @@ Cloud Agents group 的递归闭包；`privileges` 必须按 member/usage/set 恰
 `MEMBER`（仅关系可达）、`USAGE`（当前无需
 `SET ROLE` 即可使用）和 `SET`（可沿 set-enabled chain 切换）语义，不能用一个 `reachable` 布尔值代替。
 它不覆盖 direct array，也不能把 indirect edge 当成 direct authority。每种 privilege 只保留一个按 UTF-8
-logical identity 排序选出的 canonical witness path 和完整 traversed edge count，避免枚举指数级全部路径；witness
-只用于 deterministic explanation，不能用来授予额外权限。存在 cycle、超过深度/边数上限或无法确定
-闭包时，projector 返回稳定错误而不是截断后继续。
+logical identity 排序选出的 canonical witness path；`edge_count` 定义为完整
+`AuthorityProjection.direct_memberships` projection 的 closure 总行数（即该数组的完整行数），并且每一个 reachability record 重复相同的总数，
+不是本次 traversal 实际访问的边数。`reachable=true` 时 `min_depth` 与 `canonical_witness` 必须非 null；
+`reachable=false` 时二者必须同时为 null。witness 只用于 deterministic explanation，不能用来授予额外权限。
+存在 cycle、超过深度/边数上限或无法确定闭包时，projector 返回稳定错误而不是截断后继续。
+
+canonical witness 的选择算法是 closed 且不允许 caller 影响：先从 `member` 出发沿 direct membership edge
+构造有序 path（path 的第一个节点固定为 member，最后一个节点固定为目标 role）；过滤不满足该 privilege 的路径，
+取最小 edge count；仅在最短路径集合中，把每条 path 作为**当前节点顺序不变**的 RFC8785 JSON array，取其
+UTF-8 bytes 的 unsigned lexicographic minimum。path 节点不得 sort、reverse、按显示名重新排列或用 OID 替换；
+equal path key 是 duplicate error。validator 必须逐边核对 `(path[i], path[i+1])` 在 direct edge projection 中存在且
+options/privilege 条件满足，核对首尾 endpoint、`len(path)-1 == min_depth`、`edge_count` 等于完整
+`direct_memberships` projection 行数，并重新计算候选最短路径的 canonical choice；只提交 caller 自报 witness 或仅检查 endpoint 都返回
+`MIGRATION_PROJECTION_NON_CANONICAL_WITNESS`。
 
 `roles` 至少覆盖 authority contract 列出的 group role、session user、database owner、所有 direct/reachability
 membership 相关 principal；未列出的 role 不得被隐式过滤。`database_role_settings` 读取
@@ -345,7 +365,7 @@ SecurityLabel {
 DefaultACLProjection {
   owner: string
   schema: string | null
-  object_kind: string
+  object_kind: "table" | "sequence" | "function" | "type" | "schema"
   acl: ACLSetProjection
 }
 
@@ -355,6 +375,54 @@ DependencyProjection {
   dependency_kind: string
 }
 ```
+
+`DefaultACLProjection.schema = null` 是**显式 global default ACL**，不是“无 scope”或可省略值。它会影响目标
+`cloud_agents` schema 未来创建的对象，因此即使当前 schema 没有对应 relation，也必须进入 1a 的
+`CatalogStateProjection` 和 `default_acl_digest`（前提是 owner 在签名的合法集合中；无关角色按下述规则过滤）。
+`schema = "cloud_agents"` 是 schema-scoped row；global 与
+schema-scoped row 合法共存，必须作为两个独立 canonical rows 保留，不能在存储 projection 中互相覆盖或折叠。
+
+合法的 default-ACL owner 集合不是从 `pg_default_acl` 反推，而是由签名的
+`VerifiedSchemaBundleScope.default_acl_owners` 与同一 scope 签名的 `object_creator_closure` 冻结。前者是
+允许出现 default-ACL row 的 closed owner allowlist，后者是能为目标 schema 创建对象的完整 principal/role
+closure；投影前必须验证 allowlist 中的每个 owner 都在该 closure 中，二者不一致即
+`MIGRATION_AUTHORITY_DRIFT`。当前初始 profile 的两个集合都精确为
+`["cloud_agents_migration_owner"]`，不得由 caller、环境变量、数据库发现结果或 adapter 扩张。只有同时
+出现在这两个签名集合中的 owner，才可投影其 `schema = null` global row 与 `schema = "cloud_agents"`
+target-schema row。
+
+对不在该合法集合中的 owner，先检查其对目标 schema 的 effective `CREATE`：存在则返回
+`MIGRATION_AUTHORITY_DRIFT`（即使同时存在 target-schema row，也保持此优先级）；没有 effective `CREATE`
+但存在 target-schema default-ACL row，则返回 `MIGRATION_PROJECTION_UNKNOWN_OBJECT`。既无 effective `CREATE`
+又只有与目标 schema 无关的 global row 的角色，不进入 projection、任何 ACL 子 digest 或
+`default_acl_digest`，且不构成 drift。该过滤规则不改变 allowlisted owner 的 global row 必须进入目标 schema
+state digest 的要求。
+
+对每个 allowlisted `(owner, object_kind)`，effective 计算公式是 closed 且不可重写的：
+`base = global row if present else hardwired defaults`；`effective = base union schema additions`。因此
+schema-scoped row 只能追加 privileges，不能 override 或删除 global/base 值；global 与 schema 两个 stored rows
+仍按各自 canonical bytes 独立保留，effective 结果不得反写成单行。
+
+二者按以下 closed object-kind profile 解码：
+
+```text
+object_kind: "table" | "sequence" | "function" | "type" | "schema"
+```
+
+约束是机械的：`schema == null` 才能表示 global；`schema == "cloud_agents"` 才能表示目标 schema；
+`object_kind = "schema"` 只允许 `schema == null`。其他 schema name、object kind、owner 或 ACL field 直接返回
+`MIGRATION_PROJECTION_INVALID_SCOPE`。`pg_default_acl.defaclobjtype` 的 PG 原始 code 只能由 major adapter
+映射到上述 enum；unknown code、unknown grantee、unknown privilege、重复 logical row 均 fail closed。outer rows
+按 `(owner, schema-null-before-string, object_kind)` 的 UTF-8 logical key 排序；其中 null schema 排在任意 string
+schema 之前。每个 ACL entry 在 row 内再按 `(grantor, grantee, privileges[], grantable[])` 排序。allowlisted owner
+的 global rows 必须被包含在每个目标 schema state 的 digest 中；不得只扫描
+`defaclnamespace = target_namespace` 而漏掉这些 owner 的 `NULL` rows。无 effective `CREATE` 且无关角色的 global
+row 按上面的过滤规则排除，不得因“global 必须扫描”而重新进入 projection/digest。
+
+future effective-default 语义固定为：`hardwired defaults + global alteration + schema addition`。schema-scoped
+row 是对目标 schema 的 addition，不是 global row 的 override；两行的 stored projection 与 digest 永远分开，
+不把 effective 结果反写或折叠为一行。`DefaultACLProjection.acl.catalog_value` 必须为 `"explicit"`（包括
+explicit empty ACL）；`null` 只允许表示没有该 catalog row，不能用于已投影的 default-ACL row。
 
 `explicit_acl` 保留 `nspacl` 的 `NULL|explicit` 状态及 exact grantor/grantee provenance；`effective_acl` 是加入 owner/PUBLIC/default
 语义后、按同一 principal closure 计算的 observed privilege。两者不能互相替代，因而不再在
@@ -459,9 +527,153 @@ dependency 允许存在。PUBLIC/未知 grantee、extension membership 或其他
 现有 ADR-0009 artifact 中的 `empty_schema` 必须在下一次 manifest/schema-bundle regeneration 中映射为
 上述 `schema_present` exact branch；在兼容映射完成前，runner 继续拒绝混用两种 shape，不能静默接受两套语义。
 
+### 4.5 Projection digest domains
+
+三个 state/typed projection digest domain 必须严格区分；domain 是 RFC8785 输入的一部分，不是日志标签：
+
+```text
+AuthorityProjection.digest = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-authority-projection/v1",
+  "projection": <complete AuthorityProjection without a digest field>
+}))
+
+CatalogProjection.digest = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-catalog-projection/v1",
+  "projection": <complete CatalogProjection without a digest field>
+}))
+
+CatalogStateProjection.digest(schema_absent) = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-catalog-state/v1",
+  "state": "schema_absent", "scope": <exact ProjectionScope>, "schema": "cloud_agents"
+}))
+
+CatalogStateProjection.digest(schema_present) = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-catalog-state/v1",
+  "state": "schema_present", "scope": <exact ProjectionScope>, "body": <complete CatalogProjectionBody>
+}))
+```
+
+`cloud-agents-platform-catalog-state/v1` 是 catalog state union 的既有 domain，不得改名或复用于最终
+`CatalogProjection`；TS/Go same-bits 输入是 flat `{domain, state, scope, schema|body}` object，不包含额外
+`projection` wrapper。Authority/Catalog final projection 仍使用上面的 `{domain, projection}` wrapper。任一 projection
+digest 不包含 `SnapshotMetadata`、query timing、backend PID、OID、adapter-local capability flag 或 expected digest；
+这些只在 bounded metadata/evidence 中出现。缺字段、unknown field、不同 scope 或同一 bytes 采用错误 domain 都必须
+返回 stable digest/scope error，不能“兼容计算”。
+
+schema/default-ACL 的 control-plane 子 digest 也各有独立 domain；三者都使用完整 canonical input，不能只 hash
+已经展示的 privilege 数组：
+
+```text
+schema_explicit_acl_digest = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-schema-explicit-acl/v1",
+  "schema": "cloud_agents",
+  "explicit_acl": <complete ACLSetProjection including catalog_value and sorted entries>
+}))
+
+schema_effective_acl_digest = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-schema-effective-acl/v1",
+  "schema": "cloud_agents",
+  "owner": <schema owner>,
+  "effective_acl": <complete sorted ACLProjection[]>
+}))
+
+default_acl_digest = SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-default-acl/v1",
+  "target_schema": "cloud_agents",
+  "rows": <all allowlisted-owner global schema=null and target-schema rows in outer canonical order>
+}))
+```
+
+`schema_explicit_acl_digest` 排除 effective ACL、default ACL、comment、security labels、OID、timing 和 query metadata；
+`schema_effective_acl_digest` 的 canonical input **严格只有**上面的 `domain`、`schema`、`owner` 和完整排序的
+`effective_acl`；因此它排除 raw ACL text、OID、role traversal order、database/session identity、explicit ACL
+digest、database ACL、default-ACL digest、timing 和 query metadata。default-ACL owner allowlist 与
+`object_creator_closure` 是投影前必须验证的 signed precondition，不能偷偷作为额外 digest field。`default_acl_digest`
+排除由这些 rows 推导的 future-effective folded result、当前 relation objects 和 OID。每个 row 内
+`ACLSetProjection.catalog_value`、grantor/grantee、privileges/grantable 的 exact canonical bytes 都参与其
+对应 digest；任何 exclusion 变更都必须新建 ADR，而不能由 adapter 自行省略。
+
 ## 5. Snapshot API 与事务复用
 
 Projector 只依赖下列最小接口，不暴露 raw connection、pool、role switch 或任意 SQL 给 caller：
+
+### 5.0 Exact metadata/result shape
+
+Snapshot metadata 描述的是观察边界，不是 projection digest 输入；字段集合 closed：
+
+```text
+SnapshotMetadata {
+  mode: "idle_read_repeatable_read_only" | "migration_serializable_read_write"
+  ownership: "owned_idle" | "borrowed_migration"
+  postgres_major: uint16
+  server_version_num: uint32
+  database_name: string
+  authority_phase: "connected_session" | "migration_role" | "migration_transaction"
+  session_user: string
+  current_user: string
+  isolation_level: "repeatable_read" | "serializable"
+  access_mode: "read_only" | "read_write"
+  deferrable: bool
+  tx_status: "T"
+  migration_id: string | null
+  statement_index: uint32 | null
+}
+
+ProjectionMetadata {
+  projection_kind: "authority" | "catalog" | "catalog_state"
+  digest_domain: "cloud-agents-platform-authority-projection/v1" |
+                 "cloud-agents-platform-catalog-projection/v1" |
+                 "cloud-agents-platform-catalog-state/v1"
+  adapter_profile: "postgresql-authority-v1" | "postgresql-catalog-v1"
+  snapshot: SnapshotMetadata
+  verified_subject_digest: Digest
+  scope: ProjectionScope | null
+  limits_profile: "cloud-agents-platform-projection-limits/v1"
+  query_count: uint32
+  row_count: uint64
+  total_bytes: uint64
+  redaction_profile: "cloud-agents-platform-projection-redaction/v1"
+}
+
+ProjectionResult<T> {
+  projection: T
+  digest: Digest
+  metadata: ProjectionMetadata
+}
+```
+
+`ProjectionResult` 的 `digest` 只能由 typed projection 按第 4.5 节 domain 重算；`ProjectionMetadata` 不得把
+query duration、backend PID/OID、raw SQL、secret 或 caller-supplied fields 带入 result。`verified_subject_digest`
+指向已验签的 authority/catalog/bundle subject，不是实际 projection 的替代物；expected/actual 比较仍由
+validator 完成。
+
+`ProjectionMetadata` 的 `projection_kind`、`digest_domain`、`adapter_profile`、`scope` 是一个 closed mapping：
+
+```text
+authority     => scope = null,
+                 digest_domain = cloud-agents-platform-authority-projection/v1,
+                 adapter_profile = postgresql-authority-v1
+catalog       => scope != null && scope.scope_kind = final,
+                 digest_domain = cloud-agents-platform-catalog-projection/v1,
+                 adapter_profile = postgresql-catalog-v1
+catalog_state => scope != null,
+                 digest_domain = cloud-agents-platform-catalog-state/v1,
+                 adapter_profile = postgresql-catalog-v1
+```
+
+authority 结果不得携带任何伪造的 catalog scope；catalog final 结果不得使用 predecessor/statement-prefix scope；
+catalog-state 的 scope 必须与 union branch 一致。任意其他组合返回
+`MIGRATION_PROJECTION_METADATA_MISMATCH`。
+
+`owned_idle` 只适用于 `IdleReadSnapshot`：snapshot owner 在 idle connection 上执行 RR/RO/**NOT DEFERRABLE** `BEGIN`，
+读取结束后必须 rollback、验证 `TxStatus = I`、清除 transaction-local state，再 release 或销毁 connection；
+projector 不得把它交给 migration runner。`owned_idle` 的 `migration_id` 和 `statement_index` 必须均为 `null`，
+`authority_phase` 只能是 `connected_session` 或 `migration_role`。`borrowed_migration` 只适用于 runner 已拥有的
+SERIALIZABLE/RW transaction，`authority_phase` 必须是 `migration_transaction`，`migration_id` 必填；
+`statement_index = null` 仅允许 transaction-wide preflight，statement-scoped projection 必须填写 0-based index。
+projector 可以读和生成 `ProjectionResult`，但绝不能 `BEGIN`、改变 isolation/role、创建 nested savepoint、commit、
+rollback 或 close；runner transaction owner 承担全部生命周期。metadata 中 mode/ownership/isolation/access/phase
+或 nullable-field 约束的不一致映射为 `MIGRATION_PROJECTION_METADATA_MISMATCH`。
 
 ```go
 type ProjectionSnapshot interface {
@@ -507,6 +719,17 @@ snapshot 自身不提供 projection digest，digest 只能由 canonical typed pr
 idle snapshot 的 owner 负责 rollback/release；migration snapshot 的生命周期由 runner transaction owner 独占，
 projector 无权 close/commit/rollback 它。
 
+`VerifiedSchemaBundleScope` 的 owner 约束也是 signed closed input，而不是 projector 的可选参数：
+
+```text
+VerifiedSchemaBundleScope.default_acl_owners: string[]          // sorted, unique
+VerifiedSchemaBundleScope.object_creator_closure: string[]     // sorted, unique principal/role closure
+```
+
+两数组是 schema-bundle signed subject 的 exact members，由既有 `schema_bundle_digest` 与 bundle signature 传递
+覆盖；不新增独立 closure digest。字段缺失、unknown member 或未签名新增值返回 `MIGRATION_INVALID_MANIFEST`，
+signed closure 与观察到的 authority 不一致返回 `MIGRATION_AUTHORITY_DRIFT`，不能由 projection query 自动补全。
+
 ### 5.1 Idle read snapshot
 
 `BeginIdleReadSnapshot` 只能在 connection idle 时执行：`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY
@@ -523,9 +746,34 @@ runner 已经打开的每条 migration 短事务使用 `SERIALIZABLE READ WRITE`
 同一个 migration transaction 的中间状态。最终 cumulative catalog 只有在全部 statement 完成后验证；中间状态
 不能拿 final contract 误判为漂移。
 
-snapshot metadata 必须记录 `postgres_major`、database identity、session/current user、mode、statement/migration
+snapshot metadata 必须记录 `postgres_major`、database name、session/current user、mode、statement/migration
 identity；projection digest 只出现在 `ProjectionResult`。projector 禁止使用 volatile `now()`、随机顺序、
 backend PID 或 OID 作为 digest 输入。
+
+### 5.3 New adapter API 与旧 runner validator 并存
+
+A2.1a-impl-2 只新增并验证上述 `ProjectionSnapshot`、`Projector`、metadata/result 和 PG major adapter。现有
+`AuthorityValidator`、`CatalogValidator`、`IntermediateValidator` 及其 `FailClosed*` 实现继续保留，作为旧
+runner 的 compatibility seam；它们不得被本切片删除、重命名或改成接受未验签 JSON。新 projector API 不自动接入
+旧 runner，也不替换旧 phase/transaction wiring。
+
+impl-2 的成功边界是显式的：`ProjectAuthority` 可以在 verified authority contract、strict shape、固定 limits 和
+PG15/16/17 adapter 全部通过时返回成功；`ProjectPrecondition` 可以成功返回 `schema_absent|schema_present` 及
+1a 的 schema/default-ACL state。`ProjectCatalog` 与 `ProjectTransitionState` 在 A2.1b relation/expression projector
+落地前无论目标 schema 是否只有 namespace，都必须返回 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`；不得用
+namespace-only projection、空 relation list 或 catalog contract 的 partial body 冒充 full catalog/transition
+success。该 boundary 不改变任何 `publication_status`/`runtime_introspection_status`，也不把 mutable catalog
+提升为已发布 authority。
+
+只有 A2.1a-impl-3 才允许新增 adapter-backed validator、在 runner statement 前/后调用新 API、替换旧 phase
+contract、持久化 `ProjectionResult`/intermediate chain，并为旧 validator 增加等价 stable error mapping。impl-2
+完成时旧 runner 的执行结果和 `NOT_IMPLEMENTED`/`UNPUBLISHED` 边界必须保持不变；禁止用“新 API 可构造”宣称
+runner 已使用 projector 或 Gate 已关闭。当前 Go/TS implementation 可能已经存在本地未提交 adapter/API 草稿，
+但它们仍按本 ADR 的 impl-2 seam 适配：Go draft 中的 `SnapshotMetadata.database_identity` 和非 nullable
+`ProjectionMetadata.scope` 必须在提交前移除/改为本 ADR shape；TS 当前 subdigest 的 loose `migrationDigest` 调用也
+必须在 impl-2 适配为本 ADR 的 explicit domains。TS/Go CatalogState same-bits flat digest 必须保留，Authority/Catalog
+wrapper digest 与本 ADR domains 对齐。不得因本地文件存在而把 mutable catalog contract 标为
+`IMPLEMENTED`/`PUBLISHED_IMMUTABLE`，也不得在 impl-2 提前改 runner wiring。
 
 ## 6. Statement intermediate state
 
@@ -697,19 +945,92 @@ superuser 攻击。该限制是边界条件，不是放宽 runtime role 的理�
 有 cycle detection、depth/edge guard 和 deterministic order；超限即 rollback/fail closed。禁止把整个 `pg_catalog`
 或 `information_schema` 扫描后再过滤。
 
-stable error 至少包含以下 closed codes，并提供 `phase`、`path`、`postgres_major`、`retryable`；不得把数据库原始
-message 当作对外 API：
+### 10.1 Projection limits v1（不可覆盖）
 
-| code                                        | 语义                                                | retryable        |
-| ------------------------------------------- | --------------------------------------------------- | ---------------- |
-| `MIGRATION_PROJECTION_UNSUPPORTED_MAJOR`    | adapter 未声明该 major/capability                   | no               |
-| `MIGRATION_PROJECTION_CATALOG_QUERY_FAILED` | bounded query/scan/scan type 失败                   | 仅明确 transient |
-| `MIGRATION_PROJECTION_LIMIT_EXCEEDED`       | rows/bytes/depth/nodes 超限                         | no               |
-| `MIGRATION_PROJECTION_UNKNOWN_OBJECT`       | 未声明 object、ACL、node 或 dependency              | no               |
-| `MIGRATION_PROJECTION_INVALID_EXPRESSION`   | expression AST 无法安全归一                         | no               |
-| `MIGRATION_AUTHORITY_DRIFT`                 | authority/control-plane projection 不等于 expected  | no               |
-| `MIGRATION_INTERMEDIATE_STATE_MISMATCH`     | statement 状态/digest 与 signed descriptor 不符     | no               |
-| `MIGRATION_PROJECTION_SNAPSHOT_INVALID`     | isolation/read-only/TxStatus/snapshot 违反 contract | no               |
+`cloud-agents-platform-projection-limits/v1` 的数值固定如下，适用于 idle 与 borrowed migration snapshot。它们是
+代码/fixture/metadata 的常量；caller、environment variable、DSN option、manifest override 或数据库 GUC 都不能
+提高或替换它们。实现若收到任何覆盖请求必须返回 `MIGRATION_PROJECTION_LIMIT_OVERRIDE`，而不是采用较宽值。
+
+```text
+max_query_rows                         = 8_192
+max_row_bytes                          = 65_536
+max_total_result_bytes                 = 8_388_608
+max_principals                         = 256
+max_membership_edges                   = 1_024
+max_membership_depth                   = 32
+max_canonical_witness_candidates       = 4_096
+max_acl_entries                        = 4_096
+max_default_acl_entries                = 512
+max_catalog_objects                    = 4_096
+max_dependency_edges                   = 8_192
+max_expression_nodes                   = 4_096
+max_security_labels_per_object         = 32
+max_role_settings                      = 512
+max_queries_per_projection             = 128
+projection_query_timeout_ms            = 5_000
+projection_lock_timeout_ms             = 1_000
+projection_snapshot_lifetime_ms        = 30_000
+projection_idle_in_transaction_timeout_ms = 60_000
+```
+
+`max_expression_nodes`、dependency 和 relation object limits 是 1b 的 reserved fixed values；1a 仍必须执行相同
+上限 profile，不能因“不读取 expression”而变成无界。每个 query 都同时受 rows、row bytes、total bytes 和
+`projection_query_timeout_ms` 约束；一个 aggregate query 不能通过单行较小绕过 total limit。对于所有
+inclusive 的 cardinality（query rows、membership edges、principals、ACL/default-ACL entries、catalog objects、
+dependency edges、expression nodes、witness candidates、role settings 和 query count），SQL 必须使用
+`LIMIT max+1`，或使用额外的 `Rows.Next` sentinel 读取一行来证明是否超过上限；不得取前 N 行后截断。恰好
+`max` 行并收到**正常 EOF**成功，只有观察到第 `max+1` 行（即 `observed > max`）才返回
+`MIGRATION_PROJECTION_LIMIT_EXCEEDED`；非预期 EOF（包括 `Rows.Err`/流截断）或 scan/type 解码失败返回
+`MIGRATION_PROJECTION_CATALOG_QUERY_FAILED`，不能被当作“达到上限”。
+
+bytes 计数在完整 canonical serialization 后累计：单行或总结果只有在累计值实际 `> max` 时拒绝，恰好等于
+上限成功；不得截断 bytes 来伪造边界证明。上述 inclusive 规则只适用于 count/bytes/cardinality，
+`projection_query_timeout_ms`、`projection_lock_timeout_ms` 和 snapshot/idle TTL 是独立的取消/查询错误：到达
+deadline 即取消并按 stable timeout/query-error mapping 返回，绝不套用 `LIMIT_EXCEEDED` 或“相等即成功”的
+计数语义。
+
+本次 A2.1a-impl-2 微冻结只约束 limits、authority、schema/default ACL、snapshot 和 API seam；不新增或替换
+A2.1b relation/function/child-object query、dependency closure、internal-object normalization 或 expression AST
+实现。1b 的 reserved limit 只保证未来实现不会绕过同一上限 profile。
+
+stable error v1 allowlist **固定为以下 codes，不存在“至少”、别名或 adapter-specific 新 code**，并提供 `phase`、
+`path`、`postgres_major`、`retryable`；不得把数据库原始 message 当作对外 API：
+
+| code                                         | 语义                                                | retryable        |
+| -------------------------------------------- | --------------------------------------------------- | ---------------- |
+| `MIGRATION_PROJECTION_UNSUPPORTED_MAJOR`     | adapter 未声明该 major/capability                   | no               |
+| `MIGRATION_PROJECTION_CAPABILITY_MISMATCH`   | adapter capability 与 verified contract 不一致      | no               |
+| `MIGRATION_PROJECTION_CATALOG_QUERY_FAILED`  | bounded query/scan/scan type 失败                   | 仅明确 transient |
+| `MIGRATION_PROJECTION_LIMIT_EXCEEDED`        | rows/bytes/depth/nodes 超限                         | no               |
+| `MIGRATION_PROJECTION_UNKNOWN_OBJECT`        | 未声明 object、ACL、node 或 dependency              | no               |
+| `MIGRATION_PROJECTION_INVALID_EXPRESSION`    | expression AST 无法安全归一                         | no（reserved）   |
+| `MIGRATION_PROJECTION_INVALID_SCOPE`         | unknown default-ACL kind/scope 或 projection scope  | no               |
+| `MIGRATION_PROJECTION_NON_CANONICAL_WITNESS` | path adjacency/endpoint/canonical choice 不成立     | no               |
+| `MIGRATION_PROJECTION_LIMIT_OVERRIDE`        | caller/env/DSN/GUC 请求覆盖固定 v1 limit            | no               |
+| `MIGRATION_PROJECTION_METADATA_MISMATCH`     | snapshot ownership/mode/isolation/phase 不一致      | no               |
+| `MIGRATION_PROJECTION_SNAPSHOT_INVALID`      | isolation/read-only/TxStatus/snapshot 违反 contract | no               |
+| `MIGRATION_PROJECTION_NOT_IMPLEMENTED`       | impl-2 尚未提供 1b catalog/transition projector     | no               |
+| `MIGRATION_AUTHORITY_DRIFT`                  | authority/control-plane projection 不等于 expected  | no               |
+| `MIGRATION_CATALOG_DRIFT`                    | cumulative catalog 与 verified expected 不一致      | no               |
+| `MIGRATION_INTERMEDIATE_STATE_MISMATCH`      | statement 状态/digest 与 signed descriptor 不符     | no（reserved）   |
+
+digest/strict-shape 映射沿用现有 Go error ABI，边界必须保持可观察且不可互换：strict JSON parser 的 raw
+lexical/UTF-8、trailing token、duplicate key、unknown key 或 missing key 统一使用
+`MIGRATION_INVALID_JSON`；JSON 已解析后的 typed semantic 校验、closed-union/strict-shape 和 signed manifest
+校验使用 `MIGRATION_INVALID_MANIFEST`。`ParseDigest` 的 malformed input 使用 `MIGRATION_INVALID_DIGEST`；
+typed field 的 `requireDigest` 失败，以及 digest recompute/mismatch，也使用 `MIGRATION_INVALID_MANIFEST`，不能
+退化成 `MIGRATION_INVALID_DIGEST`。projection runtime failure 只能使用上面的 v1 runtime codes，不得重写成
+generic ABI code 或另造 projection alias。
+
+stable mapping 不泄露 SQLSTATE、query text 或 driver error。唯一允许 retry 的规则是：外部 transient context
+deadline/statement timeout/connection interruption，且已经确认当前 snapshot/transaction 没有不明提交或 authority
+漂移，并且尚未超过 verified retry budget；它映射为 `MIGRATION_PROJECTION_CATALOG_QUERY_FAILED(retryable=true)`。
+cancel、scan/type/UTF-8 解码失败、所有 limits/scope/witness/metadata/authority/catalog drift、NOT_IMPLEMENTED 和
+所有 reserved code 都是 `retryable=false`。row/byte/depth/principal/ACL/witness candidate 超限统一映射
+`MIGRATION_PROJECTION_LIMIT_EXCEEDED`；unknown default-ACL kind/scope 和 invalid `ProjectionScope` 统一映射
+`MIGRATION_PROJECTION_INVALID_SCOPE`；路径验证失败统一映射
+`MIGRATION_PROJECTION_NON_CANONICAL_WITNESS`。原始数据库错误仅作为 bounded、redacted local cause 保存，不参与
+digest、retry decision 或对外 message。
 
 日志和 evidence 必须 redact DSN、password、token、SQL literal、expression value 中可能的 secret、完整 catalog
 raw row 和未 allowlist 的 role/ACL payload。对外只保留 stable code、safe path、major、digest、statement index、
@@ -812,3 +1133,7 @@ npm/Go channel、写生产数据库或把 `NOT_IMPLEMENTED` 改成 `IMPLEMENTED`
 - [catalog projection model](../../../services/control-plane/migrations/catalog/schema-000001.json)
 - [authority contract placeholder](../../../services/control-plane/migrations/catalog/authority-v1.json)
 - PostgreSQL official catalog semantics：[PG15 system information](https://www.postgresql.org/docs/15/functions-info.html)、[PG16 role membership](https://www.postgresql.org/docs/16/role-membership.html)、[PG17 `pg_auth_members`](https://www.postgresql.org/docs/17/catalog-pg-auth-members.html)、[PG17 `pg_attribute`](https://www.postgresql.org/docs/17/catalog-pg-attribute.html)、[PG17 `pg_index`](https://www.postgresql.org/docs/17/catalog-pg-index.html)、[PG17 `pg_proc`](https://www.postgresql.org/docs/17/catalog-pg-proc.html)
+
+`projection_api.go`、PG adapter、snapshot implementation 和 projection fixtures 若尚未形成已提交 source
+closure，仅作为 planned A2.1a-impl-2 artifacts，不在本索引中伪造可点击 source link；现有 `contracts.go` 的旧
+validator seam 继续作为当前实现索引。新 API 提交后必须补充 exact commit/tree link，再由 impl-3 评审 runner wiring。
