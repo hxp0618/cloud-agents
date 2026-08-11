@@ -7,8 +7,13 @@ import {
   assertExpectedSemanticResult,
   canonicalizeJson,
   canonicalizeNamespaceRef,
+  canonicalizeSubjectRef,
+  managedAgentCreateProjectIdempotencyDigest,
+  managedAgentCreateProjectIdempotencyProjection,
   namespaceRefDigest,
   validateCanonicalNamespaceRefFixture,
+  validateCanonicalSubjectRefFixture,
+  validateManagedAgentCreateProjectIdempotencyFixture,
   validatePlatformSemantics,
 } from "./platform-json-semantics";
 
@@ -148,10 +153,14 @@ describe("platform semantic constraints", () => {
           typeof fixture.instancePointer === "string"
             ? resolvePointer(document, fixture.instancePointer)
             : document;
-        const canonicalResult = validateCanonicalNamespaceRefFixture(document);
-        const result = canonicalResult.valid
-          ? validatePlatformSemantics(instance, document)
-          : canonicalResult;
+        const canonicalResults = [
+          validateCanonicalNamespaceRefFixture(document),
+          validateCanonicalSubjectRefFixture(document),
+          validateManagedAgentCreateProjectIdempotencyFixture(document),
+        ];
+        const result =
+          canonicalResults.find((candidate) => !candidate.valid) ??
+          validatePlatformSemantics(instance, document);
         expect(
           () =>
             assertExpectedSemanticResult(
@@ -163,6 +172,156 @@ describe("platform semantic constraints", () => {
         ).not.toThrow();
       }
     }
+  });
+});
+
+describe("P1-A1 idempotency canonical authority", () => {
+  const subject = {
+    kind: "user" as const,
+    issuer: "https://Issuer.Example/%7Etenant",
+    subject: "Jose\u0301/用户",
+  };
+  const request = {
+    operationId: "managedAgentCreateProject",
+    path: { tenantId: "Tenant-A" },
+    headers: { idempotencyKey: "idem-one", requestId: "request-one" },
+    body: {
+      name: "project-alpha",
+      organizationRef: {
+        namespace: "cloud-agents",
+        kind: "organization",
+        id: "organization-café",
+      },
+      displayName: "项目 Café",
+    },
+  };
+
+  it("keeps SubjectRef issuer and subject exact while sorting only keys", () => {
+    expect(new TextDecoder().decode(canonicalizeSubjectRef(subject))).toBe(
+      '{"issuer":"https://Issuer.Example/%7Etenant","kind":"user","subject":"José/用户"}',
+    );
+    expect(
+      new TextDecoder().decode(
+        canonicalizeSubjectRef({ ...subject, issuer: subject.issuer.toLowerCase() }),
+      ),
+    ).not.toBe(new TextDecoder().decode(canonicalizeSubjectRef(subject)));
+    expect(() => canonicalizeSubjectRef({ ...subject, displayName: "unknown" })).toThrow(
+      /must contain exactly/,
+    );
+    expect(validateCanonicalSubjectRefFixture({ instance: subject })).toEqual({
+      valid: false,
+      errors: [{ code: "CANONICAL_SUBJECT_REF_MISMATCH", path: "/canonicalUtf8" }],
+    });
+    expect(
+      validateCanonicalSubjectRefFixture({
+        instance: subject,
+        canonicalUtf8:
+          '{"issuer":"https://Issuer.Example/%7Etenant","kind":"user","subject":"José/用户"}',
+      }),
+    ).toEqual({
+      valid: false,
+      errors: [{ code: "CANONICAL_SUBJECT_REF_DIGEST_MISMATCH", path: "/digest" }],
+    });
+    expect(
+      validateCanonicalSubjectRefFixture({
+        instance: subject,
+        canonicalUtf8:
+          '{"issuer":"https://Issuer.Example/%7Etenant","kind":"user","subject":"José/用户"}',
+        digest: "SHA256:NOT-CANONICAL",
+      }),
+    ).toEqual({
+      valid: false,
+      errors: [{ code: "CANONICAL_SUBJECT_REF_DIGEST_MISMATCH", path: "/digest" }],
+    });
+  });
+
+  it("projects only operation, authoritative path, and strict body", () => {
+    const projection = managedAgentCreateProjectIdempotencyProjection(request);
+    expect(projection).toEqual({
+      operationId: "managedAgentCreateProject",
+      path: { tenantId: "Tenant-A" },
+      body: request.body,
+    });
+    expect(managedAgentCreateProjectIdempotencyDigest(request)).toBe(
+      "sha256:0a0f700e4379aafcb7b64a0e2d11e46b1863e6789244f63999e52b81a1c225d4",
+    );
+    expect(
+      managedAgentCreateProjectIdempotencyDigest({
+        ...request,
+        headers: {
+          idempotencyKey: "different",
+          requestId: "different",
+          Authorization: "test-placeholder-not-a-credential",
+          "Content-Type": "application/json; charset=utf-8",
+          traceparent: "00-00000000000000000000000000000001-0000000000000001-01",
+          traceMetadata: { sampled: true, source: "fixture" },
+        },
+      }),
+    ).toBe(managedAgentCreateProjectIdempotencyDigest(request));
+    expect(() =>
+      managedAgentCreateProjectIdempotencyProjection({ ...request, headers: [] }),
+    ).toThrow(/headers must be an object/);
+    expect(() =>
+      managedAgentCreateProjectIdempotencyProjection({
+        ...request,
+        headers: { idempotencyKey: "present", Authorization: "placeholder" },
+      }),
+    ).toThrow(/must carry string idempotencyKey and requestId/);
+  });
+
+  it("fails closed on operation, authority, canonical bytes, number marker, and digest drift", () => {
+    const projection = managedAgentCreateProjectIdempotencyProjection(request);
+    const canonicalUtf8 = new TextDecoder().decode(canonicalizeJson(projection));
+    const base = {
+      request,
+      authority: { resolvedOrganizationTenantId: "Tenant-A" },
+      projection,
+      canonicalUtf8,
+      digest: managedAgentCreateProjectIdempotencyDigest(request),
+      numberHandling: "NOT_APPLICABLE_NO_NUMBER_FIELDS",
+    };
+    expect(validateManagedAgentCreateProjectIdempotencyFixture(base).valid).toBe(true);
+    expect(
+      validateManagedAgentCreateProjectIdempotencyFixture({
+        ...base,
+        authority: { resolvedOrganizationTenantId: "Tenant-B" },
+      }),
+    ).toEqual({
+      valid: false,
+      errors: [
+        {
+          code: "IDEMPOTENCY_PATH_BODY_AUTHORITY_MISMATCH",
+          path: "/authority/resolvedOrganizationTenantId",
+        },
+      ],
+    });
+    expect(
+      validateManagedAgentCreateProjectIdempotencyFixture({ ...base, numberHandling: "IEEE754" }),
+    ).toEqual({
+      valid: false,
+      errors: [{ code: "IDEMPOTENCY_NUMBER_RULE_MISMATCH", path: "/numberHandling" }],
+    });
+    expect(
+      validateManagedAgentCreateProjectIdempotencyFixture({
+        ...base,
+        canonicalUtf8: `${canonicalUtf8}\n`,
+      }),
+    ).toEqual({
+      valid: false,
+      errors: [{ code: "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH", path: "/canonicalUtf8" }],
+    });
+    expect(
+      validateManagedAgentCreateProjectIdempotencyFixture({
+        ...base,
+        digest: `sha256:${"0".repeat(64)}`,
+      }),
+    ).toEqual({
+      valid: false,
+      errors: [{ code: "CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH", path: "/digest" }],
+    });
+    expect(() =>
+      managedAgentCreateProjectIdempotencyProjection({ ...request, operationId: "renamed" }),
+    ).toThrow(/IDEMPOTENCY_OPERATION_ID_MISMATCH/);
   });
 });
 

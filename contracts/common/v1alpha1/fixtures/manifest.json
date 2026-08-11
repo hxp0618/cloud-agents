@@ -111,6 +111,39 @@
       "expectedSchemaValid": true
     },
     {
+      "name": "subject-ref-canonical",
+      "schema": "../schemas/subject-ref.schema.json",
+      "document": "golden/subject-ref-canonical.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "subject-ref-canonical-escape",
+      "schema": "../schemas/subject-ref.schema.json",
+      "document": "negative/subject-ref-canonical-escape.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_SUBJECT_REF_MISMATCH"
+    },
+    {
+      "name": "subject-ref-digest-mismatch",
+      "schema": "../schemas/subject-ref.schema.json",
+      "document": "negative/subject-ref-digest-mismatch.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_SUBJECT_REF_DIGEST_MISMATCH"
+    },
+    {
+      "name": "subject-ref-extra-field",
+      "schema": "../schemas/subject-ref.schema.json",
+      "instance": "negative/subject-ref-extra-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
       "name": "authorization-scope",
       "schema": "../schemas/authorization-scope.schema.json",
       "instance": "golden/authorization-scope.json",

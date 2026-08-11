@@ -20,5 +20,14 @@
       "minLength": 1,
       "maxLength": 256
     }
+  },
+  "x-cloud-agents-canonicalization": {
+    "profile": "cloud-agents-subject-ref/v1alpha1",
+    "projection": ["kind", "issuer", "subject"],
+    "stringComparison": "exact",
+    "algorithm": "RFC8785",
+    "digest": "SHA-256",
+    "digestText": "sha256:<64-lowercase-hex>",
+    "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
   }
 }

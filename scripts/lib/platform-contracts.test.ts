@@ -377,4 +377,162 @@ describe("Platform contract bootstrap checks", () => {
       rmSync(temporary, { force: true, recursive: true });
     }
   });
+
+  it("fails closed when P1-A1 SubjectRef or HTTP idempotency evidence drifts", () => {
+    const root = resolve(import.meta.dirname, "../..");
+    const temporary = mkdtempSync(join(tmpdir(), "cloud-agents-p1-a1-faults-"));
+    try {
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const subjectPath = resolve(
+        temporary,
+        "contracts/common/v1alpha1/fixtures/golden/subject-ref-canonical.json",
+      );
+      const subject = JSON.parse(readFileSync(subjectPath, "utf8")) as Record<string, unknown>;
+      subject.digest = `sha256:${"0".repeat(64)}`;
+      writeFileSync(subjectPath, `${JSON.stringify(subject, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /Expected semantic valid=true, got false/,
+      );
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const subjectWithoutCanonical = JSON.parse(readFileSync(subjectPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      delete subjectWithoutCanonical.canonicalUtf8;
+      writeFileSync(subjectPath, `${JSON.stringify(subjectWithoutCanonical, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /Expected semantic valid=true, got false/,
+      );
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const operationPath = resolve(
+        temporary,
+        "contracts/platform/v1alpha1/fixtures/golden/managed-agent-create-project-idempotency.json",
+      );
+      const operation = JSON.parse(readFileSync(operationPath, "utf8")) as {
+        request: Record<string, unknown>;
+      };
+      operation.request.operationId = "managedAgentCreateProjectRenamed";
+      writeFileSync(operationPath, `${JSON.stringify(operation, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /Expected semantic valid=true, got false/,
+      );
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const projectionSchemaPath = resolve(
+        temporary,
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      );
+      const projectionSchema = JSON.parse(readFileSync(projectionSchemaPath, "utf8")) as {
+        properties: { operationId: { const: string } };
+      };
+      projectionSchema.properties.operationId.const = "managedAgentCreateProjectRenamed";
+      writeFileSync(projectionSchemaPath, `${JSON.stringify(projectionSchema, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /idempotency projection is not bound to managedAgentCreateProject/,
+      );
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const projection = JSON.parse(readFileSync(operationPath, "utf8")) as {
+        projection: Record<string, unknown>;
+      };
+      projection.projection.idempotencyKey = "must-not-enter-projection";
+      writeFileSync(operationPath, `${JSON.stringify(projection, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(/expected schema valid=true/);
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const commonManifestPath = resolve(
+        temporary,
+        "contracts/common/v1alpha1/fixtures/manifest.json",
+      );
+      const commonManifest = JSON.parse(readFileSync(commonManifestPath, "utf8")) as {
+        cases: Array<{ name: string }>;
+      };
+      commonManifest.cases = commonManifest.cases.filter(
+        (fixture) => fixture.name !== "subject-ref-canonical",
+      );
+      writeFileSync(commonManifestPath, `${JSON.stringify(commonManifest, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /P1-A1 fixture inventory is missing subject-ref-canonical/,
+      );
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const platformManifestPath = resolve(
+        temporary,
+        "contracts/platform/v1alpha1/fixtures/manifest.json",
+      );
+      const platformManifest = JSON.parse(readFileSync(platformManifestPath, "utf8")) as {
+        cases: Array<Record<string, unknown>>;
+      };
+      const canonicalFixture = platformManifest.cases.find(
+        (fixture) => fixture.name === "managed-agent-create-project-idempotency",
+      );
+      if (!canonicalFixture) throw new Error("test setup fixture missing");
+      delete canonicalFixture.expectedSemanticValid;
+      writeFileSync(platformManifestPath, `${JSON.stringify(platformManifest, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /P1-A1 fixture inventory metadata drifted for managed-agent-create-project-idempotency/,
+      );
+
+      rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
+      cpSync(resolve(root, "contracts"), resolve(temporary, "contracts"), {
+        force: true,
+        recursive: true,
+      });
+      const openApiPath = resolve(temporary, "contracts/managed-agent/v1alpha1/openapi.json");
+      const openApi = JSON.parse(readFileSync(openApiPath, "utf8")) as {
+        paths: Record<string, unknown>;
+      };
+      openApi.paths["/v1/p1-a1-second-idempotent"] = {
+        parameters: [
+          {
+            name: "iDeMpOtEnCy-KeY",
+            in: "header",
+            required: true,
+            schema: {
+              $ref: "../../common/v1alpha1/schemas/idempotency-key.schema.json",
+            },
+          },
+        ],
+        post: {
+          operationId: "managedAgentSecondIdempotentMutation",
+          responses: { "204": { description: "No Content" } },
+        },
+      };
+      writeFileSync(openApiPath, `${JSON.stringify(openApi, null, 2)}\n`);
+      expect(() => validatePlatformContractTree(temporary)).toThrow(
+        /must bind exactly one idempotent HTTP mutation/,
+      );
+    } finally {
+      rmSync(temporary, { force: true, recursive: true });
+    }
+  });
 });

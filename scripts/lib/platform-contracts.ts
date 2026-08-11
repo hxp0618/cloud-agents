@@ -11,6 +11,8 @@ import {
   canonicalizeJson,
   canonicalJsonDigest,
   validateCanonicalNamespaceRefFixture,
+  validateCanonicalSubjectRefFixture,
+  validateManagedAgentCreateProjectIdempotencyFixture,
   validatePlatformSemantics,
 } from "./platform-json-semantics";
 
@@ -30,6 +32,123 @@ const OPERATION_METHODS = new Set([
   "put",
   "trace",
 ]);
+
+const P1_A1_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonRecord>>> = {
+  "common/v1alpha1/fixtures/manifest.json": [
+    {
+      name: "subject-ref",
+      schema: "../schemas/subject-ref.schema.json",
+      instance: "golden/subject-ref.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "subject-ref-canonical",
+      schema: "../schemas/subject-ref.schema.json",
+      document: "golden/subject-ref-canonical.json",
+      instancePointer: "/instance",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "subject-ref-canonical-escape",
+      schema: "../schemas/subject-ref.schema.json",
+      document: "negative/subject-ref-canonical-escape.json",
+      instancePointer: "/instance",
+      expectedSchemaValid: true,
+      expectedSemanticValid: false,
+      expectedError: "CANONICAL_SUBJECT_REF_MISMATCH",
+    },
+    {
+      name: "subject-ref-digest-mismatch",
+      schema: "../schemas/subject-ref.schema.json",
+      document: "negative/subject-ref-digest-mismatch.json",
+      instancePointer: "/instance",
+      expectedSchemaValid: true,
+      expectedSemanticValid: false,
+      expectedError: "CANONICAL_SUBJECT_REF_DIGEST_MISMATCH",
+    },
+    {
+      name: "subject-ref-extra-field",
+      schema: "../schemas/subject-ref.schema.json",
+      instance: "negative/subject-ref-extra-field.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+  ],
+  "platform/v1alpha1/fixtures/manifest.json": [
+    {
+      name: "project-create-request",
+      schema: "../schemas/project-create-request.schema.json",
+      instance: "golden/project-create-request.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "project-create-server-owned-field",
+      schema: "../schemas/project-create-request.schema.json",
+      instance: "negative/project-create-server-owned-field.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "managed-agent-create-project-idempotency",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      document: "golden/managed-agent-create-project-idempotency.json",
+      instancePointer: "/projection",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "managed-agent-create-project-idempotency-excluded-headers",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      document: "golden/managed-agent-create-project-idempotency-excluded-headers.json",
+      instancePointer: "/projection",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "managed-agent-create-project-body-tenant-authority",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      instance: "negative/managed-agent-create-project-body-tenant-authority.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "managed-agent-create-project-number-field",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      instance: "negative/managed-agent-create-project-number-field.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "managed-agent-create-project-authority-mismatch",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      document: "negative/managed-agent-create-project-authority-mismatch.json",
+      instancePointer: "/projection",
+      expectedSchemaValid: true,
+      expectedSemanticValid: false,
+      expectedError: "IDEMPOTENCY_PATH_BODY_AUTHORITY_MISMATCH",
+    },
+    {
+      name: "managed-agent-create-project-digest-mismatch",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      document: "negative/managed-agent-create-project-digest-mismatch.json",
+      instancePointer: "/projection",
+      expectedSchemaValid: true,
+      expectedSemanticValid: false,
+      expectedError: "CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH",
+    },
+    {
+      name: "managed-agent-create-project-canonical-escape",
+      schema: "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      document: "negative/managed-agent-create-project-canonical-escape.json",
+      instancePointer: "/projection",
+      expectedSchemaValid: true,
+      expectedSemanticValid: false,
+      expectedError: "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH",
+    },
+  ],
+};
 
 export type PlatformContractBootstrapSummary = {
   readonly status: "BOOTSTRAP_VALIDATED";
@@ -91,6 +210,8 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
   }
   validateProtoContractTree(protoFiles, root, contractRoot);
 
+  validateP1A1HttpIdempotencyBinding(openApiFiles, schemaFiles);
+
   const fixtureCases = validateJsonSchemaFixtures(schemaFiles, fixtureManifests, contractRoot);
 
   if (schemaFiles.length === 0 || openApiFiles.length !== 2 || protoFiles.length < 3) {
@@ -121,10 +242,82 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
       "generated-sdk-replay",
       "n-minus-one-compatibility",
       "response-watch-unknown-field-preservation",
-      "server-path-and-tenant-authority-validation",
+      "runtime-server-path-and-tenant-authority-enforcement",
       "remaining-generator-supply-chain-review",
     ],
   };
+}
+
+function validateP1A1HttpIdempotencyBinding(
+  openApiFiles: ReadonlyArray<string>,
+  schemaFiles: ReadonlyArray<string>,
+): void {
+  const operationId = "managedAgentCreateProject";
+  const bindings: Array<{
+    readonly operationId: string;
+    readonly method: string;
+    readonly path: string;
+  }> = [];
+  for (const file of openApiFiles) {
+    const document = parseJsonFile(file);
+    const paths = requiredRecord(document.paths, `${file} paths`);
+    for (const [path, rawPathItem] of Object.entries(paths)) {
+      const pathItem = requiredRecord(rawPathItem, `${file} ${path}`);
+      const pathParameters = collectOpenApiParameters(
+        pathItem.parameters,
+        document,
+        `${file} path ${path}`,
+      );
+      for (const [method, rawOperation] of Object.entries(pathItem)) {
+        if (!OPERATION_METHODS.has(method)) continue;
+        const operation = requiredRecord(rawOperation, `${file} ${method} ${path}`);
+        const operationParameters = collectOpenApiParameters(
+          operation.parameters,
+          document,
+          `${file} ${method} ${path}`,
+        );
+        const hasIdempotencyKey = [...pathParameters, ...operationParameters].some(
+          (parameter) =>
+            parameter.in === "header" &&
+            requiredString(
+              parameter.name,
+              `${file} ${method} ${path} parameter name`,
+            ).toLowerCase() === "idempotency-key",
+        );
+        if (hasIdempotencyKey) {
+          bindings.push({
+            operationId: requiredString(
+              operation.operationId,
+              `${file} ${method} ${path} operationId`,
+            ),
+            method,
+            path,
+          });
+        }
+      }
+    }
+  }
+  if (
+    bindings.length !== 1 ||
+    bindings[0]?.operationId !== operationId ||
+    bindings[0]?.method !== "post" ||
+    bindings[0]?.path !== "/v1/tenants/{tenantId}/projects"
+  ) {
+    throw new Error(
+      `P1-A1 must bind exactly one idempotent HTTP mutation: post /v1/tenants/{tenantId}/projects (${operationId}).`,
+    );
+  }
+
+  const projectionFile = schemaFiles.find((file) =>
+    file.endsWith("/managed-agent-create-project-idempotency-projection.schema.json"),
+  );
+  if (!projectionFile) throw new Error("P1-A1 idempotency projection schema is missing.");
+  const schema = parseJsonFile(projectionFile);
+  const properties = requiredRecord(schema.properties, `${projectionFile} properties`);
+  const operationIdSchema = requiredRecord(properties.operationId, `${projectionFile} operationId`);
+  if (operationIdSchema.const !== operationId) {
+    throw new Error(`P1-A1 idempotency projection is not bound to ${operationId}.`);
+  }
 }
 
 function validateJsonSchemaFixtures(
@@ -208,10 +401,14 @@ function validateJsonSchemaFixtures(
         );
       }
       if (fixture.expectedSemanticValid !== undefined) {
-        const canonicalResult = validateCanonicalNamespaceRefFixture(document);
-        const semanticResult = canonicalResult.valid
-          ? validatePlatformSemantics(instance, document)
-          : canonicalResult;
+        const canonicalResults = [
+          validateCanonicalNamespaceRefFixture(document),
+          validateCanonicalSubjectRefFixture(document),
+          validateManagedAgentCreateProjectIdempotencyFixture(document),
+        ];
+        const semanticResult =
+          canonicalResults.find((result) => !result.valid) ??
+          validatePlatformSemantics(instance, document);
         assertExpectedSemanticResult(
           semanticResult,
           fixture.expectedSemanticValid as boolean,
@@ -1962,6 +2159,36 @@ function validateFixtureManifest(document: JsonRecord, file: string, contractRoo
       }
     } else if (fixture.expectedError !== undefined) {
       throw new Error(`${file} fixture ${name} must not declare expectedError for a passing case.`);
+    }
+  }
+  validateP1A1FixtureInventory(cases, file, contractRoot);
+}
+
+function validateP1A1FixtureInventory(
+  cases: ReadonlyArray<unknown>,
+  file: string,
+  contractRoot: string,
+): void {
+  const manifestPath = relativePath(contractRoot, file);
+  const requiredFixtures = P1_A1_FIXTURE_INVENTORY[manifestPath];
+  if (!requiredFixtures) return;
+  const fixturesByName = new Map(
+    cases.map((value, index) => {
+      const fixture = requiredRecord(value, `${file} cases/${index}`);
+      return [requiredString(fixture.name, `${file} cases/${index}/name`), fixture] as const;
+    }),
+  );
+  for (const expected of requiredFixtures) {
+    const name = requiredString(expected.name, `${manifestPath} required fixture name`);
+    const actual = fixturesByName.get(name);
+    if (!actual) {
+      throw new Error(`${manifestPath} P1-A1 fixture inventory is missing ${name}.`);
+    }
+    if (
+      new TextDecoder().decode(canonicalizeJson(actual)) !==
+      new TextDecoder().decode(canonicalizeJson(expected))
+    ) {
+      throw new Error(`${manifestPath} P1-A1 fixture inventory metadata drifted for ${name}.`);
     }
   }
 }

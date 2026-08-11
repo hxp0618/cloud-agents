@@ -37,6 +37,63 @@
       "expectedError": "UNKNOWN_FIELD"
     },
     {
+      "name": "managed-agent-create-project-idempotency",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "document": "golden/managed-agent-create-project-idempotency.json",
+      "instancePointer": "/projection",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "managed-agent-create-project-idempotency-excluded-headers",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "document": "golden/managed-agent-create-project-idempotency-excluded-headers.json",
+      "instancePointer": "/projection",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "managed-agent-create-project-body-tenant-authority",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "instance": "negative/managed-agent-create-project-body-tenant-authority.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "managed-agent-create-project-number-field",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "instance": "negative/managed-agent-create-project-number-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "managed-agent-create-project-authority-mismatch",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "document": "negative/managed-agent-create-project-authority-mismatch.json",
+      "instancePointer": "/projection",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "IDEMPOTENCY_PATH_BODY_AUTHORITY_MISMATCH"
+    },
+    {
+      "name": "managed-agent-create-project-digest-mismatch",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "document": "negative/managed-agent-create-project-digest-mismatch.json",
+      "instancePointer": "/projection",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH"
+    },
+    {
+      "name": "managed-agent-create-project-canonical-escape",
+      "schema": "../schemas/managed-agent-create-project-idempotency-projection.schema.json",
+      "document": "negative/managed-agent-create-project-canonical-escape.json",
+      "instancePointer": "/projection",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH"
+    },
+    {
       "name": "membership",
       "schema": "../schemas/membership.schema.json",
       "instance": "golden/membership.json",

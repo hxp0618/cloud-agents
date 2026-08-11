@@ -3,9 +3,16 @@ import { createHash } from "node:crypto";
 export type JsonRecord = Record<string, unknown>;
 
 export type SemanticErrorCode =
+  | "CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH"
+  | "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH"
   | "CANONICAL_NAMESPACE_REF_DIGEST_MISMATCH"
   | "CANONICAL_NAMESPACE_REF_MISMATCH"
+  | "CANONICAL_SUBJECT_REF_DIGEST_MISMATCH"
+  | "CANONICAL_SUBJECT_REF_MISMATCH"
   | "CROSS_TENANT_REFERENCE"
+  | "IDEMPOTENCY_NUMBER_RULE_MISMATCH"
+  | "IDEMPOTENCY_OPERATION_ID_MISMATCH"
+  | "IDEMPOTENCY_PATH_BODY_AUTHORITY_MISMATCH"
   | "INVALID_NAMESPACE_REF_GRAMMAR"
   | "INVALID_NAMESPACE_REF_KIND"
   | "INVALID_NAMESPACE_REF_LENGTH"
@@ -32,8 +39,25 @@ export type NamespaceRef = {
   readonly id: string;
 };
 
+export type SubjectRef = {
+  readonly kind: "user" | "serviceAccount" | "workload";
+  readonly issuer: string;
+  readonly subject: string;
+};
+
+export type ManagedAgentCreateProjectIdempotencyProjection = {
+  readonly operationId: "managedAgentCreateProject";
+  readonly path: { readonly tenantId: string };
+  readonly body: JsonRecord;
+};
+
 const UTF8 = new TextEncoder();
 const NAMESPACE_REF_KEYS = ["id", "kind", "namespace"] as const;
+const SUBJECT_REF_KEYS = ["issuer", "kind", "subject"] as const;
+const SUBJECT_KINDS = new Set(["user", "serviceAccount", "workload"]);
+const CREATE_PROJECT_OPERATION_ID = "managedAgentCreateProject" as const;
+const NO_NUMBER_FIELDS = "NOT_APPLICABLE_NO_NUMBER_FIELDS";
+const SHA256_DIGEST_TEXT = /^sha256:[0-9a-f]{64}$/u;
 const NAMESPACE_REF_SEGMENT = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
 const KNOWN_ROLES = new Set([
   "platform.admin",
@@ -101,6 +125,79 @@ export function namespaceRefDigest(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonicalizeNamespaceRef(value)).digest("hex")}`;
 }
 
+/**
+ * Canonical SubjectRef identity. Schema validation is the admission boundary;
+ * this function independently keeps the projection exact and fail closed.
+ */
+export function canonicalizeSubjectRef(value: unknown): Uint8Array {
+  const ref = requireSubjectRef(value);
+  assertUnicodeScalarString(ref.issuer, "SubjectRef.issuer");
+  assertUnicodeScalarString(ref.subject, "SubjectRef.subject");
+  if (!SUBJECT_KINDS.has(ref.kind)) throw new TypeError("SubjectRef kind is not recognized.");
+  if ([...ref.issuer].length < 1 || [...ref.issuer].length > 512) {
+    throw new TypeError("SubjectRef issuer length is outside the schema boundary.");
+  }
+  if ([...ref.subject].length < 1 || [...ref.subject].length > 256) {
+    throw new TypeError("SubjectRef subject length is outside the schema boundary.");
+  }
+  return canonicalizeJson(ref);
+}
+
+export function subjectRefDigest(value: unknown): string {
+  return `sha256:${createHash("sha256").update(canonicalizeSubjectRef(value)).digest("hex")}`;
+}
+
+/** Builds the only v1alpha1 idempotent HTTP mutation projection. */
+export function managedAgentCreateProjectIdempotencyProjection(
+  request: unknown,
+): ManagedAgentCreateProjectIdempotencyProjection {
+  request = requireExactRecord(
+    request,
+    ["body", "headers", "operationId", "path"],
+    "managedAgentCreateProject request",
+  );
+  if (request.operationId !== CREATE_PROJECT_OPERATION_ID) {
+    throw semanticFailure("IDEMPOTENCY_OPERATION_ID_MISMATCH", "/request/operationId");
+  }
+  const path = requireExactRecord(request.path, ["tenantId"], "request.path");
+  if (!isRecord(request.headers)) throw new TypeError("request.headers must be an object.");
+  const headers = request.headers;
+  const body = requireExactRecord(
+    request.body,
+    ["displayName", "name", "organizationRef"],
+    "request.body",
+  );
+  if (typeof path.tenantId !== "string")
+    throw new TypeError("request.path.tenantId must be a string.");
+  if (typeof headers.idempotencyKey !== "string" || typeof headers.requestId !== "string") {
+    throw new TypeError("request headers must carry string idempotencyKey and requestId values.");
+  }
+  if (
+    typeof body.name !== "string" ||
+    typeof body.displayName !== "string" ||
+    !isRecord(body.organizationRef)
+  ) {
+    throw new TypeError("request.body must be a validated ProjectCreateRequest.");
+  }
+  assertUnicodeScalarString(path.tenantId, "request.path.tenantId");
+  assertUnicodeScalarString(body.name, "request.body.name");
+  assertUnicodeScalarString(body.displayName, "request.body.displayName");
+  canonicalizeNamespaceRef(body.organizationRef);
+  return {
+    operationId: CREATE_PROJECT_OPERATION_ID,
+    path: { tenantId: path.tenantId },
+    body: {
+      name: body.name,
+      organizationRef: body.organizationRef,
+      displayName: body.displayName,
+    },
+  };
+}
+
+export function managedAgentCreateProjectIdempotencyDigest(request: unknown): string {
+  return canonicalJsonDigest(managedAgentCreateProjectIdempotencyProjection(request));
+}
+
 export function namespaceRefUrn(value: unknown): string {
   return `urn:cloud-agents:ref:${namespaceRefDigest(value)}`;
 }
@@ -111,6 +208,7 @@ export function sameNamespaceRef(left: unknown, right: unknown): boolean {
 
 export function validateCanonicalNamespaceRefFixture(document: unknown): SemanticResult {
   if (!isRecord(document) || !isRecord(document.instance)) return success();
+  if (!("namespace" in document.instance) || !("id" in document.instance)) return success();
   const canonicalUtf8 = document.canonicalUtf8 ?? document.candidateCanonicalUtf8;
   const digest = document.digest;
   const urn = document.urn;
@@ -134,6 +232,72 @@ export function validateCanonicalNamespaceRefFixture(document: unknown): Semanti
     if (error instanceof PlatformSemanticFailure) {
       return failure(error.code, `/instance${error.path}`);
     }
+    throw error;
+  }
+}
+
+export function validateCanonicalSubjectRefFixture(document: unknown): SemanticResult {
+  if (!isRecord(document) || !isRecord(document.instance)) return success();
+  if (!("issuer" in document.instance) || !("subject" in document.instance)) return success();
+  if (typeof document.canonicalUtf8 !== "string") {
+    return failure("CANONICAL_SUBJECT_REF_MISMATCH", "/canonicalUtf8");
+  }
+  if (typeof document.digest !== "string" || !SHA256_DIGEST_TEXT.test(document.digest)) {
+    return failure("CANONICAL_SUBJECT_REF_DIGEST_MISMATCH", "/digest");
+  }
+  try {
+    const expectedBytes = canonicalizeSubjectRef(document.instance);
+    if (!bytesEqual(expectedBytes, UTF8.encode(document.canonicalUtf8))) {
+      return failure("CANONICAL_SUBJECT_REF_MISMATCH", "/canonicalUtf8");
+    }
+    if (document.digest !== subjectRefDigest(document.instance)) {
+      return failure("CANONICAL_SUBJECT_REF_DIGEST_MISMATCH", "/digest");
+    }
+    return success();
+  } catch (error) {
+    if (error instanceof PlatformSemanticFailure) return failure(error.code, error.path);
+    throw error;
+  }
+}
+
+export function validateManagedAgentCreateProjectIdempotencyFixture(
+  document: unknown,
+): SemanticResult {
+  if (!isRecord(document) || !isRecord(document.request)) return success();
+  try {
+    const projection = managedAgentCreateProjectIdempotencyProjection(document.request);
+    const authority = optionalRecord(document.authority);
+    if (
+      typeof authority?.resolvedOrganizationTenantId !== "string" ||
+      authority.resolvedOrganizationTenantId !== projection.path.tenantId
+    ) {
+      return failure(
+        "IDEMPOTENCY_PATH_BODY_AUTHORITY_MISMATCH",
+        "/authority/resolvedOrganizationTenantId",
+      );
+    }
+    if (document.numberHandling !== NO_NUMBER_FIELDS) {
+      return failure("IDEMPOTENCY_NUMBER_RULE_MISMATCH", "/numberHandling");
+    }
+    if (
+      !isRecord(document.projection) ||
+      !bytesEqual(canonicalizeJson(projection), canonicalizeJson(document.projection))
+    ) {
+      return failure("CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH", "/projection");
+    }
+    const expectedBytes = canonicalizeJson(projection);
+    if (
+      typeof document.canonicalUtf8 !== "string" ||
+      !bytesEqual(expectedBytes, UTF8.encode(document.canonicalUtf8))
+    ) {
+      return failure("CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH", "/canonicalUtf8");
+    }
+    if (document.digest !== canonicalJsonDigest(projection)) {
+      return failure("CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH", "/digest");
+    }
+    return success();
+  } catch (error) {
+    if (error instanceof PlatformSemanticFailure) return failure(error.code, error.path);
     throw error;
   }
 }
@@ -267,6 +431,36 @@ function requireNamespaceRef(value: unknown): NamespaceRef {
     throw new TypeError("NamespaceRef properties must be strings.");
   }
   return { id: value.id, kind: value.kind, namespace: value.namespace };
+}
+
+function requireSubjectRef(value: unknown): SubjectRef {
+  const record = requireExactRecord(value, SUBJECT_REF_KEYS, "SubjectRef");
+  if (
+    typeof record.kind !== "string" ||
+    typeof record.issuer !== "string" ||
+    typeof record.subject !== "string"
+  ) {
+    throw new TypeError("SubjectRef properties must be strings.");
+  }
+  return {
+    kind: record.kind as SubjectRef["kind"],
+    issuer: record.issuer,
+    subject: record.subject,
+  };
+}
+
+function requireExactRecord(
+  value: unknown,
+  keys: ReadonlyArray<string>,
+  label: string,
+): JsonRecord {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).toSorted().join("\0") !== [...keys].toSorted().join("\0")
+  ) {
+    throw new TypeError(`${label} must contain exactly ${[...keys].toSorted().join(", ")}.`);
+  }
+  return value;
 }
 
 function assertUnicodeScalarString(value: string, label: string): void {

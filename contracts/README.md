@@ -15,9 +15,21 @@ OpenAPI owns routes, methods, security, parameters, headers, status codes, media
 reference external JSON Schema files for data models. Proto owns its RPC messages and services; JSON fixture files next
 to Proto sources are conformance vectors, not a second transport.
 
+## Idempotency digest authority
+
+P1 v1alpha1 currently exposes exactly one idempotent HTTP mutation:
+`managedAgentCreateProject`. Its canonical request intent is the strict-schema-validated
+`ManagedAgentCreateProjectIdempotencyProjection`: the exact OpenAPI `operationId`, authoritative path `tenantId`, and
+strict `ProjectCreateRequest` body. Every transport header value—including required `Idempotency-Key` and
+`X-Request-Id`, authorization placeholders, media type, and trace metadata—plus resolved-reference lookup evidence,
+authorization context, and all other transport metadata are excluded. The organization reference must resolve to the path tenant
+before canonicalization. The projection admits no JSON numbers; number serialization is therefore not applicable in
+this version. RFC 8785 UTF-8 bytes and the SHA-256 digest are fixed by checked-in fixtures; a supplied digest or
+projection mismatch fails closed before a side effect.
+
 ## P1-A bootstrap status
 
-- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 30 fixture
+- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 41 fixture
   cases pass the independently reviewed `Ajv2020` plus in-repo semantic bootstrap path. Mutation inputs reject unknown
   fields; response/watch unknown-field preservation remains a generated-reader sidecar seam described in
   `common/v1alpha1/README.md`, not a relaxation of mutation schemas.

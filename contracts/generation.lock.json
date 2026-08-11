@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:927bed268ca433af008fa6256e3663f9bb403456a95a86818c20627b42ad31a2",
+    "manifestSha256": "sha256:835a870f1bbe9d9ccca4903b6be6440cd1a572cf8c287c05e6ee49060f7e5286",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -49,7 +49,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:6ab4d6101983a35724deba9a87aa716a161e54837ca067ac5dbdae1711948426",
+      "sourceManifestSha256": "sha256:179a697642fb84da0e0920ada2041ef9702cc767494fd68e922720626918041a",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -73,7 +73,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:aee42f931ce9975f20865717fa91ff99349ec7dfd34e612f0afbe3ddbb0c672b",
+      "sourceManifestSha256": "sha256:c2f7ca4f20aee1c782078745a68bad968cea1ec930d075140cc9398b2a4149c9",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -115,7 +115,7 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:927bed268ca433af008fa6256e3663f9bb403456a95a86818c20627b42ad31a2",
+      "inputManifestSha256": "sha256:835a870f1bbe9d9ccca4903b6be6440cd1a572cf8c287c05e6ee49060f7e5286",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
@@ -147,7 +147,7 @@
     "generated-sdk-replay",
     "n-minus-one-compatibility",
     "response-watch-unknown-field-preservation",
-    "server-path-and-tenant-authority-validation",
+    "runtime-server-path-and-tenant-authority-enforcement",
     "remaining-generator-supply-chain-review"
   ]
 }

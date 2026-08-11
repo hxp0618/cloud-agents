@@ -24,3 +24,12 @@ Namespace references use the repository's strict RFC 8785 profile: exactly three
 `namespace`), NFC identifiers, no lone UTF-16 surrogates, JCS key ordering, UTF-8 bytes, SHA-256 digest text, and a
 derived `urn:cloud-agents:ref:sha256:<hex>` identity. The bootstrap implementation is deliberately limited to this
 shape; it is not advertised as a generic RFC 8785 implementation.
+
+## SubjectRef canonicalization
+
+`SubjectRef` idempotency authority is the strict-schema-validated projection containing only `kind`, `issuer`, and
+`subject`. The issuer and subject are identity-provider values: compare and persist their exact strings. Do not trim,
+lowercase, NFC-normalize, percent-decode, parse and reserialize the issuer URL, or otherwise rewrite either value.
+After rejecting lone Unicode surrogates, encode the projection with RFC 8785 as UTF-8 and identify it with lowercase
+`sha256:<64-hex>`. The v1alpha1 projection admits no JSON number, so RFC 8785 number serialization is explicitly not
+applicable rather than delegated to a host-language numeric model.
