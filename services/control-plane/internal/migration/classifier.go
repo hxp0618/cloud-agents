@@ -1,0 +1,404 @@
+package migration
+
+import (
+	"fmt"
+	"strings"
+)
+
+type StatementPlan struct {
+	Command             string
+	ObjectKind          string
+	TargetIdentity      string
+	Grantee             *string
+	MayChangeSchemaACL  bool
+	MayChangeDefaultACL bool
+	MayChangeOwner      bool
+}
+
+type StatementClassifier interface {
+	Classify(entry MigrationEntry, statement SQLStatement) (StatementPlan, error)
+}
+
+type SpecialStatementIdentity struct {
+	MigrationID    string
+	StatementIndex int
+}
+
+// NarrowDDLClassifier is a structural grammar for the exact postgresql-ddl-v1
+// profile. It intentionally mirrors the shared TS classifier; it is not a
+// keyword bag and never treats a matching word somewhere in a tail as admission.
+type NarrowDDLClassifier struct {
+	SpecialDO map[SpecialStatementIdentity]Digest
+}
+
+func (classifier NarrowDDLClassifier) Classify(entry MigrationEntry, statement SQLStatement) (StatementPlan, error) {
+	tokens := sqlTokenTexts(statement.Tokens)
+	if len(tokens) < 2 || tokens[len(tokens)-1] != ";" {
+		return StatementPlan{}, rejectSQLProfile(entry.ID, tokens)
+	}
+	switch tokens[0] {
+	case "DO":
+		expected, ok := classifier.SpecialDO[SpecialStatementIdentity{MigrationID: entry.ID, StatementIndex: statement.Index}]
+		if !ok || expected != statement.SHA256 || len(tokens) != 3 || tokens[1] != "$BODY$" {
+			return StatementPlan{}, fail(CodeInvalidSQL, entry.ID, "DO is not the exact signed special-case statement", nil)
+		}
+		return StatementPlan{Command: "DO", ObjectKind: "SCHEMA", TargetIdentity: "schema:unquoted:cloud_agents", MayChangeSchemaACL: true, MayChangeOwner: true}, nil
+	case "CREATE":
+		return classifyCreate(entry.ID, statement.Tokens, tokens)
+	case "ALTER":
+		return classifyAlterStrict(entry.ID, statement.Tokens, tokens)
+	case "GRANT", "REVOKE":
+		return classifyGrantRevoke(entry.ID, statement.Tokens, tokens)
+	default:
+		return StatementPlan{}, rejectSQLProfile(entry.ID, tokens)
+	}
+}
+
+func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
+	if len(tokens) < 3 || !oneOf(tokens[1], "TABLE", "INDEX", "POLICY", "FUNCTION") {
+		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	}
+	kind := tokens[1]
+	switch kind {
+	case "TABLE":
+		if !cloudAgentsQualified(typed, 2) || matchingParen(tokens, 5) != len(tokens)-2 {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+	case "FUNCTION":
+		if !cloudAgentsQualified(typed, 2) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		signatureEnd := matchingParen(tokens, 5)
+		body := lastToken(tokens, "$BODY$")
+		if signatureEnd < 0 || body <= signatureEnd || body != len(tokens)-2 || tokens[body-1] != "AS" {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		for _, token := range tokens[signatureEnd+1 : body-1] {
+			if oneOf(token, "TABLESPACE", "WITH", "EXTRA", "OWNER", "DROP", "ALTER", "CREATE", "GRANT", "REVOKE", ";") {
+				return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+			}
+		}
+	case "INDEX":
+		on := topLevelToken(tokens, "ON", 0)
+		if on != 3 || !cloudAgentsQualified(typed, on+1) || matchingParen(tokens, on+4) != len(tokens)-2 {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+	case "POLICY":
+		on := topLevelToken(tokens, "ON", 0)
+		if on != 3 || !cloudAgentsQualified(typed, on+1) || !validCreatePolicyTail(tokens, on+4) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+	}
+	plan := StatementPlan{Command: "CREATE", ObjectKind: kind}
+	return planWithTarget(plan, typed)
+}
+
+func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
+	if len(tokens) < 3 {
+		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	}
+	kind := tokens[1]
+	switch kind {
+	case "TABLE":
+		if !cloudAgentsQualified(typed, 2) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		subcommand := tokens[5 : len(tokens)-1]
+		exact := stringSliceEqual(subcommand, []string{"OWNER", "TO", "CLOUD_AGENTS_MIGRATION_OWNER"}) ||
+			stringSliceEqual(subcommand, []string{"ENABLE", "ROW", "LEVEL", "SECURITY"}) ||
+			stringSliceEqual(subcommand, []string{"FORCE", "ROW", "LEVEL", "SECURITY"})
+		addConstraint := len(subcommand) >= 3 && subcommand[0] == "ADD" && subcommand[1] == "CONSTRAINT" && !hasTopLevelComma(subcommand[2:])
+		if !exact && !addConstraint {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		plan := StatementPlan{Command: "ALTER", ObjectKind: "TABLE", MayChangeOwner: len(subcommand) > 0 && subcommand[0] == "OWNER"}
+		return planWithTarget(plan, typed)
+	case "FUNCTION":
+		if !cloudAgentsQualified(typed, 2) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		closing := matchingParen(tokens, 5)
+		if closing < 0 || !stringSliceEqual(tokens[closing+1:], []string{"OWNER", "TO", "CLOUD_AGENTS_MIGRATION_OWNER", ";"}) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		return planWithTarget(StatementPlan{Command: "ALTER", ObjectKind: "FUNCTION", MayChangeOwner: true}, typed)
+	case "DEFAULT":
+		prefix := []string{"ALTER", "DEFAULT", "PRIVILEGES", "FOR", "ROLE", "CLOUD_AGENTS_MIGRATION_OWNER", "IN", "SCHEMA", "CLOUD_AGENTS"}
+		if len(tokens) < len(prefix) || !stringSliceEqual(tokens[:len(prefix)], prefix) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		tail := tokens[len(prefix):]
+		allowed := stringSliceEqual(tail, []string{"REVOKE", "ALL", "ON", "TABLES", "FROM", "PUBLIC", ";"}) ||
+			stringSliceEqual(tail, []string{"REVOKE", "ALL", "ON", "SEQUENCES", "FROM", "PUBLIC", ";"}) ||
+			stringSliceEqual(tail, []string{"REVOKE", "EXECUTE", "ON", "FUNCTIONS", "FROM", "PUBLIC", ";"})
+		if !allowed {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		grantee := "PUBLIC"
+		return StatementPlan{Command: "ALTER", ObjectKind: "DEFAULT PRIVILEGES", TargetIdentity: "schema:unquoted:cloud_agents", Grantee: &grantee, MayChangeDefaultACL: true}, nil
+	default:
+		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	}
+}
+
+func classifyGrantRevoke(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
+	on := topLevelToken(tokens, "ON", 1)
+	directionWord := "TO"
+	if tokens[0] == "REVOKE" {
+		directionWord = "FROM"
+	}
+	direction := topLevelToken(tokens, directionWord, on+1)
+	if on < 1 || direction <= on || direction+3 != len(tokens) || tokens[direction+2] != ";" {
+		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	}
+	privileges := tokens[1:on]
+	objectKind := tokens[on+1]
+	grantee := tokens[direction+1]
+	if len(privileges) != 1 || !oneOf(privileges[0], "ALL", "USAGE", "SELECT", "EXECUTE") ||
+		!oneOf(objectKind, "SCHEMA", "TABLE", "FUNCTION") ||
+		!oneOf(grantee, "PUBLIC", "CLOUD_AGENTS_RUNTIME", "CLOUD_AGENTS_BOOTSTRAP_ADMIN") {
+		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	}
+	if objectKind == "SCHEMA" {
+		if direction != on+3 || tokens[on+2] != "CLOUD_AGENTS" {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+	} else {
+		if !cloudAgentsQualified(typed, on+2) {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		if objectKind == "TABLE" && direction != on+5 {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		if objectKind == "FUNCTION" && matchingParen(tokens, on+5) != direction-1 {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+	}
+	plan := StatementPlan{Command: tokens[0], ObjectKind: objectKind, Grantee: &grantee, MayChangeSchemaACL: objectKind == "SCHEMA"}
+	return planWithTarget(plan, typed)
+}
+
+func validCreatePolicyTail(tokens []string, offset int) bool {
+	cursor := offset
+	if cursor < len(tokens) && tokens[cursor] == "FOR" {
+		if cursor+1 >= len(tokens) || !oneOf(tokens[cursor+1], "SELECT", "ALL") {
+			return false
+		}
+		cursor += 2
+	}
+	if cursor+3 >= len(tokens) || tokens[cursor] != "TO" || !oneOf(tokens[cursor+1], "CLOUD_AGENTS_RUNTIME", "CLOUD_AGENTS_MIGRATION_OWNER") || tokens[cursor+2] != "USING" {
+		return false
+	}
+	usingEnd := matchingParen(tokens, cursor+3)
+	if usingEnd < 0 {
+		return false
+	}
+	remainder := tokens[usingEnd+1:]
+	if stringSliceEqual(remainder, []string{";"}) {
+		return true
+	}
+	if len(remainder) < 4 || remainder[0] != "WITH" || remainder[1] != "CHECK" {
+		return false
+	}
+	checkEnd := matchingParen(remainder, 2)
+	return checkEnd == len(remainder)-2 && remainder[len(remainder)-1] == ";"
+}
+
+func planWithTarget(plan StatementPlan, tokens []SQLToken) (StatementPlan, error) {
+	target, err := deriveTargetIdentity(plan, tokens)
+	if err != nil {
+		return StatementPlan{}, err
+	}
+	plan.TargetIdentity = target
+	return plan, nil
+}
+
+func deriveTargetIdentity(plan StatementPlan, typed []SQLToken) (string, error) {
+	tokens := sqlTokenTexts(typed)
+	if plan.Command == "DO" || plan.ObjectKind == "DEFAULT PRIVILEGES" || plan.ObjectKind == "SCHEMA" {
+		return "schema:unquoted:cloud_agents", nil
+	}
+	start, derivedName := -1, -1
+	switch plan.Command {
+	case "CREATE":
+		if plan.ObjectKind == "TABLE" || plan.ObjectKind == "FUNCTION" {
+			start = 2
+		} else {
+			derivedName = 2
+			start = topLevelToken(tokens, "ON", 0) + 1
+		}
+	case "ALTER":
+		start = 2
+	case "GRANT", "REVOKE":
+		start = topLevelToken(tokens, "ON", 0) + 2
+	}
+	if start < 0 || start+2 >= len(typed) || typed[start+1].Text != "." || !isIdentifierSQLToken(typed[start]) || !isIdentifierSQLToken(typed[start+2]) {
+		return "", fail(CodeInvalidSQL, "target-identity", "statement target is not an exact qualified identity", nil)
+	}
+	kind := strings.ToLower(plan.ObjectKind)
+	if derivedName >= 0 {
+		if derivedName >= len(typed) || !isIdentifierSQLToken(typed[derivedName]) {
+			return "", fail(CodeInvalidSQL, "target-identity", "derived target name is invalid", nil)
+		}
+		return kind + ":" + canonicalSQLIdentifier(typed[start]) + "/" + canonicalSQLIdentifier(typed[derivedName]), nil
+	}
+	base := kind + ":" + canonicalSQLIdentifier(typed[start]) + "/" + canonicalSQLIdentifier(typed[start+2])
+	if plan.ObjectKind != "FUNCTION" {
+		return base, nil
+	}
+	open := start + 3
+	close := matchingParen(tokens, open)
+	if close < 0 {
+		return "", fail(CodeInvalidSQL, "target-identity", "function signature is unterminated", nil)
+	}
+	return base + "(" + canonicalFunctionSignature(typed[open+1:close]) + ")", nil
+}
+
+func canonicalFunctionSignature(tokens []SQLToken) string {
+	groups := make([][]SQLToken, 1)
+	depth := 0
+	for _, token := range tokens {
+		if token.Text == "(" {
+			depth++
+		} else if token.Text == ")" {
+			depth--
+		}
+		if token.Text == "," && depth == 0 {
+			groups = append(groups, nil)
+			continue
+		}
+		groups[len(groups)-1] = append(groups[len(groups)-1], token)
+	}
+	parts := make([]string, 0, len(groups))
+	for _, group := range groups {
+		if len(group) == 0 {
+			continue
+		}
+		if isWordOneOf(group[0], "IN", "OUT", "INOUT", "VARIADIC") {
+			group = group[1:]
+		}
+		if len(group) >= 2 && isIdentifierSQLToken(group[0]) {
+			group = group[1:]
+		}
+		var part strings.Builder
+		for _, token := range group {
+			if isIdentifierSQLToken(token) {
+				part.WriteString(canonicalSQLIdentifier(token))
+			} else {
+				part.WriteString(token.Text)
+			}
+		}
+		parts = append(parts, part.String())
+	}
+	return strings.Join(parts, ",")
+}
+
+func canonicalSQLIdentifier(token SQLToken) string {
+	if token.Kind == SQLWord {
+		return "unquoted:" + strings.ToLower(token.Text)
+	}
+	return "quoted:" + strings.TrimPrefix(token.Text, "@quoted:")
+}
+
+func sqlTokenTexts(tokens []SQLToken) []string {
+	result := make([]string, len(tokens))
+	for index := range tokens {
+		result[index] = tokens[index].Text
+	}
+	return result
+}
+
+func cloudAgentsQualified(tokens []SQLToken, offset int) bool {
+	return offset >= 0 && offset+2 < len(tokens) && tokens[offset].Kind == SQLWord && tokens[offset].Text == "CLOUD_AGENTS" && tokens[offset+1].Text == "." && isIdentifierSQLToken(tokens[offset+2])
+}
+
+func isIdentifierSQLToken(token SQLToken) bool {
+	return token.Kind == SQLWord || token.Kind == SQLQuotedIdentifier
+}
+
+func isWordOneOf(token SQLToken, expected ...string) bool {
+	return token.Kind == SQLWord && oneOf(token.Text, expected...)
+}
+
+func matchingParen(tokens []string, open int) int {
+	if open < 0 || open >= len(tokens) || tokens[open] != "(" {
+		return -1
+	}
+	depth := 0
+	for index := open; index < len(tokens); index++ {
+		if tokens[index] == "(" {
+			depth++
+		} else if tokens[index] == ")" {
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func topLevelToken(tokens []string, expected string, start int) int {
+	depth := 0
+	for index := max(start, 0); index < len(tokens); index++ {
+		if tokens[index] == "(" {
+			depth++
+		} else if tokens[index] == ")" {
+			depth--
+		} else if depth == 0 && tokens[index] == expected {
+			return index
+		}
+	}
+	return -1
+}
+
+func lastToken(tokens []string, expected string) int {
+	for index := len(tokens) - 1; index >= 0; index-- {
+		if tokens[index] == expected {
+			return index
+		}
+	}
+	return -1
+}
+
+func hasTopLevelComma(tokens []string) bool {
+	depth := 0
+	for _, token := range tokens {
+		if token == "(" {
+			depth++
+		} else if token == ")" {
+			depth--
+		} else if token == "," && depth == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSliceEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func rejectSQLProfile(migrationID string, tokens []string) error {
+	if len(tokens) > 12 {
+		tokens = tokens[:12]
+	}
+	return fail(CodeInvalidSQL, migrationID, fmt.Sprintf("statement is outside postgresql-ddl-v1: %s", strings.Join(tokens, " ")), nil)
+}
+
+func oneOf(value string, expected ...string) bool {
+	for _, current := range expected {
+		if value == current {
+			return true
+		}
+	}
+	return false
+}
