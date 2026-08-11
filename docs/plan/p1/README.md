@@ -3,8 +3,10 @@
 - Status：IN PROGRESS
 - Fixed decisions：[`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)、
   [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)
-- Completed slice：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)
-- Current slice：P1-A2 Data Kernel decision freeze
+- Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
+  HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)
+- Current slice：P1-A2.1 Migration/Tenancy（SQL/bootstrap authority 已实现并本地验证；strict manifest/runner、
+  pgx tenant transaction helper 和 PostgreSQL 15–17 matrix 仍未完成）
 - Remaining P1 slice：P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -28,3 +30,11 @@ Platform RC、Beta 或 GA。
 
 - [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)：global-table allowlist、bootstrap authority、tenant
   context ABI、migration lineage/checksum 与 P1-A2.1～P1-A2.4 execution slices。
+
+## P1-A2.1 current boundary
+
+`services/control-plane/migrations/` 已建立 database/role bootstrap、migration ledger schema、Tenant/Organization/
+Project、tenant-local revision/change fact、`FORCE RLS` 与 audited Tenant bootstrap 的 SQL authority。该切片只是
+P1-A2.1 的 SQL 输入；在 exact-byte manifest、dedicated pgx runner、ledger crash/replay、transaction-local tenant
+helper、pool leakage negative 和 PostgreSQL 15.18/16.14/17.10 matrix 完成前，不得声称 P1-A2.1 或
+`G-DATA` 关闭。

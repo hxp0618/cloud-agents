@@ -129,15 +129,52 @@ checked-in cluster bootstrap 只创建三个 `NOLOGIN` group role，不创建或
 
 实际 LOGIN/workload identity 与 role membership 由部署者在仓外注入。在线 Control Plane 配置只能持有 runtime
 credential；migration credential 不得进入 runtime 配置、日志、fixture、镜像或 generated SDK。bootstrap admin
-使用独立连接池/命令路径。它不获得 tenant table 的直接 DML，只能执行 `SECURITY DEFINER` 的 audited mutation
-function；function 在同一短事务写业务事实和 redacted audit fact。function owner 固定为 migration owner，SQL
-正文使用 fully-qualified object，`search_path` 固定为 `pg_catalog, cloud_agents`；撤销 `PUBLIC`/runtime EXECUTE，
-只授予具名 bootstrap role。它不通过 `BYPASSRLS` 或 table-owner bypass。
+使用独立连接池/命令路径。bootstrap LOGIN 必须是 `cloud_agents_bootstrap_admin` 的 direct member、
+不得带 `ADMIN OPTION`，且不得是 runtime/migration group 的 direct 或 indirect member；function 必须从
+`session_user` 重新验证这些条件与可继承的 EXECUTE authority。它不获得 tenant table 的直接 DML，
+只能执行 `SECURITY DEFINER` 的 audited mutation function；function 在同一短事务写业务事实和
+redacted audit fact。function owner 固定为 migration owner，SQL 正文使用 fully-qualified object，
+`search_path` 固定为 `pg_catalog, cloud_agents`；撤销 `PUBLIC`/runtime EXECUTE，只授予具名
+bootstrap role。它不通过 `BYPASSRLS` 或 table-owner bypass。
+三个 group 的 direct member 必须是不可委派的独立 `LOGIN`（该 LOGIN 自身不得有 member），并且
+必须 `NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOREPLICATION/NOBYPASSRLS`。runtime/bootstrap LOGIN 必须
+`INHERIT`；migration LOGIN 必须 `NOINHERIT`，只能在 dedicated runner 验证后显式 `SET ROLE`。不允许
+NOLOGIN intermediary 或 LOGIN-to-LOGIN 委派链替代 direct workload membership。每个 workload LOGIN 作为
+`pg_auth_members.member` 的完整集合必须精确只有目标 Cloud Agents group 这一条，不得同时属于
+任何其他 PostgreSQL role。PostgreSQL 16 新增的 per-grant `inherit_option`/`set_option` 也是 authority 输入：
+runtime/bootstrap membership 必须可实际 `USAGE`，migration membership 必须可实际 `SET ROLE`。
+PostgreSQL 15 没有这两列时按 legacy `true` 处理；checked-in SQL 必须用不会在 PG15 parse 失败的
+catalog compatibility 读法，禁止因 minor 差异跳过验证。
+三个 Cloud Agents group role 的所有 incoming membership 都必须 `ADMIN OPTION = false`，且
+`pg_auth_members.grantor` 必须是不属于任一 Cloud Agents group 的 cluster `SUPERUSER`。PostgreSQL 16
+不允许纯 `CREATEROLE` principal 在没有 `ADMIN OPTION` 时 grant 已有 role，而撤销其 `ADMIN OPTION`
+又会 cascade 删除它授出的 membership；因此 P1 不声称 non-superuser role provisioner 兼容。该部署
+adapter 若后续需要，必须以新 ADR 冻结具名 provisioner authority 和持久 provenance，不能放宽当前
+function。任何可委派或未受信 grantor 的 membership 会使 role/database bootstrap 失败，
+并使 Tenant bootstrap function 对所有 caller 立即 fail closed，直到部署 authority 移除该漂移。
+任何 role/LOGIN 按实际 direct/indirect membership 闭包最多只能属于一个 Cloud Agents group authority；
+role/database bootstrap 必须全局拒绝 runtime/migration/bootstrap 之间的任意重叠，不得只检查
+当前 caller。
 
-cluster bootstrap SQL 是 migration bundle 的受摘要输入，但不是 schema migration ledger entry；它只能创建/
-核验上述 group role，不创建业务表、不写业务数据。首次 schema bootstrap 仍由 `000001` migration 完成。
-若同名 role 已存在，bootstrap 必须验证 `NOLOGIN/NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE`，并拒绝
-该 group role 继承任何其他 role；属性或 membership 不一致时 fail closed，不静默 ALTER 降权。
+bootstrap SQL 是 migration bundle 的受摘要输入，但不是 schema migration ledger entry，并分成两个显式 authority：
+
+- cluster-scoped bootstrap 必须由不属于任一 Cloud Agents group 的 `SUPERUSER` 执行，并且只创建/
+  核验上述 group role；新建 role 也必须在同一次执行中重新读取并通过与已有 role 相同的
+  membership/provenance 检查。若同名 role 已存在，必须验证
+  `NOLOGIN/NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE/NOREPLICATION/NOINHERIT`，并拒绝该
+  group role 继承任何其他 role；
+- database-scoped bootstrap 由精确目标数据库的 deployment-owned owner 或显式 cluster superuser 执行。它必须
+  验证 database name/owner/caller 和三个 group role 的属性，拒绝 database owner 或 caller 属于任一
+  Cloud Agents group。database owner 必须是不可委派的 authority role（不得有任何 member），避免其他
+  LOGIN 通过 owner membership 继承隐式 database `CREATE`/`TEMPORARY`。owner 可以是更安全的
+  deployment-owned `NOLOGIN` role；此时只允许 cluster superuser 运行 bootstrap。它拒绝未知
+  `CREATE`/`TEMPORARY` grantee，撤销 `PUBLIC`/runtime/bootstrap 的
+  `CREATE` 和 `TEMPORARY`，只向 migration owner 授予 schema migration 必需的 database `CREATE`；不改变
+  database owner，不创建 schema/table/LOGIN，不写业务数据。
+
+任一 bootstrap 发现属性、membership、owner、caller 或 ACL 不一致时必须非零退出并 fail closed，不静默
+ALTER 降权。首次 schema bootstrap 仍由 `000001` migration 完成；它只接受 schema 不存在，或已由
+migration owner 拥有且真空的 schema，其他状态拒绝 adopt。
 
 `workload_database_principals` 由 audited bootstrap function 写入，至少绑定 exact PostgreSQL `session_user`、
 service kind、instance ID、incarnation、允许的 registration/heartbeat/retirement capability、state 与 expiry。每个
@@ -148,7 +185,8 @@ register/heartbeat/retirement 只能调用具名 `SECURITY DEFINER` function，f
 
 migration runner 使用独立、短生命周期 LOGIN。连接后必须验证：`session_user` 不是任一 group role、在
 `pg_auth_members` 中是 `cloud_agents_migration_owner` 的 direct member、不是 runtime/bootstrap group 的直接或
-间接 member，且自身 `NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE/NOREPLICATION`。随后显式
+间接 member，且自身 `NOINHERIT/NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE/NOREPLICATION`。
+随后显式
 `SET ROLE cloud_agents_migration_owner` 并核对 `current_user`，再取得 advisory lock；所有 schema/table/function
 都由该 group role 拥有。完成或失败后 runner `RESET ROLE` 并关闭 dedicated connection，不得把它放回 runtime
 pool。任一 membership/owner/attribute 不匹配时不执行 DDL。
