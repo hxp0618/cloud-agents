@@ -9,10 +9,11 @@
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
   PostgreSQL tenant-helper matrix (`99a1b54`)；fail-closed migration runner core (`99106e8`)；pgx v5.10.0 +
-  x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)
-- Current slice：P1-A2.1a-impl-1 Contract/Fixture（冻结 strict union、typed AuthorityProjection、
-  schema/default-ACL projection 与 ControlPlaneStates fixture；不实现真实 PG projector 或 production trust）
-- Remaining P1 slices：P1-A2.1a-impl-2～3、P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
+  x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
+  P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)
+- Current slice：P1-A2.1a-impl-2 PG adapters（PG15/16/17 capability probes、authority +
+  namespace/schema/default-ACL projectors、idle/migration snapshot adapters；unknown/missing field fail closed）
+- Remaining P1 slices：P1-A2.1a-impl-3、P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -45,15 +46,18 @@ Platform RC、Beta 或 GA。
   version-neutral typed projection、snapshot/transaction 边界及 P1-A2.1a/P1-A2.1b 实施顺序；细化 verified
   authority binding，但不改变 schema ledger 或 Gate 语义。
 
-## P1-A2.1a-impl-1 current boundary
+## P1-A2.1a-impl-1 completed / P1-A2.1a-impl-2 current boundary
 
 `services/control-plane/migrations/` 已建立 database/role bootstrap、migration ledger schema、Tenant/Organization/
 Project、tenant-local revision/change fact、`FORCE RLS` 与 audited Tenant bootstrap 的 SQL authority；runner 已具有
 exact-byte bundle、strict classifier、transaction-local tenant helper 和 PostgreSQL 15/16/17 helper matrix。
 `93f742f` 又集成了 pgx/x-text dependency lock、SBOM、notice 与本地时点扫描，但该记录只关闭依赖实施切片。
 
-当前 projection 只有 typed model、interface 与 fail-closed validator seam：真实 PG15–17 authority/catalog/
-intermediate projector、signed expected subject、detached-signature verifier、deployment trust-root wiring、runner
-实库矩阵、crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
-`UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
+`b36f45a` 已完成 strict typed projection contracts、Go/TS fail-closed validators、共享 golden/fault fixtures、
+generation-lock/source provenance，以及 legacy `empty_schema` 到 scoped `schema_absent|schema_present` 的 ABI 更新。
+当前切片只进入真实 PG15–17 authority、namespace/schema/default-ACL projector 与 idle/migration snapshot adapter。
+
+Projection runner wiring、signed expected subject、detached-signature verifier、deployment trust-root wiring、
+relation/expression projector、实库矩阵、crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog
+继续保持 `UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
 `G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 均不得标为 `VERIFIED`。
