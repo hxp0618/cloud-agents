@@ -15,6 +15,8 @@ import {
   validateAuthorityProfile,
   validateCatalogProjectionBody,
   validateCatalogState,
+  validateCanonicalMembershipFixture,
+  validateDefaultACLScopeFixture,
   validateExpectedStatementTransition,
   validateIntermediateState,
   validateNumericFixture,
@@ -40,14 +42,49 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
     expect((projections.migration_role as JsonObject).current_user).toBe(
       "cloud_agents_migration_owner",
     );
-    const reachability = (
-      (projections.connected_session as JsonObject).membership_reachability as JsonObject[]
-    )[0]!;
-    expect((reachability.privileges as JsonObject[]).map((entry) => entry.privilege_kind)).toEqual([
-      "member",
-      "usage",
-      "set",
+    const connected = projections.connected_session as JsonObject;
+    const roles = connected.roles as JsonObject[];
+    expect(roles.map((role) => role.name)).toEqual([
+      "cloud_agents_bootstrap_admin",
+      "cloud_agents_bootstrap_login_fixture",
+      "cloud_agents_database_owner_fixture",
+      "cloud_agents_migration_login_fixture",
+      "cloud_agents_migration_owner",
+      "cloud_agents_runtime",
+      "cloud_agents_runtime_login_fixture",
+      "fixture_cluster_superuser",
     ]);
+    for (const groupName of [
+      "cloud_agents_bootstrap_admin",
+      "cloud_agents_migration_owner",
+      "cloud_agents_runtime",
+    ]) {
+      const group = roles.find((role) => role.name === groupName)!;
+      expect({ login: group.login, inherit: group.inherit, superuser: group.superuser }).toEqual({
+        login: false,
+        inherit: false,
+        superuser: false,
+      });
+    }
+    const direct = connected.direct_memberships as JsonObject[];
+    expect(direct.map((entry) => [entry.member, entry.role])).toEqual([
+      ["cloud_agents_bootstrap_login_fixture", "cloud_agents_bootstrap_admin"],
+      ["cloud_agents_migration_login_fixture", "cloud_agents_migration_owner"],
+      ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+    ]);
+    const reachability = connected.membership_reachability as JsonObject[];
+    expect(reachability).toHaveLength(3);
+    for (const endpoint of reachability) {
+      const privileges = endpoint.privileges as JsonObject[];
+      expect(privileges.map((entry) => entry.privilege_kind)).toEqual(["member", "usage", "set"]);
+      expect(privileges.map((entry) => entry.edge_count)).toEqual([3, 3, 3]);
+    }
+    const migrationPrivileges = reachability[1]!.privileges as JsonObject[];
+    expect(migrationPrivileges[0]!.canonical_witness).toEqual([
+      "cloud_agents_migration_login_fixture",
+      "cloud_agents_migration_owner",
+    ]);
+    expect(migrationPrivileges[1]!.canonical_witness).toBeNull();
   });
 
   it("rejects unknown, missing, duplicate, digest, phase and ACL faults", () => {
@@ -111,6 +148,67 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
     const collationVersion = structuredClone(authority);
     (collationVersion.database as JsonObject).collation_version = "2.39";
     expect(() => validateAuthorityProfile(collationVersion)).toThrow(/UNEXPECTED_VALUE/u);
+  });
+
+  it("rejects mechanical authority invariant drift in the signed binding", () => {
+    const binding = fixture("golden/authority-binding-v1.json");
+    const legacyUnreachableCount = structuredClone(binding);
+    const legacyPrivilege = (
+      ((legacyUnreachableCount.expected_projections as JsonObject).connected_session as JsonObject)
+        .membership_reachability as JsonObject[]
+    )[1]!.privileges as JsonObject[];
+    legacyPrivilege[1]!.edge_count = 0;
+    expect(() => validateAuthorityBinding(legacyUnreachableCount)).toThrow(
+      /REACHABILITY_EDGE_COUNT/u,
+    );
+
+    const inheritingGroup = structuredClone(binding);
+    const roles = (
+      (inheritingGroup.expected_projections as JsonObject).connected_session as JsonObject
+    ).roles as JsonObject[];
+    roles.find((role) => role.name === "cloud_agents_migration_owner")!.inherit = true;
+    expect(() => validateAuthorityBinding(inheritingGroup)).toThrow(/AUTHORITY_GROUP_ROLE/u);
+
+    const extraRole = structuredClone(binding);
+    const extraRoles = (
+      (extraRole.expected_projections as JsonObject).connected_session as JsonObject
+    ).roles as JsonObject[];
+    extraRoles.push(syntheticRole("fixture_unbound_role", false, false));
+    expect(() => validateAuthorityBinding(extraRole)).toThrow(/AUTHORITY_ROLE_CLOSURE/u);
+  });
+
+  it("recomputes canonical equal paths only in a local synthetic graph", () => {
+    const synthetic = syntheticMembershipFixture();
+    expect(() => validateCanonicalMembershipFixture(synthetic)).not.toThrow();
+
+    const legacyUnreachableCount = structuredClone(synthetic);
+    (
+      (legacyUnreachableCount.membership_reachability as JsonObject).privileges as JsonObject[]
+    )[1]!.edge_count = 0;
+    expect(() => validateCanonicalMembershipFixture(legacyUnreachableCount)).toThrow(
+      /REACHABILITY_EDGE_COUNT/u,
+    );
+
+    const reversed = structuredClone(synthetic);
+    (
+      (reversed.membership_reachability as JsonObject).privileges as JsonObject[]
+    )[0]!.canonical_witness = ["fixture_target", "fixture_membership_a", "fixture_member"];
+    expect(() => validateCanonicalMembershipFixture(reversed)).toThrow(/REACHABILITY_WITNESS/u);
+
+    const noncanonical = structuredClone(synthetic);
+    (
+      (noncanonical.membership_reachability as JsonObject).privileges as JsonObject[]
+    )[0]!.canonical_witness = ["fixture_member", "fixture_membership_b", "fixture_target"];
+    expect(() => validateCanonicalMembershipFixture(noncanonical)).toThrow(/REACHABILITY_WITNESS/u);
+
+    const duplicateEndpoint = structuredClone(synthetic);
+    const direct = duplicateEndpoint.direct_memberships as JsonObject[];
+    const duplicate = structuredClone(direct[0]!);
+    duplicate.grantor = "fixture_membership_b";
+    direct.splice(1, 0, duplicate);
+    expect(() => validateCanonicalMembershipFixture(duplicateEndpoint)).toThrow(
+      /DIRECT_MEMBERSHIP_DUPLICATE/u,
+    );
   });
 
   it("freezes schema absent/present and rejects empty_schema or invalid scope", () => {
@@ -237,6 +335,83 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
     expect(() => validateCatalogProjectionBody(lowercasePrivilege)).toThrow(/ACL_PRIVILEGE/u);
   });
 
+  it("freezes global and schema-scoped DefaultACL closure and ordering", () => {
+    const scope = fixture("golden/default-acl-scope-v1.json");
+    expect(() => validateDefaultACLScopeFixture(scope)).not.toThrow();
+    const rows = scope.rows as JsonObject[];
+    expect(rows.filter((row) => row.schema === null).map((row) => row.object_kind)).toEqual([
+      "function",
+      "schema",
+      "sequence",
+      "table",
+      "type",
+    ]);
+    expect(
+      rows.filter((row) => row.schema === "cloud_agents").map((row) => row.object_kind),
+    ).toEqual(["function", "sequence", "table", "type"]);
+    expect(rows.every((row) => (row.acl as JsonObject).catalog_value === "explicit")).toBe(true);
+
+    const invalidSchemaKind = structuredClone(scope);
+    const invalidSchemaRows = invalidSchemaKind.rows as JsonObject[];
+    const schemaRow = invalidSchemaRows.find((row) => row.object_kind === "schema")!;
+    schemaRow.schema = "cloud_agents";
+    invalidSchemaRows.sort((left, right) =>
+      Buffer.compare(Buffer.from(defaultACLKey(left)), Buffer.from(defaultACLKey(right))),
+    );
+    expect(() => validateDefaultACLScopeFixture(invalidSchemaKind)).toThrow(
+      /DEFAULT_ACL_SCHEMA_KIND_SCOPE/u,
+    );
+
+    const invalidScope = structuredClone(scope);
+    const invalidScopeRows = invalidScope.rows as JsonObject[];
+    const scopedType = invalidScopeRows.find(
+      (row) => row.schema === "cloud_agents" && row.object_kind === "type",
+    )!;
+    scopedType.schema = "other_schema";
+    invalidScopeRows.sort((left, right) =>
+      Buffer.compare(Buffer.from(defaultACLKey(left)), Buffer.from(defaultACLKey(right))),
+    );
+    expect(() => validateDefaultACLScopeFixture(invalidScope)).toThrow(/DEFAULT_ACL_SCOPE/u);
+
+    const implicitCatalog = structuredClone(scope);
+    const firstACL = (implicitCatalog.rows as JsonObject[])[0]!.acl as JsonObject;
+    firstACL.catalog_value = "null";
+    firstACL.entries = [];
+    expect(() => validateDefaultACLScopeFixture(implicitCatalog)).toThrow(
+      /DEFAULT_ACL_CATALOG_VALUE/u,
+    );
+
+    const ownerOutsideClosure = structuredClone(scope);
+    const ownerOutsideRows = ownerOutsideClosure.rows as JsonObject[];
+    ownerOutsideRows[0]!.owner = "outside_creator_closure";
+    ownerOutsideRows.sort((left, right) =>
+      Buffer.compare(Buffer.from(defaultACLKey(left)), Buffer.from(defaultACLKey(right))),
+    );
+    expect(() => validateDefaultACLScopeFixture(ownerOutsideClosure)).toThrow(
+      /DEFAULT_ACL_OWNER_CLOSURE/u,
+    );
+
+    const reverseOrder = structuredClone(scope);
+    (reverseOrder.rows as JsonObject[]).reverse();
+    expect(() => validateDefaultACLScopeFixture(reverseOrder)).toThrow(/DUPLICATE_OR_UNSORTED/u);
+  });
+
+  it("publishes exactly 43 projection fault records for the closed negative matrix", () => {
+    const faults = fixture("negative/faults-v1.json");
+    const cases = faults.cases as JsonObject[];
+    expect(cases).toHaveLength(43);
+    expect(cases.map((entry) => entry.mutation)).toEqual(
+      expect.arrayContaining([
+        "unreachable_edge_count_zero",
+        "reverse_member_role_witness",
+        "select_utf8_later_shortest_path",
+        "schema_kind_scoped_to_cloud_agents",
+        "schema_outside_closed_scope",
+        "legacy_runner_error_code",
+      ]),
+    );
+  });
+
   it("keeps ExpectedStatementTransition closed and digest-ref-only", () => {
     const transition = fixture("golden/expected-statement-transition-v1.json");
     expect(() => validateExpectedStatementTransition(transition)).not.toThrow();
@@ -318,9 +493,50 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
 
     const badOutcome = structuredClone(terminal);
     badOutcome.outcome = "committed";
-    badOutcome.stable_error_code = "SERIALIZATION_FAILURE";
+    badOutcome.stable_error_code = "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED";
     badOutcome.terminal_digest = terminalDigest(badOutcome);
     expect(() => validateAttemptTerminalState(badOutcome)).toThrow(/ATTEMPT_TERMINAL_COMBINATION/u);
+
+    const stableErrors = [
+      "MIGRATION_PROJECTION_UNSUPPORTED_MAJOR",
+      "MIGRATION_PROJECTION_CAPABILITY_MISMATCH",
+      "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
+      "MIGRATION_PROJECTION_LIMIT_EXCEEDED",
+      "MIGRATION_PROJECTION_UNKNOWN_OBJECT",
+      "MIGRATION_PROJECTION_INVALID_EXPRESSION",
+      "MIGRATION_PROJECTION_INVALID_SCOPE",
+      "MIGRATION_PROJECTION_NON_CANONICAL_WITNESS",
+      "MIGRATION_PROJECTION_LIMIT_OVERRIDE",
+      "MIGRATION_PROJECTION_METADATA_MISMATCH",
+      "MIGRATION_PROJECTION_SNAPSHOT_INVALID",
+      "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+      "MIGRATION_AUTHORITY_DRIFT",
+      "MIGRATION_CATALOG_DRIFT",
+      "MIGRATION_INTERMEDIATE_STATE_MISMATCH",
+    ];
+    for (const stableError of stableErrors) {
+      const allowed = structuredClone(terminal);
+      allowed.outcome = "aborted_terminal";
+      allowed.stable_error_code = stableError;
+      allowed.reconcile_result = "not_run";
+      allowed.terminal_digest = terminalDigest(allowed);
+      expect(() => validateAttemptTerminalState(allowed)).not.toThrow();
+    }
+
+    const allowedStableError = structuredClone(terminal);
+    allowedStableError.outcome = "aborted_terminal";
+    allowedStableError.stable_error_code = stableErrors[0]!;
+    allowedStableError.reconcile_result = "not_run";
+
+    const unknownStableError = structuredClone(allowedStableError);
+    unknownStableError.stable_error_code = "MIGRATION_PROJECTION_UNKNOWN_FINAL_CODE";
+    unknownStableError.terminal_digest = terminalDigest(unknownStableError);
+    expect(() => validateAttemptTerminalState(unknownStableError)).toThrow(/STABLE_ERROR_CODE/u);
+
+    const oldRunnerError = structuredClone(allowedStableError);
+    oldRunnerError.stable_error_code = "MIGRATION_LOCK_LOST";
+    oldRunnerError.terminal_digest = terminalDigest(oldRunnerError);
+    expect(() => validateAttemptTerminalState(oldRunnerError)).toThrow(/STABLE_ERROR_CODE/u);
 
     const terminalLink = structuredClone(terminal);
     terminalLink.attempt_index = 2;
@@ -331,7 +547,7 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
 
     const ambiguousCommitted = structuredClone(terminal);
     ambiguousCommitted.outcome = "ambiguous_reconciled_committed";
-    ambiguousCommitted.stable_error_code = "COMMIT_RESULT_UNKNOWN";
+    ambiguousCommitted.stable_error_code = "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED";
     ambiguousCommitted.reconcile_result = "exact_committed";
     ambiguousCommitted.last_intermediate_state_digest = null;
     ambiguousCommitted.terminal_digest = terminalDigest(ambiguousCommitted);
@@ -372,4 +588,70 @@ function terminalDigest(state: JsonObject): string {
     domain: "cloud-agents-platform-attempt-terminal/v1",
     ...withoutDigest,
   } as MigrationJson);
+}
+
+function defaultACLKey(row: JsonObject): string {
+  return `${String(row.owner)}\0${row.schema === null ? "0" : `1${String(row.schema)}`}\0${String(row.object_kind)}`;
+}
+
+function syntheticRole(name: string, login: boolean, inherit: boolean): JsonObject {
+  return {
+    name,
+    login,
+    inherit,
+    superuser: false,
+    create_role: false,
+    create_db: false,
+    replication: false,
+    bypass_rls: false,
+    connection_limit_int32_decimal: "-1",
+    valid_until: null,
+    config: [],
+  };
+}
+
+function syntheticMembershipFixture(): JsonObject {
+  const member = "fixture_member";
+  const target = "fixture_target";
+  const witness = [member, "fixture_membership_a", target];
+  const privilege = (kind: string): JsonObject => ({
+    privilege_kind: kind,
+    reachable: true,
+    min_depth: 2,
+    canonical_witness: witness,
+    edge_count: 4,
+  });
+  const direct = (
+    role: string,
+    directMember: string,
+    inheritOption = true,
+    setOption = true,
+  ): JsonObject => ({
+    role,
+    member: directMember,
+    grantor: "fixture_grantor",
+    admin_option: false,
+    inherit_option: inheritOption,
+    set_option: setOption,
+  });
+  return {
+    roles: [
+      syntheticRole("fixture_grantor", false, false),
+      syntheticRole(member, true, true),
+      syntheticRole("fixture_membership_a", false, true),
+      syntheticRole("fixture_membership_b", false, true),
+      syntheticRole(target, false, false),
+    ],
+    direct_memberships: [
+      direct("fixture_membership_a", member),
+      direct("fixture_membership_b", member),
+      direct(target, "fixture_membership_a"),
+      direct(target, "fixture_membership_b"),
+    ],
+    membership_reachability: {
+      role: target,
+      member,
+      privileges: [privilege("member"), privilege("usage"), privilege("set")],
+    },
+  };
 }

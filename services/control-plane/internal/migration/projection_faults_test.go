@@ -13,8 +13,8 @@ func TestCheckedInProjectionFaultCases(t *testing.T) {
 	if _, err := DecodeStrict(mustRead(t, filepath.Join(root, "negative", "faults-v1.json")), &faults); err != nil {
 		t.Fatal(err)
 	}
-	if len(faults.Cases) != 32 {
-		t.Fatalf("expected 32 checked-in faults, got %d", len(faults.Cases))
+	if len(faults.Cases) != 43 {
+		t.Fatalf("expected 43 checked-in faults, got %d", len(faults.Cases))
 	}
 	seen := make(map[string]struct{}, len(faults.Cases))
 	for _, fault := range faults.Cases {
@@ -44,28 +44,32 @@ func executeCheckedInProjectionFault(t *testing.T, root string, fault projection
 			transition["actual_projection"] = map[string]any{}
 			return decodeFaultTransition(t, transition)
 		}
-		binding := faultObject(t, filepath.Join(root, "golden", "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		binding["unsigned_overlay"] = true
 		return decodeFaultAuthorityBinding(t, binding)
 	case "missing_expires_at":
-		binding := faultObject(t, filepath.Join(root, "golden", "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		delete(binding, "expires_at")
 		return decodeFaultAuthorityBinding(t, binding)
 	case "duplicate_format_version":
 		_, err := DecodeAuthorityBinding(mustRead(t, filepath.Join(root, "negative", "authority-binding-duplicate.raw")))
 		return err
 	case "phase_mismatch":
-		binding := faultObject(t, filepath.Join(root, "golden", "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		faultMap(faultMap(binding, "expected_projections"), "migration_transaction")["phase"] = "migration_role"
 		return decodeFaultAuthorityBinding(t, binding)
 	case "bad_profile_digest":
-		binding := faultObject(t, filepath.Join(root, "golden", "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		binding["authority_profile_digest"] = "sha256:ABC"
 		return decodeFaultAuthorityBinding(t, binding)
 	case "null_acl_with_entries":
-		binding := faultObject(t, filepath.Join(root, "golden", "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		projection := faultMap(faultMap(binding, "expected_projections"), "connected_session")
-		faultMap(projection, "database_acl")["catalog_value"] = "null"
+		databaseACL := faultMap(projection, "database_acl")
+		databaseACL["catalog_value"] = "null"
+		databaseACL["entries"] = []any{map[string]any{
+			"grantor": "database_owner", "grantee": "migration_login", "privileges": []any{"CONNECT"}, "grantable": []any{}, "origin": "catalog_explicit",
+		}}
 		return decodeFaultAuthorityBinding(t, binding)
 	case "final_without_head":
 		state := faultObject(t, filepath.Join(root, "golden", "catalog-state-schema-present-v1.json"))
@@ -170,11 +174,82 @@ func executeCheckedInProjectionFault(t *testing.T, root string, fault projection
 		entry["privileges"] = []any{"SELECT"}
 		return decodeFaultCatalogBody(t, body)
 	case "password_setting":
-		binding := faultObject(t, filepath.Join(root, "golden", "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		projection := faultMap(faultMap(binding, "expected_projections"), "connected_session")
 		role := faultSlice(projection, "roles")[0].(map[string]any)
 		role["config"] = []any{"password=fixture-secret"}
 		return decodeFaultAuthorityBinding(t, binding)
+	case "unreachable_edge_count_zero":
+		binding := validAuthorityBindingObject(t)
+		projection := faultMap(faultMap(binding, "expected_projections"), "connected_session")
+		privileges := faultSlice(faultSlice(projection, "membership_reachability")[0].(map[string]any), "privileges")
+		privileges[1].(map[string]any)["edge_count"] = float64(0)
+		return decodeFaultAuthorityBinding(t, binding)
+	case "reverse_member_role_witness":
+		binding := validAuthorityBindingObject(t)
+		projection := faultMap(faultMap(binding, "expected_projections"), "connected_session")
+		privileges := faultSlice(faultSlice(projection, "membership_reachability")[0].(map[string]any), "privileges")
+		privileges[0].(map[string]any)["canonical_witness"] = []any{MigrationOwnerRole, "migration_login"}
+		return decodeFaultAuthorityBinding(t, binding)
+	case "select_utf8_later_shortest_path":
+		return nonCanonicalEqualLengthAuthorityFault()
+	case "duplicate_member_role_endpoint":
+		binding := validAuthorityBindingObject(t)
+		projection := faultMap(faultMap(binding, "expected_projections"), "connected_session")
+		direct := faultSlice(projection, "direct_memberships")
+		projection["direct_memberships"] = []any{direct[0], cloneFaultObject(t, direct[0].(map[string]any))}
+		return decodeFaultAuthorityBinding(t, binding)
+	case "schema_kind_scoped_to_cloud_agents", "schema_outside_closed_scope", "catalog_value_null", "owner_outside_creator_closure", "reverse_rows":
+		fixture, err := decodeDefaultACLScopeFixture(t, filepath.Join(root, "golden", "default-acl-scope-v1.json"))
+		if err != nil {
+			return err
+		}
+		if err := fixture.Validate(); err != nil {
+			t.Fatalf("checked-in default ACL scope baseline is invalid: %v", err)
+		}
+		switch mutation {
+		case "schema_kind_scoped_to_cloud_agents":
+			for index := range fixture.Rows {
+				if fixture.Rows[index].ObjectKind == "schema" {
+					schema := "cloud_agents"
+					fixture.Rows[index].Schema = &schema
+					break
+				}
+			}
+		case "schema_outside_closed_scope":
+			for index := range fixture.Rows {
+				if fixture.Rows[index].Schema != nil && fixture.Rows[index].ObjectKind == "type" {
+					schema := "other_schema"
+					fixture.Rows[index].Schema = &schema
+					break
+				}
+			}
+		case "catalog_value_null":
+			fixture.Rows[0].ACL = ACLSetProjection{CatalogValue: "null", Entries: []ACLProjection{}}
+		case "owner_outside_creator_closure":
+			fixture.Rows[0].Owner = "outside_creator_closure"
+		case "reverse_rows":
+			for left, right := 0, len(fixture.Rows)-1; left < right; left, right = left+1, right-1 {
+				fixture.Rows[left], fixture.Rows[right] = fixture.Rows[right], fixture.Rows[left]
+			}
+		}
+		return fixture.Validate()
+	case "unknown_projection_error_code", "legacy_runner_error_code":
+		var terminal AttemptTerminalState
+		if _, err := DecodeStrict(mustRead(t, filepath.Join(root, "golden", "attempt-terminal-state-v1.json")), &terminal); err != nil {
+			return err
+		}
+		if err := terminal.Validate(3); err != nil {
+			t.Fatalf("checked-in attempt terminal baseline is invalid: %v", err)
+		}
+		code := "MIGRATION_PROJECTION_UNKNOWN_FINAL_CODE"
+		if mutation == "legacy_runner_error_code" {
+			code = "MIGRATION_LOCK_LOST"
+		}
+		terminal.Outcome = "aborted_terminal"
+		terminal.StableErrorCode = &code
+		terminal.ReconcileResult = "not_run"
+		return terminal.Validate(3)
 	default:
 		t.Fatalf("checked-in mutation %q has no Go executor", mutation)
 		return nil
@@ -186,7 +261,7 @@ func TestProjectionTerminalReviewDirectFaults(t *testing.T) {
 	root := filepath.Join(migrationRoot(t), "fixtures", "projection", "golden")
 
 	t.Run("security_epoch_uint32", func(t *testing.T) {
-		binding := faultObject(t, filepath.Join(root, "authority-binding-v1.json"))
+		binding := validAuthorityBindingObject(t)
 		binding["security_epoch"] = float64(4294967296)
 		if err := decodeFaultAuthorityBinding(t, binding); err == nil {
 			t.Fatal("security_epoch above uint32 was accepted")
@@ -196,7 +271,7 @@ func TestProjectionTerminalReviewDirectFaults(t *testing.T) {
 	t.Run("authority_nullable_and_identity", func(t *testing.T) {
 		projection := minimalAuthorityProjection(AuthorityPhaseConnectedSession)
 		empty := ""
-		projection.Roles = []RoleProjection{{Name: MigrationOwnerRole, ConnectionLimitInt32Decimal: "-1", ValidUntil: &empty, Config: []string{}}}
+		authorityRole(t, &projection, projection.SessionUser).ValidUntil = &empty
 		if err := projection.Validate(); err == nil {
 			t.Fatal("non-null empty valid_until was accepted")
 		}
@@ -222,36 +297,134 @@ func TestProjectionTerminalReviewDirectFaults(t *testing.T) {
 		}
 	})
 
+	t.Run("authority_mechanical_invariants", func(t *testing.T) {
+		projection := minimalAuthorityProjection(AuthorityPhaseConnectedSession)
+		projection.Roles = []RoleProjection{}
+		if err := projection.Validate(); err == nil {
+			t.Fatal("authority projection with an empty role closure was accepted")
+		}
+
+		projection = minimalAuthorityProjection(AuthorityPhaseConnectedSession)
+		authorityRole(t, &projection, projection.SessionUser).Superuser = true
+		if err := projection.Validate(); err == nil {
+			t.Fatal("unsafe superuser session workload was accepted")
+		}
+
+		projection = minimalAuthorityProjection(AuthorityPhaseConnectedSession)
+		projection.CurrentUser = MigrationOwnerRole
+		if err := projection.Validate(); err == nil {
+			t.Fatal("connected-session phase accepted switched current_user")
+		}
+		projection = minimalAuthorityProjection(AuthorityPhaseMigrationRole)
+		projection.CurrentUser = projection.SessionUser
+		if err := projection.Validate(); err == nil {
+			t.Fatal("migration-role phase accepted unswitched current_user")
+		}
+
+		projection = minimalAuthorityProjection(AuthorityPhaseConnectedSession)
+		projection.DirectMemberships[0].Member = projection.DatabaseOwner
+		if err := projection.Validate(); err == nil {
+			t.Fatal("delegated database owner was accepted")
+		}
+
+		projection = minimalAuthorityProjection(AuthorityPhaseConnectedSession)
+		projection.DirectMemberships[0].InheritOption = true
+		depth := uint32(1)
+		witness := []string{projection.SessionUser, MigrationOwnerRole}
+		projection.MembershipReachability[0].Privileges[1] = ReachabilityPrivilegeProjection{
+			PrivilegeKind: "usage", Reachable: true, MinDepth: &depth, CanonicalWitness: &witness, EdgeCount: 1,
+		}
+		if err := projection.Validate(); err != nil {
+			t.Fatalf("major-neutral typed validator rejected PG16/17 NOINHERIT plus inherit-enabled edge structure: %v", err)
+		}
+	})
+
+	t.Run("acl_fixed_privilege_rank", func(t *testing.T) {
+		acl := ACLSetProjection{CatalogValue: "explicit", Entries: []ACLProjection{{
+			Grantor: "owner", Grantee: "role", Privileges: []string{"INSERT", "SELECT"}, Grantable: []string{}, Origin: "catalog_explicit",
+		}}}
+		if err := acl.Validate(); err != nil {
+			t.Fatalf("fixed-rank ACL order was rejected in favor of lexical order: %v", err)
+		}
+		acl.Entries[0].Privileges = []string{"SELECT", "INSERT"}
+		if err := acl.Validate(); err == nil {
+			t.Fatal("fixed-rank-reversed ACL privileges were accepted")
+		}
+	})
+
 	t.Run("reachability_witness", func(t *testing.T) {
 		depth := uint32(1)
 		emptyWitness := []string{}
 		privilege := ReachabilityPrivilegeProjection{PrivilegeKind: "member", Reachable: true, MinDepth: &depth, CanonicalWitness: &emptyWitness, EdgeCount: 1}
-		projection := ReachabilityProjection{Role: "role", Member: "member", Privileges: []ReachabilityPrivilegeProjection{privilege, {PrivilegeKind: "usage"}, {PrivilegeKind: "set"}}}
-		if err := projection.Validate(); err == nil {
+		reachability := ReachabilityProjection{Role: "role", Member: "member", Privileges: []ReachabilityPrivilegeProjection{privilege, {PrivilegeKind: "usage"}, {PrivilegeKind: "set"}}}
+		if err := reachability.Validate(); err == nil {
 			t.Fatal("empty reachable witness was accepted")
 		}
-		unsorted := []string{"z", "a"}
-		projection.Privileges[0].CanonicalWitness = &unsorted
-		if err := projection.Validate(); err == nil {
-			t.Fatal("unsorted canonical witness was accepted")
+
+		reversePath := []string{"z", "a"}
+		err := validateAuthorityGraphFacts(
+			[]RoleProjection{authorityGraphRole("a", true), authorityGraphRole("z", true)},
+			[]DirectMembershipProjection{{Role: "a", Member: "z", Grantor: "a", InheritOption: true, SetOption: true}},
+			ReachabilityProjection{Role: "a", Member: "z", Privileges: []ReachabilityPrivilegeProjection{
+				{PrivilegeKind: "member", Reachable: true, MinDepth: &depth, CanonicalWitness: &reversePath, EdgeCount: 1},
+				{PrivilegeKind: "usage", Reachable: true, MinDepth: &depth, CanonicalWitness: &reversePath, EdgeCount: 1},
+				{PrivilegeKind: "set", Reachable: true, MinDepth: &depth, CanonicalWitness: &reversePath, EdgeCount: 1},
+			}},
+		)
+		if err != nil {
+			t.Fatalf("member-to-role witness path was treated as a sorted identity array: %v", err)
+		}
+
+		nonCanonicalPath := []string{"z", "b", "g"}
+		depthTwo := uint32(2)
+		err = validateAuthorityGraphFacts(
+			[]RoleProjection{authorityGraphRole("a", true), authorityGraphRole("b", true), authorityGraphRole("g", true), authorityGraphRole("z", true)},
+			[]DirectMembershipProjection{
+				{Role: "a", Member: "z", Grantor: "g", InheritOption: true, SetOption: true},
+				{Role: "b", Member: "z", Grantor: "g", InheritOption: true, SetOption: true},
+				{Role: "g", Member: "a", Grantor: "g", InheritOption: true, SetOption: true},
+				{Role: "g", Member: "b", Grantor: "g", InheritOption: true, SetOption: true},
+			},
+			ReachabilityProjection{Role: "g", Member: "z", Privileges: []ReachabilityPrivilegeProjection{
+				{PrivilegeKind: "member", Reachable: true, MinDepth: &depthTwo, CanonicalWitness: &nonCanonicalPath, EdgeCount: 4},
+				{PrivilegeKind: "usage", Reachable: true, MinDepth: &depthTwo, CanonicalWitness: &nonCanonicalPath, EdgeCount: 4},
+				{PrivilegeKind: "set", Reachable: true, MinDepth: &depthTwo, CanonicalWitness: &nonCanonicalPath, EdgeCount: 4},
+			}},
+		)
+		if err == nil {
+			t.Fatal("non-canonical equal-length witness path was accepted")
+		}
+
+		err = validateAuthorityGraphFacts(
+			[]RoleProjection{authorityGraphRole("a", true), authorityGraphRole("z", false)},
+			[]DirectMembershipProjection{{Role: "a", Member: "z", Grantor: "a", InheritOption: true, SetOption: false}},
+			ReachabilityProjection{Role: "a", Member: "z", Privileges: []ReachabilityPrivilegeProjection{
+				{PrivilegeKind: "member", Reachable: true, MinDepth: &depth, CanonicalWitness: &reversePath, EdgeCount: 1},
+				{PrivilegeKind: "usage", Reachable: false, MinDepth: nil, CanonicalWitness: nil, EdgeCount: 1},
+				{PrivilegeKind: "set", Reachable: false, MinDepth: nil, CanonicalWitness: nil, EdgeCount: 1},
+			}},
+		)
+		if err != nil {
+			t.Fatalf("unreachable privilege did not preserve complete closure edge_count: %v", err)
 		}
 	})
 
 	t.Run("default_acl_closed_kind_and_schema", func(t *testing.T) {
-		var body CatalogProjectionBody
-		if _, err := DecodeStrict(mustRead(t, filepath.Join(root, "catalog-projection-body-v1.json")), &body); err != nil {
-			t.Fatal(err)
+		body := minimalCatalogBody()
+		cloudAgents := "cloud_agents"
+		global := DefaultACLProjection{Owner: MigrationOwnerRole, Schema: nil, ObjectKind: "table", ACL: ACLSetProjection{CatalogValue: "explicit", Entries: []ACLProjection{}}}
+		scoped := DefaultACLProjection{Owner: MigrationOwnerRole, Schema: &cloudAgents, ObjectKind: "table", ACL: ACLSetProjection{CatalogValue: "explicit", Entries: []ACLProjection{}}}
+		body.DefaultACL = []DefaultACLProjection{global, scoped}
+		if err := body.Validate(); err != nil {
+			t.Fatalf("coexisting global and schema-scoped default ACL rows were rejected: %v", err)
 		}
-		body.DefaultACL[0].ObjectKind = "type"
+		body.DefaultACL = []DefaultACLProjection{{Owner: MigrationOwnerRole, Schema: &cloudAgents, ObjectKind: "schema", ACL: ACLSetProjection{CatalogValue: "explicit", Entries: []ACLProjection{}}}}
 		if err := body.Validate(); err == nil {
-			t.Fatal("default ACL type outside A2.1a closure was accepted")
+			t.Fatal("schema default ACL kind was accepted in schema scope")
 		}
-		if _, err := DecodeStrict(mustRead(t, filepath.Join(root, "catalog-projection-body-v1.json")), &body); err != nil {
-			t.Fatal(err)
-		}
-		body.DefaultACL[0].Schema = nil
+		body.DefaultACL = []DefaultACLProjection{{Owner: MigrationOwnerRole, Schema: nil, ObjectKind: "type", ACL: ACLSetProjection{CatalogValue: "null", Entries: []ACLProjection{}}}}
 		if err := body.Validate(); err == nil {
-			t.Fatal("default ACL without cloud_agents schema was accepted")
+			t.Fatal("projected default ACL row accepted non-explicit catalog_value")
 		}
 	})
 
@@ -281,6 +454,26 @@ func TestProjectionTerminalReviewDirectFaults(t *testing.T) {
 		intermediate.MigrationID = "1"
 		if err := intermediate.Validate(); err == nil {
 			t.Fatal("intermediate non-profile migration ID was accepted")
+		}
+	})
+
+	t.Run("stable_projection_error_allowlist", func(t *testing.T) {
+		for _, code := range []string{
+			"MIGRATION_PROJECTION_CAPABILITY_MISMATCH",
+			"MIGRATION_PROJECTION_INVALID_SCOPE",
+			"MIGRATION_PROJECTION_NON_CANONICAL_WITNESS",
+			"MIGRATION_PROJECTION_LIMIT_OVERRIDE",
+			"MIGRATION_PROJECTION_METADATA_MISMATCH",
+			"MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+			"MIGRATION_CATALOG_DRIFT",
+			"MIGRATION_PROJECTION_UNSUPPORTED_MAJOR",
+		} {
+			if !validStableProjectionError(code) {
+				t.Fatalf("final closed stable error code %q was rejected", code)
+			}
+		}
+		if validStableProjectionError("") || validStableProjectionError("MIGRATION_PROJECTION_ADAPTER_PRIVATE") || validStableProjectionError("MIGRATION_LOCK_LOST") {
+			t.Fatal("open stable projection error code was accepted")
 		}
 	})
 
@@ -369,6 +562,129 @@ func faultObject(t *testing.T, path string) map[string]any {
 		t.Fatal(err)
 	}
 	return object
+}
+
+func validAuthorityBindingObject(t *testing.T) map[string]any {
+	t.Helper()
+	binding := AuthorityBinding{
+		FormatVersion: AuthorityBindingFormat, AuthorityProfileDigest: projectionTestDigest,
+		DeploymentID: "deployment_1", IssuedAt: "2026-08-11T00:00:00Z", ExpiresAt: "2026-08-12T00:00:00Z", SecurityEpoch: 1,
+		ExpectedProjections: AuthorityExpectedProjections{
+			ConnectedSession:     minimalAuthorityProjection(AuthorityPhaseConnectedSession),
+			MigrationRole:        minimalAuthorityProjection(AuthorityPhaseMigrationRole),
+			MigrationTransaction: minimalAuthorityProjection(AuthorityPhaseMigrationTransaction),
+		},
+	}
+	raw := mustJSON(t, binding)
+	if _, err := DecodeAuthorityBinding(raw); err != nil {
+		t.Fatalf("local valid authority fault baseline: %v", err)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		t.Fatal(err)
+	}
+	return object
+}
+
+func nonCanonicalEqualLengthAuthorityFault() error {
+	path := []string{"z", "b", "g"}
+	depth := uint32(2)
+	return validateAuthorityGraphFacts(
+		[]RoleProjection{authorityGraphRole("a", true), authorityGraphRole("b", true), authorityGraphRole("g", true), authorityGraphRole("z", true)},
+		[]DirectMembershipProjection{
+			{Role: "a", Member: "z", Grantor: "g", InheritOption: true, SetOption: true},
+			{Role: "b", Member: "z", Grantor: "g", InheritOption: true, SetOption: true},
+			{Role: "g", Member: "a", Grantor: "g", InheritOption: true, SetOption: true},
+			{Role: "g", Member: "b", Grantor: "g", InheritOption: true, SetOption: true},
+		},
+		ReachabilityProjection{Role: "g", Member: "z", Privileges: []ReachabilityPrivilegeProjection{
+			{PrivilegeKind: "member", Reachable: true, MinDepth: &depth, CanonicalWitness: &path, EdgeCount: 4},
+			{PrivilegeKind: "usage", Reachable: true, MinDepth: &depth, CanonicalWitness: &path, EdgeCount: 4},
+			{PrivilegeKind: "set", Reachable: true, MinDepth: &depth, CanonicalWitness: &path, EdgeCount: 4},
+		}},
+	)
+}
+
+type checkedInDefaultACLScopeFixture struct {
+	FormatVersion        string                 `json:"format_version"`
+	DefaultACLOwners     []string               `json:"default_acl_owners"`
+	ObjectCreatorClosure []string               `json:"object_creator_closure"`
+	Rows                 []DefaultACLProjection `json:"rows"`
+}
+
+func decodeDefaultACLScopeFixture(t *testing.T, path string) (*checkedInDefaultACLScopeFixture, error) {
+	t.Helper()
+	var fixture checkedInDefaultACLScopeFixture
+	if _, err := DecodeStrict(mustRead(t, path), &fixture); err != nil {
+		return nil, err
+	}
+	return &fixture, nil
+}
+
+func (fixture checkedInDefaultACLScopeFixture) Validate() error {
+	if fixture.FormatVersion != "cloud-agents-platform-default-acl-scope-fixture/v1" || len(fixture.DefaultACLOwners) == 0 || len(fixture.ObjectCreatorClosure) == 0 || !strictlySorted(fixture.DefaultACLOwners) || !strictlySorted(fixture.ObjectCreatorClosure) {
+		return invalidProjection("default-acl-scope", "principal closures or format are invalid")
+	}
+	creators := make(map[string]struct{}, len(fixture.ObjectCreatorClosure))
+	for _, creator := range fixture.ObjectCreatorClosure {
+		creators[creator] = struct{}{}
+	}
+	owners := make(map[string]struct{}, len(fixture.DefaultACLOwners))
+	for _, owner := range fixture.DefaultACLOwners {
+		if _, ok := creators[owner]; !ok {
+			return invalidProjection("default-acl-scope", "default ACL owner is outside the object creator closure")
+		}
+		owners[owner] = struct{}{}
+	}
+	for _, row := range fixture.Rows {
+		if _, ok := owners[row.Owner]; !ok {
+			return invalidProjection("default-acl-scope", "projected default ACL owner is outside the signed owner closure")
+		}
+	}
+	return validateProjectedDefaultACLRows(fixture.Rows)
+}
+
+func authorityGraphRole(name string, inherit bool) RoleProjection {
+	return RoleProjection{Name: name, Inherit: inherit, ConnectionLimitInt32Decimal: "-1", Config: []string{}}
+}
+
+func authorityRole(t *testing.T, projection *AuthorityProjection, name string) *RoleProjection {
+	t.Helper()
+	for index := range projection.Roles {
+		if projection.Roles[index].Name == name {
+			return &projection.Roles[index]
+		}
+	}
+	t.Fatalf("authority role %q is absent", name)
+	return nil
+}
+
+func validateAuthorityGraphFacts(roles []RoleProjection, memberships []DirectMembershipProjection, reachability ReachabilityProjection) error {
+	rolesByName := make(map[string]RoleProjection, len(roles))
+	for _, role := range roles {
+		rolesByName[role.Name] = role
+	}
+	graph := make(map[string][]authorityValidationEdge, len(roles))
+	for _, membership := range memberships {
+		graph[membership.Member] = append(graph[membership.Member], authorityValidationEdge{
+			to: membership.Role, inherit: membership.InheritOption, set: membership.SetOption,
+		})
+	}
+	if err := validateAuthorityMembershipGraph(graph, rolesByName); err != nil {
+		return err
+	}
+	if err := reachability.Validate(); err != nil {
+		return err
+	}
+	for _, privilege := range reachability.Privileges {
+		if privilege.EdgeCount != uint32(len(memberships)) {
+			return invalidProjection("authority-test", "edge count differs")
+		}
+		if err := validateAuthorityReachabilityPrivilege(graph, reachability, privilege); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func cloneFaultObject(t *testing.T, object map[string]any) map[string]any {

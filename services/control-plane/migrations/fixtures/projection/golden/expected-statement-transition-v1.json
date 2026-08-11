@@ -25,7 +25,7 @@
       ]
     },
     "state_kind": "schema_present",
-    "digest": "sha256:ab7701dced386e80c92f568444069baa0cdcb73f3263c39965380fce08428e8a"
+    "digest": "sha256:829bba5b52c08f9c4aad6d528c063482e0444874ad0c733f06aaae2cd728dac3"
   },
   "authority_relation": "unchanged_relative_to_verified_binding",
   "control_plane_delta": [

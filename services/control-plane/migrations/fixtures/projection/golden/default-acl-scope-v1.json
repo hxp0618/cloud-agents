@@ -1,60 +1,8 @@
 {
-  "schema": {
-    "name": "cloud_agents",
-    "owner": "cloud_agents_migration_owner",
-    "explicit_acl": {
-      "catalog_value": "explicit",
-      "entries": [
-        {
-          "grantor": "cloud_agents_migration_owner",
-          "grantee": "cloud_agents_bootstrap_admin",
-          "privileges": ["USAGE"],
-          "grantable": [],
-          "origin": "catalog_explicit"
-        },
-        {
-          "grantor": "cloud_agents_migration_owner",
-          "grantee": "cloud_agents_migration_owner",
-          "privileges": ["CREATE", "USAGE"],
-          "grantable": ["CREATE", "USAGE"],
-          "origin": "catalog_explicit"
-        },
-        {
-          "grantor": "cloud_agents_migration_owner",
-          "grantee": "cloud_agents_runtime",
-          "privileges": ["USAGE"],
-          "grantable": [],
-          "origin": "catalog_explicit"
-        }
-      ]
-    },
-    "effective_acl": [
-      {
-        "grantor": "cloud_agents_migration_owner",
-        "grantee": "cloud_agents_bootstrap_admin",
-        "privileges": ["USAGE"],
-        "grantable": [],
-        "origin": "catalog_explicit"
-      },
-      {
-        "grantor": "cloud_agents_migration_owner",
-        "grantee": "cloud_agents_migration_owner",
-        "privileges": ["CREATE", "USAGE"],
-        "grantable": ["CREATE", "USAGE"],
-        "origin": "owner_implicit"
-      },
-      {
-        "grantor": "cloud_agents_migration_owner",
-        "grantee": "cloud_agents_runtime",
-        "privileges": ["USAGE"],
-        "grantable": [],
-        "origin": "catalog_explicit"
-      }
-    ],
-    "comment": null,
-    "security_labels": []
-  },
-  "default_acl": [
+  "format_version": "cloud-agents-platform-default-acl-scope-fixture/v1",
+  "default_acl_owners": ["cloud_agents_migration_owner"],
+  "object_creator_closure": ["cloud_agents_migration_owner"],
+  "rows": [
     {
       "owner": "cloud_agents_migration_owner",
       "schema": null,
@@ -246,16 +194,5 @@
         "entries": []
       }
     }
-  ],
-  "relations": [],
-  "functions": [],
-  "dependencies": [],
-  "object_count": 1,
-  "declared_objects": [
-    {
-      "kind": "schema",
-      "name": "cloud_agents"
-    }
-  ],
-  "denied_objects": []
+  ]
 }

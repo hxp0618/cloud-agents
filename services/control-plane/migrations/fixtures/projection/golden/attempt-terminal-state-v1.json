@@ -2,13 +2,13 @@
   "schema_bundle_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
   "catalog_contract_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
   "authority_profile_digest": "sha256:3a7b685a8758d47caedc671f4dff06a3cb5e4e1a988c8f090af7c07eba15d7a7",
-  "authority_binding_digest": "sha256:f8d350d82cb4c56239a0c32bd1df9887dcf97a3d9292ba571287e3947825336b",
+  "authority_binding_digest": "sha256:9ca73f072b26b6eab026b83deae475a8bf8fc295316bddf95b8bb73ac7df99d3",
   "migration_id": "000001",
   "attempt_index": 1,
   "previous_attempt_terminal_digest": null,
-  "last_intermediate_state_digest": "sha256:84b09669bdb0e290ca7cd557f9e5a25cfebaa11d8a34d89b8df069725cf1533a",
+  "last_intermediate_state_digest": "sha256:cf9e80acabd216f904e7f9851bd89db453f2fcba39c482e854772c7c40978edd",
   "outcome": "committed",
   "stable_error_code": null,
   "reconcile_result": "not_run",
-  "terminal_digest": "sha256:9f9937120571331377006a75a44c08ab695c0836422db0165ea45964ae15313e"
+  "terminal_digest": "sha256:b8c191b18c0fd8b4d517ca33a397ac942fee05dffd0f0e3634ab0fcb8cfab812"
 }

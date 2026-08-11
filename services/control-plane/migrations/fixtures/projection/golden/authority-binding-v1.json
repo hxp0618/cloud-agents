@@ -42,6 +42,19 @@
         {
           "name": "cloud_agents_bootstrap_admin",
           "login": false,
+          "inherit": false,
+          "superuser": false,
+          "create_role": false,
+          "create_db": false,
+          "replication": false,
+          "bypass_rls": false,
+          "connection_limit_int32_decimal": "-1",
+          "valid_until": null,
+          "config": []
+        },
+        {
+          "name": "cloud_agents_bootstrap_login_fixture",
+          "login": true,
           "inherit": true,
           "superuser": false,
           "create_role": false,
@@ -55,7 +68,7 @@
         {
           "name": "cloud_agents_database_owner_fixture",
           "login": false,
-          "inherit": true,
+          "inherit": false,
           "superuser": false,
           "create_role": false,
           "create_db": false,
@@ -81,7 +94,7 @@
         {
           "name": "cloud_agents_migration_owner",
           "login": false,
-          "inherit": true,
+          "inherit": false,
           "superuser": false,
           "create_role": false,
           "create_db": false,
@@ -94,6 +107,19 @@
         {
           "name": "cloud_agents_runtime",
           "login": false,
+          "inherit": false,
+          "superuser": false,
+          "create_role": false,
+          "create_db": false,
+          "replication": false,
+          "bypass_rls": false,
+          "connection_limit_int32_decimal": "-1",
+          "valid_until": null,
+          "config": []
+        },
+        {
+          "name": "cloud_agents_runtime_login_fixture",
+          "login": true,
           "inherit": true,
           "superuser": false,
           "create_role": false,
@@ -120,15 +146,67 @@
       ],
       "direct_memberships": [
         {
+          "role": "cloud_agents_bootstrap_admin",
+          "member": "cloud_agents_bootstrap_login_fixture",
+          "grantor": "fixture_cluster_superuser",
+          "admin_option": false,
+          "inherit_option": true,
+          "set_option": true
+        },
+        {
           "role": "cloud_agents_migration_owner",
           "member": "cloud_agents_migration_login_fixture",
           "grantor": "fixture_cluster_superuser",
           "admin_option": false,
           "inherit_option": false,
           "set_option": true
+        },
+        {
+          "role": "cloud_agents_runtime",
+          "member": "cloud_agents_runtime_login_fixture",
+          "grantor": "fixture_cluster_superuser",
+          "admin_option": false,
+          "inherit_option": true,
+          "set_option": true
         }
       ],
       "membership_reachability": [
+        {
+          "role": "cloud_agents_bootstrap_admin",
+          "member": "cloud_agents_bootstrap_login_fixture",
+          "privileges": [
+            {
+              "privilege_kind": "member",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "usage",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "set",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            }
+          ]
+        },
         {
           "role": "cloud_agents_migration_owner",
           "member": "cloud_agents_migration_login_fixture",
@@ -141,14 +219,14 @@
                 "cloud_agents_migration_login_fixture",
                 "cloud_agents_migration_owner"
               ],
-              "edge_count": 1
+              "edge_count": 3
             },
             {
               "privilege_kind": "usage",
               "reachable": false,
               "min_depth": null,
               "canonical_witness": null,
-              "edge_count": 0
+              "edge_count": 3
             },
             {
               "privilege_kind": "set",
@@ -158,7 +236,34 @@
                 "cloud_agents_migration_login_fixture",
                 "cloud_agents_migration_owner"
               ],
-              "edge_count": 1
+              "edge_count": 3
+            }
+          ]
+        },
+        {
+          "role": "cloud_agents_runtime",
+          "member": "cloud_agents_runtime_login_fixture",
+          "privileges": [
+            {
+              "privilege_kind": "member",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "usage",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "set",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
             }
           ]
         }
@@ -166,17 +271,23 @@
       "database_role_settings": [],
       "effective_create": {
         "cloud_agents_bootstrap_admin": false,
+        "cloud_agents_bootstrap_login_fixture": false,
         "cloud_agents_database_owner_fixture": true,
         "cloud_agents_migration_login_fixture": false,
         "cloud_agents_migration_owner": true,
-        "cloud_agents_runtime": false
+        "cloud_agents_runtime": false,
+        "cloud_agents_runtime_login_fixture": false,
+        "fixture_cluster_superuser": true
       },
       "effective_temporary": {
         "cloud_agents_bootstrap_admin": false,
+        "cloud_agents_bootstrap_login_fixture": false,
         "cloud_agents_database_owner_fixture": true,
         "cloud_agents_migration_login_fixture": false,
         "cloud_agents_migration_owner": false,
-        "cloud_agents_runtime": false
+        "cloud_agents_runtime": false,
+        "cloud_agents_runtime_login_fixture": false,
+        "fixture_cluster_superuser": true
       }
     },
     "migration_role": {
@@ -215,6 +326,19 @@
         {
           "name": "cloud_agents_bootstrap_admin",
           "login": false,
+          "inherit": false,
+          "superuser": false,
+          "create_role": false,
+          "create_db": false,
+          "replication": false,
+          "bypass_rls": false,
+          "connection_limit_int32_decimal": "-1",
+          "valid_until": null,
+          "config": []
+        },
+        {
+          "name": "cloud_agents_bootstrap_login_fixture",
+          "login": true,
           "inherit": true,
           "superuser": false,
           "create_role": false,
@@ -228,7 +352,7 @@
         {
           "name": "cloud_agents_database_owner_fixture",
           "login": false,
-          "inherit": true,
+          "inherit": false,
           "superuser": false,
           "create_role": false,
           "create_db": false,
@@ -254,7 +378,7 @@
         {
           "name": "cloud_agents_migration_owner",
           "login": false,
-          "inherit": true,
+          "inherit": false,
           "superuser": false,
           "create_role": false,
           "create_db": false,
@@ -267,6 +391,19 @@
         {
           "name": "cloud_agents_runtime",
           "login": false,
+          "inherit": false,
+          "superuser": false,
+          "create_role": false,
+          "create_db": false,
+          "replication": false,
+          "bypass_rls": false,
+          "connection_limit_int32_decimal": "-1",
+          "valid_until": null,
+          "config": []
+        },
+        {
+          "name": "cloud_agents_runtime_login_fixture",
+          "login": true,
           "inherit": true,
           "superuser": false,
           "create_role": false,
@@ -293,15 +430,67 @@
       ],
       "direct_memberships": [
         {
+          "role": "cloud_agents_bootstrap_admin",
+          "member": "cloud_agents_bootstrap_login_fixture",
+          "grantor": "fixture_cluster_superuser",
+          "admin_option": false,
+          "inherit_option": true,
+          "set_option": true
+        },
+        {
           "role": "cloud_agents_migration_owner",
           "member": "cloud_agents_migration_login_fixture",
           "grantor": "fixture_cluster_superuser",
           "admin_option": false,
           "inherit_option": false,
           "set_option": true
+        },
+        {
+          "role": "cloud_agents_runtime",
+          "member": "cloud_agents_runtime_login_fixture",
+          "grantor": "fixture_cluster_superuser",
+          "admin_option": false,
+          "inherit_option": true,
+          "set_option": true
         }
       ],
       "membership_reachability": [
+        {
+          "role": "cloud_agents_bootstrap_admin",
+          "member": "cloud_agents_bootstrap_login_fixture",
+          "privileges": [
+            {
+              "privilege_kind": "member",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "usage",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "set",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            }
+          ]
+        },
         {
           "role": "cloud_agents_migration_owner",
           "member": "cloud_agents_migration_login_fixture",
@@ -314,14 +503,14 @@
                 "cloud_agents_migration_login_fixture",
                 "cloud_agents_migration_owner"
               ],
-              "edge_count": 1
+              "edge_count": 3
             },
             {
               "privilege_kind": "usage",
               "reachable": false,
               "min_depth": null,
               "canonical_witness": null,
-              "edge_count": 0
+              "edge_count": 3
             },
             {
               "privilege_kind": "set",
@@ -331,7 +520,34 @@
                 "cloud_agents_migration_login_fixture",
                 "cloud_agents_migration_owner"
               ],
-              "edge_count": 1
+              "edge_count": 3
+            }
+          ]
+        },
+        {
+          "role": "cloud_agents_runtime",
+          "member": "cloud_agents_runtime_login_fixture",
+          "privileges": [
+            {
+              "privilege_kind": "member",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "usage",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "set",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
             }
           ]
         }
@@ -339,17 +555,23 @@
       "database_role_settings": [],
       "effective_create": {
         "cloud_agents_bootstrap_admin": false,
+        "cloud_agents_bootstrap_login_fixture": false,
         "cloud_agents_database_owner_fixture": true,
         "cloud_agents_migration_login_fixture": false,
         "cloud_agents_migration_owner": true,
-        "cloud_agents_runtime": false
+        "cloud_agents_runtime": false,
+        "cloud_agents_runtime_login_fixture": false,
+        "fixture_cluster_superuser": true
       },
       "effective_temporary": {
         "cloud_agents_bootstrap_admin": false,
+        "cloud_agents_bootstrap_login_fixture": false,
         "cloud_agents_database_owner_fixture": true,
         "cloud_agents_migration_login_fixture": false,
         "cloud_agents_migration_owner": false,
-        "cloud_agents_runtime": false
+        "cloud_agents_runtime": false,
+        "cloud_agents_runtime_login_fixture": false,
+        "fixture_cluster_superuser": true
       }
     },
     "migration_transaction": {
@@ -388,6 +610,19 @@
         {
           "name": "cloud_agents_bootstrap_admin",
           "login": false,
+          "inherit": false,
+          "superuser": false,
+          "create_role": false,
+          "create_db": false,
+          "replication": false,
+          "bypass_rls": false,
+          "connection_limit_int32_decimal": "-1",
+          "valid_until": null,
+          "config": []
+        },
+        {
+          "name": "cloud_agents_bootstrap_login_fixture",
+          "login": true,
           "inherit": true,
           "superuser": false,
           "create_role": false,
@@ -401,7 +636,7 @@
         {
           "name": "cloud_agents_database_owner_fixture",
           "login": false,
-          "inherit": true,
+          "inherit": false,
           "superuser": false,
           "create_role": false,
           "create_db": false,
@@ -427,7 +662,7 @@
         {
           "name": "cloud_agents_migration_owner",
           "login": false,
-          "inherit": true,
+          "inherit": false,
           "superuser": false,
           "create_role": false,
           "create_db": false,
@@ -440,6 +675,19 @@
         {
           "name": "cloud_agents_runtime",
           "login": false,
+          "inherit": false,
+          "superuser": false,
+          "create_role": false,
+          "create_db": false,
+          "replication": false,
+          "bypass_rls": false,
+          "connection_limit_int32_decimal": "-1",
+          "valid_until": null,
+          "config": []
+        },
+        {
+          "name": "cloud_agents_runtime_login_fixture",
+          "login": true,
           "inherit": true,
           "superuser": false,
           "create_role": false,
@@ -466,15 +714,67 @@
       ],
       "direct_memberships": [
         {
+          "role": "cloud_agents_bootstrap_admin",
+          "member": "cloud_agents_bootstrap_login_fixture",
+          "grantor": "fixture_cluster_superuser",
+          "admin_option": false,
+          "inherit_option": true,
+          "set_option": true
+        },
+        {
           "role": "cloud_agents_migration_owner",
           "member": "cloud_agents_migration_login_fixture",
           "grantor": "fixture_cluster_superuser",
           "admin_option": false,
           "inherit_option": false,
           "set_option": true
+        },
+        {
+          "role": "cloud_agents_runtime",
+          "member": "cloud_agents_runtime_login_fixture",
+          "grantor": "fixture_cluster_superuser",
+          "admin_option": false,
+          "inherit_option": true,
+          "set_option": true
         }
       ],
       "membership_reachability": [
+        {
+          "role": "cloud_agents_bootstrap_admin",
+          "member": "cloud_agents_bootstrap_login_fixture",
+          "privileges": [
+            {
+              "privilege_kind": "member",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "usage",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "set",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": [
+                "cloud_agents_bootstrap_login_fixture",
+                "cloud_agents_bootstrap_admin"
+              ],
+              "edge_count": 3
+            }
+          ]
+        },
         {
           "role": "cloud_agents_migration_owner",
           "member": "cloud_agents_migration_login_fixture",
@@ -487,14 +787,14 @@
                 "cloud_agents_migration_login_fixture",
                 "cloud_agents_migration_owner"
               ],
-              "edge_count": 1
+              "edge_count": 3
             },
             {
               "privilege_kind": "usage",
               "reachable": false,
               "min_depth": null,
               "canonical_witness": null,
-              "edge_count": 0
+              "edge_count": 3
             },
             {
               "privilege_kind": "set",
@@ -504,7 +804,34 @@
                 "cloud_agents_migration_login_fixture",
                 "cloud_agents_migration_owner"
               ],
-              "edge_count": 1
+              "edge_count": 3
+            }
+          ]
+        },
+        {
+          "role": "cloud_agents_runtime",
+          "member": "cloud_agents_runtime_login_fixture",
+          "privileges": [
+            {
+              "privilege_kind": "member",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "usage",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
+            },
+            {
+              "privilege_kind": "set",
+              "reachable": true,
+              "min_depth": 1,
+              "canonical_witness": ["cloud_agents_runtime_login_fixture", "cloud_agents_runtime"],
+              "edge_count": 3
             }
           ]
         }
@@ -512,17 +839,23 @@
       "database_role_settings": [],
       "effective_create": {
         "cloud_agents_bootstrap_admin": false,
+        "cloud_agents_bootstrap_login_fixture": false,
         "cloud_agents_database_owner_fixture": true,
         "cloud_agents_migration_login_fixture": false,
         "cloud_agents_migration_owner": true,
-        "cloud_agents_runtime": false
+        "cloud_agents_runtime": false,
+        "cloud_agents_runtime_login_fixture": false,
+        "fixture_cluster_superuser": true
       },
       "effective_temporary": {
         "cloud_agents_bootstrap_admin": false,
+        "cloud_agents_bootstrap_login_fixture": false,
         "cloud_agents_database_owner_fixture": true,
         "cloud_agents_migration_login_fixture": false,
         "cloud_agents_migration_owner": false,
-        "cloud_agents_runtime": false
+        "cloud_agents_runtime": false,
+        "cloud_agents_runtime_login_fixture": false,
+        "fixture_cluster_superuser": true
       }
     }
   }

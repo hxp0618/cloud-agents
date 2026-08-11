@@ -87,7 +87,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:d3c6f805308148397c6de0cef06d8067322a5a0818e2dba724886f97edd5c19f",
+      "sourceManifestSha256": "sha256:49220925ecae156901c8e3f415b8117ba629268183fe288edeb14609edd6662f",
       "sources": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -131,6 +131,7 @@
         "services/control-plane/migrations/fixtures/projection/golden/catalog-projection-body-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/catalog-state-schema-absent-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/catalog-state-schema-present-v1.json",
+        "services/control-plane/migrations/fixtures/projection/golden/default-acl-scope-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/expected-statement-transition-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/intermediate-state-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/numeric-v1.json",
@@ -181,7 +182,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d3c6f805308148397c6de0cef06d8067322a5a0818e2dba724886f97edd5c19f",
+      "inputManifestSha256": "sha256:49220925ecae156901c8e3f415b8117ba629268183fe288edeb14609edd6662f",
       "inputs": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -225,6 +226,7 @@
         "services/control-plane/migrations/fixtures/projection/golden/catalog-projection-body-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/catalog-state-schema-absent-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/catalog-state-schema-present-v1.json",
+        "services/control-plane/migrations/fixtures/projection/golden/default-acl-scope-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/expected-statement-transition-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/intermediate-state-v1.json",
         "services/control-plane/migrations/fixtures/projection/golden/numeric-v1.json",
@@ -259,18 +261,18 @@
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/attempt-terminal-state-v1.json",
-          "sha256": "sha256:5d2fbaa85f6def4095389b9af74845ab55b7ecf2b5fd3339d7cc1a0af0378206",
+          "sha256": "sha256:ea83179afc83501804351f8d85ef20854c8faaa7d357e46851c5dd9d58a0e0aa",
           "sizeBytes": 807
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/authority-binding-v1.json",
-          "sha256": "sha256:757f79dc4f530650f13855da764087edf271b689ebd60295f335253b6a383227",
-          "sizeBytes": 16703
+          "sha256": "sha256:02550b2ad4da6a57fe98be1e9ecbea3924f2fd34f9ad99cebf3e674deae81468",
+          "sizeBytes": 27797
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/catalog-projection-body-v1.json",
-          "sha256": "sha256:5fc33b2e2f8861260cd480db5b94ccc5b99253407ad37279fefbb903107a2e2f",
-          "sizeBytes": 4132
+          "sha256": "sha256:c49bd90b870775930fe76566aaff951309558deb04a85a22a401ef9c0ea0e05d",
+          "sizeBytes": 7035
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/catalog-state-schema-absent-v1.json",
@@ -283,13 +285,18 @@
           "sizeBytes": 909
         },
         {
+          "path": "services/control-plane/migrations/fixtures/projection/golden/default-acl-scope-v1.json",
+          "sha256": "sha256:27f88fa60cc9e929a88d58b436b52c1e14c955425a1bb5cc4022f53268afd122",
+          "sizeBytes": 5403
+        },
+        {
           "path": "services/control-plane/migrations/fixtures/projection/golden/expected-statement-transition-v1.json",
-          "sha256": "sha256:6fdbd591267bedfaf5778bdc5648380ef3319a1bc071ba5149336713a8073b8c",
+          "sha256": "sha256:0199b4f67db3e5f305b0671410cfb8fbce9467dc0f3e6318d067e6c3b05484e5",
           "sizeBytes": 1070
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/intermediate-state-v1.json",
-          "sha256": "sha256:e3ef7ca016f6223adc6634017dd9e3ab648b4fd2d0ba52c7ffcde99702740bdc",
+          "sha256": "sha256:08c67370a31d5f60f156d0645254d8abc3bb7635f49f8480a1a32aaa25eac7c3",
           "sizeBytes": 2168
         },
         {
@@ -299,18 +306,18 @@
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/manifest.json",
-          "sha256": "sha256:63134576ea192601ad597deff09cbd82befa181bab0306d9a4e62831d3f68daf",
-          "sizeBytes": 2051
+          "sha256": "sha256:3c921602c8f2f5356a38e15ae3cfbbe5365ca8a948d6550b0a9bd424ead00011",
+          "sizeBytes": 2230
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/negative/authority-binding-duplicate.raw",
-          "sha256": "sha256:805a744a44db42cd18f5125ad83cb278badeccc1103f5f881a32c6774c774cef",
-          "sizeBytes": 16769
+          "sha256": "sha256:a103f4062adb6296abc5ad57260eb9184793583991d768ca80ba092c5a4376f1",
+          "sizeBytes": 27863
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/negative/faults-v1.json",
-          "sha256": "sha256:61b5d6159564aa7528f42c1377acf331cd1c095845d2822b37393567cc294237",
-          "sizeBytes": 5613
+          "sha256": "sha256:eba376621de282cb9b0db154f2941859dfe3d37e1ac135e078aee41d60db1248",
+          "sizeBytes": 7816
         },
         {
           "path": "services/control-plane/migrations/manifest.json",

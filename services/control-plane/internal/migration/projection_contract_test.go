@@ -206,12 +206,12 @@ func TestACLSetAndReachabilityPreserveDistinctFacts(t *testing.T) {
 		t.Fatal("ACL without grantor provenance was accepted")
 	}
 	depth := uint32(1)
-	witness := []string{"cloud_agents_runtime", "login"}
+	witness := []string{"login", "cloud_agents_runtime"}
 	reachability := ReachabilityProjection{
 		Role: "cloud_agents_runtime", Member: "login",
 		Privileges: []ReachabilityPrivilegeProjection{
 			{PrivilegeKind: "member", Reachable: true, MinDepth: &depth, CanonicalWitness: &witness, EdgeCount: 1},
-			{PrivilegeKind: "usage", Reachable: false, MinDepth: nil, CanonicalWitness: nil, EdgeCount: 0},
+			{PrivilegeKind: "usage", Reachable: false, MinDepth: nil, CanonicalWitness: nil, EdgeCount: 1},
 			{PrivilegeKind: "set", Reachable: true, MinDepth: &depth, CanonicalWitness: &witness, EdgeCount: 1},
 		},
 	}
@@ -492,7 +492,7 @@ func TestCheckedInProjectionFixtureManifestSameBits(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(migrationRoot(t), "fixtures", "projection")
 	manifestRaw := mustRead(t, filepath.Join(root, "manifest.json"))
-	if DigestBytes(manifestRaw) != "sha256:63134576ea192601ad597deff09cbd82befa181bab0306d9a4e62831d3f68daf" {
+	if DigestBytes(manifestRaw) != "sha256:3c921602c8f2f5356a38e15ae3cfbbe5365ca8a948d6550b0a9bd424ead00011" {
 		t.Fatal("projection fixture manifest differs from the reviewed TS same-bits bytes")
 	}
 	var manifest projectionFixtureManifest
@@ -617,7 +617,7 @@ func TestCheckedInProjectionFixtureManifestSameBits(t *testing.T) {
 	if _, err := DecodeStrict(files["negative/faults-v1.json"], &faults); err != nil {
 		t.Fatal(err)
 	}
-	if faults.FormatVersion != "cloud-agents-platform-projection-faults/v1" || len(faults.Cases) != 32 {
+	if faults.FormatVersion != "cloud-agents-platform-projection-faults/v1" || len(faults.Cases) != 43 {
 		t.Fatal("projection fault manifest is empty or has the wrong profile")
 	}
 }
@@ -641,14 +641,37 @@ func FuzzProjectionContractDecodersNeverPanic(f *testing.F) {
 }
 
 func minimalAuthorityProjection(phase AuthorityPhase) AuthorityProjection {
+	currentUser := MigrationOwnerRole
+	if phase == AuthorityPhaseConnectedSession {
+		currentUser = "migration_login"
+	}
+	depth := uint32(1)
+	witness := []string{"migration_login", MigrationOwnerRole}
 	return AuthorityProjection{
-		Phase: phase, SessionUser: "migration_login", CurrentUser: MigrationOwnerRole,
+		Phase: phase, SessionUser: "migration_login", CurrentUser: currentUser,
 		DatabaseName: "cloud_agents", DatabaseOwner: "database_owner", DatabaseEncoding: "UTF8",
 		LocaleProvider: "libc", Datcollate: "C", Datctype: "C",
 		DatabaseACL: ACLSetProjection{CatalogValue: "null", Entries: []ACLProjection{}},
-		Roles:       []RoleProjection{}, DirectMemberships: []DirectMembershipProjection{},
-		MembershipReachability: []ReachabilityProjection{}, DatabaseRoleSettings: []DatabaseRoleSettingProjection{},
-		EffectiveCreate: map[string]bool{MigrationOwnerRole: true}, EffectiveTemporary: map[string]bool{MigrationOwnerRole: false},
+		Roles: []RoleProjection{
+			{Name: BootstrapAdminRole, ConnectionLimitInt32Decimal: "-1", Config: []string{}},
+			{Name: MigrationOwnerRole, ConnectionLimitInt32Decimal: "-1", Config: []string{}},
+			{Name: RuntimeRole, ConnectionLimitInt32Decimal: "-1", Config: []string{}},
+			{Name: "database_owner", Inherit: true, ConnectionLimitInt32Decimal: "-1", Config: []string{}},
+			{Name: "fixture_cluster_superuser", Login: true, Inherit: true, Superuser: true, ConnectionLimitInt32Decimal: "-1", Config: []string{}},
+			{Name: "migration_login", Login: true, ConnectionLimitInt32Decimal: "-1", Config: []string{}},
+		},
+		DirectMemberships: []DirectMembershipProjection{{
+			Role: MigrationOwnerRole, Member: "migration_login", Grantor: "fixture_cluster_superuser", SetOption: true,
+		}},
+		MembershipReachability: []ReachabilityProjection{{
+			Role: MigrationOwnerRole, Member: "migration_login", Privileges: []ReachabilityPrivilegeProjection{
+				{PrivilegeKind: "member", Reachable: true, MinDepth: &depth, CanonicalWitness: &witness, EdgeCount: 1},
+				{PrivilegeKind: "usage", Reachable: false, MinDepth: nil, CanonicalWitness: nil, EdgeCount: 1},
+				{PrivilegeKind: "set", Reachable: true, MinDepth: &depth, CanonicalWitness: &witness, EdgeCount: 1},
+			},
+		}},
+		DatabaseRoleSettings: []DatabaseRoleSettingProjection{},
+		EffectiveCreate:      map[string]bool{MigrationOwnerRole: true}, EffectiveTemporary: map[string]bool{MigrationOwnerRole: false},
 	}
 }
 

@@ -36,6 +36,31 @@ const STATE_KINDS = ["schema_absent", "schema_present"] as const;
 const UINT32_MAX = 4_294_967_295;
 const ADVISORY_DOMAIN = "cloud-agents-platform:migrations:v1";
 const ADVISORY_KEY = "-1047838957622507638";
+const MAX_MEMBERSHIP_DEPTH = 32;
+const MAX_CANONICAL_WITNESS_CANDIDATES = 4_096;
+const DEFAULT_ACL_OWNERS = ["cloud_agents_migration_owner"] as const;
+const OBJECT_CREATOR_CLOSURE = ["cloud_agents_migration_owner"] as const;
+const BOOTSTRAP_ADMIN_ROLE = "cloud_agents_bootstrap_admin";
+const MIGRATION_OWNER_ROLE = "cloud_agents_migration_owner";
+const RUNTIME_ROLE = "cloud_agents_runtime";
+const GROUP_ROLES = [BOOTSTRAP_ADMIN_ROLE, MIGRATION_OWNER_ROLE, RUNTIME_ROLE] as const;
+const STABLE_PROJECTION_ERRORS = [
+  "MIGRATION_PROJECTION_UNSUPPORTED_MAJOR",
+  "MIGRATION_PROJECTION_CAPABILITY_MISMATCH",
+  "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
+  "MIGRATION_PROJECTION_LIMIT_EXCEEDED",
+  "MIGRATION_PROJECTION_UNKNOWN_OBJECT",
+  "MIGRATION_PROJECTION_INVALID_EXPRESSION",
+  "MIGRATION_PROJECTION_INVALID_SCOPE",
+  "MIGRATION_PROJECTION_NON_CANONICAL_WITNESS",
+  "MIGRATION_PROJECTION_LIMIT_OVERRIDE",
+  "MIGRATION_PROJECTION_METADATA_MISMATCH",
+  "MIGRATION_PROJECTION_SNAPSHOT_INVALID",
+  "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+  "MIGRATION_AUTHORITY_DRIFT",
+  "MIGRATION_CATALOG_DRIFT",
+  "MIGRATION_INTERMEDIATE_STATE_MISMATCH",
+] as const;
 const ACL_PRIVILEGES = [
   "CONNECT",
   "CREATE",
@@ -57,7 +82,9 @@ type ACLSurface =
   | "schema_effective"
   | "default_function"
   | "default_sequence"
-  | "default_table";
+  | "default_table"
+  | "default_type"
+  | "default_schema";
 
 export function decodeAuthorityProfile(bytes: Uint8Array): JsonObject {
   const profile = object(parseStrictMigrationJson(bytes), "authority profile");
@@ -224,6 +251,9 @@ export function validateAuthorityProjection(
   const roles = array(projection.roles, "roles").map((role) => object(role, "role"));
   uniqueSorted(roles, (role) => nonemptyString(role.name, "role name"), "roles");
   roles.forEach(validateRole);
+  const rolesByName = new Map(
+    roles.map((role) => [nonemptyString(role.name, "role name"), role] as const),
+  );
   const direct = array(projection.direct_memberships, "direct memberships").map((entry) =>
     object(entry, "direct membership"),
   );
@@ -236,6 +266,8 @@ export function validateAuthorityProjection(
     "direct memberships",
   );
   direct.forEach(validateDirectMembership);
+  const graph = buildMembershipGraph(direct, rolesByName);
+  const workloadMembership = validateMechanicalAuthorityProfile(projection, rolesByName, direct);
   const reachability = array(projection.membership_reachability, "reachability").map((entry) =>
     object(entry, "reachability"),
   );
@@ -245,7 +277,17 @@ export function validateAuthorityProjection(
       `${nonemptyString(entry.role, "reachability role")}\0${nonemptyString(entry.member, "reachability member")}`,
     "reachability",
   );
-  reachability.forEach(validateReachability);
+  if (reachability.length !== direct.length) {
+    fail("REACHABILITY_ENDPOINT_CLOSURE", `${reachability.length} != ${direct.length}`);
+  }
+  for (const entry of reachability) {
+    const role = nonemptyString(entry.role, "reachability role");
+    const member = nonemptyString(entry.member, "reachability member");
+    if (workloadMembership.get(member) !== role) {
+      fail("REACHABILITY_ENDPOINT_CLOSURE", `${member}->${role}`);
+    }
+  }
+  reachability.forEach((entry) => validateReachability(entry, graph, rolesByName, direct.length));
   const settings = array(projection.database_role_settings, "database role settings").map((entry) =>
     object(entry, "database role setting"),
   );
@@ -261,8 +303,144 @@ export function validateAuthorityProjection(
     nonemptyString(setting.role, "setting role");
     sortedStrings(setting.settings, "settings");
   });
-  validateBooleanMap(object(projection.effective_create, "effective create"));
-  validateBooleanMap(object(projection.effective_temporary, "effective temporary"));
+  const roleClosure = [...rolesByName.keys()].toSorted(compareUtf8);
+  validateBooleanMap(object(projection.effective_create, "effective create"), roleClosure);
+  validateBooleanMap(object(projection.effective_temporary, "effective temporary"), roleClosure);
+}
+
+function validateMechanicalAuthorityProfile(
+  projection: JsonObject,
+  roles: ReadonlyMap<string, JsonObject>,
+  direct: ReadonlyArray<JsonObject>,
+): ReadonlyMap<string, string> {
+  const session = nonemptyString(projection.session_user, "session user");
+  const current = nonemptyString(projection.current_user, "current user");
+  const databaseOwner = nonemptyString(projection.database_owner, "database owner");
+  const sessionRole = roles.get(session);
+  const currentRole = roles.get(current);
+  const databaseOwnerRole = roles.get(databaseOwner);
+  if (sessionRole === undefined || currentRole === undefined || databaseOwnerRole === undefined) {
+    fail("AUTHORITY_ROLE_CLOSURE", "session/current/database owner");
+  }
+  const phase = literal(projection.phase, PHASES, "authority phase");
+  if (
+    (phase === "connected_session" && current !== session) ||
+    (phase !== "connected_session" && current !== MIGRATION_OWNER_ROLE)
+  ) {
+    fail("AUTHORITY_CURRENT_USER", `${phase}:${current}`);
+  }
+  for (const groupName of GROUP_ROLES) {
+    const group = roles.get(groupName);
+    if (
+      group === undefined ||
+      boolean(group.login, "group login") ||
+      boolean(group.inherit, "group inherit") ||
+      hasUnsafeAuthorityAttributes(group)
+    ) {
+      fail("AUTHORITY_GROUP_ROLE", groupName);
+    }
+  }
+  if (
+    !boolean(sessionRole.login, "session login") ||
+    boolean(sessionRole.inherit, "session inherit") ||
+    hasUnsafeAuthorityAttributes(sessionRole) ||
+    session === databaseOwner ||
+    GROUP_ROLES.includes(session as (typeof GROUP_ROLES)[number])
+  ) {
+    fail("AUTHORITY_SESSION_ROLE", session);
+  }
+  if (
+    GROUP_ROLES.includes(databaseOwner as (typeof GROUP_ROLES)[number]) ||
+    hasUnsafeAuthorityAttributes(databaseOwnerRole)
+  ) {
+    fail("AUTHORITY_DATABASE_OWNER", databaseOwner);
+  }
+  const workloads = new Map<string, string>();
+  const grantors = new Set<string>();
+  for (const membership of direct) {
+    const role = nonemptyString(membership.role, "direct role");
+    const member = nonemptyString(membership.member, "direct member");
+    const grantor = nonemptyString(membership.grantor, "direct grantor");
+    const memberRole = roles.get(member)!;
+    const grantorRole = roles.get(grantor)!;
+    if (grantor === session || !boolean(grantorRole.superuser, "grantor superuser")) {
+      fail("AUTHORITY_MEMBERSHIP_GRANTOR", grantor);
+    }
+    if (role === databaseOwner || member === databaseOwner) {
+      fail("AUTHORITY_DATABASE_OWNER_DELEGATION", `${member}->${role}`);
+    }
+    if (
+      !boolean(memberRole.login, "workload login") ||
+      hasUnsafeAuthorityAttributes(memberRole) ||
+      boolean(membership.admin_option, "admin option")
+    ) {
+      fail("AUTHORITY_WORKLOAD_ROLE", member);
+    }
+    if (role === MIGRATION_OWNER_ROLE) {
+      if (
+        boolean(memberRole.inherit, "migration workload inherit") ||
+        !boolean(membership.set_option, "migration set option")
+      ) {
+        fail("AUTHORITY_MIGRATION_MEMBERSHIP", member);
+      }
+    } else if (role === RUNTIME_ROLE || role === BOOTSTRAP_ADMIN_ROLE) {
+      if (!boolean(memberRole.inherit, "runtime/bootstrap workload inherit")) {
+        fail("AUTHORITY_INHERITING_MEMBERSHIP", member);
+      }
+    } else {
+      fail("AUTHORITY_MEMBERSHIP_TARGET", role);
+    }
+    if (workloads.has(member)) fail("AUTHORITY_WORKLOAD_OVERLAP", member);
+    workloads.set(member, role);
+    grantors.add(grantor);
+  }
+  if (workloads.get(session) !== MIGRATION_OWNER_ROLE) {
+    fail("AUTHORITY_SESSION_MEMBERSHIP", session);
+  }
+  for (const grantor of grantors) {
+    if (workloads.has(grantor)) fail("AUTHORITY_GRANTOR_OVERLAP", grantor);
+  }
+  const expectedClosure = new Set<string>([...GROUP_ROLES, databaseOwner]);
+  for (const workload of workloads.keys()) expectedClosure.add(workload);
+  for (const grantor of grantors) expectedClosure.add(grantor);
+  if (
+    expectedClosure.size !== roles.size ||
+    [...roles.keys()].some((role) => !expectedClosure.has(role))
+  ) {
+    fail("AUTHORITY_ROLE_CLOSURE", "mechanical authority closure");
+  }
+  return workloads;
+}
+
+function hasUnsafeAuthorityAttributes(role: JsonObject): boolean {
+  return ["superuser", "bypass_rls", "create_role", "create_db", "replication"].some((field) =>
+    boolean(role[field], `role ${field}`),
+  );
+}
+
+export function validateCanonicalMembershipFixture(document: JsonObject): void {
+  keys(document, ["roles", "direct_memberships", "membership_reachability"]);
+  const roles = array(document.roles, "synthetic roles").map((role) =>
+    object(role, "synthetic role"),
+  );
+  uniqueSorted(roles, (role) => nonemptyString(role.name, "role name"), "synthetic roles");
+  roles.forEach(validateRole);
+  const rolesByName = new Map(
+    roles.map((role) => [nonemptyString(role.name, "role name"), role] as const),
+  );
+  const direct = array(document.direct_memberships, "synthetic direct memberships").map((entry) =>
+    object(entry, "synthetic direct membership"),
+  );
+  uniqueSorted(
+    direct,
+    (entry) =>
+      `${nonemptyString(entry.role, "direct role")}\0${nonemptyString(entry.member, "direct member")}\0${nonemptyString(entry.grantor, "direct grantor")}`,
+    "synthetic direct memberships",
+  );
+  direct.forEach(validateDirectMembership);
+  const graph = buildMembershipGraph(direct, rolesByName);
+  const reachability = object(document.membership_reachability, "synthetic reachability");
+  validateReachability(reachability, graph, rolesByName, direct.length);
 }
 
 function validateRole(role: JsonObject): void {
@@ -323,10 +501,146 @@ function validateDirectMembership(entry: JsonObject): void {
   boolean(entry.set_option, "set option");
 }
 
-function validateReachability(entry: JsonObject): void {
+type MembershipGraphEdge = {
+  readonly to: string;
+  readonly inherit: boolean;
+  readonly set: boolean;
+};
+
+function buildMembershipGraph(
+  direct: ReadonlyArray<JsonObject>,
+  roles: ReadonlyMap<string, JsonObject>,
+): ReadonlyMap<string, ReadonlyArray<MembershipGraphEdge>> {
+  const graph = new Map<string, MembershipGraphEdge[]>();
+  const endpoints = new Set<string>();
+  for (const membership of direct) {
+    const role = nonemptyString(membership.role, "direct role");
+    const member = nonemptyString(membership.member, "direct member");
+    const grantor = nonemptyString(membership.grantor, "direct grantor");
+    if (!roles.has(role) || !roles.has(member) || !roles.has(grantor)) {
+      fail("DIRECT_MEMBERSHIP_ROLE_CLOSURE", `${member}->${role}:${grantor}`);
+    }
+    const endpoint = `${member}\0${role}`;
+    if (endpoints.has(endpoint)) fail("DIRECT_MEMBERSHIP_DUPLICATE", endpoint);
+    endpoints.add(endpoint);
+    const edges = graph.get(member) ?? [];
+    edges.push({
+      to: role,
+      inherit: boolean(membership.inherit_option, "inherit option"),
+      set: boolean(membership.set_option, "set option"),
+    });
+    graph.set(member, edges);
+  }
+  for (const edges of graph.values()) {
+    edges.sort((left, right) => compareUtf8(left.to, right.to));
+  }
+  rejectMembershipCycles(graph, roles);
+  return graph;
+}
+
+function rejectMembershipCycles(
+  graph: ReadonlyMap<string, ReadonlyArray<MembershipGraphEdge>>,
+  roles: ReadonlyMap<string, JsonObject>,
+): void {
+  const state = new Map<string, "visiting" | "visited">();
+  const visit = (node: string, depth: number): void => {
+    if (depth > MAX_MEMBERSHIP_DEPTH) fail("REACHABILITY_LIMIT", "membership depth");
+    if (state.get(node) === "visiting") fail("REACHABILITY_CYCLE", node);
+    if (state.get(node) === "visited") return;
+    state.set(node, "visiting");
+    for (const edge of graph.get(node) ?? []) visit(edge.to, depth + 1);
+    state.set(node, "visited");
+  };
+  for (const role of [...roles.keys()].toSorted(compareUtf8)) visit(role, 0);
+}
+
+function canonicalMembershipWitness(
+  graph: ReadonlyMap<string, ReadonlyArray<MembershipGraphEdge>>,
+  roles: ReadonlyMap<string, JsonObject>,
+  member: string,
+  target: string,
+  kind: string,
+): {
+  readonly reachable: boolean;
+  readonly minDepth: number | null;
+  readonly witness: string[] | null;
+} {
+  let paths: string[][] = [[member]];
+  let candidates = 0;
+  for (let depth = 0; depth <= MAX_MEMBERSHIP_DEPTH; depth += 1) {
+    const matches = paths.filter((path) => path.at(-1) === target);
+    if (matches.length !== 0) {
+      const keyed = matches.map((path) => ({
+        path,
+        key: canonicalizeMigrationJson(path),
+      }));
+      const seen = new Set<string>();
+      for (const candidate of keyed) {
+        const key = Buffer.from(candidate.key).toString("hex");
+        if (seen.has(key)) fail("REACHABILITY_DUPLICATE_CANDIDATE", key);
+        seen.add(key);
+      }
+      keyed.sort((left, right) => Buffer.compare(Buffer.from(left.key), Buffer.from(right.key)));
+      return { reachable: true, minDepth: depth, witness: [...keyed[0]!.path] };
+    }
+    if (depth === MAX_MEMBERSHIP_DEPTH) break;
+    const next: string[][] = [];
+    for (const path of paths) {
+      const node = path.at(-1)!;
+      for (const edge of graph.get(node) ?? []) {
+        if (!membershipEdgeAllowed(kind, roles.get(node)!, edge)) continue;
+        candidates += 1;
+        if (candidates > MAX_CANONICAL_WITNESS_CANDIDATES) {
+          fail("REACHABILITY_LIMIT", "canonical witness candidates");
+        }
+        next.push([...path, edge.to]);
+      }
+    }
+    if (next.length === 0) break;
+    paths = next;
+  }
+  return { reachable: false, minDepth: null, witness: null };
+}
+
+function membershipEdgeAllowed(
+  kind: string,
+  current: JsonObject,
+  edge: MembershipGraphEdge,
+): boolean {
+  if (kind === "member") return true;
+  if (kind === "usage") return boolean(current.inherit, "role inherit") && edge.inherit;
+  if (kind === "set") return edge.set;
+  fail("REACHABILITY_PRIVILEGE", kind);
+}
+
+function nullableStringArrayEqual(
+  left: ReadonlyArray<string> | null,
+  right: ReadonlyArray<string> | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function canonicalJsonText(value: MigrationJson): string {
+  return new TextDecoder().decode(canonicalizeMigrationJson(value));
+}
+
+function compareUtf8(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+function validateReachability(
+  entry: JsonObject,
+  graph: ReadonlyMap<string, ReadonlyArray<MembershipGraphEdge>>,
+  roles: ReadonlyMap<string, JsonObject>,
+  completeEdgeCount: number,
+): void {
   keys(entry, ["role", "member", "privileges"]);
-  nonemptyString(entry.role, "reachability role");
-  nonemptyString(entry.member, "reachability member");
+  const role = nonemptyString(entry.role, "reachability role");
+  const member = nonemptyString(entry.member, "reachability member");
+  if (!roles.has(role) || !roles.has(member)) {
+    fail("REACHABILITY_ROLE_CLOSURE", `${member}->${role}`);
+  }
   const privileges = array(entry.privileges, "reachability privileges").map((privilege) =>
     object(privilege, "reachability privilege"),
   );
@@ -345,15 +659,33 @@ function validateReachability(entry: JsonObject): void {
     ]);
     const reachable = boolean(privilege.reachable, "reachable");
     const depth = nullableSafeUint(privilege.min_depth, "min depth");
-    const witness = privilege.canonical_witness;
-    if (witness !== null) sortedStrings(witness, "canonical witness", false);
+    const witness =
+      privilege.canonical_witness === null
+        ? null
+        : stringArray(privilege.canonical_witness, "canonical witness");
     const edgeCount = uint32(privilege.edge_count, "edge count");
-    if (
-      reachable !== (depth !== null && witness !== null) ||
-      (reachable && (depth === 0 || edgeCount === 0)) ||
-      (!reachable && edgeCount !== 0)
-    ) {
+    if (edgeCount !== completeEdgeCount) {
+      fail("REACHABILITY_EDGE_COUNT", `${edgeCount} != ${completeEdgeCount}`);
+    }
+    if (reachable !== (depth !== null && witness !== null)) {
       fail("REACHABILITY_SHAPE", String(privilege.privilege_kind));
+    }
+    if (reachable && witness!.length - 1 !== depth) {
+      fail("REACHABILITY_SHAPE", "witness depth mismatch");
+    }
+    const expected = canonicalMembershipWitness(
+      graph,
+      roles,
+      member,
+      role,
+      String(privilege.privilege_kind),
+    );
+    if (
+      reachable !== expected.reachable ||
+      depth !== expected.minDepth ||
+      !nullableStringArrayEqual(witness, expected.witness)
+    ) {
+      fail("REACHABILITY_WITNESS", `${member}->${role}:${String(privilege.privilege_kind)}`);
     }
   });
 }
@@ -367,8 +699,11 @@ export function validateACLSet(acl: JsonObject, surface: ACLSurface = "generic")
   }
   uniqueSorted(
     entries,
-    (entry) =>
-      `${nonemptyString(entry.grantor, "acl grantor")}\0${nonemptyString(entry.grantee, "acl grantee")}`,
+    (entry) => {
+      const privileges = sortedStrings(entry.privileges, "acl privileges");
+      const grantable = sortedStrings(entry.grantable, "acl grantable");
+      return `${nonemptyString(entry.grantor, "acl grantor")}\0${nonemptyString(entry.grantee, "acl grantee")}\0${canonicalJsonText(privileges)}\0${canonicalJsonText(grantable)}`;
+    },
     "acl entries",
   );
   entries.forEach((entry) => validateACLEntry(entry, surface));
@@ -617,24 +952,7 @@ export function validateCatalogProjectionBody(body: JsonObject): void {
   const defaultACL = array(body.default_acl, "default acl").map((entry) =>
     object(entry, "default acl projection"),
   );
-  uniqueSorted(
-    defaultACL,
-    (entry) =>
-      `${nonemptyString(entry.owner, "default acl owner")}\0${entry.schema === null ? "" : nonemptyString(entry.schema, "default acl schema")}\0${nonemptyString(entry.object_kind, "default acl kind")}`,
-    "default acl",
-  );
-  defaultACL.forEach((entry) => {
-    keys(entry, ["owner", "schema", "object_kind", "acl"]);
-    nonemptyString(entry.owner, "default acl owner");
-    nullableString(entry.schema, "default acl schema");
-    nonemptyString(entry.object_kind, "default acl kind");
-    const objectKind = literal(
-      entry.object_kind,
-      ["function", "sequence", "table"] as const,
-      "default acl kind",
-    );
-    validateACLSet(object(entry.acl, "default acl entries"), `default_${objectKind}`);
-  });
+  validateDefaultACLRows(defaultACL, DEFAULT_ACL_OWNERS, OBJECT_CREATOR_CLOSURE);
   if (array(body.relations, "relations").length !== 0) {
     fail("A21A_RELATIONS_NOT_IMPLEMENTED", "relations must be empty");
   }
@@ -692,6 +1010,72 @@ export function validateCatalogProjectionBody(body: JsonObject): void {
     (entry) => objectIdentityKey(object(entry.object, "denied identity")),
     "denied objects",
   );
+}
+
+export function validateDefaultACLScopeFixture(document: JsonObject): void {
+  keys(document, ["format_version", "default_acl_owners", "object_creator_closure", "rows"]);
+  literal(
+    document.format_version,
+    ["cloud-agents-platform-default-acl-scope-fixture/v1"],
+    "default acl scope fixture",
+  );
+  const owners = sortedStrings(document.default_acl_owners, "default acl owners");
+  const creators = sortedStrings(document.object_creator_closure, "object creator closure");
+  exactArray(owners, DEFAULT_ACL_OWNERS, "default acl owners");
+  exactArray(creators, OBJECT_CREATOR_CLOSURE, "object creator closure");
+  validateDefaultACLRows(
+    array(document.rows, "default acl rows").map((entry) =>
+      object(entry, "default acl projection"),
+    ),
+    owners,
+    creators,
+  );
+}
+
+function validateDefaultACLRows(
+  rows: ReadonlyArray<JsonObject>,
+  owners: ReadonlyArray<string>,
+  objectCreators: ReadonlyArray<string>,
+): void {
+  const ownerSet = new Set(owners);
+  const creatorSet = new Set(objectCreators);
+  for (const owner of owners) {
+    if (!creatorSet.has(owner)) fail("DEFAULT_ACL_OWNER_CLOSURE", owner);
+  }
+  uniqueSorted(
+    rows,
+    (entry) => {
+      const owner = nonemptyString(entry.owner, "default acl owner");
+      const schemaKey =
+        entry.schema === null ? "0" : `1${nonemptyString(entry.schema, "default acl schema")}`;
+      return `${owner}\0${schemaKey}\0${nonemptyString(entry.object_kind, "default acl kind")}`;
+    },
+    "default acl",
+  );
+  for (const entry of rows) {
+    keys(entry, ["owner", "schema", "object_kind", "acl"]);
+    const owner = nonemptyString(entry.owner, "default acl owner");
+    if (!ownerSet.has(owner) || !creatorSet.has(owner)) {
+      fail("DEFAULT_ACL_OWNER_CLOSURE", owner);
+    }
+    const schema = nullableString(entry.schema, "default acl schema");
+    if (schema !== null && schema !== "cloud_agents") {
+      fail("DEFAULT_ACL_SCOPE", schema);
+    }
+    const objectKind = literal(
+      entry.object_kind,
+      ["function", "schema", "sequence", "table", "type"] as const,
+      "default acl kind",
+    );
+    if (objectKind === "schema" && schema !== null) {
+      fail("DEFAULT_ACL_SCHEMA_KIND_SCOPE", schema);
+    }
+    const acl = object(entry.acl, "default acl entries");
+    if (acl.catalog_value !== "explicit") {
+      fail("DEFAULT_ACL_CATALOG_VALUE", String(acl.catalog_value));
+    }
+    validateACLSet(acl, `default_${objectKind}`);
+  }
 }
 
 export function decodeExpectedStatementTransition(bytes: Uint8Array): JsonObject {
@@ -889,6 +1273,12 @@ export function validateAttemptTerminalState(state: JsonObject, maxAttempts = 3)
   }
   const outcome = literal(state.outcome, OUTCOMES, "terminal outcome");
   const error = nullableString(state.stable_error_code, "stable error");
+  if (
+    error !== null &&
+    !STABLE_PROJECTION_ERRORS.includes(error as (typeof STABLE_PROJECTION_ERRORS)[number])
+  ) {
+    fail("STABLE_ERROR_CODE", error);
+  }
   const reconcile = literal(state.reconcile_result, RECONCILE_RESULTS, "reconcile result");
   const valid =
     (outcome === "committed" && error === null && reconcile === "not_run") ||
@@ -1045,9 +1435,13 @@ function shortestFloat32(value: number): string {
   fail("FLOAT_VALUE", String(value));
 }
 
-function validateBooleanMap(value: JsonObject): void {
+function validateBooleanMap(value: JsonObject, expectedIdentities: ReadonlyArray<string>): void {
   const names = Object.keys(value);
-  if (names.length === 0 || names.join("\0") !== names.toSorted().join("\0")) {
+  if (
+    names.length === 0 ||
+    names.join("\0") !== names.toSorted(compareUtf8).join("\0") ||
+    names.join("\0") !== expectedIdentities.join("\0")
+  ) {
     fail("BOOLEAN_MAP_ORDER", names.join(","));
   }
   for (const [name, entry] of Object.entries(value)) {
@@ -1069,6 +1463,10 @@ function aclPrivilegesForSurface(surface: ACLSurface): ReadonlySet<string> {
       return new Set(["SELECT", "UPDATE", "USAGE"]);
     case "default_table":
       return new Set(["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"]);
+    case "default_type":
+      return new Set(["USAGE"]);
+    case "default_schema":
+      return new Set(["CREATE", "USAGE"]);
     case "generic":
       return new Set(ACL_PRIVILEGES);
   }
@@ -1084,6 +1482,8 @@ function aclOriginsForSurface(surface: ACLSurface): ReadonlySet<string> {
     case "default_function":
     case "default_sequence":
     case "default_table":
+    case "default_type":
+    case "default_schema":
       return new Set(["default_acl_catalog"]);
     case "generic":
       return new Set(ACL_ORIGINS);
@@ -1108,7 +1508,7 @@ function uniqueSorted<T>(
   const identities = values.map(identity);
   if (
     new Set(identities).size !== identities.length ||
-    identities.join("\0") !== identities.toSorted().join("\0")
+    identities.join("\0") !== identities.toSorted(compareUtf8).join("\0")
   ) {
     fail("DUPLICATE_OR_UNSORTED", label);
   }
@@ -1117,7 +1517,7 @@ function uniqueSorted<T>(
 function sortedStrings(value: MigrationJson, label: string, unique = true): string[] {
   const result = stringArray(value, label);
   if (
-    result.join("\0") !== result.toSorted().join("\0") ||
+    result.join("\0") !== result.toSorted(compareUtf8).join("\0") ||
     (unique && new Set(result).size !== result.length)
   ) {
     fail("DUPLICATE_OR_UNSORTED", label);

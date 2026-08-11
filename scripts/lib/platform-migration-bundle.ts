@@ -22,6 +22,7 @@ import {
   validateAuthorityProfile,
   validateCatalogProjectionBody,
   validateCatalogState,
+  validateDefaultACLScopeFixture,
   validateExpectedStatementTransition,
   validateIntermediateState,
   validateNumericFixture,
@@ -72,6 +73,7 @@ const PROJECTION_FIXTURE_PATHS = [
   `${PROJECTION_FIXTURE_ROOT}/golden/intermediate-state-v1.json`,
   `${PROJECTION_FIXTURE_ROOT}/golden/attempt-terminal-state-v1.json`,
   `${PROJECTION_FIXTURE_ROOT}/negative/faults-v1.json`,
+  `${PROJECTION_FIXTURE_ROOT}/golden/default-acl-scope-v1.json`,
 ] as const;
 const AUTHORITY_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/authority-binding-duplicate.raw`;
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
@@ -539,6 +541,9 @@ function validateProjectionFixtureInventory(
   validateAttemptTerminalState(
     requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[8]))),
   );
+  validateDefaultACLScopeFixture(
+    requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[10]))),
+  );
   try {
     parseStrictMigrationJson(readExactFile(root, AUTHORITY_DUPLICATE_RAW_PATH));
   } catch (error) {
@@ -805,6 +810,13 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   validateAttemptTerminalState(terminal);
   const duplicateAuthorityBinding = duplicateBindingBytes(binding);
   const faults = projectionFaultFixture();
+  const defaultACLScope: JsonObject = {
+    format_version: "cloud-agents-platform-default-acl-scope-fixture/v1",
+    default_acl_owners: ["cloud_agents_migration_owner"],
+    object_creator_closure: ["cloud_agents_migration_owner"],
+    rows: namespaceBody.default_acl!,
+  };
+  validateDefaultACLScopeFixture(defaultACLScope);
   const fixtureDocuments = new Map<string, JsonObject>([
     [PROJECTION_FIXTURE_PATHS[1], binding],
     [PROJECTION_FIXTURE_PATHS[2], initialAbsent],
@@ -815,6 +827,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [PROJECTION_FIXTURE_PATHS[7], intermediate],
     [PROJECTION_FIXTURE_PATHS[8], terminal],
     [PROJECTION_FIXTURE_PATHS[9], faults],
+    [PROJECTION_FIXTURE_PATHS[10], defaultACLScope],
   ]);
   const manifest = projectionFixtureManifest(fixtureDocuments, duplicateAuthorityBinding);
   fixtureDocuments.set(PROJECTION_FIXTURE_PATHS[0], manifest);
@@ -897,6 +910,8 @@ function authorityBindingFixture(authorityProfileDigest: string): JsonObject {
 
 function authorityProjectionFixture(phase: string): JsonObject {
   const session = "cloud_agents_migration_login_fixture";
+  const bootstrapWorkload = "cloud_agents_bootstrap_login_fixture";
+  const runtimeWorkload = "cloud_agents_runtime_login_fixture";
   const owner = "cloud_agents_database_owner_fixture";
   const migration = "cloud_agents_migration_owner";
   const current = phase === "connected_session" ? session : migration;
@@ -914,26 +929,34 @@ function authorityProjectionFixture(phase: string): JsonObject {
     config: [],
   });
   const roles = [
-    role("cloud_agents_bootstrap_admin", false, true),
-    role(owner, false, true),
+    role("cloud_agents_bootstrap_admin", false, false),
+    role(bootstrapWorkload, true, true),
+    role(owner, false, false),
     role(session, true, false),
-    role(migration, false, true),
-    role("cloud_agents_runtime", false, true),
+    role(migration, false, false),
+    role("cloud_agents_runtime", false, false),
+    role(runtimeWorkload, true, true),
     role("fixture_cluster_superuser", true, true, true),
   ];
   const effectiveCreate: JsonObject = {
     cloud_agents_bootstrap_admin: false,
+    cloud_agents_bootstrap_login_fixture: false,
     cloud_agents_database_owner_fixture: true,
     cloud_agents_migration_login_fixture: false,
     cloud_agents_migration_owner: true,
     cloud_agents_runtime: false,
+    cloud_agents_runtime_login_fixture: false,
+    fixture_cluster_superuser: true,
   };
   const effectiveTemporary: JsonObject = {
     cloud_agents_bootstrap_admin: false,
+    cloud_agents_bootstrap_login_fixture: false,
     cloud_agents_database_owner_fixture: true,
     cloud_agents_migration_login_fixture: false,
     cloud_agents_migration_owner: false,
     cloud_agents_runtime: false,
+    cloud_agents_runtime_login_fixture: false,
+    fixture_cluster_superuser: true,
   };
   return {
     phase,
@@ -963,6 +986,14 @@ function authorityProjectionFixture(phase: string): JsonObject {
     roles,
     direct_memberships: [
       {
+        role: "cloud_agents_bootstrap_admin",
+        member: bootstrapWorkload,
+        grantor: "fixture_cluster_superuser",
+        admin_option: false,
+        inherit_option: true,
+        set_option: true,
+      },
+      {
         role: migration,
         member: session,
         grantor: "fixture_cluster_superuser",
@@ -970,15 +1001,41 @@ function authorityProjectionFixture(phase: string): JsonObject {
         inherit_option: false,
         set_option: true,
       },
+      {
+        role: "cloud_agents_runtime",
+        member: runtimeWorkload,
+        grantor: "fixture_cluster_superuser",
+        admin_option: false,
+        inherit_option: true,
+        set_option: true,
+      },
     ],
     membership_reachability: [
+      {
+        role: "cloud_agents_bootstrap_admin",
+        member: bootstrapWorkload,
+        privileges: [
+          reachabilityPrivilege("member", [bootstrapWorkload, "cloud_agents_bootstrap_admin"], 3),
+          reachabilityPrivilege("usage", [bootstrapWorkload, "cloud_agents_bootstrap_admin"], 3),
+          reachabilityPrivilege("set", [bootstrapWorkload, "cloud_agents_bootstrap_admin"], 3),
+        ],
+      },
       {
         role: migration,
         member: session,
         privileges: [
-          reachabilityPrivilege("member", true, session, migration),
-          reachabilityPrivilege("usage", false, session, migration),
-          reachabilityPrivilege("set", true, session, migration),
+          reachabilityPrivilege("member", [session, migration], 3),
+          reachabilityPrivilege("usage", null, 3),
+          reachabilityPrivilege("set", [session, migration], 3),
+        ],
+      },
+      {
+        role: "cloud_agents_runtime",
+        member: runtimeWorkload,
+        privileges: [
+          reachabilityPrivilege("member", [runtimeWorkload, "cloud_agents_runtime"], 3),
+          reachabilityPrivilege("usage", [runtimeWorkload, "cloud_agents_runtime"], 3),
+          reachabilityPrivilege("set", [runtimeWorkload, "cloud_agents_runtime"], 3),
         ],
       },
     ],
@@ -990,16 +1047,15 @@ function authorityProjectionFixture(phase: string): JsonObject {
 
 function reachabilityPrivilege(
   kind: string,
-  reachable: boolean,
-  member: string,
-  role: string,
+  witness: ReadonlyArray<string> | null,
+  edgeCount: number,
 ): JsonObject {
   return {
     privilege_kind: kind,
-    reachable,
-    min_depth: reachable ? 1 : null,
-    canonical_witness: reachable ? [member, role] : null,
-    edge_count: reachable ? 1 : 0,
+    reachable: witness !== null,
+    min_depth: witness === null ? null : witness.length - 1,
+    canonical_witness: witness,
+    edge_count: edgeCount,
   };
 }
 
@@ -1072,29 +1128,39 @@ function namespaceProjectionBody(declared: ReadonlyArray<JsonObject>): JsonObjec
       security_labels: [],
     },
     default_acl: [
-      defaultACLProjection("function", [
-        aclEntry(owner, "cloud_agents_bootstrap_admin", ["EXECUTE"], []),
-        aclEntry(owner, owner, ["EXECUTE"], ["EXECUTE"], "default_acl_catalog"),
+      defaultACLProjection(null, "function", [aclEntry(owner, owner, ["EXECUTE"], ["EXECUTE"])]),
+      defaultACLProjection(null, "schema", [
+        aclEntry(owner, owner, ["CREATE", "USAGE"], ["CREATE", "USAGE"]),
       ]),
-      defaultACLProjection("sequence", [
+      defaultACLProjection(null, "sequence", [
+        aclEntry(owner, owner, ["SELECT", "UPDATE", "USAGE"], ["SELECT", "UPDATE", "USAGE"]),
+      ]),
+      defaultACLProjection(null, "table", [
         aclEntry(
           owner,
           owner,
-          ["SELECT", "UPDATE", "USAGE"],
-          ["SELECT", "UPDATE", "USAGE"],
-          "default_acl_catalog",
+          ["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"],
+          ["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"],
         ),
       ]),
-      defaultACLProjection("table", [
+      defaultACLProjection(null, "type", [aclEntry(owner, owner, ["USAGE"], ["USAGE"])]),
+      defaultACLProjection("cloud_agents", "function", [
+        aclEntry(owner, "cloud_agents_bootstrap_admin", ["EXECUTE"], []),
+        aclEntry(owner, owner, ["EXECUTE"], ["EXECUTE"]),
+      ]),
+      defaultACLProjection("cloud_agents", "sequence", [
+        aclEntry(owner, owner, ["SELECT", "UPDATE", "USAGE"], ["SELECT", "UPDATE", "USAGE"]),
+      ]),
+      defaultACLProjection("cloud_agents", "table", [
         aclEntry(
           owner,
           owner,
           ["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"],
           ["DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"],
-          "default_acl_catalog",
         ),
         aclEntry(owner, "cloud_agents_runtime", ["SELECT"], []),
       ]),
+      defaultACLProjection("cloud_agents", "type", []),
     ],
     relations: [],
     functions: [],
@@ -1105,10 +1171,14 @@ function namespaceProjectionBody(declared: ReadonlyArray<JsonObject>): JsonObjec
   };
 }
 
-function defaultACLProjection(kind: string, entries: ReadonlyArray<JsonObject>): JsonObject {
+function defaultACLProjection(
+  schema: string | null,
+  kind: string,
+  entries: ReadonlyArray<JsonObject>,
+): JsonObject {
   return {
     owner: "cloud_agents_migration_owner",
-    schema: "cloud_agents",
+    schema,
     object_kind: kind,
     acl: {
       catalog_value: "explicit",
@@ -1601,6 +1671,72 @@ function projectionFaultFixture(): JsonObject {
         target: "authority_binding",
         mutation: "password_setting",
         expected_error: "ROLE_CONFIG_UNSAFE",
+      },
+      {
+        name: "reachability_complete_edge_count",
+        target: "authority_binding",
+        mutation: "unreachable_edge_count_zero",
+        expected_error: "REACHABILITY_EDGE_COUNT",
+      },
+      {
+        name: "reachability_member_to_role_order",
+        target: "canonical_membership_witness_synthetic",
+        mutation: "reverse_member_role_witness",
+        expected_error: "REACHABILITY_WITNESS",
+      },
+      {
+        name: "reachability_equal_length_noncanonical",
+        target: "canonical_membership_witness_synthetic",
+        mutation: "select_utf8_later_shortest_path",
+        expected_error: "REACHABILITY_WITNESS",
+      },
+      {
+        name: "reachability_duplicate_logical_edge",
+        target: "canonical_membership_witness_synthetic",
+        mutation: "duplicate_member_role_endpoint",
+        expected_error: "DIRECT_MEMBERSHIP_DUPLICATE",
+      },
+      {
+        name: "default_acl_invalid_schema_kind_scope",
+        target: "default_acl_scope",
+        mutation: "schema_kind_scoped_to_cloud_agents",
+        expected_error: "DEFAULT_ACL_SCHEMA_KIND_SCOPE",
+      },
+      {
+        name: "default_acl_unknown_schema",
+        target: "default_acl_scope",
+        mutation: "schema_outside_closed_scope",
+        expected_error: "DEFAULT_ACL_SCOPE",
+      },
+      {
+        name: "default_acl_catalog_value",
+        target: "default_acl_scope",
+        mutation: "catalog_value_null",
+        expected_error: "DEFAULT_ACL_CATALOG_VALUE",
+      },
+      {
+        name: "default_acl_owner_creator_closure",
+        target: "default_acl_scope",
+        mutation: "owner_outside_creator_closure",
+        expected_error: "DEFAULT_ACL_OWNER_CLOSURE",
+      },
+      {
+        name: "default_acl_outer_order",
+        target: "default_acl_scope",
+        mutation: "reverse_rows",
+        expected_error: "DUPLICATE_OR_UNSORTED",
+      },
+      {
+        name: "stable_error_unknown",
+        target: "attempt_terminal",
+        mutation: "unknown_projection_error_code",
+        expected_error: "STABLE_ERROR_CODE",
+      },
+      {
+        name: "stable_error_runner_code",
+        target: "attempt_terminal",
+        mutation: "legacy_runner_error_code",
+        expected_error: "STABLE_ERROR_CODE",
       },
     ],
   };

@@ -734,9 +734,12 @@ signed closure 与观察到的 authority 不一致返回 `MIGRATION_AUTHORITY_DR
 
 `BeginIdleReadSnapshot` 只能在 connection idle 时执行：`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY
 NOT DEFERRABLE`，立即 read back `transaction_isolation`、`transaction_read_only`、`transaction_deferrable` 和
-`TxStatus = 'T'`，再运行 authority/catalog queries。所有查询必须在同一 snapshot；禁止 session-level GUC、
-role switch、nested transaction 或跨连接 join。结束时 rollback，确认 `TxStatus = 'I'` 后才把 connection 交还
-pool；状态不明、rollback 失败或 transaction 外 GUC 未清除则 hijack + close。
+`TxStatus = 'T'`，再运行 authority/catalog queries。所有查询必须在同一 snapshot；禁止 caller/projector 设置
+session-level GUC、切 role、创建 nested transaction 或跨连接 join。snapshot factory 在 begin 前必须先
+`DISCARD ALL` 并证明 clean session；仅当 closed phase 为 `migration_role` 时，factory 自身才可执行固定
+`SET ROLE cloud_agents_migration_owner` 并 exact read back，caller 不能传入任意 role。`connected_session` 不切 role。
+结束时 rollback + `DISCARD ALL`，确认 `TxStatus = 'I'` 且 `current_user = session_user` 后才把 connection 交还
+pool；状态不明、rollback 失败、role/GUC/prepared state 未清除则 hijack + close。
 
 ### 5.2 Migration snapshot reuse
 

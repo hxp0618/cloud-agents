@@ -20,10 +20,9 @@ var (
 )
 
 var privilegeOrder = map[string]int{
-	"SELECT": 0, "INSERT": 1, "UPDATE": 2, "DELETE": 3,
-	"TRUNCATE": 4, "REFERENCES": 5, "TRIGGER": 6, "CREATE": 7,
-	"USAGE": 8, "CONNECT": 9, "TEMPORARY": 10, "EXECUTE": 11,
-	"SET": 12, "ALTER SYSTEM": 13, "MAINTAIN": 14,
+	"CONNECT": 0, "CREATE": 1, "DELETE": 2, "EXECUTE": 3,
+	"INSERT": 4, "REFERENCES": 5, "SELECT": 6, "TEMPORARY": 7,
+	"TRIGGER": 8, "TRUNCATE": 9, "UPDATE": 10, "USAGE": 11,
 }
 
 func DecodeAuthorityBinding(data []byte) (*AuthorityBinding, error) {
@@ -158,6 +157,7 @@ func (projection AuthorityProjection) Validate() error {
 		return err
 	}
 	roleKeys := make([]string, len(projection.Roles))
+	rolesByName := make(map[string]RoleProjection, len(projection.Roles))
 	for index, role := range projection.Roles {
 		if role.Name == "" || role.Config == nil {
 			return invalidProjection("authority-projection", "role identity and config are required")
@@ -182,24 +182,167 @@ func (projection AuthorityProjection) Validate() error {
 			return invalidProjection("authority-projection", "initial A2.1a role config must be empty")
 		}
 		roleKeys[index] = role.Name
+		rolesByName[role.Name] = role
 	}
 	if !strictlySorted(roleKeys) {
 		return invalidProjection("authority-projection", "roles are not strictly UTF-8 sorted")
 	}
+	sessionRole, sessionPresent := rolesByName[projection.SessionUser]
+	_, currentPresent := rolesByName[projection.CurrentUser]
+	databaseOwnerRole, databaseOwnerPresent := rolesByName[projection.DatabaseOwner]
+	if !sessionPresent || !currentPresent || !databaseOwnerPresent {
+		return invalidProjection("authority-projection", "session, current, and database-owner principals must be in the explicit role closure")
+	}
+	switch projection.Phase {
+	case AuthorityPhaseConnectedSession:
+		if projection.CurrentUser != projection.SessionUser {
+			return invalidProjection("authority-projection", "connected-session current_user must equal session_user")
+		}
+	case AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction:
+		if projection.CurrentUser != MigrationOwnerRole {
+			return invalidProjection("authority-projection", "migration role and transaction phases require the migration owner current_user")
+		}
+	}
+	groupRoles := []string{BootstrapAdminRole, MigrationOwnerRole, RuntimeRole}
+	for _, groupName := range groupRoles {
+		group, ok := rolesByName[groupName]
+		if !ok {
+			return invalidProjection("authority-projection", "required Cloud Agents group role is absent")
+		}
+		if group.Login || group.Inherit || hasUnsafeAuthorityAttributes(group) {
+			return invalidProjection("authority-projection", "Cloud Agents group role attributes differ from the closed NOLOGIN/NOINHERIT profile")
+		}
+	}
+	if !sessionRole.Login || sessionRole.Inherit || hasUnsafeAuthorityAttributes(sessionRole) {
+		return invalidProjection("authority-projection", "session workload must be a safe NOINHERIT LOGIN")
+	}
+	if projection.SessionUser == projection.DatabaseOwner || projection.SessionUser == BootstrapAdminRole || projection.SessionUser == MigrationOwnerRole || projection.SessionUser == RuntimeRole {
+		return invalidProjection("authority-projection", "session workload cannot be a group role or database owner")
+	}
+	if projection.DatabaseOwner == BootstrapAdminRole || projection.DatabaseOwner == MigrationOwnerRole || projection.DatabaseOwner == RuntimeRole || hasUnsafeAuthorityAttributes(databaseOwnerRole) {
+		return invalidProjection("authority-projection", "database owner differs from the safe independent authority profile")
+	}
 	directKeys := make([]string, len(projection.DirectMemberships))
+	directGraph := make(map[string][]authorityValidationEdge, len(projection.Roles))
+	directEndpoints := make(map[string]struct{}, len(projection.DirectMemberships))
+	workloadMembership := make(map[string]string, len(projection.DirectMemberships))
+	membershipGrantors := make(map[string]struct{}, len(projection.DirectMemberships))
 	for index, membership := range projection.DirectMemberships {
 		if membership.Role == "" || membership.Member == "" || membership.Grantor == "" {
 			return invalidProjection("authority-projection", "direct membership loses role, member, or grantor provenance")
 		}
+		if _, ok := rolesByName[membership.Role]; !ok {
+			return invalidProjection("authority-projection", "direct membership role is outside the explicit role closure")
+		}
+		if _, ok := rolesByName[membership.Member]; !ok {
+			return invalidProjection("authority-projection", "direct membership member is outside the explicit role closure")
+		}
+		if _, ok := rolesByName[membership.Grantor]; !ok {
+			return invalidProjection("authority-projection", "direct membership grantor is outside the explicit role closure")
+		}
+		grantor := rolesByName[membership.Grantor]
+		if membership.Grantor == projection.SessionUser || !grantor.Superuser {
+			return invalidProjection("authority-projection", "direct membership grantor must be a distinct trusted superuser")
+		}
+		membershipGrantors[membership.Grantor] = struct{}{}
+		if membership.Role == projection.DatabaseOwner || membership.Member == projection.DatabaseOwner {
+			return invalidProjection("authority-projection", "database owner cannot participate in delegated membership")
+		}
+		memberRole := rolesByName[membership.Member]
+		if !memberRole.Login || hasUnsafeAuthorityAttributes(memberRole) || membership.AdminOption {
+			return invalidProjection("authority-projection", "direct group member must be a safe non-admin workload LOGIN")
+		}
+		switch membership.Role {
+		case MigrationOwnerRole:
+			if memberRole.Inherit || !membership.SetOption {
+				return invalidProjection("authority-projection", "migration workload must be NOINHERIT with a SET-enabled membership")
+			}
+		case RuntimeRole, BootstrapAdminRole:
+			if !memberRole.Inherit {
+				return invalidProjection("authority-projection", "runtime and bootstrap workloads must be INHERIT LOGINs")
+			}
+		default:
+			return invalidProjection("authority-projection", "direct membership targets a role outside the three group authorities")
+		}
+		if _, duplicate := workloadMembership[membership.Member]; duplicate {
+			return invalidProjection("authority-projection", "workload LOGIN belongs to more than one direct role")
+		}
+		workloadMembership[membership.Member] = membership.Role
+		endpointKey := membership.Member + "\x00" + membership.Role
+		if _, duplicate := directEndpoints[endpointKey]; duplicate {
+			return invalidProjection("authority-projection", "direct memberships contain duplicate logical witness edges")
+		}
+		directEndpoints[endpointKey] = struct{}{}
+		directGraph[membership.Member] = append(directGraph[membership.Member], authorityValidationEdge{
+			to: membership.Role, inherit: membership.InheritOption, set: membership.SetOption,
+		})
 		directKeys[index] = membership.Role + "\x00" + membership.Member + "\x00" + membership.Grantor
 	}
 	if !strictlySorted(directKeys) {
 		return invalidProjection("authority-projection", "direct memberships are not strictly sorted")
 	}
+	if workloadMembership[projection.SessionUser] != MigrationOwnerRole {
+		return invalidProjection("authority-projection", "session workload must be a direct member of exactly the migration owner role")
+	}
+	for grantor := range membershipGrantors {
+		if _, workload := workloadMembership[grantor]; workload {
+			return invalidProjection("authority-projection", "trusted membership grantor cannot also be a workload LOGIN")
+		}
+	}
+	expectedRoleClosure := map[string]struct{}{
+		BootstrapAdminRole: {}, MigrationOwnerRole: {}, RuntimeRole: {}, projection.DatabaseOwner: {},
+	}
+	for workload := range workloadMembership {
+		expectedRoleClosure[workload] = struct{}{}
+	}
+	for grantor := range membershipGrantors {
+		expectedRoleClosure[grantor] = struct{}{}
+	}
+	if len(expectedRoleClosure) != len(rolesByName) {
+		return invalidProjection("authority-projection", "role projection contains principals outside the mechanical authority closure")
+	}
+	for role := range rolesByName {
+		if _, ok := expectedRoleClosure[role]; !ok {
+			return invalidProjection("authority-projection", "role projection contains a principal outside the mechanical authority closure")
+		}
+	}
+	for member := range directGraph {
+		sort.Slice(directGraph[member], func(left, right int) bool {
+			return directGraph[member][left].to < directGraph[member][right].to
+		})
+	}
+	if err := validateAuthorityMembershipGraph(directGraph, rolesByName); err != nil {
+		return err
+	}
+	if uint64(len(projection.DirectMemberships)) > uint64(math.MaxUint32) {
+		return invalidProjection("authority-projection", "direct membership closure exceeds uint32 edge_count")
+	}
+	completeEdgeCount := uint32(len(projection.DirectMemberships))
+	if len(projection.MembershipReachability) != len(projection.DirectMemberships) {
+		return invalidProjection("authority-projection", "reachability endpoint closure differs from direct workload memberships")
+	}
 	reachabilityKeys := make([]string, len(projection.MembershipReachability))
 	for index, reachability := range projection.MembershipReachability {
 		if err := reachability.Validate(); err != nil {
 			return err
+		}
+		if _, ok := rolesByName[reachability.Role]; !ok {
+			return invalidProjection("authority-projection", "reachability role is outside the explicit role closure")
+		}
+		if _, ok := rolesByName[reachability.Member]; !ok {
+			return invalidProjection("authority-projection", "reachability member is outside the explicit role closure")
+		}
+		if workloadMembership[reachability.Member] != reachability.Role {
+			return invalidProjection("authority-projection", "reachability endpoint differs from the workload direct membership")
+		}
+		for privilegeIndex := range reachability.Privileges {
+			privilege := reachability.Privileges[privilegeIndex]
+			if privilege.EdgeCount != completeEdgeCount {
+				return invalidProjection("authority-projection", "reachability edge_count differs from the complete direct membership closure")
+			}
+			if err := validateAuthorityReachabilityPrivilege(directGraph, reachability, privilege); err != nil {
+				return err
+			}
 		}
 		reachabilityKeys[index] = reachability.Role + "\x00" + reachability.Member
 	}
@@ -238,6 +381,10 @@ func (projection AuthorityProjection) Validate() error {
 	return nil
 }
 
+func hasUnsafeAuthorityAttributes(role RoleProjection) bool {
+	return role.Superuser || role.BypassRLS || role.CreateRole || role.CreateDB || role.Replication
+}
+
 func (projection ReachabilityProjection) Validate() error {
 	if projection.Role == "" || projection.Member == "" || len(projection.Privileges) != 3 {
 		return invalidProjection("authority-projection", "reachability must contain role, member, and three privileges")
@@ -248,17 +395,185 @@ func (projection ReachabilityProjection) Validate() error {
 			return invalidProjection("authority-projection", "reachability privilege order or kind is invalid")
 		}
 		if privilege.Reachable {
-			if privilege.MinDepth == nil || privilege.CanonicalWitness == nil || len(*privilege.CanonicalWitness) == 0 || privilege.EdgeCount == 0 {
+			if privilege.MinDepth == nil || privilege.CanonicalWitness == nil || len(*privilege.CanonicalWitness) == 0 {
 				return invalidProjection("authority-projection", "reachable privilege lacks bounded witness metadata")
 			}
-			if !strictlySorted(*privilege.CanonicalWitness) {
-				return invalidProjection("authority-projection", "canonical witness is not UTF-8 sorted")
+			if uint64(len(*privilege.CanonicalWitness)-1) != uint64(*privilege.MinDepth) {
+				return invalidProjection("authority-projection", "reachable privilege depth differs from witness path length")
 			}
-		} else if privilege.MinDepth != nil || privilege.CanonicalWitness != nil || privilege.EdgeCount != 0 {
-			return invalidProjection("authority-projection", "unreachable privilege carries a witness or traversed edge count")
+			for _, principal := range *privilege.CanonicalWitness {
+				if principal == "" {
+					return invalidProjection("authority-projection", "canonical witness contains an empty principal identity")
+				}
+			}
+		} else if privilege.MinDepth != nil || privilege.CanonicalWitness != nil {
+			return invalidProjection("authority-projection", "unreachable privilege carries non-null witness metadata")
 		}
 	}
 	return nil
+}
+
+type authorityValidationEdge struct {
+	to      string
+	inherit bool
+	set     bool
+}
+
+func validateAuthorityMembershipGraph(graph map[string][]authorityValidationEdge, roles map[string]RoleProjection) error {
+	const (
+		authorityUnseen = iota
+		authorityVisiting
+		authorityVisited
+	)
+	states := make(map[string]int, len(roles))
+	var visit func(string, uint64) error
+	visit = func(role string, depth uint64) error {
+		if depth > projectionMaxMembershipDepth {
+			return invalidProjection("authority-projection", "direct membership graph exceeds the closed depth limit")
+		}
+		switch states[role] {
+		case authorityVisiting:
+			return invalidProjection("authority-projection", "direct membership graph contains a cycle")
+		case authorityVisited:
+			return nil
+		}
+		states[role] = authorityVisiting
+		for _, edge := range graph[role] {
+			if err := visit(edge.to, depth+1); err != nil {
+				return err
+			}
+		}
+		states[role] = authorityVisited
+		return nil
+	}
+	roleNames := make([]string, 0, len(roles))
+	for role := range roles {
+		roleNames = append(roleNames, role)
+	}
+	sort.Strings(roleNames)
+	for _, role := range roleNames {
+		if err := visit(role, 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAuthorityReachabilityPrivilege(graph map[string][]authorityValidationEdge, reachability ReachabilityProjection, privilege ReachabilityPrivilegeProjection) error {
+	if privilege.Reachable {
+		if err := validateAuthorityWitnessPath(graph, reachability.Member, reachability.Role, privilege.PrivilegeKind, *privilege.CanonicalWitness); err != nil {
+			return err
+		}
+	}
+	if privilege.PrivilegeKind == "usage" {
+		// PostgreSQL 15 derives USAGE from role-level INHERIT while 16/17 derive it
+		// from per-edge inherit_option. AuthorityProjection deliberately carries no
+		// major, so the typed seam can only validate its path shape and adjacency;
+		// the exact major adapter computes and verifies USAGE reachability.
+		return nil
+	}
+	reachable, minDepth, witness, err := canonicalAuthorityMembershipWitness(
+		graph, reachability.Member, reachability.Role, privilege.PrivilegeKind,
+	)
+	if err != nil {
+		return err
+	}
+	if privilege.Reachable != reachable {
+		return invalidProjection("authority-projection", "reported reachability differs from the direct membership graph")
+	}
+	if reachable && (privilege.MinDepth == nil || *privilege.MinDepth != minDepth || privilege.CanonicalWitness == nil || !equalStrings(*privilege.CanonicalWitness, witness)) {
+		return invalidProjection("authority-projection", "reachability witness is not the canonical shortest direct membership path")
+	}
+	return nil
+}
+
+func validateAuthorityWitnessPath(graph map[string][]authorityValidationEdge, member, target, kind string, witness []string) error {
+	if len(witness) == 0 || witness[0] != member || witness[len(witness)-1] != target {
+		return invalidProjection("authority-projection", "reachability witness endpoints differ from member and role")
+	}
+	for index := 0; index+1 < len(witness); index++ {
+		found := false
+		for _, edge := range graph[witness[index]] {
+			if edge.to == witness[index+1] && authorityMembershipEdgeAllowed(kind, edge) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return invalidProjection("authority-projection", "reachability witness contains a missing or privilege-ineligible direct edge")
+		}
+	}
+	return nil
+}
+
+func canonicalAuthorityMembershipWitness(graph map[string][]authorityValidationEdge, member, target, kind string) (bool, uint32, []string, error) {
+	paths := [][]string{{member}}
+	var candidates uint64
+	for depth := uint64(0); depth <= projectionMaxMembershipDepth; depth++ {
+		matches := make([][]string, 0)
+		for _, path := range paths {
+			if path[len(path)-1] == target {
+				matches = append(matches, path)
+			}
+		}
+		if len(matches) != 0 {
+			best := matches[0]
+			bestKey, err := canonicalContractKey(best)
+			if err != nil {
+				return false, 0, nil, invalidProjection("authority-projection", "canonical witness encoding failed")
+			}
+			seenKeys := map[string]struct{}{bestKey: {}}
+			for _, candidate := range matches[1:] {
+				key, err := canonicalContractKey(candidate)
+				if err != nil {
+					return false, 0, nil, invalidProjection("authority-projection", "canonical witness encoding failed")
+				}
+				if _, duplicate := seenKeys[key]; duplicate {
+					return false, 0, nil, invalidProjection("authority-projection", "canonical witness candidate is duplicated")
+				}
+				seenKeys[key] = struct{}{}
+				if key < bestKey {
+					best, bestKey = candidate, key
+				}
+			}
+			return true, uint32(depth), append([]string(nil), best...), nil
+		}
+		if depth == projectionMaxMembershipDepth {
+			break
+		}
+		next := make([][]string, 0)
+		for _, path := range paths {
+			current := path[len(path)-1]
+			for _, edge := range graph[current] {
+				if !authorityMembershipEdgeAllowed(kind, edge) {
+					continue
+				}
+				candidates++
+				if candidates > projectionMaxCanonicalWitnessCandidates {
+					return false, 0, nil, invalidProjection("authority-projection", "canonical witness candidate limit exceeded")
+				}
+				next = append(next, append(append([]string(nil), path...), edge.to))
+			}
+		}
+		if len(next) == 0 {
+			break
+		}
+		paths = next
+	}
+	return false, 0, nil, nil
+}
+
+func authorityMembershipEdgeAllowed(kind string, edge authorityValidationEdge) bool {
+	switch kind {
+	case "member":
+		return true
+	case "usage":
+		return true
+	case "set":
+		return edge.set
+	default:
+		return false
+	}
 }
 
 func validateRoleSettings(settings []string) error {
@@ -323,10 +638,13 @@ func (set ACLSetProjection) Validate() error {
 }
 
 func validatePrivilegeList(privileges []string) error {
+	previousRank := -1
 	for index, privilege := range privileges {
-		if _, ok := privilegeOrder[privilege]; !ok || (index > 0 && privileges[index-1] >= privilege) {
+		rank, ok := privilegeOrder[privilege]
+		if !ok || (index > 0 && previousRank >= rank) {
 			return invalidProjection("acl-set", "privilege list contains unknown, duplicate, or unsorted values")
 		}
+		previousRank = rank
 	}
 	return nil
 }
@@ -680,14 +998,27 @@ func (body CatalogProjectionBody) Validate() error {
 		return invalidProjection("catalog-projection", "security labels are duplicate or unsorted")
 	}
 	defaultACLKeys := make([]string, len(body.DefaultACL))
-	for _, acl := range body.DefaultACL {
-		if acl.Owner == "" || acl.Schema == nil || *acl.Schema != "cloud_agents" {
+	for index, acl := range body.DefaultACL {
+		if acl.Owner == "" {
 			return invalidProjection("catalog-projection", "default ACL scope is incomplete")
 		}
+		schemaSortKey := "0"
+		if acl.Schema != nil {
+			if *acl.Schema != "cloud_agents" {
+				return invalidProjection("catalog-projection", "default ACL schema is outside the global or cloud_agents scope")
+			}
+			schemaSortKey = "1" + *acl.Schema
+		}
 		switch acl.ObjectKind {
-		case "table", "sequence", "function":
+		case "table", "sequence", "function", "type", "schema":
 		default:
 			return invalidProjection("catalog-projection", "unknown default ACL object kind")
+		}
+		if acl.ObjectKind == "schema" && acl.Schema != nil {
+			return invalidProjection("catalog-projection", "schema default ACL kind is only valid in global scope")
+		}
+		if acl.ACL.CatalogValue != "explicit" {
+			return invalidProjection("catalog-projection", "projected default ACL catalog_value must be explicit")
 		}
 		if err := acl.ACL.Validate(); err != nil {
 			return err
@@ -703,17 +1034,15 @@ func (body CatalogProjectionBody) Validate() error {
 			allowed = []string{"SELECT", "UPDATE", "USAGE"}
 		case "function":
 			allowed = []string{"EXECUTE"}
+		case "type":
+			allowed = []string{"USAGE"}
+		case "schema":
+			allowed = []string{"CREATE", "USAGE"}
 		}
 		if err := validateACLPrivileges(acl.ACL.Entries, allowed...); err != nil {
 			return err
 		}
-	}
-	for index, acl := range body.DefaultACL {
-		schema := ""
-		if acl.Schema != nil {
-			schema = *acl.Schema
-		}
-		defaultACLKeys[index] = acl.Owner + "\x00" + schema + "\x00" + acl.ObjectKind
+		defaultACLKeys[index] = acl.Owner + "\x00" + schemaSortKey + "\x00" + acl.ObjectKind
 	}
 	if !strictlySorted(defaultACLKeys) {
 		return invalidProjection("catalog-projection", "default ACL projections are duplicate or unsorted")
@@ -1137,10 +1466,13 @@ func (state AttemptTerminalState) Validate(maxAttempts uint32) error {
 func validStableProjectionError(code string) bool {
 	_, ok := map[string]struct{}{
 		"MIGRATION_PROJECTION_UNSUPPORTED_MAJOR": {}, "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED": {},
-		"MIGRATION_PROJECTION_LIMIT_EXCEEDED": {}, "MIGRATION_PROJECTION_UNKNOWN_OBJECT": {},
+		"MIGRATION_PROJECTION_CAPABILITY_MISMATCH": {},
+		"MIGRATION_PROJECTION_LIMIT_EXCEEDED":      {}, "MIGRATION_PROJECTION_UNKNOWN_OBJECT": {},
 		"MIGRATION_PROJECTION_INVALID_EXPRESSION": {}, "MIGRATION_AUTHORITY_DRIFT": {},
+		"MIGRATION_PROJECTION_INVALID_SCOPE": {}, "MIGRATION_PROJECTION_NON_CANONICAL_WITNESS": {},
+		"MIGRATION_PROJECTION_LIMIT_OVERRIDE": {}, "MIGRATION_PROJECTION_METADATA_MISMATCH": {},
 		"MIGRATION_INTERMEDIATE_STATE_MISMATCH": {}, "MIGRATION_PROJECTION_SNAPSHOT_INVALID": {},
-		"MIGRATION_AMBIGUOUS_COMMIT": {}, "MIGRATION_TRANSACTION_BOUNDARY": {}, "MIGRATION_LOCK_LOST": {},
+		"MIGRATION_PROJECTION_NOT_IMPLEMENTED": {}, "MIGRATION_CATALOG_DRIFT": {},
 	}[code]
 	return ok
 }

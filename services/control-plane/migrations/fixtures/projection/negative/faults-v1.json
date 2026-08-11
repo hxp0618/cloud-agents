@@ -192,6 +192,72 @@
       "target": "authority_binding",
       "mutation": "password_setting",
       "expected_error": "ROLE_CONFIG_UNSAFE"
+    },
+    {
+      "name": "reachability_complete_edge_count",
+      "target": "authority_binding",
+      "mutation": "unreachable_edge_count_zero",
+      "expected_error": "REACHABILITY_EDGE_COUNT"
+    },
+    {
+      "name": "reachability_member_to_role_order",
+      "target": "canonical_membership_witness_synthetic",
+      "mutation": "reverse_member_role_witness",
+      "expected_error": "REACHABILITY_WITNESS"
+    },
+    {
+      "name": "reachability_equal_length_noncanonical",
+      "target": "canonical_membership_witness_synthetic",
+      "mutation": "select_utf8_later_shortest_path",
+      "expected_error": "REACHABILITY_WITNESS"
+    },
+    {
+      "name": "reachability_duplicate_logical_edge",
+      "target": "canonical_membership_witness_synthetic",
+      "mutation": "duplicate_member_role_endpoint",
+      "expected_error": "DIRECT_MEMBERSHIP_DUPLICATE"
+    },
+    {
+      "name": "default_acl_invalid_schema_kind_scope",
+      "target": "default_acl_scope",
+      "mutation": "schema_kind_scoped_to_cloud_agents",
+      "expected_error": "DEFAULT_ACL_SCHEMA_KIND_SCOPE"
+    },
+    {
+      "name": "default_acl_unknown_schema",
+      "target": "default_acl_scope",
+      "mutation": "schema_outside_closed_scope",
+      "expected_error": "DEFAULT_ACL_SCOPE"
+    },
+    {
+      "name": "default_acl_catalog_value",
+      "target": "default_acl_scope",
+      "mutation": "catalog_value_null",
+      "expected_error": "DEFAULT_ACL_CATALOG_VALUE"
+    },
+    {
+      "name": "default_acl_owner_creator_closure",
+      "target": "default_acl_scope",
+      "mutation": "owner_outside_creator_closure",
+      "expected_error": "DEFAULT_ACL_OWNER_CLOSURE"
+    },
+    {
+      "name": "default_acl_outer_order",
+      "target": "default_acl_scope",
+      "mutation": "reverse_rows",
+      "expected_error": "DUPLICATE_OR_UNSORTED"
+    },
+    {
+      "name": "stable_error_unknown",
+      "target": "attempt_terminal",
+      "mutation": "unknown_projection_error_code",
+      "expected_error": "STABLE_ERROR_CODE"
+    },
+    {
+      "name": "stable_error_runner_code",
+      "target": "attempt_terminal",
+      "mutation": "legacy_runner_error_code",
+      "expected_error": "STABLE_ERROR_CODE"
     }
   ]
 }
