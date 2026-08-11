@@ -2,10 +2,10 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（Decision Freeze / Contract Kernel）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.1a contract/fixture）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
-- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md) / [`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)
+- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)
 
 ## 固定追踪根
 
@@ -21,11 +21,10 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 
 ## 当前执行边界
 
-用户已于 2026-08-10 批准 ADR-0006、D-001～D-021 并解除 P0 暂停；P0 执行期间又记录了应用既有
-fail-closed 原则与 local-first 验证策略的 D-022～D-024。P0 当前由 `G-INVENTORY` R3 和
+用户已批准 ADR-0006～ADR-0010 与 D-001～D-037；P0 当前由 `G-INVENTORY` R3 和
 `G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
 helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
-decision digest 的下游证据不得继承。P1 现从 Decision Freeze / Contract Kernel 开始，只允许在公共仓实施
+decision digest 的下游证据不得继承。P1 现进入 P1-A2.1a contract/fixture，只允许在公共仓实施
 contracts、Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral
 Postgres 测试。仍不授权：
 
@@ -64,7 +63,7 @@ Postgres 测试。仍不授权：
 
 发生冲突时按以下顺序解释：
 
-1. 已批准的 ADR-0006 与 ADR-0007；
+1. 已批准的 ADR-0006～ADR-0010；
 2. 本目录的 `01`–`06`；
 3. 总设计中标记为 2026-08-10 Revision 的章节；
 4. 总设计附录中的历史实现证据；

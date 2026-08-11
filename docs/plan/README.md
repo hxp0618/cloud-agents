@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（Decision Freeze / Contract Kernel）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.1a contract/fixture）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -15,8 +15,8 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 解释顺序：
 
-1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 与
-   [`ADR-0007`](adr/0007-p1-contract-data-toolchain-foundation.md)；
+1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
+   [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)；
 2. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 3. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 4. `legacy/` 历史计划；
@@ -25,21 +25,24 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 ## 当前计划
 
-| 文档                                                                                                     | 作用                                          |
-| -------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| [`cloud-agents-platform/README.md`](cloud-agents-platform/README.md)                                     | 公共平台固定追踪入口                          |
-| [`01-product-scope-and-authority.md`](cloud-agents-platform/01-product-scope-and-authority.md)           | 产品范围与单一 authority                      |
-| [`02-target-architecture.md`](cloud-agents-platform/02-target-architecture.md)                           | Control Plane/Worker/Runtime 目标架构         |
-| [`03-public-repository-and-release.md`](cloud-agents-platform/03-public-repository-and-release.md)       | 公共仓、module、制品与 release train          |
-| [`04-extraction-and-migration.md`](cloud-agents-platform/04-extraction-and-migration.md)                 | Go CP inventory、迁移与 cutover               |
-| [`05-gates-and-acceptance.md`](cloud-agents-platform/05-gates-and-acceptance.md)                         | Gate、same-bits、安全与验收                   |
-| [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md)                                     | 决策、阶段、record 与暂停现场                 |
-| [`p0/README.md`](p0/README.md)                                                                           | P0 freeze、inventory、baseline 与 provenance  |
-| [`p1/README.md`](p1/README.md)                                                                           | P1 Contract Kernel 与 dependency review 证据  |
-| [`synara-t3-cloud-agent-integration-architecture.md`](synara-t3-cloud-agent-integration-architecture.md) | Runtime + Platform + 双宿主总设计             |
-| [`ADR-0005`](adr/0005-cloud-agent-external-runtime-candidate.md)                                         | immutable external Runtime candidate 历史决定 |
-| [`ADR-0006`](adr/0006-public-cloud-agents-platform.md)                                                   | 完整公共 Go Control Plane 平台决定            |
-| [`ADR-0007`](adr/0007-p1-contract-data-toolchain-foundation.md)                                          | P1 contract/data/toolchain foundation 决定    |
+| 文档                                                                                                     | 作用                                            |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| [`cloud-agents-platform/README.md`](cloud-agents-platform/README.md)                                     | 公共平台固定追踪入口                            |
+| [`01-product-scope-and-authority.md`](cloud-agents-platform/01-product-scope-and-authority.md)           | 产品范围与单一 authority                        |
+| [`02-target-architecture.md`](cloud-agents-platform/02-target-architecture.md)                           | Control Plane/Worker/Runtime 目标架构           |
+| [`03-public-repository-and-release.md`](cloud-agents-platform/03-public-repository-and-release.md)       | 公共仓、module、制品与 release train            |
+| [`04-extraction-and-migration.md`](cloud-agents-platform/04-extraction-and-migration.md)                 | Go CP inventory、迁移与 cutover                 |
+| [`05-gates-and-acceptance.md`](cloud-agents-platform/05-gates-and-acceptance.md)                         | Gate、same-bits、安全与验收                     |
+| [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md)                                     | 决策、阶段、record 与暂停现场                   |
+| [`p0/README.md`](p0/README.md)                                                                           | P0 freeze、inventory、baseline 与 provenance    |
+| [`p1/README.md`](p1/README.md)                                                                           | P1 foundation 与 dependency review 证据         |
+| [`synara-t3-cloud-agent-integration-architecture.md`](synara-t3-cloud-agent-integration-architecture.md) | Runtime + Platform + 双宿主总设计               |
+| [`ADR-0005`](adr/0005-cloud-agent-external-runtime-candidate.md)                                         | immutable external Runtime candidate 历史决定   |
+| [`ADR-0006`](adr/0006-public-cloud-agents-platform.md)                                                   | 完整公共 Go Control Plane 平台决定              |
+| [`ADR-0007`](adr/0007-p1-contract-data-toolchain-foundation.md)                                          | P1 contract/data/toolchain foundation 决定      |
+| [`ADR-0008`](adr/0008-p1-postgres-data-kernel.md)                                                        | P1 PostgreSQL data kernel 决定                  |
+| [`ADR-0009`](adr/0009-p1-migration-bundle-runner.md)                                                     | P1 migration bundle/runner/trust 决定           |
+| [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)                                                | P1 PostgreSQL authority/catalog projection 决定 |
 
 ## 历史与参考
 
@@ -53,7 +56,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 ## 执行边界
 
 P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R3 两个 independently reviewed closure record 完成；
-P1 已从 Decision Freeze / Contract Kernel 开始。Inventory R2 因 66 个公开 target 的 ABI/authority 方向冲突被
+P1 当前进入 P1-A2.1a contract/fixture。Inventory R2 因 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
 SDK、数据模型、authority 与安全基础，以及 source modules/本地 ephemeral Postgres 验证；不得由 P0/P1
 启动结论外推：
