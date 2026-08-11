@@ -666,8 +666,10 @@ catalog-state 的 scope 必须与 union branch 一致。任意其他组合返回
 `MIGRATION_PROJECTION_METADATA_MISMATCH`。
 
 `owned_idle` 只适用于 `IdleReadSnapshot`：snapshot owner 在 idle connection 上执行 RR/RO/**NOT DEFERRABLE** `BEGIN`，
-读取结束后必须 rollback、验证 `TxStatus = I`、清除 transaction-local state，再 release 或销毁 connection；
-projector 不得把它交给 migration runner。`owned_idle` 的 `migration_id` 和 `statement_index` 必须均为 `null`，
+读取结束后必须 rollback、验证 `TxStatus = I` 并清除 transaction-local state。普通调用方由 factory release 或销毁
+pool connection；第 5.4 节的 runner-owned factory 则把同一 dedicated physical connection 交还给 runner，绝不 release
+进 pool。两种 factory 都不能把 raw connection 交给 projector。`owned_idle` 的 `migration_id` 和
+`statement_index` 必须均为 `null`，
 `authority_phase` 只能是 `connected_session` 或 `migration_role`。`borrowed_migration` 只适用于 runner 已拥有的
 SERIALIZABLE/RW transaction，`authority_phase` 必须是 `migration_transaction`，`migration_id` 必填；
 `statement_index = null` 仅允许 transaction-wide preflight，statement-scoped projection 必须填写 0-based index。
@@ -769,7 +771,8 @@ success。该 boundary 不改变任何 `publication_status`/`runtime_introspecti
 提升为已发布 authority。
 
 只有 A2.1a-impl-3 才允许新增 adapter-backed validator、在 runner statement 前/后调用新 API、替换旧 phase
-contract、持久化 `ProjectionResult`/intermediate chain，并为旧 validator 增加等价 stable error mapping。impl-2
+contract、持久化 `ProjectionResult` digest/bounded metadata evidence 与 intermediate chain，并为旧 validator 增加等价
+stable error mapping。impl-2
 完成时旧 runner 的执行结果和 `NOT_IMPLEMENTED`/`UNPUBLISHED` 边界必须保持不变；禁止用“新 API 可构造”宣称
 runner 已使用 projector 或 Gate 已关闭。当前 Go/TS implementation 可能已经存在本地未提交 adapter/API 草稿，
 但它们仍按本 ADR 的 impl-2 seam 适配：Go draft 中的 `SnapshotMetadata.database_identity` 和非 nullable
@@ -777,6 +780,933 @@ runner 已使用 projector 或 Gate 已关闭。当前 Go/TS implementation 可�
 必须在 impl-2 适配为本 ADR 的 explicit domains。TS/Go CatalogState same-bits flat digest 必须保留，Authority/Catalog
 wrapper digest 与本 ADR domains 对齐。不得因本地文件存在而把 mutable catalog contract 标为
 `IMPLEMENTED`/`PUBLISHED_IMMUTABLE`，也不得在 impl-2 提前改 runner wiring。
+
+### 5.4 A2.1a-impl-3 runner wiring ABI
+
+本节只冻结 runner 接入已完成 projector 的 ABI、证据 journal 与 fail-closed 顺序；不实现 production signature
+verifier、A2.1b catalog/expression projector、crash 后自动继续写数据库或任何 Gate closure。
+
+#### 5.4.1 唯一 trust decision 与 opaque projection bindings
+
+runner 只能从第 3 节同一个 release trust verifier 的一次成功结果取得以下 opaque value；不得再调用第二 verifier，
+不得从 environment、CLI、DSN、runtime tar 内的 loose JSON 或 caller 参数补齐任一字段：
+
+```text
+RunnerProjectionBindings {
+  release_trust_decision_digest: Digest
+  runner_projection_decision_digest: Digest
+  execution_lineage_digest: Digest
+  schema_bundle_digest: Digest
+  authority_profile_digest: Digest
+  authority_binding_digest: Digest
+  verified_authority: VerifiedAuthorityContract
+  initial_schema_scope: VerifiedSchemaBundleScope
+  executable_catalogs: ExecutableCatalogBinding[]
+  release_expires_at: RFC3339-UTC
+  release_security_epoch: uint64
+  authority_expires_at: RFC3339-UTC
+  authority_security_epoch: uint64
+}
+
+ExecutableCatalogBinding {
+  schema_head: string
+  catalog_contract_digest: Digest
+  verified_catalog: VerifiedCatalogContract
+  expires_at: RFC3339-UTC
+  security_epoch: uint64
+}
+```
+
+`executable_catalogs` 按 `schema_head` UTF-8 bytes 升序、unique，且只能包含
+`PUBLISHED_IMMUTABLE/IMPLEMENTED`、具备完整 `expected_projection` 和每 statement exact
+`expected_transition` 的 catalog subject。`verified_authority` 必须同时绑定 exact authority profile/binding digest、
+三个 phase expected projection、authority expiry 和 authority security epoch；`initial_schema_scope` 必须绑定同一
+`schema_bundle_digest`、inline predecessor、owner closure、release expiry 和 release epoch；每个
+`verified_catalog` 必须绑定其 exact catalog digest/head/statement closure、per-head expiry 和 epoch。各 subject 的
+expiry/epoch 可因独立签名生命周期而不同，不能强行取同一个值；runner 必须逐项验证并在任一 subject 过期或低于
+minimum epoch 时 fail closed。任何 digest、expiry、epoch 或 subject identity 不一致都返回
+`MIGRATION_UNTRUSTED`，不能降级成 mutable input。
+
+`VerifiedSchemaBundleScope.default_acl_owners` 与 `object_creator_closure` 的唯一 production 来源固定为 schema
+bundle exact signed member：
+
+```text
+schema_bundle.projection_scope_authority {
+  default_acl_owners: string[]
+  object_creator_closure: string[]
+}
+```
+
+两数组必须 sorted/unique/closed，并受既有 schema bundle signature 和 `schema_bundle_digest` 覆盖；不能从 fixture、
+authority actual projection、catalog rows、environment 或部署 binding 推导。当前 manifest/schema-bundle 尚无该 exact
+member，因此补齐 strict Go/TS contract、negative fixture、digest regeneration 和 same-bits test 是 impl-3 之前的
+contract pre-slice；缺失时不得构造 `RunnerProjectionBindings`，并在连接数据库前返回
+`MIGRATION_INVALID_MANIFEST`。
+
+本节新增 `release_trust_decision_digest` canonical formula；它只表达 release subject，不含 deployment-specific authority binding 或
+per-deployment executable catalog 集合：
+
+```text
+SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-release-trust-decision/v1",
+  "repository_identity": ...,
+  "release_identity": ...,
+  "schema_bundle_digest": ...,
+  "bootstrap_bundle_digest": ...,
+  "manifest_digest": ...,
+  "outer_artifact_digest": ...,
+  "runner_release_digest": ...,
+  "expires_at": ...,
+  "security_epoch": ...
+}))
+```
+
+`runner_projection_decision_digest` 才是本次执行的 combined total identity：
+
+```text
+SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-runner-projection-decision/v1",
+  "release_trust_decision_digest": ...,
+  "schema_bundle_digest": ...,
+  "authority_profile_digest": ...,
+  "authority_binding_digest": ...,
+  "authority_expires_at": ...,
+  "authority_security_epoch": ...,
+  "catalog_contracts": [{
+    "schema_head": ...,
+    "catalog_contract_digest": ...,
+    "expires_at": ...,
+    "security_epoch": ...
+  }, ...]
+}))
+```
+
+其中 catalog 数组与 `executable_catalogs` exact same order/members。release decision 内已经绑定 release expiry/epoch；
+combined digest 不把 authority/catalog identity 反向塞进 release identity。`ControlPlaneStates.verified_authority_decision_digest`
+必须 exact 等于 `runner_projection_decision_digest`；不得指向 release-only digest 或另造 projector-local decision digest。
+`catalog_contract_digest` 使用 schema bundle 中 exact artifact descriptor SHA-256；
+`authority_profile_digest` 使用 manifest authority descriptor SHA-256；`authority_binding_digest` 使用已验签 binding
+subject 的 RFC8785+SHA-256。重连、普通 retry 和 ambiguous reconciliation 都必须重新验证 signature、expiry、
+revocation/minimum epoch、runner/repository/release identity，并分别 exact-match 第一次的 release decision digest、
+combined projection decision digest 和完整 opaque bindings；只比较 schema bundle digest 不足以继续。
+
+authority binding expiry/epoch、binding digest 或 schema-bundle strict-prefix successor 的合法轮换会改变 combined
+decision 与 journal generation identity，但不能改变同一 deployment/database/repository 的 execution lineage。
+`execution_lineage_digest` 固定为：
+
+```text
+SHA-256(RFC8785({
+  "domain": "cloud-agents-platform-execution-lineage/v1",
+  "deployment_id": <signed authority binding deployment_id>,
+  "expected_database_identity": {
+    "database_name": <signed connected_session expected projection database_name>
+  },
+  "repository_identity": <signed release subject repository_identity>
+}))
+```
+
+lineage key 不得包含 DSN、host、port、credential、expiry、security epoch、authority binding digest、combined decision
+digest、release decision digest、schema bundle digest 或随机值。上述 member 必须来自同一个 release verifier 已验证的 signed subjects，并与 opaque bindings 一起
+返回；caller 不能自报。若新 decision 需要继承旧 generation 的 recovery outcome，同一 verifier 还必须返回 opaque
+`VerifiedLineageRecoveryAuthority`，exact 绑定 lineage digest、旧 journal/combined decision、closed supersession outcome，
+并按 outcome 绑定完整 planned `GenerationReserved` 或 explicit null；允许动作只能是
+`reconcile_old_generation|inherit_resolved_pending|continue_verified_successor`。production 不得提供 loose constructor。
+
+当前 production verifier 仍是 rejecting implementation。测试可在 migration package 内由 test-only verifier 构造
+opaque bindings，但 production API 不得导出接受 loose projection JSON 的 constructor。
+
+#### 5.4.2 Same-connection snapshot factory
+
+ADR-0009 runner 的 `connected_session` 与 `migration_role` projection 必须运行在 runner 已拥有的同一条 dedicated
+physical connection 上。内部 closed factory 只接受该 connection 和 enum phase，不接受 pool、任意 role 或 SQL：
+
+```text
+BeginRunnerSessionProjectionSnapshot(connection, "connected_session" | "migration_role")
+  -> RunnerSessionProjectionSnapshot
+
+RunnerSessionProjectionSnapshot.RollbackAndReturnToRunner()
+```
+
+factory 在该 connection idle 时开启 RR/RO/NOT DEFERRABLE transaction，复用相同 fixed-query registry；rollback 后
+必须证明 `TxStatus=I`，然后把原 connection 交还 runner。`connected_session` 只能在任何 `SET ROLE`、session setting
+和 advisory lock 前调用；此时允许在 begin 前做一次 initial sanitation。`migration_role` 只能在 runner 已完成固定
+`SET ROLE`/settings exact readback 并取得 signed advisory lock 后调用；factory 不得 `DISCARD ALL`、`RESET ROLE`、
+`SET ROLE`、unlock、release 进 pool 或换 connection，rollback 后仍须证明 `current_user` 是 migration owner 且 exact
+session lock held。unknown phase 或 lifecycle mismatch 返回 `MIGRATION_PROJECTION_METADATA_MISMATCH`。
+
+进入 migration transaction 后只能使用 `BorrowMigrationProjectionSnapshot`；它必须复用 runner-owned
+SERIALIZABLE/RW transaction，不 nested `BEGIN`、不 savepoint、不 commit/rollback/close。这样三 phase 都观察同一
+physical session，且只有 runner 是 role、lock 和 transaction lifecycle owner。
+
+#### 5.4.3 Exact phase、StatementPlan 与 pre-ledger 顺序
+
+runtime artifact 完成 strict decode 后、连接数据库前，runner 必须先证明 schema bundle 中每个 entry 的 catalog
+binding 可执行，且每个 statement descriptor 都有以下 exact closed plan：
+
+```text
+StatementPlan {
+  migration_id: string
+  statement_index: uint32
+  sql_artifact_sha256: Digest
+  sql_artifact_size_bytes: uint64
+  start_offset: uint64
+  end_offset: uint64
+  statement_sha256: Digest
+  classification: StatementClassification
+  expected_transition: ExpectedStatementTransition
+  expected_transition_digest: Digest
+}
+```
+
+runner 必须从 signed catalog subject 取出 `expected_transition`，重算
+`SHA-256(RFC8785(<exact ExpectedStatementTransition>))` 并与 plan digest 比较，再核对 migration ID、0-based index、
+SQL artifact digest/size、statement exact bytes digest、offset 和 narrow classification。actual state、classifier output 或 generator evidence
+都不能生成/覆盖 expected transition。任一 schema head 不在 `executable_catalogs`，任一 transition 缺失/unknown，或
+catalog 是 `UNPUBLISHED_BOOTSTRAP_MUTABLE/NOT_IMPLEMENTED`，都必须在 `Connect`、projection query、
+`BeginMigration` 和 `ExecuteStatement` 前返回 fail-closed；该 run 的 connection/statement/ledger insert/commit 调用数
+全部为零。
+
+可执行 binding 下的顺序固定：
+
+1. 每一条新 physical connection（initial、retry、reconcile 均包括）都必须先在切 role 前用 runner-owned snapshot 投影并
+   比较 `connected_session` authority；不得从旧 connection 继承该 phase；
+2. 固定 role/settings、取得 lock 后，用同 connection snapshot 投影并比较 `migration_role`；随后在每个 entry 前、
+   每次 reconnect/retry/reconcile 后重做该 phase、lock、ledger prefix 和 predecessor/final catalog preflight；
+3. 每个 attempt 开启 SERIALIZABLE/RW transaction 后，使用 `statement_index=null` 的 borrowed snapshot 做
+   transaction-wide authority/predecessor preflight；
+4. statement `i` 执行前，以 `statement_index=i` 投影 authority 与 exact `catalog_before`，比较同 phase verified
+   authority 和 signed state digest；全部通过并 durable append `statement_intent` 后才可执行 exact SQL bytes；
+5. statement 返回后，在同 transaction、同 index 投影 authority 与 `catalog_after`；比较后生成 intermediate。
+   非 final statement 必须先 durable append intermediate 才能进入下一条 SQL；
+6. final statement 后使用 `statement_index=null` 重做 lock/current user/TxStatus、migration-transaction authority 和
+   final cumulative `ProjectCatalog`；final CatalogProjection 必须等于 signed expected projection，且 body byte-equal
+   final statement-after CatalogState。只有该 equality 成立后才 durable append final intermediate；
+7. durable final intermediate 后才允许 ledger insert；ledger row exact readback 后 durable append `commit_intent`，
+   然后且仅然后调用 transaction commit。
+
+`ControlPlaneStates` 表示该 statement 的 **after state**。它的 authority/schema/default-ACL subdigest 全部来自同一个
+after snapshot；final statement 则来自 pre-ledger snapshot，并且必须与 immediate after projection exact 相等。
+pre-ledger 不生成第二个 intermediate。任何 before/after/pre-ledger mismatch 都发生在 ledger insert 前并 rollback。
+
+#### 5.4.4 Crash-durable append-only EvidenceJournal
+
+impl-3 的“持久化”固定为 runner-local crash-durable `EvidenceJournal`，不是 ledger 字段、tenant payload、日志或
+best-effort observer。journal 在连接数据库前打开并 replay；没有成功 replay 和 single-writer ownership 就不能执行。
+最小机械接口固定为：
+
+```text
+ContentObjectStore.PutVerified(context, VerifiedRuntimeArtifact) -> (VerifiedContentReceipt, error)
+EvidenceSink.Open(context, VerifiedEvidenceRun, VerifiedContentReceipt)
+  -> (EvidenceJournal, JournalCursor, RecoverySnapshot | null, error)
+EvidenceJournal.Replay(context) -> (JournalCursor, RecoverySnapshot | null, error)
+EvidenceJournal.AppendDurable(context, JournalCursor, EvidenceRecord) -> (AppendResult, error)
+EvidenceJournal.Close(context) -> error
+
+VerifiedRuntimeArtifact = opaque runner-owned bounded bytes/reader
+VerifiedContentReceipt = opaque durable content-object identity
+
+VerifiedEvidenceRun {
+  release_trust_decision_digest: Digest
+  runner_projection_decision_digest: Digest
+  execution_lineage_digest: Digest
+  lineage_recovery_authority: VerifiedLineageRecoveryAuthority | null
+  outer_artifact_digest: Digest
+  manifest_digest: Digest
+  runner_release_digest: Digest
+  schema_bundle_digest: Digest
+  authority_profile_digest: Digest
+  authority_binding_digest: Digest
+}
+
+JournalCursor {
+  segment_index: uint32
+  next_sequence: uint64
+  previous_record_digest: Digest | null
+}
+
+AppendResult {
+  outcome: "durable" | "unknown"
+  durable_cursor: JournalCursor | null
+  candidate_sequence: uint64
+  candidate_previous_record_digest: Digest | null
+  candidate_record_digest: Digest
+}
+
+RecoverySnapshot = opaque {
+  state: "brand_new" | "brand_new_inherited" | "completed" |
+         "dangling_statement_intent" | "dangling_intermediate" |
+         "dangling_commit_intent" | "ambiguous_unresolved" |
+         "terminal" | "divergent"
+  migration_id: string | null
+  attempt_index: uint32 | null
+  lineage_continuation: OwnedRecovered<LineageContinuationContext> | null
+  last_statement_intent: OwnedRecovered<StatementIntent> | null
+  last_intermediate_evidence: OwnedRecovered<StatementIntermediateEvidence> | null
+  commit_intent: OwnedRecovered<CommitIntent> | null
+  last_terminal: OwnedRecovered<AttemptTerminalState> | null
+  last_resolution: OwnedRecovered<AmbiguousResolutionState> | null
+  last_terminal_digest: Digest | null
+  last_resolution_digest: Digest | null
+  last_statement_intent_record_digest: Digest | null
+  last_intermediate_evidence_record_digest: Digest | null
+  last_commit_intent_record_digest: Digest | null
+  previous_attempt_terminal_digest: Digest | null
+  last_intermediate_state_digest: Digest | null
+  next_permitted_action: "begin_first_attempt" | "append_aborted_retryable" |
+                         "append_aborted_terminal" | "reconcile_commit" |
+                         "begin_next_attempt" | "begin_first_attempt_next_entry" |
+                         "return_success" | "return_failure"
+}
+```
+
+`VerifiedRuntimeArtifact` 只能由 runner 对已读入内存或受同一 bounded reader 控制的 outer artifact 在 size bound、
+release descriptor digest 和全量 SHA-256 均验证后构造；`PutVerified` 不接受 path、file descriptor、URL 或 caller
+声称的 digest。receipt exact 绑定 object digest、size 和 store identity，不能由 caller 构造。`Open` 必须取得
+single-writer lock、验证 `VerifiedEvidenceRun`、receipt 与 content object/header identity，并先 strict replay
+LineageIndex；它把验证后的 continuation 构造成 immutable `LineageContinuationContext`，注入所打开的
+`EvidenceJournal` 后再完成 journal `Replay`，才返回 last-durable cursor 和 opaque recovery snapshot。caller 不能伪造
+cursor/snapshot/context。`EvidenceJournal.Replay` 必须合并 journal frames 与注入的 lineage context 后计算 snapshot，
+不能仅看 segment-0/header。`Replay` 可在 append
+response unknown 后或 reopen 时幂等重跑。只有 `AppendResult.outcome=durable` 且 `error=nil` 时
+`durable_cursor` 非 null，并成为下一次 append 的唯一 authority；`outcome=unknown` 时普通 cursor 立即失效，caller
+只能保存 candidate identity 并重新 `Replay`，不能猜测 append 是否成功。
+
+`OwnedRecovered<T>` 是 evidence 实现拥有、只读且由 journal+lineage replay cursor、record digest 与 typed closed
+decoder 共同约束的 opaque body/accessor；caller 不能构造、mutate 或把另一个 cursor/generation 的 body 注入
+snapshot。各 typed body 的
+self/record/link digest 必须与并列 digest fields 及 journal tail exact。这样 crash reopen 后
+`reconcile_commit`/`begin_next_attempt` 可直接取得实际 intent/terminal/resolution typed input，而不是只靠 digest 猜测。
+
+在 journal open 前，已由 release decision 验证的 outer runtime artifact 必须通过 `PutVerified` 以
+`<root>/objects/sha256/<outer digest hex>` 存为 content-addressed object。新 object 先写入同目录 no-follow/O_EXCL
+temporary regular file；temp basename 固定为 `.tmp-<128-bit CSPRNG lower-hex>`，只能在该 object final path 的同一
+directory 以 `O_NOFOLLOW|O_CREAT|O_EXCL`、mode `0600` 创建。写完后重验 size/outer SHA、`fdatasync`，再用
+`renameat2(RENAME_NOREPLACE)` 或同目录 `linkat` no-replace + `unlink` 的等价序列 publish，并 `fsync` objects
+directory；不得用可覆盖已有 target 的 rename。并发 publish 发现 final 已存在时，必须 no-follow reopen 并完整重验
+owner/mode/link-count/regular-file/size/digest 后才丢弃本调用拥有的 temp；验证失败保留 fail-closed error。crash temp
+只能在持有 store writer lock、证明 basename/owner/regular-file/link-count 且它不被任何 active writer 持有后清理；
+不得自动删除 final object。existing final object 同样必须完整重验后复用。object
+和 objects directory 至多 `0600/0700`，partial/temp 不能被当作 final。只有 object durable 后才能创建 header；这样
+`sql_path + start/end offset + statement digest` 长期引用 verified bytes，而不是引用调用方之后可能消失或变化的
+artifact source。
+
+journal closed record union 至少包含：
+
+```text
+EvidenceRecord =
+  JournalHeader |
+  StatementIntent |
+  StatementIntermediateEvidence |
+  CommitIntent |
+  AttemptTerminalState |
+  AmbiguousResolutionState
+
+JournalHeader {
+  format_version: "cloud-agents-platform-evidence-journal/v1"
+  journal_identity_digest: Digest
+  release_trust_decision_digest: Digest
+  runner_projection_decision_digest: Digest
+  execution_lineage_digest: Digest
+  outer_artifact_digest: Digest
+  manifest_digest: Digest
+  runner_release_digest: Digest
+  schema_bundle_digest: Digest
+  authority_profile_digest: Digest
+  authority_binding_digest: Digest
+  segment_index: uint32
+  previous_segment_record_digest: Digest | null
+  limits_profile: "cloud-agents-platform-evidence-journal-limits/v1"
+  quota_reservation_digest: Digest
+  reserved_records: uint64
+  reserved_bytes: uint64
+  reserved_segments: uint32
+}
+
+StatementIntent {
+  schema_bundle_digest: Digest
+  catalog_contract_digest: Digest
+  authority_profile_digest: Digest
+  authority_binding_digest: Digest
+  migration_id: string
+  attempt_index: uint32
+  statement_index: uint32
+  sql_path: string
+  sql_artifact_sha256: Digest
+  sql_artifact_size_bytes: uint64
+  start_offset: uint64
+  end_offset: uint64
+  statement_sha256: Digest
+  classification: StatementClassification
+  previous_attempt_terminal_digest: Digest | null
+  previous_intermediate_state_digest: Digest | null
+  expected_transition_digest: Digest
+  authority_before_digest: Digest
+  catalog_before_digest: Digest
+}
+
+ProjectionResultEvidence {
+  digest: Digest
+  metadata: ProjectionMetadata
+}
+
+StatementIntermediateEvidence {
+  state: StatementIntermediateState
+  authority_before_result: ProjectionResultEvidence
+  catalog_before_result: ProjectionResultEvidence
+  authority_after_result: ProjectionResultEvidence
+  catalog_after_result: ProjectionResultEvidence
+  preledger_authority_result: ProjectionResultEvidence | null
+  preledger_catalog_result: ProjectionResultEvidence | null
+}
+
+CommitIntent {
+  schema_bundle_digest: Digest
+  catalog_contract_digest: Digest
+  authority_profile_digest: Digest
+  authority_binding_digest: Digest
+  migration_id: string
+  attempt_index: uint32
+  previous_attempt_terminal_digest: Digest | null
+  attempt_predecessor_catalog_digest: Digest
+  last_intermediate_state_digest: Digest
+  expected_ledger_length: uint32
+  expected_ledger_head: string
+  ledger_row: {
+    migration_id: string
+    migration_name: string
+    predecessor_id: string | null
+    phase: string
+    schema_from: string
+    schema_to: string
+    compatible_binary_min: string
+    compatible_binary_max: string
+    sql_path: string
+    sql_size_bytes: uint64
+    sql_sha256: Digest
+    bundle_digest: Digest
+    transaction_mode: string
+    reentrancy: string
+    rollback_boundary: string
+    requires_live_instance_preflight: bool
+    requires_pitr_preflight: bool
+  }
+}
+
+AmbiguousResolutionState {
+  schema_bundle_digest: Digest
+  catalog_contract_digest: Digest
+  authority_profile_digest: Digest
+  authority_binding_digest: Digest
+  migration_id: string
+  attempt_index: uint32
+  unresolved_terminal_digest: Digest
+  outcome: "resolved_committed" | "resolved_pending" | "resolved_divergent"
+  reconcile_result: "exact_committed" | "exact_pending" | "divergent"
+  stable_error_code: "MIGRATION_AMBIGUOUS_COMMIT" |
+                     "MIGRATION_UNTRUSTED" |
+                     "MIGRATION_EVIDENCE_JOURNAL_FAILED" |
+                     "MIGRATION_EVIDENCE_RECOVERY_REQUIRED" |
+                     "MIGRATION_CONTEXT_CANCELED" |
+                     "MIGRATION_DEADLINE_EXCEEDED"
+  resolution_digest: Digest
+}
+```
+
+`journal_identity_digest` 是
+`SHA-256(RFC8785({"domain":"cloud-agents-platform-evidence-journal-identity/v1",
+"release_trust_decision_digest":...,"runner_projection_decision_digest":...,"schema_bundle_digest":...,
+"authority_profile_digest":...,
+"authority_binding_digest":...}))`。它是一次 verified run 的跨-entry journal identity；同一 schema bundle 的所有
+entry、segment 和 attempt 必须使用同一 identity，不得在连接/读取 ledger 前猜测 pending migration。identity 不得加入
+timestamp、PID、path 或随机 nonce；它是随 combined decision 轮换的 **generation identity**，不是跨轮换 lineage。
+
+`LineageIndex` 是 `EvidenceSink.Open` 内部 ABI，不新增 public caller surface。路径固定为
+`<root>/lineages/<execution_lineage_digest hex>/index.caj`，单文件、永不 rotate；root-wide lock 固定为
+`<root>/lineages.lock`，per-lineage writer lock 固定为同 lineage directory 下 `writer.lock`。on-disk closed frame/profile
+固定为：
+
+```text
+LineageIndexFrame {
+  format_version: "cloud-agents-platform-lineage-index-frame/v1"
+  sequence: uint64
+  previous_record_digest: Digest | null
+  record_kind: "header" | "generation_reserved" | "generation_activated" |
+               "generation_checkpoint" | "generation_superseded"
+  record: LineageIndexRecord
+  record_digest: Digest
+}
+
+LineageIndexRecord = LineageIndexHeader | GenerationReserved |
+                     GenerationActivated | GenerationCheckpoint |
+                     GenerationSuperseded
+
+LineageIndexHeader {
+  format_version: "cloud-agents-platform-lineage-index/v1"
+  execution_lineage_digest: Digest
+  deployment_id: string
+  expected_database_identity: { database_name: string }
+  repository_identity: string
+  limits_profile: "cloud-agents-platform-lineage-index-limits/v1"
+}
+
+LineageContinuationContext {
+  start_action: "begin_first_attempt_next_entry" | "begin_next_attempt"
+  migration_id: string
+  attempt_index: uint32
+  previous_attempt_terminal_digest: Digest | null
+  source_journal_identity_digest: Digest
+  source_checkpoint_record_digest: Digest
+  source_terminal_digest: Digest
+  lineage_recovery_authority_digest: Digest
+}
+
+GenerationReserved {
+  execution_lineage_digest: Digest
+  journal_identity_digest: Digest
+  runner_projection_decision_digest: Digest
+  schema_bundle_digest: Digest
+  quota_reservation_digest: Digest
+  reserved_records: uint64
+  reserved_bytes: uint64
+  reserved_segments: uint32
+  expected_segment0_header_digest: Digest
+  continuation: LineageContinuationContext | null
+}
+
+GenerationActivated {
+  execution_lineage_digest: Digest
+  journal_identity_digest: Digest
+  runner_projection_decision_digest: Digest
+  schema_bundle_digest: Digest
+  quota_reservation_digest: Digest
+  generation_reserved_record_digest: Digest
+  segment0_header_digest: Digest
+  initial_journal_tail_digest: Digest
+}
+
+GenerationCheckpoint {
+  execution_lineage_digest: Digest
+  journal_identity_digest: Digest
+  runner_projection_decision_digest: Digest
+  schema_bundle_digest: Digest
+  journal_next_sequence: uint64
+  journal_tail_digest: Digest
+  recovery_state: "brand_new" | "brand_new_inherited" | "completed" |
+                  "dangling_statement_intent" | "dangling_intermediate" |
+                  "dangling_commit_intent" | "ambiguous_unresolved" |
+                  "terminal" | "divergent"
+  migration_id: string | null
+  attempt_index: uint32 | null
+  last_statement_intent_record_digest: Digest | null
+  last_intermediate_evidence_record_digest: Digest | null
+  last_commit_intent_record_digest: Digest | null
+  last_terminal_digest: Digest | null
+  last_resolution_digest: Digest | null
+  previous_attempt_terminal_digest: Digest | null
+  last_intermediate_state_digest: Digest | null
+  previous_checkpoint_record_digest: Digest | null
+}
+
+GenerationSuperseded {
+  execution_lineage_digest: Digest
+  old_journal_identity_digest: Digest
+  old_runner_projection_decision_digest: Digest
+  old_schema_bundle_digest: Digest
+  old_checkpoint_record_digest: Digest
+  lineage_recovery_authority_digest: Digest
+  outcome: "exact_committed_bundle_complete" |
+           "exact_committed_continue_successor" |
+           "precommit_aborted_retryable" | "exact_pending" |
+           "resolved_pending" | "divergent_terminal"
+  planned_generation_reserved: GenerationReserved | null
+}
+```
+
+frame bytes 固定为 `uint64-big-endian length || RFC8785(canonical LineageIndexFrame)`，没有 padding。
+`record_digest` 对移除自身字段后的完整 frame 使用独立 domain
+`cloud-agents-platform-lineage-index-record/v1` 做 RFC8785+SHA-256。首 record 必须是 header、sequence=0、previous=null；
+之后 sequence 连续且 previous exact 引用前一 record digest；`record_kind` 与 union body 必须一一对应。header constituent 必须与第 5.4.1 节 lineage formula
+重算 same-bits；每个 generation record 都 exact 绑定 lineage、generation journal identity、combined decision、schema
+bundle、reservation/header/tail/state，superseded 还绑定 verified authority 与 old/new generation/outcome。index 禁止
+secret、path、DSN、host、credential、raw SQL、raw cause 或 driver message。
+`GenerationSuperseded` 的 `exact_committed_bundle_complete|divergent_terminal` 要求
+`planned_generation_reserved=null`；`exact_committed_continue_successor|precommit_aborted_retryable|exact_pending|
+resolved_pending` 要求完整 planned body 非 null。后续 `GenerationReserved` body 必须与该 planned body byte-canonical
+exact；不能只比较 journal/decision/schema 三个 digest，也不能重新猜 quota/header/limits。其他组合拒绝。
+
+`GenerationReserved.continuation` 是 closed cross-generation start authority：
+
+- 没有 preceding superseded、且同 lineage 不存在待继承 state 的 true brand-new generation 才允许 null；
+- `exact_committed_continue_successor` 只能使用 `begin_first_attempt_next_entry`，migration 必须是 verified current
+  candidate 中 old checkpoint exact ledger prefix 的下一 entry，`attempt_index=1`、
+  `previous_attempt_terminal_digest=null`；
+- `precommit_aborted_retryable|exact_pending|resolved_pending` 只能使用 `begin_next_attempt`，migration 必须与旧 attempt
+  同 entry，`attempt_index=old attempt_index+1<=max_attempts`，previous digest 必须 exact 等于旧 generation terminal；
+- non-null continuation 的 source journal/checkpoint/terminal/authority digest 必须分别 exact 等于 immediately preceding
+  superseded record、其 old checkpoint、该 checkpoint 所引用 terminal 和 verified recovery authority。stored linkage
+  自相矛盾是 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`；当前 binding/authority 无法验证是
+  `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。不得把 attempt 重置为 1、跳过 entry 或盲重放旧 SQL。
+
+`GenerationSuperseded.record_digest` 覆盖完整 nested planned reservation 及 continuation。planned path 的
+`GenerationReserved` frame 必须是 superseded 后 **紧邻的下一 index frame**，且 body byte-canonical exact；正常
+brand-new generation 是唯一可无 superseded 前驱的 reserved 例外。`GenerationActivated.generation_reserved_record_digest`
+必须 exact 引用该 reserved frame digest，activated 的 generation/decision/schema/quota 也必须与 reserved exact，防止
+activation 与 continuation 脱钩。continuation 只含 bounded migration identity/digest/attempt，不得包含 secret/path/raw
+cause。
+
+LineageIndex 固定 inclusive maxima：单 on-disk frame 256 KiB、header 32 KiB、reserved/activated 各 64 KiB、checkpoint/
+superseded 各 128 KiB、每 index 16,384 records、单 index file 16 MiB、每 root 64 lineage indexes 且 index bytes 总计
+1 GiB；exact maximum 合法，不可由 env/CLI/DSN/GUC 覆盖。prefix、frame header 与 record bytes 全计入 limits；不
+rotation、不自动 GC。index reservation/count/bytes 必须纳入 root quota/admission，任何超限都在 Connect 前返回
+`MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。
+
+index append 与主 journal 共用第 5.4.4 节 `AppendResult` durability 语义：只要一次 append 已尝试，zero-byte 可统一按
+unknown；任一首字节已触碰但 short/partial write、write error、sync/response error 且未证明 complete+sync，都返回
+unknown、旧 cursor 失效。replay 发现 byte-identical complete candidate 后必须再次成功 `fdatasync` 及必要 directory
+`fsync` 才承认 durable；仅 index 尾部 torn frame 可截断到 last durable boundary 并 `fdatasync`，不得补写 missing
+bytes；middle corruption、同 sequence different complete frame 或 chain mismatch 一律
+`MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。
+
+registration 状态机固定为：configured root 必须预先存在并通过 owner/mode/no-follow/filesystem probe，runner 不得
+创建它。先取得 root-wide lock；首次创建 `<root>/lineages` 后必须 `fsync(root)`，创建 lineage directory 后必须
+`fsync(<root>/lineages)`，创建并同步 lineage `writer.lock` 后再取得 per-lineage lock。brand-new lineage 先 durable
+创建/同步 LineageIndex header，然后 durable append `GenerationReserved`；再创建 deterministic generation journal
+directory 并 `fsync` 其 lineage parent。写 segment-0/header 时必须 `fdatasync` segment file、`fsync` journal directory，
+且 generation directory entry 已由 lineage-parent `fsync` 覆盖；reserved expected digest、activated header digest 与
+activated initial tail digest 三者都必须 exact 等于该 segment-0 `EvidenceFrame.record_digest`；activated
+`generation_reserved_record_digest` 还必须 exact 等于前述 reserved index frame digest；再 durable append
+`GenerationActivated`。只有上述 file/directory barriers 全成功且 activated durable 后才
+允许 `Connect`。root-wide lock 覆盖全 root discovery、reserve、journal/header create 和 activate；per-lineage writer
+lock 贯穿 open/run/reconcile/supersession。所有 index append 在 per-lineage lock 下串行；reserve/activate 还必须同时
+持有 root-wide lock，固定 lock order 是 root-wide 后 per-lineage；checkpoint/supersede
+只需持有该 per-lineage lock。reopen 时：reserved 且无
+header 是 pre-DB reservation，可按 expected digest 创建/activate；reserved + valid matching header 但无 activated 时，
+append activated 后方可 DB；activated 但 generation directory、segment-0 或 header missing/mismatch 是 index corrupt。正常 activation protocol 已在 index
+record 前完成 file 与两级 directory-entry barriers，因此不得把 activated-but-missing 解释为普通掉电可恢复状态。
+no-follow root scan 必须枚举所有
+journal-shaped directories；任何未登记 journal、未知 generation 或 index 未覆盖的 journal dir 都是 corrupt，不能忽略。
+
+activation 已绑定 segment-0/header；此后每个主 journal record 必须先 durable，再 append 对应该 tail 的
+`GenerationCheckpoint`，checkpoint 未 durable 或 outcome unknown 时不得继续任何数据库进度。checkpoint 落后但 journal 是其
+exact linear extension 时，`Open` 可在 DB 前 replay 并 append healing checkpoint。checkpoint 领先、指向不同 branch、
+tail/state/link mismatch 或 journal 比 checkpoint 短一律 corrupt。supersession 只能在旧 generation exact
+terminal/resolution 已 durable 且 checkpoint 后 append，必须 exact 绑定 old/new generation 与
+`VerifiedLineageRecoveryAuthority`；随后新 generation 仍完整执行 reserve/header/activate，不得直接 Connect。
+
+`LineageOpenState` 是 internal closed union：`ready|reserved_no_header|reserved_header_unactivated|index_stale_prefix|
+supersession_required|superseded_pending_reservation|orphan_generation|corrupt`。`ready` 才可进入 normal run；两个
+reserved state 与 `index_stale_prefix` 可按上述规则在 DB 前 deterministic heal；`supersession_required` 返回
+`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`，表示旧 generation 尚未 durable supersede，并等待显式 `Runner.Run` +
+verified authority。`superseded_pending_reservation` 只表示 superseded 已 durable、其非 null planned reservation 尚未
+出现；reopen 必须在 exact current bindings + `VerifiedLineageRecoveryAuthority` 下按 root-wide → per-lineage lock 顺序
+重验 root quota、planned reservation/header digest、continuation 的 source terminal/checkpoint/authority linkage 和当前
+candidate identity，然后幂等 append byte-identical planned
+`GenerationReserved`，再走 header/activate。binding/authority 不 exact 返回
+`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`，quota 不足返回 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`；全部在 DB 前，
+不得重算或猜测 planned body。orphan/corrupt 返回 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。单 journal
+`RecoverySnapshot` 不承担该 lineage-level state。
+
+`Open` 必须先完成上述 root scan，再扫描/replay 同 lineage index 登记的 **全部 generations、跨全部 schema-bundle
+digests**。因此 strict-prefix successor bundle、新 combined decision、expiry 或 epoch 都不能隐藏 ancestor bundle 的
+dangling/ambiguous/unresolved state。若任一旧 generation 是 `dangling_statement_intent`、`dangling_intermediate`、
+`dangling_commit_intent`、`ambiguous_unresolved`，或存在尚未 exact 收敛的 ambiguous/pending recovery，缺少第 5.4.1 节
+exact `VerifiedLineageRecoveryAuthority` 时必须在 DB 前返回 `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`，且不得 reserve
+新 generation。具备 authority 时也只能先显式 `Runner.Run` 收敛旧 snapshot 并 checkpoint，再 durable append
+superseded。只有 DB ledger/head/catalog 已达到 **当前 verified candidate 的 final entry/final catalog**，才允许
+`exact_committed_bundle_complete`、planned reservation null 并 return success。旧 target entry exact committed、但当前
+strict-prefix successor candidate 仍有 remaining entries 时必须
+`exact_committed_continue_successor`，不得重放旧 entry SQL；它与 precommit `aborted_retryable` + exact predecessor、
+`exact_pending`、`resolved_pending` 一样必须携带 non-null full planned reservation，在 superseded durable 后按
+`superseded_pending_reservation` 创建新 generation，从 exact ledger prefix 的下一 pending entry 继续。
+`divergent_terminal` 永远 fail closed 且 planned null。lineage/index records 不保存或派生 DSN、host、port、credential。
+
+`StatementIntent`/`CommitIntent` 是 closed object，frame
+digest 已提供 record identity，因此不得再增加自报 intent digest。`expected_ledger_length` 固定为
+`entry_index + 1`，`expected_ledger_head` 和 `ledger_row.migration_id` 固定为 target entry ID；ledger row 还必须与即将
+insert 的 exact typed row byte-for-byte 对应。`ledger_row` 包含现有 `LedgerRow` 除 observational `applied_at/applied_by`
+外的全部 ledger-backed identity；这两个数据库生成/观察字段不得进入 commit-intent digest，reconciliation 也不得用
+它们把 identity mismatch 判成成功。`attempt_predecessor_catalog_digest` 必须在 attempt 第一条 SQL 前由该 attempt
+first statement 的 actual `catalog_before_digest` 固定，并同时 exact 等于 signed expected-transition 选择出的具体
+predecessor branch；后续 statement 或 accepted predecessor union 的其他 branch 不能覆盖它。
+`StatementIntent.sql_artifact_sha256/sql_artifact_size_bytes` 是 **inner SQL member** identity，必须 exact 等于
+`StatementPlan` 以及 signed manifest/schema-bundle artifact descriptor；它们不得等于或冒充 outer
+`VerifiedContentReceipt` 的 digest/size。runner 必须从 receipt 绑定的 outer object bytes 按 strict tar/member profile
+重新定位 exact `sql_path`，对完整 inner member 重算 size/SHA-256，再验证 start/end 在 inner size 内且 statement bytes
+digest exact；不能只凭 path、offset 或 outer receipt 信任 inner SQL。
+`StatementIntermediateEvidence` 是第 5.3 节“持久化 ProjectionResult digest/bounded metadata evidence”的 impl-3
+closed evidence shape：四个
+before/after result evidence 必填，其 digest 必须分别等于 state 的 authority/catalog before/after digest，metadata
+必须是第 5.0 节 exact bounded/redacted shape、phase/index/scope/kind mapping 完全一致。非 final statement 的两个
+preledger field 必须为 null；final statement 两者必填，分别记录 `statement_index=null` 的 migration-transaction
+authority result 与 final `ProjectCatalog` result，并与 final after equality check 对齐。journal 不持久化 raw query row、
+SQL、driver cause 或最大可达 8 MiB 的 typed projection canonical body；只有 projection digest 与 bounded/redacted
+metadata 进入 evidence。typed projection 的 canonical digest 已进入 state，观察边界、query/row/byte counts、adapter、
+verified subject 和 scope 由上述 metadata 完整保存。任一 evidence/result mapping mismatch 返回
+`MIGRATION_INTERMEDIATE_STATE_MISMATCH`。
+`resolution_digest` 使用 domain `cloud-agents-platform-ambiguous-resolution/v1` 对移除自身字段后的完整
+`AmbiguousResolutionState` 做 RFC8785+SHA-256；outcome/result 必须一一对应。它只能引用同 migration/attempt 的
+durable `ambiguous_unresolved` terminal，不能替换、删除或重写该 terminal。`resolved_pending` 后的新 attempt 仍以该
+unresolved terminal digest 作为 `previous_attempt_terminal_digest`，journal frame chain 同时证明 resolution 发生在
+新 attempt 之前。`AmbiguousResolutionState.stable_error_code` 必须 byte-for-byte 等于被引用 unresolved terminal 的
+`StableFailureEvidence.code`/`stable_error_code`；resolution 不得重分类或覆盖该 code。
+
+每个 frame 是 RFC8785 canonical closed object：
+
+```text
+EvidenceFrame {
+  format_version: "cloud-agents-platform-evidence-journal-frame/v1"
+  sequence: uint64
+  previous_record_digest: Digest | null
+  record_kind: "header" | "statement_intent" | "intermediate" |
+               "commit_intent" | "attempt_terminal" | "ambiguous_resolution"
+  record: EvidenceRecord
+  record_digest: Digest
+}
+```
+
+`record_digest` 对移除自身字段后的 frame 使用 domain
+`cloud-agents-platform-evidence-journal-record/v1` 做 RFC8785+SHA-256；整个 journal 的首 frame 必须是 segment 0
+header 且 previous 为 null，每个后续 segment 的首 frame 也必须是 header、previous 引用前一 segment final record；
+其余 sequence 在 segment 间仍严格递增并引用前一 record digest。header exact 绑定 journal format、
+release/combined decision digest、execution lineage、outer artifact、manifest、runner release、schema bundle、authority profile/binding、
+segment index 和固定 limits；三个 artifact/release digest 必须与 durable content-addressed object 及 verified release
+decision exact match。segment 0 的
+header previous segment 为 null；后续 segment header 还必须引用前一 segment 的 final record
+digest。每个 attempt 的 intent/intermediate/terminal linkage 还必须满足第 6 节 chain，journal chain 不能替代它。
+
+`AppendDurable` 必须先验证 typed record、canonical bytes、sequence/previous digest 和 limits，再以
+`uint64-big-endian length || canonical frame bytes` 完整追加。所有 frame/record/segment byte limits 都包含 8-byte
+length prefix、完整 frame headers 与 canonical record bytes，不存在 alignment/padding 豁免。只有 file `fdatasync`
+成功，且新建/rotate segment 所需 parent directory `fsync` 也成功后，才返回
+`AppendResult{outcome=durable,durable_cursor!=null}`；rotate 只允许发生在两个完整 durable frame 之间。
+一旦进入 append attempt，zero-byte write/error 也允许统一按 unknown；任一首字节已触碰但 short/partial write、write
+error、`fdatasync`、必要 directory `fsync` 或 response 失败，且 caller 未取得 complete+sync proof 时，都必须返回
+`AppendResult{outcome=unknown,durable_cursor=null}` 和 exact candidate sequence/previous/record digest，runner 立即停止
+数据库进度；旧 cursor 不再有 authority，只有下一次 strict replay 可决定 durable boundary。replay 若在该 sequence 找到 byte-identical complete candidate，仍必须对承载它的 segment 再次
+成功 `fdatasync`（以及该 segment 尚未证明 directory durability 时再次 `fsync` parent）后，才把它认定为 durable 并
+幂等返回对应 cursor；不能只因 bytes 可读就承认。若只看到 final torn candidate，replay 只能截断到前一 durable
+boundary 并 `fdatasync`，然后由 `RecoverySnapshot` 重新计算 next action；不得声称缺失 bytes 已恢复、不得自动补写
+candidate。若该 sequence 已有不同 complete frame、candidate 出现在中间或 chain 不同，则
+`MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。同一 logical record 永远不能因 append response 丢失而获得第二 sequence。
+固定 inclusive maxima 不可由 env/CLI/DSN/GUC 覆盖：frame 1 MiB、segment 16 MiB、每 segment 4,096 records、每
+journal 16 segments；exact 等于 maximum 合法，任何 append 将使值超过 maximum 时必须在下一条 SQL 前返回
+`MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。
+record-kind on-disk framed-record maxima 进一步固定为 header 32 KiB、statement intent 64 KiB、intermediate evidence
+256 KiB、commit intent 64 KiB、attempt terminal 64 KiB、ambiguous resolution 64 KiB；这些 maxima 同样包含 prefix 与
+frame headers。content object store 固定 inclusive maxima 为 64 个 final objects、总计 4 GiB；journal root 固定为
+16 个 run journal、总 durable reservation 4 GiB，单 journal 仍受 16 × 16 MiB 上限。所有限额不可配置覆盖，store
+不自动删除 final object/journal 以制造额度。
+
+`Open` 在任何第一次 `Connect` 前尚不能信任 ledger，因此必须把 **整个 schema bundle 的所有 entry 都保守视为尚未
+提交**，按每 entry 的 `max_attempts` 计算完整 remaining bundle 的所有 statement intent/intermediate、commit intent、
+terminal、possible resolution、segment headers 与 length prefixes，以及每个 journal frame 对应的 lineage checkpoint、
+reserve/activate/possible supersede 的 record/bytes worst case；绝不能只为
+单个 entry admission。后续 exact ledger read 即使证明 prefix 已提交，也不能缩小该 run 已取得的保守 reservation。它
+必须在 root-wide lock 下从 strict-replayed LineageIndex generations 与 object quota metadata 重算 root usage，以
+no-overcommit 方式 durable append `GenerationReserved`；该 record 就是 journal/index quota 的唯一 durable
+reservation authority，然后才按 registration state machine 写 segment-0 header。header 的 reservation fields/digest
+必须 exact 对应。任一 journal/object/index count、bytes、records 或
+segments admission 超限，必须在 Connect/transaction/SQL 前返回
+`MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。reservation 只防 exhaustion，不替代每次 append actual-size validation
+或任何 sync；run 未达到 terminal 前不得回收，terminal 后也只能由显式、审计过的 maintenance 操作回收，不得由
+runner 自动 GC。
+
+journal root 必须是预先配置、已存在的 absolute local path，缺失时拒绝而不是创建。root、`lineages/`、每个 lineage directory 和每个 generation journal
+directory 的所有 path component 必须用 no-follow component walk 验证为真实 directory、owner 是 runner UID、且
+group/world 均不可写，directory mode 至多 `0700`；directory 不适用 regular-file/link-count predicate。
+object/temp/quota metadata/LineageIndex/root-wide lock/per-lineage writer lock/generation writer lock/segment 则必须分别
+no-follow open，验证为 owner 匹配、mode 至多 `0600`、link-count=1 的 regular file；任何 symlink、device/socket/FIFO
+或 hard link 都拒绝。
+首次创建 root-wide/per-lineage/generation lock、LineageIndex 或 segment file 时，必须先 `fdatasync` 新 file，再
+`fsync` containing directory 后才能把它视为存在/可用；file create 成功本身不是 durable directory-entry proof。
+创建新 segment 使用 `O_NOFOLLOW|O_CREAT|O_EXCL`，replay 已存在 segment 使用
+`O_NOFOLLOW` read/write open 并在读取任何 record 前验证 owner/mode/regular-file/link-count/header identity；不得用
+`O_EXCL` 伪装 replay。single-writer lock 必须在整个 replay/run/reconcile 期间独占，不能用进程内 mutex 冒充。
+journal/object root 只支持 allowlist 中明确审核过的 local mount/filesystem type，且启动时 required syscall probe 必须
+成功：POSIX advisory lock 跨进程互斥、atomic no-replace publish
+（`renameat2(RENAME_NOREPLACE)` 或同目录 link/unlink 等价）、regular-file `fdatasync` 与 parent-directory `fsync`。
+unknown/unsupported mount type、NFS/FUSE/object-backed mount 或任一 syscall/lock/no-replace probe 失败都必须在 Connect
+前拒绝，不得用“best effort”降级。online startup probe 只验证调用与可观察语义，不宣称能证明 storage/controller 的
+真实 crash durability；后者必须由 impl-3 fault-injection/environment matrix 的 power-loss/restart evidence 验证。
+journal path 固定为
+`<root>/lineages/<execution_lineage_digest hex>/<journal_identity_digest 去掉 sha256:>/`，其下只有 `writer.lock` 与
+`segment-%08d.caj`；不得用 migration ID
+或 caller string 拼 path。permission、owner、lock、write、sync failure 一律 fail closed。`Close` 不是 durability 或
+correctness barrier：此前已成功 `fdatasync` 的 records 与已证明的 database outcome 继续有效；但 lock release/close
+failure 必须返回 `MIGRATION_EVIDENCE_JOURNAL_FAILED`，阻止 clean success、writer handoff 或同进程再次执行，下一次
+owner 仍须 no-follow open、取得 lock 并完整 replay。
+
+replay 使用相同 strict JSON/RFC8785/closed-union/bounds，验证所有 segment/header/sequence/digest/attempt chain。
+只有最后一个 segment 最尾部、尚未形成完整 length-prefixed frame 的 torn tail 可截断到最后一个 valid durable
+boundary，截断和 `fdatasync` 成功后只能重建 `RecoverySnapshot`，不能自动补写被截断 bytes；middle corruption、完整 frame digest mismatch、unknown key/kind、
+duplicate sequence、跨 segment 断链或非 canonical bytes 一律以 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT` 拒绝。
+journal 只保存 allowlist identity、digest、offset、
+classification、bounded counts 和 stable code；禁止 DSN/password/token、raw SQL/literal、raw catalog row、driver
+message 或未 allowlist role/ACL payload。exact SQL bytes 由 journal 中 artifact digest + offset + statement digest 引用，
+不重复写入 journal。
+
+append/数据库边界固定如下：
+
+- `statement_intent` 在 before projection/transition compare 后、SQL 前 durable；append 失败时 SQL 零次；
+- intermediate 在 after compare 后 durable；失败时 rollback，禁止下一 statement/ledger/commit；
+- final intermediate 在 pre-ledger final equality 后 durable；随后 ledger insert；
+- `commit_intent` 在 ledger insert/readback 后、commit 前 durable；失败时 rollback；
+- durable `commit_intent` 后调用 `Commit`：明确成功时 append `committed`；明确返回 PostgreSQL SQLSTATE
+  `40001`/`40P01` 是 confirmed abort，只有新 connection 证明 bindings、ledger 和
+  `CommitIntent.attempt_predecessor_catalog_digest` 的 exact predecessor 且 attempt budget 尚有余额，才能 append
+  `aborted_retryable` 并授权下一 attempt；无余额则 append `aborted_terminal`。一旦 `Commit` 已被调用，connection loss、
+  EOF、context cancel/deadline 或任意 timeout 都永远是 ambiguous，禁止按 rollback/retry 处理；
+- commit 明确成功或 reconciliation 得到 exact outcome 后，必须 durable append 唯一 attempt terminal 后才能向 caller
+  报告 terminal result。
+
+以上规则是 ADR-0009 第 10 节宽泛 “serialization/deadlock/connection-loss retry” 对 impl-3 的精确收窄；尤其不能把
+`Commit` 调用后的 connection loss 解释为该宽泛 retry。
+
+`Replay` 必须从完整 chain 构造上述 opaque `RecoverySnapshot`，并 exact 返回最后 terminal/resolution、
+statement/intermediate/commit intent 的 owned typed body、migration/attempt identity、record digest，以及
+previous-terminal/last-intermediate linkage 与唯一 next action；typed body 与 digest/cursor 不一致、缺失必要 link、同
+attempt 多 terminal、resolution 未引用 unresolved terminal 或 state/next-action 不一致均为
+`divergent`，不得以默认值继续。activated generation 只有 header 时必须联合 injected continuation 判定：
+
+- continuation=null 才是 true `brand_new/begin_first_attempt`；pre-DB snapshot 的 migration/attempt 可为 null，随后 exact
+  ledger preflight 必须选择 current verified bundle 的第一 pending entry、`attempt_index=1`、previous attempt terminal
+  null；
+- successor continuation 返回 `brand_new_inherited/begin_first_attempt_next_entry`，migration exact 为 context 的 next
+  entry、`attempt_index=1`、previous null；
+- retry/pending continuation 返回 `brand_new_inherited/begin_next_attempt`，migration exact 为旧 entry、attempt 是
+  `N+1<=max_attempts`、previous exact 为旧 generation terminal digest。
+
+因此不能把所有空 header 无条件解释成 brand new。最后一个
+schema-bundle entry 已 committed 或 resolved_committed 才是 `completed/return_success`；非最终 entry committed 或
+resolved_committed 必须是 `terminal/begin_first_attempt_next_entry`，下一 entry 固定 `attempt_index=1`、
+`previous_attempt_terminal_digest=null`，但 EvidenceFrame `previous_record_digest` 仍引用上一 entry 的 terminal/resolution
+tail，保持整个 journal chain 连续。dangling commit 是
+`dangling_commit_intent/reconcile_commit`；durable unresolved terminal 是
+`ambiguous_unresolved/reconcile_commit`；普通 terminal 根据其 exact outcome 只能
+`begin_next_attempt|return_success|return_failure`。`resolved_pending` resolution 与 exact retry budget 可授权
+`begin_next_attempt` 的充分条件只采用第 5.4.6 节 adjacent 二选一，并以 unresolved terminal digest 作为下一 attempt
+predecessor。
+
+新 generation 的第一条 `StatementIntent` 必须 exact 消费 immutable continuation：non-null 时 migration ID、attempt
+index 与 previous-attempt-terminal 三字段逐字节相等，且 successor/retry 对应的 ledger prefix、entry identity、attempt
+budget 仍通过 current verified bindings 检查；null 时只能使用 exact ledger preflight 选出的 first pending entry、attempt
+1、previous null。append 前 mismatch 必须 `divergent/return_failure` 且 SQL 为零；replay 发现已
+durable 的 first intent 不匹配 injected context 是 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。first intent durable 后 context
+即视为 consumed，后续 intent 不能再次使用或改变它。continuation 的旧 terminal、old checkpoint、authority 或 index
+frame linkage 任一 stored mismatch 都在 DB 前 corrupt；仅当前 binding/authority 不可验证则 recovery-required。两者都
+不得重置 attempt budget、把 inherited state 降级为 brand_new 或盲重放旧 SQL。
+
+dangling `statement_intent` 或 `intermediate` 且没有 `commit_intent` 时，旧 transaction 不可能被本 runner commit；
+`RecoverySnapshot` 分别返回 `dangling_statement_intent`/`dangling_intermediate`。只有显式调用 `Runner.Run` 后，runner
+用新 dedicated connection 重验 exact bindings/role/lock/ledger/catalog，证明 actual catalog exact 等于该 attempt 的
+first-before predecessor、journal linkage exact 且仍有 attempt budget，才可 durable append `aborted_retryable` 并进入
+下一 attempt；无预算或 predecessor 不 exact 时只能 append `aborted_terminal` 并 return failure；journal link/shape
+本身不 exact 则是 `divergent/return_failure`，不能追加新 record。
+`Replay`、`Open`、后台 goroutine 或独立 recovery daemon 都不得自行连接或写数据库，也不得自动 append terminal。
+dangling `commit_intent` 必须按第 5.4.6 节视为 ambiguous commit，禁止先重放 SQL。journal append/sync 在 commit 后
+失败时，数据库结果不回滚成“失败”；runner 返回
+`MIGRATION_EVIDENCE_JOURNAL_FAILED` 和 committed-unknown evidence 状态，下一次打开必须从 durable commit intent
+reconcile，绝不能因 terminal 缺失而重放。
+
+#### 5.4.5 Terminal runner/evidence codes
+
+第 10 节 stable projection error allowlist 保持不变。`AttemptTerminalState.stable_error_code` 使用独立 closed union：
+第 10 节全部 projection runtime codes，加上
+`MIGRATION_INVALID_SQL`、`MIGRATION_INVALID_LEDGER`、`MIGRATION_UNTRUSTED`、`MIGRATION_LOCK_LOST`、
+`MIGRATION_TRANSACTION_BOUNDARY`、`MIGRATION_AMBIGUOUS_COMMIT`、
+`MIGRATION_EVIDENCE_JOURNAL_FAILED`、`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`、
+`MIGRATION_CONTEXT_CANCELED` 和 `MIGRATION_DEADLINE_EXCEEDED`。其中 journal code 的 closed mapping 为：
+
+- open/create/write/flush/fsync/fdatasync/permission/owner/lock/close failure => `MIGRATION_EVIDENCE_JOURNAL_FAILED`；
+- replay strict-shape/canonical/digest/sequence/segment chain corruption => `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`；
+- 任一 fixed inclusive maximum 将被超过 => `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`；
+- durable dangling intent 阻止普通执行、必须先 reconciliation => `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。
+
+每个 non-committed terminal 还必须携带 closed、bounded、redacted failure object：
+
+```text
+StableFailureEvidence {
+  code: <exact AttemptTerminalState stable code union>
+  phase: "preconnect" | "journal_open" | "journal_replay" |
+         "connected_session" | "migration_role" | "migration_transaction" |
+         "commit" | "reconcile" | "journal_close"
+  path: "trust" | "artifact" | "journal" | "authority" | "catalog" |
+        "sql" | "ledger" | "transaction" | "context"
+  major: 15 | 16 | 17 | null
+  retryable: bool
+}
+```
+
+`stable_error_code` 必须 exact 等于 `failure_evidence.code`，且 `retryable` 必须 exact 等于本节 closed policy；
+`terminal_digest` 对完整 terminal object 的 hashing 因而同时绑定 code/phase/path/major/retryable。不得加入 raw error、
+driver text、SQL 或 caller path。committed terminal 的两者都为 null；所有其他 outcome 的两者都非 null。
+
+artifact/strict-shape 在 attempt 前失败不生成 attempt terminal；不得为了填 terminal 把 generic driver message 发明成
+新 code。Go `context.Canceled` 必须映射 `MIGRATION_CONTEXT_CANCELED`，`context.DeadlineExceeded` 或 runner-owned
+deadline expiry 必须映射 `MIGRATION_DEADLINE_EXCEEDED`，二者均 `retryable=false` 且不得把 raw context/driver error
+写入 evidence。projector-owned bounded query timeout 仍严格按第 10 节映射
+`MIGRATION_PROJECTION_CATALOG_QUERY_FAILED`；不能在两个 ABI 间任选。
+
+唯一 terminal retryable cases 是：第 10 节明确标记 `retryable=true` 的
+`MIGRATION_PROJECTION_CATALOG_QUERY_FAILED`；`Commit` 尚未调用且已证明 rollback/exact predecessor 的
+serialization/deadlock/connection-loss `MIGRATION_TRANSACTION_BOUNDARY`；以及 durable commit intent 后 `Commit`
+明确返回 `40001`/`40P01`、再证明 exact predecessor 的 `MIGRATION_TRANSACTION_BOUNDARY`。`Commit` 调用后的
+connection loss/EOF/context/timeout 不在 retryable union。其他 runner/evidence/context codes 全部 `retryable=false`。
+
+`MIGRATION_EVIDENCE_JOURNAL_CORRUPT` 与 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED` 是 run-level failure：不能尝试
+把 terminal 写入同一个 corrupt/over-limit journal；只返回 stable run error，只有已验证 prefix 足以构造时才附 opaque
+recovery snapshot，否则 snapshot 为 null。它们属于 runner stable error union，但不属于
+`AttemptTerminalState.stable_error_code` union。journal
+write/sync/close 失败时，同一不健康 journal 也不能追加 `MIGRATION_EVIDENCE_JOURNAL_FAILED` terminal；只有下一次
+open/replay/sync 已证明 journal 健康且 reservation 足够时，显式 `Runner.Run` 才可按 snapshot append 该 terminal。
+
+`AttemptTerminalState` 增加 outcome `ambiguous_unresolved` 和 reconcile result `unresolved`。closed 组合为：
+
+- `committed => stable_error_code=null,reconcile_result=not_run,last_intermediate!=null`；
+- `aborted_retryable => stable_error_code!=null,reconcile_result=not_run,attempt_index<max_attempts`，且 code 必须由
+  verified retry policy 标为 retryable；
+- `aborted_terminal => stable_error_code!=null,reconcile_result=not_run`；
+- `ambiguous_reconciled_committed|ambiguous_reconciled_pending|ambiguous_divergent` 的 `stable_error_code` 必须是
+  `MIGRATION_AMBIGUOUS_COMMIT|MIGRATION_EVIDENCE_JOURNAL_FAILED|MIGRATION_EVIDENCE_RECOVERY_REQUIRED` 之一，
+  `reconcile_result` 分别为 `exact_committed|exact_pending|divergent`，且 `last_intermediate!=null`；
+- `ambiguous_unresolved => stable_error_code=MIGRATION_AMBIGUOUS_COMMIT|MIGRATION_UNTRUSTED|
+MIGRATION_EVIDENCE_JOURNAL_FAILED|MIGRATION_EVIDENCE_RECOVERY_REQUIRED|MIGRATION_CONTEXT_CANCELED|
+MIGRATION_DEADLINE_EXCEEDED,reconcile_result=unresolved,last_intermediate!=null`。
+
+`ambiguous_unresolved` 只能在 commit intent 已 durable、但 context/connection/trust/journal failure 使 exact database
+outcome 尚不可证明时使用；它不可 retry SQL，也不可改写为 aborted/divergent。下一次 replay 必须继续 reconciliation，
+若 unresolved terminal 尚未 durable，则 append exact committed/pending/divergent terminal；若它已经 durable，则保留
+唯一 terminal 并 append 第 5.4.4 节 `AmbiguousResolutionState`，不得为同一 attempt 追加第二 terminal。
+
+#### 5.4.6 Exact ambiguous reconciliation
+
+commit acknowledgment 丢失、commit 后 terminal append failure 或 replay 发现 dangling commit intent 时，runner 关闭
+旧 connection，使用新 dedicated connection exact reverify `RunnerProjectionBindings`，重做 connected-session、
+migration-role、lock 和 database state projection。令 `entry_index` 为 target entry 的 0-based schema-bundle index：
+
+- `len(ledger) == entry_index + 1`：只有 row `entry_index` 除 observational `applied_at/applied_by` 外的全部
+  `LedgerRow` identity 与 durable `CommitIntent.ledger_row` exact，ledger 是合法 prefix，head exact 为 target，且
+  actual catalog exact 等于 target cumulative contract，才是 `exact_committed`；
+- `len(ledger) == entry_index`：只有 ledger 是 exact predecessor prefix、target row 不存在、head exact 为 predecessor，
+  且 actual catalog digest exact 等于 durable `CommitIntent.attempt_predecessor_catalog_digest`，该 digest 又已与本
+  attempt 第一条 statement 的 durable intent before digest 及 signed concrete predecessor branch exact 绑定，才是
+  `exact_pending`；actual 仅匹配 accepted predecessor union 的任意其他 branch 不足以成功；
+- 其他 ledger length，或上述任一 row/head/catalog/binding mismatch，都是 `divergent`。
+
+reconnect/context/trust/journal 暂时无法得到上述 exact 结论是 `unresolved`，不是 `pending` 或 `divergent`。只有 durable
+pending proof 满足以下二选一且 attempt budget 尚有余额时才能开启同 entry 下一 attempt：
+
+1. durable `ambiguous_reconciled_pending` terminal；或
+2. durable `ambiguous_unresolved` terminal 后紧邻同 migration/attempt 的 durable `resolved_pending` resolution；该模式
+   不得写第二 terminal，下一 attempt 的 `previous_attempt_terminal_digest` 必须引用 unresolved terminal digest。
+
+单独的 `exact_pending` database observation、未 durable record 或 resolution 与 terminal 不相邻都不足以 retry。
+`exact_committed` 只证明 target entry 已提交，因此绝不重放该 target SQL；它不自动等于 current candidate success。只有
+ledger length/head 与 actual catalog 同时达到 current verified candidate 的 final entry/final cumulative contract，才按
+`exact_committed_bundle_complete` 返回成功。若 current strict-prefix successor 仍有 remaining entries，同 active
+generation 按第 5.4.4 节跨-entry `begin_first_attempt_next_entry` 规则继续；从旧 generation supersede 到新 decision 时
+必须 durable `exact_committed_continue_successor` + full planned reservation，创建/activate 新 generation 后从 exact
+ledger prefix 的下一 entry 继续。`divergent` 永久 fail closed。
 
 ## 6. Statement intermediate state
 
@@ -867,21 +1797,24 @@ AttemptTerminalState {
   previous_attempt_terminal_digest: Digest | null
   last_intermediate_state_digest: Digest | null
   outcome: "committed" | "aborted_retryable" | "aborted_terminal" |
-           "ambiguous_reconciled_committed" | "ambiguous_reconciled_pending" | "ambiguous_divergent"
+           "ambiguous_reconciled_committed" | "ambiguous_reconciled_pending" |
+           "ambiguous_divergent" | "ambiguous_unresolved"
   stable_error_code: string | null
-  reconcile_result: "not_run" | "exact_committed" | "exact_pending" | "divergent"
+  failure_evidence: StableFailureEvidence | null
+  reconcile_result: "not_run" | "exact_committed" | "exact_pending" | "divergent" | "unresolved"
   terminal_digest: Digest
 }
 ```
 
 `terminal_digest` 使用 domain `cloud-agents-platform-attempt-terminal/v1` 对移除自身字段后的完整 object 做
 RFC8785+SHA-256；statement 尚未产生 intermediate record 就失败时 `last_intermediate_state_digest = null`。
-合法组合也是 closed：`committed => stable_error_code=null,reconcile_result=not_run`；
-`aborted_retryable|aborted_terminal => stable_error_code!=null,reconcile_result=not_run`；
-`ambiguous_reconciled_committed => stable_error_code!=null,reconcile_result=exact_committed`；
-`ambiguous_reconciled_pending => stable_error_code!=null,reconcile_result=exact_pending`；
-`ambiguous_divergent => stable_error_code!=null,reconcile_result=divergent`。其他组合、committed 但缺 final statement
-digest、或 retryable outcome 超过 manifest `max_attempts` 都拒绝。
+合法组合、runner/evidence stable code、`last_intermediate_state_digest` 的非空约束和 retryability 以第 5.4.5 节为
+唯一 authority；本节不另建较宽的别名规则。其他组合或 retryable outcome 达到/超过 manifest `max_attempts` 都拒绝。
+只有 `committed` 与全部 ambiguous outcomes 必须接受该 entry 的 final 0-based statement index，并证明
+`last_intermediate_state_digest` 对应 final durable intermediate；只检查 digest 非空不足以声称 final chain 已关闭。
+`aborted_retryable`/`aborted_terminal` 可为 null（尚无 durable intermediate）或引用最后一个 durable statement prefix，
+但非 null 时必须 exact 等于 replay 所见该 attempt journal tail 的 `last_intermediate_state_digest`，不得伪造 final-index
+proof，也不得引用已 rollback attempt 中未 durable 的 state。
 下一 attempt 的 `previous_attempt_terminal_digest` 必须引用它。
 首个 attempt 为 null。这样审计链跨 attempt 连续，而 catalog state chain 在每个 rollback 边界重新开始。
 
@@ -889,8 +1822,9 @@ digest、或 retryable outcome 超过 manifest `max_attempts` 都拒绝。
 `expected_transition` 属于 catalog artifact，因此必须经 artifact SHA 和 schema bundle**传递绑定**。authority
 profile/binding 继续是可独立升级的 trust subject，只以 digest 进入 runtime evidence，不反向成为 schema identity。
 运行时 actual digest 是 statement evidence 和 replay input，不得改变已签名 transition。
-每个 statement 的 raw SQL bytes、offset、narrow classification、intermediate digest 和 stable error 都必须
-进入本地 evidence/provenance，不能写入 tenant runtime payload。
+每个 statement 的 signed artifact digest、offset、exact bytes digest、narrow classification、intermediate digest 和
+stable error 都必须进入本地 evidence/provenance；raw SQL bytes 由 signed artifact 引用，不重复写入 journal，也不能
+写入 tenant runtime payload。
 
 ## 7. P1-A2.1a / P1-A2.1b 拆分
 
@@ -1113,9 +2047,15 @@ introspection 未实现前继续 `NOT_IMPLEMENTED`/`UNPUBLISHED`。
    `expected_projection`。任何 `IMPLEMENTED` 或 `PUBLISHED_IMMUTABLE` contract 必须包含本 ADR 的完整 fields。
 2. **A2.1a-impl-2：PG adapters**：实现 PG15/16/17 capability probes、authority projector、schema/default ACL
    projector、idle/migration snapshot adapter；所有 unknown/missing field fail closed。
-3. **A2.1a-impl-3：runner wiring**：在 statement 前/后和 ledger insert 前记录
-   `intermediate_state_digest/control_plane_states`，验证 lock/current user/TxStatus，并补齐 redacted stable
-   errors；signed verifier 仍为 fail closed。
+3. **A2.1a-impl-3：runner wiring**：只按第 5.4 节接入唯一 `RunnerProjectionBindings`、same-dedicated-connection
+   session snapshots、statement 前/后与 pre-ledger projection、crash-durable EvidenceJournal、terminal/reconcile
+   chain 和 redacted runner/evidence errors。Entry 是 impl-1/2 exact commits/matrix 已完成、本节 ABI 已冻结，且第
+   5.4.1 节 `projection_scope_authority` contract pre-slice 已完成 strict Go/TS/fixture/digest same-bits；Done 必须证明
+   executable synthetic binding 的 phase/order/journal/fault tests，以及当前
+   `UNPUBLISHED_BOOTSTRAP_MUTABLE/NOT_IMPLEMENTED` catalog 在连接数据库前 deterministic fail closed，
+   `Connect/ExecuteStatement/Ledger.Insert/Commit` 均为零。production signed verifier/deployment trust-root wiring仍是
+   rejecting boundary；不得在本切片实现/生成 A2.1b relation/function/dependency/expression expected state，不得改变
+   catalog publication/runtime status、生产 CLI、Gate、release 或部署状态。
 4. **A2.1b-impl-1：catalog**：实现 relation/function/child object projection、internal dependency closure 和
    denied object set；不改变 migration SQL。
 5. **A2.1b-impl-2：expression**：实现 PG15/16/17 `pg_node_tree`/deparse adapter 与
