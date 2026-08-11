@@ -2,11 +2,14 @@
 
 - Status：IN PROGRESS
 - Fixed decisions：[`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)、
-  [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)
+  [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)、
+  [`ADR-0009`](../adr/0009-p1-migration-bundle-runner.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
-  HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)
-- Current slice：P1-A2.1 Migration/Tenancy（SQL/bootstrap authority 已实现并本地验证；strict manifest/runner、
-  pgx tenant transaction helper 和 PostgreSQL 15–17 matrix 仍未完成）
+  HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
+  (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
+  PostgreSQL tenant-helper matrix (`99a1b54`)；fail-closed migration runner core (`99106e8`)
+- Current slice：P1-A2.1 Migration/Tenancy（真实 PostgreSQL authority/catalog/intermediate projector、signed trust
+  provider、runner 实库矩阵、crash/recovery 与 Gate closure 仍未完成）
 - Remaining P1 slice：P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -30,11 +33,17 @@ Platform RC、Beta 或 GA。
 
 - [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)：global-table allowlist、bootstrap authority、tenant
   context ABI、migration lineage/checksum 与 P1-A2.1～P1-A2.4 execution slices。
+- [`ADR-0009`](../adr/0009-p1-migration-bundle-runner.md)：schema/bootstrap/manifest/runner 四类 digest、deterministic
+  bundle、外部 trust anchor、strict SQL/catalog contract、ambiguous commit 与 tenant helper 生命周期。
 
 ## P1-A2.1 current boundary
 
 `services/control-plane/migrations/` 已建立 database/role bootstrap、migration ledger schema、Tenant/Organization/
-Project、tenant-local revision/change fact、`FORCE RLS` 与 audited Tenant bootstrap 的 SQL authority。该切片只是
-P1-A2.1 的 SQL 输入；在 exact-byte manifest、dedicated pgx runner、ledger crash/replay、transaction-local tenant
-helper、pool leakage negative 和 PostgreSQL 15.18/16.14/17.10 matrix 完成前，不得声称 P1-A2.1 或
-`G-DATA` 关闭。
+Project、tenant-local revision/change fact、`FORCE RLS` 与 audited Tenant bootstrap 的 SQL authority。当前还具有
+exact-byte manifest/generator、deterministic runtime/bootstrap archive、strict TS/Go classifier、dedicated pgx runner
+core、transaction-local typed tenant helper，以及 PostgreSQL 15.18/16.14/17.10 上 helper 的连接复用/泄漏负向矩阵。
+
+这些结果仍是 `UNPUBLISHED_BOOTSTRAP_MUTABLE`：catalog/authority runtime introspection 与 detached signing 为
+`NOT_IMPLEMENTED`，生产 CLI 默认在读取 artifact 或连接数据库前拒绝。必须补齐真实 projectors、signed trust、
+runner 的三版本实库执行/锁/timeout/ambiguous-commit 证据、migration/recovery/N-1/PITR evidence 和 immutable closure
+record，才能声称 P1-A2.1 或 `G-DATA` 关闭。
