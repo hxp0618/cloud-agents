@@ -1,0 +1,57 @@
+{
+  "format_version": "cloud-agents-platform-evidence-frame-segments-fixture/v1",
+  "frames": [
+    {
+      "sequence": 0,
+      "record_digest": "sha256:8966b4c07eccb916135cef32a69855658a00b1041bb4851e80a79560e824bdee",
+      "canonical_size_bytes": 1783,
+      "length_prefix_hex": "00000000000006f7",
+      "framed_size_bytes": 1791,
+      "framed_sha256": "sha256:9ed2c280c4c83686bdcf63202b8a4b888bce14bfd8782165277353861a7fc967"
+    },
+    {
+      "sequence": 1,
+      "record_digest": "sha256:6448157bc69f640c89d3b882120b3a323c8094588cce796956362769692d2d33",
+      "canonical_size_bytes": 3787,
+      "length_prefix_hex": "0000000000000ecb",
+      "framed_size_bytes": 3795,
+      "framed_sha256": "sha256:ffebdbc41996798dce87c556bf76a6126eb3accfec28b7b7cac34610405af329"
+    },
+    {
+      "sequence": 2,
+      "record_digest": "sha256:f8a2cac642fcb3ba66b7729fd1c0196b6c644205a8bd71ee7ac6b8c9bf419264",
+      "canonical_size_bytes": 8729,
+      "length_prefix_hex": "0000000000002219",
+      "framed_size_bytes": 8737,
+      "framed_sha256": "sha256:7d17375742a06edf752d8a631c5e97324170bcd9d0fecb3b316043d5f5bd9240"
+    },
+    {
+      "sequence": 3,
+      "record_digest": "sha256:9e210c346b7610a46a44e133b04e5df6f1c44946786188df40d7f92e60d12e07",
+      "canonical_size_bytes": 1768,
+      "length_prefix_hex": "00000000000006e8",
+      "framed_size_bytes": 1776,
+      "framed_sha256": "sha256:6d02088875e08f6bba6c4d26b84fd4212bdae15ba06e2c432f89b1921877a56a"
+    },
+    {
+      "sequence": 4,
+      "record_digest": "sha256:05d29fa0182d4790071f52345f0940e0241add96daf11025e3b77798376123b8",
+      "canonical_size_bytes": 1113,
+      "length_prefix_hex": "0000000000000459",
+      "framed_size_bytes": 1121,
+      "framed_sha256": "sha256:9376f1efd4758d87a85ffd483a7e0b1153bfce0ce2f27c44eb0840a7e901828f"
+    }
+  ],
+  "inclusive_maxima": {
+    "evidence_frame_bytes": 1048576,
+    "evidence_segment_bytes": 16777216,
+    "evidence_segment_records": 4096,
+    "evidence_journal_segments": 16,
+    "lineage_frame_bytes": 262144,
+    "lineage_index_bytes": 16777216,
+    "lineage_index_records": 16384,
+    "uint16_max": 65535,
+    "uint32_max": 4294967295,
+    "uint64_json_safe_max": 9007199254740991
+  }
+}

@@ -1393,9 +1393,12 @@ func (states ControlPlaneStates) Validate() error {
 	return nil
 }
 
-func (state AttemptTerminalState) Validate(maxAttempts uint32) error {
-	if state.AttemptIndex == 0 || state.AttemptIndex > maxAttempts || !migrationIDPattern.MatchString(state.MigrationID) {
+func (state AttemptTerminalState) Validate(maxAttempts ...uint32) error {
+	if state.AttemptIndex == 0 || !migrationIDPattern.MatchString(state.MigrationID) {
 		return invalidProjection("attempt-terminal", "attempt index or migration identity is invalid")
+	}
+	if len(maxAttempts) > 1 || len(maxAttempts) == 1 && (maxAttempts[0] == 0 || state.AttemptIndex > maxAttempts[0]) {
+		return invalidProjection("attempt-terminal", "attempt index exceeds external maximum")
 	}
 	if (state.AttemptIndex == 1) != (state.PreviousAttemptTerminalDigest == nil) {
 		return invalidProjection("attempt-terminal", "previous attempt terminal linkage is invalid")
@@ -1419,36 +1422,65 @@ func (state AttemptTerminalState) Validate(maxAttempts uint32) error {
 			return err
 		}
 	}
-	if state.StableErrorCode != nil {
-		if *state.StableErrorCode == "" || !validStableProjectionError(*state.StableErrorCode) {
-			return invalidProjection("attempt-terminal", "stable error code is outside the closed set")
+	if (state.StableErrorCode == nil) != (state.FailureEvidence == nil) {
+		return invalidProjection("attempt-terminal", "stable error and failure evidence nullability differ")
+	}
+	if state.FailureEvidence != nil {
+		if err := state.FailureEvidence.Validate(); err != nil {
+			return err
+		}
+		if string(state.FailureEvidence.Code) != *state.StableErrorCode {
+			return invalidProjection("attempt-terminal", "stable error differs from failure evidence")
+		}
+	}
+	if state.RetryProof != nil {
+		if err := state.RetryProof.Validate(); err != nil {
+			return err
 		}
 	}
 	hasError := state.StableErrorCode != nil
 	switch state.Outcome {
 	case "committed":
-		if hasError || state.ReconcileResult != "not_run" || state.LastIntermediateStateDigest == nil {
+		if hasError || state.RetryProof != nil || state.ReconcileResult != "not_run" || state.LastIntermediateStateDigest == nil {
 			return invalidProjection("attempt-terminal", "illegal committed outcome combination")
 		}
 	case "aborted_retryable":
-		if !hasError || state.ReconcileResult != "not_run" || state.AttemptIndex >= maxAttempts {
+		if !hasError || !state.FailureEvidence.Retryable || state.RetryProof == nil || state.ReconcileResult != "not_run" || len(maxAttempts) == 1 && state.AttemptIndex >= maxAttempts[0] {
 			return invalidProjection("attempt-terminal", "illegal retryable outcome combination")
 		}
+		kind := state.RetryProof.ProofKind
+		if *state.StableErrorCode == string(CodeProjectionCatalogQueryFailed) && kind != "projection_transient_exact_predecessor" ||
+			*state.StableErrorCode == string(CodeTransactionBoundary) && kind != "precommit_rollback_exact_predecessor" && kind != "precommit_connection_terminated_exact_predecessor" && kind != "commit_rejected_exact_predecessor" ||
+			*state.StableErrorCode != string(CodeProjectionCatalogQueryFailed) && *state.StableErrorCode != string(CodeTransactionBoundary) ||
+			state.RetryProof.CommitRejectedReason != nil && *state.RetryProof.CommitRejectedReason == "other_confirmed_postgres_error" {
+			return invalidProjection("attempt-terminal", "retry proof does not match retryable outcome")
+		}
 	case "aborted_terminal":
-		if !hasError || state.ReconcileResult != "not_run" {
+		if !hasError || state.FailureEvidence.Retryable || state.ReconcileResult != "not_run" || *state.StableErrorCode == string(CodeAmbiguousCommit) {
 			return invalidProjection("attempt-terminal", "illegal terminal abort combination")
 		}
+		if *state.StableErrorCode == string(CodeTransactionBoundary) {
+			if state.RetryProof == nil || state.RetryProof.ProofKind == "projection_transient_exact_predecessor" {
+				return invalidProjection("attempt-terminal", "transaction abort lacks boundary proof")
+			}
+		} else if state.RetryProof != nil {
+			return invalidProjection("attempt-terminal", "non-transaction abort carries retry proof")
+		}
 	case "ambiguous_reconciled_committed":
-		if !hasError || state.ReconcileResult != "exact_committed" || state.LastIntermediateStateDigest == nil {
+		if !validAmbiguousTerminal(state, "exact_committed") {
 			return invalidProjection("attempt-terminal", "illegal reconciled committed combination")
 		}
 	case "ambiguous_reconciled_pending":
-		if !hasError || state.ReconcileResult != "exact_pending" {
+		if !validAmbiguousTerminal(state, "exact_pending") {
 			return invalidProjection("attempt-terminal", "illegal reconciled pending combination")
 		}
 	case "ambiguous_divergent":
-		if !hasError || state.ReconcileResult != "divergent" {
+		if !validAmbiguousTerminal(state, "divergent") {
 			return invalidProjection("attempt-terminal", "illegal divergent combination")
+		}
+	case "ambiguous_unresolved":
+		if !validUnresolvedTerminal(state) {
+			return invalidProjection("attempt-terminal", "illegal unresolved combination")
 		}
 	default:
 		return invalidProjection("attempt-terminal", "unknown terminal outcome")
@@ -1461,6 +1493,26 @@ func (state AttemptTerminalState) Validate(maxAttempts uint32) error {
 		return invalidProjection("attempt-terminal", "terminal digest mismatch")
 	}
 	return nil
+}
+
+func validAmbiguousTerminal(state AttemptTerminalState, reconcile string) bool {
+	if state.StableErrorCode == nil || state.FailureEvidence == nil || state.FailureEvidence.Retryable || state.RetryProof != nil || state.LastIntermediateStateDigest == nil || state.ReconcileResult != reconcile {
+		return false
+	}
+	code := ErrorCode(*state.StableErrorCode)
+	return code == CodeAmbiguousCommit || code == CodeEvidenceJournalFailed || code == CodeEvidenceRecoveryRequired
+}
+
+func validUnresolvedTerminal(state AttemptTerminalState) bool {
+	if state.StableErrorCode == nil || state.FailureEvidence == nil || state.FailureEvidence.Retryable || state.RetryProof != nil || state.LastIntermediateStateDigest == nil || state.ReconcileResult != "unresolved" {
+		return false
+	}
+	switch ErrorCode(*state.StableErrorCode) {
+	case CodeAmbiguousCommit, CodeUntrusted, CodeEvidenceJournalFailed, CodeEvidenceRecoveryRequired, CodeContextCanceled, CodeDeadlineExceeded:
+		return true
+	default:
+		return false
+	}
 }
 
 func validStableProjectionError(code string) bool {

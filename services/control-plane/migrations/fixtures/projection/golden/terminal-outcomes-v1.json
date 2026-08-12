@@ -1,0 +1,207 @@
+{
+  "format_version": "cloud-agents-platform-terminal-outcomes-fixture/v1",
+  "retry_proofs": [
+    {
+      "proof_kind": "projection_transient_exact_predecessor",
+      "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "observed_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ledger_prefix_digest": "sha256:bd879a4d76bca1a907cf6fd427380f4b6f7bbe2900d8f72602556d694520da68",
+      "authority_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "commit_rejected_reason": null
+    },
+    {
+      "proof_kind": "precommit_rollback_exact_predecessor",
+      "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "observed_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ledger_prefix_digest": "sha256:bd879a4d76bca1a907cf6fd427380f4b6f7bbe2900d8f72602556d694520da68",
+      "authority_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "commit_rejected_reason": null
+    },
+    {
+      "proof_kind": "precommit_connection_terminated_exact_predecessor",
+      "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "observed_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ledger_prefix_digest": "sha256:bd879a4d76bca1a907cf6fd427380f4b6f7bbe2900d8f72602556d694520da68",
+      "authority_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "commit_rejected_reason": null
+    },
+    {
+      "proof_kind": "commit_rejected_exact_predecessor",
+      "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "observed_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "ledger_prefix_digest": "sha256:bd879a4d76bca1a907cf6fd427380f4b6f7bbe2900d8f72602556d694520da68",
+      "authority_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "commit_rejected_reason": "serialization_failure"
+    }
+  ],
+  "outcomes": [
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "outcome": "committed",
+      "stable_error_code": null,
+      "failure_evidence": null,
+      "retry_proof": null,
+      "reconcile_result": "not_run",
+      "terminal_digest": "sha256:34698e3bbaae5fb19958cb5f682ccd8a52ba04c06b649f9a4b73799f7a450917"
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": null,
+      "outcome": "aborted_retryable",
+      "stable_error_code": "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
+      "failure_evidence": {
+        "code": "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
+        "projection_kind": "catalog",
+        "phase": "migration_transaction",
+        "path": "catalog",
+        "major": 15,
+        "retryable": true
+      },
+      "retry_proof": {
+        "proof_kind": "projection_transient_exact_predecessor",
+        "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "observed_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "ledger_prefix_digest": "sha256:bd879a4d76bca1a907cf6fd427380f4b6f7bbe2900d8f72602556d694520da68",
+        "authority_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "commit_rejected_reason": null
+      },
+      "reconcile_result": "not_run",
+      "terminal_digest": "sha256:538508c6b6f354708893721ee90ee81b15c2e0471706f3320f24e3fe828c235c"
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": null,
+      "outcome": "aborted_terminal",
+      "stable_error_code": "MIGRATION_TRANSACTION_BOUNDARY",
+      "failure_evidence": {
+        "code": "MIGRATION_TRANSACTION_BOUNDARY",
+        "projection_kind": null,
+        "phase": "commit",
+        "path": "transaction",
+        "major": 15,
+        "retryable": false
+      },
+      "retry_proof": {
+        "proof_kind": "commit_rejected_exact_predecessor",
+        "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "observed_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "ledger_prefix_digest": "sha256:bd879a4d76bca1a907cf6fd427380f4b6f7bbe2900d8f72602556d694520da68",
+        "authority_result_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "commit_rejected_reason": "other_confirmed_postgres_error"
+      },
+      "reconcile_result": "not_run",
+      "terminal_digest": "sha256:540e378828382a7339df7563cf5ddf3fbe337429fcc6f7a921c23cedaac82097"
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "outcome": "ambiguous_reconciled_committed",
+      "stable_error_code": "MIGRATION_AMBIGUOUS_COMMIT",
+      "failure_evidence": {
+        "code": "MIGRATION_AMBIGUOUS_COMMIT",
+        "projection_kind": null,
+        "phase": "commit",
+        "path": "transaction",
+        "major": 15,
+        "retryable": false
+      },
+      "retry_proof": null,
+      "reconcile_result": "exact_committed",
+      "terminal_digest": "sha256:2c3fee066dd64a7600949f68ae3cb7d73aa1fb3f85c08795f081fc48756d5300"
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "outcome": "ambiguous_reconciled_pending",
+      "stable_error_code": "MIGRATION_AMBIGUOUS_COMMIT",
+      "failure_evidence": {
+        "code": "MIGRATION_AMBIGUOUS_COMMIT",
+        "projection_kind": null,
+        "phase": "commit",
+        "path": "transaction",
+        "major": 15,
+        "retryable": false
+      },
+      "retry_proof": null,
+      "reconcile_result": "exact_pending",
+      "terminal_digest": "sha256:22752c9db4509e697324c74627acbb1c9c2f7751a5a8e71459c8c5dc8461ef84"
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "outcome": "ambiguous_divergent",
+      "stable_error_code": "MIGRATION_AMBIGUOUS_COMMIT",
+      "failure_evidence": {
+        "code": "MIGRATION_AMBIGUOUS_COMMIT",
+        "projection_kind": null,
+        "phase": "commit",
+        "path": "transaction",
+        "major": 15,
+        "retryable": false
+      },
+      "retry_proof": null,
+      "reconcile_result": "divergent",
+      "terminal_digest": "sha256:8c837f81233f7e7507cc81e39bb3e6d36d5ef1c283eb5ed309822cce4332d4b3"
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "outcome": "ambiguous_unresolved",
+      "stable_error_code": "MIGRATION_AMBIGUOUS_COMMIT",
+      "failure_evidence": {
+        "code": "MIGRATION_AMBIGUOUS_COMMIT",
+        "projection_kind": null,
+        "phase": "commit",
+        "path": "transaction",
+        "major": 15,
+        "retryable": false
+      },
+      "retry_proof": null,
+      "reconcile_result": "unresolved",
+      "terminal_digest": "sha256:14297cd48a6d0c55a063e2fdd0826523ef96770a0fe93852f1ad38b8699eda8e"
+    }
+  ]
+}

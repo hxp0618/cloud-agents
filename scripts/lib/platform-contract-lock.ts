@@ -27,6 +27,8 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "scripts/generate-platform-migration-bundle.ts",
   "scripts/lib/platform-migration-bundle.test.ts",
   "scripts/lib/platform-migration-bundle.ts",
+  "scripts/lib/platform-migration-evidence.test.ts",
+  "scripts/lib/platform-migration-evidence.ts",
   "scripts/lib/platform-migration-json.test.ts",
   "scripts/lib/platform-migration-json.ts",
   "scripts/lib/platform-migration-projection.test.ts",

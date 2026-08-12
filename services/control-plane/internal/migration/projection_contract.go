@@ -630,16 +630,18 @@ type StatementIntermediateState struct {
 }
 
 type AttemptTerminalState struct {
-	SchemaBundleDigest            Digest  `json:"schema_bundle_digest"`
-	CatalogContractDigest         Digest  `json:"catalog_contract_digest"`
-	AuthorityProfileDigest        Digest  `json:"authority_profile_digest"`
-	AuthorityBindingDigest        Digest  `json:"authority_binding_digest"`
-	MigrationID                   string  `json:"migration_id"`
-	AttemptIndex                  uint32  `json:"attempt_index"`
-	PreviousAttemptTerminalDigest *Digest `json:"previous_attempt_terminal_digest"`
-	LastIntermediateStateDigest   *Digest `json:"last_intermediate_state_digest"`
-	Outcome                       string  `json:"outcome"`
-	StableErrorCode               *string `json:"stable_error_code"`
-	ReconcileResult               string  `json:"reconcile_result"`
-	TerminalDigest                Digest  `json:"terminal_digest"`
+	SchemaBundleDigest            Digest                 `json:"schema_bundle_digest"`
+	CatalogContractDigest         Digest                 `json:"catalog_contract_digest"`
+	AuthorityProfileDigest        Digest                 `json:"authority_profile_digest"`
+	AuthorityBindingDigest        Digest                 `json:"authority_binding_digest"`
+	MigrationID                   string                 `json:"migration_id"`
+	AttemptIndex                  uint32                 `json:"attempt_index"`
+	PreviousAttemptTerminalDigest *Digest                `json:"previous_attempt_terminal_digest"`
+	LastIntermediateStateDigest   *Digest                `json:"last_intermediate_state_digest"`
+	Outcome                       string                 `json:"outcome"`
+	StableErrorCode               *string                `json:"stable_error_code"`
+	FailureEvidence               *StableFailureEvidence `json:"failure_evidence"`
+	RetryProof                    *RetryProofEvidence    `json:"retry_proof"`
+	ReconcileResult               string                 `json:"reconcile_result"`
+	TerminalDigest                Digest                 `json:"terminal_digest"`
 }

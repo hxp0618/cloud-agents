@@ -37,6 +37,12 @@ const (
 	CodeIntermediateStateMismatch     ErrorCode = "MIGRATION_INTERMEDIATE_STATE_MISMATCH"
 	CodeProjectionSnapshotInvalid     ErrorCode = "MIGRATION_PROJECTION_SNAPSHOT_INVALID"
 	CodeProjectionNotImplemented      ErrorCode = "MIGRATION_PROJECTION_NOT_IMPLEMENTED"
+	CodeEvidenceJournalFailed         ErrorCode = "MIGRATION_EVIDENCE_JOURNAL_FAILED"
+	CodeEvidenceJournalCorrupt        ErrorCode = "MIGRATION_EVIDENCE_JOURNAL_CORRUPT"
+	CodeEvidenceJournalLimitExceeded  ErrorCode = "MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED"
+	CodeEvidenceRecoveryRequired      ErrorCode = "MIGRATION_EVIDENCE_RECOVERY_REQUIRED"
+	CodeContextCanceled               ErrorCode = "MIGRATION_CONTEXT_CANCELED"
+	CodeDeadlineExceeded              ErrorCode = "MIGRATION_DEADLINE_EXCEEDED"
 )
 
 // Error intentionally carries a stable code and a bounded explanation, not raw SQL or credentials.

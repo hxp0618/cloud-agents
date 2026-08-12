@@ -492,7 +492,7 @@ func TestCheckedInProjectionFixtureManifestSameBits(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(migrationRoot(t), "fixtures", "projection")
 	manifestRaw := mustRead(t, filepath.Join(root, "manifest.json"))
-	if DigestBytes(manifestRaw) != "sha256:3c921602c8f2f5356a38e15ae3cfbbe5365ca8a948d6550b0a9bd424ead00011" {
+	if DigestBytes(manifestRaw) != "sha256:d4e9c06be3fb2275821562a51d8db8525a3a44ccdb7880724b0934c2c69a0292" {
 		t.Fatal("projection fixture manifest differs from the reviewed TS same-bits bytes")
 	}
 	var manifest projectionFixtureManifest
@@ -501,6 +501,24 @@ func TestCheckedInProjectionFixtureManifestSameBits(t *testing.T) {
 	}
 	if manifest.FormatVersion != "cloud-agents-platform-projection-fixtures/v1" || manifest.RuntimeAuthority || manifest.PublicationStatus != "UNPUBLISHED_BOOTSTRAP_MUTABLE" || manifest.RuntimeIntrospectionStatus != "NOT_IMPLEMENTED" {
 		t.Fatal("projection fixture manifest attempts to claim runtime authority")
+	}
+	expectedFixturePaths := []string{
+		"golden/attempt-terminal-state-v1.json", "golden/authority-binding-v1.json", "golden/catalog-projection-body-v1.json",
+		"golden/catalog-state-schema-absent-v1.json", "golden/catalog-state-schema-present-v1.json", "golden/decision-recovery-inputs-v1.json",
+		"golden/default-acl-scope-v1.json", "golden/evidence-ambiguous-chain-v1.json", "golden/evidence-frame-segments-v1.json",
+		"golden/evidence-record-chain-v1.json", "golden/evidence-retry-chains-v1.json", "golden/expected-statement-transition-v1.json",
+		"golden/intermediate-state-v1.json", "golden/lineage-index-chain-v1.json", "golden/numeric-v1.json",
+		"golden/recovery-policy-chain-v1.json", "golden/supersession-outcomes-v1.json", "golden/terminal-outcomes-v1.json",
+		"negative/authority-binding-duplicate.raw", "negative/evidence-frame-duplicate.raw", "negative/evidence-framing-faults-v1.json",
+		"negative/evidence-limits-faults-v1.json", "negative/evidence-nested-record-duplicate.raw", "negative/evidence-semantic-faults-v1.json",
+		"negative/faults-v1.json", "negative/lineage-frame-duplicate.raw",
+	}
+	actualFixturePaths := make([]string, len(manifest.Files))
+	for index := range manifest.Files {
+		actualFixturePaths[index] = manifest.Files[index].Path
+	}
+	if !equalStrings(actualFixturePaths, expectedFixturePaths) {
+		t.Fatalf("projection fixture manifest path inventory differs:\nactual=%v\nexpected=%v", actualFixturePaths, expectedFixturePaths)
 	}
 	for _, head := range []string{"000001", "000002"} {
 		catalog, err := DecodeCatalogContract(mustRead(t, filepath.Join(migrationRoot(t), "catalog", "schema-"+head+".json")))

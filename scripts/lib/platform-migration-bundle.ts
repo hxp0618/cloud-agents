@@ -34,6 +34,15 @@ import {
   readDeterministicUstar,
   type UstarEntry,
 } from "./platform-migration-ustar";
+import {
+  buildEvidenceContractFixtures,
+  validateAmbiguousResolutionState,
+  validateDecisionRecoveryVerificationInputs,
+  validateEvidenceFrame,
+  validateGenerationSuperseded,
+  validateLineageIndexFrame,
+  validateRecoveryPolicyChainFixture,
+} from "./platform-migration-evidence";
 
 export type GeneratedMigrationBundle = {
   readonly files: ReadonlyMap<string, Uint8Array>;
@@ -76,6 +85,9 @@ const PROJECTION_FIXTURE_PATHS = [
   `${PROJECTION_FIXTURE_ROOT}/golden/default-acl-scope-v1.json`,
 ] as const;
 const AUTHORITY_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/authority-binding-duplicate.raw`;
+const EVIDENCE_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/evidence-frame-duplicate.raw`;
+const EVIDENCE_NESTED_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/evidence-nested-record-duplicate.raw`;
+const LINEAGE_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/lineage-frame-duplicate.raw`;
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const MAX_PROJECTION_SCOPE_PRINCIPALS = 256;
 const INITIAL_PROJECTION_SCOPE_AUTHORITY = {
@@ -165,7 +177,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   for (const [path, document] of generatedProjection.fixtureDocuments) {
     files.set(path, prettyJson(document));
   }
-  files.set(AUTHORITY_DUPLICATE_RAW_PATH, generatedProjection.duplicateAuthorityBinding);
+  for (const [path, bytes] of generatedProjection.rawFixtureFiles) files.set(path, bytes);
 
   const sqlArtifacts = new Map(
     SQL_PATHS.map((path) => [path, artifactRecord(path, sqlBytes.get(path)!)] as const),
@@ -550,13 +562,62 @@ function validateProjectionFixtureInventory(
   validateDefaultACLScopeFixture(
     requiredObject(parseStrictMigrationJson(readExactFile(root, PROJECTION_FIXTURE_PATHS[10]))),
   );
-  try {
-    parseStrictMigrationJson(readExactFile(root, AUTHORITY_DUPLICATE_RAW_PATH));
-  } catch (error) {
-    if (error instanceof MigrationValidationError && error.code === "DUPLICATE_JSON_KEY") return;
-    throw error;
+  const evidenceRecordChain = fixtureDocument(root, "golden/evidence-record-chain-v1.json");
+  for (const frame of requiredArray(evidenceRecordChain.frames).map(requiredObject)) {
+    validateEvidenceFrame(frame);
   }
-  throw new MigrationValidationError("PROJECTION_DUPLICATE_FIXTURE", "accepted");
+  const ambiguousChain = fixtureDocument(root, "golden/evidence-ambiguous-chain-v1.json");
+  for (const resolution of requiredArray(ambiguousChain.resolutions).map(requiredObject)) {
+    validateAmbiguousResolutionState(resolution);
+  }
+  for (const frame of requiredArray(ambiguousChain.frames).map(requiredObject)) {
+    validateEvidenceFrame(frame);
+  }
+  const terminalOutcomes = fixtureDocument(root, "golden/terminal-outcomes-v1.json");
+  for (const terminal of requiredArray(terminalOutcomes.outcomes).map(requiredObject)) {
+    validateAttemptTerminalState(terminal);
+  }
+  const retryChains = fixtureDocument(root, "golden/evidence-retry-chains-v1.json");
+  for (const chain of requiredArray(retryChains.chains).map(requiredObject)) {
+    for (const frame of requiredArray(chain.frames).map(requiredObject))
+      validateEvidenceFrame(frame);
+  }
+  const lineageChain = fixtureDocument(root, "golden/lineage-index-chain-v1.json");
+  for (const frame of requiredArray(lineageChain.frames).map(requiredObject)) {
+    validateLineageIndexFrame(frame);
+  }
+  const supersessionOutcomes = fixtureDocument(root, "golden/supersession-outcomes-v1.json");
+  for (const outcome of requiredArray(supersessionOutcomes.outcomes).map(requiredObject)) {
+    validateGenerationSuperseded(outcome);
+  }
+  validateDecisionRecoveryVerificationInputs(
+    requiredObject(
+      fixtureDocument(root, "golden/decision-recovery-inputs-v1.json").same_bits_input,
+    ),
+  );
+  validateRecoveryPolicyChainFixture(fixtureDocument(root, "golden/recovery-policy-chain-v1.json"));
+  for (const rawPath of [
+    AUTHORITY_DUPLICATE_RAW_PATH,
+    EVIDENCE_DUPLICATE_RAW_PATH,
+    EVIDENCE_NESTED_DUPLICATE_RAW_PATH,
+    LINEAGE_DUPLICATE_RAW_PATH,
+  ]) {
+    try {
+      parseStrictMigrationJson(readExactFile(root, rawPath));
+    } catch (error) {
+      if (error instanceof MigrationValidationError && error.code === "DUPLICATE_JSON_KEY") {
+        continue;
+      }
+      throw error;
+    }
+    throw new MigrationValidationError("PROJECTION_DUPLICATE_FIXTURE", rawPath);
+  }
+}
+
+function fixtureDocument(root: string, relative: string): JsonObject {
+  return requiredObject(
+    parseStrictMigrationJson(readExactFile(root, `${PROJECTION_FIXTURE_ROOT}/${relative}`)),
+  );
 }
 
 export function validateSchemaAncestorChain(
@@ -761,7 +822,7 @@ export function migrationStatementSourceDescriptors(
 type ProjectionDocuments = {
   readonly catalogDocuments: ReadonlyMap<string, JsonObject>;
   readonly fixtureDocuments: ReadonlyMap<string, JsonObject>;
-  readonly duplicateAuthorityBinding: Uint8Array;
+  readonly rawFixtureFiles: ReadonlyMap<string, Uint8Array>;
 };
 
 function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): ProjectionDocuments {
@@ -846,7 +907,17 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [PROJECTION_FIXTURE_PATHS[9], faults],
     [PROJECTION_FIXTURE_PATHS[10], defaultACLScope],
   ]);
-  const manifest = projectionFixtureManifest(fixtureDocuments, duplicateAuthorityBinding);
+  const evidenceFixtures = buildEvidenceContractFixtures();
+  for (const [relative, document] of evidenceFixtures.documents) {
+    fixtureDocuments.set(`${PROJECTION_FIXTURE_ROOT}/${relative}`, document);
+  }
+  const rawFixtureFiles = new Map<string, Uint8Array>([
+    [AUTHORITY_DUPLICATE_RAW_PATH, duplicateAuthorityBinding],
+    [EVIDENCE_DUPLICATE_RAW_PATH, evidenceFixtures.duplicateEvidenceFrame],
+    [EVIDENCE_NESTED_DUPLICATE_RAW_PATH, evidenceFixtures.duplicateEvidenceNestedRecord],
+    [LINEAGE_DUPLICATE_RAW_PATH, evidenceFixtures.duplicateLineageFrame],
+  ]);
+  const manifest = projectionFixtureManifest(fixtureDocuments, rawFixtureFiles);
   fixtureDocuments.set(PROJECTION_FIXTURE_PATHS[0], manifest);
   const catalogDocuments = new Map<string, JsonObject>([
     [CATALOG_PATHS[0], authority],
@@ -854,7 +925,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[2], schema000001],
     [CATALOG_PATHS[3], schema000002],
   ]);
-  return { catalogDocuments, fixtureDocuments, duplicateAuthorityBinding };
+  return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
 
 function authorityProfile(): JsonObject {
@@ -1472,6 +1543,8 @@ function terminalFixture(intermediate: JsonObject): JsonObject {
     last_intermediate_state_digest: intermediate.intermediate_state_digest!,
     outcome: "committed",
     stable_error_code: null,
+    failure_evidence: null,
+    retry_proof: null,
     reconcile_result: "not_run",
   };
   return {
@@ -1761,7 +1834,7 @@ function projectionFaultFixture(): JsonObject {
 
 function projectionFixtureManifest(
   documents: ReadonlyMap<string, JsonObject>,
-  duplicateRaw: Uint8Array,
+  rawFiles: ReadonlyMap<string, Uint8Array>,
 ): JsonObject {
   const cases = [...documents.entries()]
     .map(([path, document]) => ({
@@ -1770,11 +1843,13 @@ function projectionFixtureManifest(
       sha256: rawSha256(prettyJson(document)),
     }))
     .toSorted((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
-  cases.push({
-    path: AUTHORITY_DUPLICATE_RAW_PATH.slice(`${PROJECTION_FIXTURE_ROOT}/`.length),
-    size_bytes: duplicateRaw.length,
-    sha256: rawSha256(duplicateRaw),
-  });
+  for (const [path, bytes] of rawFiles) {
+    cases.push({
+      path: path.slice(`${PROJECTION_FIXTURE_ROOT}/`.length),
+      size_bytes: bytes.length,
+      sha256: rawSha256(bytes),
+    });
+  }
   cases.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
   return {
     format_version: "cloud-agents-platform-projection-fixtures/v1",

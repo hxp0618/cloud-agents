@@ -29,8 +29,15 @@ const OUTCOMES = [
   "ambiguous_reconciled_committed",
   "ambiguous_reconciled_pending",
   "ambiguous_divergent",
+  "ambiguous_unresolved",
 ] as const;
-const RECONCILE_RESULTS = ["not_run", "exact_committed", "exact_pending", "divergent"] as const;
+const RECONCILE_RESULTS = [
+  "not_run",
+  "exact_committed",
+  "exact_pending",
+  "divergent",
+  "unresolved",
+] as const;
 const CHANGE_KINDS = ["create", "alter", "grant", "revoke"] as const;
 const STATE_KINDS = ["schema_absent", "schema_present"] as const;
 const UINT32_MAX = 4_294_967_295;
@@ -60,6 +67,47 @@ const STABLE_PROJECTION_ERRORS = [
   "MIGRATION_AUTHORITY_DRIFT",
   "MIGRATION_CATALOG_DRIFT",
   "MIGRATION_INTERMEDIATE_STATE_MISMATCH",
+] as const;
+const TERMINAL_RUNNER_ERRORS = [
+  "MIGRATION_INVALID_SQL",
+  "MIGRATION_INVALID_LEDGER",
+  "MIGRATION_UNTRUSTED",
+  "MIGRATION_LOCK_LOST",
+  "MIGRATION_TRANSACTION_BOUNDARY",
+  "MIGRATION_AMBIGUOUS_COMMIT",
+  "MIGRATION_EVIDENCE_JOURNAL_FAILED",
+  "MIGRATION_EVIDENCE_RECOVERY_REQUIRED",
+  "MIGRATION_CONTEXT_CANCELED",
+  "MIGRATION_DEADLINE_EXCEEDED",
+] as const;
+export const ATTEMPT_TERMINAL_STABLE_ERROR_CODES = [
+  ...STABLE_PROJECTION_ERRORS.filter(
+    (code) =>
+      code !== "MIGRATION_PROJECTION_NOT_IMPLEMENTED" &&
+      code !== "MIGRATION_PROJECTION_LIMIT_OVERRIDE",
+  ),
+  ...TERMINAL_RUNNER_ERRORS,
+] as const;
+const FAILURE_PHASES = [
+  "preconnect",
+  "journal_open",
+  "journal_replay",
+  "connected_session",
+  "migration_role",
+  "migration_transaction",
+  "commit",
+  "reconcile",
+  "journal_close",
+] as const;
+const FAILURE_PATHS = [
+  "trust",
+  "journal",
+  "authority",
+  "catalog",
+  "sql",
+  "ledger",
+  "transaction",
+  "context",
 ] as const;
 const ACL_PRIVILEGES = [
   "CONNECT",
@@ -1235,7 +1283,157 @@ export function intermediateStateDigest(stateWithoutDigest: JsonObject): string 
   return String(state.intermediate_state_digest);
 }
 
-export function validateAttemptTerminalState(state: JsonObject, maxAttempts = 3): void {
+export function validateStableFailureEvidence(evidence: JsonObject): void {
+  keys(evidence, ["code", "projection_kind", "phase", "path", "major", "retryable"]);
+  const code = literal(
+    evidence.code,
+    ATTEMPT_TERMINAL_STABLE_ERROR_CODES,
+    "failure evidence code",
+  ) as string;
+  const phase = literal(evidence.phase, FAILURE_PHASES, "failure evidence phase") as string;
+  const path = literal(evidence.path, FAILURE_PATHS, "failure evidence path") as string;
+  const projectionKinds: Record<string, readonly string[]> = {
+    MIGRATION_AUTHORITY_DRIFT: ["authority"],
+    MIGRATION_CATALOG_DRIFT: ["catalog"],
+    MIGRATION_INTERMEDIATE_STATE_MISMATCH: ["catalog"],
+    MIGRATION_PROJECTION_UNSUPPORTED_MAJOR: ["snapshot"],
+    MIGRATION_PROJECTION_CAPABILITY_MISMATCH: ["snapshot"],
+    MIGRATION_PROJECTION_CATALOG_QUERY_FAILED: ["authority", "catalog"],
+    MIGRATION_PROJECTION_LIMIT_EXCEEDED: ["authority", "catalog"],
+    MIGRATION_PROJECTION_NON_CANONICAL_WITNESS: ["authority", "catalog"],
+    MIGRATION_PROJECTION_UNKNOWN_OBJECT: ["authority", "catalog"],
+    MIGRATION_PROJECTION_INVALID_SCOPE: ["authority", "catalog"],
+    MIGRATION_PROJECTION_INVALID_EXPRESSION: ["catalog"],
+    MIGRATION_PROJECTION_METADATA_MISMATCH: ["authority", "catalog", "snapshot"],
+    MIGRATION_PROJECTION_SNAPSHOT_INVALID: ["snapshot"],
+  };
+  const projectionKind = evidence.projection_kind;
+  const allowedKinds = projectionKinds[code];
+  if (allowedKinds !== undefined) {
+    if (typeof projectionKind !== "string" || !allowedKinds.includes(projectionKind)) {
+      fail("STABLE_FAILURE_TUPLE", `${code}/projection_kind`);
+    }
+    const projectionPath =
+      projectionKind === "authority"
+        ? "authority"
+        : projectionKind === "catalog"
+          ? "catalog"
+          : "transaction";
+    const legalPhases =
+      projectionKind === "authority"
+        ? ["connected_session", "migration_role", "migration_transaction", "reconcile"]
+        : projectionKind === "catalog"
+          ? ["migration_role", "migration_transaction", "reconcile"]
+          : ["connected_session", "migration_role", "migration_transaction", "reconcile"];
+    if (
+      path !== projectionPath ||
+      !legalPhases.includes(phase) ||
+      ((code === "MIGRATION_PROJECTION_UNSUPPORTED_MAJOR" ||
+        code === "MIGRATION_PROJECTION_CAPABILITY_MISMATCH") &&
+        phase !== "connected_session")
+    ) {
+      fail("STABLE_FAILURE_TUPLE", `${code}/${projectionKind}/${phase}/${path}`);
+    }
+  } else {
+    if (projectionKind !== null) fail("STABLE_FAILURE_TUPLE", `${code}/projection_kind`);
+    const nonProjection: Record<string, readonly [string, readonly string[]]> = {
+      MIGRATION_EVIDENCE_JOURNAL_FAILED: [
+        "journal",
+        ["journal_open", "journal_replay", "reconcile", "journal_close"],
+      ],
+      MIGRATION_EVIDENCE_RECOVERY_REQUIRED: ["journal", ["journal_replay", "reconcile"]],
+      MIGRATION_CONTEXT_CANCELED: ["context", FAILURE_PHASES],
+      MIGRATION_DEADLINE_EXCEEDED: ["context", FAILURE_PHASES],
+      MIGRATION_INVALID_SQL: ["sql", ["preconnect", "migration_transaction"]],
+      MIGRATION_INVALID_LEDGER: [
+        "ledger",
+        ["migration_role", "migration_transaction", "reconcile"],
+      ],
+      MIGRATION_LOCK_LOST: [
+        "transaction",
+        ["migration_role", "migration_transaction", "reconcile"],
+      ],
+      MIGRATION_TRANSACTION_BOUNDARY: [
+        "transaction",
+        ["migration_transaction", "commit", "reconcile"],
+      ],
+      MIGRATION_AMBIGUOUS_COMMIT: ["transaction", ["commit", "reconcile"]],
+      MIGRATION_UNTRUSTED: [
+        "trust",
+        ["preconnect", "connected_session", "migration_role", "reconcile"],
+      ],
+    };
+    const rule = nonProjection[code];
+    if (rule === undefined || path !== rule[0] || !rule[1].includes(phase)) {
+      fail("STABLE_FAILURE_TUPLE", `${code}/${phase}/${path}`);
+    }
+  }
+  const major =
+    evidence.major === null ? null : uint32(evidence.major, "failure evidence major", 1);
+  if (major !== null && major > 65_535) fail("UINT16_RANGE", "failure evidence major");
+  const nullMajorPhase = ["preconnect", "journal_open", "journal_replay", "journal_close"].includes(
+    phase,
+  );
+  if (nullMajorPhase && major !== null) fail("STABLE_FAILURE_MAJOR", phase);
+  if (code === "MIGRATION_PROJECTION_UNSUPPORTED_MAJOR") {
+    if (major === null) fail("STABLE_FAILURE_MAJOR", code);
+  } else if (phase === "connected_session" && major !== 15 && major !== 16 && major !== 17) {
+    fail("STABLE_FAILURE_MAJOR", phase);
+  } else if (["migration_role", "migration_transaction", "commit"].includes(phase)) {
+    if (major !== 15 && major !== 16 && major !== 17) fail("STABLE_FAILURE_MAJOR", phase);
+  } else if (
+    phase === "reconcile" &&
+    major !== null &&
+    major !== 15 &&
+    major !== 16 &&
+    major !== 17
+  ) {
+    fail("STABLE_FAILURE_MAJOR", phase);
+  }
+  boolean(evidence.retryable, "failure evidence retryable");
+}
+
+export function validateRetryProofEvidence(proof: JsonObject): void {
+  keys(proof, [
+    "proof_kind",
+    "attempt_predecessor_catalog_digest",
+    "observed_catalog_digest",
+    "ledger_prefix_digest",
+    "authority_result_digest",
+    "commit_rejected_reason",
+  ]);
+  const kind = literal(
+    proof.proof_kind,
+    [
+      "projection_transient_exact_predecessor",
+      "precommit_rollback_exact_predecessor",
+      "precommit_connection_terminated_exact_predecessor",
+      "commit_rejected_exact_predecessor",
+    ] as const,
+    "retry proof kind",
+  );
+  for (const field of [
+    "attempt_predecessor_catalog_digest",
+    "observed_catalog_digest",
+    "ledger_prefix_digest",
+    "authority_result_digest",
+  ] as const)
+    digest(proof[field], field);
+  if (proof.attempt_predecessor_catalog_digest !== proof.observed_catalog_digest) {
+    fail("RETRY_PROOF_PREDECESSOR", "observed catalog differs");
+  }
+  const reason = literal(
+    proof.commit_rejected_reason,
+    [null, "serialization_failure", "deadlock_detected", "other_confirmed_postgres_error"],
+    "commit rejected reason",
+  );
+  if ((kind === "commit_rejected_exact_predecessor") !== (reason !== null)) {
+    fail("RETRY_PROOF_REASON", `${kind}/${String(reason)}`);
+  }
+}
+
+/** Closed wire validation only. Cross-record proof is intentionally not inferred here. */
+export function validateAttemptTerminalState(state: JsonObject): void {
   keys(state, [
     "schema_bundle_digest",
     "catalog_contract_digest",
@@ -1247,6 +1445,8 @@ export function validateAttemptTerminalState(state: JsonObject, maxAttempts = 3)
     "last_intermediate_state_digest",
     "outcome",
     "stable_error_code",
+    "failure_evidence",
+    "retry_proof",
     "reconcile_result",
     "terminal_digest",
   ]);
@@ -1275,31 +1475,99 @@ export function validateAttemptTerminalState(state: JsonObject, maxAttempts = 3)
   const error = nullableString(state.stable_error_code, "stable error");
   if (
     error !== null &&
-    !STABLE_PROJECTION_ERRORS.includes(error as (typeof STABLE_PROJECTION_ERRORS)[number])
+    !ATTEMPT_TERMINAL_STABLE_ERROR_CODES.includes(
+      error as (typeof ATTEMPT_TERMINAL_STABLE_ERROR_CODES)[number],
+    )
   ) {
     fail("STABLE_ERROR_CODE", error);
   }
+  const failure =
+    state.failure_evidence === null ? null : object(state.failure_evidence, "failure");
+  if (failure !== null) validateStableFailureEvidence(failure);
+  if ((error === null) !== (failure === null)) fail("ATTEMPT_TERMINAL_FAILURE", "nullability");
+  if (failure !== null && failure.code !== error) {
+    fail("ATTEMPT_TERMINAL_FAILURE", `${String(failure.code)} != ${String(error)}`);
+  }
+  const retryProof = state.retry_proof === null ? null : object(state.retry_proof, "retry proof");
+  if (retryProof !== null) validateRetryProofEvidence(retryProof);
   const reconcile = literal(state.reconcile_result, RECONCILE_RESULTS, "reconcile result");
+  const ambiguousStableCodes = new Set([
+    "MIGRATION_AMBIGUOUS_COMMIT",
+    "MIGRATION_EVIDENCE_JOURNAL_FAILED",
+    "MIGRATION_EVIDENCE_RECOVERY_REQUIRED",
+  ]);
+  const unresolvedStableCodes = new Set([
+    ...ambiguousStableCodes,
+    "MIGRATION_UNTRUSTED",
+    "MIGRATION_CONTEXT_CANCELED",
+    "MIGRATION_DEADLINE_EXCEEDED",
+  ]);
   const valid =
-    (outcome === "committed" && error === null && reconcile === "not_run") ||
+    (outcome === "committed" &&
+      error === null &&
+      failure === null &&
+      retryProof === null &&
+      reconcile === "not_run") ||
     ((outcome === "aborted_retryable" || outcome === "aborted_terminal") &&
       error !== null &&
       reconcile === "not_run") ||
     (outcome === "ambiguous_reconciled_committed" &&
       error !== null &&
+      ambiguousStableCodes.has(error) &&
       reconcile === "exact_committed") ||
     (outcome === "ambiguous_reconciled_pending" &&
       error !== null &&
+      ambiguousStableCodes.has(error) &&
       reconcile === "exact_pending") ||
-    (outcome === "ambiguous_divergent" && error !== null && reconcile === "divergent");
-  if (!valid || (outcome === "aborted_retryable" && attempt >= maxAttempts)) {
+    (outcome === "ambiguous_divergent" &&
+      error !== null &&
+      ambiguousStableCodes.has(error) &&
+      reconcile === "divergent") ||
+    (outcome === "ambiguous_unresolved" &&
+      error !== null &&
+      unresolvedStableCodes.has(error) &&
+      reconcile === "unresolved");
+  if (!valid) {
     fail("ATTEMPT_TERMINAL_COMBINATION", `${outcome}/${reconcile}/${String(error)}`);
   }
-  if (
-    (outcome === "committed" || outcome === "ambiguous_reconciled_committed") &&
-    lastIntermediate === null
-  ) {
-    fail("ATTEMPT_TERMINAL_COMBINATION", "committed attempt missing intermediate digest");
+  const retryable = failure === null ? false : boolean(failure.retryable, "failure retryable");
+  if (outcome === "aborted_retryable") {
+    if (!retryable || retryProof === null) fail("ATTEMPT_TERMINAL_RETRY_PROOF", outcome);
+    const kind = String(retryProof.proof_kind);
+    if (
+      (error === "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED" &&
+        kind !== "projection_transient_exact_predecessor") ||
+      (error === "MIGRATION_TRANSACTION_BOUNDARY" &&
+        ![
+          "precommit_rollback_exact_predecessor",
+          "precommit_connection_terminated_exact_predecessor",
+          "commit_rejected_exact_predecessor",
+        ].includes(kind)) ||
+      (error !== "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED" &&
+        error !== "MIGRATION_TRANSACTION_BOUNDARY") ||
+      retryProof.commit_rejected_reason === "other_confirmed_postgres_error"
+    )
+      fail("ATTEMPT_TERMINAL_RETRY_PROOF", `${String(error)}/${kind}`);
+  } else if (outcome === "aborted_terminal" && error === "MIGRATION_TRANSACTION_BOUNDARY") {
+    if (
+      retryable ||
+      retryProof === null ||
+      ![
+        "precommit_rollback_exact_predecessor",
+        "precommit_connection_terminated_exact_predecessor",
+        "commit_rejected_exact_predecessor",
+      ].includes(String(retryProof.proof_kind))
+    )
+      fail("ATTEMPT_TERMINAL_RETRY_PROOF", outcome);
+  } else if (retryable || retryProof !== null) {
+    fail("ATTEMPT_TERMINAL_RETRY_PROOF", outcome);
+  }
+  if (outcome === "aborted_terminal" && error === "MIGRATION_AMBIGUOUS_COMMIT") {
+    fail("ATTEMPT_TERMINAL_COMBINATION", "ambiguous commit cannot be aborted_terminal");
+  }
+  const requiresFinalIntermediate = outcome === "committed" || outcome.startsWith("ambiguous_");
+  if (requiresFinalIntermediate && lastIntermediate === null) {
+    fail("ATTEMPT_TERMINAL_COMBINATION", "final attempt missing intermediate digest");
   }
   const claimed = digest(state.terminal_digest, "terminal digest");
   const withoutDigest = { ...state };

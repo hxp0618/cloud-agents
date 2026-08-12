@@ -9,6 +9,8 @@
   "last_intermediate_state_digest": "sha256:cf9e80acabd216f904e7f9851bd89db453f2fcba39c482e854772c7c40978edd",
   "outcome": "committed",
   "stable_error_code": null,
+  "failure_evidence": null,
+  "retry_proof": null,
   "reconcile_result": "not_run",
-  "terminal_digest": "sha256:b8c191b18c0fd8b4d517ca33a397ac942fee05dffd0f0e3634ab0fcb8cfab812"
+  "terminal_digest": "sha256:fb0c0e8319bcbb0bc34e4402618857e480b96be7db61bcba210be83398d89a32"
 }

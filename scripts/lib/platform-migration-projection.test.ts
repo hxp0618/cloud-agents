@@ -494,49 +494,50 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
     const badOutcome = structuredClone(terminal);
     badOutcome.outcome = "committed";
     badOutcome.stable_error_code = "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED";
+    badOutcome.failure_evidence = {
+      code: "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
+      projection_kind: "catalog",
+      phase: "migration_transaction",
+      path: "catalog",
+      major: 15,
+      retryable: false,
+    };
     badOutcome.terminal_digest = terminalDigest(badOutcome);
     expect(() => validateAttemptTerminalState(badOutcome)).toThrow(/ATTEMPT_TERMINAL_COMBINATION/u);
 
-    const stableErrors = [
-      "MIGRATION_PROJECTION_UNSUPPORTED_MAJOR",
-      "MIGRATION_PROJECTION_CAPABILITY_MISMATCH",
-      "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
-      "MIGRATION_PROJECTION_LIMIT_EXCEEDED",
-      "MIGRATION_PROJECTION_UNKNOWN_OBJECT",
-      "MIGRATION_PROJECTION_INVALID_EXPRESSION",
-      "MIGRATION_PROJECTION_INVALID_SCOPE",
-      "MIGRATION_PROJECTION_NON_CANONICAL_WITNESS",
-      "MIGRATION_PROJECTION_LIMIT_OVERRIDE",
-      "MIGRATION_PROJECTION_METADATA_MISMATCH",
-      "MIGRATION_PROJECTION_SNAPSHOT_INVALID",
-      "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
-      "MIGRATION_AUTHORITY_DRIFT",
-      "MIGRATION_CATALOG_DRIFT",
-      "MIGRATION_INTERMEDIATE_STATE_MISMATCH",
-    ];
-    for (const stableError of stableErrors) {
-      const allowed = structuredClone(terminal);
-      allowed.outcome = "aborted_terminal";
-      allowed.stable_error_code = stableError;
-      allowed.reconcile_result = "not_run";
-      allowed.terminal_digest = terminalDigest(allowed);
-      expect(() => validateAttemptTerminalState(allowed)).not.toThrow();
-    }
-
     const allowedStableError = structuredClone(terminal);
     allowedStableError.outcome = "aborted_terminal";
-    allowedStableError.stable_error_code = stableErrors[0]!;
+    allowedStableError.stable_error_code = "MIGRATION_LOCK_LOST";
+    allowedStableError.failure_evidence = {
+      code: "MIGRATION_LOCK_LOST",
+      projection_kind: null,
+      phase: "migration_transaction",
+      path: "transaction",
+      major: 15,
+      retryable: false,
+    };
+    allowedStableError.last_intermediate_state_digest = null;
     allowedStableError.reconcile_result = "not_run";
+    allowedStableError.terminal_digest = terminalDigest(allowedStableError);
+    expect(() => validateAttemptTerminalState(allowedStableError)).not.toThrow();
 
     const unknownStableError = structuredClone(allowedStableError);
     unknownStableError.stable_error_code = "MIGRATION_PROJECTION_UNKNOWN_FINAL_CODE";
+    (unknownStableError.failure_evidence as JsonObject).code =
+      "MIGRATION_PROJECTION_UNKNOWN_FINAL_CODE";
     unknownStableError.terminal_digest = terminalDigest(unknownStableError);
     expect(() => validateAttemptTerminalState(unknownStableError)).toThrow(/STABLE_ERROR_CODE/u);
 
-    const oldRunnerError = structuredClone(allowedStableError);
-    oldRunnerError.stable_error_code = "MIGRATION_LOCK_LOST";
-    oldRunnerError.terminal_digest = terminalDigest(oldRunnerError);
-    expect(() => validateAttemptTerminalState(oldRunnerError)).toThrow(/STABLE_ERROR_CODE/u);
+    for (const runOnly of [
+      "MIGRATION_PROJECTION_LIMIT_OVERRIDE",
+      "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+    ]) {
+      const rejected = structuredClone(allowedStableError);
+      rejected.stable_error_code = runOnly;
+      (rejected.failure_evidence as JsonObject).code = runOnly;
+      rejected.terminal_digest = terminalDigest(rejected);
+      expect(() => validateAttemptTerminalState(rejected)).toThrow(/STABLE_ERROR_CODE/u);
+    }
 
     const terminalLink = structuredClone(terminal);
     terminalLink.attempt_index = 2;
@@ -548,6 +549,14 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
     const ambiguousCommitted = structuredClone(terminal);
     ambiguousCommitted.outcome = "ambiguous_reconciled_committed";
     ambiguousCommitted.stable_error_code = "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED";
+    ambiguousCommitted.failure_evidence = {
+      code: "MIGRATION_PROJECTION_CATALOG_QUERY_FAILED",
+      projection_kind: "catalog",
+      phase: "reconcile",
+      path: "catalog",
+      major: 15,
+      retryable: false,
+    };
     ambiguousCommitted.reconcile_result = "exact_committed";
     ambiguousCommitted.last_intermediate_state_digest = null;
     ambiguousCommitted.terminal_digest = terminalDigest(ambiguousCommitted);

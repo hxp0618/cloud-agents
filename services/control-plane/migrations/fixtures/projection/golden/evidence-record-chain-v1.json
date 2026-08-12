@@ -1,0 +1,898 @@
+{
+  "format_version": "cloud-agents-platform-evidence-record-chain-fixture/v1",
+  "validation_context": {
+    "fixture_only": true,
+    "max_attempts_by_migration": {
+      "000001": 3
+    },
+    "final_statement_index_by_migration": {
+      "000001": 0
+    },
+    "final_catalog_digest_by_migration": {
+      "000001": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "signed_statement_plans": [
+      {
+        "migration_id": "000001",
+        "statement_index": 0,
+        "sql_artifact_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "sql_artifact_size_bytes": 4096,
+        "start_offset": 0,
+        "end_offset": 64,
+        "statement_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "classification": {
+          "profile": "postgresql-ddl-v1",
+          "command": "CREATE",
+          "object_kind": "SCHEMA",
+          "target_identity": "cloud_agents",
+          "grantee": null,
+          "special_case": null
+        },
+        "expected_transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "owned_runtime_receipt_oracle": {
+      "kind": "runtime",
+      "sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "size_bytes": 65536
+    },
+    "owned_decision_recovery_receipt_oracle": {
+      "kind": "decision_recovery",
+      "sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "size_bytes": 4096
+    }
+  },
+  "records": [
+    {
+      "format_version": "cloud-agents-platform-evidence-journal/v1",
+      "journal_identity_digest": "sha256:07a3b8afbdd4b766413c4ec8e0529e2fabac501a7dd90c70a4c06b001ebb71ff",
+      "release_trust_decision_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "runner_projection_decision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+      "outer_artifact_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "outer_artifact_size_bytes": 65536,
+      "decision_recovery_artifact_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "decision_recovery_artifact_size_bytes": 4096,
+      "manifest_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "runner_release_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "segment_index": 0,
+      "previous_segment_record_digest": null,
+      "limits_profile": "cloud-agents-platform-evidence-journal-limits/v1",
+      "quota_reservation_digest": "sha256:4b7c477108d0cef6dc099b3f14c90fc08ad91da5b60cfc304556248dea610dd3",
+      "reserved_records": 64,
+      "reserved_bytes": 1048576,
+      "reserved_segments": 1
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "statement_index": 0,
+      "sql_path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+      "sql_artifact_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "sql_artifact_size_bytes": 4096,
+      "start_offset": 0,
+      "end_offset": 64,
+      "statement_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "classification": {
+        "profile": "postgresql-ddl-v1",
+        "command": "CREATE",
+        "object_kind": "SCHEMA",
+        "target_identity": "cloud_agents",
+        "grantee": null,
+        "special_case": null
+      },
+      "previous_attempt_terminal_digest": null,
+      "previous_intermediate_state_digest": null,
+      "expected_transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "authority_before_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "catalog_before_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "authority_before_result": {
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "metadata": {
+          "projection_kind": "authority",
+          "digest_domain": "cloud-agents-platform-authority-projection/v1",
+          "adapter_profile": "postgresql-authority-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": 0
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": null,
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      },
+      "catalog_before_result": {
+        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "metadata": {
+          "projection_kind": "catalog_state",
+          "digest_domain": "cloud-agents-platform-catalog-state/v1",
+          "adapter_profile": "postgresql-catalog-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": 0
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": {
+            "scope_kind": "statement_prefix",
+            "schema_head": null,
+            "migration_id": "000001",
+            "through_statement_index": 0,
+            "declared_objects": []
+          },
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      }
+    },
+    {
+      "state": {
+        "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "migration_id": "000001",
+        "attempt_index": 1,
+        "statement_index": 0,
+        "statement_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "previous_attempt_terminal_digest": null,
+        "previous_intermediate_state_digest": null,
+        "control_plane_states": {
+          "tx_status": "T",
+          "session_user": "cloud_agents_migration_login_fixture",
+          "current_user": "cloud_agents_migration_owner",
+          "migration_role": "cloud_agents_migration_owner",
+          "advisory_lock": {
+            "domain": "cloud-agents-platform:migrations:v1",
+            "key_int64_decimal": "-1047838957622507638",
+            "held": true
+          },
+          "verified_authority_decision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "schema_owner": "cloud_agents_migration_owner",
+          "schema_explicit_acl_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "schema_effective_acl_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "default_acl_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "expected_transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "authority_before_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "authority_after_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "catalog_before_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "catalog_after_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81"
+      },
+      "authority_before_result": {
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "metadata": {
+          "projection_kind": "authority",
+          "digest_domain": "cloud-agents-platform-authority-projection/v1",
+          "adapter_profile": "postgresql-authority-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": 0
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": null,
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      },
+      "catalog_before_result": {
+        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "metadata": {
+          "projection_kind": "catalog_state",
+          "digest_domain": "cloud-agents-platform-catalog-state/v1",
+          "adapter_profile": "postgresql-catalog-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": 0
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": {
+            "scope_kind": "statement_prefix",
+            "schema_head": null,
+            "migration_id": "000001",
+            "through_statement_index": 0,
+            "declared_objects": []
+          },
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      },
+      "authority_after_result": {
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "metadata": {
+          "projection_kind": "authority",
+          "digest_domain": "cloud-agents-platform-authority-projection/v1",
+          "adapter_profile": "postgresql-authority-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": 0
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": null,
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      },
+      "catalog_after_result": {
+        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "metadata": {
+          "projection_kind": "catalog_state",
+          "digest_domain": "cloud-agents-platform-catalog-state/v1",
+          "adapter_profile": "postgresql-catalog-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": 0
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": {
+            "scope_kind": "statement_prefix",
+            "schema_head": null,
+            "migration_id": "000001",
+            "through_statement_index": 0,
+            "declared_objects": []
+          },
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      },
+      "preledger_authority_result": {
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "metadata": {
+          "projection_kind": "authority",
+          "digest_domain": "cloud-agents-platform-authority-projection/v1",
+          "adapter_profile": "postgresql-authority-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": null
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": null,
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      },
+      "preledger_catalog_result": {
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "metadata": {
+          "projection_kind": "catalog",
+          "digest_domain": "cloud-agents-platform-catalog-projection/v1",
+          "adapter_profile": "postgresql-catalog-v1",
+          "snapshot": {
+            "mode": "migration_serializable_read_write",
+            "ownership": "borrowed_migration",
+            "postgres_major": 15,
+            "server_version_num": 150018,
+            "database_name": "cloud_agents_fixture",
+            "authority_phase": "migration_transaction",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "isolation_level": "serializable",
+            "access_mode": "read_write",
+            "deferrable": false,
+            "tx_status": "T",
+            "migration_id": "000001",
+            "statement_index": null
+          },
+          "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scope": {
+            "scope_kind": "final",
+            "schema_head": "000001",
+            "migration_id": null,
+            "through_statement_index": null,
+            "declared_objects": []
+          },
+          "limits_profile": "cloud-agents-platform-projection-limits/v1",
+          "query_count": 1,
+          "row_count": 1,
+          "total_bytes": 128,
+          "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+        }
+      }
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "expected_ledger_length": 1,
+      "expected_ledger_head": "000001",
+      "ledger_row": {
+        "migration_id": "000001",
+        "migration_name": "expand_migration_kernel",
+        "predecessor_id": null,
+        "phase": "expand",
+        "schema_from": "absent",
+        "schema_to": "000001",
+        "compatible_binary_min": "0.1.0-alpha.1",
+        "compatible_binary_max": "0.2.0-0",
+        "sql_path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+        "sql_size_bytes": 4096,
+        "sql_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "transaction_mode": "serializable_read_write",
+        "reentrancy": "single_writer",
+        "rollback_boundary": "transaction",
+        "requires_live_instance_preflight": true,
+        "requires_pitr_preflight": true
+      }
+    },
+    {
+      "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "migration_id": "000001",
+      "attempt_index": 1,
+      "previous_attempt_terminal_digest": null,
+      "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+      "outcome": "committed",
+      "stable_error_code": null,
+      "failure_evidence": null,
+      "retry_proof": null,
+      "reconcile_result": "not_run",
+      "terminal_digest": "sha256:34698e3bbaae5fb19958cb5f682ccd8a52ba04c06b649f9a4b73799f7a450917"
+    }
+  ],
+  "frames": [
+    {
+      "format_version": "cloud-agents-platform-evidence-journal-frame/v1",
+      "sequence": 0,
+      "previous_record_digest": null,
+      "record_kind": "header",
+      "record": {
+        "format_version": "cloud-agents-platform-evidence-journal/v1",
+        "journal_identity_digest": "sha256:07a3b8afbdd4b766413c4ec8e0529e2fabac501a7dd90c70a4c06b001ebb71ff",
+        "release_trust_decision_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "runner_projection_decision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+        "outer_artifact_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "outer_artifact_size_bytes": 65536,
+        "decision_recovery_artifact_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "decision_recovery_artifact_size_bytes": 4096,
+        "manifest_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "runner_release_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "segment_index": 0,
+        "previous_segment_record_digest": null,
+        "limits_profile": "cloud-agents-platform-evidence-journal-limits/v1",
+        "quota_reservation_digest": "sha256:4b7c477108d0cef6dc099b3f14c90fc08ad91da5b60cfc304556248dea610dd3",
+        "reserved_records": 64,
+        "reserved_bytes": 1048576,
+        "reserved_segments": 1
+      },
+      "record_digest": "sha256:8966b4c07eccb916135cef32a69855658a00b1041bb4851e80a79560e824bdee"
+    },
+    {
+      "format_version": "cloud-agents-platform-evidence-journal-frame/v1",
+      "sequence": 1,
+      "previous_record_digest": "sha256:8966b4c07eccb916135cef32a69855658a00b1041bb4851e80a79560e824bdee",
+      "record_kind": "statement_intent",
+      "record": {
+        "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "migration_id": "000001",
+        "attempt_index": 1,
+        "statement_index": 0,
+        "sql_path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+        "sql_artifact_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "sql_artifact_size_bytes": 4096,
+        "start_offset": 0,
+        "end_offset": 64,
+        "statement_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "classification": {
+          "profile": "postgresql-ddl-v1",
+          "command": "CREATE",
+          "object_kind": "SCHEMA",
+          "target_identity": "cloud_agents",
+          "grantee": null,
+          "special_case": null
+        },
+        "previous_attempt_terminal_digest": null,
+        "previous_intermediate_state_digest": null,
+        "expected_transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "authority_before_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "catalog_before_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "authority_before_result": {
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "metadata": {
+            "projection_kind": "authority",
+            "digest_domain": "cloud-agents-platform-authority-projection/v1",
+            "adapter_profile": "postgresql-authority-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": 0
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": null,
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        },
+        "catalog_before_result": {
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "metadata": {
+            "projection_kind": "catalog_state",
+            "digest_domain": "cloud-agents-platform-catalog-state/v1",
+            "adapter_profile": "postgresql-catalog-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": 0
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": {
+              "scope_kind": "statement_prefix",
+              "schema_head": null,
+              "migration_id": "000001",
+              "through_statement_index": 0,
+              "declared_objects": []
+            },
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        }
+      },
+      "record_digest": "sha256:6448157bc69f640c89d3b882120b3a323c8094588cce796956362769692d2d33"
+    },
+    {
+      "format_version": "cloud-agents-platform-evidence-journal-frame/v1",
+      "sequence": 2,
+      "previous_record_digest": "sha256:6448157bc69f640c89d3b882120b3a323c8094588cce796956362769692d2d33",
+      "record_kind": "intermediate",
+      "record": {
+        "state": {
+          "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "migration_id": "000001",
+          "attempt_index": 1,
+          "statement_index": 0,
+          "statement_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "previous_attempt_terminal_digest": null,
+          "previous_intermediate_state_digest": null,
+          "control_plane_states": {
+            "tx_status": "T",
+            "session_user": "cloud_agents_migration_login_fixture",
+            "current_user": "cloud_agents_migration_owner",
+            "migration_role": "cloud_agents_migration_owner",
+            "advisory_lock": {
+              "domain": "cloud-agents-platform:migrations:v1",
+              "key_int64_decimal": "-1047838957622507638",
+              "held": true
+            },
+            "verified_authority_decision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "schema_owner": "cloud_agents_migration_owner",
+            "schema_explicit_acl_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "schema_effective_acl_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "default_acl_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "expected_transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "authority_before_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "authority_after_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "catalog_before_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "catalog_after_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81"
+        },
+        "authority_before_result": {
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "metadata": {
+            "projection_kind": "authority",
+            "digest_domain": "cloud-agents-platform-authority-projection/v1",
+            "adapter_profile": "postgresql-authority-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": 0
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": null,
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        },
+        "catalog_before_result": {
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "metadata": {
+            "projection_kind": "catalog_state",
+            "digest_domain": "cloud-agents-platform-catalog-state/v1",
+            "adapter_profile": "postgresql-catalog-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": 0
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": {
+              "scope_kind": "statement_prefix",
+              "schema_head": null,
+              "migration_id": "000001",
+              "through_statement_index": 0,
+              "declared_objects": []
+            },
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        },
+        "authority_after_result": {
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "metadata": {
+            "projection_kind": "authority",
+            "digest_domain": "cloud-agents-platform-authority-projection/v1",
+            "adapter_profile": "postgresql-authority-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": 0
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": null,
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        },
+        "catalog_after_result": {
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "metadata": {
+            "projection_kind": "catalog_state",
+            "digest_domain": "cloud-agents-platform-catalog-state/v1",
+            "adapter_profile": "postgresql-catalog-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": 0
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": {
+              "scope_kind": "statement_prefix",
+              "schema_head": null,
+              "migration_id": "000001",
+              "through_statement_index": 0,
+              "declared_objects": []
+            },
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        },
+        "preledger_authority_result": {
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "metadata": {
+            "projection_kind": "authority",
+            "digest_domain": "cloud-agents-platform-authority-projection/v1",
+            "adapter_profile": "postgresql-authority-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": null
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": null,
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        },
+        "preledger_catalog_result": {
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "metadata": {
+            "projection_kind": "catalog",
+            "digest_domain": "cloud-agents-platform-catalog-projection/v1",
+            "adapter_profile": "postgresql-catalog-v1",
+            "snapshot": {
+              "mode": "migration_serializable_read_write",
+              "ownership": "borrowed_migration",
+              "postgres_major": 15,
+              "server_version_num": 150018,
+              "database_name": "cloud_agents_fixture",
+              "authority_phase": "migration_transaction",
+              "session_user": "cloud_agents_migration_login_fixture",
+              "current_user": "cloud_agents_migration_owner",
+              "isolation_level": "serializable",
+              "access_mode": "read_write",
+              "deferrable": false,
+              "tx_status": "T",
+              "migration_id": "000001",
+              "statement_index": null
+            },
+            "verified_subject_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "scope": {
+              "scope_kind": "final",
+              "schema_head": "000001",
+              "migration_id": null,
+              "through_statement_index": null,
+              "declared_objects": []
+            },
+            "limits_profile": "cloud-agents-platform-projection-limits/v1",
+            "query_count": 1,
+            "row_count": 1,
+            "total_bytes": 128,
+            "redaction_profile": "cloud-agents-platform-projection-redaction/v1"
+          }
+        }
+      },
+      "record_digest": "sha256:f8a2cac642fcb3ba66b7729fd1c0196b6c644205a8bd71ee7ac6b8c9bf419264"
+    },
+    {
+      "format_version": "cloud-agents-platform-evidence-journal-frame/v1",
+      "sequence": 3,
+      "previous_record_digest": "sha256:f8a2cac642fcb3ba66b7729fd1c0196b6c644205a8bd71ee7ac6b8c9bf419264",
+      "record_kind": "commit_intent",
+      "record": {
+        "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "migration_id": "000001",
+        "attempt_index": 1,
+        "previous_attempt_terminal_digest": null,
+        "attempt_predecessor_catalog_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+        "expected_ledger_length": 1,
+        "expected_ledger_head": "000001",
+        "ledger_row": {
+          "migration_id": "000001",
+          "migration_name": "expand_migration_kernel",
+          "predecessor_id": null,
+          "phase": "expand",
+          "schema_from": "absent",
+          "schema_to": "000001",
+          "compatible_binary_min": "0.1.0-alpha.1",
+          "compatible_binary_max": "0.2.0-0",
+          "sql_path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+          "sql_size_bytes": 4096,
+          "sql_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "transaction_mode": "serializable_read_write",
+          "reentrancy": "single_writer",
+          "rollback_boundary": "transaction",
+          "requires_live_instance_preflight": true,
+          "requires_pitr_preflight": true
+        }
+      },
+      "record_digest": "sha256:9e210c346b7610a46a44e133b04e5df6f1c44946786188df40d7f92e60d12e07"
+    },
+    {
+      "format_version": "cloud-agents-platform-evidence-journal-frame/v1",
+      "sequence": 4,
+      "previous_record_digest": "sha256:9e210c346b7610a46a44e133b04e5df6f1c44946786188df40d7f92e60d12e07",
+      "record_kind": "attempt_terminal",
+      "record": {
+        "schema_bundle_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "catalog_contract_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "migration_id": "000001",
+        "attempt_index": 1,
+        "previous_attempt_terminal_digest": null,
+        "last_intermediate_state_digest": "sha256:3fdf7b9a36c8eed72892d91e2d4111271caa3cda448c867107b908dee8e74b81",
+        "outcome": "committed",
+        "stable_error_code": null,
+        "failure_evidence": null,
+        "retry_proof": null,
+        "reconcile_result": "not_run",
+        "terminal_digest": "sha256:34698e3bbaae5fb19958cb5f682ccd8a52ba04c06b649f9a4b73799f7a450917"
+      },
+      "record_digest": "sha256:05d29fa0182d4790071f52345f0940e0241add96daf11025e3b77798376123b8"
+    }
+  ]
+}
