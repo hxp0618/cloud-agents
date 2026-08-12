@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "snapshot": {
-    "generated_at": "2026-08-11T07:04:31Z",
+    "generated_at": "2026-08-12T02:16:19Z",
     "module": "github.com/hxp0618/cloud-agents/services/control-plane",
     "go": "go1.26.5",
     "goos": "darwin",
@@ -13,20 +13,20 @@
     "gosumdb": "sum.golang.org",
     "goprivate": "",
     "gonosumdb": "",
-    "source_commit": "99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
-    "source_commit_tree_oid": "606ab156439e6b30129f7738c646f1b4a3c6d70a",
+    "source_commit": "3f92d8059cf51ab3bc995802f6bd85acfea5076a",
+    "source_commit_tree_oid": "7cc2085b7b46bcb6c52873111f5d6d2dc97ce71b",
     "source_commit_tree_oid_algorithm": "sha1",
-    "control_plane_tree_oid": "ad47c98dba6bebdbaaa612d7e9a5500f833db8ee",
+    "control_plane_tree_oid": "174853c911016e9309694bd4bc98c732f3ce94c1",
     "control_plane_tree_oid_algorithm": "sha1",
-    "control_plane_tracked_manifest_sha256": "65ae44316bfc02d5bf4980d73c1a521518dc499dc2e5cd68f4b58d3c50a3e173",
-    "control_plane_tracked_file_count": 54,
-    "control_plane_go_source_manifest_sha256": "ae5178f70c74dcd75ee530d4e44325bb19ec1c5d1769ce7f08ac574d0293cc05",
-    "control_plane_go_source_file_count": 25,
+    "control_plane_tracked_manifest_sha256": "2a9ddd7802f4afbf43806689fe18d1adc76992f1a0a4f34f0c6b8ac72150d3f9",
+    "control_plane_tracked_file_count": 120,
+    "control_plane_go_source_manifest_sha256": "2c90de5769288f77e4c3156f41752f7dd8fbd595c371652297ff54d606e0b019",
+    "control_plane_go_source_file_count": 56,
     "source_tree_committed": true,
-    "source_tree_boundary": "non-test import closure replayed at the exact source commit with no tracked worktree changes; only the four declared untracked supply-chain evidence artifacts were present"
+    "source_tree_boundary": "non-test import closure replayed from exact committed source 3f92d8059cf51ab3bc995802f6bd85acfea5076a; the four supply-chain artifact refreshes are excluded from that source commit identity, and an unrelated untracked repository-root go.work.sum was present"
   },
   "inputs": {
-    "go_mod_sha256": "be3b52ada42aee131f5ab650ecd9d17aa65b779d52615cd3b607df83507b4f5e",
+    "go_mod_sha256": "3eaa75348e57ef4ea72e1fff572058dd496acb877be543600e5b1a57ed93de90",
     "go_sum_sha256": "f65654519c652388e9f315cef1ef299e86fdc964d8d18332c05dbdb51a40c7fb",
     "selected_module_list_sha256": "4c6ddbb19110b86687228f56f48de96e10eea997d6c35283329945d08d52db1a",
     "module_graph_sha256": "8264f2a6181bda29e3ed7e13cf410fb6f6e91cf5b0c5a1306a15e310a48e675e",
@@ -38,6 +38,7 @@
     "go_mod_tidy_diff_empty": true,
     "go_mod_verify": "all modules verified",
     "go_test_all": "go test -count=1 ./... passed",
+    "go_build_all": "go build ./... passed",
     "go_vet_all": "go vet ./... passed",
     "replace_count": 0,
     "exclude_count": 0,
@@ -45,6 +46,8 @@
     "production_module_count": 6,
     "graph_only_module_count": 9,
     "production_package_count": 29,
+    "direct_requirement_count": 2,
+    "direct_requirements": ["github.com/jackc/pgx/v5 v5.10.0", "golang.org/x/text v0.39.0"],
     "production_patents_file_count": 2,
     "notice_scope": "production-linked-only",
     "graph_only_definition": "selected by go list -m all but absent from the non-test go list -deps ./... module set"
@@ -76,7 +79,8 @@
       "query_sha256": "d2ef1d0cc93788e13a3e12a8df0f9ee8ee5c8df17851978df6b815d630957e05",
       "canonical_response_sha256": "dfffd23768f912c4b64bd2c127cef7c089434b0aaf86855657e6b8c4cb95386c"
     },
-    "invalidation": "Any advisory database, scanner, module graph, source import, build tag, toolchain, version, checksum, license text, additional IP rights grant, or distribution-scope change requires a new snapshot. An empty result is not permanent safety evidence."
+    "invalidation": "Any advisory database, scanner, module graph, source import, build tag, toolchain, version, checksum, license text, additional IP rights grant, or distribution-scope change requires a new snapshot. An empty result is not permanent safety evidence.",
+    "inheritance": "The 2026-08-11 exact vulnerability evidence is retained because all 15 selected module paths, versions, module sums, proxy bits, and the 29-package production closure are unchanged; it is not represented as a new advisory-database scan."
   },
   "modules": [
     {
@@ -108,6 +112,7 @@
     {
       "path": "github.com/jackc/pgx/v5",
       "version": "v5.10.0",
+      "requirement": "direct",
       "classification": "production-linked",
       "module_sum": "h1:VhSvgU2jSli8o3AqIEOTJr7rZwAEUVo4E4XhR94Zfr0=",
       "go_mod_sum": "h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4=",
@@ -168,6 +173,7 @@
     {
       "path": "golang.org/x/text",
       "version": "v0.39.0",
+      "requirement": "direct",
       "classification": "production-linked",
       "module_sum": "h1:UbZz4pLOvn600D6Oh6GGEI6VAmndrEBLv8/6BEXzyus=",
       "go_mod_sum": "h1:3UwRclnC2g0TU9x8PZiyfOajCd1zaUNHF9cvqcQZ+ZM=",

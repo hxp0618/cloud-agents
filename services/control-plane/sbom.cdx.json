@@ -3,7 +3,7 @@
   "specVersion": "1.6",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-11T07:04:31Z",
+    "timestamp": "2026-08-12T02:16:19Z",
     "tools": {
       "components": [
         {
@@ -20,15 +20,15 @@
     },
     "component": {
       "type": "application",
-      "bom-ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "bom-ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@3f92d8059cf51ab3bc995802f6bd85acfea5076a",
       "group": "github.com/hxp0618/cloud-agents/services",
       "name": "control-plane",
-      "version": "99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
-      "purl": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "version": "3f92d8059cf51ab3bc995802f6bd85acfea5076a",
+      "purl": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@3f92d8059cf51ab3bc995802f6bd85acfea5076a",
       "properties": [
         {
           "name": "cloud-agents:go-mod-sha256",
-          "value": "be3b52ada42aee131f5ab650ecd9d17aa65b779d52615cd3b607df83507b4f5e"
+          "value": "3eaa75348e57ef4ea72e1fff572058dd496acb877be543600e5b1a57ed93de90"
         },
         {
           "name": "cloud-agents:go-sum-sha256",
@@ -36,23 +36,23 @@
         },
         {
           "name": "cloud-agents:source-commit",
-          "value": "99106e8a77b6318830c63b4a4c294fa7ff8f1de4"
+          "value": "3f92d8059cf51ab3bc995802f6bd85acfea5076a"
         },
         {
           "name": "cloud-agents:source-commit-tree-oid",
-          "value": "606ab156439e6b30129f7738c646f1b4a3c6d70a"
+          "value": "7cc2085b7b46bcb6c52873111f5d6d2dc97ce71b"
         },
         {
           "name": "cloud-agents:control-plane-tree-oid",
-          "value": "ad47c98dba6bebdbaaa612d7e9a5500f833db8ee"
+          "value": "174853c911016e9309694bd4bc98c732f3ce94c1"
         },
         {
           "name": "cloud-agents:control-plane-tracked-manifest-sha256",
-          "value": "65ae44316bfc02d5bf4980d73c1a521518dc499dc2e5cd68f4b58d3c50a3e173"
+          "value": "2a9ddd7802f4afbf43806689fe18d1adc76992f1a0a4f34f0c6b8ac72150d3f9"
         },
         {
           "name": "cloud-agents:control-plane-go-source-manifest-sha256",
-          "value": "ae5178f70c74dcd75ee530d4e44325bb19ec1c5d1769ce7f08ac574d0293cc05"
+          "value": "2c90de5769288f77e4c3156f41752f7dd8fbd595c371652297ff54d606e0b019"
         },
         {
           "name": "cloud-agents:non-test-production-package-list-sha256",
@@ -148,6 +148,10 @@
         {
           "name": "cloud-agents:go-mod-sum",
           "value": "h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4="
+        },
+        {
+          "name": "cloud-agents:main-module-requirement",
+          "value": "direct"
         }
       ]
     },
@@ -241,6 +245,10 @@
         {
           "name": "cloud-agents:go-mod-sum",
           "value": "h1:3UwRclnC2g0TU9x8PZiyfOajCd1zaUNHF9cvqcQZ+ZM="
+        },
+        {
+          "name": "cloud-agents:main-module-requirement",
+          "value": "direct"
         },
         {
           "name": "cloud-agents:additional-ip-rights-grant-path",
@@ -430,7 +438,7 @@
   ],
   "dependencies": [
     {
-      "ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@99106e8a77b6318830c63b4a4c294fa7ff8f1de4",
+      "ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@3f92d8059cf51ab3bc995802f6bd85acfea5076a",
       "dependsOn": [
         "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
         "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
