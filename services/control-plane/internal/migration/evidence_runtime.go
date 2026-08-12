@@ -47,7 +47,7 @@ type VerifiedRuntimeArtifact struct {
 
 type VerifiedContentReceipt struct {
 	owner     *evidenceOwnerToken
-	kind      string
+	kind      durableContentObjectKind
 	digest    Digest
 	sizeBytes uint64
 	identity  Digest
@@ -55,31 +55,43 @@ type VerifiedContentReceipt struct {
 
 type VerifiedDecisionRecoveryReceipt struct {
 	owner     *evidenceOwnerToken
-	kind      string
+	kind      durableContentObjectKind
 	digest    Digest
 	sizeBytes uint64
 	identity  Digest
 }
 
-func bindRuntimeContentReceipt(owner *evidenceOwnerToken, artifact VerifiedRuntimeArtifact, storeIdentity Digest) (VerifiedContentReceipt, error) {
-	if owner == nil || artifact.owner != owner || artifact.sizeBytes == 0 || uint64(len(artifact.bytes)) != artifact.sizeBytes || artifact.digest.Validate() != nil || DigestBytes(artifact.bytes) != artifact.digest || storeIdentity.Validate() != nil {
-		return VerifiedContentReceipt{}, invalidEvidence("runtime-receipt", "artifact or store identity")
-	}
-	return VerifiedContentReceipt{owner: owner, kind: "runtime", digest: artifact.digest, sizeBytes: artifact.sizeBytes, identity: storeIdentity}, nil
+type durableContentObjectKind string
+
+const (
+	durableRuntimeContentObject          durableContentObjectKind = "runtime"
+	durableDecisionRecoveryContentObject durableContentObjectKind = "decision_recovery"
+)
+
+// verifiedDurableContentObject is the reserved non-wire input for the future
+// content-store publication result. This slice deliberately has no constructor
+// or self-authenticating seal: without a separate FS-owned publication handle,
+// a same-package seal would be forgeable and must not mint receipt authority.
+type verifiedDurableContentObject struct {
+	publicationAuthority any
 }
 
-func bindDecisionRecoveryReceipt(owner *evidenceOwnerToken, artifact VerifiedDecisionRecoveryArtifact, storeIdentity Digest) (VerifiedDecisionRecoveryReceipt, error) {
-	if owner == nil || artifact.owner == nil || artifact.owner.token != owner || artifact.sizeBytes == 0 || uint64(len(artifact.bytes)) != artifact.sizeBytes || artifact.digest.Validate() != nil || DigestBytes(artifact.bytes) != artifact.digest || storeIdentity.Validate() != nil {
-		return VerifiedDecisionRecoveryReceipt{}, invalidEvidence("decision-recovery-receipt", "artifact or store identity")
-	}
-	return VerifiedDecisionRecoveryReceipt{owner: owner, kind: "decision_recovery", digest: artifact.digest, sizeBytes: artifact.sizeBytes, identity: storeIdentity}, nil
+func bindRuntimeContentReceipt(*evidenceOwnerToken, VerifiedRuntimeArtifact, verifiedDurableContentObject) (VerifiedContentReceipt, error) {
+	return VerifiedContentReceipt{}, fail(CodeProjectionNotImplemented, "runtime-receipt", "durable content publication authority is not implemented", nil)
 }
 
-func validRuntimeReceipt(r VerifiedContentReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
-	return owner != nil && r.owner == owner && r.kind == "runtime" && r.digest == digest && r.sizeBytes == size && size > 0 && r.identity.Validate() == nil
+func bindDecisionRecoveryReceipt(*evidenceOwnerToken, VerifiedDecisionRecoveryArtifact, verifiedDurableContentObject) (VerifiedDecisionRecoveryReceipt, error) {
+	return VerifiedDecisionRecoveryReceipt{}, fail(CodeProjectionNotImplemented, "decision-recovery-receipt", "durable content publication authority is not implemented", nil)
 }
-func validDecisionRecoveryReceipt(r VerifiedDecisionRecoveryReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
-	return owner != nil && r.owner == owner && r.kind == "decision_recovery" && r.digest == digest && r.sizeBytes == size && size > 0 && r.identity.Validate() == nil
+
+func validRuntimeReceipt(VerifiedContentReceipt, *evidenceOwnerToken, Digest, uint64) bool {
+	// No receipt is valid until a separately owned durable publication result
+	// exists. Accepting a structurally self-consistent literal here would bypass
+	// the rejecting binder and recreate digest-only authority.
+	return false
+}
+func validDecisionRecoveryReceipt(VerifiedDecisionRecoveryReceipt, *evidenceOwnerToken, Digest, uint64) bool {
+	return false
 }
 
 type VerifiedEvidenceRun struct {

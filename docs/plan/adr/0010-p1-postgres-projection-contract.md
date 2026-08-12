@@ -1515,6 +1515,41 @@ owner/mode/link-count/regular-file/size/digest 后才丢弃本调用拥有的 te
 `sql_path + start/end offset + statement digest` 长期引用 verified bytes，而不是引用调用方之后可能消失或变化的
 artifact source；decision-recovery receipt 也因 header digest/size 能在重启后恢复 exact verifier input。
 
+`objects` tree 的 registration grammar 在首次 `Open` 前固定关闭：configured root 必须预置 `objects` directory，
+并且只允许另有 `lineages` directory 与 `lineages.lock` regular file；后两者缺失时继续由下文既有 registration state
+machine 按 file/directory durability protocol 创建，缺失本身不是 object-store admission failure。root 中出现其他 entry、
+symlink/special/hardlink，统一在 root admission 返回 `MIGRATION_EVIDENCE_JOURNAL_FAILED`，不得忽略或递归清理。
+`objects` 内只能有预置的 `sha256` directory；`sha256` 缺失或出现其他 entry 都是同一 admission failure。root、`objects`、`objects/sha256`
+必须在 `Open` 中逐 component `O_NOFOLLOW` 打开，exact 验证 runner UID、directory mode 至多 `0700`，并证明三者
+`st_dev` 相同；`objects` 或 `sha256` 缺失必须拒绝，不得由 runner 创建。root 中尚未初始化的 `lineages`/
+`lineages.lock` 仍只按下文 registration state machine 创建；这不授权创建 content-store directories。
+
+`objects/sha256` 的 entry grammar 仅允许两类 basename：final 为 exact `64lowerhex`；temporary 为 exact
+`.tmp-<32lowerhex>`，其中 32 hex 必须来自每次 create 独立的 128-bit CSPRNG，不能使用时间、PID、计数器、digest
+prefix 或 caller string。final 名必须与全量 SHA-256 完全相等；registered digest/size/kind 与 final bytes 不一致是
+`MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。malformed/unknown basename、symlink、device/socket/FIFO、owner/mode/link-count
+错误或跨 device object 是 `MIGRATION_EVIDENCE_JOURNAL_FAILED`；valid-name final 的 full digest/size mismatch、同 digest
+却与 durable registration 不一致则是 corrupt。final hardlink 因 `st_nlink != 1` 拒绝；temp 也必须是 owner 匹配、
+mode 至多 `0600`、link-count=1、same-device regular file。
+
+每次 root admission 对 temp 做 bounded inclusive scan：最多 `64` 个 temp、每 temp physical size 最多 `64 MiB`、
+全部 temp physical bytes 总计最多 `4 GiB`；exact maximum 合法，第 65 个、任一 `64 MiB+1` 或 cumulative
+`4 GiB+1` 在读取 object bytes 或进入 DB 前返回 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。计数/累计必须使用
+overflow-safe `value > max-current` 比较，不能 wrap。超过 limits 不得先删除再通过 admission。能证明由当前持有
+store-writer lock 的 active publication handle exact 引用的 temp 保留；无法证明 active/unreferenced 的 temp 同样保守
+计入 count/bytes。只有在 root-wide + store-writer lock 下、完整证明 basename/owner/type/link-count/same-device 且不被
+任何 active writer/reference 持有后，maintenance 才可清理 unreferenced temp；`Open` 不得猜测 crash ownership，
+不得删除 final，也不得把 temp 作为 durable object/receipt authority。
+
+`publish` 一旦尝试创建/write/link/rename/sync，任何无法证明 durable 成功的结果都进入 unknown：session/cursor/root
+admission authority 失效，只能 close 后重新 `Open` 并重新 bounded scan/full verify。超限若在任何 mutation 前由同一
+root-wide lock 内 exact 证明，才映射 limit-exceeded；mutation 后即使随后观察到 quota 超限也不得把 unknown 降格为
+普通 limit。sealed durable-object authority 只能由 content store 在 write-complete、full digest/size verify、`fdatasync`、
+atomic no-replace publish、objects-directory `fsync`、no-follow reopen 及再次 full digest/size/owner/mode/link-count/kind/
+store-identity verify全部成功后，从私有 publication result mint。`EEXIST` reuse 也必须执行同一套 reopen/full verify；
+wire decode、普通 caller、loose Digest 或自洽 same-package literal 均不能升格。当前 impl-2 receipt binder 在该 private
+publication-result 路径落地前固定 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，不得生成伪 durable receipt。
+
 journal wire record 是以下 **exact closed union**；不存在额外 record kind、unknown member 或开放扩展点：
 
 ```text
@@ -2103,7 +2138,8 @@ journal root 固定为
 不自动删除 final object/journal 以制造额度。
 
 `Open` 在任何第一次 `Connect` 前尚不能信任 ledger，因此必须把 **整个 schema bundle 的所有 entry 都保守视为尚未
-提交**，按每 entry 的 `max_attempts` 计算完整 remaining bundle 的所有 statement intent/intermediate、commit intent、
+提交**。attempt budget 的唯一 authority 是 verified schema bundle 已有 `ExecutionPolicy.MaxAttempts`；它对每个 entry
+统一适用，不在 entry 或 C3 wire 新增 `max_attempts` 字段。reservation 按该统一值计算完整 remaining bundle 的所有 statement intent/intermediate、commit intent、
 terminal、possible resolution、segment headers 与 length prefixes，以及每个 journal frame 对应的 lineage checkpoint、
 reserve/activate/possible supersede 的 record/bytes worst case；绝不能只为
 单个 entry admission。后续 exact ledger read 即使证明 prefix 已提交，也不能缩小该 run 已取得的保守 reservation。它
@@ -2122,13 +2158,16 @@ record-kind maximum（已包含 8-byte prefix + full frame headers + canonical r
 平均值：
 
 ```text
-attempts_total = sum(entry.max_attempts for every entry in verified schema bundle)
-statements_total = sum(entry.statement_count * entry.max_attempts for every entry)
+max_attempts = verified_schema_bundle.execution_policy.max_attempts
+entry_count = count(verified_schema_bundle.entries)
+attempts_total = entry_count * max_attempts
+statements_total = sum(entry.statement_count * max_attempts for every entry)
 terminal_records = attempts_total
 resolution_records = attempts_total
 
 WorstCaseCallerSizes = concatenate, in verified entry/attempt/statement order:
-  for each attempt:
+  for each entry in verified order:
+   for attempt_index = 1..max_attempts:
     repeat entry.statement_count times:
       [MaxFramedStatementIntentBytes, MaxFramedIntermediateBytes]
     [MaxFramedCommitIntentBytes,
@@ -2781,7 +2820,8 @@ AttemptTerminalState {
 `terminal_digest` 使用 domain `cloud-agents-platform-attempt-terminal/v1` 对移除自身字段后的完整 object 做
 RFC8785+SHA-256；statement 尚未产生 intermediate record 就失败时 `last_intermediate_state_digest = null`。
 合法组合、runner/evidence stable code、`last_intermediate_state_digest` 的非空约束和 retryability 以第 5.4.5 节为
-唯一 authority；本节不另建较宽的别名规则。其他组合或 retryable outcome 达到/超过 manifest `max_attempts` 都拒绝。
+唯一 authority；本节不另建较宽的别名规则。其他组合或 retryable outcome 达到/超过 verified schema bundle
+`ExecutionPolicy.MaxAttempts` 都拒绝。
 只有 `committed` 与全部 ambiguous outcomes 必须接受该 entry 的 final 0-based statement index，并证明
 `last_intermediate_state_digest` 对应 final durable intermediate；只检查 digest 非空不足以声称 final chain 已关闭。
 `aborted_retryable`/`aborted_terminal` 可为 null（尚无 durable intermediate）或引用最后一个 durable statement prefix，

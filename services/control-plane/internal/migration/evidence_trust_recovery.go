@@ -90,6 +90,13 @@ func (d OwnedVerifiedDecision) recoverHistoricalSupersession(ctx context.Context
 	if d.owner == nil || d.capability.owner != d.owner || d.owner.verifier == nil || authority == nil || authority.owner != d.owner || oldArtifact.owner != d.owner || plannedRecovery.owner != d.owner || plannedRuntime.owner != d.owner.token || plannedRuntimeReceipt.owner != d.owner.token || plannedRecoveryReceipt.owner != d.owner.token || plannedRuntimeReceipt.kind != "runtime" || plannedRecoveryReceipt.kind != "decision_recovery" {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "inputs are not owned by the same verifier", nil)
 	}
+	// Durable content receipts are an external precondition to invoking the
+	// historical verifier. Until the content-store publication authority exists,
+	// even a self-consistent same-package literal must stop here with zero
+	// verifier side effects.
+	if !validRuntimeReceipt(plannedRuntimeReceipt, d.owner.token, plannedRuntime.digest, plannedRuntime.sizeBytes) || !validDecisionRecoveryReceipt(plannedRecoveryReceipt, d.owner.token, plannedRecovery.digest, plannedRecovery.sizeBytes) {
+		return nil, fail(CodeProjectionNotImplemented, "historical-supersession", "durable content publication authority is not implemented", nil)
+	}
 	if err := superseded.Validate(); err != nil || superseded.LineageSupersessionAuthorityDigest != authority.digest || plannedRuntime.digest != plannedRuntimeReceipt.digest || plannedRuntime.sizeBytes != plannedRuntimeReceipt.sizeBytes || plannedRecovery.digest != plannedRecoveryReceipt.digest || plannedRecovery.sizeBytes != plannedRecoveryReceipt.sizeBytes {
 		return nil, invalidEvidence("historical-supersession", "authority, body, or typed receipt mismatch")
 	}

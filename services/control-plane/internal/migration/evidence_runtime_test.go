@@ -10,6 +10,57 @@ import (
 	"testing"
 )
 
+func TestDurableContentReceiptBindersRejectUntilPublicationAuthorityExists(t *testing.T) {
+	owner := &evidenceOwnerToken{nonce: [16]byte{41}}
+	runtimeBytes := []byte("runtime-durable-object")
+	runtimeArtifact := VerifiedRuntimeArtifact{owner: owner, bytes: runtimeBytes, digest: DigestBytes(runtimeBytes), sizeBytes: uint64(len(runtimeBytes))}
+	for name, object := range map[string]verifiedDurableContentObject{
+		"zero":    {},
+		"literal": {publicationAuthority: DigestBytes([]byte("loose-digest"))},
+		"alias":   {publicationAuthority: &runtimeArtifact},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := bindRuntimeContentReceipt(owner, runtimeArtifact, object); !IsCode(err, CodeProjectionNotImplemented) {
+				t.Fatalf("runtime binder did not reject unavailable publication authority: %v", err)
+			}
+		})
+	}
+	for name, receipt := range map[string]VerifiedContentReceipt{
+		"zero": {},
+		"self-consistent-literal": {
+			owner: owner, kind: durableRuntimeContentObject, digest: runtimeArtifact.digest,
+			sizeBytes: runtimeArtifact.sizeBytes, identity: DigestBytes([]byte("store")),
+		},
+	} {
+		t.Run("runtime-validator-"+name, func(t *testing.T) {
+			if validRuntimeReceipt(receipt, owner, runtimeArtifact.digest, runtimeArtifact.sizeBytes) {
+				t.Fatal("runtime receipt literal bypassed unavailable publication authority")
+			}
+		})
+	}
+
+	verifierOwner := &recoveryVerifierOwner{verifier: &recoveryVerifierFake{}, token: owner}
+	recoveryBytes := []byte("recovery-durable-object")
+	recoveryArtifact := VerifiedDecisionRecoveryArtifact{owner: verifierOwner, bytes: recoveryBytes, digest: DigestBytes(recoveryBytes), sizeBytes: uint64(len(recoveryBytes)), decision: DigestBytes([]byte("decision"))}
+	for name, object := range map[string]verifiedDurableContentObject{
+		"zero":      {},
+		"kind-swap": {publicationAuthority: runtimeArtifact},
+		"digest":    {publicationAuthority: recoveryArtifact.digest},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := bindDecisionRecoveryReceipt(owner, recoveryArtifact, object); !IsCode(err, CodeProjectionNotImplemented) {
+				t.Fatalf("recovery binder did not reject unavailable publication authority: %v", err)
+			}
+		})
+	}
+	if validDecisionRecoveryReceipt(VerifiedDecisionRecoveryReceipt{
+		owner: owner, kind: durableDecisionRecoveryContentObject, digest: recoveryArtifact.digest,
+		sizeBytes: recoveryArtifact.sizeBytes, identity: DigestBytes([]byte("store")),
+	}, owner, recoveryArtifact.digest, recoveryArtifact.sizeBytes) {
+		t.Fatal("recovery receipt literal bypassed unavailable publication authority")
+	}
+}
+
 func TestOwnedEvidenceRecordIsKindGenerationCursorBoundAndSingleUse(t *testing.T) {
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
 	frames := decodeEvidenceFrames(t, document["frames"])

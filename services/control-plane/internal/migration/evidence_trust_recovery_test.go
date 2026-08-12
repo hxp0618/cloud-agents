@@ -125,35 +125,55 @@ func TestTypedReceiptBindersRejectKindDigestSizeAndStoreIdentitySwaps(t *testing
 	owner := &evidenceOwnerToken{nonce: [16]byte{7}}
 	runtimeBytes := []byte("runtime")
 	runtime := VerifiedRuntimeArtifact{owner, runtimeBytes, DigestBytes(runtimeBytes), uint64(len(runtimeBytes))}
-	receipt, err := bindRuntimeContentReceipt(owner, runtime, DigestBytes([]byte("runtime-store")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !validRuntimeReceipt(receipt, owner, runtime.digest, runtime.sizeBytes) {
-		t.Fatal("valid runtime receipt rejected")
+	if _, err := bindRuntimeContentReceipt(owner, runtime, verifiedDurableContentObject{}); !IsCode(err, CodeProjectionNotImplemented) {
+		t.Fatalf("runtime receipt escaped unimplemented durable publication authority: %v", err)
 	}
 	wrong := runtime
 	wrong.digest = DigestBytes([]byte("wrong"))
-	if _, err := bindRuntimeContentReceipt(owner, wrong, DigestBytes([]byte("runtime-store"))); err == nil {
-		t.Fatal("runtime digest swap accepted")
+	if _, err := bindRuntimeContentReceipt(owner, wrong, verifiedDurableContentObject{}); !IsCode(err, CodeProjectionNotImplemented) {
+		t.Fatalf("runtime digest swap escaped unavailable publication authority: %v", err)
 	}
 
 	verifierOwner := &recoveryVerifierOwner{&recoveryVerifierFake{}, owner}
 	recoveryBytes := []byte("recovery")
 	recovery := VerifiedDecisionRecoveryArtifact{verifierOwner, recoveryBytes, DigestBytes(recoveryBytes), uint64(len(recoveryBytes)), DigestBytes([]byte("decision"))}
-	recoveryReceipt, err := bindDecisionRecoveryReceipt(owner, recovery, DigestBytes([]byte("recovery-store")))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := bindDecisionRecoveryReceipt(owner, recovery, verifiedDurableContentObject{}); !IsCode(err, CodeProjectionNotImplemented) {
+		t.Fatalf("recovery receipt escaped unimplemented durable publication authority: %v", err)
 	}
-	if !validDecisionRecoveryReceipt(recoveryReceipt, owner, recovery.digest, recovery.sizeBytes) {
-		t.Fatal("valid recovery receipt rejected")
-	}
-	if validRuntimeReceipt(VerifiedContentReceipt{owner: owner, kind: "decision_recovery", digest: runtime.digest, sizeBytes: runtime.sizeBytes, identity: receipt.identity}, owner, runtime.digest, runtime.sizeBytes) {
+	identity := DigestBytes([]byte("runtime-store"))
+	if validRuntimeReceipt(VerifiedContentReceipt{owner: owner, kind: durableDecisionRecoveryContentObject, digest: runtime.digest, sizeBytes: runtime.sizeBytes, identity: identity}, owner, runtime.digest, runtime.sizeBytes) {
 		t.Fatal("typed receipt kind swap accepted")
 	}
+	recoveryReceipt := VerifiedDecisionRecoveryReceipt{owner: owner, kind: durableDecisionRecoveryContentObject, digest: recovery.digest, sizeBytes: recovery.sizeBytes, identity: identity}
 	recoveryReceipt.identity = ""
 	if validDecisionRecoveryReceipt(recoveryReceipt, owner, recovery.digest, recovery.sizeBytes) {
 		t.Fatal("missing store identity accepted")
+	}
+}
+
+func TestHistoricalSupersessionRejectsLiteralReceiptsBeforeVerifierCall(t *testing.T) {
+	t.Parallel()
+	token := &evidenceOwnerToken{nonce: [16]byte{17}}
+	verifier := &recoveryVerifierFake{}
+	owner := &recoveryVerifierOwner{verifier: verifier, token: token}
+	decision := OwnedVerifiedDecision{owner: owner, capability: sameVerifierRecoveryCapability{owner: owner}}
+	authority := &VerifiedLineageSupersessionAuthority{owner: owner}
+
+	oldBytes := []byte("old-recovery")
+	oldArtifact := VerifiedDecisionRecoveryArtifact{owner: owner, bytes: oldBytes, digest: DigestBytes(oldBytes), sizeBytes: uint64(len(oldBytes))}
+	runtimeBytes := []byte("planned-runtime")
+	plannedRuntime := VerifiedRuntimeArtifact{owner: token, bytes: runtimeBytes, digest: DigestBytes(runtimeBytes), sizeBytes: uint64(len(runtimeBytes))}
+	recoveryBytes := []byte("planned-recovery")
+	plannedRecovery := VerifiedDecisionRecoveryArtifact{owner: owner, bytes: recoveryBytes, digest: DigestBytes(recoveryBytes), sizeBytes: uint64(len(recoveryBytes))}
+	storeIdentity := DigestBytes([]byte("self-consistent-store"))
+	runtimeReceipt := VerifiedContentReceipt{owner: token, kind: durableRuntimeContentObject, digest: plannedRuntime.digest, sizeBytes: plannedRuntime.sizeBytes, identity: storeIdentity}
+	recoveryReceipt := VerifiedDecisionRecoveryReceipt{owner: token, kind: durableDecisionRecoveryContentObject, digest: plannedRecovery.digest, sizeBytes: plannedRecovery.sizeBytes, identity: storeIdentity}
+
+	if _, err := decision.recoverHistoricalSupersession(context.Background(), authority, GenerationSuperseded{}, oldArtifact, plannedRuntime, runtimeReceipt, plannedRecovery, recoveryReceipt); !IsCode(err, CodeProjectionNotImplemented) {
+		t.Fatalf("literal receipts did not stop at publication boundary: %v", err)
+	}
+	if verifier.supersessionCalls != 0 {
+		t.Fatalf("literal receipts reached historical verifier: calls=%d", verifier.supersessionCalls)
 	}
 }
 
