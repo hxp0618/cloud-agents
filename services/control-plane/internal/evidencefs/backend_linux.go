@@ -108,6 +108,7 @@ func (linuxBackend) readDirNames(fd int, maximum int) ([]string, error) {
 	}
 }
 func (linuxBackend) isOverflow(err error) bool { return errors.Is(err, unix.EOVERFLOW) }
+func (linuxBackend) isNotExist(err error) bool { return errors.Is(err, unix.ENOENT) }
 
 func (linuxBackend) pread(fd int, target []byte, offset int64) (int, error) {
 	return unix.Pread(fd, target, offset)

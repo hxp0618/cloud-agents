@@ -16,16 +16,18 @@ var (
 )
 
 type fakeNode struct {
-	name     string
-	stat     fileStat
-	data     []byte
-	children map[string]*fakeNode
-	locked   bool
+	name        string
+	stat        fileStat
+	data        []byte
+	children    map[string]*fakeNode
+	locked      bool
+	virtualZero bool
 }
 
 type fakeHandle struct {
 	node    *fakeNode
 	dirRead bool
+	locked  bool
 }
 
 type fakeBackend struct {
@@ -52,8 +54,11 @@ type fakeBackend struct {
 	failFsync          bool
 	failUnlock         bool
 	failCloseNames     map[string]bool
+	failCloseAt        map[string]int
+	closeNameCounts    map[string]int
 	closeAttempts      []string
 	unlockAttempts     int
+	unlockInodes       []uint64
 	failRename         bool
 	replaceOnOpen      string
 	replaceOnOpenAt    int
@@ -62,13 +67,26 @@ type fakeBackend struct {
 	openNameCounts     map[string]int
 	consumeDirents     bool
 	readDirErr         error
+	readDirCalls       int
+	onReadDir          func(*fakeBackend, *fakeNode, int)
+	preadCalls         int
+	onPread            func(*fakeBackend, *fakeNode, int)
+	tryLockAttempts    []string
+	busyInodeAttempts  map[uint64]int
+	failTryLockInodes  map[uint64]bool
 	failCloseName      string
+	failOpenNames      map[string]error
 	nonce              [16]byte
 }
 
 func newFakeBackend() *fakeBackend {
 	f := &fakeBackend{handles: map[int]fakeHandle{}, nextFD: 10, nextInode: 100, uid: 501, device: 7, directoryOpens: map[string]int{}, openNameCounts: map[string]int{}}
 	f.failCloseNames = map[string]bool{}
+	f.failCloseAt = map[string]int{}
+	f.closeNameCounts = map[string]int{}
+	f.busyInodeAttempts = map[uint64]int{}
+	f.failTryLockInodes = map[uint64]bool{}
+	f.failOpenNames = map[string]error{}
 	f.root = f.directory("root")
 	objects := f.directory("objects")
 	sha := f.directory("sha256")
@@ -128,6 +146,9 @@ func (f *fakeBackend) openRoot(string) (int, error) {
 }
 
 func (f *fakeBackend) openDirAt(parent int, name string) (int, error) {
+	if err := f.failOpenNames[name]; err != nil {
+		return -1, err
+	}
 	node, err := f.child(parent, name)
 	if err != nil || node.stat.kind != kindDirectory {
 		return -1, fakeNotExist
@@ -146,6 +167,9 @@ func (f *fakeBackend) lstatAt(parent int, name string) (fileStat, error) {
 }
 
 func (f *fakeBackend) openFileAt(parent int, name string, create bool) (int, error) {
+	if err := f.failOpenNames[name]; err != nil {
+		return -1, err
+	}
 	parentNode, err := f.node(parent)
 	if err != nil || parentNode.stat.kind != kindDirectory {
 		return -1, fakeNotExist
@@ -205,6 +229,10 @@ func (f *fakeBackend) readDirNames(fd int, maximum int) ([]string, error) {
 		return nil, fakeNotExist
 	}
 	node := handle.node
+	f.readDirCalls++
+	if f.onReadDir != nil {
+		f.onReadDir(f, node, f.readDirCalls)
+	}
 	if f.consumeDirents && handle.dirRead {
 		return nil, nil
 	}
@@ -227,6 +255,7 @@ func (f *fakeBackend) readDirNames(fd int, maximum int) ([]string, error) {
 func (f *fakeBackend) isOverflow(err error) bool {
 	return err != nil && err.Error() == "too many names"
 }
+func (f *fakeBackend) isNotExist(err error) bool { return errors.Is(err, fakeNotExist) }
 
 func (f *fakeBackend) pread(fd int, target []byte, offset int64) (int, error) {
 	f.preads++
@@ -234,7 +263,23 @@ func (f *fakeBackend) pread(fd int, target []byte, offset int64) (int, error) {
 	if err != nil || offset < 0 {
 		return 0, fakeNotExist
 	}
+	f.preadCalls++
+	if f.onPread != nil {
+		f.onPread(f, node, f.preadCalls)
+	}
 	if offset >= int64(len(node.data)) {
+		if node.virtualZero && offset < int64(node.stat.size) {
+			remaining := int64(node.stat.size) - offset
+			n := len(target)
+			if int64(n) > remaining {
+				n = int(remaining)
+			}
+			clear(target[:n])
+			if offset+int64(n) == int64(node.stat.size) {
+				return n, io.EOF
+			}
+			return n, nil
+		}
 		return 0, io.EOF
 	}
 	n := copy(target, node.data[offset:])
@@ -323,10 +368,22 @@ func (f *fakeBackend) tryLock(fd int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	f.tryLockAttempts = append(f.tryLockAttempts, node.name)
+	if f.failTryLockInodes[node.stat.inode] {
+		delete(f.failTryLockInodes, node.stat.inode)
+		return false, errors.New("try lock")
+	}
+	if f.busyInodeAttempts[node.stat.inode] > 0 {
+		f.busyInodeAttempts[node.stat.inode]--
+		return false, nil
+	}
 	if node.locked {
 		return false, nil
 	}
 	node.locked = true
+	handle := f.handles[fd]
+	handle.locked = true
+	f.handles[fd] = handle
 	if f.replaceAfterLock {
 		f.root.children["lineages.lock"] = f.regular("lineages.lock", node.data)
 		f.replaceAfterLock = false
@@ -344,7 +401,13 @@ func (f *fakeBackend) unlock(fd int) error {
 	if err != nil {
 		return err
 	}
-	node.locked = false
+	f.unlockInodes = append(f.unlockInodes, node.stat.inode)
+	handle := f.handles[fd]
+	if handle.locked {
+		node.locked = false
+		handle.locked = false
+		f.handles[fd] = handle
+	}
 	if f.failUnlock {
 		return errors.New("unlock")
 	}
@@ -355,9 +418,10 @@ func (f *fakeBackend) close(fd int) error {
 	handle := f.handles[fd]
 	if handle.node != nil {
 		f.closeAttempts = append(f.closeAttempts, handle.node.name)
+		f.closeNameCounts[handle.node.name]++
 	}
 	delete(f.handles, fd)
-	if handle.node != nil && (handle.node.name == f.failCloseName || f.failCloseNames[handle.node.name]) {
+	if handle.node != nil && (handle.node.name == f.failCloseName || f.failCloseNames[handle.node.name] || f.failCloseAt[handle.node.name] == f.closeNameCounts[handle.node.name]) {
 		f.failCloseName = ""
 		return errors.New("close")
 	}
@@ -407,6 +471,33 @@ func TestAcquireUsesLineagesLockAndRejectsRootGrammar(t *testing.T) {
 	}
 	if _, err := root.Acquire(context.Background()); !errors.Is(err, ErrFilesystem) {
 		t.Fatalf("unexpected root entry admitted: %v", err)
+	}
+}
+
+func TestRootGrammarCloseFailuresPoisonAndMintNoLease(t *testing.T) {
+	for _, name := range []string{"root", "objects", "lineages", "lineages.lock"} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeBackend()
+			f.root.children["lineages"] = f.directory("lineages")
+			root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.failCloseNames[name] = true
+			lease, err := root.Acquire(context.Background())
+			if lease != nil || !errors.Is(err, ErrFilesystem) || root.usable() {
+				t.Fatalf("lease=%v err=%v usable=%v closes=%v", lease, err, root.usable(), f.closeAttempts)
+			}
+		})
+	}
+}
+
+func TestRootConstructorCloseFailureReturnsNoAuthority(t *testing.T) {
+	f := newFakeBackend()
+	f.failCloseAt["root"] = 1
+	root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
+	if root != nil || !errors.Is(err, ErrFilesystem) {
+		t.Fatalf("root=%v err=%v closes=%v", root, err, f.closeAttempts)
 	}
 }
 

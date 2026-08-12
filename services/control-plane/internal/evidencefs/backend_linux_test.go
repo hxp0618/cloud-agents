@@ -3,6 +3,7 @@
 package evidencefs
 
 import (
+	"errors"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -16,6 +17,13 @@ func TestLinuxExistingOpenIsNonblockingAndNoFollow(t *testing.T) {
 	createRequired := unix.O_RDWR | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_CREAT | unix.O_EXCL
 	if linuxCreateOpenFlags&createRequired != createRequired || linuxCreateOpenFlags&unix.O_NONBLOCK != 0 {
 		t.Fatalf("create flags=%#x", linuxCreateOpenFlags)
+	}
+}
+
+func TestLinuxBackendClassifiesOnlyENOENTAsAbsent(t *testing.T) {
+	backend := linuxBackend{}
+	if !backend.isNotExist(unix.ENOENT) || backend.isNotExist(unix.EACCES) || backend.isNotExist(errors.New("missing text")) {
+		t.Fatal("absence classification is not exact")
 	}
 }
 

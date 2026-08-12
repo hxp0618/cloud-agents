@@ -43,6 +43,7 @@ type backend interface {
 	fstat(int) (fileStat, error)
 	readDirNames(int, int) ([]string, error)
 	isOverflow(error) bool
+	isNotExist(error) bool
 	pread(int, []byte, int64) (int, error)
 	write(int, []byte) (int, error)
 	fdatasync(int) error
@@ -306,6 +307,7 @@ func (r *Root) verifyFreshRootGrammar() (rootGrammar, error) {
 	}
 	grammar, grammarErr := r.verifyRootGrammar(fd)
 	if r.ops.close(fd) != nil {
+		r.poison()
 		return rootGrammar{}, filesystem("root-grammar-close")
 	}
 	return grammar, grammarErr
@@ -330,6 +332,7 @@ func (r *Root) verifyRootGrammar(rootFD int) (rootGrammar, error) {
 				return rootGrammar{}, openErr
 			}
 			if r.ops.close(fd) != nil {
+				r.poison()
 				return rootGrammar{}, filesystem("root-directory-close")
 			}
 		case "lineages.lock":
@@ -338,6 +341,7 @@ func (r *Root) verifyRootGrammar(rootFD int) (rootGrammar, error) {
 				return rootGrammar{}, openErr
 			}
 			if r.ops.close(fd) != nil {
+				r.poison()
 				return rootGrammar{}, filesystem("root-lock-close")
 			}
 			grammar.lock = st
