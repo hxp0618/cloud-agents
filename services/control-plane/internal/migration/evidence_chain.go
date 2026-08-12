@@ -109,157 +109,27 @@ type evidenceAttemptState struct {
 }
 
 func validateEvidenceChainWithWitness(frames []EvidenceFrame, witness verifiedEvidenceChainWitness) error {
-	if len(frames) == 0 {
-		return invalidEvidence("chain", "empty")
+	replay, err := validateEvidenceChainStructure(frames)
+	if err != nil {
+		return err
 	}
-	var previous *Digest
-	var header *JournalHeader
-	var firstHeader *JournalHeader
-	var previousSegmentFinal *Digest
-	var segmentBytes uint64
-	var segmentRecords uint32
-	var segmentCount uint32
-	attempts := map[string]*evidenceAttemptState{}
-	seenIntents := map[string]bool{}
-	lastTerminal := map[string]*AttemptTerminalState{}
-	lastResolution := map[string]*AmbiguousResolutionState{}
-	for index := range frames {
-		frame := &frames[index]
-		if err := frame.Validate(); err != nil {
+	for _, header := range replay.headers {
+		if !receiptMatches(witness.runtimeReceipt, "runtime", header.OuterArtifactDigest, header.OuterArtifactSizeBytes) || !receiptMatches(witness.recoveryReceipt, "decision_recovery", header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) {
+			return invalidEvidence("chain", "content receipt")
+		}
+	}
+	for _, intent := range replay.intents {
+		key := evidenceStatementKey(intent.MigrationID, intent.AttemptIndex, intent.StatementIndex)
+		plan, ok := witness.plans[key]
+		if !ok || !planMatchesIntent(plan, intent) {
+			return invalidEvidence("chain", "statement plan")
+		}
+	}
+	for _, terminal := range replay.terminals {
+		state := cloneEvidenceAttemptState(&terminal.state)
+		if err := validateTerminalWitness(*terminal.frame.Record.AttemptTerminal, terminal.frame, &state, terminal.header, witness); err != nil {
 			return err
 		}
-		if frame.Sequence != uint64(index) || !equalDigestPointer(frame.PreviousRecordDigest, previous) {
-			return invalidEvidence("chain", "sequence or previous")
-		}
-		canonical, err := canonicalContractKey(*frame)
-		if err != nil {
-			return err
-		}
-		frameBytes := uint64(len(canonical)) + 8
-		if frame.RecordKind == EvidenceRecordHeader {
-			segmentBytes = 0
-			segmentRecords = 0
-			segmentCount++
-		}
-		segmentBytes += frameBytes
-		segmentRecords++
-		if validateEvidenceSegmentUsage(uint64(segmentRecords), segmentBytes) != nil || segmentCount > 16 {
-			return invalidEvidence("chain", "segment byte limit")
-		}
-		if frame.RecordKind == EvidenceRecordHeader {
-			h := frame.Record.Header
-			if index == 0 {
-				if h.SegmentIndex != 0 {
-					return invalidEvidence("chain", "initial segment")
-				}
-				firstHeader = h
-			} else {
-				if header == nil || firstHeader == nil || h.SegmentIndex != header.SegmentIndex+1 || h.PreviousSegmentRecordDigest == nil || previousSegmentFinal == nil || *h.PreviousSegmentRecordDigest != *previousSegmentFinal || !sameJournalGeneration(*firstHeader, *h) {
-					return invalidEvidence("chain", "segment header")
-				}
-			}
-			if !receiptMatches(witness.runtimeReceipt, "runtime", h.OuterArtifactDigest, h.OuterArtifactSizeBytes) || !receiptMatches(witness.recoveryReceipt, "decision_recovery", h.DecisionRecoveryArtifactSHA256, h.DecisionRecoveryArtifactSizeBytes) {
-				return invalidEvidence("chain", "content receipt")
-			}
-			header = h
-		} else {
-			if header == nil {
-				return invalidEvidence("chain", "record before header")
-			}
-			if err := recordMatchesHeader(frame.Record, *header); err != nil {
-				return err
-			}
-			key, migration, attempt, err := evidenceAttemptIdentity(frame.Record)
-			if err != nil {
-				return err
-			}
-			state := attempts[key]
-			if state == nil {
-				state = &evidenceAttemptState{}
-				attempts[key] = state
-			}
-			switch frame.RecordKind {
-			case EvidenceRecordStatementIntent:
-				intent := frame.Record.StatementIntent
-				if state.terminal != nil || state.commit != nil {
-					return invalidEvidence("chain", "intent after closed boundary")
-				}
-				statementKey := evidenceStatementKey(migration, attempt, intent.StatementIndex)
-				if seenIntents[statementKey] {
-					return invalidEvidence("chain", "duplicate statement intent")
-				}
-				plan, ok := witness.plans[statementKey]
-				if !ok || !planMatchesIntent(plan, *intent) {
-					return invalidEvidence("chain", "statement plan")
-				}
-				seenIntents[statementKey] = true
-				if state.lastIntent == nil {
-					if intent.StatementIndex != 0 {
-						return invalidEvidence("chain", "first statement index")
-					}
-				} else if intent.StatementIndex != state.lastIntent.Record.StatementIntent.StatementIndex+1 {
-					return invalidEvidence("chain", "statement index gap")
-				}
-				if intent.StatementIndex == 0 {
-					predecessor := lastTerminal[migration]
-					if predecessor == nil {
-						if attempt != 1 || intent.PreviousAttemptTerminalDigest != nil {
-							return invalidEvidence("chain", "first attempt")
-						}
-					} else {
-						if attempt != predecessor.AttemptIndex+1 || intent.PreviousAttemptTerminalDigest == nil || *intent.PreviousAttemptTerminalDigest != predecessor.TerminalDigest || !predecessorAllowsNextAttempt(*predecessor, lastResolution[migration]) {
-							return invalidEvidence("chain", "attempt predecessor")
-						}
-					}
-				} else if state.lastIntermediate == nil || intent.PreviousIntermediateStateDigest == nil || *intent.PreviousIntermediateStateDigest != state.lastIntermediate.Record.Intermediate.State.IntermediateStateDigest {
-					return invalidEvidence("chain", "statement predecessor")
-				}
-				state.lastIntent = frame
-			case EvidenceRecordIntermediate:
-				inter := frame.Record.Intermediate
-				if state.lastIntent == nil || state.commit != nil || state.terminal != nil || state.lastIntermediate != nil && state.lastIntermediate.Record.Intermediate.State.StatementIndex == state.lastIntent.Record.StatementIntent.StatementIndex {
-					return invalidEvidence("chain", "intermediate position")
-				}
-				intent := state.lastIntent.Record.StatementIntent
-				if inter.State.StatementIndex != intent.StatementIndex || inter.State.StatementSHA256 != intent.StatementSHA256 || !projectionEvidenceEqual(inter.AuthorityBeforeResult, intent.AuthorityBeforeResult) || !projectionEvidenceEqual(inter.CatalogBeforeResult, intent.CatalogBeforeResult) {
-					return invalidEvidence("chain", "intermediate intent")
-				}
-				state.lastIntermediate = frame
-			case EvidenceRecordCommitIntent:
-				commit := frame.Record.CommitIntent
-				if state.commit != nil || state.terminal != nil || state.lastIntermediate == nil {
-					return invalidEvidence("chain", "commit position")
-				}
-				if commit.LastIntermediateStateDigest != state.lastIntermediate.Record.Intermediate.State.IntermediateStateDigest {
-					return invalidEvidence("chain", "commit intermediate")
-				}
-				state.commit = frame
-			case EvidenceRecordAttemptTerminal:
-				terminal := frame.Record.AttemptTerminal
-				if state.terminal != nil || state.resolution != nil {
-					return invalidEvidence("chain", "second terminal")
-				}
-				if err := validateTerminalWitness(*terminal, *frame, state, *header, witness); err != nil {
-					return err
-				}
-				state.terminal = frame
-				lastTerminal[migration] = terminal
-			case EvidenceRecordAmbiguousResolution:
-				resolution := frame.Record.AmbiguousResolution
-				if state.terminal == nil || state.resolution != nil || index == 0 || frames[index-1].RecordKind != EvidenceRecordAttemptTerminal {
-					return invalidEvidence("chain", "resolution adjacency")
-				}
-				terminal := state.terminal.Record.AttemptTerminal
-				if terminal.Outcome != "ambiguous_unresolved" || resolution.UnresolvedTerminalDigest != terminal.TerminalDigest || string(resolution.StableErrorCode) != *terminal.StableErrorCode {
-					return invalidEvidence("chain", "resolution terminal")
-				}
-				state.resolution = frame
-				lastResolution[migration] = resolution
-			}
-		}
-		d := frame.RecordDigest
-		previous = &d
-		previousSegmentFinal = &d
 	}
 	return nil
 }
@@ -277,15 +147,12 @@ func validateTerminalWitness(t AttemptTerminalState, frame EvidenceFrame, state 
 	}
 	requiresFinal := t.Outcome == "committed" || len(t.Outcome) >= 10 && t.Outcome[:10] == "ambiguous_"
 	if requiresFinal {
-		if state.lastIntermediate == nil || state.lastIntermediate.Record.Intermediate.State.StatementIndex != final || t.LastIntermediateStateDigest == nil || *t.LastIntermediateStateDigest != state.lastIntermediate.Record.Intermediate.State.IntermediateStateDigest {
+		if state.lastIntermediate == nil || state.lastIntermediate.Record.Intermediate.State.StatementIndex != final {
 			return invalidEvidence("chain", "final intermediate")
 		}
 		catalog := state.lastIntermediate.Record.Intermediate.PreledgerCatalogResult
 		if catalog == nil || catalog.Digest != w.finalCatalogDigest[migration] {
 			return invalidEvidence("chain", "final catalog")
-		}
-		if state.commit == nil || frame.Sequence != state.commit.Sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.RecordDigest {
-			return invalidEvidence("chain", "terminal commit boundary")
 		}
 	}
 	if t.RetryProof != nil {
@@ -301,7 +168,7 @@ func validateTerminalWitness(t AttemptTerminalState, frame EvidenceFrame, state 
 	}
 	if len(t.Outcome) >= 10 && t.Outcome[:10] == "ambiguous_" {
 		owned, ok := w.ambiguousBoundaries[t.TerminalDigest]
-		if !ok || state.lastIntermediate == nil || state.commit == nil || !owned.commitCalled || owned.migrationID != migration || owned.attemptIndex != t.AttemptIndex || owned.finalIntermediateRecordDigest != state.lastIntermediate.RecordDigest || owned.commitIntentRecordDigest != state.commit.RecordDigest || state.commit.Sequence != state.lastIntermediate.Sequence+1 || state.commit.PreviousRecordDigest == nil || *state.commit.PreviousRecordDigest != state.lastIntermediate.RecordDigest {
+		if !ok || state.lastIntermediate == nil || state.commit == nil || !owned.commitCalled || owned.migrationID != migration || owned.attemptIndex != t.AttemptIndex || owned.finalIntermediateRecordDigest != state.lastIntermediate.RecordDigest || owned.commitIntentRecordDigest != state.commit.RecordDigest {
 			return invalidEvidence("chain", "ambiguous boundary")
 		}
 	}
@@ -459,135 +326,38 @@ type verifiedLineageChainWitness struct {
 }
 
 func validateLineageChainWithWitness(frames []LineageIndexFrame, w verifiedLineageChainWitness) error {
-	if len(frames) == 0 || len(frames) > 16384 {
-		return invalidEvidence("lineage-chain", "empty")
+	grouped := make(map[Digest][][]EvidenceFrame, len(w.journals))
+	for digest, journal := range w.journals {
+		segments, groupErr := logicalEvidenceSegments(journal)
+		if groupErr != nil {
+			return groupErr
+		}
+		grouped[digest] = segments
 	}
-	var previous *Digest
-	var indexBytes uint64
-	var header *LineageIndexHeader
-	var reservedFrame *LineageIndexFrame
-	var activatedFrame *LineageIndexFrame
-	var checkpointFrame *LineageIndexFrame
-	var supersededFrame *LineageIndexFrame
-	for i := range frames {
-		f := &frames[i]
-		if err := f.Validate(); err != nil {
-			return err
+	replay, err := validateLineageChainStructure(frames, w.actualSegment0, grouped)
+	if err != nil {
+		return err
+	}
+	if !lineageHeaderEqual(replay.header, w.header) {
+		return invalidEvidence("lineage-chain", "header authority")
+	}
+	for _, structural := range replay.supersessions {
+		superseded := structural.frame.Record.Superseded
+		authority, ok := w.historicalRecovery.authorities[superseded.LineageSupersessionAuthorityDigest]
+		if !ok {
+			return invalidEvidence("lineage-chain", "authority missing")
 		}
-		if f.Sequence != uint64(i) || !equalDigestPointer(f.PreviousRecordDigest, previous) {
-			return invalidEvidence("lineage-chain", "sequence")
+		digest, err := authority.ComputeDigest()
+		var plannedContinuation *LineageContinuationContext
+		if superseded.PlannedGenerationReserved != nil {
+			plannedContinuation = superseded.PlannedGenerationReserved.Continuation
 		}
-		canonical, err := canonicalContractKey(*f)
-		if err != nil {
-			return err
+		if err != nil || digest != superseded.LineageSupersessionAuthorityDigest || authority.ObservedOutcome != superseded.Outcome || authority.ExecutionLineageDigest != superseded.ExecutionLineageDigest || authority.OldJournalIdentityDigest != superseded.OldJournalIdentityDigest || authority.OldRunnerProjectionDecisionDigest != superseded.OldRunnerProjectionDecisionDigest || authority.OldSchemaBundleDigest != superseded.OldSchemaBundleDigest || !equalDigestPointer(authority.OldCheckpointRecordDigest, superseded.OldCheckpointRecordDigest) || !equalDigestPointer(authority.OldActivationRecordDigest, superseded.OldActivationRecordDigest) || !equalDigestPointer(authority.OldInitialJournalTailDigest, superseded.OldInitialJournalTailDigest) || !canonicalEqual(authority.Continuation, plannedContinuation) {
+			return invalidEvidence("lineage-chain", "authority mismatch")
 		}
-		indexBytes += uint64(len(canonical)) + 8
-		if validateLineageIndexUsage(uint64(i+1), indexBytes) != nil {
-			return invalidEvidence("lineage-chain", "index byte limit")
+		if superseded.Outcome != "activated_no_migration_progress" && (structural.checkpoint == nil || !equalDigestPointer(authority.OldTerminalDigest, structural.checkpoint.Record.Checkpoint.LastTerminalDigest) || !equalDigestPointer(authority.OldResolutionDigest, structural.checkpoint.Record.Checkpoint.LastResolutionDigest)) {
+			return invalidEvidence("lineage-chain", "checkpoint authority boundary")
 		}
-		if i == 0 {
-			if f.RecordKind != LineageRecordHeader || f.Record.Header == nil || !lineageHeaderEqual(*f.Record.Header, w.header) {
-				return invalidEvidence("lineage-chain", "header")
-			}
-			lineage, err := ExecutionLineageDigest(*f.Record.Header)
-			if err != nil || lineage != f.Record.Header.ExecutionLineageDigest {
-				return invalidEvidence("lineage-chain", "constituent identity")
-			}
-			header = f.Record.Header
-		} else {
-			if f.RecordKind == LineageRecordHeader {
-				return invalidEvidence("lineage-chain", "second header")
-			}
-			if header == nil {
-				return invalidEvidence("lineage-chain", "missing header")
-			}
-			if supersededFrame != nil && f.RecordKind != LineageRecordGenerationReserved {
-				return invalidEvidence("lineage-chain", "superseded generation is closed")
-			}
-			switch f.RecordKind {
-			case LineageRecordGenerationReserved:
-				r := f.Record.Reserved
-				if r.ExecutionLineageDigest != header.ExecutionLineageDigest {
-					return invalidEvidence("lineage-chain", "reserved lineage")
-				}
-				if supersededFrame != nil {
-					planned := supersededFrame.Record.Superseded.PlannedGenerationReserved
-					if planned == nil || f.Sequence != supersededFrame.Sequence+1 || !canonicalEqual(*planned, *r) {
-						return invalidEvidence("lineage-chain", "planned reservation")
-					}
-				} else if reservedFrame != nil {
-					return invalidEvidence("lineage-chain", "unplanned generation")
-				}
-				reservedFrame = f
-				activatedFrame = nil
-				checkpointFrame = nil
-				supersededFrame = nil
-			case LineageRecordGenerationActivated:
-				a := f.Record.Activated
-				if reservedFrame == nil || activatedFrame != nil {
-					return invalidEvidence("lineage-chain", "activation position")
-				}
-				r := reservedFrame.Record.Reserved
-				if a.GenerationReservedRecordDigest != reservedFrame.RecordDigest || a.ExecutionLineageDigest != r.ExecutionLineageDigest || a.JournalIdentityDigest != r.JournalIdentityDigest || a.RunnerProjectionDecisionDigest != r.RunnerProjectionDecisionDigest || a.SchemaBundleDigest != r.SchemaBundleDigest || a.QuotaReservationDigest != r.QuotaReservationDigest || a.Segment0HeaderDigest != r.ExpectedSegment0HeaderDigest {
-					return invalidEvidence("lineage-chain", "activation binding")
-				}
-				actual, ok := w.actualSegment0[a.JournalIdentityDigest]
-				expected := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, PreviousRecordDigest: nil, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &r.PlannedSegment0Header}, RecordDigest: r.ExpectedSegment0HeaderDigest}
-				if !ok || actual.Sequence != 0 || actual.PreviousRecordDigest != nil || actual.RecordKind != EvidenceRecordHeader || actual.RecordDigest != a.Segment0HeaderDigest || !canonicalEqual(actual, expected) {
-					return invalidEvidence("lineage-chain", "actual header")
-				}
-				activatedFrame = f
-			case LineageRecordGenerationCheckpoint:
-				c := f.Record.Checkpoint
-				if activatedFrame == nil {
-					return invalidEvidence("lineage-chain", "checkpoint before activation")
-				}
-				a := activatedFrame.Record.Activated
-				if c.ExecutionLineageDigest != a.ExecutionLineageDigest || c.JournalIdentityDigest != a.JournalIdentityDigest || c.RunnerProjectionDecisionDigest != a.RunnerProjectionDecisionDigest || c.SchemaBundleDigest != a.SchemaBundleDigest {
-					return invalidEvidence("lineage-chain", "checkpoint identity")
-				}
-				if checkpointFrame == nil {
-					if c.PreviousCheckpointRecordDigest != nil {
-						return invalidEvidence("lineage-chain", "first checkpoint previous")
-					}
-				} else if c.PreviousCheckpointRecordDigest == nil || *c.PreviousCheckpointRecordDigest != checkpointFrame.RecordDigest {
-					return invalidEvidence("lineage-chain", "checkpoint previous")
-				}
-				journal := w.journals[c.JournalIdentityDigest]
-				if uint64(len(journal)) != c.JournalNextSequence || len(journal) == 0 || journal[len(journal)-1].RecordDigest != c.JournalTailDigest {
-					return invalidEvidence("lineage-chain", "checkpoint tail")
-				}
-				summary, err := summarizeEvidenceJournal(journal)
-				if err != nil || !checkpointSummaryEqual(*c, summary) {
-					return invalidEvidence("lineage-chain", "checkpoint summary")
-				}
-				checkpointFrame = f
-			case LineageRecordGenerationSuperseded:
-				s := f.Record.Superseded
-				authority, ok := w.historicalRecovery.authorities[s.LineageSupersessionAuthorityDigest]
-				if !ok {
-					return invalidEvidence("lineage-chain", "authority missing")
-				}
-				digest, err := authority.ComputeDigest()
-				plannedContinuation := (*LineageContinuationContext)(nil)
-				if s.PlannedGenerationReserved != nil {
-					plannedContinuation = s.PlannedGenerationReserved.Continuation
-				}
-				if err != nil || digest != s.LineageSupersessionAuthorityDigest || authority.ObservedOutcome != s.Outcome || authority.ExecutionLineageDigest != s.ExecutionLineageDigest || authority.OldJournalIdentityDigest != s.OldJournalIdentityDigest || authority.OldRunnerProjectionDecisionDigest != s.OldRunnerProjectionDecisionDigest || authority.OldSchemaBundleDigest != s.OldSchemaBundleDigest || !equalDigestPointer(authority.OldCheckpointRecordDigest, s.OldCheckpointRecordDigest) || !equalDigestPointer(authority.OldActivationRecordDigest, s.OldActivationRecordDigest) || !equalDigestPointer(authority.OldInitialJournalTailDigest, s.OldInitialJournalTailDigest) || !canonicalEqual(authority.Continuation, plannedContinuation) {
-					return invalidEvidence("lineage-chain", "authority mismatch")
-				}
-				if s.Outcome == "activated_no_migration_progress" {
-					if activatedFrame == nil || checkpointFrame != nil || s.OldActivationRecordDigest == nil || *s.OldActivationRecordDigest != activatedFrame.RecordDigest || s.OldInitialJournalTailDigest == nil || *s.OldInitialJournalTailDigest != activatedFrame.Record.Activated.InitialJournalTailDigest {
-						return invalidEvidence("lineage-chain", "header boundary")
-					}
-				} else if checkpointFrame == nil || s.OldCheckpointRecordDigest == nil || *s.OldCheckpointRecordDigest != checkpointFrame.RecordDigest || !equalDigestPointer(authority.OldTerminalDigest, checkpointFrame.Record.Checkpoint.LastTerminalDigest) || !equalDigestPointer(authority.OldResolutionDigest, checkpointFrame.Record.Checkpoint.LastResolutionDigest) {
-					return invalidEvidence("lineage-chain", "checkpoint boundary")
-				}
-				supersededFrame = f
-			}
-		}
-		d := f.RecordDigest
-		previous = &d
 	}
 	return nil
 }
@@ -606,34 +376,53 @@ type evidenceJournalSummary struct {
 }
 
 func summarizeEvidenceJournal(frames []EvidenceFrame) (evidenceJournalSummary, error) {
-	if len(frames) == 0 {
+	replay, err := validateEvidenceChainStructure(frames)
+	if err != nil {
+		return evidenceJournalSummary{}, err
+	}
+	return summarizeStructuralEvidenceJournal(replay)
+}
+
+func summarizeStructuralEvidenceJournal(replay *evidenceStructuralReplay) (evidenceJournalSummary, error) {
+	if replay == nil || len(replay.frames) == 0 {
 		return evidenceJournalSummary{}, invalidEvidence("journal-summary", "empty")
 	}
-	var previous *Digest
-	var lastIntentFrame, lastIntermediateFrame, lastCommitFrame *EvidenceFrame
-	var lastTerminal *AttemptTerminalState
-	var lastResolution *AmbiguousResolutionState
-	for index := range frames {
-		frame := &frames[index]
-		if err := frame.Validate(); err != nil || frame.Sequence != uint64(index) || !equalDigestPointer(frame.PreviousRecordDigest, previous) || index == 0 && frame.RecordKind != EvidenceRecordHeader || index != 0 && frame.RecordKind == EvidenceRecordHeader {
-			return evidenceJournalSummary{}, invalidEvidence("journal-summary", "ordered frames")
+	var lastIntentFrame, lastIntermediateFrame, lastCommitFrame, lastTerminalFrame, lastResolutionFrame, tailFrame *EvidenceFrame
+	for index := len(replay.frames) - 1; index >= 0; index-- {
+		frame := &replay.frames[index]
+		if frame.RecordKind == EvidenceRecordHeader {
+			continue
 		}
-		switch frame.RecordKind {
-		case EvidenceRecordStatementIntent:
-			lastIntentFrame = frame
-		case EvidenceRecordIntermediate:
-			lastIntermediateFrame = frame
-		case EvidenceRecordCommitIntent:
-			lastCommitFrame = frame
-		case EvidenceRecordAttemptTerminal:
-			lastTerminal = frame.Record.AttemptTerminal
-		case EvidenceRecordAmbiguousResolution:
-			lastResolution = frame.Record.AmbiguousResolution
+		migration, attempt := structuralRecordAttempt(frame.Record)
+		if migration == "" {
+			continue
 		}
-		d := frame.RecordDigest
-		previous = &d
+		tailFrame = frame
+		for scan := 0; scan <= index; scan++ {
+			candidate := &replay.frames[scan]
+			candidateMigration, candidateAttempt := structuralRecordAttempt(candidate.Record)
+			if candidateMigration != migration || candidateAttempt != attempt {
+				continue
+			}
+			switch candidate.RecordKind {
+			case EvidenceRecordStatementIntent:
+				lastIntentFrame = candidate
+			case EvidenceRecordIntermediate:
+				lastIntermediateFrame = candidate
+			case EvidenceRecordCommitIntent:
+				lastCommitFrame = candidate
+			case EvidenceRecordAttemptTerminal:
+				lastTerminalFrame = candidate
+			case EvidenceRecordAmbiguousResolution:
+				lastResolutionFrame = candidate
+			}
+		}
+		break
 	}
 	summary := evidenceJournalSummary{recoveryState: "brand_new"}
+	if tailFrame == nil {
+		return summary, nil
+	}
 	if lastIntentFrame != nil {
 		summary.lastStatementIntentRecordDigest = digestPointer(lastIntentFrame.RecordDigest)
 	}
@@ -646,8 +435,9 @@ func summarizeEvidenceJournal(frames []EvidenceFrame) (evidenceJournalSummary, e
 	}
 	var migration string
 	var attempt uint32
-	switch {
-	case lastResolution != nil:
+	switch tailFrame.RecordKind {
+	case EvidenceRecordAmbiguousResolution:
+		lastResolution := lastResolutionFrame.Record.AmbiguousResolution
 		migration, attempt = lastResolution.MigrationID, lastResolution.AttemptIndex
 		summary.lastResolutionDigest = digestPointer(lastResolution.ResolutionDigest)
 		summary.previousAttemptTerminalDigest = digestPointer(lastResolution.UnresolvedTerminalDigest)
@@ -659,7 +449,8 @@ func summarizeEvidenceJournal(frames []EvidenceFrame) (evidenceJournalSummary, e
 		default:
 			summary.recoveryState = "terminal"
 		}
-	case lastTerminal != nil:
+	case EvidenceRecordAttemptTerminal:
+		lastTerminal := lastTerminalFrame.Record.AttemptTerminal
 		migration, attempt = lastTerminal.MigrationID, lastTerminal.AttemptIndex
 		summary.lastTerminalDigest = digestPointer(lastTerminal.TerminalDigest)
 		summary.previousAttemptTerminalDigest = cloneDigestPointer(lastTerminal.PreviousAttemptTerminalDigest)
@@ -673,16 +464,16 @@ func summarizeEvidenceJournal(frames []EvidenceFrame) (evidenceJournalSummary, e
 		default:
 			summary.recoveryState = "terminal"
 		}
-	case lastCommitFrame != nil:
+	case EvidenceRecordCommitIntent:
 		migration, attempt = lastCommitFrame.Record.CommitIntent.MigrationID, lastCommitFrame.Record.CommitIntent.AttemptIndex
 		summary.previousAttemptTerminalDigest = cloneDigestPointer(lastCommitFrame.Record.CommitIntent.PreviousAttemptTerminalDigest)
 		summary.recoveryState = "dangling_commit_intent"
-	case lastIntermediateFrame != nil:
+	case EvidenceRecordIntermediate:
 		state := lastIntermediateFrame.Record.Intermediate.State
 		migration, attempt = state.MigrationID, state.AttemptIndex
 		summary.previousAttemptTerminalDigest = cloneDigestPointer(state.PreviousAttemptTerminalDigest)
 		summary.recoveryState = "dangling_intermediate"
-	case lastIntentFrame != nil:
+	case EvidenceRecordStatementIntent:
 		intent := lastIntentFrame.Record.StatementIntent
 		migration, attempt = intent.MigrationID, intent.AttemptIndex
 		summary.previousAttemptTerminalDigest = cloneDigestPointer(intent.PreviousAttemptTerminalDigest)
@@ -693,6 +484,23 @@ func summarizeEvidenceJournal(frames []EvidenceFrame) (evidenceJournalSummary, e
 		summary.attemptIndex = &attempt
 	}
 	return summary, nil
+}
+
+func structuralRecordAttempt(record EvidenceRecord) (string, uint32) {
+	switch {
+	case record.StatementIntent != nil:
+		return record.StatementIntent.MigrationID, record.StatementIntent.AttemptIndex
+	case record.Intermediate != nil:
+		return record.Intermediate.State.MigrationID, record.Intermediate.State.AttemptIndex
+	case record.CommitIntent != nil:
+		return record.CommitIntent.MigrationID, record.CommitIntent.AttemptIndex
+	case record.AttemptTerminal != nil:
+		return record.AttemptTerminal.MigrationID, record.AttemptTerminal.AttemptIndex
+	case record.AmbiguousResolution != nil:
+		return record.AmbiguousResolution.MigrationID, record.AmbiguousResolution.AttemptIndex
+	default:
+		return "", 0
+	}
 }
 
 func checkpointSummaryEqual(c GenerationCheckpoint, s evidenceJournalSummary) bool {
