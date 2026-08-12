@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "snapshot": {
-    "generated_at": "2026-08-12T02:16:19Z",
+    "generated_at": "2026-08-12T06:20:48Z",
     "module": "github.com/hxp0618/cloud-agents/services/control-plane",
     "go": "go1.26.5",
-    "goos": "darwin",
-    "goarch": "arm64",
+    "goos": "linux",
+    "goarch": "amd64",
     "gowork": "off",
     "gotoolchain": "local",
     "go_flags": "-mod=readonly",
@@ -13,26 +13,28 @@
     "gosumdb": "sum.golang.org",
     "goprivate": "",
     "gonosumdb": "",
-    "source_commit": "3f92d8059cf51ab3bc995802f6bd85acfea5076a",
-    "source_commit_tree_oid": "7cc2085b7b46bcb6c52873111f5d6d2dc97ce71b",
+    "source_commit": "ebcf94f803b05ddb56934c656d3d4e69e37cc970",
+    "source_commit_tree_oid": "65eb831f8def941814d4e4256466fc6407736314",
     "source_commit_tree_oid_algorithm": "sha1",
-    "control_plane_tree_oid": "174853c911016e9309694bd4bc98c732f3ce94c1",
+    "control_plane_tree_oid": "a70c87c74100e4e22fa058394a6cb9052c8f2139",
     "control_plane_tree_oid_algorithm": "sha1",
-    "control_plane_tracked_manifest_sha256": "2a9ddd7802f4afbf43806689fe18d1adc76992f1a0a4f34f0c6b8ac72150d3f9",
-    "control_plane_tracked_file_count": 120,
-    "control_plane_go_source_manifest_sha256": "2c90de5769288f77e4c3156f41752f7dd8fbd595c371652297ff54d606e0b019",
-    "control_plane_go_source_file_count": 56,
+    "control_plane_tracked_manifest_sha256": "2b20336b07efd966f0b10d7dcab1be301417dc2cb56543e5c3700995333d49ff",
+    "control_plane_tracked_file_count": 136,
+    "control_plane_go_source_manifest_sha256": "6f9b0e86279d1e2a77cce71f85b4efe3e47ccfe505f94d8c7845309af454f199",
+    "control_plane_go_source_file_count": 72,
     "source_tree_committed": true,
-    "source_tree_boundary": "non-test import closure replayed from exact committed source 3f92d8059cf51ab3bc995802f6bd85acfea5076a; the four supply-chain artifact refreshes are excluded from that source commit identity, and an unrelated untracked repository-root go.work.sum was present"
+    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source ebcf94f803b05ddb56934c656d3d4e69e37cc970; this four-file supply-chain refresh is derived after and excluded from that source commit identity"
   },
   "inputs": {
-    "go_mod_sha256": "3eaa75348e57ef4ea72e1fff572058dd496acb877be543600e5b1a57ed93de90",
-    "go_sum_sha256": "f65654519c652388e9f315cef1ef299e86fdc964d8d18332c05dbdb51a40c7fb",
-    "selected_module_list_sha256": "4c6ddbb19110b86687228f56f48de96e10eea997d6c35283329945d08d52db1a",
-    "module_graph_sha256": "8264f2a6181bda29e3ed7e13cf410fb6f6e91cf5b0c5a1306a15e310a48e675e",
-    "production_module_list_sha256": "12203596417e4926a8292ad208df4d410ef0d6e89627320e2c4fe08858a5154b",
-    "production_package_list_sha256": "07d05153aff50a4db408a9e4d34c4a298a21f5ccd5615b9940e4e8521e0de354",
-    "third_party_notices_sha256": "5fa0f0ebf9c81ea7b9d15714799c0c6b2b3f5be65a52e3eee0b0b96f450d0f5a"
+    "go_mod_sha256": "ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7",
+    "go_sum_sha256": "8d46b65698d18e97869fa31da700c24f3bfbc8b091afefd5584b3aaa1824d977",
+    "selected_module_list_sha256": "0f98de7d6500cfc9bda9c5d76cb269b714e2cd31a18857b7433e33fe540e7793",
+    "module_graph_sha256": "28d53b4b26eb41e956644aeced541d33df787590a2e91c9fc81cb15973bf6416",
+    "production_module_list_sha256": "48ca0dbaba0f918d99091decd0520a70327c36badb7d74c7cbbe1e180cd66e5f",
+    "production_package_list_sha256": "12a56c91f56460e9757560f00234c06cec462f248df6a770d41172168e9a8d08",
+    "darwin_production_module_list_sha256": "12203596417e4926a8292ad208df4d410ef0d6e89627320e2c4fe08858a5154b",
+    "darwin_production_package_list_sha256": "07d05153aff50a4db408a9e4d34c4a298a21f5ccd5615b9940e4e8521e0de354",
+    "third_party_notices_sha256": "1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48"
   },
   "assertions": {
     "go_mod_tidy_diff_empty": true,
@@ -43,21 +45,25 @@
     "replace_count": 0,
     "exclude_count": 0,
     "retract_count": 0,
-    "production_module_count": 6,
+    "production_module_count": 7,
+    "darwin_production_module_count": 6,
     "graph_only_module_count": 9,
-    "production_package_count": 29,
-    "direct_requirement_count": 2,
-    "direct_requirements": ["github.com/jackc/pgx/v5 v5.10.0", "golang.org/x/text v0.39.0"],
-    "production_patents_file_count": 2,
+    "production_package_count": 30,
+    "darwin_production_package_count": 29,
+    "direct_requirement_count": 3,
+    "direct_requirements": ["github.com/jackc/pgx/v5 v5.10.0", "golang.org/x/sys v0.44.0", "golang.org/x/text v0.39.0"],
+    "production_patents_file_count": 3,
     "notice_scope": "production-linked-only",
-    "graph_only_definition": "selected by go list -m all but absent from the non-test go list -deps ./... module set"
+    "production_platform": "linux/amd64 and linux/arm64 CGO_ENABLED=0; both closures are identical",
+    "non_linux_boundary": "Darwin excludes build-tagged golang.org/x/sys/unix and the production filesystem constructor remains fail-closed before mutation",
+    "graph_only_definition": "selected by go list -m all but absent from the Linux non-test go list -deps ./... module set"
   },
   "vulnerability_snapshot": {
     "non_bit_safe": true,
     "govulncheck": {
       "version": "v1.6.0",
       "database": "https://vuln.go.dev",
-      "database_updated_at": "2026-08-10T22:42:36Z",
+      "database_updated_at": "2026-08-11T23:21:33Z",
       "module_scan": {
         "command": "govulncheck -scan=module",
         "exit_code": 0,
@@ -65,7 +71,7 @@
         "output_sha256": "3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5"
       },
       "symbol_scan": {
-        "command": "govulncheck -scan=symbol ./...",
+        "command": "GOOS=linux GOARCH=amd64 CGO_ENABLED=0 govulncheck -scan=symbol ./...",
         "exit_code": 0,
         "result": "No vulnerabilities found.",
         "output_sha256": "3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5"
@@ -74,13 +80,13 @@
     "osv": {
       "endpoint": "https://api.osv.dev/v1/querybatch",
       "ecosystem": "Go",
-      "queried_module_count": 15,
+      "queried_module_count": 16,
       "finding_count": 0,
-      "query_sha256": "d2ef1d0cc93788e13a3e12a8df0f9ee8ee5c8df17851978df6b815d630957e05",
-      "canonical_response_sha256": "dfffd23768f912c4b64bd2c127cef7c089434b0aaf86855657e6b8c4cb95386c"
+      "query_sha256": "937ac9fb9495cc4ea13990a2cdead2c17f85fbfb817f610057051097aeb8d720",
+      "canonical_response_sha256": "597de9d918195ae56f69090341f0a38ab47139b85ab19c2a11ec52f916e5f861"
     },
     "invalidation": "Any advisory database, scanner, module graph, source import, build tag, toolchain, version, checksum, license text, additional IP rights grant, or distribution-scope change requires a new snapshot. An empty result is not permanent safety evidence.",
-    "inheritance": "The 2026-08-11 exact vulnerability evidence is retained because all 15 selected module paths, versions, module sums, proxy bits, and the 29-package production closure are unchanged; it is not represented as a new advisory-database scan."
+    "inheritance": "Not inherited: module/symbol scans and the 16-module OSV query were refreshed after x/sys entered the selected Linux production closure; all zero-finding results remain non-bit-safe time-bound evidence."
   },
   "modules": [
     {
@@ -166,9 +172,31 @@
         "path": "PATENTS",
         "title": "Additional IP Rights Grant (Patents)",
         "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
-        "notice_scope": "shared verbatim section applying independently to x/sync and x/text"
+        "notice_scope": "shared verbatim section applying independently to x/sync, x/sys, and x/text"
       },
       "effective_packages": ["golang.org/x/sync/semaphore"]
+    },
+    {
+      "path": "golang.org/x/sys",
+      "version": "v0.44.0",
+      "requirement": "direct",
+      "classification": "production-linked",
+      "module_sum": "h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=",
+      "go_mod_sum": "h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=",
+      "canonical_tag_commit": "fb1facd76f95fa87c151018200ea5e4892ff115d",
+      "proxy_zip_sha256": "f1fa1052808e6bd6eb9c5372c053b2370a582532fac5d6a4600e7a6fab190ff3",
+      "proxy_go_mod_sha256": "57f4393ea18d5446a12363b35c23a616d843fa1669c7121a70a2bc3a9677d665",
+      "sumdb_lookup_sha256": "d06fe1ff17b158574ead359c298c5cf5158c9a21072793c1c6b639185437d543",
+      "license": "BSD-3-Clause",
+      "license_text_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+      "patents": {
+        "path": "PATENTS",
+        "title": "Additional IP Rights Grant (Patents)",
+        "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+        "notice_scope": "shared verbatim section applying independently to x/sync, x/sys, and x/text"
+      },
+      "platform_scope": "linux/amd64 and linux/arm64 CGO_ENABLED=0",
+      "effective_packages": ["golang.org/x/sys/unix"]
     },
     {
       "path": "golang.org/x/text",
@@ -186,7 +214,7 @@
         "path": "PATENTS",
         "title": "Additional IP Rights Grant (Patents)",
         "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
-        "notice_scope": "shared verbatim section applying independently to x/sync and x/text"
+        "notice_scope": "shared verbatim section applying independently to x/sync, x/sys, and x/text"
       },
       "effective_packages": [
         "golang.org/x/text/cases",

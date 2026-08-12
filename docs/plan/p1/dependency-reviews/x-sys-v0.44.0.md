@@ -1,197 +1,169 @@
-# P1 dependency review：golang.org/x/sys v0.44.0
+# P1 dependency implementation closure：golang.org/x/sys v0.44.0
 
-- Status：**APPROVED_FOR_IMPLEMENTATION（conditional；尚未引入）**
-- Scope：impl-3 filesystem slice 计划使用的 `golang.org/x/sys/unix` Linux syscall/constants surface
-- Reviewed version：`golang.org/x/sys v0.44.0`
-- Prohibited：`replace`、fork、vendor patch、floating branch/pseudo-version、空白 import、Darwin production fallback
+- Status：**APPROVED — dependency implementation closure only**
+- Scope：固定 source commit `ebcf94f803b05ddb56934c656d3d4e69e37cc970` 的
+  `services/control-plane` source、module graph，以及 Linux/Darwin non-test import closure
+- Reviewed dependency：`golang.org/x/sys v0.44.0`
 - Accountable owner：hxp0618
 - Evidence owner：Codex P1 supply-chain worker
-- Review snapshot：2026-08-12T03:18:56Z
-- Review toolchain：Go `1.26.5 darwin/arm64`，`GOWORK=off`，`GOTOOLCHAIN=local`
-- Source boundary：review 从 clean exact HEAD
-  `2fe6995de52c8b27046573c5c69f61dfcfda4d0c` 开始；结束前出现其他 worker 拥有的 untracked Go source，
-  本记录没有读取、修改或把它们纳入 dependency/source closure
+- Review snapshot：2026-08-12T06:20:48Z
+- Toolchain：Go `1.26.5 darwin/arm64`，`GOWORK=off`，`GOTOOLCHAIN=local`，
+  `GOFLAGS=-mod=readonly`
+- Prohibited：`replace`、fork、vendor patch、floating version、blank import、Darwin production fallback
 
-## Decision
+## Decision and supersession
 
-**条件批准 `golang.org/x/sys v0.44.0` 作为 impl-3 Linux filesystem runtime 的 ordinary exact direct
-dependency。** 只有 production filesystem source 实际 import `golang.org/x/sys/unix` 时，实施者才可在同一受审
-slice 中加入 exact `require golang.org/x/sys v0.44.0`，且必须同时刷新 `go.sum`、dependency lock、CycloneDX SBOM、
-license/PATENTS notice 与 source-bound closure evidence。不得提前增加未被 source 使用、会被 `go mod tidy` 删除的
-graph edge，也不得用空白 import 伪装 source-direct dependency。
+本记录取代本文件此前的 `APPROVED_FOR_IMPLEMENTATION（conditional；尚未引入）` 状态。exact committed source
+已经在 Linux build-tagged production package 中直接 import `golang.org/x/sys/unix`；`go.mod` 将
+`golang.org/x/sys v0.44.0` 固定为 ordinary exact direct requirement，`go.sum` 固定两个 exact `h1`。
 
-当前 committed Control Plane graph **不包含** `x/sys`：它不是 selected module，不是 source-imported package，
-不是 production-linked component，也不是当前 distribution 或 notice scope。因而本 review 没有修改：
+因此 x/sys 现在是 16-module selected graph 的 direct module，也是 Linux production-linked、noticed、SBOM root
+dependency。Darwin non-test closure 不含 x/sys package，这是 build-tag platform 差异，不是 graph-only 分类：同一主模块
+的 direct selected requirement 仍存在，而 production filesystem 在 Darwin 明确 fail closed。
 
-| Current artifact                                | SHA-256（与 HEAD same-bits）                                       |
-| ----------------------------------------------- | ------------------------------------------------------------------ |
-| `services/control-plane/go.mod`                 | `3eaa75348e57ef4ea72e1fff572058dd496acb877be543600e5b1a57ed93de90` |
-| `services/control-plane/go.sum`                 | `f65654519c652388e9f315cef1ef299e86fdc964d8d18332c05dbdb51a40c7fb` |
-| `services/control-plane/dependency-lock.json`   | `4bae3bfce955cdc1df34235b64308eb8bb6b411dacb65b56144039b143aeef7b` |
-| `services/control-plane/sbom.cdx.json`          | `d8ff0182bebbc3a4cedcba6534a2c2a7747ccbd642bcc0238251857d360b6fe5` |
-| `services/control-plane/THIRD_PARTY_NOTICES.md` | `5fa0f0ebf9c81ea7b9d15714799c0c6b2b3f5be65a52e3eee0b0b96f450d0f5a` |
+此批准仅关闭 **dependency implementation/supply evidence**。它不声称 production filesystem runtime 已启用：
+`NewEvidenceSink()` 仍返回 `CodeProjectionNotImplemented`，Linux `newProductionEvidenceFSRoot` 也在任何 mutation 前
+返回稳定 filesystem failure，因为 trusted mount authority 尚未实现。真实 ext4/XFS syscall probe、跨进程锁、
+power-loss/restart、runner/DB/cloud、RC/release Gate 仍然开放。
 
-上述批准只关闭 impl-3 的 **dependency choice review** Entry；它不证明 runtime source、filesystem probe、锁、
-no-replace publish、crash/power-loss durability、SBOM 集成、最终 binary same-bits 或任何 RC/release Gate 已完成。
+## Exact source authority
 
-## Fixed upstream identity
+| Evidence | Exact value |
+| --- | --- |
+| Source commit | `ebcf94f803b05ddb56934c656d3d4e69e37cc970` |
+| Repository tree OID（Git SHA-1） | `65eb831f8def941814d4e4256466fc6407736314` |
+| `services/control-plane` subtree OID（Git SHA-1） | `a70c87c74100e4e22fa058394a6cb9052c8f2139` |
+| 136-file tracked manifest SHA-256 | `2b20336b07efd966f0b10d7dcab1be301417dc2cb56543e5c3700995333d49ff` |
+| 72-file tracked Go-source manifest SHA-256 | `6f9b0e86279d1e2a77cce71f85b4efe3e47ccfe505f94d8c7845309af454f199` |
+| `go.mod` SHA-256 | `ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7` |
+| `go.sum` SHA-256 | `8d46b65698d18e97869fa31da700c24f3bfbc8b091afefd5584b3aaa1824d977` |
+| sorted `go list -m all` SHA-256 | `0f98de7d6500cfc9bda9c5d76cb269b714e2cd31a18857b7433e33fe540e7793` |
+| sorted `go mod graph` SHA-256 | `28d53b4b26eb41e956644aeced541d33df787590a2e91c9fc81cb15973bf6416` |
 
-| Evidence                      | Exact value                                                        |
-| ----------------------------- | ------------------------------------------------------------------ |
-| Module/version                | `golang.org/x/sys v0.44.0`                                         |
-| Canonical tag commit          | `fb1facd76f95fa87c151018200ea5e4892ff115d`                         |
-| Tag time                      | `2026-04-23T15:37:02Z`                                             |
-| Minimum Go                    | `1.25.0`                                                           |
-| Module dependencies           | none (`go.mod` contains only module path and Go directive)         |
-| Module sum                    | `h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=`                  |
-| `go.mod` sum                  | `h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=`                  |
-| Proxy zip SHA-256             | `f1fa1052808e6bd6eb9c5372c053b2370a582532fac5d6a4600e7a6fab190ff3` |
-| Proxy `go.mod` SHA-256        | `57f4393ea18d5446a12363b35c23a616d843fa1669c7121a70a2bc3a9677d665` |
-| Proxy `.info` SHA-256         | `db88d97c963506d830212c91e42f4bbd9076c18faccb127b6c096bb86bab0ae6` |
-| SumDB lookup response SHA-256 | `86d37dd2005bce9919d3893114fe50fbeeb751898ff9009a5871ccf320c00337` |
+tracked/source manifests 直接从 exact commit 的 `git ls-tree` 机械计算。本记录、lock、SBOM、NOTICE 是该 source
+commit 之后的四个派生 refresh，不反向成为 source/import authority，也不伪称它们已经包含于 source commit。
 
-`go mod download -json` 的 `Origin.URL`/`Origin.Hash`、`proxy.golang.org` `.info`、canonical
-`go.googlesource.com/sys` tag ref 与 GitHub mirror tag ref 均解析到上述 commit。transport mirror 不是 bits
-authority；实施 lock 必须同时固定 exact version、module `h1`、proxy zip digest 和公开 SumDB witness。SumDB lookup
-包含时点 tree head，因此 response digest 是 non-bit-safe snapshot，不能替代 stable module identity。
+## Platform-specific production closure
 
-## License and additional IP rights
+Linux amd64 与 arm64（均 `CGO_ENABLED=0`）产生相同 non-test closure：7 modules、30 packages。
+
+| Linux production module | Version | Requirement | x/sys effective package |
+| --- | --- | --- | --- |
+| `github.com/jackc/pgpassfile` | `v1.0.0` | transitive | — |
+| `github.com/jackc/pgservicefile` | `v0.0.0-20240606120523-5a60cdf6a761` | transitive | — |
+| `github.com/jackc/pgx/v5` | `v5.10.0` | direct | — |
+| `github.com/jackc/puddle/v2` | `v2.2.2` | transitive | — |
+| `golang.org/x/sync` | `v0.21.0` | transitive | — |
+| `golang.org/x/sys` | `v0.44.0` | **direct** | `golang.org/x/sys/unix` |
+| `golang.org/x/text` | `v0.39.0` | direct | — |
+
+| Closure | Modules SHA-256 | Packages SHA-256 | Count |
+| --- | --- | --- | --- |
+| Linux amd64/arm64 | `48ca0dbaba0f918d99091decd0520a70327c36badb7d74c7cbbe1e180cd66e5f` | `12a56c91f56460e9757560f00234c06cec462f248df6a770d41172168e9a8d08` | 7 / 30 |
+| Darwin arm64 | `12203596417e4926a8292ad208df4d410ef0d6e89627320e2c4fe08858a5154b` | `07d05153aff50a4db408a9e4d34c4a298a21f5ccd5615b9940e4e8521e0de354` | 6 / 29 |
+
+9 个 module 只在 selected graph 中出现，未进入 Linux non-test package closure，继续分类为 graph-only：
+`go-spew`、`kr/pretty`、`go-difflib`、`objx`、`testify`、`x/mod`、`x/tools`、`check.v1`、`yaml.v3`。
+SBOM 保留其 inventory，但 root `dependsOn` 仅含上述 7 个 Linux production module。
+
+## Fixed upstream bits and provenance
+
+| Evidence | Exact value |
+| --- | --- |
+| Module/version | `golang.org/x/sys v0.44.0` |
+| Canonical tag commit | `fb1facd76f95fa87c151018200ea5e4892ff115d` |
+| Tag time | `2026-04-23T15:37:02Z` |
+| Minimum Go | `1.25.0` |
+| Module dependencies | none |
+| Module sum | `h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=` |
+| `go.mod` sum | `h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=` |
+| Official proxy zip SHA-256 | `f1fa1052808e6bd6eb9c5372c053b2370a582532fac5d6a4600e7a6fab190ff3` |
+| Official proxy `go.mod` SHA-256 | `57f4393ea18d5446a12363b35c23a616d843fa1669c7121a70a2bc3a9677d665` |
+| Official proxy `.info` SHA-256 | `db88d97c963506d830212c91e42f4bbd9076c18faccb127b6c096bb86bab0ae6` |
+| SumDB lookup response SHA-256 | `d06fe1ff17b158574ead359c298c5cf5158c9a21072793c1c6b639185437d543` |
+
+`go mod download -json` 的 `Origin.URL`、`Origin.Hash`、`Origin.Ref` 分别是 canonical
+`https://go.googlesource.com/sys`、上述 commit、`refs/tags/v0.44.0`。transport mirror 不是 bits authority；stable
+identity 是 exact version、module `h1` 与 proxy zip digest。SumDB response 含时点 signed tree head，故本次 digest
+与 conditional review 的旧 digest 不同并不表示 module bits 漂移；它是必须注明时间边界的 non-bit-safe witness。
+
+## License, PATENTS, NOTICE, and SBOM
 
 - License：BSD-3-Clause；root `LICENSE` SHA-256
   `911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad`。
-- Additional grant：root `PATENTS`，标题 `Additional IP Rights Grant (Patents)`，SHA-256
+- Additional grant：root `PATENTS`；标题 `Additional IP Rights Grant (Patents)`；SHA-256
   `96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc`。
-- `PATENTS` 包含 Google 的 patent license 及 patent-litigation termination 条款；不能仅记录 SPDX
-  `BSD-3-Clause` 而遗漏该文本。
+- `x/sync`、`x/sys`、`x/text` 分发 byte-identical PATENTS。NOTICE 只复制文本一次，但明确该 grant 独立适用于
+  三个 module；lock 与 SBOM 对三个组件各自记录 path/title/digest/scope，不能把共享展示误解为合并法律关系。
+- CycloneDX root dependency 现有 7 项并包含 x/sys。x/sys component 标记 exact direct、Linux production-linked、
+  `linux/amd64` + `linux/arm64`、BSD-3-Clause 与 PATENTS metadata。
 
-当前 x/sys 未被链接或分发，所以现有 production-linked-only `THIRD_PARTY_NOTICES.md` 保持不变是准确分类。
-当 filesystem source import 落地后，x/sys 将成为 production-linked/direct component；届时 notice 必须明确把已共享
-展示的相同 `PATENTS` 文本也独立适用于 x/sys，dependency lock 与 SBOM component 必须分别记录 license/PATENTS
-path、digest 和 distribution scope。共享展示可去重文本，不能合并法律适用关系。
-
-## Reviewed syscall surface
-
-本 review 只批准 ADR 0010 impl-3 所需的窄 Linux surface，不构成对整个 `x/sys` module 的开放授权：
-
-| Required behavior                             | Reviewed `unix` API/constants                                           | Boundary                                                                                                      |
-| --------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| descriptor-relative no-follow open/create     | `Openat`；`O_CLOEXEC`、`O_NOFOLLOW`、`O_DIRECTORY`、`O_CREAT`、`O_EXCL` | 每个 path component 仍需逐级验证；一个末尾 `O_NOFOLLOW` 不能证明整个 path 无 symlink                          |
-| stronger component resolution where available | `Openat2` / `OpenHow`                                                   | Linux/kernel dependent；`ENOSYS`/unsupported flags 必须 fail closed 或走已审等价 component-walk，不得静默降级 |
-| owner/mode/type/link checks                   | `Fstatat`、`Fstat`、`AT_SYMLINK_NOFOLLOW`                               | 检查与使用必须保持 descriptor authority，避免 pathname TOCTOU                                                 |
-| filesystem allowlist probe                    | `Fstatfs`、`Statfs_t.Type`、`EXT4_SUPER_MAGIC`、`XFS_SUPER_MAGIC`       | magic 只证明报告类型；仍需验证 mount source/options 并做在线语义 probe                                        |
-| cross-process nonblocking writer lock         | `Flock`；`LOCK_EX`、`LOCK_NB`、`LOCK_UN`                                | 必须两进程验证；不得用进程内 mutex 替代，也不得假设所有 mount 的 flock 语义相同                               |
-| bounded write at offset                       | `Write` / `Pwrite`                                                      | short write、`EINTR`、partial mutation 和 checked offset overflow 必须显式处理                                |
-| file durability                               | `Fdatasync`                                                             | 成功只覆盖该 file 的承诺边界；不能替代新 directory entry 的 parent `Fsync`                                    |
-| directory-entry durability                    | `Fsync` on verified directory fd                                        | unsupported/error 必须 fail closed；`Close` 不是 durability barrier                                           |
-| atomic no-replace publish                     | `Renameat2(..., RENAME_NOREPLACE)`                                      | `ENOSYS`/unsupported filesystem 时只能使用已审同目录 `Linkat` + `Unlinkat` 等价协议；普通可覆盖 rename 禁止   |
-| no-replace fallback/cleanup                   | `Linkat`、`Unlinkat`                                                    | 必须在同一 verified filesystem/directory，处理 crash window、existing target 和 unlink failure                |
-
-`v0.44.0` 的 Linux generated wrappers/constants 对 amd64 与 arm64 均包含该 surface。API 的存在只证明可以表达
-协议，不证明目标 kernel、seccomp profile、mount 或 storage controller 支持相同语义。
-
-## CGO=0 API fixture
-
-权限 `0700` 的独立临时 module 以唯一 dependency `golang.org/x/sys v0.44.0` 编译以下行为：`Openat` no-follow
-exclusive create、`Pwrite`、`Fdatasync`、`Fstatat`、`Fstatfs`、nonblocking `Flock`、
-`Renameat2(RENAME_NOREPLACE)`、`Linkat`/`Unlinkat` fallback、ext4/xfs magic 与 directory `Fsync`。Darwin 文件只
-验证通用 `unix` import/build seam，不授权 production Open。
-
-| Target         | Command shape                                          | Result |
-| -------------- | ------------------------------------------------------ | ------ |
-| `darwin/arm64` | `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go test ./...` | PASS   |
-| `linux/amd64`  | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test ./...`  | PASS   |
-| `linux/arm64`  | `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test ./...`  | PASS   |
-
-Fixture identity：Linux source SHA-256
-`cc20e56943806026e9fa5e9c597222005aff40b25f0f6b6054779db3cea345d2`，Darwin source SHA-256
-`926a99dd69439c05b1e3a64eb4f70e015dd6e8705bffa3c334fcec4e05e869fd`。fixture 位于 review 临时目录，
-不属于 repository source、SBOM 或 production closure；cross-compile success 也不是 syscall runtime/fault evidence。
+| Derived artifact | SHA-256 |
+| --- | --- |
+| `services/control-plane/dependency-lock.json` | `7343374d24f6600c3fd034d28c709f451eadfceb4fffeb98d4058dfa99a8c763` |
+| `services/control-plane/sbom.cdx.json` | `eeb2e043e92c369e6323ada8ff6d89bb84a3c770a5e651deec8acf05666eb73b` |
+| `services/control-plane/THIRD_PARTY_NOTICES.md` | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
 
 ## Vulnerability snapshot
 
-漏洞结果是联网时点证据，不是永久安全证明：
+漏洞证据是联网时点判断，不是永久安全声明。
 
-| Check                                                       | Snapshot/result                                                                         | Evidence SHA-256                                                                                   |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Go vulnerability DB module index                            | `x/sys` 有 `GO-2022-0493`（早已修复）和 `GO-2026-5024`（first fixed `v0.44.0`）         | exact selected module-index row `0644e1e476122df4cbdcb2bebc7b739fa14c19f838e16558541ad0bd0cdd5e73` |
-| `GO-2026-5024` official record                              | reviewed；影响 `x/sys/windows.NewNTUnicodeString`；first fixed `v0.44.0`                | `ec93b4e06338823aff63cebe8aa3bad0d46bc68e16fe226cffaed3846af8b95f`                                 |
-| OSV exact query                                             | ecosystem `Go`、module `golang.org/x/sys`、version `v0.44.0`；response `{}`，0 findings | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a`                                 |
-| `govulncheck v1.6.0 -scan=module` on isolated fixture       | DB updated `2026-08-11T23:21:33Z`；`No vulnerabilities found.`                          | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5`                                 |
-| `govulncheck v1.6.0 -scan=symbol ./...` on isolated fixture | same DB；`No vulnerabilities found.`                                                    | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5`                                 |
+| Check | Snapshot/result | Evidence SHA-256 |
+| --- | --- | --- |
+| `govulncheck v1.6.0 -scan=module` | DB updated `2026-08-11T23:21:33Z`；0 findings | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5` |
+| Linux symbol scan | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`；0 findings | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5` |
+| OSV querybatch | 16 exact selected modules；16 responses；0 findings | query `937ac9fb9495cc4ea13990a2cdead2c17f85fbfb817f610057051097aeb8d720`；canonical response `597de9d918195ae56f69090341f0a38ab47139b85ab19c2a11ec52f916e5f861` |
 
-`GO-2026-5024` 是 Windows package issue，而计划 surface 是 Linux `unix`；仍选择首个 fixed exact version，避免把
-OS/build-tag 边界当成 suppression。实施时必须在真实 Control Plane source、最终 Linux binaries 和更新后的完整
-selected graph 上刷新 module/symbol/OSV evidence；不得继承本临时 fixture 的 0 findings 作为 RC 证明。
+本次没有继承旧 15-module/29-package 结论；在 x/sys 进入 Linux production closure 后重新执行 module scan、Linux
+symbol scan 与 16-module OSV query。`GO-2026-5024` 影响 Windows API，且 v0.44.0 是 first-fixed version；这里没有
+用 platform suppression 替代 fixed version。任一 advisory DB、scanner、module graph、source import、build tag、
+version、sum、license/PATENTS 或 distribution scope 变化，都要求刷新判断。
 
-## Alternatives considered
+## Verification and fail-closed runtime boundary
 
-| Alternative                                            | Decision | Reason                                                                                                                        |
-| ------------------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| standard `os` / `path/filepath` only                   | reject   | 无法完整表达 descriptor-relative component walk、`renameat2(RENAME_NOREPLACE)`、`fstatfs` magic 与明确 fd durability barriers |
-| standard `syscall`                                     | reject   | frozen/deprecated surface，缺少或不稳定覆盖所需现代 Linux wrappers/constants；自行 raw syscall 更易产生 arch/ABI 错误         |
-| cgo + libc                                             | reject   | 无必要地引入 C toolchain、libc/ABI、cross-build 与 provenance closure；本 surface 已用 CGO=0 验证可编译                       |
-| hand-written `RawSyscall` numbers                      | reject   | 重复 x/sys 的 per-arch ABI work，增加 unsafe pointer/lifetime、errno 与 syscall-number drift 风险                             |
-| `x/sys` latest/floating branch                         | reject   | 不可复现；批准只适用于 exact `v0.44.0` bits                                                                                   |
-| older `x/sys`                                          | reject   | `v0.44.0` 是 `GO-2026-5024` first fixed version；无理由选择已知受影响 floor                                                   |
-| silently fall back to ordinary rename/best effort sync | reject   | 会破坏 no-replace 与 durable-append协议；应返回 stable fail-closed error                                                      |
+本 closure 的本地 replay 必须至少执行：
 
-## Runtime risks and required negative evidence
+```bash
+cd services/control-plane
+export GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly
 
-dependency/API 批准不等于 filesystem correctness。impl-3 必须至少关闭以下风险：
+go mod tidy -diff
+go mod verify
+go test -count=1 ./...
+go test -race -count=1 ./internal/migration
+go build ./...
+go vet ./...
 
-1. **`ENOSYS` / `EOPNOTSUPP` / `EINVAL` 不等于可忽略。** `Openat2`、`renameat2`、directory `fsync`、lock 或
-   mount semantics 不可用时，只有 ADR 已允许且经 fault test 的等价协议可继续；否则在 DB connect 前 fail closed。
-2. **no-follow 不是单 syscall 结论。** 必须 descriptor-relative 逐 component walk，验证 owner/mode/type/link-count，
-   并在 check/use 期间保持 fd authority；不得先 `Lstat` 再按原字符串 reopen。
-3. **filesystem magic 不足以证明 durable semantics。** ext4/xfs allowlist 还需 mount source/options、bind/overlay
-   detection、required syscall probe，以及真实 local mount 的 power-loss/restart matrix。
-4. **写入结果可能 unknown。** short/partial write、`EINTR`、`fdatasync`/directory `fsync` error、response loss 均需
-   遵守 ADR 的 cursor invalidation/replay contract，不能把 retry 当作未写入。
-5. **no-replace fallback 有 crash window。** link 成功而 unlink 失败时 final 已存在；replay 必须 full verify final，
-   temp cleanup 只能在锁、owner/type/link-count 与 active-writer证明后执行。
-6. **锁和 quota 是跨进程语义。** 必须验证 `Flock` nonblocking contention、root→lineage lock order、两进程
-   no-overcommit；不得用单进程测试或 race-clean 代替。
-7. **整数与资源边界。** fd、offset、length、record/byte quota 的转换和加法必须 checked；exact inclusive maxima
-   可接受，溢出或超过上限在 mutation/DB 前拒绝。
-8. **平台边界。** Darwin fixture 只验证 build seam。production implementation 必须由 Linux build tags 隔离，
-   non-Linux production Open 返回稳定 fail-closed error，不能在 APFS 上声称 ext4/xfs durability。
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -exec=/usr/bin/true ./...
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -exec=/usr/bin/true ./...
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go test -exec=/usr/bin/true ./...
+```
 
-## Implementation acceptance checklist
+`-exec=/usr/bin/true` 让 Darwin host 只编译异构 test binaries，不尝试执行 Linux/其他架构产物；直接执行会以
+`exec format error` 失败，不能把 host-kernel incompatibility 误报为 source compile failure。
 
-当 filesystem source 实际落地时，必须在一个可审计 slice 内全部满足：
+还应机械断言：16 selected components；7 Linux production / 9 graph-only；3 direct requirements；Linux closure与
+lock production rows一致；SBOM metadata/root dependency ref 都绑定 exact source commit；root `dependsOn` 恰含7项；
+x/sys component 的 direct/platform/PATENTS properties 完整；三个 PATENTS scope exact 一致；NOTICE digest 与 lock
+互绑；CycloneDX 1.6、SPDX、JSF schemas 全部通过。
 
-- production source 直接 import `golang.org/x/sys/unix`；`go.mod` 以 ordinary exact direct require 固定
-  `v0.44.0`，`go mod tidy -diff` 为空；
-- `go.sum` 含本记录的两个 exact `h1`，`go mod verify` 通过；无 `replace`、`exclude`、fork 或 vendor patch；
-- `go list -m all`、`go mod graph` 和 non-test `go list -deps ./...` 明确把 x/sys 分类为 selected、direct、
-  production-linked，且 production effective package 只按真实 imports记录；
-- `dependency-lock.json` 固定 tag/proxy/SumDB/module/license/PATENTS evidence，`sbom.cdx.json` root dependency
-  关系与真实 production closure一致；
-- `THIRD_PARTY_NOTICES.md` 加入 BSD-3-Clause 并明确共享 PATENTS grant 独立适用于 x/sys；
-- 刷新 source commit/tree、tracked/Go-source manifests、module/package closure digests；候选未 commit 时必须
-  `source_tree_committed=false`，集成 commit 后再二阶段刷新为 exact committed evidence；
-- 真实 source 上通过 tidy/verify/test/race/build/vet、CGO=0 Linux amd64/arm64 build、license/PATENTS、
-  CycloneDX 1.6 schema、secret scan 与 dependency-diff gate；
-- 在 Linux ext4/xfs 环境完成 syscall probe、两进程 lock/quota、partial write/sync/close/ENOSYS、
-  no-replace crash window、torn tail/replay 及 power-loss/restart evidence；
-- 完成后由独立 reviewer 复核 exact diff、closure classification 和 fail-closed fault mapping，再声明 impl-3
-  dependency integration Done。
+上述 build/test 只验证当前封装和 fail-closed seam。Linux production constructor 当前仍主动拒绝 trusted mount
+authority，因而不会进行 probe mutation；这不是 runtime enablement。真实 ext4/XFS mount authority、跨进程/断电
+matrix 必须在后续单独关闭，不能用 unit fake、cross-compile 或 supply-chain closure 代替。
 
-任一 version/sum/proxy bits/license/PATENTS/API import/build tag/toolchain/module graph/advisory DB/distribution scope 变化，
-均使本批准的对应证据失效并要求重审。
+## Gate boundary
+
+- x/sys dependency choice + exact direct integration + supply artifacts：**CLOSED for this source commit**。
+- production filesystem constructor/runtime：**NOT IMPLEMENTED / fail closed before mutation**。
+- `G-SUPPLY-CHAIN`：**OPEN**；最终 RC binary/artifact same-bits 与集成 commit provenance 尚未关闭。
+- `G-DATA`、runner/DB/cloud、RC/release/deployment：**OPEN / NOT AUTHORIZED**。
 
 ## Durable upstream locators
 
-- Module：[pkg.go.dev `golang.org/x/sys@v0.44.0`](https://pkg.go.dev/golang.org/x/sys@v0.44.0)
-- Unix API：[pkg.go.dev `golang.org/x/sys/unix@v0.44.0`](https://pkg.go.dev/golang.org/x/sys/unix@v0.44.0)
-- Canonical source tag：[go.googlesource.com/sys `v0.44.0`](https://go.googlesource.com/sys/+/refs/tags/v0.44.0)
-- GitHub mirror tag：[golang/sys `v0.44.0`](https://github.com/golang/sys/tree/v0.44.0)
-- Go proxy：[`.info`](https://proxy.golang.org/golang.org/x/sys/@v/v0.44.0.info)、
-  [`go.mod`](https://proxy.golang.org/golang.org/x/sys/@v/v0.44.0.mod)
-- SumDB：[x/sys@v0.44.0](https://sum.golang.org/lookup/golang.org/x/sys@v0.44.0)
-- Fixed vulnerability：[GO-2026-5024](https://pkg.go.dev/vuln/GO-2026-5024)
-- Runtime authority：[ADR 0010 §5.4](../../adr/0010-p1-postgres-projection-contract.md)
-
-联网 raw responses 与临时 fixture 位于权限 `0700` 的临时目录，review 后删除；仓库只保留 sanitised decision、
-stable bits identity 和 response digest。未来 RC 必须重新生成 sanitised scanner/proxy/SumDB/OSV evidence，不得把本
-snapshot 的空查询或旧 signed tree head 当作永久安全证明。
+- [pkg.go.dev `golang.org/x/sys@v0.44.0`](https://pkg.go.dev/golang.org/x/sys@v0.44.0)
+- [pkg.go.dev `golang.org/x/sys/unix@v0.44.0`](https://pkg.go.dev/golang.org/x/sys/unix@v0.44.0)
+- [canonical tag `v0.44.0`](https://go.googlesource.com/sys/+/refs/tags/v0.44.0)
+- [official proxy `.info`](https://proxy.golang.org/golang.org/x/sys/@v/v0.44.0.info)
+- [SumDB lookup](https://sum.golang.org/lookup/golang.org/x/sys@v0.44.0)
+- [GO-2026-5024](https://pkg.go.dev/vuln/GO-2026-5024)
+- [ADR 0010 §5.4](../../adr/0010-p1-postgres-projection-contract.md)

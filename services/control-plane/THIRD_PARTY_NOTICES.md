@@ -5,9 +5,10 @@ Plane build closure. Modules that are only present in the selected Go module
 graph are recorded in `dependency-lock.json` and `sbom.cdx.json`; they are not
 copied here because they are not linked or distributed by this build.
 
-The identical `PATENTS` grant distributed with `golang.org/x/sync v0.21.0`
-and `golang.org/x/text v0.39.0` is reproduced once after both license sections
-and explicitly applies to both modules.
+The identical `PATENTS` grant distributed with `golang.org/x/sync v0.21.0`,
+`golang.org/x/sys v0.44.0`, and `golang.org/x/text v0.39.0` is reproduced once
+after the three license sections and explicitly applies independently to all
+three modules.
 
 ## github.com/jackc/pgpassfile v1.0.0
 
@@ -181,11 +182,43 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-## Shared PATENTS grant for golang.org/x/sync v0.21.0 and golang.org/x/text v0.39.0
+## golang.org/x/sys v0.44.0
 
-The following text is byte-identical in both modules' root `PATENTS` files
+License: BSD-3-Clause
+
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+- Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+- Redistributions in binary form must reproduce the above
+  copyright notice, this list of conditions and the following disclaimer
+  in the documentation and/or other materials provided with the
+  distribution.
+- Neither the name of Google LLC nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## Shared PATENTS grant for golang.org/x/sync v0.21.0, golang.org/x/sys v0.44.0, and golang.org/x/text v0.39.0
+
+The following text is byte-identical in all three modules' root `PATENTS` files
 (SHA-256 `96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc`)
-and applies independently to each module:
+and applies independently to each of the three modules:
 
 ```text
 Additional IP Rights Grant (Patents)
