@@ -87,7 +87,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:19327be129b1061c3d8b8d7881ea797f1ac602eebcbd31f829a5d3eeb9fb0a19",
+      "sourceManifestSha256": "sha256:007cc52ab7cdaefc3e26890ee1f176a2ddd4facfb837515e59b19b6013c43af1",
       "sources": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -199,7 +199,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:19327be129b1061c3d8b8d7881ea797f1ac602eebcbd31f829a5d3eeb9fb0a19",
+      "inputManifestSha256": "sha256:007cc52ab7cdaefc3e26890ee1f176a2ddd4facfb837515e59b19b6013c43af1",
       "inputs": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
