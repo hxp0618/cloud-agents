@@ -389,20 +389,24 @@ func NewDescriptorClassifier(bundle *RuntimeBundle) (*DescriptorClassifier, erro
 // projection bindings; no connector, queryer, transaction, ledger, or SQL
 // executor is reachable from this pure function.
 func buildExactStatementPlans(bundle *RuntimeBundle, bindings RunnerProjectionBindings, now time.Time) ([]StatementPlan, error) {
-	if bundle == nil || bundle.Manifest == nil {
+	if bundle == nil {
 		return nil, fail(CodeInvalidManifest, "statement-plan", "verified runtime bundle is absent", nil)
+	}
+	manifest, files, err := bundle.ownedInputs.copyVerified()
+	if err != nil {
+		return nil, err
 	}
 	if err := bindings.validateAt(now); err != nil {
 		return nil, err
 	}
-	authorityRecord := bundle.Manifest.ExecutionPolicy.AuthorityContract
+	authorityRecord := manifest.ExecutionPolicy.AuthorityContract
 	if authorityRecord.SHA256 != bindings.authorityProfileDigest || bindings.verifiedAuthorityProfile.artifactDigest != bindings.authorityProfileDigest {
 		return nil, fail(CodeUntrusted, "authority-profile", "manifest authority descriptor differs from projection bindings", nil)
 	}
-	if !runtimeDescriptorExact(bundle.Manifest.RuntimeArtifacts, authorityRecord) {
+	if !runtimeDescriptorExact(manifest.RuntimeArtifacts, authorityRecord) {
 		return nil, fail(CodeInvalidManifest, "authority-profile", "authority descriptor is not exact and unique in runtime_artifacts", nil)
 	}
-	authorityRaw, err := exactRuntimeArtifact(bundle.Files, authorityRecord)
+	authorityRaw, err := exactRuntimeArtifact(files, authorityRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -419,26 +423,26 @@ func buildExactStatementPlans(bundle *RuntimeBundle, bindings RunnerProjectionBi
 		!runnerCanonicalEqual(*authorityContract, bindings.verifiedAuthorityProfile.contract) {
 		return nil, fail(CodeUntrusted, "authority-profile", "runtime authority profile differs from its complete verified binding", canonicalErr)
 	}
-	if bundle.Manifest.SchemaBundleDigest != bindings.schemaBundleDigest {
+	if manifest.SchemaBundleDigest != bindings.schemaBundleDigest {
 		return nil, fail(CodeUntrusted, "statement-plan", "runtime schema bundle differs from projection bindings", nil)
 	}
-	if len(bundle.Manifest.SchemaBundle.Migrations) == 0 {
+	if len(manifest.SchemaBundle.Migrations) == 0 {
 		return nil, fail(CodeInvalidManifest, "statement-plan", "migration closure is empty", nil)
 	}
-	projectionAuthority := bundle.Manifest.SchemaBundle.ProjectionScopeAuthority
+	projectionAuthority := manifest.SchemaBundle.ProjectionScopeAuthority
 	if !reflect.DeepEqual(projectionAuthority.DefaultACLOwnersCopy(), bindings.initialSchemaScope.DefaultACLOwners()) ||
 		!reflect.DeepEqual(projectionAuthority.ObjectCreatorClosureCopy(), bindings.initialSchemaScope.ObjectCreatorClosure()) ||
-		bindings.initialSchemaScope.subjectDigest != bundle.Manifest.SchemaBundleDigest ||
-		!reflect.DeepEqual(bindings.initialSchemaScope.BoundPrecondition(), bundle.Manifest.SchemaBundle.Migrations[0].PredecessorCatalogContract) {
+		bindings.initialSchemaScope.subjectDigest != manifest.SchemaBundleDigest ||
+		!reflect.DeepEqual(bindings.initialSchemaScope.BoundPrecondition(), manifest.SchemaBundle.Migrations[0].PredecessorCatalogContract) {
 		return nil, fail(CodeUntrusted, "statement-plan", "initial schema scope differs from exact signed schema bundle authority", nil)
 	}
-	if len(bindings.executableCatalogs) != len(bundle.Manifest.SchemaBundle.Migrations) {
+	if len(bindings.executableCatalogs) != len(manifest.SchemaBundle.Migrations) {
 		return nil, fail(CodeUntrusted, "statement-plan", "executable catalog closure differs from migration closure", nil)
 	}
 
 	plans := make([]StatementPlan, 0)
 	usedHeads := make(map[string]struct{}, len(bindings.executableCatalogs))
-	for _, entry := range bundle.Manifest.SchemaBundle.Migrations {
+	for _, entry := range manifest.SchemaBundle.Migrations {
 		catalogBinding, ok := exactCatalogBindingForHead(bindings.executableCatalogs, entry.ID)
 		if !ok {
 			return nil, fail(CodeUntrusted, entry.ID, "schema head has no exact executable catalog binding", nil)
@@ -450,10 +454,10 @@ func buildExactStatementPlans(bundle *RuntimeBundle, bindings RunnerProjectionBi
 		if catalogBinding.catalogContractDigest != entry.CatalogContract.SHA256 {
 			return nil, fail(CodeUntrusted, entry.ID, "catalog binding digest differs from manifest descriptor", nil)
 		}
-		if !runtimeDescriptorExact(bundle.Manifest.RuntimeArtifacts, entry.CatalogContract) {
+		if !runtimeDescriptorExact(manifest.RuntimeArtifacts, entry.CatalogContract) {
 			return nil, fail(CodeInvalidManifest, entry.ID, "catalog descriptor is not exact in runtime_artifacts", nil)
 		}
-		catalogRaw, err := exactRuntimeArtifact(bundle.Files, entry.CatalogContract)
+		catalogRaw, err := exactRuntimeArtifact(files, entry.CatalogContract)
 		if err != nil {
 			return nil, err
 		}
@@ -482,10 +486,10 @@ func buildExactStatementPlans(bundle *RuntimeBundle, bindings RunnerProjectionBi
 		if source.SQLSHA256 != entry.SQLArtifact.SHA256 {
 			return nil, fail(CodeInvalidManifest, entry.ID, "catalog source SQL digest differs from manifest descriptor", nil)
 		}
-		if !runtimeDescriptorExact(bundle.Manifest.RuntimeArtifacts, entry.SQLArtifact) {
+		if !runtimeDescriptorExact(manifest.RuntimeArtifacts, entry.SQLArtifact) {
 			return nil, fail(CodeInvalidManifest, entry.ID, "SQL descriptor is not exact in runtime_artifacts", nil)
 		}
-		sqlRaw, err := exactRuntimeArtifact(bundle.Files, entry.SQLArtifact)
+		sqlRaw, err := exactRuntimeArtifact(files, entry.SQLArtifact)
 		if err != nil {
 			return nil, err
 		}

@@ -27,7 +27,7 @@ func TestLimitFaultInventoryExecutesProductionValidators(t *testing.T) {
 	fixture := fixtureObject(t, migrationFixturePath(t, "negative/evidence-limits-faults-v1.json"))
 	boundaries := fixture["boundaries"].([]JSONValue)
 	invalid := fixture["invalid_cases"].([]JSONValue)
-	if len(boundaries) != 15 || len(invalid) != 4 {
+	if len(boundaries) != 16 || len(invalid) != 4 {
 		t.Fatalf("limits %d+%d", len(boundaries), len(invalid))
 	}
 	for _, raw := range boundaries {
@@ -95,7 +95,7 @@ func dispatchLimitBoundary(name string, value uint64) error {
 		"quota_reserved_records": "quota_reserved_records", "quota_reserved_bytes": "quota_reserved_bytes",
 		"evidence_intermediate_framed_bytes": "evidence_intermediate_framed_bytes", "evidence_segment_bytes": "evidence_segment_bytes",
 		"evidence_segment_records": "evidence_segment_records", "journal_reserved_segments": "evidence_journal_segments",
-		"lineage_superseded_framed_bytes": "lineage_superseded_framed_bytes", "lineage_index_bytes": "lineage_index_bytes",
+		"lineage_checkpoint_framed_bytes": "lineage_checkpoint_framed_bytes", "lineage_superseded_framed_bytes": "lineage_superseded_framed_bytes", "lineage_index_bytes": "lineage_index_bytes",
 		"lineage_index_records": "lineage_index_records", "decision_recovery_identity_bytes": "decision_recovery_identity_bytes",
 		"decision_recovery_encoded_bytes": "decision_recovery_encoded_bytes", "decision_recovery_input_count": "decision_recovery_input_count",
 	}
@@ -106,10 +106,10 @@ func dispatchLimitBoundary(name string, value uint64) error {
 		return nil
 	}
 	if mapping[name] == "lineage_superseded_framed_bytes" {
-		if value > lineageRecordFrameLimits[LineageRecordGenerationSuperseded] {
-			return invalidEvidence("limit", "superseded")
-		}
-		return nil
+		return validateFramedSizeLimit(value, maxLineageFrameBytes, lineageRecordFrameLimits[LineageRecordGenerationSuperseded])
+	}
+	if mapping[name] == "lineage_checkpoint_framed_bytes" {
+		return validateFramedSizeLimit(value, maxLineageFrameBytes, lineageRecordFrameLimits[LineageRecordGenerationCheckpoint])
 	}
 	return validateEvidenceLimitBoundary(mapping[name], value)
 }

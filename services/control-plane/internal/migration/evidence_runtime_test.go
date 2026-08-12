@@ -61,6 +61,140 @@ func TestDurableContentReceiptBindersRejectUntilPublicationAuthorityExists(t *te
 	}
 }
 
+func TestVerifiedEvidenceRunTotalBinderOwnsInputsAndRejectsEverySwap(t *testing.T) {
+	bundle := quotaAdmissionBundleForTest(t)
+	baseline := quotaCandidateForBundle(t, bundle, []byte("ignored-shape"))
+	decision := baseline.verifiedRun.currentDecision.decision
+	bindings, err := decision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := baseline.verifiedRun.currentDecision
+	outer := append([]byte(nil), baseline.runtimeArtifact.bytes...)
+	recovery := baseline.decisionRecoveryArtifact
+	recovery.bytes = append([]byte(nil), recovery.bytes...)
+
+	run, runtime, candidate, err := bindVerifiedEvidenceRun(decision, bindings, current, outer, recovery)
+	if err != nil || !validOwnedCurrentCandidate(candidate) || run.binding == nil || run.binding != runtime.binding || run.binding != candidate.binding {
+		t.Fatalf("total binder baseline: run=%+v runtime=%+v candidate=%+v err=%v", run, runtime, candidate, err)
+	}
+	// The result owns all mutable inputs. Mutating caller aliases cannot change
+	// the authority that was already minted.
+	outer[0] ^= 0x01
+	recovery.bytes[0] ^= 0x01
+	bindings.executableCatalogs[0].catalogContract.SourceDescriptors[0].Statements[0].Start++
+	if !validOwnedCurrentCandidate(candidate) {
+		t.Fatal("caller alias mutation changed an owned evidence candidate")
+	}
+	run.decisionRecoveryArtifact.bytes[0] ^= 0x01
+	runtime.bytes[0] ^= 0x01
+	if !validOwnedCurrentCandidate(candidate) {
+		t.Fatal("separately returned run/runtime aliases changed the owned candidate")
+	}
+
+	if _, _, _, err := bindVerifiedEvidenceRun(VerifiedTrustDecision{}, RunnerProjectionBindings{}, OwnedVerifiedDecision{}, nil, VerifiedDecisionRecoveryArtifact{}); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("zero literal entered total binder: %v", err)
+	}
+	wrongBindings := bindings.ownedCopy()
+	wrongBindings.runnerProjectionDecisionDigest = testDigest("swapped-projection")
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, wrongBindings, current, baseline.runtimeArtifact.bytes, baseline.decisionRecoveryArtifact); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("projection swap entered total binder: %v", err)
+	}
+	wrongCurrent := current
+	wrongCurrent.digest = testDigest("swapped-current")
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, baseline.verifiedRun.currentDecision.decision.projectionBindings.ownedCopy(), wrongCurrent, baseline.runtimeArtifact.bytes, baseline.decisionRecoveryArtifact); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("current decision swap entered total binder: %v", err)
+	}
+	wrongRecovery := baseline.decisionRecoveryArtifact
+	wrongRecovery.owner = &recoveryVerifierOwner{verifier: &recoveryVerifierFake{}, token: baseline.owner}
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, *decision.projectionBindings, current, baseline.runtimeArtifact.bytes, wrongRecovery); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("verifier owner swap entered total binder: %v", err)
+	}
+	wrongRecovery = baseline.decisionRecoveryArtifact
+	wrongRecovery.digest = testDigest("swapped-recovery")
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, *decision.projectionBindings, current, baseline.runtimeArtifact.bytes, wrongRecovery); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("recovery digest swap entered total binder: %v", err)
+	}
+	noncanonicalRecovery := baseline.decisionRecoveryArtifact
+	noncanonicalRecovery.bytes = append([]byte(" "), noncanonicalRecovery.bytes...)
+	noncanonicalRecovery.sizeBytes = uint64(len(noncanonicalRecovery.bytes))
+	noncanonicalRecovery.digest = DigestBytes(noncanonicalRecovery.bytes)
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, *decision.projectionBindings, current, baseline.runtimeArtifact.bytes, noncanonicalRecovery); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("noncanonical recovery entered total binder: %v", err)
+	}
+	profileRecovery := baseline.decisionRecoveryArtifact
+	profileInputs, err := decodeDecisionRecoveryVerificationInputs(profileRecovery.bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileInputs.ProfileDigest = testDigest("other-recovery-profile")
+	profileCanonical, err := canonicalContractKey(profileInputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileRecovery.bytes = []byte(profileCanonical)
+	profileRecovery.sizeBytes = uint64(len(profileRecovery.bytes))
+	profileRecovery.digest = DigestBytes(profileRecovery.bytes)
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, *decision.projectionBindings, current, baseline.runtimeArtifact.bytes, profileRecovery); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("recovery profile swap entered total binder: %v", err)
+	}
+	wrongOuter := append([]byte(nil), baseline.runtimeArtifact.bytes...)
+	wrongOuter[0] ^= 0x01
+	if _, _, _, err := bindVerifiedEvidenceRun(decision, *decision.projectionBindings, current, wrongOuter, baseline.decisionRecoveryArtifact); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("outer bytes swap entered total binder: %v", err)
+	}
+
+	mutations := map[string]func(*OwnedCurrentCandidate){
+		"candidate owner":   func(value *OwnedCurrentCandidate) { value.owner = &evidenceOwnerToken{} },
+		"candidate binding": func(value *OwnedCurrentCandidate) { value.binding = &verifiedEvidenceRunBinding{} },
+		"run owner":         func(value *OwnedCurrentCandidate) { value.verifiedRun.owner = &evidenceOwnerToken{} },
+		"run binding":       func(value *OwnedCurrentCandidate) { value.verifiedRun.binding = &verifiedEvidenceRunBinding{} },
+		"current owner":     func(value *OwnedCurrentCandidate) { value.verifiedRun.currentDecision.owner = &recoveryVerifierOwner{} },
+		"current digest":    func(value *OwnedCurrentCandidate) { value.verifiedRun.currentDecision.digest = testDigest("current") },
+		"release": func(value *OwnedCurrentCandidate) {
+			value.verifiedRun.releaseTrustDecisionDigest = testDigest("release")
+		},
+		"projection": func(value *OwnedCurrentCandidate) {
+			value.verifiedRun.runnerProjectionDecisionDigest = testDigest("projection")
+		},
+		"lineage":      func(value *OwnedCurrentCandidate) { value.verifiedRun.executionLineageDigest = testDigest("lineage") },
+		"outer digest": func(value *OwnedCurrentCandidate) { value.verifiedRun.outerArtifactDigest = testDigest("outer") },
+		"outer size":   func(value *OwnedCurrentCandidate) { value.verifiedRun.outerArtifactSizeBytes++ },
+		"recovery digest": func(value *OwnedCurrentCandidate) {
+			value.verifiedRun.decisionRecoveryArtifactSHA256 = testDigest("recovery")
+		},
+		"recovery size": func(value *OwnedCurrentCandidate) { value.verifiedRun.decisionRecoveryArtifactSizeBytes++ },
+		"manifest":      func(value *OwnedCurrentCandidate) { value.verifiedRun.manifestDigest = testDigest("mutated-manifest") },
+		"runner release": func(value *OwnedCurrentCandidate) {
+			value.verifiedRun.runnerReleaseDigest = testDigest("mutated-runner")
+		},
+		"schema":               func(value *OwnedCurrentCandidate) { value.verifiedRun.schemaBundleDigest = testDigest("schema") },
+		"authority profile":    func(value *OwnedCurrentCandidate) { value.verifiedRun.authorityProfileDigest = testDigest("profile") },
+		"authority binding":    func(value *OwnedCurrentCandidate) { value.verifiedRun.authorityBindingDigest = testDigest("authority") },
+		"runtime bytes":        func(value *OwnedCurrentCandidate) { value.runtimeArtifact.bytes[0] ^= 0x01 },
+		"runtime digest":       func(value *OwnedCurrentCandidate) { value.runtimeArtifact.digest = testDigest("runtime") },
+		"runtime binding":      func(value *OwnedCurrentCandidate) { value.runtimeArtifact.binding = &verifiedEvidenceRunBinding{} },
+		"recovery bytes":       func(value *OwnedCurrentCandidate) { value.decisionRecoveryArtifact.bytes[0] ^= 0x01 },
+		"recovery decision":    func(value *OwnedCurrentCandidate) { value.decisionRecoveryArtifact.decision = testDigest("decision") },
+		"bound recovery bytes": func(value *OwnedCurrentCandidate) { value.verifiedRun.decisionRecoveryArtifact.bytes[0] ^= 0x01 },
+		"projection closure": func(value *OwnedCurrentCandidate) {
+			value.verifiedRun.currentDecision.decision.projectionBindings.authorityBindingDigest = testDigest("nested")
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			value := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("candidate"))
+			mutate(&value)
+			if validOwnedCurrentCandidate(value) {
+				t.Fatal("mutated candidate retained total authority")
+			}
+			if _, _, err := quotaCandidateArtifacts(quotaAdmissionBundleForTest(t).quotaFacts, value); !IsCode(err, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("mutated candidate entered quota: %v", err)
+			}
+		})
+	}
+}
+
 func TestOwnedEvidenceRecordIsKindGenerationCursorBoundAndSingleUse(t *testing.T) {
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
 	frames := decodeEvidenceFrames(t, document["frames"])

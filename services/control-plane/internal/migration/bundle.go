@@ -2,6 +2,8 @@ package migration
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -15,6 +17,82 @@ type RuntimeBundle struct {
 	AuthorityContract    *AuthorityContract
 	GlobalTableAuthority *GlobalTableAuthorityContract
 	Files                map[string][]byte
+	ownedInputs          verifiedRuntimeBundleInputs
+	quotaFacts           verifiedQuotaBundleFacts
+}
+
+// verifiedRuntimeBundleInputs is the private, immutable execution authority
+// captured at LoadRuntimeBundle. Public RuntimeBundle projections remain
+// useful to callers, but production planning and quota must both use this
+// independently owned snapshot so caller mutation cannot split their view.
+type verifiedRuntimeBundleInputs struct {
+	manifest            Manifest
+	files               map[string][]byte
+	outerArtifactDigest Digest
+	outerArtifactSize   uint64
+	canonical           [32]byte
+}
+
+func bindVerifiedRuntimeBundleInputs(manifest *Manifest, files map[string][]byte, outerArtifactDigest Digest, outerArtifactSize uint64) (verifiedRuntimeBundleInputs, error) {
+	if manifest == nil || files == nil || requireDigest("runtime-bundle.outer", outerArtifactDigest) != nil || outerArtifactSize == 0 || outerArtifactSize > maxRuntimeTarSize {
+		return verifiedRuntimeBundleInputs{}, fail(CodeUntrusted, "runtime-bundle", "owned runtime inputs are unavailable", nil)
+	}
+	owned := verifiedRuntimeBundleInputs{manifest: cloneProjectionValue(*manifest), files: make(map[string][]byte, len(files)), outerArtifactDigest: outerArtifactDigest, outerArtifactSize: outerArtifactSize}
+	for path, raw := range files {
+		owned.files[path] = bytes.Clone(raw)
+	}
+	canonical, err := runtimeBundleInputsDigest(owned.manifest, owned.files, owned.outerArtifactDigest, owned.outerArtifactSize)
+	if err != nil {
+		return verifiedRuntimeBundleInputs{}, err
+	}
+	owned.canonical = canonical
+	return owned, nil
+}
+
+func (owned verifiedRuntimeBundleInputs) copyVerified() (*Manifest, map[string][]byte, error) {
+	canonical, err := runtimeBundleInputsDigest(owned.manifest, owned.files, owned.outerArtifactDigest, owned.outerArtifactSize)
+	if err != nil || canonical != owned.canonical {
+		return nil, nil, fail(CodeUntrusted, "runtime-bundle", "owned runtime inputs changed after verification", err)
+	}
+	manifest := cloneProjectionValue(owned.manifest)
+	files := make(map[string][]byte, len(owned.files))
+	for path, raw := range owned.files {
+		files[path] = bytes.Clone(raw)
+	}
+	return &manifest, files, nil
+}
+
+func runtimeBundleInputsDigest(manifest Manifest, files map[string][]byte, outerArtifactDigest Digest, outerArtifactSize uint64) ([32]byte, error) {
+	canonicalManifest, err := canonicalContractKey(manifest)
+	if err != nil {
+		return [32]byte{}, fail(CodeInvalidManifest, "runtime-bundle", "owned manifest cannot be canonicalized", err)
+	}
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-runtime-bundle-owned-inputs/v1\x00"))
+	h.Write([]byte(canonicalManifest))
+	var encoded [8]byte
+	h.Write([]byte(outerArtifactDigest))
+	binary.BigEndian.PutUint64(encoded[:], outerArtifactSize)
+	h.Write(encoded[:])
+	binary.BigEndian.PutUint64(encoded[:], uint64(len(paths)))
+	h.Write(encoded[:])
+	for _, path := range paths {
+		raw := files[path]
+		h.Write([]byte(path))
+		h.Write([]byte{0})
+		binary.BigEndian.PutUint64(encoded[:], uint64(len(raw)))
+		h.Write(encoded[:])
+		digest := sha256.Sum256(raw)
+		h.Write(digest[:])
+	}
+	var digest [32]byte
+	copy(digest[:], h.Sum(nil))
+	return digest, nil
 }
 
 func LoadRuntimeBundle(raw []byte, decision VerifiedTrustDecision) (*RuntimeBundle, error) {
@@ -83,7 +161,19 @@ func LoadRuntimeBundle(raw []byte, decision VerifiedTrustDecision) (*RuntimeBund
 	if err := validateRuntimeClosure(manifest, lineage); err != nil {
 		return nil, err
 	}
-	return &RuntimeBundle{Manifest: manifest, Lineage: lineage, AuthorityContract: authorityContract, GlobalTableAuthority: globalContract, Files: files}, nil
+	ownedInputs, err := bindVerifiedRuntimeBundleInputs(manifest, files, decision.OuterArtifactDigest(), uint64(len(raw)))
+	if err != nil {
+		return nil, err
+	}
+	ownedManifest, ownedFiles, err := ownedInputs.copyVerified()
+	if err != nil {
+		return nil, err
+	}
+	quotaFacts, err := bindVerifiedQuotaBundleFacts(ownedManifest, ownedFiles, ownedInputs.canonical, ownedInputs.outerArtifactDigest, ownedInputs.outerArtifactSize)
+	if err != nil {
+		return nil, err
+	}
+	return &RuntimeBundle{Manifest: manifest, Lineage: lineage, AuthorityContract: authorityContract, GlobalTableAuthority: globalContract, Files: files, ownedInputs: ownedInputs, quotaFacts: quotaFacts}, nil
 }
 
 func validateRuntimeRecords(manifest *Manifest, files map[string][]byte) error {

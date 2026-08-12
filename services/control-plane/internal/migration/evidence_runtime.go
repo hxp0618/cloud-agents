@@ -2,6 +2,9 @@ package migration
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"sync"
 	"sync/atomic"
 )
 
@@ -43,6 +46,7 @@ type VerifiedRuntimeArtifact struct {
 	bytes     []byte
 	digest    Digest
 	sizeBytes uint64
+	binding   *verifiedEvidenceRunBinding
 }
 
 type VerifiedContentReceipt struct {
@@ -110,6 +114,7 @@ type VerifiedEvidenceRun struct {
 	schemaBundleDigest                Digest
 	authorityProfileDigest            Digest
 	authorityBindingDigest            Digest
+	binding                           *verifiedEvidenceRunBinding
 }
 
 type OwnedCurrentCandidate struct {
@@ -117,6 +122,139 @@ type OwnedCurrentCandidate struct {
 	verifiedRun              VerifiedEvidenceRun
 	runtimeArtifact          VerifiedRuntimeArtifact
 	decisionRecoveryArtifact VerifiedDecisionRecoveryArtifact
+	binding                  *verifiedEvidenceRunBinding
+}
+
+// verifiedEvidenceRunBinding is minted only by bindVerifiedEvidenceRun. The
+// three returned authorities share this exact pointer, so a caller cannot
+// assemble a candidate from individually plausible values. canonical is
+// recomputed from every frozen scalar and exact byte identity at each use.
+type verifiedEvidenceRunBinding struct {
+	owner         *evidenceOwnerToken
+	verifierOwner *recoveryVerifierOwner
+	canonical     [32]byte
+}
+
+var verifiedEvidenceRunBindingRegistry sync.Map
+
+// bindVerifiedEvidenceRun is the sole total promotion seam for the evidence
+// run, its exact outer artifact, and the current candidate. Inputs have already
+// crossed their respective trust-verifier boundaries; this binder closes every
+// cross-object identity and takes owned copies before minting runtime authority.
+func bindVerifiedEvidenceRun(decision VerifiedTrustDecision, bindings RunnerProjectionBindings, current OwnedVerifiedDecision, outerArtifactBytes []byte, recovery VerifiedDecisionRecoveryArtifact) (VerifiedEvidenceRun, VerifiedRuntimeArtifact, OwnedCurrentCandidate, error) {
+	decisionBindings, err := decision.runnerProjectionBindings()
+	if err != nil || !bindings.exactlyMatches(decisionBindings) || !current.decision.exactlyMatches(decision) || !validOwnedCurrentDecision(current, bindings) || !validCurrentRecoveryArtifact(current, recovery) || len(outerArtifactBytes) == 0 || uint64(len(outerArtifactBytes)) > maxRuntimeTarSize || DigestBytes(outerArtifactBytes) != decision.expectedOuterArtifactDigest {
+		return VerifiedEvidenceRun{}, VerifiedRuntimeArtifact{}, OwnedCurrentCandidate{}, fail(CodeEvidenceRecoveryRequired, "evidence-run", "verified decision, projection, runtime, or recovery authority is not totally bound", err)
+	}
+
+	ownedCurrent := ownedVerifiedDecisionCopy(current, decisionBindings)
+	ownedRecovery := ownedDecisionRecoveryArtifactCopy(recovery)
+	owner := current.owner.token
+	run := VerifiedEvidenceRun{
+		owner: owner, currentDecision: ownedCurrent, decisionRecoveryArtifact: ownedRecovery,
+		releaseTrustDecisionDigest:     decisionBindings.releaseTrustDecisionDigest,
+		runnerProjectionDecisionDigest: decisionBindings.runnerProjectionDecisionDigest,
+		executionLineageDigest:         decisionBindings.executionLineageDigest,
+		outerArtifactDigest:            decision.expectedOuterArtifactDigest, outerArtifactSizeBytes: uint64(len(outerArtifactBytes)),
+		decisionRecoveryArtifactSHA256: ownedRecovery.digest, decisionRecoveryArtifactSizeBytes: ownedRecovery.sizeBytes,
+		manifestDigest: decision.expectedManifestDigest, runnerReleaseDigest: decision.expectedRunnerReleaseDigest,
+		schemaBundleDigest: decision.expectedSchemaBundleDigest, authorityProfileDigest: decisionBindings.authorityProfileDigest,
+		authorityBindingDigest: decisionBindings.authorityBindingDigest,
+	}
+	runtime := VerifiedRuntimeArtifact{owner: owner, bytes: append([]byte(nil), outerArtifactBytes...), digest: run.outerArtifactDigest, sizeBytes: run.outerArtifactSizeBytes}
+	binding := &verifiedEvidenceRunBinding{owner: owner, verifierOwner: current.owner}
+	binding.canonical = evidenceRunBindingDigest(run, runtime, ownedRecovery)
+	verifiedEvidenceRunBindingRegistry.Store(binding, binding.canonical)
+	run.binding = binding
+	runtime.binding = binding
+	candidateRun := run
+	candidateBindings := decisionBindings.ownedCopy()
+	candidateRun.currentDecision = ownedVerifiedDecisionCopy(current, candidateBindings)
+	candidateRun.decisionRecoveryArtifact = ownedDecisionRecoveryArtifactCopy(recovery)
+	candidateRuntime := runtime
+	candidateRuntime.bytes = append([]byte(nil), runtime.bytes...)
+	candidateRecovery := ownedDecisionRecoveryArtifactCopy(recovery)
+	candidate := OwnedCurrentCandidate{owner: owner, verifiedRun: candidateRun, runtimeArtifact: candidateRuntime, decisionRecoveryArtifact: candidateRecovery, binding: binding}
+	return run, runtime, candidate, nil
+}
+
+func validOwnedCurrentDecision(current OwnedVerifiedDecision, bindings RunnerProjectionBindings) bool {
+	currentBindings, err := current.decision.runnerProjectionBindings()
+	return err == nil && current.owner != nil && current.owner.token != nil && current.owner.verifier != nil && current.capability.owner == current.owner && current.digest == bindings.runnerProjectionDecisionDigest && currentBindings.exactlyMatches(bindings) && current.decision.validate() == nil
+}
+
+func ownedVerifiedDecisionCopy(current OwnedVerifiedDecision, bindings RunnerProjectionBindings) OwnedVerifiedDecision {
+	owned := current
+	ownedDecision := current.decision
+	ownedBindings := bindings.ownedCopy()
+	ownedDecision.projectionBindings = &ownedBindings
+	owned.decision = ownedDecision
+	return owned
+}
+
+func ownedDecisionRecoveryArtifactCopy(recovery VerifiedDecisionRecoveryArtifact) VerifiedDecisionRecoveryArtifact {
+	owned := recovery
+	owned.bytes = append([]byte(nil), recovery.bytes...)
+	return owned
+}
+
+func validCurrentRecoveryArtifact(current OwnedVerifiedDecision, recovery VerifiedDecisionRecoveryArtifact) bool {
+	if recovery.owner != current.owner || recovery.decision != current.digest || recovery.sizeBytes == 0 || recovery.sizeBytes > maxDecisionRecoveryArtifactBytes || uint64(len(recovery.bytes)) != recovery.sizeBytes || requireDigest("evidence-run.recovery", recovery.digest) != nil || DigestBytes(recovery.bytes) != recovery.digest {
+		return false
+	}
+	inputs, err := decodeDecisionRecoveryVerificationInputs(recovery.bytes)
+	bindings, bindingErr := current.decision.runnerProjectionBindings()
+	canonical, canonicalErr := canonicalContractKey(inputs)
+	return err == nil && bindingErr == nil && canonicalErr == nil && canonical == string(recovery.bytes) && inputs.OldRunnerProjectionDecisionDigest == current.digest && inputs.ProfileDigest == bindings.decisionRecoveryArtifactProfileDigest && inputs.RepositoryIdentity == current.decision.repositoryIdentity && inputs.ReleaseIdentity == current.decision.releaseIdentity
+}
+
+func evidenceRunBindingDigest(run VerifiedEvidenceRun, runtime VerifiedRuntimeArtifact, recovery VerifiedDecisionRecoveryArtifact) [32]byte {
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-verified-evidence-run-binding/v1\x00"))
+	for _, value := range []Digest{
+		run.currentDecision.digest, run.releaseTrustDecisionDigest, run.runnerProjectionDecisionDigest,
+		run.executionLineageDigest, run.outerArtifactDigest, run.decisionRecoveryArtifactSHA256,
+		run.manifestDigest, run.runnerReleaseDigest, run.schemaBundleDigest,
+		run.authorityProfileDigest, run.authorityBindingDigest, runtime.digest, recovery.digest, recovery.decision,
+	} {
+		h.Write([]byte(value))
+		h.Write([]byte{0})
+	}
+	var encoded [8]byte
+	for _, size := range []uint64{run.outerArtifactSizeBytes, run.decisionRecoveryArtifactSizeBytes, runtime.sizeBytes, recovery.sizeBytes} {
+		binary.BigEndian.PutUint64(encoded[:], size)
+		h.Write(encoded[:])
+	}
+	if run.currentDecision.decision.projectionBindings != nil {
+		h.Write([]byte(run.currentDecision.decision.projectionBindings.expectedCanonical))
+	}
+	h.Write([]byte{0})
+	h.Write(runtime.bytes)
+	h.Write([]byte{0})
+	h.Write(recovery.bytes)
+	var digest [32]byte
+	copy(digest[:], h.Sum(nil))
+	return digest
+}
+
+func validOwnedCurrentCandidate(candidate OwnedCurrentCandidate) bool {
+	binding := candidate.binding
+	run, runtime, recovery := candidate.verifiedRun, candidate.runtimeArtifact, candidate.decisionRecoveryArtifact
+	if binding == nil || candidate.owner == nil || run.binding != binding || runtime.binding != binding || run.owner != candidate.owner || runtime.owner != candidate.owner || binding.owner != candidate.owner || binding.verifierOwner == nil || binding.verifierOwner.token != candidate.owner || run.currentDecision.owner != binding.verifierOwner || recovery.owner != binding.verifierOwner || run.decisionRecoveryArtifact.owner != binding.verifierOwner {
+		return false
+	}
+	registered, ok := verifiedEvidenceRunBindingRegistry.Load(binding)
+	if !ok || registered != binding.canonical {
+		return false
+	}
+	bindings, err := run.currentDecision.decision.runnerProjectionBindings()
+	if err != nil || !validOwnedCurrentDecision(run.currentDecision, bindings) || !validCurrentRecoveryArtifact(run.currentDecision, recovery) || !validCurrentRecoveryArtifact(run.currentDecision, run.decisionRecoveryArtifact) {
+		return false
+	}
+	if !run.currentDecision.decision.exactlyMatches(run.currentDecision.decision) || run.releaseTrustDecisionDigest != bindings.releaseTrustDecisionDigest || run.runnerProjectionDecisionDigest != bindings.runnerProjectionDecisionDigest || run.executionLineageDigest != bindings.executionLineageDigest || run.outerArtifactDigest != run.currentDecision.decision.expectedOuterArtifactDigest || run.manifestDigest != run.currentDecision.decision.expectedManifestDigest || run.runnerReleaseDigest != run.currentDecision.decision.expectedRunnerReleaseDigest || run.schemaBundleDigest != run.currentDecision.decision.expectedSchemaBundleDigest || run.authorityProfileDigest != bindings.authorityProfileDigest || run.authorityBindingDigest != bindings.authorityBindingDigest || run.decisionRecoveryArtifactSHA256 != recovery.digest || run.decisionRecoveryArtifactSizeBytes != recovery.sizeBytes || run.decisionRecoveryArtifact.digest != recovery.digest || run.decisionRecoveryArtifact.sizeBytes != recovery.sizeBytes || string(run.decisionRecoveryArtifact.bytes) != string(recovery.bytes) || runtime.digest != run.outerArtifactDigest || runtime.sizeBytes != run.outerArtifactSizeBytes || runtime.sizeBytes == 0 || runtime.sizeBytes > maxRuntimeTarSize || uint64(len(runtime.bytes)) != runtime.sizeBytes || DigestBytes(runtime.bytes) != runtime.digest {
+		return false
+	}
+	return binding.canonical == evidenceRunBindingDigest(run, runtime, recovery)
 }
 
 type activeGenerationKind string

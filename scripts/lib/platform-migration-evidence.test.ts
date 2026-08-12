@@ -677,6 +677,10 @@ function executeLimitBoundary(boundary: JsonObject, value: number): void {
     validateLineageFramedSizeForKind("generation_superseded", value);
     return;
   }
+  if (name === "lineage_checkpoint_framed_bytes") {
+    validateLineageFramedSizeForKind("generation_checkpoint", value);
+    return;
+  }
   if (name === "lineage_index_bytes") {
     validateLineageIndexUsage(1, value);
     return;

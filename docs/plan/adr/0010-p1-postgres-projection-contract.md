@@ -1904,8 +1904,8 @@ brand-new generation 是唯一可无 superseded 前驱的 reserved 例外。`Gen
 activation 与 continuation 脱钩。continuation 只含 bounded migration identity/digest/attempt，不得包含 secret/path/raw
 cause。
 
-LineageIndex 固定 inclusive maxima：单 on-disk frame 256 KiB、header 32 KiB、reserved/activated 各 64 KiB、checkpoint/
-superseded 各 128 KiB、每 index 16,384 records、单 index file 16 MiB、每 root 64 lineage indexes 且 index bytes 总计
+LineageIndex 固定 inclusive maxima：单 on-disk frame 256 KiB、header 32 KiB、reserved/activated 各 64 KiB、checkpoint
+16 KiB、superseded 128 KiB、每 index 16,384 records、单 index file 16 MiB、每 root 64 lineage indexes 且 index bytes 总计
 1 GiB；exact maximum 合法，不可由 env/CLI/DSN/GUC 覆盖。prefix、frame header 与 record bytes 全计入 limits；不
 rotation、不自动 GC。index reservation/count/bytes 必须纳入 root quota/admission，任何超限都在 Connect 前返回
 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。

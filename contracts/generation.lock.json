@@ -87,7 +87,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:802a5c2c84941a8e39744696546bab8b7c3cd323e311eb1a1bbddb2c1251c7c3",
+      "sourceManifestSha256": "sha256:19327be129b1061c3d8b8d7881ea797f1ac602eebcbd31f829a5d3eeb9fb0a19",
       "sources": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -199,7 +199,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:802a5c2c84941a8e39744696546bab8b7c3cd323e311eb1a1bbddb2c1251c7c3",
+      "inputManifestSha256": "sha256:19327be129b1061c3d8b8d7881ea797f1ac602eebcbd31f829a5d3eeb9fb0a19",
       "inputs": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -385,7 +385,7 @@
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/manifest.json",
-          "sha256": "sha256:d4e9c06be3fb2275821562a51d8db8525a3a44ccdb7880724b0934c2c69a0292",
+          "sha256": "sha256:80eddb43e6479b459d80096c13521790934f468f91d206f0e5c5145f12e458a1",
           "sizeBytes": 5007
         },
         {
@@ -405,8 +405,8 @@
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/negative/evidence-limits-faults-v1.json",
-          "sha256": "sha256:db3316048bb66c84b7be7e13fd597230aef4f7010e78bb23c37392bf6c15d2ec",
-          "sizeBytes": 2917
+          "sha256": "sha256:4da79acb248d4bcbdd42507407ce439419d5089465949c79288ab7cb9d202463",
+          "sizeBytes": 3077
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/negative/evidence-nested-record-duplicate.raw",
@@ -464,7 +464,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:a512fd8e6fecb701fd9ee6730793ddd6c974ab3055cc3c8144ada10085e056c7",
+      "inputManifestSha256": "sha256:d12f9c8914f0f50f6f369fbd5e65a99a07d5b12c32a5a29cdd1c61c3adc5b61f",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",

@@ -244,13 +244,15 @@ func TestExactStatementPlanBindsArtifactClassificationAndTransition(t *testing.T
 	if err != nil || !reflect.DeepEqual(gotSQL, wantSQL) {
 		t.Fatalf("exact SQL bytes differ: got=%q want=%q err=%v", gotSQL, wantSQL, err)
 	}
-	// The plan owns its bytes even if the RuntimeBundle.Files map is mutated.
+	// Load-owned inputs remain the sole execution authority even if public
+	// RuntimeBundle projections are mutated after verification.
 	bundle.Files[bundle.Manifest.SchemaBundle.Migrations[0].SQLArtifact.Path][0] ^= 0x01
 	if err := plans[0].validateExact(); err != nil {
 		t.Fatalf("runtime alias mutation reached frozen plan: %v", err)
 	}
-	if _, err := buildExactStatementPlans(bundle, bindings, fixture.now); !IsCode(err, CodeInvalidArtifact) {
-		t.Fatalf("mutated runtime SQL artifact was accepted: %v", err)
+	rebuilt, err := buildExactStatementPlans(bundle, bindings, fixture.now)
+	if err != nil || len(rebuilt) != 1 || !exactStatementPlanEqual(rebuilt[0], plans[0]) {
+		t.Fatalf("public runtime mutation changed owned execution inputs: rebuilt=%+v err=%v", rebuilt, err)
 	}
 
 	for name, mutate := range map[string]func(*StatementPlan){
@@ -342,7 +344,7 @@ func TestVerifiedAuthorityProfileTotalBindingFaults(t *testing.T) {
 	}
 }
 
-func TestExactPlanRejectsAuthorityProfileDescriptorAndRuntimeFaults(t *testing.T) {
+func TestExactPlanIgnoresPublicAuthorityProfileDescriptorAndRuntimeMutation(t *testing.T) {
 	fixture := newRunnerBindingFixture(t, []string{"000001"})
 	bundle, catalog := exactPlanBundle(t, fixture.decision.expectedSchemaBundleDigest, fixture.initialScope.BoundPrecondition(), fixture.authorityProfile)
 	catalogRaw := mustJSON(t, catalog)
@@ -381,10 +383,16 @@ func TestExactPlanRejectsAuthorityProfileDescriptorAndRuntimeFaults(t *testing.T
 		t.Run(name, func(t *testing.T) {
 			owned := cloneRuntimeBundleForAuthorityFault(bundle)
 			mutate(owned)
-			if _, err := buildExactStatementPlans(owned, bindings, fixture.now); err == nil {
-				t.Fatal("authority profile fault was accepted")
+			if _, err := buildExactStatementPlans(owned, bindings, fixture.now); err != nil {
+				t.Fatalf("public projection mutation reached owned inputs: %v", err)
 			}
 		})
+	}
+
+	owned := cloneRuntimeBundleForAuthorityFault(bundle)
+	owned.ownedInputs.files[owned.ownedInputs.manifest.ExecutionPolicy.AuthorityContract.Path][0] ^= 0x01
+	if _, err := buildExactStatementPlans(owned, bindings, fixture.now); !IsCode(err, CodeUntrusted) {
+		t.Fatalf("owned runtime input mutation was accepted: %v", err)
 	}
 }
 
@@ -520,7 +528,12 @@ func exactPlanBundle(t *testing.T, schemaBundleDigest Digest, predecessor Catalo
 	files := map[string][]byte{
 		sqlRecord.Path: append([]byte(nil), sqlRaw...), authorityRecord.Path: append([]byte(nil), authorityRaw...), catalogRecord.Path: append([]byte(nil), catalogRaw...),
 	}
-	return &RuntimeBundle{Manifest: manifest, Files: files}, contract
+	outerDigest := testDigest("exact-plan-runtime")
+	owned, err := bindVerifiedRuntimeBundleInputs(manifest, files, outerDigest, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &RuntimeBundle{Manifest: manifest, Files: files, ownedInputs: owned}, contract
 }
 
 func installExactCatalog(t *testing.T, bundle *RuntimeBundle, contract CatalogContract, expiresAt, now time.Time) verifiedExecutableCatalogSubject {
@@ -535,6 +548,11 @@ func installExactCatalog(t *testing.T, bundle *RuntimeBundle, contract CatalogCo
 		}
 	}
 	bundle.Files[record.Path] = append([]byte(nil), raw...)
+	owned, ownedErr := bindVerifiedRuntimeBundleInputs(bundle.Manifest, bundle.Files, bundle.ownedInputs.outerArtifactDigest, bundle.ownedInputs.outerArtifactSize)
+	if ownedErr != nil {
+		t.Fatal(ownedErr)
+	}
+	bundle.ownedInputs = owned
 	subject, err := bindVerifiedExecutableCatalogSubject(raw, record.SHA256, expiresAt, 1, now)
 	if err != nil {
 		t.Fatal(err)
@@ -544,7 +562,7 @@ func installExactCatalog(t *testing.T, bundle *RuntimeBundle, contract CatalogCo
 
 func cloneRuntimeBundleForAuthorityFault(bundle *RuntimeBundle) *RuntimeBundle {
 	manifest := cloneProjectionValue(*bundle.Manifest)
-	owned := &RuntimeBundle{Manifest: &manifest, Files: make(map[string][]byte, len(bundle.Files))}
+	owned := &RuntimeBundle{Manifest: &manifest, Files: make(map[string][]byte, len(bundle.Files)), ownedInputs: bundle.ownedInputs}
 	for path, raw := range bundle.Files {
 		owned.Files[path] = append([]byte(nil), raw...)
 	}

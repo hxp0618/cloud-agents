@@ -41,7 +41,7 @@ var lineageRecordFrameLimits = map[LineageRecordKind]uint64{
 	LineageRecordHeader:               32 << 10,
 	LineageRecordGenerationReserved:   64 << 10,
 	LineageRecordGenerationActivated:  64 << 10,
-	LineageRecordGenerationCheckpoint: 128 << 10,
+	LineageRecordGenerationCheckpoint: 16 << 10,
 	LineageRecordGenerationSuperseded: 128 << 10,
 }
 
@@ -640,8 +640,15 @@ func validateCanonicalFrameSize(frame any, maximum, recordMaximum uint64) error 
 		return err
 	}
 	size := uint64(len(canonical)) + 8
-	if recordMaximum == 0 || size > maximum || size > recordMaximum {
+	if err := validateFramedSizeLimit(size, maximum, recordMaximum); err != nil {
 		return invalidEvidence("frame-limit", "canonical framed record exceeds limit")
+	}
+	return nil
+}
+
+func validateFramedSizeLimit(size, maximum, recordMaximum uint64) error {
+	if recordMaximum == 0 || size > maximum || size > recordMaximum {
+		return invalidEvidence("frame-limit", "framed record exceeds limit")
 	}
 	return nil
 }

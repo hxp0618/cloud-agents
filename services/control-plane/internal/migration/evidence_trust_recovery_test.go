@@ -124,7 +124,7 @@ func TestFirstVerificationConstructorRequiresCanonicalRecoveryABIAndExactDecisio
 func TestTypedReceiptBindersRejectKindDigestSizeAndStoreIdentitySwaps(t *testing.T) {
 	owner := &evidenceOwnerToken{nonce: [16]byte{7}}
 	runtimeBytes := []byte("runtime")
-	runtime := VerifiedRuntimeArtifact{owner, runtimeBytes, DigestBytes(runtimeBytes), uint64(len(runtimeBytes))}
+	runtime := VerifiedRuntimeArtifact{owner: owner, bytes: runtimeBytes, digest: DigestBytes(runtimeBytes), sizeBytes: uint64(len(runtimeBytes))}
 	if _, err := bindRuntimeContentReceipt(owner, runtime, verifiedDurableContentObject{}); !IsCode(err, CodeProjectionNotImplemented) {
 		t.Fatalf("runtime receipt escaped unimplemented durable publication authority: %v", err)
 	}

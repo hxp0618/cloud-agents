@@ -56,6 +56,12 @@
       "max_plus_one": 17
     },
     {
+      "name": "lineage_checkpoint_framed_bytes",
+      "validator": "lineage_frame_profile",
+      "exact_max": 16384,
+      "max_plus_one": 16385
+    },
+    {
       "name": "lineage_superseded_framed_bytes",
       "validator": "lineage_frame_profile",
       "exact_max": 131072,

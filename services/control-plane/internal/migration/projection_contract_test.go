@@ -492,7 +492,7 @@ func TestCheckedInProjectionFixtureManifestSameBits(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(migrationRoot(t), "fixtures", "projection")
 	manifestRaw := mustRead(t, filepath.Join(root, "manifest.json"))
-	if DigestBytes(manifestRaw) != "sha256:d4e9c06be3fb2275821562a51d8db8525a3a44ccdb7880724b0934c2c69a0292" {
+	if DigestBytes(manifestRaw) != "sha256:80eddb43e6479b459d80096c13521790934f468f91d206f0e5c5145f12e458a1" {
 		t.Fatal("projection fixture manifest differs from the reviewed TS same-bits bytes")
 	}
 	var manifest projectionFixtureManifest

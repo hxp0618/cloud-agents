@@ -39,7 +39,7 @@ export const LINEAGE_LIMITS = {
     header: 32_768,
     generation_reserved: 65_536,
     generation_activated: 65_536,
-    generation_checkpoint: 131_072,
+    generation_checkpoint: 16_384,
     generation_superseded: 131_072,
   },
 } as const;
@@ -3858,6 +3858,12 @@ function fixtureLimitFaults(): JsonObject {
         EVIDENCE_LIMITS.segmentRecords + 1,
       ],
       ["journal_reserved_segments", "journal_header", 16, 17],
+      [
+        "lineage_checkpoint_framed_bytes",
+        "lineage_frame_profile",
+        LINEAGE_LIMITS.recordBytes.generation_checkpoint,
+        LINEAGE_LIMITS.recordBytes.generation_checkpoint + 1,
+      ],
       [
         "lineage_superseded_framed_bytes",
         "lineage_frame_profile",

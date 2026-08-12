@@ -109,6 +109,20 @@ func TestFramingFaultFixtureRoutesEveryCase(t *testing.T) {
 	}
 }
 
+func TestLineageCheckpointFramedLimitIsExact16KiB(t *testing.T) {
+	t.Parallel()
+	maximum := lineageRecordFrameLimits[LineageRecordGenerationCheckpoint]
+	if maximum != 16<<10 {
+		t.Fatalf("checkpoint framed maximum = %d", maximum)
+	}
+	if err := validateFramedSizeLimit(maximum, maxLineageFrameBytes, maximum); err != nil {
+		t.Fatalf("exact 16 KiB rejected: %v", err)
+	}
+	if err := validateFramedSizeLimit(maximum+1, maxLineageFrameBytes, maximum); err == nil {
+		t.Fatal("16 KiB + 1 accepted")
+	}
+}
+
 func TestCanonicalFrameDecoderRejectsRawJSONFaults(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join(migrationRoot(t), "fixtures", "projection", "negative")
