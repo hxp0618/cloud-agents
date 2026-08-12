@@ -591,6 +591,107 @@ func TestScanHashesFinalAndTempWithFreshHandles(t *testing.T) {
 	}
 }
 
+func TestScanCloseFailuresPoisonAndAttemptAllCleanup(t *testing.T) {
+	tests := map[string]func(*fakeBackend){
+		"objects-open-root-close": func(f *fakeBackend) {
+			f.failOpenNames["objects"] = errors.New("objects open")
+			f.failCloseNames["root"] = true
+		},
+		"root-close-objects-close": func(f *fakeBackend) {
+			f.failCloseNames["root"] = true
+			f.failCloseNames["objects"] = true
+		},
+		"objects-grammar-close": func(f *fakeBackend) {
+			f.root.children["objects"].children["unknown"] = f.directory("unknown")
+			f.failCloseNames["objects"] = true
+		},
+		"sha-open-objects-close": func(f *fakeBackend) {
+			f.failOpenNames["sha256"] = errors.New("sha open")
+			f.failCloseNames["objects"] = true
+		},
+		"objects-close-sha-cleanup": func(f *fakeBackend) { f.failCloseNames["objects"] = true },
+		"sha-close":                 func(f *fakeBackend) { f.failCloseNames["sha256"] = true },
+		"entry-close": func(f *fakeBackend) {
+			f.addFinal([]byte("object"))
+			f.failCloseNames[fmt.Sprintf("%x", sha256.Sum256([]byte("object")))] = true
+		},
+	}
+	for name, configure := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeBackend()
+			root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease, err := root.Acquire(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline := len(f.handles)
+			configure(f)
+			if scan, err := lease.Scan(context.Background()); scan != nil || !errors.Is(err, ErrFilesystem) || root.usable() {
+				t.Fatalf("scan=%v err=%v usable=%v closes=%v", scan, err, root.usable(), f.closeAttempts)
+			}
+			if len(f.handles) != baseline {
+				t.Fatalf("handles=%d baseline=%d closes=%v", len(f.handles), baseline, f.closeAttempts)
+			}
+			if _, err := root.Acquire(context.Background()); !errors.Is(err, ErrFilesystem) {
+				t.Fatalf("poisoned root reacquired: %v", err)
+			}
+			_ = lease.Close()
+		})
+	}
+}
+
+func TestScanCloseAmbiguityInvalidatesEarlierScan(t *testing.T) {
+	f := newFakeBackend()
+	digest := f.addFinal([]byte("object"))
+	root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := root.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := lease.Scan(context.Background())
+	if err != nil || !old.HasObject(digest, 6) {
+		t.Fatalf("old scan err=%v", err)
+	}
+	f.failCloseNames["sha256"] = true
+	if scan, err := lease.Scan(context.Background()); scan != nil || !errors.Is(err, ErrFilesystem) {
+		t.Fatalf("scan=%v err=%v", scan, err)
+	}
+	if old.HasObject(digest, 6) || old.Usage().FinalBytes != 0 {
+		t.Fatal("old scan retained authority after close ambiguity")
+	}
+	_ = lease.Close()
+}
+
+func TestScanContextAndCloseFailureReturnsFilesystem(t *testing.T) {
+	f := newFakeBackend()
+	f.addFinal([]byte("object"))
+	root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := root.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	f.onPread = func(_ *fakeBackend, node *fakeNode, _ int) {
+		if finalNamePattern.MatchString(node.name) {
+			cancel()
+			f.failCloseNames[node.name] = true
+		}
+	}
+	if scan, err := lease.Scan(ctx); scan != nil || !errors.Is(err, ErrFilesystem) || root.usable() {
+		t.Fatalf("scan=%v err=%v usable=%v", scan, err, root.usable())
+	}
+	_ = lease.Close()
+}
+
 func TestScanEnforcesGrammarAndBoundsBeforeReading(t *testing.T) {
 	t.Run("malformed", func(t *testing.T) {
 		f := newFakeBackend()

@@ -6,6 +6,371 @@ import (
 	"testing"
 )
 
+func TestAdmissionInventoryTargetBindingAndLifecycle(t *testing.T) {
+	f := newFakeBackend()
+	present := digestForTest(1)
+	other := digestForTest(2)
+	addAdmissionLineage(f, present, 0, 0)
+	addAdmissionLineage(f, other, 0, 0)
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), present)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := inventory.Target(); err != nil || got != present || got == other {
+		t.Fatalf("target=%x err=%v", got, err)
+	}
+	copyInventory := *inventory
+	if _, err := copyInventory.Target(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("copy target err=%v", err)
+	}
+	if err := copyInventory.Revalidate(context.Background()); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("copy revalidate err=%v", err)
+	}
+	var zero AdmissionInventory
+	if _, err := zero.Target(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("zero target err=%v", err)
+	}
+	if err := zero.Revalidate(context.Background()); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("zero revalidate err=%v", err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inventory.Target(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("closed target err=%v", err)
+	}
+	if err := inventory.Revalidate(context.Background()); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("closed revalidate err=%v", err)
+	}
+
+	f = newFakeBackend()
+	store = testStore(t, f)
+	absent := digestForTest(9)
+	lease, inventory, err = store.AcquireAdmission(context.Background(), absent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := inventory.Target(); err != nil || got != absent {
+		t.Fatalf("absent target=%x err=%v", got, err)
+	}
+	if err := inventory.Revalidate(context.Background()); err != nil {
+		t.Fatalf("absent revalidate: %v", err)
+	}
+	_ = lease.Close()
+}
+
+func TestAdmissionInventoryRevalidateStableAndDetectsDrift(t *testing.T) {
+	t.Run("stable-does-not-advance-authority", func(t *testing.T) {
+		f := newFakeBackend()
+		objectDigest := f.addFinal([]byte("object"))
+		addAdmissionLineage(f, digestForTest(1), 1, 1)
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		baselineHandles := len(f.handles)
+		full, _ := inventory.FullSetDigest()
+		revision, _ := inventory.Revision()
+		target, _ := inventory.Target()
+		lineages, _ := inventory.LineageIDs()
+		objects, _ := inventory.Objects()
+		if len(objects) != 1 {
+			t.Fatalf("objects=%d", len(objects))
+		}
+		for attempt := 0; attempt < 3; attempt++ {
+			if err := inventory.Revalidate(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.handles) != baselineHandles {
+				t.Fatalf("attempt=%d handles=%d baseline=%d", attempt, len(f.handles), baselineHandles)
+			}
+		}
+		fullAfter, _ := inventory.FullSetDigest()
+		revisionAfter, _ := inventory.Revision()
+		targetAfter, _ := inventory.Target()
+		lineagesAfter, _ := inventory.LineageIDs()
+		objectsAfter, _ := inventory.Objects()
+		if fullAfter != full || revision != 0 || revisionAfter != revision || targetAfter != target || len(lineagesAfter) != len(lineages) || objectsAfter[0] != objects[0] {
+			t.Fatal("revalidation changed inventory authority")
+		}
+		if digest, _ := objectsAfter[0].Digest(); digest != objectDigest {
+			t.Fatalf("object digest=%x", digest)
+		}
+		_ = lease.Close()
+	})
+
+	tests := map[string]func(*fakeBackend, *fakeNode){
+		"index-content": func(_ *fakeBackend, lineage *fakeNode) { lineage.children["index.caj"].data[0] ^= 1 },
+		"segment-content": func(_ *fakeBackend, lineage *fakeNode) {
+			for name, journal := range lineage.children {
+				if finalNamePattern.MatchString(name) {
+					journal.children[admissionSegmentName(0)].data[0] ^= 1
+				}
+			}
+		},
+		"object-content": func(f *fakeBackend, _ *fakeNode) {
+			for _, object := range f.shaDir().children {
+				object.data[0] ^= 1
+			}
+		},
+		"entry-add": func(f *fakeBackend, _ *fakeNode) { addAdmissionLineage(f, digestForTest(2), 0, 0) },
+		"entry-remove": func(f *fakeBackend, _ *fakeNode) {
+			delete(f.root.children["lineages"].children, fmtDigest(digestForTest(1)))
+		},
+		"directory-metadata": func(f *fakeBackend, _ *fakeNode) { f.root.children["lineages"].stat.nlink++ },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeBackend()
+			f.addFinal([]byte("object"))
+			lineage := addAdmissionLineage(f, digestForTest(1), 1, 1)
+			store := testStore(t, f)
+			lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline := len(f.handles)
+			mutate(f, lineage)
+			if err := inventory.Revalidate(context.Background()); err == nil {
+				t.Fatal("drift passed revalidation")
+			}
+			if len(f.handles) != baseline {
+				t.Fatalf("handles=%d baseline=%d", len(f.handles), baseline)
+			}
+			assertRevokedInventory(t, lease, inventory)
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("cleanup err=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
+func assertRevokedInventory(t *testing.T, lease *AdmissionLease, inventory *AdmissionInventory) {
+	t.Helper()
+	if lease.Active() {
+		t.Fatal("failed revalidation retained active lease")
+	}
+	if _, err := inventory.Target(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("target after revoke err=%v", err)
+	}
+	if _, err := inventory.LineageIDs(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("views after revoke err=%v", err)
+	}
+}
+
+func fmtDigest(value [32]byte) string {
+	const digits = "0123456789abcdef"
+	result := make([]byte, 64)
+	for index, b := range value {
+		result[index*2] = digits[b>>4]
+		result[index*2+1] = digits[b&15]
+	}
+	return string(result)
+}
+
+func TestAdmissionInventoryRevalidateFaultsAndCancellation(t *testing.T) {
+	t.Run("scan-close-revokes-and-poisons", func(t *testing.T) {
+		f := newFakeBackend()
+		addAdmissionLineage(f, digestForTest(1), 0, 0)
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.failCloseNames["sha256"] = true
+		if err := inventory.Revalidate(context.Background()); !errors.Is(err, ErrFilesystem) || store.usable() {
+			t.Fatalf("err=%v usable=%v", err, store.usable())
+		}
+		assertRevokedInventory(t, lease, inventory)
+		if _, err := store.AcquireRoot(context.Background()); !errors.Is(err, ErrFilesystem) {
+			t.Fatalf("poisoned root acquired: %v", err)
+		}
+		if nextLease, nextInventory, err := store.AcquireAdmission(context.Background(), digestForTest(1)); nextLease != nil || nextInventory != nil || !errors.Is(err, ErrFilesystem) {
+			t.Fatalf("lease=%v inventory=%v err=%v", nextLease, nextInventory, err)
+		}
+		_ = lease.Close()
+	})
+
+	t.Run("read-fault", func(t *testing.T) {
+		f := newFakeBackend()
+		addAdmissionLineage(f, digestForTest(1), 0, 0)
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.failOpenNames["index.caj"] = errors.New("read open")
+		if err := inventory.Revalidate(context.Background()); !errors.Is(err, ErrFilesystem) {
+			t.Fatalf("err=%v", err)
+		}
+		assertRevokedInventory(t, lease, inventory)
+		if err := lease.Close(); err != nil || len(f.handles) != 0 {
+			t.Fatalf("cleanup err=%v handles=%d", err, len(f.handles))
+		}
+	})
+
+	t.Run("close-fault", func(t *testing.T) {
+		f := newFakeBackend()
+		addAdmissionLineage(f, digestForTest(1), 0, 0)
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.failCloseNames["index.caj"] = true
+		if err := inventory.Revalidate(context.Background()); !errors.Is(err, ErrFilesystem) || store.usable() {
+			t.Fatalf("err=%v usable=%v", err, store.usable())
+		}
+		assertRevokedInventory(t, lease, inventory)
+		_ = lease.Close()
+	})
+
+	t.Run("pre-cancel", func(t *testing.T) {
+		f := newFakeBackend()
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := inventory.Revalidate(ctx); !errors.Is(err, context.Canceled) {
+			t.Fatalf("err=%v", err)
+		}
+		if !lease.Active() {
+			t.Fatal("clean pre-cancel revoked lease")
+		}
+		_ = lease.Close()
+	})
+
+	for _, phase := range []string{"mid", "post"} {
+		t.Run(phase+"-cancel", func(t *testing.T) {
+			f := newFakeBackend()
+			lineage := addAdmissionLineage(f, digestForTest(1), 0, 0)
+			store := testStore(t, f)
+			lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			reads := 0
+			shaReads := 0
+			if phase == "mid" {
+				f.onPread = func(_ *fakeBackend, node *fakeNode, _ int) {
+					if node == lineage.children["index.caj"] {
+						reads++
+						cancel()
+					}
+				}
+			} else {
+				f.onReadDir = func(_ *fakeBackend, node *fakeNode, _ int) {
+					if node.name == "sha256" {
+						shaReads++
+						// The first two sha256 reads belong to the before
+						// discovery+Scan boundary; the third begins after.
+						if shaReads == 3 {
+							cancel()
+						}
+					}
+				}
+			}
+			if err := inventory.Revalidate(ctx); !errors.Is(err, context.Canceled) {
+				t.Fatalf("phase=%s reads=%d shaReads=%d err=%v", phase, reads, shaReads, err)
+			}
+			if !lease.Active() {
+				t.Fatalf("clean %s cancel revoked lease", phase)
+			}
+			_ = lease.Close()
+		})
+	}
+}
+
+func TestAdmissionInventoryRevalidateDetectsPreexistingAndCurrentReadMutation(t *testing.T) {
+	t.Run("preexisting-early-index", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 0, 0)
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lineage.children["index.caj"].data[0] ^= 1
+		if err := inventory.Revalidate(context.Background()); err == nil {
+			t.Fatal("preexisting same-size index mutation passed")
+		}
+		assertRevokedInventory(t, lease, inventory)
+		_ = lease.Close()
+	})
+
+	t.Run("current-fd", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 0, 0)
+		index := lineage.children["index.caj"]
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.onPread = func(_ *fakeBackend, node *fakeNode, _ int) {
+			if node == index {
+				index.data[0] ^= 1
+			}
+		}
+		if err := inventory.Revalidate(context.Background()); err == nil {
+			t.Fatal("current-fd same-size mutation passed")
+		}
+		assertRevokedInventory(t, lease, inventory)
+		_ = lease.Close()
+	})
+}
+
+func TestAdmissionInventoryRevalidateRejectsAuthorityGraphTamper(t *testing.T) {
+	tests := map[string]func(*AdmissionInventory){
+		"inventory-target":   func(i *AdmissionInventory) { i.target = digestForTest(99) },
+		"inventory-full-set": func(i *AdmissionInventory) { i.fullSet[0] ^= 1 },
+		"lineage-id":         func(i *AdmissionInventory) { i.lineages[0].id = digestForTest(99) },
+		"lineage-name":       func(i *AdmissionInventory) { i.lineages[0].name = "forged" },
+		"lineage-order":      func(i *AdmissionInventory) { i.lineages[0], i.lineages[1] = i.lineages[1], i.lineages[0] },
+		"journal-id":         func(i *AdmissionInventory) { i.lineages[0].journals[0].id = digestForTest(99) },
+		"journal-name":       func(i *AdmissionInventory) { i.lineages[0].journals[0].name = "forged" },
+		"file-digest":        func(i *AdmissionInventory) { i.lineages[0].index.digest[0] ^= 1 },
+		"file-identity":      func(i *AdmissionInventory) { i.lineages[0].index.identity[0] ^= 1 },
+		"file-stat":          func(i *AdmissionInventory) { i.lineages[0].index.stat.size++ },
+		"file-parent":        func(i *AdmissionInventory) { i.lineages[0].index.parents[0].stat.nlink++ },
+		"object-digest":      func(i *AdmissionInventory) { i.objects[0].digest[0] ^= 1 },
+		"object-temporary":   func(i *AdmissionInventory) { i.objects[0].temporary = !i.objects[0].temporary },
+		"slot-baseline":      func(i *AdmissionInventory) { i.slot.discovery.lineages[0].index.size++ },
+		"slot-expectation": func(i *AdmissionInventory) {
+			expected := i.slot.files[i.lineages[0].index]
+			expected.digest[0] ^= 1
+			i.slot.files[i.lineages[0].index] = expected
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeBackend()
+			f.addFinal([]byte("object"))
+			addAdmissionLineage(f, digestForTest(1), 1, 1)
+			addAdmissionLineage(f, digestForTest(2), 1, 1)
+			store := testStore(t, f)
+			lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutate(inventory)
+			if err := inventory.Revalidate(context.Background()); !errors.Is(err, ErrLeaseInvalid) {
+				t.Fatalf("err=%v", err)
+			}
+			assertRevokedInventory(t, lease, inventory)
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("cleanup err=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
 func TestAdmissionInventoryObjectsAndFullSetChange(t *testing.T) {
 	f := newFakeBackend()
 	content := []byte("registered-object")

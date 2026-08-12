@@ -59,7 +59,12 @@ type Usage struct {
 }
 
 func (s *Scan) Usage() Usage {
-	if !s.valid() {
+	if s == nil || s.lease == nil {
+		return Usage{}
+	}
+	s.lease.mu.Lock()
+	defer s.lease.mu.Unlock()
+	if !s.validLocked() {
 		return Usage{}
 	}
 	facts := make([]ObjectFact, 0, len(s.objects))
@@ -71,21 +76,36 @@ func (s *Scan) Usage() Usage {
 }
 
 func (s *Scan) FinalUsage() (count, bytes uint64) {
-	if !s.valid() {
+	if s == nil || s.lease == nil {
+		return 0, 0
+	}
+	s.lease.mu.Lock()
+	defer s.lease.mu.Unlock()
+	if !s.validLocked() {
 		return 0, 0
 	}
 	return s.finalCount, s.finalBytes
 }
 
 func (s *Scan) TemporaryUsage() (count, bytes uint64) {
-	if !s.valid() {
+	if s == nil || s.lease == nil {
+		return 0, 0
+	}
+	s.lease.mu.Lock()
+	defer s.lease.mu.Unlock()
+	if !s.validLocked() {
 		return 0, 0
 	}
 	return s.tempCount, s.tempBytes
 }
 
 func (s *Scan) HasObject(digest [32]byte, size uint64) bool {
-	if !s.valid() {
+	if s == nil || s.lease == nil {
+		return false
+	}
+	s.lease.mu.Lock()
+	defer s.lease.mu.Unlock()
+	if !s.validLocked() {
 		return false
 	}
 	object, ok := s.objects[digest]
@@ -93,10 +113,19 @@ func (s *Scan) HasObject(digest [32]byte, size uint64) bool {
 }
 
 func (s *Scan) valid() bool {
-	return s != nil && s.self == s && s.seal != nil && s.lease != nil && s.generation != 0
+	if s == nil || s.lease == nil {
+		return false
+	}
+	s.lease.mu.Lock()
+	defer s.lease.mu.Unlock()
+	return s.validLocked()
 }
 
-func (l *Lease) Scan(ctx context.Context) (*Scan, error) {
+func (s *Scan) validLocked() bool {
+	return s != nil && s.self == s && s.seal != nil && s.lease != nil && s.generation != 0 && s.generation == s.lease.generation && s.lease.active()
+}
+
+func (l *Lease) Scan(ctx context.Context) (result *Scan, resultErr error) {
 	if l == nil {
 		return nil, ErrLeaseInvalid
 	}
@@ -116,34 +145,38 @@ func (l *Lease) Scan(ctx context.Context) (*Scan, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer l.closeScanFD(&rootFD, &result, &resultErr, "scan-root-close")()
 	objectsFD, _, err := l.root.openVerifiedDirectory(rootFD, "objects")
 	if err != nil {
-		_ = l.root.ops.close(rootFD)
 		return nil, err
 	}
-	if l.root.ops.close(rootFD) != nil {
-		_ = l.root.ops.close(objectsFD)
-		return nil, filesystem("scan-root-close")
-	}
+	defer l.closeScanFD(&objectsFD, &result, &resultErr, "objects-close")()
 	names, err := l.root.ops.readDirNames(objectsFD, 2)
 	if err != nil || len(names) != 1 || names[0] != "sha256" {
-		_ = l.root.ops.close(objectsFD)
 		return nil, filesystem("objects-grammar")
 	}
 	shaFD, _, err := l.root.openVerifiedDirectory(objectsFD, "sha256")
 	if err != nil {
-		_ = l.root.ops.close(objectsFD)
 		return nil, err
 	}
-	if l.root.ops.close(objectsFD) != nil {
-		_ = l.root.ops.close(shaFD)
-		return nil, filesystem("objects-close")
+	defer l.closeScanFD(&shaFD, &result, &resultErr, "sha256-close")()
+	return l.scanSHA256(ctx, shaFD)
+}
+
+func (l *Lease) closeScanFD(fd *int, result **Scan, resultErr *error, operation string) func() {
+	return func() {
+		if fd == nil || *fd < 0 {
+			return
+		}
+		current := *fd
+		*fd = -1
+		if l.root.ops.close(current) != nil {
+			l.root.poison()
+			l.invalidate()
+			*result = nil
+			*resultErr = filesystem(operation)
+		}
 	}
-	scan, scanErr := l.scanSHA256(ctx, shaFD)
-	if l.root.ops.close(shaFD) != nil {
-		return nil, filesystem("sha256-close")
-	}
-	return scan, scanErr
 }
 
 func (l *Lease) scanSHA256(ctx context.Context, shaFD int) (*Scan, error) {
@@ -161,10 +194,17 @@ func (l *Lease) scanSHA256(ctx context.Context, shaFD int) (*Scan, error) {
 	}, 0, len(names))
 	closeEntries := func() error {
 		failed := false
-		for _, entry := range entries {
-			failed = l.root.ops.close(entry.fd) != nil || failed
+		for index := range entries {
+			if entries[index].fd < 0 {
+				continue
+			}
+			fd := entries[index].fd
+			entries[index].fd = -1
+			failed = l.root.ops.close(fd) != nil || failed
 		}
 		if failed {
+			l.root.poison()
+			l.invalidate()
 			return filesystem("object-close")
 		}
 		return nil
@@ -360,7 +400,7 @@ func (l *Lease) Publish(ctx context.Context, scan *Scan, digest [32]byte, source
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
-	if !l.active() || !scan.valid() || scan.lease != l || scan.generation != l.generation {
+	if !l.active() || scan == nil || !scan.validLocked() || scan.lease != l || scan.generation != l.generation {
 		return nil, ErrLeaseInvalid
 	}
 	finalName := hex.EncodeToString(digest[:])

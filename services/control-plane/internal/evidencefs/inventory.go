@@ -43,6 +43,8 @@ type AdmissionInventory struct {
 	objects    []*AdmissionObjectView
 	absent     *TargetAbsentFact
 	fullSet    [32]byte
+	discovery  admissionDiscovery
+	objectSet  admissionObjectDiscovery
 }
 
 type AdmissionLineageView struct {
@@ -152,6 +154,130 @@ func (i *AdmissionInventory) Revision() (uint64, error) {
 	var revision uint64
 	err := i.withValid(func() error { revision = i.revision; return nil })
 	return revision, err
+}
+
+// Target returns the acquisition target bound to this revision-zero inventory.
+func (i *AdmissionInventory) Target() ([32]byte, error) {
+	var target [32]byte
+	err := i.withValid(func() error { target = i.target; return nil })
+	return target, err
+}
+
+// Revalidate proves that the complete physical root still matches the
+// inventoried bytes while the active admission lease holds the root and all
+// lineage locks. This is authority against lock-compliant writers; it is not a
+// kernel snapshot or an atomicity claim about actors that bypass those locks.
+// It neither advances the revision nor replaces the current admission slot.
+func (i *AdmissionInventory) Revalidate(ctx context.Context) error {
+	if i == nil || i.lease == nil {
+		return ErrLeaseInvalid
+	}
+	lease := i.lease
+	lease.mu.Lock()
+	defer lease.mu.Unlock()
+	if !i.validLocked() {
+		if lease.current != nil && lease.current.inventory == i && lease.current.active {
+			lease.revokeLocked()
+		}
+		return ErrLeaseInvalid
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if !i.snapshotMatchesLocked() {
+		lease.revokeLocked()
+		return ErrLeaseInvalid
+	}
+	err := lease.verifyTerminalInventory(ctx, i.slot.discovery, i.slot.objectSet, i)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			lease.revokeLocked()
+		}
+		return err
+	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if !i.validLocked() || !i.snapshotMatchesLocked() {
+		lease.revokeLocked()
+		return ErrLeaseInvalid
+	}
+	return nil
+}
+
+func (i *AdmissionInventory) snapshotMatchesLocked() bool {
+	if i == nil || i.slot == nil || admissionBaselineDigest(i.slot.discovery, i.slot.objectSet) != i.slot.baseline || admissionSlotGraphDigest(i.slot) != i.slot.graph || len(i.slot.discovery.lineages) != len(i.lineages) || len(i.slot.objectSet.objects) != len(i.objects) || len(i.slot.lineages) != len(i.lineages) || len(i.lineageMap) != len(i.lineages) || len(i.slot.objects) != len(i.objects) {
+		return false
+	}
+	if i.absent == nil {
+		if i.slot.absent != nil {
+			return false
+		}
+	} else if i.absent.self != i.absent || i.absent.seal == nil || i.absent.owner != i || !i.absent.binding.validFor(i) || i.slot.absent != i.absent || i.absent.target != i.target || i.absent.fullSet != i.fullSet {
+		return false
+	}
+	if len(i.lineages) != 0 && i.slot.discovery.lineagesDirectory == nil {
+		return false
+	}
+	journalCount, fileCount := 0, len(i.objects)+len(i.lineages)
+	for index, lineage := range i.lineages {
+		if lineage == nil || lineage.self != lineage || lineage.seal == nil || lineage.owner != i || !lineage.binding.validFor(i) || i.lineageMap[lineage.id] != lineage {
+			return false
+		}
+		discovered := i.slot.discovery.lineages[index]
+		expected, ok := i.slot.lineages[lineage]
+		if !ok || expected.id != lineage.id || expected.name != lineage.name || expected.index != lineage.index || !sameJournalPointers(expected.journals, lineage.journals) || discovered.name != expected.name || lineage.index == nil || !sameIdentity(discovered.index, lineage.index.stat) || len(discovered.journals) != len(expected.journals) || index >= len(i.lease.locks) || i.lease.locks[index].name != discovered.name || !sameIdentity(discovered.lock, i.lease.locks[index].stat) {
+			return false
+		}
+		indexExpected, ok := i.slot.files[lineage.index]
+		if !ok || !inventoryFileGraphValid(i, lineage.index, indexExpected) || i.slot.discovery.lineagesDirectory == nil || len(lineage.index.parents) != 2 || !sameDirectoryIdentity(*i.slot.discovery.lineagesDirectory, lineage.index.parents[0].stat) || !sameDirectoryIdentity(discovered.stat, lineage.index.parents[1].stat) {
+			return false
+		}
+		for journalIndex, journal := range expected.journals {
+			journalCount++
+			registered, ok := i.slot.journals[journal]
+			discoveredJournal := discovered.journals[journalIndex]
+			if !ok || journal == nil || journal.self != journal || journal.seal == nil || journal.owner != i || !journal.binding.validFor(i) || registered.id != journal.id || registered.name != journal.name || registered.lineage != journal.lineage || registered.parent != lineage || !sameFilePointers(registered.segments, journal.segments) || discoveredJournal.name != registered.name || len(discoveredJournal.segments) != len(registered.segments) {
+				return false
+			}
+			if len(journal.segments) == 0 || len(journal.segments[0].parents) != 3 || !sameDirectoryIdentity(discoveredJournal.stat, journal.segments[0].parents[2].stat) {
+				return false
+			}
+			for segmentIndex, segment := range registered.segments {
+				fileCount++
+				fileExpected, ok := i.slot.files[segment]
+				if !ok || !inventoryFileGraphValid(i, segment, fileExpected) || !sameIdentity(discoveredJournal.segments[segmentIndex], segment.stat) {
+					return false
+				}
+			}
+		}
+	}
+	for index, object := range i.objects {
+		discovered := i.slot.objectSet.objects[index]
+		expected, ok := i.slot.objects[object]
+		fileExpected, fileOK := i.slot.files[expected.file]
+		if !ok || object == nil || object.self != object || object.seal == nil || object.owner != i || !object.binding.validFor(i) || object.file == nil || expected.file != object.file || expected.digest != object.digest || expected.temporary != object.temporary || object.digest != object.file.digest || !fileOK || !inventoryFileGraphValid(i, object.file, fileExpected) || discovered.name != object.file.name || !sameIdentity(discovered.stat, object.file.stat) || discovered.final == expected.temporary {
+			return false
+		}
+		if len(object.file.parents) != 2 || !sameDirectoryIdentity(i.slot.objectSet.objectsStat, object.file.parents[0].stat) || !sameDirectoryIdentity(i.slot.objectSet.shaStat, object.file.parents[1].stat) {
+			return false
+		}
+	}
+	return len(i.lease.locks) == len(i.lineages) && len(i.slot.journals) == journalCount && len(i.slot.files) == fileCount
+}
+
+func inventoryFileGraphValid(owner *AdmissionInventory, file *AdmissionFileView, expected fileExpectation) bool {
+	return file != nil && file.self == file && file.seal != nil && file.owner == owner && file.binding.validFor(owner) && matchesFileExpectation(owner.slot, file, expected) && file.identity == inventoryIdentityDigest(file.role, file.lineage, file.journal, file.name, file.ordinal, file.parents, file.stat, file.digest)
+}
+
+func (l *AdmissionLease) revokeLocked() {
+	if l == nil {
+		return
+	}
+	l.valid = false
+	if l.current != nil {
+		l.current.active = false
+	}
 }
 
 func (i *AdmissionInventory) FullSetDigest() ([32]byte, error) {
@@ -534,7 +660,7 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 	if !sameAdmissionObjects(objectsBefore, objectsAfter) || !objectDiscoveryMatchesScan(objectsAfter, scan) {
 		return nil, filesystem("admission-object-mismatch")
 	}
-	inventory := &AdmissionInventory{seal: &struct{}{}, store: l.store, lease: l, epoch: l.epoch, revision: 0, target: target, lineageMap: map[[32]byte]*AdmissionLineageView{}}
+	inventory := &AdmissionInventory{seal: &struct{}{}, store: l.store, lease: l, epoch: l.epoch, revision: 0, target: target, lineageMap: map[[32]byte]*AdmissionLineageView{}, discovery: cloneAdmissionDiscovery(discovery), objectSet: cloneAdmissionObjectDiscovery(objectsAfter)}
 	inventory.self = inventory
 	full := sha256.New()
 	full.Write([]byte("cloud-agents-platform-evidencefs-admission-full-set/v1\x00"))
@@ -629,7 +755,13 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 }
 
 func (l *AdmissionLease) verifyTerminalInventory(ctx context.Context, discovery admissionDiscovery, objects admissionObjectDiscovery, inventory *AdmissionInventory) error {
+	if err := contextError(ctx); err != nil {
+		return err
+	}
 	verifyBoundary := func() (admissionDiscovery, admissionObjectDiscovery, error) {
+		if err := contextError(ctx); err != nil {
+			return admissionDiscovery{}, admissionObjectDiscovery{}, err
+		}
 		root, err := l.store.discoverAdmissionRoot(ctx)
 		if err != nil {
 			return admissionDiscovery{}, admissionObjectDiscovery{}, err
@@ -653,6 +785,9 @@ func (l *AdmissionLease) verifyTerminalInventory(ctx context.Context, discovery 
 	}
 	if !sameAdmissionDiscovery(discovery, beforeRoot) || !sameAdmissionObjects(objects, beforeObjects) {
 		return filesystem("admission-terminal-mismatch")
+	}
+	if err := contextError(ctx); err != nil {
+		return err
 	}
 	for _, lineage := range inventory.lineages {
 		bytes, err := l.readInventoryFileRaw(ctx, lineage.index)
@@ -683,14 +818,154 @@ func (l *AdmissionLease) verifyTerminalInventory(ctx context.Context, discovery 
 			return corrupt("admission-terminal-object")
 		}
 	}
+	if err := contextError(ctx); err != nil {
+		return err
+	}
 	afterRoot, afterObjects, err := verifyBoundary()
 	if err != nil {
+		return err
+	}
+	if err := contextError(ctx); err != nil {
 		return err
 	}
 	if !sameAdmissionDiscovery(discovery, afterRoot) || !sameAdmissionDiscovery(beforeRoot, afterRoot) || !sameAdmissionObjects(objects, afterObjects) || !sameAdmissionObjects(beforeObjects, afterObjects) || !l.store.usable() || !l.rootLease.Active() {
 		return filesystem("admission-terminal-mismatch")
 	}
 	return nil
+}
+
+func cloneAdmissionDiscovery(value admissionDiscovery) admissionDiscovery {
+	result := value
+	if value.lineagesDirectory != nil {
+		stat := *value.lineagesDirectory
+		result.lineagesDirectory = &stat
+	}
+	result.lineages = append([]discoveredLineage(nil), value.lineages...)
+	for index := range result.lineages {
+		result.lineages[index].journals = append([]discoveredJournal(nil), value.lineages[index].journals...)
+		for journal := range result.lineages[index].journals {
+			result.lineages[index].journals[journal].segments = append([]fileStat(nil), value.lineages[index].journals[journal].segments...)
+		}
+	}
+	return result
+}
+
+func cloneAdmissionObjectDiscovery(value admissionObjectDiscovery) admissionObjectDiscovery {
+	value.objects = append([]discoveredObject(nil), value.objects...)
+	return value
+}
+
+func admissionBaselineDigest(discovery admissionDiscovery, objects admissionObjectDiscovery) [32]byte {
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-evidencefs-admission-baseline/v1\x00"))
+	if discovery.lineagesDirectory == nil {
+		writeFullSetEntry(h, "directory-absent", "lineages", fileStat{}, [32]byte{})
+	} else {
+		writeFullSetEntry(h, "directory", "lineages", *discovery.lineagesDirectory, [32]byte{})
+	}
+	writeFullSetCount(h, uint64(len(discovery.lineages)))
+	for _, lineage := range discovery.lineages {
+		writeFullSetEntry(h, "lineage", lineage.name, lineage.stat, [32]byte{})
+		writeFullSetEntry(h, "lineage-lock", lineage.name, lineage.lock, [32]byte{})
+		writeFullSetEntry(h, "index", lineage.name, lineage.index, [32]byte{})
+		writeFullSetCount(h, uint64(len(lineage.journals)))
+		for _, journal := range lineage.journals {
+			writeFullSetEntry(h, "journal", lineage.name+"/"+journal.name, journal.stat, [32]byte{})
+			writeFullSetEntry(h, "journal-lock", lineage.name+"/"+journal.name, journal.lock, [32]byte{})
+			writeFullSetCount(h, uint64(len(journal.segments)))
+			for ordinal, segment := range journal.segments {
+				writeFullSetEntry(h, "segment", lineage.name+"/"+journal.name+"/"+admissionSegmentName(ordinal), segment, [32]byte{})
+			}
+		}
+	}
+	writeFullSetEntry(h, "directory", "objects", objects.objectsStat, [32]byte{})
+	writeFullSetEntry(h, "directory", "objects/sha256", objects.shaStat, [32]byte{})
+	writeFullSetCount(h, uint64(len(objects.objects)))
+	for _, object := range objects.objects {
+		kind := "temporary-object"
+		if object.final {
+			kind = "final-object"
+		}
+		writeFullSetEntry(h, kind, object.name, object.stat, [32]byte{})
+	}
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func admissionSlotGraphDigest(slot *admissionSlot) [32]byte {
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-evidencefs-admission-slot-graph/v1\x00"))
+	if slot == nil {
+		return [32]byte{}
+	}
+	h.Write(slot.target[:])
+	h.Write(slot.fullSet[:])
+	writeFullSetCount(h, slot.revision)
+	writeFullSetCount(h, uint64(len(slot.lineageOrder)))
+	for _, lineage := range slot.lineageOrder {
+		expected, ok := slot.lineages[lineage]
+		if !ok {
+			writeFullSetCount(h, ^uint64(0))
+			continue
+		}
+		h.Write(expected.id[:])
+		h.Write([]byte(expected.name))
+		h.Write([]byte{0})
+		writeSlotFileExpectation(h, slot.files[expected.index])
+		writeFullSetCount(h, uint64(len(expected.journals)))
+		for _, journal := range expected.journals {
+			journalExpected, ok := slot.journals[journal]
+			if !ok {
+				writeFullSetCount(h, ^uint64(0))
+				continue
+			}
+			h.Write(journalExpected.id[:])
+			h.Write([]byte(journalExpected.lineage))
+			h.Write([]byte{0})
+			h.Write([]byte(journalExpected.name))
+			h.Write([]byte{0})
+			writeFullSetCount(h, uint64(len(journalExpected.segments)))
+			for _, segment := range journalExpected.segments {
+				writeSlotFileExpectation(h, slot.files[segment])
+			}
+		}
+	}
+	writeFullSetCount(h, uint64(len(slot.objectOrder)))
+	for _, object := range slot.objectOrder {
+		expected, ok := slot.objects[object]
+		if !ok {
+			writeFullSetCount(h, ^uint64(0))
+			continue
+		}
+		writeSlotFileExpectation(h, slot.files[expected.file])
+		h.Write(expected.digest[:])
+		if expected.temporary {
+			h.Write([]byte{1})
+		} else {
+			h.Write([]byte{0})
+		}
+	}
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func writeSlotFileExpectation(h io.Writer, expected fileExpectation) {
+	_, _ = h.Write([]byte{byte(expected.role)})
+	_, _ = h.Write([]byte(expected.lineage))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(expected.journal))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(expected.name))
+	_, _ = h.Write([]byte{0})
+	writeFullSetCount(h, uint64(expected.ordinal))
+	writeFullSetCount(h, uint64(len(expected.parents)))
+	for _, parent := range expected.parents {
+		writeFullSetEntry(h, "parent", parent.name, parent.stat, [32]byte{})
+	}
+	writeFullSetEntry(h, "file", expected.name, expected.stat, expected.digest)
+	_, _ = h.Write(expected.identity[:])
 }
 
 func (l *AdmissionLease) activeLockedForBuild() bool {

@@ -25,6 +25,10 @@ type admissionSlot struct {
 	fullSet      [32]byte
 	lineageOrder []*AdmissionLineageView
 	objectOrder  []*AdmissionObjectView
+	discovery    admissionDiscovery
+	objectSet    admissionObjectDiscovery
+	baseline     [32]byte
+	graph        [32]byte
 }
 
 type lineageExpectation struct {
@@ -100,7 +104,9 @@ func (l *AdmissionLease) activeLocked() bool {
 }
 
 // Close always attempts every lineage unlock/close in reverse acquisition
-// order and then releases the root lease. Any uncertain cleanup poisons Store.
+// order and then releases the root lease. A revoked genuine lease remains
+// closable so its retained descriptors and locks can still be cleaned up. Any
+// uncertain cleanup poisons Store.
 func (l *AdmissionLease) Close() error {
 	if l == nil || l.self != l || l.seal == nil {
 		return ErrLeaseInvalid
@@ -223,6 +229,8 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 			return nil, nil, err
 		}
 		slot := newAdmissionSlot(epoch, inventory)
+		inventory.discovery = admissionDiscovery{}
+		inventory.objectSet = admissionObjectDiscovery{}
 		lease.current = slot
 		inventory.slot = slot
 		return lease, inventory, nil
@@ -237,7 +245,9 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory) *adm
 		files: map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent,
 		target: inventory.target, fullSet: inventory.fullSet,
 		lineageOrder: append([]*AdmissionLineageView(nil), inventory.lineages...), objectOrder: append([]*AdmissionObjectView(nil), inventory.objects...),
+		discovery: cloneAdmissionDiscovery(inventory.discovery), objectSet: cloneAdmissionObjectDiscovery(inventory.objectSet),
 	}
+	slot.baseline = admissionBaselineDigest(slot.discovery, slot.objectSet)
 	for _, lineage := range inventory.lineages {
 		slot.lineages[lineage] = lineageExpectation{id: lineage.id, name: lineage.name, index: lineage.index, journals: append([]*AdmissionJournalView(nil), lineage.journals...)}
 		slot.files[lineage.index] = expectedFile(lineage.index, lineage, nil)
@@ -252,6 +262,7 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory) *adm
 		slot.objects[object] = objectExpectation{file: object.file, digest: object.digest, temporary: object.temporary}
 		slot.files[object.file] = expectedFile(object.file, nil, nil)
 	}
+	slot.graph = admissionSlotGraphDigest(slot)
 	return slot
 }
 
