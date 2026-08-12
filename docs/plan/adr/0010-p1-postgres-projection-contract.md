@@ -1501,6 +1501,14 @@ no-replace/no-follow publish protocol，但 receipt kind 不可互换。这样�
 overcommit。root usage 的 authority 只有 durable object files、strict LineageIndex records 和其中
 `GenerationReserved`；不得新增另一份 mutable quota state 或 database。
 
+实现可以先由 sibling package `services/control-plane/internal/evidencefs` 产出只覆盖 `objects/sha256` 的 opaque
+`Scan`，但该 commit-1 `Scan` **不是** full root quota authority，不能单独授权 admission、publish 后的 reserve 或
+`GenerationReserved`。full root quota binder 必须在同一 active root-wide lease 下，把该 object scan 与 strict replayer
+内部派生的全部 registered lineage/index/journal accounting 合并；replayer 必须跨所有 registered schema-bundle digests
+枚举并验证每个 registration，不能只按 current bundle 过滤，也不能接收 caller 提供的 count/bytes/facts。该 strict
+replayer 仍是本 filesystem implementation 的 trusted code，本决议不要求为它新增 `evidenceindex` package；但其 outputs
+只能从本次 no-follow inventory 与 exact replay 内部产生，不得由 wire、public API 或普通 caller 构造。
+
 新 object 先写入同目录 no-follow/O_EXCL
 temporary regular file；temp basename 固定为 `.tmp-<128-bit CSPRNG lower-hex>`，只能在该 object final path 的同一
 directory 以 `O_NOFOLLOW|O_CREAT|O_EXCL`、mode `0600` 创建。写完后重验 size/outer SHA、`fdatasync`，再用
@@ -1509,7 +1517,7 @@ directory；不得用可覆盖已有 target 的 rename。写入 runtime object �
 recovery object 时重验 recovery size/SHA 与 4 MiB 单件上限。并发 publish 发现 final 已存在时，必须
 no-follow reopen 并完整重验
 owner/mode/link-count/regular-file/size/digest 后才丢弃本调用拥有的 temp；验证失败保留 fail-closed error。crash temp
-只能在持有 store writer lock、证明 basename/owner/regular-file/link-count 且它不被任何 active writer 持有后清理；
+只能在持有 store-writer lock、证明 basename/owner/regular-file/link-count 且它不被任何 active writer 持有后清理；
 不得自动删除 final object。existing final object 同样必须完整重验后复用。object
 和 objects directory 至多 `0600/0700`，partial/temp 不能被当作 final。只有 object durable 后才能创建 header；这样
 `sql_path + start/end offset + statement digest` 长期引用 verified bytes，而不是引用调用方之后可能消失或变化的
@@ -1537,7 +1545,9 @@ mode 至多 `0600`、link-count=1、same-device regular file。
 `4 GiB+1` 在读取 object bytes 或进入 DB 前返回 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。计数/累计必须使用
 overflow-safe `value > max-current` 比较，不能 wrap。超过 limits 不得先删除再通过 admission。能证明由当前持有
 store-writer lock 的 active publication handle exact 引用的 temp 保留；无法证明 active/unreferenced 的 temp 同样保守
-计入 count/bytes。只有在 root-wide + store-writer lock 下、完整证明 basename/owner/type/link-count/same-device 且不被
+计入 count/bytes。这里的 store-writer lock **exactly 是** `<root>/lineages.lock` 上既有的 root-wide lock，不新增第二个
+lock file、path 或 lock domain；object scan、full root quota bind、publish、reserve 和 activate 必须连续消费同一个仍 active
+的 root-wide lease。只有在该 lease 下、完整证明 basename/owner/type/link-count/same-device 且不被
 任何 active writer/reference 持有后，maintenance 才可清理 unreferenced temp；`Open` 不得猜测 crash ownership，
 不得删除 final，也不得把 temp 作为 durable object/receipt authority。
 
@@ -1547,8 +1557,13 @@ root-wide lock 内 exact 证明，才映射 limit-exceeded；mutation 后即使�
 普通 limit。sealed durable-object authority 只能由 content store 在 write-complete、full digest/size verify、`fdatasync`、
 atomic no-replace publish、objects-directory `fsync`、no-follow reopen 及再次 full digest/size/owner/mode/link-count/kind/
 store-identity verify全部成功后，从私有 publication result mint。`EEXIST` reuse 也必须执行同一套 reopen/full verify；
-wire decode、普通 caller、loose Digest 或自洽 same-package literal 均不能升格。当前 impl-2 receipt binder 在该 private
-publication-result 路径落地前固定 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，不得生成伪 durable receipt。
+wire decode、普通 caller、loose Digest 或自洽 same-package literal 均不能升格。durable `Publication` 的 concrete type、
+constructor、store identity、active-lease binding 和 validity check 由 sibling
+`services/control-plane/internal/evidencefs` package 私有持有；`migration` 只能消费其 opaque result 并与 owned runtime/
+recovery artifact 的 kind/digest/size/owner 交叉绑定。`migration` 内的 private seal、registry 或 same-package literal 都不能
+mint、repair 或替代该 authority，两个 typed receipt 也必须保留该 opaque `Publication`，不能降格为 digest summary。当前
+impl-2 receipt binder 在该 private publication-result 路径落地前固定 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，不得生成伪
+durable receipt。
 
 journal wire record 是以下 **exact closed union**；不存在额外 record kind、unknown member 或开放扩展点：
 
@@ -1922,7 +1937,9 @@ registration 状态机固定为：configured root 必须预先存在并通过 ow
 lock，然后只对 per-lineage lock 做**nonblocking try**；若 lineage busy，必须立即释放 root-wide lock，再按
 bounded/context-aware backoff 重试。任何代码都不得持有 root-wide lock 等待 lineage lock，也不得先持
 lineage 后等 root；这一 helper 同时是 open、heal、reserve、activate 和 supersession handoff 的唯一 lock-order
-authority。
+authority。root-wide lock 与上文 store-writer lock 是同一个 `<root>/lineages.lock` flock lease；不存在可与其并行取得的
+第二把 content-store writer lock。任何 object `Scan` 或 `Publication` 若不是由当前 active lease 产生，或 lease 已释放/
+unknown-invalidated，都不能进入 quota binder、receipt binder 或后续 reserve。
 
 首次创建 `<root>/lineages` 后必须 `fsync(root)`，创建 lineage directory 后必须
 `fsync(<root>/lineages)`，创建并同步 lineage `writer.lock` 后必须在同一 helper 中 try-acquire；busy 时仍按
@@ -2144,7 +2161,8 @@ terminal、possible resolution、segment headers 与 length prefixes，以及每
 reserve/activate/possible supersede 的 record/bytes worst case；绝不能只为
 单个 entry admission。后续 exact ledger read 即使证明 prefix 已提交，也不能缩小该 run 已取得的保守 reservation。它
 必须在 root-wide lock 下从 bounded no-follow object files、journal directories 和 strict-replayed LineageIndex
-generations 重算 root usage，以
+generations 重算 root usage；该 replay 必须覆盖所有 registered lineage/index/journal 和全部 registered schema-bundle
+digests，不能只覆盖 current lineage/current schema bundle，也不能把 commit-1 object `Scan` 冒充 aggregate authority，以
 no-overcommit 方式 durable append `GenerationReserved`；该 record 就是 journal/index quota 的唯一 durable
 reservation authority，然后才按 registration state machine 写 segment-0 header。header 的 reservation fields/digest
 必须 exact 对应。任一 journal/object/index count、bytes、records 或
@@ -2244,12 +2262,23 @@ journal/object root 首期 production allowlist **仅限 Linux 上 local `ext4` 
 source/type/options 与 required syscall probe；Linux 上其他 filesystem、bind 到 unknown backing mount、overlayfs、tmpfs、
 NFS、FUSE、object-backed mount，以及任何非 Linux OS 都是 unsupported，必须在 DB 前 fail closed。Darwin 只允许使用
 in-memory/fake filesystem 做 unit tests，不得运行 production `Open`，不得把 APFS 测试、普通重启或 fake fault 注入称为
-crash/power-loss durability evidence。生产实现预计需要 `golang.org/x/sys/unix` 提供 Linux syscall/constants；它只是
-**proposed dependency**，本 ADR 不声称其版本、SBOM/license/provenance 已审，完成 dependency review 是 filesystem slice
-Entry 条件，未审不得引入 production source 或更新 lock/module state。
+crash/power-loss durability evidence。即使 OS/mount/syscall consistency checks 通过，缺少 trusted provisioner 提供的
+non-forgeable mount authority 时 production constructor 仍必须在任何 probe 或 mutation 前拒绝，不能凭 kernel mountinfo
+推断 direct local mount。当前 committed source 已将 `golang.org/x/sys/unix v0.44.0` 作为 direct dependency 链接到 Linux
+production filesystem source，其 exact version、license/SBOM、source provenance 与实际 syscall surface 的 dependency
+review/integration 已闭合。production constructor 继续 fail closed 的剩余原因只是 trusted mount authority 尚未实现；该闭合
+不构成 real required-syscall probe/runtime validation、`ext4`/`xfs` 或 power-loss/restart durability evidence，也不授权绕过
+下述 environment matrix。
 journal/object root 只支持上述 allowlist，且启动时 required syscall probe 必须
 成功：POSIX advisory lock 跨进程互斥、atomic no-replace publish
 （`renameat2(RENAME_NOREPLACE)` 或同目录 link/unlink 等价）、regular-file `fdatasync` 与 parent-directory `fsync`。
+probe 必须先持有既有 `<root>/lineages.lock` root-wide lease，且所有 probe files 只能位于已验证的
+`<root>/objects/sha256`，basename 必须是 entry grammar 已允许的 exact `.tmp-<32lowerhex>`，其中 nonce 来自独立 128-bit
+CSPRNG；若 `lineages.lock` 原先缺失，只能在 trusted mount authority 与 closed root grammar 已验证后，先按上述
+registration durability protocol 创建、同步并取得该 lock，再开始 probe。probe 不得在 root、`objects` 或其他 directory
+创建 `caj-probe-*` 或任何新增 allowlisted name。clean probe 必须
+unlink 自己拥有的 temp 并 `fsync(objects/sha256)` 后才成功；crash/unknown 遗留仍只是普通 valid-name temp，下一次 bounded
+scan 必须保守计入 temp count/bytes，不能靠 probe prefix 忽略、自动删除或把它升格为 final object。
 unknown/unsupported mount type、NFS/FUSE/object-backed mount 或任一 syscall/lock/no-replace probe 失败都必须在 Connect
 前拒绝，不得用“best effort”降级。online startup probe 只验证调用与可观察语义，不宣称能证明 storage/controller 的
 真实 crash durability；后者必须由 impl-3 fault-injection/environment matrix 的 power-loss/restart evidence 验证。
@@ -2671,11 +2700,11 @@ locking、append/fdatasync、crash/power-loss、object publish 和 recovery sess
 本 filesystem slice 是第 5.4.1–5.4.7 节 runtime substrate 的窄实现，不是 runner integration completion。
 Entry 必须全部满足：C3 wire/flat digest same-bits fixtures 已固定且本 slice不得改其 canonical bytes/digests；同一个
 `TrustVerifier` 的 historical recovery capability 与 binder API 已可由 package-private seam 消费；Linux `ext4`/`xfs`
-测试环境的 mount identity 与 power-loss harness 已固定；`golang.org/x/sys/unix` exact dependency review 已完成并明确
-批准 chosen version、license/SBOM、source provenance 与 syscall surface。当前 dependency graph 不含 `x/sys`，production
-引入会是 new direct dependency；只读评审推荐的 proposed stable minimum floor 是 `v0.44.0`，但在 module/lock 提交并由
-dependency review 批准 exact version 前，本 ADR 不声称已批准或已引入该版本。缺任一 Entry，production filesystem source 保持 absent/rejecting，不能用
-Darwin/APFS 或 fake 测试替代。
+测试环境的 mount identity、trusted mount authority 与 power-loss harness 已固定；`golang.org/x/sys/unix v0.44.0` 已作为
+Linux production-linked direct dependency 完成 exact version、license/SBOM、source provenance、实际 syscall surface 与
+module/lock integration review。dependency Entry 对当前 committed source 已闭合；trusted mount authority 和 real
+required-syscall probe/runtime validation、`ext4`/`xfs` power-loss/restart evidence 尚未闭合，所以 production constructor
+仍保持 pre-mutation rejecting，不能用 Darwin/APFS 或 fake 测试替代。
 
 filesystem API 的 stable error mapping 是 closed 且优先级固定：
 
