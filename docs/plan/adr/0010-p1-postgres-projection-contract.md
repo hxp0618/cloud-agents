@@ -1007,8 +1007,10 @@ planned-B 的两个 artifacts/receipts 只能按 nested
 `planned_segment0_header.outer_artifact_digest/outer_artifact_size_bytes` 和
 `decision_recovery_artifact_sha256/decision_recovery_artifact_size_bytes` 从 object store no-follow 恢复。方法必须对两个
 B final objects 分别完整验证 typed receipt kind、SHA-256、size、store identity、owner/mode/link-count/regular-file
-与 artifact bytes，并 exact 等于 nested planned header 的同一 pair。缺任一 artifact/receipt、kind 互换或
-pair mismatch 都在 DB 零调用时返回 `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。
+与 artifact bytes，并 exact 等于 nested planned header 的同一 pair。artifact/receipt absent 或完整自洽 objects 无法由
+current capability 形成 historical authorization，都在 DB 零调用时返回
+`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`；已 registered object/header/receipt 存在而 kind 互换、size、digest、canonical bytes、
+closed shape 或 pair 不一致是 stored-chain contradiction，必须返回 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。
 
 `VerifiedHistoricalSupersessionReceipt` 是 non-serializable one-shot capability，只授权在
 `AcquireRootThenTryLineage` 临界区中按 nested planned B byte-exact 追加 reserved→header→activated；它不授权 B
@@ -1056,7 +1058,9 @@ artifact 明确排除 `CandidateEnvelope.Now`、current clock、observed/verific
 iteration order、credential、token、DSN、raw SQL 和其他 non-deterministic/secret member。recovery validator 的 current
 clock 是 non-persisted invocation parameter，只用于验证 current policy expiry。同一 old decision + 同一
 verifier/profile 的 artifact 必须 same-bits；profile/decision/digest/sort/bound 任一 mismatch 都在 DB 前返回
-`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。artifact 仍是 verifier-owned content object，不是 evidence frame/C3 DTO。
+`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`；但 artifact 一旦已被 registered header/receipt 引用，其 stored
+profile/decision/digest/sort/bound mismatch 按下文优先映射为 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。artifact 仍是
+verifier-owned content object，不是 evidence frame/C3 DTO。
 
 reopen ancestor 时，evidence package 按 old `JournalHeader.decision_recovery_artifact_sha256/size_bytes`
 no-follow 打开 content-addressed object，验证 receipt、owner/mode/link-count/regular-file、exact size 和全量 SHA-256，
@@ -1064,8 +1068,11 @@ no-follow 打开 content-addressed object，验证 receipt、owner/mode/link-cou
 binding、全部 digests 和签名链，但不能调用普通“current unexpired execution” validator 将旧 expiry 失败
 伪装成 recovery 结果。old release/authority/catalog expiry 可以已过期，过期本身只能由 **current signed
 recovery policy** 对 exact old decision/security epoch/revocation state 显式裁决；revoked、compromised、below-minimum
-或 policy 未授权，以及 artifact 缺失/损坏/不 exact，都在 DB 零调用时返回
-`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。成功时必须返回完整 old `OwnedVerifiedDecision` 和
+或 policy 未授权，以及 artifact absent 或完整自洽但无法获 current authorization，都在 DB 零调用时返回
+`MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。这里“缺失”只指 registered path/object/receipt absent，或完整自洽 bytes 无法由
+current policy/signature/recovery capability 授权；若 registered stored object/header/receipt 已存在但 size/digest/
+canonical/closed-shape 不 exact，evidence layer 必须先分类为 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`，不得送 verifier 后降级
+为 recovery-required。成功时必须返回完整 old `OwnedVerifiedDecision` 和
 `RunnerProjectionBindings` 以及 current signed subject 产生的 outcome-independent opaque
 `VerifiedHistoricalRecoveryPolicy`，不得只恢复
 digest summary。
@@ -1294,12 +1301,16 @@ EvidenceSession.CurrentCandidate() -> OwnedCurrentCandidate
 EvidenceSession.ActiveGeneration() -> ActiveGeneration
 EvidenceSession.Journal() -> EvidenceJournal
 EvidenceSession.RecoverySnapshot() -> RecoverySnapshot | null
-EvidenceSession.ReserveAndActivateSuccessor(context)
+EvidenceSession.ReserveAndActivateSuccessor(
+  context,
+  sealed VerifiedLineageSupersessionAuthority,
+)
   -> (ActiveGeneration, RecoverySnapshot | null, error)
 EvidenceSession.Close(context) -> error
 
 EvidenceJournal.Replay(context) -> (JournalCursor, RecoverySnapshot | null, error)
-EvidenceJournal.AppendDurable(context, JournalCursor, EvidenceRecord) -> (AppendResult, error)
+EvidenceJournal.AppendDurable(context, JournalCursor, sealed OwnedEvidenceRecord)
+  -> (AppendResult, error)
 EvidenceJournal.Close(context) -> error
 
 VerifiedRuntimeArtifact = opaque runner-owned bounded bytes/reader
@@ -1347,6 +1358,9 @@ JournalCursor {
   segment_index: uint32
   next_sequence: uint64
   previous_record_digest: Digest | null
+  lineage_index_next_sequence: uint64
+  lineage_index_previous_record_digest: Digest
+  latest_checkpoint_record_digest: Digest | null
 }
 
 AppendResult {
@@ -1355,6 +1369,21 @@ AppendResult {
   candidate_sequence: uint64
   candidate_previous_record_digest: Digest | null
   candidate_record_digest: Digest
+  rotation_header_record_digest: Digest | null
+  rotation_header_checkpoint_record_digest: Digest | null
+  candidate_checkpoint_record_digest: Digest
+}
+
+OwnedEvidenceRecord = package-private sealed {
+  wire_record: EvidenceRecord
+  witness: OwnedEvidenceWitness
+  active_generation_identity: opaque
+  consumed: bool
+}
+
+OwnedEvidenceWitness = package-private non-serializable closed capability union {
+  owned_statement_intent | owned_intermediate |
+  owned_commit_intent | owned_attempt_terminal | owned_ambiguous_resolution
 }
 
 RecoverySnapshot = opaque {
@@ -1409,6 +1438,42 @@ package-private、non-serializable capability；`Open` 的 ancestor recovery 和
 caller-supplied policy/authority/verifier/artifact，也不能 lookup 另一个 verifier；因此无第二 verifier 或 loose
 injection path。
 
+impl-3 filesystem slice 必须直接使用第 5.4.1 节已冻结的 same-verifier recovery graph：current
+`OwnedVerifiedDecision` 持有唯一 recovery capability；already-owned historical `VerifiedDecisionRecoveryArtifact` 是由
+该 capability 送入同一个 `TrustVerifier.RecoverHistoricalDecision` 的输入，不是 recovery output，也不能在 recovery
+时第二次构造。该方法的 outputs 严格只有 old `OwnedVerifiedDecision`、old `RunnerProjectionBindings` 与
+`VerifiedHistoricalRecoveryPolicy`；package-private binder 随后才产出 `VerifiedRecoveryExecutionBindings` 和
+`VerifiedLineageSupersessionAuthority`。`RecoverHistoricalSupersession` 严格只产出
+`VerifiedHistoricalSupersessionReceipt`，不得重签发 artifact、decision、bindings、policy、execution bindings 或
+authority。filesystem package 只消费这些 opaque values，不能实现签名、policy、
+expiry/revocation 或 artifact verification 的第二套 verifier，也不能把 disk bytes、environment 或 test hook 升格成
+capability。磁盘 strict decode 只恢复 C3 wire DTO 与 typed `RecoverySnapshot`；它**绝不能**恢复、反序列化、伪造或缓存
+任一 verified/owned capability。重启后的 capability 必须再次由 current decision 的 same-verifier recovery-only path，
+结合全部 registered historical artifacts 与 replay-owned bodies 重新签发。
+
+`OwnedEvidenceRecord` 只能由 package-private binder 从 exact C3 `EvidenceRecord`、当前 active generation、signed
+StatementPlan/catalog inputs 和对应 non-serialized `OwnedEvidenceWitness` 构造；binder 必须完成第 5.4.7 节 external
+chain witness、record-kind/body、self/link digest、cursor/generation、limits 和 action authorization。它是 sealed、
+single-use value，不能由 public caller、wire decoder、JSON fixture 或 filesystem 实现直接构造。`AppendDurable` 只能
+检查并消费该 owned value，不得接受裸 `EvidenceRecord`；写盘时只序列化其中的 wire record/frame，witness、capability、
+connection/rollback/commit receipt 与 owned identity 永不落盘。append `unknown`、消费后重用、generation/cursor swap 或
+witness mismatch 都 fail closed；replay 可重建 typed facts，但不能重建 `OwnedEvidenceWitness` 或再次授权同一 DB action。
+`JournalHeader` 不属于 caller `OwnedEvidenceWitness` union：segment-0 header 只能由 filesystem 内部 package-private sealed
+activation-header binder 基于 exact generation/reservation/verified receipts 构造；rotation header 只能由内部 sealed
+rotation-header binder 基于 active generation、durable cursor、previous segment tail 与 fixed limits 构造。两者都不接受
+StatementPlan/caller record，不走 caller-facing `AppendDurable(OwnedEvidenceRecord)` seam；但 rotation header 的内部
+durability仍与 caller append 组成下文 composite operation。header wire bytes/self-digests 保持第 5.4.7 节 same-bits，
+filesystem 只拥有 construction authority，不能新增 header wire member。
+
+successor API 精确选择“显式 sealed 参数”而非在 filesystem 内派生：runner/evidence binder 先用
+`VerifiedRecoveryExecutionBindings + OwnedSupersessionEvidence` 选择唯一 outcome 并签发
+`VerifiedLineageSupersessionAuthority`；binder 消费 owned evidence，随后只把 sealed authority 交给
+`ReserveAndActivateSuccessor`。session 必须在 invalidation/reacquire 后从 durable bytes重建 old boundary，再与参数中的
+policy/execution/authority digest、old journal/schema/decision、outcome、continuation 和 planned successor 做 byte-exact
+cross-bind；authority 必须同 session、同 generation、同 replay tail 且 single-use，session-owned replay evidence 必须与
+authority 已绑定的 evidence digests exact。filesystem 不得重新选择
+outcome、调用 loose binder、接受 digest-only authority，或从 `GenerationSuperseded` 反向恢复 capability。
+
 若 lineage 已 ready，`Open` 可直接激活 current generation。无论哪条路径，session 都把验证后的 continuation 构造成
 immutable `LineageContinuationContext` 注入 active `EvidenceJournal` 后再完成 journal `Replay`，才暴露 journal 和
 opaque recovery snapshot。caller 不能伪造 cursor/snapshot/context/active generation。
@@ -1423,6 +1488,10 @@ decoder 共同约束的 opaque body/accessor；caller 不能构造、mutate 或�
 snapshot。各 typed body 的
 self/record/link digest 必须与并列 digest fields 及 journal tail exact。这样 crash reopen 后
 `reconcile_commit`/`begin_next_attempt` 可直接取得实际 intent/terminal/resolution typed input，而不是只靠 digest 猜测。
+这里的 `RecoverySnapshot` 是本节 closed state/action union 的 dedicated typed runtime value；不得复用、type alias、
+type assert 或扩展现有 generic `evidenceJournalSummary`（包括同名 private summary）来承载它。summary 可作为纯内部统计，
+但不能取得 owned typed bodies、cursor、next-action 或 recovery authority；所有 public/package seam 都只接收本节 typed
+`RecoverySnapshot`/`OwnedRecovered<T>`。
 
 `Open`/`ReserveAndActivateSuccessor` 按下文 `AcquireRootThenTryLineage` 临界区对 objects、journals、全部
 durable `GenerationReserved` 和 LineageIndexes 做 bounded no-follow scan，先计算 object+journal+index combined
@@ -1840,7 +1909,11 @@ no-follow root scan 必须枚举所有
 journal-shaped directories；任何未登记 journal、未知 generation 或 index 未覆盖的 journal dir 都是 corrupt，不能忽略。
 
 activation 已绑定 segment-0/header；此后每个主 journal record 必须先 durable，再 append 对应该 tail 的
-`GenerationCheckpoint`，checkpoint 未 durable 或 outcome unknown 时不得继续任何数据库进度。checkpoint 落后但 journal 是其
+`GenerationCheckpoint`，两步共同构成一次 `AppendDurable` composite operation。顺序只能是 journal frame
+write-complete → journal `fdatasync`/必要 directory `fsync` → byte-exact checkpoint index frame write-complete → index
+`fdatasync`；只有两步都 durable 才返回 `outcome=durable` 和新 cursor。journal 已 durable 但 checkpoint append/sync/
+response 失败或 unknown 时，**整个** `AppendDurable` 返回 `outcome=unknown`、`durable_cursor=null`，旧 cursor 与本次
+owned record 永久失效，caller 不得继续数据库进度、重试同 record 或猜测 checkpoint。checkpoint 落后但 journal 是其
 exact linear extension 时，`Open` 可在 DB 前 replay 并 append healing checkpoint。checkpoint 领先、指向不同 branch、
 tail/state/link mismatch 或 journal 比 checkpoint 短一律 corrupt。supersession 前必须先固定 old generation 的
 latest durable boundary：普通 generation 是 exact terminal/resolution 后的 `GenerationCheckpoint`；header-only
@@ -1873,20 +1946,27 @@ supersession_required|superseded_pending_reservation|orphan_generation|corrupt`�
 reserved state 与 `index_stale_prefix` 可按上述规则在 DB 前 deterministic heal；`supersession_required`
 表示旧 generation 尚未 durable supersede。若 current signed recovery policy 授权该 exact
 ancestor，`Open` 必须返回具有 `VerifiedRecoveryExecutionBindings` 的 ancestor session + owned snapshot，等待
-显式 `Runner.Run`；若不授权、不可重验或 artifact 缺失/损坏，才返回
+显式 `Runner.Run`；若 stored chain 完整自洽但 current policy 不授权、signature/recovery capability 不可形成或 artifact
+absent，才返回
 `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。`superseded_pending_reservation` 只表示 superseded 已 durable、其非 null
 planned reservation 尚未出现；planned B 不再要求仍是 current/unexpired decision。reopen 必须通过上述
 `RecoverHistoricalSupersession(current C, A→B, A artifact/boundary, B runtime+recovery artifacts/typed receipts)` 取得
 `VerifiedHistoricalSupersessionReceipt`，再且只能通过 `AcquireRootThenTryLineage` 重验 root quota、nested
 planned reservation/header digest、continuation/source linkage 和 receipt one-shot state，然后幂等 append byte-identical planned
-`GenerationReserved`，再走 header/activate。A/B artifact 缺失、C policy 未 exact 授权两者或重建
-binding/authority 不 exact 返回
+`GenerationReserved`，再走 header/activate。A/B artifact absent、C policy 未 exact 授权两者或完整自洽 inputs 无法重建
+current signature/recovery capability 返回
 `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`，quota 不足返回 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`；全部在 DB 前，
-不得重算或猜测 planned body。orphan/corrupt 返回 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。单 journal
+不得重算或猜测 planned body。已 registered A/B object/header/receipt 的 size/digest/canonical/shape mismatch、
+reconstructed binding/authority body 与 stored chain 不 exact、orphan/corrupt 返回
+`MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。单 journal
 `RecoverySnapshot` 不承担该 lineage-level state。
 
-`Open` 必须先完成上述 root scan，再扫描/replay 同 lineage index 登记的 **全部 generations、跨全部 schema-bundle
-digests**。因此 strict-prefix successor bundle、新 combined decision、expiry 或 epoch 都不能隐藏 ancestor bundle 的
+`Open` 必须先完成上述 root scan，再扫描/replay 同 lineage index 登记的 **全部 registered generations、跨全部
+registered schema-bundle digests**，并逐 generation 按 header 指向的 historical runtime object 与
+decision-recovery artifact 恢复其 exact schema bundle/catalog set；不能只扫描 current candidate 能识别的 heads，也不能
+用 current manifest 的 entry 列表过滤历史 registration。每个已登记 generation 的 header、artifact、schema bundle、
+catalog descriptors 和 index chain 都必须 strict decode/replay；unknown registration 是 corrupt，known registration 但
+current same-verifier policy 无法重新授权则 recovery-required。因此 strict-prefix successor bundle、新 combined decision、expiry 或 epoch 都不能隐藏 ancestor bundle 的
 dangling/ambiguous/unresolved state。若任一旧 generation 是 `dangling_statement_intent`、`dangling_intermediate`、
 `dangling_commit_intent`、`ambiguous_unresolved`，或存在尚未 exact 收敛的 ambiguous/pending recovery，缺少第 5.4.1 节
 exact current recovery policy、historical decision 或 `VerifiedRecoveryExecutionBindings` 时必须在 DB 前返回
@@ -1906,8 +1986,10 @@ strict-prefix successor candidate 仍有 remaining entries 时必须
 `session!=null,snapshot!=null,error=nil`，且 session accessor 返回同一 owned snapshot；失败时
 `session=null,snapshot=null,error!=nil`。可被 current policy 授权且
 完成 historical revalidation 的 ancestor 是成功返回，其 `ActiveGeneration.kind=ancestor_recovery` 并持有
-`VerifiedRecoveryExecutionBindings`；缺失/损坏 artifact、current policy 拒绝或 same-verifier recovery 失败时是
-`session=null,snapshot=null + MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。任何路径都永不允许 non-null session
+`VerifiedRecoveryExecutionBindings`；artifact absent、current policy 拒绝，或完整自洽 inputs 无法形成 same-verifier
+recovery capability 时是 `session=null,snapshot=null + MIGRATION_EVIDENCE_RECOVERY_REQUIRED`。已 registered
+artifact/header/receipt 的 stored size/digest/canonical/closed-shape mismatch 则是
+`session=null,snapshot=null + MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。任何路径都永不允许 non-null session
 与 non-null error 同时出现，也不得在 error 中泄露 artifact bytes 或 secret。
 
 `StatementIntent`/`CommitIntent` 是 closed object，frame
@@ -1984,17 +2066,31 @@ digest。每个 attempt 的 intent/intermediate/terminal linkage 还必须满足
 `AppendDurable` 必须先验证 typed record、canonical bytes、sequence/previous digest 和 limits，再以
 `uint64-big-endian length || canonical frame bytes` 完整追加。所有 frame/record/segment byte limits 都包含 8-byte
 length prefix、完整 frame headers 与 canonical record bytes，不存在 alignment/padding 豁免。只有 file `fdatasync`
-成功，且新建/rotate segment 所需 parent directory `fsync` 也成功后，才返回
-`AppendResult{outcome=durable,durable_cursor!=null}`；rotate 只允许发生在两个完整 durable frame 之间。
+成功、新建/rotate segment 所需 parent directory `fsync` 成功，且对应 `GenerationCheckpoint` 也按上文 composite
+protocol durable 后，才返回 `AppendResult{outcome=durable,durable_cursor!=null}`；rotate 只允许发生在两个完整
+durable composite operations 之间。
 一旦进入 append attempt，zero-byte write/error 也允许统一按 unknown；任一首字节已触碰但 short/partial write、write
-error、`fdatasync`、必要 directory `fsync` 或 response 失败，且 caller 未取得 complete+sync proof 时，都必须返回
+error、`fdatasync`、必要 directory `fsync`、checkpoint append/sync 或 response 失败，且 caller 未取得 journal+
+checkpoint complete+sync proof 时，都必须返回
 `AppendResult{outcome=unknown,durable_cursor=null}` 和 exact candidate sequence/previous/record digest，runner 立即停止
 数据库进度；旧 cursor 不再有 authority，只有下一次 strict replay 可决定 durable boundary。replay 若在该 sequence 找到 byte-identical complete candidate，仍必须对承载它的 segment 再次
-成功 `fdatasync`（以及该 segment 尚未证明 directory durability 时再次 `fsync` parent）后，才把它认定为 durable 并
+成功 `fdatasync`（以及该 segment 尚未证明 directory durability 时再次 `fsync` parent），并找到或 durable append
+byte-exact healing checkpoint 后，才把它认定为 durable 并
 幂等返回对应 cursor；不能只因 bytes 可读就承认。若只看到 final torn candidate，replay 只能截断到前一 durable
 boundary 并 `fdatasync`，然后由 `RecoverySnapshot` 重新计算 next action；不得声称缺失 bytes 已恢复、不得自动补写
 candidate。若该 sequence 已有不同 complete frame、candidate 出现在中间或 chain 不同，则
 `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`。同一 logical record 永远不能因 append response 丢失而获得第二 sequence。
+
+rotation 采用 exact worst-case preflight，且可能写入的 rotation header 本身也是 journal record。若当前 segment 放不下
+caller record，`AppendDurable` 必须先证明新 segment header frame + 其 checkpoint + caller frame + 其 checkpoint 全部在
+本 generation reservation 与 per-segment/per-index limits 内；任一不足时 zero write 返回
+`MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。durability 顺序固定为：创建/同步新 segment 与 directory entry → durable
+append continuation header frame → durable append该 header 的 checkpoint → durable append caller frame → durable
+append caller checkpoint。rotation header 或其 checkpoint 一旦已尝试，而 caller frame 尚未取得完整 composite durable
+proof，整个调用仍返回 `outcome=unknown,durable_cursor=null`；`rotation_header_record_digest`/
+`rotation_header_checkpoint_record_digest` 只作 candidate diagnosis，不是 cursor/authority。replay 必须保留已 durable
+header、healing/验证其 checkpoint，并从该 header 后的 next sequence 判定 caller record absent/torn/complete；caller
+不得把“rotation header durable、caller record absent”解释成 caller record durable，也不得在原 cursor 上补写。
 固定 inclusive maxima 不可由 env/CLI/DSN/GUC 覆盖：frame 1 MiB、segment 16 MiB、每 segment 4,096 records、每
 journal 16 segments；exact 等于 maximum 合法，任何 append 将使值超过 maximum 时必须在下一条 SQL 前返回
 `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`。
@@ -2021,6 +2117,79 @@ segments admission 超限，必须在 Connect/transaction/SQL 前返回
 或任何 sync；run 未达到 terminal 前不得回收，terminal 后也只能由显式、审计过的 maintenance 操作回收，不得由
 runner 自动 GC。
 
+whole-bundle reservation 的 exact inclusive formula 冻结为下式；所有 `MaxFramed*Bytes` 都是其 closed DTO
+record-kind maximum（已包含 8-byte prefix + full frame headers + canonical record），不使用 sample serialization 或
+平均值：
+
+```text
+attempts_total = sum(entry.max_attempts for every entry in verified schema bundle)
+statements_total = sum(entry.statement_count * entry.max_attempts for every entry)
+terminal_records = attempts_total
+resolution_records = attempts_total
+
+WorstCaseCallerSizes = concatenate, in verified entry/attempt/statement order:
+  for each attempt:
+    repeat entry.statement_count times:
+      [MaxFramedStatementIntentBytes, MaxFramedIntermediateBytes]
+    [MaxFramedCommitIntentBytes,
+     MaxFramedAttemptTerminalBytes,
+     MaxFramedAmbiguousResolutionBytes]
+
+segments = 1
+segment_records = 1
+segment_bytes = MaxFramedHeaderBytes
+reserved_records = 1
+reserved_journal_bytes = MaxFramedHeaderBytes
+for size in WorstCaseCallerSizes:
+  if segment_records + 1 > 4096 or segment_bytes + size > 16 MiB:
+    segments += 1
+    segment_records = 1
+    segment_bytes = MaxFramedHeaderBytes
+    reserved_records += 1
+    reserved_journal_bytes += MaxFramedHeaderBytes
+  segment_records += 1
+  segment_bytes += size
+  reserved_records += 1
+  reserved_journal_bytes += size
+reserved_segments = segments
+reserved_checkpoint_records = reserved_records - 1 /* segment-0 activation header excluded */
+new_index_header_records = 1 if lineage index is brand-new else 0
+new_index_header_bytes = MaxFramedLineageIndexHeaderBytes if lineage index is brand-new else 0
+reserved_index_records = new_index_header_records
+                       + 2 /* generation_reserved + generation_activated */
+                       + reserved_checkpoint_records
+                       + 1 /* possible generation_superseded */
+reserved_index_bytes = new_index_header_bytes
+                     + MaxFramedGenerationReservedBytes
+                     + MaxFramedGenerationActivatedBytes
+                     + MaxFramedGenerationCheckpointBytes * reserved_checkpoint_records
+                     + MaxFramedGenerationSupersededBytes
+reserved_bytes = reserved_journal_bytes + reserved_index_bytes
+```
+
+这是按 record-kind inclusive maxima 与 deterministic execution order 做的 exact worst-case first-fit simulation；rotation
+predicate 的 `>` 表示 exact 16 MiB/4,096 records 合法，只有下一 record 将超过时才 rotate。entry/statement/attempt
+count、每个乘加与最终值都用 checked integer arithmetic，overflow 等同 limit exceeded；`segments > 16` 也立即拒绝。
+`terminal_records` 为每个 attempt 保守一个，
+`resolution_records` 也为每个 attempt 保守一个，不因当前 failure path 看似不会 ambiguous 而删减。rotation header 按
+上述 simulation 插入；每个由 `AppendDurable` 写入的 journal record（含每个 rotation header）exact 对应一个
+checkpoint。segment-0 activation header 不经过 `AppendDurable`，由紧邻的 `GenerationActivated` 证明，故 checkpoint
+数 exact 等于 `reserved_records-1`。formula 的 index bytes 与 index count 必须计入 root
+admission；object bytes/count 另按 current runtime + recovery objects 的 exact verified size 加入 combined root quota，
+不得塞入 `reserved_bytes` 造成双计数。若该 worst case 本身超过 journal/index maxima，必须在 DB 前拒绝，不得依赖运行时
+“大概不会发生”的路径。
+brand-new lineage 的 `LineageIndexHeader` 还必须 exact 保守 `1` record 与
+`MaxFramedLineageIndexHeaderBytes`；existing strict-replayed lineage 两者为零。它进入 root combined admission 与
+`reserved_index_records/bytes` 计算，但不是 generation-owned journal capacity，所以不进入 header/
+`GenerationReserved.reserved_records`，也不改变 C3 wire。
+现有 C3/header/quota fields 的 same-bits 语义不变：`reserved_records` 是 journal records（含 rotation headers），
+`reserved_segments` 是 journal segments，`reserved_bytes` 是 journal + checkpoint/reserve/activate/possible-supersede index
+frames 的 combined durable byte reservation；`reserved_index_records/bytes` 只是计算中间量，不新增 wire member。
+三重 inclusive limit 必须同时成立且分别检查：generation `reserved_bytes <= 256 MiB` combined reservation；其中
+`reserved_journal_bytes <= 16 * 16 MiB = 256 MiB` journal component；写入目标 LineageIndex 后该独立 index file 的 actual
+durable bytes `<= 16 MiB`。combined 等于 256 MiB、journal component 等于 256 MiB、index file 等于 16 MiB 分别合法；
+任一超过即 pre-DB `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`，不能以另一上限尚有空间抵消。
+
 journal root 必须是预先配置、已存在的 absolute local path，缺失时拒绝而不是创建。root、`lineages/`、每个 lineage directory 和每个 generation journal
 directory 的所有 path component 必须用 no-follow component walk 验证为真实 directory、owner 是 runner UID、且
 group/world 均不可写，directory mode 至多 `0700`；directory 不适用 regular-file/link-count predicate。
@@ -2032,7 +2201,14 @@ no-follow open，验证为 owner 匹配、mode 至多 `0600`、link-count=1 的 
 创建新 segment 使用 `O_NOFOLLOW|O_CREAT|O_EXCL`，replay 已存在 segment 使用
 `O_NOFOLLOW` read/write open 并在读取任何 record 前验证 owner/mode/regular-file/link-count/header identity；不得用
 `O_EXCL` 伪装 replay。single-writer lock 必须在整个 replay/run/reconcile 期间独占，不能用进程内 mutex 冒充。
-journal/object root 只支持 allowlist 中明确审核过的 local mount/filesystem type，且启动时 required syscall probe 必须
+journal/object root 首期 production allowlist **仅限 Linux 上 local `ext4` 与 `xfs`**，且启动时必须同时通过 OS、mount
+source/type/options 与 required syscall probe；Linux 上其他 filesystem、bind 到 unknown backing mount、overlayfs、tmpfs、
+NFS、FUSE、object-backed mount，以及任何非 Linux OS 都是 unsupported，必须在 DB 前 fail closed。Darwin 只允许使用
+in-memory/fake filesystem 做 unit tests，不得运行 production `Open`，不得把 APFS 测试、普通重启或 fake fault 注入称为
+crash/power-loss durability evidence。生产实现预计需要 `golang.org/x/sys/unix` 提供 Linux syscall/constants；它只是
+**proposed dependency**，本 ADR 不声称其版本、SBOM/license/provenance 已审，完成 dependency review 是 filesystem slice
+Entry 条件，未审不得引入 production source 或更新 lock/module state。
+journal/object root 只支持上述 allowlist，且启动时 required syscall probe 必须
 成功：POSIX advisory lock 跨进程互斥、atomic no-replace publish
 （`renameat2(RENAME_NOREPLACE)` 或同目录 link/unlink 等价）、regular-file `fdatasync` 与 parent-directory `fsync`。
 unknown/unsupported mount type、NFS/FUSE/object-backed mount 或任一 syscall/lock/no-replace probe 失败都必须在 Connect
@@ -2450,6 +2626,58 @@ body mismatch，以及 `confirmed_abort_terminal|terminal_failure` 与 terminal/
 C3 Done 只要求 wire DTO、TS/Go same-bits、strict/self-digest validation 与 external witness fixtures。real filesystem
 locking、append/fdatasync、crash/power-loss、object publish 和 recovery session fault matrix 属 impl-3 runtime validation，
 不得用 C3 in-memory fixture 冒充。
+
+#### 5.4.8 impl-3 filesystem slice Entry、stable mapping 与 Done
+
+本 filesystem slice 是第 5.4.1–5.4.7 节 runtime substrate 的窄实现，不是 runner integration completion。
+Entry 必须全部满足：C3 wire/flat digest same-bits fixtures 已固定且本 slice不得改其 canonical bytes/digests；同一个
+`TrustVerifier` 的 historical recovery capability 与 binder API 已可由 package-private seam 消费；Linux `ext4`/`xfs`
+测试环境的 mount identity 与 power-loss harness 已固定；`golang.org/x/sys/unix` exact dependency review 已完成并明确
+批准 chosen version、license/SBOM、source provenance 与 syscall surface。当前 dependency graph 不含 `x/sys`，production
+引入会是 new direct dependency；只读评审推荐的 proposed stable minimum floor 是 `v0.44.0`，但在 module/lock 提交并由
+dependency review 批准 exact version 前，本 ADR 不声称已批准或已引入该版本。缺任一 Entry，production filesystem source 保持 absent/rejecting，不能用
+Darwin/APFS 或 fake 测试替代。
+
+filesystem API 的 stable error mapping 是 closed 且优先级固定：
+
+| observation                                                                                                      | stable result                                                        | cursor/session                                  | DB effect                    |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------- |
+| non-Linux、非 `ext4`/`xfs`、unknown backing mount、syscall/probe unsupported                                     | `MIGRATION_EVIDENCE_JOURNAL_FAILED`                                  | null/closed                                     | zero                         |
+| owner/mode/no-follow/link-count/lock/open/create/write/fdatasync/fsync/close failure，且未尝试 append            | `MIGRATION_EVIDENCE_JOURNAL_FAILED`                                  | null/closed                                     | zero                         |
+| any journal/index append or sync outcome not proven complete+durable                                             | `MIGRATION_EVIDENCE_JOURNAL_FAILED` + `AppendResult.outcome=unknown` | cursor invalid                                  | stop all further DB progress |
+| registered object/header/receipt 或 frame 的 size/digest/canonical/shape/sequence/chain/checkpoint mismatch      | `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`                                 | null/closed                                     | zero or stop                 |
+| fixed formula/runtime append would exceed any inclusive maximum                                                  | `MIGRATION_EVIDENCE_JOURNAL_LIMIT_EXCEEDED`                          | unchanged only if zero write; otherwise invalid | zero or stop                 |
+| stored chain 完整自洽，但 artifact absent 或 current policy/authorization/signature/recovery capability 不可形成 | `MIGRATION_EVIDENCE_RECOVERY_REQUIRED`                               | null/closed                                     | zero                         |
+| context cancellation before any mutation                                                                         | existing context stable code                                         | unchanged/closed                                | zero                         |
+| context cancellation after any filesystem append/publish mutation begins                                         | journal failed/unknown semantics；不得降级为 plain cancel            | invalid/closed                                  | stop                         |
+
+corrupt 优先于 recovery-required：已 registered stored object/header/receipt 存在却 size/digest/canonical/closed-shape
+不匹配，或 chain 自相矛盾，就是 corrupt；stored chain 完整自洽但 artifact absent，或 current policy/authorization/
+signature/recovery capability 无法形成，才是 recovery-required。limit 仅在 exact preflight 证明 zero write 时保留 cursor；一旦 write/publish/append 尝试，任何
+不能证明完整 durable outcome 的错误都采用 unknown，不得借 limit/context 分类复用旧 cursor。
+
+fault/Done matrix 至少必须逐 barrier 注入 before/short/after-write/before-sync/after-sync/response-lost/crash+reopen：
+
+| boundary                                                            | required Done proof                                                                                                               |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| runtime/recovery object temp write、publish、objects directory sync | no partial final accepted；typed receipts不可 swap；unknown reopen 全量重验                                                       |
+| root/index/generation directory 与 lock file creation               | no-follow、owner/mode、directory-entry barrier、cross-process lock order                                                          |
+| segment-0 header、reserved、activated                               | exact planned bytes/digests；reserved-no-header/header-unactivated deterministic heal；activated-missing corrupt                  |
+| ordinary frame journal write/sync                                   | SQL-before intent zero；complete/torn/different-candidate replay exact                                                            |
+| matching checkpoint index write/sync                                | journal-durable/checkpoint-unknown 整体 unknown；cursor invalid；DB 前 healing checkpoint                                         |
+| rotation segment create/header/checkpoint/caller/checkpoint         | exact preflight；header-only progress 不误报 caller durable；reopen 唯一 next sequence                                            |
+| torn final vs middle corruption                                     | only final incomplete frame truncatable；middle/complete mismatch corrupt                                                         |
+| quota/root concurrency                                              | whole-bundle exact formula、checked overflow、two-process no-overcommit、no auto-GC                                               |
+| same-verifier historical generation                                 | 全 registered generations/bundles scan；stored mismatch→corrupt，absent/unauthorized→recovery-required；disk decode 无 capability |
+| successor handoff                                                   | binder先消费owned evidence；FS用sealed authority与session replay digests cross-bind；A→B exact；one-shot/swap rejection           |
+| platform matrix                                                     | Linux `ext4` 与 `xfs` 分别 power-loss/restart；其他 Linux FS/mount 与非 Linux production pre-DB reject；Darwin 仅 fake/unit       |
+
+filesystem slice Done 只允许声明：owned append/sealed successor seams、Linux `ext4`/`xfs` filesystem registration、object/
+journal/index durability、typed replay/recovery snapshot、quota与上述 fault matrix 已本地验证并由 reviewer 签署。它明确
+**不包含** runner phase/order wiring、任何 `Connect`/SQL/ledger/`Commit`、production signature/trust-root、cloud run、
+PostgreSQL matrix、Gate closure、Beta/GA 或发布状态；这些 API 在本 slice test harness 中必须使用 fake/opaque inputs，
+runner/DB/signature/cloud/Gate 调用计数均为零。只有后续 runner integration slice 才能消费本 filesystem package；不得因
+filesystem Done 更新 catalog/runtime publication 或 Gate。
 
 ## 6. Statement intermediate state
 
