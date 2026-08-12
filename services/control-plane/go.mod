@@ -6,6 +6,7 @@ toolchain go1.26.5
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
+	golang.org/x/sys v0.44.0
 	golang.org/x/text v0.39.0
 )
 
