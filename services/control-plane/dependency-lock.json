@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "snapshot": {
-    "generated_at": "2026-08-12T06:20:48Z",
+    "generated_at": "2026-08-12T10:16:34Z",
     "module": "github.com/hxp0618/cloud-agents/services/control-plane",
     "go": "go1.26.5",
     "goos": "linux",
@@ -13,17 +13,17 @@
     "gosumdb": "sum.golang.org",
     "goprivate": "",
     "gonosumdb": "",
-    "source_commit": "ebcf94f803b05ddb56934c656d3d4e69e37cc970",
-    "source_commit_tree_oid": "65eb831f8def941814d4e4256466fc6407736314",
+    "source_commit": "5403ece2ef4d6903ef02fb8525f990c3c665c49a",
+    "source_commit_tree_oid": "bcc8e45ca59b8ebc0014834ebd204d2ae38299e1",
     "source_commit_tree_oid_algorithm": "sha1",
-    "control_plane_tree_oid": "a70c87c74100e4e22fa058394a6cb9052c8f2139",
+    "control_plane_tree_oid": "2be8cf17ea8e71863bae04b1589501a6467ce7b9",
     "control_plane_tree_oid_algorithm": "sha1",
-    "control_plane_tracked_manifest_sha256": "2b20336b07efd966f0b10d7dcab1be301417dc2cb56543e5c3700995333d49ff",
-    "control_plane_tracked_file_count": 136,
-    "control_plane_go_source_manifest_sha256": "6f9b0e86279d1e2a77cce71f85b4efe3e47ccfe505f94d8c7845309af454f199",
-    "control_plane_go_source_file_count": 72,
+    "control_plane_tracked_manifest_sha256": "55037541ffd0f41b22e42d2ad4c2bf00f01f935c55f3b01fb8811f8e6bbfb41b",
+    "control_plane_tracked_file_count": 144,
+    "control_plane_go_source_manifest_sha256": "22a41b466b6d181765b6b3203a36fda88430cae6362b82dfe1958cfbd2f7d21f",
+    "control_plane_go_source_file_count": 80,
     "source_tree_committed": true,
-    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source ebcf94f803b05ddb56934c656d3d4e69e37cc970; this four-file supply-chain refresh is derived after and excluded from that source commit identity"
+    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source 5403ece2ef4d6903ef02fb8525f990c3c665c49a; this three-file supply-chain refresh is derived after and excluded from that source commit identity"
   },
   "inputs": {
     "go_mod_sha256": "ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7",

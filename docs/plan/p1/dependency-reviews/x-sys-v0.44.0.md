@@ -1,12 +1,12 @@
 # P1 dependency implementation closure：golang.org/x/sys v0.44.0
 
 - Status：**APPROVED — dependency implementation closure only**
-- Scope：固定 source commit `ebcf94f803b05ddb56934c656d3d4e69e37cc970` 的
+- Scope：固定 source commit `5403ece2ef4d6903ef02fb8525f990c3c665c49a` 的
   `services/control-plane` source、module graph，以及 Linux/Darwin non-test import closure
 - Reviewed dependency：`golang.org/x/sys v0.44.0`
 - Accountable owner：hxp0618
 - Evidence owner：Codex P1 supply-chain worker
-- Review snapshot：2026-08-12T06:20:48Z
+- Review snapshot：2026-08-12T10:16:34Z
 - Toolchain：Go `1.26.5 darwin/arm64`，`GOWORK=off`，`GOTOOLCHAIN=local`，
   `GOFLAGS=-mod=readonly`
 - Prohibited：`replace`、fork、vendor patch、floating version、blank import、Darwin production fallback
@@ -30,18 +30,18 @@ power-loss/restart、runner/DB/cloud、RC/release Gate 仍然开放。
 
 | Evidence | Exact value |
 | --- | --- |
-| Source commit | `ebcf94f803b05ddb56934c656d3d4e69e37cc970` |
-| Repository tree OID（Git SHA-1） | `65eb831f8def941814d4e4256466fc6407736314` |
-| `services/control-plane` subtree OID（Git SHA-1） | `a70c87c74100e4e22fa058394a6cb9052c8f2139` |
-| 136-file tracked manifest SHA-256 | `2b20336b07efd966f0b10d7dcab1be301417dc2cb56543e5c3700995333d49ff` |
-| 72-file tracked Go-source manifest SHA-256 | `6f9b0e86279d1e2a77cce71f85b4efe3e47ccfe505f94d8c7845309af454f199` |
+| Source commit | `5403ece2ef4d6903ef02fb8525f990c3c665c49a` |
+| Repository tree OID（Git SHA-1） | `bcc8e45ca59b8ebc0014834ebd204d2ae38299e1` |
+| `services/control-plane` subtree OID（Git SHA-1） | `2be8cf17ea8e71863bae04b1589501a6467ce7b9` |
+| 144-file tracked manifest SHA-256 | `55037541ffd0f41b22e42d2ad4c2bf00f01f935c55f3b01fb8811f8e6bbfb41b` |
+| 80-file tracked Go-source manifest SHA-256 | `22a41b466b6d181765b6b3203a36fda88430cae6362b82dfe1958cfbd2f7d21f` |
 | `go.mod` SHA-256 | `ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7` |
 | `go.sum` SHA-256 | `8d46b65698d18e97869fa31da700c24f3bfbc8b091afefd5584b3aaa1824d977` |
 | sorted `go list -m all` SHA-256 | `0f98de7d6500cfc9bda9c5d76cb269b714e2cd31a18857b7433e33fe540e7793` |
 | sorted `go mod graph` SHA-256 | `28d53b4b26eb41e956644aeced541d33df787590a2e91c9fc81cb15973bf6416` |
 
-tracked/source manifests 直接从 exact commit 的 `git ls-tree` 机械计算。本记录、lock、SBOM、NOTICE 是该 source
-commit 之后的四个派生 refresh，不反向成为 source/import authority，也不伪称它们已经包含于 source commit。
+tracked/source manifests 直接从 exact commit 的 `git ls-tree` 机械计算。本记录、lock 与 SBOM 是该 source
+commit 之后的三个派生 refresh，不反向成为 source/import authority；NOTICE 的法律位未变化，因此保持 same-bits。
 
 ## Platform-specific production closure
 
@@ -100,8 +100,8 @@ identity 是 exact version、module `h1` 与 proxy zip digest。SumDB response �
 
 | Derived artifact | SHA-256 |
 | --- | --- |
-| `services/control-plane/dependency-lock.json` | `7343374d24f6600c3fd034d28c709f451eadfceb4fffeb98d4058dfa99a8c763` |
-| `services/control-plane/sbom.cdx.json` | `eeb2e043e92c369e6323ada8ff6d89bb84a3c770a5e651deec8acf05666eb73b` |
+| `services/control-plane/dependency-lock.json` | `359829c97e9f2d6cda10dbda6f3f42b32a15f48f6ef60f7a14070dec8d7ad2e4` |
+| `services/control-plane/sbom.cdx.json` | `f230db79a56514d23ddee6ae544a1d55f65d1345e9c00fe68330c5f26d39e319` |
 | `services/control-plane/THIRD_PARTY_NOTICES.md` | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
 
 ## Vulnerability snapshot
