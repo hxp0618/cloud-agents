@@ -1,28 +1,480 @@
 package migration
 
-// evidenceStructuralReplay is a package-private description of facts proved by
-// strict wire validation and the journal FSM. It is deliberately not sealed and
-// carries no authority: copying or constructing one cannot mint a recovery
-// snapshot, admission plan, content receipt, or external execution witness.
+// evidenceStructuralReplay contains only compact, ordinary facts. It is not a
+// witness and cannot mint admission, recovery, or execution authority.
 type evidenceStructuralReplay struct {
-	segments  [][]EvidenceFrame
-	frames    []EvidenceFrame
-	headers   []JournalHeader
-	intents   []StatementIntent
-	terminals []evidenceStructuralTerminal
+	firstFrame    EvidenceFrame
+	header        JournalHeader
+	records       uint64
+	segments      uint32
+	physicalBytes uint64
+	tailDigest    Digest
+	summary       evidenceJournalSummary
 }
 
-type evidenceStructuralTerminal struct {
-	frame  EvidenceFrame
-	header JournalHeader
-	state  evidenceAttemptState
+type evidenceStructuralObserver interface {
+	observeHeader(JournalHeader) error
+	observeIntent(StatementIntent) error
+	observeTerminal(AttemptTerminalState, evidenceCompactAttemptState, JournalHeader) error
 }
 
-// validateEvidenceChainStructure is the legacy logical wrapper for callers that
-// hold a flat frame chain. It groups at validated header boundaries, but that
-// inferred grouping is not physical inventory authority. Admission replay must
-// call validateEvidenceChainStructureSegments with one slice per inventoried
-// segment file.
+type evidenceCheckpointRequirement struct {
+	nextSequence  uint64
+	tailDigest    Digest
+	summaryDigest Digest
+}
+
+type evidenceMigrationStructuralState struct {
+	attempt uint32
+	state   evidenceCompactAttemptState
+	summary evidenceJournalSummary
+}
+
+// Only bounded predecessor facts survive a consume call. No wire frame or
+// variable-sized projection/control-plane payload is retained per migration.
+type evidenceCompactAttemptState struct {
+	lastIntent       *evidenceCompactIntent
+	lastIntermediate *evidenceCompactIntermediate
+	commit           *evidenceCompactCommit
+	terminal         *evidenceCompactTerminal
+	resolution       *evidenceCompactResolution
+}
+
+type evidenceCompactIntent struct {
+	recordDigest          Digest
+	statementIndex        uint32
+	statementSHA256       Digest
+	authorityBeforeDigest Digest
+	catalogBeforeDigest   Digest
+}
+
+type evidenceCompactIntermediate struct {
+	sequence                uint64
+	recordDigest            Digest
+	statementIndex          uint32
+	intermediateStateDigest Digest
+	preledgerCatalogDigest  *Digest
+}
+
+type evidenceCompactCommit struct {
+	sequence     uint64
+	recordDigest Digest
+}
+type evidenceCompactTerminal struct {
+	recordDigest, terminalDigest Digest
+	attempt                      uint32
+	outcome                      string
+	stableErrorCode              *string
+}
+type evidenceCompactResolution struct {
+	outcome                  string
+	unresolvedTerminalDigest Digest
+}
+
+// evidenceStructuralAccumulator consumes exactly one decoded physical segment
+// at a time. Callers may discard a segment immediately after endSegment.
+type evidenceStructuralAccumulator struct {
+	requirements []evidenceCheckpointRequirement
+	requirement  int
+	observer     evidenceStructuralObserver
+	headerErr    error
+	intentErr    error
+	terminalErr  error
+
+	started              bool
+	inSegment            bool
+	segmentRecords       uint64
+	segmentBytes         uint64
+	physicalBytes        uint64
+	records              uint64
+	segments             uint32
+	previous             *Digest
+	header               *JournalHeader
+	firstHeader          *JournalHeader
+	firstFrame           *EvidenceFrame
+	previousSegmentFinal *Digest
+	migrations           map[string]*evidenceMigrationStructuralState
+	summary              evidenceJournalSummary
+}
+
+func newEvidenceStructuralAccumulator(requirements []evidenceCheckpointRequirement, observer evidenceStructuralObserver) *evidenceStructuralAccumulator {
+	return &evidenceStructuralAccumulator{
+		requirements: requirements,
+		observer:     observer,
+		migrations:   make(map[string]*evidenceMigrationStructuralState),
+		summary:      evidenceJournalSummary{recoveryState: "brand_new"},
+	}
+}
+
+func (a *evidenceStructuralAccumulator) beginSegment() error {
+	if a.inSegment || a.segments >= maxEvidenceReservedSegments {
+		return invalidEvidence("chain", "physical segment count")
+	}
+	a.inSegment = true
+	a.segmentRecords, a.segmentBytes = 0, 0
+	return nil
+}
+
+func (a *evidenceStructuralAccumulator) consumeFrame(frame EvidenceFrame, framedBytes uint64) error {
+	if !a.inSegment {
+		return invalidEvidence("chain", "physical segment state")
+	}
+	canonical, err := canonicalContractKey(frame)
+	if err != nil {
+		return err
+	}
+	exact := uint64(len(canonical)) + 8
+	if framedBytes != exact {
+		return invalidEvidence("chain", "physical framed bytes")
+	}
+	if a.segmentBytes > ^uint64(0)-framedBytes || a.physicalBytes > ^uint64(0)-framedBytes {
+		return invalidEvidence("chain", "physical byte overflow")
+	}
+	if a.segmentRecords == 0 {
+		if frame.RecordKind != EvidenceRecordHeader {
+			return invalidEvidence("chain", "physical segment header")
+		}
+	} else if frame.RecordKind == EvidenceRecordHeader {
+		return invalidEvidence("chain", "middle physical segment header")
+	}
+	if err := frame.Validate(); err != nil {
+		return err
+	}
+	if frame.Sequence != a.records || !equalDigestPointer(frame.PreviousRecordDigest, a.previous) {
+		return invalidEvidence("chain", "sequence or previous")
+	}
+
+	if frame.RecordKind == EvidenceRecordHeader {
+		h := frame.Record.Header
+		if a.records == 0 {
+			if h.SegmentIndex != 0 {
+				return invalidEvidence("chain", "initial segment")
+			}
+			ownedHeader := cloneProjectionValue(*h)
+			a.firstHeader = &ownedHeader
+			ownedFrame := cloneProjectionValue(frame)
+			a.firstFrame = &ownedFrame
+		} else if a.header == nil || a.firstHeader == nil || h.SegmentIndex != a.header.SegmentIndex+1 || h.PreviousSegmentRecordDigest == nil || a.previousSegmentFinal == nil || *h.PreviousSegmentRecordDigest != *a.previousSegmentFinal || !sameJournalGeneration(*a.firstHeader, *h) {
+			return invalidEvidence("chain", "segment header")
+		}
+		owned := cloneProjectionValue(*h)
+		a.header = &owned
+		a.observeHeader(owned)
+	} else {
+		if a.header == nil {
+			return invalidEvidence("chain", "record before header")
+		}
+		if err := recordMatchesHeader(frame.Record, *a.header); err != nil {
+			return err
+		}
+		if err := a.consumeRecord(frame); err != nil {
+			return err
+		}
+	}
+
+	a.segmentRecords++
+	a.segmentBytes += framedBytes
+	a.physicalBytes += framedBytes
+	a.records++
+	digest := frame.RecordDigest
+	a.previous = &digest
+	a.previousSegmentFinal = &digest
+	a.started = true
+	if a.requirement < len(a.requirements) && a.records == a.requirements[a.requirement].nextSequence {
+		requirement := a.requirements[a.requirement]
+		if digest != requirement.tailDigest || evidenceJournalSummaryDigest(a.summary) != requirement.summaryDigest {
+			return invalidEvidence("lineage-chain", "checkpoint summary")
+		}
+		a.requirement++
+	}
+	return nil
+}
+
+func (a *evidenceStructuralAccumulator) endSegment() error {
+	if !a.inSegment || a.segmentRecords == 0 {
+		return invalidEvidence("chain", "physical segment header")
+	}
+	if validateEvidenceSegmentUsage(a.segmentRecords, a.segmentBytes) != nil {
+		return invalidEvidence("chain", "physical segment limit")
+	}
+	a.inSegment = false
+	a.segments++
+	return nil
+}
+
+func (a *evidenceStructuralAccumulator) finish() (*evidenceStructuralReplay, error) {
+	if a.inSegment || !a.started || a.firstHeader == nil || a.firstFrame == nil || a.segments == 0 {
+		return nil, invalidEvidence("chain", "empty")
+	}
+	if a.requirement != len(a.requirements) {
+		return nil, invalidEvidence("lineage-chain", "checkpoint tail")
+	}
+	if a.records > a.firstHeader.ReservedRecords || a.segments > a.firstHeader.ReservedSegments || a.physicalBytes > a.firstHeader.ReservedBytes {
+		return nil, invalidEvidence("chain", "observed journal exceeds reservation")
+	}
+	if a.headerErr != nil {
+		return nil, a.headerErr
+	}
+	if a.intentErr != nil {
+		return nil, a.intentErr
+	}
+	if a.terminalErr != nil {
+		return nil, a.terminalErr
+	}
+	return &evidenceStructuralReplay{
+		firstFrame:    cloneProjectionValue(*a.firstFrame),
+		header:        cloneProjectionValue(*a.firstHeader),
+		records:       a.records,
+		segments:      a.segments,
+		physicalBytes: a.physicalBytes,
+		tailDigest:    *a.previous,
+		summary:       cloneEvidenceJournalSummary(a.summary),
+	}, nil
+}
+
+func (a *evidenceStructuralAccumulator) observeHeader(header JournalHeader) {
+	if a.observer != nil && a.headerErr == nil {
+		a.headerErr = a.observer.observeHeader(cloneProjectionValue(header))
+	}
+}
+
+func (a *evidenceStructuralAccumulator) observeIntent(intent StatementIntent) {
+	if a.observer != nil && a.intentErr == nil {
+		a.intentErr = a.observer.observeIntent(cloneProjectionValue(intent))
+	}
+}
+
+func (a *evidenceStructuralAccumulator) observeTerminal(terminal AttemptTerminalState, state evidenceCompactAttemptState) {
+	if a.observer != nil && a.terminalErr == nil {
+		a.terminalErr = a.observer.observeTerminal(cloneProjectionValue(terminal), state, cloneProjectionValue(*a.header))
+	}
+}
+
+func (a *evidenceStructuralAccumulator) consumeRecord(frame EvidenceFrame) error {
+	key, migration, attempt, err := evidenceAttemptIdentity(frame.Record)
+	if err != nil {
+		return err
+	}
+	_ = key
+	migrationState := a.migrations[migration]
+	if migrationState == nil {
+		migrationState = &evidenceMigrationStructuralState{}
+		a.migrations[migration] = migrationState
+	}
+	if migrationState.attempt != 0 && attempt != migrationState.attempt {
+		if frame.RecordKind != EvidenceRecordStatementIntent || frame.Record.StatementIntent.StatementIndex != 0 || attempt != migrationState.attempt+1 || migrationState.state.terminal == nil || !compactPredecessorAllowsNextAttempt(*migrationState.state.terminal, migrationState.state.resolution) {
+			return invalidEvidence("chain", "attempt predecessor")
+		}
+		if frame.Record.StatementIntent.PreviousAttemptTerminalDigest == nil || *frame.Record.StatementIntent.PreviousAttemptTerminalDigest != migrationState.state.terminal.terminalDigest {
+			return invalidEvidence("chain", "attempt predecessor")
+		}
+		predecessor := migrationState.state.terminal.terminalDigest
+		migrationState.state = evidenceCompactAttemptState{}
+		migrationState.summary = evidenceJournalSummary{previousAttemptTerminalDigest: &predecessor}
+		migrationState.attempt = attempt
+	}
+	if migrationState.attempt == 0 {
+		migrationState.attempt = attempt
+	}
+	if attempt != migrationState.attempt {
+		return invalidEvidence("chain", "attempt predecessor")
+	}
+	state := &migrationState.state
+	switch frame.RecordKind {
+	case EvidenceRecordStatementIntent:
+		intent := frame.Record.StatementIntent
+		if state.terminal != nil || state.commit != nil {
+			return invalidEvidence("chain", "intent after closed boundary")
+		}
+		if state.lastIntent == nil {
+			if intent.StatementIndex != 0 {
+				return invalidEvidence("chain", "first statement index")
+			}
+			if attempt == 1 {
+				if intent.PreviousAttemptTerminalDigest != nil {
+					return invalidEvidence("chain", "first attempt")
+				}
+			} else if migrationState.summary.previousAttemptTerminalDigest == nil || intent.PreviousAttemptTerminalDigest == nil || *intent.PreviousAttemptTerminalDigest != *migrationState.summary.previousAttemptTerminalDigest {
+				return invalidEvidence("chain", "attempt predecessor")
+			}
+		} else if intent.StatementIndex != state.lastIntent.statementIndex+1 {
+			return invalidEvidence("chain", "statement index gap")
+		} else if state.lastIntermediate == nil || intent.PreviousIntermediateStateDigest == nil || *intent.PreviousIntermediateStateDigest != state.lastIntermediate.intermediateStateDigest {
+			return invalidEvidence("chain", "statement predecessor")
+		}
+		state.lastIntent = &evidenceCompactIntent{frame.RecordDigest, intent.StatementIndex, intent.StatementSHA256, projectionResultCompactDigest(intent.AuthorityBeforeResult), projectionResultCompactDigest(intent.CatalogBeforeResult)}
+		a.observeIntent(*intent)
+	case EvidenceRecordIntermediate:
+		intermediate := frame.Record.Intermediate
+		if state.lastIntent == nil || state.commit != nil || state.terminal != nil || state.lastIntermediate != nil && state.lastIntermediate.statementIndex == state.lastIntent.statementIndex {
+			return invalidEvidence("chain", "intermediate position")
+		}
+		intent := state.lastIntent
+		if intermediate.State.StatementIndex != intent.statementIndex || intermediate.State.StatementSHA256 != intent.statementSHA256 || projectionResultCompactDigest(intermediate.AuthorityBeforeResult) != intent.authorityBeforeDigest || projectionResultCompactDigest(intermediate.CatalogBeforeResult) != intent.catalogBeforeDigest {
+			return invalidEvidence("chain", "intermediate intent")
+		}
+		var catalog *Digest
+		if intermediate.PreledgerCatalogResult != nil {
+			digest := intermediate.PreledgerCatalogResult.Digest
+			catalog = &digest
+		}
+		state.lastIntermediate = &evidenceCompactIntermediate{frame.Sequence, frame.RecordDigest, intermediate.State.StatementIndex, intermediate.State.IntermediateStateDigest, catalog}
+	case EvidenceRecordCommitIntent:
+		commit := frame.Record.CommitIntent
+		if state.commit != nil || state.terminal != nil || state.lastIntermediate == nil {
+			return invalidEvidence("chain", "commit position")
+		}
+		if commit.LastIntermediateStateDigest != state.lastIntermediate.intermediateStateDigest {
+			return invalidEvidence("chain", "commit intermediate")
+		}
+		state.commit = &evidenceCompactCommit{frame.Sequence, frame.RecordDigest}
+	case EvidenceRecordAttemptTerminal:
+		terminal := frame.Record.AttemptTerminal
+		if state.terminal != nil || state.resolution != nil {
+			return invalidEvidence("chain", "second terminal")
+		}
+		if err := validateStructuralTerminalCompact(*terminal, frame, state); err != nil {
+			return err
+		}
+		state.terminal = &evidenceCompactTerminal{frame.RecordDigest, terminal.TerminalDigest, terminal.AttemptIndex, terminal.Outcome, cloneStringPointer(terminal.StableErrorCode)}
+		a.observeTerminal(*terminal, *state)
+	case EvidenceRecordAmbiguousResolution:
+		resolution := frame.Record.AmbiguousResolution
+		if state.terminal == nil || state.resolution != nil || a.records == 0 || a.previous == nil || state.terminal.recordDigest != *a.previous {
+			return invalidEvidence("chain", "resolution adjacency")
+		}
+		terminal := state.terminal
+		if terminal.outcome != "ambiguous_unresolved" || resolution.UnresolvedTerminalDigest != terminal.terminalDigest || terminal.stableErrorCode == nil || string(resolution.StableErrorCode) != *terminal.stableErrorCode {
+			return invalidEvidence("chain", "resolution terminal")
+		}
+		state.resolution = &evidenceCompactResolution{resolution.Outcome, resolution.UnresolvedTerminalDigest}
+	}
+	migrationState.summary = summarizeAttemptState(frame, state, migrationState.summary)
+	a.summary = cloneEvidenceJournalSummary(migrationState.summary)
+	if frame.RecordKind == EvidenceRecordAttemptTerminal || frame.RecordKind == EvidenceRecordAmbiguousResolution {
+		a.compactClosedAttempt(migrationState)
+	}
+	return nil
+}
+
+func (a *evidenceStructuralAccumulator) compactClosedAttempt(state *evidenceMigrationStructuralState) {
+	state.state.lastIntent = nil
+	state.state.lastIntermediate = nil
+	state.state.commit = nil
+}
+
+func summarizeAttemptState(tail EvidenceFrame, state *evidenceCompactAttemptState, prior evidenceJournalSummary) evidenceJournalSummary {
+	summary := evidenceJournalSummary{recoveryState: "brand_new"}
+	if state.lastIntent != nil {
+		summary.lastStatementIntentRecordDigest = digestPointer(state.lastIntent.recordDigest)
+	}
+	if state.lastIntermediate != nil {
+		summary.lastIntermediateEvidenceRecordDigest = digestPointer(state.lastIntermediate.recordDigest)
+		summary.lastIntermediateStateDigest = digestPointer(state.lastIntermediate.intermediateStateDigest)
+	}
+	if state.commit != nil {
+		summary.lastCommitIntentRecordDigest = digestPointer(state.commit.recordDigest)
+	}
+	// Closed attempts have discarded their large predecessor frames. Preserve
+	// their already-computed compact digest facts while resolving ambiguity.
+	if tail.RecordKind == EvidenceRecordAmbiguousResolution {
+		summary.lastStatementIntentRecordDigest = cloneDigestPointer(prior.lastStatementIntentRecordDigest)
+		summary.lastIntermediateEvidenceRecordDigest = cloneDigestPointer(prior.lastIntermediateEvidenceRecordDigest)
+		summary.lastIntermediateStateDigest = cloneDigestPointer(prior.lastIntermediateStateDigest)
+		summary.lastCommitIntentRecordDigest = cloneDigestPointer(prior.lastCommitIntentRecordDigest)
+	}
+	migration, attempt := structuralRecordAttempt(tail.Record)
+	summary.migrationID, summary.attemptIndex = &migration, &attempt
+	switch tail.RecordKind {
+	case EvidenceRecordAmbiguousResolution:
+		resolution := tail.Record.AmbiguousResolution
+		summary.lastResolutionDigest = digestPointer(resolution.ResolutionDigest)
+		summary.previousAttemptTerminalDigest = digestPointer(resolution.UnresolvedTerminalDigest)
+		switch resolution.Outcome {
+		case "resolved_committed":
+			summary.recoveryState = "completed"
+		case "resolved_divergent":
+			summary.recoveryState = "divergent"
+		default:
+			summary.recoveryState = "terminal"
+		}
+	case EvidenceRecordAttemptTerminal:
+		terminal := tail.Record.AttemptTerminal
+		summary.lastTerminalDigest = digestPointer(terminal.TerminalDigest)
+		summary.previousAttemptTerminalDigest = cloneDigestPointer(terminal.PreviousAttemptTerminalDigest)
+		switch terminal.Outcome {
+		case "committed", "ambiguous_reconciled_committed":
+			summary.recoveryState = "completed"
+		case "ambiguous_divergent":
+			summary.recoveryState = "divergent"
+		case "ambiguous_unresolved":
+			summary.recoveryState = "ambiguous_unresolved"
+		default:
+			summary.recoveryState = "terminal"
+		}
+	case EvidenceRecordCommitIntent:
+		summary.previousAttemptTerminalDigest = cloneDigestPointer(tail.Record.CommitIntent.PreviousAttemptTerminalDigest)
+		summary.recoveryState = "dangling_commit_intent"
+	case EvidenceRecordIntermediate:
+		summary.previousAttemptTerminalDigest = cloneDigestPointer(tail.Record.Intermediate.State.PreviousAttemptTerminalDigest)
+		summary.recoveryState = "dangling_intermediate"
+	case EvidenceRecordStatementIntent:
+		summary.previousAttemptTerminalDigest = cloneDigestPointer(tail.Record.StatementIntent.PreviousAttemptTerminalDigest)
+		summary.recoveryState = "dangling_statement_intent"
+	}
+	return summary
+}
+
+func cloneEvidenceJournalSummary(value evidenceJournalSummary) evidenceJournalSummary {
+	value.migrationID = cloneStringPointer(value.migrationID)
+	value.attemptIndex = cloneUint32Pointer(value.attemptIndex)
+	value.lastStatementIntentRecordDigest = cloneDigestPointer(value.lastStatementIntentRecordDigest)
+	value.lastIntermediateEvidenceRecordDigest = cloneDigestPointer(value.lastIntermediateEvidenceRecordDigest)
+	value.lastCommitIntentRecordDigest = cloneDigestPointer(value.lastCommitIntentRecordDigest)
+	value.lastTerminalDigest = cloneDigestPointer(value.lastTerminalDigest)
+	value.lastResolutionDigest = cloneDigestPointer(value.lastResolutionDigest)
+	value.previousAttemptTerminalDigest = cloneDigestPointer(value.previousAttemptTerminalDigest)
+	value.lastIntermediateStateDigest = cloneDigestPointer(value.lastIntermediateStateDigest)
+	return value
+}
+
+type evidenceJournalSummaryRecord struct {
+	RecoveryState                        string
+	MigrationID                          *string
+	AttemptIndex                         *uint32
+	LastStatementIntentRecordDigest      *Digest
+	LastIntermediateEvidenceRecordDigest *Digest
+	LastCommitIntentRecordDigest         *Digest
+	LastTerminalDigest                   *Digest
+	LastResolutionDigest                 *Digest
+	PreviousAttemptTerminalDigest        *Digest
+	LastIntermediateStateDigest          *Digest
+}
+
+func evidenceJournalSummaryDigest(value evidenceJournalSummary) Digest {
+	record := evidenceJournalSummaryRecord{value.recoveryState, value.migrationID, value.attemptIndex, value.lastStatementIntentRecordDigest, value.lastIntermediateEvidenceRecordDigest, value.lastCommitIntentRecordDigest, value.lastTerminalDigest, value.lastResolutionDigest, value.previousAttemptTerminalDigest, value.lastIntermediateStateDigest}
+	canonical, err := canonicalContractKey(record)
+	if err != nil {
+		return ""
+	}
+	return DigestBytes([]byte(canonical))
+}
+
+func projectionResultCompactDigest(value ProjectionResultEvidence) Digest {
+	canonical, err := canonicalContractKey(value)
+	if err != nil {
+		return ""
+	}
+	return DigestBytes([]byte(canonical))
+}
+
+func compactPredecessorAllowsNextAttempt(terminal evidenceCompactTerminal, resolution *evidenceCompactResolution) bool {
+	if terminal.outcome == "aborted_retryable" || terminal.outcome == "ambiguous_reconciled_pending" {
+		return true
+	}
+	return terminal.outcome == "ambiguous_unresolved" && resolution != nil && resolution.outcome == "resolved_pending" && resolution.unresolvedTerminalDigest == terminal.terminalDigest
+}
+
 func validateEvidenceChainStructure(frames []EvidenceFrame) (*evidenceStructuralReplay, error) {
 	if len(frames) == 0 {
 		return nil, invalidEvidence("chain", "empty")
@@ -36,186 +488,63 @@ func validateEvidenceChainStructure(frames []EvidenceFrame) (*evidenceStructural
 
 func logicalEvidenceSegments(frames []EvidenceFrame) ([][]EvidenceFrame, error) {
 	var segments [][]EvidenceFrame
+	start := -1
 	for index := range frames {
-		if frames[index].RecordKind == EvidenceRecordHeader {
-			segments = append(segments, nil)
+		if frames[index].RecordKind != EvidenceRecordHeader {
+			if start < 0 {
+				return nil, invalidEvidence("chain", "record before header")
+			}
+			continue
 		}
-		if len(segments) == 0 {
+		if start >= 0 {
+			segments = append(segments, frames[start:index])
+		}
+		start = index
+	}
+	if start < 0 {
+		if len(frames) != 0 {
 			return nil, invalidEvidence("chain", "record before header")
 		}
-		segments[len(segments)-1] = append(segments[len(segments)-1], cloneProjectionValue(frames[index]))
+		return nil, nil
 	}
+	segments = append(segments, frames[start:])
 	return segments, nil
 }
 
 func validateEvidenceChainStructureSegments(segments [][]EvidenceFrame) (*evidenceStructuralReplay, error) {
+	return validateEvidenceChainStructureSegmentsObserved(segments, nil, nil)
+}
+
+func validateEvidenceChainStructureSegmentsObserved(segments [][]EvidenceFrame, requirements []evidenceCheckpointRequirement, observer evidenceStructuralObserver) (*evidenceStructuralReplay, error) {
 	if len(segments) == 0 || len(segments) > int(maxEvidenceReservedSegments) {
 		return nil, invalidEvidence("chain", "physical segment count")
 	}
-	ownedSegments := cloneProjectionValue(segments)
-	var owned []EvidenceFrame
-	var physicalBytes uint64
-	for segmentIndex := range ownedSegments {
-		segment := ownedSegments[segmentIndex]
-		if len(segment) == 0 || segment[0].RecordKind != EvidenceRecordHeader {
-			return nil, invalidEvidence("chain", "physical segment header")
-		}
-		var segmentBytes uint64
-		for frameIndex := range segment {
-			if frameIndex != 0 && segment[frameIndex].RecordKind == EvidenceRecordHeader {
-				return nil, invalidEvidence("chain", "middle physical segment header")
-			}
-			canonical, err := canonicalContractKey(segment[frameIndex])
-			if err != nil {
-				return nil, err
-			}
-			frameBytes := uint64(len(canonical)) + 8
-			if segmentBytes > ^uint64(0)-frameBytes || physicalBytes > ^uint64(0)-frameBytes {
-				return nil, invalidEvidence("chain", "physical byte overflow")
-			}
-			segmentBytes += frameBytes
-			physicalBytes += frameBytes
-		}
-		if validateEvidenceSegmentUsage(uint64(len(segment)), segmentBytes) != nil {
-			return nil, invalidEvidence("chain", "physical segment limit")
-		}
-		owned = append(owned, segment...)
-	}
-	replay := &evidenceStructuralReplay{segments: ownedSegments, frames: owned}
-	var previous *Digest
-	var header *JournalHeader
-	var firstHeader *JournalHeader
-	var previousSegmentFinal *Digest
-	attempts := map[string]*evidenceAttemptState{}
-	seenIntents := map[string]bool{}
-	lastTerminal := map[string]*AttemptTerminalState{}
-	lastResolution := map[string]*AmbiguousResolutionState{}
-	for index := range owned {
-		frame := &owned[index]
-		if err := frame.Validate(); err != nil {
+	accumulator := newEvidenceStructuralAccumulator(requirements, observer)
+	for _, segment := range segments {
+		if err := accumulator.beginSegment(); err != nil {
 			return nil, err
 		}
-		if frame.Sequence != uint64(index) || !equalDigestPointer(frame.PreviousRecordDigest, previous) {
-			return nil, invalidEvidence("chain", "sequence or previous")
-		}
-		if frame.RecordKind == EvidenceRecordHeader {
-			h := frame.Record.Header
-			if index == 0 {
-				if h.SegmentIndex != 0 {
-					return nil, invalidEvidence("chain", "initial segment")
-				}
-				firstHeader = h
-			} else if header == nil || firstHeader == nil || h.SegmentIndex != header.SegmentIndex+1 || h.PreviousSegmentRecordDigest == nil || previousSegmentFinal == nil || *h.PreviousSegmentRecordDigest != *previousSegmentFinal || !sameJournalGeneration(*firstHeader, *h) {
-				return nil, invalidEvidence("chain", "segment header")
-			}
-			header = h
-			replay.headers = append(replay.headers, cloneProjectionValue(*h))
-		} else {
-			if header == nil {
-				return nil, invalidEvidence("chain", "record before header")
-			}
-			if err := recordMatchesHeader(frame.Record, *header); err != nil {
-				return nil, err
-			}
-			key, migration, attempt, err := evidenceAttemptIdentity(frame.Record)
+		for _, frame := range segment {
+			canonical, err := canonicalContractKey(frame)
 			if err != nil {
 				return nil, err
 			}
-			state := attempts[key]
-			if state == nil {
-				state = &evidenceAttemptState{}
-				attempts[key] = state
-			}
-			switch frame.RecordKind {
-			case EvidenceRecordStatementIntent:
-				intent := frame.Record.StatementIntent
-				if state.terminal != nil || state.commit != nil {
-					return nil, invalidEvidence("chain", "intent after closed boundary")
-				}
-				statementKey := evidenceStatementKey(migration, attempt, intent.StatementIndex)
-				if seenIntents[statementKey] {
-					return nil, invalidEvidence("chain", "duplicate statement intent")
-				}
-				seenIntents[statementKey] = true
-				if state.lastIntent == nil {
-					if intent.StatementIndex != 0 {
-						return nil, invalidEvidence("chain", "first statement index")
-					}
-				} else if intent.StatementIndex != state.lastIntent.Record.StatementIntent.StatementIndex+1 {
-					return nil, invalidEvidence("chain", "statement index gap")
-				}
-				if intent.StatementIndex == 0 {
-					predecessor := lastTerminal[migration]
-					if predecessor == nil {
-						if attempt != 1 || intent.PreviousAttemptTerminalDigest != nil {
-							return nil, invalidEvidence("chain", "first attempt")
-						}
-					} else if attempt != predecessor.AttemptIndex+1 || intent.PreviousAttemptTerminalDigest == nil || *intent.PreviousAttemptTerminalDigest != predecessor.TerminalDigest || !predecessorAllowsNextAttempt(*predecessor, lastResolution[migration]) {
-						return nil, invalidEvidence("chain", "attempt predecessor")
-					}
-				} else if state.lastIntermediate == nil || intent.PreviousIntermediateStateDigest == nil || *intent.PreviousIntermediateStateDigest != state.lastIntermediate.Record.Intermediate.State.IntermediateStateDigest {
-					return nil, invalidEvidence("chain", "statement predecessor")
-				}
-				state.lastIntent = frame
-				replay.intents = append(replay.intents, cloneProjectionValue(*intent))
-			case EvidenceRecordIntermediate:
-				intermediate := frame.Record.Intermediate
-				if state.lastIntent == nil || state.commit != nil || state.terminal != nil || state.lastIntermediate != nil && state.lastIntermediate.Record.Intermediate.State.StatementIndex == state.lastIntent.Record.StatementIntent.StatementIndex {
-					return nil, invalidEvidence("chain", "intermediate position")
-				}
-				intent := state.lastIntent.Record.StatementIntent
-				if intermediate.State.StatementIndex != intent.StatementIndex || intermediate.State.StatementSHA256 != intent.StatementSHA256 || !projectionEvidenceEqual(intermediate.AuthorityBeforeResult, intent.AuthorityBeforeResult) || !projectionEvidenceEqual(intermediate.CatalogBeforeResult, intent.CatalogBeforeResult) {
-					return nil, invalidEvidence("chain", "intermediate intent")
-				}
-				state.lastIntermediate = frame
-			case EvidenceRecordCommitIntent:
-				commit := frame.Record.CommitIntent
-				if state.commit != nil || state.terminal != nil || state.lastIntermediate == nil {
-					return nil, invalidEvidence("chain", "commit position")
-				}
-				if commit.LastIntermediateStateDigest != state.lastIntermediate.Record.Intermediate.State.IntermediateStateDigest {
-					return nil, invalidEvidence("chain", "commit intermediate")
-				}
-				state.commit = frame
-			case EvidenceRecordAttemptTerminal:
-				terminal := frame.Record.AttemptTerminal
-				if state.terminal != nil || state.resolution != nil {
-					return nil, invalidEvidence("chain", "second terminal")
-				}
-				if err := validateStructuralTerminal(*terminal, *frame, state); err != nil {
-					return nil, err
-				}
-				state.terminal = frame
-				lastTerminal[migration] = terminal
-				replay.terminals = append(replay.terminals, evidenceStructuralTerminal{cloneProjectionValue(*frame), cloneProjectionValue(*header), cloneEvidenceAttemptState(state)})
-			case EvidenceRecordAmbiguousResolution:
-				resolution := frame.Record.AmbiguousResolution
-				if state.terminal == nil || state.resolution != nil || index == 0 || owned[index-1].RecordKind != EvidenceRecordAttemptTerminal {
-					return nil, invalidEvidence("chain", "resolution adjacency")
-				}
-				terminal := state.terminal.Record.AttemptTerminal
-				if terminal.Outcome != "ambiguous_unresolved" || resolution.UnresolvedTerminalDigest != terminal.TerminalDigest || terminal.StableErrorCode == nil || string(resolution.StableErrorCode) != *terminal.StableErrorCode {
-					return nil, invalidEvidence("chain", "resolution terminal")
-				}
-				state.resolution = frame
-				lastResolution[migration] = resolution
+			if err := accumulator.consumeFrame(frame, uint64(len(canonical))+8); err != nil {
+				return nil, err
 			}
 		}
-		digest := frame.RecordDigest
-		previous = &digest
-		previousSegmentFinal = &digest
+		if err := accumulator.endSegment(); err != nil {
+			return nil, err
+		}
 	}
-	if firstHeader == nil || uint64(len(owned)) > firstHeader.ReservedRecords || uint32(len(ownedSegments)) > firstHeader.ReservedSegments || physicalBytes > firstHeader.ReservedBytes {
-		return nil, invalidEvidence("chain", "observed journal exceeds reservation")
-	}
-	return replay, nil
+	return accumulator.finish()
 }
 
-func validateStructuralTerminal(terminal AttemptTerminalState, frame EvidenceFrame, state *evidenceAttemptState) error {
+func validateStructuralTerminalCompact(terminal AttemptTerminalState, frame EvidenceFrame, state *evidenceCompactAttemptState) error {
 	if terminal.RetryProof != nil {
 		switch terminal.RetryProof.ProofKind {
 		case "commit_rejected_exact_predecessor":
-			if state.commit == nil || frame.Sequence != state.commit.Sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.RecordDigest {
+			if state.commit == nil || frame.Sequence != state.commit.sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.recordDigest {
 				return invalidEvidence("chain", "commit-rejected boundary")
 			}
 		case "projection_transient_exact_predecessor", "precommit_rollback_exact_predecessor", "precommit_connection_terminated_exact_predecessor":
@@ -228,60 +557,53 @@ func validateStructuralTerminal(terminal AttemptTerminalState, frame EvidenceFra
 	if !requiresCommit {
 		return nil
 	}
-	if state.lastIntermediate == nil || terminal.LastIntermediateStateDigest == nil || *terminal.LastIntermediateStateDigest != state.lastIntermediate.Record.Intermediate.State.IntermediateStateDigest {
+	if state.lastIntermediate == nil || terminal.LastIntermediateStateDigest == nil || *terminal.LastIntermediateStateDigest != state.lastIntermediate.intermediateStateDigest {
 		return invalidEvidence("chain", "terminal intermediate boundary")
 	}
-	if state.commit == nil || frame.Sequence != state.commit.Sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.RecordDigest || state.commit.Sequence != state.lastIntermediate.Sequence+1 || state.commit.PreviousRecordDigest == nil || *state.commit.PreviousRecordDigest != state.lastIntermediate.RecordDigest {
+	if state.commit == nil || frame.Sequence != state.commit.sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.recordDigest || state.commit.sequence != state.lastIntermediate.sequence+1 {
 		return invalidEvidence("chain", "terminal commit boundary")
 	}
 	return nil
 }
 
-func cloneEvidenceAttemptState(state *evidenceAttemptState) evidenceAttemptState {
-	clone := func(frame *EvidenceFrame) *EvidenceFrame {
-		if frame == nil {
-			return nil
-		}
-		owned := cloneProjectionValue(*frame)
-		return &owned
-	}
-	return evidenceAttemptState{clone(state.lastIntent), clone(state.lastIntermediate), clone(state.commit), clone(state.terminal), clone(state.resolution)}
-}
-
 type lineageStructuralReplay struct {
-	frames        []LineageIndexFrame
 	header        LineageIndexHeader
 	supersessions []lineageStructuralSupersession
 }
-
 type lineageStructuralSupersession struct {
 	frame      LineageIndexFrame
 	checkpoint *LineageIndexFrame
 }
 
-// actualSegment0 and journals describe the registered set referenced by this
-// one lineage. This validator requires every activated generation it observes;
-// the future ALL-history inventory adapter remains responsible for rejecting
-// extra/orphan registered journal views before it calls this package-private
-// seam.
-func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 map[Digest]EvidenceFrame, journals map[Digest][][]EvidenceFrame) (*lineageStructuralReplay, error) {
+type lineageJournalPlan struct {
+	expected          EvidenceFrame
+	requirements      []evidenceCheckpointRequirement
+	activated         bool
+	headerOnly        bool
+	active            bool
+	checkpointNext    uint64
+	supersededOutcome string
+}
+type lineageStructuralPlan struct {
+	header        LineageIndexHeader
+	journals      map[Digest]*lineageJournalPlan
+	finalReserved *GenerationReserved
+	results       map[Digest]*evidenceStructuralReplay
+	supersessions []lineageStructuralSupersession
+}
+
+func scanLineageChainStructure(frames []LineageIndexFrame) (*lineageStructuralPlan, error) {
 	if len(frames) == 0 || len(frames) > 16384 {
 		return nil, invalidEvidence("lineage-chain", "empty")
 	}
-	owned := cloneProjectionValue(frames)
-	replay := &lineageStructuralReplay{frames: owned}
-	journalReplays := make(map[Digest]*evidenceStructuralReplay, len(journals))
-	activatedJournals := make(map[Digest]bool)
+	plan := &lineageStructuralPlan{journals: make(map[Digest]*lineageJournalPlan), results: make(map[Digest]*evidenceStructuralReplay)}
 	var previous *Digest
 	var indexBytes uint64
 	var header *LineageIndexHeader
-	var reservedFrame *LineageIndexFrame
-	var activatedFrame *LineageIndexFrame
-	var checkpointFrame *LineageIndexFrame
-	var checkpointNextSequence uint64
-	var supersededFrame *LineageIndexFrame
-	for index := range owned {
-		frame := &owned[index]
+	var reservedFrame, activatedFrame, checkpointFrame, supersededFrame *LineageIndexFrame
+	var checkpointNext uint64
+	for index := range frames {
+		frame := &frames[index]
 		if err := frame.Validate(); err != nil {
 			return nil, err
 		}
@@ -291,6 +613,9 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 		canonical, err := canonicalContractKey(*frame)
 		if err != nil {
 			return nil, err
+		}
+		if indexBytes > ^uint64(0)-(uint64(len(canonical))+8) {
+			return nil, invalidEvidence("lineage-chain", "index byte limit")
 		}
 		indexBytes += uint64(len(canonical)) + 8
 		if validateLineageIndexUsage(uint64(index+1), indexBytes) != nil {
@@ -304,8 +629,9 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 			if err != nil || lineage != frame.Record.Header.ExecutionLineageDigest {
 				return nil, invalidEvidence("lineage-chain", "constituent identity")
 			}
-			header = frame.Record.Header
-			replay.header = cloneProjectionValue(*header)
+			owned := cloneProjectionValue(*frame.Record.Header)
+			header = &owned
+			plan.header = owned
 		} else {
 			if frame.RecordKind == LineageRecordHeader || header == nil {
 				return nil, invalidEvidence("lineage-chain", "second or missing header")
@@ -329,7 +655,9 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 				} else if reserved.Continuation != nil {
 					return nil, invalidEvidence("lineage-chain", "initial generation continuation")
 				}
-				reservedFrame, activatedFrame, checkpointFrame, supersededFrame, checkpointNextSequence = frame, nil, nil, nil, 0
+				reservedFrame, activatedFrame, checkpointFrame, supersededFrame, checkpointNext = frame, nil, nil, nil, 0
+				owned := cloneProjectionValue(*reserved)
+				plan.finalReserved = &owned
 			case LineageRecordGenerationActivated:
 				activated := frame.Record.Activated
 				if reservedFrame == nil || activatedFrame != nil {
@@ -339,22 +667,13 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 				if activated.GenerationReservedRecordDigest != reservedFrame.RecordDigest || activated.ExecutionLineageDigest != reserved.ExecutionLineageDigest || activated.JournalIdentityDigest != reserved.JournalIdentityDigest || activated.RunnerProjectionDecisionDigest != reserved.RunnerProjectionDecisionDigest || activated.SchemaBundleDigest != reserved.SchemaBundleDigest || activated.QuotaReservationDigest != reserved.QuotaReservationDigest || activated.Segment0HeaderDigest != reserved.ExpectedSegment0HeaderDigest {
 					return nil, invalidEvidence("lineage-chain", "activation binding")
 				}
-				actual, ok := actualSegment0[activated.JournalIdentityDigest]
-				expected := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, PreviousRecordDigest: nil, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &reserved.PlannedSegment0Header}, RecordDigest: reserved.ExpectedSegment0HeaderDigest}
-				if !ok || actual.Validate() != nil || actual.Sequence != 0 || actual.PreviousRecordDigest != nil || actual.RecordKind != EvidenceRecordHeader || actual.RecordDigest != activated.Segment0HeaderDigest || !canonicalEqual(actual, expected) {
-					return nil, invalidEvidence("lineage-chain", "actual header")
-				}
-				journal, ok := journals[activated.JournalIdentityDigest]
-				if !ok || activatedJournals[activated.JournalIdentityDigest] {
+				if _, exists := plan.journals[activated.JournalIdentityDigest]; exists {
 					return nil, invalidEvidence("lineage-chain", "registered journal missing")
 				}
-				journalReplay, err := validateEvidenceChainStructureSegments(journal)
-				if err != nil || len(journalReplay.frames) == 0 || !canonicalEqual(journalReplay.frames[0], actual) {
-					return nil, invalidEvidence("lineage-chain", "registered journal structure")
-				}
-				journalReplays[activated.JournalIdentityDigest] = journalReplay
-				activatedJournals[activated.JournalIdentityDigest] = true
+				expected := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &reserved.PlannedSegment0Header}, RecordDigest: reserved.ExpectedSegment0HeaderDigest}
+				plan.journals[activated.JournalIdentityDigest] = &lineageJournalPlan{expected: cloneProjectionValue(expected), activated: true}
 				activatedFrame = frame
+				plan.finalReserved = nil
 			case LineageRecordGenerationCheckpoint:
 				checkpoint := frame.Record.Checkpoint
 				if activatedFrame == nil {
@@ -371,92 +690,160 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 				} else if checkpoint.PreviousCheckpointRecordDigest == nil || *checkpoint.PreviousCheckpointRecordDigest != checkpointFrame.RecordDigest {
 					return nil, invalidEvidence("lineage-chain", "checkpoint previous")
 				}
-				journal := journalReplays[checkpoint.JournalIdentityDigest]
-				if journal == nil || checkpoint.JournalNextSequence == 0 || checkpoint.JournalNextSequence > uint64(len(journal.frames)) || checkpoint.JournalNextSequence <= checkpointNextSequence || journal.frames[checkpoint.JournalNextSequence-1].RecordDigest != checkpoint.JournalTailDigest {
+				if checkpoint.JournalNextSequence == 0 || checkpoint.JournalNextSequence <= checkpointNext {
 					return nil, invalidEvidence("lineage-chain", "checkpoint tail")
 				}
-				prefix, err := validateEvidenceChainStructure(journal.frames[:checkpoint.JournalNextSequence])
-				if err != nil {
-					return nil, invalidEvidence("lineage-chain", "checkpoint prefix")
+				journalPlan := plan.journals[checkpoint.JournalIdentityDigest]
+				if journalPlan == nil {
+					return nil, invalidEvidence("lineage-chain", "checkpoint identity")
 				}
-				summary, err := summarizeStructuralEvidenceJournal(prefix)
-				if err != nil || !checkpointSummaryEqual(*checkpoint, summary) {
-					return nil, invalidEvidence("lineage-chain", "checkpoint summary")
-				}
-				checkpointFrame = frame
-				checkpointNextSequence = checkpoint.JournalNextSequence
+				journalPlan.requirements = append(journalPlan.requirements, evidenceCheckpointRequirement{checkpoint.JournalNextSequence, checkpoint.JournalTailDigest, evidenceJournalSummaryDigest(summaryFromCheckpoint(*checkpoint))})
+				checkpointFrame, checkpointNext = frame, checkpoint.JournalNextSequence
 			case LineageRecordGenerationSuperseded:
 				superseded := frame.Record.Superseded
 				if reservedFrame == nil || activatedFrame == nil || superseded.ExecutionLineageDigest != header.ExecutionLineageDigest || superseded.OldJournalIdentityDigest != activatedFrame.Record.Activated.JournalIdentityDigest || superseded.OldRunnerProjectionDecisionDigest != activatedFrame.Record.Activated.RunnerProjectionDecisionDigest || superseded.OldSchemaBundleDigest != activatedFrame.Record.Activated.SchemaBundleDigest {
 					return nil, invalidEvidence("lineage-chain", "superseded generation identity")
 				}
 				if superseded.Outcome == "activated_no_migration_progress" {
-					journal := journalReplays[superseded.OldJournalIdentityDigest]
-					if checkpointFrame != nil || journal == nil || len(journal.frames) != 1 || superseded.OldActivationRecordDigest == nil || *superseded.OldActivationRecordDigest != activatedFrame.RecordDigest || superseded.OldInitialJournalTailDigest == nil || *superseded.OldInitialJournalTailDigest != activatedFrame.Record.Activated.InitialJournalTailDigest {
+					if checkpointFrame != nil || superseded.OldActivationRecordDigest == nil || *superseded.OldActivationRecordDigest != activatedFrame.RecordDigest || superseded.OldInitialJournalTailDigest == nil || *superseded.OldInitialJournalTailDigest != activatedFrame.Record.Activated.InitialJournalTailDigest {
 						return nil, invalidEvidence("lineage-chain", "header boundary")
 					}
-				} else if checkpointFrame == nil || superseded.OldCheckpointRecordDigest == nil || *superseded.OldCheckpointRecordDigest != checkpointFrame.RecordDigest || checkpointFrame.Record.Checkpoint.JournalNextSequence != uint64(len(journalReplays[superseded.OldJournalIdentityDigest].frames)) {
+				} else if checkpointFrame == nil || superseded.OldCheckpointRecordDigest == nil || *superseded.OldCheckpointRecordDigest != checkpointFrame.RecordDigest {
 					return nil, invalidEvidence("lineage-chain", "checkpoint boundary")
 				}
 				if err := validateStructuralSupersessionContinuation(*superseded, *reservedFrame.Record.Reserved, checkpointFrame); err != nil {
 					return nil, err
 				}
-				replay.supersessions = append(replay.supersessions, lineageStructuralSupersession{cloneProjectionValue(*frame), cloneLineageFrame(checkpointFrame)})
+				journalPlan := plan.journals[superseded.OldJournalIdentityDigest]
+				journalPlan.supersededOutcome = superseded.Outcome
+				journalPlan.checkpointNext = checkpointNext
+				plan.supersessions = append(plan.supersessions, lineageStructuralSupersession{cloneProjectionValue(*frame), cloneLineageFrame(checkpointFrame)})
 				supersededFrame = frame
 			}
 		}
 		digest := frame.RecordDigest
 		previous = &digest
 	}
-	registeredJournals := make(map[Digest]bool, len(activatedJournals)+1)
-	for digest := range activatedJournals {
-		registeredJournals[digest] = true
+	if activatedFrame != nil && supersededFrame == nil {
+		journalPlan := plan.journals[activatedFrame.Record.Activated.JournalIdentityDigest]
+		journalPlan.active = true
+		journalPlan.checkpointNext = checkpointNext
 	}
-	if reservedFrame != nil && activatedFrame == nil {
-		reserved := reservedFrame.Record.Reserved
-		journal, journalPresent := journals[reserved.JournalIdentityDigest]
-		actual, actualPresent := actualSegment0[reserved.JournalIdentityDigest]
+	return plan, nil
+}
+
+func summaryFromCheckpoint(c GenerationCheckpoint) evidenceJournalSummary {
+	return evidenceJournalSummary{c.RecoveryState, cloneStringPointer(c.MigrationID), cloneUint32Pointer(c.AttemptIndex), cloneDigestPointer(c.LastStatementIntentRecordDigest), cloneDigestPointer(c.LastIntermediateEvidenceRecordDigest), cloneDigestPointer(c.LastCommitIntentRecordDigest), cloneDigestPointer(c.LastTerminalDigest), cloneDigestPointer(c.LastResolutionDigest), cloneDigestPointer(c.PreviousAttemptTerminalDigest), cloneDigestPointer(c.LastIntermediateStateDigest)}
+}
+
+func (p *lineageStructuralPlan) journalRequirements(id Digest) ([]evidenceCheckpointRequirement, bool) {
+	if journal := p.journals[id]; journal != nil {
+		return journal.requirements, true
+	}
+	if p.finalReserved != nil && p.finalReserved.JournalIdentityDigest == id {
+		return nil, true
+	}
+	return nil, false
+}
+
+func (p *lineageStructuralPlan) acceptJournal(id Digest, replay *evidenceStructuralReplay) error {
+	if replay == nil {
+		return invalidEvidence("lineage-chain", "registered journal structure")
+	}
+	journal := p.journals[id]
+	if journal == nil {
+		if p.finalReserved == nil || p.finalReserved.JournalIdentityDigest != id {
+			return invalidEvidence("lineage-chain", "orphan registered journal")
+		}
+		expected := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &p.finalReserved.PlannedSegment0Header}, RecordDigest: p.finalReserved.ExpectedSegment0HeaderDigest}
+		if replay.records != 1 || replay.segments != 1 || !canonicalEqual(replay.firstFrame, expected) {
+			return invalidEvidence("lineage-chain", "reserved header registration")
+		}
+	} else if !canonicalEqual(replay.firstFrame, journal.expected) {
+		return invalidEvidence("lineage-chain", "registered journal structure")
+	}
+	if p.results[id] != nil {
+		return invalidEvidence("lineage-chain", "registered journal missing")
+	}
+	p.results[id] = replay
+	return nil
+}
+
+func (p *lineageStructuralPlan) finish(actual map[Digest]EvidenceFrame, journalIDs map[Digest]bool) (*lineageStructuralReplay, error) {
+	expected := make(map[Digest]bool, len(p.journals)+1)
+	for id, journal := range p.journals {
+		replay := p.results[id]
+		if replay == nil {
+			return nil, invalidEvidence("lineage-chain", "registered journal missing")
+		}
+		if journal.supersededOutcome == "activated_no_migration_progress" && replay.records != 1 {
+			return nil, invalidEvidence("lineage-chain", "header boundary")
+		}
+		if journal.supersededOutcome != "" && journal.supersededOutcome != "activated_no_migration_progress" && replay.records != journal.checkpointNext {
+			return nil, invalidEvidence("lineage-chain", "checkpoint boundary")
+		}
+		if journal.active {
+			if journal.checkpointNext == 0 {
+				if replay.records > 2 {
+					return nil, invalidEvidence("lineage-chain", "active journal without checkpoint")
+				}
+			} else if replay.records < journal.checkpointNext || replay.records > journal.checkpointNext+1 {
+				return nil, invalidEvidence("lineage-chain", "active journal checkpoint lag")
+			}
+		}
+		expected[id] = true
+	}
+	if p.finalReserved != nil {
+		id := p.finalReserved.JournalIdentityDigest
+		_, journalPresent := p.results[id]
+		_, actualPresent := actual[id]
 		if journalPresent != actualPresent {
 			return nil, invalidEvidence("lineage-chain", "reserved header registration split")
 		}
 		if journalPresent {
-			expected := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, PreviousRecordDigest: nil, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &reserved.PlannedSegment0Header}, RecordDigest: reserved.ExpectedSegment0HeaderDigest}
-			if len(journal) != 1 || len(journal[0]) != 1 || actual.Validate() != nil || !canonicalEqual(journal[0][0], actual) || !canonicalEqual(actual, expected) {
-				return nil, invalidEvidence("lineage-chain", "reserved header registration")
-			}
-			registeredJournals[reserved.JournalIdentityDigest] = true
+			expected[id] = true
 		}
 	}
-	if activatedFrame != nil && supersededFrame == nil {
-		journal := journalReplays[activatedFrame.Record.Activated.JournalIdentityDigest]
-		if journal == nil {
-			return nil, invalidEvidence("lineage-chain", "active journal missing")
-		}
-		// Historical checkpoint intervals remain sparse for the C3 wire format.
-		// Reopening the one active generation is narrower: durable evidence may
-		// contain at most one linear candidate beyond its latest checkpoint.
-		if checkpointFrame == nil {
-			if len(journal.frames) > 2 {
-				return nil, invalidEvidence("lineage-chain", "active journal without checkpoint")
-			}
-		} else if uint64(len(journal.frames)) < checkpointNextSequence || uint64(len(journal.frames)) > checkpointNextSequence+1 {
-			return nil, invalidEvidence("lineage-chain", "active journal checkpoint lag")
-		}
-	}
-	if len(registeredJournals) != len(journals) || len(registeredJournals) != len(actualSegment0) {
+	if len(expected) != len(journalIDs) || len(expected) != len(actual) {
 		return nil, invalidEvidence("lineage-chain", "registered journal cardinality")
 	}
-	for digest := range journals {
-		if !registeredJournals[digest] {
+	for id := range expected {
+		if !journalIDs[id] {
+			return nil, invalidEvidence("lineage-chain", "registered journal missing")
+		}
+		actualFrame, ok := actual[id]
+		if !ok || actualFrame.Validate() != nil || !canonicalEqual(actualFrame, p.results[id].firstFrame) {
+			return nil, invalidEvidence("lineage-chain", "actual header")
+		}
+	}
+	supersessions := make([]lineageStructuralSupersession, len(p.supersessions))
+	for index := range p.supersessions {
+		supersessions[index] = lineageStructuralSupersession{cloneProjectionValue(p.supersessions[index].frame), cloneLineageFrame(p.supersessions[index].checkpoint)}
+	}
+	return &lineageStructuralReplay{cloneProjectionValue(p.header), supersessions}, nil
+}
+
+func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 map[Digest]EvidenceFrame, journals map[Digest][][]EvidenceFrame) (*lineageStructuralReplay, error) {
+	plan, err := scanLineageChainStructure(frames)
+	if err != nil {
+		return nil, err
+	}
+	journalIDs := make(map[Digest]bool, len(journals))
+	for id, segments := range journals {
+		requirements, ok := plan.journalRequirements(id)
+		if !ok {
 			return nil, invalidEvidence("lineage-chain", "orphan registered journal")
 		}
-	}
-	for digest := range actualSegment0 {
-		if !registeredJournals[digest] {
-			return nil, invalidEvidence("lineage-chain", "orphan segment zero")
+		replay, err := validateEvidenceChainStructureSegmentsObserved(segments, requirements, nil)
+		if err != nil {
+			return nil, invalidEvidence("lineage-chain", "registered journal structure")
 		}
+		if err := plan.acceptJournal(id, replay); err != nil {
+			return nil, err
+		}
+		journalIDs[id] = true
 	}
-	return replay, nil
+	return plan.finish(actualSegment0, journalIDs)
 }
 
 func validateStructuralSupersessionContinuation(superseded GenerationSuperseded, oldReserved GenerationReserved, checkpointFrame *LineageIndexFrame) error {

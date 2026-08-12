@@ -1,12 +1,136 @@
 package migration
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"testing"
 )
+
+type structuralObserverProbe struct {
+	headerCalls int
+	headerErrAt int
+	headerErr   error
+	intentErr   error
+	terminalErr error
+}
+
+func (p *structuralObserverProbe) observeHeader(JournalHeader) error {
+	p.headerCalls++
+	if p.headerCalls == p.headerErrAt {
+		return p.headerErr
+	}
+	return nil
+}
+func (p *structuralObserverProbe) observeIntent(StatementIntent) error { return p.intentErr }
+func (p *structuralObserverProbe) observeTerminal(AttemptTerminalState, evidenceCompactAttemptState, JournalHeader) error {
+	return p.terminalErr
+}
+
+func TestStructuralObserverErrorPriorityAndStructuralDominance(t *testing.T) {
+	t.Parallel()
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, document["frames"])
+	headerErr, intentErr, terminalErr := errors.New("header"), errors.New("intent"), errors.New("terminal")
+
+	all := &structuralObserverProbe{headerErrAt: 1, headerErr: headerErr, intentErr: intentErr, terminalErr: terminalErr}
+	if _, err := validateEvidenceChainStructureSegmentsObserved([][]EvidenceFrame{frames}, nil, all); !errors.Is(err, headerErr) {
+		t.Fatalf("header category did not dominate: %v", err)
+	}
+
+	corrupt := cloneProjectionValue(frames)
+	corrupt[len(corrupt)-1].Sequence++
+	late := &structuralObserverProbe{intentErr: intentErr, terminalErr: terminalErr}
+	if _, err := validateEvidenceChainStructureSegmentsObserved([][]EvidenceFrame{corrupt}, nil, late); err == nil || errors.Is(err, intentErr) || errors.Is(err, terminalErr) {
+		t.Fatalf("observer error masked structural corruption: %v", err)
+	}
+
+	// A header error discovered in a later physical segment must still beat an
+	// earlier intent error, matching the legacy headers->intents->terminals pass.
+	rotated := cloneProjectionValue(frames)
+	header := *rotated[0].Record.Header
+	header.ReservedSegments = 2
+	header.ReservedRecords++
+	header.ReservedBytes += 65536
+	rotated[0].Record.Header = &header
+	redigestEvidenceFrames(t, rotated)
+	rotation := header
+	rotation.SegmentIndex = 1
+	rotation.PreviousSegmentRecordDigest = digestPointer(rotated[len(rotated)-1].RecordDigest)
+	rotationFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: uint64(len(rotated)), PreviousRecordDigest: digestPointer(rotated[len(rotated)-1].RecordDigest), RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &rotation}}
+	rotationFrame.RecordDigest, _ = rotationFrame.ComputeDigest()
+	lateHeader := &structuralObserverProbe{headerErrAt: 2, headerErr: headerErr, intentErr: intentErr}
+	if _, err := validateEvidenceChainStructureSegmentsObserved([][]EvidenceFrame{rotated, {rotationFrame}}, nil, lateHeader); !errors.Is(err, headerErr) {
+		t.Fatalf("late header category did not dominate earlier intent: %v", err)
+	}
+}
+
+func TestStructuralStreamingStateContainsNoFrameCollections(t *testing.T) {
+	t.Parallel()
+	for _, root := range []reflect.Type{
+		reflect.TypeOf(evidenceStructuralReplay{}),
+		reflect.TypeOf(evidenceStructuralAccumulator{}),
+		reflect.TypeOf(evidenceMigrationStructuralState{}),
+		reflect.TypeOf(lineageStructuralPlan{}),
+	} {
+		var walk func(reflect.Type, map[reflect.Type]bool)
+		walk = func(value reflect.Type, seen map[reflect.Type]bool) {
+			if seen[value] {
+				return
+			}
+			seen[value] = true
+			switch value.Kind() {
+			case reflect.Pointer:
+				walk(value.Elem(), seen)
+			case reflect.Slice, reflect.Array:
+				if value.Elem() == reflect.TypeOf(EvidenceFrame{}) {
+					t.Fatalf("%v retains EvidenceFrame collection", root)
+				}
+				walk(value.Elem(), seen)
+			case reflect.Map:
+				if value.Elem() == reflect.TypeOf(EvidenceFrame{}) {
+					t.Fatalf("%v retains EvidenceFrame map", root)
+				}
+				walk(value.Elem(), seen)
+			case reflect.Struct:
+				for index := 0; index < value.NumField(); index++ {
+					walk(value.Field(index).Type, seen)
+				}
+			}
+		}
+		walk(root, map[reflect.Type]bool{})
+	}
+}
+
+func TestStructuralStreamingHeaderOnlySummaryAndHighWater(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	header := decodeOneEvidenceFrame(t, fixture["journal_header_frame"])
+	canonical, err := canonicalContractKey(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accumulator := newEvidenceStructuralAccumulator([]evidenceCheckpointRequirement{{1, header.RecordDigest, evidenceJournalSummaryDigest(evidenceJournalSummary{recoveryState: "brand_new"})}}, nil)
+	if err := accumulator.beginSegment(); err != nil {
+		t.Fatal(err)
+	}
+	if err := accumulator.consumeFrame(header, uint64(len(canonical))+8); err != nil {
+		t.Fatal(err)
+	}
+	if err := accumulator.endSegment(); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := accumulator.finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.summary.recoveryState != "brand_new" {
+		t.Fatalf("header-only summary=%q", replay.summary.recoveryState)
+	}
+}
 
 func TestStructuralEvidenceReplayDoesNotRequireAppendTimeWitnesses(t *testing.T) {
 	t.Parallel()
@@ -294,7 +418,7 @@ func TestStructuralEvidenceReplayOwnsInputWithoutMintingAuthority(t *testing.T) 
 		t.Fatal(err)
 	}
 	frames[0].Record.Header.SchemaBundleDigest = projectionTestDigest
-	if replay.frames[0].Record.Header.SchemaBundleDigest == projectionTestDigest {
+	if replay.firstFrame.Record.Header.SchemaBundleDigest == projectionTestDigest {
 		t.Fatal("structural replay aliased caller frames")
 	}
 	entries, err := os.ReadDir(".")
@@ -302,10 +426,13 @@ func TestStructuralEvidenceReplayOwnsInputWithoutMintingAuthority(t *testing.T) 
 		t.Fatal(err)
 	}
 	allowed := map[string]bool{
-		"summarizeStructuralEvidenceJournal":     true,
-		"validateEvidenceChainStructure":         true,
-		"validateEvidenceChainStructureSegments": true,
-		"validateLineageChainStructure":          true,
+		"acceptJournal":                                  true,
+		"finish":                                         true,
+		"summarizeStructuralEvidenceJournal":             true,
+		"validateEvidenceChainStructure":                 true,
+		"validateEvidenceChainStructureSegments":         true,
+		"validateEvidenceChainStructureSegmentsObserved": true,
+		"validateLineageChainStructure":                  true,
 	}
 	containsTranscript := func(fields *ast.FieldList) bool {
 		found := false

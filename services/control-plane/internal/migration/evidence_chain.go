@@ -109,36 +109,42 @@ type evidenceAttemptState struct {
 }
 
 func validateEvidenceChainWithWitness(frames []EvidenceFrame, witness verifiedEvidenceChainWitness) error {
-	replay, err := validateEvidenceChainStructure(frames)
+	if len(frames) == 0 {
+		return invalidEvidence("chain", "empty")
+	}
+	segments, err := logicalEvidenceSegments(frames)
 	if err != nil {
 		return err
 	}
-	for _, header := range replay.headers {
-		if !receiptMatches(witness.runtimeReceipt, "runtime", header.OuterArtifactDigest, header.OuterArtifactSizeBytes) || !receiptMatches(witness.recoveryReceipt, "decision_recovery", header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) {
-			return invalidEvidence("chain", "content receipt")
-		}
-	}
-	for _, intent := range replay.intents {
-		key := evidenceStatementKey(intent.MigrationID, intent.AttemptIndex, intent.StatementIndex)
-		plan, ok := witness.plans[key]
-		if !ok || !planMatchesIntent(plan, intent) {
-			return invalidEvidence("chain", "statement plan")
-		}
-	}
-	for _, terminal := range replay.terminals {
-		state := cloneEvidenceAttemptState(&terminal.state)
-		if err := validateTerminalWitness(*terminal.frame.Record.AttemptTerminal, terminal.frame, &state, terminal.header, witness); err != nil {
-			return err
-		}
+	_, err = validateEvidenceChainStructureSegmentsObserved(segments, nil, evidenceWitnessObserver{witness: witness})
+	return err
+}
+
+// Authority failures are recorded by the accumulator but structural replay
+// continues, so a later corrupt frame remains the dominant result.
+type evidenceWitnessObserver struct{ witness verifiedEvidenceChainWitness }
+
+func (o evidenceWitnessObserver) observeHeader(header JournalHeader) error {
+	if !receiptMatches(o.witness.runtimeReceipt, "runtime", header.OuterArtifactDigest, header.OuterArtifactSizeBytes) || !receiptMatches(o.witness.recoveryReceipt, "decision_recovery", header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) {
+		return invalidEvidence("chain", "content receipt")
 	}
 	return nil
 }
 
-func sameJournalGeneration(a, b JournalHeader) bool {
-	return a.JournalIdentityDigest == b.JournalIdentityDigest && a.ReleaseTrustDecisionDigest == b.ReleaseTrustDecisionDigest && a.RunnerProjectionDecisionDigest == b.RunnerProjectionDecisionDigest && a.ExecutionLineageDigest == b.ExecutionLineageDigest && a.OuterArtifactDigest == b.OuterArtifactDigest && a.OuterArtifactSizeBytes == b.OuterArtifactSizeBytes && a.DecisionRecoveryArtifactSHA256 == b.DecisionRecoveryArtifactSHA256 && a.DecisionRecoveryArtifactSizeBytes == b.DecisionRecoveryArtifactSizeBytes && a.ManifestDigest == b.ManifestDigest && a.RunnerReleaseDigest == b.RunnerReleaseDigest && a.SchemaBundleDigest == b.SchemaBundleDigest && a.AuthorityProfileDigest == b.AuthorityProfileDigest && a.AuthorityBindingDigest == b.AuthorityBindingDigest && a.LimitsProfile == b.LimitsProfile && a.QuotaReservationDigest == b.QuotaReservationDigest && a.ReservedRecords == b.ReservedRecords && a.ReservedBytes == b.ReservedBytes && a.ReservedSegments == b.ReservedSegments
+func (o evidenceWitnessObserver) observeIntent(intent StatementIntent) error {
+	key := evidenceStatementKey(intent.MigrationID, intent.AttemptIndex, intent.StatementIndex)
+	plan, ok := o.witness.plans[key]
+	if !ok || !planMatchesIntent(plan, intent) {
+		return invalidEvidence("chain", "statement plan")
+	}
+	return nil
 }
 
-func validateTerminalWitness(t AttemptTerminalState, frame EvidenceFrame, state *evidenceAttemptState, header JournalHeader, w verifiedEvidenceChainWitness) error {
+func (o evidenceWitnessObserver) observeTerminal(terminal AttemptTerminalState, state evidenceCompactAttemptState, header JournalHeader) error {
+	return validateTerminalWitnessCompact(terminal, state, header, o.witness)
+}
+
+func validateTerminalWitnessCompact(t AttemptTerminalState, state evidenceCompactAttemptState, header JournalHeader, w verifiedEvidenceChainWitness) error {
 	migration := t.MigrationID
 	final, hasFinal := w.finalStatementIndex[migration]
 	maxAttempts, hasMax := w.maxAttempts[migration]
@@ -147,11 +153,10 @@ func validateTerminalWitness(t AttemptTerminalState, frame EvidenceFrame, state 
 	}
 	requiresFinal := t.Outcome == "committed" || len(t.Outcome) >= 10 && t.Outcome[:10] == "ambiguous_"
 	if requiresFinal {
-		if state.lastIntermediate == nil || state.lastIntermediate.Record.Intermediate.State.StatementIndex != final {
+		if state.lastIntermediate == nil || state.lastIntermediate.statementIndex != final {
 			return invalidEvidence("chain", "final intermediate")
 		}
-		catalog := state.lastIntermediate.Record.Intermediate.PreledgerCatalogResult
-		if catalog == nil || catalog.Digest != w.finalCatalogDigest[migration] {
+		if state.lastIntermediate.preledgerCatalogDigest == nil || *state.lastIntermediate.preledgerCatalogDigest != w.finalCatalogDigest[migration] {
 			return invalidEvidence("chain", "final catalog")
 		}
 	}
@@ -160,23 +165,36 @@ func validateTerminalWitness(t AttemptTerminalState, frame EvidenceFrame, state 
 		if !ok {
 			return invalidEvidence("chain", "missing retry receipt")
 		}
-		if err := receipt.validateRetryProof(*t.RetryProof, t, state, header); err != nil {
-			return err
+		if commitRejected, ok := receipt.(verifiedCommitRejectedRetry); ok {
+			if t.RetryProof.ProofKind != "commit_rejected_exact_predecessor" || t.RetryProof.CommitRejectedReason == nil || *t.RetryProof.CommitRejectedReason != commitRejected.old.commitRejectedReason || state.commit == nil || state.commit.recordDigest != commitRejected.old.commitIntentRecordDigest {
+				return invalidEvidence("retry-receipt", "commit proof binding")
+			}
+			if err := validateRetryCommon(commitRejected.old.identity, commitRejected.predecessor, *t.RetryProof, t, header); err != nil {
+				return err
+			}
+		} else {
+			compact := evidenceAttemptState{}
+			if err := receipt.validateRetryProof(*t.RetryProof, t, &compact, header); err != nil {
+				return err
+			}
 		}
 	} else if _, ok := w.retryReceipts[t.TerminalDigest]; ok {
 		return invalidEvidence("chain", "unexpected retry receipt")
 	}
 	if len(t.Outcome) >= 10 && t.Outcome[:10] == "ambiguous_" {
 		owned, ok := w.ambiguousBoundaries[t.TerminalDigest]
-		if !ok || state.lastIntermediate == nil || state.commit == nil || !owned.commitCalled || owned.migrationID != migration || owned.attemptIndex != t.AttemptIndex || owned.finalIntermediateRecordDigest != state.lastIntermediate.RecordDigest || owned.commitIntentRecordDigest != state.commit.RecordDigest {
+		if !ok || state.lastIntermediate == nil || state.commit == nil || !owned.commitCalled || owned.migrationID != migration || owned.attemptIndex != t.AttemptIndex || owned.finalIntermediateRecordDigest != state.lastIntermediate.recordDigest || owned.commitIntentRecordDigest != state.commit.recordDigest {
 			return invalidEvidence("chain", "ambiguous boundary")
 		}
 	}
 	if t.Outcome == "aborted_retryable" && t.AttemptIndex >= maxAttempts {
 		return invalidEvidence("chain", "retry budget")
 	}
-	_ = frame
 	return nil
+}
+
+func sameJournalGeneration(a, b JournalHeader) bool {
+	return a.JournalIdentityDigest == b.JournalIdentityDigest && a.ReleaseTrustDecisionDigest == b.ReleaseTrustDecisionDigest && a.RunnerProjectionDecisionDigest == b.RunnerProjectionDecisionDigest && a.ExecutionLineageDigest == b.ExecutionLineageDigest && a.OuterArtifactDigest == b.OuterArtifactDigest && a.OuterArtifactSizeBytes == b.OuterArtifactSizeBytes && a.DecisionRecoveryArtifactSHA256 == b.DecisionRecoveryArtifactSHA256 && a.DecisionRecoveryArtifactSizeBytes == b.DecisionRecoveryArtifactSizeBytes && a.ManifestDigest == b.ManifestDigest && a.RunnerReleaseDigest == b.RunnerReleaseDigest && a.SchemaBundleDigest == b.SchemaBundleDigest && a.AuthorityProfileDigest == b.AuthorityProfileDigest && a.AuthorityBindingDigest == b.AuthorityBindingDigest && a.LimitsProfile == b.LimitsProfile && a.QuotaReservationDigest == b.QuotaReservationDigest && a.ReservedRecords == b.ReservedRecords && a.ReservedBytes == b.ReservedBytes && a.ReservedSegments == b.ReservedSegments
 }
 
 func (verifiedRollbackRetry) retryReceiptSealed()            {}
@@ -384,106 +402,10 @@ func summarizeEvidenceJournal(frames []EvidenceFrame) (evidenceJournalSummary, e
 }
 
 func summarizeStructuralEvidenceJournal(replay *evidenceStructuralReplay) (evidenceJournalSummary, error) {
-	if replay == nil || len(replay.frames) == 0 {
+	if replay == nil || replay.records == 0 {
 		return evidenceJournalSummary{}, invalidEvidence("journal-summary", "empty")
 	}
-	var lastIntentFrame, lastIntermediateFrame, lastCommitFrame, lastTerminalFrame, lastResolutionFrame, tailFrame *EvidenceFrame
-	for index := len(replay.frames) - 1; index >= 0; index-- {
-		frame := &replay.frames[index]
-		if frame.RecordKind == EvidenceRecordHeader {
-			continue
-		}
-		migration, attempt := structuralRecordAttempt(frame.Record)
-		if migration == "" {
-			continue
-		}
-		tailFrame = frame
-		for scan := 0; scan <= index; scan++ {
-			candidate := &replay.frames[scan]
-			candidateMigration, candidateAttempt := structuralRecordAttempt(candidate.Record)
-			if candidateMigration != migration || candidateAttempt != attempt {
-				continue
-			}
-			switch candidate.RecordKind {
-			case EvidenceRecordStatementIntent:
-				lastIntentFrame = candidate
-			case EvidenceRecordIntermediate:
-				lastIntermediateFrame = candidate
-			case EvidenceRecordCommitIntent:
-				lastCommitFrame = candidate
-			case EvidenceRecordAttemptTerminal:
-				lastTerminalFrame = candidate
-			case EvidenceRecordAmbiguousResolution:
-				lastResolutionFrame = candidate
-			}
-		}
-		break
-	}
-	summary := evidenceJournalSummary{recoveryState: "brand_new"}
-	if tailFrame == nil {
-		return summary, nil
-	}
-	if lastIntentFrame != nil {
-		summary.lastStatementIntentRecordDigest = digestPointer(lastIntentFrame.RecordDigest)
-	}
-	if lastIntermediateFrame != nil {
-		summary.lastIntermediateEvidenceRecordDigest = digestPointer(lastIntermediateFrame.RecordDigest)
-		summary.lastIntermediateStateDigest = digestPointer(lastIntermediateFrame.Record.Intermediate.State.IntermediateStateDigest)
-	}
-	if lastCommitFrame != nil {
-		summary.lastCommitIntentRecordDigest = digestPointer(lastCommitFrame.RecordDigest)
-	}
-	var migration string
-	var attempt uint32
-	switch tailFrame.RecordKind {
-	case EvidenceRecordAmbiguousResolution:
-		lastResolution := lastResolutionFrame.Record.AmbiguousResolution
-		migration, attempt = lastResolution.MigrationID, lastResolution.AttemptIndex
-		summary.lastResolutionDigest = digestPointer(lastResolution.ResolutionDigest)
-		summary.previousAttemptTerminalDigest = digestPointer(lastResolution.UnresolvedTerminalDigest)
-		switch lastResolution.Outcome {
-		case "resolved_committed":
-			summary.recoveryState = "completed"
-		case "resolved_divergent":
-			summary.recoveryState = "divergent"
-		default:
-			summary.recoveryState = "terminal"
-		}
-	case EvidenceRecordAttemptTerminal:
-		lastTerminal := lastTerminalFrame.Record.AttemptTerminal
-		migration, attempt = lastTerminal.MigrationID, lastTerminal.AttemptIndex
-		summary.lastTerminalDigest = digestPointer(lastTerminal.TerminalDigest)
-		summary.previousAttemptTerminalDigest = cloneDigestPointer(lastTerminal.PreviousAttemptTerminalDigest)
-		switch lastTerminal.Outcome {
-		case "committed", "ambiguous_reconciled_committed":
-			summary.recoveryState = "completed"
-		case "ambiguous_divergent":
-			summary.recoveryState = "divergent"
-		case "ambiguous_unresolved":
-			summary.recoveryState = "ambiguous_unresolved"
-		default:
-			summary.recoveryState = "terminal"
-		}
-	case EvidenceRecordCommitIntent:
-		migration, attempt = lastCommitFrame.Record.CommitIntent.MigrationID, lastCommitFrame.Record.CommitIntent.AttemptIndex
-		summary.previousAttemptTerminalDigest = cloneDigestPointer(lastCommitFrame.Record.CommitIntent.PreviousAttemptTerminalDigest)
-		summary.recoveryState = "dangling_commit_intent"
-	case EvidenceRecordIntermediate:
-		state := lastIntermediateFrame.Record.Intermediate.State
-		migration, attempt = state.MigrationID, state.AttemptIndex
-		summary.previousAttemptTerminalDigest = cloneDigestPointer(state.PreviousAttemptTerminalDigest)
-		summary.recoveryState = "dangling_intermediate"
-	case EvidenceRecordStatementIntent:
-		intent := lastIntentFrame.Record.StatementIntent
-		migration, attempt = intent.MigrationID, intent.AttemptIndex
-		summary.previousAttemptTerminalDigest = cloneDigestPointer(intent.PreviousAttemptTerminalDigest)
-		summary.recoveryState = "dangling_statement_intent"
-	}
-	if migration != "" {
-		summary.migrationID = &migration
-		summary.attemptIndex = &attempt
-	}
-	return summary, nil
+	return cloneEvidenceJournalSummary(replay.summary), nil
 }
 
 func structuralRecordAttempt(record EvidenceRecord) (string, uint32) {
