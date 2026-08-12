@@ -1610,6 +1610,50 @@ sync/try-lock outcome unknown 都使整个 epoch/lease admission authority 失�
 也不得用第二把 lineage handle 拼接 inventory。若 target 原本存在，该 verify/reuse transition仍 consume/advance revision，避免
 present/absent TOCTOU。
 
+target registration 不新增 marker、sidecar 或 wire member；完整、canonical 的单枚 `LineageIndexHeader` frame 就是唯一
+registration commit。这里的半注册恢复只适用于 requested target 尚未进入 registered full set、但其 exact canonical basename
+已由 no-follow scan 观察到 prefix 的分支；已注册且含 generation 的 lineage 仍走 ALL-history strict replay，不得降格为本状态机。
+`TargetRegistrationState` 是以下 exact closed runtime union，不能由磁盘名称、caller bool 或 loose digest 自报：
+
+- `target_absent`：canonical target directory 不存在，且 closed scan 已排除同 digest 的任何其他 entry；
+- `registration_prefix_directory`：只存在 metadata 合法的 canonical target directory，目录为空；
+- `registration_prefix_lock`：目录中只存在 metadata 合法、exact basename 为 `writer.lock` 的 regular file，`index.caj` 尚不存在；
+- `registration_prefix_index`：目录中只存在合法 `writer.lock` 与 `index.caj`，index bytes 是零长度、目标
+  `LineageIndexHeader` 完整 canonical framed bytes 的 exact final-torn prefix，或完整 candidate 但尚未在本次 fresh authority
+  下重做 file/directory sync 与 rescan；
+- `registered_empty`：本次 fresh authority 已对完整 canonical `LineageIndexHeader` 重做 durability barriers，并由 no-follow
+  rescan 证明目录仍只有 `writer.lock` 与该单枚 header；它已进入 updated full set，但尚无 `GenerationReserved`、generation
+  directory、segment 或 generation-ready authority；
+- `corrupt`：除上述 exact shape 外的任何状态，包括 unknown/extra entry、多个 index frame、complete different header、
+  non-prefix/torn-middle bytes、target/header digest mismatch 或已出现未登记 generation 内容。
+
+directory/lock/index 三种 prefix 都只是 filesystem observation，不能自证继续 mutation。每次 reopen 必须先重新
+`AcquireAdmission`，由 migration 基于当前 verified target inputs mint fresh、one-shot `VerifiedTargetRegistrationPlan`，再由
+composite binder 与 fresh inventory、typed prefix state、same target digest、完整 planned `LineageIndexHeader` bytes/digest、
+epoch/revision 和 permit exact cross-bind；旧 plan/permit、仅凭曾经授权、磁盘自洽或 current path 都不得恢复。发现合法 prefix
+但无法形成 fresh plan/permit 时返回 `MIGRATION_EVIDENCE_RECOVERY_REQUIRED` 并阻塞该 target 及新 admission，不得跳过、
+当作 registered、发布 candidate 或自动清理。metadata/type/owner/mode/link/device/no-follow/open/lock 检查失败映射
+`MIGRATION_EVIDENCE_JOURNAL_FAILED`；已存在 bytes/shape/linkage 与 planned registration 矛盾映射
+`MIGRATION_EVIDENCE_JOURNAL_CORRUPT`，且 corrupt 优先于 recovery-required。任何状态都禁止 unlink、remove 或
+rename-away target directory、lock 或 index；唯一允许的内容收缩是下述 fresh plan/permit 已授权的 exact final-torn
+index truncate-to-zero、durability barrier 与 whole-frame rewrite，不能把该例外扩展成清理、回滚或任意 bytes 修改。
+
+fresh plan/permit 下唯一 registration 顺序是：创建 canonical target directory → `fsync(<root>/lineages)` → 创建
+`writer.lock` → `fdatasync(writer.lock)` → `fsync(target lineage directory)` → 对该 lock 做 nonblocking `flock` → 创建并写入
+完整 canonical `LineageIndexHeader` frame → `fdatasync(index.caj)` → `fsync(target lineage directory)` → no-follow 重扫 target
+及完整 registered set。恢复 `registration_prefix_directory` 必须先重做 `fsync(<root>/lineages)`，证明 observed target
+directory entry 的 durability，再从 lock create 开始；任何 observed target prefix 进入 forward recovery 前都必须重做其
+已存在 parent directory entry 的 durability barrier。恢复 `registration_prefix_lock` 必须先重做
+lock 的 `fdatasync`、lineage-directory `fsync` 与 nonblocking flock，再创建 index；恢复 `registration_prefix_index` 的任一
+子状态也必须先重做现有 `writer.lock` 的 `fdatasync`、target lineage-directory `fsync` 与 nonblocking flock，busy 时按
+release-all/reacquire 规则重试，任一 lock/sync outcome unknown 都 invalidate lease/inventory/permit，绝不能无排他锁修改
+index。取得该 lock 后，零长度或 exact final-torn prefix 只能先把 index 截断到 `0`、`fdatasync` 证明该边界 durable，再从 offset 0 重写完整 header，禁止补写
+suffix；完整 matching header 必须重做 `fdatasync(index.caj)` 与 `fsync(target lineage directory)`。每条路径最后都必须 no-follow
+重开并 byte-exact 验证 header/metadata/file identity，再把 target 纳入 revision+1 full-set digest 并只 mint
+`registered_empty`；在此之前不得把 target 计为 registered member。任一 create/truncate/write/sync/flock 尝试后的 outcome 若
+不能证明 complete+durable，仍按 `unknown` invalidate lease/inventory/permit，之后只能以另一枚 fresh plan/permit 重走上述
+reopen classification；不能在旧 authority 上原地续写。
+
 所有 admission mutation API 只返回 closed `AdmissionTransitionResult`：
 
 - `pre_mutation_failure`：尚未尝试任何 mutation，返回稳定错误；旧 authority 仅在 error contract 显式允许时仍可关闭，绝不
@@ -2086,8 +2130,9 @@ unknown-invalidated，都不能进入 quota binder、receipt binder 或后续 re
 
 首次创建 `<root>/lineages` 后必须 `fsync(root)`，创建 lineage directory 后必须
 `fsync(<root>/lineages)`，创建并同步 lineage `writer.lock` 后必须在同一 helper 中 try-acquire；busy 时仍按
-上述规则释放 root 重试。brand-new lineage 先 durable
-创建/同步 LineageIndex header，然后 durable append `GenerationReserved`；再创建 deterministic generation journal
+上述规则释放 root 重试。brand-new lineage 必须先按前述 closed `TargetRegistrationState` 与 fresh
+`VerifiedTargetRegistrationPlan`/permit 完成 `registered_empty`，完整 `LineageIndexHeader` 是 registration commit，不存在另一个
+marker。只有 target 已纳入更新后的 full set 后才能 durable append `GenerationReserved`；再创建 deterministic generation journal
 directory 并 `fsync` 其 lineage parent。写 segment-0/header 时必须 `fdatasync` segment file、`fsync` journal directory，
 且 generation directory entry 已由 lineage-parent `fsync` 覆盖；reserved expected digest、activated header digest 与
 activated initial tail digest 三者都必须 exact 等于该 segment-0 `EvidenceFrame.record_digest`；activated
@@ -2884,27 +2929,28 @@ signature/recovery capability 无法形成，才是 recovery-required。limit �
 
 fault/Done matrix 至少必须逐 barrier 注入 before/short/after-write/before-sync/after-sync/response-lost/crash+reopen：
 
-| boundary                                                            | required Done proof                                                                                                                         |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| runtime/recovery object temp write、publish、objects directory sync | no partial final accepted；typed receipts不可 swap；unknown reopen 全量重验                                                                 |
-| root/index/generation directory 与 lock file creation               | no-follow、owner/mode、directory-entry barrier、cross-process lock order                                                                    |
-| segment-0 header、reserved、activated                               | exact planned bytes/digests；reserved-no-header/header-unactivated deterministic heal；activated-missing corrupt                            |
-| ordinary frame journal write/sync                                   | SQL-before intent zero；complete/torn/different-candidate replay exact                                                                      |
-| matching checkpoint index write/sync                                | journal-durable/checkpoint-unknown 整体 unknown；cursor invalid；DB 前 healing checkpoint                                                   |
-| rotation segment create/header/checkpoint/caller/checkpoint         | exact preflight；header-only progress 不误报 caller durable；reopen 唯一 next sequence                                                      |
-| torn final vs middle corruption                                     | only final incomplete frame truncatable；middle/complete mismatch corrupt                                                                   |
-| full-root acquire / busy locks                                      | canonical all-lineage nonblocking try-lock；任一 busy 释放全部 lineage+root 后 bounded retry；无 lock leak/deadlock                         |
-| foreign authority / inode swap                                      | foreign fd/path/dev-inode、root/lineage/object inode swap、raw counter/DTO/literal 全拒绝；旧 epoch/revision 不可复活                       |
-| quota/root concurrency                                              | ALL history whole-bundle exact formula、checked overflow、exact/+1 boundaries、two-process no-overcommit、no auto-GC                        |
-| permit order / revision / reuse                                     | publish→bind→publish→bind→seal reserve-ready；每步 consume/advance revision；skip/swap/replay/copy/cross-root/reuse 全拒绝                  |
-| transition result / inventory refresh                               | closed pre-mutation/unknown/durable；publish 后 object set 更新；第二次 publish 拒绝旧 inventory；unknown 无 authority、Open-only reconcile |
-| brand-new / successor state graph                                   | receipts→reserved 与 receipts→superseded→adjacent reserved 两条 closed path；顺序、邻接、swap 全拒绝                                        |
-| receipt pair one-shot                                               | `ReserveReady.BindReceiptPair` 一次 mint 两枚 receipts→`ReceiptBoundReady`；half-pair、双消费、旧 authority reuse 全拒绝                    |
-| superseded→reserved crash/reopen                                    | stored registration 才可 mint recovery-only `RegisteredPublication`/receipt；unreferenced object、自证/new-admission reuse 全拒绝           |
-| per-frame reservation debit                                         | A possible-supersede 与 B reserve/activate/checkpoint 各 debit 唯一 generation slot；无 double/missing debit 或超额消费                     |
-| same-verifier historical generation                                 | 全 registered generations/bundles scan；stored mismatch→corrupt，absent/unauthorized→recovery-required；disk decode 无 capability           |
-| successor handoff                                                   | binder先消费owned evidence；FS用sealed authority与session replay digests cross-bind；A→B exact；one-shot/swap rejection                     |
-| platform matrix                                                     | Linux `ext4` 与 `xfs` 分别 power-loss/restart；其他 Linux FS/mount 与非 Linux production pre-DB reject；Darwin 仅 fake/unit                 |
+| boundary                                                            | required Done proof                                                                                                                                       |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| runtime/recovery object temp write、publish、objects directory sync | no partial final accepted；typed receipts不可 swap；unknown reopen 全量重验                                                                               |
+| root/index/generation directory 与 lock file creation               | no-follow、owner/mode、directory-entry barrier、cross-process lock order                                                                                  |
+| segment-0 header、reserved、activated                               | exact planned bytes/digests；reserved-no-header/header-unactivated deterministic heal；activated-missing corrupt                                          |
+| ordinary frame journal write/sync                                   | SQL-before intent zero；complete/torn/different-candidate replay exact                                                                                    |
+| matching checkpoint index write/sync                                | journal-durable/checkpoint-unknown 整体 unknown；cursor invalid；DB 前 healing checkpoint                                                                 |
+| rotation segment create/header/checkpoint/caller/checkpoint         | exact preflight；header-only progress 不误报 caller durable；reopen 唯一 next sequence                                                                    |
+| torn final vs middle corruption                                     | only final incomplete frame truncatable；middle/complete mismatch corrupt                                                                                 |
+| full-root acquire / busy locks                                      | canonical all-lineage nonblocking try-lock；任一 busy 释放全部 lineage+root 后 bounded retry；无 lock leak/deadlock                                       |
+| target half-registration                                            | 六态 closed classification；每个 mkdir/lock/index/truncate/write/sync/flock barrier crash+reopen 只可 fresh-plan 恢复；无 marker、delete 或旧 permit 续写 |
+| foreign authority / inode swap                                      | foreign fd/path/dev-inode、root/lineage/object inode swap、raw counter/DTO/literal 全拒绝；旧 epoch/revision 不可复活                                     |
+| quota/root concurrency                                              | ALL history whole-bundle exact formula、checked overflow、exact/+1 boundaries、two-process no-overcommit、no auto-GC                                      |
+| permit order / revision / reuse                                     | publish→bind→publish→bind→seal reserve-ready；每步 consume/advance revision；skip/swap/replay/copy/cross-root/reuse 全拒绝                                |
+| transition result / inventory refresh                               | closed pre-mutation/unknown/durable；publish 后 object set 更新；第二次 publish 拒绝旧 inventory；unknown 无 authority、Open-only reconcile               |
+| brand-new / successor state graph                                   | receipts→reserved 与 receipts→superseded→adjacent reserved 两条 closed path；顺序、邻接、swap 全拒绝                                                      |
+| receipt pair one-shot                                               | `ReserveReady.BindReceiptPair` 一次 mint 两枚 receipts→`ReceiptBoundReady`；half-pair、双消费、旧 authority reuse 全拒绝                                  |
+| superseded→reserved crash/reopen                                    | stored registration 才可 mint recovery-only `RegisteredPublication`/receipt；unreferenced object、自证/new-admission reuse 全拒绝                         |
+| per-frame reservation debit                                         | A possible-supersede 与 B reserve/activate/checkpoint 各 debit 唯一 generation slot；无 double/missing debit 或超额消费                                   |
+| same-verifier historical generation                                 | 全 registered generations/bundles scan；stored mismatch→corrupt，absent/unauthorized→recovery-required；disk decode 无 capability                         |
+| successor handoff                                                   | binder先消费owned evidence；FS用sealed authority与session replay digests cross-bind；A→B exact；one-shot/swap rejection                                   |
+| platform matrix                                                     | Linux `ext4` 与 `xfs` 分别 power-loss/restart；其他 Linux FS/mount 与非 Linux production pre-DB reject；Darwin 仅 fake/unit                               |
 
 filesystem slice Done 只允许声明：owned append/sealed successor seams、Linux `ext4`/`xfs` filesystem registration、object/
 journal/index durability、typed replay/recovery snapshot、quota与上述 fault matrix 已本地验证并由 reviewer 签署。它明确
@@ -2917,6 +2963,12 @@ filesystem Done 更新 catalog/runtime publication 或 Gate。
 revision rejection；全部 registered lineage/index/generation/segment/schema bundle 的 no-follow inventory 与 strict replay；
 dual-authority cross-bind 与 dependency 单向性；每次 publish 后 inventory object set/revision 更新且 stale scan 被拒绝；closed
 transition result 的 diagnosis/authority shape；brand-new 与 successor 两条 state graph；
+`target_absent|registration_prefix_directory|registration_prefix_lock|registration_prefix_index|registered_empty|corrupt` 六态
+穷举且 traversal order 不改变分类；完整 `LineageIndexHeader` 作为唯一 registration commit，无新增 marker/wire；directory、lock、
+empty/final-torn/complete index 的每个 crash/response-lost 窗口都只能由 fresh `VerifiedTargetRegistrationPlan` + permit 恢复，
+final-torn 先 truncate-to-zero + `fdatasync` 再整帧重写、完整 header 重做 file/directory sync，最后 no-follow full-set rescan；
+unauthorized prefix 稳定返回 recovery-required 并阻塞，metadata failure 稳定返回 failed，extra/mismatch 稳定返回 corrupt，且任何
+路径均不删除半注册状态；`registered_empty` 已纳入 full set 但不得 mint generation-ready/reserve authority；
 `BindReceiptPair` one-shot/atomic pair 与 transition authority invalidation；superseded durable 后 reserved
 absent/torn/durable-response-lost 各窗口只能由 stored registration 重建 recovery-only
 `RegisteredPublication`/typed receipts，unreferenced object 不能自证；每个 index frame 对 A/B reservation slot 的唯一 debit；
