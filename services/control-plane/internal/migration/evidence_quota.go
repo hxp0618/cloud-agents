@@ -136,12 +136,22 @@ type evidenceQuotaReservation struct {
 }
 
 func calculateEvidenceQuotaReservation(facts verifiedQuotaBundleFacts, root *verifiedRootQuotaState) (evidenceQuotaReservation, error) {
-	if !facts.valid() {
-		return evidenceQuotaReservation{}, fail(CodeUntrusted, "evidence-quota", "verified bundle facts are invalid", nil)
-	}
 	rootFacts, err := root.snapshot()
 	if err != nil {
 		return evidenceQuotaReservation{}, err
+	}
+	return calculateEvidenceQuotaReservationForFacts(facts, rootFacts)
+}
+
+// calculateEvidenceQuotaReservationForFacts is arithmetic only. It consumes no
+// filesystem or lock authority and is kept separate so formula tests cannot
+// manufacture a verifiedRootQuotaState.
+func calculateEvidenceQuotaReservationForFacts(facts verifiedQuotaBundleFacts, rootFacts rootQuotaUsageFacts) (evidenceQuotaReservation, error) {
+	if !facts.valid() {
+		return evidenceQuotaReservation{}, fail(CodeUntrusted, "evidence-quota", "verified bundle facts are invalid", nil)
+	}
+	if !rootFacts.valid() {
+		return evidenceQuotaReservation{}, filesystemFailure("quota-root", "root quota facts are invalid")
 	}
 	reservation := evidenceQuotaReservation{ReservedRecords: 1, ReservedJournalBytes: evidenceRecordFrameLimits[EvidenceRecordHeader], ReservedSegments: 1}
 	segmentRecords := uint64(1)
@@ -211,7 +221,7 @@ func calculateEvidenceQuotaReservation(facts verifiedQuotaBundleFacts, root *ver
 		reservation.ReservedIndexRecords++
 		reservation.ReservedIndexBytes = lineageRecordFrameLimits[LineageRecordHeader]
 	}
-	err = nil
+	var err error
 	for _, size := range []uint64{lineageRecordFrameLimits[LineageRecordGenerationReserved], lineageRecordFrameLimits[LineageRecordGenerationActivated]} {
 		reservation.ReservedIndexBytes, err = quotaAddValue(reservation.ReservedIndexBytes, size)
 		if err != nil {
@@ -360,7 +370,15 @@ func (state *verifiedRootQuotaState) snapshot() (rootQuotaUsageFacts, error) {
 }
 
 func validRootQuotaLock(lock *evidenceLineageLock) bool {
-	return lock != nil && !lock.done && lock.rootHeld && lock.lineageHeld && validDistinctLockFiles(lock.root, lock.lineage, evidenceRootLockKind, evidenceLineageLockKind)
+	if lock == nil || lock.self != lock || lock.done || lock.rootReleased || lock.root == nil || !lock.root.Active() || !lock.lineageHeld || !validLockFile(lock.lineage, evidenceLineageLockKind) {
+		return false
+	}
+	root, ok := lock.root.(*evidenceFSRootLease)
+	if !ok || root.self != root {
+		return false
+	}
+	publicationLease := root.publicationLease()
+	return publicationLease != nil && publicationLease.Active()
 }
 
 func (bundle *RuntimeBundle) quotaFactsForAdmission() (verifiedQuotaBundleFacts, error) {
@@ -391,11 +409,27 @@ func admitRootQuota(state *verifiedRootQuotaState, bundle *RuntimeBundle, candid
 		}
 		return rootQuotaAdmission{}, filesystemFailure("quota-root", "strict root usage authority was already consumed")
 	}
+	admission, err := calculateRootQuotaAdmission(rootFacts, bundle, candidate)
+	if err != nil {
+		return rootQuotaAdmission{}, err
+	}
+	if !state.consumed.CompareAndSwap(false, true) {
+		return rootQuotaAdmission{}, filesystemFailure("quota-root", "strict root usage authority was already consumed")
+	}
+	return admission, nil
+}
+
+// calculateRootQuotaAdmission contains the pure quota calculation after a
+// caller has obtained exact root facts from an authoritative snapshot.
+func calculateRootQuotaAdmission(rootFacts rootQuotaUsageFacts, bundle *RuntimeBundle, candidate OwnedCurrentCandidate) (rootQuotaAdmission, error) {
+	if !rootFacts.valid() {
+		return rootQuotaAdmission{}, filesystemFailure("quota-root", "root quota facts are invalid")
+	}
 	facts, err := bundle.quotaFactsForAdmission()
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
-	reservation, err := calculateEvidenceQuotaReservation(facts, state)
+	reservation, err := calculateEvidenceQuotaReservationForFacts(facts, rootFacts)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
@@ -460,9 +494,6 @@ func admitRootQuota(state *verifiedRootQuotaState, bundle *RuntimeBundle, candid
 	}
 	if uint64(len(objects)) > rootFinalObjectMaximumCount || objectBytes > rootFinalObjectMaximumBytes || journalCount > rootJournalMaximumCount || journalBytes > rootJournalMaximumBytes || indexCount > rootIndexMaximumCount || indexBytes > rootIndexMaximumBytes || targetRecords > lineageIndexMaximumRecords || targetBytes > lineageIndexMaximumBytes {
 		return rootQuotaAdmission{}, quotaLimit("root admission exceeds a fixed inclusive maximum")
-	}
-	if !state.consumed.CompareAndSwap(false, true) {
-		return rootQuotaAdmission{}, filesystemFailure("quota-root", "strict root usage authority was already consumed")
 	}
 	return rootQuotaAdmission{uint64(len(objects)), objectBytes, journalCount, journalBytes, indexCount, indexBytes, targetRecords, targetBytes}, nil
 }

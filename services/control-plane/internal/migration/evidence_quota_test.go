@@ -4,8 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"math"
-	"sync"
 	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 func quotaFactsForTest(counts []uint64, attempts uint64) verifiedQuotaBundleFacts {
@@ -16,33 +17,60 @@ func quotaFactsForTest(counts []uint64, attempts uint64) verifiedQuotaBundleFact
 	return facts
 }
 
-func rootFactsForTest(t *testing.T, objects []rootQuotaObjectFact) *verifiedRootQuotaState {
+func rootFactsForTest(t *testing.T, objects []rootQuotaObjectFact) rootQuotaUsageFacts {
 	t.Helper()
 	facts := rootQuotaUsageFacts{finalObjects: canonicalRootObjects(objects)}
 	for _, object := range objects {
 		facts.finalObjectBytes += object.size
 	}
-	fs := newFakeEvidenceFS()
-	lock := &evidenceLineageLock{
-		root: testEvidenceLockFile(fs, 101, 101, evidenceRootLockKind), lineage: testEvidenceLockFile(fs, 102, 102, evidenceLineageLockKind), rootHeld: true, lineageHeld: true,
-	}
 	if facts.exceedsLimits() || !facts.valid() {
 		t.Fatal("invalid test-only root quota facts")
 	}
-	owned := facts
-	owned.finalObjects = append([]rootQuotaObjectFact(nil), facts.finalObjects...)
-	return &verifiedRootQuotaState{facts: owned, canonical: rootQuotaFactsDigest(owned), lock: lock}
+	return facts
 }
 
 func TestProductionRootQuotaStateBinderFailsClosed(t *testing.T) {
 	fs := newFakeEvidenceFS()
-	lock := &evidenceLineageLock{
-		root: testEvidenceLockFile(fs, 201, 201, evidenceRootLockKind), lineage: testEvidenceLockFile(fs, 202, 202, evidenceLineageLockKind), rootHeld: true, lineageHeld: true,
+	root := activeTestRootLease()
+	lock := testLineageHandle(root, testEvidenceLockFile(fs, 202, 202, evidenceLineageLockKind))
+	if root.publicationLease() != nil {
+		t.Fatal("test root facade minted publication or quota authority")
+	}
+	facts := rootFactsForTest(t, nil)
+	fakeState := &verifiedRootQuotaState{facts: facts, canonical: rootQuotaFactsDigest(facts), lock: lock}
+	if validRootQuotaLock(lock) {
+		t.Fatal("fake active root facade was accepted as quota authority")
+	}
+	// Even a same-package facade satisfying the handle interface is rejected by
+	// exact production-wrapper type before any borrowed publication lease could
+	// be considered. This fake returns nil because tests cannot mint that lease.
+	borrowed := testLineageHandle(&borrowedEvidenceRootLease{active: true}, testEvidenceLockFile(fs, 203, 203, evidenceLineageLockKind))
+	if validRootQuotaLock(borrowed) {
+		t.Fatal("borrowed root facade was accepted as quota authority")
+	}
+	zeroProduction := &evidenceFSRootLease{}
+	zeroLock := testLineageHandle(zeroProduction, testEvidenceLockFile(fs, 204, 204, evidenceLineageLockKind))
+	if validRootQuotaLock(zeroLock) {
+		t.Fatal("unsealed production wrapper was accepted as quota authority")
+	}
+	if _, err := fakeState.snapshot(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("fake quota state snapshot was accepted: %v", err)
+	}
+	bundle := quotaAdmissionBundleForTest(t)
+	candidate := quotaCandidateForBundle(t, bundle, []byte("recovery"))
+	if _, err := admitRootQuota(fakeState, bundle, candidate); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("fake quota state admission was accepted: %v", err)
 	}
 	if state, err := bindVerifiedRootQuotaState(lock, verifiedRootQuotaScan{}); state != nil || !IsCode(err, CodeProjectionNotImplemented) {
 		t.Fatalf("production root quota state binder did not fail closed: state=%+v err=%v", state, err)
 	}
 }
+
+type borrowedEvidenceRootLease struct{ active bool }
+
+func (l *borrowedEvidenceRootLease) Active() bool                          { return l != nil && l.active }
+func (l *borrowedEvidenceRootLease) Close() error                          { l.active = false; return nil }
+func (*borrowedEvidenceRootLease) publicationLease() *evidencefs.RootLease { return nil }
 
 func quotaAdmissionBundleForTest(t *testing.T) *RuntimeBundle {
 	t.Helper()
@@ -113,7 +141,7 @@ func quotaCandidateForBundle(t *testing.T, bundle *RuntimeBundle, recoveryBytes 
 func TestEvidenceQuotaReservationExactFormula(t *testing.T) {
 	facts := quotaFactsForTest([]uint64{1}, 1)
 	brandNew := rootFactsForTest(t, nil)
-	got, err := calculateEvidenceQuotaReservation(facts, brandNew)
+	got, err := calculateEvidenceQuotaReservationForFacts(facts, brandNew)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,11 +155,10 @@ func TestEvidenceQuotaReservationExactFormula(t *testing.T) {
 		t.Fatalf("reservation=%+v", got)
 	}
 	existingState := rootFactsForTest(t, nil)
-	existingState.facts.targetIndexPresent = true
-	existingState.facts.targetIndexRecords = 1
-	existingState.facts.targetIndexBytes = lineageRecordFrameLimits[LineageRecordHeader]
-	existingState.canonical = rootQuotaFactsDigest(existingState.facts)
-	existing, err := calculateEvidenceQuotaReservation(facts, existingState)
+	existingState.targetIndexPresent = true
+	existingState.targetIndexRecords = 1
+	existingState.targetIndexBytes = lineageRecordFrameLimits[LineageRecordHeader]
+	existing, err := calculateEvidenceQuotaReservationForFacts(facts, existingState)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +170,7 @@ func TestEvidenceQuotaReservationExactFormula(t *testing.T) {
 func TestEvidenceQuotaRotationAndSegmentLimit(t *testing.T) {
 	// One statement/attempt consumes five caller records. Find a bounded shape
 	// that rotates and assert first-fit state exactly.
-	got, err := calculateEvidenceQuotaReservation(quotaFactsForTest([]uint64{52}, 1), rootFactsForTest(t, nil))
+	got, err := calculateEvidenceQuotaReservationForFacts(quotaFactsForTest([]uint64{52}, 1), rootFactsForTest(t, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +181,7 @@ func TestEvidenceQuotaRotationAndSegmentLimit(t *testing.T) {
 		t.Fatalf("rotation headers missing: %+v", got)
 	}
 
-	if _, err := calculateEvidenceQuotaReservation(quotaFactsForTest([]uint64{4096}, 16), rootFactsForTest(t, nil)); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+	if _, err := calculateEvidenceQuotaReservationForFacts(quotaFactsForTest([]uint64{4096}, 16), rootFactsForTest(t, nil)); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
 		t.Fatalf("segment 17/excess was admitted: %v", err)
 	}
 }
@@ -162,11 +189,11 @@ func TestEvidenceQuotaRotationAndSegmentLimit(t *testing.T) {
 func TestEvidenceQuotaFactsDetectAliasAndOverflow(t *testing.T) {
 	facts := quotaFactsForTest([]uint64{1}, 1)
 	facts.statementCounts[0] = 2
-	if _, err := calculateEvidenceQuotaReservation(facts, rootFactsForTest(t, nil)); !IsCode(err, CodeUntrusted) {
+	if _, err := calculateEvidenceQuotaReservationForFacts(facts, rootFactsForTest(t, nil)); !IsCode(err, CodeUntrusted) {
 		t.Fatalf("aliased facts: %v", err)
 	}
 	facts = quotaFactsForTest([]uint64{math.MaxUint64}, math.MaxUint64)
-	if _, err := calculateEvidenceQuotaReservation(facts, rootFactsForTest(t, nil)); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+	if _, err := calculateEvidenceQuotaReservationForFacts(facts, rootFactsForTest(t, nil)); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
 		t.Fatalf("overflow: %v", err)
 	}
 }
@@ -180,7 +207,7 @@ func TestCheckedInBundleQuotaReservationExact(t *testing.T) {
 	if !bundle.quotaFacts.valid() || bundle.quotaFacts.maxAttempts != 3 || len(bundle.quotaFacts.statementCounts) != 2 || bundle.quotaFacts.statementCounts[0] != 20 || bundle.quotaFacts.statementCounts[1] != 71 {
 		t.Fatalf("unexpected current facts: %+v", bundle.quotaFacts)
 	}
-	reservation, err := calculateEvidenceQuotaReservation(bundle.quotaFacts, rootFactsForTest(t, nil))
+	reservation, err := calculateEvidenceQuotaReservationForFacts(bundle.quotaFacts, rootFactsForTest(t, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,38 +236,34 @@ func TestRootQuotaAdmissionDedupeExactAndOneShot(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, bundle, make([]byte, maxDecisionRecoveryArtifactBytes))
 	runtime := candidate.runtimeArtifact
 	facts := rootFactsForTest(t, []rootQuotaObjectFact{{digest: runtime.digest, size: runtime.sizeBytes}})
-	got, err := admitRootQuota(facts, bundle, candidate)
+	got, err := calculateRootQuotaAdmission(facts, bundle, candidate)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.finalObjectCount != 2 || got.finalObjectBytes != runtime.sizeBytes+candidate.decisionRecoveryArtifact.sizeBytes {
 		t.Fatalf("dedupe=%+v", got)
 	}
-	if _, err := admitRootQuota(facts, bundle, candidate); !IsCode(err, CodeEvidenceJournalFailed) {
-		t.Fatalf("one-shot reused: %v", err)
-	}
-
 	facts = rootFactsForTest(t, nil)
 	tinyCandidate := candidate
 	tinyCandidate.runtimeArtifact = VerifiedRuntimeArtifact{owner: runtime.owner, bytes: []byte("tiny"), digest: DigestBytes([]byte("tiny")), sizeBytes: 4}
-	if _, err := admitRootQuota(facts, bundle, tinyCandidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
+	if _, err := calculateRootQuotaAdmission(facts, bundle, tinyCandidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("runtime tiny swap: %v", err)
 	}
 	facts = rootFactsForTest(t, nil)
 	candidate = quotaCandidateForBundle(t, bundle, make([]byte, maxDecisionRecoveryArtifactBytes+1))
-	if _, err := admitRootQuota(facts, bundle, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
+	if _, err := calculateRootQuotaAdmission(facts, bundle, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("recovery +1: %v", err)
 	}
 	facts = rootFactsForTest(t, nil)
 	candidate = quotaCandidateForBundle(t, bundle, []byte("recovery"))
 	candidate.decisionRecoveryArtifact.owner = &recoveryVerifierOwner{token: &evidenceOwnerToken{}}
-	if _, err := admitRootQuota(facts, bundle, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
+	if _, err := calculateRootQuotaAdmission(facts, bundle, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("recovery owner swap: %v", err)
 	}
 	facts = rootFactsForTest(t, nil)
 	candidate = quotaCandidateForBundle(t, bundle, []byte("recovery"))
 	candidate.decisionRecoveryArtifact.decision = DigestBytes([]byte("other-decision"))
-	if _, err := admitRootQuota(facts, bundle, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
+	if _, err := calculateRootQuotaAdmission(facts, bundle, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("recovery decision swap: %v", err)
 	}
 }
@@ -307,34 +330,5 @@ func TestTypedRuntimeArtifactInclusiveMaximumAndPlusOne(t *testing.T) {
 	facts.canonical = quotaBundleFactsDigest(facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 	if _, err := quotaRuntimeObject(facts, VerifiedRuntimeArtifact{owner: owner, bytes: runtimeBytes, digest: facts.outerArtifactDigest, sizeBytes: facts.outerArtifactSize}); !IsCode(err, CodeUntrusted) {
 		t.Fatalf("64 MiB + 1 runtime admitted: %v", err)
-	}
-}
-
-func TestRootQuotaAdmissionCASAllowsOneWinner(t *testing.T) {
-	state := rootFactsForTest(t, nil)
-	bundle := quotaAdmissionBundleForTest(t)
-	candidate := quotaCandidateForBundle(t, bundle, []byte("recovery"))
-	var wg sync.WaitGroup
-	results := make(chan error, 2)
-	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := admitRootQuota(state, bundle, candidate)
-			results <- err
-		}()
-	}
-	wg.Wait()
-	close(results)
-	successes := 0
-	for err := range results {
-		if err == nil {
-			successes++
-		} else if !IsCode(err, CodeEvidenceJournalFailed) {
-			t.Fatalf("unexpected concurrent admission error: %v", err)
-		}
-	}
-	if successes != 1 {
-		t.Fatalf("concurrent admissions succeeded %d times", successes)
 	}
 }
