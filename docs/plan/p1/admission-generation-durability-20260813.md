@@ -2,16 +2,16 @@
 
 - Status：**LOCAL IMPLEMENTATION VERIFIED — GATE OPEN**
 - Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability、
-  `GenerationActivated` durable append、root-wide lock release、retained generation snapshot 与 non-runnable strict replay
-- Fixed source commit：`fa7f8e13ae5ecee3cdc723b8674ab1d8512be5df`（local；GitHub push 因 remote 500 暂未完成）
-- Fixed implementation tree：`64f24a96668400c027a54d19496e9d3d3f454a73`（`fa7f8e1^{tree}`，不含本次证据文档更新）
+  `GenerationActivated` durable append、root-wide lock release、retained generation snapshot、strict replay 与 same-verifier recovery binding
+- Fixed source commit：`96e6165870eae161dc94bdb65e19497fea14dc76`（local；GitHub push 因 remote 500 暂未完成）
+- Fixed implementation tree：`b008532371900316452814590d6dc43f249f6672`（`96e6165^{tree}`，不含本次证据文档更新）
 - Branch：`codex/cloud-agents-platform-p1`
 - Date：2026-08-13 Asia/Shanghai
 - Toolchain：Go `1.26.5 darwin/arm64`
 - Record type：implementation evidence；**不是** Gate closure record
 
 本记录固定
-`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady → GenerationReplayReady`
+`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady → GenerationReplayReady → GenerationRecoveryReady`
 的本地实现证据。
 它证明 brand-new generation 在同一 active admission epoch 与 retained lock chain 下，按
 `GenerationReserved → exact segment-0 JournalHeader → GenerationActivated` 的顺序完成代码级 durability barrier。
@@ -29,6 +29,7 @@
 | `c017c9573015d7e91099d71744459f9f7478594d` | migration lock handoff               | consume generation-ready and seal non-runnable `GenerationHandoffReady`      |
 | `3b1534069ab58553a3176f47a9eac6eb11ec47c7` | retained generation snapshot         | compact exact index/segment facts with bounded re-read and terminal revalidate |
 | `fa7f8e13ae5ecee3cdc723b8674ab1d8512be5df` | migration strict generation replay   | consume handoff and seal non-runnable `GenerationReplayReady`                |
+| `96e6165870eae161dc94bdb65e19497fea14dc76` | migration same-verifier recovery     | bind private brand-new cursor/snapshot without runtime or append authority   |
 
 Key fixed file identities:
 
@@ -44,8 +45,12 @@ Key fixed file identities:
 | `internal/migration/evidence_admission_activation_test.go` | `dbed639b6e3289542637e45a416b6eeff84cdd8905e7f4cfd7b8e271b77ec04f` |
 | `internal/evidencefs/admission_handoff.go`                 | `67b99efddcba783d1702f7a87ab3e7203ba977632ef74df4ecce8a5f75645533` |
 | `internal/evidencefs/admission_handoff_test.go`            | `5c8ffb744fe7a1db83c70c6a79ff9483b31bdf5501e24d66b2779396c1bcfa9e` |
-| `internal/migration/evidence_admission_handoff.go`         | `1de1e9268cc11406e079301be5f504350174000e1b576fd506c013fd65b17e03` |
-| `internal/migration/evidence_admission_handoff_test.go`    | `8e17d7ff611193a7e46d2c405537f1c7d2e1be2b51e198e456842226ac3153ec` |
+| `internal/migration/evidence_admission_handoff.go`         | `05d5b1b70e57c3ee9fdfba2ed4690a80893d2dfe57ef4925beb80631cc5e22f2` |
+| `internal/migration/evidence_admission_handoff_test.go`    | `7fee8fba9c597aae0cbec6b80ab17d3d27c3da603917556ef0936c74d3ca7523` |
+| `internal/migration/evidence_admission_history.go`         | `47d1926437af65155104764fe905ddae3a5e20e8af3ab66b67f785878e597ad0` |
+| `internal/migration/evidence_admission_history_test.go`    | `7e40d08539c0b034efd2d3d69a1f3b2dc20897e6f7874a8dd75f8263e4a5e989` |
+| `internal/migration/evidence_generation_recovery.go`       | `52f94dbd91e2704af6d5b834623fd82c512c108424b907a4003af84d78c6d0f6` |
+| `internal/migration/evidence_generation_recovery_test.go`  | `ab2c339decc1fe5bb29cf36662e9f012313e1292fc34f8377c1a34c7684f8bc1` |
 
 Paths in this table are relative to `services/control-plane/`.
 
@@ -94,8 +99,13 @@ lineage and root locks in reverse ownership order. No failure path deletes or re
   uncertainty revokes the lease, close uncertainty poisons the store, and replacing or closing a snapshot invalidates its registry slot.
 - `GenerationHandoffReady.Replay` accepts only the exact brand-new three-frame index and the exact one-segment/one-header journal,
   uses the lineage-plan-owned continuation/checkpoint streaming bridge, terminally revalidates the evidencefs snapshot, and seals
-  `GenerationReplayReady`. This value remains non-runnable and has no production consumer; static tests forbid `EvidenceJournal`,
-  `JournalCursor`, `Connect`, `AppendDurable`, `Open` and `ActiveGeneration` seams.
+  `GenerationReplayReady`.
+- `GenerationReplayReady.BindRecovery` consumes that replay once, reopens the exact header-only segment, verifies the immutable
+  current same-verifier history facts and both purpose-typed publication receipts, reconstructs the closed recovery schema witness,
+  creates a private brand-new cursor and `RecoverySnapshot`, terminally revalidates the filesystem snapshot, and seals
+  `GenerationRecoveryReady`. The successor remains non-runnable and exposes neither cursor nor snapshot; static tests forbid
+  `EvidenceJournal`, `Connect`, `AppendDurable`, `Open` and unreviewed production consumers. Failure and Close release the retained
+  generation/lineage locks through immutable registry records even after the predecessor one-shot value has been consumed.
 
 ## Local verification
 
@@ -130,8 +140,8 @@ cleanup through the original retained FDs.
 - Linux production `evidencefs.Open`/trusted-mount authority remains fail closed before mutation; there is no positive production
   constructor or cross-package end-to-end admission test.
 - Root-wide admission release and opaque target/generation lock transfer are locally implemented, but `GenerationHandoffReady`
-  now advances through compact filesystem snapshot and strict brand-new replay into `GenerationReplayReady`; it still deliberately
-  stops before normal-run authority.
+  now advances through compact filesystem snapshot, strict brand-new replay and same-verifier recovery binding into
+  `GenerationRecoveryReady`; it still deliberately stops before normal-run authority.
 - Normal-run `EvidenceJournal`, `JournalCursor`, checkpoint append/heal, `ActiveGeneration`, `Connect`, runner and database wiring
   are not implemented by this slice.
 - Successor `GenerationSuperseded → adjacent GenerationReserved` and crash-reopen recovery remain separate incomplete paths.
@@ -149,9 +159,10 @@ record in place.
 
 ## Push state
 
-`3b15340` is present on `origin/codex/cloud-agents-platform-p1`. The strict replay commit `fa7f8e1` is committed locally and passed
-all gates above, but two authenticated GitHub pushes were rejected by the remote with `Internal Server Error` (request IDs
-`81750123b6d8a1f0b0558de37214a30b` and `36abdfa32685cbecb3c19520073d893d`). Retry after the remote recovers:
+`3b15340` is present on `origin/codex/cloud-agents-platform-p1`. The strict replay commit `fa7f8e1`, its evidence update `de6ee39`,
+and same-verifier recovery commit `96e6165` are committed locally and passed their recorded gates, but authenticated GitHub pushes
+were rejected by the remote with `Internal Server Error` (request IDs `81750123b6d8a1f0b0558de37214a30b`,
+`36abdfa32685cbecb3c19520073d893d`, and `28150b7e32b2ad721809a3d632e48720`). Retry after the remote recovers:
 
 ```bash
 GIT_SSH_COMMAND='ssh -F /dev/null -p 443 -o HostName=ssh.github.com -o User=git -o IdentitiesOnly=yes -i /Users/huang/.ssh/id_ed25519' \
