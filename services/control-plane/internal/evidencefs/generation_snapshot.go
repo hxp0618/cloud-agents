@@ -164,6 +164,17 @@ func (s *GenerationSnapshot) IdentityDigest() ([32]byte, error) {
 	return digest, err
 }
 
+// OwnsSnapshot reports whether the snapshot is the current sealed snapshot of
+// this exact retained lease. It exposes no descriptor, path, or lock identity.
+func (l *GenerationLease) OwnsSnapshot(snapshot *GenerationSnapshot) bool {
+	if l == nil || l.self != l || l.seal == nil || l.mu == nil || snapshot == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.snapshot == snapshot && snapshot.lease == l && snapshot.validLocked()
+}
+
 // Revalidate reopens and rehashes the exact index and segment set while the
 // retained locks remain held. Non-context uncertainty revokes the lease.
 func (s *GenerationSnapshot) Revalidate(ctx context.Context) error {

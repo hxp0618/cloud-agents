@@ -209,6 +209,9 @@ func TestGenerationSnapshotReplacementInvalidatesPriorSnapshot(t *testing.T) {
 	if _, err := first.IndexFact(); !errors.Is(err, ErrLeaseInvalid) {
 		t.Fatalf("replaced snapshot remained live: %v", err)
 	}
+	if lease.OwnsSnapshot(first) || !lease.OwnsSnapshot(second) {
+		t.Fatal("snapshot lease comparator accepted stale or rejected current snapshot")
+	}
 	if _, err := second.IndexFact(); err != nil {
 		t.Fatalf("replacement snapshot invalid: %v", err)
 	}
