@@ -14,6 +14,7 @@ type AdmissionPublicationTransitionResult struct {
 	candidateSequence uint64
 	candidateRevision uint64
 	previousRevision  uint64
+	size              uint64
 	reused            bool
 }
 
@@ -25,7 +26,23 @@ func (r AdmissionPublicationTransitionResult) CandidateDigest() [32]byte        
 func (r AdmissionPublicationTransitionResult) CandidateSequence() uint64           { return r.candidateSequence }
 func (r AdmissionPublicationTransitionResult) CandidateRevision() uint64           { return r.candidateRevision }
 func (r AdmissionPublicationTransitionResult) PreviousRevision() uint64            { return r.previousRevision }
+func (r AdmissionPublicationTransitionResult) Size() uint64                        { return r.size }
 func (r AdmissionPublicationTransitionResult) Reused() bool                        { return r.reused }
+
+func (r AdmissionPublicationTransitionResult) ValidFor(inventory *AdmissionInventory) bool {
+	if r.outcome != AdmissionTransitionDurable || r.inventory != inventory || r.publication == nil || inventory == nil || inventory.lease == nil || r.candidateRevision != r.previousRevision+1 || r.size == 0 {
+		return false
+	}
+	l := inventory.lease
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !inventory.validLocked() || inventory.revision != r.candidateRevision {
+		return false
+	}
+	l.rootLease.mu.Lock()
+	defer l.rootLease.mu.Unlock()
+	return r.publication.transientValid() && r.publication.lease == l.rootLease && r.publication.digest == r.candidateDigest && r.publication.size == r.size && r.publication.generation == l.rootLease.generation
+}
 
 // Invalidate permanently revokes a durable next pair and consumes its
 // transient Publication. It only reduces authority and leaves the genuine
@@ -94,7 +111,7 @@ func (t *AdmissionMutationToken) PublishObject(ctx context.Context, inventory *A
 		if errors.Is(err, ErrUnknown) {
 			t.consumed = true
 			l.revokeLocked()
-			return AdmissionPublicationTransitionResult{outcome: AdmissionTransitionUnknown, candidateDigest: digest, candidateRevision: inventory.revision + 1, previousRevision: inventory.revision, reused: reused}, err
+			return AdmissionPublicationTransitionResult{outcome: AdmissionTransitionUnknown, candidateDigest: digest, candidateRevision: inventory.revision + 1, previousRevision: inventory.revision, size: uint64(len(source)), reused: reused}, err
 		}
 		return pre, err
 	}
@@ -104,7 +121,7 @@ func (t *AdmissionMutationToken) PublishObject(ctx context.Context, inventory *A
 		}
 		t.consumed = true
 		l.revokeLocked()
-		return AdmissionPublicationTransitionResult{outcome: AdmissionTransitionUnknown, candidateDigest: digest, candidateRevision: inventory.revision + 1, previousRevision: inventory.revision, reused: reused}, unknown(cause)
+		return AdmissionPublicationTransitionResult{outcome: AdmissionTransitionUnknown, candidateDigest: digest, candidateRevision: inventory.revision + 1, previousRevision: inventory.revision, size: uint64(len(source)), reused: reused}, unknown(cause)
 	}
 	if publication == nil || !publication.transientValid() || publication.lease != l.rootLease || publication.digest != digest || publication.size != uint64(len(source)) {
 		return unknownResult(ErrLeaseInvalid)
@@ -139,5 +156,5 @@ func (t *AdmissionMutationToken) PublishObject(ctx context.Context, inventory *A
 	if !next.snapshotMatchesLocked() {
 		return unknownResult(ErrLeaseInvalid)
 	}
-	return AdmissionPublicationTransitionResult{outcome: AdmissionTransitionDurable, inventory: next, publication: publication, candidateDigest: digest, candidateRevision: nextRevision, previousRevision: inventory.revision, reused: reused}, nil
+	return AdmissionPublicationTransitionResult{outcome: AdmissionTransitionDurable, inventory: next, publication: publication, candidateDigest: digest, candidateRevision: nextRevision, previousRevision: inventory.revision, size: uint64(len(source)), reused: reused}, nil
 }

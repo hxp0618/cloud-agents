@@ -109,6 +109,57 @@ type registeredAdmissionPermitBinding struct {
 
 var registeredAdmissionPermitRegistry sync.Map
 
+type RuntimePublicationTransitionResult struct {
+	outcome           evidencefs.AdmissionTransitionOutcome
+	next              *RuntimePublishedPermit
+	candidateDigest   [32]byte
+	candidateSequence uint64
+	candidateRevision uint64
+	previousRevision  uint64
+}
+
+func (r RuntimePublicationTransitionResult) Outcome() evidencefs.AdmissionTransitionOutcome {
+	return r.outcome
+}
+func (r RuntimePublicationTransitionResult) Next() *RuntimePublishedPermit { return r.next }
+func (r RuntimePublicationTransitionResult) CandidateKind() string         { return "runtime_object" }
+func (r RuntimePublicationTransitionResult) CandidateDigest() [32]byte     { return r.candidateDigest }
+func (r RuntimePublicationTransitionResult) CandidateSequence() uint64     { return r.candidateSequence }
+func (r RuntimePublicationTransitionResult) CandidateRevision() uint64     { return r.candidateRevision }
+func (r RuntimePublicationTransitionResult) PreviousRevision() uint64      { return r.previousRevision }
+
+// RuntimePublishedPermit is the only post-registration state. Its Publication
+// remains transient and must be consumed by the immediate runtime bind step.
+type RuntimePublishedPermit struct {
+	self             *RuntimePublishedPermit
+	prior            *RegisteredAdmissionPermit
+	plan             *VerifiedAdmissionPlan
+	candidateBinding *verifiedEvidenceRunBinding
+	inventory        *evidencefs.AdmissionInventory
+	mutation         *evidencefs.AdmissionMutationToken
+	publication      *evidencefs.Publication
+	fsResult         evidencefs.AdmissionPublicationTransitionResult
+	target, fullSet  [32]byte
+	revision         uint64
+	digest           Digest
+	size             uint64
+	reused           bool
+	binding          *runtimePublishedPermitBinding
+	consumed         *atomic.Bool
+}
+
+type runtimePublishedPermitBinding struct {
+	permit      *RuntimePublishedPermit
+	prior       *RegisteredAdmissionPermit
+	plan        *VerifiedAdmissionPlan
+	inventory   *evidencefs.AdmissionInventory
+	mutation    *evidencefs.AdmissionMutationToken
+	publication *evidencefs.Publication
+	canonical   [32]byte
+}
+
+var runtimePublishedPermitRegistry sync.Map
+
 func bindVerifiedAdmissionPlan(ctx context.Context, history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate) (*VerifiedAdmissionPlan, error) {
 	if !validVerifiedAdmissionHistory(history, candidate) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "admission-plan", "verified admission history is unavailable", nil)
@@ -489,4 +540,128 @@ func validConsumedAdmissionPermit(permit *AdmissionPermit, plan *VerifiedAdmissi
 	registeredPlan, planOK := verifiedAdmissionPlanRegistry.Load(plan.binding)
 	registeredPermit, permitOK := admissionPermitRegistry.Load(permit.binding)
 	return historyOK && registeredHistory == permit.history.binding.canonical && planOK && registeredPlan == plan.binding.canonical && permitOK && registeredPermit == permit.binding.canonical
+}
+
+func (p *RegisteredAdmissionPermit) PublishRuntime(ctx context.Context, candidate OwnedCurrentCandidate) (RuntimePublicationTransitionResult, error) {
+	pre := RuntimePublicationTransitionResult{outcome: evidencefs.AdmissionTransitionPreMutationFailure}
+	if p == nil || p.inventory == nil || !validRegisteredAdmissionPermit(p, p.inventory, candidate) {
+		return pre, fail(CodeEvidenceRecoveryRequired, "admission-runtime-publish", "registered admission permit is unavailable", nil)
+	}
+	runtime := candidate.runtimeArtifact
+	pre.previousRevision = p.revision
+	pre.candidateRevision = p.revision + 1
+	pre.candidateDigest = digestRaw(runtime.digest)
+	if !p.consumed.CompareAndSwap(false, true) {
+		return pre, fail(CodeEvidenceRecoveryRequired, "admission-runtime-publish", "registered admission permit was already consumed", nil)
+	}
+	fsResult, transitionErr := p.mutation.PublishObject(ctx, p.inventory, pre.candidateDigest, runtime.bytes)
+	result := RuntimePublicationTransitionResult{
+		outcome: fsResult.Outcome(), candidateDigest: fsResult.CandidateDigest(),
+		candidateSequence: 1, candidateRevision: fsResult.CandidateRevision(), previousRevision: fsResult.PreviousRevision(),
+	}
+	if fsResult.Outcome() != evidencefs.AdmissionTransitionDurable {
+		if fsResult.Outcome() == evidencefs.AdmissionTransitionPreMutationFailure {
+			p.consumed.CompareAndSwap(true, false)
+		}
+		return result, mapAdmissionMutationError(transitionErr, "admission-runtime-publish")
+	}
+	if transitionErr != nil || fsResult.CandidateKind() != "content_object" || fsResult.CandidateSequence() != 0 || fsResult.CandidateDigest() != pre.candidateDigest || fsResult.Size() != runtime.sizeBytes || fsResult.PreviousRevision() != pre.previousRevision || fsResult.CandidateRevision() != pre.candidateRevision || !fsResult.ValidFor(fsResult.Inventory()) {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish")
+	}
+	nextInventory := fsResult.Inventory()
+	if err := nextInventory.Revalidate(ctx); err != nil {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish-revalidate")
+	}
+	revision, err := nextInventory.Revision()
+	if err != nil || revision != pre.candidateRevision {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish-revision")
+	}
+	target, err := nextInventory.Target()
+	if err != nil || target != p.target {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish-target")
+	}
+	fullSet, err := nextInventory.FullSetDigest()
+	if err != nil || fullSet == ([32]byte{}) || (fullSet == p.fullSet) != fsResult.Reused() {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish-full-set")
+	}
+	nextToken, err := nextInventory.MutationToken()
+	if err != nil || !nextToken.ValidFor(nextInventory) {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish-token")
+	}
+	next := &RuntimePublishedPermit{
+		prior: p, plan: p.plan, candidateBinding: candidate.binding, inventory: nextInventory, mutation: nextToken,
+		publication: fsResult.Publication(), fsResult: fsResult, target: target, fullSet: fullSet, revision: revision,
+		digest: runtime.digest, size: runtime.sizeBytes, reused: fsResult.Reused(), consumed: &atomic.Bool{},
+	}
+	next.self = next
+	binding := &runtimePublishedPermitBinding{permit: next, prior: p, plan: p.plan, inventory: nextInventory, mutation: nextToken, publication: next.publication}
+	next.binding = binding
+	binding.canonical = runtimePublishedPermitDigest(next)
+	runtimePublishedPermitRegistry.Store(binding, binding.canonical)
+	if !validRuntimePublishedPermit(next, nextInventory, candidate) {
+		_ = fsResult.Invalidate()
+		return runtimePublicationUnknown(result), admissionPostMutationFailure("admission-runtime-publish-seal")
+	}
+	result.next = next
+	return result, nil
+}
+
+func runtimePublicationUnknown(value RuntimePublicationTransitionResult) RuntimePublicationTransitionResult {
+	value.outcome = evidencefs.AdmissionTransitionUnknown
+	value.next = nil
+	return value
+}
+
+func runtimePublishedPermitDigest(permit *RuntimePublishedPermit) [32]byte {
+	if permit == nil || permit.self != permit || permit.prior == nil || permit.plan == nil || permit.candidateBinding == nil || permit.prior.binding == nil || permit.plan.binding == nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-runtime-published-permit/v1\x00"))
+	h.Write(permit.prior.binding.canonical[:])
+	h.Write(permit.plan.binding.canonical[:])
+	h.Write(permit.candidateBinding.canonical[:])
+	h.Write(permit.target[:])
+	h.Write(permit.fullSet[:])
+	writeAdmissionUint(h, permit.revision)
+	writeAdmissionString(h, permit.digest.String())
+	writeAdmissionUint(h, permit.size)
+	if permit.reused {
+		h.Write([]byte{1})
+	} else {
+		h.Write([]byte{0})
+	}
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validRuntimePublishedPermit(permit *RuntimePublishedPermit, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate) bool {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.plan == nil || permit.inventory != inventory || permit.mutation == nil || permit.publication == nil || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.plan != permit.plan || permit.binding.inventory != inventory || permit.binding.mutation != permit.mutation || permit.binding.publication != permit.publication || permit.consumed == nil || permit.consumed.Load() || !validConsumedRegisteredAdmissionPermit(permit.prior, permit.plan, candidate) || permit.revision != permit.prior.revision+1 || permit.target != permit.prior.target || (permit.fullSet == permit.prior.fullSet) != permit.reused || permit.digest != candidate.runtimeArtifact.digest || permit.size != candidate.runtimeArtifact.sizeBytes || permit.fsResult.Publication() != permit.publication || permit.fsResult.Reused() != permit.reused || permit.fsResult.CandidateDigest() != digestRaw(permit.digest) || permit.fsResult.Size() != permit.size || !permit.fsResult.ValidFor(inventory) || !permit.mutation.ValidFor(inventory) || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != runtimePublishedPermitDigest(permit) {
+		return false
+	}
+	registered, ok := runtimePublishedPermitRegistry.Load(permit.binding)
+	if !ok || registered != permit.binding.canonical {
+		return false
+	}
+	revision, err := inventory.Revision()
+	if err != nil || revision != permit.revision {
+		return false
+	}
+	fullSet, err := inventory.FullSetDigest()
+	return err == nil && fullSet == permit.fullSet
+}
+
+func validConsumedRegisteredAdmissionPermit(permit *RegisteredAdmissionPermit, plan *VerifiedAdmissionPlan, candidate OwnedCurrentCandidate) bool {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.plan != plan || plan == nil || plan.lineageHeaderFrame.Record.Header == nil || permit.inventory == nil || permit.mutation == nil || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.plan != plan || permit.binding.inventory != permit.inventory || permit.binding.mutation != permit.mutation || permit.consumed == nil || !permit.consumed.Load() || !validConsumedAdmissionPermit(permit.prior, plan, candidate) || permit.indexDigest != sha256.Sum256(plan.lineageHeaderBytes) || permit.target != digestRaw(plan.lineageHeaderFrame.Record.Header.ExecutionLineageDigest) || permit.revision != permit.prior.history.revision+1 || permit.reused != permit.prior.history.rootFacts.targetIndexPresent || (permit.fullSet == permit.prior.history.fullSet) != permit.reused || permit.binding.canonical != registeredAdmissionPermitDigest(permit) {
+		return false
+	}
+	registered, ok := registeredAdmissionPermitRegistry.Load(permit.binding)
+	return ok && registered == permit.binding.canonical
 }

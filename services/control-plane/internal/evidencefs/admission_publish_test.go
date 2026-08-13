@@ -27,11 +27,11 @@ func TestAdmissionPublishObjectDurableAdvancesInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := token.PublishObject(context.Background(), inventory, digest, content)
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "content_object" || result.CandidateDigest() != digest || result.CandidateSequence() != 0 || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 || result.Reused() {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "content_object" || result.CandidateDigest() != digest || result.CandidateSequence() != 0 || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 || result.Size() != uint64(len(content)) || result.Reused() {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	next, publication := result.Inventory(), result.Publication()
-	if next == nil || publication == nil || publication.Matches(digest, uint64(len(content))) {
+	if next == nil || publication == nil || !result.ValidFor(next) || publication.Matches(digest, uint64(len(content))) {
 		t.Fatalf("next=%v publication=%v transientMatches=%v", next, publication, publication != nil && publication.Matches(digest, uint64(len(content))))
 	}
 	if revision, err := next.Revision(); err != nil || revision != 1 {
@@ -50,6 +50,11 @@ func TestAdmissionPublishObjectDurableAdvancesInventory(t *testing.T) {
 	}
 	if _, err := inventory.Revision(); !errors.Is(err, ErrLeaseInvalid) || token.ValidFor(inventory) {
 		t.Fatalf("old authority survived: err=%v token=%v", err, token.ValidFor(inventory))
+	}
+	copyResult := result
+	copyResult.candidateDigest[0]++
+	if copyResult.ValidFor(next) || (AdmissionPublicationTransitionResult{}).ValidFor(next) {
+		t.Fatal("mutated or literal publication result retained authority")
 	}
 	if err := lease.rootLease.BindPublication(publication, digest, uint64(len(content))); err != nil || !publication.Matches(digest, uint64(len(content))) {
 		t.Fatalf("bind err=%v matches=%v", err, publication.Matches(digest, uint64(len(content))))

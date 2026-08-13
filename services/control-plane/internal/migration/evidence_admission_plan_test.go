@@ -119,6 +119,53 @@ func TestRegisteredAdmissionPermitDigestRejectsCopyAndMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimePublishedPermitRejectsLiteralCopyAndMutation(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	inventory := &evidencefs.AdmissionInventory{}
+	if result, err := (&RegisteredAdmissionPermit{}).PublishRuntime(context.Background(), candidate); result.Next() != nil || result.Outcome() != evidencefs.AdmissionTransitionPreMutationFailure || result.CandidateKind() != "runtime_object" || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal permit entered runtime publish: result=%+v err=%v", result, err)
+	}
+	if validRuntimePublishedPermit(&RuntimePublishedPermit{}, inventory, candidate) {
+		t.Fatal("literal runtime-published permit passed validation")
+	}
+	prior := &RegisteredAdmissionPermit{binding: &registeredAdmissionPermitBinding{canonical: [32]byte{1}}}
+	plan := &VerifiedAdmissionPlan{binding: &verifiedAdmissionPlanBinding{canonical: [32]byte{2}}}
+	permit := &RuntimePublishedPermit{
+		prior: prior, plan: plan, candidateBinding: candidate.binding, target: [32]byte{3}, fullSet: [32]byte{4},
+		revision: 2, digest: candidate.runtimeArtifact.digest, size: candidate.runtimeArtifact.sizeBytes,
+	}
+	permit.self = permit
+	want := runtimePublishedPermitDigest(permit)
+	if want == ([32]byte{}) {
+		t.Fatal("runtime-published permit digest is empty")
+	}
+	copyPermit := *permit
+	if runtimePublishedPermitDigest(&copyPermit) != ([32]byte{}) {
+		t.Fatal("runtime-published permit copy retained self binding")
+	}
+	for name, mutate := range map[string]func(*RuntimePublishedPermit){
+		"target":   func(v *RuntimePublishedPermit) { v.target[0]++ },
+		"full set": func(v *RuntimePublishedPermit) { v.fullSet[0]++ },
+		"revision": func(v *RuntimePublishedPermit) { v.revision++ },
+		"digest":   func(v *RuntimePublishedPermit) { v.digest = testDigest("other") },
+		"size":     func(v *RuntimePublishedPermit) { v.size++ },
+		"reused":   func(v *RuntimePublishedPermit) { v.reused = !v.reused },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *permit
+			value.self = &value
+			mutate(&value)
+			if runtimePublishedPermitDigest(&value) == want {
+				t.Fatal("mutation did not change runtime-published permit digest")
+			}
+		})
+	}
+	result := RuntimePublicationTransitionResult{outcome: evidencefs.AdmissionTransitionUnknown, candidateDigest: [32]byte{5}, candidateSequence: 1, candidateRevision: 3, previousRevision: 2}
+	if result.Next() != nil || result.CandidateSequence() != 1 || result.CandidateDigest() != ([32]byte{5}) || result.CandidateRevision() != 3 || result.PreviousRevision() != 2 {
+		t.Fatalf("runtime closed diagnosis changed: %+v", result)
+	}
+}
+
 func TestAdmissionPermitDigestRejectsCopyAndReuse(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
 	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}}
