@@ -36,6 +36,26 @@ func (r AdmissionBindingTransitionResult) ValidFor(inventory *AdmissionInventory
 	return inventory.validLocked() && inventory.revision == r.candidateRevision
 }
 
+// Invalidate revokes the durable next admission pair after an upper-layer seal
+// failure. The already-bound Publication remains immutable content authority,
+// but cannot continue this admission epoch.
+func (r AdmissionBindingTransitionResult) Invalidate() error {
+	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || r.publication == nil || r.candidateRevision != r.previousRevision+1 || !r.publication.Matches(r.candidateDigest, r.size) {
+		return ErrLeaseInvalid
+	}
+	l := r.inventory.lease
+	if l == nil {
+		return ErrLeaseInvalid
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !r.inventory.validLocked() || r.inventory.revision != r.candidateRevision {
+		return ErrLeaseInvalid
+	}
+	l.revokeLocked()
+	return nil
+}
+
 // BindPublishedObject consumes the exact transient Publication under the same
 // root lease/generation. All filesystem validation and the next inventory are
 // completed before the one-way bind, so success has no fallible work after it.

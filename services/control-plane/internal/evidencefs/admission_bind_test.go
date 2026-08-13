@@ -110,3 +110,20 @@ func TestAdmissionBindPublishedObjectTerminalFailureRevokesEpoch(t *testing.T) {
 		t.Fatalf("fd leak=%v", f.handles)
 	}
 }
+
+func TestAdmissionBindingDurableResultCanInvalidatePairOnly(t *testing.T) {
+	f, lease, inventory, token, publication, digest, content := admissionPublishedFixture(t)
+	result, err := token.BindPublishedObject(context.Background(), inventory, publication, digest, uint64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Invalidate(); err != nil || lease.Active() || !publication.Matches(digest, uint64(len(content))) {
+		t.Fatalf("invalidate err=%v active=%v publication=%v", err, lease.Active(), publication.Matches(digest, uint64(len(content))))
+	}
+	if err := result.Invalidate(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("second invalidate=%v", err)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
+	}
+}

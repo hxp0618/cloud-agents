@@ -166,6 +166,52 @@ func TestRuntimePublishedPermitRejectsLiteralCopyAndMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeBoundPermitRejectsLiteralCopyAndMutation(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	inventory := &evidencefs.AdmissionInventory{}
+	if result, err := (&RuntimePublishedPermit{}).BindRuntime(context.Background(), candidate); result.Next() != nil || result.Outcome() != evidencefs.AdmissionTransitionPreMutationFailure || result.CandidateKind() != "runtime_binding" || result.CandidateSequence() != 2 || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal permit entered runtime bind: result=%+v err=%v", result, err)
+	}
+	if validRuntimeBoundPermit(&RuntimeBoundPermit{}, inventory, candidate) {
+		t.Fatal("literal runtime-bound permit passed validation")
+	}
+	prior := &RuntimePublishedPermit{binding: &runtimePublishedPermitBinding{canonical: [32]byte{1}}}
+	plan := &VerifiedAdmissionPlan{binding: &verifiedAdmissionPlanBinding{canonical: [32]byte{2}}}
+	permit := &RuntimeBoundPermit{
+		prior: prior, plan: plan, candidateBinding: candidate.binding, target: [32]byte{3}, fullSet: [32]byte{4},
+		revision: 3, digest: candidate.runtimeArtifact.digest, size: candidate.runtimeArtifact.sizeBytes,
+	}
+	permit.self = permit
+	want := runtimeBoundPermitDigest(permit)
+	if want == ([32]byte{}) {
+		t.Fatal("runtime-bound permit digest is empty")
+	}
+	copyPermit := *permit
+	if runtimeBoundPermitDigest(&copyPermit) != ([32]byte{}) {
+		t.Fatal("runtime-bound permit copy retained self binding")
+	}
+	for name, mutate := range map[string]func(*RuntimeBoundPermit){
+		"target":   func(v *RuntimeBoundPermit) { v.target[0]++ },
+		"full set": func(v *RuntimeBoundPermit) { v.fullSet[0]++ },
+		"revision": func(v *RuntimeBoundPermit) { v.revision++ },
+		"digest":   func(v *RuntimeBoundPermit) { v.digest = testDigest("other") },
+		"size":     func(v *RuntimeBoundPermit) { v.size++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *permit
+			value.self = &value
+			mutate(&value)
+			if runtimeBoundPermitDigest(&value) == want {
+				t.Fatal("mutation did not change runtime-bound permit digest")
+			}
+		})
+	}
+	result := RuntimeBindingTransitionResult{outcome: evidencefs.AdmissionTransitionUnknown, candidateDigest: [32]byte{5}, candidateSequence: 2, candidateRevision: 4, previousRevision: 3}
+	if result.Next() != nil || result.CandidateSequence() != 2 || result.CandidateDigest() != ([32]byte{5}) || result.CandidateRevision() != 4 || result.PreviousRevision() != 3 {
+		t.Fatalf("runtime binding diagnosis changed: %+v", result)
+	}
+}
+
 func TestAdmissionPermitDigestRejectsCopyAndReuse(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
 	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}}
