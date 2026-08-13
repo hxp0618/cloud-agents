@@ -1,9 +1,11 @@
 package migration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +46,100 @@ func TestSameVerifierRecoveryCapabilityRejectsSwapAndRejectingVerifier(t *testin
 	ownedOld := VerifiedDecisionRecoveryArtifact{ownerA, artifactBytes, DigestBytes(artifactBytes), uint64(len(artifactBytes)), oldDigest}
 	if _, _, _, err := current.recoverHistoricalDecision(context.Background(), generation, ownedOld); !IsCode(err, CodeEvidenceRecoveryRequired) || fakeA.historicalCalls != 1 || fakeB.historicalCalls != 0 {
 		t.Fatalf("same-verifier capability did not route exactly once: err=%v calls=%d/%d", err, fakeA.historicalCalls, fakeB.historicalCalls)
+	}
+}
+
+func TestRegisteredHistoricalRecoveryArtifactBinderOwnsCanonicalBytesAndRejectsEverySwap(t *testing.T) {
+	inputs := decisionRecoveryVerificationInputs{
+		FormatVersion: decisionRecoveryArtifactFormatVersion, ProfileDigest: decisionRecoveryArtifactProfileDigest,
+		OldRunnerProjectionDecisionDigest: DigestBytes([]byte("old-decision")), RepositoryIdentity: "hxp0618/cloud-agents", ReleaseIdentity: "v0.0.0-old",
+		CandidateSubjectBase64URLNoPadding: "Y2FuZGlkYXRl", CandidateDetachedEnvelopeBase64URLNoPadding: "c2lnbmF0dXJl",
+		ProjectionSubjectInputs: []decisionRecoveryProjectionSubjectInput{
+			{Kind: "release", SubjectDigest: DigestBytes([]byte("release")), SubjectBase64URLNoPadding: "cmVsZWFzZQ", DetachedEnvelopeBase64URLNoPadding: "c2ln"},
+			{Kind: "authority_profile", SubjectDigest: DigestBytes([]byte("profile")), SubjectBase64URLNoPadding: "cHJvZmlsZQ", DetachedEnvelopeBase64URLNoPadding: "c2ln"},
+			{Kind: "authority_binding", SubjectDigest: DigestBytes([]byte("binding")), SubjectBase64URLNoPadding: "YmluZGluZw", DetachedEnvelopeBase64URLNoPadding: "c2ln"},
+		},
+	}
+	canonical, err := canonicalContractKey(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes := []byte(canonical)
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), nil)
+	current := candidate.verifiedRun.currentDecision
+	owner, token := current.owner, current.owner.token
+	identity := generationIdentity{owner: token, executionLineageDigest: DigestBytes([]byte("lineage")), journalIdentityDigest: DigestBytes([]byte("journal")), runnerProjectionDecisionDigest: inputs.OldRunnerProjectionDecisionDigest, schemaBundleDigest: DigestBytes([]byte("schema"))}
+	header := JournalHeader{
+		FormatVersion: EvidenceJournalFormat, JournalIdentityDigest: identity.journalIdentityDigest, ReleaseTrustDecisionDigest: DigestBytes([]byte("release-decision")), RunnerProjectionDecisionDigest: identity.runnerProjectionDecisionDigest,
+		ExecutionLineageDigest: identity.executionLineageDigest, OuterArtifactDigest: DigestBytes([]byte("runtime")), OuterArtifactSizeBytes: 1, DecisionRecoveryArtifactSHA256: DigestBytes(bytes), DecisionRecoveryArtifactSizeBytes: uint64(len(bytes)),
+		ManifestDigest: DigestBytes([]byte("manifest")), RunnerReleaseDigest: DigestBytes([]byte("runner")), SchemaBundleDigest: identity.schemaBundleDigest, AuthorityProfileDigest: DigestBytes([]byte("authority-profile")), AuthorityBindingDigest: DigestBytes([]byte("authority-binding")),
+		LimitsProfile: EvidenceLimitsProfile, QuotaReservationDigest: DigestBytes([]byte("quota")), ReservedRecords: 1, ReservedBytes: 1, ReservedSegments: 1,
+	}
+	journalDigest, err := JournalIdentityDigest(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header.JournalIdentityDigest, identity.journalIdentityDigest = journalDigest, journalDigest
+	generation := GenerationDescriptor{identity: identity, header: header, replayTailDigest: DigestBytes([]byte("tail")), recoveryArtifactDigest: DigestBytes(bytes), recoveryArtifactSize: uint64(len(bytes))}
+
+	artifact, err := bindHistoricalRecoveryVerifierInput(current, generation, bytes)
+	if err != nil || artifact.owner != owner || artifact.decision != inputs.OldRunnerProjectionDecisionDigest || artifact.digest != DigestBytes(bytes) || string(artifact.bytes) != string(bytes) {
+		t.Fatalf("registered historical artifact did not bind: artifact=%+v err=%v", artifact, err)
+	}
+	bytes[0] ^= 1
+	if string(artifact.bytes) == string(bytes) {
+		t.Fatal("bound historical artifact aliases caller bytes")
+	}
+	verifier := owner.verifier.(*recoveryVerifierFake)
+	if _, _, _, err := current.recoverHistoricalDecision(t.Context(), generation, artifact); !IsCode(err, CodeEvidenceRecoveryRequired) || verifier.historicalCalls != 1 {
+		t.Fatalf("bound artifact did not route exactly once through the current verifier: err=%v calls=%d", err, verifier.historicalCalls)
+	}
+
+	for name, mutate := range map[string]func(*OwnedVerifiedDecision, *GenerationDescriptor, *[]byte){
+		"zero-current": func(c *OwnedVerifiedDecision, _ *GenerationDescriptor, _ *[]byte) { *c = OwnedVerifiedDecision{} },
+		"foreign-generation": func(_ *OwnedVerifiedDecision, g *GenerationDescriptor, _ *[]byte) {
+			g.identity.owner = &evidenceOwnerToken{}
+		},
+		"decision": func(_ *OwnedVerifiedDecision, g *GenerationDescriptor, _ *[]byte) {
+			g.identity.runnerProjectionDecisionDigest = DigestBytes([]byte("other-decision"))
+		},
+		"digest": func(_ *OwnedVerifiedDecision, g *GenerationDescriptor, _ *[]byte) {
+			g.recoveryArtifactDigest = DigestBytes([]byte("other-artifact"))
+		},
+		"size": func(_ *OwnedVerifiedDecision, g *GenerationDescriptor, _ *[]byte) { g.recoveryArtifactSize++ },
+		"noncanonical": func(_ *OwnedVerifiedDecision, g *GenerationDescriptor, raw *[]byte) {
+			*raw = append([]byte(" "), *raw...)
+			g.recoveryArtifactDigest, g.recoveryArtifactSize = DigestBytes(*raw), uint64(len(*raw))
+			g.header.DecisionRecoveryArtifactSHA256, g.header.DecisionRecoveryArtifactSizeBytes = g.recoveryArtifactDigest, g.recoveryArtifactSize
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidateCurrent, candidateGeneration, candidateBytes := current, generation, []byte(canonical)
+			mutate(&candidateCurrent, &candidateGeneration, &candidateBytes)
+			if _, err := bindHistoricalRecoveryVerifierInput(candidateCurrent, candidateGeneration, candidateBytes); !IsCode(err, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("historical recovery swap accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestHistoricalRecoveryVerifierInputHasNoProductionCallerBeforeAdmissionPlan(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_trust_recovery.go" {
+			continue
+		}
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(raw, []byte("bindHistoricalRecoveryVerifierInput(")) {
+			t.Fatalf("historical recovery input binder has premature production caller in %s", name)
+		}
 	}
 }
 

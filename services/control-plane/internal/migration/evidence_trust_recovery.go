@@ -54,6 +54,27 @@ type OwnedVerifiedDecision struct {
 	capability sameVerifierRecoveryCapability
 }
 
+// bindHistoricalRecoveryVerifierInput binds canonical recovery bytes to the
+// current decision's sole recovery verifier owner. It does not prove filesystem
+// registration and does not verify or authorize the historical decision. A
+// future admission-plan binder must first mint the owned generation descriptor;
+// only recoverHistoricalDecision may then perform historical authorization.
+func bindHistoricalRecoveryVerifierInput(current OwnedVerifiedDecision, generation GenerationDescriptor, artifactBytes []byte) (VerifiedDecisionRecoveryArtifact, error) {
+	bindings, bindingErr := current.decision.runnerProjectionBindings()
+	if bindingErr != nil || !validOwnedCurrentDecision(current, bindings) || generation.identity.owner != current.owner.token || generation.header.Validate() != nil || !sameGenerationHeader(generation.identity, generation.header) || generation.recoveryArtifactDigest != generation.header.DecisionRecoveryArtifactSHA256 || generation.recoveryArtifactSize != generation.header.DecisionRecoveryArtifactSizeBytes || generation.recoveryArtifactSize == 0 || generation.recoveryArtifactSize > maxDecisionRecoveryArtifactBytes || uint64(len(artifactBytes)) != generation.recoveryArtifactSize || DigestBytes(artifactBytes) != generation.recoveryArtifactDigest {
+		return VerifiedDecisionRecoveryArtifact{}, fail(CodeEvidenceRecoveryRequired, "historical-recovery-artifact", "registered historical recovery input is unavailable or mismatched", nil)
+	}
+	inputs, err := decodeDecisionRecoveryVerificationInputs(artifactBytes)
+	if err != nil || inputs.ProfileDigest != bindings.decisionRecoveryArtifactProfileDigest || inputs.OldRunnerProjectionDecisionDigest != generation.identity.runnerProjectionDecisionDigest {
+		return VerifiedDecisionRecoveryArtifact{}, fail(CodeEvidenceRecoveryRequired, "historical-recovery-artifact", "registered historical recovery input is unavailable or mismatched", nil)
+	}
+	canonical, err := canonicalContractKey(inputs)
+	if err != nil || canonical != string(artifactBytes) {
+		return VerifiedDecisionRecoveryArtifact{}, fail(CodeEvidenceRecoveryRequired, "historical-recovery-artifact", "registered historical recovery input is not canonical", err)
+	}
+	return VerifiedDecisionRecoveryArtifact{owner: current.owner, bytes: append([]byte(nil), artifactBytes...), digest: generation.recoveryArtifactDigest, sizeBytes: generation.recoveryArtifactSize, decision: generation.identity.runnerProjectionDecisionDigest}, nil
+}
+
 func bindOwnedVerifiedDecision(verifier TrustVerifier, decision VerifiedTrustDecision, decisionDigest Digest, artifact VerifiedDecisionRecoveryArtifact) (OwnedVerifiedDecision, error) {
 	historical, ok := verifier.(historicalRecoveryVerifier)
 	inputs, decodeErr := decodeDecisionRecoveryVerificationInputs(artifact.bytes)
