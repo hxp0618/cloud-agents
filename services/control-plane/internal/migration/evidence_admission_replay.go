@@ -1002,6 +1002,89 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 	return nil
 }
 
+// rootQuotaUsageFactsFromAdmissionTranscript is a pure projection from the
+// fully replayed ordinary transcript. It mints no authority and deliberately
+// recomputes every aggregate from compact physical facts instead of accepting
+// the transcript's cached counters as caller-supplied quota input.
+func rootQuotaUsageFactsFromAdmissionTranscript(transcript *admissionReplayTranscript) (rootQuotaUsageFacts, error) {
+	if transcript == nil || transcript.revision != 0 || transcript.canonical == ([32]byte{}) || transcript.canonical != admissionReplayCanonicalDigest(transcript) {
+		return rootQuotaUsageFacts{}, admissionCorrupt("admission-quota", "admission transcript is not exact", nil)
+	}
+	facts := rootQuotaUsageFacts{targetIndexPresent: !transcript.targetAbsent}
+	var err error
+	for _, object := range transcript.objects {
+		if object.size == 0 || object.size > rootTempMaximumEachBytes || requireDigest("admission-quota.object", object.digest) != nil {
+			return rootQuotaUsageFacts{}, admissionCorrupt("admission-quota", "stored object quota fact is invalid", nil)
+		}
+		if object.temporary {
+			facts.tempCount, err = admissionCheckedAdd(facts.tempCount, 1)
+			if err != nil {
+				return rootQuotaUsageFacts{}, err
+			}
+			facts.tempBytes, err = admissionCheckedAdd(facts.tempBytes, object.size)
+			if err != nil {
+				return rootQuotaUsageFacts{}, err
+			}
+			if object.size > facts.largestTempBytes {
+				facts.largestTempBytes = object.size
+			}
+			continue
+		}
+		facts.finalObjects = append(facts.finalObjects, rootQuotaObjectFact{digest: object.digest, size: object.size})
+		facts.finalObjectBytes, err = admissionCheckedAdd(facts.finalObjectBytes, object.size)
+		if err != nil {
+			return rootQuotaUsageFacts{}, err
+		}
+	}
+	facts.finalObjects = canonicalRootObjects(facts.finalObjects)
+	for lineageIndex := range transcript.lineages {
+		lineage := &transcript.lineages[lineageIndex]
+		facts.indexCount, err = admissionCheckedAdd(facts.indexCount, 1)
+		if err != nil {
+			return rootQuotaUsageFacts{}, err
+		}
+		facts.indexActualBytes, err = admissionCheckedAdd(facts.indexActualBytes, lineage.index.size)
+		if err != nil {
+			return rootQuotaUsageFacts{}, err
+		}
+		facts.journalCount, err = admissionCheckedAdd(facts.journalCount, uint64(len(lineage.journals)))
+		if err != nil {
+			return rootQuotaUsageFacts{}, err
+		}
+		var lineageReservedBytes, lineageReservedRecords uint64
+		for generationIndex := range lineage.generations {
+			generation := &lineage.generations[generationIndex]
+			if generation.runtimeInspection == nil {
+				return rootQuotaUsageFacts{}, fail(CodeEvidenceRecoveryRequired, "admission-quota", "historical runtime quota inspection is unavailable", nil)
+			}
+			facts.journalReservedBytes, err = admissionCheckedAdd(facts.journalReservedBytes, generation.runtimeInspection.reservation.ReservedJournalBytes)
+			if err != nil {
+				return rootQuotaUsageFacts{}, err
+			}
+			lineageReservedBytes, err = admissionCheckedAdd(lineageReservedBytes, generation.remainingIndexBytes)
+			if err != nil {
+				return rootQuotaUsageFacts{}, err
+			}
+			lineageReservedRecords, err = admissionCheckedAdd(lineageReservedRecords, generation.remainingIndexRecords)
+			if err != nil {
+				return rootQuotaUsageFacts{}, err
+			}
+		}
+		facts.indexReservedBytes, err = admissionCheckedAdd(facts.indexReservedBytes, lineageReservedBytes)
+		if err != nil {
+			return rootQuotaUsageFacts{}, err
+		}
+		if lineage.id == transcript.target {
+			facts.targetIndexRecords, facts.targetIndexBytes = lineage.indexRecords, lineage.index.size
+			facts.targetIndexReservedRecords, facts.targetIndexReservedBytes = lineageReservedRecords, lineageReservedBytes
+		}
+	}
+	if facts.journalReservedBytes != transcript.journalReservedBytes || facts.indexActualBytes != transcript.indexBytes || facts.indexReservedBytes != transcript.indexReservedBytes || facts.targetIndexPresent && (facts.targetIndexRecords == 0 || facts.targetIndexBytes == 0) || facts.targetIndexPresent == transcript.targetAbsent || !facts.valid() {
+		return rootQuotaUsageFacts{}, admissionCorrupt("admission-quota", "recomputed root quota facts differ from admission transcript", nil)
+	}
+	return facts, nil
+}
+
 func lineageByID(lineages []admissionReplayLineage, id [32]byte) *admissionReplayLineage {
 	for index := range lineages {
 		if lineages[index].id == id {

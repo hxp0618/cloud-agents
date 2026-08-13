@@ -1135,7 +1135,7 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 		}
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" {
+			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" || function.Name.Name == "rootQuotaUsageFactsFromAdmissionTranscript" {
 				continue
 			}
 			mentions := false
@@ -1149,6 +1149,59 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 				t.Fatalf("admission transcript gained production consumer %s in %s", function.Name.Name, name)
 			}
 		}
+	}
+}
+
+func TestAdmissionTranscriptRecomputesRootAndTargetQuotaFacts(t *testing.T) {
+	target := [32]byte{1}
+	finalA, finalB := DigestBytes([]byte("quota-final-a")), DigestBytes([]byte("quota-final-b"))
+	transcript := &admissionReplayTranscript{
+		revision: 0, fullSetDigest: [32]byte{2}, target: target,
+		objects: []admissionReplayObject{
+			{digest: finalB, size: 7, identity: [32]byte{3}},
+			{temporary: true, digest: DigestBytes([]byte("quota-temp")), size: 11, identity: [32]byte{4}},
+			{digest: finalA, size: 5, identity: [32]byte{5}},
+		},
+		lineages: []admissionReplayLineage{
+			{id: target, index: admissionReplayFile{size: 13}, indexRecords: 2, journals: []admissionReplayJournal{{id: [32]byte{6}}}, generations: []admissionReplayGeneration{{remainingIndexRecords: 3, remainingIndexBytes: 17, runtimeInspection: &admissionReplayRuntimeInspection{reservation: evidenceQuotaReservation{ReservedJournalBytes: 12}}}}},
+			{id: [32]byte{7}, index: admissionReplayFile{size: 19}, indexRecords: 4, journals: []admissionReplayJournal{{id: [32]byte{8}}, {id: [32]byte{9}}}, generations: []admissionReplayGeneration{{remainingIndexRecords: 5, remainingIndexBytes: 23, runtimeInspection: &admissionReplayRuntimeInspection{reservation: evidenceQuotaReservation{ReservedJournalBytes: 17}}}}},
+		},
+		journalReservedBytes: 29, indexBytes: 32, indexReservedBytes: 40,
+	}
+	transcript.canonical = admissionReplayCanonicalDigest(transcript)
+	facts, err := rootQuotaUsageFactsFromAdmissionTranscript(transcript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.finalObjects) != 2 || facts.finalObjectBytes != 12 || facts.tempCount != 1 || facts.tempBytes != 11 || facts.largestTempBytes != 11 || facts.journalCount != 3 || facts.journalReservedBytes != 29 || facts.indexCount != 2 || facts.indexActualBytes != 32 || facts.indexReservedBytes != 40 || !facts.targetIndexPresent || facts.targetIndexRecords != 2 || facts.targetIndexBytes != 13 || facts.targetIndexReservedRecords != 3 || facts.targetIndexReservedBytes != 17 || !facts.valid() {
+		t.Fatalf("root quota facts are incomplete: %+v", facts)
+	}
+	if facts.finalObjects[0].digest >= facts.finalObjects[1].digest {
+		t.Fatal("final objects are not canonical")
+	}
+
+	for name, mutate := range map[string]func(*admissionReplayTranscript){
+		"cached actual":   func(v *admissionReplayTranscript) { v.indexBytes++ },
+		"cached reserved": func(v *admissionReplayTranscript) { v.indexReservedBytes++ },
+		"target swap":     func(v *admissionReplayTranscript) { v.target = [32]byte{99} },
+		"object zero":     func(v *admissionReplayTranscript) { v.objects[0].size = 0 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := cloneAdmissionReplayTranscript(transcript)
+			mutate(value)
+			value.canonical = admissionReplayCanonicalDigest(value)
+			if _, err := rootQuotaUsageFactsFromAdmissionTranscript(value); !IsCode(err, CodeEvidenceJournalCorrupt) {
+				t.Fatalf("quota mismatch accepted: %v", err)
+			}
+		})
+	}
+
+	absent := cloneAdmissionReplayTranscript(transcript)
+	absent.target, absent.targetAbsent = [32]byte{99}, true
+	absent.canonical = admissionReplayCanonicalDigest(absent)
+	absentFacts, err := rootQuotaUsageFactsFromAdmissionTranscript(absent)
+	if err != nil || absentFacts.targetIndexPresent || absentFacts.targetIndexRecords != 0 || absentFacts.targetIndexReservedBytes != 0 {
+		t.Fatalf("absent target quota facts differ: %+v err=%v", absentFacts, err)
 	}
 }
 
