@@ -43,6 +43,7 @@ type fakeBackend struct {
 	lstats             int
 	preads             int
 	writes             int
+	onWrite            func(*fakeBackend, *fakeNode, int)
 	fdatasyncs         int
 	fsyncs             int
 	renames            int
@@ -211,6 +212,7 @@ func (f *fakeBackend) mkdirAt(parent int, name string) error {
 		return fakeExist
 	}
 	parentNode.children[name] = f.directory(name)
+	parentNode.stat.nlink++
 	return nil
 }
 
@@ -308,6 +310,9 @@ func (f *fakeBackend) write(fd int, source []byte) (int, error) {
 	node, err := f.node(fd)
 	if err != nil {
 		return 0, err
+	}
+	if f.onWrite != nil {
+		f.onWrite(f, node, f.writes)
 	}
 	n := len(source)
 	if f.partialWrite > 0 && n > f.partialWrite {
