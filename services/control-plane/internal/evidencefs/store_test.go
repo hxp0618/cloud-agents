@@ -970,6 +970,57 @@ func TestBoundPublicationSurvivesLeaseClose(t *testing.T) {
 	}
 }
 
+func TestBoundPublicationOpaqueComparators(t *testing.T) {
+	f := newFakeBackend()
+	lease := testLease(t, f)
+	content := []byte("same-content")
+	digest := sha256.Sum256(content)
+	scan, err := lease.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := lease.Publish(context.Background(), scan, digest, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.BindPublication(first, digest, uint64(len(content))); err != nil {
+		t.Fatal(err)
+	}
+	scan, err = lease.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := lease.Publish(context.Background(), scan, digest, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.SameStore(second) || first.SameObject(second) {
+		t.Fatal("transient publication entered bound comparator")
+	}
+	if err := lease.BindPublication(second, digest, uint64(len(content))); err != nil {
+		t.Fatal(err)
+	}
+	if !first.SameStore(second) || !first.SameObject(second) {
+		t.Fatal("same bound object did not compare equal")
+	}
+	otherBackend := newFakeBackend()
+	otherLease := testLease(t, otherBackend)
+	otherScan, err := otherLease.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := otherLease.Publish(context.Background(), otherScan, digest, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := otherLease.BindPublication(foreign, digest, uint64(len(content))); err != nil {
+		t.Fatal(err)
+	}
+	if first.SameStore(foreign) || first.SameObject(foreign) || (&Publication{}).SameStore(first) || (&Publication{}).SameObject(first) {
+		t.Fatal("foreign or literal publication compared as bound authority")
+	}
+}
+
 func TestExistingReuseSyncOrderAndFailures(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		f := newFakeBackend()

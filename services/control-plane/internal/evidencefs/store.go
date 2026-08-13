@@ -351,6 +351,19 @@ func (p *Publication) Matches(digest [32]byte, size uint64) bool {
 	return p.boundValid() && p.digest == digest && p.size == size
 }
 
+// SameStore compares only opaque bound publication authority. It exposes no
+// root path, descriptor, device, inode, or caller-reconstructable identity.
+func (p *Publication) SameStore(other *Publication) bool {
+	return p.boundValid() && other.boundValid() && p.root == other.root
+}
+
+// SameObject is SameStore plus exact verified final-object identity. Equal
+// content in this store is normally the same object, but retaining the private
+// file identity makes restart/recovery comparisons explicit.
+func (p *Publication) SameObject(other *Publication) bool {
+	return p.SameStore(other) && p.digest == other.digest && p.size == other.size && sameIdentity(p.identity.object, other.identity.object)
+}
+
 func (p *Publication) transientValid() bool {
 	return p != nil && p.self == p && p.seal != nil && p.root != nil && p.lease != nil && p.identity != nil && p.identity.self == p.identity && p.identity.seal != nil && sameIdentity(p.identity.root, p.root.identity) && validRegular(p.identity.object, p.root.uid, p.root.identity.device) && p.size == p.identity.object.size && !p.bound && !p.consumed
 }
