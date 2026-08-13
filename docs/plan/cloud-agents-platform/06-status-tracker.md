@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-13
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（brand-new admission durability locally reaches sealed `GenerationReadyPermit`；root-release/normal-run handoff、trusted mount 与 runner/DB remain open）；M1/P2–P6 PAUSED
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（brand-new admission locally reaches sealed non-runnable `GenerationHandoffReady`；normal-run journal/cursor、trusted mount 与 runner/DB remain open）；M1/P2–P6 PAUSED
 
 ## 1. 决策表
 
@@ -69,14 +69,14 @@
 | G-BASELINE-M1       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-BASELINE          | none                           | IN PROGRESS | `CAG-G-BASELINE-P0-20260810-R3`                                                 | P0 phase verified；M1 phase not started                                                                                                                                                                             | 2026-08-10    |
 | G-CONTRACT          | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / G-INVENTORY R3 / G-BASELINE-P0 R3`                       | P1-A1 bootstrap + SubjectRef/HTTP idempotency follow-up；official generation/closure record open                                                                                                                    | 2026-08-11    |
-| G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission reserve/header/activate locally durable through `5896da7`；normal-run journal、runner/DB、recovery与closure open                         | 2026-08-13    |
-| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Typed authority/projector complete；sealed `GenerationReadyPermit` local boundary at `5896da7`；trusted mount、root-release/handoff、active-generation与runner closure open                                         | 2026-08-13    |
+| G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission reserve/header/activate + lock handoff locally complete through `c017c95`；journal/cursor、runner/DB、recovery与closure open             | 2026-08-13    |
+| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Sealed non-runnable `GenerationHandoffReady` local boundary at `c017c95`；trusted mount、normal-run journal/cursor、active-generation与runner closure open                                                          | 2026-08-13    |
 | G-AUTHORITY-P2      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P3      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P4      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P5      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P6      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
-| G-SECURITY-P1       | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Fail-closed adapters + local admission fault gates through `5896da7` complete；真实 mount/cross-process/power-loss、normal-run consumer 与 closure open                                                             | 2026-08-13    |
+| G-SECURITY-P1       | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Fail-closed adapters + admission/lock-handoff fault gates through `c017c95` complete；真实 mount/cross-process/power-loss、normal-run consumer 与 closure open                                                      | 2026-08-13    |
 | G-SECURITY-P2       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-SECURITY-P3       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-SECURITY-P4       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
@@ -159,9 +159,10 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       dependency 仍须逐项重复该流程。
 - [x] pgx v5.10.0 + x/text v0.39.0 dependency implementation closure 已由 `93f742f` 集成；该切片只把
       `G-SUPPLY-CHAIN` 推进到 `IN PROGRESS`，未形成 aggregate Gate closure。
-- [x] brand-new admission 已在 `5896da7` 本地推进到 durable
+- [x] brand-new admission 已在 `c017c95` 本地推进到 durable
       `GenerationReserved → segment-0 JournalHeader → GenerationActivated` 与 sealed `GenerationReadyPermit`；
+      随后释放 root-wide/non-target locks 并进入 non-runnable `GenerationHandoffReady`；
       [implementation evidence](../p1/admission-generation-durability-20260813.md) 不构成 Gate closure。
-- [ ] 实现并独立复核 root-wide lock release/normal-run handoff、trusted-mount production constructor、
-      `EvidenceJournal`/checkpoint/runner/DB `Connect` 与真实 ext4/XFS/cross-process/power-loss evidence；完成前 P1 Gates
-      继续 `IN PROGRESS`。
+- [ ] 实现并独立复核 `EvidenceJournal`/`JournalCursor`/checkpoint normal-run authority、trusted-mount production
+      constructor、runner/DB `Connect` 与真实 ext4/XFS/cross-process/power-loss evidence；完成前 P1 Gates 继续
+      `IN PROGRESS`。

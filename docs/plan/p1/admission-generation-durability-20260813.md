@@ -1,16 +1,18 @@
 # P1 admission generation durability implementation evidence
 
 - Status：**LOCAL IMPLEMENTATION VERIFIED — GATE OPEN**
-- Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability 与
-  `GenerationActivated` durable append
-- Fixed source commit：`5896da7c6c4bc75055bfad7dc63db913bb5a9446`
-- Fixed source tree：`4fd3c0fcc0940049f661d51a511c2e1136e4401e`
+- Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability、
+  `GenerationActivated` durable append 与 root-wide lock release/non-runnable lock handoff
+- Fixed source commit：`c017c9573015d7e91099d71744459f9f7478594d`
+- Fixed source tree：`3409033bc39fb8d6ec59a8dfee0643051489ba6b`
 - Branch：`codex/cloud-agents-platform-p1`
 - Date：2026-08-13 Asia/Shanghai
 - Toolchain：Go `1.26.5 darwin/arm64`
 - Record type：implementation evidence；**不是** Gate closure record
 
-本记录固定 `ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit` 的本地实现证据。
+本记录固定
+`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady`
+的本地实现证据。
 它证明 brand-new generation 在同一 active admission epoch 与 retained lock chain 下，按
 `GenerationReserved → exact segment-0 JournalHeader → GenerationActivated` 的顺序完成代码级 durability barrier。
 它不证明 production trusted mount、正常运行交接、数据库连接、真实文件系统掉电恢复或 Platform RC。
@@ -23,6 +25,8 @@
 | `e5283693f116552ecefdb6ef626668ca0f931666` | migration generation reserve         | exact planned `GenerationReserved` append and sealed `ReservedDurablePermit` |
 | `1ecbba8db051e5d1ee0d1a6dd66b810a9c6030cf` | migration generation header          | exact planned header create and sealed `HeaderDurablePermit`                 |
 | `5896da7c6c4bc75055bfad7dc63db913bb5a9446` | migration generation activation      | exact `GenerationActivated` append and sealed `GenerationReadyPermit`        |
+| `8bfe7c816811ab0a1885b65a53b7a621b66d1144` | evidencefs lock handoff              | release root/non-target locks and retain exact target/generation lock pair   |
+| `c017c9573015d7e91099d71744459f9f7478594d` | migration lock handoff               | consume generation-ready and seal non-runnable `GenerationHandoffReady`      |
 
 Key fixed file identities:
 
@@ -36,6 +40,10 @@ Key fixed file identities:
 | `internal/migration/evidence_admission_header_test.go`     | `6300f021349d3fdbd17f1aa211d72332572e2def5b43a585e6279172321c0688` |
 | `internal/migration/evidence_admission_activation.go`      | `981edd5e0af5046aec0796d371ff13535a22f974611af0e3310edb696a7a2b72` |
 | `internal/migration/evidence_admission_activation_test.go` | `dbed639b6e3289542637e45a416b6eeff84cdd8905e7f4cfd7b8e271b77ec04f` |
+| `internal/evidencefs/admission_handoff.go`                 | `67b99efddcba783d1702f7a87ab3e7203ba977632ef74df4ecce8a5f75645533` |
+| `internal/evidencefs/admission_handoff_test.go`            | `5c8ffb744fe7a1db83c70c6a79ff9483b31bdf5501e24d66b2779396c1bcfa9e` |
+| `internal/migration/evidence_admission_handoff.go`         | `1de1e9268cc11406e079301be5f504350174000e1b576fd506c013fd65b17e03` |
+| `internal/migration/evidence_admission_handoff_test.go`    | `8e17d7ff611193a7e46d2c405537f1c7d2e1be2b51e198e456842226ac3153ec` |
 
 Paths in this table are relative to `services/control-plane/`.
 
@@ -72,8 +80,14 @@ lineage and root locks in reverse ownership order. No failure path deletes or re
   predecessor. Literal, copied, stale, field-swapped and double-consumed values fail closed. Mutation/response uncertainty returns
   no successor authority.
 - `GenerationReadyPermit` proves only the durable reserve/header/activate chain. It is intentionally not `ActiveGeneration`, does
-  not expose `Connect`, `EvidenceJournal` or `JournalCursor`, cannot release the root lock, and has no production consumer. A
-  static regression test preserves this boundary.
+  not expose `Connect`, `EvidenceJournal` or `JournalCursor`, and its only reviewed production consumer is the handoff transition.
+- `AdmissionMutationToken.HandoffGeneration` consumes the exact current revision, invalidates the old inventory/admission lease,
+  releases all other generation locks, all non-target lineage locks and the root-wide lock, and transfers only the exact target
+  lineage + generation FD pair into a registry-sealed `evidencefs.GenerationLease`. Any unlock/close uncertainty cleans both
+  retained locks, poisons the store and returns no lease.
+- migration then binds that opaque lease to the exact activated C3 identities and returns `GenerationHandoffReady`. Both layers use
+  immutable registry records, anti-copy checks and one-shot cleanup. The handoff value remains non-runnable and has no production
+  consumer; static tests forbid `Connect`, `AppendDurable`, `Open` and `ActiveGeneration` seams.
 
 ## Local verification
 
@@ -100,14 +114,15 @@ git diff --check
 Focused fault coverage includes pre-mutation preservation, post-mutation unknown/revocation, short and failed writes, each
 sync/close boundary, retained-lock slot binding, reverse cleanup, exact inventory revision/full-set changes, receipt/object/store
 identity swaps, canonical frame/digest mismatches, anti-copy/one-shot behavior and the absence of an unreviewed
-`GenerationReadyPermit` consumer.
+runtime consumer, exact release order, root-lock reacquisition after handoff, immutable-registry tamper rejection and
+cleanup through the original retained FDs.
 
 ## Explicitly open boundaries
 
 - Linux production `evidencefs.Open`/trusted-mount authority remains fail closed before mutation; there is no positive production
   constructor or cross-package end-to-end admission test.
-- `GenerationReadyPermit` still holds the full-root admission critical section. The transition that releases root-wide and
-  non-target lineage locks while retaining the target lineage/generation writer authority is not implemented.
+- Root-wide admission release and opaque target/generation lock transfer are locally implemented, but `GenerationHandoffReady`
+  deliberately stops before normal-run authority.
 - Normal-run `EvidenceJournal`, `JournalCursor`, checkpoint append/heal, `ActiveGeneration`, `Connect`, runner and database wiring
   are not implemented by this slice.
 - Successor `GenerationSuperseded → adjacent GenerationReserved` and crash-reopen recovery remain separate incomplete paths.

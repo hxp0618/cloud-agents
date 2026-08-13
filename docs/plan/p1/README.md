@@ -12,10 +12,11 @@
   x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
   P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)；P1-A2.1a-impl-2 PG adapters
   (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)；admission registration/publish/bind/reserve
-  chain (`8c9a72b` through `5896da7`)，其中 brand-new generation 已完成 exact
-  `GenerationReserved → segment-0 header → GenerationActivated` 本地 durability 切片
-- Current slice：从 sealed `GenerationReadyPermit` 实现 root-wide admission lock release 与 normal-run handoff；
-  production trusted mount、`EvidenceJournal`/`JournalCursor`、runner/DB `Connect` 仍 fail closed
+  chain (`8c9a72b` through `c017c95`)，其中 brand-new generation 已完成 exact
+  `GenerationReserved → segment-0 header → GenerationActivated` durability 与 root-wide lock release/opaque
+  target+generation lock handoff
+- Current slice：从 sealed non-runnable `GenerationHandoffReady` 建立 normal-run `EvidenceJournal`/`JournalCursor`
+  authority；production trusted mount 与 runner/DB `Connect` 仍 fail closed
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -52,10 +53,10 @@ Platform RC、Beta 或 GA。
 ## Current admission durability evidence
 
 - [`admission-generation-durability-20260813.md`](admission-generation-durability-20260813.md) 固定 source
-  `5896da7c6c4bc75055bfad7dc63db913bb5a9446`，记录 brand-new receipt-bound reservation、generation
-  journal/segment-0 durability、exact activation append、fault gates 与未实现边界。
+  `c017c9573015d7e91099d71744459f9f7478594d`，记录 brand-new receipt-bound reservation、generation
+  journal/segment-0 durability、exact activation append、root-wide lock release、fault gates 与未实现边界。
 - 该记录是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；
-  `GenerationReadyPermit` 没有 production consumer，也没有 normal-run/DB authority。
+  `GenerationHandoffReady` 没有 production consumer，也没有 normal-run journal/cursor 或 DB authority。
 
 ## Projection runner boundary (still open)
 
@@ -75,6 +76,7 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 `UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
 `G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 均不得标为 `VERIFIED`。
 
-在上述 projection 工作之后，admission durability 已推进到 sealed `GenerationReadyPermit`，但这没有改变 Gate
-结论：production trusted-mount constructor、root-wide lock release/normal-run handoff、journal cursor/checkpoint、
-runner/DB `Connect`、successor/reopen 与真实 ext4/XFS/power-loss 证据仍然开放。
+在上述 projection 工作之后，admission durability 已推进到 sealed non-runnable `GenerationHandoffReady`：root-wide 与
+non-target locks 已释放，只保留 exact target lineage + generation lock pair。但这没有改变 Gate 结论：production
+trusted-mount constructor、journal cursor/checkpoint、runner/DB `Connect`、successor/reopen 与真实
+ext4/XFS/power-loss 证据仍然开放。
