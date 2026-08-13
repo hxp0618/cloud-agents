@@ -123,7 +123,7 @@ func TestGenerationHandoffReadyIsNotRuntimeAuthorityAndHasNoConsumer(t *testing.
 	for _, entry := range entries {
 		name := entry.Name()
 		isTest := len(name) >= len("_test.go") && name[len(name)-len("_test.go"):] == "_test.go"
-		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || isTest {
+		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || name == "evidence_generation_recovery.go" || isTest {
 			continue
 		}
 		raw, err := os.ReadFile(name)
@@ -310,7 +310,7 @@ func TestGenerationReplayReadyIsNotRuntimeAuthority(t *testing.T) {
 	for _, entry := range entries {
 		name := entry.Name()
 		isTest := len(name) >= len("_test.go") && name[len(name)-len("_test.go"):] == "_test.go"
-		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || isTest {
+		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || name == "evidence_generation_recovery.go" || isTest {
 			continue
 		}
 		raw, err := os.ReadFile(name)
@@ -395,7 +395,7 @@ func generationReplayFixture(t *testing.T) (OwnedCurrentCandidate, *GenerationHa
 	ready.consumed.Store(true)
 	ready.binding = &generationHandoffReadyBinding{ready: ready, prior: consumedPermit, plan: plan, history: history, candidateBinding: candidate.binding, lease: ready.lease}
 	ready.binding.canonical = generationHandoffReadyDigest(ready)
-	generationHandoffReadyRegistry.Store(ready, generationHandoffReadyRegistryRecord{ready: ready, binding: ready.binding, prior: consumedPermit, plan: plan, history: history, candidateBinding: candidate.binding, lease: ready.lease, canonical: ready.binding.canonical})
+	generationHandoffReadyRegistry.Store(ready, generationHandoffReadyRegistryRecord{ready: ready, binding: ready.binding, prior: consumedPermit, plan: plan, history: history, candidateBinding: candidate.binding, lease: ready.lease, runtimeReceipt: consumedPermit.runtimeReceipt, recoveryReceipt: consumedPermit.recoveryReceipt, canonical: ready.binding.canonical})
 	indexRaw := append(append(append([]byte(nil), lineageRaw...), reservedRaw...), activatedRaw...)
 	return candidate, ready, indexRaw, [][]byte{headerRaw}
 }

@@ -67,6 +67,8 @@ type generationHandoffReadyRegistryRecord struct {
 	history          *VerifiedAdmissionHistory
 	candidateBinding *verifiedEvidenceRunBinding
 	lease            *evidencefs.GenerationLease
+	runtimeReceipt   VerifiedContentReceipt
+	recoveryReceipt  VerifiedDecisionRecoveryReceipt
 	canonical        [32]byte
 }
 
@@ -206,7 +208,7 @@ func (p *GenerationReadyPermit) Handoff(ctx context.Context, candidate OwnedCurr
 	binding.canonical = generationHandoffReadyDigest(ready)
 	generationHandoffReadyRegistry.Store(ready, generationHandoffReadyRegistryRecord{
 		ready: ready, binding: binding, prior: p, plan: p.plan, history: p.history, candidateBinding: candidate.binding,
-		lease: fsLease, canonical: binding.canonical,
+		lease: fsLease, runtimeReceipt: p.runtimeReceipt, recoveryReceipt: p.recoveryReceipt, canonical: binding.canonical,
 	})
 	if !validGenerationHandoffReady(ready, candidate) {
 		generationHandoffReadyRegistry.Delete(ready)
@@ -270,6 +272,7 @@ func validGenerationHandoffReady(ready *GenerationHandoffReady, candidate OwnedC
 	record, recordOK := registered.(generationHandoffReadyRegistryRecord)
 	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.plan == ready.plan &&
 		record.history == ready.history && record.candidateBinding == ready.candidateBinding && record.lease == ready.lease &&
+		record.runtimeReceipt.binding == ready.prior.runtimeReceipt.binding && record.recoveryReceipt.binding == ready.prior.recoveryReceipt.binding &&
 		record.canonical == ready.binding.canonical
 }
 
@@ -426,7 +429,6 @@ func (r *GenerationHandoffReady) replaySnapshot(ctx context.Context, candidate O
 		_ = r.lease.Close()
 		return result, admissionFailed("generation-replay-seal", "replayed generation authority could not be sealed", nil)
 	}
-	generationHandoffReadyRegistry.Delete(r)
 	result.next = ready
 	result.snapshotIdentity = identity
 	result.indexRecords = uint64(len(indexFrames))
@@ -447,7 +449,7 @@ func validConsumedGenerationHandoffReady(ready *GenerationHandoffReady, candidat
 	}
 	registered, ok := generationHandoffReadyRegistry.Load(ready)
 	record, recordOK := registered.(generationHandoffReadyRegistryRecord)
-	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.plan == ready.plan && record.history == ready.history && record.candidateBinding == ready.candidateBinding && record.lease == ready.lease && record.canonical == ready.binding.canonical
+	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.plan == ready.plan && record.history == ready.history && record.candidateBinding == ready.candidateBinding && record.lease == ready.lease && record.runtimeReceipt.binding == ready.prior.runtimeReceipt.binding && record.recoveryReceipt.binding == ready.prior.recoveryReceipt.binding && record.canonical == ready.binding.canonical
 }
 
 func isPreMutationReplayError(err error) bool {
@@ -549,7 +551,7 @@ func generationReplayReadyDigest(ready *GenerationReplayReady) [32]byte {
 }
 
 func validGenerationReplayReady(ready *GenerationReplayReady, candidate OwnedCurrentCandidate) bool {
-	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.plan == nil || ready.history == nil || ready.candidateBinding != candidate.binding || ready.lease == nil || ready.snapshot == nil || ready.binding.prior != ready.prior || ready.binding.plan != ready.plan || ready.binding.history != ready.history || ready.binding.candidateBinding != ready.candidateBinding || ready.binding.lease != ready.lease || ready.binding.snapshot != ready.snapshot || ready.consumed == nil || ready.consumed.Load() || !validOwnedCurrentCandidate(candidate) || ready.plan != ready.prior.plan || ready.history != ready.prior.history || ready.candidateBinding != ready.prior.candidateBinding || ready.target != ready.prior.target || ready.journal != ready.prior.journal || ready.revision != ready.prior.revision || ready.reservedDigest != ready.prior.reservedDigest || ready.headerDigest != ready.prior.headerDigest || ready.activationDigest != ready.prior.activationDigest || !ready.lease.Active() || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != generationReplayReadyDigest(ready) {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.plan == nil || ready.history == nil || ready.candidateBinding != candidate.binding || ready.lease == nil || ready.snapshot == nil || ready.binding.prior != ready.prior || ready.binding.plan != ready.plan || ready.binding.history != ready.history || ready.binding.candidateBinding != ready.candidateBinding || ready.binding.lease != ready.lease || ready.binding.snapshot != ready.snapshot || ready.consumed == nil || ready.consumed.Load() || !validOwnedCurrentCandidate(candidate) || !validConsumedGenerationHandoffReady(ready.prior, candidate) || ready.plan != ready.prior.plan || ready.history != ready.prior.history || ready.candidateBinding != ready.prior.candidateBinding || ready.target != ready.prior.target || ready.journal != ready.prior.journal || ready.revision != ready.prior.revision || ready.reservedDigest != ready.prior.reservedDigest || ready.headerDigest != ready.prior.headerDigest || ready.activationDigest != ready.prior.activationDigest || !ready.lease.Active() || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != generationReplayReadyDigest(ready) {
 		return false
 	}
 	identity, err := ready.snapshot.IdentityDigest()
@@ -569,14 +571,28 @@ func (r *GenerationReplayReady) Close() error {
 	if r == nil || r.self != r || r.consumed == nil || !r.consumed.CompareAndSwap(false, true) {
 		return admissionFailed("generation-replay-close", "generation replay authority is unavailable", nil)
 	}
+	return closeRegisteredGenerationReplay(r, "generation-replay-close")
+}
+
+// closeRegisteredGenerationReplay performs the actual immutable-registry
+// cleanup after the replay value has already been consumed by either Close or
+// a successor transition. It deliberately does not consult the mutable
+// one-shot bit a second time.
+func closeRegisteredGenerationReplay(r *GenerationReplayReady, operation string) error {
+	if r == nil || r.self != r || operation == "" {
+		return admissionFailed(operation, "generation replay authority is unavailable", nil)
+	}
 	registered, ok := generationReplayReadyRegistry.Load(r)
 	record, recordOK := registered.(generationReplayReadyRegistryRecord)
-	if !ok || !recordOK || record.ready != r || record.binding == nil || record.lease == nil {
-		return admissionFailed("generation-replay-close", "immutable generation filesystem lease is unavailable", nil)
+	if !ok || !recordOK || record.ready != r || record.lease == nil || record.canonical == ([32]byte{}) {
+		return admissionFailed(operation, "immutable generation filesystem lease is unavailable", nil)
 	}
 	generationReplayReadyRegistry.Delete(r)
+	if record.prior != nil {
+		generationHandoffReadyRegistry.Delete(record.prior)
+	}
 	if err := record.lease.Close(); err != nil {
-		return mapEvidenceAdmissionError(err, "generation-replay-close")
+		return mapEvidenceAdmissionError(err, operation)
 	}
 	return nil
 }

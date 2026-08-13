@@ -24,6 +24,7 @@ type VerifiedAdmissionHistory struct {
 	targetHeader        admissionReplayLineageHeader
 	targetIndexRecords  uint64
 	targetIndexTail     Digest
+	currentFacts        *admissionHistoricalVerificationFacts
 	rootFacts           rootQuotaUsageFacts
 	reservation         evidenceQuotaReservation
 	quotaAdmission      rootQuotaAdmission
@@ -152,13 +153,40 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 		owner: current.owner, candidateBinding: candidate.binding, inventory: inventory, revision: revision,
 		target: target, fullSet: fullSet, transcriptCanonical: transcript.canonical,
 		targetState: targetState, targetHeader: targetHeader, targetIndexRecords: targetRecords, targetIndexTail: targetTail,
-		rootFacts: rootFacts, reservation: reservation, quotaAdmission: quotaAdmission,
+		currentFacts: cloneAdmissionHistoricalVerificationFacts(currentFacts),
+		rootFacts:    rootFacts, reservation: reservation, quotaAdmission: quotaAdmission,
 	}
 	binding := &verifiedAdmissionHistoryBinding{owner: current.owner, candidateBinding: candidate.binding, inventory: inventory, history: history}
 	history.binding = binding
 	binding.canonical = admissionHistoryDigest(history)
 	verifiedAdmissionHistoryRegistry.Store(binding, binding.canonical)
 	return history, nil
+}
+
+func cloneAdmissionHistoricalVerificationFacts(facts *admissionHistoricalVerificationFacts) *admissionHistoricalVerificationFacts {
+	if facts == nil {
+		return nil
+	}
+	owned := *facts
+	owned.orderedMigrations = append([]string(nil), facts.orderedMigrations...)
+	owned.statementSubjects = make(map[string][][32]byte, len(facts.statementSubjects))
+	for key, values := range facts.statementSubjects {
+		owned.statementSubjects[key] = append([][32]byte(nil), values...)
+	}
+	owned.finalCatalogDigest = make(map[string][32]byte, len(facts.finalCatalogDigest))
+	for key, value := range facts.finalCatalogDigest {
+		owned.finalCatalogDigest[key] = value
+	}
+	owned.catalogContractDigest = make(map[string][32]byte, len(facts.catalogContractDigest))
+	for key, value := range facts.catalogContractDigest {
+		owned.catalogContractDigest[key] = value
+	}
+	owned.attemptPredecessorCatalog = make(map[string][32]byte, len(facts.attemptPredecessorCatalog))
+	for key, value := range facts.attemptPredecessorCatalog {
+		owned.attemptPredecessorCatalog[key] = value
+	}
+	owned.ledgerRows = cloneProjectionValue(facts.ledgerRows)
+	return &owned
 }
 
 func admissionHistoryTargetFacts(transcript *admissionReplayTranscript) (admissionReplayLineageState, admissionReplayLineageHeader, uint64, Digest, error) {
@@ -349,6 +377,8 @@ func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 		value := history.targetIndexTail
 		writeAdmissionOptionalDigest(h, &value)
 	}
+	facts := admissionRecoveryFactsDigest(history.currentFacts)
+	h.Write(facts[:])
 	root := rootQuotaFactsDigest(history.rootFacts)
 	h.Write(root[:])
 	writeHistoryUint := func(value uint64) {
@@ -374,7 +404,7 @@ func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 }
 
 func validVerifiedAdmissionHistory(history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate) bool {
-	if history == nil || history.binding == nil || history.owner == nil || history.inventory == nil || !validOwnedCurrentCandidate(candidate) || history.owner != candidate.verifiedRun.currentDecision.owner || history.candidateBinding != candidate.binding || history.binding.owner != history.owner || history.binding.candidateBinding != candidate.binding || history.binding.inventory != history.inventory || history.binding.history != history || history.binding.canonical == ([32]byte{}) || history.binding.canonical != admissionHistoryDigest(history) || !history.rootFacts.valid() {
+	if history == nil || history.binding == nil || history.owner == nil || history.inventory == nil || !validOwnedCurrentCandidate(candidate) || history.owner != candidate.verifiedRun.currentDecision.owner || history.candidateBinding != candidate.binding || history.binding.owner != history.owner || history.binding.candidateBinding != candidate.binding || history.binding.inventory != history.inventory || history.binding.history != history || admissionRecoveryFactsDigest(history.currentFacts) == ([32]byte{}) || history.binding.canonical == ([32]byte{}) || history.binding.canonical != admissionHistoryDigest(history) || !history.rootFacts.valid() {
 		return false
 	}
 	registered, ok := verifiedAdmissionHistoryRegistry.Load(history.binding)
