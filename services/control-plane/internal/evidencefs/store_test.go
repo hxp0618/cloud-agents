@@ -309,6 +309,28 @@ func (f *fakeBackend) pread(fd int, target []byte, offset int64) (int, error) {
 	return n, nil
 }
 
+func (f *fakeBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
+	f.writes++
+	node, err := f.node(fd)
+	if err != nil || offset < 0 || offset > int64(len(node.data)) {
+		return 0, fakeNotExist
+	}
+	if f.onWrite != nil {
+		f.onWrite(f, node, f.writes)
+	}
+	n := len(source)
+	if f.partialWrite > 0 && n > f.partialWrite {
+		n = f.partialWrite
+	}
+	end := int(offset) + n
+	if end > len(node.data) {
+		node.data = append(node.data, make([]byte, end-len(node.data))...)
+	}
+	copy(node.data[int(offset):end], source[:n])
+	node.stat.size = uint64(len(node.data))
+	return n, nil
+}
+
 func (f *fakeBackend) write(fd int, source []byte) (int, error) {
 	f.writes++
 	node, err := f.node(fd)

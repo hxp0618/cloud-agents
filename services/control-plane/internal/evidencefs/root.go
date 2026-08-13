@@ -47,6 +47,7 @@ type backend interface {
 	isOverflow(error) bool
 	isNotExist(error) bool
 	pread(int, []byte, int64) (int, error)
+	pwrite(int, []byte, int64) (int, error)
 	write(int, []byte) (int, error)
 	fdatasync(int) error
 	fsync(int) error

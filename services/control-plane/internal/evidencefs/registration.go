@@ -37,7 +37,7 @@ func (r AdmissionTransitionResult) PreviousRevision() uint64            { return
 // binder cannot complete. It can only reduce authority; it never closes locks
 // or mutates disk, so the genuine AdmissionLease remains explicitly closable.
 func (r AdmissionTransitionResult) Invalidate() error {
-	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || (r.candidateKind != "target_lineage" && r.candidateKind != "target_lineage_reuse" && r.candidateKind != "inventory_advance") || r.candidateRevision != r.previousRevision+1 {
+	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || (r.candidateKind != "target_lineage" && r.candidateKind != "target_lineage_reuse" && r.candidateKind != "inventory_advance" && r.candidateKind != "target_index_append") || r.candidateRevision != r.previousRevision+1 {
 		return ErrLeaseInvalid
 	}
 	l := r.inventory.lease
@@ -49,7 +49,7 @@ func (r AdmissionTransitionResult) Invalidate() error {
 	if !r.inventory.validLocked() || r.inventory.revision != r.candidateRevision {
 		return ErrLeaseInvalid
 	}
-	if r.candidateKind != "inventory_advance" {
+	if r.candidateKind == "target_lineage" || r.candidateKind == "target_lineage_reuse" {
 		lineage := r.inventory.lineageMap[r.inventory.target]
 		if lineage == nil || lineage.index == nil || lineage.index.digest != r.candidateDigest {
 			l.revokeLocked()

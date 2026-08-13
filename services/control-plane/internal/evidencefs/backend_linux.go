@@ -81,6 +81,10 @@ func (linuxBackend) fstat(fd int) (fileStat, error) {
 	return linuxFileStat(raw)
 }
 
+func (linuxBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
+	return unix.Pwrite(fd, source, offset)
+}
+
 func linuxFileStat(raw unix.Stat_t) (fileStat, error) {
 	if raw.Size < 0 {
 		return fileStat{}, unix.EOVERFLOW
