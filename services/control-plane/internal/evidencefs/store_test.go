@@ -39,6 +39,7 @@ type fakeBackend struct {
 	device             uint64
 	rootOpens          int
 	directoryOpens     map[string]int
+	mkdirs             []string
 	lstats             int
 	preads             int
 	writes             int
@@ -198,6 +199,19 @@ func (f *fakeBackend) openFileAt(parent int, name string, create bool) (int, err
 		f.replaceOnOpen = ""
 	}
 	return f.alloc(node), nil
+}
+
+func (f *fakeBackend) mkdirAt(parent int, name string) error {
+	parentNode, err := f.node(parent)
+	if err != nil || parentNode.stat.kind != kindDirectory {
+		return fakeNotExist
+	}
+	f.mkdirs = append(f.mkdirs, name)
+	if _, exists := parentNode.children[name]; exists {
+		return fakeExist
+	}
+	parentNode.children[name] = f.directory(name)
+	return nil
 }
 
 func (f *fakeBackend) child(parent int, name string) (*fakeNode, error) {

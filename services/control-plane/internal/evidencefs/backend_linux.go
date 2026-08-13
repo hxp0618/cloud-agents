@@ -47,6 +47,10 @@ func (linuxBackend) openDirAt(parent int, name string) (int, error) {
 	return unix.Openat2(parent, name, &unix.OpenHow{Flags: unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC | unix.O_NOFOLLOW, Resolve: resolveFlags})
 }
 
+func (linuxBackend) mkdirAt(parent int, name string) error {
+	return unix.Mkdirat(parent, name, directoryMode)
+}
+
 func (linuxBackend) lstatAt(parent int, name string) (fileStat, error) {
 	var raw unix.Stat_t
 	if err := unix.Fstatat(parent, name, &raw, unix.AT_SYMLINK_NOFOLLOW); err != nil {

@@ -35,3 +35,9 @@ func TestLinuxRootMayCrossMountButChildrenMayNot(t *testing.T) {
 		t.Fatalf("child resolve flags=%#x root=%#x", resolveFlags, rootResolveFlags)
 	}
 }
+
+func TestLinuxMkdirUsesPrivateDirectoryMode(t *testing.T) {
+	if directoryMode != 0o700 {
+		t.Fatalf("directory mode=%#o", directoryMode)
+	}
+}

@@ -38,6 +38,7 @@ type fileStat struct {
 type backend interface {
 	openRoot(string) (int, error)
 	openDirAt(int, string) (int, error)
+	mkdirAt(int, string) error
 	lstatAt(int, string) (fileStat, error)
 	openFileAt(int, string, bool) (int, error)
 	fstat(int) (fileStat, error)
