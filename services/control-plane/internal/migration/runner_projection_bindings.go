@@ -604,6 +604,14 @@ func (bindings RunnerProjectionBindings) exactlyMatches(other RunnerProjectionBi
 // verifier and current signed recovery policy remain responsible for expiry
 // and revocation authorization.
 func (bindings RunnerProjectionBindings) validateHistorical() error {
+	validationTime, err := bindings.historicalValidationTime()
+	if err != nil {
+		return err
+	}
+	return bindings.validateAt(validationTime)
+}
+
+func (bindings RunnerProjectionBindings) historicalValidationTime() (time.Time, error) {
 	expiries := []time.Time{
 		bindings.releaseExpiresAt, bindings.authorityExpiresAt,
 		bindings.verifiedRecoveryPolicy.expiresAt,
@@ -616,13 +624,13 @@ func (bindings RunnerProjectionBindings) validateHistorical() error {
 	var earliest time.Time
 	for _, expiry := range expiries {
 		if expiry.IsZero() {
-			return fail(CodeUntrusted, "runner-projection-bindings", "historical projection binding expiry is unavailable", nil)
+			return time.Time{}, fail(CodeUntrusted, "runner-projection-bindings", "historical projection binding expiry is unavailable", nil)
 		}
 		if earliest.IsZero() || expiry.Before(earliest) {
 			earliest = expiry
 		}
 	}
-	return bindings.validateAt(earliest.Add(-time.Nanosecond))
+	return earliest.Add(-time.Nanosecond), nil
 }
 
 func (bindings RunnerProjectionBindings) historicallyExactlyMatches(other RunnerProjectionBindings) bool {
