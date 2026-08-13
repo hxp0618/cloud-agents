@@ -74,6 +74,7 @@ type fakeBackend struct {
 	preadCalls         int
 	onPread            func(*fakeBackend, *fakeNode, int)
 	tryLockAttempts    []string
+	onTryLock          func(*fakeBackend, *fakeNode, int)
 	busyInodeAttempts  map[uint64]int
 	failTryLockInodes  map[uint64]bool
 	failCloseName      string
@@ -414,6 +415,9 @@ func (f *fakeBackend) tryLock(fd int) (bool, error) {
 		return false, err
 	}
 	f.tryLockAttempts = append(f.tryLockAttempts, node.name)
+	if f.onTryLock != nil {
+		f.onTryLock(f, node, len(f.tryLockAttempts))
+	}
 	if f.failTryLockInodes[node.stat.inode] {
 		delete(f.failTryLockInodes, node.stat.inode)
 		return false, errors.New("try lock")

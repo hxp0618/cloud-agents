@@ -25,6 +25,7 @@ type admissionSlot struct {
 	fullSet      [32]byte
 	lineageOrder []*AdmissionLineageView
 	objectOrder  []*AdmissionObjectView
+	journalLocks []heldJournalLock
 	discovery    admissionDiscovery
 	objectSet    admissionObjectDiscovery
 	baseline     [32]byte
@@ -120,20 +121,22 @@ type heldLineageLock struct {
 	stat fileStat
 }
 
-// AdmissionLease owns the root writer lock and every writer lock in the
-// registered lineage set. It is sealed and cannot be reconstructed from paths,
-// descriptors, or filesystem identities.
+// AdmissionLease owns the root writer lock, every registered lineage writer
+// lock, and each generation-journal lock created during this epoch. It is
+// sealed and cannot be reconstructed from paths, descriptors, or filesystem
+// identities.
 type AdmissionLease struct {
-	self      *AdmissionLease
-	seal      *struct{}
-	mu        sync.Mutex
-	store     *Store
-	rootLease *RootLease
-	epoch     *admissionEpoch
-	current   *admissionSlot
-	locks     []heldLineageLock
-	valid     bool
-	closed    bool
+	self         *AdmissionLease
+	seal         *struct{}
+	mu           sync.Mutex
+	store        *Store
+	rootLease    *RootLease
+	epoch        *admissionEpoch
+	current      *admissionSlot
+	locks        []heldLineageLock
+	journalLocks []heldJournalLock
+	valid        bool
+	closed       bool
 }
 
 func (l *AdmissionLease) Active() bool {
@@ -151,10 +154,10 @@ func (l *AdmissionLease) activeLocked() bool {
 		l.valid && !l.closed && l.rootLease.Active()
 }
 
-// Close always attempts every lineage unlock/close in reverse acquisition
-// order and then releases the root lease. A revoked genuine lease remains
-// closable so its retained descriptors and locks can still be cleaned up. Any
-// uncertain cleanup poisons Store.
+// Close always attempts every generation-journal and lineage unlock/close in
+// reverse acquisition order and then releases the root lease. A revoked genuine
+// lease remains closable so its retained descriptors and locks can still be
+// cleaned up. Any uncertain cleanup poisons Store.
 func (l *AdmissionLease) Close() error {
 	if l == nil || l.self != l || l.seal == nil {
 		return ErrLeaseInvalid
@@ -168,7 +171,9 @@ func (l *AdmissionLease) Close() error {
 	if l.current != nil {
 		l.current.active = false
 	}
-	failed := releaseLineageLocks(l.store, l.locks)
+	failed := releaseJournalLocks(l.store, l.journalLocks)
+	l.journalLocks = nil
+	failed = releaseLineageLocks(l.store, l.locks) || failed
 	l.locks = nil
 	if l.rootLease.Close() != nil {
 		failed = true
@@ -178,6 +183,25 @@ func (l *AdmissionLease) Close() error {
 		return filesystem("admission-close")
 	}
 	return nil
+}
+
+type heldJournalLock struct {
+	lineage string
+	name    string
+	fd      int
+	stat    fileStat
+}
+
+func releaseJournalLocks(store *Store, locks []heldJournalLock) bool {
+	failed := false
+	if store == nil || store.ops == nil {
+		return true
+	}
+	for index := len(locks) - 1; index >= 0; index-- {
+		failed = store.ops.unlock(locks[index].fd) != nil || failed
+		failed = store.ops.close(locks[index].fd) != nil || failed
+	}
+	return failed
 }
 
 func releaseLineageLocks(store *Store, locks []heldLineageLock) bool {
@@ -293,7 +317,8 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory, revi
 		files: map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent,
 		target: inventory.target, fullSet: inventory.fullSet,
 		lineageOrder: append([]*AdmissionLineageView(nil), inventory.lineages...), objectOrder: append([]*AdmissionObjectView(nil), inventory.objects...),
-		discovery: cloneAdmissionDiscovery(inventory.discovery), objectSet: cloneAdmissionObjectDiscovery(inventory.objectSet),
+		journalLocks: append([]heldJournalLock(nil), inventory.lease.journalLocks...),
+		discovery:    cloneAdmissionDiscovery(inventory.discovery), objectSet: cloneAdmissionObjectDiscovery(inventory.objectSet),
 	}
 	slot.baseline = admissionBaselineDigest(slot.discovery, slot.objectSet)
 	for _, lineage := range inventory.lineages {

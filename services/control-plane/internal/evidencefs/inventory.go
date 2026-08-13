@@ -206,7 +206,7 @@ func (i *AdmissionInventory) Revalidate(ctx context.Context) error {
 }
 
 func (i *AdmissionInventory) snapshotMatchesLocked() bool {
-	if i == nil || i.slot == nil || admissionBaselineDigest(i.slot.discovery, i.slot.objectSet) != i.slot.baseline || admissionSlotGraphDigest(i.slot) != i.slot.graph || len(i.slot.discovery.lineages) != len(i.lineages) || len(i.slot.objectSet.objects) != len(i.objects) || len(i.slot.lineages) != len(i.lineages) || len(i.lineageMap) != len(i.lineages) || len(i.slot.objects) != len(i.objects) {
+	if i == nil || i.slot == nil || admissionBaselineDigest(i.slot.discovery, i.slot.objectSet) != i.slot.baseline || admissionSlotGraphDigest(i.slot) != i.slot.graph || len(i.slot.discovery.lineages) != len(i.lineages) || len(i.slot.objectSet.objects) != len(i.objects) || len(i.slot.lineages) != len(i.lineages) || len(i.lineageMap) != len(i.lineages) || len(i.slot.objects) != len(i.objects) || !sameHeldJournalLocks(i.slot.journalLocks, i.lease.journalLocks) || !journalLocksMatchDiscovery(i.slot.journalLocks, i.slot.discovery) {
 		return false
 	}
 	if i.absent == nil {
@@ -946,9 +946,60 @@ func admissionSlotGraphDigest(slot *admissionSlot) [32]byte {
 			h.Write([]byte{0})
 		}
 	}
+	writeFullSetCount(h, uint64(len(slot.journalLocks)))
+	for _, lock := range slot.journalLocks {
+		h.Write([]byte(lock.lineage))
+		h.Write([]byte{0})
+		h.Write([]byte(lock.name))
+		h.Write([]byte{0})
+		writeFullSetCount(h, uint64(lock.fd))
+		writeFullSetEntry(h, "journal-lock", lock.lineage+"/"+lock.name, lock.stat, [32]byte{})
+	}
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
+}
+
+func sameHeldJournalLocks(a, b []heldJournalLock) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index].lineage != b[index].lineage || a[index].name != b[index].name || a[index].fd != b[index].fd || !sameIdentity(a[index].stat, b[index].stat) {
+			return false
+		}
+	}
+	return true
+}
+
+func journalLocksMatchDiscovery(locks []heldJournalLock, discovery admissionDiscovery) bool {
+	for index, lock := range locks {
+		if lock.lineage == "" || lock.name == "" || lock.fd < 0 {
+			return false
+		}
+		for prior := 0; prior < index; prior++ {
+			if locks[prior].lineage == lock.lineage && locks[prior].name == lock.name {
+				return false
+			}
+		}
+		matched := false
+		for _, lineage := range discovery.lineages {
+			if lineage.name != lock.lineage {
+				continue
+			}
+			for _, journal := range lineage.journals {
+				if journal.name == lock.name && sameIdentity(journal.lock, lock.stat) {
+					matched = true
+					break
+				}
+			}
+			break
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }
 
 func writeSlotFileExpectation(h io.Writer, expected fileExpectation) {
