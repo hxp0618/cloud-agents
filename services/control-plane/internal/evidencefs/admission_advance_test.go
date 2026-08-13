@@ -61,3 +61,29 @@ func TestAdmissionInventoryAdvancePreCancelPreservesAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAdmissionInventoryAdvanceDurableResultCanInvalidate(t *testing.T) {
+	f := newFakeBackend()
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := token.Advance(context.Background(), inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Invalidate(); err != nil || lease.Active() {
+		t.Fatalf("invalidate err=%v active=%v", err, lease.Active())
+	}
+	if err := result.Invalidate(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("second invalidate=%v", err)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
+	}
+}
