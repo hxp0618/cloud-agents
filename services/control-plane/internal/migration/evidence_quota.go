@@ -292,18 +292,21 @@ type rootQuotaObjectFact struct {
 }
 
 type rootQuotaUsageFacts struct {
-	finalObjects         []rootQuotaObjectFact
-	finalObjectBytes     uint64
-	tempCount            uint64
-	tempBytes            uint64
-	largestTempBytes     uint64
-	journalCount         uint64
-	journalReservedBytes uint64
-	indexCount           uint64
-	indexActualBytes     uint64
-	targetIndexPresent   bool
-	targetIndexRecords   uint64
-	targetIndexBytes     uint64
+	finalObjects               []rootQuotaObjectFact
+	finalObjectBytes           uint64
+	tempCount                  uint64
+	tempBytes                  uint64
+	largestTempBytes           uint64
+	journalCount               uint64
+	journalReservedBytes       uint64
+	indexCount                 uint64
+	indexActualBytes           uint64
+	indexReservedBytes         uint64
+	targetIndexPresent         bool
+	targetIndexRecords         uint64
+	targetIndexBytes           uint64
+	targetIndexReservedRecords uint64
+	targetIndexReservedBytes   uint64
 }
 
 // verifiedRootQuotaState owns one exact root scan under the root-wide lock.
@@ -346,7 +349,7 @@ func rootQuotaFactsDigest(facts rootQuotaUsageFacts) [32]byte {
 		h.Write([]byte{0})
 		write(object.size)
 	}
-	for _, value := range []uint64{facts.finalObjectBytes, facts.tempCount, facts.tempBytes, facts.largestTempBytes, facts.journalCount, facts.journalReservedBytes, facts.indexCount, facts.indexActualBytes, facts.targetIndexRecords, facts.targetIndexBytes} {
+	for _, value := range []uint64{facts.finalObjectBytes, facts.tempCount, facts.tempBytes, facts.largestTempBytes, facts.journalCount, facts.journalReservedBytes, facts.indexCount, facts.indexActualBytes, facts.indexReservedBytes, facts.targetIndexRecords, facts.targetIndexBytes, facts.targetIndexReservedRecords, facts.targetIndexReservedBytes} {
 		write(value)
 	}
 	if facts.targetIndexPresent {
@@ -376,12 +379,15 @@ func (facts rootQuotaUsageFacts) valid() bool {
 		}
 		previous = object.digest
 	}
-	targetStateExact := (facts.targetIndexPresent && facts.targetIndexRecords > 0 && facts.targetIndexBytes > 0) || (!facts.targetIndexPresent && facts.targetIndexRecords == 0 && facts.targetIndexBytes == 0)
+	targetStateExact := (facts.targetIndexPresent && facts.targetIndexRecords > 0 && facts.targetIndexBytes > 0) || (!facts.targetIndexPresent && facts.targetIndexRecords == 0 && facts.targetIndexBytes == 0 && facts.targetIndexReservedRecords == 0 && facts.targetIndexReservedBytes == 0)
 	return total == facts.finalObjectBytes && targetStateExact
 }
 
 func (facts rootQuotaUsageFacts) exceedsLimits() bool {
-	if facts.finalObjectBytes > rootFinalObjectMaximumBytes || uint64(len(facts.finalObjects)) > rootFinalObjectMaximumCount || facts.tempCount > rootTempMaximumCount || facts.tempBytes > rootTempMaximumTotalBytes || facts.largestTempBytes > rootTempMaximumEachBytes || facts.journalCount > rootJournalMaximumCount || facts.journalReservedBytes > rootJournalMaximumBytes || facts.indexCount > rootIndexMaximumCount || facts.indexActualBytes > rootIndexMaximumBytes || facts.targetIndexRecords > lineageIndexMaximumRecords || facts.targetIndexBytes > lineageIndexMaximumBytes {
+	indexBytes, indexOverflow := quotaAdd(facts.indexActualBytes, facts.indexReservedBytes)
+	targetRecords, targetRecordsOverflow := quotaAdd(facts.targetIndexRecords, facts.targetIndexReservedRecords)
+	targetBytes, targetBytesOverflow := quotaAdd(facts.targetIndexBytes, facts.targetIndexReservedBytes)
+	if indexOverflow || targetRecordsOverflow || targetBytesOverflow || facts.finalObjectBytes > rootFinalObjectMaximumBytes || uint64(len(facts.finalObjects)) > rootFinalObjectMaximumCount || facts.tempCount > rootTempMaximumCount || facts.tempBytes > rootTempMaximumTotalBytes || facts.largestTempBytes > rootTempMaximumEachBytes || facts.journalCount > rootJournalMaximumCount || facts.journalReservedBytes > rootJournalMaximumBytes || facts.indexCount > rootIndexMaximumCount || indexBytes > rootIndexMaximumBytes || targetRecords > lineageIndexMaximumRecords || targetBytes > lineageIndexMaximumBytes {
 		return true
 	}
 	for _, object := range facts.finalObjects {
@@ -519,15 +525,27 @@ func calculateRootQuotaAdmission(rootFacts rootQuotaUsageFacts, bundle *RuntimeB
 			return rootQuotaAdmission{}, err
 		}
 	}
-	indexBytes, err := quotaAddValue(rootFacts.indexActualBytes, reservation.ReservedIndexBytes)
+	indexBytes, err := quotaAddValue(rootFacts.indexActualBytes, rootFacts.indexReservedBytes)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
-	targetRecords, err := quotaAddValue(rootFacts.targetIndexRecords, reservation.ReservedIndexRecords)
+	indexBytes, err = quotaAddValue(indexBytes, reservation.ReservedIndexBytes)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
-	targetBytes, err := quotaAddValue(rootFacts.targetIndexBytes, reservation.ReservedIndexBytes)
+	targetRecords, err := quotaAddValue(rootFacts.targetIndexRecords, rootFacts.targetIndexReservedRecords)
+	if err != nil {
+		return rootQuotaAdmission{}, err
+	}
+	targetRecords, err = quotaAddValue(targetRecords, reservation.ReservedIndexRecords)
+	if err != nil {
+		return rootQuotaAdmission{}, err
+	}
+	targetBytes, err := quotaAddValue(rootFacts.targetIndexBytes, rootFacts.targetIndexReservedBytes)
+	if err != nil {
+		return rootQuotaAdmission{}, err
+	}
+	targetBytes, err = quotaAddValue(targetBytes, reservation.ReservedIndexBytes)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}

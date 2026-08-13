@@ -247,7 +247,7 @@ func TestRootQuotaAdmissionDedupeExactAndOneShot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.journalReservedBytes != facts.journalReservedBytes+reservation.ReservedJournalBytes || got.indexReservedBytes != facts.indexActualBytes+reservation.ReservedIndexBytes {
+	if got.journalReservedBytes != facts.journalReservedBytes+reservation.ReservedJournalBytes || got.indexReservedBytes != facts.indexActualBytes+facts.indexReservedBytes+reservation.ReservedIndexBytes {
 		t.Fatalf("journal/index reservation components were not debited exactly once: admission=%+v reservation=%+v", got, reservation)
 	}
 	facts = rootFactsForTest(t, nil)
@@ -299,8 +299,11 @@ func TestRootQuotaUsageExactMaximaAndPlusOne(t *testing.T) {
 		func(v *rootQuotaUsageFacts) { v.journalReservedBytes++ },
 		func(v *rootQuotaUsageFacts) { v.indexCount++ },
 		func(v *rootQuotaUsageFacts) { v.indexActualBytes++ },
+		func(v *rootQuotaUsageFacts) { v.indexReservedBytes++ },
 		func(v *rootQuotaUsageFacts) { v.targetIndexRecords++ },
 		func(v *rootQuotaUsageFacts) { v.targetIndexBytes++ },
+		func(v *rootQuotaUsageFacts) { v.targetIndexReservedRecords++ },
+		func(v *rootQuotaUsageFacts) { v.targetIndexReservedBytes++ },
 	}
 	for index, mutate := range mutations {
 		copyFacts := facts
@@ -318,6 +321,50 @@ func TestRootQuotaUsageExactMaximaAndPlusOne(t *testing.T) {
 	oversized := rootQuotaUsageFacts{finalObjects: []rootQuotaObjectFact{{digest: DigestBytes([]byte("object-too-large")), size: rootTempMaximumEachBytes + 1}}, finalObjectBytes: rootTempMaximumEachBytes + 1}
 	if oversized.valid() {
 		t.Fatal("64 MiB + 1 final object was accepted")
+	}
+}
+
+func TestRootQuotaAdmissionIncludesHistoricalIndexReservation(t *testing.T) {
+	bundle := quotaAdmissionBundleForTest(t)
+	candidate := quotaCandidateForBundle(t, bundle, []byte("recovery"))
+	facts := rootFactsForTest(t, nil)
+	facts.indexCount = 1
+	facts.indexActualBytes = 11
+	facts.indexReservedBytes = 13
+	facts.targetIndexPresent = true
+	facts.targetIndexRecords = 1
+	facts.targetIndexBytes = 11
+	facts.targetIndexReservedRecords = 2
+	facts.targetIndexReservedBytes = 13
+	if !facts.valid() {
+		t.Fatal("historical reservation fixture is invalid")
+	}
+	reservation, err := calculateEvidenceQuotaReservationForFacts(bundle.quotaFacts, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := calculateRootQuotaAdmission(facts, bundle, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.indexReservedBytes != facts.indexActualBytes+facts.indexReservedBytes+reservation.ReservedIndexBytes || got.targetIndexRecords != facts.targetIndexRecords+facts.targetIndexReservedRecords+reservation.ReservedIndexRecords || got.targetIndexReservedBytes != facts.targetIndexBytes+facts.targetIndexReservedBytes+reservation.ReservedIndexBytes {
+		t.Fatalf("historical index reservation was not debited: admission=%+v reservation=%+v", got, reservation)
+	}
+
+	overRoot := facts
+	overRoot.indexActualBytes = rootIndexMaximumBytes
+	if overRoot.valid() {
+		t.Fatal("root actual plus historical reservation overflow was accepted")
+	}
+	overTargetRecords := facts
+	overTargetRecords.targetIndexRecords = lineageIndexMaximumRecords
+	if overTargetRecords.valid() {
+		t.Fatal("target records plus historical reservation overflow was accepted")
+	}
+	overTargetBytes := facts
+	overTargetBytes.targetIndexBytes = lineageIndexMaximumBytes
+	if overTargetBytes.valid() {
+		t.Fatal("target bytes plus historical reservation overflow was accepted")
 	}
 }
 
