@@ -57,8 +57,8 @@ Platform RC、Beta 或 GA。
   `c017c9573015d7e91099d71744459f9f7478594d`，记录 brand-new receipt-bound reservation、generation
   journal/segment-0 durability、exact activation append、root-wide lock release、fault gates 与未实现边界。
 - 该记录是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；
-  `GenerationRecoveryReady` 没有 production consumer，也没有 normal-run journal/cursor 或 DB authority。`96e6165` 当前因
-  GitHub remote 500 仅存在本地，远端分支仍停在 `3b15340`。
+  `GenerationRecoveryReady` 没有 production consumer，也没有 normal-run journal/cursor 或 DB authority。实现与本次
+  evidence/status 更新已推送至 `origin/codex/cloud-agents-platform-p1` 的 `4fd1b2b`。
 
 ## Projection runner boundary (still open)
 

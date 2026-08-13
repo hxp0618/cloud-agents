@@ -3,7 +3,7 @@
 - Status：**LOCAL IMPLEMENTATION VERIFIED — GATE OPEN**
 - Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability、
   `GenerationActivated` durable append、root-wide lock release、retained generation snapshot、strict replay 与 same-verifier recovery binding
-- Fixed source commit：`96e6165870eae161dc94bdb65e19497fea14dc76`（local；GitHub push 因 remote 500 暂未完成）
+- Fixed source commit：`96e6165870eae161dc94bdb65e19497fea14dc76`（已推送至 feature branch）
 - Fixed implementation tree：`b008532371900316452814590d6dc43f249f6672`（`96e6165^{tree}`，不含本次证据文档更新）
 - Branch：`codex/cloud-agents-platform-p1`
 - Date：2026-08-13 Asia/Shanghai
@@ -159,12 +159,7 @@ record in place.
 
 ## Push state
 
-`3b15340` is present on `origin/codex/cloud-agents-platform-p1`. The strict replay commit `fa7f8e1`, its evidence update `de6ee39`,
-and same-verifier recovery commit `96e6165` are committed locally and passed their recorded gates, but authenticated GitHub pushes
-were rejected by the remote with `Internal Server Error` (request IDs `81750123b6d8a1f0b0558de37214a30b`,
-`36abdfa32685cbecb3c19520073d893d`, and `28150b7e32b2ad721809a3d632e48720`). Retry after the remote recovers:
-
-```bash
-GIT_SSH_COMMAND='ssh -F /dev/null -p 443 -o HostName=ssh.github.com -o User=git -o IdentitiesOnly=yes -i /Users/huang/.ssh/id_ed25519' \
-  git push origin codex/cloud-agents-platform-p1
-```
+The remote recovered after three recorded `Internal Server Error` rejections (request IDs
+`81750123b6d8a1f0b0558de37214a30b`, `36abdfa32685cbecb3c19520073d893d`, and
+`28150b7e32b2ad721809a3d632e48720`). On 2026-08-13, the feature branch advanced successfully from remote `3b15340` through
+strict replay `fa7f8e1`, evidence update `de6ee39`, recovery implementation `96e6165`, and this status/evidence update `4fd1b2b`.

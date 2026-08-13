@@ -70,7 +70,7 @@
 | G-BASELINE          | none                           | IN PROGRESS | `CAG-G-BASELINE-P0-20260810-R3`                                                 | P0 phase verified；M1 phase not started                                                                                                                                                                             | 2026-08-10    |
 | G-CONTRACT          | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / G-INVENTORY R3 / G-BASELINE-P0 R3`                       | P1-A1 bootstrap + SubjectRef/HTTP idempotency follow-up；official generation/closure record open                                                                                                                    | 2026-08-11    |
 | G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission durability/lock handoff/snapshot/strict replay/same-verifier recovery locally complete through `96e6165`；journal/cursor、runner/DB与closure open | 2026-08-13    |
-| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Sealed non-runnable `GenerationRecoveryReady` local boundary at `96e6165`；GitHub push pending remote 500；trusted mount、normal-run journal/cursor、active-generation与runner closure open | 2026-08-13    |
+| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Sealed non-runnable `GenerationRecoveryReady` boundary at pushed `96e6165`；trusted mount、normal-run journal/cursor、active-generation与runner closure open | 2026-08-13    |
 | G-AUTHORITY-P2      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P3      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P4      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
@@ -163,12 +163,11 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       `GenerationReserved → segment-0 JournalHeader → GenerationActivated` 与 sealed `GenerationReadyPermit`；
       随后释放 root-wide/non-target locks 并进入 non-runnable `GenerationHandoffReady`；
       [implementation evidence](../p1/admission-generation-durability-20260813.md) 不构成 Gate closure。
-- [x] retained generation 已在 `3b15340` 完成 compact evidencefs snapshot，并在本地 `fa7f8e1` 完成 exact
-      brand-new index/journal strict replay与 non-runnable `GenerationReplayReady`；`fa7f8e1` push 因 GitHub remote 500
-      暂未完成，不能把本地提交误报为远端已同步。
-- [x] 本地 `96e6165` 已从 exact `GenerationReplayReady` 完成 current same-verifier facts、typed publication receipt、
+- [x] retained generation 已在 `3b15340` 完成 compact evidencefs snapshot，并在 `fa7f8e1` 完成 exact
+      brand-new index/journal strict replay与 non-runnable `GenerationReplayReady`；该提交已同步 feature branch。
+- [x] `96e6165` 已从 exact `GenerationReplayReady` 完成 current same-verifier facts、typed publication receipt、
       private brand-new cursor/`RecoverySnapshot` 的 sealed `GenerationRecoveryReady` 绑定；该值仍无 normal-run consumer，
-      且与 `fa7f8e1`/`de6ee39` 一样尚未因 GitHub remote 500 同步远端。
+      且已随 `fa7f8e1`/`de6ee39` 与 evidence/status commit `4fd1b2b` 推送至 feature branch。
 - [ ] 实现并独立复核 `EvidenceJournal`/`JournalCursor`/checkpoint normal-run authority、trusted-mount production
       constructor、runner/DB `Connect` 与真实 ext4/XFS/cross-process/power-loss evidence；完成前 P1 Gates 继续
       `IN PROGRESS`。
