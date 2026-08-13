@@ -61,6 +61,7 @@ type fakeBackend struct {
 	closeAttempts      []string
 	unlockAttempts     int
 	unlockInodes       []uint64
+	onUnlock           func(*fakeBackend, *fakeNode, int)
 	failRename         bool
 	replaceOnOpen      string
 	replaceOnOpenAt    int
@@ -451,6 +452,9 @@ func (f *fakeBackend) unlock(fd int) error {
 		return err
 	}
 	f.unlockInodes = append(f.unlockInodes, node.stat.inode)
+	if f.onUnlock != nil {
+		f.onUnlock(f, node, f.unlockAttempts)
+	}
 	handle := f.handles[fd]
 	if handle.locked {
 		node.locked = false
