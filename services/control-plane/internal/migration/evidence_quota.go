@@ -469,7 +469,10 @@ func calculateRootQuotaAdmission(rootFacts rootQuotaUsageFacts, bundle *RuntimeB
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
-	journalBytes, err := quotaAddValue(rootFacts.journalReservedBytes, reservation.ReservedBytes)
+	// Journal and index budgets are independent physical components. Adding the
+	// combined reservation here would debit ReservedIndexBytes a second time
+	// when indexBytes is calculated below.
+	journalBytes, err := quotaAddValue(rootFacts.journalReservedBytes, reservation.ReservedJournalBytes)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}

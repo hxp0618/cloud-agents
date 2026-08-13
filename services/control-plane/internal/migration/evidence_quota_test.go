@@ -243,6 +243,13 @@ func TestRootQuotaAdmissionDedupeExactAndOneShot(t *testing.T) {
 	if got.finalObjectCount != 2 || got.finalObjectBytes != runtime.sizeBytes+candidate.decisionRecoveryArtifact.sizeBytes {
 		t.Fatalf("dedupe=%+v", got)
 	}
+	reservation, err := calculateEvidenceQuotaReservationForFacts(bundle.quotaFacts, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.journalReservedBytes != facts.journalReservedBytes+reservation.ReservedJournalBytes || got.indexReservedBytes != facts.indexActualBytes+reservation.ReservedIndexBytes {
+		t.Fatalf("journal/index reservation components were not debited exactly once: admission=%+v reservation=%+v", got, reservation)
+	}
 	facts = rootFactsForTest(t, nil)
 	tinyCandidate := candidate
 	tinyCandidate.runtimeArtifact = VerifiedRuntimeArtifact{owner: runtime.owner, bytes: []byte("tiny"), digest: DigestBytes([]byte("tiny")), sizeBytes: 4}
