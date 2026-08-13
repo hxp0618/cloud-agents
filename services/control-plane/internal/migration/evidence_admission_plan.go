@@ -93,6 +93,7 @@ type RegisteredAdmissionPermit struct {
 	target, fullSet  [32]byte
 	revision         uint64
 	indexDigest      [32]byte
+	reused           bool
 	binding          *registeredAdmissionPermitBinding
 	consumed         *atomic.Bool
 }
@@ -302,8 +303,14 @@ func validAdmissionPermit(permit *AdmissionPermit, inventory *evidencefs.Admissi
 
 func (p *AdmissionPermit) CreateTargetLineage(ctx context.Context, candidate OwnedCurrentCandidate) (AdmissionPermitTransitionResult, error) {
 	pre := AdmissionPermitTransitionResult{outcome: evidencefs.AdmissionTransitionPreMutationFailure, candidateKind: "target_lineage"}
-	if p == nil || p.inventory == nil || !validAdmissionPermit(p, p.inventory, candidate) || p.history.rootFacts.targetIndexPresent || p.plan.lineageHeaderFrame.Record.Header == nil {
+	if p == nil || p.inventory == nil || !validAdmissionPermit(p, p.inventory, candidate) || p.plan.lineageHeaderFrame.Record.Header == nil {
 		return pre, fail(CodeEvidenceRecoveryRequired, "admission-target-register", "admission permit cannot register a target lineage", nil)
+	}
+	if p.history.rootFacts.targetIndexPresent {
+		pre.candidateKind = "target_lineage_reuse"
+		if p.history.targetState != admissionLineageEmpty || p.history.targetIndexRecords != 1 || p.history.targetIndexTail != p.plan.lineageHeaderFrame.RecordDigest {
+			return pre, fail(CodeEvidenceRecoveryRequired, "admission-target-register", "present target is not registered-empty", nil)
+		}
 	}
 	pre.previousRevision = p.history.revision
 	pre.candidateRevision = p.history.revision + 1
@@ -311,7 +318,13 @@ func (p *AdmissionPermit) CreateTargetLineage(ctx context.Context, candidate Own
 	if !p.consumed.CompareAndSwap(false, true) {
 		return pre, fail(CodeEvidenceRecoveryRequired, "admission-target-register", "admission permit was already consumed", nil)
 	}
-	fsResult, transitionErr := p.mutation.CreateTargetLineage(ctx, p.inventory, p.plan.lineageHeaderBytes)
+	var fsResult evidencefs.AdmissionTransitionResult
+	var transitionErr error
+	if p.history.rootFacts.targetIndexPresent {
+		fsResult, transitionErr = p.mutation.ReuseTargetLineage(ctx, p.inventory, p.plan.lineageHeaderBytes)
+	} else {
+		fsResult, transitionErr = p.mutation.CreateTargetLineage(ctx, p.inventory, p.plan.lineageHeaderBytes)
+	}
 	result := admissionPermitTransitionFromFS(fsResult)
 	if fsResult.Outcome() != evidencefs.AdmissionTransitionDurable {
 		if fsResult.Outcome() == evidencefs.AdmissionTransitionPreMutationFailure {
@@ -319,7 +332,7 @@ func (p *AdmissionPermit) CreateTargetLineage(ctx context.Context, candidate Own
 		}
 		return result, mapAdmissionMutationError(transitionErr, "admission-target-register")
 	}
-	if transitionErr != nil || fsResult.Inventory() == nil || fsResult.CandidateKind() != "target_lineage" || fsResult.CandidateSequence() != 0 || fsResult.CandidateDigest() != pre.candidateDigest || fsResult.PreviousRevision() != pre.previousRevision || fsResult.CandidateRevision() != pre.candidateRevision {
+	if transitionErr != nil || fsResult.Inventory() == nil || fsResult.CandidateKind() != pre.candidateKind || fsResult.CandidateSequence() != 0 || fsResult.CandidateDigest() != pre.candidateDigest || fsResult.PreviousRevision() != pre.previousRevision || fsResult.CandidateRevision() != pre.candidateRevision {
 		_ = fsResult.Invalidate()
 		return admissionMutationUnknown(result), admissionFailed("admission-target-register", "durable target registration result is inconsistent", nil)
 	}
@@ -339,7 +352,8 @@ func (p *AdmissionPermit) CreateTargetLineage(ctx context.Context, candidate Own
 		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-target")
 	}
 	fullSet, err := nextInventory.FullSetDigest()
-	if err != nil || fullSet == ([32]byte{}) || fullSet == p.history.fullSet {
+	fullSetChanged := fullSet != p.history.fullSet
+	if err != nil || fullSet == ([32]byte{}) || fullSetChanged == p.history.rootFacts.targetIndexPresent {
 		_ = fsResult.Invalidate()
 		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-full-set")
 	}
@@ -369,7 +383,7 @@ func (p *AdmissionPermit) CreateTargetLineage(ctx context.Context, candidate Own
 	}
 	next := &RegisteredAdmissionPermit{
 		prior: p, plan: p.plan, candidateBinding: candidate.binding, inventory: nextInventory, mutation: nextToken,
-		target: target, fullSet: fullSet, revision: revision, indexDigest: pre.candidateDigest, consumed: &atomic.Bool{},
+		target: target, fullSet: fullSet, revision: revision, indexDigest: pre.candidateDigest, reused: p.history.rootFacts.targetIndexPresent, consumed: &atomic.Bool{},
 	}
 	next.self = next
 	binding := &registeredAdmissionPermitBinding{permit: next, prior: p, plan: p.plan, inventory: nextInventory, mutation: nextToken}
@@ -435,13 +449,18 @@ func registeredAdmissionPermitDigest(permit *RegisteredAdmissionPermit) [32]byte
 	h.Write(permit.fullSet[:])
 	h.Write(permit.indexDigest[:])
 	writeAdmissionUint(h, permit.revision)
+	if permit.reused {
+		h.Write([]byte{1})
+	} else {
+		h.Write([]byte{0})
+	}
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
 }
 
 func validRegisteredAdmissionPermit(permit *RegisteredAdmissionPermit, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate) bool {
-	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.plan == nil || permit.plan.lineageHeaderFrame.Record.Header == nil || permit.inventory != inventory || permit.mutation == nil || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.plan != permit.plan || permit.binding.inventory != inventory || permit.binding.mutation != permit.mutation || permit.consumed == nil || permit.consumed.Load() || !validConsumedAdmissionPermit(permit.prior, permit.plan, candidate) || permit.indexDigest != sha256.Sum256(permit.plan.lineageHeaderBytes) || permit.target != digestRaw(permit.plan.lineageHeaderFrame.Record.Header.ExecutionLineageDigest) || permit.revision != permit.prior.history.revision+1 || permit.fullSet == permit.prior.history.fullSet || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != registeredAdmissionPermitDigest(permit) || !permit.mutation.ValidFor(inventory) {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.plan == nil || permit.plan.lineageHeaderFrame.Record.Header == nil || permit.inventory != inventory || permit.mutation == nil || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.plan != permit.plan || permit.binding.inventory != inventory || permit.binding.mutation != permit.mutation || permit.consumed == nil || permit.consumed.Load() || !validConsumedAdmissionPermit(permit.prior, permit.plan, candidate) || permit.indexDigest != sha256.Sum256(permit.plan.lineageHeaderBytes) || permit.target != digestRaw(permit.plan.lineageHeaderFrame.Record.Header.ExecutionLineageDigest) || permit.revision != permit.prior.history.revision+1 || permit.reused != permit.prior.history.rootFacts.targetIndexPresent || (permit.fullSet == permit.prior.history.fullSet) != permit.reused || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != registeredAdmissionPermitDigest(permit) || !permit.mutation.ValidFor(inventory) {
 		return false
 	}
 	registeredPlan, planOK := verifiedAdmissionPlanRegistry.Load(permit.plan.binding)

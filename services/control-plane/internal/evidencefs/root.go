@@ -41,6 +41,7 @@ type backend interface {
 	mkdirAt(int, string) error
 	lstatAt(int, string) (fileStat, error)
 	openFileAt(int, string, bool) (int, error)
+	openFileAtReadWrite(int, string) (int, error)
 	fstat(int) (fileStat, error)
 	readDirNames(int, int) ([]string, error)
 	isOverflow(error) bool

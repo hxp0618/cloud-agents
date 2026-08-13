@@ -37,7 +37,7 @@ func (r AdmissionTransitionResult) PreviousRevision() uint64            { return
 // binder cannot complete. It can only reduce authority; it never closes locks
 // or mutates disk, so the genuine AdmissionLease remains explicitly closable.
 func (r AdmissionTransitionResult) Invalidate() error {
-	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || r.candidateKind != "target_lineage" || r.candidateRevision != r.previousRevision+1 {
+	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || (r.candidateKind != "target_lineage" && r.candidateKind != "target_lineage_reuse") || r.candidateRevision != r.previousRevision+1 {
 		return ErrLeaseInvalid
 	}
 	l := r.inventory.lease
@@ -56,6 +56,140 @@ func (r AdmissionTransitionResult) Invalidate() error {
 	}
 	l.revokeLocked()
 	return nil
+}
+
+// ReuseTargetLineage replays registered-empty durability under the already
+// held canonical target lock, then advances to a fresh revision without
+// changing bytes or filesystem membership.
+func (t *AdmissionMutationToken) ReuseTargetLineage(ctx context.Context, inventory *AdmissionInventory, indexHeader []byte) (AdmissionTransitionResult, error) {
+	digest := sha256.Sum256(indexHeader)
+	pre := AdmissionTransitionResult{outcome: AdmissionTransitionPreMutationFailure, candidateKind: "target_lineage_reuse", candidateDigest: digest}
+	if t == nil || inventory == nil || t.lease == nil {
+		return pre, ErrLeaseInvalid
+	}
+	l := t.lease
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	pre.previousRevision = inventory.revision
+	if !t.validLocked(inventory) || inventory.absent != nil || len(indexHeader) == 0 || uint64(len(indexHeader)) > maximumAdmissionIndexBytes || inventory.revision == ^uint64(0) {
+		return pre, ErrInvalidInput
+	}
+	pre.candidateRevision = inventory.revision + 1
+	if !inventory.snapshotMatchesLocked() {
+		t.consumed = true
+		l.revokeLocked()
+		return pre, ErrLeaseInvalid
+	}
+	lineage := inventory.lineageMap[inventory.target]
+	name := hex.EncodeToString(inventory.target[:])
+	if lineage == nil || lineage.index == nil || lineage.name != name || lineage.index.digest != digest || lineage.index.stat.size != uint64(len(indexHeader)) || len(lineage.journals) != 0 {
+		return pre, ErrInvalidInput
+	}
+	lockIndex := sort.Search(len(l.locks), func(index int) bool { return l.locks[index].name >= name })
+	if lockIndex == len(l.locks) || l.locks[lockIndex].name != name || !sameIdentity(l.locks[lockIndex].stat, inventory.slot.discovery.lineages[lockIndex].lock) {
+		t.consumed = true
+		l.revokeLocked()
+		return pre, ErrLeaseInvalid
+	}
+	if err := contextError(ctx); err != nil {
+		return pre, err
+	}
+	rootFD, err := l.store.freshRoot()
+	if err != nil {
+		return pre, err
+	}
+	lineagesFD, lineageFD, lockFD, indexFD := -1, -1, -1, -1
+	mutated := false
+	cleanup := func() error {
+		failed := false
+		for _, fd := range []int{indexFD, lockFD, lineageFD, lineagesFD, rootFD} {
+			failed = l.store.checkedClose(fd) != nil || failed
+		}
+		if failed {
+			return filesystem("target-reuse-cleanup")
+		}
+		return nil
+	}
+	unknownResult := func(cause error) (AdmissionTransitionResult, error) {
+		t.consumed = true
+		l.revokeLocked()
+		return AdmissionTransitionResult{outcome: AdmissionTransitionUnknown, candidateKind: "target_lineage_reuse", candidateDigest: digest, candidateRevision: inventory.revision + 1, previousRevision: inventory.revision}, unknown(cause)
+	}
+	fail := func(cause error) (AdmissionTransitionResult, error) {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			cause = cleanupErr
+		}
+		if mutated {
+			return unknownResult(cause)
+		}
+		t.consumed = true
+		l.revokeLocked()
+		return pre, cause
+	}
+	lineagesFD, _, err = l.store.openVerifiedDirectory(rootFD, "lineages")
+	if err != nil {
+		return fail(err)
+	}
+	lineageFD, _, err = l.store.openVerifiedDirectory(lineagesFD, name)
+	if err != nil {
+		return fail(err)
+	}
+	lockFD, err = l.store.ops.openFileAtReadWrite(lineageFD, "writer.lock")
+	if err != nil {
+		return fail(filesystem("target-reuse-lock-open"))
+	}
+	lockStat, err := l.store.ops.fstat(lockFD)
+	if err != nil || !sameIdentity(lockStat, l.locks[lockIndex].stat) {
+		return fail(filesystem("target-reuse-lock-identity"))
+	}
+	indexFD, err = l.store.ops.openFileAtReadWrite(lineageFD, "index.caj")
+	if err != nil {
+		return fail(filesystem("target-reuse-index-open"))
+	}
+	indexStat, err := l.store.ops.fstat(indexFD)
+	if err != nil || !sameIdentity(indexStat, lineage.index.stat) {
+		return fail(filesystem("target-reuse-index-identity"))
+	}
+	bytes, err := l.readInventoryFileRaw(ctx, lineage.index)
+	if err != nil || string(bytes) != string(indexHeader) || sha256.Sum256(bytes) != digest {
+		return fail(corrupt("target-reuse-index-bytes"))
+	}
+	mutated = true
+	if l.store.ops.fdatasync(lockFD) != nil || l.store.ops.fsync(lineageFD) != nil || l.store.ops.fdatasync(indexFD) != nil || l.store.ops.fsync(lineageFD) != nil {
+		return fail(filesystem("target-reuse-sync"))
+	}
+	if err := contextError(ctx); err != nil {
+		return fail(err)
+	}
+	if err := cleanup(); err != nil {
+		return unknownResult(err)
+	}
+	rootFD, lineagesFD, lineageFD, lockFD, indexFD = -1, -1, -1, -1, -1
+	discovery, err := l.store.discoverAdmissionRoot(ctx)
+	if err != nil || !sameAdmissionDiscovery(inventory.slot.discovery, discovery) {
+		if err == nil {
+			err = filesystem("target-reuse-discovery")
+		}
+		return unknownResult(err)
+	}
+	nextRevision := inventory.revision + 1
+	next, err := l.buildAdmissionInventory(ctx, inventory.target, nextRevision, discovery)
+	if err != nil {
+		return unknownResult(err)
+	}
+	registered := next.lineageMap[inventory.target]
+	if registered == nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 || next.absent != nil {
+		return unknownResult(filesystem("target-reuse-missing"))
+	}
+	nextSlot := newAdmissionSlot(l.epoch, next, nextRevision)
+	next.discovery, next.objectSet = admissionDiscovery{}, admissionObjectDiscovery{}
+	inventory.slot.active = false
+	t.consumed = true
+	l.current, next.slot = nextSlot, nextSlot
+	if !next.snapshotMatchesLocked() {
+		return unknownResult(ErrLeaseInvalid)
+	}
+	return AdmissionTransitionResult{outcome: AdmissionTransitionDurable, inventory: next, candidateKind: "target_lineage_reuse", candidateDigest: digest, candidateRevision: nextRevision, previousRevision: inventory.revision}, nil
 }
 
 // CreateTargetLineage consumes this token to durably register an absent target

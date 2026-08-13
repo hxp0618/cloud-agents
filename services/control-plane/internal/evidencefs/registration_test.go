@@ -322,3 +322,131 @@ func TestAdmissionTransitionDurableResultCanOnlyInvalidate(t *testing.T) {
 		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
 	}
 }
+
+func TestReuseTargetLineageDurableAdvancesOnlyRevision(t *testing.T) {
+	f := newFakeBackend()
+	target := digestForTest(9)
+	header := []byte("opaque-verified-lineage-index-header")
+	lineage := addAdmissionLineage(f, target, 0, 0)
+	lineage.children["index.caj"].data = append([]byte(nil), header...)
+	lineage.children["index.caj"].stat.size = uint64(len(header))
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldFullSet, err := inventory.FullSetDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := token.ReuseTargetLineage(context.Background(), inventory, header)
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "target_lineage_reuse" || result.CandidateDigest() != sha256.Sum256(header) || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	next := result.Inventory()
+	if next == nil {
+		t.Fatal("durable reuse returned no next inventory")
+	}
+	newFullSet, err := next.FullSetDigest()
+	if err != nil || newFullSet != oldFullSet {
+		t.Fatalf("full set changed: old=%x new=%x err=%v", oldFullSet, newFullSet, err)
+	}
+	if revision, err := next.Revision(); err != nil || revision != 1 {
+		t.Fatalf("revision=%d err=%v", revision, err)
+	}
+	if f.mkdirs != nil || f.writes != 0 || f.fdatasyncs != 2 || f.fsyncs != 2 {
+		t.Fatalf("mkdirs=%v writes=%d fdatasync=%d fsync=%d", f.mkdirs, f.writes, f.fdatasyncs, f.fsyncs)
+	}
+	if _, err := inventory.Revision(); !errors.Is(err, ErrLeaseInvalid) || token.ValidFor(inventory) {
+		t.Fatalf("old authority survived: err=%v token=%v", err, token.ValidFor(inventory))
+	}
+	if err := next.Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
+	}
+}
+
+func TestReuseTargetLineagePreMutationMismatchPreservesAuthority(t *testing.T) {
+	f := newFakeBackend()
+	target := digestForTest(9)
+	lineage := addAdmissionLineage(f, target, 0, 0)
+	lineage.children["index.caj"].data = []byte("header")
+	lineage.children["index.caj"].stat.size = uint64(len("header"))
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := token.ReuseTargetLineage(context.Background(), inventory, []byte("different"))
+	if !errors.Is(err, ErrInvalidInput) || result.Outcome() != AdmissionTransitionPreMutationFailure || !token.ValidFor(inventory) || f.fdatasyncs != 0 || f.fsyncs != 0 {
+		t.Fatalf("result=%+v err=%v token=%v fdatasync=%d fsync=%d", result, err, token.ValidFor(inventory), f.fdatasyncs, f.fsyncs)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReuseTargetLineageSyncFailureIsUnknown(t *testing.T) {
+	f := newFakeBackend()
+	target := digestForTest(9)
+	lineage := addAdmissionLineage(f, target, 0, 0)
+	lineage.children["index.caj"].data = []byte("header")
+	lineage.children["index.caj"].stat.size = uint64(len("header"))
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.failFdatasyncAt = 1
+	result, err := token.ReuseTargetLineage(context.Background(), inventory, []byte("header"))
+	if !errors.Is(err, ErrUnknown) || result.Outcome() != AdmissionTransitionUnknown || result.Inventory() != nil || lease.Active() || token.ValidFor(inventory) {
+		t.Fatalf("result=%+v err=%v lease=%v token=%v", result, err, lease.Active(), token.ValidFor(inventory))
+	}
+	if !bytes.Equal(lineage.children["index.caj"].data, []byte("header")) {
+		t.Fatal("reuse failure changed index bytes")
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
+	}
+}
+
+func TestAdmissionTransitionReuseResultCanInvalidate(t *testing.T) {
+	f := newFakeBackend()
+	target := digestForTest(9)
+	lineage := addAdmissionLineage(f, target, 0, 0)
+	lineage.children["index.caj"].data = []byte("header")
+	lineage.children["index.caj"].stat.size = uint64(len("header"))
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := token.ReuseTargetLineage(context.Background(), inventory, []byte("header"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := result.Invalidate(); err != nil || lease.Active() {
+		t.Fatalf("invalidate err=%v active=%v", err, lease.Active())
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
+	}
+}

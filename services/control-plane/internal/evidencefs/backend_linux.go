@@ -69,6 +69,10 @@ func (linuxBackend) openFileAt(parent int, name string, create bool) (int, error
 	return unix.Openat2(parent, name, &unix.OpenHow{Flags: flags, Mode: mode, Resolve: resolveFlags})
 }
 
+func (linuxBackend) openFileAtReadWrite(parent int, name string) (int, error) {
+	return unix.Openat2(parent, name, &unix.OpenHow{Flags: unix.O_RDWR | unix.O_CLOEXEC | unix.O_NOFOLLOW, Resolve: resolveFlags})
+}
+
 func (linuxBackend) fstat(fd int) (fileStat, error) {
 	var raw unix.Stat_t
 	if err := unix.Fstat(fd, &raw); err != nil {

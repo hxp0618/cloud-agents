@@ -202,6 +202,10 @@ func (f *fakeBackend) openFileAt(parent int, name string, create bool) (int, err
 	return f.alloc(node), nil
 }
 
+func (f *fakeBackend) openFileAtReadWrite(parent int, name string) (int, error) {
+	return f.openFileAt(parent, name, false)
+}
+
 func (f *fakeBackend) mkdirAt(parent int, name string) error {
 	parentNode, err := f.node(parent)
 	if err != nil || parentNode.stat.kind != kindDirectory {

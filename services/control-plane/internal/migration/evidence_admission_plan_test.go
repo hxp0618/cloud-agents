@@ -106,6 +106,7 @@ func TestRegisteredAdmissionPermitDigestRejectsCopyAndMutation(t *testing.T) {
 		"full set": func(v *RegisteredAdmissionPermit) { v.fullSet[0]++ },
 		"index":    func(v *RegisteredAdmissionPermit) { v.indexDigest[0]++ },
 		"revision": func(v *RegisteredAdmissionPermit) { v.revision++ },
+		"reused":   func(v *RegisteredAdmissionPermit) { v.reused = !v.reused },
 	} {
 		t.Run(name, func(t *testing.T) {
 			value := *permit
