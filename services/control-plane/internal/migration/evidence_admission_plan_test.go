@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 
@@ -55,6 +56,65 @@ func TestAdmissionPermitRejectsLiteralAndCrossBoundInputs(t *testing.T) {
 	}
 	if validAdmissionPermit(&AdmissionPermit{}, inventory, candidate) {
 		t.Fatal("literal permit passed validation")
+	}
+	if result, err := (&AdmissionPermit{}).CreateTargetLineage(context.Background(), candidate); result.Next() != nil || result.Outcome() != evidencefs.AdmissionTransitionPreMutationFailure || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal permit entered transition: result=%+v err=%v", result, err)
+	}
+	if validRegisteredAdmissionPermit(&RegisteredAdmissionPermit{}, inventory, candidate) {
+		t.Fatal("literal registered permit passed validation")
+	}
+}
+
+func TestAdmissionMutationErrorMappingAndClosedResult(t *testing.T) {
+	if err := mapAdmissionMutationError(errors.Join(evidencefs.ErrUnknown, context.Canceled), "test"); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("unknown mutation leaked context authority: %v", err)
+	}
+	if err := mapAdmissionMutationError(context.Canceled, "test"); !IsCode(err, CodeContextCanceled) {
+		t.Fatalf("pre-mutation context mapping changed: %v", err)
+	}
+	if err := mapAdmissionMutationError(evidencefs.ErrLimit, "test"); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+		t.Fatalf("candidate limit became stored corruption: %v", err)
+	}
+	if err := mapAdmissionMutationError(evidencefs.ErrLeaseInvalid, "test"); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("lease failure mapping changed: %v", err)
+	}
+	if err := admissionPostMutationFailure("test"); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("post-mutation failure became retryable: %v", err)
+	}
+	result := AdmissionPermitTransitionResult{outcome: evidencefs.AdmissionTransitionUnknown, candidateKind: "target_lineage", candidateDigest: [32]byte{1}, candidateSequence: 2, candidateRevision: 4, previousRevision: 3}
+	if result.Next() != nil || result.CandidateKind() != "target_lineage" || result.CandidateDigest() != ([32]byte{1}) || result.CandidateSequence() != 2 || result.CandidateRevision() != 4 || result.PreviousRevision() != 3 {
+		t.Fatalf("closed diagnosis changed: %+v", result)
+	}
+}
+
+func TestRegisteredAdmissionPermitDigestRejectsCopyAndMutation(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	prior := &AdmissionPermit{binding: &admissionPermitBinding{canonical: [32]byte{1}}}
+	plan := &VerifiedAdmissionPlan{binding: &verifiedAdmissionPlanBinding{canonical: [32]byte{2}}}
+	permit := &RegisteredAdmissionPermit{prior: prior, plan: plan, candidateBinding: candidate.binding, target: [32]byte{3}, fullSet: [32]byte{4}, indexDigest: [32]byte{5}, revision: 1}
+	permit.self = permit
+	want := registeredAdmissionPermitDigest(permit)
+	if want == ([32]byte{}) {
+		t.Fatal("registered permit digest is empty")
+	}
+	copyPermit := *permit
+	if registeredAdmissionPermitDigest(&copyPermit) != ([32]byte{}) {
+		t.Fatal("registered permit copy retained self binding")
+	}
+	for name, mutate := range map[string]func(*RegisteredAdmissionPermit){
+		"target":   func(v *RegisteredAdmissionPermit) { v.target[0]++ },
+		"full set": func(v *RegisteredAdmissionPermit) { v.fullSet[0]++ },
+		"index":    func(v *RegisteredAdmissionPermit) { v.indexDigest[0]++ },
+		"revision": func(v *RegisteredAdmissionPermit) { v.revision++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *permit
+			value.self = &value
+			mutate(&value)
+			if registeredAdmissionPermitDigest(&value) == want {
+				t.Fatal("mutation did not change registered permit digest")
+			}
+		})
 	}
 }
 

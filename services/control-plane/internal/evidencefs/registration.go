@@ -20,6 +20,7 @@ type AdmissionTransitionResult struct {
 	inventory         *AdmissionInventory
 	candidateKind     string
 	candidateDigest   [32]byte
+	candidateSequence uint64
 	candidateRevision uint64
 	previousRevision  uint64
 }
@@ -28,8 +29,34 @@ func (r AdmissionTransitionResult) Outcome() AdmissionTransitionOutcome { return
 func (r AdmissionTransitionResult) Inventory() *AdmissionInventory      { return r.inventory }
 func (r AdmissionTransitionResult) CandidateKind() string               { return r.candidateKind }
 func (r AdmissionTransitionResult) CandidateDigest() [32]byte           { return r.candidateDigest }
+func (r AdmissionTransitionResult) CandidateSequence() uint64           { return r.candidateSequence }
 func (r AdmissionTransitionResult) CandidateRevision() uint64           { return r.candidateRevision }
 func (r AdmissionTransitionResult) PreviousRevision() uint64            { return r.previousRevision }
+
+// Invalidate revokes durable next authority when an upper-layer composite
+// binder cannot complete. It can only reduce authority; it never closes locks
+// or mutates disk, so the genuine AdmissionLease remains explicitly closable.
+func (r AdmissionTransitionResult) Invalidate() error {
+	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || r.candidateKind != "target_lineage" || r.candidateRevision != r.previousRevision+1 {
+		return ErrLeaseInvalid
+	}
+	l := r.inventory.lease
+	if l == nil {
+		return ErrLeaseInvalid
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !r.inventory.validLocked() || r.inventory.revision != r.candidateRevision {
+		return ErrLeaseInvalid
+	}
+	lineage := r.inventory.lineageMap[r.inventory.target]
+	if lineage == nil || lineage.index == nil || lineage.index.digest != r.candidateDigest {
+		l.revokeLocked()
+		return ErrLeaseInvalid
+	}
+	l.revokeLocked()
+	return nil
+}
 
 // CreateTargetLineage consumes this token to durably register an absent target
 // with exact caller-owned index-header bytes. evidencefs treats those bytes as

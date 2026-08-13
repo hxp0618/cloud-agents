@@ -290,3 +290,35 @@ func TestCreateTargetLineageCancellationAfterWriteIsUnknown(t *testing.T) {
 		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
 	}
 }
+
+func TestAdmissionTransitionDurableResultCanOnlyInvalidate(t *testing.T) {
+	f := newFakeBackend()
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := token.CreateTargetLineage(context.Background(), inventory, []byte("header"))
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.Inventory() == nil {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if err := result.Invalidate(); err != nil {
+		t.Fatal(err)
+	}
+	if lease.Active() {
+		t.Fatal("invalidated durable result retained lease authority")
+	}
+	if err := result.Invalidate(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("durable result invalidated twice: %v", err)
+	}
+	if err := (AdmissionTransitionResult{}).Invalidate(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("literal result invalidated authority: %v", err)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close err=%v handles=%d", err, len(f.handles))
+	}
+}

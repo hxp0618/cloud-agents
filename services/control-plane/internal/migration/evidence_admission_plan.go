@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"sync"
 	"sync/atomic"
 
@@ -55,6 +56,57 @@ type admissionPermitBinding struct {
 }
 
 var admissionPermitRegistry sync.Map
+
+// AdmissionPermitTransitionResult is the closed migration-side projection of
+// one evidencefs mutation result. Only durable carries next authority.
+type AdmissionPermitTransitionResult struct {
+	outcome           evidencefs.AdmissionTransitionOutcome
+	next              *RegisteredAdmissionPermit
+	candidateKind     string
+	candidateDigest   [32]byte
+	candidateSequence uint64
+	candidateRevision uint64
+	previousRevision  uint64
+}
+
+func (r AdmissionPermitTransitionResult) Outcome() evidencefs.AdmissionTransitionOutcome {
+	return r.outcome
+}
+func (r AdmissionPermitTransitionResult) Next() *RegisteredAdmissionPermit { return r.next }
+func (r AdmissionPermitTransitionResult) CandidateKind() string            { return r.candidateKind }
+func (r AdmissionPermitTransitionResult) CandidateDigest() [32]byte        { return r.candidateDigest }
+func (r AdmissionPermitTransitionResult) CandidateSequence() uint64        { return r.candidateSequence }
+func (r AdmissionPermitTransitionResult) CandidateRevision() uint64        { return r.candidateRevision }
+func (r AdmissionPermitTransitionResult) PreviousRevision() uint64         { return r.previousRevision }
+
+// RegisteredAdmissionPermit is the revision+1 authority returned only after
+// durable target registration and exact migration/evidencefs cross-binding.
+// It retains frozen verification facts from the consumed prior chain while
+// all future filesystem mutation must consume its new evidencefs token.
+type RegisteredAdmissionPermit struct {
+	self             *RegisteredAdmissionPermit
+	prior            *AdmissionPermit
+	plan             *VerifiedAdmissionPlan
+	candidateBinding *verifiedEvidenceRunBinding
+	inventory        *evidencefs.AdmissionInventory
+	mutation         *evidencefs.AdmissionMutationToken
+	target, fullSet  [32]byte
+	revision         uint64
+	indexDigest      [32]byte
+	binding          *registeredAdmissionPermitBinding
+	consumed         *atomic.Bool
+}
+
+type registeredAdmissionPermitBinding struct {
+	permit    *RegisteredAdmissionPermit
+	prior     *AdmissionPermit
+	plan      *VerifiedAdmissionPlan
+	inventory *evidencefs.AdmissionInventory
+	mutation  *evidencefs.AdmissionMutationToken
+	canonical [32]byte
+}
+
+var registeredAdmissionPermitRegistry sync.Map
 
 func bindVerifiedAdmissionPlan(ctx context.Context, history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate) (*VerifiedAdmissionPlan, error) {
 	if !validVerifiedAdmissionHistory(history, candidate) {
@@ -246,4 +298,176 @@ func validAdmissionPermit(permit *AdmissionPermit, inventory *evidencefs.Admissi
 	}
 	registered, ok := admissionPermitRegistry.Load(permit.binding)
 	return ok && registered == permit.binding.canonical
+}
+
+func (p *AdmissionPermit) CreateTargetLineage(ctx context.Context, candidate OwnedCurrentCandidate) (AdmissionPermitTransitionResult, error) {
+	pre := AdmissionPermitTransitionResult{outcome: evidencefs.AdmissionTransitionPreMutationFailure, candidateKind: "target_lineage"}
+	if p == nil || p.inventory == nil || !validAdmissionPermit(p, p.inventory, candidate) || p.history.rootFacts.targetIndexPresent || p.plan.lineageHeaderFrame.Record.Header == nil {
+		return pre, fail(CodeEvidenceRecoveryRequired, "admission-target-register", "admission permit cannot register a target lineage", nil)
+	}
+	pre.previousRevision = p.history.revision
+	pre.candidateRevision = p.history.revision + 1
+	pre.candidateDigest = sha256.Sum256(p.plan.lineageHeaderBytes)
+	if !p.consumed.CompareAndSwap(false, true) {
+		return pre, fail(CodeEvidenceRecoveryRequired, "admission-target-register", "admission permit was already consumed", nil)
+	}
+	fsResult, transitionErr := p.mutation.CreateTargetLineage(ctx, p.inventory, p.plan.lineageHeaderBytes)
+	result := admissionPermitTransitionFromFS(fsResult)
+	if fsResult.Outcome() != evidencefs.AdmissionTransitionDurable {
+		if fsResult.Outcome() == evidencefs.AdmissionTransitionPreMutationFailure {
+			p.consumed.CompareAndSwap(true, false)
+		}
+		return result, mapAdmissionMutationError(transitionErr, "admission-target-register")
+	}
+	if transitionErr != nil || fsResult.Inventory() == nil || fsResult.CandidateKind() != "target_lineage" || fsResult.CandidateSequence() != 0 || fsResult.CandidateDigest() != pre.candidateDigest || fsResult.PreviousRevision() != pre.previousRevision || fsResult.CandidateRevision() != pre.candidateRevision {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionFailed("admission-target-register", "durable target registration result is inconsistent", nil)
+	}
+	nextInventory := fsResult.Inventory()
+	if err := nextInventory.Revalidate(ctx); err != nil {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-revalidate")
+	}
+	revision, err := nextInventory.Revision()
+	if err != nil || revision != pre.candidateRevision {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-revision")
+	}
+	target, err := nextInventory.Target()
+	if err != nil || target != p.history.target {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-target")
+	}
+	fullSet, err := nextInventory.FullSetDigest()
+	if err != nil || fullSet == ([32]byte{}) || fullSet == p.history.fullSet {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-full-set")
+	}
+	lineage, err := nextInventory.Lineage(target)
+	if err != nil {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-lineage")
+	}
+	index, err := lineage.Index()
+	if err != nil {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-index")
+	}
+	indexBytes, err := index.ReadAll(ctx)
+	if err != nil || string(indexBytes) != string(p.plan.lineageHeaderBytes) || sha256.Sum256(indexBytes) != pre.candidateDigest {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-index-read")
+	}
+	if absent, err := nextInventory.TargetAbsent(); err != nil || absent != nil {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-absence")
+	}
+	nextToken, err := nextInventory.MutationToken()
+	if err != nil || !nextToken.ValidFor(nextInventory) {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionPostMutationFailure("admission-target-register-token")
+	}
+	next := &RegisteredAdmissionPermit{
+		prior: p, plan: p.plan, candidateBinding: candidate.binding, inventory: nextInventory, mutation: nextToken,
+		target: target, fullSet: fullSet, revision: revision, indexDigest: pre.candidateDigest, consumed: &atomic.Bool{},
+	}
+	next.self = next
+	binding := &registeredAdmissionPermitBinding{permit: next, prior: p, plan: p.plan, inventory: nextInventory, mutation: nextToken}
+	next.binding = binding
+	binding.canonical = registeredAdmissionPermitDigest(next)
+	registeredAdmissionPermitRegistry.Store(binding, binding.canonical)
+	if !validRegisteredAdmissionPermit(next, nextInventory, candidate) {
+		_ = fsResult.Invalidate()
+		return admissionMutationUnknown(result), admissionFailed("admission-target-register", "next admission permit could not be sealed", nil)
+	}
+	result.next = next
+	return result, nil
+}
+
+func admissionPermitTransitionFromFS(value evidencefs.AdmissionTransitionResult) AdmissionPermitTransitionResult {
+	result := AdmissionPermitTransitionResult{
+		outcome: value.Outcome(), candidateKind: value.CandidateKind(), candidateDigest: value.CandidateDigest(),
+		candidateSequence: value.CandidateSequence(), candidateRevision: value.CandidateRevision(), previousRevision: value.PreviousRevision(),
+	}
+	if result.outcome != evidencefs.AdmissionTransitionDurable {
+		result.next = nil
+	}
+	return result
+}
+
+func admissionMutationUnknown(value AdmissionPermitTransitionResult) AdmissionPermitTransitionResult {
+	value.outcome = evidencefs.AdmissionTransitionUnknown
+	value.next = nil
+	return value
+}
+
+func mapAdmissionMutationError(err error, op string) error {
+	switch {
+	case errors.Is(err, evidencefs.ErrUnknown):
+		return admissionFailed(op, "admission mutation outcome is unknown", nil)
+	case err == nil:
+		return admissionFailed(op, "admission mutation returned no error", nil)
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return mapEvidenceAdmissionError(err, op)
+	case errors.Is(err, evidencefs.ErrLimit):
+		return fail(CodeEvidenceJournalLimitExceeded, op, "admission mutation exceeds a fixed limit", nil)
+	case errors.Is(err, evidencefs.ErrCorrupt):
+		return admissionCorrupt(op, "admission mutation observed corrupt stored state", nil)
+	default:
+		return admissionFailed(op, "admission mutation could not start", nil)
+	}
+}
+
+func admissionPostMutationFailure(op string) error {
+	return admissionFailed(op, "admission mutation outcome is unknown", nil)
+}
+
+func registeredAdmissionPermitDigest(permit *RegisteredAdmissionPermit) [32]byte {
+	if permit == nil || permit.self != permit || permit.prior == nil || permit.plan == nil || permit.candidateBinding == nil || permit.prior.binding == nil || permit.plan.binding == nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-registered-admission-permit/v1\x00"))
+	h.Write(permit.prior.binding.canonical[:])
+	h.Write(permit.plan.binding.canonical[:])
+	h.Write(permit.candidateBinding.canonical[:])
+	h.Write(permit.target[:])
+	h.Write(permit.fullSet[:])
+	h.Write(permit.indexDigest[:])
+	writeAdmissionUint(h, permit.revision)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validRegisteredAdmissionPermit(permit *RegisteredAdmissionPermit, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate) bool {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.plan == nil || permit.plan.lineageHeaderFrame.Record.Header == nil || permit.inventory != inventory || permit.mutation == nil || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.plan != permit.plan || permit.binding.inventory != inventory || permit.binding.mutation != permit.mutation || permit.consumed == nil || permit.consumed.Load() || !validConsumedAdmissionPermit(permit.prior, permit.plan, candidate) || permit.indexDigest != sha256.Sum256(permit.plan.lineageHeaderBytes) || permit.target != digestRaw(permit.plan.lineageHeaderFrame.Record.Header.ExecutionLineageDigest) || permit.revision != permit.prior.history.revision+1 || permit.fullSet == permit.prior.history.fullSet || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != registeredAdmissionPermitDigest(permit) || !permit.mutation.ValidFor(inventory) {
+		return false
+	}
+	registeredPlan, planOK := verifiedAdmissionPlanRegistry.Load(permit.plan.binding)
+	registeredPrior, priorOK := admissionPermitRegistry.Load(permit.prior.binding)
+	registered, ok := registeredAdmissionPermitRegistry.Load(permit.binding)
+	if !planOK || registeredPlan != permit.plan.binding.canonical || !priorOK || registeredPrior != permit.prior.binding.canonical || !ok || registered != permit.binding.canonical {
+		return false
+	}
+	revision, err := inventory.Revision()
+	if err != nil || revision != permit.revision {
+		return false
+	}
+	target, err := inventory.Target()
+	if err != nil || target != permit.target {
+		return false
+	}
+	fullSet, err := inventory.FullSetDigest()
+	return err == nil && fullSet == permit.fullSet
+}
+
+func validConsumedAdmissionPermit(permit *AdmissionPermit, plan *VerifiedAdmissionPlan, candidate OwnedCurrentCandidate) bool {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.history == nil || permit.history.binding == nil || permit.plan != plan || plan == nil || plan.binding == nil || permit.inventory == nil || permit.inventory != permit.history.inventory || permit.mutation == nil || permit.candidateBinding != candidate.binding || permit.binding.history != permit.history || permit.binding.plan != plan || permit.binding.inventory != permit.inventory || permit.binding.mutation != permit.mutation || permit.consumed == nil || !permit.consumed.Load() || plan.consumed == nil || !plan.consumed.Load() || permit.history.owner == nil || permit.history.owner != candidate.verifiedRun.currentDecision.owner || permit.history.candidateBinding != candidate.binding || permit.history.binding.owner != permit.history.owner || permit.history.binding.candidateBinding != candidate.binding || permit.history.binding.inventory != permit.history.inventory || permit.history.binding.history != permit.history || plan.history != permit.history || plan.candidateBinding != candidate.binding || plan.binding.plan != plan || plan.binding.history != permit.history || plan.binding.candidate != candidate.binding || permit.history.binding.canonical != admissionHistoryDigest(permit.history) || !permit.history.rootFacts.valid() || !admissionPlanFramesExact(plan) || plan.binding.canonical != admissionPlanDigest(plan) || permit.binding.canonical != admissionPermitDigest(permit) {
+		return false
+	}
+	registeredHistory, historyOK := verifiedAdmissionHistoryRegistry.Load(permit.history.binding)
+	registeredPlan, planOK := verifiedAdmissionPlanRegistry.Load(plan.binding)
+	registeredPermit, permitOK := admissionPermitRegistry.Load(permit.binding)
+	return historyOK && registeredHistory == permit.history.binding.canonical && planOK && registeredPlan == plan.binding.canonical && permitOK && registeredPermit == permit.binding.canonical
 }
