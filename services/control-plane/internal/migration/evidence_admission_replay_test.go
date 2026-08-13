@@ -1,0 +1,969 @@
+package migration
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"hash"
+	"math"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+	"unsafe"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
+)
+
+func TestAdmissionDecodeGoldenFramesSameBits(t *testing.T) {
+	t.Parallel()
+	evidenceFixture := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	evidence := decodeEvidenceFrames(t, evidenceFixture["frames"])
+	var evidenceRaw []byte
+	for _, frame := range evidence {
+		encoded, err := EncodeCanonicalEvidenceFrame(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidenceRaw = append(evidenceRaw, encoded...)
+	}
+	accumulator := newEvidenceStructuralAccumulator(nil, nil)
+	if err := accumulator.beginSegment(); err != nil {
+		t.Fatal(err)
+	}
+	records, tail, first, err := streamAdmissionEvidenceFrames(evidenceRaw, accumulator)
+	if err != nil || records != uint64(len(evidence)) || tail != evidence[len(evidence)-1].RecordDigest || !canonicalEqual(first, evidence[0]) {
+		t.Fatalf("evidence same-bits replay failed: %v", err)
+	}
+
+	lineageFixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	lineage := decodeLineageFrames(t, lineageFixture["frames"])
+	var lineageRaw []byte
+	for _, frame := range lineage {
+		encoded, err := EncodeCanonicalLineageFrame(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lineageRaw = append(lineageRaw, encoded...)
+	}
+	decodedLineage, err := decodeAdmissionLineageFrames(lineageRaw)
+	if err != nil || !canonicalEqual(lineage, decodedLineage) {
+		t.Fatalf("lineage same-bits replay failed: %v", err)
+	}
+}
+
+func TestAdmissionFramedDecoderRejectsEveryPrefixBoundaryAndLengthFault(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frame := decodeEvidenceFrames(t, fixture["frames"])[0]
+	encoded, err := EncodeCanonicalEvidenceFrame(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for length := 0; length < len(encoded); length++ {
+		if _, _, err := drainAdmissionEvidenceFrames(encoded[:length]); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("prefix %d accepted or wrong code: %v", length, err)
+		}
+	}
+	if records, _, err := drainAdmissionEvidenceFrames(encoded); err != nil || records != 1 {
+		t.Fatalf("exact frame rejected: %v", err)
+	}
+	for _, declared := range []uint64{maxEvidenceFrameBytes - 7, maxEvidenceFrameBytes - 8, math.MaxUint64} {
+		fault := append([]byte(nil), encoded...)
+		binary.BigEndian.PutUint64(fault[:8], declared)
+		if _, _, err := drainAdmissionEvidenceFrames(fault); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("declared=%d accepted: %v", declared, err)
+		}
+	}
+	trailing := append(append([]byte(nil), encoded...), 0)
+	if _, _, err := drainAdmissionEvidenceFrames(trailing); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("trailing byte accepted: %v", err)
+	}
+	nonCanonical := append([]byte(nil), encoded...)
+	nonCanonical = append(nonCanonical, ' ')
+	binary.BigEndian.PutUint64(nonCanonical[:8], uint64(len(nonCanonical)-8))
+	if _, _, err := drainAdmissionEvidenceFrames(nonCanonical); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("non-canonical JSON accepted: %v", err)
+	}
+	unknown := bytes.Replace(append([]byte(nil), encoded...), []byte(`"record_kind":"header"`), []byte(`"record_kind":"bogus!"`), 1)
+	if bytes.Equal(unknown, encoded) {
+		t.Fatal("fixture does not expose record kind")
+	}
+	if _, _, err := drainAdmissionEvidenceFrames(unknown); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("unknown record kind accepted: %v", err)
+	}
+	digestFault := append([]byte(nil), encoded...)
+	digestFault[len(digestFault)-3] ^= 1
+	if _, _, err := drainAdmissionEvidenceFrames(digestFault); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("digest/non-canonical fault accepted: %v", err)
+	}
+}
+
+func TestAdmissionOrderingTargetAndObjectFactsAreClosed(t *testing.T) {
+	t.Parallel()
+	a, b := [32]byte{1}, [32]byte{2}
+	if !strictRawDigestOrder([][32]byte{a, b}) || strictRawDigestOrder([][32]byte{b, a}) || strictRawDigestOrder([][32]byte{a, a}) {
+		t.Fatal("strict raw digest ordering is not closed")
+	}
+	if rawDigestIndex([][32]byte{a, b}, b) != 1 || rawDigestIndex([][32]byte{a, b}, [32]byte{3}) != -1 {
+		t.Fatal("target membership search mismatch")
+	}
+	if !rawDigestContains([][32]byte{b, a}, a) {
+		t.Fatal("unordered corrupt inventory lost target membership")
+	}
+	if err := validateAdmissionTargetXOR(a, b, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAdmissionTargetXOR(a, b, false, nil); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("absent target without fact accepted: %v", err)
+	}
+	objects := []admissionReplayObject{{temporary: true, digest: digestString(b)}, {digest: digestString(b)}, {digest: digestString(a)}}
+	sortAdmissionObjects(objects)
+	if objects[0].temporary || objects[1].temporary || !objects[2].temporary || objects[0].digest >= objects[1].digest {
+		t.Fatal("canonical object ordering mismatch")
+	}
+}
+
+func TestAdmissionObjectReferencePurposeDedupeAndConflict(t *testing.T) {
+	t.Parallel()
+	digest := DigestBytes([]byte("same-content"))
+	references := []admissionObjectReference{
+		{kind: durableRuntimeContentObject, digest: digest, sizeBytes: 12},
+		{kind: durableDecisionRecoveryContentObject, digest: digest, sizeBytes: 12},
+	}
+	_, replayRefs, needs, err := replayAdmissionObjects(t.Context(), nil, nil, references)
+	if err != nil || len(replayRefs) != 2 || len(needs) != 2 || needs[0].kind == needs[1].kind {
+		t.Fatalf("same digest dual purpose was not retained: needs=%v err=%v", needs, err)
+	}
+	conflict := cloneProjectionValue(references)
+	conflict[1].sizeBytes++
+	if _, _, _, err := replayAdmissionObjects(t.Context(), nil, nil, conflict); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("same digest conflicting size accepted: %v", err)
+	}
+}
+
+func TestAdmissionCheckedUsageRejectsOverflowAndExactPlusOne(t *testing.T) {
+	t.Parallel()
+	if value, err := admissionCheckedAdd(rootJournalMaximumBytes-1, 1); err != nil || value != rootJournalMaximumBytes {
+		t.Fatalf("exact maximum rejected: value=%d err=%v", value, err)
+	}
+	if _, err := admissionCheckedAdd(math.MaxUint64, 1); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("overflow accepted: %v", err)
+	}
+	if value, err := admissionCheckedAdd(rootJournalMaximumBytes, 1); err != nil || value != rootJournalMaximumBytes+1 {
+		t.Fatalf("checked add lost exact plus one: value=%d err=%v", value, err)
+	}
+}
+
+func TestAdmissionReferenceBoundsAndCanonicalFindingOrder(t *testing.T) {
+	t.Parallel()
+	digest := DigestBytes([]byte("runtime"))
+	tooLarge := []admissionObjectReference{{kind: durableRuntimeContentObject, digest: digest, sizeBytes: maxRuntimeTarSize + 1}}
+	if _, _, _, err := replayAdmissionObjects(t.Context(), nil, nil, tooLarge); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("oversized runtime reference accepted: %v", err)
+	}
+	recoveryTooLarge := []admissionObjectReference{{kind: durableDecisionRecoveryContentObject, digest: digest, sizeBytes: maxDecisionRecoveryArtifactBytes + 1}}
+	if _, _, _, err := replayAdmissionObjects(t.Context(), nil, nil, recoveryTooLarge); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("oversized recovery reference accepted: %v", err)
+	}
+	accumulator := &admissionCorruptAccumulator{}
+	late := admissionCorrupt("late", "late", nil)
+	early := admissionCorrupt("early", "early", nil)
+	accumulator.addAt("20", late)
+	accumulator.addAt("10", early)
+	if accumulator.key != "10" || accumulator.first == nil {
+		t.Fatal("corrupt finding order depends on encounter order")
+	}
+}
+
+func TestAdmissionCompactGenerationsRetainPass2Inputs(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeLineageFrames(t, fixture["frames"])
+	generations, err := compactAdmissionGenerations(frames)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(generations) == 0 {
+		t.Fatal("generation summaries disappeared")
+	}
+	var debit uint64
+	for _, generation := range generations {
+		debit += uint64(len(generation.indexDebits))
+		if generation.journalID == "" {
+			t.Fatal("generation journal identity missing")
+		}
+	}
+	if debit != uint64(len(frames)-1) {
+		t.Fatalf("generation index debit=%d want=%d", debit, len(frames)-1)
+	}
+	for _, generation := range generations {
+		for _, debit := range generation.indexDebits {
+			if debit.recordDigest == "" || debit.framedBytes < 8 {
+				t.Fatal("generation index debit lost exact framed fact")
+			}
+		}
+	}
+	if generations[0].reservedRecords != frames[1].Record.Reserved.ReservedRecords {
+		t.Fatal("generation reservation facts drifted")
+	}
+}
+
+func TestAdmissionGenerationSummaryChangesCanonicalDigest(t *testing.T) {
+	t.Parallel()
+	summary := evidenceJournalSummary{recoveryState: "brand_new"}
+	generation := admissionReplayGeneration{journalID: projectionTestDigest, summary: &summary}
+	transcript := &admissionReplayTranscript{lineages: []admissionReplayLineage{{generations: []admissionReplayGeneration{generation}}}}
+	before := admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].generations[0].summary.recoveryState = "dangling_intent"
+	after := admissionReplayCanonicalDigest(transcript)
+	if before == after {
+		t.Fatal("journal summary mutation did not change transcript digest")
+	}
+	checkpoint := summary
+	transcript.lineages[0].generations[0].latestCheckpointSummary = &checkpoint
+	before = admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].generations[0].latestCheckpointSummary.recoveryState = "terminal"
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("checkpoint summary mutation did not change digest")
+	}
+	planned := admissionReplayGeneration{journalID: DigestBytes([]byte("planned")), reservedRecords: 1, reservedBytes: 1, reservedSegments: 1}
+	transcript.lineages[0].generations[0].plannedSuccessor = &planned
+	before = admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].generations[0].plannedSuccessor.reservedBytes++
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("planned successor mutation did not change digest")
+	}
+}
+
+func TestAdmissionLineageHeaderAndTailChangeCanonicalDigest(t *testing.T) {
+	t.Parallel()
+	lineage := admissionReplayLineage{header: admissionReplayLineageHeader{executionLineageDigest: projectionTestDigest, deploymentID: "deploy", databaseName: "db", repositoryIdentity: "repo", limitsProfile: LineageLimitsProfile}, indexHeaderRecordDigest: DigestBytes([]byte("header")), indexTailRecordDigest: DigestBytes([]byte("tail"))}
+	transcript := &admissionReplayTranscript{lineages: []admissionReplayLineage{lineage}}
+	before := admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].indexTailRecordDigest = DigestBytes([]byte("changed"))
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("lineage index tail mutation did not change digest")
+	}
+}
+
+func TestAdmissionReservedUnregisteredRetainsPlannedPurposeAndContinuation(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeLineageFrames(t, fixture["frames"])
+	generations, err := compactAdmissionGenerations(frames[:2])
+	if err != nil || len(generations) != 1 {
+		t.Fatalf("generations=%v err=%v", generations, err)
+	}
+	g := generations[0]
+	if g.header == nil || g.expectedSegment0HeaderDigest != frames[1].Record.Reserved.ExpectedSegment0HeaderDigest || g.header.outerArtifactDigest != frames[1].Record.Reserved.PlannedSegment0Header.OuterArtifactDigest {
+		t.Fatal("planned segment0 purpose facts missing")
+	}
+	// Fixture is the initial generation and therefore correctly has no continuation.
+	if g.continuation != nil {
+		t.Fatal("initial generation acquired continuation")
+	}
+	continuation := LineageContinuationContext{StartAction: "begin_next_attempt", MigrationID: "000001", AttemptIndex: 2, PreviousAttemptTerminalDigest: digestPointer(projectionTestDigest), SourceJournalIdentityDigest: projectionTestDigest, SourceCheckpointRecordDigest: projectionTestDigest, SourceTerminalDigest: projectionTestDigest}
+	mutated := cloneProjectionValue(frames[:2])
+	mutated[1].Record.Reserved.Continuation = &continuation
+	mutated[1].Record.Reserved.QuotaReservationDigest, _ = QuotaReservationDigest(*mutated[1].Record.Reserved)
+	mutated[1].RecordDigest, _ = mutated[1].ComputeDigest()
+	generations, err = compactAdmissionGenerations(mutated)
+	if err != nil || generations[0].continuation == nil || generations[0].continuation.startAction != continuation.StartAction || generations[0].continuation.sourceTerminalDigest != continuation.SourceTerminalDigest {
+		t.Fatalf("continuation compact facts missing: %+v err=%v", generations[0].continuation, err)
+	}
+	transcript := &admissionReplayTranscript{lineages: []admissionReplayLineage{{generations: generations}}}
+	before := admissionReplayCanonicalDigest(transcript)
+	generations[0].continuation.attemptIndex++
+	after := admissionReplayCanonicalDigest(transcript)
+	if before == after {
+		t.Fatal("continuation mutation did not change transcript digest")
+	}
+}
+
+func TestAdmissionStandaloneStreamingRejectsJournalWithoutLineagePlan(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, fixture["journal_frames"])
+	var raw []byte
+	for _, frame := range frames {
+		encoded, err := EncodeCanonicalEvidenceFrame(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw = append(raw, encoded...)
+	}
+	accumulator := newEvidenceStructuralAccumulator(nil, nil)
+	if err := accumulator.beginSegment(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := streamAdmissionEvidenceFrames(raw, accumulator); err != nil {
+		t.Fatal(err)
+	}
+	if err := accumulator.endSegment(); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := accumulator.finish(); err != nil || replay.records != uint64(len(frames)) {
+		t.Fatalf("standalone strict replay failed: records=%v err=%v", replay, err)
+	}
+	fault := append([]byte(nil), raw...)
+	fault[len(fault)-1] ^= 1
+	accumulator = newEvidenceStructuralAccumulator(nil, nil)
+	_ = accumulator.beginSegment()
+	if _, _, _, err := streamAdmissionEvidenceFrames(fault, accumulator); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("standalone corrupt journal accepted: %v", err)
+	}
+}
+
+func TestAdmissionTypedRecoveryTailStateMatrix(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, fixture["journal_frames"])
+	states := map[EvidenceRecordKind]func(*admissionReplayRecoveryTail) bool{
+		EvidenceRecordStatementIntent: func(tail *admissionReplayRecoveryTail) bool { return tail.intent != nil }, EvidenceRecordIntermediate: func(tail *admissionReplayRecoveryTail) bool { return tail.intermediate != nil }, EvidenceRecordCommitIntent: func(tail *admissionReplayRecoveryTail) bool { return tail.commit != nil }, EvidenceRecordAttemptTerminal: func(tail *admissionReplayRecoveryTail) bool { return tail.terminal != nil }, EvidenceRecordAmbiguousResolution: func(tail *admissionReplayRecoveryTail) bool { return tail.resolution != nil },
+	}
+	collector := &admissionReplayJournalCollector{}
+	tail := &admissionReplayRecoveryTail{}
+	for _, frame := range frames {
+		if frame.RecordKind == EvidenceRecordHeader {
+			continue
+		}
+		if err := collector.observe(frame); err != nil {
+			t.Fatal(err)
+		}
+		if err := tail.observe(frame); err != nil {
+			t.Fatal(err)
+		}
+		if check := states[frame.RecordKind]; check != nil && !check(tail) {
+			t.Fatalf("typed tail missing %s", frame.RecordKind)
+		}
+	}
+	if tail.terminal == nil {
+		t.Fatal("terminal/completed tail missing")
+	}
+	if len(collector.terminals) == 0 {
+		t.Fatal("historical folded terminal event missing")
+	}
+	if err := collector.validate(); err != nil {
+		t.Fatal(err)
+	}
+	copyTail := *cloneAdmissionRecoveryTail(tail)
+	if copyTail.terminal != nil {
+		original := copyTail.terminal.body.TerminalDigest
+		tail.terminal.body.TerminalDigest = projectionTestDigest
+		if copyTail.terminal.body.TerminalDigest != original {
+			t.Fatal("typed tail clone aliased body")
+		}
+	}
+	transcript := &admissionReplayTranscript{lineages: []admissionReplayLineage{{generations: []admissionReplayGeneration{{currentTail: &copyTail}}}}}
+	before := admissionReplayCanonicalDigest(transcript)
+	if copyTail.intent != nil {
+		copyTail.intent.recordDigest = projectionTestDigest
+	} else if copyTail.terminal != nil {
+		copyTail.terminal.recordDigest = projectionTestDigest
+	} else if copyTail.resolution != nil {
+		copyTail.resolution.recordDigest = projectionTestDigest
+	} else {
+		t.Fatal("fixture produced no typed recovery record")
+	}
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("typed recovery tail mutation did not change digest")
+	}
+}
+
+func TestAdmissionTypedRecoveryTailRejectsEveryBodyAndPreviousMutation(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, fixture["journal_frames"])
+	var tail admissionReplayRecoveryTail
+	for _, frame := range frames {
+		if frame.RecordKind != EvidenceRecordHeader {
+			if err := tail.observe(frame); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := validateAdmissionRecoveryTail(&tail); err != nil {
+		t.Fatalf("valid tail rejected: %v", err)
+	}
+	tests := []func(*admissionReplayRecoveryTail){
+		func(v *admissionReplayRecoveryTail) {
+			if v.intent != nil {
+				v.intent.body.StatementIndex++
+			}
+		},
+		func(v *admissionReplayRecoveryTail) {
+			if v.intermediate != nil {
+				v.intermediate.body.State.StatementIndex++
+			}
+		},
+		func(v *admissionReplayRecoveryTail) {
+			if v.commit != nil {
+				v.commit.body.ExpectedLedgerLength++
+			}
+		},
+		func(v *admissionReplayRecoveryTail) {
+			if v.terminal != nil {
+				v.terminal.body.Outcome += "_drift"
+			}
+		},
+		func(v *admissionReplayRecoveryTail) {
+			if v.resolution != nil {
+				v.resolution.body.Outcome += "_drift"
+			}
+		},
+	}
+	for _, mutate := range tests {
+		v := cloneAdmissionRecoveryTail(&tail)
+		before := cloneProjectionValue(*v)
+		mutate(v)
+		if canonicalEqual(before, *v) {
+			continue
+		}
+		if err := validateAdmissionRecoveryTail(v); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("typed body mutation accepted: %v", err)
+		}
+	}
+	v := cloneAdmissionRecoveryTail(&tail)
+	var recordPrevious **Digest
+	switch {
+	case v.terminal != nil:
+		recordPrevious = &v.terminal.previousRecordDigest
+	case v.commit != nil:
+		recordPrevious = &v.commit.previousRecordDigest
+	case v.intermediate != nil:
+		recordPrevious = &v.intermediate.previousRecordDigest
+	case v.intent != nil:
+		recordPrevious = &v.intent.previousRecordDigest
+	}
+	if recordPrevious == nil {
+		t.Fatal("tail has no recovery record")
+	}
+	drift := projectionTestDigest
+	*recordPrevious = &drift
+	if err := validateAdmissionRecoveryTail(v); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("previous digest mutation accepted: %v", err)
+	}
+}
+
+func TestAdmissionCommitSubjectBindsCompleteBody(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, fixture["journal_frames"])
+	var commit CommitIntent
+	for _, frame := range frames {
+		if frame.Record.CommitIntent != nil {
+			commit = cloneProjectionValue(*frame.Record.CommitIntent)
+			break
+		}
+	}
+	if commit.MigrationID == "" {
+		t.Fatal("fixture commit missing")
+	}
+	want, err := admissionCommitSubject(commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutations := []func(*CommitIntent){func(v *CommitIntent) { v.SchemaBundleDigest = projectionTestDigest }, func(v *CommitIntent) { v.AttemptPredecessorCatalogDigest = projectionTestDigest }, func(v *CommitIntent) { v.LastIntermediateStateDigest = projectionTestDigest }, func(v *CommitIntent) { v.ExpectedLedgerLength++ }, func(v *CommitIntent) { v.LedgerRow.MigrationName += " drift" }}
+	for _, mutate := range mutations {
+		v := cloneProjectionValue(commit)
+		mutate(&v)
+		got, err := admissionCommitSubject(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == want {
+			t.Fatal("commit subject omitted a body field")
+		}
+	}
+}
+
+func TestAdmissionCheckpointTailAndSupersessionCompactFacts(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeLineageFrames(t, fixture["frames"])
+	generations, err := compactAdmissionGenerations(frames)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checked bool
+	for _, g := range generations {
+		if g.latestCheckpointRecordDigest != nil {
+			if g.latestCheckpointTailDigest == nil {
+				t.Fatal("checkpoint tail digest missing")
+			}
+			checked = true
+		}
+		if g.supersessionRecordDigest != nil {
+			if g.supersessionAuthorityDigest == "" {
+				t.Fatal("supersession authority digest missing")
+			}
+			if g.supersessionOutcome == "activated_no_migration_progress" && g.oldActivationRecordDigest == nil {
+				t.Fatal("activation boundary missing")
+			}
+			if g.supersessionOutcome != "activated_no_migration_progress" && g.oldCheckpointRecordDigest == nil {
+				t.Fatal("checkpoint boundary missing")
+			}
+		}
+	}
+	if !checked {
+		t.Fatal("fixture checkpoint missing")
+	}
+	transcript := &admissionReplayTranscript{lineages: []admissionReplayLineage{{generations: generations}}}
+	before := admissionReplayCanonicalDigest(transcript)
+	for i := range generations {
+		if generations[i].latestCheckpointTailDigest != nil {
+			*generations[i].latestCheckpointTailDigest = projectionTestDigest
+			break
+		}
+	}
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("checkpoint tail mutation did not change digest")
+	}
+}
+
+func TestAdmissionFoldedTerminalCanonicalCoversEveryField(t *testing.T) {
+	t.Parallel()
+	base := admissionReplayTerminalEvent{migrationID: 1, attemptIndex: 2, statementCount: 3, lastStatementIndex: 4, outcome: 5, resolutionOutcome: 2, flags: admissionTerminalHasFinal | admissionTerminalHasCommit | admissionTerminalHasRetry | admissionTerminalHasResolution, terminalDigest: [32]byte{1}, statementChain: [32]byte{2}}
+	digest := func(v admissionReplayTerminalEvent) [32]byte {
+		h := sha256.New()
+		writeAdmissionTerminalEvent(h, v)
+		var d [32]byte
+		copy(d[:], h.Sum(nil))
+		return d
+	}
+	want := digest(base)
+	mutations := []func(*admissionReplayTerminalEvent){
+		func(v *admissionReplayTerminalEvent) { v.migrationID++ }, func(v *admissionReplayTerminalEvent) { v.attemptIndex++ }, func(v *admissionReplayTerminalEvent) { v.statementCount++ }, func(v *admissionReplayTerminalEvent) { v.lastStatementIndex++ }, func(v *admissionReplayTerminalEvent) { v.outcome++ }, func(v *admissionReplayTerminalEvent) { v.resolutionOutcome++ }, func(v *admissionReplayTerminalEvent) { v.flags ^= admissionTerminalHasRetry }, func(v *admissionReplayTerminalEvent) { v.terminalDigest[0]++ }, func(v *admissionReplayTerminalEvent) { v.statementChain[0]++ },
+	}
+	for _, mutate := range mutations {
+		v := base
+		mutate(&v)
+		if digest(v) == want {
+			t.Fatal("folded terminal field missing from canonical digest")
+		}
+	}
+}
+
+func TestAdmissionCanonicalLengthPrefixesLineageHeaderStrings(t *testing.T) {
+	t.Parallel()
+	left := &admissionReplayTranscript{lineages: []admissionReplayLineage{{header: admissionReplayLineageHeader{deploymentID: "a\x00b", databaseName: "c", repositoryIdentity: "d", limitsProfile: "e"}}}}
+	right := &admissionReplayTranscript{lineages: []admissionReplayLineage{{header: admissionReplayLineageHeader{deploymentID: "a", databaseName: "b\x00c", repositoryIdentity: "d", limitsProfile: "e"}}}}
+	if admissionReplayCanonicalDigest(left) == admissionReplayCanonicalDigest(right) {
+		t.Fatal("lineage header string boundaries collide in transcript digest")
+	}
+}
+
+func TestAdmissionFoldedSparseCanonicalCoversEveryField(t *testing.T) {
+	t.Parallel()
+	digestOf := func(write func(hash.Hash)) [32]byte {
+		h := sha256.New()
+		write(h)
+		var result [32]byte
+		copy(result[:], h.Sum(nil))
+		return result
+	}
+	final := admissionReplayTerminalFinal{ordinal: 1, lastIntermediateRecord: [32]byte{2}, preledgerCatalog: [32]byte{3}}
+	want := digestOf(func(h hash.Hash) { writeAdmissionTerminalFinal(h, final) })
+	final.preledgerCatalog[0]++
+	if want == digestOf(func(h hash.Hash) { writeAdmissionTerminalFinal(h, final) }) {
+		t.Fatal("terminal final mutation did not change canonical digest")
+	}
+	commit := admissionReplayTerminalCommit{ordinal: 1, expectedLedgerLength: 2, commitRecord: [32]byte{2}, commitBody: [32]byte{3}, previousAttemptTerminal: [32]byte{4}, attemptPredecessorCatalog: [32]byte{5}, lastIntermediateState: [32]byte{6}}
+	want = digestOf(func(h hash.Hash) { writeAdmissionTerminalCommit(h, commit) })
+	commit.attemptPredecessorCatalog[0]++
+	if want == digestOf(func(h hash.Hash) { writeAdmissionTerminalCommit(h, commit) }) {
+		t.Fatal("terminal commit mutation did not change canonical digest")
+	}
+	retry := admissionReplayTerminalRetry{ordinal: 1, proofKind: 4, commitRejectedReason: 1, attemptPredecessorCatalog: [32]byte{2}, observedCatalog: [32]byte{3}, ledgerPrefix: [32]byte{4}, authorityResult: [32]byte{5}}
+	want = digestOf(func(h hash.Hash) { writeAdmissionTerminalRetry(h, retry) })
+	retry.ledgerPrefix[0]++
+	if want == digestOf(func(h hash.Hash) { writeAdmissionTerminalRetry(h, retry) }) {
+		t.Fatal("terminal retry mutation did not change canonical digest")
+	}
+	resolution := admissionReplayTerminalResolution{ordinal: 1, resolutionDigest: [32]byte{2}}
+	want = digestOf(func(h hash.Hash) { writeAdmissionTerminalResolution(h, resolution) })
+	resolution.resolutionDigest[0]++
+	if want == digestOf(func(h hash.Hash) { writeAdmissionTerminalResolution(h, resolution) }) {
+		t.Fatal("terminal resolution mutation did not change canonical digest")
+	}
+}
+
+func TestAdmissionVerificationEventBoundIsHonest(t *testing.T) {
+	t.Parallel()
+	for name, size := range map[string]uintptr{"terminal": unsafe.Sizeof(admissionReplayTerminalEvent{}), "final": unsafe.Sizeof(admissionReplayTerminalFinal{}), "commit": unsafe.Sizeof(admissionReplayTerminalCommit{}), "retry": unsafe.Sizeof(admissionReplayTerminalRetry{}), "resolution": unsafe.Sizeof(admissionReplayTerminalResolution{})} {
+		if size > 176 {
+			t.Fatalf("%s verification event grew to %d bytes", name, size)
+		}
+	}
+	records := rootJournalMaximumCount * maxEvidenceReservedRecords
+	// Model mutually exclusive legal terminal shapes instead of summing sparse
+	// maxima that cannot coexist. A terminal without an intent closes that
+	// journal, so there are at most 16; later precommit retry needs intent plus
+	// terminal, commit/final shapes need four records, and resolution five.
+	base := uint64(unsafe.Sizeof(admissionReplayTerminalEvent{}))
+	retry := uint64(unsafe.Sizeof(admissionReplayTerminalRetry{}))
+	commit := uint64(unsafe.Sizeof(admissionReplayTerminalCommit{}))
+	final := uint64(unsafe.Sizeof(admissionReplayTerminalFinal{}))
+	resolution := uint64(unsafe.Sizeof(admissionReplayTerminalResolution{}))
+	worstPersistent := rootJournalMaximumCount*base + max((base+retry)*records/2, (base+commit+retry)*records/4, (base+commit+final)*records/4, (base+commit+final+resolution)*records/5)
+	if worstPersistent >= 128<<20 {
+		t.Fatalf("folded verification persistent upper bound is %d bytes", worstPersistent)
+	}
+}
+
+func TestAdmissionCollectorCompactsEveryHistoricalTerminalShape(t *testing.T) {
+	t.Parallel()
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-retry-chains-v1.json"))
+	chains := document["chains"].([]JSONValue)
+	for _, raw := range chains {
+		chain := fixtureObjectValue(t, raw, "retry chain")
+		frames := decodeEvidenceFrames(t, chain["frames"])
+		collector := &admissionReplayJournalCollector{}
+		for _, frame := range frames {
+			if frame.RecordKind != EvidenceRecordHeader {
+				if err := collector.observe(frame); err != nil {
+					t.Fatalf("%v: %v", chain["name"], err)
+				}
+			}
+		}
+		if err := collector.validate(); err != nil {
+			t.Fatalf("%v: %v", chain["name"], err)
+		}
+		terminal := terminalFrame(t, frames).Record.AttemptTerminal
+		if len(collector.terminals) != 1 || len(collector.retries) != 1 || collector.terminals[0].terminalDigest != digestRaw(terminal.TerminalDigest) || collector.terminals[0].flags&admissionTerminalHasRetry == 0 {
+			t.Fatalf("%v: terminal/retry facts missing", chain["name"])
+		}
+		if terminal.RetryProof.ProofKind == "commit_rejected_exact_predecessor" {
+			if len(collector.commits) != 1 || collector.commits[0].commitRecord == ([32]byte{}) || collector.commits[0].commitBody == ([32]byte{}) {
+				t.Fatalf("%v: commit-rejected boundary missing", chain["name"])
+			}
+		} else if len(collector.commits) != 0 {
+			t.Fatalf("%v: precommit retry retained impossible commit", chain["name"])
+		}
+	}
+
+	ambiguous := fixtureObject(t, migrationFixturePath(t, "golden/evidence-ambiguous-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, ambiguous["frames"])
+	collector := &admissionReplayJournalCollector{}
+	for _, frame := range frames {
+		if frame.RecordKind != EvidenceRecordHeader {
+			if err := collector.observe(frame); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := collector.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(collector.terminals) != 1 || len(collector.finals) != 1 || len(collector.commits) != 1 || len(collector.resolutions) != 1 || collector.terminals[0].flags != admissionTerminalHasFinal|admissionTerminalHasCommit|admissionTerminalHasResolution|admissionTerminalHasStatements {
+		t.Fatalf("ambiguous sparse facts incomplete: %+v", collector.terminals)
+	}
+}
+
+func TestAdmissionCollectorUsesValidatedSuccessorContinuation(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	intent := cloneProjectionValue(*decodeEvidenceFrames(t, fixture["frames"])[1].Record.StatementIntent)
+	previous := DigestBytes([]byte("previous-terminal"))
+	continuation := &admissionReplayContinuation{startAction: "begin_next_attempt", migrationID: intent.MigrationID, attemptIndex: 2, previousAttemptTerminalDigest: &previous, sourceTerminalDigest: previous}
+	intent.AttemptIndex = 2
+	intent.StatementIndex = 0
+	intent.PreviousAttemptTerminalDigest = &previous
+	frame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 1, RecordKind: EvidenceRecordStatementIntent, Record: EvidenceRecord{StatementIntent: &intent}}
+	frame.RecordDigest, _ = frame.ComputeDigest()
+	collector := &admissionReplayJournalCollector{initial: cloneAdmissionContinuation(continuation)}
+	if err := collector.observe(frame); err != nil {
+		t.Fatalf("valid successor intent rejected: %v", err)
+	}
+	if collector.initial != nil || collector.active == nil || collector.openAttempt() == nil {
+		t.Fatal("successor continuation was not consumed into one open attempt")
+	}
+	fault := cloneProjectionValue(frame)
+	fault.Record.StatementIntent.AttemptIndex++
+	fault.RecordDigest, _ = fault.ComputeDigest()
+	collector = &admissionReplayJournalCollector{initial: cloneAdmissionContinuation(continuation)}
+	if err := collector.observe(fault); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("mismatched successor intent accepted: %v", err)
+	}
+}
+
+func TestAdmissionCollectorAcceptsTerminalBeforeIntentOnlyAsClosedAttempt(t *testing.T) {
+	t.Parallel()
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-retry-chains-v1.json"))
+	chain := fixtureObjectValue(t, document["chains"].([]JSONValue)[3], "commit rejected")
+	frames := decodeEvidenceFrames(t, chain["frames"])
+	terminal := cloneProjectionValue(terminalFrame(t, frames))
+	terminal.Record.AttemptTerminal.LastIntermediateStateDigest = nil
+	terminal.Record.AttemptTerminal.RetryProof = nil
+	terminal.Record.AttemptTerminal.Outcome = "aborted_terminal"
+	code := string(CodeUntrusted)
+	terminal.Record.AttemptTerminal.StableErrorCode = &code
+	terminal.Record.AttemptTerminal.FailureEvidence = &StableFailureEvidence{Code: CodeUntrusted, Phase: "preconnect", Path: "trust", Retryable: false}
+	terminal.Record.AttemptTerminal.ReconcileResult = "not_run"
+	terminal.Record.AttemptTerminal.TerminalDigest, _ = terminal.Record.AttemptTerminal.ComputeDigest()
+	terminal.Sequence = 1
+	terminal.PreviousRecordDigest = nil
+	terminal.RecordDigest, _ = terminal.ComputeDigest()
+	collector := &admissionReplayJournalCollector{}
+	if err := collector.observe(terminal); err != nil {
+		t.Fatalf("valid pre-intent terminal rejected: %v", err)
+	}
+	if err := collector.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(collector.terminals) != 1 || collector.terminals[0].flags&admissionTerminalHasStatements != 0 || collector.terminals[0].statementChain != ([32]byte{}) || collector.active != nil {
+		t.Fatal("pre-intent terminal acquired a statement chain or open attempt")
+	}
+}
+
+func TestAdmissionCollectorBindsOneCatalogContractPerJournal(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, fixture["frames"])
+	collector := &admissionReplayJournalCollector{}
+	if err := collector.observe(frames[1]); err != nil {
+		t.Fatal(err)
+	}
+	if collector.catalogContract != digestRaw(frames[1].Record.StatementIntent.CatalogContractDigest) {
+		t.Fatal("journal catalog contract was not retained")
+	}
+	fault := cloneProjectionValue(frames[2])
+	fault.Record.Intermediate.State.CatalogContractDigest = projectionTestDigest
+	fault.Record.Intermediate.State.IntermediateStateDigest, _ = fault.Record.Intermediate.State.ComputeDigest()
+	fault.RecordDigest, _ = fault.ComputeDigest()
+	if err := collector.observe(fault); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("catalog contract drift accepted: %v", err)
+	}
+	generation := admissionReplayGeneration{verificationCatalogContract: collector.catalogContract}
+	transcript := &admissionReplayTranscript{lineages: []admissionReplayLineage{{generations: []admissionReplayGeneration{generation}}}}
+	before := admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].generations[0].verificationCatalogContract[0]++
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("catalog contract mutation did not change transcript digest")
+	}
+}
+
+func TestAdmissionCollectorRejectsInterleavedOpenAttempts(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, fixture["journal_frames"])
+	var intent StatementIntent
+	for _, frame := range frames {
+		if frame.Record.StatementIntent != nil {
+			intent = cloneProjectionValue(*frame.Record.StatementIntent)
+			break
+		}
+	}
+	if intent.MigrationID == "" {
+		t.Fatal("fixture intent missing")
+	}
+	makeIntent := func(id string, sequence uint64) EvidenceFrame {
+		body := cloneProjectionValue(intent)
+		body.MigrationID = id
+		frame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: sequence, RecordKind: EvidenceRecordStatementIntent, Record: EvidenceRecord{StatementIntent: &body}}
+		frame.RecordDigest, _ = frame.ComputeDigest()
+		return frame
+	}
+	a, b := makeIntent("000001", 1), makeIntent("000002", 2)
+	collector := &admissionReplayJournalCollector{}
+	if err := collector.observe(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := collector.observe(b); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("interleaved attempt accepted: %v", err)
+	}
+	subject, err := admissionStatementPlanSubject(*a.Record.StatementIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := admissionStatementChainStep([32]byte{}, "000001", 1, 0, subject)
+	if collector.frontier.statementChain != want {
+		t.Fatal("statement chain cannot be recomputed from recovered plan")
+	}
+}
+
+func TestAdmissionErrorMappingIsClosed(t *testing.T) {
+	t.Parallel()
+	if err := contextAdmissionError(nil); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("nil context=%v", err)
+	}
+	tests := []struct {
+		err  error
+		code ErrorCode
+	}{
+		{context.Canceled, CodeContextCanceled}, {context.DeadlineExceeded, CodeDeadlineExceeded},
+		{evidencefs.ErrLimit, CodeEvidenceJournalCorrupt}, {evidencefs.ErrLeaseInvalid, CodeEvidenceJournalFailed},
+		{evidencefs.ErrFilesystem, CodeEvidenceJournalFailed}, {evidencefs.ErrUnknown, CodeEvidenceJournalFailed},
+	}
+	for _, test := range tests {
+		if err := mapEvidenceAdmissionError(test.err, "test"); !IsCode(err, test.code) {
+			t.Fatalf("input=%v got=%v want=%s", test.err, err, test.code)
+		}
+	}
+	if !errors.Is(context.Canceled, context.Canceled) {
+		t.Fatal("context sentinel drift")
+	}
+}
+
+func TestAdmissionDrainedSegmentAlwaysPreservesPhysicalFact(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frame := decodeEvidenceFrames(t, fixture["frames"])[0]
+	raw, err := EncodeCanonicalEvidenceFrame(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := admissionReplayFile{size: uint64(len(raw)), digest: [32]byte{1}, identity: [32]byte{2}}
+	journal := admissionReplayJournal{}
+	findings := &admissionCorruptAccumulator{}
+	appendAdmissionDrainedSegment(file, raw, "10", &journal, findings)
+	if findings.first != nil || len(journal.segments) != 1 || journal.segments[0].file != file || journal.records != 1 || journal.tail != frame.RecordDigest {
+		t.Fatalf("valid drained physical fact lost: journal=%+v err=%v", journal, findings.first)
+	}
+	bad := append(append([]byte(nil), raw...), 0)
+	appendAdmissionDrainedSegment(admissionReplayFile{size: uint64(len(bad))}, bad, "20", &journal, findings)
+	if findings.first == nil || len(journal.segments) != 2 || journal.segments[1].file.size != uint64(len(bad)) {
+		t.Fatalf("corrupt drained physical fact lost: journal=%+v err=%v", journal, findings.first)
+	}
+	overflow := admissionReplayJournal{records: math.MaxUint64}
+	overflowFindings := &admissionCorruptAccumulator{}
+	appendAdmissionDrainedSegment(file, raw, "10", &overflow, overflowFindings)
+	if overflow.records != math.MaxUint64 || overflowFindings.first == nil || len(overflow.segments) != 1 {
+		t.Fatal("drained overflow did not saturate and retain segment")
+	}
+}
+
+func TestAdmissionStrictLineageStateKeepsOneUnknownExtension(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	index := decodeLineageFrames(t, fixture["frames"])
+	journal := decodeEvidenceFrames(t, fixture["journal_frames"])
+	id := journal[0].Record.Header.JournalIdentityDigest
+
+	reserved := cloneProjectionValue(index[:2])
+	if state, err := classifyAdmissionLineageStateCompact(reserved, nil); err != nil || state != admissionLineageReservedUnregistered {
+		t.Fatalf("reserved unregistered state=%q err=%v", state, err)
+	}
+	if state, err := classifyAdmissionLineageStateCompact(reserved, []admissionReplayJournal{{id: digestRaw(id), records: 1}}); err != nil || state != admissionLineageReservedHeader {
+		t.Fatalf("reserved header state=%q err=%v", state, err)
+	}
+	active := cloneProjectionValue(index[:3])
+	for length, expected := range map[int]admissionReplayLineageState{1: admissionLineageActiveInitial, 2: admissionLineageActiveUnknownExtension} {
+		state, err := classifyAdmissionLineageStateCompact(active, []admissionReplayJournal{{id: digestRaw(id), records: uint64(length)}})
+		if err != nil || state != expected {
+			t.Fatalf("active length=%d state=%q err=%v", length, state, err)
+		}
+	}
+	if _, err := classifyAdmissionLineageStateCompact(active, []admissionReplayJournal{{id: digestRaw(id), records: 3}}); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("two unknown extensions accepted: %v", err)
+	}
+
+	checkpointed := cloneProjectionValue(index[:4])
+	checkpoint := checkpointed[3].Record.Checkpoint
+	checkpoint.JournalNextSequence = 3
+	checkpoint.JournalTailDigest = journal[2].RecordDigest
+	summary, err := summarizeEvidenceJournal(journal[:3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	applySummaryToCheckpoint(checkpoint, summary)
+	redigestStructuralLineageFrames(t, checkpointed)
+	for length, expected := range map[int]admissionReplayLineageState{3: admissionLineageActiveCheckpointed, 4: admissionLineageActiveUnknownExtension} {
+		state, err := classifyAdmissionLineageStateCompact(checkpointed, []admissionReplayJournal{{id: digestRaw(id), records: uint64(length)}})
+		if err != nil || state != expected {
+			t.Fatalf("checkpoint length=%d state=%q err=%v", length, state, err)
+		}
+	}
+	if _, err := classifyAdmissionLineageStateCompact(checkpointed, []admissionReplayJournal{{id: digestRaw(id), records: uint64(len(journal))}}); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("checkpoint lag greater than one accepted: %v", err)
+	}
+}
+
+func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
+	t.Parallel()
+	transcript := &admissionReplayTranscript{
+		revision: 0, fullSetDigest: [32]byte{1}, target: [32]byte{2},
+		lineages: []admissionReplayLineage{{journals: []admissionReplayJournal{{segments: []admissionReplaySegment{{records: 1}}}}}},
+	}
+	transcript.canonical = admissionReplayCanonicalDigest(transcript)
+	owned := cloneAdmissionReplayTranscript(transcript)
+	transcript.lineages[0].journals[0].segments[0].records = 2
+	if owned.lineages[0].journals[0].segments[0].records != 1 || owned.canonical != admissionReplayCanonicalDigest(owned) {
+		t.Fatal("returned transcript aliases input or canonical digest drifted")
+	}
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name != "evidence_admission_replay.go" {
+			ast.Inspect(file, func(node ast.Node) bool {
+				if call, ok := node.(*ast.CallExpr); ok {
+					if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "replayAdmissionInventory" {
+						t.Fatalf("production consumer calls replayAdmissionInventory in %s", name)
+					}
+				}
+				if ident, ok := node.(*ast.Ident); ok && (ident.Name == "admissionReplayTranscript" || ident.Name == "admissionReplayReference") {
+					t.Fatalf("admission ordinary facts escaped into production consumer %s", name)
+				}
+				return true
+			})
+		}
+		if name == "evidence_admission_replay.go" {
+			for _, declaration := range file.Decls {
+				function, ok := declaration.(*ast.FuncDecl)
+				if !ok {
+					continue
+				}
+				lower := strings.ToLower(function.Name.Name)
+				if strings.Contains(lower, "bind") || strings.Contains(lower, "permit") || strings.Contains(lower, "receipt") || strings.Contains(lower, "verifiedadmissionplan") {
+					mentions := false
+					ast.Inspect(function, func(node ast.Node) bool {
+						if ident, ok := node.(*ast.Ident); ok && (ident.Name == "admissionReplayTranscript" || ident.Name == "admissionReplayReference") {
+							mentions = true
+						}
+						return true
+					})
+					if mentions {
+						t.Fatalf("ordinary admission fact reached authority-like consumer %s", function.Name.Name)
+					}
+				}
+			}
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" {
+				continue
+			}
+			mentions := false
+			ast.Inspect(function.Type, func(node ast.Node) bool {
+				if ident, ok := node.(*ast.Ident); ok && ident.Name == "admissionReplayTranscript" {
+					mentions = true
+				}
+				return true
+			})
+			if mentions && function.Name.Name != "replayAdmissionInventory" {
+				t.Fatalf("admission transcript gained production consumer %s in %s", function.Name.Name, name)
+			}
+		}
+	}
+}
+
+func sortAdmissionObjects(objects []admissionReplayObject) {
+	sort.Slice(objects, func(i, j int) bool { return admissionObjectLess(objects[i], objects[j]) })
+}
