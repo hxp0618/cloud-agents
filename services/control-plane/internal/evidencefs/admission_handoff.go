@@ -23,6 +23,7 @@ type GenerationLease struct {
 	lineage    heldLineageLock
 	generation heldJournalLock
 	binding    *generationLeaseBinding
+	snapshot   *GenerationSnapshot
 	valid      bool
 	closed     bool
 }
@@ -115,6 +116,7 @@ func (l *GenerationLease) Close() error {
 		return ErrLeaseInvalid
 	}
 	l.closed, l.valid = true, false
+	invalidateGenerationSnapshotsLocked(l)
 	lineage, generation, store := l.lineage, l.generation, l.store
 	if registered, ok := generationLeaseRegistry.Load(l); ok {
 		if record, recordOK := registered.(generationLeaseRegistryRecord); recordOK && record.lease == l && record.store != nil {
