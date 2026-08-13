@@ -92,6 +92,28 @@ func (decision VerifiedTrustDecision) exactlyMatches(other VerifiedTrustDecision
 	return decision.projectionBindings.exactlyMatches(*other.projectionBindings)
 }
 
+func (decision VerifiedTrustDecision) validateHistorical(bindings RunnerProjectionBindings) error {
+	if !decision.verified {
+		return fail(CodeUntrusted, "historical-trust", "historical decision was not produced by the recovery verifier", nil)
+	}
+	for field, digest := range map[string]Digest{
+		"schema_bundle": decision.expectedSchemaBundleDigest, "bootstrap_bundle": decision.expectedBootstrapBundleDigest,
+		"manifest": decision.expectedManifestDigest, "outer_artifact": decision.expectedOuterArtifactDigest,
+		"runner_release": decision.expectedRunnerReleaseDigest,
+	} {
+		if err := requireDigest("historical-trust."+field, digest); err != nil {
+			return fail(CodeUntrusted, "historical-trust", "historical decision contains an invalid digest", err)
+		}
+	}
+	if decision.repositoryIdentity == "" || decision.releaseIdentity == "" || decision.securityEpoch == 0 || decision.projectionBindings == nil || !decision.projectionBindings.historicallyExactlyMatches(bindings) {
+		return fail(CodeUntrusted, "historical-trust", "historical decision is missing or differs from its recovered bindings", nil)
+	}
+	if bindings.schemaBundleDigest != decision.expectedSchemaBundleDigest || bindings.releaseSubject.RepositoryIdentity != decision.repositoryIdentity || bindings.releaseSubject.ReleaseIdentity != decision.releaseIdentity || bindings.releaseSubject.BootstrapBundleDigest != decision.expectedBootstrapBundleDigest || bindings.releaseSubject.ManifestDigest != decision.expectedManifestDigest || bindings.releaseSubject.OuterArtifactDigest != decision.expectedOuterArtifactDigest || bindings.releaseSubject.RunnerReleaseDigest != decision.expectedRunnerReleaseDigest || !bindings.releaseExpiresAt.Equal(decision.expiresAt) || bindings.releaseSecurityEpoch != decision.securityEpoch {
+		return fail(CodeUntrusted, "historical-trust", "historical projection bindings differ from their release decision", nil)
+	}
+	return nil
+}
+
 func (decision VerifiedTrustDecision) SchemaBundleDigest() Digest {
 	return decision.expectedSchemaBundleDigest
 }

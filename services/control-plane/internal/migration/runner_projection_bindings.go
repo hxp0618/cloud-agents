@@ -599,6 +599,36 @@ func (bindings RunnerProjectionBindings) exactlyMatches(other RunnerProjectionBi
 	return bindings.validateAt(now) == nil && other.validateAt(now) == nil && bindings.expectedCanonical == other.expectedCanonical
 }
 
+// validateHistorical rechecks the complete immutable projection binding while
+// deliberately not applying today's clock to an old decision. The historical
+// verifier and current signed recovery policy remain responsible for expiry
+// and revocation authorization.
+func (bindings RunnerProjectionBindings) validateHistorical() error {
+	expiries := []time.Time{
+		bindings.releaseExpiresAt, bindings.authorityExpiresAt,
+		bindings.verifiedRecoveryPolicy.expiresAt,
+		bindings.verifiedAuthority.verifiedDecisionExpiresAt,
+		bindings.initialSchemaScope.verifiedDecisionExpiresAt,
+	}
+	for _, catalog := range bindings.executableCatalogs {
+		expiries = append(expiries, catalog.expiresAt, catalog.verifiedCatalog.verifiedDecisionExpiresAt)
+	}
+	var earliest time.Time
+	for _, expiry := range expiries {
+		if expiry.IsZero() {
+			return fail(CodeUntrusted, "runner-projection-bindings", "historical projection binding expiry is unavailable", nil)
+		}
+		if earliest.IsZero() || expiry.Before(earliest) {
+			earliest = expiry
+		}
+	}
+	return bindings.validateAt(earliest.Add(-time.Nanosecond))
+}
+
+func (bindings RunnerProjectionBindings) historicallyExactlyMatches(other RunnerProjectionBindings) bool {
+	return bindings.validateHistorical() == nil && other.validateHistorical() == nil && bindings.expectedCanonical == other.expectedCanonical
+}
+
 func (bindings RunnerProjectionBindings) sentinel() runnerProjectionBindingSentinel {
 	return runnerProjectionBindingSentinel{
 		ReleaseTrustDecisionDigest: bindings.releaseTrustDecisionDigest, RunnerProjectionDecisionDigest: bindings.runnerProjectionDecisionDigest,

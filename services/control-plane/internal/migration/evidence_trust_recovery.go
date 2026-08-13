@@ -86,7 +86,19 @@ func bindOwnedVerifiedDecision(verifier TrustVerifier, decision VerifiedTrustDec
 }
 
 func (d OwnedVerifiedDecision) recoverHistoricalDecision(ctx context.Context, generation GenerationDescriptor, artifact VerifiedDecisionRecoveryArtifact) (OwnedVerifiedDecision, RunnerProjectionBindings, VerifiedHistoricalRecoveryPolicy, error) {
-	if d.owner == nil || d.capability.owner != d.owner || d.owner.verifier == nil || artifact.owner != d.owner || generation.identity.owner != d.owner.token || artifact.decision != generation.header.RunnerProjectionDecisionDigest || generation.recoveryArtifactDigest != artifact.digest || generation.recoveryArtifactSize != artifact.sizeBytes || generation.header.DecisionRecoveryArtifactSHA256 != artifact.digest || generation.header.DecisionRecoveryArtifactSizeBytes != artifact.sizeBytes || !sameGenerationHeader(generation.identity, generation.header) {
+	currentBindings, currentErr := d.decision.runnerProjectionBindings()
+	artifactInputs, inputErr := decodeDecisionRecoveryVerificationInputs(artifact.bytes)
+	canonical, canonicalErr := canonicalContractKey(artifactInputs)
+	oldAuthorized := false
+	if currentErr == nil {
+		for _, authorization := range currentBindings.verifiedRecoveryPolicy.subject.OldDecisionAuthorizations {
+			if authorization.OldRunnerProjectionDecisionDigest == artifact.decision {
+				oldAuthorized = true
+				break
+			}
+		}
+	}
+	if currentErr != nil || !validOwnedCurrentDecision(d, currentBindings) || artifact.owner != d.owner || generation.identity.owner != d.owner.token || artifact.decision == d.digest || artifact.decision != generation.header.RunnerProjectionDecisionDigest || generation.header.Validate() != nil || generation.recoveryArtifactDigest != artifact.digest || generation.recoveryArtifactSize != artifact.sizeBytes || generation.header.DecisionRecoveryArtifactSHA256 != artifact.digest || generation.header.DecisionRecoveryArtifactSizeBytes != artifact.sizeBytes || !sameGenerationHeader(generation.identity, generation.header) || artifact.sizeBytes == 0 || artifact.sizeBytes > maxDecisionRecoveryArtifactBytes || uint64(len(artifact.bytes)) != artifact.sizeBytes || DigestBytes(artifact.bytes) != artifact.digest || inputErr != nil || canonicalErr != nil || canonical != string(artifact.bytes) || artifactInputs.ProfileDigest != currentBindings.decisionRecoveryArtifactProfileDigest || artifactInputs.OldRunnerProjectionDecisionDigest != artifact.decision || !oldAuthorized {
 		return OwnedVerifiedDecision{}, RunnerProjectionBindings{}, VerifiedHistoricalRecoveryPolicy{}, fail(CodeEvidenceRecoveryRequired, "decision-recovery", "historical inputs are not owned by the same verifier", nil)
 	}
 	old, bindings, subject, err := d.owner.verifier.recoverHistoricalDecision(ctx, d.decision, generation, artifact)
@@ -96,7 +108,7 @@ func (d OwnedVerifiedDecision) recoverHistoricalDecision(ctx context.Context, ge
 	// Historical decisions may be expired. The recovery-only verifier owns the
 	// signature/epoch/revocation checks; do not route its result through the
 	// ordinary current-unexpired validation path here.
-	if !old.verified || subject.OldRunnerProjectionDecisionDigest != artifact.decision || subject.CurrentDecisionMismatch(d.digest) {
+	if old.validateHistorical(bindings) != nil || artifactInputs.RepositoryIdentity != old.repositoryIdentity || artifactInputs.ReleaseIdentity != old.releaseIdentity || subject.OldRunnerProjectionDecisionDigest != artifact.decision || subject.CurrentDecisionMismatch(d.digest) || subject.RecoveryPolicySubjectDigest != currentBindings.recoveryPolicySubjectDigest || subject.ExecutionLineageDigest != generation.identity.executionLineageDigest || subject.OldJournalIdentityDigest != generation.identity.journalIdentityDigest || subject.OldSchemaBundleDigest != generation.identity.schemaBundleDigest || subject.OldDecisionRecoveryArtifactSHA256 != artifact.digest || subject.OldDecisionRecoveryArtifactSizeBytes != artifact.sizeBytes || subject.SuccessorSchemaBundleDigest != d.decision.expectedSchemaBundleDigest || bindings.runnerProjectionDecisionDigest != artifact.decision || bindings.executionLineageDigest != generation.identity.executionLineageDigest || bindings.schemaBundleDigest != generation.identity.schemaBundleDigest || bindings.releaseTrustDecisionDigest != generation.header.ReleaseTrustDecisionDigest || bindings.authorityProfileDigest != generation.header.AuthorityProfileDigest || bindings.authorityBindingDigest != generation.header.AuthorityBindingDigest || old.expectedManifestDigest != generation.header.ManifestDigest || old.expectedOuterArtifactDigest != generation.header.OuterArtifactDigest || old.expectedRunnerReleaseDigest != generation.header.RunnerReleaseDigest {
 		return OwnedVerifiedDecision{}, RunnerProjectionBindings{}, VerifiedHistoricalRecoveryPolicy{}, fail(CodeEvidenceRecoveryRequired, "decision-recovery", "historical verifier output is not totally bound", nil)
 	}
 	digest, err := subject.ComputeDigest()

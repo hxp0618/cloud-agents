@@ -3,19 +3,29 @@ package migration
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
-type recoveryVerifierFake struct{ historicalCalls, supersessionCalls int }
+type recoveryVerifierFake struct {
+	historicalCalls, supersessionCalls int
+	historicalDecision                 VerifiedTrustDecision
+	historicalBindings                 RunnerProjectionBindings
+	historicalSubject                  historicalRecoveryPolicySubject
+}
 
 func (*recoveryVerifierFake) Verify(context.Context, CandidateEnvelope) (VerifiedTrustDecision, error) {
 	return VerifiedTrustDecision{}, fail(CodeUntrusted, "fake", "ordinary verification is outside recovery ABI tests", nil)
 }
 func (f *recoveryVerifierFake) recoverHistoricalDecision(context.Context, VerifiedTrustDecision, GenerationDescriptor, VerifiedDecisionRecoveryArtifact) (VerifiedTrustDecision, RunnerProjectionBindings, historicalRecoveryPolicySubject, error) {
 	f.historicalCalls++
+	if f.historicalDecision.verified {
+		return f.historicalDecision, f.historicalBindings, f.historicalSubject, nil
+	}
 	return VerifiedTrustDecision{}, RunnerProjectionBindings{}, historicalRecoveryPolicySubject{}, fail(CodeEvidenceRecoveryRequired, "fake-recovery", "test stop", nil)
 }
 func (f *recoveryVerifierFake) recoverHistoricalSupersession(context.Context, VerifiedTrustDecision, *VerifiedLineageSupersessionAuthority, GenerationSuperseded, VerifiedDecisionRecoveryArtifact, VerifiedRuntimeArtifact, VerifiedContentReceipt, VerifiedDecisionRecoveryArtifact, VerifiedDecisionRecoveryReceipt) (*verifiedHistoricalSupersessionReceipt, error) {
@@ -44,8 +54,8 @@ func TestSameVerifierRecoveryCapabilityRejectsSwapAndRejectingVerifier(t *testin
 		t.Fatalf("cross-verifier swap reached verifier: err=%v calls=%d/%d", err, fakeA.historicalCalls, fakeB.historicalCalls)
 	}
 	ownedOld := VerifiedDecisionRecoveryArtifact{ownerA, artifactBytes, DigestBytes(artifactBytes), uint64(len(artifactBytes)), oldDigest}
-	if _, _, _, err := current.recoverHistoricalDecision(context.Background(), generation, ownedOld); !IsCode(err, CodeEvidenceRecoveryRequired) || fakeA.historicalCalls != 1 || fakeB.historicalCalls != 0 {
-		t.Fatalf("same-verifier capability did not route exactly once: err=%v calls=%d/%d", err, fakeA.historicalCalls, fakeB.historicalCalls)
+	if _, _, _, err := current.recoverHistoricalDecision(context.Background(), generation, ownedOld); !IsCode(err, CodeEvidenceRecoveryRequired) || fakeA.historicalCalls != 0 || fakeB.historicalCalls != 0 {
+		t.Fatalf("unvalidated current decision reached verifier: err=%v calls=%d/%d", err, fakeA.historicalCalls, fakeB.historicalCalls)
 	}
 }
 
@@ -91,8 +101,8 @@ func TestRegisteredHistoricalRecoveryArtifactBinderOwnsCanonicalBytesAndRejectsE
 		t.Fatal("bound historical artifact aliases caller bytes")
 	}
 	verifier := owner.verifier.(*recoveryVerifierFake)
-	if _, _, _, err := current.recoverHistoricalDecision(t.Context(), generation, artifact); !IsCode(err, CodeEvidenceRecoveryRequired) || verifier.historicalCalls != 1 {
-		t.Fatalf("bound artifact did not route exactly once through the current verifier: err=%v calls=%d", err, verifier.historicalCalls)
+	if _, _, _, err := current.recoverHistoricalDecision(t.Context(), generation, artifact); !IsCode(err, CodeEvidenceRecoveryRequired) || verifier.historicalCalls != 0 {
+		t.Fatalf("unauthorized old decision reached the current verifier: err=%v calls=%d", err, verifier.historicalCalls)
 	}
 
 	for name, mutate := range map[string]func(*OwnedVerifiedDecision, *GenerationDescriptor, *[]byte){
@@ -140,6 +150,163 @@ func TestHistoricalRecoveryVerifierInputHasNoProductionCallerBeforeAdmissionPlan
 		if bytes.Contains(raw, []byte("bindHistoricalRecoveryVerifierInput(")) {
 			t.Fatalf("historical recovery input binder has premature production caller in %s", name)
 		}
+	}
+}
+
+func TestHistoricalProjectionValidationIgnoresOnlyElapsedClock(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), nil)
+	decision := candidate.verifiedRun.currentDecision.decision
+	bindings, err := decision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bindings.validateAt(time.Now().Add(48 * time.Hour)); !IsCode(err, CodeUntrusted) {
+		t.Fatalf("future clock did not expire ordinary bindings: %v", err)
+	}
+	if err := bindings.validateHistorical(); err != nil {
+		t.Fatalf("immutable historical binding was rejected: %v", err)
+	}
+	if err := decision.validateHistorical(bindings); err != nil {
+		t.Fatalf("historical decision did not match recovered bindings: %v", err)
+	}
+
+	mutatedBindings := bindings
+	mutatedBindings.expectedCanonical += "x"
+	if err := mutatedBindings.validateHistorical(); !IsCode(err, CodeUntrusted) {
+		t.Fatalf("mutated historical binding accepted: %v", err)
+	}
+	mutatedDecision := decision
+	mutatedDecision.expectedManifestDigest = DigestBytes([]byte("other-manifest"))
+	if err := mutatedDecision.validateHistorical(bindings); !IsCode(err, CodeUntrusted) {
+		t.Fatalf("mutated historical decision accepted: %v", err)
+	}
+	expiredDecision, expiredBindings := decision, bindings.ownedCopy()
+	expired := time.Now().Add(-time.Hour)
+	expiredDecision.expiresAt, expiredBindings.releaseExpiresAt = expired, expired
+	expiredBindings.releaseSubject.ExpiresAt = canonicalProjectionExpiry(expired)
+	expiredBindings.releaseTrustDecisionDigest, err = digestRunnerProjectionCanonical(expiredBindings.releaseSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredBindings.runnerProjectionDecisionDigest, err = digestRunnerProjectionCanonical(runnerProjectionDecisionSubject{
+		Domain: runnerProjectionDecisionDomain, ReleaseTrustDecisionDigest: expiredBindings.releaseTrustDecisionDigest,
+		SchemaBundleDigest: expiredBindings.schemaBundleDigest, AuthorityProfileDigest: expiredBindings.authorityProfileDigest,
+		AuthorityBindingDigest: expiredBindings.authorityBindingDigest, AuthorityExpiresAt: canonicalProjectionExpiry(expiredBindings.authorityExpiresAt), AuthoritySecurityEpoch: expiredBindings.authoritySecurityEpoch,
+		RecoveryPolicySubjectDigest: expiredBindings.recoveryPolicySubjectDigest, DecisionRecoveryArtifactProfileDigest: expiredBindings.decisionRecoveryArtifactProfileDigest,
+		CatalogContracts: catalogDecisionSubjects(expiredBindings.executableCatalogs),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredBindings.initialSchemaScope.verifiedDecisionExpiresAt = expired
+	expiredBindings.initialSchemaScope.bindingCanonical, expiredBindings.initialSchemaScope.bindingDigest, err = canonicalVerifiedBinding(expiredBindings.initialSchemaScope.schemaBundleBinding())
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredBindings.initialSchemaScopeBindingCanonical = expiredBindings.initialSchemaScope.bindingCanonical
+	expiredBindings.expectedCanonical, _, err = canonicalVerifiedBinding(expiredBindings.sentinel())
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredDecision.projectionBindings = &expiredBindings
+	if err := expiredDecision.validate(); !IsCode(err, CodeUntrusted) {
+		t.Fatalf("expired decision passed ordinary validation: %v", err)
+	}
+	if err := expiredDecision.validateHistorical(expiredBindings); err != nil {
+		t.Fatalf("expired but immutable historical decision was rejected: %v", err)
+	}
+}
+
+func TestHistoricalVerifierOutputIsTotallyBoundToGenerationAndCurrentPolicy(t *testing.T) {
+	oldFixture := newRunnerBindingFixture(t, []string{"000001"})
+	old, err := bindVerifiedRunnerProjectionDecision(oldFixture.decision, oldFixture.authorityProfile, oldFixture.authorityBinding, oldFixture.authority, oldFixture.recoveryPolicy, oldFixture.initialScope, oldFixture.catalogs, oldFixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBindings, err := old.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentFixture := newRunnerBindingFixture(t, []string{"000001"})
+	currentFixture.recoveryPolicy, err = bindVerifiedRecoveryPolicySubject(recoveryPolicySignedSubject{
+		Domain: recoveryPolicySubjectDomain, IssuerKeyIdentityDigest: testDigest("recovery-policy-issuer"), ExpiresAt: currentFixture.expiresAt.Format(time.RFC3339), SecurityEpoch: 1, MinimumOldSecurityEpoch: 1,
+		OldRevocationPolicyDigest: testDigest("old-revocation-policy"), OldDecisionAuthorizations: []oldDecisionAuthorization{{OldRunnerProjectionDecisionDigest: oldBindings.runnerProjectionDecisionDigest, AllowExpired: true}},
+	}, 1, currentFixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentDecision, err := bindVerifiedRunnerProjectionDecision(currentFixture.decision, currentFixture.authorityProfile, currentFixture.authorityBinding, currentFixture.authority, currentFixture.recoveryPolicy, currentFixture.initialScope, currentFixture.catalogs, currentFixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentBindings, err := currentDecision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection := func(kind, value string) decisionRecoveryProjectionSubjectInput {
+		raw := []byte(value)
+		return decisionRecoveryProjectionSubjectInput{Kind: kind, SubjectDigest: DigestBytes(raw), SubjectBase64URLNoPadding: base64.RawURLEncoding.EncodeToString(raw), DetachedEnvelopeBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("sig-" + kind))}
+	}
+	currentInputs := decisionRecoveryVerificationInputs{
+		FormatVersion: decisionRecoveryArtifactFormatVersion, ProfileDigest: currentBindings.decisionRecoveryArtifactProfileDigest,
+		OldRunnerProjectionDecisionDigest: currentBindings.runnerProjectionDecisionDigest, RepositoryIdentity: currentDecision.repositoryIdentity, ReleaseIdentity: currentDecision.releaseIdentity,
+		CandidateSubjectBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("current-candidate")), CandidateDetachedEnvelopeBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("current-signature")),
+		ProjectionSubjectInputs: []decisionRecoveryProjectionSubjectInput{projection("release", "current-release"), projection("authority_profile", "current-profile"), projection("authority_binding", "current-binding")},
+	}
+	currentCanonical, err := canonicalContractKey(currentInputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &recoveryVerifierFake{}
+	current, _, err := bindVerifierOwnedDecision(fake, currentDecision, currentBindings.runnerProjectionDecisionDigest, []byte(currentCanonical))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldBindings.executionLineageDigest != currentBindings.executionLineageDigest || oldBindings.runnerProjectionDecisionDigest == current.digest {
+		t.Fatal("historical fixture is not a strict old decision in the current lineage")
+	}
+	inputs := decisionRecoveryVerificationInputs{
+		FormatVersion: decisionRecoveryArtifactFormatVersion, ProfileDigest: currentBindings.decisionRecoveryArtifactProfileDigest,
+		OldRunnerProjectionDecisionDigest: oldBindings.runnerProjectionDecisionDigest, RepositoryIdentity: old.repositoryIdentity, ReleaseIdentity: old.releaseIdentity,
+		CandidateSubjectBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("old-candidate")), CandidateDetachedEnvelopeBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("old-signature")),
+		ProjectionSubjectInputs: []decisionRecoveryProjectionSubjectInput{projection("release", "old-release"), projection("authority_profile", "old-profile"), projection("authority_binding", "old-binding")},
+	}
+	canonical, err := canonicalContractKey(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactBytes := []byte(canonical)
+	header := JournalHeader{
+		FormatVersion: EvidenceJournalFormat, ReleaseTrustDecisionDigest: oldBindings.releaseTrustDecisionDigest, RunnerProjectionDecisionDigest: oldBindings.runnerProjectionDecisionDigest,
+		ExecutionLineageDigest: oldBindings.executionLineageDigest, OuterArtifactDigest: old.expectedOuterArtifactDigest, OuterArtifactSizeBytes: 1,
+		DecisionRecoveryArtifactSHA256: DigestBytes(artifactBytes), DecisionRecoveryArtifactSizeBytes: uint64(len(artifactBytes)), ManifestDigest: old.expectedManifestDigest,
+		RunnerReleaseDigest: old.expectedRunnerReleaseDigest, SchemaBundleDigest: old.expectedSchemaBundleDigest, AuthorityProfileDigest: oldBindings.authorityProfileDigest,
+		AuthorityBindingDigest: oldBindings.authorityBindingDigest, LimitsProfile: EvidenceLimitsProfile, QuotaReservationDigest: DigestBytes([]byte("old-quota")), ReservedRecords: 1, ReservedBytes: 1, ReservedSegments: 1,
+	}
+	header.JournalIdentityDigest, err = JournalIdentityDigest(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := generationIdentity{current.owner.token, header.ExecutionLineageDigest, header.JournalIdentityDigest, header.RunnerProjectionDecisionDigest, header.SchemaBundleDigest}
+	generation := GenerationDescriptor{identity: identity, header: header, replayTailDigest: DigestBytes([]byte("old-tail")), recoveryArtifactDigest: header.DecisionRecoveryArtifactSHA256, recoveryArtifactSize: header.DecisionRecoveryArtifactSizeBytes}
+	subject := recoveryPolicyFixtureSubject(identity)
+	subject.RecoveryPolicySubjectDigest = currentBindings.recoveryPolicySubjectDigest
+	subject.OldDecisionRecoveryArtifactSHA256, subject.OldDecisionRecoveryArtifactSizeBytes = generation.recoveryArtifactDigest, generation.recoveryArtifactSize
+	subject.SuccessorRunnerProjectionDecisionDigest, subject.SuccessorSchemaBundleDigest = current.digest, current.decision.expectedSchemaBundleDigest
+	fake.historicalDecision, fake.historicalBindings, fake.historicalSubject = old, oldBindings, subject
+	artifact, err := bindHistoricalRecoveryVerifierInput(current, generation, artifactBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedOld, recoveredBindings, policy, err := current.recoverHistoricalDecision(t.Context(), generation, artifact)
+	if err != nil || ownedOld.owner != current.owner || ownedOld.digest != oldBindings.runnerProjectionDecisionDigest || !recoveredBindings.historicallyExactlyMatches(oldBindings) || policy.owner != current.owner || fake.historicalCalls != 1 {
+		t.Fatalf("historical verifier output was not totally bound: old=%+v policy=%+v calls=%d err=%v", ownedOld, policy, fake.historicalCalls, err)
+	}
+
+	fake.historicalCalls = 0
+	fake.historicalSubject.SuccessorSchemaBundleDigest = DigestBytes([]byte("wrong-successor-schema"))
+	if _, _, _, err := current.recoverHistoricalDecision(t.Context(), generation, artifact); !IsCode(err, CodeEvidenceRecoveryRequired) || fake.historicalCalls != 1 {
+		t.Fatalf("mismatched verifier output was accepted or skipped verifier: err=%v calls=%d", err, fake.historicalCalls)
 	}
 }
 
