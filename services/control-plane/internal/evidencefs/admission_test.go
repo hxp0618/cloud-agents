@@ -79,6 +79,88 @@ func TestAcquireAdmissionEmptyAndTargetAbsentCreatesNothing(t *testing.T) {
 	}
 }
 
+func TestAdmissionMutationTokenIsExactOneShotRevisionAuthority(t *testing.T) {
+	f := newFakeBackend()
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil || !token.ValidFor(inventory) {
+		t.Fatalf("token=%+v err=%v", token, err)
+	}
+	if second, err := inventory.MutationToken(); second != nil || !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("second token minted: token=%+v err=%v", second, err)
+	}
+	copyToken := *token
+	if copyToken.ValidFor(inventory) {
+		t.Fatal("copied token retained authority")
+	}
+	for name, mutate := range map[string]func(*AdmissionMutationToken){
+		"target":   func(v *AdmissionMutationToken) { v.target[0]++ },
+		"full set": func(v *AdmissionMutationToken) { v.fullSet[0]++ },
+		"revision": func(v *AdmissionMutationToken) { v.revision++ },
+		"consumed": func(v *AdmissionMutationToken) { v.consumed = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *token
+			value.self = &value
+			mutate(&value)
+			if value.ValidFor(inventory) {
+				t.Fatal("mutated token retained authority")
+			}
+		})
+	}
+	if (&AdmissionMutationToken{}).ValidFor(inventory) {
+		t.Fatal("literal token retained authority")
+	}
+	copyInventory := *inventory
+	if token.ValidFor(&copyInventory) {
+		t.Fatal("token accepted copied inventory")
+	}
+	otherBackend := newFakeBackend()
+	otherStore := testStore(t, otherBackend)
+	otherLease, otherInventory, err := otherStore.AcquireAdmission(context.Background(), digestForTest(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otherLease.Close()
+	if token.ValidFor(otherInventory) {
+		t.Fatal("token crossed admission epoch")
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if token.ValidFor(inventory) {
+		t.Fatal("token survived lease close")
+	}
+}
+
+func TestAdmissionMutationTokenRevokedByTerminalDrift(t *testing.T) {
+	f := newFakeBackend()
+	lineage := addAdmissionLineage(f, digestForTest(1), 0, 0)
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage.children["index.caj"].data[0] ^= 1
+	if err := inventory.Revalidate(context.Background()); err == nil {
+		t.Fatal("terminal drift passed revalidation")
+	}
+	if token.ValidFor(inventory) {
+		t.Fatal("token survived terminal drift")
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAcquireAdmissionCanonicalLocksAndPresentTarget(t *testing.T) {
 	f := newFakeBackend()
 	for _, value := range []int{3, 1, 2} {

@@ -29,6 +29,54 @@ type admissionSlot struct {
 	objectSet    admissionObjectDiscovery
 	baseline     [32]byte
 	graph        [32]byte
+	mutation     *AdmissionMutationToken
+}
+
+// AdmissionMutationToken is evidencefs-owned one-shot filesystem authority
+// bound to one exact inventory slot. It carries no migration DTO, quota fact,
+// path, descriptor, or caller-provided filesystem identity.
+type AdmissionMutationToken struct {
+	self      *AdmissionMutationToken
+	seal      *struct{}
+	inventory *AdmissionInventory
+	store     *Store
+	lease     *AdmissionLease
+	epoch     *admissionEpoch
+	revision  uint64
+	target    [32]byte
+	fullSet   [32]byte
+	consumed  bool
+}
+
+// MutationToken mints at most one token for the current revision. Minting is
+// read-only; a later transition must consume the token atomically.
+func (i *AdmissionInventory) MutationToken() (*AdmissionMutationToken, error) {
+	var token *AdmissionMutationToken
+	err := i.withValid(func() error {
+		if i.slot.mutation != nil {
+			return ErrLeaseInvalid
+		}
+		token = &AdmissionMutationToken{seal: &struct{}{}, inventory: i, store: i.store, lease: i.lease, epoch: i.epoch, revision: i.revision, target: i.target, fullSet: i.fullSet}
+		token.self = token
+		i.slot.mutation = token
+		return nil
+	})
+	return token, err
+}
+
+func (t *AdmissionMutationToken) ValidFor(i *AdmissionInventory) bool {
+	if t == nil || t.self != t || t.seal == nil || i == nil || t.inventory != i || t.lease != i.lease {
+		return false
+	}
+	t.lease.mu.Lock()
+	defer t.lease.mu.Unlock()
+	return t.validLocked(i)
+}
+
+func (t *AdmissionMutationToken) validLocked(i *AdmissionInventory) bool {
+	return t != nil && t.self == t && t.seal != nil && !t.consumed && i != nil && i.validLocked() &&
+		t.inventory == i && t.store == i.store && t.lease == i.lease && t.epoch == i.epoch && t.revision == i.revision &&
+		t.target == i.target && t.fullSet == i.fullSet && i.slot.mutation == t
 }
 
 type lineageExpectation struct {
