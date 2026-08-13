@@ -44,6 +44,8 @@ func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 	mutations := []func(*VerifiedAdmissionHistory){
 		func(v *VerifiedAdmissionHistory) { v.revision++ }, func(v *VerifiedAdmissionHistory) { v.target[0]++ }, func(v *VerifiedAdmissionHistory) { v.fullSet[0]++ },
 		func(v *VerifiedAdmissionHistory) { v.transcriptCanonical[0]++ }, func(v *VerifiedAdmissionHistory) { v.rootFacts.indexReservedBytes++ },
+		func(v *VerifiedAdmissionHistory) { v.targetState = admissionLineageEmpty }, func(v *VerifiedAdmissionHistory) { v.targetHeader.deploymentID = "drift" },
+		func(v *VerifiedAdmissionHistory) { v.targetIndexRecords++ }, func(v *VerifiedAdmissionHistory) { v.targetIndexTail = testDigest("history-tail") },
 		func(v *VerifiedAdmissionHistory) { v.reservation.ReservedCheckpointRecords++ }, func(v *VerifiedAdmissionHistory) { v.reservation.ReservedIndexBytes++ }, func(v *VerifiedAdmissionHistory) { v.reservation.ReservedBytes++ }, func(v *VerifiedAdmissionHistory) { v.quotaAdmission.targetIndexReservedBytes++ },
 	}
 	for index, mutate := range mutations {

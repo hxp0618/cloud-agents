@@ -20,6 +20,10 @@ type VerifiedAdmissionHistory struct {
 	revision            uint64
 	target, fullSet     [32]byte
 	transcriptCanonical [32]byte
+	targetState         admissionReplayLineageState
+	targetHeader        admissionReplayLineageHeader
+	targetIndexRecords  uint64
+	targetIndexTail     Digest
 	rootFacts           rootQuotaUsageFacts
 	reservation         evidenceQuotaReservation
 	quotaAdmission      rootQuotaAdmission
@@ -140,9 +144,14 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	if revision != transcript.revision || fullSet != transcript.fullSetDigest {
 		return nil, admissionFailed("admission-history", "inventory changed after historical verification", nil)
 	}
+	targetState, targetHeader, targetRecords, targetTail, err := admissionHistoryTargetFacts(transcript)
+	if err != nil {
+		return nil, err
+	}
 	history := &VerifiedAdmissionHistory{
 		owner: current.owner, candidateBinding: candidate.binding, inventory: inventory, revision: revision,
 		target: target, fullSet: fullSet, transcriptCanonical: transcript.canonical,
+		targetState: targetState, targetHeader: targetHeader, targetIndexRecords: targetRecords, targetIndexTail: targetTail,
 		rootFacts: rootFacts, reservation: reservation, quotaAdmission: quotaAdmission,
 	}
 	binding := &verifiedAdmissionHistoryBinding{owner: current.owner, candidateBinding: candidate.binding, inventory: inventory, history: history}
@@ -150,6 +159,25 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	binding.canonical = admissionHistoryDigest(history)
 	verifiedAdmissionHistoryRegistry.Store(binding, binding.canonical)
 	return history, nil
+}
+
+func admissionHistoryTargetFacts(transcript *admissionReplayTranscript) (admissionReplayLineageState, admissionReplayLineageHeader, uint64, Digest, error) {
+	if transcript == nil {
+		return "", admissionReplayLineageHeader{}, 0, "", admissionCorrupt("admission-history", "target transcript is unavailable", nil)
+	}
+	if transcript.targetAbsent {
+		return "", admissionReplayLineageHeader{}, 0, "", nil
+	}
+	for index := range transcript.lineages {
+		lineage := &transcript.lineages[index]
+		if lineage.id == transcript.target {
+			if lineage.indexRecords == 0 || requireDigest("admission-history.target-tail", lineage.indexTailRecordDigest) != nil {
+				return "", admissionReplayLineageHeader{}, 0, "", admissionCorrupt("admission-history", "target index boundary is invalid", nil)
+			}
+			return lineage.state, lineage.header, lineage.indexRecords, lineage.indexTailRecordDigest, nil
+		}
+	}
+	return "", admissionReplayLineageHeader{}, 0, "", admissionCorrupt("admission-history", "present target lineage is absent", nil)
 }
 
 func verifyAdmissionHistoryGeneration(ctx context.Context, lineage admissionReplayLineage, generation *admissionReplayGeneration, objects map[Digest]*evidencefs.AdmissionObjectView, current OwnedVerifiedDecision, currentFacts *admissionHistoricalVerificationFacts, candidate OwnedCurrentCandidate) (bool, error) {
@@ -310,6 +338,17 @@ func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 	h.Write(history.target[:])
 	h.Write(history.fullSet[:])
 	h.Write(history.transcriptCanonical[:])
+	writeAdmissionString(h, string(history.targetState))
+	for _, value := range []string{history.targetHeader.executionLineageDigest.String(), history.targetHeader.deploymentID, history.targetHeader.databaseName, history.targetHeader.repositoryIdentity, history.targetHeader.limitsProfile} {
+		writeAdmissionString(h, value)
+	}
+	if history.targetIndexTail == "" {
+		h.Write([]byte{0})
+	} else {
+		h.Write([]byte{1})
+		value := history.targetIndexTail
+		writeAdmissionOptionalDigest(h, &value)
+	}
 	root := rootQuotaFactsDigest(history.rootFacts)
 	h.Write(root[:])
 	writeHistoryUint := func(value uint64) {
@@ -318,6 +357,7 @@ func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 		h.Write(raw[:])
 	}
 	writeHistoryUint(history.revision)
+	writeHistoryUint(history.targetIndexRecords)
 	for _, value := range []uint64{
 		history.reservation.ReservedRecords, history.reservation.ReservedJournalBytes, uint64(history.reservation.ReservedSegments), history.reservation.ReservedCheckpointRecords, history.reservation.ReservedIndexRecords, history.reservation.ReservedIndexBytes, history.reservation.ReservedBytes,
 		history.quotaAdmission.finalObjectCount, history.quotaAdmission.finalObjectBytes, history.quotaAdmission.journalCount, history.quotaAdmission.journalReservedBytes,

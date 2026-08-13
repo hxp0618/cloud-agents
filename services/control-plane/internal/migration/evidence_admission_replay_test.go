@@ -1125,7 +1125,7 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 					}
 					return true
 				})
-				if mentions && function.Name.Name != "admissionHistoryObjectViews" {
+				if mentions && function.Name.Name != "admissionHistoryObjectViews" && function.Name.Name != "admissionHistoryTargetFacts" {
 					t.Fatalf("admission transcript escaped history binder helper %s", function.Name.Name)
 				}
 			}
@@ -1153,7 +1153,7 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 		}
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" || function.Name.Name == "rootQuotaUsageFactsFromAdmissionTranscript" || name == "evidence_admission_history.go" && function.Name.Name == "admissionHistoryObjectViews" {
+			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" || function.Name.Name == "rootQuotaUsageFactsFromAdmissionTranscript" || name == "evidence_admission_history.go" && (function.Name.Name == "admissionHistoryObjectViews" || function.Name.Name == "admissionHistoryTargetFacts") {
 				continue
 			}
 			mentions := false
