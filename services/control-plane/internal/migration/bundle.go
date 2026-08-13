@@ -121,8 +121,15 @@ func LoadRuntimeBundle(raw []byte, decision VerifiedTrustDecision) (*RuntimeBund
 	if err != nil {
 		return nil, err
 	}
+	return bindDecodedRuntimeBundle(decoded, decision.OuterArtifactDigest(), uint64(len(raw)))
+}
+
+func bindDecodedRuntimeBundle(decoded *decodedRuntimeBundle, outerArtifactDigest Digest, outerArtifactSize uint64) (*RuntimeBundle, error) {
+	if decoded == nil {
+		return nil, fail(CodeUntrusted, "runtime-bundle", "decoded runtime bundle is unavailable", nil)
+	}
 	manifest, lineage, authorityContract, globalContract, files := decoded.manifest, decoded.lineage, decoded.authorityContract, decoded.globalContract, decoded.files
-	ownedInputs, err := bindVerifiedRuntimeBundleInputs(manifest, files, decision.OuterArtifactDigest(), uint64(len(raw)))
+	ownedInputs, err := bindVerifiedRuntimeBundleInputs(manifest, files, outerArtifactDigest, outerArtifactSize)
 	if err != nil {
 		return nil, err
 	}

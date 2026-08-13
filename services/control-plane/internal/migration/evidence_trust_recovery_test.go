@@ -310,6 +310,79 @@ func TestHistoricalVerifierOutputIsTotallyBoundToGenerationAndCurrentPolicy(t *t
 	}
 }
 
+func TestHistoricalRuntimeLoaderRequiresRecoveredAuthorityAndExactRegisteredBytes(t *testing.T) {
+	raw, manifest := buildCheckedInRuntimeTar(t)
+	oldFixture := newRunnerBindingFixture(t, []string{"000001"})
+	oldFixture.decision.expectedSchemaBundleDigest = manifest.SchemaBundleDigest
+	oldFixture.decision.expectedBootstrapBundleDigest = manifest.BootstrapBundleDigest
+	oldFixture.decision.expectedManifestDigest = manifest.ManifestDigest
+	oldFixture.decision.expectedOuterArtifactDigest = DigestBytes(raw)
+	oldFixture.initialScope, _ = bindVerifiedSchemaBundleScope(manifest.SchemaBundleDigest, oldFixture.initialScope.Scope(), oldFixture.initialScope.BoundPrecondition(), oldFixture.initialScope.DefaultACLOwners(), oldFixture.initialScope.ObjectCreatorClosure(), oldFixture.expiresAt, 1)
+	old, err := bindVerifiedRunnerProjectionDecision(oldFixture.decision, oldFixture.authorityProfile, oldFixture.authorityBinding, oldFixture.authority, oldFixture.recoveryPolicy, oldFixture.initialScope, oldFixture.catalogs, oldFixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBindings, err := old.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), nil).verifiedRun.currentDecision
+	currentOwner := current.owner
+	currentBindings, err := current.decision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if currentBindings.executionLineageDigest != oldBindings.executionLineageDigest {
+		t.Fatal("historical and current fixture lineages differ")
+	}
+	ownedOld := OwnedVerifiedDecision{owner: currentOwner, decision: old, digest: oldBindings.runnerProjectionDecisionDigest, capability: sameVerifierRecoveryCapability{owner: currentOwner}}
+	header := JournalHeader{
+		FormatVersion: EvidenceJournalFormat, ReleaseTrustDecisionDigest: oldBindings.releaseTrustDecisionDigest, RunnerProjectionDecisionDigest: oldBindings.runnerProjectionDecisionDigest, ExecutionLineageDigest: oldBindings.executionLineageDigest,
+		OuterArtifactDigest: DigestBytes(raw), OuterArtifactSizeBytes: uint64(len(raw)), DecisionRecoveryArtifactSHA256: DigestBytes([]byte("recovery")), DecisionRecoveryArtifactSizeBytes: 1,
+		ManifestDigest: manifest.ManifestDigest, RunnerReleaseDigest: old.expectedRunnerReleaseDigest, SchemaBundleDigest: manifest.SchemaBundleDigest, AuthorityProfileDigest: oldBindings.authorityProfileDigest,
+		AuthorityBindingDigest: oldBindings.authorityBindingDigest, LimitsProfile: EvidenceLimitsProfile, QuotaReservationDigest: DigestBytes([]byte("quota")), ReservedRecords: 1, ReservedBytes: 1, ReservedSegments: 1,
+	}
+	header.JournalIdentityDigest, err = JournalIdentityDigest(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := generationIdentity{currentOwner.token, header.ExecutionLineageDigest, header.JournalIdentityDigest, header.RunnerProjectionDecisionDigest, header.SchemaBundleDigest}
+	generation := GenerationDescriptor{identity: identity, header: header, replayTailDigest: DigestBytes([]byte("tail")), recoveryArtifactDigest: header.DecisionRecoveryArtifactSHA256, recoveryArtifactSize: header.DecisionRecoveryArtifactSizeBytes}
+	policySubject := recoveryPolicyFixtureSubject(identity)
+	policySubject.RecoveryPolicySubjectDigest = currentBindings.recoveryPolicySubjectDigest
+	policySubject.OldDecisionRecoveryArtifactSHA256, policySubject.OldDecisionRecoveryArtifactSizeBytes = generation.recoveryArtifactDigest, generation.recoveryArtifactSize
+	policySubject.SuccessorRunnerProjectionDecisionDigest, policySubject.SuccessorSchemaBundleDigest = current.digest, DigestBytes([]byte("current-schema"))
+	policy := VerifiedHistoricalRecoveryPolicy{owner: currentOwner, subject: policySubject}
+	policy.digest, err = policySubject.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := loadHistoricalRuntimeBundle(current, ownedOld, oldBindings, policy, generation, raw)
+	if err != nil || bundle == nil || bundle.Manifest.ManifestDigest != manifest.ManifestDigest || !bundle.quotaFacts.valid() {
+		t.Fatalf("historical runtime bundle did not bind: bundle=%+v err=%v", bundle, err)
+	}
+	mutated := append([]byte(nil), raw...)
+	mutated[len(mutated)/2] ^= 1
+	if _, err := loadHistoricalRuntimeBundle(current, ownedOld, oldBindings, policy, generation, mutated); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("registered runtime digest swap was accepted: %v", err)
+	}
+	foreign := ownedOld
+	foreign.owner = &recoveryVerifierOwner{verifier: currentOwner.verifier, token: currentOwner.token}
+	if _, err := loadHistoricalRuntimeBundle(current, foreign, oldBindings, policy, generation, raw); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("foreign recovered decision owner accepted: %v", err)
+	}
+	mutatedPolicy := policy
+	mutatedPolicy.digest = DigestBytes([]byte("other-policy"))
+	if _, err := loadHistoricalRuntimeBundle(current, ownedOld, oldBindings, mutatedPolicy, generation, raw); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("mutated historical policy accepted: %v", err)
+	}
+	mutatedHeader := generation
+	mutatedHeader.header.ManifestDigest = DigestBytes([]byte("other-manifest"))
+	if _, err := loadHistoricalRuntimeBundle(current, ownedOld, oldBindings, policy, mutatedHeader, raw); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("header and recovered decision mismatch accepted: %v", err)
+	}
+}
+
 func TestSupersessionAuthorityRejectsSessionGenerationTailSwapAndOneShot(t *testing.T) {
 	owner := &evidenceOwnerToken{nonce: [16]byte{3}}
 	generation := generationIdentity{owner, DigestBytes([]byte("lineage")), DigestBytes([]byte("journal")), DigestBytes([]byte("old-decision")), DigestBytes([]byte("old-schema"))}

@@ -147,6 +147,39 @@ func (s historicalRecoveryPolicySubject) CurrentDecisionMismatch(current Digest)
 	return s.SuccessorRunnerProjectionDecisionDigest != current
 }
 
+// loadHistoricalRuntimeBundle is recovery-only. It accepts neither a raw old
+// decision nor loose bundle facts: current/old verifier ownership, current
+// policy, recovered bindings, generation header, and exact bytes must all
+// remain cross-bound before the ordinary runtime bundle can be constructed.
+func loadHistoricalRuntimeBundle(current, old OwnedVerifiedDecision, oldBindings RunnerProjectionBindings, policy VerifiedHistoricalRecoveryPolicy, generation GenerationDescriptor, raw []byte) (*RuntimeBundle, error) {
+	currentBindings, currentErr := current.decision.runnerProjectionBindings()
+	policyDigest, policyErr := policy.subject.ComputeDigest()
+	if currentErr != nil || !validOwnedCurrentDecision(current, currentBindings) || old.owner != current.owner || old.capability.owner != current.owner || policy.owner != current.owner || policy.digest == "" || policyErr != nil || policy.digest != policyDigest || generation.identity.owner != current.owner.token || policy.subject.OldRunnerProjectionDecisionDigest != old.digest || policy.subject.SuccessorRunnerProjectionDecisionDigest != current.digest || policy.subject.RecoveryPolicySubjectDigest != currentBindings.recoveryPolicySubjectDigest || policy.subject.ExecutionLineageDigest != generation.identity.executionLineageDigest || policy.subject.OldJournalIdentityDigest != generation.identity.journalIdentityDigest || policy.subject.OldSchemaBundleDigest != generation.identity.schemaBundleDigest || policy.subject.OldDecisionRecoveryArtifactSHA256 != generation.recoveryArtifactDigest || policy.subject.OldDecisionRecoveryArtifactSizeBytes != generation.recoveryArtifactSize || old.decision.validateHistorical(oldBindings) != nil || oldBindings.runnerProjectionDecisionDigest != generation.identity.runnerProjectionDecisionDigest || oldBindings.releaseTrustDecisionDigest != generation.header.ReleaseTrustDecisionDigest || oldBindings.authorityProfileDigest != generation.header.AuthorityProfileDigest || oldBindings.authorityBindingDigest != generation.header.AuthorityBindingDigest || old.decision.expectedOuterArtifactDigest != generation.header.OuterArtifactDigest || old.decision.expectedManifestDigest != generation.header.ManifestDigest || old.decision.expectedSchemaBundleDigest != generation.header.SchemaBundleDigest || old.decision.expectedRunnerReleaseDigest != generation.header.RunnerReleaseDigest {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-runtime", "historical runtime authority is unavailable or mismatched", nil)
+	}
+	if generation.header.Validate() != nil || !sameGenerationHeader(generation.identity, generation.header) || len(raw) == 0 || uint64(len(raw)) != generation.header.OuterArtifactSizeBytes || DigestBytes(raw) != generation.header.OuterArtifactDigest {
+		return nil, fail(CodeEvidenceJournalCorrupt, "historical-runtime", "registered historical runtime bytes differ from their stored header", nil)
+	}
+	decoded, err := decodeRuntimeBundleWithManifestCheck(raw, func(manifest *Manifest) error {
+		if manifest.ManifestDigest != old.decision.expectedManifestDigest || manifest.SchemaBundleDigest != old.decision.expectedSchemaBundleDigest || manifest.BootstrapBundleDigest != old.decision.expectedBootstrapBundleDigest {
+			return fail(CodeEvidenceJournalCorrupt, "historical-runtime", "registered historical runtime manifest differs from its recovered decision", nil)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fail(CodeEvidenceJournalCorrupt, "historical-runtime", "registered historical runtime bundle is invalid", err)
+	}
+	bundle, err := bindDecodedRuntimeBundle(decoded, generation.header.OuterArtifactDigest, generation.header.OuterArtifactSizeBytes)
+	if err != nil {
+		return nil, fail(CodeEvidenceJournalCorrupt, "historical-runtime", "registered historical runtime bundle cannot be owned", err)
+	}
+	facts, err := bundle.quotaFactsForAdmission()
+	if err != nil || facts.schemaBundleDigest != generation.header.SchemaBundleDigest || facts.outerArtifactDigest != generation.header.OuterArtifactDigest || facts.outerArtifactSize != generation.header.OuterArtifactSizeBytes {
+		return nil, fail(CodeEvidenceJournalCorrupt, "historical-runtime", "registered historical runtime quota closure differs from its generation", err)
+	}
+	return bundle, nil
+}
+
 type VerifiedHistoricalRecoveryPolicy struct {
 	owner   *recoveryVerifierOwner
 	subject historicalRecoveryPolicySubject
