@@ -262,7 +262,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 		epoch := &admissionEpoch{seal: &struct{}{}}
 		lease := &AdmissionLease{seal: &struct{}{}, store: s, rootLease: rootLease, epoch: epoch, locks: locks, valid: true}
 		lease.self = lease
-		inventory, err := lease.buildAdmissionInventory(ctx, target, second)
+		inventory, err := lease.buildAdmissionInventory(ctx, target, 0, second)
 		if err == nil && (!s.usable() || !rootLease.Active()) {
 			err = filesystem("admission-inventory-cleanup")
 		}
@@ -276,7 +276,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 			}
 			return nil, nil, err
 		}
-		slot := newAdmissionSlot(epoch, inventory)
+		slot := newAdmissionSlot(epoch, inventory, 0)
 		inventory.discovery = admissionDiscovery{}
 		inventory.objectSet = admissionObjectDiscovery{}
 		lease.current = slot
@@ -286,9 +286,9 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 	return nil, nil, filesystem("admission-exhausted")
 }
 
-func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory) *admissionSlot {
+func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory, revision uint64) *admissionSlot {
 	slot := &admissionSlot{
-		epoch: epoch, revision: 0, inventory: inventory, active: true,
+		epoch: epoch, revision: revision, inventory: inventory, active: true,
 		lineages: map[*AdmissionLineageView]lineageExpectation{}, journals: map[*AdmissionJournalView]journalExpectation{},
 		files: map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent,
 		target: inventory.target, fullSet: inventory.fullSet,

@@ -792,3 +792,45 @@ func TestAdmissionJournalAggregateLimitExactAndPlusOne(t *testing.T) {
 		t.Fatalf("plus-one lease=%v inventory=%v err=%v", lease, inventory, err)
 	}
 }
+
+func TestAdmissionInventoryRevisionAdvanceInvalidatesOldViews(t *testing.T) {
+	f := newFakeBackend()
+	addAdmissionLineage(f, digestForTest(1), 0, 0)
+	store := testStore(t, f)
+	lease, old, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldLineage, err := old.Lineage(digestForTest(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery := cloneAdmissionDiscovery(lease.current.discovery)
+	next, err := lease.buildAdmissionInventory(context.Background(), digestForTest(1), 1, discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextSlot := newAdmissionSlot(lease.epoch, next, 1)
+	next.discovery, next.objectSet = admissionDiscovery{}, admissionObjectDiscovery{}
+	old.slot.active = false
+	lease.current, next.slot = nextSlot, nextSlot
+	if revision, err := next.Revision(); err != nil || revision != 1 {
+		t.Fatalf("next revision=%d err=%v", revision, err)
+	}
+	if _, err := old.Revision(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("old inventory survived advance: %v", err)
+	}
+	if _, err := oldLineage.ID(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("old child view survived advance: %v", err)
+	}
+	nextLineage, err := next.Lineage(digestForTest(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, err := nextLineage.ID(); err != nil || id != digestForTest(1) {
+		t.Fatalf("next child view is invalid: id=%x err=%v", id, err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

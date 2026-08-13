@@ -27,7 +27,7 @@ const (
 	inventoryObject
 )
 
-// AdmissionInventory is revision-zero physical authority for the complete
+// AdmissionInventory is revision-bound physical authority for the complete
 // registered root set. It contains no decoded C3 or quota conclusions.
 type AdmissionInventory struct {
 	self       *AdmissionInventory
@@ -125,7 +125,7 @@ func (i *AdmissionInventory) bindingForView() admissionBinding {
 }
 
 func (b admissionBinding) validFor(i *AdmissionInventory) bool {
-	return i != nil && b.store == i.store && b.lease == i.lease && b.epoch == i.epoch && b.revision == i.revision && b.revision == 0
+	return i != nil && b.store == i.store && b.lease == i.lease && b.epoch == i.epoch && b.revision == i.revision
 }
 
 func (i *AdmissionInventory) validLocked() bool {
@@ -133,7 +133,7 @@ func (i *AdmissionInventory) validLocked() bool {
 		i.lease != nil && i.lease.self == i.lease && i.lease.store == i.store &&
 		i.epoch != nil && i.epoch.seal != nil && i.epoch == i.lease.epoch &&
 		i.slot != nil && i.slot == i.lease.current && i.slot.epoch == i.epoch &&
-		i.slot.revision == i.revision && i.slot.revision == 0 &&
+		i.slot.revision == i.revision &&
 		i.slot.inventory == i && i.slot.active && i.slot.target == i.target && i.slot.fullSet == i.fullSet &&
 		sameLineagePointers(i.slot.lineageOrder, i.lineages) && sameObjectPointers(i.slot.objectOrder, i.objects) && i.slot.absent == i.absent && i.lease.activeLocked()
 }
@@ -156,7 +156,7 @@ func (i *AdmissionInventory) Revision() (uint64, error) {
 	return revision, err
 }
 
-// Target returns the acquisition target bound to this revision-zero inventory.
+// Target returns the acquisition target bound to this exact revision.
 func (i *AdmissionInventory) Target() ([32]byte, error) {
 	var target [32]byte
 	err := i.withValid(func() error { target = i.target; return nil })
@@ -617,7 +617,7 @@ func containsFilePointer(values []*AdmissionFileView, target *AdmissionFileView)
 	return false
 }
 
-func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32]byte, discovery admissionDiscovery) (*AdmissionInventory, error) {
+func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32]byte, revision uint64, discovery admissionDiscovery) (*AdmissionInventory, error) {
 	if !l.activeLockedForBuild() {
 		return nil, ErrLeaseInvalid
 	}
@@ -660,7 +660,7 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 	if !sameAdmissionObjects(objectsBefore, objectsAfter) || !objectDiscoveryMatchesScan(objectsAfter, scan) {
 		return nil, filesystem("admission-object-mismatch")
 	}
-	inventory := &AdmissionInventory{seal: &struct{}{}, store: l.store, lease: l, epoch: l.epoch, revision: 0, target: target, lineageMap: map[[32]byte]*AdmissionLineageView{}, discovery: cloneAdmissionDiscovery(discovery), objectSet: cloneAdmissionObjectDiscovery(objectsAfter)}
+	inventory := &AdmissionInventory{seal: &struct{}{}, store: l.store, lease: l, epoch: l.epoch, revision: revision, target: target, lineageMap: map[[32]byte]*AdmissionLineageView{}, discovery: cloneAdmissionDiscovery(discovery), objectSet: cloneAdmissionObjectDiscovery(objectsAfter)}
 	inventory.self = inventory
 	full := sha256.New()
 	full.Write([]byte("cloud-agents-platform-evidencefs-admission-full-set/v1\x00"))
