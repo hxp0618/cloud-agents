@@ -613,6 +613,46 @@ func compactAdmissionReserved(r GenerationReserved, recordDigest Digest) admissi
 	return generation
 }
 
+func expandAdmissionHeaderFacts(h admissionReplayHeaderFacts) (JournalHeader, error) {
+	result := JournalHeader{
+		FormatVersion: EvidenceJournalFormat, JournalIdentityDigest: h.journalIdentityDigest, ReleaseTrustDecisionDigest: h.releaseTrustDecisionDigest,
+		RunnerProjectionDecisionDigest: h.runnerProjectionDecisionDigest, ExecutionLineageDigest: h.executionLineageDigest,
+		OuterArtifactDigest: h.outerArtifactDigest, OuterArtifactSizeBytes: h.outerArtifactSize, DecisionRecoveryArtifactSHA256: h.recoveryArtifactDigest,
+		DecisionRecoveryArtifactSizeBytes: h.recoveryArtifactSize, ManifestDigest: h.manifestDigest, RunnerReleaseDigest: h.runnerReleaseDigest,
+		SchemaBundleDigest: h.schemaBundleDigest, AuthorityProfileDigest: h.authorityProfileDigest, AuthorityBindingDigest: h.authorityBindingDigest,
+		LimitsProfile: EvidenceLimitsProfile, QuotaReservationDigest: h.quotaReservationDigest, ReservedRecords: h.reservedRecords,
+		ReservedBytes: h.reservedBytes, ReservedSegments: h.reservedSegments,
+	}
+	if err := result.Validate(); err != nil {
+		return JournalHeader{}, admissionCorrupt("admission-generation", "compact journal header is invalid", err)
+	}
+	return result, nil
+}
+
+func expandAdmissionGenerationReserved(lineage [32]byte, g admissionReplayGeneration) (GenerationReserved, error) {
+	if g.header == nil || digestString(lineage) != g.header.executionLineageDigest || g.header.journalIdentityDigest != g.journalID || g.header.runnerProjectionDecisionDigest != g.runnerProjectionDecisionDigest || g.header.schemaBundleDigest != g.schemaBundleDigest || g.header.quotaReservationDigest != g.quotaReservationDigest || g.header.reservedRecords != g.reservedRecords || g.header.reservedBytes != g.reservedBytes || g.header.reservedSegments != g.reservedSegments {
+		return GenerationReserved{}, admissionCorrupt("admission-generation", "compact generation and header differ", nil)
+	}
+	header, err := expandAdmissionHeaderFacts(*g.header)
+	if err != nil {
+		return GenerationReserved{}, err
+	}
+	result := GenerationReserved{
+		ExecutionLineageDigest: digestString(lineage), JournalIdentityDigest: g.journalID, RunnerProjectionDecisionDigest: g.runnerProjectionDecisionDigest,
+		SchemaBundleDigest: g.schemaBundleDigest, QuotaReservationDigest: g.quotaReservationDigest, ReservedRecords: g.reservedRecords,
+		ReservedBytes: g.reservedBytes, ReservedSegments: g.reservedSegments, PlannedSegment0Header: header,
+		ExpectedSegment0HeaderDigest: g.expectedSegment0HeaderDigest,
+	}
+	if g.continuation != nil {
+		c := g.continuation
+		result.Continuation = &LineageContinuationContext{c.startAction, c.migrationID, c.attemptIndex, cloneDigestPointer(c.previousAttemptTerminalDigest), c.sourceJournalIdentityDigest, c.sourceCheckpointRecordDigest, c.sourceTerminalDigest}
+	}
+	if err := result.Validate(); err != nil {
+		return GenerationReserved{}, admissionCorrupt("admission-generation", "compact generation reservation is invalid", err)
+	}
+	return result, nil
+}
+
 type admissionReplayJournal struct {
 	id       [32]byte
 	segments []admissionReplaySegment

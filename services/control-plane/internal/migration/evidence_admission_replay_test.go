@@ -421,6 +421,59 @@ func TestAdmissionReservedUnregisteredRetainsPlannedPurposeAndContinuation(t *te
 	}
 }
 
+func TestAdmissionCompactGenerationRoundTripsExactReservedBytes(t *testing.T) {
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	frames := decodeLineageFrames(t, fixture["frames"])
+	generations, err := compactAdmissionGenerations(frames)
+	if err != nil || len(generations) == 0 {
+		t.Fatalf("generations=%d err=%v", len(generations), err)
+	}
+	lineage := digestRaw(frames[0].Record.Header.ExecutionLineageDigest)
+	for index := range generations {
+		expanded, err := expandAdmissionGenerationReserved(lineage, generations[index])
+		if err != nil || !canonicalEqual(expanded, *frames[indexGenerationReservedFrame(frames, index)].Record.Reserved) {
+			t.Fatalf("generation %d did not round-trip: err=%v", index, err)
+		}
+		if generations[index].plannedSuccessor != nil {
+			planned, err := expandAdmissionGenerationReserved(lineage, *generations[index].plannedSuccessor)
+			if err != nil || frames[indexGenerationSupersededFrame(frames, index)].Record.Superseded.PlannedGenerationReserved == nil || !canonicalEqual(planned, *frames[indexGenerationSupersededFrame(frames, index)].Record.Superseded.PlannedGenerationReserved) {
+				t.Fatalf("planned successor %d did not round-trip: err=%v", index, err)
+			}
+		}
+	}
+	bad := cloneAdmissionGeneration(generations[0])
+	bad.reservedBytes++
+	if _, err := expandAdmissionGenerationReserved(lineage, bad); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("compact reservation/header mismatch accepted: %v", err)
+	}
+}
+
+func indexGenerationReservedFrame(frames []LineageIndexFrame, generation int) int {
+	seen := 0
+	for index := range frames {
+		if frames[index].RecordKind == LineageRecordGenerationReserved {
+			if seen == generation {
+				return index
+			}
+			seen++
+		}
+	}
+	return -1
+}
+
+func indexGenerationSupersededFrame(frames []LineageIndexFrame, generation int) int {
+	seen := 0
+	for index := range frames {
+		if frames[index].RecordKind == LineageRecordGenerationSuperseded {
+			if seen == generation {
+				return index
+			}
+			seen++
+		}
+	}
+	return -1
+}
+
 func TestAdmissionStandaloneStreamingRejectsJournalWithoutLineagePlan(t *testing.T) {
 	t.Parallel()
 	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
