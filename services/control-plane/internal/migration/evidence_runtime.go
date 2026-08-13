@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"sync"
 	"sync/atomic"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 // EvidenceSink is the sealed runtime boundary frozen by ADR-0010. There is no
@@ -50,20 +52,41 @@ type VerifiedRuntimeArtifact struct {
 }
 
 type VerifiedContentReceipt struct {
-	owner     *evidenceOwnerToken
-	kind      durableContentObjectKind
-	digest    Digest
-	sizeBytes uint64
-	identity  Digest
+	owner       *evidenceOwnerToken
+	kind        durableContentObjectKind
+	digest      Digest
+	sizeBytes   uint64
+	publication *evidencefs.Publication
+	binding     *verifiedContentReceiptBinding
 }
 
 type VerifiedDecisionRecoveryReceipt struct {
-	owner     *evidenceOwnerToken
-	kind      durableContentObjectKind
-	digest    Digest
-	sizeBytes uint64
-	identity  Digest
+	owner       *evidenceOwnerToken
+	kind        durableContentObjectKind
+	digest      Digest
+	sizeBytes   uint64
+	publication *evidencefs.Publication
+	binding     *verifiedDecisionRecoveryReceiptBinding
 }
+
+type verifiedContentReceiptBinding struct {
+	owner       *evidenceOwnerToken
+	kind        durableContentObjectKind
+	digest      Digest
+	sizeBytes   uint64
+	publication *evidencefs.Publication
+}
+
+type verifiedDecisionRecoveryReceiptBinding struct {
+	owner       *evidenceOwnerToken
+	kind        durableContentObjectKind
+	digest      Digest
+	sizeBytes   uint64
+	publication *evidencefs.Publication
+}
+
+var verifiedContentReceiptRegistry sync.Map
+var verifiedDecisionRecoveryReceiptRegistry sync.Map
 
 type durableContentObjectKind string
 
@@ -72,30 +95,60 @@ const (
 	durableDecisionRecoveryContentObject durableContentObjectKind = "decision_recovery"
 )
 
-// verifiedDurableContentObject is the reserved non-wire input for the future
-// content-store publication result. This slice deliberately has no constructor
-// or self-authenticating seal: without a separate FS-owned publication handle,
-// a same-package seal would be forgeable and must not mint receipt authority.
 type verifiedDurableContentObject struct {
-	publicationAuthority any
+	publication *evidencefs.Publication
 }
 
-func bindRuntimeContentReceipt(*evidenceOwnerToken, VerifiedRuntimeArtifact, verifiedDurableContentObject) (VerifiedContentReceipt, error) {
-	return VerifiedContentReceipt{}, fail(CodeProjectionNotImplemented, "runtime-receipt", "durable content publication authority is not implemented", nil)
+func bindRuntimeContentReceipt(owner *evidenceOwnerToken, artifact VerifiedRuntimeArtifact, object verifiedDurableContentObject) (VerifiedContentReceipt, error) {
+	receipt, binding, err := mintRuntimeContentReceipt(owner, artifact, object.publication)
+	if err != nil {
+		return VerifiedContentReceipt{}, err
+	}
+	verifiedContentReceiptRegistry.Store(binding, binding)
+	return receipt, nil
 }
 
-func bindDecisionRecoveryReceipt(*evidenceOwnerToken, VerifiedDecisionRecoveryArtifact, verifiedDurableContentObject) (VerifiedDecisionRecoveryReceipt, error) {
-	return VerifiedDecisionRecoveryReceipt{}, fail(CodeProjectionNotImplemented, "decision-recovery-receipt", "durable content publication authority is not implemented", nil)
+func bindDecisionRecoveryReceipt(owner *evidenceOwnerToken, artifact VerifiedDecisionRecoveryArtifact, object verifiedDurableContentObject) (VerifiedDecisionRecoveryReceipt, error) {
+	receipt, binding, err := mintDecisionRecoveryReceipt(owner, artifact, object.publication)
+	if err != nil {
+		return VerifiedDecisionRecoveryReceipt{}, err
+	}
+	verifiedDecisionRecoveryReceiptRegistry.Store(binding, binding)
+	return receipt, nil
 }
 
-func validRuntimeReceipt(VerifiedContentReceipt, *evidenceOwnerToken, Digest, uint64) bool {
-	// No receipt is valid until a separately owned durable publication result
-	// exists. Accepting a structurally self-consistent literal here would bypass
-	// the rejecting binder and recreate digest-only authority.
-	return false
+func mintRuntimeContentReceipt(owner *evidenceOwnerToken, artifact VerifiedRuntimeArtifact, publication *evidencefs.Publication) (VerifiedContentReceipt, *verifiedContentReceiptBinding, error) {
+	registered, bindingOK := verifiedEvidenceRunBindingRegistry.Load(artifact.binding)
+	if owner == nil || artifact.owner != owner || artifact.binding == nil || !bindingOK || registered != artifact.binding.canonical || artifact.binding.owner != owner || artifact.sizeBytes == 0 || artifact.sizeBytes > maxRuntimeTarSize || uint64(len(artifact.bytes)) != artifact.sizeBytes || requireDigest("runtime-receipt.digest", artifact.digest) != nil || DigestBytes(artifact.bytes) != artifact.digest || publication == nil || !publication.Matches(digestRaw(artifact.digest), artifact.sizeBytes) {
+		return VerifiedContentReceipt{}, nil, fail(CodeEvidenceRecoveryRequired, "runtime-receipt", "runtime publication authority is unavailable or mismatched", nil)
+	}
+	binding := &verifiedContentReceiptBinding{owner: owner, kind: durableRuntimeContentObject, digest: artifact.digest, sizeBytes: artifact.sizeBytes, publication: publication}
+	return VerifiedContentReceipt{owner: owner, kind: binding.kind, digest: artifact.digest, sizeBytes: artifact.sizeBytes, publication: publication, binding: binding}, binding, nil
 }
-func validDecisionRecoveryReceipt(VerifiedDecisionRecoveryReceipt, *evidenceOwnerToken, Digest, uint64) bool {
-	return false
+
+func mintDecisionRecoveryReceipt(owner *evidenceOwnerToken, artifact VerifiedDecisionRecoveryArtifact, publication *evidencefs.Publication) (VerifiedDecisionRecoveryReceipt, *verifiedDecisionRecoveryReceiptBinding, error) {
+	inputs, decodeErr := decodeDecisionRecoveryVerificationInputs(artifact.bytes)
+	canonical, canonicalErr := canonicalContractKey(inputs)
+	if owner == nil || artifact.owner == nil || artifact.owner.token != owner || artifact.sizeBytes == 0 || artifact.sizeBytes > maxDecisionRecoveryArtifactBytes || uint64(len(artifact.bytes)) != artifact.sizeBytes || requireDigest("recovery-receipt.digest", artifact.digest) != nil || requireDigest("recovery-receipt.decision", artifact.decision) != nil || DigestBytes(artifact.bytes) != artifact.digest || decodeErr != nil || canonicalErr != nil || canonical != string(artifact.bytes) || inputs.OldRunnerProjectionDecisionDigest != artifact.decision || inputs.ProfileDigest != decisionRecoveryArtifactProfileDigest || publication == nil || !publication.Matches(digestRaw(artifact.digest), artifact.sizeBytes) {
+		return VerifiedDecisionRecoveryReceipt{}, nil, fail(CodeEvidenceRecoveryRequired, "decision-recovery-receipt", "decision recovery publication authority is unavailable or mismatched", nil)
+	}
+	binding := &verifiedDecisionRecoveryReceiptBinding{owner: owner, kind: durableDecisionRecoveryContentObject, digest: artifact.digest, sizeBytes: artifact.sizeBytes, publication: publication}
+	return VerifiedDecisionRecoveryReceipt{owner: owner, kind: binding.kind, digest: artifact.digest, sizeBytes: artifact.sizeBytes, publication: publication, binding: binding}, binding, nil
+}
+
+func validRuntimeReceipt(receipt VerifiedContentReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
+	if receipt.owner != owner || owner == nil || receipt.kind != durableRuntimeContentObject || receipt.digest != digest || receipt.sizeBytes != size || receipt.publication == nil || receipt.binding == nil || receipt.binding.owner != owner || receipt.binding.kind != receipt.kind || receipt.binding.digest != digest || receipt.binding.sizeBytes != size || receipt.binding.publication != receipt.publication || !receipt.publication.Matches(digestRaw(digest), size) {
+		return false
+	}
+	registered, ok := verifiedContentReceiptRegistry.Load(receipt.binding)
+	return ok && registered == receipt.binding
+}
+func validDecisionRecoveryReceipt(receipt VerifiedDecisionRecoveryReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
+	if receipt.owner != owner || owner == nil || receipt.kind != durableDecisionRecoveryContentObject || receipt.digest != digest || receipt.sizeBytes != size || receipt.publication == nil || receipt.binding == nil || receipt.binding.owner != owner || receipt.binding.kind != receipt.kind || receipt.binding.digest != digest || receipt.binding.sizeBytes != size || receipt.binding.publication != receipt.publication || !receipt.publication.Matches(digestRaw(digest), size) {
+		return false
+	}
+	registered, ok := verifiedDecisionRecoveryReceiptRegistry.Load(receipt.binding)
+	return ok && registered == receipt.binding
 }
 
 type VerifiedEvidenceRun struct {

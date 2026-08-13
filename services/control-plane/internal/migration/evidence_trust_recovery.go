@@ -123,12 +123,8 @@ func (d OwnedVerifiedDecision) recoverHistoricalSupersession(ctx context.Context
 	if d.owner == nil || d.capability.owner != d.owner || d.owner.verifier == nil || authority == nil || authority.owner != d.owner || oldArtifact.owner != d.owner || plannedRecovery.owner != d.owner || plannedRuntime.owner != d.owner.token || plannedRuntimeReceipt.owner != d.owner.token || plannedRecoveryReceipt.owner != d.owner.token || plannedRuntimeReceipt.kind != "runtime" || plannedRecoveryReceipt.kind != "decision_recovery" {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "inputs are not owned by the same verifier", nil)
 	}
-	// Durable content receipts are an external precondition to invoking the
-	// historical verifier. Until the content-store publication authority exists,
-	// even a self-consistent same-package literal must stop here with zero
-	// verifier side effects.
 	if !validRuntimeReceipt(plannedRuntimeReceipt, d.owner.token, plannedRuntime.digest, plannedRuntime.sizeBytes) || !validDecisionRecoveryReceipt(plannedRecoveryReceipt, d.owner.token, plannedRecovery.digest, plannedRecovery.sizeBytes) {
-		return nil, fail(CodeProjectionNotImplemented, "historical-supersession", "durable content publication authority is not implemented", nil)
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "durable content publication authority is unavailable or mismatched", nil)
 	}
 	if err := superseded.Validate(); err != nil || superseded.LineageSupersessionAuthorityDigest != authority.digest || plannedRuntime.digest != plannedRuntimeReceipt.digest || plannedRuntime.sizeBytes != plannedRuntimeReceipt.sizeBytes || plannedRecovery.digest != plannedRecoveryReceipt.digest || plannedRecovery.sizeBytes != plannedRecoveryReceipt.sizeBytes {
 		return nil, invalidEvidence("historical-supersession", "authority, body, or typed receipt mismatch")
@@ -137,7 +133,7 @@ func (d OwnedVerifiedDecision) recoverHistoricalSupersession(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	if receipt == nil || receipt.owner != d.owner || receipt.authorityDigest != authority.digest || !validRuntimeReceipt(receipt.runtimeReceipt, d.owner.token, plannedRuntimeReceipt.digest, plannedRuntimeReceipt.sizeBytes) || receipt.runtimeReceipt.identity != plannedRuntimeReceipt.identity || !validDecisionRecoveryReceipt(receipt.recoveryReceipt, d.owner.token, plannedRecoveryReceipt.digest, plannedRecoveryReceipt.sizeBytes) || receipt.recoveryReceipt.identity != plannedRecoveryReceipt.identity {
+	if receipt == nil || receipt.owner != d.owner || receipt.authorityDigest != authority.digest || !validRuntimeReceipt(receipt.runtimeReceipt, d.owner.token, plannedRuntimeReceipt.digest, plannedRuntimeReceipt.sizeBytes) || !receipt.runtimeReceipt.publication.SameObject(plannedRuntimeReceipt.publication) || !validDecisionRecoveryReceipt(receipt.recoveryReceipt, d.owner.token, plannedRecoveryReceipt.digest, plannedRecoveryReceipt.sizeBytes) || !receipt.recoveryReceipt.publication.SameObject(plannedRecoveryReceipt.publication) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "verifier returned a foreign receipt", nil)
 	}
 	return receipt, nil

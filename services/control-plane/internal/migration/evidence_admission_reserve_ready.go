@@ -67,6 +67,36 @@ type reserveReadyBinding struct {
 
 var reserveReadyRegistry sync.Map
 
+type ReceiptBoundReady struct {
+	self             *ReceiptBoundReady
+	prior            *ReserveReady
+	plan             *VerifiedAdmissionPlan
+	history          *VerifiedAdmissionHistory
+	candidateBinding *verifiedEvidenceRunBinding
+	inventory        *evidencefs.AdmissionInventory
+	mutation         *evidencefs.AdmissionMutationToken
+	runtimeReceipt   VerifiedContentReceipt
+	recoveryReceipt  VerifiedDecisionRecoveryReceipt
+	target, fullSet  [32]byte
+	revision         uint64
+	binding          *receiptBoundReadyBinding
+	consumed         *atomic.Bool
+}
+
+type receiptBoundReadyBinding struct {
+	ready           *ReceiptBoundReady
+	prior           *ReserveReady
+	plan            *VerifiedAdmissionPlan
+	history         *VerifiedAdmissionHistory
+	inventory       *evidencefs.AdmissionInventory
+	mutation        *evidencefs.AdmissionMutationToken
+	runtimeBinding  *verifiedContentReceiptBinding
+	recoveryBinding *verifiedDecisionRecoveryReceiptBinding
+	canonical       [32]byte
+}
+
+var receiptBoundReadyRegistry sync.Map
+
 func (p *RecoveryBoundPermit) SealReserveReady(ctx context.Context, candidate OwnedCurrentCandidate) (ReserveReadyTransitionResult, error) {
 	pre := ReserveReadyTransitionResult{outcome: evidencefs.AdmissionTransitionPreMutationFailure, candidateSequence: 5}
 	if p == nil || p.inventory == nil || !validRecoveryBoundPermit(p, p.inventory, candidate) {
@@ -201,4 +231,82 @@ func validConsumedRecoveryBoundPermit(permit *RecoveryBoundPermit, plan *Verifie
 	}
 	registered, ok := recoveryBoundPermitRegistry.Load(permit.binding)
 	return ok && registered == permit.binding.canonical
+}
+
+// BindReceiptPair atomically mints both purpose-typed receipts. Neither
+// receipt registry is updated until both artifact/publication checks and the
+// same-store constraint succeed.
+func (r *ReserveReady) BindReceiptPair(candidate OwnedCurrentCandidate) (*ReceiptBoundReady, error) {
+	if r == nil || r.inventory == nil || !validReserveReady(r, r.inventory, candidate) || !r.consumed.CompareAndSwap(false, true) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-receipt-pair", "reserve-ready authority is unavailable or consumed", nil)
+	}
+	runtimeReceipt, runtimeBinding, runtimeErr := mintRuntimeContentReceipt(candidate.owner, candidate.runtimeArtifact, r.runtimePublication)
+	recoveryReceipt, recoveryBinding, recoveryErr := mintDecisionRecoveryReceipt(candidate.owner, candidate.decisionRecoveryArtifact, r.recoveryPublication)
+	if runtimeErr != nil || recoveryErr != nil || runtimeBinding == nil || recoveryBinding == nil || !r.runtimePublication.SameStore(r.recoveryPublication) {
+		r.consumed.CompareAndSwap(true, false)
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-receipt-pair", "typed receipt pair cannot be bound", nil)
+	}
+	ready := &ReceiptBoundReady{
+		prior: r, plan: r.plan, history: r.history, candidateBinding: candidate.binding,
+		inventory: r.inventory, mutation: r.mutation, runtimeReceipt: runtimeReceipt, recoveryReceipt: recoveryReceipt,
+		target: r.target, fullSet: r.fullSet, revision: r.revision, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	binding := &receiptBoundReadyBinding{
+		ready: ready, prior: r, plan: r.plan, history: r.history, inventory: r.inventory, mutation: r.mutation,
+		runtimeBinding: runtimeBinding, recoveryBinding: recoveryBinding,
+	}
+	ready.binding = binding
+	binding.canonical = receiptBoundReadyDigest(ready)
+	// Atomic at the authority layer: validators require all three registries.
+	// No observable receipt escapes before these stores complete.
+	verifiedContentReceiptRegistry.Store(runtimeBinding, runtimeBinding)
+	verifiedDecisionRecoveryReceiptRegistry.Store(recoveryBinding, recoveryBinding)
+	receiptBoundReadyRegistry.Store(binding, binding.canonical)
+	if !validReceiptBoundReady(ready, r.inventory, candidate) {
+		verifiedContentReceiptRegistry.Delete(runtimeBinding)
+		verifiedDecisionRecoveryReceiptRegistry.Delete(recoveryBinding)
+		receiptBoundReadyRegistry.Delete(binding)
+		r.consumed.CompareAndSwap(true, false)
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-receipt-pair", "typed receipt pair could not be sealed", nil)
+	}
+	return ready, nil
+}
+
+func receiptBoundReadyDigest(ready *ReceiptBoundReady) [32]byte {
+	if ready == nil || ready.self != ready || ready.prior == nil || ready.plan == nil || ready.history == nil || ready.candidateBinding == nil || ready.prior.binding == nil || ready.plan.binding == nil || ready.history.binding == nil || ready.runtimeReceipt.binding == nil || ready.recoveryReceipt.binding == nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-receipt-bound-ready/v1\x00"))
+	h.Write(ready.prior.binding.canonical[:])
+	h.Write(ready.plan.binding.canonical[:])
+	h.Write(ready.history.binding.canonical[:])
+	h.Write(ready.candidateBinding.canonical[:])
+	h.Write(ready.target[:])
+	h.Write(ready.fullSet[:])
+	writeAdmissionUint(h, ready.revision)
+	writeAdmissionString(h, ready.runtimeReceipt.digest.String())
+	writeAdmissionUint(h, ready.runtimeReceipt.sizeBytes)
+	writeAdmissionString(h, ready.recoveryReceipt.digest.String())
+	writeAdmissionUint(h, ready.recoveryReceipt.sizeBytes)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validReceiptBoundReady(ready *ReceiptBoundReady, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.plan == nil || ready.history == nil || ready.inventory != inventory || ready.mutation == nil || ready.candidateBinding != candidate.binding || ready.binding.prior != ready.prior || ready.binding.plan != ready.plan || ready.binding.history != ready.history || ready.binding.inventory != inventory || ready.binding.mutation != ready.mutation || ready.binding.runtimeBinding != ready.runtimeReceipt.binding || ready.binding.recoveryBinding != ready.recoveryReceipt.binding || ready.consumed == nil || ready.consumed.Load() || !validConsumedReserveReady(ready.prior, ready.plan, candidate) || ready.history != ready.plan.history || ready.revision != ready.prior.revision || ready.target != ready.prior.target || ready.fullSet != ready.prior.fullSet || !validRuntimeReceipt(ready.runtimeReceipt, candidate.owner, candidate.runtimeArtifact.digest, candidate.runtimeArtifact.sizeBytes) || !validDecisionRecoveryReceipt(ready.recoveryReceipt, candidate.owner, candidate.decisionRecoveryArtifact.digest, candidate.decisionRecoveryArtifact.sizeBytes) || !ready.runtimeReceipt.publication.SameStore(ready.recoveryReceipt.publication) || !ready.mutation.ValidFor(inventory) || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != receiptBoundReadyDigest(ready) {
+		return false
+	}
+	registered, ok := receiptBoundReadyRegistry.Load(ready.binding)
+	return ok && registered == ready.binding.canonical
+}
+
+func validConsumedReserveReady(ready *ReserveReady, plan *VerifiedAdmissionPlan, candidate OwnedCurrentCandidate) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.plan != plan || plan == nil || ready.history == nil || ready.inventory == nil || ready.mutation == nil || ready.runtimePublication == nil || ready.recoveryPublication == nil || ready.candidateBinding != candidate.binding || ready.binding.prior != ready.prior || ready.binding.plan != plan || ready.binding.history != ready.history || ready.binding.inventory != ready.inventory || ready.binding.mutation != ready.mutation || ready.binding.runtimePublication != ready.runtimePublication || ready.binding.recoveryPublication != ready.recoveryPublication || ready.consumed == nil || !ready.consumed.Load() || !validConsumedRecoveryBoundPermit(ready.prior, plan, candidate) || ready.history != plan.history || ready.revision != ready.prior.revision+1 || ready.target != ready.prior.target || ready.fullSet != ready.prior.fullSet || ready.runtimeDigest != candidate.runtimeArtifact.digest || ready.runtimeSize != candidate.runtimeArtifact.sizeBytes || ready.recoveryDigest != candidate.decisionRecoveryArtifact.digest || ready.recoverySize != candidate.decisionRecoveryArtifact.sizeBytes || !ready.runtimePublication.Matches(digestRaw(ready.runtimeDigest), ready.runtimeSize) || !ready.recoveryPublication.Matches(digestRaw(ready.recoveryDigest), ready.recoverySize) || string(ready.lineageHeaderBytes) != string(plan.lineageHeaderBytes) || string(ready.reservedFrameBytes) != string(plan.reservedFrameBytes) || ready.binding.canonical != reserveReadyDigest(ready) {
+		return false
+	}
+	registered, ok := reserveReadyRegistry.Load(ready.binding)
+	return ok && registered == ready.binding.canonical
 }

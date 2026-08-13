@@ -67,10 +67,60 @@ func TestReserveReadyRejectsLiteralCopyAndMutation(t *testing.T) {
 func TestReserveReadyDoesNotMintContentReceipts(t *testing.T) {
 	owner := &evidenceOwnerToken{}
 	runtime := VerifiedRuntimeArtifact{owner: owner, bytes: []byte("runtime"), digest: DigestBytes([]byte("runtime")), sizeBytes: 7}
-	if receipt, err := bindRuntimeContentReceipt(owner, runtime, verifiedDurableContentObject{}); receipt != (VerifiedContentReceipt{}) || !IsCode(err, CodeProjectionNotImplemented) {
-		t.Fatalf("runtime receipt became implemented: receipt=%+v err=%v", receipt, err)
+	if receipt, err := bindRuntimeContentReceipt(owner, runtime, verifiedDurableContentObject{}); receipt != (VerifiedContentReceipt{}) || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("runtime receipt accepted missing publication: receipt=%+v err=%v", receipt, err)
 	}
 	if validRuntimeReceipt(VerifiedContentReceipt{}, owner, runtime.digest, runtime.sizeBytes) {
 		t.Fatal("reserve-ready work made literal runtime receipt valid")
+	}
+}
+
+func TestReceiptBoundReadyRejectsLiteralCopyAndMutation(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	inventory := &evidencefs.AdmissionInventory{}
+	if ready, err := (&ReserveReady{}).BindReceiptPair(candidate); ready != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal reserve-ready minted receipts: ready=%+v err=%v", ready, err)
+	}
+	if validReceiptBoundReady(&ReceiptBoundReady{}, inventory, candidate) {
+		t.Fatal("literal receipt-bound ready passed validation")
+	}
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}}
+	plan := &VerifiedAdmissionPlan{history: history, binding: &verifiedAdmissionPlanBinding{canonical: [32]byte{2}}}
+	prior := &ReserveReady{plan: plan, history: history, binding: &reserveReadyBinding{canonical: [32]byte{3}}}
+	runtimeBinding := &verifiedContentReceiptBinding{}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{}
+	ready := &ReceiptBoundReady{
+		prior: prior, plan: plan, history: history, candidateBinding: candidate.binding,
+		target: [32]byte{4}, fullSet: [32]byte{5}, revision: 6,
+		runtimeReceipt:  VerifiedContentReceipt{digest: candidate.runtimeArtifact.digest, sizeBytes: candidate.runtimeArtifact.sizeBytes, binding: runtimeBinding},
+		recoveryReceipt: VerifiedDecisionRecoveryReceipt{digest: candidate.decisionRecoveryArtifact.digest, sizeBytes: candidate.decisionRecoveryArtifact.sizeBytes, binding: recoveryBinding},
+		consumed:        &atomic.Bool{},
+	}
+	ready.self = ready
+	want := receiptBoundReadyDigest(ready)
+	if want == ([32]byte{}) {
+		t.Fatal("receipt-bound digest is empty")
+	}
+	copyReady := *ready
+	if receiptBoundReadyDigest(&copyReady) != ([32]byte{}) {
+		t.Fatal("receipt-bound copy retained self binding")
+	}
+	for name, mutate := range map[string]func(*ReceiptBoundReady){
+		"target":          func(v *ReceiptBoundReady) { v.target[0]++ },
+		"full set":        func(v *ReceiptBoundReady) { v.fullSet[0]++ },
+		"revision":        func(v *ReceiptBoundReady) { v.revision++ },
+		"runtime digest":  func(v *ReceiptBoundReady) { v.runtimeReceipt.digest = testDigest("other-runtime") },
+		"runtime size":    func(v *ReceiptBoundReady) { v.runtimeReceipt.sizeBytes++ },
+		"recovery digest": func(v *ReceiptBoundReady) { v.recoveryReceipt.digest = testDigest("other-recovery") },
+		"recovery size":   func(v *ReceiptBoundReady) { v.recoveryReceipt.sizeBytes++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *ready
+			value.self = &value
+			mutate(&value)
+			if receiptBoundReadyDigest(&value) == want {
+				t.Fatal("mutation did not change receipt-bound digest")
+			}
+		})
 	}
 }
