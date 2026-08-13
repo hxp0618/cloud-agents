@@ -21,6 +21,16 @@ type RuntimeBundle struct {
 	quotaFacts           verifiedQuotaBundleFacts
 }
 
+// decodedRuntimeBundle is strict structural input only. It deliberately owns
+// no trust decision, verifier, receipt, or execution authority.
+type decodedRuntimeBundle struct {
+	manifest          *Manifest
+	lineage           *SchemaLineage
+	authorityContract *AuthorityContract
+	globalContract    *GlobalTableAuthorityContract
+	files             map[string][]byte
+}
+
 // verifiedRuntimeBundleInputs is the private, immutable execution authority
 // captured at LoadRuntimeBundle. Public RuntimeBundle projections remain
 // useful to callers, but production planning and quota must both use this
@@ -102,6 +112,39 @@ func LoadRuntimeBundle(raw []byte, decision VerifiedTrustDecision) (*RuntimeBund
 	if len(raw) > maxRuntimeTarSize || DigestBytes(raw) != decision.OuterArtifactDigest() {
 		return nil, fail(CodeUntrusted, "artifact", "outer migration artifact digest mismatch", nil)
 	}
+	decoded, err := decodeRuntimeBundleWithManifestCheck(raw, func(manifest *Manifest) error {
+		if manifest.ManifestDigest != decision.ManifestDigest() || manifest.SchemaBundleDigest != decision.SchemaBundleDigest() || manifest.BootstrapBundleDigest != decision.BootstrapBundleDigest() {
+			return fail(CodeUntrusted, "manifest", "manifest identities differ from the verified candidate", nil)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	manifest, lineage, authorityContract, globalContract, files := decoded.manifest, decoded.lineage, decoded.authorityContract, decoded.globalContract, decoded.files
+	ownedInputs, err := bindVerifiedRuntimeBundleInputs(manifest, files, decision.OuterArtifactDigest(), uint64(len(raw)))
+	if err != nil {
+		return nil, err
+	}
+	ownedManifest, ownedFiles, err := ownedInputs.copyVerified()
+	if err != nil {
+		return nil, err
+	}
+	quotaFacts, err := bindVerifiedQuotaBundleFacts(ownedManifest, ownedFiles, ownedInputs.canonical, ownedInputs.outerArtifactDigest, ownedInputs.outerArtifactSize)
+	if err != nil {
+		return nil, err
+	}
+	return &RuntimeBundle{Manifest: manifest, Lineage: lineage, AuthorityContract: authorityContract, GlobalTableAuthority: globalContract, Files: files, ownedInputs: ownedInputs, quotaFacts: quotaFacts}, nil
+}
+
+func decodeRuntimeBundle(raw []byte) (*decodedRuntimeBundle, error) {
+	return decodeRuntimeBundleWithManifestCheck(raw, nil)
+}
+
+func decodeRuntimeBundleWithManifestCheck(raw []byte, checkManifest func(*Manifest) error) (*decodedRuntimeBundle, error) {
+	if len(raw) == 0 || len(raw) > maxRuntimeTarSize {
+		return nil, fail(CodeInvalidArtifact, "artifact", "outer migration artifact size is invalid", nil)
+	}
 	members, err := parseDeterministicUSTAR(raw)
 	if err != nil {
 		return nil, err
@@ -118,8 +161,10 @@ func LoadRuntimeBundle(raw []byte, decision VerifiedTrustDecision) (*RuntimeBund
 	if err != nil {
 		return nil, err
 	}
-	if manifest.ManifestDigest != decision.ManifestDigest() || manifest.SchemaBundleDigest != decision.SchemaBundleDigest() || manifest.BootstrapBundleDigest != decision.BootstrapBundleDigest() {
-		return nil, fail(CodeUntrusted, "manifest", "manifest identities differ from the verified candidate", nil)
+	if checkManifest != nil {
+		if err := checkManifest(manifest); err != nil {
+			return nil, err
+		}
 	}
 	if err := validateRuntimeRecords(manifest, files); err != nil {
 		return nil, err
@@ -161,19 +206,7 @@ func LoadRuntimeBundle(raw []byte, decision VerifiedTrustDecision) (*RuntimeBund
 	if err := validateRuntimeClosure(manifest, lineage); err != nil {
 		return nil, err
 	}
-	ownedInputs, err := bindVerifiedRuntimeBundleInputs(manifest, files, decision.OuterArtifactDigest(), uint64(len(raw)))
-	if err != nil {
-		return nil, err
-	}
-	ownedManifest, ownedFiles, err := ownedInputs.copyVerified()
-	if err != nil {
-		return nil, err
-	}
-	quotaFacts, err := bindVerifiedQuotaBundleFacts(ownedManifest, ownedFiles, ownedInputs.canonical, ownedInputs.outerArtifactDigest, ownedInputs.outerArtifactSize)
-	if err != nil {
-		return nil, err
-	}
-	return &RuntimeBundle{Manifest: manifest, Lineage: lineage, AuthorityContract: authorityContract, GlobalTableAuthority: globalContract, Files: files, ownedInputs: ownedInputs, quotaFacts: quotaFacts}, nil
+	return &decodedRuntimeBundle{manifest, lineage, authorityContract, globalContract, files}, nil
 }
 
 func validateRuntimeRecords(manifest *Manifest, files map[string][]byte) error {

@@ -20,19 +20,21 @@ const admissionReplayDigestDomain = "cloud-agents-platform-evidence-admission-re
 // evidencefs inventory. It deliberately has no seal, self pointer, registry, or
 // authority consumer. In particular, it cannot authorize recovery or execution.
 type admissionReplayTranscript struct {
-	revision       uint64
-	fullSetDigest  [32]byte
-	target         [32]byte
-	targetAbsent   bool
-	lineages       []admissionReplayLineage
-	objects        []admissionReplayObject
-	recoveryNeeds  []admissionRecoveryNeed
-	references     []admissionReplayReference
-	journalBytes   uint64
-	journalRecords uint64
-	indexBytes     uint64
-	indexRecords   uint64
-	canonical      [32]byte
+	revision             uint64
+	fullSetDigest        [32]byte
+	target               [32]byte
+	targetAbsent         bool
+	lineages             []admissionReplayLineage
+	objects              []admissionReplayObject
+	recoveryNeeds        []admissionRecoveryNeed
+	references           []admissionReplayReference
+	journalBytes         uint64
+	journalRecords       uint64
+	journalReservedBytes uint64
+	indexBytes           uint64
+	indexRecords         uint64
+	indexReservedBytes   uint64
+	canonical            [32]byte
 }
 
 type admissionReplayLineage struct {
@@ -74,6 +76,8 @@ type admissionReplayGeneration struct {
 	verificationResolutions                                                                                     []admissionReplayTerminalResolution
 	verificationOpen                                                                                            *admissionReplayOpenAttempt
 	verificationCatalogContract                                                                                 [32]byte
+	runtimeInspection                                                                                           *admissionReplayRuntimeInspection
+	remainingIndexRecords, remainingIndexBytes                                                                  uint64
 	supersessionAuthorityDigest                                                                                 Digest
 	oldCheckpointRecordDigest, oldActivationRecordDigest, oldInitialJournalTailDigest                           *Digest
 }
@@ -660,17 +664,45 @@ type admissionObjectReference struct {
 	kind         durableContentObjectKind
 	digest       Digest
 	sizeBytes    uint64
+	decision     Digest
+	manifest     Digest
+	schema       Digest
+	records      uint64
+	bytes        uint64
+	segments     uint32
+}
+
+type admissionObjectReferenceKey struct {
+	lineageID, journalID [32]byte
+	headerDigest         Digest
+	kind                 durableContentObjectKind
+	digest               Digest
+	sizeBytes            uint64
+}
+
+func (ref admissionObjectReference) identityKey() admissionObjectReferenceKey {
+	return admissionObjectReferenceKey{ref.lineageID, ref.journalID, ref.headerDigest, ref.kind, ref.digest, ref.sizeBytes}
 }
 
 type admissionReplayReference struct {
-	lineageID      [32]byte
-	journalID      [32]byte
-	headerDigest   Digest
-	kind           durableContentObjectKind
-	digest         Digest
-	sizeBytes      uint64
-	present        bool
-	objectIdentity [32]byte
+	lineageID                         [32]byte
+	journalID                         [32]byte
+	headerDigest                      Digest
+	kind                              durableContentObjectKind
+	digest                            Digest
+	sizeBytes                         uint64
+	present                           bool
+	objectIdentity                    [32]byte
+	inspection                        [32]byte
+	runtime                           *admissionReplayRuntimeInspection
+	recoveryDecision, recoveryProfile Digest
+}
+
+type admissionReplayRuntimeInspection struct {
+	manifestDigest, schemaBundleDigest Digest
+	maxAttempts                        uint64
+	statementCounts                    []uint64
+	reservation                        evidenceQuotaReservation
 }
 
 type admissionCorruptAccumulator struct {
@@ -799,6 +831,16 @@ func replayAdmissionInventory(ctx context.Context, inventory *evidencefs.Admissi
 		}
 	}
 	transcript.objects, transcript.references, transcript.recoveryNeeds = objects, replayReferences, needs
+	if err := attachAdmissionInspections(transcript); err != nil {
+		if IsCode(err, CodeEvidenceJournalCorrupt) {
+			corrupt.add(err)
+		} else {
+			return nil, err
+		}
+	}
+	if transcript.journalReservedBytes > rootJournalMaximumBytes || transcript.indexReservedBytes > rootIndexMaximumBytes {
+		corrupt.add(admissionCorrupt("admission-inspection", "verified historical reservation exceeds root maximum", nil))
+	}
 	if err := inventory.Revalidate(ctx); err != nil {
 		return nil, mapEvidenceAdmissionError(err, "admission-revalidate")
 	}
@@ -809,6 +851,124 @@ func replayAdmissionInventory(ctx context.Context, inventory *evidencefs.Admissi
 	// Every stored slice/body was copied at its accessor/collector boundary;
 	// returning this owned value avoids a full-root second copy at peak usage.
 	return transcript, nil
+}
+
+func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
+	if transcript == nil {
+		return admissionCorrupt("admission-inspection", "transcript is unavailable", nil)
+	}
+	byGeneration := make(map[[64]byte][]*admissionReplayGeneration)
+	transcript.journalReservedBytes, transcript.indexReservedBytes = 0, 0
+	for lineageIndex := range transcript.lineages {
+		lineage := &transcript.lineages[lineageIndex]
+		register := func(generation *admissionReplayGeneration) error {
+			if generation == nil {
+				return nil
+			}
+			generation.runtimeInspection = nil
+			generation.remainingIndexRecords, generation.remainingIndexBytes = 0, 0
+			var key [64]byte
+			copy(key[:32], lineage.id[:])
+			journal := digestRaw(generation.journalID)
+			copy(key[32:], journal[:])
+			byGeneration[key] = append(byGeneration[key], generation)
+			return nil
+		}
+		for generationIndex := range lineage.generations {
+			generation := &lineage.generations[generationIndex]
+			if err := register(generation); err != nil {
+				return err
+			}
+			if err := register(generation.plannedSuccessor); err != nil {
+				return err
+			}
+		}
+	}
+	for index := range transcript.references {
+		ref := &transcript.references[index]
+		if !ref.present || ref.kind != durableRuntimeContentObject {
+			continue
+		}
+		var key [64]byte
+		copy(key[:32], ref.lineageID[:])
+		copy(key[32:], ref.journalID[:])
+		generations := byGeneration[key]
+		inspection := ref.runtime
+		if len(generations) == 0 || inspection == nil {
+			return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
+		}
+		for _, generation := range generations {
+			if generation.header == nil || inspection.manifestDigest != generation.header.manifestDigest || inspection.schemaBundleDigest != generation.schemaBundleDigest || inspection.reservation.ReservedRecords != generation.reservedRecords || inspection.reservation.ReservedBytes != generation.reservedBytes || inspection.reservation.ReservedSegments != generation.reservedSegments {
+				return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
+			}
+			var consumedRecords, consumedBytes uint64
+			for _, debit := range generation.indexDebits {
+				var err error
+				consumedRecords, err = admissionCheckedAdd(consumedRecords, 1)
+				if err != nil {
+					return err
+				}
+				consumedBytes, err = admissionCheckedAdd(consumedBytes, debit.framedBytes)
+				if err != nil {
+					return err
+				}
+			}
+			if consumedRecords > inspection.reservation.ReservedIndexRecords || consumedBytes > inspection.reservation.ReservedIndexBytes {
+				return admissionCorrupt("admission-inspection", "durable index debit exceeds generation reservation", nil)
+			}
+			generation.remainingIndexRecords = inspection.reservation.ReservedIndexRecords - consumedRecords
+			generation.remainingIndexBytes = inspection.reservation.ReservedIndexBytes - consumedBytes
+			owned := *inspection
+			owned.statementCounts = append([]uint64(nil), inspection.statementCounts...)
+			generation.runtimeInspection = &owned
+		}
+		var addErr error
+		lineage := lineageByID(transcript.lineages, ref.lineageID)
+		if lineage == nil {
+			return admissionCorrupt("admission-inspection", "generation lineage is absent", nil)
+		}
+		for _, journal := range lineage.journals {
+			if journal.id == ref.journalID {
+				var physical uint64
+				for _, segment := range journal.segments {
+					physical, addErr = admissionSaturatingAdd(physical, segment.file.size)
+					if addErr != nil {
+						return addErr
+					}
+				}
+				if physical > inspection.reservation.ReservedJournalBytes {
+					return admissionCorrupt("admission-inspection", "physical journal exceeds verified reservation", nil)
+				}
+			}
+		}
+	}
+	for lineageIndex := range transcript.lineages {
+		for generationIndex := range transcript.lineages[lineageIndex].generations {
+			generation := &transcript.lineages[lineageIndex].generations[generationIndex]
+			if generation.runtimeInspection == nil {
+				continue
+			}
+			var err error
+			transcript.journalReservedBytes, err = admissionSaturatingAdd(transcript.journalReservedBytes, generation.runtimeInspection.reservation.ReservedJournalBytes)
+			if err != nil {
+				return err
+			}
+			transcript.indexReservedBytes, err = admissionSaturatingAdd(transcript.indexReservedBytes, generation.remainingIndexBytes)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func lineageByID(lineages []admissionReplayLineage, id [32]byte) *admissionReplayLineage {
+	for index := range lineages {
+		if lineages[index].id == id {
+			return &lineages[index]
+		}
+	}
+	return nil
 }
 
 func validateAdmissionTargetXOR(target, fullSet [32]byte, present bool, fact *evidencefs.TargetAbsentFact) error {
@@ -1158,7 +1318,12 @@ func admissionGenerationReferences(lineage [32]byte, generation admissionReplayG
 	}
 	journal := digestRaw(generation.journalID)
 	h := generation.header
-	return []admissionObjectReference{{lineage, journal, generation.expectedSegment0HeaderDigest, durableRuntimeContentObject, h.outerArtifactDigest, h.outerArtifactSize}, {lineage, journal, generation.expectedSegment0HeaderDigest, durableDecisionRecoveryContentObject, h.recoveryArtifactDigest, h.recoveryArtifactSize}}
+	common := admissionObjectReference{lineageID: lineage, journalID: journal, headerDigest: generation.expectedSegment0HeaderDigest, decision: generation.runnerProjectionDecisionDigest, manifest: h.manifestDigest, schema: generation.schemaBundleDigest, records: generation.reservedRecords, bytes: generation.reservedBytes, segments: generation.reservedSegments}
+	runtime := common
+	runtime.kind, runtime.digest, runtime.sizeBytes = durableRuntimeContentObject, h.outerArtifactDigest, h.outerArtifactSize
+	recovery := common
+	recovery.kind, recovery.digest, recovery.sizeBytes = durableDecisionRecoveryContentObject, h.recoveryArtifactDigest, h.recoveryArtifactSize
+	return []admissionObjectReference{runtime, recovery}
 }
 
 func readAdmissionFile(ctx context.Context, view *evidencefs.AdmissionFileView, expectedOrdinal uint32) (admissionReplayFile, []byte, error, error) {
@@ -1397,9 +1562,10 @@ func replayAdmissionObjects(ctx context.Context, finals, temps []*evidencefs.Adm
 		findings.addAt("00000001", admissionCorrupt("admission-object-usage", "stored temporary object count exceeds maximum", nil))
 	}
 	refSizeByDigest := make(map[Digest]uint64)
-	uniqueReferences := make(map[admissionObjectReference]bool)
+	uniqueReferences := make(map[admissionObjectReferenceKey]admissionObjectReference)
+	referenceKinds := make(map[Digest]map[durableContentObjectKind]bool)
 	for _, ref := range references {
-		if ref.digest.Validate() != nil || ref.sizeBytes == 0 {
+		if ref.digest.Validate() != nil || ref.sizeBytes == 0 || ref.kind != durableRuntimeContentObject && ref.kind != durableDecisionRecoveryContentObject || ref.decision.Validate() != nil || ref.manifest.Validate() != nil || ref.schema.Validate() != nil || ref.headerDigest.Validate() != nil || ref.records == 0 || ref.bytes == 0 || ref.segments == 0 {
 			findings.addAt("01000000", admissionCorrupt("admission-object-reference", "journal object reference is invalid", nil))
 			continue
 		}
@@ -1416,10 +1582,25 @@ func replayAdmissionObjects(ctx context.Context, finals, temps []*evidencefs.Adm
 			continue
 		}
 		refSizeByDigest[ref.digest] = ref.sizeBytes
-		uniqueReferences[ref] = true
+		key := ref.identityKey()
+		if prior, exists := uniqueReferences[key]; exists && prior != ref {
+			findings.addAt("01000003", admissionCorrupt("admission-object-reference", "duplicate object reference facts disagree", nil))
+			continue
+		}
+		uniqueReferences[key] = ref
+		if referenceKinds[ref.digest] == nil {
+			referenceKinds[ref.digest] = make(map[durableContentObjectKind]bool)
+		}
+		referenceKinds[ref.digest][ref.kind] = true
 	}
 	objects := make([]admissionReplayObject, 0, len(finals)+len(temps))
 	finalIdentityByDigest := make(map[Digest][32]byte)
+	runtimeInspectionByDigest := make(map[Digest]admissionReplayRuntimeInspection)
+	type recoveryInspection struct {
+		digest            [32]byte
+		decision, profile Digest
+	}
+	recoveryInspectionByDigest := make(map[Digest]recoveryInspection)
 	tempDigests := make(map[Digest]bool)
 	identities := make(map[[32]byte]bool)
 	var finalBytes, tempBytes uint64
@@ -1489,6 +1670,22 @@ func replayAdmissionObjects(ctx context.Context, finals, temps []*evidencefs.Adm
 				return nil
 			}
 			finalIdentityByDigest[digest] = identity
+			if referenceKinds[digest][durableRuntimeContentObject] {
+				inspection, inspectErr := inspectAdmissionRuntimeObject(content)
+				if inspectErr != nil {
+					findings.addAt(key(6), inspectErr)
+				} else {
+					runtimeInspectionByDigest[digest] = inspection
+				}
+			}
+			if referenceKinds[digest][durableDecisionRecoveryContentObject] {
+				inspection, decision, profile, inspectErr := inspectAdmissionRecoveryObject(content, digest, size)
+				if inspectErr != nil {
+					findings.addAt(key(6), inspectErr)
+				} else {
+					recoveryInspectionByDigest[digest] = recoveryInspection{inspection, decision, profile}
+				}
+			}
 			if declaredSize, referenced := refSizeByDigest[digest]; referenced {
 				if declaredSize != size {
 					findings.addAt(key(5), admissionCorrupt("admission-object", "referenced object size mismatch", nil))
@@ -1518,16 +1715,29 @@ func replayAdmissionObjects(ctx context.Context, finals, temps []*evidencefs.Adm
 		}
 	}
 	sort.Slice(objects, func(i, j int) bool { return admissionObjectLess(objects[i], objects[j]) })
-	if findings.first != nil {
-		return nil, nil, nil, findings.first
-	}
 	var needs []admissionRecoveryNeed
 	replayReferences := make([]admissionReplayReference, 0, len(uniqueReferences))
-	for ref := range uniqueReferences {
+	for _, ref := range uniqueReferences {
 		identity, ok := finalIdentityByDigest[ref.digest]
-		fact := admissionReplayReference{ref.lineageID, ref.journalID, ref.headerDigest, ref.kind, ref.digest, ref.sizeBytes, ok, [32]byte{}}
+		fact := admissionReplayReference{lineageID: ref.lineageID, journalID: ref.journalID, headerDigest: ref.headerDigest, kind: ref.kind, digest: ref.digest, sizeBytes: ref.sizeBytes, present: ok}
 		if ok {
 			fact.objectIdentity = identity
+			if ref.kind == durableRuntimeContentObject {
+				inspection := runtimeInspectionByDigest[ref.digest]
+				fact.inspection = inspection.digest()
+				fact.runtime = &inspection
+			} else {
+				inspection := recoveryInspectionByDigest[ref.digest]
+				if inspection.decision != ref.decision {
+					findings.addAt("06000001", admissionCorrupt("admission-recovery-object", "recovery decision differs from generation", nil))
+				} else {
+					fact.inspection = inspection.digest
+					fact.recoveryDecision, fact.recoveryProfile = inspection.decision, inspection.profile
+				}
+			}
+		}
+		if !ok {
+			fact.runtime = nil
 		}
 		replayReferences = append(replayReferences, fact)
 		if !ok {
@@ -1547,7 +1757,69 @@ func replayAdmissionObjects(ctx context.Context, finals, temps []*evidencefs.Adm
 		}
 		return needs[i].sizeBytes < needs[j].sizeBytes
 	})
+	if findings.first != nil {
+		return nil, nil, nil, findings.first
+	}
+	if len(replayReferences) != len(uniqueReferences) {
+		return nil, nil, nil, admissionCorrupt("admission-object-reference", "object reference catalog is incomplete", nil)
+	}
 	return objects, replayReferences, needs, nil
+}
+
+func inspectAdmissionRuntimeObject(raw []byte) (admissionReplayRuntimeInspection, error) {
+	decoded, err := decodeRuntimeBundle(raw)
+	if err != nil {
+		return admissionReplayRuntimeInspection{}, admissionCorrupt("admission-runtime-object", "registered runtime object is invalid", err)
+	}
+	maxAttempts, statementCounts, err := inspectQuotaBundleFacts(decoded.manifest, decoded.files)
+	if err != nil {
+		return admissionReplayRuntimeInspection{}, admissionCorrupt("admission-runtime-object", "registered runtime quota facts are invalid", err)
+	}
+	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{maxAttempts, statementCounts}, false)
+	if err != nil {
+		return admissionReplayRuntimeInspection{}, admissionCorrupt("admission-runtime-object", "registered runtime reservation is invalid", err)
+	}
+	return admissionReplayRuntimeInspection{decoded.manifest.ManifestDigest, decoded.manifest.SchemaBundleDigest, maxAttempts, append([]uint64(nil), statementCounts...), reservation}, nil
+}
+
+func inspectAdmissionRecoveryObject(raw []byte, digest Digest, size uint64) ([32]byte, Digest, Digest, error) {
+	inputs, err := decodeDecisionRecoveryVerificationInputs(raw)
+	canonical, canonicalErr := canonicalContractKey(inputs)
+	if err != nil || canonicalErr != nil || canonical != string(raw) || uint64(len(raw)) != size || DigestBytes(raw) != digest {
+		return [32]byte{}, "", "", admissionCorrupt("admission-recovery-object", "registered recovery object is invalid", err)
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-admission-recovery-object-inspection/v1\x00"))
+	h.Write([]byte(digest))
+	writeAdmissionUint(h, size)
+	h.Write([]byte(inputs.OldRunnerProjectionDecisionDigest))
+	h.Write([]byte(inputs.ProfileDigest))
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result, inputs.OldRunnerProjectionDecisionDigest, inputs.ProfileDigest, nil
+}
+
+func (i admissionReplayRuntimeInspection) digest() [32]byte {
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v1\x00"))
+	for _, digest := range []Digest{i.manifestDigest, i.schemaBundleDigest} {
+		h.Write([]byte(digest))
+	}
+	writeAdmissionUint(h, i.maxAttempts)
+	writeAdmissionUint(h, uint64(len(i.statementCounts)))
+	for _, count := range i.statementCounts {
+		writeAdmissionUint(h, count)
+	}
+	writeAdmissionReservation(h, i.reservation)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func writeAdmissionReservation(h interface{ Write([]byte) (int, error) }, value evidenceQuotaReservation) {
+	for _, field := range []uint64{value.ReservedRecords, value.ReservedJournalBytes, uint64(value.ReservedSegments), value.ReservedCheckpointRecords, value.ReservedIndexRecords, value.ReservedIndexBytes, value.ReservedBytes} {
+		writeAdmissionUint(h, field)
+	}
 }
 
 func classifyAdmissionLineageStateCompact(index []LineageIndexFrame, journals []admissionReplayJournal) (admissionReplayLineageState, error) {
@@ -1749,6 +2021,15 @@ func admissionReplayCanonicalDigest(t *admissionReplayTranscript) [32]byte {
 			}
 			writeAdmissionOpenAttempt(h, generation.verificationOpen)
 			h.Write(generation.verificationCatalogContract[:])
+			if generation.runtimeInspection == nil {
+				h.Write([]byte{0})
+			} else {
+				h.Write([]byte{1})
+				inspectionDigest := generation.runtimeInspection.digest()
+				h.Write(inspectionDigest[:])
+			}
+			writeAdmissionUint(h, generation.remainingIndexRecords)
+			writeAdmissionUint(h, generation.remainingIndexBytes)
 		}
 	}
 	writeAdmissionUint(h, uint64(len(t.objects)))
@@ -1788,11 +2069,25 @@ func admissionReplayCanonicalDigest(t *admissionReplayTranscript) [32]byte {
 			h.Write([]byte{0})
 		}
 		h.Write(ref.objectIdentity[:])
+		h.Write(ref.inspection[:])
+		h.Write([]byte(ref.recoveryDecision))
+		h.Write([]byte{0})
+		h.Write([]byte(ref.recoveryProfile))
+		h.Write([]byte{0})
+		if ref.runtime == nil {
+			h.Write([]byte{0})
+		} else {
+			h.Write([]byte{1})
+			inspectionDigest := ref.runtime.digest()
+			h.Write(inspectionDigest[:])
+		}
 	}
 	writeAdmissionUint(h, t.journalBytes)
 	writeAdmissionUint(h, t.journalRecords)
+	writeAdmissionUint(h, t.journalReservedBytes)
 	writeAdmissionUint(h, t.indexBytes)
 	writeAdmissionUint(h, t.indexRecords)
+	writeAdmissionUint(h, t.indexReservedBytes)
 	var digest [32]byte
 	copy(digest[:], h.Sum(nil))
 	return digest
@@ -2038,6 +2333,11 @@ func cloneAdmissionGeneration(g admissionReplayGeneration) admissionReplayGenera
 		v := *g.verificationOpen
 		owned.verificationOpen = &v
 	}
+	if g.runtimeInspection != nil {
+		v := *g.runtimeInspection
+		v.statementCounts = append([]uint64(nil), g.runtimeInspection.statementCounts...)
+		owned.runtimeInspection = &v
+	}
 	return owned
 }
 func writeAdmissionPlannedGeneration(h interface{ Write([]byte) (int, error) }, g admissionReplayGeneration) {
@@ -2092,7 +2392,15 @@ func cloneAdmissionReplayTranscript(value *admissionReplayTranscript) *admission
 	}
 	owned.objects = append([]admissionReplayObject(nil), value.objects...)
 	owned.recoveryNeeds = append([]admissionRecoveryNeed(nil), value.recoveryNeeds...)
-	owned.references = append([]admissionReplayReference(nil), value.references...)
+	owned.references = make([]admissionReplayReference, len(value.references))
+	for index := range value.references {
+		owned.references[index] = value.references[index]
+		if value.references[index].runtime != nil {
+			inspection := *value.references[index].runtime
+			inspection.statementCounts = append([]uint64(nil), value.references[index].runtime.statementCounts...)
+			owned.references[index].runtime = &inspection
+		}
+	}
 	return &owned
 }
 

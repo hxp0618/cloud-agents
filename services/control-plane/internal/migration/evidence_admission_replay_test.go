@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -132,10 +133,13 @@ func TestAdmissionOrderingTargetAndObjectFactsAreClosed(t *testing.T) {
 func TestAdmissionObjectReferencePurposeDedupeAndConflict(t *testing.T) {
 	t.Parallel()
 	digest := DigestBytes([]byte("same-content"))
+	common := admissionObjectReference{headerDigest: projectionTestDigest, decision: projectionTestDigest, manifest: projectionTestDigest, schema: projectionTestDigest, records: 1, bytes: 1, segments: 1}
 	references := []admissionObjectReference{
-		{kind: durableRuntimeContentObject, digest: digest, sizeBytes: 12},
-		{kind: durableDecisionRecoveryContentObject, digest: digest, sizeBytes: 12},
+		common,
+		common,
 	}
+	references[0].kind, references[0].digest, references[0].sizeBytes = durableRuntimeContentObject, digest, 12
+	references[1].kind, references[1].digest, references[1].sizeBytes = durableDecisionRecoveryContentObject, digest, 12
 	_, replayRefs, needs, err := replayAdmissionObjects(t.Context(), nil, nil, references)
 	if err != nil || len(replayRefs) != 2 || len(needs) != 2 || needs[0].kind == needs[1].kind {
 		t.Fatalf("same digest dual purpose was not retained: needs=%v err=%v", needs, err)
@@ -144,6 +148,134 @@ func TestAdmissionObjectReferencePurposeDedupeAndConflict(t *testing.T) {
 	conflict[1].sizeBytes++
 	if _, _, _, err := replayAdmissionObjects(t.Context(), nil, nil, conflict); !IsCode(err, CodeEvidenceJournalCorrupt) {
 		t.Fatalf("same digest conflicting size accepted: %v", err)
+	}
+}
+
+func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *testing.T) {
+	t.Parallel()
+	raw, manifest := buildCheckedInRuntimeTar(t)
+	inspection, err := inspectAdmissionRuntimeObject(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.manifestDigest != manifest.ManifestDigest || inspection.schemaBundleDigest != manifest.SchemaBundleDigest || inspection.maxAttempts != manifest.ExecutionPolicy.MaxAttempts || len(inspection.statementCounts) != len(manifest.SchemaBundle.Migrations) || inspection.reservation.ReservedJournalBytes == 0 || inspection.reservation.ReservedIndexBytes == 0 || inspection.digest() == ([32]byte{}) {
+		t.Fatalf("runtime inspection is incomplete: %+v", inspection)
+	}
+	mutated := append([]byte(nil), raw...)
+	mutated[len(mutated)/2] ^= 1
+	if _, err := inspectAdmissionRuntimeObject(mutated); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("mutated registered runtime accepted: %v", err)
+	}
+
+	generation := admissionReplayGeneration{journalID: DigestBytes([]byte("journal")), schemaBundleDigest: manifest.SchemaBundleDigest, reservedRecords: inspection.reservation.ReservedRecords, reservedBytes: inspection.reservation.ReservedBytes, reservedSegments: inspection.reservation.ReservedSegments, header: &admissionReplayHeaderFacts{manifestDigest: manifest.ManifestDigest}, indexDebits: []admissionReplayIndexDebit{{framedBytes: 8}}}
+	lineage := [32]byte{1}
+	journal := digestRaw(generation.journalID)
+	ref := admissionReplayReference{lineageID: lineage, journalID: journal, kind: durableRuntimeContentObject, present: true, runtime: &inspection}
+	newTranscript := func() *admissionReplayTranscript {
+		ownedGeneration := cloneAdmissionGeneration(generation)
+		return &admissionReplayTranscript{lineages: []admissionReplayLineage{{id: lineage, journals: []admissionReplayJournal{{id: journal}}, generations: []admissionReplayGeneration{ownedGeneration}}}, references: []admissionReplayReference{ref}}
+	}
+	transcript := newTranscript()
+	if err := attachAdmissionInspections(transcript); err != nil {
+		t.Fatal(err)
+	}
+	got := transcript.lineages[0].generations[0]
+	if got.runtimeInspection == nil || got.remainingIndexBytes != inspection.reservation.ReservedIndexBytes-8 || got.remainingIndexRecords != inspection.reservation.ReservedIndexRecords-1 || transcript.journalReservedBytes != inspection.reservation.ReservedJournalBytes {
+		t.Fatalf("runtime inspection did not bind generation: %+v", got)
+	}
+	for name, mutate := range map[string]func(*admissionReplayGeneration){
+		"manifest": func(g *admissionReplayGeneration) { g.header.manifestDigest = DigestBytes([]byte("other-manifest")) },
+		"schema":   func(g *admissionReplayGeneration) { g.schemaBundleDigest = DigestBytes([]byte("other-schema")) },
+		"records":  func(g *admissionReplayGeneration) { g.reservedRecords++ },
+		"bytes":    func(g *admissionReplayGeneration) { g.reservedBytes++ },
+		"segments": func(g *admissionReplayGeneration) { g.reservedSegments++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := newTranscript()
+			mutate(&bad.lineages[0].generations[0])
+			if err := attachAdmissionInspections(bad); !IsCode(err, CodeEvidenceJournalCorrupt) {
+				t.Fatalf("stored reservation mismatch accepted: %v", err)
+			}
+		})
+	}
+
+	t.Run("index-debit-records-plus-one", func(t *testing.T) {
+		bad := newTranscript()
+		bad.lineages[0].generations[0].indexDebits = make([]admissionReplayIndexDebit, inspection.reservation.ReservedIndexRecords+1)
+		if err := attachAdmissionInspections(bad); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("index record debit above reservation accepted: %v", err)
+		}
+	})
+	t.Run("index-debit-bytes-plus-one", func(t *testing.T) {
+		bad := newTranscript()
+		bad.lineages[0].generations[0].indexDebits = []admissionReplayIndexDebit{{framedBytes: inspection.reservation.ReservedIndexBytes + 1}}
+		if err := attachAdmissionInspections(bad); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("index byte debit above reservation accepted: %v", err)
+		}
+	})
+	t.Run("journal-bytes-plus-one", func(t *testing.T) {
+		bad := newTranscript()
+		bad.lineages[0].journals[0].segments = []admissionReplaySegment{{file: admissionReplayFile{size: inspection.reservation.ReservedJournalBytes + 1}}}
+		if err := attachAdmissionInspections(bad); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("physical journal above reservation accepted: %v", err)
+		}
+	})
+
+	nested := generation
+	nested.journalID = DigestBytes([]byte("planned-successor"))
+	nestedJournal := digestRaw(nested.journalID)
+	withNested := newTranscript()
+	withNested.lineages[0].generations[0].plannedSuccessor = &nested
+	withNested.references = append(withNested.references, admissionReplayReference{lineageID: lineage, journalID: nestedJournal, kind: durableRuntimeContentObject, present: true, runtime: &inspection})
+	if err := attachAdmissionInspections(withNested); err != nil {
+		t.Fatal(err)
+	}
+	if withNested.lineages[0].generations[0].plannedSuccessor.runtimeInspection == nil || withNested.journalReservedBytes != inspection.reservation.ReservedJournalBytes {
+		t.Fatal("planned successor inspection was lost or double-counted before durable reservation")
+	}
+
+	before := admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].generations[0].runtimeInspection.maxAttempts++
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("runtime inspection mutation did not change transcript digest")
+	}
+	transcript.lineages[0].generations[0].runtimeInspection.maxAttempts--
+	before = admissionReplayCanonicalDigest(transcript)
+	transcript.journalReservedBytes++
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("reserved aggregate mutation did not change transcript digest")
+	}
+}
+
+func TestAdmissionRecoveryObjectInspectionBindsDecision(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(migrationFixturePath(t, "golden/decision-recovery-inputs-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Same json.RawMessage `json:"same_bits_input"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	var inputs decisionRecoveryVerificationInputs
+	if _, err := DecodeStrict(fixture.Same, &inputs); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := canonicalContractKey(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalBytes := []byte(canonical)
+	digest := DigestBytes(canonicalBytes)
+	inspection, decision, profile, err := inspectAdmissionRecoveryObject(canonicalBytes, digest, uint64(len(canonicalBytes)))
+	if err != nil || inspection == ([32]byte{}) || decision == "" || profile != decisionRecoveryArtifactProfileDigest {
+		t.Fatalf("recovery inspection incomplete: decision=%s profile=%s err=%v", decision, profile, err)
+	}
+	mutated := append([]byte(" "), canonicalBytes...)
+	if _, _, _, err := inspectAdmissionRecoveryObject(mutated, DigestBytes(mutated), uint64(len(mutated))); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("noncanonical registered recovery artifact accepted: %v", err)
 	}
 }
 
@@ -163,11 +295,14 @@ func TestAdmissionCheckedUsageRejectsOverflowAndExactPlusOne(t *testing.T) {
 func TestAdmissionReferenceBoundsAndCanonicalFindingOrder(t *testing.T) {
 	t.Parallel()
 	digest := DigestBytes([]byte("runtime"))
-	tooLarge := []admissionObjectReference{{kind: durableRuntimeContentObject, digest: digest, sizeBytes: maxRuntimeTarSize + 1}}
+	base := admissionObjectReference{headerDigest: projectionTestDigest, decision: projectionTestDigest, manifest: projectionTestDigest, schema: projectionTestDigest, records: 1, bytes: 1, segments: 1}
+	tooLarge := []admissionObjectReference{base}
+	tooLarge[0].kind, tooLarge[0].digest, tooLarge[0].sizeBytes = durableRuntimeContentObject, digest, maxRuntimeTarSize+1
 	if _, _, _, err := replayAdmissionObjects(t.Context(), nil, nil, tooLarge); !IsCode(err, CodeEvidenceJournalCorrupt) {
 		t.Fatalf("oversized runtime reference accepted: %v", err)
 	}
-	recoveryTooLarge := []admissionObjectReference{{kind: durableDecisionRecoveryContentObject, digest: digest, sizeBytes: maxDecisionRecoveryArtifactBytes + 1}}
+	recoveryTooLarge := []admissionObjectReference{base}
+	recoveryTooLarge[0].kind, recoveryTooLarge[0].digest, recoveryTooLarge[0].sizeBytes = durableDecisionRecoveryContentObject, digest, maxDecisionRecoveryArtifactBytes+1
 	if _, _, _, err := replayAdmissionObjects(t.Context(), nil, nil, recoveryTooLarge); !IsCode(err, CodeEvidenceJournalCorrupt) {
 		t.Fatalf("oversized recovery reference accepted: %v", err)
 	}
@@ -947,7 +1082,7 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 		}
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" {
+			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" {
 				continue
 			}
 			mentions := false
