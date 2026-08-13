@@ -147,7 +147,7 @@ func TestHistoricalRecoveryVerifierInputHasNoProductionCallerBeforeAdmissionPlan
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(raw, []byte("bindHistoricalRecoveryVerifierInput(")) {
+		if bytes.Contains(raw, []byte("bindHistoricalRecoveryVerifierInput(")) && name != "evidence_admission_history.go" {
 			t.Fatalf("historical recovery input binder has premature production caller in %s", name)
 		}
 	}

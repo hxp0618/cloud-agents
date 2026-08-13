@@ -1099,7 +1099,7 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if name != "evidence_admission_replay.go" {
+		if name != "evidence_admission_replay.go" && name != "evidence_admission_history.go" {
 			ast.Inspect(file, func(node ast.Node) bool {
 				if call, ok := node.(*ast.CallExpr); ok {
 					if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "replayAdmissionInventory" {
@@ -1111,6 +1111,24 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 				}
 				return true
 			})
+		}
+		if name == "evidence_admission_history.go" {
+			for _, declaration := range file.Decls {
+				function, ok := declaration.(*ast.FuncDecl)
+				if !ok {
+					continue
+				}
+				mentions := false
+				ast.Inspect(function, func(node ast.Node) bool {
+					if ident, ok := node.(*ast.Ident); ok && ident.Name == "admissionReplayTranscript" {
+						mentions = true
+					}
+					return true
+				})
+				if mentions && function.Name.Name != "admissionHistoryObjectViews" {
+					t.Fatalf("admission transcript escaped history binder helper %s", function.Name.Name)
+				}
+			}
 		}
 		if name == "evidence_admission_replay.go" {
 			for _, declaration := range file.Decls {
@@ -1135,7 +1153,7 @@ func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 		}
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" || function.Name.Name == "rootQuotaUsageFactsFromAdmissionTranscript" {
+			if !ok || function.Type == nil || function.Name.Name == "cloneAdmissionReplayTranscript" || function.Name.Name == "admissionReplayCanonicalDigest" || function.Name.Name == "attachAdmissionInspections" || function.Name.Name == "rootQuotaUsageFactsFromAdmissionTranscript" || name == "evidence_admission_history.go" && function.Name.Name == "admissionHistoryObjectViews" {
 				continue
 			}
 			mentions := false
