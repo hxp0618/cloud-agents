@@ -56,3 +56,52 @@ func TestRecoveryPublishedPermitRejectsLiteralCopyAndMutation(t *testing.T) {
 		t.Fatalf("recovery publication diagnosis changed: %+v", result)
 	}
 }
+
+func TestRecoveryBoundPermitRejectsLiteralCopyAndMutation(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	inventory := &evidencefs.AdmissionInventory{}
+	if result, err := (&RecoveryPublishedPermit{}).BindDecisionRecovery(context.Background(), candidate); result.Next() != nil || result.Outcome() != evidencefs.AdmissionTransitionPreMutationFailure || result.CandidateKind() != "decision_recovery_binding" || result.CandidateSequence() != 4 || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal permit entered recovery bind: result=%+v err=%v", result, err)
+	}
+	if validRecoveryBoundPermit(&RecoveryBoundPermit{}, inventory, candidate) {
+		t.Fatal("literal recovery-bound permit passed validation")
+	}
+	prior := &RecoveryPublishedPermit{binding: &recoveryPublishedPermitBinding{canonical: [32]byte{1}}}
+	plan := &VerifiedAdmissionPlan{binding: &verifiedAdmissionPlanBinding{canonical: [32]byte{2}}}
+	permit := &RecoveryBoundPermit{
+		prior: prior, plan: plan, candidateBinding: candidate.binding, target: [32]byte{3}, fullSet: [32]byte{4}, revision: 5,
+		runtimeDigest: candidate.runtimeArtifact.digest, runtimeSize: candidate.runtimeArtifact.sizeBytes,
+		recoveryDigest: candidate.decisionRecoveryArtifact.digest, recoverySize: candidate.decisionRecoveryArtifact.sizeBytes,
+	}
+	permit.self = permit
+	want := recoveryBoundPermitDigest(permit)
+	if want == ([32]byte{}) {
+		t.Fatal("recovery-bound permit digest is empty")
+	}
+	copyPermit := *permit
+	if recoveryBoundPermitDigest(&copyPermit) != ([32]byte{}) {
+		t.Fatal("recovery-bound permit copy retained self binding")
+	}
+	for name, mutate := range map[string]func(*RecoveryBoundPermit){
+		"target":          func(v *RecoveryBoundPermit) { v.target[0]++ },
+		"full set":        func(v *RecoveryBoundPermit) { v.fullSet[0]++ },
+		"revision":        func(v *RecoveryBoundPermit) { v.revision++ },
+		"runtime digest":  func(v *RecoveryBoundPermit) { v.runtimeDigest = testDigest("other-runtime") },
+		"runtime size":    func(v *RecoveryBoundPermit) { v.runtimeSize++ },
+		"recovery digest": func(v *RecoveryBoundPermit) { v.recoveryDigest = testDigest("other-recovery") },
+		"recovery size":   func(v *RecoveryBoundPermit) { v.recoverySize++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *permit
+			value.self = &value
+			mutate(&value)
+			if recoveryBoundPermitDigest(&value) == want {
+				t.Fatal("mutation did not change recovery-bound permit digest")
+			}
+		})
+	}
+	result := RecoveryBindingTransitionResult{outcome: evidencefs.AdmissionTransitionUnknown, candidateDigest: [32]byte{5}, candidateSequence: 4, candidateRevision: 6, previousRevision: 5}
+	if result.Next() != nil || result.CandidateSequence() != 4 || result.CandidateDigest() != ([32]byte{5}) || result.CandidateRevision() != 6 || result.PreviousRevision() != 5 {
+		t.Fatalf("recovery binding diagnosis changed: %+v", result)
+	}
+}
