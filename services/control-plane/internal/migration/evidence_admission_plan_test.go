@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 func TestBrandNewAdmissionFramesBindCurrentCandidateAndExactQuota(t *testing.T) {
@@ -42,6 +44,39 @@ func TestBrandNewAdmissionFramesBindCurrentCandidateAndExactQuota(t *testing.T) 
 	present.targetState = admissionLineageActiveInitial
 	if _, _, _, _, err := buildBrandNewAdmissionFrames(&present, candidate); !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("active target entered brand-new path: %v", err)
+	}
+}
+
+func TestAdmissionPermitRejectsLiteralAndCrossBoundInputs(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	inventory := &evidencefs.AdmissionInventory{}
+	if permit, err := bindAdmissionPermit(context.Background(), inventory, &evidencefs.AdmissionMutationToken{}, &VerifiedAdmissionHistory{}, &VerifiedAdmissionPlan{}, candidate); permit != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal inputs minted permit: permit=%+v err=%v", permit, err)
+	}
+	if validAdmissionPermit(&AdmissionPermit{}, inventory, candidate) {
+		t.Fatal("literal permit passed validation")
+	}
+}
+
+func TestAdmissionPermitDigestRejectsCopyAndReuse(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}}
+	plan := &VerifiedAdmissionPlan{history: history, candidateBinding: candidate.binding, binding: &verifiedAdmissionPlanBinding{canonical: [32]byte{2}}, consumed: &atomic.Bool{}}
+	permit := &AdmissionPermit{history: history, plan: plan, candidateBinding: candidate.binding, consumed: &atomic.Bool{}}
+	permit.self = permit
+	binding := &admissionPermitBinding{permit: permit, history: history, plan: plan}
+	permit.binding, binding.canonical = binding, admissionPermitDigest(permit)
+	want := binding.canonical
+	copyPermit := *permit
+	if admissionPermitDigest(&copyPermit) != ([32]byte{}) || admissionPermitDigest(permit) != want {
+		t.Fatal("permit self binding is not exact")
+	}
+	plan.binding.canonical[0]++
+	if admissionPermitDigest(permit) == want {
+		t.Fatal("plan binding mutation did not change permit digest")
+	}
+	if !plan.consumed.CompareAndSwap(false, true) || plan.consumed.CompareAndSwap(false, true) {
+		t.Fatal("plan one-shot consumption is not exact")
 	}
 }
 

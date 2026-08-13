@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"sync"
 	"sync/atomic"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 // VerifiedAdmissionPlan is migration-owned authority for the brand-new
@@ -29,6 +31,30 @@ type verifiedAdmissionPlanBinding struct {
 }
 
 var verifiedAdmissionPlanRegistry sync.Map
+
+// AdmissionPermit cross-binds migration verification with evidencefs-owned
+// mutation authority. It performs no mutation and exposes no raw token.
+type AdmissionPermit struct {
+	self             *AdmissionPermit
+	history          *VerifiedAdmissionHistory
+	plan             *VerifiedAdmissionPlan
+	candidateBinding *verifiedEvidenceRunBinding
+	inventory        *evidencefs.AdmissionInventory
+	mutation         *evidencefs.AdmissionMutationToken
+	binding          *admissionPermitBinding
+	consumed         *atomic.Bool
+}
+
+type admissionPermitBinding struct {
+	permit    *AdmissionPermit
+	history   *VerifiedAdmissionHistory
+	plan      *VerifiedAdmissionPlan
+	inventory *evidencefs.AdmissionInventory
+	mutation  *evidencefs.AdmissionMutationToken
+	canonical [32]byte
+}
+
+var admissionPermitRegistry sync.Map
 
 func bindVerifiedAdmissionPlan(ctx context.Context, history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate) (*VerifiedAdmissionPlan, error) {
 	if !validVerifiedAdmissionHistory(history, candidate) {
@@ -173,4 +199,51 @@ func admissionPlanFramesExact(plan *VerifiedAdmissionPlan) bool {
 	lineageBytes, lineageErr := EncodeCanonicalLineageFrame(plan.lineageHeaderFrame)
 	reservedBytes, reservedErr := EncodeCanonicalLineageFrame(plan.reservedFrame)
 	return lineageErr == nil && reservedErr == nil && string(lineageBytes) == string(plan.lineageHeaderBytes) && string(reservedBytes) == string(plan.reservedFrameBytes)
+}
+
+func bindAdmissionPermit(ctx context.Context, inventory *evidencefs.AdmissionInventory, token *evidencefs.AdmissionMutationToken, history *VerifiedAdmissionHistory, plan *VerifiedAdmissionPlan, candidate OwnedCurrentCandidate) (*AdmissionPermit, error) {
+	if inventory == nil || token == nil || history == nil || plan == nil || history.inventory != inventory || !token.ValidFor(inventory) || !validVerifiedAdmissionPlan(plan, history, candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-permit", "migration and filesystem admission authority do not match", nil)
+	}
+	if err := inventory.Revalidate(ctx); err != nil {
+		return nil, mapEvidenceAdmissionError(err, "admission-permit-revalidate")
+	}
+	if !token.ValidFor(inventory) || !validVerifiedAdmissionPlan(plan, history, candidate) || !plan.consumed.CompareAndSwap(false, true) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-permit", "admission authority changed or was already consumed", nil)
+	}
+	permit := &AdmissionPermit{
+		history: history, plan: plan, candidateBinding: candidate.binding, inventory: inventory, mutation: token, consumed: &atomic.Bool{},
+	}
+	permit.self = permit
+	binding := &admissionPermitBinding{permit: permit, history: history, plan: plan, inventory: inventory, mutation: token}
+	permit.binding = binding
+	binding.canonical = admissionPermitDigest(permit)
+	admissionPermitRegistry.Store(binding, binding.canonical)
+	return permit, nil
+}
+
+func admissionPermitDigest(permit *AdmissionPermit) [32]byte {
+	if permit == nil || permit.self != permit || permit.history == nil || permit.plan == nil || permit.candidateBinding == nil || permit.history.binding == nil || permit.plan.binding == nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-admission-permit/v1\x00"))
+	h.Write(permit.history.binding.canonical[:])
+	h.Write(permit.plan.binding.canonical[:])
+	h.Write(permit.candidateBinding.canonical[:])
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validAdmissionPermit(permit *AdmissionPermit, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate) bool {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.history == nil || permit.plan == nil || permit.inventory != inventory || permit.mutation == nil || permit.candidateBinding != candidate.binding || permit.binding.history != permit.history || permit.binding.plan != permit.plan || permit.binding.inventory != inventory || permit.binding.mutation != permit.mutation || permit.consumed == nil || permit.consumed.Load() || !permit.mutation.ValidFor(inventory) || !validOwnedCurrentCandidate(candidate) || permit.plan.history != permit.history || permit.plan.candidateBinding != candidate.binding || permit.plan.binding == nil || permit.plan.binding.plan != permit.plan || permit.plan.binding.history != permit.history || permit.plan.binding.candidate != candidate.binding || permit.plan.consumed == nil || !permit.plan.consumed.Load() || !admissionPlanFramesExact(permit.plan) || permit.plan.binding.canonical != admissionPlanDigest(permit.plan) || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != admissionPermitDigest(permit) {
+		return false
+	}
+	registeredPlan, planOK := verifiedAdmissionPlanRegistry.Load(permit.plan.binding)
+	if !planOK || registeredPlan != permit.plan.binding.canonical {
+		return false
+	}
+	registered, ok := admissionPermitRegistry.Load(permit.binding)
+	return ok && registered == permit.binding.canonical
 }
