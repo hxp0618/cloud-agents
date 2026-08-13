@@ -11,9 +11,11 @@
   PostgreSQL tenant-helper matrix (`99a1b54`)；fail-closed migration runner core (`99106e8`)；pgx v5.10.0 +
   x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
   P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)；P1-A2.1a-impl-2 PG adapters
-  (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)
-- Current slice：P1-A2.1a-impl-3 runner wiring（statement 前/后与 pre-ledger projection、
-  `ControlPlaneStates`/intermediate chain、redacted stable errors；production trust 仍 fail closed）
+  (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)；admission registration/publish/bind/reserve
+  chain (`8c9a72b` through `5896da7`)，其中 brand-new generation 已完成 exact
+  `GenerationReserved → segment-0 header → GenerationActivated` 本地 durability 切片
+- Current slice：从 sealed `GenerationReadyPermit` 实现 root-wide admission lock release 与 normal-run handoff；
+  production trusted mount、`EvidenceJournal`/`JournalCursor`、runner/DB `Connect` 仍 fail closed
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -47,7 +49,15 @@ Platform RC、Beta 或 GA。
   version-neutral typed projection、snapshot/transaction 边界及 P1-A2.1a/P1-A2.1b 实施顺序；细化 verified
   authority binding，但不改变 schema ledger 或 Gate 语义。
 
-## P1-A2.1a-impl-2 completed / P1-A2.1a-impl-3 current boundary
+## Current admission durability evidence
+
+- [`admission-generation-durability-20260813.md`](admission-generation-durability-20260813.md) 固定 source
+  `5896da7c6c4bc75055bfad7dc63db913bb5a9446`，记录 brand-new receipt-bound reservation、generation
+  journal/segment-0 durability、exact activation append、fault gates 与未实现边界。
+- 该记录是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；
+  `GenerationReadyPermit` 没有 production consumer，也没有 normal-run/DB authority。
+
+## Projection runner boundary (still open)
 
 `services/control-plane/migrations/` 已建立 database/role bootstrap、migration ledger schema、Tenant/Organization/
 Project、tenant-local revision/change fact、`FORCE RLS` 与 audited Tenant bootstrap 的 SQL authority；runner 已具有
@@ -59,8 +69,12 @@ generation-lock/source provenance，以及 scoped predecessor ABI。`e2541c5` �
 PG15/16/17 capability/authority/namespace/default-ACL projector；`a0eac37` 在本地 `linux/arm64` 用固定 PG15.18、
 16.14、17.10 镜像完成 fresh A/B、normal/race 两轮矩阵。该证据不外推到 x86_64、云环境或 Gate closure。
 
-当前切片只进入 projection runner wiring、statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。
+Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。
 Signed expected subject 的 production verifier、deployment trust-root wiring、relation/expression projector、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
 `UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
 `G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 均不得标为 `VERIFIED`。
+
+在上述 projection 工作之后，admission durability 已推进到 sealed `GenerationReadyPermit`，但这没有改变 Gate
+结论：production trusted-mount constructor、root-wide lock release/normal-run handoff、journal cursor/checkpoint、
+runner/DB `Connect`、successor/reopen 与真实 ext4/XFS/power-loss 证据仍然开放。
