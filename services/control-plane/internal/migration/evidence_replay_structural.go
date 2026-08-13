@@ -24,6 +24,21 @@ type evidenceCheckpointRequirement struct {
 	summaryDigest Digest
 }
 
+// evidenceStructuralContinuationSeed is ordinary, validated lineage data. It
+// lets structural replay consume the first durable intent of a successor
+// generation without granting recovery or execution authority.
+type evidenceStructuralContinuationSeed struct{ context LineageContinuationContext }
+
+func newEvidenceStructuralContinuationSeed(value *LineageContinuationContext) (*evidenceStructuralContinuationSeed, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if err := value.Validate(); err != nil {
+		return nil, err
+	}
+	return &evidenceStructuralContinuationSeed{cloneProjectionValue(*value)}, nil
+}
+
 type evidenceMigrationStructuralState struct {
 	attempt uint32
 	state   evidenceCompactAttemptState
@@ -81,20 +96,22 @@ type evidenceStructuralAccumulator struct {
 	intentErr    error
 	terminalErr  error
 
-	started              bool
-	inSegment            bool
-	segmentRecords       uint64
-	segmentBytes         uint64
-	physicalBytes        uint64
-	records              uint64
-	segments             uint32
-	previous             *Digest
-	header               *JournalHeader
-	firstHeader          *JournalHeader
-	firstFrame           *EvidenceFrame
-	previousSegmentFinal *Digest
-	migrations           map[string]*evidenceMigrationStructuralState
-	summary              evidenceJournalSummary
+	started                bool
+	inSegment              bool
+	segmentRecords         uint64
+	segmentBytes           uint64
+	physicalBytes          uint64
+	records                uint64
+	segments               uint32
+	previous               *Digest
+	header                 *JournalHeader
+	firstHeader            *JournalHeader
+	firstFrame             *EvidenceFrame
+	previousSegmentFinal   *Digest
+	migrations             map[string]*evidenceMigrationStructuralState
+	summary                evidenceJournalSummary
+	structuralSeed         *evidenceStructuralContinuationSeed
+	structuralSeedConsumed bool
 }
 
 func newEvidenceStructuralAccumulator(requirements []evidenceCheckpointRequirement, observer evidenceStructuralObserver) *evidenceStructuralAccumulator {
@@ -212,6 +229,8 @@ func (a *evidenceStructuralAccumulator) finish() (*evidenceStructuralReplay, err
 	if a.records > a.firstHeader.ReservedRecords || a.segments > a.firstHeader.ReservedSegments || a.physicalBytes > a.firstHeader.ReservedBytes {
 		return nil, invalidEvidence("chain", "observed journal exceeds reservation")
 	}
+	// Header-only successor journals are a legal reserved/activated state; the
+	// seed remains unconsumed until the first non-header record is durable.
 	if a.headerErr != nil {
 		return nil, a.headerErr
 	}
@@ -256,6 +275,17 @@ func (a *evidenceStructuralAccumulator) consumeRecord(frame EvidenceFrame) error
 		return err
 	}
 	_ = key
+	if a.structuralSeed != nil && !a.structuralSeedConsumed {
+		if frame.RecordKind != EvidenceRecordStatementIntent || frame.Record.StatementIntent == nil {
+			return invalidEvidence("chain", "continuation first record")
+		}
+		intent := frame.Record.StatementIntent
+		seed := a.structuralSeed.context
+		if intent.StatementIndex != 0 || intent.MigrationID != seed.MigrationID || intent.AttemptIndex != seed.AttemptIndex || !equalDigestPointer(intent.PreviousAttemptTerminalDigest, seed.PreviousAttemptTerminalDigest) {
+			return invalidEvidence("chain", "continuation intent")
+		}
+		a.structuralSeedConsumed = true
+	}
 	migrationState := a.migrations[migration]
 	if migrationState == nil {
 		migrationState = &evidenceMigrationStructuralState{}
@@ -275,6 +305,9 @@ func (a *evidenceStructuralAccumulator) consumeRecord(frame EvidenceFrame) error
 	}
 	if migrationState.attempt == 0 {
 		migrationState.attempt = attempt
+		if a.structuralSeedConsumed && a.structuralSeed != nil && migration == a.structuralSeed.context.MigrationID && attempt == a.structuralSeed.context.AttemptIndex {
+			migrationState.summary.previousAttemptTerminalDigest = cloneDigestPointer(a.structuralSeed.context.PreviousAttemptTerminalDigest)
+		}
 	}
 	if attempt != migrationState.attempt {
 		return invalidEvidence("chain", "attempt predecessor")
@@ -583,6 +616,7 @@ type lineageJournalPlan struct {
 	active            bool
 	checkpointNext    uint64
 	supersededOutcome string
+	continuation      *evidenceStructuralContinuationSeed
 }
 type lineageStructuralPlan struct {
 	header        LineageIndexHeader
@@ -671,7 +705,11 @@ func scanLineageChainStructure(frames []LineageIndexFrame) (*lineageStructuralPl
 					return nil, invalidEvidence("lineage-chain", "registered journal missing")
 				}
 				expected := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &reserved.PlannedSegment0Header}, RecordDigest: reserved.ExpectedSegment0HeaderDigest}
-				plan.journals[activated.JournalIdentityDigest] = &lineageJournalPlan{expected: cloneProjectionValue(expected), activated: true}
+				seed, err := newEvidenceStructuralContinuationSeed(reserved.Continuation)
+				if err != nil {
+					return nil, invalidEvidence("lineage-chain", "continuation seed")
+				}
+				plan.journals[activated.JournalIdentityDigest] = &lineageJournalPlan{expected: cloneProjectionValue(expected), activated: true, continuation: seed}
 				activatedFrame = frame
 				plan.finalReserved = nil
 			case LineageRecordGenerationCheckpoint:
@@ -744,6 +782,38 @@ func (p *lineageStructuralPlan) journalRequirements(id Digest) ([]evidenceCheckp
 		return nil, true
 	}
 	return nil, false
+}
+
+// newJournalAccumulator is the only production bridge from a strict lineage
+// plan to a continuation-seeded journal replay. The seed never leaves this
+// file or crosses the plan boundary as a caller-provided value.
+func (p *lineageStructuralPlan) newJournalAccumulator(id Digest, observer evidenceStructuralObserver) (*evidenceStructuralAccumulator, bool) {
+	build := func(requirements []evidenceCheckpointRequirement, seed *evidenceStructuralContinuationSeed) *evidenceStructuralAccumulator {
+		accumulator := newEvidenceStructuralAccumulator(requirements, observer)
+		if seed != nil {
+			value := cloneProjectionValue(seed.context)
+			accumulator.structuralSeed = &evidenceStructuralContinuationSeed{value}
+		}
+		return accumulator
+	}
+	journal := p.journals[id]
+	if journal == nil {
+		if p.finalReserved != nil && p.finalReserved.JournalIdentityDigest == id {
+			seed, err := newEvidenceStructuralContinuationSeed(p.finalReserved.Continuation)
+			if err != nil {
+				return nil, false
+			}
+			return build(nil, seed), true
+		}
+		return nil, false
+	}
+	requirements := append([]evidenceCheckpointRequirement(nil), journal.requirements...)
+	var seed *evidenceStructuralContinuationSeed
+	if journal.continuation != nil {
+		value := cloneProjectionValue(journal.continuation.context)
+		seed = &evidenceStructuralContinuationSeed{value}
+	}
+	return build(requirements, seed), true
 }
 
 func (p *lineageStructuralPlan) acceptJournal(id Digest, replay *evidenceStructuralReplay) error {
@@ -830,11 +900,28 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 	}
 	journalIDs := make(map[Digest]bool, len(journals))
 	for id, segments := range journals {
-		requirements, ok := plan.journalRequirements(id)
+		accumulator, ok := plan.newJournalAccumulator(id, nil)
 		if !ok {
 			return nil, invalidEvidence("lineage-chain", "orphan registered journal")
 		}
-		replay, err := validateEvidenceChainStructureSegmentsObserved(segments, requirements, nil)
+		if len(segments) == 0 || len(segments) > int(maxEvidenceReservedSegments) {
+			return nil, invalidEvidence("lineage-chain", "registered journal structure")
+		}
+		for _, segment := range segments {
+			if err := accumulator.beginSegment(); err != nil {
+				return nil, invalidEvidence("lineage-chain", "registered journal structure")
+			}
+			for _, frame := range segment {
+				canonical, err := canonicalContractKey(frame)
+				if err != nil || accumulator.consumeFrame(frame, uint64(len(canonical))+8) != nil {
+					return nil, invalidEvidence("lineage-chain", "registered journal structure")
+				}
+			}
+			if err := accumulator.endSegment(); err != nil {
+				return nil, invalidEvidence("lineage-chain", "registered journal structure")
+			}
+		}
+		replay, err := accumulator.finish()
 		if err != nil {
 			return nil, invalidEvidence("lineage-chain", "registered journal structure")
 		}

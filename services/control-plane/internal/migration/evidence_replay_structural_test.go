@@ -132,6 +132,286 @@ func TestStructuralStreamingHeaderOnlySummaryAndHighWater(t *testing.T) {
 	}
 }
 
+func TestStructuralContinuationSeedConsumesExactFirstIntent(t *testing.T) {
+	t.Parallel()
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, document["frames"])
+	var header EvidenceFrame
+	var intent EvidenceFrame
+	for _, frame := range frames {
+		if frame.RecordKind == EvidenceRecordHeader {
+			header = cloneProjectionValue(frame)
+		}
+		if frame.RecordKind == EvidenceRecordStatementIntent {
+			intent = cloneProjectionValue(frame)
+			break
+		}
+	}
+	previous := DigestBytes([]byte("previous-terminal"))
+	continuation := &LineageContinuationContext{StartAction: "begin_next_attempt", MigrationID: intent.Record.StatementIntent.MigrationID, AttemptIndex: 2, PreviousAttemptTerminalDigest: &previous, SourceJournalIdentityDigest: DigestBytes([]byte("source-journal")), SourceCheckpointRecordDigest: DigestBytes([]byte("source-checkpoint")), SourceTerminalDigest: previous}
+	header.Sequence = 0
+	header.PreviousRecordDigest = nil
+	header.RecordDigest, _ = header.ComputeDigest()
+	v := intent.Record.StatementIntent
+	v.AttemptIndex = 2
+	v.StatementIndex = 0
+	v.PreviousAttemptTerminalDigest = &previous
+	intent.Sequence = 1
+	intent.PreviousRecordDigest = digestPointer(header.RecordDigest)
+	intent.RecordDigest, _ = intent.ComputeDigest()
+	replay := func(continuation *LineageContinuationContext, records []EvidenceFrame) error {
+		seed, seedErr := newEvidenceStructuralContinuationSeed(continuation)
+		if seedErr != nil {
+			return seedErr
+		}
+		plan := &lineageStructuralPlan{journals: map[Digest]*lineageJournalPlan{header.Record.Header.JournalIdentityDigest: {continuation: seed}}}
+		a, ok := plan.newJournalAccumulator(header.Record.Header.JournalIdentityDigest, nil)
+		if !ok {
+			return invalidEvidence("test", "missing accumulator")
+		}
+		if err := a.beginSegment(); err != nil {
+			return err
+		}
+		for _, f := range records {
+			canonical, _ := canonicalContractKey(f)
+			if err := a.consumeFrame(f, uint64(len(canonical))+8); err != nil {
+				return err
+			}
+		}
+		if err := a.endSegment(); err != nil {
+			return err
+		}
+		_, err := a.finish()
+		return err
+	}
+	if err := replay(continuation, []EvidenceFrame{header}); err != nil {
+		t.Fatalf("seeded header-only journal rejected: %v", err)
+	}
+	if err := replay(continuation, []EvidenceFrame{header, intent}); err != nil {
+		t.Fatalf("exact seeded intent rejected: %v", err)
+	}
+	legacy := cloneProjectionValue(intent)
+	legacy.Record.StatementIntent.AttemptIndex = 1
+	legacy.Record.StatementIntent.PreviousAttemptTerminalDigest = nil
+	legacy.RecordDigest, _ = legacy.ComputeDigest()
+	if err := replay(nil, []EvidenceFrame{header, legacy}); err != nil {
+		t.Fatalf("legacy nil seed changed behavior: %v", err)
+	}
+	if err := replay(nil, []EvidenceFrame{header, intent}); err == nil {
+		t.Fatal("legacy nil seed accepted a successor attempt")
+	}
+	candidates := append(cloneProjectionValue(frames[2:]), decodeEvidenceFrames(t, fixtureObject(t, migrationFixturePath(t, "golden/evidence-ambiguous-chain-v1.json"))["frames"])...)
+	for _, candidate := range candidates {
+		if candidate.RecordKind == EvidenceRecordHeader || candidate.RecordKind == EvidenceRecordStatementIntent {
+			continue
+		}
+		first := cloneProjectionValue(candidate)
+		first.Sequence = 1
+		first.PreviousRecordDigest = digestPointer(header.RecordDigest)
+		first.RecordDigest, _ = first.ComputeDigest()
+		if err := replay(continuation, []EvidenceFrame{header, first}); err == nil {
+			t.Fatalf("seed accepted %s as first record", first.RecordKind)
+		}
+	}
+	mutations := []func(*EvidenceFrame){func(f *EvidenceFrame) { f.Record.StatementIntent.MigrationID = "000002" }, func(f *EvidenceFrame) { f.Record.StatementIntent.AttemptIndex = 3 }, func(f *EvidenceFrame) { f.Record.StatementIntent.StatementIndex = 1 }, func(f *EvidenceFrame) { f.Record.StatementIntent.PreviousAttemptTerminalDigest = nil }, func(f *EvidenceFrame) {
+		f.Record.StatementIntent.PreviousAttemptTerminalDigest = digestPointer(projectionTestDigest)
+	}}
+	for _, mutate := range mutations {
+		fault := cloneProjectionValue(intent)
+		mutate(&fault)
+		fault.RecordDigest, _ = fault.ComputeDigest()
+		if err := replay(continuation, []EvidenceFrame{header, fault}); err == nil {
+			t.Fatal("continuation mismatch accepted")
+		}
+	}
+	bad := cloneProjectionValue(*continuation)
+	bad.AttemptIndex = 1
+	if _, err := newEvidenceStructuralContinuationSeed(&bad); err == nil {
+		t.Fatal("invalid continuation seed accepted")
+	}
+}
+
+func TestStructuralLineageJournalReplayInputsOwnContinuation(t *testing.T) {
+	t.Parallel()
+	previous := DigestBytes([]byte("previous-terminal"))
+	continuation := &LineageContinuationContext{StartAction: "begin_next_attempt", MigrationID: "000001", AttemptIndex: 2, PreviousAttemptTerminalDigest: &previous, SourceJournalIdentityDigest: DigestBytes([]byte("source-journal")), SourceCheckpointRecordDigest: DigestBytes([]byte("source-checkpoint")), SourceTerminalDigest: previous}
+	seed, err := newEvidenceStructuralContinuationSeed(continuation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := DigestBytes([]byte("journal"))
+	plan := &lineageStructuralPlan{journals: map[Digest]*lineageJournalPlan{id: {requirements: []evidenceCheckpointRequirement{{nextSequence: 2, tailDigest: projectionTestDigest}}, continuation: seed}}}
+	got, ok := plan.newJournalAccumulator(id, nil)
+	if !ok || got == nil || got.structuralSeed == nil || len(got.requirements) != 1 {
+		t.Fatal("journal replay inputs missing")
+	}
+	got.requirements[0].nextSequence = 9
+	got.structuralSeed.context.MigrationID = "000002"
+	*got.structuralSeed.context.PreviousAttemptTerminalDigest = projectionTestDigest
+	second, ok := plan.newJournalAccumulator(id, nil)
+	if !ok || second.requirements[0].nextSequence != 2 || second.structuralSeed.context.MigrationID != "000001" || *second.structuralSeed.context.PreviousAttemptTerminalDigest != previous {
+		t.Fatal("journal replay inputs aliased plan state")
+	}
+	finalID := DigestBytes([]byte("final-reserved-journal"))
+	finalReserved := cloneProjectionValue(*continuation)
+	finalPlan := &lineageStructuralPlan{journals: map[Digest]*lineageJournalPlan{}, finalReserved: &GenerationReserved{JournalIdentityDigest: finalID, Continuation: &finalReserved}}
+	final, ok := finalPlan.newJournalAccumulator(finalID, nil)
+	if !ok || final == nil || final.structuralSeed == nil || final.structuralSeed.context.MigrationID != continuation.MigrationID {
+		t.Fatal("final reserved continuation was not bound to its accumulator")
+	}
+}
+
+func TestStructuralContinuationSeedIgnoresRotationHeaders(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	journal := decodeEvidenceFrames(t, fixture["journal_frames"])
+	header := cloneProjectionValue(journal[0])
+	base := cloneProjectionValue(*header.Record.Header)
+	base.ReservedSegments = 2
+	base.ReservedRecords++
+	base.ReservedBytes += 65536
+	header.Record.Header = &base
+	header.RecordDigest, _ = header.ComputeDigest()
+	rotation := cloneProjectionValue(base)
+	rotation.SegmentIndex = 1
+	rotation.PreviousSegmentRecordDigest = digestPointer(header.RecordDigest)
+	rotationFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 1, PreviousRecordDigest: digestPointer(header.RecordDigest), RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &rotation}}
+	rotationFrame.RecordDigest, _ = rotationFrame.ComputeDigest()
+	previous := DigestBytes([]byte("rotation-predecessor"))
+	continuation := &LineageContinuationContext{StartAction: "begin_next_attempt", MigrationID: "000001", AttemptIndex: 2, PreviousAttemptTerminalDigest: &previous, SourceJournalIdentityDigest: DigestBytes([]byte("source-journal")), SourceCheckpointRecordDigest: DigestBytes([]byte("source-checkpoint")), SourceTerminalDigest: previous}
+	seed, err := newEvidenceStructuralContinuationSeed(continuation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &lineageStructuralPlan{journals: map[Digest]*lineageJournalPlan{base.JournalIdentityDigest: {continuation: seed}}}
+	accumulator, ok := plan.newJournalAccumulator(base.JournalIdentityDigest, nil)
+	if !ok {
+		t.Fatal("missing seeded accumulator")
+	}
+	if err := accumulator.beginSegment(); err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := canonicalContractKey(header)
+	if err := accumulator.consumeFrame(header, uint64(len(canonical))+8); err != nil {
+		t.Fatal(err)
+	}
+	if err := accumulator.endSegment(); err != nil {
+		t.Fatal(err)
+	}
+	if err := accumulator.beginSegment(); err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ = canonicalContractKey(rotationFrame)
+	if err := accumulator.consumeFrame(rotationFrame, uint64(len(canonical))+8); err != nil {
+		t.Fatal(err)
+	}
+	intent := cloneProjectionValue(journal[1])
+	intent.Record.StatementIntent.AttemptIndex = 2
+	intent.Record.StatementIntent.PreviousAttemptTerminalDigest = &previous
+	intent.Sequence = 2
+	intent.PreviousRecordDigest = digestPointer(rotationFrame.RecordDigest)
+	intent.RecordDigest, _ = intent.ComputeDigest()
+	canonical, _ = canonicalContractKey(intent)
+	if err := accumulator.consumeFrame(intent, uint64(len(canonical))+8); err != nil {
+		t.Fatalf("rotation header consumed or invalidated continuation: %v", err)
+	}
+	if err := accumulator.endSegment(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accumulator.finish(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStructuralLineagePlanSeedsSuccessorJournalEndToEnd(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	index := decodeLineageFrames(t, fixture["frames"])
+	journalFixture := decodeEvidenceFrames(t, fixture["journal_frames"])
+	var baseIntent EvidenceFrame
+	for _, frame := range journalFixture {
+		if frame.Record.StatementIntent != nil {
+			baseIntent = cloneProjectionValue(frame)
+			break
+		}
+	}
+	if len(index) < 5 || index[3].Record.Checkpoint == nil || index[4].Record.Superseded == nil || baseIntent.Record.StatementIntent == nil {
+		t.Fatal("fixture lacks successor inputs")
+	}
+	oldCheckpoint := index[3]
+	oldTerminal := cloneDigestPointer(oldCheckpoint.Record.Checkpoint.LastTerminalDigest)
+	if oldTerminal == nil {
+		t.Fatal("fixture checkpoint has no terminal")
+	}
+	for _, test := range []struct {
+		name, outcome, action, migration string
+		attempt                          uint32
+		previous                         *Digest
+	}{
+		{"next-entry", "exact_committed_continue_successor", "begin_first_attempt_next_entry", "000002", 1, nil},
+		{"next-attempt", "exact_pending", "begin_next_attempt", *oldCheckpoint.Record.Checkpoint.MigrationID, *oldCheckpoint.Record.Checkpoint.AttemptIndex + 1, oldTerminal},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			chain := cloneProjectionValue(index[:5])
+			planned := cloneProjectionValue(*chain[1].Record.Reserved)
+			plannedHeader := cloneProjectionValue(planned.PlannedSegment0Header)
+			plannedHeader.OuterArtifactDigest = DigestBytes([]byte("successor-runtime-" + test.name))
+			journalID, err := JournalIdentityDigest(plannedHeader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			planned.JournalIdentityDigest = journalID
+			plannedHeader.JournalIdentityDigest = journalID
+			planned.Continuation = &LineageContinuationContext{StartAction: test.action, MigrationID: test.migration, AttemptIndex: test.attempt, PreviousAttemptTerminalDigest: cloneDigestPointer(test.previous), SourceJournalIdentityDigest: chain[4].Record.Superseded.OldJournalIdentityDigest, SourceCheckpointRecordDigest: oldCheckpoint.RecordDigest, SourceTerminalDigest: *oldTerminal}
+			planned.QuotaReservationDigest, err = QuotaReservationDigest(planned)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plannedHeader.QuotaReservationDigest = planned.QuotaReservationDigest
+			planned.PlannedSegment0Header = plannedHeader
+			header := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &planned.PlannedSegment0Header}}
+			header.RecordDigest, err = header.ComputeDigest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			planned.ExpectedSegment0HeaderDigest = header.RecordDigest
+			chain[4].Record.Superseded.Outcome = test.outcome
+			chain[4].Record.Superseded.PlannedGenerationReserved = &planned
+			redigestStructuralLineageFrames(t, chain)
+
+			reservedFrame := LineageIndexFrame{FormatVersion: LineageFrameFormat, RecordKind: LineageRecordGenerationReserved, Record: LineageIndexRecord{Reserved: &planned}}
+			chain = append(chain, reservedFrame)
+			redigestStructuralLineageFrames(t, chain)
+			oldJournalID := journalFixture[0].Record.Header.JournalIdentityDigest
+			reservedActual := map[Digest]EvidenceFrame{oldJournalID: journalFixture[0], journalID: header}
+			reservedJournals := map[Digest][][]EvidenceFrame{oldJournalID: {cloneProjectionValue(journalFixture)}, journalID: {{header}}}
+			if _, err := validateLineageChainStructure(chain, reservedActual, reservedJournals); err != nil {
+				t.Fatalf("successor reserved header-only replay failed: %v", err)
+			}
+			activated := GenerationActivated{ExecutionLineageDigest: planned.ExecutionLineageDigest, JournalIdentityDigest: planned.JournalIdentityDigest, RunnerProjectionDecisionDigest: planned.RunnerProjectionDecisionDigest, SchemaBundleDigest: planned.SchemaBundleDigest, QuotaReservationDigest: planned.QuotaReservationDigest, GenerationReservedRecordDigest: chain[5].RecordDigest, Segment0HeaderDigest: planned.ExpectedSegment0HeaderDigest, InitialJournalTailDigest: planned.ExpectedSegment0HeaderDigest}
+			chain = append(chain, LineageIndexFrame{FormatVersion: LineageFrameFormat, RecordKind: LineageRecordGenerationActivated, Record: LineageIndexRecord{Activated: &activated}})
+			redigestStructuralLineageFrames(t, chain)
+
+			intent := cloneProjectionValue(baseIntent)
+			intent.Record.StatementIntent.MigrationID = test.migration
+			intent.Record.StatementIntent.AttemptIndex = test.attempt
+			intent.Record.StatementIntent.StatementIndex = 0
+			intent.Record.StatementIntent.PreviousAttemptTerminalDigest = cloneDigestPointer(test.previous)
+			intent.Sequence = 1
+			intent.PreviousRecordDigest = digestPointer(header.RecordDigest)
+			intent.RecordDigest, err = intent.ComputeDigest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := map[Digest]EvidenceFrame{oldJournalID: journalFixture[0], journalID: header}
+			journals := map[Digest][][]EvidenceFrame{oldJournalID: {cloneProjectionValue(journalFixture)}, journalID: {{header, intent}}}
+			if _, err := validateLineageChainStructure(chain, actual, journals); err != nil {
+				t.Fatalf("successor seeded journal replay failed: %v", err)
+			}
+		})
+	}
+}
+
 func TestStructuralEvidenceReplayDoesNotRequireAppendTimeWitnesses(t *testing.T) {
 	t.Parallel()
 	contextDocument := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
@@ -476,6 +756,30 @@ func TestStructuralEvidenceReplayOwnsInputWithoutMintingAuthority(t *testing.T) 
 		if !seen[name] {
 			t.Fatalf("structural signature allowlist entry disappeared: %s", name)
 		}
+	}
+	bannedSeedSymbols := map[string]bool{
+		"evidenceStructuralContinuationSeed":    true,
+		"newEvidenceStructuralContinuationSeed": true,
+		"newJournalAccumulator":                 true,
+		"structuralSeed":                        true,
+		"structuralSeedConsumed":                true,
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || name == "evidence_replay_structural.go" || len(name) < 3 || name[len(name)-3:] != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if ok && bannedSeedSymbols[identifier.Name] {
+				t.Fatalf("continuation seed authority escaped to %s via %s", name, identifier.Name)
+			}
+			return true
+		})
 	}
 }
 
