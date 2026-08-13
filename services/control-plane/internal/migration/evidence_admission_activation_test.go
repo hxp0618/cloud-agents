@@ -173,7 +173,7 @@ func TestGenerationReadyIsNotActiveGeneration(t *testing.T) {
 	}
 }
 
-func TestGenerationReadyHasNoProductionConsumer(t *testing.T) {
+func TestGenerationReadyHasOnlyReviewedHandoffConsumer(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestGenerationReadyHasNoProductionConsumer(t *testing.T) {
 	for _, entry := range entries {
 		name := entry.Name()
 		isTest := len(name) >= len("_test.go") && name[len(name)-len("_test.go"):] == "_test.go"
-		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_activation.go" || isTest {
+		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_activation.go" || name == "evidence_admission_handoff.go" || isTest {
 			continue
 		}
 		raw, err := os.ReadFile(name)

@@ -283,3 +283,19 @@ func TestGenerationLeaseBindingMutationFailsClosed(t *testing.T) {
 		t.Fatalf("cleanup=%v handles=%d", err, len(f.handles))
 	}
 }
+
+func TestGenerationLeasePairedFieldMutationMissesRegistry(t *testing.T) {
+	f, _, _, inventory, token, _, journal := admissionWithGenerationForHandoff(t, 1)
+	generation, err := token.HandoffGeneration(context.Background(), inventory, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation.generation.stat.inode++
+	generation.binding.generation.inode++
+	if generation.Active() {
+		t.Fatal("paired field mutation retained registered authority")
+	}
+	if err := generation.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("cleanup=%v handles=%d", err, len(f.handles))
+	}
+}

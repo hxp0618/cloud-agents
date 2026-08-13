@@ -47,7 +47,8 @@ func (r GenerationActivationTransitionResult) HeaderRecordDigest() Digest {
 // GenerationReadyPermit proves reserve -> exact segment-0 header -> activate
 // are all durable under the same admission epoch and retained lock chain. It is
 // intentionally not ActiveGeneration and cannot connect, mint a JournalCursor,
-// or release the root lock; those handoff authorities remain unimplemented.
+// or perform normal-run work. Its only production consumer transfers exact lock
+// ownership into the non-runnable handoff state.
 type GenerationReadyPermit struct {
 	self             *GenerationReadyPermit
 	prior            *HeaderDurablePermit
@@ -86,6 +87,20 @@ type generationReadyPermitBinding struct {
 	runtimeBinding  *verifiedContentReceiptBinding
 	recoveryBinding *verifiedDecisionRecoveryReceiptBinding
 	canonical       [32]byte
+}
+
+type generationReadyPermitRegistryRecord struct {
+	permit           *GenerationReadyPermit
+	binding          *generationReadyPermitBinding
+	prior            *HeaderDurablePermit
+	plan             *VerifiedAdmissionPlan
+	history          *VerifiedAdmissionHistory
+	candidateBinding *verifiedEvidenceRunBinding
+	inventory        *evidencefs.AdmissionInventory
+	mutation         *evidencefs.AdmissionMutationToken
+	runtimeBinding   *verifiedContentReceiptBinding
+	recoveryBinding  *verifiedDecisionRecoveryReceiptBinding
+	canonical        [32]byte
 }
 
 var generationReadyPermitRegistry sync.Map
@@ -197,9 +212,13 @@ func (p *HeaderDurablePermit) AppendGenerationActivated(ctx context.Context, can
 	}
 	next.binding = binding
 	binding.canonical = generationReadyPermitDigest(next)
-	generationReadyPermitRegistry.Store(binding, binding.canonical)
+	generationReadyPermitRegistry.Store(next, generationReadyPermitRegistryRecord{
+		permit: next, binding: binding, prior: p, plan: p.plan, history: p.history, candidateBinding: candidate.binding,
+		inventory: nextInventory, mutation: nextToken, runtimeBinding: p.runtimeReceipt.binding,
+		recoveryBinding: p.recoveryReceipt.binding, canonical: binding.canonical,
+	})
 	if !validGenerationReadyPermit(next, nextInventory, candidate) {
-		generationReadyPermitRegistry.Delete(binding)
+		generationReadyPermitRegistry.Delete(next)
 		_ = fsResult.Invalidate()
 		return generationActivationUnknown(result), admissionPostMutationFailure("admission-generation-activate-seal")
 	}
@@ -385,8 +404,9 @@ func validGenerationReadyPermit(permit *GenerationReadyPermit, inventory *eviden
 	if headerErr != nil || headerEncodeErr != nil || activatedErr != nil || !sameGenerationIdentity(permit.activationHeader.generation, generation) || !canonicalEqual(permit.activationHeader.header, wantHeader.header) || !canonicalEqual(permit.activationHeader.reserved, wantHeader.reserved) || !canonicalEqual(permit.headerFrame, wantHeaderFrame) || !bytes.Equal(permit.headerBytes, wantHeaderBytes) || !canonicalEqual(permit.activatedFrame, wantActivated) || !bytes.Equal(permit.activatedBytes, wantActivatedBytes) {
 		return false
 	}
-	registered, ok := generationReadyPermitRegistry.Load(permit.binding)
-	if !ok || registered != permit.binding.canonical {
+	registered, ok := generationReadyPermitRegistry.Load(permit)
+	record, recordOK := registered.(generationReadyPermitRegistryRecord)
+	if !ok || !recordOK || !generationReadyRegistryRecordMatches(record, permit) {
 		return false
 	}
 	revision, err := inventory.Revision()
@@ -398,6 +418,13 @@ func validGenerationReadyPermit(permit *GenerationReadyPermit, inventory *eviden
 		return false
 	}
 	return generationReadyMetadataMatches(inventory, permit.target, digestRaw(permit.journal), permit.indexDigest, sha256.Sum256(permit.headerBytes), uint64(len(permit.headerBytes)))
+}
+
+func generationReadyRegistryRecordMatches(record generationReadyPermitRegistryRecord, permit *GenerationReadyPermit) bool {
+	return permit != nil && record.permit == permit && record.binding == permit.binding && record.prior == permit.prior && record.plan == permit.plan &&
+		record.history == permit.history && record.candidateBinding == permit.candidateBinding && record.inventory == permit.inventory &&
+		record.mutation == permit.mutation && record.runtimeBinding == permit.runtimeReceipt.binding &&
+		record.recoveryBinding == permit.recoveryReceipt.binding && record.canonical == permit.binding.canonical
 }
 
 func generationReadyMetadataMatches(inventory *evidencefs.AdmissionInventory, target, journalID [32]byte, indexDigest, headerBytesDigest [32]byte, headerSize uint64) bool {

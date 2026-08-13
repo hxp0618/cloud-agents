@@ -2,7 +2,10 @@ package evidencefs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"io"
 	"sync"
 )
 
@@ -31,7 +34,21 @@ type generationLeaseBinding struct {
 	journal    [32]byte
 	lineage    fileStat
 	generation fileStat
+	canonical  [32]byte
 }
+
+type generationLeaseRegistryRecord struct {
+	lease      *GenerationLease
+	binding    *generationLeaseBinding
+	store      *Store
+	target     [32]byte
+	journal    [32]byte
+	lineage    heldLineageLock
+	generation heldJournalLock
+	canonical  [32]byte
+}
+
+var generationLeaseRegistry sync.Map
 
 // Active reports whether the exact lineage and generation lock ownership is
 // still live. A genuine lease remains closable after Store poison.
@@ -45,11 +62,18 @@ func (l *GenerationLease) Active() bool {
 }
 
 func (l *GenerationLease) activeLocked() bool {
-	return l != nil && l.self == l && l.seal != nil && l.store != nil && l.store.usable() && l.binding != nil &&
-		l.binding.lease == l && l.binding.store == l.store && l.binding.target == l.target && l.binding.journal == l.journal &&
-		sameIdentity(l.binding.lineage, l.lineage.stat) && sameIdentity(l.binding.generation, l.generation.stat) &&
-		l.lineage.fd >= 0 && l.generation.fd >= 0 && l.lineage.name == hex.EncodeToString(l.target[:]) &&
-		l.generation.lineage == l.lineage.name && l.generation.name == hex.EncodeToString(l.journal[:]) && l.valid && !l.closed
+	if l == nil || l.self != l || l.seal == nil || l.store == nil || !l.store.usable() || l.binding == nil ||
+		l.binding.lease != l || l.binding.store != l.store || l.binding.target != l.target || l.binding.journal != l.journal ||
+		!sameIdentity(l.binding.lineage, l.lineage.stat) || !sameIdentity(l.binding.generation, l.generation.stat) ||
+		l.lineage.fd < 0 || l.generation.fd < 0 || l.lineage.name != hex.EncodeToString(l.target[:]) ||
+		l.generation.lineage != l.lineage.name || l.generation.name != hex.EncodeToString(l.journal[:]) || !l.valid || l.closed ||
+		l.binding.canonical == ([32]byte{}) || l.binding.canonical != generationLeaseDigest(l) {
+		return false
+	}
+	registered, ok := generationLeaseRegistry.Load(l)
+	record, recordOK := registered.(generationLeaseRegistryRecord)
+	return ok && recordOK && record.lease == l && record.binding == l.binding && record.store == l.store && record.target == l.target && record.journal == l.journal &&
+		sameLineageLock(record.lineage, l.lineage) && sameJournalLock(record.generation, l.generation) && record.canonical == l.binding.canonical
 }
 
 func (l *GenerationLease) Target() ([32]byte, error) {
@@ -91,11 +115,20 @@ func (l *GenerationLease) Close() error {
 		return ErrLeaseInvalid
 	}
 	l.closed, l.valid = true, false
-	failed := releaseJournalLocks(l.store, []heldJournalLock{l.generation})
-	failed = releaseLineageLocks(l.store, []heldLineageLock{l.lineage}) || failed
+	lineage, generation, store := l.lineage, l.generation, l.store
+	if registered, ok := generationLeaseRegistry.Load(l); ok {
+		if record, recordOK := registered.(generationLeaseRegistryRecord); recordOK && record.lease == l && record.store != nil {
+			lineage, generation, store = record.lineage, record.generation, record.store
+		}
+	}
+	generationLeaseRegistry.Delete(l)
+	failed := releaseJournalLocks(store, []heldJournalLock{generation})
+	failed = releaseLineageLocks(store, []heldLineageLock{lineage}) || failed
 	l.generation.fd, l.lineage.fd = -1, -1
 	if failed {
-		l.store.poison()
+		if store != nil {
+			store.poison()
+		}
 		return filesystem("generation-lease-close")
 	}
 	return nil
@@ -194,10 +227,50 @@ func (t *AdmissionMutationToken) HandoffGeneration(ctx context.Context, inventor
 		lease: lease, store: l.store, target: t.target, journal: journal,
 		lineage: retainedLineage.stat, generation: retainedGeneration.stat,
 	}
+	lease.binding.canonical = generationLeaseDigest(lease)
+	generationLeaseRegistry.Store(lease, generationLeaseRegistryRecord{
+		lease: lease, binding: lease.binding, store: lease.store, target: lease.target, journal: lease.journal,
+		lineage: lease.lineage, generation: lease.generation, canonical: lease.binding.canonical,
+	})
 	if !lease.activeLocked() {
 		_ = lease.Close()
 		l.store.poison()
 		return nil, filesystem("generation-handoff-seal")
 	}
 	return lease, nil
+}
+
+func sameLineageLock(left, right heldLineageLock) bool {
+	return left.name == right.name && left.fd == right.fd && sameIdentity(left.stat, right.stat)
+}
+
+func sameJournalLock(left, right heldJournalLock) bool {
+	return left.lineage == right.lineage && left.name == right.name && left.fd == right.fd && sameIdentity(left.stat, right.stat)
+}
+
+func generationLeaseDigest(lease *GenerationLease) [32]byte {
+	if lease == nil || lease.self != lease || lease.binding == nil || lease.binding.lease != lease || lease.store == nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	_, _ = h.Write([]byte("cloud-agents-platform-evidencefs-generation-lease/v1\x00"))
+	_, _ = h.Write(lease.target[:])
+	_, _ = h.Write(lease.journal[:])
+	writeGenerationLeaseLock(h, lease.lineage.name, "", lease.lineage.fd, lease.lineage.stat)
+	writeGenerationLeaseLock(h, lease.generation.lineage, lease.generation.name, lease.generation.fd, lease.generation.stat)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func writeGenerationLeaseLock(h io.Writer, lineage, journal string, fd int, stat fileStat) {
+	_, _ = h.Write([]byte(lineage))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(journal))
+	_, _ = h.Write([]byte{0})
+	var encoded [8]byte
+	for _, value := range []uint64{uint64(fd), stat.device, stat.inode, stat.size, uint64(stat.mode), uint64(stat.uid), stat.nlink, uint64(stat.kind)} {
+		binary.BigEndian.PutUint64(encoded[:], value)
+		_, _ = h.Write(encoded[:])
+	}
 }
