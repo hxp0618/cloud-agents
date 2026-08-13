@@ -2,16 +2,16 @@
 
 - Status：**LOCAL IMPLEMENTATION VERIFIED — GATE OPEN**
 - Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability、
-  `GenerationActivated` durable append 与 root-wide lock release/non-runnable lock handoff
-- Fixed source commit：`c017c9573015d7e91099d71744459f9f7478594d`
-- Fixed source tree：`3409033bc39fb8d6ec59a8dfee0643051489ba6b`
+  `GenerationActivated` durable append、root-wide lock release、retained generation snapshot 与 non-runnable strict replay
+- Fixed source commit：`fa7f8e13ae5ecee3cdc723b8674ab1d8512be5df`（local；GitHub push 因 remote 500 暂未完成）
+- Fixed implementation tree：`64f24a96668400c027a54d19496e9d3d3f454a73`（`fa7f8e1^{tree}`，不含本次证据文档更新）
 - Branch：`codex/cloud-agents-platform-p1`
 - Date：2026-08-13 Asia/Shanghai
 - Toolchain：Go `1.26.5 darwin/arm64`
 - Record type：implementation evidence；**不是** Gate closure record
 
 本记录固定
-`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady`
+`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady → GenerationReplayReady`
 的本地实现证据。
 它证明 brand-new generation 在同一 active admission epoch 与 retained lock chain 下，按
 `GenerationReserved → exact segment-0 JournalHeader → GenerationActivated` 的顺序完成代码级 durability barrier。
@@ -27,6 +27,8 @@
 | `5896da7c6c4bc75055bfad7dc63db913bb5a9446` | migration generation activation      | exact `GenerationActivated` append and sealed `GenerationReadyPermit`        |
 | `8bfe7c816811ab0a1885b65a53b7a621b66d1144` | evidencefs lock handoff              | release root/non-target locks and retain exact target/generation lock pair   |
 | `c017c9573015d7e91099d71744459f9f7478594d` | migration lock handoff               | consume generation-ready and seal non-runnable `GenerationHandoffReady`      |
+| `3b1534069ab58553a3176f47a9eac6eb11ec47c7` | retained generation snapshot         | compact exact index/segment facts with bounded re-read and terminal revalidate |
+| `fa7f8e13ae5ecee3cdc723b8674ab1d8512be5df` | migration strict generation replay   | consume handoff and seal non-runnable `GenerationReplayReady`                |
 
 Key fixed file identities:
 
@@ -86,8 +88,14 @@ lineage and root locks in reverse ownership order. No failure path deletes or re
   lineage + generation FD pair into a registry-sealed `evidencefs.GenerationLease`. Any unlock/close uncertainty cleans both
   retained locks, poisons the store and returns no lease.
 - migration then binds that opaque lease to the exact activated C3 identities and returns `GenerationHandoffReady`. Both layers use
-  immutable registry records, anti-copy checks and one-shot cleanup. The handoff value remains non-runnable and has no production
-  consumer; static tests forbid `Connect`, `AppendDurable`, `Open` and `ActiveGeneration` seams.
+  immutable registry records, anti-copy checks and one-shot cleanup.
+- `GenerationLease.Snapshot` records compact exact index/segment identities without retaining raw payloads. Every read reopens and
+  rehashes the selected file under the retained locks; terminal `Revalidate` checks the complete index and segment set. Non-context
+  uncertainty revokes the lease, close uncertainty poisons the store, and replacing or closing a snapshot invalidates its registry slot.
+- `GenerationHandoffReady.Replay` accepts only the exact brand-new three-frame index and the exact one-segment/one-header journal,
+  uses the lineage-plan-owned continuation/checkpoint streaming bridge, terminally revalidates the evidencefs snapshot, and seals
+  `GenerationReplayReady`. This value remains non-runnable and has no production consumer; static tests forbid `EvidenceJournal`,
+  `JournalCursor`, `Connect`, `AppendDurable`, `Open` and `ActiveGeneration` seams.
 
 ## Local verification
 
@@ -122,7 +130,8 @@ cleanup through the original retained FDs.
 - Linux production `evidencefs.Open`/trusted-mount authority remains fail closed before mutation; there is no positive production
   constructor or cross-package end-to-end admission test.
 - Root-wide admission release and opaque target/generation lock transfer are locally implemented, but `GenerationHandoffReady`
-  deliberately stops before normal-run authority.
+  now advances through compact filesystem snapshot and strict brand-new replay into `GenerationReplayReady`; it still deliberately
+  stops before normal-run authority.
 - Normal-run `EvidenceJournal`, `JournalCursor`, checkpoint append/heal, `ActiveGeneration`, `Connect`, runner and database wiring
   are not implemented by this slice.
 - Successor `GenerationSuperseded → adjacent GenerationReserved` and crash-reopen recovery remain separate incomplete paths.
@@ -137,3 +146,14 @@ This evidence must be refreshed if any fixed implementation file, admission/C3 c
 unknown-outcome mapping, Go toolchain, module graph or production-consumer boundary changes. A later Gate closure must bind its own
 exact committed source, runtime environment, trusted-mount proof and independent reviewer record; it must not promote this local
 record in place.
+
+## Push state
+
+`3b15340` is present on `origin/codex/cloud-agents-platform-p1`. The strict replay commit `fa7f8e1` is committed locally and passed
+all gates above, but two authenticated GitHub pushes were rejected by the remote with `Internal Server Error` (request IDs
+`81750123b6d8a1f0b0558de37214a30b` and `36abdfa32685cbecb3c19520073d893d`). Retry after the remote recovers:
+
+```bash
+GIT_SSH_COMMAND='ssh -F /dev/null -p 443 -o HostName=ssh.github.com -o User=git -o IdentitiesOnly=yes -i /Users/huang/.ssh/id_ed25519' \
+  git push origin codex/cloud-agents-platform-p1
+```
