@@ -261,6 +261,58 @@ func TestStructuralLineageJournalReplayInputsOwnContinuation(t *testing.T) {
 	}
 }
 
+func TestStructuralJournalStreamKeepsContinuationInsidePlan(t *testing.T) {
+	t.Parallel()
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, document["frames"])
+	header := cloneProjectionValue(frames[0])
+	intent := cloneProjectionValue(frames[1])
+	previous := DigestBytes([]byte("stream-previous-terminal"))
+	continuation := &LineageContinuationContext{StartAction: "begin_next_attempt", MigrationID: intent.Record.StatementIntent.MigrationID, AttemptIndex: 2, PreviousAttemptTerminalDigest: &previous, SourceJournalIdentityDigest: DigestBytes([]byte("source-journal")), SourceCheckpointRecordDigest: DigestBytes([]byte("source-checkpoint")), SourceTerminalDigest: previous}
+	seed, err := newEvidenceStructuralContinuationSeed(continuation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journalID := header.Record.Header.JournalIdentityDigest
+	plan := &lineageStructuralPlan{journals: map[Digest]*lineageJournalPlan{journalID: {continuation: seed}}}
+	stream, expected := openEvidenceJournalStructuralStream(plan, journalID, nil)
+	if !expected {
+		t.Fatal("strict plan journal was not recognized")
+	}
+	intent.Record.StatementIntent.AttemptIndex = 2
+	intent.Record.StatementIntent.StatementIndex = 0
+	intent.Record.StatementIntent.PreviousAttemptTerminalDigest = &previous
+	intent.Sequence = 1
+	intent.PreviousRecordDigest = digestPointer(header.RecordDigest)
+	intent.RecordDigest, _ = intent.ComputeDigest()
+	if err := stream.beginSegment(); err != nil {
+		t.Fatal(err)
+	}
+	for _, frame := range []EvidenceFrame{header, intent} {
+		canonical, canonicalErr := canonicalContractKey(frame)
+		if canonicalErr != nil {
+			t.Fatal(canonicalErr)
+		}
+		if err := stream.consumeFrame(frame, uint64(len(canonical))+8); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := stream.endSegment(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.finish(); err != nil {
+		t.Fatalf("opaque stream lost validated continuation: %v", err)
+	}
+
+	standalone, expected := openEvidenceJournalStructuralStream(plan, DigestBytes([]byte("orphan")), nil)
+	if expected || standalone == nil {
+		t.Fatal("orphan journal did not receive an unbound diagnostic stream")
+	}
+	if err := (*evidenceJournalStructuralStream)(nil).beginSegment(); err == nil {
+		t.Fatal("nil structural stream accepted input")
+	}
+}
+
 func TestStructuralContinuationSeedIgnoresRotationHeaders(t *testing.T) {
 	t.Parallel()
 	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
@@ -760,6 +812,7 @@ func TestStructuralEvidenceReplayOwnsInputWithoutMintingAuthority(t *testing.T) 
 	bannedSeedSymbols := map[string]bool{
 		"evidenceStructuralContinuationSeed":    true,
 		"newEvidenceStructuralContinuationSeed": true,
+		"newEvidenceStructuralAccumulator":      true,
 		"newJournalAccumulator":                 true,
 		"structuralSeed":                        true,
 		"structuralSeedConsumed":                true,

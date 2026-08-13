@@ -114,6 +114,50 @@ type evidenceStructuralAccumulator struct {
 	structuralSeedConsumed bool
 }
 
+// evidenceJournalStructuralStream is the opaque streaming edge exposed to
+// inventory replay. Continuation seeds remain owned by lineageStructuralPlan;
+// callers can only feed the resulting journal stream.
+type evidenceJournalStructuralStream struct {
+	accumulator *evidenceStructuralAccumulator
+}
+
+func openEvidenceJournalStructuralStream(plan *lineageStructuralPlan, id Digest, observer evidenceStructuralObserver) (*evidenceJournalStructuralStream, bool) {
+	if plan != nil {
+		if accumulator, ok := plan.newJournalAccumulator(id, observer); ok {
+			return &evidenceJournalStructuralStream{accumulator: accumulator}, true
+		}
+	}
+	return &evidenceJournalStructuralStream{accumulator: newEvidenceStructuralAccumulator(nil, observer)}, false
+}
+
+func (s *evidenceJournalStructuralStream) beginSegment() error {
+	if s == nil || s.accumulator == nil {
+		return invalidEvidence("chain", "journal stream")
+	}
+	return s.accumulator.beginSegment()
+}
+
+func (s *evidenceJournalStructuralStream) consumeFrame(frame EvidenceFrame, framedBytes uint64) error {
+	if s == nil || s.accumulator == nil {
+		return invalidEvidence("chain", "journal stream")
+	}
+	return s.accumulator.consumeFrame(frame, framedBytes)
+}
+
+func (s *evidenceJournalStructuralStream) endSegment() error {
+	if s == nil || s.accumulator == nil {
+		return invalidEvidence("chain", "journal stream")
+	}
+	return s.accumulator.endSegment()
+}
+
+func (s *evidenceJournalStructuralStream) finish() (*evidenceStructuralReplay, error) {
+	if s == nil || s.accumulator == nil {
+		return nil, invalidEvidence("chain", "journal stream")
+	}
+	return s.accumulator.finish()
+}
+
 func newEvidenceStructuralAccumulator(requirements []evidenceCheckpointRequirement, observer evidenceStructuralObserver) *evidenceStructuralAccumulator {
 	return &evidenceStructuralAccumulator{
 		requirements: requirements,
@@ -772,16 +816,6 @@ func scanLineageChainStructure(frames []LineageIndexFrame) (*lineageStructuralPl
 
 func summaryFromCheckpoint(c GenerationCheckpoint) evidenceJournalSummary {
 	return evidenceJournalSummary{c.RecoveryState, cloneStringPointer(c.MigrationID), cloneUint32Pointer(c.AttemptIndex), cloneDigestPointer(c.LastStatementIntentRecordDigest), cloneDigestPointer(c.LastIntermediateEvidenceRecordDigest), cloneDigestPointer(c.LastCommitIntentRecordDigest), cloneDigestPointer(c.LastTerminalDigest), cloneDigestPointer(c.LastResolutionDigest), cloneDigestPointer(c.PreviousAttemptTerminalDigest), cloneDigestPointer(c.LastIntermediateStateDigest)}
-}
-
-func (p *lineageStructuralPlan) journalRequirements(id Digest) ([]evidenceCheckpointRequirement, bool) {
-	if journal := p.journals[id]; journal != nil {
-		return journal.requirements, true
-	}
-	if p.finalReserved != nil && p.finalReserved.JournalIdentityDigest == id {
-		return nil, true
-	}
-	return nil, false
 }
 
 // newJournalAccumulator is the only production bridge from a strict lineage
