@@ -552,15 +552,27 @@ func generationSnapshotDigest(snapshot *GenerationSnapshot) [32]byte {
 	if snapshot == nil || snapshot.self != snapshot || snapshot.lease == nil || !validGenerationSnapshotFile(snapshot.index) || len(snapshot.segments) == 0 {
 		return [32]byte{}
 	}
+	return generationSnapshotFilesDigest(snapshot.target, snapshot.journal, snapshot.index, snapshot.segments)
+}
+
+func generationSnapshotFilesDigest(target, journal [32]byte, index generationSnapshotFile, segments []generationSnapshotFile) [32]byte {
+	if target == ([32]byte{}) || journal == ([32]byte{}) || !validGenerationSnapshotFile(index) || len(segments) == 0 {
+		return [32]byte{}
+	}
+	for ordinal := range segments {
+		if segments[ordinal].ordinal != uint32(ordinal) || !validGenerationSnapshotFile(segments[ordinal]) {
+			return [32]byte{}
+		}
+	}
 	h := sha256.New()
 	h.Write([]byte("cloud-agents-platform-evidencefs-generation-snapshot/v1\x00"))
-	h.Write(snapshot.target[:])
-	h.Write(snapshot.journal[:])
-	h.Write(snapshot.index.identity[:])
+	h.Write(target[:])
+	h.Write(journal[:])
+	h.Write(index.identity[:])
 	var encoded [8]byte
-	binary.BigEndian.PutUint64(encoded[:], uint64(len(snapshot.segments)))
+	binary.BigEndian.PutUint64(encoded[:], uint64(len(segments)))
 	h.Write(encoded[:])
-	for _, segment := range snapshot.segments {
+	for _, segment := range segments {
 		h.Write(segment.identity[:])
 	}
 	var result [32]byte

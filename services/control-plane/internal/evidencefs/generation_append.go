@@ -22,6 +22,10 @@ type GenerationAppendResult struct {
 	segmentOrdinal           uint32
 	journalPreviousSize      uint64
 	indexPreviousSize        uint64
+	previousIndex            generationSnapshotFile
+	previousSegments         []generationSnapshotFile
+	journalFramed            []byte
+	checkpointFramed         []byte
 }
 
 func (r GenerationAppendResult) Outcome() AdmissionTransitionOutcome { return r.outcome }
@@ -95,11 +99,16 @@ func (l *GenerationLease) AppendExistingSegmentComposite(ctx context.Context, sn
 	checkpointFramed = append([]byte(nil), checkpointFramed...)
 	result.journalFramedDigest = sha256.Sum256(journalFramed)
 	result.checkpointFramedDigest = sha256.Sum256(checkpointFramed)
+	result.previousIndex = indexExpected
+	result.previousSegments = append([]generationSnapshotFile(nil), snapshot.segments...)
+	result.journalFramed = journalFramed
+	result.checkpointFramed = checkpointFramed
 
 	rootFD, err := l.store.freshRoot()
 	if err != nil {
 		l.valid = false
 		invalidateGenerationSnapshotsLocked(l)
+		clearGenerationAppendReconcile(&result)
 		return result, err
 	}
 	lineagesFD, lineageFD, journalFD, segmentFD, indexFD := -1, -1, -1, -1, -1
@@ -125,6 +134,7 @@ func (l *GenerationLease) AppendExistingSegmentComposite(ctx context.Context, sn
 		}
 		l.valid = false
 		invalidateGenerationSnapshotsLocked(l)
+		clearGenerationAppendReconcile(&result)
 		return result, cause
 	}
 	lineagesFD, _, err = l.store.openVerifiedDirectory(rootFD, "lineages")
@@ -237,7 +247,18 @@ func (l *GenerationLease) AppendExistingSegmentComposite(ctx context.Context, sn
 		result.outcome, result.snapshot = AdmissionTransitionUnknown, nil
 		return result, unknown(ErrLeaseInvalid)
 	}
+	clearGenerationAppendReconcile(&result)
 	return result, nil
+}
+
+func clearGenerationAppendReconcile(result *GenerationAppendResult) {
+	if result == nil {
+		return
+	}
+	result.previousIndex = generationSnapshotFile{}
+	result.previousSegments = nil
+	result.journalFramed = nil
+	result.checkpointFramed = nil
 }
 
 func readGenerationAppendFile(ctx context.Context, l *GenerationLease, fd int, expected generationSnapshotFile) ([]byte, error) {

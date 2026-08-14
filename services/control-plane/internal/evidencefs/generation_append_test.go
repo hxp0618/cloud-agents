@@ -161,11 +161,12 @@ func TestGenerationAppendMutationFailuresAreUnknownAndReplayable(t *testing.T) {
 		fault              func(*fakeBackend, *context.Context)
 		journalAppended    bool
 		checkpointAppended bool
+		reconcile          GenerationAppendReconcileState
 	}{
-		{name: "journal-write", fault: func(f *fakeBackend, _ *context.Context) { f.failWriteAt = f.writes + 1 }},
-		{name: "journal-sync", fault: func(f *fakeBackend, _ *context.Context) { f.failFdatasyncAt = f.fdatasyncs + 1 }, journalAppended: true},
-		{name: "checkpoint-write", fault: func(f *fakeBackend, _ *context.Context) { f.failWriteAt = f.writes + 2 }, journalAppended: true},
-		{name: "checkpoint-sync", fault: func(f *fakeBackend, _ *context.Context) { f.failFdatasyncAt = f.fdatasyncs + 2 }, journalAppended: true, checkpointAppended: true},
+		{name: "journal-write", fault: func(f *fakeBackend, _ *context.Context) { f.failWriteAt = f.writes + 1 }, reconcile: GenerationAppendReconcileUnchanged},
+		{name: "journal-sync", fault: func(f *fakeBackend, _ *context.Context) { f.failFdatasyncAt = f.fdatasyncs + 1 }, journalAppended: true, reconcile: GenerationAppendReconcileJournalComplete},
+		{name: "checkpoint-write", fault: func(f *fakeBackend, _ *context.Context) { f.failWriteAt = f.writes + 2 }, journalAppended: true, reconcile: GenerationAppendReconcileJournalComplete},
+		{name: "checkpoint-sync", fault: func(f *fakeBackend, _ *context.Context) { f.failFdatasyncAt = f.fdatasyncs + 2 }, journalAppended: true, checkpointAppended: true, reconcile: GenerationAppendReconcileCompositeComplete},
 		{name: "context-after-journal", fault: func(f *fakeBackend, ctx *context.Context) {
 			value, cancel := context.WithCancel(context.Background())
 			*ctx = value
@@ -175,7 +176,7 @@ func TestGenerationAppendMutationFailuresAreUnknownAndReplayable(t *testing.T) {
 					cancel()
 				}
 			}
-		}, journalAppended: true},
+		}, journalAppended: true, reconcile: GenerationAppendReconcileJournalComplete},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -200,6 +201,11 @@ func TestGenerationAppendMutationFailuresAreUnknownAndReplayable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			baselineHandles := len(f.handles)
+			state, reconcileErr := result.Reconcile(context.Background(), lease, fresh)
+			if reconcileErr != nil || state != test.reconcile || len(f.handles) != baselineHandles {
+				t.Fatalf("reconcile=%q want=%q err=%v handles=%d/%d", state, test.reconcile, reconcileErr, len(f.handles), baselineHandles)
+			}
 			index, _ := fresh.IndexBytes()
 			segment, _ := fresh.SegmentBytes(0)
 			wantIndex, wantSegment := oldIndex, oldSegment
@@ -217,6 +223,154 @@ func TestGenerationAppendMutationFailuresAreUnknownAndReplayable(t *testing.T) {
 				t.Fatalf("close=%v handles=%d", err, len(f.handles))
 			}
 		})
+	}
+}
+
+func TestGenerationAppendReconcileClassifiesPartialSuffixes(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		journal    []byte
+		checkpoint []byte
+		failWrite  int
+		want       GenerationAppendReconcileState
+	}{
+		{name: "journal-torn", journal: []byte("journal"), checkpoint: []byte("checkpoint"), failWrite: 2, want: GenerationAppendReconcileJournalTorn},
+		{name: "checkpoint-torn", journal: []byte("abc"), checkpoint: []byte("checkpoint"), failWrite: 3, want: GenerationAppendReconcileCheckpointTorn},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, lease, _, _ := generationLeaseForSnapshot(t, [][]byte{[]byte("header")})
+			snapshot, err := lease.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.partialWrite = 3
+			f.failWriteAt = f.writes + test.failWrite
+			result, err := lease.AppendExistingSegmentComposite(context.Background(), snapshot, test.journal, test.checkpoint)
+			if !errors.Is(err, ErrUnknown) || result.Outcome() != AdmissionTransitionUnknown || lease.OwnsSnapshot(snapshot) || !lease.Active() {
+				t.Fatalf("err=%v outcome=%q owns=%v active=%v", err, result.Outcome(), lease.OwnsSnapshot(snapshot), lease.Active())
+			}
+			fresh, err := lease.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, err := result.Reconcile(context.Background(), lease, fresh)
+			if err != nil || state != test.want {
+				t.Fatalf("state=%q want=%q err=%v", state, test.want, err)
+			}
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("close=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
+func TestGenerationAppendReconcileRejectsDifferentAheadAndReplacedBytes(t *testing.T) {
+	t.Run("different-suffix", func(t *testing.T) {
+		f, _, lease, target, journal := generationLeaseForSnapshot(t, [][]byte{[]byte("header")})
+		snapshot, err := lease.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.partialWrite = 3
+		f.failWriteAt = f.writes + 2
+		result, err := lease.AppendExistingSegmentComposite(context.Background(), snapshot, []byte("journal"), []byte("checkpoint"))
+		if !errors.Is(err, ErrUnknown) {
+			t.Fatal(err)
+		}
+		_, segment := generationAppendNodes(f, target, journal, 0)
+		segment.data[len(segment.data)-1] ^= 1
+		fresh, err := lease.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state, err := result.Reconcile(context.Background(), lease, fresh); state != "" || !errors.Is(err, ErrCorrupt) || lease.Active() {
+			t.Fatalf("state=%q err=%v active=%v", state, err, lease.Active())
+		}
+		if err := lease.Close(); err != nil || len(f.handles) != 0 {
+			t.Fatalf("close=%v handles=%d", err, len(f.handles))
+		}
+	})
+	t.Run("checkpoint-ahead", func(t *testing.T) {
+		f, _, lease, target, journal := generationLeaseForSnapshot(t, [][]byte{[]byte("header")})
+		snapshot, err := lease.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkpoint := []byte("checkpoint")
+		f.failWriteAt = f.writes + 1
+		result, err := lease.AppendExistingSegmentComposite(context.Background(), snapshot, []byte("journal"), checkpoint)
+		if !errors.Is(err, ErrUnknown) {
+			t.Fatal(err)
+		}
+		index, _ := generationAppendNodes(f, target, journal, 0)
+		appendGenerationTailForTest(index, checkpoint)
+		fresh, err := lease.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state, err := result.Reconcile(context.Background(), lease, fresh); state != "" || !errors.Is(err, ErrCorrupt) || lease.Active() {
+			t.Fatalf("state=%q err=%v active=%v", state, err, lease.Active())
+		}
+		if err := lease.Close(); err != nil || len(f.handles) != 0 {
+			t.Fatalf("close=%v handles=%d", err, len(f.handles))
+		}
+	})
+	t.Run("inode-replacement", func(t *testing.T) {
+		f, _, lease, target, journal := generationLeaseForSnapshot(t, [][]byte{[]byte("header")})
+		snapshot, err := lease.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.failFdatasyncAt = f.fdatasyncs + 1
+		result, err := lease.AppendExistingSegmentComposite(context.Background(), snapshot, []byte("journal"), []byte("checkpoint"))
+		if !errors.Is(err, ErrUnknown) {
+			t.Fatal(err)
+		}
+		dir := f.root.children["lineages"].children[fmt.Sprintf("%x", target)].children[fmt.Sprintf("%x", journal)]
+		current := dir.children[admissionSegmentName(0)]
+		dir.children[admissionSegmentName(0)] = f.regular(admissionSegmentName(0), current.data)
+		fresh, err := lease.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state, err := result.Reconcile(context.Background(), lease, fresh); state != "" || !errors.Is(err, ErrCorrupt) || lease.Active() {
+			t.Fatalf("state=%q err=%v active=%v", state, err, lease.Active())
+		}
+		if err := lease.Close(); err != nil || len(f.handles) != 0 {
+			t.Fatalf("close=%v handles=%d", err, len(f.handles))
+		}
+	})
+}
+
+func TestGenerationAppendReconcileRejectsLiteralAndPrivateMutation(t *testing.T) {
+	f, _, lease, _, _ := generationLeaseForSnapshot(t, [][]byte{[]byte("header")})
+	snapshot, err := lease.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.failWriteAt = f.writes + 1
+	result, err := lease.AppendExistingSegmentComposite(context.Background(), snapshot, []byte("journal"), []byte("checkpoint"))
+	if !errors.Is(err, ErrUnknown) {
+		t.Fatal(err)
+	}
+	fresh, err := lease.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state, err := (GenerationAppendResult{}).Reconcile(context.Background(), lease, fresh); state != "" || !errors.Is(err, ErrLeaseInvalid) || !lease.Active() {
+		t.Fatalf("literal state=%q err=%v active=%v", state, err, lease.Active())
+	}
+	mutated := result
+	mutated.journalFramed = append([]byte(nil), result.journalFramed...)
+	mutated.journalFramed[0] ^= 1
+	if state, err := mutated.Reconcile(context.Background(), lease, fresh); state != "" || !errors.Is(err, ErrLeaseInvalid) || !lease.Active() {
+		t.Fatalf("mutated state=%q err=%v active=%v", state, err, lease.Active())
+	}
+	if state, err := result.Reconcile(context.Background(), lease, fresh); err != nil || state != GenerationAppendReconcileUnchanged {
+		t.Fatalf("genuine state=%q err=%v", state, err)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close=%v handles=%d", err, len(f.handles))
 	}
 }
 
