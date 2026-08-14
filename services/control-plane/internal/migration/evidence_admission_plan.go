@@ -265,33 +265,8 @@ func buildBrandNewAdmissionFrames(history *VerifiedAdmissionHistory, candidate O
 	} else if history.targetState != "" || history.targetIndexRecords != 0 || history.targetIndexTail != "" {
 		return LineageIndexFrame{}, LineageIndexFrame{}, nil, nil, admissionCorrupt("admission-plan", "absent target carries an index boundary", nil)
 	}
-	run := candidate.verifiedRun
-	header := JournalHeader{
-		FormatVersion: EvidenceJournalFormat, ReleaseTrustDecisionDigest: run.releaseTrustDecisionDigest, RunnerProjectionDecisionDigest: run.runnerProjectionDecisionDigest,
-		ExecutionLineageDigest: run.executionLineageDigest, OuterArtifactDigest: run.outerArtifactDigest, OuterArtifactSizeBytes: run.outerArtifactSizeBytes,
-		DecisionRecoveryArtifactSHA256: run.decisionRecoveryArtifactSHA256, DecisionRecoveryArtifactSizeBytes: run.decisionRecoveryArtifactSizeBytes,
-		ManifestDigest: run.manifestDigest, RunnerReleaseDigest: run.runnerReleaseDigest, SchemaBundleDigest: run.schemaBundleDigest,
-		AuthorityProfileDigest: run.authorityProfileDigest, AuthorityBindingDigest: run.authorityBindingDigest,
-		LimitsProfile: EvidenceLimitsProfile, ReservedRecords: history.reservation.ReservedRecords, ReservedBytes: history.reservation.ReservedBytes, ReservedSegments: history.reservation.ReservedSegments,
-	}
-	header.JournalIdentityDigest, err = JournalIdentityDigest(header)
+	reserved, _, err := buildPlannedGenerationReservation(history, candidate, nil)
 	if err != nil {
-		return LineageIndexFrame{}, LineageIndexFrame{}, nil, nil, err
-	}
-	reserved := GenerationReserved{
-		ExecutionLineageDigest: run.executionLineageDigest, JournalIdentityDigest: header.JournalIdentityDigest, RunnerProjectionDecisionDigest: run.runnerProjectionDecisionDigest,
-		SchemaBundleDigest: run.schemaBundleDigest, ReservedRecords: history.reservation.ReservedRecords, ReservedBytes: history.reservation.ReservedBytes,
-		ReservedSegments: history.reservation.ReservedSegments,
-	}
-	reserved.QuotaReservationDigest, err = QuotaReservationDigest(reserved)
-	if err != nil {
-		return LineageIndexFrame{}, LineageIndexFrame{}, nil, nil, err
-	}
-	header.QuotaReservationDigest = reserved.QuotaReservationDigest
-	reserved.PlannedSegment0Header = header
-	headerFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &header}}
-	reserved.ExpectedSegment0HeaderDigest, err = headerFrame.ComputeDigest()
-	if err != nil || reserved.Validate() != nil {
 		return LineageIndexFrame{}, LineageIndexFrame{}, nil, nil, fail(CodeEvidenceRecoveryRequired, "admission-plan", "generation reservation cannot be planned", err)
 	}
 	previous := lineageFrame.RecordDigest
@@ -318,6 +293,47 @@ func buildBrandNewAdmissionFrames(history *VerifiedAdmissionHistory, candidate O
 		return LineageIndexFrame{}, LineageIndexFrame{}, nil, nil, fail(CodeEvidenceJournalLimitExceeded, "admission-plan", "planned index frames exceed candidate reservation", nil)
 	}
 	return lineageFrame, reservedFrame, lineageBytes, reservedBytes, nil
+}
+
+func buildPlannedGenerationReservation(history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate, continuation *LineageContinuationContext) (GenerationReserved, EvidenceFrame, error) {
+	if history == nil || !validOwnedCurrentCandidate(candidate) || history.candidateBinding != candidate.binding || history.target != digestRaw(candidate.verifiedRun.executionLineageDigest) || history.reservation.ReservedRecords == 0 || history.reservation.ReservedJournalBytes == 0 || history.reservation.ReservedSegments == 0 || history.reservation.ReservedBytes != history.reservation.ReservedJournalBytes+history.reservation.ReservedIndexBytes {
+		return GenerationReserved{}, EvidenceFrame{}, fail(CodeEvidenceRecoveryRequired, "admission-plan", "generation reservation facts are unavailable", nil)
+	}
+	if continuation != nil && continuation.Validate() != nil {
+		return GenerationReserved{}, EvidenceFrame{}, fail(CodeEvidenceRecoveryRequired, "admission-plan", "generation continuation is invalid", nil)
+	}
+	run := candidate.verifiedRun
+	header := JournalHeader{
+		FormatVersion: EvidenceJournalFormat, ReleaseTrustDecisionDigest: run.releaseTrustDecisionDigest, RunnerProjectionDecisionDigest: run.runnerProjectionDecisionDigest,
+		ExecutionLineageDigest: run.executionLineageDigest, OuterArtifactDigest: run.outerArtifactDigest, OuterArtifactSizeBytes: run.outerArtifactSizeBytes,
+		DecisionRecoveryArtifactSHA256: run.decisionRecoveryArtifactSHA256, DecisionRecoveryArtifactSizeBytes: run.decisionRecoveryArtifactSizeBytes,
+		ManifestDigest: run.manifestDigest, RunnerReleaseDigest: run.runnerReleaseDigest, SchemaBundleDigest: run.schemaBundleDigest,
+		AuthorityProfileDigest: run.authorityProfileDigest, AuthorityBindingDigest: run.authorityBindingDigest,
+		LimitsProfile: EvidenceLimitsProfile, ReservedRecords: history.reservation.ReservedRecords, ReservedBytes: history.reservation.ReservedBytes, ReservedSegments: history.reservation.ReservedSegments,
+	}
+	var err error
+	header.JournalIdentityDigest, err = JournalIdentityDigest(header)
+	if err != nil {
+		return GenerationReserved{}, EvidenceFrame{}, err
+	}
+	reserved := GenerationReserved{
+		ExecutionLineageDigest: run.executionLineageDigest, JournalIdentityDigest: header.JournalIdentityDigest, RunnerProjectionDecisionDigest: run.runnerProjectionDecisionDigest,
+		SchemaBundleDigest: run.schemaBundleDigest, ReservedRecords: history.reservation.ReservedRecords, ReservedBytes: history.reservation.ReservedBytes,
+		ReservedSegments: history.reservation.ReservedSegments, Continuation: cloneProjectionValue(continuation),
+	}
+	reserved.QuotaReservationDigest, err = QuotaReservationDigest(reserved)
+	if err != nil {
+		return GenerationReserved{}, EvidenceFrame{}, err
+	}
+	header.QuotaReservationDigest = reserved.QuotaReservationDigest
+	reserved.PlannedSegment0Header = header
+	headerFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &header}}
+	reserved.ExpectedSegment0HeaderDigest, err = headerFrame.ComputeDigest()
+	if err != nil || reserved.Validate() != nil {
+		return GenerationReserved{}, EvidenceFrame{}, fail(CodeEvidenceRecoveryRequired, "admission-plan", "generation reservation cannot be planned", err)
+	}
+	headerFrame.RecordDigest = reserved.ExpectedSegment0HeaderDigest
+	return reserved, headerFrame, nil
 }
 
 func admissionPlanDigest(plan *VerifiedAdmissionPlan) [32]byte {
