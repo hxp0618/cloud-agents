@@ -43,8 +43,10 @@ type fakeBackend struct {
 	lstats             int
 	preads             int
 	writes             int
+	failWriteAt        int
 	onWrite            func(*fakeBackend, *fakeNode, int)
 	fdatasyncs         int
+	fdatasyncNames     []string
 	fsyncs             int
 	renames            int
 	unlinks            int
@@ -320,6 +322,9 @@ func (f *fakeBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
 	if f.onWrite != nil {
 		f.onWrite(f, node, f.writes)
 	}
+	if f.failWriteAt > 0 && f.writes == f.failWriteAt {
+		return 0, errors.New("write")
+	}
 	n := len(source)
 	if f.partialWrite > 0 && n > f.partialWrite {
 		n = f.partialWrite
@@ -342,6 +347,9 @@ func (f *fakeBackend) write(fd int, source []byte) (int, error) {
 	if f.onWrite != nil {
 		f.onWrite(f, node, f.writes)
 	}
+	if f.failWriteAt > 0 && f.writes == f.failWriteAt {
+		return 0, errors.New("write")
+	}
 	n := len(source)
 	if f.partialWrite > 0 && n > f.partialWrite {
 		n = f.partialWrite
@@ -351,8 +359,11 @@ func (f *fakeBackend) write(fd int, source []byte) (int, error) {
 	return n, nil
 }
 
-func (f *fakeBackend) fdatasync(int) error {
+func (f *fakeBackend) fdatasync(fd int) error {
 	f.fdatasyncs++
+	if node, err := f.node(fd); err == nil {
+		f.fdatasyncNames = append(f.fdatasyncNames, node.name)
+	}
 	if f.failFdatasync || (f.failFdatasyncAt > 0 && f.fdatasyncs == f.failFdatasyncAt) {
 		return errors.New("fdatasync")
 	}

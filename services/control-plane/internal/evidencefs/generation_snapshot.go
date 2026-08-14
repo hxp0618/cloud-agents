@@ -84,6 +84,13 @@ func (l *GenerationLease) Snapshot(ctx context.Context) (*GenerationSnapshot, er
 		}
 		return nil, err
 	}
+	return l.mintGenerationSnapshotLocked(index, segments)
+}
+
+func (l *GenerationLease) mintGenerationSnapshotLocked(index generationSnapshotFile, segments []generationSnapshotFile) (*GenerationSnapshot, error) {
+	if l == nil || !l.activeLocked() || !validGenerationSnapshotFile(index) || len(segments) == 0 {
+		return nil, ErrLeaseInvalid
+	}
 	snapshot := &GenerationSnapshot{
 		seal: &struct{}{}, lease: l, target: l.target, journal: l.journal,
 		index: compactGenerationSnapshotFile(index), segments: compactGenerationSnapshotFiles(segments),
