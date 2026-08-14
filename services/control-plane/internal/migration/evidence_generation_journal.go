@@ -20,6 +20,8 @@ type generationEvidenceJournal struct {
 	plan             *VerifiedAdmissionPlan
 	history          *VerifiedAdmissionHistory
 	candidateBinding *verifiedEvidenceRunBinding
+	runtimeReceipt   VerifiedContentReceipt
+	recoveryReceipt  VerifiedDecisionRecoveryReceipt
 	lease            *evidencefs.GenerationLease
 	generation       generationIdentity
 	reservation      evidenceQuotaReservation
@@ -36,6 +38,8 @@ type generationEvidenceJournalBinding struct {
 	plan             *VerifiedAdmissionPlan
 	history          *VerifiedAdmissionHistory
 	candidateBinding *verifiedEvidenceRunBinding
+	runtimeBinding   *verifiedContentReceiptBinding
+	recoveryBinding  *verifiedDecisionRecoveryReceiptBinding
 	lease            *evidencefs.GenerationLease
 	canonical        [32]byte
 }
@@ -67,14 +71,18 @@ type generationJournalUnknownAppend struct {
 }
 
 type generationEvidenceJournalRegistryRecord struct {
-	journal        *generationEvidenceJournal
-	binding        *generationEvidenceJournalBinding
-	prior          *GenerationRecoveryReady
-	replay         *GenerationReplayReady
-	lease          *evidencefs.GenerationLease
-	state          *generationEvidenceJournalState
-	canonical      [32]byte
-	stateCanonical [32]byte
+	journal         *generationEvidenceJournal
+	binding         *generationEvidenceJournalBinding
+	prior           *GenerationRecoveryReady
+	replay          *GenerationReplayReady
+	lease           *evidencefs.GenerationLease
+	runtimeReceipt  VerifiedContentReceipt
+	recoveryReceipt VerifiedDecisionRecoveryReceipt
+	runtimeBinding  *verifiedContentReceiptBinding
+	recoveryBinding *verifiedDecisionRecoveryReceiptBinding
+	state           *generationEvidenceJournalState
+	canonical       [32]byte
+	stateCanonical  [32]byte
 }
 
 var generationEvidenceJournalRegistry sync.Map
@@ -94,6 +102,14 @@ func (r *GenerationRecoveryReady) BindJournal(ctx context.Context, candidate Own
 	if err := r.prior.snapshot.Revalidate(ctx); err != nil {
 		return nil, mapEvidenceAdmissionError(err, "generation-journal-bind")
 	}
+	reserved := r.plan.reservedFrame.Record.Reserved
+	if reserved == nil {
+		return nil, fail(CodeEvidenceRecoveryRequired, "generation-journal-bind", "generation reservation authority is unavailable", nil)
+	}
+	runtimeReceipt, recoveryReceipt, receiptsOK := generationReplayReceipts(r.prior, candidate, reserved.PlannedSegment0Header)
+	if !receiptsOK {
+		return nil, fail(CodeEvidenceRecoveryRequired, "generation-journal-bind", "typed publication receipts are unavailable", nil)
+	}
 	_, schema, err := buildBrandNewRecoveryWitness(candidate, r.generation, cloneAdmissionHistoricalVerificationFacts(r.history.currentFacts))
 	if err != nil {
 		return nil, err
@@ -108,12 +124,14 @@ func (r *GenerationRecoveryReady) BindJournal(ctx context.Context, candidate Own
 	}
 	journal := &generationEvidenceJournal{
 		prior: r, replay: r.prior, plan: r.plan, history: r.history, candidateBinding: candidate.binding,
+		runtimeReceipt: runtimeReceipt, recoveryReceipt: recoveryReceipt,
 		lease: r.prior.lease, generation: r.generation, reservation: r.history.reservation, schema: cloneGenerationJournalSchema(schema),
 	}
 	journal.self = journal
 	journal.binding = &generationEvidenceJournalBinding{
 		journal: journal, prior: r, replay: r.prior, plan: r.plan, history: r.history,
-		candidateBinding: candidate.binding, lease: r.prior.lease,
+		candidateBinding: candidate.binding, runtimeBinding: runtimeReceipt.binding,
+		recoveryBinding: recoveryReceipt.binding, lease: r.prior.lease,
 	}
 	journal.binding.canonical = generationEvidenceJournalDigest(journal)
 	state.journal = journal
@@ -122,6 +140,8 @@ func (r *GenerationRecoveryReady) BindJournal(ctx context.Context, candidate Own
 	journal.state = state
 	generationEvidenceJournalRegistry.Store(journal, generationEvidenceJournalRegistryRecord{
 		journal: journal, binding: journal.binding, prior: r, replay: r.prior, lease: r.prior.lease,
+		runtimeReceipt: runtimeReceipt, recoveryReceipt: recoveryReceipt,
+		runtimeBinding: runtimeReceipt.binding, recoveryBinding: recoveryReceipt.binding,
 		state: state, canonical: journal.binding.canonical, stateCanonical: state.canonical,
 	})
 	journal.mu.Lock()
@@ -804,13 +824,19 @@ func (j *generationEvidenceJournal) installStateLocked(state *generationEvidence
 	j.state = state
 	generationEvidenceJournalRegistry.Store(j, generationEvidenceJournalRegistryRecord{
 		journal: j, binding: j.binding, prior: j.prior, replay: j.replay, lease: j.lease,
+		runtimeReceipt: j.runtimeReceipt, recoveryReceipt: j.recoveryReceipt,
+		runtimeBinding: j.runtimeReceipt.binding, recoveryBinding: j.recoveryReceipt.binding,
 		state: state, canonical: j.binding.canonical, stateCanonical: state.canonical,
 	})
 	return j.validLocked()
 }
 
 func (j *generationEvidenceJournal) validLocked() bool {
-	if j == nil || j.self != j || j.closed || j.binding == nil || j.binding.journal != j || j.prior == nil || j.replay == nil || j.plan == nil || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.binding.prior != j.prior || j.binding.replay != j.replay || j.binding.plan != j.plan || j.binding.history != j.history || j.binding.candidateBinding != j.candidateBinding || j.binding.lease != j.lease || j.state == nil || j.state.self != j.state || j.state.journal != j || !j.lease.Active() || j.binding.canonical == ([32]byte{}) || j.binding.canonical != generationEvidenceJournalDigest(j) || j.state.canonical == ([32]byte{}) || j.state.canonical != generationEvidenceJournalStateDigest(j.state) {
+	if j == nil || j.self != j || j.closed || j.binding == nil || j.binding.journal != j || j.prior == nil || j.replay == nil || j.plan == nil || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.binding.prior != j.prior || j.binding.replay != j.replay || j.binding.plan != j.plan || j.binding.history != j.history || j.binding.candidateBinding != j.candidateBinding || j.binding.runtimeBinding != j.runtimeReceipt.binding || j.binding.recoveryBinding != j.recoveryReceipt.binding || j.binding.lease != j.lease || j.state == nil || j.state.self != j.state || j.state.journal != j || !j.lease.Active() || j.binding.canonical == ([32]byte{}) || j.binding.canonical != generationEvidenceJournalDigest(j) || j.state.canonical == ([32]byte{}) || j.state.canonical != generationEvidenceJournalStateDigest(j.state) {
+		return false
+	}
+	reserved := j.plan.reservedFrame.Record.Reserved
+	if reserved == nil || j.generation.owner != j.candidateBinding.owner || !validRuntimeReceipt(j.runtimeReceipt, j.generation.owner, reserved.PlannedSegment0Header.OuterArtifactDigest, reserved.PlannedSegment0Header.OuterArtifactSizeBytes) || !validDecisionRecoveryReceipt(j.recoveryReceipt, j.generation.owner, reserved.PlannedSegment0Header.DecisionRecoveryArtifactSHA256, reserved.PlannedSegment0Header.DecisionRecoveryArtifactSizeBytes) || !j.runtimeReceipt.publication.SameStore(j.recoveryReceipt.publication) {
 		return false
 	}
 	if j.state.unknown == nil {
@@ -822,15 +848,15 @@ func (j *generationEvidenceJournal) validLocked() bool {
 	}
 	registered, ok := generationEvidenceJournalRegistry.Load(j)
 	record, recordOK := registered.(generationEvidenceJournalRegistryRecord)
-	return ok && recordOK && record.journal == j && record.binding == j.binding && record.prior == j.prior && record.replay == j.replay && record.lease == j.lease && record.state == j.state && record.canonical == j.binding.canonical && record.stateCanonical == j.state.canonical
+	return ok && recordOK && record.journal == j && record.binding == j.binding && record.prior == j.prior && record.replay == j.replay && record.lease == j.lease && record.runtimeBinding == j.runtimeReceipt.binding && record.recoveryBinding == j.recoveryReceipt.binding && record.runtimeReceipt == j.runtimeReceipt && record.recoveryReceipt == j.recoveryReceipt && record.state == j.state && record.canonical == j.binding.canonical && record.stateCanonical == j.state.canonical
 }
 
 func generationEvidenceJournalDigest(j *generationEvidenceJournal) [32]byte {
-	if j == nil || j.self != j || j.prior == nil || j.replay == nil || j.plan == nil || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.prior.binding == nil || j.replay.binding == nil || j.plan.binding == nil || j.history.binding == nil || j.reservation.ReservedRecords == 0 || j.reservation.ReservedBytes != j.reservation.ReservedJournalBytes+j.reservation.ReservedIndexBytes {
+	if j == nil || j.self != j || j.prior == nil || j.replay == nil || j.plan == nil || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.prior.binding == nil || j.replay.binding == nil || j.plan.binding == nil || j.history.binding == nil || j.runtimeReceipt.binding == nil || j.recoveryReceipt.binding == nil || j.reservation.ReservedRecords == 0 || j.reservation.ReservedBytes != j.reservation.ReservedJournalBytes+j.reservation.ReservedIndexBytes {
 		return [32]byte{}
 	}
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-generation-evidence-journal/v1\x00"))
+	h.Write([]byte("cloud-agents-platform-generation-evidence-journal/v2\x00"))
 	h.Write(j.prior.binding.canonical[:])
 	h.Write(j.replay.binding.canonical[:])
 	h.Write(j.plan.binding.canonical[:])
@@ -844,6 +870,13 @@ func generationEvidenceJournalDigest(j *generationEvidenceJournal) [32]byte {
 	for _, value := range []Digest{j.generation.executionLineageDigest, j.generation.journalIdentityDigest, j.generation.runnerProjectionDecisionDigest, j.generation.schemaBundleDigest} {
 		writeAdmissionString(h, value.String())
 	}
+	for _, value := range []Digest{j.runtimeReceipt.digest, j.recoveryReceipt.digest} {
+		writeAdmissionString(h, value.String())
+	}
+	writeAdmissionString(h, string(j.runtimeReceipt.kind))
+	writeAdmissionUint(h, j.runtimeReceipt.sizeBytes)
+	writeAdmissionString(h, string(j.recoveryReceipt.kind))
+	writeAdmissionUint(h, j.recoveryReceipt.sizeBytes)
 	for _, value := range []uint64{j.reservation.ReservedRecords, j.reservation.ReservedJournalBytes, uint64(j.reservation.ReservedSegments), j.reservation.ReservedCheckpointRecords, j.reservation.ReservedIndexRecords, j.reservation.ReservedIndexBytes, j.reservation.ReservedBytes} {
 		writeAdmissionUint(h, value)
 	}

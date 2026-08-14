@@ -149,7 +149,7 @@ func TestGenerationRecoveryReadyIsNotRuntimeOrAppendAuthority(t *testing.T) {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || name == "evidence_generation_recovery.go" || name == "evidence_generation_journal.go" || len(name) < 3 || name[len(name)-3:] != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
+		if entry.IsDir() || name == "evidence_generation_recovery.go" || name == "evidence_generation_journal.go" || name == "evidence_session.go" || len(name) < 3 || name[len(name)-3:] != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)

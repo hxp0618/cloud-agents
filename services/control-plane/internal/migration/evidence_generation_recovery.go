@@ -174,17 +174,29 @@ func buildBrandNewRecoveryWitness(candidate OwnedCurrentCandidate, generation ge
 }
 
 func validGenerationReplayReceiptAuthority(replay *GenerationReplayReady, candidate OwnedCurrentCandidate, header JournalHeader) bool {
+	_, _, ok := generationReplayReceipts(replay, candidate, header)
+	return ok
+}
+
+// generationReplayReceipts is the only bridge from the consumed admission
+// chain into normal-run receipt ownership. The handoff registry, rather than
+// mutable predecessor fields alone, proves that both exact receipt bindings
+// crossed the filesystem handoff with this replay lease.
+func generationReplayReceipts(replay *GenerationReplayReady, candidate OwnedCurrentCandidate, header JournalHeader) (VerifiedContentReceipt, VerifiedDecisionRecoveryReceipt, bool) {
 	if replay == nil || replay.prior == nil || replay.prior.prior == nil || replay.plan == nil || replay.plan.reservedFrame.Record.Reserved == nil || !validOwnedCurrentCandidate(candidate) || header.Validate() != nil || !canonicalEqual(header, replay.plan.reservedFrame.Record.Reserved.PlannedSegment0Header) {
-		return false
+		return VerifiedContentReceipt{}, VerifiedDecisionRecoveryReceipt{}, false
 	}
 	registered, ok := generationHandoffReadyRegistry.Load(replay.prior)
 	record, recordOK := registered.(generationHandoffReadyRegistryRecord)
-	if !ok || !recordOK || record.ready != replay.prior || record.prior != replay.prior.prior || record.runtimeReceipt.binding == nil || record.recoveryReceipt.binding == nil {
-		return false
+	if !ok || !recordOK || record.ready != replay.prior || record.binding != replay.prior.binding || record.prior != replay.prior.prior || record.candidateBinding != candidate.binding || record.lease != replay.lease || record.canonical == ([32]byte{}) || record.canonical != replay.prior.binding.canonical || record.runtimeReceipt.binding == nil || record.recoveryReceipt.binding == nil || record.runtimeReceipt.binding != record.prior.runtimeReceipt.binding || record.recoveryReceipt.binding != record.prior.recoveryReceipt.binding {
+		return VerifiedContentReceipt{}, VerifiedDecisionRecoveryReceipt{}, false
 	}
-	return validRuntimeReceipt(record.runtimeReceipt, candidate.owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) &&
-		validDecisionRecoveryReceipt(record.recoveryReceipt, candidate.owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) &&
-		record.runtimeReceipt.publication.SameStore(record.recoveryReceipt.publication)
+	if !validRuntimeReceipt(record.runtimeReceipt, candidate.owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) ||
+		!validDecisionRecoveryReceipt(record.recoveryReceipt, candidate.owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) ||
+		!record.runtimeReceipt.publication.SameStore(record.recoveryReceipt.publication) {
+		return VerifiedContentReceipt{}, VerifiedDecisionRecoveryReceipt{}, false
+	}
+	return record.runtimeReceipt, record.recoveryReceipt, true
 }
 
 func cloneUint32Map(input map[string]uint32) map[string]uint32 {

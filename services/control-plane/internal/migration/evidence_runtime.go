@@ -333,6 +333,7 @@ type ActiveGeneration struct {
 	contentReceipt            VerifiedContentReceipt
 	decisionRecoveryReceipt   VerifiedDecisionRecoveryReceipt
 	recoveryExecutionBindings *VerifiedRecoveryExecutionBindings
+	binding                   *activeGenerationBinding
 }
 
 type GenerationDescriptor struct {
