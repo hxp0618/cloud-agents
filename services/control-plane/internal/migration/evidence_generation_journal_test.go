@@ -246,10 +246,119 @@ func TestRenewGenerationJournalRecoveryRebindsAllNestedBodies(t *testing.T) {
 	}
 }
 
+func TestRegisteredGenerationJournalStateUsesExactRenewedReplayFacts(t *testing.T) {
+	replay, identity, _, _, _, _ := registeredGenerationReplayFixture(t, 5)
+	ready := &RegisteredGenerationRecoveryReady{
+		snapshot: &evidencefs.GenerationSnapshot{}, replay: replay, generation: identity,
+		cursor: replay.cursor.clone(), recovery: cloneRecoverySnapshot(replay.recovery), snapshotIdentity: [32]byte{12},
+	}
+	state, err := registeredGenerationJournalStateFromFacts(ready, ready.snapshotIdentity, replay.indexFact, replay.segmentFacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := len(replay.segmentFacts) - 1
+	if state.snapshot != ready.snapshot || state.snapshotIdentity != ready.snapshotIdentity || state.indexFact != replay.indexFact || len(state.segmentFacts) != len(replay.segmentFacts) || state.journalRecords != replay.journalRecords || state.journalBytes != replay.journalBytes || state.segmentRecords != replay.segmentRecords[last] || state.segmentBytes != replay.segmentFacts[last].Size || state.checkpointRecords != replay.checkpointRecords || state.indexDebitRecords != replay.indexDebitRecords || state.indexDebitBytes != replay.indexDebitBytes || !sameCursorIdentity(state.cursor, replay.cursor) || !validRecoverySnapshotForJournal(state.recovery, identity, state.cursor) {
+		t.Fatalf("registered initial state differs: %+v", state)
+	}
+	for name, mutate := range map[string]func(*evidencefs.GenerationFileFact, []evidencefs.GenerationFileFact, *[32]byte){
+		"index": func(index *evidencefs.GenerationFileFact, _ []evidencefs.GenerationFileFact, _ *[32]byte) {
+			index.Size++
+		},
+		"segment": func(_ *evidencefs.GenerationFileFact, segments []evidencefs.GenerationFileFact, _ *[32]byte) {
+			segments[0].IdentityDigest[0]++
+		},
+		"identity": func(_ *evidencefs.GenerationFileFact, _ []evidencefs.GenerationFileFact, identity *[32]byte) {
+			identity[0]++
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			index := replay.indexFact
+			segments := append([]evidencefs.GenerationFileFact(nil), replay.segmentFacts...)
+			identityDigest := ready.snapshotIdentity
+			mutate(&index, segments, &identityDigest)
+			if state, err := registeredGenerationJournalStateFromFacts(ready, identityDigest, index, segments); state != nil || !IsCode(err, CodeEvidenceJournalCorrupt) {
+				t.Fatalf("mutated state=%+v err=%v", state, err)
+			}
+		})
+	}
+}
+
+func TestGenerationEvidenceJournalDigestBindsRegisteredProvenance(t *testing.T) {
+	replay, identity, _, _, _, _ := registeredGenerationReplayFixture(t, 5)
+	registered := &verifiedAdmissionRegisteredGeneration{descriptor: GenerationDescriptor{identity: identity}, replay: replay, canonical: [32]byte{13}}
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{14}}}
+	ready := &RegisteredGenerationRecoveryReady{history: history, registered: registered, replay: replay, binding: &registeredGenerationRecoveryReadyBinding{canonical: [32]byte{15}}}
+	candidateBinding := &verifiedEvidenceRunBinding{owner: identity.owner, canonical: [32]byte{16}}
+	runtimeBinding := &verifiedContentReceiptBinding{}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{}
+	journal := &generationEvidenceJournal{
+		registeredPrior: ready, history: history, candidateBinding: candidateBinding, lease: &evidencefs.GenerationLease{},
+		generation: identity, reservation: replay.reservation, schema: cloneGenerationJournalSchema(replay.schema),
+		runtimeReceipt:  VerifiedContentReceipt{kind: durableRuntimeContentObject, digest: testDigest("registered-runtime"), sizeBytes: 1, binding: runtimeBinding},
+		recoveryReceipt: VerifiedDecisionRecoveryReceipt{kind: durableDecisionRecoveryContentObject, digest: testDigest("registered-recovery"), sizeBytes: 1, binding: recoveryBinding},
+	}
+	journal.self = journal
+	want := generationEvidenceJournalDigest(journal)
+	if want == ([32]byte{}) || !generationJournalProvenanceShape(journal) {
+		t.Fatal("registered journal provenance did not seal")
+	}
+	copyJournal := cloneRegisteredJournalDigestFixture(journal)
+	copyJournal.self = journal
+	if generationEvidenceJournalDigest(copyJournal) != ([32]byte{}) {
+		t.Fatal("copied registered journal retained digest authority")
+	}
+	for name, mutate := range map[string]func(*generationEvidenceJournal){
+		"source":      func(v *generationEvidenceJournal) { v.registeredPrior.binding.canonical[0]++ },
+		"history":     func(v *generationEvidenceJournal) { v.history.binding.canonical[0]++ },
+		"candidate":   func(v *generationEvidenceJournal) { v.candidateBinding.canonical[0]++ },
+		"generation":  func(v *generationEvidenceJournal) { v.generation.journalIdentityDigest = testDigest("other-journal") },
+		"reservation": func(v *generationEvidenceJournal) { v.reservation.ReservedRecords++ },
+		"schema":      func(v *generationEvidenceJournal) { v.schema.finalCatalogDigest = testDigest("other-catalog") },
+		"runtime":     func(v *generationEvidenceJournal) { v.runtimeReceipt.digest = testDigest("other-runtime") },
+		"recovery":    func(v *generationEvidenceJournal) { v.recoveryReceipt.digest = testDigest("other-recovery") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := cloneRegisteredJournalDigestFixture(journal)
+			historyCopy, readyCopy, readyBinding, candidateCopy := *history, *ready, *ready.binding, *candidateBinding
+			historyBinding := *history.binding
+			historyCopy.binding = &historyBinding
+			readyCopy.history, readyCopy.binding = &historyCopy, &readyBinding
+			value.registeredPrior, value.history, value.candidateBinding = &readyCopy, &historyCopy, &candidateCopy
+			value.schema = cloneGenerationJournalSchema(journal.schema)
+			mutate(value)
+			if generationEvidenceJournalDigest(value) == want {
+				t.Fatal("registered journal mutation retained digest")
+			}
+		})
+	}
+	invalid := cloneRegisteredJournalDigestFixture(journal)
+	invalid.prior = &GenerationRecoveryReady{}
+	invalid.replay = &GenerationReplayReady{}
+	invalid.plan = &VerifiedAdmissionPlan{}
+	if generationJournalProvenanceShape(invalid) || generationEvidenceJournalDigest(invalid) != ([32]byte{}) {
+		t.Fatal("mixed brand-new and registered provenance was accepted")
+	}
+}
+
+func cloneRegisteredJournalDigestFixture(source *generationEvidenceJournal) *generationEvidenceJournal {
+	result := &generationEvidenceJournal{
+		prior: source.prior, registeredPrior: source.registeredPrior, replay: source.replay, plan: source.plan,
+		history: source.history, candidateBinding: source.candidateBinding,
+		runtimeReceipt: source.runtimeReceipt, recoveryReceipt: source.recoveryReceipt,
+		lease: source.lease, generation: source.generation, reservation: source.reservation,
+		schema: cloneGenerationJournalSchema(source.schema), binding: source.binding,
+	}
+	result.self = result
+	return result
+}
+
 func TestGenerationEvidenceJournalRejectsLiteralAuthorityAndConsumerSpread(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("journal-literal"))
 	if journal, err := (&GenerationRecoveryReady{}).BindJournal(context.Background(), candidate); journal != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("literal recovery entered journal binder: journal=%T err=%v", journal, err)
+	}
+	if journal, err := (&RegisteredGenerationRecoveryReady{}).BindJournal(context.Background(), candidate); journal != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal registered recovery entered journal binder: journal=%T err=%v", journal, err)
 	}
 	literal := &generationEvidenceJournal{}
 	if _, _, err := literal.Replay(context.Background()); !IsCode(err, CodeEvidenceJournalFailed) {

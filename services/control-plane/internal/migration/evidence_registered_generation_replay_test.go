@@ -86,6 +86,7 @@ func TestVerifiedAdmissionGenerationReplayAuthorityDoesNotSpread(t *testing.T) {
 			"evidence_registered_generation_replay.go":  true,
 			"evidence_admission_history.go":             true,
 			"evidence_registered_generation_handoff.go": true,
+			"evidence_generation_journal.go":            true,
 		},
 		"bindVerifiedAdmissionGenerationReplay": {
 			"evidence_registered_generation_replay.go": true,
@@ -104,6 +105,7 @@ func TestVerifiedAdmissionGenerationReplayAuthorityDoesNotSpread(t *testing.T) {
 			"evidence_registered_generation_replay.go":  true,
 			"evidence_admission_history.go":             true,
 			"evidence_registered_generation_handoff.go": true,
+			"evidence_generation_journal.go":            true,
 		},
 		"buildRecoverySnapshotFromTail": {
 			"evidence_registered_generation_replay.go": true,

@@ -417,7 +417,15 @@ func registeredGenerationRecoveryReadyDigest(ready *RegisteredGenerationRecovery
 }
 
 func validRegisteredGenerationRecoveryReady(ready *RegisteredGenerationRecoveryReady, candidate OwnedCurrentCandidate) bool {
-	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.history == nil || ready.registered == nil || ready.registered.replay == nil || ready.registered.bundle == nil || ready.replay == nil || ready.candidateBinding != candidate.binding || ready.lease == nil || ready.snapshot == nil || ready.binding.prior != ready.prior || ready.binding.history != ready.history || ready.binding.registered != ready.registered || ready.binding.candidateBinding != candidate.binding || ready.binding.lease != ready.lease || ready.binding.snapshot != ready.snapshot || ready.binding.replay != ready.replay || ready.consumed == nil || ready.consumed.Load() || !validOwnedCurrentCandidate(candidate) || ready.prior.consumed == nil || !ready.prior.consumed.Load() || ready.prior.history != ready.history || ready.prior.registered != ready.registered || ready.history.targetGeneration != ready.registered || ready.registered.handoffConsumed == nil || !ready.registered.handoffConsumed.Load() || ready.registered.replay.cursor.valid == nil || ready.registered.replay.cursor.valid.Load() || ready.generation.owner != candidate.owner || !sameGenerationIdentity(ready.generation, ready.registered.descriptor.identity) || !ready.lease.Active() || !ready.lease.OwnsSnapshot(ready.snapshot) || !ready.cursor.Valid() || !sameGenerationIdentity(ready.cursor.generation, ready.generation) || !validRecoverySnapshotForJournal(ready.recovery, ready.generation, ready.cursor) || !validVerifiedAdmissionGenerationReplay(ready.replay, ready.generation) || !sameCursorIdentity(ready.replay.cursor, ready.cursor) || ready.replay.recovery == nil || generationJournalRecoveryDigest(ready.replay.recovery) != generationJournalRecoveryDigest(ready.recovery) || !validRegisteredRuntimeReceipt(ready.registered.runtimeReceipt, candidate.owner, ready.registered.descriptor.header.OuterArtifactDigest, ready.registered.descriptor.header.OuterArtifactSizeBytes) || !validRegisteredDecisionRecoveryReceipt(ready.registered.recoveryReceipt, candidate.owner, ready.registered.descriptor.header.DecisionRecoveryArtifactSHA256, ready.registered.descriptor.header.DecisionRecoveryArtifactSizeBytes) || !registeredReceiptsSameStore(ready.registered.runtimeReceipt, ready.registered.recoveryReceipt) || !validRegisteredGenerationExecutionBindings(ready, candidate) || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != registeredGenerationRecoveryReadyDigest(ready) {
+	return validRegisteredGenerationRecoveryReadyState(ready, candidate, false)
+}
+
+func validConsumedRegisteredGenerationRecoveryReady(ready *RegisteredGenerationRecoveryReady, candidate OwnedCurrentCandidate) bool {
+	return validRegisteredGenerationRecoveryReadyState(ready, candidate, true)
+}
+
+func validRegisteredGenerationRecoveryReadyState(ready *RegisteredGenerationRecoveryReady, candidate OwnedCurrentCandidate, consumed bool) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.history == nil || ready.registered == nil || ready.registered.replay == nil || ready.registered.bundle == nil || ready.replay == nil || ready.candidateBinding != candidate.binding || ready.lease == nil || ready.snapshot == nil || ready.binding.prior != ready.prior || ready.binding.history != ready.history || ready.binding.registered != ready.registered || ready.binding.candidateBinding != candidate.binding || ready.binding.lease != ready.lease || ready.binding.snapshot != ready.snapshot || ready.binding.replay != ready.replay || ready.consumed == nil || ready.consumed.Load() != consumed || !validOwnedCurrentCandidate(candidate) || ready.prior.consumed == nil || !ready.prior.consumed.Load() || ready.prior.history != ready.history || ready.prior.registered != ready.registered || ready.history.targetGeneration != ready.registered || ready.registered.handoffConsumed == nil || !ready.registered.handoffConsumed.Load() || ready.registered.replay.cursor.valid == nil || ready.registered.replay.cursor.valid.Load() || ready.generation.owner != candidate.owner || !sameGenerationIdentity(ready.generation, ready.registered.descriptor.identity) || !ready.lease.Active() || !ready.lease.OwnsSnapshot(ready.snapshot) || !ready.cursor.Valid() || !sameGenerationIdentity(ready.cursor.generation, ready.generation) || !validRecoverySnapshotForJournal(ready.recovery, ready.generation, ready.cursor) || !validVerifiedAdmissionGenerationReplay(ready.replay, ready.generation) || !sameCursorIdentity(ready.replay.cursor, ready.cursor) || ready.replay.recovery == nil || generationJournalRecoveryDigest(ready.replay.recovery) != generationJournalRecoveryDigest(ready.recovery) || !validRegisteredRuntimeReceipt(ready.registered.runtimeReceipt, candidate.owner, ready.registered.descriptor.header.OuterArtifactDigest, ready.registered.descriptor.header.OuterArtifactSizeBytes) || !validRegisteredDecisionRecoveryReceipt(ready.registered.recoveryReceipt, candidate.owner, ready.registered.descriptor.header.DecisionRecoveryArtifactSHA256, ready.registered.descriptor.header.DecisionRecoveryArtifactSizeBytes) || !registeredReceiptsSameStore(ready.registered.runtimeReceipt, ready.registered.recoveryReceipt) || !validRegisteredGenerationExecutionBindings(ready, candidate) || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != registeredGenerationRecoveryReadyDigest(ready) {
 		return false
 	}
 	identity, err := registeredGenerationSnapshotIdentity(ready.snapshot, ready.replay)
@@ -490,10 +498,17 @@ func (r *RegisteredGenerationRecoveryReady) Close() error {
 	if r == nil || r.self != r || r.consumed == nil || !r.consumed.CompareAndSwap(false, true) {
 		return admissionFailed("registered-generation-recovery-close", "registered generation recovery authority is unavailable", nil)
 	}
+	return closeRegisteredGenerationRecoveryReady(r, "registered-generation-recovery-close")
+}
+
+func closeRegisteredGenerationRecoveryReady(r *RegisteredGenerationRecoveryReady, operation string) error {
+	if r == nil || r.self != r || operation == "" {
+		return admissionFailed(operation, "registered generation recovery authority is unavailable", nil)
+	}
 	registered, ok := registeredGenerationRecoveryReadyRegistry.Load(r)
 	record, recordOK := registered.(registeredGenerationRecoveryReadyRegistryRecord)
 	if !ok || !recordOK || record.ready != r || record.binding == nil || record.prior == nil || record.history == nil || record.registered == nil || record.lease == nil || record.replay == nil || record.cursorValid == nil || record.canonical == ([32]byte{}) {
-		return admissionFailed("registered-generation-recovery-close", "immutable registered generation lease is unavailable", nil)
+		return admissionFailed(operation, "immutable registered generation lease is unavailable", nil)
 	}
 	registeredGenerationRecoveryReadyRegistry.Delete(r)
 	registeredGenerationHandoffPermitRegistry.Delete(record.prior)
@@ -503,7 +518,7 @@ func (r *RegisteredGenerationRecoveryReady) Close() error {
 	record.cursorValid.Store(false)
 	revokeVerifiedAdmissionRegisteredGeneration(record.registered)
 	if err := record.lease.Close(); err != nil {
-		return mapEvidenceAdmissionError(err, "registered-generation-recovery-close")
+		return mapEvidenceAdmissionError(err, operation)
 	}
 	return nil
 }

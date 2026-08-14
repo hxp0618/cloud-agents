@@ -16,6 +16,7 @@ type generationEvidenceJournal struct {
 	self             *generationEvidenceJournal
 	mu               sync.Mutex
 	prior            *GenerationRecoveryReady
+	registeredPrior  *RegisteredGenerationRecoveryReady
 	replay           *GenerationReplayReady
 	plan             *VerifiedAdmissionPlan
 	history          *VerifiedAdmissionHistory
@@ -34,6 +35,7 @@ type generationEvidenceJournal struct {
 type generationEvidenceJournalBinding struct {
 	journal          *generationEvidenceJournal
 	prior            *GenerationRecoveryReady
+	registeredPrior  *RegisteredGenerationRecoveryReady
 	replay           *GenerationReplayReady
 	plan             *VerifiedAdmissionPlan
 	history          *VerifiedAdmissionHistory
@@ -74,6 +76,7 @@ type generationEvidenceJournalRegistryRecord struct {
 	journal         *generationEvidenceJournal
 	binding         *generationEvidenceJournalBinding
 	prior           *GenerationRecoveryReady
+	registeredPrior *RegisteredGenerationRecoveryReady
 	replay          *GenerationReplayReady
 	lease           *evidencefs.GenerationLease
 	runtimeReceipt  VerifiedContentReceipt
@@ -160,6 +163,63 @@ func (r *GenerationRecoveryReady) BindJournal(ctx context.Context, candidate Own
 	return journal, nil
 }
 
+// BindJournal consumes an exact registered-generation handoff and enters the
+// same append/reconcile state machine used by a brand-new generation. The two
+// provenance branches remain concrete and mutually exclusive; no interface or
+// caller-supplied replay facts can authorize this bridge.
+func (r *RegisteredGenerationRecoveryReady) BindJournal(ctx context.Context, candidate OwnedCurrentCandidate) (EvidenceJournal, error) {
+	if r == nil || !validRegisteredGenerationRecoveryReady(r, candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "registered-generation-journal-bind", "registered generation recovery authority is unavailable", nil)
+	}
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, err
+	}
+	if err := r.snapshot.Revalidate(ctx); err != nil {
+		return nil, mapEvidenceAdmissionError(err, "registered-generation-journal-bind")
+	}
+	state, err := initialRegisteredGenerationJournalState(r)
+	if err != nil {
+		return nil, err
+	}
+	if !r.consumed.CompareAndSwap(false, true) {
+		state.cursor.valid.Store(false)
+		return nil, fail(CodeEvidenceRecoveryRequired, "registered-generation-journal-bind", "registered generation recovery authority is consumed", nil)
+	}
+	journal := &generationEvidenceJournal{
+		registeredPrior: r, history: r.history, candidateBinding: candidate.binding,
+		runtimeReceipt: r.registered.runtimeReceipt, recoveryReceipt: r.registered.recoveryReceipt,
+		lease: r.lease, generation: r.generation, reservation: r.replay.reservation,
+		schema: cloneGenerationJournalSchema(r.replay.schema),
+	}
+	journal.self = journal
+	journal.binding = &generationEvidenceJournalBinding{
+		journal: journal, registeredPrior: r, history: r.history, candidateBinding: candidate.binding,
+		runtimeBinding: journal.runtimeReceipt.binding, recoveryBinding: journal.recoveryReceipt.binding, lease: r.lease,
+	}
+	journal.binding.canonical = generationEvidenceJournalDigest(journal)
+	state.journal, state.self = journal, state
+	state.canonical = generationEvidenceJournalStateDigest(state)
+	journal.state = state
+	generationEvidenceJournalRegistry.Store(journal, generationEvidenceJournalRegistryRecord{
+		journal: journal, binding: journal.binding, registeredPrior: r, lease: r.lease,
+		runtimeReceipt: journal.runtimeReceipt, recoveryReceipt: journal.recoveryReceipt,
+		runtimeBinding: journal.runtimeReceipt.binding, recoveryBinding: journal.recoveryReceipt.binding,
+		state: state, canonical: journal.binding.canonical, stateCanonical: state.canonical,
+	})
+	journal.mu.Lock()
+	valid := journal.validLocked()
+	journal.mu.Unlock()
+	if !valid {
+		generationEvidenceJournalRegistry.Delete(journal)
+		state.cursor.valid.Store(false)
+		if cleanupErr := closeRegisteredGenerationRecoveryReady(r, "registered-generation-journal-bind-cleanup"); cleanupErr != nil {
+			return nil, cleanupErr
+		}
+		return nil, admissionFailed("registered-generation-journal-bind", "registered journal authority could not be sealed", nil)
+	}
+	return journal, nil
+}
+
 func initialGenerationJournalState(ready *GenerationRecoveryReady) (*generationEvidenceJournalState, error) {
 	if ready == nil || ready.prior == nil || ready.prior.snapshot == nil || ready.plan == nil || ready.history == nil || ready.prior.prior == nil || ready.prior.prior.prior == nil || !validAdmissionRecoveryFacts(ready.history.currentFacts) || !validBrandNewRecoverySnapshot(ready.recovery, ready.generation, ready.cursor, ready.prior.journalTail) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "generation-journal-bind", "initial journal facts are unavailable", nil)
@@ -198,6 +258,53 @@ func initialGenerationJournalState(ready *GenerationRecoveryReady) (*generationE
 		segmentFacts: []evidencefs.GenerationFileFact{segmentFact}, cursor: ready.cursor.clone(), recovery: cloneRecoverySnapshot(ready.recovery),
 		journalRecords: 1, journalBytes: segmentFact.Size, segmentRecords: 1, segmentBytes: segmentFact.Size,
 		checkpointRecords: 0, indexDebitRecords: initialIndexRecords, indexDebitBytes: initialIndexBytes,
+	}, nil
+}
+
+func initialRegisteredGenerationJournalState(ready *RegisteredGenerationRecoveryReady) (*generationEvidenceJournalState, error) {
+	if ready == nil || ready.snapshot == nil || ready.replay == nil || !validVerifiedAdmissionGenerationReplay(ready.replay, ready.generation) || !sameCursorIdentity(ready.cursor, ready.replay.cursor) || !validRecoverySnapshotForJournal(ready.recovery, ready.generation, ready.cursor) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "registered-generation-journal-bind", "registered journal facts are unavailable", nil)
+	}
+	indexFact, err := ready.snapshot.IndexFact()
+	if err != nil {
+		return nil, mapEvidenceAdmissionError(err, "registered-generation-journal-bind")
+	}
+	count, err := ready.snapshot.SegmentCount()
+	if err != nil || count == 0 || uint64(count) != uint64(len(ready.replay.segmentFacts)) {
+		if err == nil {
+			err = evidencefs.ErrCorrupt
+		}
+		return nil, mapEvidenceAdmissionError(err, "registered-generation-journal-bind")
+	}
+	segments := make([]evidencefs.GenerationFileFact, count)
+	for ordinal := uint32(0); ordinal < count; ordinal++ {
+		segments[ordinal], err = ready.snapshot.SegmentFact(ordinal)
+		if err != nil {
+			return nil, mapEvidenceAdmissionError(err, "registered-generation-journal-bind")
+		}
+	}
+	identity, err := ready.snapshot.IdentityDigest()
+	if err != nil {
+		return nil, mapEvidenceAdmissionError(err, "registered-generation-journal-bind")
+	}
+	return registeredGenerationJournalStateFromFacts(ready, identity, indexFact, segments)
+}
+
+func registeredGenerationJournalStateFromFacts(ready *RegisteredGenerationRecoveryReady, identity [32]byte, indexFact evidencefs.GenerationFileFact, segments []evidencefs.GenerationFileFact) (*generationEvidenceJournalState, error) {
+	if ready == nil || ready.snapshot == nil || ready.replay == nil || len(segments) == 0 || !validVerifiedAdmissionGenerationReplay(ready.replay, ready.generation) || !sameCursorIdentity(ready.cursor, ready.replay.cursor) || !validRecoverySnapshotForJournal(ready.recovery, ready.generation, ready.cursor) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "registered-generation-journal-bind", "registered journal facts are unavailable", nil)
+	}
+	last := len(segments) - 1
+	if identity != ready.snapshotIdentity || !registeredGenerationFileFactsMatch(ready.replay, indexFact, segments) || ready.replay.segmentRecords[last] == 0 || ready.replay.journalRecords == 0 || ready.replay.journalBytes == 0 || ready.replay.indexDebitRecords == 0 || ready.replay.indexDebitBytes == 0 {
+		return nil, admissionCorrupt("registered-generation-journal-bind", "registered snapshot differs from verified replay", nil)
+	}
+	return &generationEvidenceJournalState{
+		snapshot: ready.snapshot, snapshotIdentity: identity, indexFact: indexFact,
+		segmentFacts: segments, cursor: ready.cursor.clone(), recovery: cloneRecoverySnapshot(ready.recovery),
+		journalRecords: ready.replay.journalRecords, journalBytes: ready.replay.journalBytes,
+		segmentRecords: ready.replay.segmentRecords[last], segmentBytes: segments[last].Size,
+		checkpointRecords: ready.replay.checkpointRecords,
+		indexDebitRecords: ready.replay.indexDebitRecords, indexDebitBytes: ready.replay.indexDebitBytes,
 	}, nil
 }
 
@@ -300,7 +407,7 @@ func (j *generationEvidenceJournal) Close(ctx context.Context) error {
 	contextErr := contextAdmissionError(ctx)
 	registered, ok := generationEvidenceJournalRegistry.Load(j)
 	record, recordOK := registered.(generationEvidenceJournalRegistryRecord)
-	if j.closed || !ok || !recordOK || record.journal != j || record.replay == nil || record.canonical == ([32]byte{}) {
+	if j.closed || !ok || !recordOK || record.journal != j || (record.replay == nil) == (record.registeredPrior == nil) || record.canonical == ([32]byte{}) {
 		return admissionFailed("generation-journal-close", "immutable journal authority is unavailable", nil)
 	}
 	j.closed = true
@@ -314,7 +421,7 @@ func (j *generationEvidenceJournal) Close(ctx context.Context) error {
 	if record.prior != nil {
 		generationRecoveryReadyRegistry.Delete(record.prior)
 	}
-	if err := closeRegisteredGenerationReplay(record.replay, "generation-journal-close"); err != nil {
+	if err := closeGenerationEvidenceJournalSource(record, "generation-journal-close"); err != nil {
 		return err
 	}
 	return contextErr
@@ -823,7 +930,7 @@ func (j *generationEvidenceJournal) installStateLocked(state *generationEvidence
 	}
 	j.state = state
 	generationEvidenceJournalRegistry.Store(j, generationEvidenceJournalRegistryRecord{
-		journal: j, binding: j.binding, prior: j.prior, replay: j.replay, lease: j.lease,
+		journal: j, binding: j.binding, prior: j.prior, registeredPrior: j.registeredPrior, replay: j.replay, lease: j.lease,
 		runtimeReceipt: j.runtimeReceipt, recoveryReceipt: j.recoveryReceipt,
 		runtimeBinding: j.runtimeReceipt.binding, recoveryBinding: j.recoveryReceipt.binding,
 		state: state, canonical: j.binding.canonical, stateCanonical: state.canonical,
@@ -832,11 +939,11 @@ func (j *generationEvidenceJournal) installStateLocked(state *generationEvidence
 }
 
 func (j *generationEvidenceJournal) validLocked() bool {
-	if j == nil || j.self != j || j.closed || j.binding == nil || j.binding.journal != j || j.prior == nil || j.replay == nil || j.plan == nil || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.binding.prior != j.prior || j.binding.replay != j.replay || j.binding.plan != j.plan || j.binding.history != j.history || j.binding.candidateBinding != j.candidateBinding || j.binding.runtimeBinding != j.runtimeReceipt.binding || j.binding.recoveryBinding != j.recoveryReceipt.binding || j.binding.lease != j.lease || j.state == nil || j.state.self != j.state || j.state.journal != j || !j.lease.Active() || j.binding.canonical == ([32]byte{}) || j.binding.canonical != generationEvidenceJournalDigest(j) || j.state.canonical == ([32]byte{}) || j.state.canonical != generationEvidenceJournalStateDigest(j.state) {
+	if j == nil || j.self != j || j.closed || j.binding == nil || j.binding.journal != j || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.binding.prior != j.prior || j.binding.registeredPrior != j.registeredPrior || j.binding.replay != j.replay || j.binding.plan != j.plan || j.binding.history != j.history || j.binding.candidateBinding != j.candidateBinding || j.binding.runtimeBinding != j.runtimeReceipt.binding || j.binding.recoveryBinding != j.recoveryReceipt.binding || j.binding.lease != j.lease || j.state == nil || j.state.self != j.state || j.state.journal != j || !generationJournalProvenanceValid(j) || !j.lease.Active() || j.binding.canonical == ([32]byte{}) || j.binding.canonical != generationEvidenceJournalDigest(j) || j.state.canonical == ([32]byte{}) || j.state.canonical != generationEvidenceJournalStateDigest(j.state) {
 		return false
 	}
-	reserved := j.plan.reservedFrame.Record.Reserved
-	if reserved == nil || j.generation.owner != j.candidateBinding.owner || !validRuntimeReceipt(j.runtimeReceipt, j.generation.owner, reserved.PlannedSegment0Header.OuterArtifactDigest, reserved.PlannedSegment0Header.OuterArtifactSizeBytes) || !validDecisionRecoveryReceipt(j.recoveryReceipt, j.generation.owner, reserved.PlannedSegment0Header.DecisionRecoveryArtifactSHA256, reserved.PlannedSegment0Header.DecisionRecoveryArtifactSizeBytes) || !j.runtimeReceipt.publication.SameStore(j.recoveryReceipt.publication) {
+	header, ok := generationJournalHeader(j)
+	if !ok || j.generation.owner != j.candidateBinding.owner || !validGenerationJournalReceiptPair(j.runtimeReceipt, j.recoveryReceipt, j.generation.owner, header) {
 		return false
 	}
 	if j.state.unknown == nil {
@@ -848,18 +955,24 @@ func (j *generationEvidenceJournal) validLocked() bool {
 	}
 	registered, ok := generationEvidenceJournalRegistry.Load(j)
 	record, recordOK := registered.(generationEvidenceJournalRegistryRecord)
-	return ok && recordOK && record.journal == j && record.binding == j.binding && record.prior == j.prior && record.replay == j.replay && record.lease == j.lease && record.runtimeBinding == j.runtimeReceipt.binding && record.recoveryBinding == j.recoveryReceipt.binding && record.runtimeReceipt == j.runtimeReceipt && record.recoveryReceipt == j.recoveryReceipt && record.state == j.state && record.canonical == j.binding.canonical && record.stateCanonical == j.state.canonical
+	return ok && recordOK && record.journal == j && record.binding == j.binding && record.prior == j.prior && record.registeredPrior == j.registeredPrior && record.replay == j.replay && record.lease == j.lease && record.runtimeBinding == j.runtimeReceipt.binding && record.recoveryBinding == j.recoveryReceipt.binding && record.runtimeReceipt == j.runtimeReceipt && record.recoveryReceipt == j.recoveryReceipt && record.state == j.state && record.canonical == j.binding.canonical && record.stateCanonical == j.state.canonical
 }
 
 func generationEvidenceJournalDigest(j *generationEvidenceJournal) [32]byte {
-	if j == nil || j.self != j || j.prior == nil || j.replay == nil || j.plan == nil || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.prior.binding == nil || j.replay.binding == nil || j.plan.binding == nil || j.history.binding == nil || j.runtimeReceipt.binding == nil || j.recoveryReceipt.binding == nil || j.reservation.ReservedRecords == 0 || j.reservation.ReservedBytes != j.reservation.ReservedJournalBytes+j.reservation.ReservedIndexBytes {
+	if j == nil || j.self != j || j.history == nil || j.candidateBinding == nil || j.lease == nil || j.history.binding == nil || j.runtimeReceipt.binding == nil || j.recoveryReceipt.binding == nil || j.reservation.ReservedRecords == 0 || j.reservation.ReservedBytes != j.reservation.ReservedJournalBytes+j.reservation.ReservedIndexBytes || !generationJournalProvenanceShape(j) {
 		return [32]byte{}
 	}
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-generation-evidence-journal/v2\x00"))
-	h.Write(j.prior.binding.canonical[:])
-	h.Write(j.replay.binding.canonical[:])
-	h.Write(j.plan.binding.canonical[:])
+	h.Write([]byte("cloud-agents-platform-generation-evidence-journal/v3\x00"))
+	if j.registeredPrior == nil {
+		h.Write([]byte{1})
+		h.Write(j.prior.binding.canonical[:])
+		h.Write(j.replay.binding.canonical[:])
+		h.Write(j.plan.binding.canonical[:])
+	} else {
+		h.Write([]byte{2})
+		h.Write(j.registeredPrior.binding.canonical[:])
+	}
 	h.Write(j.history.binding.canonical[:])
 	h.Write(j.candidateBinding.canonical[:])
 	schemaDigest := generationJournalSchemaDigest(j.schema, j.generation)
@@ -883,6 +996,58 @@ func generationEvidenceJournalDigest(j *generationEvidenceJournal) [32]byte {
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
+}
+
+func generationJournalProvenanceShape(j *generationEvidenceJournal) bool {
+	if j == nil {
+		return false
+	}
+	brandNew := j.prior != nil && j.replay != nil && j.plan != nil && j.registeredPrior == nil && j.prior.binding != nil && j.replay.binding != nil && j.plan.binding != nil
+	registered := j.registeredPrior != nil && j.prior == nil && j.replay == nil && j.plan == nil && j.registeredPrior.binding != nil
+	return brandNew != registered
+}
+
+func generationJournalProvenanceValid(j *generationEvidenceJournal) bool {
+	if !generationJournalProvenanceShape(j) {
+		return false
+	}
+	if j.registeredPrior == nil {
+		return j.prior.consumed != nil && j.prior.consumed.Load() && j.replay == j.prior.prior && j.plan == j.prior.plan && j.history == j.prior.history && j.candidateBinding == j.prior.candidateBinding && j.lease == j.replay.lease
+	}
+	r := j.registeredPrior
+	return r.consumed != nil && r.consumed.Load() && r.history == j.history && r.candidateBinding == j.candidateBinding && r.lease == j.lease && sameGenerationIdentity(r.generation, j.generation) && r.replay != nil && r.replay.reservation == j.reservation && generationJournalSchemaDigest(r.replay.schema, r.generation) == generationJournalSchemaDigest(j.schema, j.generation) && registeredGenerationRecoveryReadyRecordMatches(r)
+}
+
+func registeredGenerationRecoveryReadyRecordMatches(ready *RegisteredGenerationRecoveryReady) bool {
+	if ready == nil || ready.binding == nil || ready.registered == nil || ready.replay == nil || ready.lease == nil || ready.snapshot == nil || ready.cursor.valid == nil {
+		return false
+	}
+	registered, ok := registeredGenerationRecoveryReadyRegistry.Load(ready)
+	record, recordOK := registered.(registeredGenerationRecoveryReadyRegistryRecord)
+	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.history == ready.history && record.registered == ready.registered && record.candidateBinding == ready.candidateBinding && record.lease == ready.lease && record.snapshot == ready.snapshot && record.replay == ready.replay && record.cursorValid == ready.cursor.valid && record.handoffConsumed == ready.registered.handoffConsumed && record.readyConsumed == ready.consumed && record.oldCursorValid == ready.registered.replay.cursor.valid && record.runtimeBinding == ready.registered.runtimeReceipt.binding && record.recoveryBinding == ready.registered.recoveryReceipt.binding && record.sourceCanonical == ready.registered.canonical && record.sourceReplayCanonical == ready.registered.replay.canonical && record.readyReplayCanonical == ready.replay.canonical && record.canonical == ready.binding.canonical
+}
+
+func generationJournalHeader(j *generationEvidenceJournal) (JournalHeader, bool) {
+	if !generationJournalProvenanceShape(j) {
+		return JournalHeader{}, false
+	}
+	if j.registeredPrior != nil {
+		header := j.registeredPrior.registered.descriptor.header
+		return header, header.Validate() == nil && sameGenerationHeader(j.generation, header)
+	}
+	reserved := j.plan.reservedFrame.Record.Reserved
+	if reserved == nil {
+		return JournalHeader{}, false
+	}
+	header := reserved.PlannedSegment0Header
+	return header, header.Validate() == nil && sameGenerationHeader(j.generation, header)
+}
+
+func validGenerationJournalReceiptPair(runtime VerifiedContentReceipt, recovery VerifiedDecisionRecoveryReceipt, owner *evidenceOwnerToken, header JournalHeader) bool {
+	if runtime.publication != nil || recovery.publication != nil {
+		return validRuntimeReceipt(runtime, owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) && validDecisionRecoveryReceipt(recovery, owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) && runtime.publication.SameStore(recovery.publication)
+	}
+	return validRegisteredRuntimeReceipt(runtime, owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) && validRegisteredDecisionRecoveryReceipt(recovery, owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) && registeredReceiptsSameStore(runtime, recovery)
 }
 
 func generationEvidenceJournalStateDigest(state *generationEvidenceJournalState) [32]byte {
@@ -1227,7 +1392,11 @@ func (j *generationEvidenceJournal) failLocked(cause error, operation string) er
 		j.state.unknown.prepared.invalidate()
 	}
 	if ok && recordOK && record.replay != nil {
-		if cleanupErr := closeRegisteredGenerationReplay(record.replay, operation+"-cleanup"); cleanupErr != nil {
+		if cleanupErr := closeGenerationEvidenceJournalSource(record, operation+"-cleanup"); cleanupErr != nil {
+			return cleanupErr
+		}
+	} else if ok && recordOK && record.registeredPrior != nil {
+		if cleanupErr := closeGenerationEvidenceJournalSource(record, operation+"-cleanup"); cleanupErr != nil {
 			return cleanupErr
 		}
 	}
@@ -1235,6 +1404,16 @@ func (j *generationEvidenceJournal) failLocked(cause error, operation string) er
 		return cause
 	}
 	return mapEvidenceAdmissionError(cause, operation)
+}
+
+func closeGenerationEvidenceJournalSource(record generationEvidenceJournalRegistryRecord, operation string) error {
+	if (record.replay == nil) == (record.registeredPrior == nil) {
+		return admissionFailed(operation, "immutable generation journal source is unavailable", nil)
+	}
+	if record.registeredPrior != nil {
+		return closeRegisteredGenerationRecoveryReady(record.registeredPrior, operation)
+	}
+	return closeRegisteredGenerationReplay(record.replay, operation)
 }
 
 func (j *generationEvidenceJournal) reconcileUnknownLocked(ctx context.Context) (JournalCursor, *RecoverySnapshot, error) {
