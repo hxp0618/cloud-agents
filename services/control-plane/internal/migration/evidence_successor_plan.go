@@ -185,6 +185,19 @@ func validVerifiedSuccessorAdmissionPlan(plan *VerifiedSuccessorAdmissionPlan, h
 	return ok && registered == plan.binding.canonical
 }
 
+func validConsumedVerifiedSuccessorAdmissionPlan(plan *VerifiedSuccessorAdmissionPlan, candidate OwnedCurrentCandidate) bool {
+	if plan == nil || plan.self != plan || plan.binding == nil || plan.binding.plan != plan || plan.history == nil || plan.registered == nil || plan.history.targetGeneration != plan.registered || plan.candidateBinding != candidate.binding || plan.authority == nil || plan.binding.history != plan.history || plan.binding.registered != plan.registered || plan.binding.candidateBinding != candidate.binding || plan.binding.authority != plan.authority || plan.consumed == nil || !plan.consumed.Load() || !plan.authority.consumed.Load() || !validOwnedCurrentCandidate(candidate) || plan.history.owner != candidate.verifiedRun.currentDecision.owner || plan.history.candidateBinding != candidate.binding || plan.history.binding == nil || plan.history.binding.owner != plan.history.owner || plan.history.binding.candidateBinding != candidate.binding || plan.history.binding.inventory != plan.history.inventory || plan.history.binding.history != plan.history || plan.history.binding.canonical == ([32]byte{}) || plan.history.binding.canonical != admissionHistoryDigest(plan.history) || !plan.history.rootFacts.valid() || !validVerifiedAdmissionRegisteredGeneration(plan.registered, candidate.verifiedRun.currentDecision) || plan.binding.canonical == ([32]byte{}) || plan.binding.canonical != verifiedSuccessorAdmissionPlanDigest(plan) || !successorAdmissionPlanFramesExact(plan) {
+		return false
+	}
+	execution, subject, err := verifiedSuccessorAuthorityInputs(plan.history, candidate, plan.authority, true)
+	if err != nil || execution.digest != plan.executionDigest || plan.authority.digest != plan.authorityDigest || !canonicalEqual(subject, plan.authoritySubject) {
+		return false
+	}
+	registeredHistory, historyOK := verifiedAdmissionHistoryRegistry.Load(plan.history.binding)
+	registeredPlan, planOK := verifiedSuccessorAdmissionPlanRegistry.Load(plan.binding)
+	return historyOK && registeredHistory == plan.history.binding.canonical && planOK && registeredPlan == plan.binding.canonical
+}
+
 func successorAdmissionPlanFramesExact(plan *VerifiedSuccessorAdmissionPlan) bool {
 	if plan == nil || plan.supersededFrame.Validate() != nil || plan.reservedFrame.Validate() != nil || plan.headerFrame.Validate() != nil || plan.supersededFrame.Record.Superseded == nil || plan.reservedFrame.Record.Reserved == nil || plan.headerFrame.Record.Header == nil || plan.reservedFrame.Sequence != plan.supersededFrame.Sequence+1 || plan.reservedFrame.PreviousRecordDigest == nil || *plan.reservedFrame.PreviousRecordDigest != plan.supersededFrame.RecordDigest || !canonicalEqual(plan.supersededFrame.Record.Superseded.PlannedGenerationReserved, plan.reservedFrame.Record.Reserved) || plan.reservedFrame.Record.Reserved.ExpectedSegment0HeaderDigest != plan.headerFrame.RecordDigest {
 		return false

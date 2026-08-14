@@ -168,14 +168,14 @@ func TestSuccessorPlanBinderRejectsLiteralAuthorityWithoutConsumption(t *testing
 	}
 }
 
-func TestSuccessorPlanAuthorityDoesNotSpreadBeforeTransitionSlice(t *testing.T) {
+func TestSuccessorPlanAuthorityDoesNotSpreadOutsideTransitionSlice(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_plan.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_plan.go" || name == "evidence_successor_content.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
