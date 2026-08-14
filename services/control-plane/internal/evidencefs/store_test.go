@@ -54,6 +54,8 @@ type fakeBackend struct {
 	fdatasyncNames      []string
 	onFdatasync         func(*fakeBackend, *fakeNode, int)
 	fsyncs              int
+	fsyncNames          []string
+	onFsync             func(*fakeBackend, *fakeNode, int)
 	renames             int
 	unlinks             int
 	partialWrite        int
@@ -62,6 +64,7 @@ type fakeBackend struct {
 	failFdatasync       bool
 	failFdatasyncAt     int
 	failFsync           bool
+	failFsyncAt         int
 	failUnlock          bool
 	failCloseNames      map[string]bool
 	failCloseAt         map[string]int
@@ -405,9 +408,15 @@ func (f *fakeBackend) fdatasync(fd int) error {
 	return nil
 }
 
-func (f *fakeBackend) fsync(int) error {
+func (f *fakeBackend) fsync(fd int) error {
 	f.fsyncs++
-	if f.failFsync {
+	if node, err := f.node(fd); err == nil {
+		f.fsyncNames = append(f.fsyncNames, node.name)
+		if f.onFsync != nil {
+			f.onFsync(f, node, f.fsyncs)
+		}
+	}
+	if f.failFsync || (f.failFsyncAt > 0 && f.fsyncs == f.failFsyncAt) {
 		return errors.New("fsync")
 	}
 	return nil
