@@ -298,37 +298,44 @@ type successorIndexSnapshot struct {
 }
 
 func readSuccessorCurrentIndex(ctx context.Context, state *successorAdmissionState, records uint64, tail Digest, expectedDigest [32]byte, expectedSize uint64) (successorIndexSnapshot, error) {
+	if state == nil {
+		return successorIndexSnapshot{}, fail(CodeEvidenceRecoveryRequired, "successor-index-prefix", "successor index prefix authority is unavailable", nil)
+	}
+	return readSuccessorInventoryIndex(ctx, state.inventory, state.target, records, tail, expectedDigest, expectedSize, "successor-index-prefix")
+}
+
+func readSuccessorInventoryIndex(ctx context.Context, inventory *evidencefs.AdmissionInventory, expectedTarget [32]byte, records uint64, tail Digest, expectedDigest [32]byte, expectedSize uint64, op string) (successorIndexSnapshot, error) {
 	var zero successorIndexSnapshot
-	if state == nil || state.inventory == nil || records == 0 || tail.Validate() != nil {
-		return zero, fail(CodeEvidenceRecoveryRequired, "successor-index-prefix", "successor index prefix authority is unavailable", nil)
+	if inventory == nil || expectedTarget == ([32]byte{}) || records == 0 || tail.Validate() != nil {
+		return zero, fail(CodeEvidenceRecoveryRequired, op, "successor index prefix authority is unavailable", nil)
 	}
-	if err := state.inventory.Revalidate(ctx); err != nil {
-		return zero, mapEvidenceAdmissionError(err, "successor-index-prefix-revalidate")
+	if err := inventory.Revalidate(ctx); err != nil {
+		return zero, mapEvidenceAdmissionError(err, op+"-revalidate")
 	}
-	target, targetErr := state.inventory.Target()
-	lineage, lineageErr := state.inventory.Lineage(state.target)
-	absent, absentErr := state.inventory.TargetAbsent()
+	target, targetErr := inventory.Target()
+	lineage, lineageErr := inventory.Lineage(expectedTarget)
+	absent, absentErr := inventory.TargetAbsent()
 	if targetErr != nil || lineageErr != nil || absentErr != nil {
 		for _, accessorErr := range []error{targetErr, lineageErr, absentErr} {
 			if accessorErr != nil {
-				return zero, mapEvidenceAdmissionError(accessorErr, "successor-index-prefix")
+				return zero, mapEvidenceAdmissionError(accessorErr, op)
 			}
 		}
 	}
-	if target != state.target || absent != nil {
-		return zero, admissionCorrupt("successor-index-prefix", "successor target registration changed", nil)
+	if target != expectedTarget || absent != nil {
+		return zero, admissionCorrupt(op, "successor target registration changed", nil)
 	}
 	lineageID, idErr := lineage.ID()
 	index, indexErr := lineage.Index()
 	if idErr != nil || indexErr != nil {
 		for _, accessorErr := range []error{idErr, indexErr} {
 			if accessorErr != nil {
-				return zero, mapEvidenceAdmissionError(accessorErr, "successor-index-prefix")
+				return zero, mapEvidenceAdmissionError(accessorErr, op)
 			}
 		}
 	}
-	if lineageID != state.target {
-		return zero, admissionCorrupt("successor-index-prefix", "successor lineage identity changed", nil)
+	if lineageID != expectedTarget {
+		return zero, admissionCorrupt(op, "successor lineage identity changed", nil)
 	}
 	raw, readErr := index.ReadAll(ctx)
 	digest, digestErr := index.Digest()
@@ -336,7 +343,7 @@ func readSuccessorCurrentIndex(ctx context.Context, state *successorAdmissionSta
 	if readErr != nil || digestErr != nil || sizeErr != nil {
 		for _, accessorErr := range []error{readErr, digestErr, sizeErr} {
 			if accessorErr != nil {
-				return zero, mapEvidenceAdmissionError(accessorErr, "successor-index-prefix")
+				return zero, mapEvidenceAdmissionError(accessorErr, op)
 			}
 		}
 	}
@@ -345,14 +352,14 @@ func readSuccessorCurrentIndex(ctx context.Context, state *successorAdmissionSta
 		return zero, decodeErr
 	}
 	if _, structuralErr := scanLineageChainStructure(frames); structuralErr != nil {
-		return zero, admissionCorrupt("successor-index-prefix", "successor index prefix is structurally invalid", structuralErr)
+		return zero, admissionCorrupt(op, "successor index prefix is structurally invalid", structuralErr)
 	}
 	actualDigest := sha256.Sum256(raw)
 	if len(frames) == 0 || uint64(len(frames)) != records || frames[len(frames)-1].RecordDigest != tail || uint64(len(raw)) != size || actualDigest != digest || expectedDigest != ([32]byte{}) && digest != expectedDigest || expectedSize != 0 && size != expectedSize {
-		return zero, admissionCorrupt("successor-index-prefix", "successor index prefix differs from verified history", nil)
+		return zero, admissionCorrupt(op, "successor index prefix differs from verified history", nil)
 	}
-	if err := state.inventory.Revalidate(ctx); err != nil {
-		return zero, mapEvidenceAdmissionError(err, "successor-index-prefix-terminal-revalidate")
+	if err := inventory.Revalidate(ctx); err != nil {
+		return zero, mapEvidenceAdmissionError(err, op+"-terminal-revalidate")
 	}
 	return successorIndexSnapshot{raw: append([]byte(nil), raw...), frames: frames, digest: digest, size: size, tail: tail}, nil
 }

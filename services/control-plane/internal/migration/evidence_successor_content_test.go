@@ -97,6 +97,16 @@ func TestSuccessorAdmissionStateDigestBindsClosedFacts(t *testing.T) {
 		"index tail":    func(value *successorAdmissionState) { value.indexTail = testDigest("index-tail") },
 		"superseded":    func(value *successorAdmissionState) { value.supersededDigest = testDigest("superseded") },
 		"reserved":      func(value *successorAdmissionState) { value.reservedDigest = testDigest("reserved") },
+		"journal":       func(value *successorAdmissionState) { value.journal = testDigest("journal") },
+		"header digest": func(value *successorAdmissionState) { value.headerDigest = testDigest("header") },
+		"journal count": func(value *successorAdmissionState) { value.journalCount = 1 },
+		"header bytes":  func(value *successorAdmissionState) { value.headerBytes = []byte("header") },
+		"header hash":   func(value *successorAdmissionState) { value.headerBytesHash[0] = 1 },
+		"fs journal":    func(value *successorAdmissionState) { value.fsJournalCandidate[0] = 1 },
+		"activation hash": func(value *successorAdmissionState) {
+			value.activationBytesHash[0] = 1
+		},
+		"activation digest": func(value *successorAdmissionState) { value.activationDigest = testDigest("activation") },
 	} {
 		t.Run(name, func(t *testing.T) {
 			value := *state
@@ -142,6 +152,8 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 		"SuccessorReceiptBoundReady":       true,
 		"SuccessorAdjacentReserveReady":    true,
 		"SuccessorReservedDurablePermit":   true,
+		"SuccessorHeaderDurablePermit":     true,
+		"SuccessorGenerationReadyPermit":   true,
 		"successorAdmissionState":          true,
 		"bindSuccessorAdmissionPermit":     true,
 	}
@@ -151,7 +163,7 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -178,10 +190,12 @@ func TestSuccessorContentConcreteTransitionGraphIsClosed(t *testing.T) {
 		"SuccessorReserveReady":            "BindReceiptPair",
 		"SuccessorReceiptBoundReady":       "AppendGenerationSuperseded",
 		"SuccessorAdjacentReserveReady":    "AppendGenerationReserved",
-		"SuccessorReservedDurablePermit":   "",
+		"SuccessorReservedDurablePermit":   "CreateGenerationHeader",
+		"SuccessorHeaderDurablePermit":     "AppendGenerationActivated",
+		"SuccessorGenerationReadyPermit":   "",
 	}
 	seen := make(map[string]bool)
-	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go"} {
+	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go", "evidence_successor_activation.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)

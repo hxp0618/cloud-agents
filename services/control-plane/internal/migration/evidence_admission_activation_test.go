@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"bytes"
 	"context"
 	"go/ast"
 	"go/parser"
@@ -184,13 +183,23 @@ func TestGenerationReadyHasOnlyReviewedHandoffConsumer(t *testing.T) {
 		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_activation.go" || name == "evidence_admission_handoff.go" || isTest {
 			continue
 		}
-		raw, err := os.ReadFile(name)
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(raw, []byte("GenerationReadyPermit")) || bytes.Contains(raw, []byte("AppendGenerationActivated")) || bytes.Contains(raw, []byte("validGenerationReadyPermit")) {
-			t.Fatalf("generation-ready authority has an unreviewed production consumer: %s", name)
-		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if ok && (identifier.Name == "GenerationReadyPermit" || identifier.Name == "validGenerationReadyPermit") {
+				t.Fatalf("generation-ready authority has an unreviewed production consumer: %s", name)
+			}
+			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "AppendGenerationActivated" {
+				t.Fatalf("brand-new activation transition has an unreviewed production call: %s", name)
+			}
+			if function, ok := node.(*ast.FuncDecl); ok && function.Name.Name == "AppendGenerationActivated" && name != "evidence_successor_activation.go" {
+				t.Fatalf("brand-new activation transition has an unreviewed production declaration: %s", name)
+			}
+			return true
+		})
 	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "evidence_admission_activation.go", nil, 0)
