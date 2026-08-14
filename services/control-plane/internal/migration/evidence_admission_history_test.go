@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
@@ -149,6 +150,7 @@ func registeredGenerationDigestFixture(t *testing.T, candidate OwnedCurrentCandi
 		runtimeReceipt:   VerifiedContentReceipt{owner: candidate.owner, kind: durableRuntimeContentObject, digest: runtimeBinding.digest, sizeBytes: runtimeBinding.sizeBytes, binding: runtimeBinding},
 		recoveryReceipt:  VerifiedDecisionRecoveryReceipt{owner: candidate.owner, kind: durableDecisionRecoveryContentObject, digest: recoveryBinding.digest, sizeBytes: recoveryBinding.sizeBytes, binding: recoveryBinding},
 		replay:           &verifiedAdmissionGenerationReplay{canonical: [32]byte{9}},
+		handoffConsumed:  &atomic.Bool{},
 	}
 	registered.canonical = verifiedAdmissionRegisteredGenerationDigest(registered)
 	if registered.canonical == ([32]byte{}) {

@@ -83,23 +83,27 @@ func TestVerifiedAdmissionGenerationReplayAuthorityDoesNotSpread(t *testing.T) {
 	t.Parallel()
 	allowed := map[string]map[string]bool{
 		"verifiedAdmissionGenerationReplay": {
-			"evidence_registered_generation_replay.go": true,
-			"evidence_admission_history.go":            true,
+			"evidence_registered_generation_replay.go":  true,
+			"evidence_admission_history.go":             true,
+			"evidence_registered_generation_handoff.go": true,
 		},
 		"bindVerifiedAdmissionGenerationReplay": {
 			"evidence_registered_generation_replay.go": true,
 			"evidence_admission_history.go":            true,
 		},
 		"cloneVerifiedAdmissionGenerationReplay": {
-			"evidence_registered_generation_replay.go": true,
-			"evidence_admission_history.go":            true,
+			"evidence_registered_generation_replay.go":  true,
+			"evidence_admission_history.go":             true,
+			"evidence_registered_generation_handoff.go": true,
 		},
 		"verifiedAdmissionGenerationReplayDigest": {
-			"evidence_registered_generation_replay.go": true,
+			"evidence_registered_generation_replay.go":  true,
+			"evidence_registered_generation_handoff.go": true,
 		},
 		"validVerifiedAdmissionGenerationReplay": {
-			"evidence_registered_generation_replay.go": true,
-			"evidence_admission_history.go":            true,
+			"evidence_registered_generation_replay.go":  true,
+			"evidence_admission_history.go":             true,
+			"evidence_registered_generation_handoff.go": true,
 		},
 		"buildRecoverySnapshotFromTail": {
 			"evidence_registered_generation_replay.go": true,
