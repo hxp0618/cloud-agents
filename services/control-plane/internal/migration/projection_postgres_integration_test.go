@@ -3,9 +3,11 @@ package migration
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -107,6 +109,7 @@ func TestPGProjectionPostgresMatrix(t *testing.T) {
 	if runnerConnectedDigest != connectedDigest || runnerMigrationRoleDigest != migrationRoleDigest {
 		t.Fatalf("same dedicated runner connection projection drifted: connected=%s/%s migration_role=%s/%s", runnerConnectedDigest, connectedDigest, runnerMigrationRoleDigest, migrationRoleDigest)
 	}
+	runPostgresPublicRunnerAuthorityPreflight(t, ctx, admin, environment, fixture.AuthorityExpected)
 	absentDigest := projectPostgresPreconditionIdle(t, ctx, connectedPool, verifiedSchema, condition, fixture.SchemaAbsent, environment)
 
 	migrationTxDigest, ownedWriteDigest := projectPostgresBorrowedTransaction(
@@ -322,6 +325,44 @@ func projectPostgresRunnerSessionAuthority(t *testing.T, ctx context.Context, en
 		t.Fatalf("release dedicated runner projection lock: %v", err)
 	}
 	return connected, migrationRole
+}
+
+func runPostgresPublicRunnerAuthorityPreflight(t *testing.T, ctx context.Context, admin *pgx.Conn, environment postgresProjectionEnvironment, expected AuthorityExpectedProjections) {
+	t.Helper()
+	raw, decision := buildExactAdmissionRuntimeWithAuthority(t, &expected)
+	verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
+	sink := &runnerEvidenceSinkFake{}
+	observer := &recordingStateObserver{}
+	before := liveVerifiedEvidenceRunBindings()
+	runner := Runner{Trust: verifier, Evidence: sink, Connector: PGXConnector{}, Observer: observer}
+	_, err := runner.Run(ctx, RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: environment.MigrationURL})
+	var migrationErr *Error
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-catalog-preflight" || migrationErr.Err != nil {
+		t.Fatalf("public runner authority preflight boundary: %#v", migrationErr)
+	}
+	if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
+		t.Fatalf("public runner authority preflight leaked evidence authority: session=%+v live=%d/%d", sink.session, liveVerifiedEvidenceRunBindings(), before)
+	}
+	if !reflect.DeepEqual(observer.transitions, []RunnerState{StateVerifyTrust, StateLoadBundle, StateConnect, StateLocked}) {
+		t.Fatalf("public runner authority preflight ordering=%v", observer.transitions)
+	}
+	bundle, err := LoadRuntimeBundle(raw, decision)
+	if err != nil {
+		t.Fatalf("reload public runner fixture: %v", err)
+	}
+	key, err := bundle.Manifest.SchemaBundle.AdvisoryLock.Key()
+	if err != nil {
+		t.Fatalf("public runner advisory key: %v", err)
+	}
+	var acquired bool
+	if err := admin.QueryRow(ctx, "SELECT pg_catalog.pg_try_advisory_lock($1)", key).Scan(&acquired); err != nil || !acquired {
+		t.Fatalf("public runner left the signed advisory lock held: acquired=%v err=%v", acquired, err)
+	}
+	var unlocked bool
+	if err := admin.QueryRow(ctx, "SELECT pg_catalog.pg_advisory_unlock($1)", key).Scan(&unlocked); err != nil || !unlocked {
+		t.Fatalf("release public runner cleanup probe lock: unlocked=%v err=%v", unlocked, err)
+	}
+	assertPostgresSchemaAbsent(t, ctx, admin)
 }
 
 func (contract VerifiedAuthorityContract) expectedProjectionForTest(phase AuthorityPhase) AuthorityProjection {

@@ -69,10 +69,10 @@ func TestPublicRunnerExactAdmissionStopsAtUnconfiguredEvidenceSinkWithZeroSideEf
 	assertNoRunnerSideEffects(t, connector, backend)
 }
 
-func TestPublicRunnerOpensAndClosesEvidenceBeforeUnwiredProjector(t *testing.T) {
+func TestPublicRunnerProjectsBothAuthorityPhasesBeforeCatalogBoundary(t *testing.T) {
 	raw, decision := buildExactAdmissionRuntime(t)
-	backend := &fakeBackend{}
-	connector := &fakeConnector{backend: backend}
+	connector := &runnerPreflightConnector{session: newRunnerPreflightSession()}
+	factory := &runnerPreflightProjectorFactory{}
 	verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
 	sink := &runnerEvidenceSinkFake{}
 	source := &memoryArtifactSource{data: raw}
@@ -80,18 +80,22 @@ func TestPublicRunnerOpensAndClosesEvidenceBeforeUnwiredProjector(t *testing.T) 
 	runner := Runner{
 		Trust: verifier, Evidence: sink, Connector: connector, Observer: observer,
 		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+		projectionFactory: factory,
 	}
 	before := liveVerifiedEvidenceRunBindings()
 	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-projector" {
-		t.Fatalf("evidence-open runner did not stop at the unwired projector boundary: %v", err)
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-catalog-preflight" || migrationErr.Err != nil {
+		t.Fatalf("authority-preflight runner did not stop at the catalog boundary: %v", err)
 	}
-	assertPublicAdmissionCounts(t, verifier, source, observer)
 	if sink.calls != 1 || sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
 		t.Fatalf("evidence session lifecycle mismatch: sink=%d session=%+v live=%d/%d", sink.calls, sink.session, liveVerifiedEvidenceRunBindings(), before)
 	}
-	assertNoRunnerSideEffects(t, connector, backend)
+	wantTransitions := []RunnerState{StateVerifyTrust, StateLoadBundle, StateConnect, StateLocked}
+	if verifier.calls != 1 || source.reads != 1 || !reflect.DeepEqual(observer.transitions, wantTransitions) {
+		t.Fatalf("runner preflight ordering mismatch: verify=%d read=%d transitions=%v", verifier.calls, source.reads, observer.transitions)
+	}
+	assertRunnerAuthorityPreflightLifecycle(t, connector, factory)
 }
 
 func TestPublicRunnerEvidenceOpenClosedResultAndCleanupFaults(t *testing.T) {
@@ -127,7 +131,11 @@ func TestPublicRunnerEvidenceOpenClosedResultAndCleanupFaults(t *testing.T) {
 			test.configure(sink)
 			source := &memoryArtifactSource{data: raw}
 			before := liveVerifiedEvidenceRunBindings()
-			runner := Runner{Trust: verifier, Evidence: sink, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
+			var databaseConnector DatabaseConnector = connector
+			if test.name == "close-failure-dominates" {
+				databaseConnector = nil
+			}
+			runner := Runner{Trust: verifier, Evidence: sink, Connector: databaseConnector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
 			_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 			var migrationErr *Error
 			if !errors.As(err, &migrationErr) || migrationErr.Code != test.want || migrationErr.Err != nil || liveVerifiedEvidenceRunBindings() != before {
@@ -327,8 +335,20 @@ func assertNoRunnerSideEffects(t *testing.T, connector *fakeConnector, backend *
 }
 
 func buildExactAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
+	return buildExactAdmissionRuntimeWithAuthority(t, nil)
+}
+
+func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityExpectedProjections) ([]byte, VerifiedTrustDecision) {
 	t.Helper()
 	fixture := newRunnerBindingFixture(t, []string{"000001"})
+	if expected != nil {
+		fixture.authorityBinding.ExpectedProjections = cloneProjectionValue(*expected)
+		var err error
+		fixture.authority, err = bindVerifiedAuthorityContract(mustCanonicalDigest(t, fixture.authorityBinding), fixture.authorityBinding.ExpectedProjections, fixture.expiresAt, uint64(fixture.authorityBinding.SecurityEpoch))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	direct, catalog := exactPlanBundle(t, fixture.decision.expectedSchemaBundleDigest, fixture.initialScope.BoundPrecondition(), fixture.authorityProfile)
 	entry := direct.Manifest.SchemaBundle.Migrations[0]
 	entry.Name = "test exact admission"

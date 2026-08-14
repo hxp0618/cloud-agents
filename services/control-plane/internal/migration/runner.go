@@ -54,6 +54,8 @@ type Runner struct {
 	Intermediate IntermediateValidator
 	Classifier   StatementClassifier // nil builds the exact signed descriptor classifier
 	Observer     StateObserver
+
+	projectionFactory runnerAuthorityProjectorFactory
 }
 
 type preparedSession struct {
@@ -68,10 +70,10 @@ type databaseState struct {
 	catalog CatalogProjection
 }
 
-// Run is the public production gate. Until the impl-3 evidence journal and
-// projector wiring exist, a successfully admitted exact plan and totally bound
-// evidence candidate still fail closed before advisory-lock derivation or any
-// database side effect.
+// Run is the public production gate. It now admits one evidence session and
+// proves the connected-session and migration-role authority projections on the
+// same dedicated database connection. Catalog, ledger, and migration execution
+// remain fail-closed and unreachable.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err
@@ -124,10 +126,14 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 	if err != nil {
 		return RunResult{}, err
 	}
+	preflightErr := runner.runDatabaseAuthorityPreflight(ctx, request.TargetDSN, bundle, session, candidate)
 	if cleanupErr := closeRunnerEvidenceOwnership(session, candidate); cleanupErr != nil {
 		return RunResult{}, cleanupErr
 	}
-	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-projector", "evidence session admitted but projector and database wiring are not implemented", nil)
+	if preflightErr != nil {
+		return RunResult{}, preflightErr
+	}
+	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-catalog-preflight", "database authority preflight completed but catalog and ledger wiring are not implemented", nil)
 }
 
 func verifyRunnerCurrentEvidence(ctx context.Context, verifier TrustVerifier, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
