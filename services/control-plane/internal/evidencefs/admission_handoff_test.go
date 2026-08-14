@@ -299,3 +299,132 @@ func TestGenerationLeasePairedFieldMutationMissesRegistry(t *testing.T) {
 		t.Fatalf("cleanup=%v handles=%d", err, len(f.handles))
 	}
 }
+
+func TestGenerationLeaseReacquiresFullRootFromSameStore(t *testing.T) {
+	f, _, _, inventory, token, target, journal := admissionWithGenerationForHandoff(t, 2)
+	generation, err := token.HandoffGeneration(context.Background(), inventory, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousDigest := generation.binding.canonical
+	result, err := generation.ReacquireAdmission(context.Background())
+	if err != nil || !result.Valid() || generation.Active() || result.PreviousTarget() != target || result.PreviousJournal() != journal || result.PreviousLeaseDigest() != previousDigest {
+		t.Fatalf("result=%+v err=%v valid=%v oldActive=%v", result, err, result.Valid(), generation.Active())
+	}
+	lease, next, err := result.Admission()
+	if err != nil || lease == nil || next == nil || !lease.Active() {
+		t.Fatalf("lease=%v inventory=%v err=%v", lease, next, err)
+	}
+	gotTarget, targetErr := next.Target()
+	if targetErr != nil || gotTarget != target {
+		t.Fatalf("target=%x err=%v", gotTarget, targetErr)
+	}
+	if err := generation.Close(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("old lease close=%v", err)
+	}
+	if got, want := len(f.handles), 1+2+1; got != want {
+		t.Fatalf("reacquired handles=%d want=%d", got, want)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close=%v handles=%d", err, len(f.handles))
+	}
+	if result.Valid() {
+		t.Fatal("result remained valid after new admission closed")
+	}
+}
+
+func TestGenerationLeaseReacquireCancellationIsIrreversible(t *testing.T) {
+	f, store, _, inventory, token, _, journal := admissionWithGenerationForHandoff(t, 1)
+	generation, err := token.HandoffGeneration(context.Background(), inventory, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := generation.ReacquireAdmission(ctx)
+	if !errors.Is(err, context.Canceled) || result.Valid() || generation.Active() || len(f.handles) != 0 || !store.usable() {
+		t.Fatalf("result=%+v err=%v oldActive=%v handles=%d usable=%v", result, err, generation.Active(), len(f.handles), store.usable())
+	}
+	root, err := store.AcquireRoot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenerationLeaseReacquireCleanupFailurePoisonsStore(t *testing.T) {
+	f, store, _, inventory, token, _, journal := admissionWithGenerationForHandoff(t, 1)
+	generation, err := token.HandoffGeneration(context.Background(), inventory, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.closeAttempts = nil
+	f.unlockAttempts = 0
+	f.failUnlock = true
+	f.failCloseNames["writer.lock"] = true
+	result, err := generation.ReacquireAdmission(context.Background())
+	if !errors.Is(err, ErrFilesystem) || result.Valid() || generation.Active() || store.usable() || f.unlockAttempts != 2 || len(f.closeAttempts) != 2 || len(f.handles) != 0 {
+		t.Fatalf("result=%+v err=%v active=%v usable=%v unlock=%d closes=%v handles=%d", result, err, generation.Active(), store.usable(), f.unlockAttempts, f.closeAttempts, len(f.handles))
+	}
+}
+
+func TestGenerationLeaseReacquireRejectsCopyAndLiteral(t *testing.T) {
+	f, _, _, inventory, token, _, journal := admissionWithGenerationForHandoff(t, 1)
+	generation, err := token.HandoffGeneration(context.Background(), inventory, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyLease := *generation
+	if result, err := copyLease.ReacquireAdmission(context.Background()); !errors.Is(err, ErrLeaseInvalid) || result.Valid() || !generation.Active() {
+		t.Fatalf("copy result=%+v err=%v originalActive=%v", result, err, generation.Active())
+	}
+	if result, err := (&GenerationLease{}).ReacquireAdmission(context.Background()); !errors.Is(err, ErrLeaseInvalid) || result.Valid() {
+		t.Fatalf("literal result=%+v err=%v", result, err)
+	}
+	if (GenerationAdmissionReacquireResult{}).Valid() {
+		t.Fatal("literal result retained authority")
+	}
+	if err := generation.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("cleanup=%v handles=%d", err, len(f.handles))
+	}
+}
+
+func TestGenerationAdmissionReacquireResultRejectsPairedFieldMutation(t *testing.T) {
+	f, _, _, inventory, token, _, journal := admissionWithGenerationForHandoff(t, 1)
+	generation, err := token.HandoffGeneration(context.Background(), inventory, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := generation.ReacquireAdmission(context.Background())
+	if err != nil || !result.Valid() {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	foreignStore := testStore(t, newFakeBackend())
+	faults := map[string]func(*GenerationAdmissionReacquireResult){
+		"target":           func(value *GenerationAdmissionReacquireResult) { value.target[0]++ },
+		"journal":          func(value *GenerationAdmissionReacquireResult) { value.journal[0]++ },
+		"previous digest":  func(value *GenerationAdmissionReacquireResult) { value.previousDigest[0]++ },
+		"previous binding": func(value *GenerationAdmissionReacquireResult) { value.previousBinding = &generationLeaseBinding{} },
+		"store":            func(value *GenerationAdmissionReacquireResult) { value.store = foreignStore },
+		"lease":            func(value *GenerationAdmissionReacquireResult) { value.lease = &AdmissionLease{} },
+		"inventory":        func(value *GenerationAdmissionReacquireResult) { value.inventory = &AdmissionInventory{} },
+	}
+	for name, mutate := range faults {
+		t.Run(name, func(t *testing.T) {
+			value := result
+			mutate(&value)
+			if value.Valid() {
+				t.Fatal("mutated result retained authority")
+			}
+		})
+	}
+	lease, _, err := result.Admission()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("cleanup=%v handles=%d", err, len(f.handles))
+	}
+}

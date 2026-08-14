@@ -51,6 +51,49 @@ type generationLeaseRegistryRecord struct {
 
 var generationLeaseRegistry sync.Map
 
+// GenerationAdmissionReacquireResult proves that one exact GenerationLease
+// was irreversibly released before a new full-root admission was acquired from
+// the same private Store for the same target. It exposes neither Store nor any
+// path/descriptor and cannot revive the previous lease.
+type GenerationAdmissionReacquireResult struct {
+	previous        *GenerationLease
+	previousBinding *generationLeaseBinding
+	previousDigest  [32]byte
+	store           *Store
+	target          [32]byte
+	journal         [32]byte
+	lease           *AdmissionLease
+	inventory       *AdmissionInventory
+}
+
+func (r GenerationAdmissionReacquireResult) Valid() bool {
+	if r.previous == nil || r.previous.mu == nil || r.previousBinding == nil || r.previousDigest == ([32]byte{}) || r.store == nil || r.target == ([32]byte{}) || r.journal == ([32]byte{}) || r.lease == nil || r.inventory == nil {
+		return false
+	}
+	r.previous.mu.Lock()
+	previousValid := r.previous.closed && !r.previous.valid && r.previous.store == r.store && r.previous.target == r.target && r.previous.journal == r.journal && r.previous.binding == r.previousBinding && r.previousBinding.lease == r.previous && r.previousBinding.store == r.store && r.previousBinding.target == r.target && r.previousBinding.journal == r.journal && r.previousBinding.canonical == r.previousDigest
+	r.previous.mu.Unlock()
+	if !previousValid {
+		return false
+	}
+	r.lease.mu.Lock()
+	defer r.lease.mu.Unlock()
+	return r.lease.activeLocked() && r.lease.store == r.store && r.inventory.lease == r.lease && r.inventory.store == r.store && r.inventory.target == r.target && r.inventory.validLocked()
+}
+
+func (r GenerationAdmissionReacquireResult) Admission() (*AdmissionLease, *AdmissionInventory, error) {
+	if !r.Valid() {
+		return nil, nil, ErrLeaseInvalid
+	}
+	return r.lease, r.inventory, nil
+}
+
+func (r GenerationAdmissionReacquireResult) PreviousTarget() [32]byte  { return r.target }
+func (r GenerationAdmissionReacquireResult) PreviousJournal() [32]byte { return r.journal }
+func (r GenerationAdmissionReacquireResult) PreviousLeaseDigest() [32]byte {
+	return r.previousDigest
+}
+
 // Active reports whether the exact lineage and generation lock ownership is
 // still live. A genuine lease remains closable after Store poison.
 func (l *GenerationLease) Active() bool {
@@ -112,17 +155,37 @@ func (l *GenerationLease) Close() error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	_, err := l.closeLocked()
+	return err
+}
+
+type generationLeaseCloseFacts struct {
+	store     *Store
+	target    [32]byte
+	journal   [32]byte
+	binding   *generationLeaseBinding
+	canonical [32]byte
+}
+
+func (l *GenerationLease) closeLocked() (generationLeaseCloseFacts, error) {
+	var facts generationLeaseCloseFacts
 	if l.closed {
-		return ErrLeaseInvalid
+		return facts, ErrLeaseInvalid
 	}
 	l.closed, l.valid = true, false
 	invalidateGenerationSnapshotsLocked(l)
-	lineage, generation, store := l.lineage, l.generation, l.store
+	lineage, generation, store, target, journal, binding := l.lineage, l.generation, l.store, l.target, l.journal, l.binding
+	canonical := [32]byte{}
+	if binding != nil {
+		canonical = binding.canonical
+	}
 	if registered, ok := generationLeaseRegistry.Load(l); ok {
 		if record, recordOK := registered.(generationLeaseRegistryRecord); recordOK && record.lease == l && record.store != nil {
 			lineage, generation, store = record.lineage, record.generation, record.store
+			target, journal, binding, canonical = record.target, record.journal, record.binding, record.canonical
 		}
 	}
+	facts = generationLeaseCloseFacts{store: store, target: target, journal: journal, binding: binding, canonical: canonical}
 	generationLeaseRegistry.Delete(l)
 	failed := releaseJournalLocks(store, []heldJournalLock{generation})
 	failed = releaseLineageLocks(store, []heldLineageLock{lineage}) || failed
@@ -131,9 +194,58 @@ func (l *GenerationLease) Close() error {
 		if store != nil {
 			store.poison()
 		}
-		return filesystem("generation-lease-close")
+		return facts, filesystem("generation-lease-close")
 	}
-	return nil
+	return facts, nil
+}
+
+// ReacquireAdmission is an irreversible lock-order transition. It always
+// releases and invalidates the old generation/lineage lease first, even when
+// ctx is already canceled, then asks that lease's same private Store to acquire
+// the full-root admission set for the exact same target. Any release ambiguity
+// poisons Store and returns no new authority.
+func (l *GenerationLease) ReacquireAdmission(ctx context.Context) (GenerationAdmissionReacquireResult, error) {
+	var result GenerationAdmissionReacquireResult
+	if l == nil || l.self != l || l.seal == nil || l.mu == nil {
+		return result, ErrLeaseInvalid
+	}
+	l.mu.Lock()
+	if !l.activeLocked() {
+		l.mu.Unlock()
+		return result, ErrLeaseInvalid
+	}
+	registered, ok := generationLeaseRegistry.Load(l)
+	record, recordOK := registered.(generationLeaseRegistryRecord)
+	if !ok || !recordOK || record.lease != l || record.binding != l.binding || record.store != l.store || record.target != l.target || record.journal != l.journal || record.canonical == ([32]byte{}) || record.canonical != l.binding.canonical {
+		l.mu.Unlock()
+		return result, ErrLeaseInvalid
+	}
+	facts, closeErr := l.closeLocked()
+	l.mu.Unlock()
+	if closeErr != nil {
+		return result, closeErr
+	}
+	if facts.store != record.store || facts.target != record.target || facts.journal != record.journal || facts.binding != record.binding || facts.canonical != record.canonical {
+		if facts.store != nil {
+			facts.store.poison()
+		}
+		return result, ErrFilesystem
+	}
+	lease, inventory, err := facts.store.AcquireAdmission(ctx, facts.target)
+	if err != nil {
+		return result, err
+	}
+	result = GenerationAdmissionReacquireResult{
+		previous: l, previousBinding: record.binding, previousDigest: record.canonical,
+		store: facts.store, target: facts.target, journal: facts.journal, lease: lease, inventory: inventory,
+	}
+	if !result.Valid() {
+		if cleanupErr := lease.Close(); cleanupErr != nil {
+			return GenerationAdmissionReacquireResult{}, cleanupErr
+		}
+		return GenerationAdmissionReacquireResult{}, ErrUnknown
+	}
+	return result, nil
 }
 
 // HandoffGeneration consumes the current admission revision authority and
