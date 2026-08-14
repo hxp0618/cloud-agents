@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const maxCandidateEnvelopeComponentBytes = 1 << 20
+
 // CandidateEnvelope is opaque signed input. Implementations must verify it
 // against deployment trust roots rather than trusting fields inside the bundle.
 type CandidateEnvelope struct {
@@ -17,6 +19,16 @@ type CandidateEnvelope struct {
 
 type TrustVerifier interface {
 	Verify(context.Context, CandidateEnvelope) (VerifiedTrustDecision, error)
+}
+
+// currentEvidenceTrustVerifier is the production Runner extension of
+// TrustVerifier. The same verifier invocation returns both the current release
+// decision and the deterministic, bounded recovery artifact bytes. Keeping the
+// method package-private prevents callers from overlaying recovery bytes from a
+// second verifier or from loose runtime input.
+type currentEvidenceTrustVerifier interface {
+	TrustVerifier
+	verifyCurrentEvidence(context.Context, CandidateEnvelope) (VerifiedTrustDecision, []byte, error)
 }
 
 // VerifiedTrustDecision has no public constructor. A production verifier in
@@ -150,4 +162,8 @@ type RejectingTrustVerifier struct{}
 
 func (RejectingTrustVerifier) Verify(context.Context, CandidateEnvelope) (VerifiedTrustDecision, error) {
 	return VerifiedTrustDecision{}, fail(CodeUntrusted, "trust", "no production trust verifier is configured", nil)
+}
+
+func (RejectingTrustVerifier) verifyCurrentEvidence(context.Context, CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
+	return VerifiedTrustDecision{}, nil, fail(CodeUntrusted, "trust", "no production trust verifier is configured", nil)
 }

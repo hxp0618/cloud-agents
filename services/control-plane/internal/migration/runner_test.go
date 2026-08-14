@@ -2,9 +2,14 @@ package migration
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -43,20 +48,185 @@ func TestPublicRunnerExactAdmissionStopsAtUnwiredJournalWithZeroSideEffects(t *t
 	raw, decision := buildExactAdmissionRuntime(t)
 	backend := &fakeBackend{}
 	connector := &fakeConnector{backend: backend}
-	verifier := &sequenceTrustVerifier{fallback: decision}
+	verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
 	source := &memoryArtifactSource{data: raw}
 	observer := &recordingStateObserver{}
 	runner := Runner{
 		Trust: verifier, Connector: connector, Observer: observer,
 		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
 	}
+	before := liveVerifiedEvidenceRunBindings()
 	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	var migrationErr *Error
 	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-evidence-journal" {
 		t.Fatalf("exact admission did not stop at the unwired journal boundary: %v", err)
 	}
 	assertPublicAdmissionCounts(t, verifier, source, observer)
+	if liveVerifiedEvidenceRunBindings() != before {
+		t.Fatalf("public runner left a discarded evidence candidate live: got=%d want=%d", liveVerifiedEvidenceRunBindings(), before)
+	}
 	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestPublicRunnerRequiresSameVerifierRecoveryBeforeArtifactRead(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	backend := &fakeBackend{}
+	connector := &fakeConnector{backend: backend}
+	source := &memoryArtifactSource{data: raw}
+	observer := &recordingStateObserver{}
+	runner := Runner{
+		Trust: plainRunnerTrustVerifier{decision: decision}, Connector: connector, Observer: observer,
+		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+	}
+	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	if !IsCode(err, CodeEvidenceRecoveryRequired) || source.reads != 0 || !reflect.DeepEqual(observer.transitions, []RunnerState{StateVerifyTrust}) {
+		t.Fatalf("runner did not reject a verifier without current recovery authority before artifact read: err=%v reads=%d transitions=%v", err, source.reads, observer.transitions)
+	}
+	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestPublicRunnerRejectsMalformedSameVerifierRecoveryWithNoLiveCandidate(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	backend := &fakeBackend{}
+	connector := &fakeConnector{backend: backend}
+	verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: []byte("{}")}
+	source := &memoryArtifactSource{data: raw}
+	before := liveVerifiedEvidenceRunBindings()
+	runner := Runner{
+		Trust: verifier, Connector: connector,
+		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+	}
+	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	if !IsCode(err, CodeEvidenceRecoveryRequired) || verifier.calls != 1 || verifier.evidenceCalls != 1 || source.reads != 1 || liveVerifiedEvidenceRunBindings() != before {
+		t.Fatalf("malformed recovery input crossed or leaked the total binder: err=%v verify=%d evidence=%d reads=%d live=%d/%d", err, verifier.calls, verifier.evidenceCalls, source.reads, liveVerifiedEvidenceRunBindings(), before)
+	}
+	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestPublicRunnerRedactsCurrentEvidenceVerifierFailureBeforeArtifactRead(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	backend := &fakeBackend{}
+	connector := &fakeConnector{backend: backend}
+	verifier := &sequenceTrustVerifier{fallback: decision, recoveryErr: errors.New("secret-current-verifier-cause")}
+	source := &memoryArtifactSource{data: raw}
+	runner := Runner{
+		Trust: verifier, Connector: connector,
+		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+	}
+	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	var migrationErr *Error
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeUntrusted || migrationErr.Err != nil || verifier.calls != 1 || verifier.evidenceCalls != 1 || source.reads != 0 {
+		t.Fatalf("current evidence verifier failure was not redacted before artifact read: err=%#v verify=%d evidence=%d reads=%d", migrationErr, verifier.calls, verifier.evidenceCalls, source.reads)
+	}
+	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestVerifyRunnerCurrentEvidenceOwnsInputAndOutputAndSkipsLooseVerify(t *testing.T) {
+	input := CandidateEnvelope{Subject: []byte("candidate-subject"), DetachedEnvelope: []byte("candidate-envelope")}
+	artifact := []byte("recovery-artifact")
+	verifier := &recordingCurrentEvidenceVerifier{artifact: artifact}
+	_, ownedArtifact, err := verifyRunnerCurrentEvidence(context.Background(), verifier, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Subject[0] ^= 1
+	input.DetachedEnvelope[0] ^= 1
+	artifact[0] ^= 1
+	if verifier.looseCalls != 0 || verifier.evidenceCalls != 1 || string(verifier.candidate.Subject) != "candidate-subject" || string(verifier.candidate.DetachedEnvelope) != "candidate-envelope" || string(ownedArtifact) != "recovery-artifact" {
+		t.Fatalf("combined verifier aliases or call path escaped ownership: loose=%d evidence=%d candidate=%q/%q artifact=%q", verifier.looseCalls, verifier.evidenceCalls, verifier.candidate.Subject, verifier.candidate.DetachedEnvelope, ownedArtifact)
+	}
+}
+
+func TestVerifyRunnerCurrentEvidenceRejectsOversizeBeforeCopy(t *testing.T) {
+	verifier := &recordingCurrentEvidenceVerifier{artifact: make([]byte, maxDecisionRecoveryArtifactBytes+1)}
+	if _, _, err := verifyRunnerCurrentEvidence(context.Background(), verifier, CandidateEnvelope{}); !IsCode(err, CodeEvidenceRecoveryRequired) || verifier.evidenceCalls != 1 {
+		t.Fatalf("oversize recovery artifact was not rejected at the combined verifier boundary: err=%v calls=%d", err, verifier.evidenceCalls)
+	}
+	verifier = &recordingCurrentEvidenceVerifier{artifact: []byte("bounded")}
+	if _, _, err := verifyRunnerCurrentEvidence(context.Background(), verifier, CandidateEnvelope{Subject: make([]byte, maxCandidateEnvelopeComponentBytes+1)}); !IsCode(err, CodeUntrusted) || verifier.evidenceCalls != 0 {
+		t.Fatalf("oversize candidate subject reached the verifier: err=%v calls=%d", err, verifier.evidenceCalls)
+	}
+	if _, _, err := verifyRunnerCurrentEvidence(context.Background(), verifier, CandidateEnvelope{DetachedEnvelope: make([]byte, maxCandidateEnvelopeComponentBytes+1)}); !IsCode(err, CodeUntrusted) || verifier.evidenceCalls != 0 {
+		t.Fatalf("oversize detached envelope reached the verifier: err=%v calls=%d", err, verifier.evidenceCalls)
+	}
+}
+
+func TestCurrentEvidenceVerifierHasOneProductionCallEdge(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "verifyCurrentEvidence" {
+				return true
+			}
+			calls++
+			if name != "runner.go" {
+				t.Fatalf("current evidence verifier call edge spread into %s", name)
+			}
+			return true
+		})
+	}
+	if calls != 1 {
+		t.Fatalf("current evidence verifier call edges=%d want=1", calls)
+	}
+}
+
+func runnerDecisionRecoveryArtifact(t *testing.T, decision VerifiedTrustDecision) []byte {
+	t.Helper()
+	bindings, err := decision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection := func(kind, subject string) decisionRecoveryProjectionSubjectInput {
+		bytes := []byte(subject)
+		return decisionRecoveryProjectionSubjectInput{
+			Kind: kind, SubjectDigest: DigestBytes(bytes),
+			SubjectBase64URLNoPadding:          base64.RawURLEncoding.EncodeToString(bytes),
+			DetachedEnvelopeBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("signature-" + kind)),
+		}
+	}
+	inputs := decisionRecoveryVerificationInputs{
+		FormatVersion: decisionRecoveryArtifactFormatVersion, ProfileDigest: bindings.decisionRecoveryArtifactProfileDigest,
+		OldRunnerProjectionDecisionDigest: bindings.runnerProjectionDecisionDigest,
+		RepositoryIdentity:                decision.repositoryIdentity, ReleaseIdentity: decision.releaseIdentity,
+		CandidateSubjectBase64URLNoPadding:          base64.RawURLEncoding.EncodeToString([]byte("runner-candidate")),
+		CandidateDetachedEnvelopeBase64URLNoPadding: base64.RawURLEncoding.EncodeToString([]byte("runner-candidate-signature")),
+		ProjectionSubjectInputs: []decisionRecoveryProjectionSubjectInput{
+			projection("release", "runner-release-subject"),
+			projection("authority_profile", "runner-authority-profile-subject"),
+			projection("authority_binding", "runner-authority-binding-subject"),
+		},
+	}
+	canonical, err := canonicalContractKey(inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []byte(canonical)
+}
+
+func liveVerifiedEvidenceRunBindings() int {
+	count := 0
+	verifiedEvidenceRunBindingRegistry.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
 }
 
 type recordingStateObserver struct{ transitions []RunnerState }
@@ -582,9 +752,38 @@ func (acceptingIntermediate) ValidateIntermediate(context.Context, Queryer, int,
 }
 
 type sequenceTrustVerifier struct {
-	decisions []VerifiedTrustDecision
-	fallback  VerifiedTrustDecision
-	calls     int
+	recoveryVerifierFake
+	decisions        []VerifiedTrustDecision
+	fallback         VerifiedTrustDecision
+	calls            int
+	evidenceCalls    int
+	recoveryArtifact []byte
+	recoveryErr      error
+}
+
+type plainRunnerTrustVerifier struct{ decision VerifiedTrustDecision }
+
+func (verifier plainRunnerTrustVerifier) Verify(context.Context, CandidateEnvelope) (VerifiedTrustDecision, error) {
+	return verifier.decision, nil
+}
+
+type recordingCurrentEvidenceVerifier struct {
+	decision      VerifiedTrustDecision
+	artifact      []byte
+	candidate     CandidateEnvelope
+	looseCalls    int
+	evidenceCalls int
+}
+
+func (verifier *recordingCurrentEvidenceVerifier) Verify(context.Context, CandidateEnvelope) (VerifiedTrustDecision, error) {
+	verifier.looseCalls++
+	return verifier.decision, nil
+}
+
+func (verifier *recordingCurrentEvidenceVerifier) verifyCurrentEvidence(_ context.Context, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
+	verifier.evidenceCalls++
+	verifier.candidate = candidate
+	return verifier.decision, verifier.artifact, nil
 }
 
 func (verifier *sequenceTrustVerifier) Verify(context.Context, CandidateEnvelope) (VerifiedTrustDecision, error) {
@@ -595,4 +794,16 @@ func (verifier *sequenceTrustVerifier) Verify(context.Context, CandidateEnvelope
 	decision := verifier.decisions[0]
 	verifier.decisions = verifier.decisions[1:]
 	return decision, nil
+}
+
+func (verifier *sequenceTrustVerifier) verifyCurrentEvidence(ctx context.Context, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
+	verifier.evidenceCalls++
+	decision, err := verifier.Verify(ctx, candidate)
+	if err != nil {
+		return VerifiedTrustDecision{}, nil, err
+	}
+	if verifier.recoveryErr != nil {
+		return decision, nil, verifier.recoveryErr
+	}
+	return decision, verifier.recoveryArtifact, nil
 }

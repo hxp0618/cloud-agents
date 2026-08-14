@@ -195,6 +195,15 @@ func TestVerifiedEvidenceRunTotalBinderOwnsInputsAndRejectsEverySwap(t *testing.
 	}
 }
 
+func TestOwnedCurrentCandidateRevocationIsExactAndOneShot(t *testing.T) {
+	bundle := quotaAdmissionBundleForTest(t)
+	candidate := quotaCandidateForBundle(t, bundle, []byte("ignored-shape"))
+	copyCandidate := candidate
+	if !validOwnedCurrentCandidate(candidate) || !revokeOwnedCurrentCandidate(copyCandidate) || validOwnedCurrentCandidate(candidate) || revokeOwnedCurrentCandidate(candidate) {
+		t.Fatal("owned current candidate revocation was not exact, shared, and one-shot")
+	}
+}
+
 func TestOwnedEvidenceRecordIsKindGenerationCursorBoundAndSingleUse(t *testing.T) {
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
 	frames := decodeEvidenceFrames(t, document["frames"])

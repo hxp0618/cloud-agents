@@ -767,6 +767,10 @@ func (verifier testTrustVerifier) Verify(context.Context, CandidateEnvelope) (Ve
 	return verifier.decision, nil
 }
 
+func (verifier testTrustVerifier) verifyCurrentEvidence(context.Context, CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
+	return verifier.decision, nil, nil
+}
+
 type memoryArtifactSource struct {
 	data  []byte
 	read  bool

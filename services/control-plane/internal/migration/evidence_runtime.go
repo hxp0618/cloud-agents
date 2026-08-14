@@ -314,6 +314,19 @@ func validOwnedCurrentCandidate(candidate OwnedCurrentCandidate) bool {
 	return binding.canonical == evidenceRunBindingDigest(run, runtime, recovery)
 }
 
+// revokeOwnedCurrentCandidate invalidates the shared total-binder capability.
+// Runner uses it on every pre-session failure so a discarded candidate cannot
+// leave a live registry authority behind. Future session wiring must retain the
+// binding only until the owning session has closed.
+func revokeOwnedCurrentCandidate(candidate OwnedCurrentCandidate) bool {
+	binding := candidate.binding
+	run, runtime, recovery := candidate.verifiedRun, candidate.runtimeArtifact, candidate.decisionRecoveryArtifact
+	if binding == nil || binding.canonical == ([32]byte{}) || run.binding != binding || runtime.binding != binding || candidate.owner == nil || run.owner != candidate.owner || runtime.owner != candidate.owner || binding.owner != candidate.owner || binding.verifierOwner == nil || binding.verifierOwner.token != candidate.owner || run.currentDecision.owner != binding.verifierOwner || recovery.owner != binding.verifierOwner || evidenceRunBindingDigest(run, runtime, recovery) != binding.canonical {
+		return false
+	}
+	return verifiedEvidenceRunBindingRegistry.CompareAndDelete(binding, binding.canonical)
+}
+
 type activeGenerationKind string
 
 const (

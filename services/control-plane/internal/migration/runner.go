@@ -68,16 +68,17 @@ type databaseState struct {
 }
 
 // Run is the public production gate. Until the impl-3 evidence journal and
-// projector wiring exist, a successfully admitted exact plan still fails
-// closed before advisory-lock derivation or any database side effect.
+// projector wiring exist, a successfully admitted exact plan and totally bound
+// evidence candidate still fail closed before advisory-lock derivation or any
+// database side effect.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err
 	}
 	runner.transition(StateVerifyTrust)
-	decision, err := runner.Trust.Verify(ctx, request.Candidate)
+	decision, recoveryArtifactBytes, err := verifyRunnerCurrentEvidence(ctx, runner.Trust, request.Candidate)
 	if err != nil {
-		return RunResult{}, fail(CodeUntrusted, "trust", "candidate verification failed", err)
+		return RunResult{}, err
 	}
 	if err := decision.validate(); err != nil {
 		return RunResult{}, err
@@ -104,7 +105,39 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 			return RunResult{}, err
 		}
 	}
+	current, recoveryArtifact, err := bindVerifierOwnedDecision(runner.Trust, decision, bindings.runnerProjectionDecisionDigest, recoveryArtifactBytes)
+	if err != nil {
+		return RunResult{}, err
+	}
+	_, _, candidate, err := bindVerifiedEvidenceRun(decision, bindings, current, raw, recoveryArtifact)
+	if err != nil {
+		return RunResult{}, err
+	}
+	if !revokeOwnedCurrentCandidate(candidate) {
+		return RunResult{}, fail(CodeEvidenceJournalFailed, "runner-evidence-candidate-close", "discarded evidence candidate could not be revoked", nil)
+	}
 	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-evidence-journal", "exact plans admitted but evidence journal and projector wiring are not implemented", nil)
+}
+
+func verifyRunnerCurrentEvidence(ctx context.Context, verifier TrustVerifier, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
+	evidenceVerifier, ok := verifier.(currentEvidenceTrustVerifier)
+	if !ok {
+		return VerifiedTrustDecision{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-decision-recovery", "trust verifier cannot mint current recovery authority", nil)
+	}
+	if len(candidate.Subject) > maxCandidateEnvelopeComponentBytes || len(candidate.DetachedEnvelope) > maxCandidateEnvelopeComponentBytes {
+		return VerifiedTrustDecision{}, nil, fail(CodeUntrusted, "trust", "candidate envelope exceeds the verification bound", nil)
+	}
+	ownedCandidate := candidate
+	ownedCandidate.Subject = append([]byte(nil), candidate.Subject...)
+	ownedCandidate.DetachedEnvelope = append([]byte(nil), candidate.DetachedEnvelope...)
+	decision, artifact, err := evidenceVerifier.verifyCurrentEvidence(ctx, ownedCandidate)
+	if err != nil {
+		return VerifiedTrustDecision{}, nil, fail(CodeUntrusted, "trust", "candidate verification failed", nil)
+	}
+	if uint64(len(artifact)) > maxDecisionRecoveryArtifactBytes {
+		return VerifiedTrustDecision{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-decision-recovery", "current recovery artifact exceeds the verification bound", nil)
+	}
+	return decision, append([]byte(nil), artifact...), nil
 }
 
 // runLegacyCharacterization preserves the ADR-0009 state-machine tests while
