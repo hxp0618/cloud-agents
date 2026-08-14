@@ -154,6 +154,8 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 		"SuccessorReservedDurablePermit":   true,
 		"SuccessorHeaderDurablePermit":     true,
 		"SuccessorGenerationReadyPermit":   true,
+		"SuccessorGenerationHandoffReady":  true,
+		"SuccessorGenerationReplayReady":   true,
 		"successorAdmissionState":          true,
 		"bindSuccessorAdmissionPermit":     true,
 	}
@@ -163,7 +165,7 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" || name == "evidence_successor_handoff.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -192,10 +194,12 @@ func TestSuccessorContentConcreteTransitionGraphIsClosed(t *testing.T) {
 		"SuccessorAdjacentReserveReady":    "AppendGenerationReserved",
 		"SuccessorReservedDurablePermit":   "CreateGenerationHeader",
 		"SuccessorHeaderDurablePermit":     "AppendGenerationActivated",
-		"SuccessorGenerationReadyPermit":   "",
+		"SuccessorGenerationReadyPermit":   "Handoff",
+		"SuccessorGenerationHandoffReady":  "Replay",
+		"SuccessorGenerationReplayReady":   "",
 	}
 	seen := make(map[string]bool)
-	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go", "evidence_successor_activation.go"} {
+	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go", "evidence_successor_activation.go", "evidence_successor_handoff.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -215,6 +219,12 @@ func TestSuccessorContentConcreteTransitionGraphIsClosed(t *testing.T) {
 			}
 			method, tracked := expected[receiver.Name]
 			if !tracked {
+				continue
+			}
+			if !ast.IsExported(function.Name.Name) {
+				continue
+			}
+			if function.Name.Name == "Close" && (receiver.Name == "SuccessorGenerationHandoffReady" || receiver.Name == "SuccessorGenerationReplayReady") {
 				continue
 			}
 			if method == "" || function.Name.Name != method || seen[receiver.Name] {

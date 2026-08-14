@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"bytes"
 	"context"
 	"go/ast"
 	"go/parser"
@@ -126,13 +125,17 @@ func TestGenerationHandoffReadyIsNotRuntimeAuthorityAndHasNoConsumer(t *testing.
 		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || name == "evidence_generation_recovery.go" || isTest {
 			continue
 		}
-		raw, err := os.ReadFile(name)
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(raw, []byte("GenerationHandoffReady")) || bytes.Contains(raw, []byte("validGenerationHandoffReady")) {
-			t.Fatalf("handoff-ready authority has unreviewed consumer: %s", name)
-		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if ok && (identifier.Name == "GenerationHandoffReady" || identifier.Name == "validGenerationHandoffReady") {
+				t.Fatalf("handoff-ready authority has unreviewed consumer: %s", name)
+			}
+			return true
+		})
 	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "evidence_admission_handoff.go", nil, 0)
@@ -313,13 +316,17 @@ func TestGenerationReplayReadyIsNotRuntimeAuthority(t *testing.T) {
 		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || name == "evidence_generation_recovery.go" || name == "evidence_generation_journal.go" || isTest {
 			continue
 		}
-		raw, err := os.ReadFile(name)
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(raw, []byte("GenerationReplayReady")) || bytes.Contains(raw, []byte("validGenerationReplayReady")) {
-			t.Fatalf("replay-ready authority has unreviewed consumer: %s", name)
-		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if ok && (identifier.Name == "GenerationReplayReady" || identifier.Name == "validGenerationReplayReady") {
+				t.Fatalf("replay-ready authority has unreviewed consumer: %s", name)
+			}
+			return true
+		})
 	}
 }
 
