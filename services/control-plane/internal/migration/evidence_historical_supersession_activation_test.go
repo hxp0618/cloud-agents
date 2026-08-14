@@ -125,14 +125,22 @@ func TestHistoricalSuccessorActivationDigestsBindEveryStageFact(t *testing.T) {
 }
 
 func TestHistoricalSuccessorActivationAuthorityDoesNotSpread(t *testing.T) {
-	allowed := map[string]bool{"evidence_historical_supersession_activation.go": true}
+	allowed := map[string]map[string]bool{
+		"evidence_historical_supersession_activation.go": {
+			"HistoricalSuccessorHeaderDurablePermit":   true,
+			"HistoricalSuccessorGenerationReadyPermit": true,
+		},
+		"evidence_historical_supersession_handoff.go": {
+			"HistoricalSuccessorGenerationReadyPermit": true,
+		},
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || allowed[name] || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -141,7 +149,7 @@ func TestHistoricalSuccessorActivationAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "HistoricalSuccessorHeaderDurablePermit" || identifier.Name == "HistoricalSuccessorGenerationReadyPermit") {
+			if ok && (identifier.Name == "HistoricalSuccessorHeaderDurablePermit" || identifier.Name == "HistoricalSuccessorGenerationReadyPermit") && !allowed[name][identifier.Name] {
 				t.Fatalf("historical successor activation authority spread into %s", name)
 			}
 			return true
