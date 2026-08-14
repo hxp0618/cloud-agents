@@ -47,6 +47,7 @@ type fakeBackend struct {
 	onWrite            func(*fakeBackend, *fakeNode, int)
 	fdatasyncs         int
 	fdatasyncNames     []string
+	onFdatasync        func(*fakeBackend, *fakeNode, int)
 	fsyncs             int
 	renames            int
 	unlinks            int
@@ -363,6 +364,9 @@ func (f *fakeBackend) fdatasync(fd int) error {
 	f.fdatasyncs++
 	if node, err := f.node(fd); err == nil {
 		f.fdatasyncNames = append(f.fdatasyncNames, node.name)
+		if f.onFdatasync != nil {
+			f.onFdatasync(f, node, f.fdatasyncs)
+		}
 	}
 	if f.failFdatasync || (f.failFdatasyncAt > 0 && f.fdatasyncs == f.failFdatasyncAt) {
 		return errors.New("fdatasync")
