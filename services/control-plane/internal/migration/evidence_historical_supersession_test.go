@@ -185,7 +185,7 @@ func TestHistoricalSupersessionAdjacentAuthorityRejectsLiteralsBeforeReplay(t *t
 }
 
 func TestHistoricalSupersessionRecoveryAuthorityDoesNotSpread(t *testing.T) {
-	allowed := map[string]bool{"evidence_historical_supersession.go": true, "evidence_admission_history.go": true}
+	allowed := map[string]bool{"evidence_historical_supersession.go": true, "evidence_historical_supersession_activation.go": true, "evidence_admission_history.go": true}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

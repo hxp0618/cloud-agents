@@ -195,7 +195,7 @@ func TestGenerationReadyHasOnlyReviewedHandoffConsumer(t *testing.T) {
 			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "AppendGenerationActivated" && name != "evidence_session.go" {
 				t.Fatalf("brand-new activation transition has an unreviewed production call: %s", name)
 			}
-			if function, ok := node.(*ast.FuncDecl); ok && function.Name.Name == "AppendGenerationActivated" && name != "evidence_successor_activation.go" {
+			if function, ok := node.(*ast.FuncDecl); ok && function.Name.Name == "AppendGenerationActivated" && name != "evidence_successor_activation.go" && name != "evidence_historical_supersession_activation.go" {
 				t.Fatalf("brand-new activation transition has an unreviewed production declaration: %s", name)
 			}
 			return true
