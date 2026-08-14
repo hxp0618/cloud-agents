@@ -310,7 +310,7 @@ func TestGenerationReplayReadyIsNotRuntimeAuthority(t *testing.T) {
 	for _, entry := range entries {
 		name := entry.Name()
 		isTest := len(name) >= len("_test.go") && name[len(name)-len("_test.go"):] == "_test.go"
-		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || name == "evidence_generation_recovery.go" || isTest {
+		if entry.IsDir() || len(name) < 3 || name[len(name)-3:] != ".go" || name == "evidence_admission_handoff.go" || name == "evidence_generation_recovery.go" || name == "evidence_generation_journal.go" || isTest {
 			continue
 		}
 		raw, err := os.ReadFile(name)

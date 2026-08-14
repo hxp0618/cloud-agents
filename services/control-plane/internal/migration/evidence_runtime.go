@@ -384,24 +384,17 @@ type AppendResult struct {
 // I/O. Unknown invalidates the input cursor; only a fully durable composite
 // result can mint the next cursor.
 func finishAppend(cursor JournalCursor, record *OwnedEvidenceRecord, generation generationIdentity, outcome appendOutcome, durable *JournalCursor, candidateDigest, checkpointDigest Digest) (AppendResult, error) {
-	if !sameGenerationIdentity(cursor.generation, generation) || !cursor.Valid() || candidateDigest.Validate() != nil || checkpointDigest.Validate() != nil {
-		return AppendResult{}, invalidEvidence("append-result", "cursor or candidate identity")
-	}
-	// Reject contradictions which are knowable before append authority is
-	// consumed. Once consumed below, every failure invalidates the cursor.
-	switch outcome {
-	case appendOutcomeDurable:
-		if durable == nil || !durable.Valid() || !sameGenerationIdentity(durable.generation, generation) || durable.nextSequence <= cursor.nextSequence || durable.previousRecordDigest == nil || *durable.previousRecordDigest != candidateDigest {
-			return AppendResult{}, invalidEvidence("append-result", "durable composite cursor")
-		}
-	case appendOutcomeUnknown:
-		if durable != nil {
-			return AppendResult{}, invalidEvidence("append-result", "unknown carries durable cursor")
-		}
-	default:
-		return AppendResult{}, invalidEvidence("append-result", "unknown outcome kind")
+	if err := validateAppendResultShape(cursor, generation, outcome, durable, candidateDigest, checkpointDigest); err != nil {
+		return AppendResult{}, err
 	}
 	if _, err := record.consume(generation, cursor); err != nil {
+		return AppendResult{}, err
+	}
+	return finishConsumedAppend(cursor, generation, outcome, durable, candidateDigest, checkpointDigest)
+}
+
+func finishConsumedAppend(cursor JournalCursor, generation generationIdentity, outcome appendOutcome, durable *JournalCursor, candidateDigest, checkpointDigest Digest) (AppendResult, error) {
+	if err := validateAppendResultShape(cursor, generation, outcome, durable, candidateDigest, checkpointDigest); err != nil {
 		return AppendResult{}, err
 	}
 	invalidate := true
@@ -418,6 +411,27 @@ func finishAppend(cursor JournalCursor, record *OwnedEvidenceRecord, generation 
 	case appendOutcomeUnknown:
 	}
 	return result, nil
+}
+
+func validateAppendResultShape(cursor JournalCursor, generation generationIdentity, outcome appendOutcome, durable *JournalCursor, candidateDigest, checkpointDigest Digest) error {
+	if !sameGenerationIdentity(cursor.generation, generation) || !cursor.Valid() || candidateDigest.Validate() != nil || checkpointDigest.Validate() != nil {
+		return invalidEvidence("append-result", "cursor or candidate identity")
+	}
+	// Reject contradictions which are knowable before append authority is
+	// consumed. Once consumed below, every failure invalidates the cursor.
+	switch outcome {
+	case appendOutcomeDurable:
+		if durable == nil || !durable.Valid() || !sameGenerationIdentity(durable.generation, generation) || durable.nextSequence <= cursor.nextSequence || durable.previousRecordDigest == nil || *durable.previousRecordDigest != candidateDigest {
+			return invalidEvidence("append-result", "durable composite cursor")
+		}
+	case appendOutcomeUnknown:
+		if durable != nil {
+			return invalidEvidence("append-result", "unknown carries durable cursor")
+		}
+	default:
+		return invalidEvidence("append-result", "unknown outcome kind")
+	}
+	return nil
 }
 
 func (r AppendResult) Outcome() string { return string(r.outcome) }
