@@ -485,7 +485,15 @@ func writeSuccessorGenerationFileFact(h interface{ Write([]byte) (int, error) },
 }
 
 func validSuccessorGenerationReplayReady(ready *SuccessorGenerationReplayReady, candidate OwnedCurrentCandidate) bool {
-	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.state == nil || ready.candidateBinding != candidate.binding || ready.lease == nil || ready.snapshot == nil || ready.binding.prior != ready.prior || ready.binding.state != ready.state || ready.binding.stateBinding != ready.state.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.binding.lease != ready.lease || ready.binding.snapshot != ready.snapshot || ready.consumed == nil || ready.consumed.Load() || !validConsumedSuccessorGenerationHandoffReady(ready.prior, candidate) || ready.state != ready.prior.state || ready.target != ready.prior.target || ready.journal != ready.prior.journal || ready.revision != ready.prior.revision || ready.indexRecords != ready.state.indexRecords || ready.segmentCount != 1 || ready.journalRecords != 1 || ready.journalTail != ready.state.headerDigest || !ready.lease.Active() || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != successorGenerationReplayDigest(ready) {
+	return validSuccessorGenerationReplayShape(ready, candidate, false)
+}
+
+func validConsumedSuccessorGenerationReplayReady(ready *SuccessorGenerationReplayReady, candidate OwnedCurrentCandidate) bool {
+	return validSuccessorGenerationReplayShape(ready, candidate, true)
+}
+
+func validSuccessorGenerationReplayShape(ready *SuccessorGenerationReplayReady, candidate OwnedCurrentCandidate, consumed bool) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.state == nil || ready.candidateBinding != candidate.binding || ready.lease == nil || ready.snapshot == nil || ready.binding.prior != ready.prior || ready.binding.state != ready.state || ready.binding.stateBinding != ready.state.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.binding.lease != ready.lease || ready.binding.snapshot != ready.snapshot || ready.consumed == nil || ready.consumed.Load() != consumed || !validConsumedSuccessorGenerationHandoffReady(ready.prior, candidate) || ready.state != ready.prior.state || ready.target != ready.prior.target || ready.journal != ready.prior.journal || ready.revision != ready.prior.revision || ready.indexRecords != ready.state.indexRecords || ready.segmentCount != 1 || ready.journalRecords != 1 || ready.journalTail != ready.state.headerDigest || !ready.lease.Active() || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != successorGenerationReplayDigest(ready) {
 		return false
 	}
 	identity, identityErr := ready.snapshot.IdentityDigest()
