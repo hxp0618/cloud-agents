@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 type recoveryVerifierFake struct {
@@ -507,6 +509,29 @@ func TestHistoricalSupersessionRejectsLiteralReceiptsBeforeVerifierCall(t *testi
 	}
 	if verifier.supersessionCalls != 0 {
 		t.Fatalf("literal receipts reached historical verifier: calls=%d", verifier.supersessionCalls)
+	}
+}
+
+func TestHistoricalSupersessionReceiptModesRejectLiteralAndCrossMode(t *testing.T) {
+	owner := &evidenceOwnerToken{nonce: [16]byte{18}}
+	digest := testDigest("historical-receipt-mode")
+	if validHistoricalSupersessionRuntimeReceipt(VerifiedContentReceipt{}, owner, digest, 1) || validHistoricalSupersessionRecoveryReceipt(VerifiedDecisionRecoveryReceipt{}, owner, digest, 1) {
+		t.Fatal("literal receipt entered historical supersession recovery")
+	}
+	transientRuntime := VerifiedContentReceipt{publication: &evidencefs.Publication{}}
+	registeredRuntime := VerifiedContentReceipt{registeredPublication: &evidencefs.RegisteredPublication{}}
+	if sameHistoricalSupersessionRuntimeObject(transientRuntime, registeredRuntime) || sameHistoricalSupersessionRuntimeObject(registeredRuntime, transientRuntime) {
+		t.Fatal("runtime receipt mode swap retained object identity")
+	}
+	transientRecovery := VerifiedDecisionRecoveryReceipt{publication: &evidencefs.Publication{}}
+	registeredRecovery := VerifiedDecisionRecoveryReceipt{registeredPublication: &evidencefs.RegisteredPublication{}}
+	if sameHistoricalSupersessionRecoveryObject(transientRecovery, registeredRecovery) || sameHistoricalSupersessionRecoveryObject(registeredRecovery, transientRecovery) {
+		t.Fatal("decision-recovery receipt mode swap retained object identity")
+	}
+	mixedRuntime := VerifiedContentReceipt{publication: &evidencefs.Publication{}, registeredPublication: &evidencefs.RegisteredPublication{}}
+	mixedRecovery := VerifiedDecisionRecoveryReceipt{publication: &evidencefs.Publication{}, registeredPublication: &evidencefs.RegisteredPublication{}}
+	if sameHistoricalSupersessionRuntimeObject(mixedRuntime, mixedRuntime) || sameHistoricalSupersessionRecoveryObject(mixedRecovery, mixedRecovery) {
+		t.Fatal("mixed fresh and registered receipt shape was accepted")
 	}
 }
 

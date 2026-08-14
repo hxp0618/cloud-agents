@@ -123,7 +123,7 @@ func (d OwnedVerifiedDecision) recoverHistoricalSupersession(ctx context.Context
 	if d.owner == nil || d.capability.owner != d.owner || d.owner.verifier == nil || authority == nil || authority.owner != d.owner || oldArtifact.owner != d.owner || plannedRecovery.owner != d.owner || plannedRuntime.owner != d.owner.token || plannedRuntimeReceipt.owner != d.owner.token || plannedRecoveryReceipt.owner != d.owner.token || plannedRuntimeReceipt.kind != "runtime" || plannedRecoveryReceipt.kind != "decision_recovery" {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "inputs are not owned by the same verifier", nil)
 	}
-	if !validRuntimeReceipt(plannedRuntimeReceipt, d.owner.token, plannedRuntime.digest, plannedRuntime.sizeBytes) || !validDecisionRecoveryReceipt(plannedRecoveryReceipt, d.owner.token, plannedRecovery.digest, plannedRecovery.sizeBytes) {
+	if !validHistoricalSupersessionRuntimeReceipt(plannedRuntimeReceipt, d.owner.token, plannedRuntime.digest, plannedRuntime.sizeBytes) || !validHistoricalSupersessionRecoveryReceipt(plannedRecoveryReceipt, d.owner.token, plannedRecovery.digest, plannedRecovery.sizeBytes) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "durable content publication authority is unavailable or mismatched", nil)
 	}
 	if err := superseded.Validate(); err != nil || superseded.LineageSupersessionAuthorityDigest != authority.digest || plannedRuntime.digest != plannedRuntimeReceipt.digest || plannedRuntime.sizeBytes != plannedRuntimeReceipt.sizeBytes || plannedRecovery.digest != plannedRecoveryReceipt.digest || plannedRecovery.sizeBytes != plannedRecoveryReceipt.sizeBytes {
@@ -133,10 +133,44 @@ func (d OwnedVerifiedDecision) recoverHistoricalSupersession(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	if receipt == nil || receipt.owner != d.owner || receipt.authorityDigest != authority.digest || !validRuntimeReceipt(receipt.runtimeReceipt, d.owner.token, plannedRuntimeReceipt.digest, plannedRuntimeReceipt.sizeBytes) || !receipt.runtimeReceipt.publication.SameObject(plannedRuntimeReceipt.publication) || !validDecisionRecoveryReceipt(receipt.recoveryReceipt, d.owner.token, plannedRecoveryReceipt.digest, plannedRecoveryReceipt.sizeBytes) || !receipt.recoveryReceipt.publication.SameObject(plannedRecoveryReceipt.publication) {
+	if receipt == nil || receipt.owner != d.owner || receipt.authorityDigest != authority.digest || !validHistoricalSupersessionRuntimeReceipt(receipt.runtimeReceipt, d.owner.token, plannedRuntimeReceipt.digest, plannedRuntimeReceipt.sizeBytes) || !sameHistoricalSupersessionRuntimeObject(receipt.runtimeReceipt, plannedRuntimeReceipt) || !validHistoricalSupersessionRecoveryReceipt(receipt.recoveryReceipt, d.owner.token, plannedRecoveryReceipt.digest, plannedRecoveryReceipt.sizeBytes) || !sameHistoricalSupersessionRecoveryObject(receipt.recoveryReceipt, plannedRecoveryReceipt) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession", "verifier returned a foreign receipt", nil)
 	}
 	return receipt, nil
+}
+
+// Historical supersession recovery accepts the concrete receipt mode that
+// exists at its lifecycle boundary: fresh in-process publication receipts or
+// registration-only receipts reconstructed after restart. The modes are never
+// interchangeable, and verifier output must retain the exact same object.
+func validHistoricalSupersessionRuntimeReceipt(receipt VerifiedContentReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
+	return validRuntimeReceipt(receipt, owner, digest, size) || validRegisteredRuntimeReceipt(receipt, owner, digest, size)
+}
+
+func validHistoricalSupersessionRecoveryReceipt(receipt VerifiedDecisionRecoveryReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
+	return validDecisionRecoveryReceipt(receipt, owner, digest, size) || validRegisteredDecisionRecoveryReceipt(receipt, owner, digest, size)
+}
+
+func sameHistoricalSupersessionRuntimeObject(left, right VerifiedContentReceipt) bool {
+	switch {
+	case left.publication != nil && right.publication != nil && left.registeredPublication == nil && right.registeredPublication == nil:
+		return left.publication.SameObject(right.publication)
+	case left.registeredPublication != nil && right.registeredPublication != nil && left.publication == nil && right.publication == nil:
+		return left.registeredPublication.SameObject(right.registeredPublication)
+	default:
+		return false
+	}
+}
+
+func sameHistoricalSupersessionRecoveryObject(left, right VerifiedDecisionRecoveryReceipt) bool {
+	switch {
+	case left.publication != nil && right.publication != nil && left.registeredPublication == nil && right.registeredPublication == nil:
+		return left.publication.SameObject(right.publication)
+	case left.registeredPublication != nil && right.registeredPublication != nil && left.publication == nil && right.publication == nil:
+		return left.registeredPublication.SameObject(right.registeredPublication)
+	default:
+		return false
+	}
 }
 
 func (s historicalRecoveryPolicySubject) CurrentDecisionMismatch(current Digest) bool {
