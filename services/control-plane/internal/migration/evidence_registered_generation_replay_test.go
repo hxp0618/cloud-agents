@@ -69,20 +69,7 @@ func TestVerifiedAdmissionGenerationReplayRejectsEveryBoundFactMutation(t *testi
 func TestVerifiedSupersededAdmissionGenerationReplayBindsOnlyExactPendingBoundary(t *testing.T) {
 	_, identity, lineage, generation, descriptor, facts := registeredGenerationReplayFixture(t, 5)
 	superseded := testDigest("target-replay-superseded")
-	planned := cloneAdmissionGeneration(generation)
-	planned.activationRecordDigest = nil
-	planned.latestCheckpointRecordDigest = nil
-	planned.latestCheckpointTailDigest = nil
-	planned.latestCheckpointNext = 0
-	planned.indexDebits = nil
-	planned.summary = nil
-	planned.currentTail = nil
-	planned.verificationTerminals = nil
-	planned.verificationFinals = nil
-	planned.verificationCommits = nil
-	planned.verificationRetries = nil
-	planned.verificationResolutions = nil
-	planned.verificationOpen = nil
+	planned := plannedSuccessorReplayFixture(generation)
 	generation.supersessionRecordDigest = &superseded
 	generation.plannedSuccessor = &planned
 	generation.indexDebits = append(generation.indexDebits, admissionReplayIndexDebit{kind: LineageRecordGenerationSuperseded, recordDigest: superseded, framedBytes: 17})
@@ -120,6 +107,70 @@ func TestVerifiedSupersededAdmissionGenerationReplayBindsOnlyExactPendingBoundar
 	}
 }
 
+func TestVerifiedMaterializedSupersededAdmissionGenerationReplayBindsExactDurableSuccessor(t *testing.T) {
+	_, identity, lineage, source, descriptor, facts := registeredGenerationReplayFixture(t, 5)
+	planned := plannedSuccessorReplayFixture(source)
+	superseded := testDigest("materialized-source-superseded")
+	source.supersessionRecordDigest = &superseded
+	source.plannedSuccessor = &planned
+	source.indexDebits = append(source.indexDebits, admissionReplayIndexDebit{kind: LineageRecordGenerationSuperseded, recordDigest: superseded, framedBytes: 17})
+
+	actual := cloneAdmissionGeneration(planned)
+	reserved := testDigest("materialized-successor-reserved")
+	activation := testDigest("materialized-successor-activation")
+	actual.reservedRecordDigest = reserved
+	actual.activationRecordDigest = &activation
+	actual.indexDebits = []admissionReplayIndexDebit{
+		{kind: LineageRecordGenerationReserved, recordDigest: reserved, framedBytes: 19},
+		{kind: LineageRecordGenerationActivated, recordDigest: activation, framedBytes: 23},
+	}
+	lineage.state = admissionLineageActiveInitial
+	lineage.indexRecords += 3
+	lineage.indexTailRecordDigest = activation
+	lineage.generations = []admissionReplayGeneration{cloneAdmissionGeneration(source), cloneAdmissionGeneration(actual)}
+	sourceGeneration := &lineage.generations[0]
+	actualSuccessor := &lineage.generations[1]
+
+	if !admissionSuccessorReservationMatches(lineage.id, &planned, &actual) || !materializedAdmissionSuccessorMatches(lineage.id, &planned, &actual) {
+		t.Fatal("byte-exact durable successor was not recognized")
+	}
+	if !materializedAdmissionSuccessorIsAdjacent(lineage, sourceGeneration, actualSuccessor) {
+		t.Fatal("durable successor was not exact adjacent transcript state")
+	}
+	replay, err := bindVerifiedMaterializedSupersededAdmissionGenerationReplay(lineage, sourceGeneration, actualSuccessor, descriptor, facts)
+	if err != nil || replay == nil || !replay.supersessionDebited || !validVerifiedAdmissionGenerationReplay(replay, identity) || replay.cursor.lineageIndexNextSequence != lineage.indexRecords || replay.cursor.lineageIndexPreviousRecordDigest != activation {
+		t.Fatalf("materialized superseded replay was not sealed: replay=%+v err=%v", replay, err)
+	}
+	if pending, err := bindVerifiedSupersededAdmissionGenerationReplay(lineage, sourceGeneration, descriptor, facts); pending != nil || !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("materialized successor re-entered pending-tail binder: replay=%+v err=%v", pending, err)
+	}
+	if value, err := bindVerifiedMaterializedSupersededAdmissionGenerationReplay(lineage, &source, actualSuccessor, descriptor, facts); value != nil || !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("detached source clone entered materialized binder: replay=%+v err=%v", value, err)
+	}
+
+	unactivated := cloneAdmissionGeneration(actual)
+	unactivated.activationRecordDigest = nil
+	if !admissionSuccessorReservationMatches(lineage.id, &planned, &unactivated) || materializedAdmissionSuccessorMatches(lineage.id, &planned, &unactivated) {
+		t.Fatal("unactivated adjacent reservation was classified as fully materialized")
+	}
+	unactivatedLineage := lineage
+	unactivatedLineage.generations = []admissionReplayGeneration{cloneAdmissionGeneration(source), unactivated}
+	if value, err := bindVerifiedMaterializedSupersededAdmissionGenerationReplay(unactivatedLineage, &unactivatedLineage.generations[0], &unactivatedLineage.generations[1], descriptor, facts); value != nil || !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("unactivated successor entered materialized binder: replay=%+v err=%v", value, err)
+	}
+
+	drifted := cloneAdmissionGeneration(actual)
+	drifted.reservedBytes++
+	if admissionSuccessorReservationMatches(lineage.id, &planned, &drifted) || materializedAdmissionSuccessorMatches(lineage.id, &planned, &drifted) {
+		t.Fatal("mutated adjacent reservation matched stored supersession")
+	}
+	driftedLineage := lineage
+	driftedLineage.generations = []admissionReplayGeneration{cloneAdmissionGeneration(source), drifted}
+	if value, err := bindVerifiedMaterializedSupersededAdmissionGenerationReplay(driftedLineage, &driftedLineage.generations[0], &driftedLineage.generations[1], descriptor, facts); value != nil || !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("mutated successor entered materialized binder: replay=%+v err=%v", value, err)
+	}
+}
+
 func TestVerifiedAdmissionGenerationReplayRejectsSummaryAndTailDrift(t *testing.T) {
 	_, _, lineage, generation, descriptor, facts := registeredGenerationReplayFixture(t, 5)
 	mutatedSummary := cloneAdmissionGeneration(generation)
@@ -150,6 +201,20 @@ func TestVerifiedAdmissionGenerationReplayAuthorityDoesNotSpread(t *testing.T) {
 		"bindVerifiedSupersededAdmissionGenerationReplay": {
 			"evidence_registered_generation_replay.go": true,
 			"evidence_admission_history.go":            true,
+		},
+		"bindVerifiedMaterializedSupersededAdmissionGenerationReplay": {
+			"evidence_registered_generation_replay.go": true,
+			"evidence_admission_history.go":            true,
+		},
+		"materializedAdmissionSuccessorIsAdjacent": {
+			"evidence_registered_generation_replay.go": true,
+			"evidence_admission_history.go":            true,
+		},
+		"retainMaterializedAdmissionHistoryGeneration": {
+			"evidence_admission_history.go": true,
+		},
+		"verifyMaterializedHistoricalSupersession": {
+			"evidence_admission_history.go": true,
 		},
 		"cloneVerifiedAdmissionGenerationReplay": {
 			"evidence_registered_generation_replay.go":  true,
@@ -196,6 +261,27 @@ func TestVerifiedAdmissionGenerationReplayAuthorityDoesNotSpread(t *testing.T) {
 			return true
 		})
 	}
+}
+
+func plannedSuccessorReplayFixture(generation admissionReplayGeneration) admissionReplayGeneration {
+	planned := cloneAdmissionGeneration(generation)
+	planned.reservedRecordDigest = ""
+	planned.activationRecordDigest = nil
+	planned.latestCheckpointRecordDigest = nil
+	planned.latestCheckpointTailDigest = nil
+	planned.latestCheckpointNext = 0
+	planned.indexDebits = nil
+	planned.summary = nil
+	planned.currentTail = nil
+	planned.verificationTerminals = nil
+	planned.verificationFinals = nil
+	planned.verificationCommits = nil
+	planned.verificationRetries = nil
+	planned.verificationResolutions = nil
+	planned.verificationOpen = nil
+	planned.supersessionRecordDigest = nil
+	planned.plannedSuccessor = nil
+	return planned
 }
 
 func registeredGenerationReplayFixture(t *testing.T, frameCount int) (*verifiedAdmissionGenerationReplay, generationIdentity, admissionReplayLineage, admissionReplayGeneration, GenerationDescriptor, *admissionHistoricalVerificationFacts) {

@@ -33,6 +33,29 @@ func TestAdmissionHistoryAuthorityFailsClosedWithoutOpaqueInventory(t *testing.T
 	}
 }
 
+func TestMaterializedHistoricalSupersessionKeepsIntermediateSuccessorRecoveryRequired(t *testing.T) {
+	_, _, lineage, source, _, _ := registeredGenerationReplayFixture(t, 5)
+	planned := plannedSuccessorReplayFixture(source)
+	superseded := testDigest("history-intermediate-superseded")
+	source.supersessionRecordDigest = &superseded
+	source.plannedSuccessor = &planned
+	actual := cloneAdmissionGeneration(planned)
+	actual.reservedRecordDigest = testDigest("history-intermediate-reserved")
+	actual.activationRecordDigest = digestPointer(testDigest("history-intermediate-activated"))
+	lineage.generations = []admissionReplayGeneration{cloneAdmissionGeneration(source), cloneAdmissionGeneration(actual)}
+
+	oldDecision := testDigest("history-intermediate-old")
+	intermediateDecision := testDigest("history-intermediate-successor")
+	currentDecision := testDigest("history-current-successor")
+	sourceEvidence := &admissionVerifiedGenerationEvidence{decision: OwnedVerifiedDecision{digest: oldDecision}}
+	plannedEvidence := &admissionVerifiedGenerationEvidence{decision: OwnedVerifiedDecision{digest: intermediateDecision}}
+	current := OwnedVerifiedDecision{digest: currentDecision}
+	err := verifyMaterializedHistoricalSupersession(context.Background(), lineage, &lineage.generations[0], &lineage.generations[1], sourceEvidence, plannedEvidence, current)
+	if !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("intermediate historical successor was misclassified: %v", err)
+	}
+}
+
 func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
 	facts := admissionHistoricalFactsFixture(t)

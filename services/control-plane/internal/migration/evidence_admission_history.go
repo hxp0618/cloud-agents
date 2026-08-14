@@ -69,6 +69,7 @@ type admissionGenerationRetention uint8
 const (
 	admissionRetainActiveGeneration admissionGenerationRetention = iota + 1
 	admissionRetainSupersededSource
+	admissionRetainMaterializedSupersededSource
 )
 
 type verifiedAdmissionHistoryBinding struct {
@@ -114,6 +115,22 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	var firstCorrupt, fatal error
 	var targetGeneration *verifiedAdmissionRegisteredGeneration
 	retainTargetGeneration := false
+	recordHistoryError := func(value error) {
+		if value == nil {
+			return
+		}
+		if IsCode(value, CodeEvidenceJournalCorrupt) {
+			if firstCorrupt == nil {
+				firstCorrupt = value
+			}
+			return
+		}
+		if IsCode(value, CodeEvidenceRecoveryRequired) {
+			recoveryRequired = true
+			return
+		}
+		fatal = value
+	}
 	defer func() {
 		if !retainTargetGeneration {
 			revokeVerifiedAdmissionRegisteredGeneration(targetGeneration)
@@ -123,35 +140,74 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 		lineage := &transcript.lineages[lineageIndex]
 		for generationIndex := range lineage.generations {
 			generation := &lineage.generations[generationIndex]
-			generations := []*admissionReplayGeneration{generation}
-			if generation.plannedSuccessor != nil {
-				generations = append(generations, generation.plannedSuccessor)
-			}
-			for generationPosition, verifyGeneration := range generations {
-				retainRegistered := lineage.id == target && generationIndex == len(lineage.generations)-1 && generationPosition == 0
-				needsRecovery, verifiedGeneration, verifyErr := verifyAdmissionHistoryGeneration(ctx, *lineage, verifyGeneration, objects, current, currentFacts, candidate, retainRegistered)
-				recoveryRequired = recoveryRequired || needsRecovery
-				if verifyErr == nil {
-					if retainRegistered {
-						targetGeneration = verifiedGeneration
-					}
-					continue
-				}
-				if IsCode(verifyErr, CodeEvidenceJournalCorrupt) {
-					if firstCorrupt == nil {
-						firstCorrupt = verifyErr
-					}
-					continue
-				}
-				fatal = verifyErr
+			needsRecovery, generationEvidence, verifyErr := verifyAdmissionHistoryGenerationEvidence(ctx, *lineage, generation, objects, current, currentFacts, candidate)
+			recoveryRequired = recoveryRequired || needsRecovery
+			recordHistoryError(verifyErr)
+			if fatal != nil {
 				break
 			}
-			// Historical supersession receipts are verifier/lifecycle authority,
-			// not durable wire facts. The active target generation can now retain
-			// registered receipts, but A -> B reconstruction and its adjacent
-			// reservation authority remain a separate closed transition.
-			if generation.supersessionRecordDigest != nil || generation.plannedSuccessor != nil {
+
+			var plannedEvidence *admissionVerifiedGenerationEvidence
+			if generation.plannedSuccessor != nil {
+				plannedNeedsRecovery, evidence, plannedErr := verifyAdmissionHistoryGenerationEvidence(ctx, *lineage, generation.plannedSuccessor, objects, current, currentFacts, candidate)
+				recoveryRequired = recoveryRequired || plannedNeedsRecovery
+				plannedEvidence = evidence
+				recordHistoryError(plannedErr)
+				if fatal != nil {
+					break
+				}
+			}
+
+			retainRegistered := lineage.id == target && generationIndex == len(lineage.generations)-1 && generation.supersessionRecordDigest == nil && generationEvidence != nil
+			if retainRegistered {
+				registered, retainErr := retainAdmissionHistoryGeneration(ctx, *lineage, generation, generationEvidence, current, admissionRetainActiveGeneration)
+				recordHistoryError(retainErr)
+				if retainErr == nil {
+					if targetGeneration != nil {
+						revokeVerifiedAdmissionRegisteredGeneration(registered)
+						recordHistoryError(admissionCorrupt("admission-history", "target generation authority is duplicated", nil))
+					} else {
+						targetGeneration = registered
+					}
+				}
+				if fatal != nil {
+					break
+				}
+			}
+
+			hasSuperseded := generation.supersessionRecordDigest != nil
+			hasPlanned := generation.plannedSuccessor != nil
+			if hasSuperseded != hasPlanned {
+				recordHistoryError(admissionCorrupt("admission-history", "historical supersession boundary is incomplete", nil))
+				continue
+			}
+			if !hasSuperseded {
+				continue
+			}
+			if generationIndex+1 >= len(lineage.generations) {
+				// Superseded is durable but its byte-exact adjacent reservation is
+				// not. Only the dedicated adjacent-reserve recovery path may resume.
 				recoveryRequired = true
+				continue
+			}
+			actualSuccessor := &lineage.generations[generationIndex+1]
+			if !admissionSuccessorReservationMatches(lineage.id, generation.plannedSuccessor, actualSuccessor) {
+				recordHistoryError(admissionCorrupt("admission-history", "materialized successor differs from stored supersession", nil))
+				continue
+			}
+			if !materializedAdmissionSuccessorMatches(lineage.id, generation.plannedSuccessor, actualSuccessor) {
+				// The adjacent reservation is byte-exact, but its registered
+				// generation has not crossed the durable activation barrier yet.
+				recoveryRequired = true
+				continue
+			}
+			if generationEvidence == nil || plannedEvidence == nil {
+				recoveryRequired = true
+				continue
+			}
+			recordHistoryError(verifyMaterializedHistoricalSupersession(ctx, *lineage, generation, actualSuccessor, generationEvidence, plannedEvidence, current))
+			if fatal != nil {
+				break
 			}
 		}
 		if fatal != nil {
@@ -224,6 +280,52 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	}
 	retainTargetGeneration = true
 	return history, nil
+}
+
+// verifyMaterializedHistoricalSupersession reconstructs stored A -> B
+// verifier authority only long enough to prove that the durable Superseded
+// frame and its now-materialized successor still bind to the same verifier and
+// exact registered objects. No receipt, replay cursor, or append authority
+// escapes this function.
+func verifyMaterializedHistoricalSupersession(ctx context.Context, lineage admissionReplayLineage, sourceGeneration, actualSuccessor *admissionReplayGeneration, sourceEvidence, plannedEvidence *admissionVerifiedGenerationEvidence, current OwnedVerifiedDecision) error {
+	if !materializedAdmissionSuccessorIsAdjacent(lineage, sourceGeneration, actualSuccessor) || sourceEvidence == nil || plannedEvidence == nil {
+		return admissionCorrupt("admission-materialized-supersession", "stored supersession inputs are incomplete", nil)
+	}
+	// The currently implemented recovery policy binds one old generation to
+	// the exact current successor. A deeper A -> B -> current-C chain remains
+	// recovery-required until the verifier can reconstruct the intermediate
+	// A -> B policy; it is not evidence that the stored chain is corrupt.
+	if plannedEvidence.decision.digest != current.digest {
+		return fail(CodeEvidenceRecoveryRequired, "admission-materialized-supersession", "intermediate successor recovery authority is unavailable", nil)
+	}
+	source, err := retainMaterializedAdmissionHistoryGeneration(ctx, lineage, sourceGeneration, actualSuccessor, sourceEvidence, current)
+	if err != nil {
+		return err
+	}
+	planned, err := retainAdmissionHistoryGeneration(ctx, lineage, sourceGeneration.plannedSuccessor, plannedEvidence, current, admissionRetainActiveGeneration)
+	if err != nil {
+		revokeVerifiedAdmissionRegisteredGeneration(source)
+		return err
+	}
+	defer revokeVerifiedAdmissionRegisteredGeneration(source)
+	defer revokeVerifiedAdmissionRegisteredGeneration(planned)
+
+	superseded, err := expandAdmissionGenerationSuperseded(lineage.id, *sourceGeneration)
+	if err != nil {
+		return err
+	}
+	wantSource := generationIdentity{current.owner.token, superseded.ExecutionLineageDigest, superseded.OldJournalIdentityDigest, superseded.OldRunnerProjectionDecisionDigest, superseded.OldSchemaBundleDigest}
+	if !sameGenerationIdentity(source.descriptor.identity, wantSource) || superseded.PlannedGenerationReserved == nil || !sameGenerationHeader(planned.descriptor.identity, superseded.PlannedGenerationReserved.PlannedSegment0Header) {
+		return admissionCorrupt("admission-materialized-supersession", "registered generations differ from stored supersession", nil)
+	}
+	authority, receipt, err := bindStoredHistoricalSupersession(ctx, current, source, planned, plannedEvidence.runtimeArtifact, superseded)
+	if err != nil {
+		return err
+	}
+	if authority == nil || receipt == nil || receipt.consume(current.owner, authority.digest) != nil {
+		return admissionCorrupt("admission-materialized-supersession", "recovered supersession receipt could not be consumed", nil)
+	}
+	return nil
 }
 
 // bindHistoricalSupersessionAdjacentReserveReady performs the same bounded
@@ -450,21 +552,6 @@ func admissionHistoryTargetFacts(transcript *admissionReplayTranscript) (admissi
 	return "", admissionReplayLineageHeader{}, 0, "", admissionCorrupt("admission-history", "present target lineage is absent", nil)
 }
 
-func verifyAdmissionHistoryGeneration(ctx context.Context, lineage admissionReplayLineage, generation *admissionReplayGeneration, objects map[Digest]*evidencefs.AdmissionObjectView, current OwnedVerifiedDecision, currentFacts *admissionHistoricalVerificationFacts, candidate OwnedCurrentCandidate, retainRegistered bool) (bool, *verifiedAdmissionRegisteredGeneration, error) {
-	needsRecovery, evidence, err := verifyAdmissionHistoryGenerationEvidence(ctx, lineage, generation, objects, current, currentFacts, candidate)
-	if err != nil || needsRecovery || !retainRegistered {
-		return needsRecovery, nil, err
-	}
-	registered, err := retainAdmissionHistoryGeneration(ctx, lineage, generation, evidence, current, admissionRetainActiveGeneration)
-	if err != nil {
-		if IsCode(err, CodeEvidenceJournalCorrupt) {
-			return false, nil, err
-		}
-		return true, nil, nil
-	}
-	return false, registered, nil
-}
-
 func verifyAdmissionHistoryGenerationEvidence(ctx context.Context, lineage admissionReplayLineage, generation *admissionReplayGeneration, objects map[Digest]*evidencefs.AdmissionObjectView, current OwnedVerifiedDecision, currentFacts *admissionHistoricalVerificationFacts, candidate OwnedCurrentCandidate) (bool, *admissionVerifiedGenerationEvidence, error) {
 	if generation == nil || generation.header == nil {
 		return false, nil, admissionCorrupt("admission-history", "generation header is unavailable", nil)
@@ -555,6 +642,14 @@ func verifyAdmissionHistoryGenerationEvidence(ctx context.Context, lineage admis
 }
 
 func retainAdmissionHistoryGeneration(ctx context.Context, lineage admissionReplayLineage, generation *admissionReplayGeneration, evidence *admissionVerifiedGenerationEvidence, current OwnedVerifiedDecision, retention admissionGenerationRetention) (*verifiedAdmissionRegisteredGeneration, error) {
+	return retainAdmissionHistoryGenerationMode(ctx, lineage, generation, nil, evidence, current, retention)
+}
+
+func retainMaterializedAdmissionHistoryGeneration(ctx context.Context, lineage admissionReplayLineage, generation, actualSuccessor *admissionReplayGeneration, evidence *admissionVerifiedGenerationEvidence, current OwnedVerifiedDecision) (*verifiedAdmissionRegisteredGeneration, error) {
+	return retainAdmissionHistoryGenerationMode(ctx, lineage, generation, actualSuccessor, evidence, current, admissionRetainMaterializedSupersededSource)
+}
+
+func retainAdmissionHistoryGenerationMode(ctx context.Context, lineage admissionReplayLineage, generation, actualSuccessor *admissionReplayGeneration, evidence *admissionVerifiedGenerationEvidence, current OwnedVerifiedDecision, retention admissionGenerationRetention) (*verifiedAdmissionRegisteredGeneration, error) {
 	if evidence == nil || evidence.runtimeView == nil || evidence.recoveryView == nil || evidence.bundle == nil || !validAdmissionRecoveryFacts(evidence.facts) || evidence.decision.owner != current.owner || evidence.runtimeArtifact.owner != current.owner.token || uint64(len(evidence.runtimeArtifact.bytes)) != evidence.runtimeArtifact.sizeBytes || DigestBytes(evidence.runtimeArtifact.bytes) != evidence.runtimeArtifact.digest {
 		return nil, fail(CodeEvidenceRecoveryRequired, "admission-history-retain", "verified generation evidence is unavailable", nil)
 	}
@@ -565,6 +660,8 @@ func retainAdmissionHistoryGeneration(ctx context.Context, lineage admissionRepl
 		replay, err = bindVerifiedAdmissionGenerationReplay(lineage, generation, evidence.descriptor, evidence.facts)
 	case admissionRetainSupersededSource:
 		replay, err = bindVerifiedSupersededAdmissionGenerationReplay(lineage, generation, evidence.descriptor, evidence.facts)
+	case admissionRetainMaterializedSupersededSource:
+		replay, err = bindVerifiedMaterializedSupersededAdmissionGenerationReplay(lineage, generation, actualSuccessor, evidence.descriptor, evidence.facts)
 	default:
 		return nil, fail(CodeEvidenceRecoveryRequired, "admission-history-retain", "generation retention purpose is unavailable", nil)
 	}

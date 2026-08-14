@@ -30,7 +30,7 @@ type verifiedAdmissionGenerationReplay struct {
 }
 
 func bindVerifiedAdmissionGenerationReplay(lineage admissionReplayLineage, generation *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts) (*verifiedAdmissionGenerationReplay, error) {
-	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, false)
+	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, false, false)
 }
 
 // bindVerifiedSupersededAdmissionGenerationReplay reconstructs the durable A
@@ -41,14 +41,54 @@ func bindVerifiedSupersededAdmissionGenerationReplay(lineage admissionReplayLine
 	if generation == nil || generation.supersessionRecordDigest == nil || generation.plannedSuccessor == nil || lineage.state != admissionLineageSuperseded {
 		return nil, admissionCorrupt("admission-supersession-replay", "superseded generation boundary is incomplete", nil)
 	}
-	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, true)
+	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, true, true)
 }
 
-func bindVerifiedAdmissionGenerationReplayMode(lineage admissionReplayLineage, generation *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts, allowSuperseded bool) (*verifiedAdmissionGenerationReplay, error) {
+// bindVerifiedMaterializedSupersededAdmissionGenerationReplay reconstructs a
+// superseded source after its byte-exact planned successor has also become a
+// durable registered generation. The source owns its Superseded debit but can
+// never re-enter a generation handoff.
+func bindVerifiedMaterializedSupersededAdmissionGenerationReplay(lineage admissionReplayLineage, generation, actualSuccessor *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts) (*verifiedAdmissionGenerationReplay, error) {
+	if !materializedAdmissionSuccessorIsAdjacent(lineage, generation, actualSuccessor) {
+		return nil, admissionCorrupt("admission-supersession-replay", "materialized successor boundary is incomplete", nil)
+	}
+	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, true, false)
+}
+
+func materializedAdmissionSuccessorIsAdjacent(lineage admissionReplayLineage, source, actual *admissionReplayGeneration) bool {
+	if source == nil || actual == nil || source.supersessionRecordDigest == nil || source.plannedSuccessor == nil {
+		return false
+	}
+	for index := range lineage.generations {
+		if &lineage.generations[index] != source {
+			continue
+		}
+		return index+1 < len(lineage.generations) && &lineage.generations[index+1] == actual && materializedAdmissionSuccessorMatches(lineage.id, source.plannedSuccessor, actual)
+	}
+	return false
+}
+
+func materializedAdmissionSuccessorMatches(lineage [32]byte, planned, actual *admissionReplayGeneration) bool {
+	return admissionSuccessorReservationMatches(lineage, planned, actual) && actual.activationRecordDigest != nil && actual.activationRecordDigest.Validate() == nil
+}
+
+func admissionSuccessorReservationMatches(lineage [32]byte, planned, actual *admissionReplayGeneration) bool {
+	if lineage == ([32]byte{}) || planned == nil || actual == nil || planned.reservedRecordDigest != "" || actual.reservedRecordDigest.Validate() != nil {
+		return false
+	}
+	plannedBody, plannedErr := expandAdmissionGenerationReserved(lineage, *planned)
+	actualBody, actualErr := expandAdmissionGenerationReserved(lineage, *actual)
+	return plannedErr == nil && actualErr == nil && canonicalEqual(plannedBody, actualBody)
+}
+
+func bindVerifiedAdmissionGenerationReplayMode(lineage admissionReplayLineage, generation *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts, allowSuperseded, requireSupersessionTail bool) (*verifiedAdmissionGenerationReplay, error) {
 	if generation == nil || generation.activationRecordDigest == nil || generation.supersessionRecordDigest != nil && !allowSuperseded {
 		return nil, nil
 	}
-	if allowSuperseded && (generation.supersessionRecordDigest == nil || lineage.indexTailRecordDigest != *generation.supersessionRecordDigest) {
+	if allowSuperseded && generation.supersessionRecordDigest == nil {
+		return nil, admissionCorrupt("admission-supersession-replay", "superseded index tail is not exact", nil)
+	}
+	if requireSupersessionTail && lineage.indexTailRecordDigest != *generation.supersessionRecordDigest {
 		return nil, admissionCorrupt("admission-supersession-replay", "superseded index tail is not exact", nil)
 	}
 	if generation.header == nil || generation.summary == nil || generation.runtimeInspection == nil || !validAdmissionRecoveryFacts(facts) || descriptor.identity.owner == nil || descriptor.header.Validate() != nil || !sameGenerationHeader(descriptor.identity, descriptor.header) || descriptor.identity.executionLineageDigest != digestString(lineage.id) || lineage.indexRecords == 0 || lineage.indexTailRecordDigest.Validate() != nil || lineage.index.size == 0 || lineage.index.digest == ([32]byte{}) || lineage.index.identity == ([32]byte{}) {
