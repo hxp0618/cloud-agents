@@ -1,8 +1,8 @@
 # 06. 状态与决策追踪
 
-- 最后更新：2026-08-13
+- 最后更新：2026-08-14
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（brand-new admission locally reaches sealed non-runnable `GenerationRecoveryReady`；normal-run journal/cursor、trusted mount 与 runner/DB remain open）；M1/P2–P6 PAUSED
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（brand-new admission locally reaches a concrete retained `EvidenceJournal` with existing-segment append/checkpoint and unknown reconciliation；segment rotation、successor/session、trusted mount 与 runner/DB remain open）；M1/P2–P6 PAUSED
 
 ## 1. 决策表
 
@@ -69,14 +69,14 @@
 | G-BASELINE-M1       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-BASELINE          | none                           | IN PROGRESS | `CAG-G-BASELINE-P0-20260810-R3`                                                 | P0 phase verified；M1 phase not started                                                                                                                                                                             | 2026-08-10    |
 | G-CONTRACT          | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / G-INVENTORY R3 / G-BASELINE-P0 R3`                       | P1-A1 bootstrap + SubjectRef/HTTP idempotency follow-up；official generation/closure record open                                                                                                                    | 2026-08-11    |
-| G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission durability/lock handoff/snapshot/strict replay/same-verifier recovery locally complete through `96e6165`；journal/cursor、runner/DB与closure open | 2026-08-13    |
-| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Sealed non-runnable `GenerationRecoveryReady` boundary at pushed `96e6165`；trusted mount、normal-run journal/cursor、active-generation与runner closure open | 2026-08-13    |
+| G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission durability/lock handoff/snapshot/replay/recovery/journal locally complete through `544004a`；runner/DB与closure open                     | 2026-08-14    |
+| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Concrete retained brand-new `EvidenceJournal` at pushed `544004a`；rotation、successor/session、trusted mount、active-generation与runner closure open                                                               | 2026-08-14    |
 | G-AUTHORITY-P2      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P3      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P4      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P5      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P6      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
-| G-SECURITY-P1       | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Fail-closed adapters + admission/lock-handoff/snapshot/replay/recovery fault gates through local `96e6165` complete；真实 mount/cross-process/power-loss、normal-run consumer 与 closure open | 2026-08-13    |
+| G-SECURITY-P1       | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Fail-closed adapters + retained append/checkpoint/repair/reconcile/journal fault gates through pushed `544004a` complete；真实 mount/cross-process/power-loss、public session 与 closure open                       | 2026-08-14    |
 | G-SECURITY-P2       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-SECURITY-P3       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-SECURITY-P4       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
@@ -166,8 +166,11 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 - [x] retained generation 已在 `3b15340` 完成 compact evidencefs snapshot，并在 `fa7f8e1` 完成 exact
       brand-new index/journal strict replay与 non-runnable `GenerationReplayReady`；该提交已同步 feature branch。
 - [x] `96e6165` 已从 exact `GenerationReplayReady` 完成 current same-verifier facts、typed publication receipt、
-      private brand-new cursor/`RecoverySnapshot` 的 sealed `GenerationRecoveryReady` 绑定；该值仍无 normal-run consumer，
-      且已随 `fa7f8e1`/`de6ee39` 与 evidence/status commit `4fd1b2b` 推送至 feature branch。
-- [ ] 实现并独立复核 `EvidenceJournal`/`JournalCursor`/checkpoint normal-run authority、trusted-mount production
+      private brand-new cursor/`RecoverySnapshot` 的 sealed `GenerationRecoveryReady` 绑定；该提交当时尚无 normal-run
+      consumer，且已随 `fa7f8e1`/`de6ee39` 与 evidence/status commit `4fd1b2b` 推送至 feature branch。
+- [x] `460a1d7`～`33f1c7d` 已完成 retained existing-segment composite append、checkpoint heal、snapshot resync、
+      torn-tail truncate 与五态 byte-level unknown classification；`544004a` 将唯一 reviewed recovery consumer 封装为
+      concrete brand-new `EvidenceJournal`，并在 `Replay` 内闭合 unknown repair/reclassification。
+- [ ] 实现 segment rotation、successor/continuation journal、`ActiveGeneration`/`EvidenceSession`、trusted-mount production
       constructor、runner/DB `Connect` 与真实 ext4/XFS/cross-process/power-loss evidence；完成前 P1 Gates 继续
       `IN PROGRESS`。

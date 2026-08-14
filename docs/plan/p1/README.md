@@ -12,12 +12,13 @@
   x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
   P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)；P1-A2.1a-impl-2 PG adapters
   (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)；admission registration/publish/bind/reserve
-  chain (`8c9a72b` through local `96e6165`)，其中 brand-new generation 已完成 exact
+  chain (`8c9a72b` through pushed `544004a`)，其中 brand-new generation 已完成 exact
   `GenerationReserved → segment-0 header → GenerationActivated` durability 与 root-wide lock release/opaque
   target+generation lock handoff，并推进到 compact evidencefs snapshot、strict replay 与 sealed same-verifier
-  `GenerationRecoveryReady`
-- Current slice：从 sealed non-runnable `GenerationRecoveryReady` 建立 normal-run `EvidenceJournal`/`JournalCursor`
-  authority；production trusted mount 与 runner/DB `Connect` 仍 fail closed
+  `GenerationRecoveryReady`，以及 retained existing-segment `EvidenceJournal` composite append/checkpoint 与 unknown
+  reconciliation
+- Current slice：在 concrete brand-new `EvidenceJournal` 之后实现 segment rotation、successor/continuation、
+  `ActiveGeneration`/`EvidenceSession` 与 runner/DB `Connect`；production trusted mount 仍 fail closed
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -54,11 +55,12 @@ Platform RC、Beta 或 GA。
 ## Current admission durability evidence
 
 - [`admission-generation-durability-20260813.md`](admission-generation-durability-20260813.md) 固定 source
-  `c017c9573015d7e91099d71744459f9f7478594d`，记录 brand-new receipt-bound reservation、generation
-  journal/segment-0 durability、exact activation append、root-wide lock release、fault gates 与未实现边界。
+  `544004ac3526bbebaf154d1f0cf9cd64ab9c722e`，记录 brand-new receipt-bound reservation、generation
+  journal/segment-0 durability、exact activation append、root-wide lock release、retained normal-run journal、unknown
+  reconciliation、fault gates 与未实现边界。
 - 该记录是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；
-  `GenerationRecoveryReady` 没有 production consumer，也没有 normal-run journal/cursor 或 DB authority。实现与本次
-  evidence/status 更新已推送至 `origin/codex/cloud-agents-platform-p1` 的 `4fd1b2b`。
+  concrete journal 仍没有 public `EvidenceSink`/session、`ActiveGeneration`、trusted mount 或 DB authority。固定实现已推送至
+  `origin/codex/cloud-agents-platform-p1` 的 `544004a`。
 
 ## Projection runner boundary (still open)
 
