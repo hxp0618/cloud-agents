@@ -87,6 +87,16 @@ func TestSuccessorAdmissionStateDigestBindsClosedFacts(t *testing.T) {
 		"recovery receipt": func(value *successorAdmissionState) {
 			value.recoveryReceipt = VerifiedDecisionRecoveryReceipt{digest: value.recoveryDigest, sizeBytes: value.recoverySize, binding: &verifiedDecisionRecoveryReceiptBinding{}}
 		},
+		"index prefix":  func(value *successorAdmissionState) { value.indexPrefixDigest[0] = 1 },
+		"index digest":  func(value *successorAdmissionState) { value.indexDigest[0] = 1 },
+		"framed digest": func(value *successorAdmissionState) { value.framedDigest[0] = 1 },
+		"index sizes": func(value *successorAdmissionState) {
+			value.indexPrefixSize, value.indexSize = 1, 2
+		},
+		"index records": func(value *successorAdmissionState) { value.indexRecords = 1 },
+		"index tail":    func(value *successorAdmissionState) { value.indexTail = testDigest("index-tail") },
+		"superseded":    func(value *successorAdmissionState) { value.supersededDigest = testDigest("superseded") },
+		"reserved":      func(value *successorAdmissionState) { value.reservedDigest = testDigest("reserved") },
 	} {
 		t.Run(name, func(t *testing.T) {
 			value := *state
@@ -130,6 +140,8 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 		"SuccessorRecoveryBoundPermit":     true,
 		"SuccessorReserveReady":            true,
 		"SuccessorReceiptBoundReady":       true,
+		"SuccessorAdjacentReserveReady":    true,
+		"SuccessorReservedDurablePermit":   true,
 		"successorAdmissionState":          true,
 		"bindSuccessorAdmissionPermit":     true,
 	}
@@ -139,7 +151,7 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -157,10 +169,6 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 }
 
 func TestSuccessorContentConcreteTransitionGraphIsClosed(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "evidence_successor_content.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	expected := map[string]string{
 		"SuccessorAdmissionPermit":         "PublishRuntime",
 		"SuccessorRuntimePublishedPermit":  "BindRuntime",
@@ -168,30 +176,38 @@ func TestSuccessorContentConcreteTransitionGraphIsClosed(t *testing.T) {
 		"SuccessorRecoveryPublishedPermit": "BindDecisionRecovery",
 		"SuccessorRecoveryBoundPermit":     "SealReserveReady",
 		"SuccessorReserveReady":            "BindReceiptPair",
-		"SuccessorReceiptBoundReady":       "",
+		"SuccessorReceiptBoundReady":       "AppendGenerationSuperseded",
+		"SuccessorAdjacentReserveReady":    "AppendGenerationReserved",
+		"SuccessorReservedDurablePermit":   "",
 	}
 	seen := make(map[string]bool)
-	for _, declaration := range file.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Recv == nil || len(function.Recv.List) != 1 {
-			continue
+	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go"} {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
 		}
-		star, ok := function.Recv.List[0].Type.(*ast.StarExpr)
-		if !ok {
-			continue
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || len(function.Recv.List) != 1 {
+				continue
+			}
+			star, ok := function.Recv.List[0].Type.(*ast.StarExpr)
+			if !ok {
+				continue
+			}
+			receiver, ok := star.X.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			method, tracked := expected[receiver.Name]
+			if !tracked {
+				continue
+			}
+			if method == "" || function.Name.Name != method || seen[receiver.Name] {
+				t.Fatalf("concrete successor stage %s exposes unexpected method %s", receiver.Name, function.Name.Name)
+			}
+			seen[receiver.Name] = true
 		}
-		receiver, ok := star.X.(*ast.Ident)
-		if !ok {
-			continue
-		}
-		method, tracked := expected[receiver.Name]
-		if !tracked {
-			continue
-		}
-		if method == "" || function.Name.Name != method || seen[receiver.Name] {
-			t.Fatalf("concrete successor stage %s exposes unexpected method %s", receiver.Name, function.Name.Name)
-		}
-		seen[receiver.Name] = true
 	}
 	for receiver, method := range expected {
 		if method != "" && !seen[receiver] {

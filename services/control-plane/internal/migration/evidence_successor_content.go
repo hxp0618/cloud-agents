@@ -19,6 +19,8 @@ const (
 	successorAdmissionRecoveryBound     successorAdmissionStage = "recovery_bound"
 	successorAdmissionReserveReady      successorAdmissionStage = "reserve_ready"
 	successorAdmissionReceiptBound      successorAdmissionStage = "receipt_bound"
+	successorAdmissionAdjacentReady     successorAdmissionStage = "adjacent_reserve_ready"
+	successorAdmissionReservedDurable   successorAdmissionStage = "reserved_durable"
 )
 
 // SuccessorAdmissionTransitionResult is the closed migration projection of
@@ -95,6 +97,7 @@ type successorAdmissionState struct {
 	runtimePublication  *evidencefs.Publication
 	recoveryPublication *evidencefs.Publication
 	fsPublication       evidencefs.AdmissionPublicationTransitionResult
+	fsIndex             evidencefs.AdmissionTransitionResult
 	target, fullSet     [32]byte
 	revision            uint64
 	runtimeDigest       Digest
@@ -105,6 +108,15 @@ type successorAdmissionState struct {
 	recoveryReused      bool
 	runtimeReceipt      VerifiedContentReceipt
 	recoveryReceipt     VerifiedDecisionRecoveryReceipt
+	indexPrefixDigest   [32]byte
+	indexDigest         [32]byte
+	framedDigest        [32]byte
+	indexPrefixSize     uint64
+	indexSize           uint64
+	indexRecords        uint64
+	indexTail           Digest
+	supersededDigest    Digest
+	reservedDigest      Digest
 	binding             *successorAdmissionStateBinding
 	consumed            *atomic.Bool
 }
@@ -235,6 +247,10 @@ func successorStageOwnerValid(owner any, state *successorAdmissionState) bool {
 		return state.stage == successorAdmissionReserveReady && value != nil && value.self == value && value.state == state
 	case *SuccessorReceiptBoundReady:
 		return state.stage == successorAdmissionReceiptBound && value != nil && value.self == value && value.state == state
+	case *SuccessorAdjacentReserveReady:
+		return state.stage == successorAdmissionAdjacentReady && value != nil && value.self == value && value.state == state
+	case *SuccessorReservedDurablePermit:
+		return state.stage == successorAdmissionReservedDurable && value != nil && value.self == value && value.state == state
 	default:
 		return false
 	}
@@ -276,19 +292,23 @@ func validSuccessorAdmissionStageShape(state *successorAdmissionState) bool {
 	emptyReceipts := state.runtimeReceipt.binding == nil && state.recoveryReceipt.binding == nil
 	switch state.stage {
 	case successorAdmissionPrepared:
-		return state.prior == nil && state.revision == state.history.revision && state.fullSet == state.history.fullSet && state.runtimePublication == nil && state.recoveryPublication == nil && emptyAdmissionPublicationResult(state.fsPublication) && !state.runtimeReused && !state.recoveryReused && emptyReceipts
+		return state.prior == nil && state.revision == state.history.revision && state.fullSet == state.history.fullSet && state.runtimePublication == nil && state.recoveryPublication == nil && emptyAdmissionPublicationResult(state.fsPublication) && emptySuccessorIndexFacts(state) && !state.runtimeReused && !state.recoveryReused && emptyReceipts
 	case successorAdmissionRuntimePublished:
-		return state.prior != nil && state.prior.stage == successorAdmissionPrepared && state.revision == state.prior.revision+1 && state.recoveryPublication == nil && state.runtimePublication != nil && validStoredSuccessorPublicationResult(state, state.runtimePublication, state.runtimeDigest, state.runtimeSize, state.runtimeReused) && !state.recoveryReused && emptyReceipts && (state.fullSet == state.prior.fullSet) == state.runtimeReused
+		return state.prior != nil && state.prior.stage == successorAdmissionPrepared && state.revision == state.prior.revision+1 && state.recoveryPublication == nil && state.runtimePublication != nil && validStoredSuccessorPublicationResult(state, state.runtimePublication, state.runtimeDigest, state.runtimeSize, state.runtimeReused) && emptySuccessorIndexFacts(state) && !state.recoveryReused && emptyReceipts && (state.fullSet == state.prior.fullSet) == state.runtimeReused
 	case successorAdmissionRuntimeBound:
-		return state.prior != nil && state.prior.stage == successorAdmissionRuntimePublished && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == nil && emptyAdmissionPublicationResult(state.fsPublication) && state.runtimeReused == state.prior.runtimeReused && !state.recoveryReused && emptyReceipts && state.fullSet == state.prior.fullSet
+		return state.prior != nil && state.prior.stage == successorAdmissionRuntimePublished && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == nil && emptyAdmissionPublicationResult(state.fsPublication) && emptySuccessorIndexFacts(state) && state.runtimeReused == state.prior.runtimeReused && !state.recoveryReused && emptyReceipts && state.fullSet == state.prior.fullSet
 	case successorAdmissionRecoveryPublished:
-		return state.prior != nil && state.prior.stage == successorAdmissionRuntimeBound && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication != nil && validStoredSuccessorPublicationResult(state, state.recoveryPublication, state.recoveryDigest, state.recoverySize, state.recoveryReused) && state.runtimeReused == state.prior.runtimeReused && emptyReceipts && (state.fullSet == state.prior.fullSet) == state.recoveryReused
+		return state.prior != nil && state.prior.stage == successorAdmissionRuntimeBound && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication != nil && validStoredSuccessorPublicationResult(state, state.recoveryPublication, state.recoveryDigest, state.recoverySize, state.recoveryReused) && emptySuccessorIndexFacts(state) && state.runtimeReused == state.prior.runtimeReused && emptyReceipts && (state.fullSet == state.prior.fullSet) == state.recoveryReused
 	case successorAdmissionRecoveryBound:
-		return state.prior != nil && state.prior.stage == successorAdmissionRecoveryPublished && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && emptyAdmissionPublicationResult(state.fsPublication) && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && emptyReceipts && state.fullSet == state.prior.fullSet
+		return state.prior != nil && state.prior.stage == successorAdmissionRecoveryPublished && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && emptyAdmissionPublicationResult(state.fsPublication) && emptySuccessorIndexFacts(state) && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && emptyReceipts && state.fullSet == state.prior.fullSet
 	case successorAdmissionReserveReady:
-		return state.prior != nil && state.prior.stage == successorAdmissionRecoveryBound && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && emptyAdmissionPublicationResult(state.fsPublication) && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && emptyReceipts && state.fullSet == state.prior.fullSet
+		return state.prior != nil && state.prior.stage == successorAdmissionRecoveryBound && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && emptyAdmissionPublicationResult(state.fsPublication) && emptySuccessorIndexFacts(state) && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && emptyReceipts && state.fullSet == state.prior.fullSet
 	case successorAdmissionReceiptBound:
-		return state.prior != nil && state.prior.stage == successorAdmissionReserveReady && state.revision == state.prior.revision && state.inventory == state.prior.inventory && state.mutation == state.prior.mutation && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && emptyAdmissionPublicationResult(state.fsPublication) && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && state.runtimeReceipt.binding != nil && state.recoveryReceipt.binding != nil && state.fullSet == state.prior.fullSet
+		return state.prior != nil && state.prior.stage == successorAdmissionReserveReady && state.revision == state.prior.revision && state.inventory == state.prior.inventory && state.mutation == state.prior.mutation && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && emptyAdmissionPublicationResult(state.fsPublication) && emptySuccessorIndexFacts(state) && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && state.runtimeReceipt.binding != nil && state.recoveryReceipt.binding != nil && state.fullSet == state.prior.fullSet
+	case successorAdmissionAdjacentReady:
+		return state.prior != nil && state.prior.stage == successorAdmissionReceiptBound && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && state.runtimeReceipt.binding == state.prior.runtimeReceipt.binding && state.recoveryReceipt.binding == state.prior.recoveryReceipt.binding && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && emptyAdmissionPublicationResult(state.fsPublication) && validStoredSuccessorIndexResult(state, state.plan.supersededFrameBytes, state.plan.supersededFrame.RecordDigest) && state.indexRecords == state.history.targetIndexRecords+1 && state.fullSet != state.prior.fullSet
+	case successorAdmissionReservedDurable:
+		return state.prior != nil && state.prior.stage == successorAdmissionAdjacentReady && state.revision == state.prior.revision+1 && state.runtimePublication == state.prior.runtimePublication && state.recoveryPublication == state.prior.recoveryPublication && state.runtimeReceipt.binding == state.prior.runtimeReceipt.binding && state.recoveryReceipt.binding == state.prior.recoveryReceipt.binding && state.runtimeReused == state.prior.runtimeReused && state.recoveryReused == state.prior.recoveryReused && emptyAdmissionPublicationResult(state.fsPublication) && validStoredSuccessorIndexResult(state, state.plan.reservedFrameBytes, state.plan.reservedFrame.RecordDigest) && state.indexPrefixDigest == state.prior.indexDigest && state.indexPrefixSize == state.prior.indexSize && state.indexRecords == state.prior.indexRecords+1 && state.supersededDigest == state.prior.supersededDigest && state.fullSet != state.prior.fullSet
 	default:
 		return false
 	}
@@ -301,6 +321,21 @@ func validStoredSuccessorPublicationResult(state *successorAdmissionState, publi
 
 func emptyAdmissionPublicationResult(result evidencefs.AdmissionPublicationTransitionResult) bool {
 	return result.Outcome() == "" && result.Inventory() == nil && result.Publication() == nil && result.CandidateDigest() == ([32]byte{}) && result.CandidateSequence() == 0 && result.CandidateRevision() == 0 && result.PreviousRevision() == 0 && result.Size() == 0 && !result.Reused()
+}
+
+func emptySuccessorIndexFacts(state *successorAdmissionState) bool {
+	return state != nil && emptyAdmissionTransitionResult(state.fsIndex) && state.indexPrefixDigest == ([32]byte{}) && state.indexDigest == ([32]byte{}) && state.framedDigest == ([32]byte{}) && state.indexPrefixSize == 0 && state.indexSize == 0 && state.indexRecords == 0 && state.indexTail == "" && state.supersededDigest == "" && state.reservedDigest == ""
+}
+
+func emptyAdmissionTransitionResult(result evidencefs.AdmissionTransitionResult) bool {
+	return result.Outcome() == "" && result.Inventory() == nil && result.CandidateKind() == "" && result.CandidateDigest() == ([32]byte{}) && result.CandidateSequence() == 0 && result.CandidateRevision() == 0 && result.PreviousRevision() == 0
+}
+
+func validStoredSuccessorIndexResult(state *successorAdmissionState, framed []byte, tail Digest) bool {
+	if state == nil || len(framed) == 0 || tail.Validate() != nil || state.indexPrefixSize > ^uint64(0)-uint64(len(framed)) || state.fsIndex.Outcome() != evidencefs.AdmissionTransitionDurable || state.fsIndex.Inventory() != state.inventory || state.fsIndex.CandidateKind() != "target_index_append" || state.fsIndex.CandidateSequence() != 0 || state.fsIndex.CandidateDigest() != sha256.Sum256(framed) || state.fsIndex.CandidateRevision() != state.revision || state.fsIndex.PreviousRevision()+1 != state.revision || state.indexPrefixDigest == ([32]byte{}) || state.indexDigest == ([32]byte{}) || state.framedDigest != sha256.Sum256(framed) || state.indexPrefixSize == 0 || state.indexSize != state.indexPrefixSize+uint64(len(framed)) || state.indexTail != tail || state.supersededDigest != state.plan.supersededFrame.RecordDigest || state.reservedDigest != state.plan.reservedFrame.RecordDigest {
+		return false
+	}
+	return true
 }
 
 func validSuccessorAdmissionState(owner any, state *successorAdmissionState, stage successorAdmissionStage, candidate OwnedCurrentCandidate) bool {
@@ -326,6 +361,8 @@ func validSuccessorAdmissionState(owner any, state *successorAdmissionState, sta
 		return state.runtimePublication.Matches(digestRaw(state.runtimeDigest), state.runtimeSize) && state.recoveryPublication.Matches(digestRaw(state.recoveryDigest), state.recoverySize) && state.runtimePublication.SameStore(state.recoveryPublication)
 	case successorAdmissionReceiptBound:
 		return validRuntimeReceipt(state.runtimeReceipt, candidate.owner, state.runtimeDigest, state.runtimeSize) && validDecisionRecoveryReceipt(state.recoveryReceipt, candidate.owner, state.recoveryDigest, state.recoverySize) && state.runtimeReceipt.publication == state.runtimePublication && state.recoveryReceipt.publication == state.recoveryPublication && state.runtimePublication.SameStore(state.recoveryPublication)
+	case successorAdmissionAdjacentReady, successorAdmissionReservedDurable:
+		return validRuntimeReceipt(state.runtimeReceipt, candidate.owner, state.runtimeDigest, state.runtimeSize) && validDecisionRecoveryReceipt(state.recoveryReceipt, candidate.owner, state.recoveryDigest, state.recoverySize) && state.runtimeReceipt.publication == state.runtimePublication && state.recoveryReceipt.publication == state.recoveryPublication && state.runtimePublication.SameStore(state.recoveryPublication) && validSuccessorInventoryIndex(state)
 	default:
 		return false
 	}
@@ -366,6 +403,13 @@ func successorAdmissionStateDigest(state *successorAdmissionState) [32]byte {
 	writeAdmissionUint(h, state.fsPublication.PreviousRevision())
 	writeAdmissionUint(h, state.fsPublication.Size())
 	writeAdmissionBool(h, state.fsPublication.Reused())
+	writeAdmissionString(h, string(state.fsIndex.Outcome()))
+	writeAdmissionString(h, state.fsIndex.CandidateKind())
+	indexCandidateDigest := state.fsIndex.CandidateDigest()
+	h.Write(indexCandidateDigest[:])
+	writeAdmissionUint(h, state.fsIndex.CandidateSequence())
+	writeAdmissionUint(h, state.fsIndex.CandidateRevision())
+	writeAdmissionUint(h, state.fsIndex.PreviousRevision())
 	if state.runtimeReceipt.binding == nil {
 		h.Write([]byte{0})
 	} else {
@@ -380,6 +424,15 @@ func successorAdmissionStateDigest(state *successorAdmissionState) [32]byte {
 		writeAdmissionString(h, state.recoveryReceipt.digest.String())
 		writeAdmissionUint(h, state.recoveryReceipt.sizeBytes)
 	}
+	h.Write(state.indexPrefixDigest[:])
+	h.Write(state.indexDigest[:])
+	h.Write(state.framedDigest[:])
+	writeAdmissionUint(h, state.indexPrefixSize)
+	writeAdmissionUint(h, state.indexSize)
+	writeAdmissionUint(h, state.indexRecords)
+	writeAdmissionString(h, state.indexTail.String())
+	writeAdmissionString(h, state.supersededDigest.String())
+	writeAdmissionString(h, state.reservedDigest.String())
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
@@ -409,7 +462,12 @@ func nextSuccessorAdmissionState(prior *successorAdmissionState, stage successor
 		inventory: step.inventory, mutation: step.mutation, target: step.target, fullSet: step.fullSet, revision: step.revision,
 		runtimePublication: prior.runtimePublication, recoveryPublication: prior.recoveryPublication,
 		runtimeDigest: prior.runtimeDigest, runtimeSize: prior.runtimeSize, recoveryDigest: prior.recoveryDigest, recoverySize: prior.recoverySize,
-		runtimeReused: prior.runtimeReused, recoveryReused: prior.recoveryReused, consumed: &atomic.Bool{},
+		runtimeReused: prior.runtimeReused, recoveryReused: prior.recoveryReused,
+		runtimeReceipt: prior.runtimeReceipt, recoveryReceipt: prior.recoveryReceipt,
+		indexPrefixDigest: prior.indexPrefixDigest, indexDigest: prior.indexDigest, framedDigest: prior.framedDigest,
+		indexPrefixSize: prior.indexPrefixSize, indexSize: prior.indexSize, indexRecords: prior.indexRecords,
+		indexTail: prior.indexTail, supersededDigest: prior.supersededDigest, reservedDigest: prior.reservedDigest,
+		consumed: &atomic.Bool{},
 	}
 }
 
@@ -527,7 +585,7 @@ func successorExistingBoundPublicationsExact(state *successorAdmissionState) boo
 		return true
 	case successorAdmissionRuntimeBound, successorAdmissionRecoveryPublished:
 		return state.runtimePublication != nil && state.runtimePublication.Matches(digestRaw(state.runtimeDigest), state.runtimeSize)
-	case successorAdmissionRecoveryBound, successorAdmissionReserveReady, successorAdmissionReceiptBound:
+	case successorAdmissionRecoveryBound, successorAdmissionReserveReady, successorAdmissionReceiptBound, successorAdmissionAdjacentReady, successorAdmissionReservedDurable:
 		return state.runtimePublication != nil && state.recoveryPublication != nil && state.runtimePublication.Matches(digestRaw(state.runtimeDigest), state.runtimeSize) && state.recoveryPublication.Matches(digestRaw(state.recoveryDigest), state.recoverySize) && state.runtimePublication.SameStore(state.recoveryPublication)
 	default:
 		return false
