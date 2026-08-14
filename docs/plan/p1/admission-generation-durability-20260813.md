@@ -3,9 +3,9 @@
 - Status：**LOCAL IMPLEMENTATION VERIFIED — GATE OPEN**
 - Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability、
   `GenerationActivated` durable append、root-wide lock release、retained generation snapshot、strict replay、same-verifier recovery
-  binding、existing-segment composite append/checkpoint 与 unknown-outcome reconciliation
-- Fixed source commit：`544004ac3526bbebaf154d1f0cf9cd64ab9c722e`（已推送至 feature branch）
-- Fixed implementation tree：`3e5586f04d7b509c0dde64110a235730b31dcdd3`（`544004a^{tree}`，不含本次证据文档更新）
+  binding、existing/rotated-segment composite append/checkpoint、ten-state unknown classification 与 response-lost repair
+- Fixed source commit：`93d3263ce6f8dba167c42645c1005bc753e482b4`（已推送至 feature branch）
+- Fixed implementation tree：`5b538f3e0d1eb3fee7b34024e287e535be659884`（`93d3263^{tree}`，不含本次证据文档更新）
 - Branch：`codex/cloud-agents-platform-p1`
 - Date：2026-08-14 Asia/Shanghai
 - Toolchain：Go `1.26.5 darwin/arm64`
@@ -16,7 +16,7 @@
 的本地实现证据。
 它证明 brand-new generation 在同一 active admission epoch 与 retained lock chain 下，按
 `GenerationReserved → exact segment-0 JournalHeader → GenerationActivated` 的顺序完成代码级 durability barrier。
-它不证明 production trusted mount、segment rotation、successor generation、`ActiveGeneration`/session、数据库连接、
+它不证明 production trusted mount、successor generation、`ActiveGeneration`/session、数据库连接、
 真实文件系统掉电恢复或 Platform RC。
 
 ## Fixed implementation commits
@@ -38,35 +38,46 @@
 | `3084ecdc8cb35eacf15caf2e19873e4ab733a7a6` | retained tail repair                 | shrink only torn final segment/index suffixes                                  |
 | `33f1c7d422d59ec604200838e154969d3dfa59a3` | unknown append classification        | closed unchanged/torn/complete composite byte classification                   |
 | `544004ac3526bbebaf154d1f0cf9cd64ab9c722e` | migration retained EvidenceJournal   | sealed replay/append/close plus five-way unknown reconciliation                |
+| `145ceb2049a3b2d657dad5ce0ae27ac4c633c3ea` | evidencefs segment rotation          | exact new-segment/header/caller/checkpoint durability order                    |
+| `f0d9a665e53521d9fd18d0a5361074b6a1cd7541` | rotation unknown classification      | ten-state byte-level observation and relaxed response-lost replay classifier   |
+| `93d3263ce6f8dba167c42645c1005bc753e482b4` | migration rotation integration       | prepared/durable/unknown rotation journal binding and torn-segment discard     |
 
 Key fixed file identities:
 
-| File                                                       | SHA-256                                                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------------ |
-| `internal/evidencefs/admission_journal_create.go`          | `428008d074db6ec93c1b0b8b50f803f28b517d3af7aab88857d15f49d1f3f3f5` |
-| `internal/evidencefs/admission_journal_create_test.go`     | `77f08741a5ebc6a811989a7d813610b3c379247858152490871517759aea5f66` |
-| `internal/migration/evidence_admission_reserved.go`        | `370c1bb930713e8f7da9f9af9158ea0c0428ce50aa7fb796d46e31d57847b518` |
-| `internal/migration/evidence_admission_reserved_test.go`   | `ea5d820bcb67125e36bcba5d2bfcf109c9eba7135c42be33b5f8c6cea56326b5` |
-| `internal/migration/evidence_admission_header.go`          | `8da40eb19a3838dea7e39327d0c78ceae5fac326bb6d686c3e4943279cad649f` |
-| `internal/migration/evidence_admission_header_test.go`     | `6300f021349d3fdbd17f1aa211d72332572e2def5b43a585e6279172321c0688` |
-| `internal/migration/evidence_admission_activation.go`      | `981edd5e0af5046aec0796d371ff13535a22f974611af0e3310edb696a7a2b72` |
-| `internal/migration/evidence_admission_activation_test.go` | `dbed639b6e3289542637e45a416b6eeff84cdd8905e7f4cfd7b8e271b77ec04f` |
-| `internal/evidencefs/admission_handoff.go`                 | `67b99efddcba783d1702f7a87ab3e7203ba977632ef74df4ecce8a5f75645533` |
-| `internal/evidencefs/admission_handoff_test.go`            | `5c8ffb744fe7a1db83c70c6a79ff9483b31bdf5501e24d66b2779396c1bcfa9e` |
-| `internal/migration/evidence_admission_handoff.go`         | `05d5b1b70e57c3ee9fdfba2ed4690a80893d2dfe57ef4925beb80631cc5e22f2` |
-| `internal/migration/evidence_admission_handoff_test.go`    | `eba777211843b3d444ab97432c5d5fe8603140d334db5f03d998a6a96148c801` |
-| `internal/migration/evidence_admission_history.go`         | `47d1926437af65155104764fe905ddae3a5e20e8af3ab66b67f785878e597ad0` |
-| `internal/migration/evidence_admission_history_test.go`    | `7e40d08539c0b034efd2d3d69a1f3b2dc20897e6f7874a8dd75f8263e4a5e989` |
-| `internal/migration/evidence_generation_recovery.go`       | `52f94dbd91e2704af6d5b834623fd82c512c108424b907a4003af84d78c6d0f6` |
-| `internal/migration/evidence_generation_recovery_test.go`  | `8f4df385d27398c375e657515928988329321c89111156ab556da3f285a37bb6` |
-| `internal/evidencefs/generation_append.go`                 | `387182e9575cfe745b0c9aad73411f6582a80a7232ddd792856754aa5a4405dd` |
-| `internal/evidencefs/generation_checkpoint.go`             | `503e55da43f837e174a61d0fb638a5b63b3fd0da68c08cb212ca8332d649f31c` |
-| `internal/evidencefs/generation_resync.go`                 | `9b187b594d096a43a1afdf12575375285395dd6019240d628d30236dd3951a9c` |
-| `internal/evidencefs/generation_truncate.go`               | `67fa4229615df349eb5ad035e3b126d1337bdbecb9ce53f5b199a1316cd16eea` |
-| `internal/evidencefs/generation_append_reconcile.go`       | `04cef92367bc745dc084e975e144ca49c8725b7a516e74a88c1be017c0a8030b` |
-| `internal/migration/evidence_generation_journal.go`        | `967aa915b16844f026cede6a8cfbb461b25b5e1095b4647358ba151875bfd4d8` |
-| `internal/migration/evidence_generation_journal_test.go`   | `df42cab7dc48e89be921d81b6d29271be1b9ab72defa5f82d84bd1de684a5001` |
-| `internal/migration/evidence_runtime.go`                   | `34844de81ac52b8785398ea4b8fef547b0a85fcc7425a2b7b465d54cfe77bc70` |
+| File                                                         | SHA-256                                                            |
+| ------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `internal/evidencefs/admission_journal_create.go`            | `428008d074db6ec93c1b0b8b50f803f28b517d3af7aab88857d15f49d1f3f3f5` |
+| `internal/evidencefs/admission_journal_create_test.go`       | `77f08741a5ebc6a811989a7d813610b3c379247858152490871517759aea5f66` |
+| `internal/migration/evidence_admission_reserved.go`          | `370c1bb930713e8f7da9f9af9158ea0c0428ce50aa7fb796d46e31d57847b518` |
+| `internal/migration/evidence_admission_reserved_test.go`     | `ea5d820bcb67125e36bcba5d2bfcf109c9eba7135c42be33b5f8c6cea56326b5` |
+| `internal/migration/evidence_admission_header.go`            | `8da40eb19a3838dea7e39327d0c78ceae5fac326bb6d686c3e4943279cad649f` |
+| `internal/migration/evidence_admission_header_test.go`       | `6300f021349d3fdbd17f1aa211d72332572e2def5b43a585e6279172321c0688` |
+| `internal/migration/evidence_admission_activation.go`        | `981edd5e0af5046aec0796d371ff13535a22f974611af0e3310edb696a7a2b72` |
+| `internal/migration/evidence_admission_activation_test.go`   | `dbed639b6e3289542637e45a416b6eeff84cdd8905e7f4cfd7b8e271b77ec04f` |
+| `internal/evidencefs/admission_handoff.go`                   | `67b99efddcba783d1702f7a87ab3e7203ba977632ef74df4ecce8a5f75645533` |
+| `internal/evidencefs/admission_handoff_test.go`              | `5c8ffb744fe7a1db83c70c6a79ff9483b31bdf5501e24d66b2779396c1bcfa9e` |
+| `internal/migration/evidence_admission_handoff.go`           | `05d5b1b70e57c3ee9fdfba2ed4690a80893d2dfe57ef4925beb80631cc5e22f2` |
+| `internal/migration/evidence_admission_handoff_test.go`      | `eba777211843b3d444ab97432c5d5fe8603140d334db5f03d998a6a96148c801` |
+| `internal/migration/evidence_admission_history.go`           | `47d1926437af65155104764fe905ddae3a5e20e8af3ab66b67f785878e597ad0` |
+| `internal/migration/evidence_admission_history_test.go`      | `7e40d08539c0b034efd2d3d69a1f3b2dc20897e6f7874a8dd75f8263e4a5e989` |
+| `internal/migration/evidence_generation_recovery.go`         | `52f94dbd91e2704af6d5b834623fd82c512c108424b907a4003af84d78c6d0f6` |
+| `internal/migration/evidence_generation_recovery_test.go`    | `8f4df385d27398c375e657515928988329321c89111156ab556da3f285a37bb6` |
+| `internal/evidencefs/generation_append.go`                   | `387182e9575cfe745b0c9aad73411f6582a80a7232ddd792856754aa5a4405dd` |
+| `internal/evidencefs/generation_checkpoint.go`               | `503e55da43f837e174a61d0fb638a5b63b3fd0da68c08cb212ca8332d649f31c` |
+| `internal/evidencefs/generation_resync.go`                   | `9b187b594d096a43a1afdf12575375285395dd6019240d628d30236dd3951a9c` |
+| `internal/evidencefs/generation_truncate.go`                 | `67fa4229615df349eb5ad035e3b126d1337bdbecb9ce53f5b199a1316cd16eea` |
+| `internal/evidencefs/generation_append_reconcile.go`         | `04cef92367bc745dc084e975e144ca49c8725b7a516e74a88c1be017c0a8030b` |
+| `internal/evidencefs/generation_rotate.go`                   | `e3083491e3829c52cdf840557a5fd57eb9a162f79ab28b9b2b8b0c2f99f41006` |
+| `internal/evidencefs/generation_rotate_reconcile.go`         | `4761afbee3d7770421d450cd773cfb0f18d7a18bc131bca33863bd8e007462bb` |
+| `internal/evidencefs/generation_rotate_discard.go`           | `0535490ad33acbe0662f6126e5894f53de749438be6ad6e797d3ce99209730eb` |
+| `internal/evidencefs/generation_rotate_test.go`              | `cc4d69eaa018f2e4c8d0594b358694506cf4a2448cff0cd8f00913d6e08a9d43` |
+| `internal/migration/evidence_generation_journal.go`          | `7f05a6e59c4e7ba608db59008905dc628fae8e7dc5443d691cfb5db5033aafd8` |
+| `internal/migration/evidence_generation_journal_rotation.go` | `e5865bfc0d30ced1aa005a940f32d19a85b1970397a8e65679a378682458cd94` |
+| `internal/migration/evidence_generation_journal_test.go`     | `cf018969f33e2190ec8b580f93df5e1fc4823d757a931884f9492b85597d4d53` |
+| `internal/migration/evidence_replay_structural.go`           | `6abebc1cf0517eb711b6f54b4d6fe06b6f5c96cee23eaae93744ff23a85b6005` |
+| `internal/migration/evidence_replay_structural_test.go`      | `eb8c839aefff7c0758113197d7f90ea01002736ec2209e808c3ac0967df4a600` |
+| `internal/migration/evidence_runtime.go`                     | `cb5dc0b0c803c6fd2ce9d1920b6ff81a7fbea26c84af583a681d6b7f1b42aeeb` |
+| `internal/migration/evidence_runtime_test.go`                | `4d77807af70e338ac3f13f7a7841c72179356a7d107d61dff5f12168b463b63c` |
 
 Paths in this table are relative to `services/control-plane/`.
 
@@ -133,8 +144,18 @@ lineage and root locks in reverse ownership order. No failure path deletes or re
   is reclassified from fresh bytes on the next replay; contradiction revokes the lease and closes through the immutable chain.
 - The journal registry binds the exact predecessor capabilities, same-verifier schema facts, reservation, snapshot/file facts,
   cursor, recovery snapshot, usage counters, opaque filesystem result and prepared framed bytes. Literal/copy/paired-field mutation,
-  stale cursor, wrong owner/generation, quota overflow and the unimplemented rotation boundary fail closed. The unknown state stores
-  compact previous/candidate recovery facts rather than retaining the full frame/witness graph.
+  stale cursor, wrong owner/generation and quota overflow fail closed. The unknown state stores compact previous/header/candidate
+  recovery facts rather than retaining the full frame/witness graph.
+- When the current segment cannot fit the caller composite, the journal prepares a sealed rotation header, its checkpoint, the
+  caller frame and its checkpoint together. evidencefs executes create+directory sync, header, header checkpoint, caller and caller
+  checkpoint barriers in that exact order; only the lower durable result installs the next-segment cursor. The migration layer
+  binds the rotated header/caller counters and emits both rotation diagnostic digests without exposing a header cursor as caller authority.
+- Rotation response loss is classified as `segment_absent`, `segment_empty`, `header_torn`, `header_complete`,
+  `header_checkpoint_torn`, `header_composite_complete`, `caller_torn`, `caller_complete`, `caller_checkpoint_torn` or
+  `composite_complete`. Empty/torn created tails can only be removed by the result-bound evidencefs discard transition, which
+  unlinks that exact final segment and fsyncs its journal directory; any uncertainty remains unknown. Complete prefixes use only
+  the matching resync/truncate/checkpoint sequence. Physical segment headers are transparent only to logical record adjacency;
+  inserted business records remain rejected by the structural FSM.
 
 ## Local verification
 
@@ -162,7 +183,8 @@ identity swaps, canonical frame/digest mismatches, anti-copy/one-shot behavior a
 runtime consumer, exact release order, root-lock reacquisition after handoff, immutable-registry tamper rejection and
 cleanup through the original retained FDs. The retained journal additions cover exact composite preparation, caller-record
 non-consumption on quota/rotation preflight, prepared/recovery/schema mutation closure, ordered durable-ledger refresh, fresh cursor
-rebinding, every lower unknown byte classification and the standalone checkpoint/resync/truncate fault matrices. A positive
+rebinding, every existing and rotated lower unknown byte classification, empty/torn segment discard, response-lost discard
+reclassification, logical adjacency across physical headers and the standalone checkpoint/resync/truncate fault matrices. A positive
 cross-package migration-to-real-evidencefs journal integration remains unavailable until the trusted production constructor exists;
 no exported fake constructor, unsafe bridge or weakened seal was added to manufacture that test.
 
@@ -173,8 +195,8 @@ no exported fake constructor, unsafe bridge or weakened seal was added to manufa
 - Root-wide admission release and opaque target/generation lock transfer are locally implemented, but `GenerationHandoffReady`
   now advances through compact filesystem snapshot, strict brand-new replay and same-verifier recovery binding into
   a concrete retained `EvidenceJournal`; no public production sink/session is minted.
-- Segment rotation, successor/continuation journal binding, `ActiveGeneration`, `EvidenceSession`, `Connect`, runner and database
-  wiring are not implemented by this slice. `NewEvidenceSink` therefore continues to reject before production I/O.
+- Successor/continuation journal binding, `ActiveGeneration`, `EvidenceSession`, `Connect`, runner and database wiring are not
+  implemented by this slice. `NewEvidenceSink` therefore continues to reject before production I/O.
 - Successor `GenerationSuperseded → adjacent GenerationReserved` and process-restart reconstruction of opaque in-memory authorities
   remain separate incomplete paths. The implemented unknown reconciliation covers response-lost I/O while the retained lease and
   process-local journal capability are still alive; it is not a crash-reopen constructor.
@@ -195,5 +217,5 @@ record in place.
 The remote recovered after three recorded `Internal Server Error` rejections (request IDs
 `81750123b6d8a1f0b0558de37214a30b`, `36abdfa32685cbecb3c19520073d893d`, and
 `28150b7e32b2ad721809a3d632e48720`). On 2026-08-14, the feature branch advanced through retained checkpoint append/heal,
-resync, tail repair, unknown classification and the concrete journal binder at `544004a`; all listed implementation commits are
-present on `origin/codex/cloud-agents-platform-p1`.
+resync, tail repair, the concrete journal binder, segment rotation and ten-state rotation reconciliation at `93d3263`; all listed
+implementation commits are present on `origin/codex/cloud-agents-platform-p1`.
