@@ -534,6 +534,46 @@ func TestStructuralEvidenceReplayRetainsWireFSMFaults(t *testing.T) {
 	}
 }
 
+func TestStructuralRotationHeaderIsPhysicalOnlyForLogicalAdjacency(t *testing.T) {
+	t.Parallel()
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	base := decodeEvidenceFrames(t, document["frames"])
+	header := *base[0].Record.Header
+	header.ReservedSegments = 2
+	header.QuotaReservationDigest = projectionTestDigest
+	base[0].Record.Header = &header
+	redigestEvidenceFrames(t, base)
+	prefix := cloneProjectionValue(base[:len(base)-1])
+	rotation := header
+	rotation.SegmentIndex = 1
+	rotation.PreviousSegmentRecordDigest = digestPointer(prefix[len(prefix)-1].RecordDigest)
+	rotationFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: uint64(len(prefix)), PreviousRecordDigest: digestPointer(prefix[len(prefix)-1].RecordDigest), RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &rotation}}
+	rotationFrame.RecordDigest, _ = rotationFrame.ComputeDigest()
+	terminal := cloneProjectionValue(base[len(base)-1])
+	terminal.Sequence = rotationFrame.Sequence + 1
+	terminal.PreviousRecordDigest = digestPointer(rotationFrame.RecordDigest)
+	terminal.RecordDigest, _ = terminal.ComputeDigest()
+	rotated := append(prefix, rotationFrame, terminal)
+	if _, err := validateEvidenceChainStructureSegments([][]EvidenceFrame{rotated[:len(prefix)], rotated[len(prefix):]}); err != nil {
+		t.Fatalf("rotation header broke logical commit/terminal adjacency: %v", err)
+	}
+
+	intervening := cloneProjectionValue(rotated[:len(rotated)-1])
+	extraCommit := cloneProjectionValue(prefix[len(prefix)-1])
+	extraCommit.Sequence = uint64(len(intervening))
+	extraCommit.PreviousRecordDigest = digestPointer(intervening[len(intervening)-1].RecordDigest)
+	extraCommit.RecordDigest, _ = extraCommit.ComputeDigest()
+	intervening = append(intervening, extraCommit)
+	lateTerminal := cloneProjectionValue(terminal)
+	lateTerminal.Sequence = uint64(len(intervening))
+	lateTerminal.PreviousRecordDigest = digestPointer(extraCommit.RecordDigest)
+	lateTerminal.RecordDigest, _ = lateTerminal.ComputeDigest()
+	intervening = append(intervening, lateTerminal)
+	if _, err := validateEvidenceChainStructureSegments([][]EvidenceFrame{intervening[:len(prefix)], intervening[len(prefix):]}); err == nil {
+		t.Fatal("rotation-compatible adjacency accepted an inserted business record")
+	}
+}
+
 func TestStructuralEvidenceReplayPhysicalGroupingAndReservationBounds(t *testing.T) {
 	t.Parallel()
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))

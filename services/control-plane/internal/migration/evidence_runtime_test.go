@@ -273,6 +273,38 @@ func TestAppendUnknownInvalidatesCursorAndNeverMintsDurableAuthority(t *testing.
 	}
 }
 
+func TestRotationAppendResultBindsHeaderDiagnosisAndTwoStepCursor(t *testing.T) {
+	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
+	frames := decodeEvidenceFrames(t, document["frames"])
+	owner := &evidenceOwnerToken{nonce: [16]byte{34}}
+	generation := recoveryFixtureGeneration(owner, *frames[0].Record.Header)
+	previous := frames[len(frames)-2].RecordDigest
+	header, headerCheckpoint := testDigest("rotation-header"), testDigest("rotation-header-checkpoint")
+	candidate, candidateCheckpoint := testDigest("rotation-candidate"), testDigest("rotation-candidate-checkpoint")
+
+	unknownCursor := runtimeCursorAt(generation, previous, frames[len(frames)-1].Sequence)
+	unknown, err := finishConsumedRotationAppend(unknownCursor, generation, appendOutcomeUnknown, nil, candidate, candidateCheckpoint, header, headerCheckpoint)
+	if err != nil || unknown.Outcome() != "unknown" || unknown.DurableCursor() != nil || unknownCursor.Valid() || unknown.candidateSequence != frames[len(frames)-1].Sequence+1 || unknown.candidatePreviousRecordDigest == nil || *unknown.candidatePreviousRecordDigest != header || unknown.rotationHeaderRecordDigest == nil || *unknown.rotationHeaderRecordDigest != header || unknown.rotationHeaderCheckpointRecordDigest == nil || *unknown.rotationHeaderCheckpointRecordDigest != headerCheckpoint || unknown.candidateRecordDigest != candidate || unknown.candidateCheckpointRecordDigest != candidateCheckpoint {
+		t.Fatalf("unknown rotation=%+v err=%v cursor=%v", unknown, err, unknownCursor.Valid())
+	}
+
+	durableCursor := runtimeCursorAt(generation, candidate, frames[len(frames)-1].Sequence+2)
+	durableCursor.segmentIndex = 1
+	durableCursor.lineageIndexNextSequence = 3
+	input := runtimeCursorAt(generation, previous, frames[len(frames)-1].Sequence)
+	durable, err := finishConsumedRotationAppend(input, generation, appendOutcomeDurable, &durableCursor, candidate, candidateCheckpoint, header, headerCheckpoint)
+	if err != nil || durable.Outcome() != "durable" || durable.DurableCursor() == nil || durable.DurableCursor().segmentIndex != 1 || input.Valid() {
+		t.Fatalf("durable rotation=%+v err=%v cursor=%v", durable, err, input.Valid())
+	}
+
+	badInput := runtimeCursorAt(generation, previous, frames[len(frames)-1].Sequence)
+	badDurable := durableCursor.clone()
+	badDurable.lineageIndexNextSequence--
+	if _, err := finishConsumedRotationAppend(badInput, generation, appendOutcomeDurable, &badDurable, candidate, candidateCheckpoint, header, headerCheckpoint); err == nil || !badInput.Valid() {
+		t.Fatalf("pre-consume rotation contradiction changed cursor: %v", err)
+	}
+}
+
 func TestOwnedRecordRejectsMultipleBranchesAndAppendResultShapeFaults(t *testing.T) {
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
 	frames := decodeEvidenceFrames(t, document["frames"])

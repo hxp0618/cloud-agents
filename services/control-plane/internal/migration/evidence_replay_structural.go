@@ -104,6 +104,7 @@ type evidenceStructuralAccumulator struct {
 	records                uint64
 	segments               uint32
 	previous               *Digest
+	previousNonHeader      *Digest
 	header                 *JournalHeader
 	firstHeader            *JournalHeader
 	firstFrame             *EvidenceFrame
@@ -231,6 +232,8 @@ func (a *evidenceStructuralAccumulator) consumeFrame(frame EvidenceFrame, framed
 		if err := a.consumeRecord(frame); err != nil {
 			return err
 		}
+		digest := frame.RecordDigest
+		a.previousNonHeader = &digest
 	}
 
 	a.segmentRecords++
@@ -401,7 +404,7 @@ func (a *evidenceStructuralAccumulator) consumeRecord(frame EvidenceFrame) error
 		if state.commit != nil || state.terminal != nil || state.lastIntermediate == nil {
 			return invalidEvidence("chain", "commit position")
 		}
-		if commit.LastIntermediateStateDigest != state.lastIntermediate.intermediateStateDigest {
+		if commit.LastIntermediateStateDigest != state.lastIntermediate.intermediateStateDigest || a.previousNonHeader == nil || *a.previousNonHeader != state.lastIntermediate.recordDigest {
 			return invalidEvidence("chain", "commit intermediate")
 		}
 		state.commit = &evidenceCompactCommit{frame.Sequence, frame.RecordDigest}
@@ -410,14 +413,14 @@ func (a *evidenceStructuralAccumulator) consumeRecord(frame EvidenceFrame) error
 		if state.terminal != nil || state.resolution != nil {
 			return invalidEvidence("chain", "second terminal")
 		}
-		if err := validateStructuralTerminalCompact(*terminal, frame, state); err != nil {
+		if err := validateStructuralTerminalCompact(*terminal, state, a.previousNonHeader); err != nil {
 			return err
 		}
 		state.terminal = &evidenceCompactTerminal{frame.RecordDigest, terminal.TerminalDigest, terminal.AttemptIndex, terminal.Outcome, cloneStringPointer(terminal.StableErrorCode)}
 		a.observeTerminal(*terminal, *state)
 	case EvidenceRecordAmbiguousResolution:
 		resolution := frame.Record.AmbiguousResolution
-		if state.terminal == nil || state.resolution != nil || a.records == 0 || a.previous == nil || state.terminal.recordDigest != *a.previous {
+		if state.terminal == nil || state.resolution != nil || a.previousNonHeader == nil || state.terminal.recordDigest != *a.previousNonHeader {
 			return invalidEvidence("chain", "resolution adjacency")
 		}
 		terminal := state.terminal
@@ -617,11 +620,11 @@ func validateEvidenceChainStructureSegmentsObserved(segments [][]EvidenceFrame, 
 	return accumulator.finish()
 }
 
-func validateStructuralTerminalCompact(terminal AttemptTerminalState, frame EvidenceFrame, state *evidenceCompactAttemptState) error {
+func validateStructuralTerminalCompact(terminal AttemptTerminalState, state *evidenceCompactAttemptState, previousNonHeader *Digest) error {
 	if terminal.RetryProof != nil {
 		switch terminal.RetryProof.ProofKind {
 		case "commit_rejected_exact_predecessor":
-			if state.commit == nil || frame.Sequence != state.commit.sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.recordDigest {
+			if state.commit == nil || previousNonHeader == nil || *previousNonHeader != state.commit.recordDigest {
 				return invalidEvidence("chain", "commit-rejected boundary")
 			}
 		case "projection_transient_exact_predecessor", "precommit_rollback_exact_predecessor", "precommit_connection_terminated_exact_predecessor":
@@ -637,7 +640,7 @@ func validateStructuralTerminalCompact(terminal AttemptTerminalState, frame Evid
 	if state.lastIntermediate == nil || terminal.LastIntermediateStateDigest == nil || *terminal.LastIntermediateStateDigest != state.lastIntermediate.intermediateStateDigest {
 		return invalidEvidence("chain", "terminal intermediate boundary")
 	}
-	if state.commit == nil || frame.Sequence != state.commit.sequence+1 || frame.PreviousRecordDigest == nil || *frame.PreviousRecordDigest != state.commit.recordDigest || state.commit.sequence != state.lastIntermediate.sequence+1 {
+	if state.commit == nil || previousNonHeader == nil || *previousNonHeader != state.commit.recordDigest {
 		return invalidEvidence("chain", "terminal commit boundary")
 	}
 	return nil

@@ -46,14 +46,14 @@ func TestGenerationEvidenceJournalPreflightLimitsPreserveAppendAuthority(t *test
 		mutate func(*generationEvidenceJournal)
 		code   ErrorCode
 	}{
-		"rotation": {
+		"segment reservation": {
 			mutate: func(j *generationEvidenceJournal) {
 				j.state.segmentBytes = evidenceSegmentMaximumBytes
 				j.state.journalBytes = evidenceSegmentMaximumBytes
 				j.reservation.ReservedJournalBytes = evidenceSegmentMaximumBytes + maxEvidenceFrameBytes
 				j.reservation.ReservedBytes = j.reservation.ReservedJournalBytes + j.reservation.ReservedIndexBytes
 			},
-			code: CodeProjectionNotImplemented,
+			code: CodeEvidenceJournalLimitExceeded,
 		},
 		"reservation": {
 			mutate: func(j *generationEvidenceJournal) {
@@ -69,6 +69,59 @@ func TestGenerationEvidenceJournalPreflightLimitsPreserveAppendAuthority(t *test
 			prepared, err := journal.prepareAppendLocked(cursor, owned)
 			if prepared != nil || !IsCode(err, test.code) || owned.consumed.Load() || !cursor.Valid() {
 				t.Fatalf("prepared=%+v err=%v consumed=%v cursor=%v", prepared, err, owned.consumed.Load(), cursor.Valid())
+			}
+		})
+	}
+}
+
+func TestGenerationEvidenceJournalPreparesExactRotationComposite(t *testing.T) {
+	journal, cursor, owned, terminal, _ := generationJournalPreparationFixtureWithSegments(t, 2)
+	journal.state.segmentRecords = evidenceSegmentMaximumRecords
+	journal.state.segmentFacts = []evidencefs.GenerationFileFact{{Ordinal: cursor.segmentIndex, Size: journal.state.segmentBytes, ContentDigest: [32]byte{1}, IdentityDigest: [32]byte{2}}}
+	prepared, err := journal.prepareAppendLocked(cursor, owned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotation := prepared.rotation
+	if rotation == nil || prepared.canonical == ([32]byte{}) || owned.consumed.Load() || !cursor.Valid() || rotation.header.Record.Header == nil || rotation.header.Record.Header.SegmentIndex != cursor.segmentIndex+1 || rotation.header.Sequence != cursor.nextSequence || rotation.header.PreviousRecordDigest == nil || *rotation.header.PreviousRecordDigest != *cursor.previousRecordDigest || rotation.headerCheckpoint.Sequence != cursor.lineageIndexNextSequence || rotation.headerCursor.segmentIndex != cursor.segmentIndex+1 || rotation.headerCursor.nextSequence != cursor.nextSequence+1 || prepared.frame.Sequence != cursor.nextSequence+1 || prepared.frame.PreviousRecordDigest == nil || *prepared.frame.PreviousRecordDigest != rotation.header.RecordDigest || !canonicalEqual(prepared.frame.Record, terminal.Record) || prepared.checkpoint.Sequence != cursor.lineageIndexNextSequence+1 || prepared.nextCursor.segmentIndex != cursor.segmentIndex+1 || prepared.nextCursor.nextSequence != cursor.nextSequence+2 || prepared.nextCursor.lineageIndexNextSequence != cursor.lineageIndexNextSequence+2 || rotation.headerRecovery == nil || rotation.headerRecovery.tailDigest != rotation.header.RecordDigest || prepared.recovery == nil || prepared.recovery.tailDigest != prepared.frame.RecordDigest || rotation.segmentRecords != 1 || prepared.segmentRecords != 2 || prepared.journalRecords != journal.state.journalRecords+2 || prepared.checkpointRecords != journal.state.checkpointRecords+2 {
+		t.Fatalf("rotation preparation mismatch: prepared=%+v rotation=%+v", prepared, rotation)
+	}
+	want := prepared.canonical
+	prepared.invalidate()
+	if prepared.nextCursor.Valid() || rotation.headerCursor.Valid() || preparedGenerationJournalAppendDigest(prepared) != want {
+		t.Fatal("rotation invalidation destroyed or retained the wrong prepared authority")
+	}
+}
+
+func TestPreparedGenerationJournalRotationDigestRejectsEveryMutableFact(t *testing.T) {
+	mutations := map[string]func(*preparedGenerationJournalAppend){
+		"header bytes":            func(value *preparedGenerationJournalAppend) { value.rotation.headerFramed[0] ^= 1 },
+		"header checkpoint bytes": func(value *preparedGenerationJournalAppend) { value.rotation.headerCheckpointFramed[0] ^= 1 },
+		"header digest": func(value *preparedGenerationJournalAppend) {
+			value.rotation.header.RecordDigest = testDigest("rotation-header")
+		},
+		"header checkpoint digest": func(value *preparedGenerationJournalAppend) {
+			value.rotation.headerCheckpoint.RecordDigest = testDigest("rotation-checkpoint")
+		},
+		"header cursor":        func(value *preparedGenerationJournalAppend) { value.rotation.headerCursor.nextSequence++ },
+		"header recovery":      func(value *preparedGenerationJournalAppend) { value.rotation.headerRecovery.state = RecoveryDivergent },
+		"header journal usage": func(value *preparedGenerationJournalAppend) { value.rotation.journalBytes++ },
+		"header index usage":   func(value *preparedGenerationJournalAppend) { value.rotation.indexDebitBytes++ },
+		"candidate sequence":   func(value *preparedGenerationJournalAppend) { value.frame.Sequence++ },
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			journal, cursor, owned, _, _ := generationJournalPreparationFixtureWithSegments(t, 2)
+			journal.state.segmentRecords = evidenceSegmentMaximumRecords
+			journal.state.segmentFacts = []evidencefs.GenerationFileFact{{Ordinal: cursor.segmentIndex, Size: journal.state.segmentBytes, ContentDigest: [32]byte{1}, IdentityDigest: [32]byte{2}}}
+			prepared, err := journal.prepareAppendLocked(cursor, owned)
+			if err != nil || prepared.rotation == nil || prepared.canonical == ([32]byte{}) {
+				t.Fatalf("baseline=%+v err=%v", prepared, err)
+			}
+			want := prepared.canonical
+			mutate(prepared)
+			if got := preparedGenerationJournalAppendDigest(prepared); got == want {
+				t.Fatal("rotation mutation retained prepared append digest")
 			}
 		})
 	}
@@ -215,7 +268,7 @@ func TestGenerationEvidenceJournalRejectsLiteralAuthorityAndConsumerSpread(t *te
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || name == "evidence_generation_recovery.go" || name == "evidence_generation_journal.go" || len(name) < 3 || name[len(name)-3:] != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
+		if entry.IsDir() || name == "evidence_generation_recovery.go" || name == "evidence_generation_journal.go" || name == "evidence_generation_journal_rotation.go" || len(name) < 3 || name[len(name)-3:] != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -259,9 +312,19 @@ func TestGenerationJournalObservedLedgerIsExactCommittedPrefix(t *testing.T) {
 }
 
 func generationJournalPreparationFixture(t *testing.T) (*generationEvidenceJournal, JournalCursor, *OwnedEvidenceRecord, EvidenceFrame, []EvidenceFrame) {
+	return generationJournalPreparationFixtureWithSegments(t, 1)
+}
+
+func generationJournalPreparationFixtureWithSegments(t *testing.T, reservedSegments uint32) (*generationEvidenceJournal, JournalCursor, *OwnedEvidenceRecord, EvidenceFrame, []EvidenceFrame) {
 	t.Helper()
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
 	frames := decodeEvidenceFrames(t, document["frames"])
+	if reservedSegments != frames[0].Record.Header.ReservedSegments {
+		header := cloneProjectionValue(*frames[0].Record.Header)
+		header.ReservedSegments = reservedSegments
+		frames[0].Record.Header = &header
+		redigestEvidenceFrames(t, frames)
+	}
 	contextValue := fixtureObjectValue(t, document["validation_context"], "validation context")
 	chain := buildEvidenceWitness(t, frames, contextValue)
 	owner := &evidenceOwnerToken{nonce: [16]byte{30}}
@@ -299,7 +362,7 @@ func generationJournalPreparationFixture(t *testing.T) (*generationEvidenceJourn
 	journal := &generationEvidenceJournal{
 		generation: generation,
 		reservation: evidenceQuotaReservation{
-			ReservedRecords: 4096, ReservedJournalBytes: evidenceSegmentMaximumBytes, ReservedSegments: 1,
+			ReservedRecords: 4096, ReservedJournalBytes: evidenceSegmentMaximumBytes, ReservedSegments: reservedSegments,
 			ReservedCheckpointRecords: 4095, ReservedIndexRecords: 16384, ReservedIndexBytes: 16 << 20,
 			ReservedBytes: evidenceSegmentMaximumBytes + 16<<20,
 		},

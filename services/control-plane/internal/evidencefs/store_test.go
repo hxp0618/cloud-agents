@@ -58,6 +58,8 @@ type fakeBackend struct {
 	onFsync             func(*fakeBackend, *fakeNode, int)
 	renames             int
 	unlinks             int
+	failUnlink          bool
+	failUnlinkAt        int
 	partialWrite        int
 	renameConflict      bool
 	conflictContent     []byte
@@ -455,6 +457,9 @@ func (f *fakeBackend) unlinkAt(parent int, name string) error {
 	parentNode, err := f.node(parent)
 	if err != nil {
 		return err
+	}
+	if f.failUnlink || f.failUnlinkAt > 0 && f.unlinks == f.failUnlinkAt {
+		return errors.New("unlink")
 	}
 	if _, exists := parentNode.children[name]; !exists {
 		return fakeNotExist

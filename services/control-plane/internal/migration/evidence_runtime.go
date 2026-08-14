@@ -394,8 +394,22 @@ func finishAppend(cursor JournalCursor, record *OwnedEvidenceRecord, generation 
 }
 
 func finishConsumedAppend(cursor JournalCursor, generation generationIdentity, outcome appendOutcome, durable *JournalCursor, candidateDigest, checkpointDigest Digest) (AppendResult, error) {
+	return finishConsumedAppendWithRotation(cursor, generation, outcome, durable, candidateDigest, checkpointDigest, nil, nil)
+}
+
+func finishConsumedRotationAppend(cursor JournalCursor, generation generationIdentity, outcome appendOutcome, durable *JournalCursor, candidateDigest, checkpointDigest, rotationHeaderDigest, rotationCheckpointDigest Digest) (AppendResult, error) {
+	return finishConsumedAppendWithRotation(cursor, generation, outcome, durable, candidateDigest, checkpointDigest, &rotationHeaderDigest, &rotationCheckpointDigest)
+}
+
+func finishConsumedAppendWithRotation(cursor JournalCursor, generation generationIdentity, outcome appendOutcome, durable *JournalCursor, candidateDigest, checkpointDigest Digest, rotationHeaderDigest, rotationCheckpointDigest *Digest) (AppendResult, error) {
 	if err := validateAppendResultShape(cursor, generation, outcome, durable, candidateDigest, checkpointDigest); err != nil {
 		return AppendResult{}, err
+	}
+	if (rotationHeaderDigest == nil) != (rotationCheckpointDigest == nil) || rotationHeaderDigest != nil && (rotationHeaderDigest.Validate() != nil || rotationCheckpointDigest.Validate() != nil || cursor.nextSequence == maxJSONInteger) {
+		return AppendResult{}, invalidEvidence("append-result", "rotation diagnosis")
+	}
+	if rotationHeaderDigest != nil && outcome == appendOutcomeDurable && (durable == nil || durable.segmentIndex != cursor.segmentIndex+1 || durable.nextSequence != cursor.nextSequence+2 || durable.lineageIndexNextSequence != cursor.lineageIndexNextSequence+2) {
+		return AppendResult{}, invalidEvidence("append-result", "rotation durable cursor")
 	}
 	invalidate := true
 	defer func() {
@@ -404,6 +418,12 @@ func finishConsumedAppend(cursor JournalCursor, generation generationIdentity, o
 		}
 	}()
 	result := AppendResult{outcome: outcome, candidateSequence: cursor.nextSequence, candidatePreviousRecordDigest: cloneDigestPointer(cursor.previousRecordDigest), candidateRecordDigest: candidateDigest, candidateCheckpointRecordDigest: checkpointDigest}
+	if rotationHeaderDigest != nil {
+		result.candidateSequence++
+		result.candidatePreviousRecordDigest = cloneDigestPointer(rotationHeaderDigest)
+		result.rotationHeaderRecordDigest = cloneDigestPointer(rotationHeaderDigest)
+		result.rotationHeaderCheckpointRecordDigest = cloneDigestPointer(rotationCheckpointDigest)
+	}
 	switch outcome {
 	case appendOutcomeDurable:
 		copy := durable.clone()

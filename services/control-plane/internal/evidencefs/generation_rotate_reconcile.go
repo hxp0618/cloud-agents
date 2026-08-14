@@ -38,10 +38,14 @@ func (r GenerationRotationResult) Reconcile(ctx context.Context, lease *Generati
 	}
 	lease.mu.Lock()
 	defer lease.mu.Unlock()
+	return r.reconcileLocked(ctx, lease)
+}
+
+func (r GenerationRotationResult) reconcileLocked(ctx context.Context, lease *GenerationLease) (GenerationRotationReconcileState, error) {
 	if err := contextError(ctx); err != nil {
 		return "", err
 	}
-	if r.outcome != AdmissionTransitionUnknown || r.snapshot != nil || r.nextSnapshotIdentity != ([32]byte{}) || r.previousSnapshotIdentity == ([32]byte{}) || r.rotationHeaderFramedDigest == ([32]byte{}) || r.rotationCheckpointFramedDigest == ([32]byte{}) || r.callerFramedDigest == ([32]byte{}) || r.callerCheckpointFramedDigest == ([32]byte{}) || sha256.Sum256(r.rotationHeaderFramed) != r.rotationHeaderFramedDigest || sha256.Sum256(r.rotationCheckpointFramed) != r.rotationCheckpointFramedDigest || sha256.Sum256(r.callerFramed) != r.callerFramedDigest || sha256.Sum256(r.callerCheckpointFramed) != r.callerCheckpointFramedDigest || !validCompactGenerationSnapshotFile(r.previousIndex) || len(r.previousSegments) == 0 || r.segmentOrdinal != uint32(len(r.previousSegments)) || r.segmentOrdinal >= maximumAdmissionSegments || r.indexPreviousSize != r.previousIndex.stat.size || r.previousSnapshotIdentity != generationSnapshotFilesDigest(lease.target, lease.journal, r.previousIndex, r.previousSegments) || !lease.activeLocked() || lease.snapshot != nil {
+	if !r.validUnknownForLocked(lease) {
 		return "", ErrLeaseInvalid
 	}
 	index, segmentPresent, segment, err := observeGenerationRotationLocked(ctx, lease, r)
@@ -52,7 +56,7 @@ func (r GenerationRotationResult) Reconcile(ctx context.Context, lease *Generati
 		}
 		return "", err
 	}
-	if segmentPresent != r.segmentOpened || !validGenerationReconcilePrefix(index, r.previousIndex) {
+	if segmentPresent && !r.segmentOpened || !validGenerationReconcilePrefix(index, r.previousIndex) {
 		return r.failRotationReconcileCorrupt(lease)
 	}
 	indexState, indexOK := classifyGenerationRotationSuffix(index.bytes, r.indexPreviousSize, r.rotationCheckpointFramed, r.callerCheckpointFramed)
@@ -91,6 +95,11 @@ func (r GenerationRotationResult) Reconcile(ctx context.Context, lease *Generati
 	default:
 		return r.failRotationReconcileCorrupt(lease)
 	}
+}
+
+func (r GenerationRotationResult) validUnknownForLocked(lease *GenerationLease) bool {
+	currentSnapshotValid := lease != nil && (lease.snapshot == nil || lease.snapshot.lease == lease && lease.snapshot.validLocked())
+	return lease != nil && r.outcome == AdmissionTransitionUnknown && r.snapshot == nil && r.nextSnapshotIdentity == ([32]byte{}) && r.previousSnapshotIdentity != ([32]byte{}) && r.rotationHeaderFramedDigest != ([32]byte{}) && r.rotationCheckpointFramedDigest != ([32]byte{}) && r.callerFramedDigest != ([32]byte{}) && r.callerCheckpointFramedDigest != ([32]byte{}) && sha256.Sum256(r.rotationHeaderFramed) == r.rotationHeaderFramedDigest && sha256.Sum256(r.rotationCheckpointFramed) == r.rotationCheckpointFramedDigest && sha256.Sum256(r.callerFramed) == r.callerFramedDigest && sha256.Sum256(r.callerCheckpointFramed) == r.callerCheckpointFramedDigest && validCompactGenerationSnapshotFile(r.previousIndex) && len(r.previousSegments) > 0 && r.segmentOrdinal == uint32(len(r.previousSegments)) && r.segmentOrdinal < maximumAdmissionSegments && r.indexPreviousSize == r.previousIndex.stat.size && r.previousSnapshotIdentity == generationSnapshotFilesDigest(lease.target, lease.journal, r.previousIndex, r.previousSegments) && lease.activeLocked() && currentSnapshotValid
 }
 
 func (r GenerationRotationResult) failRotationReconcileCorrupt(lease *GenerationLease) (GenerationRotationReconcileState, error) {

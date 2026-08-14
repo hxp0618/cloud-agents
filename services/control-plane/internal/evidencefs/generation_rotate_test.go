@@ -204,6 +204,118 @@ func TestGenerationRotationReconcileClassifiesEveryPartialSuffix(t *testing.T) {
 	}
 }
 
+func TestGenerationRotationDiscardRestoresOnlyEmptyOrTornCreatedSegment(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		fault func(*fakeBackend)
+		want  GenerationRotationReconcileState
+	}{
+		{name: "empty", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 1 }, want: GenerationRotationReconcileSegmentEmpty},
+		{name: "header-torn", fault: func(f *fakeBackend) {
+			f.partialWrite = 3
+			f.failWriteAt = f.writes + 2
+		}, want: GenerationRotationReconcileHeaderTorn},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, lease, target, journal := generationLeaseForSnapshot(t, [][]byte{[]byte("segment-zero")})
+			snapshot, err := lease.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldIdentity, _ := snapshot.IdentityDigest()
+			oldIndex, _ := snapshot.IndexBytes()
+			oldSegment, _ := snapshot.SegmentBytes(0)
+			test.fault(f)
+			rotation, err := lease.AppendRotatedSegmentComposite(context.Background(), snapshot, []byte("header"), []byte("header-checkpoint"), []byte("caller"), []byte("caller-checkpoint"))
+			if !errors.Is(err, ErrUnknown) {
+				t.Fatal(err)
+			}
+			if state, reconcileErr := rotation.Reconcile(context.Background(), lease); reconcileErr != nil || state != test.want {
+				t.Fatalf("state=%q want=%q err=%v", state, test.want, reconcileErr)
+			}
+			unlinks, syncs := f.unlinks, f.fsyncs
+			discarded, err := rotation.DiscardIncompleteSegment(context.Background(), lease)
+			if err != nil || discarded.Outcome() != AdmissionTransitionDurable || !discarded.ValidFor(lease) || discarded.PreviousSnapshotIdentity() != oldIdentity || discarded.NextSnapshotIdentity() != oldIdentity || discarded.SegmentOrdinal() != 1 || generationNode(f, target, journal).children[admissionSegmentName(1)] != nil || f.unlinks != unlinks+1 || f.fsyncs != syncs+1 {
+				t.Fatalf("err=%v outcome=%q valid=%v identities=%x/%x unlink=%d/%d fsync=%d/%d", err, discarded.Outcome(), discarded.ValidFor(lease), discarded.PreviousSnapshotIdentity(), discarded.NextSnapshotIdentity(), f.unlinks, unlinks, f.fsyncs, syncs)
+			}
+			next := discarded.Snapshot()
+			index, indexErr := next.IndexBytes()
+			segment, segmentErr := next.SegmentBytes(0)
+			if indexErr != nil || segmentErr != nil || !bytes.Equal(index, oldIndex) || !bytes.Equal(segment, oldSegment) {
+				t.Fatalf("restored bytes=%q/%q errors=%v/%v", index, segment, indexErr, segmentErr)
+			}
+			if state, reconcileErr := rotation.Reconcile(context.Background(), lease); reconcileErr != nil || state != GenerationRotationReconcileSegmentAbsent {
+				t.Fatalf("post-discard state=%q err=%v", state, reconcileErr)
+			}
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("close=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
+func TestGenerationRotationDiscardUnknownRemainsClassifiable(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		fault      func(*fakeBackend)
+		want       GenerationRotationReconcileState
+		segmentOut bool
+	}{
+		{name: "unlink", fault: func(f *fakeBackend) { f.failUnlinkAt = f.unlinks + 1 }, want: GenerationRotationReconcileSegmentEmpty},
+		{name: "directory-sync", fault: func(f *fakeBackend) { f.failFsyncAt = f.fsyncs + 1 }, want: GenerationRotationReconcileSegmentAbsent, segmentOut: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, lease, target, journal := generationLeaseForSnapshot(t, [][]byte{[]byte("segment-zero")})
+			snapshot, err := lease.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.failFdatasyncAt = f.fdatasyncs + 1
+			rotation, err := lease.AppendRotatedSegmentComposite(context.Background(), snapshot, []byte("header"), []byte("header-checkpoint"), []byte("caller"), []byte("caller-checkpoint"))
+			if !errors.Is(err, ErrUnknown) {
+				t.Fatal(err)
+			}
+			test.fault(f)
+			discarded, err := rotation.DiscardIncompleteSegment(context.Background(), lease)
+			if !errors.Is(err, ErrUnknown) || discarded.Outcome() != AdmissionTransitionUnknown || discarded.Snapshot() != nil || !lease.Active() {
+				t.Fatalf("err=%v outcome=%q active=%v", err, discarded.Outcome(), lease.Active())
+			}
+			present := generationNode(f, target, journal).children[admissionSegmentName(1)] != nil
+			if present == test.segmentOut {
+				t.Fatalf("segment present=%v want=%v", present, !test.segmentOut)
+			}
+			state, reconcileErr := rotation.Reconcile(context.Background(), lease)
+			if reconcileErr != nil || state != test.want {
+				t.Fatalf("state=%q want=%q err=%v", state, test.want, reconcileErr)
+			}
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("close=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
+func TestGenerationRotationDiscardRejectsCompletedHeader(t *testing.T) {
+	f, _, lease, _, _ := generationLeaseForSnapshot(t, [][]byte{[]byte("segment-zero")})
+	snapshot, err := lease.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.failFdatasyncAt = f.fdatasyncs + 2
+	rotation, err := lease.AppendRotatedSegmentComposite(context.Background(), snapshot, []byte("header"), []byte("header-checkpoint"), []byte("caller"), []byte("caller-checkpoint"))
+	if !errors.Is(err, ErrUnknown) {
+		t.Fatal(err)
+	}
+	unlinks := f.unlinks
+	discarded, err := rotation.DiscardIncompleteSegment(context.Background(), lease)
+	if !errors.Is(err, ErrInvalidInput) || discarded.Outcome() != AdmissionTransitionPreMutationFailure || f.unlinks != unlinks || !lease.Active() {
+		t.Fatalf("err=%v outcome=%q unlinks=%d/%d active=%v", err, discarded.Outcome(), f.unlinks, unlinks, lease.Active())
+	}
+	if err := lease.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("close=%v handles=%d", err, len(f.handles))
+	}
+}
+
 func TestGenerationRotationReconcileRejectsDifferentOrUnorderedState(t *testing.T) {
 	for _, test := range []struct {
 		name   string

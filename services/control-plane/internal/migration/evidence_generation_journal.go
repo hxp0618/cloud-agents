@@ -62,6 +62,7 @@ type generationEvidenceJournalState struct {
 
 type generationJournalUnknownAppend struct {
 	filesystem evidencefs.GenerationAppendResult
+	rotation   *evidencefs.GenerationRotationResult
 	prepared   *preparedGenerationJournalAppend
 }
 
@@ -226,6 +227,9 @@ func (j *generationEvidenceJournal) AppendDurable(ctx context.Context, cursor Jo
 		}
 		return AppendResult{}, err
 	}
+	if prepared.rotation != nil {
+		return j.appendRotatedPreparedLocked(ctx, cursor, prepared)
+	}
 	filesystemResult, filesystemErr := j.lease.AppendExistingSegmentComposite(ctx, j.state.snapshot, prepared.framed, prepared.checkpointFramed)
 	switch filesystemResult.Outcome() {
 	case evidencefs.AdmissionTransitionPreMutationFailure:
@@ -313,12 +317,40 @@ type preparedGenerationJournalAppend struct {
 	checkpointRecords uint64
 	indexDebitRecords uint64
 	indexDebitBytes   uint64
+	rotation          *preparedGenerationJournalRotation
 	canonical         [32]byte
 }
+
+type preparedGenerationJournalRotation struct {
+	header                 EvidenceFrame
+	headerFramed           []byte
+	headerCheckpoint       LineageIndexFrame
+	headerCheckpointFramed []byte
+	headerCursor           JournalCursor
+	headerRecovery         *RecoverySnapshot
+	journalRecords         uint64
+	journalBytes           uint64
+	segmentRecords         uint64
+	segmentBytes           uint64
+	checkpointRecords      uint64
+	indexDebitRecords      uint64
+	indexDebitBytes        uint64
+}
+
+type preparedGenerationJournalProgress uint8
+
+const (
+	preparedGenerationJournalPrevious preparedGenerationJournalProgress = iota
+	preparedGenerationJournalRotationHeader
+	preparedGenerationJournalCandidate
+)
 
 func (p *preparedGenerationJournalAppend) invalidate() {
 	if p != nil && p.nextCursor.valid != nil {
 		p.nextCursor.valid.Store(false)
+	}
+	if p != nil && p.rotation != nil && p.rotation.headerCursor.valid != nil {
+		p.rotation.headerCursor.valid.Store(false)
 	}
 }
 
@@ -330,6 +362,17 @@ func (j *generationEvidenceJournal) prepareAppendLocked(cursor JournalCursor, re
 	framed, err := EncodeCanonicalEvidenceFrame(frame)
 	if err != nil {
 		return nil, err
+	}
+	nextSegmentRecords, err := admissionCheckedAdd(j.state.segmentRecords, 1)
+	if err != nil {
+		return nil, err
+	}
+	nextSegmentBytes, err := admissionCheckedAdd(j.state.segmentBytes, uint64(len(framed)))
+	if err != nil {
+		return nil, err
+	}
+	if nextSegmentRecords > evidenceSegmentMaximumRecords || nextSegmentBytes > evidenceSegmentMaximumBytes {
+		return j.prepareRotatedAppendLocked(cursor, frames, chain, frame)
 	}
 	summary, err := summarizeEvidenceJournal(frames)
 	if err != nil {
@@ -362,12 +405,7 @@ func (j *generationEvidenceJournal) prepareAppendLocked(cursor JournalCursor, re
 	if err == nil {
 		p.journalBytes, err = admissionCheckedAdd(j.state.journalBytes, uint64(len(framed)))
 	}
-	if err == nil {
-		p.segmentRecords, err = admissionCheckedAdd(j.state.segmentRecords, 1)
-	}
-	if err == nil {
-		p.segmentBytes, err = admissionCheckedAdd(j.state.segmentBytes, uint64(len(framed)))
-	}
+	p.segmentRecords, p.segmentBytes = nextSegmentRecords, nextSegmentBytes
 	if err == nil {
 		p.checkpointRecords, err = admissionCheckedAdd(j.state.checkpointRecords, 1)
 	}
@@ -380,10 +418,6 @@ func (j *generationEvidenceJournal) prepareAppendLocked(cursor JournalCursor, re
 	if err != nil {
 		p.invalidate()
 		return nil, err
-	}
-	if p.segmentRecords > evidenceSegmentMaximumRecords || p.segmentBytes > evidenceSegmentMaximumBytes {
-		p.invalidate()
-		return nil, fail(CodeProjectionNotImplemented, "generation-journal-rotation", "durable segment rotation is not implemented", nil)
 	}
 	if p.journalRecords > j.reservation.ReservedRecords || p.journalBytes > j.reservation.ReservedJournalBytes || p.checkpointRecords > j.reservation.ReservedCheckpointRecords || p.indexDebitRecords > j.reservation.ReservedIndexRecords || p.indexDebitBytes > j.reservation.ReservedIndexBytes {
 		p.invalidate()
@@ -546,7 +580,7 @@ func (j *generationEvidenceJournal) nextDurableStateLocked(snapshot *evidencefs.
 	}, nil
 }
 
-func (j *generationEvidenceJournal) knownStateFromSnapshotLocked(snapshot *evidencefs.GenerationSnapshot, prepared *preparedGenerationJournalAppend, candidate bool) (*generationEvidenceJournalState, error) {
+func (j *generationEvidenceJournal) knownStateFromSnapshotLocked(snapshot *evidencefs.GenerationSnapshot, prepared *preparedGenerationJournalAppend, progress preparedGenerationJournalProgress) (*generationEvidenceJournalState, error) {
 	if j == nil || j.state == nil || snapshot == nil || prepared == nil || prepared.canonical == ([32]byte{}) || prepared.canonical != preparedGenerationJournalAppendDigest(prepared) || !j.lease.OwnsSnapshot(snapshot) {
 		return nil, evidencefs.ErrLeaseInvalid
 	}
@@ -565,7 +599,11 @@ func (j *generationEvidenceJournal) knownStateFromSnapshotLocked(snapshot *evide
 	if err != nil {
 		return nil, err
 	}
-	if count != uint32(len(j.state.segmentFacts)) || count == 0 {
+	expectedCount := uint32(len(j.state.segmentFacts))
+	if prepared.rotation != nil && progress != preparedGenerationJournalPrevious {
+		expectedCount++
+	}
+	if count != expectedCount || count == 0 {
 		return nil, evidencefs.ErrCorrupt
 	}
 	segments := make([]evidencefs.GenerationFileFact, count)
@@ -574,7 +612,11 @@ func (j *generationEvidenceJournal) knownStateFromSnapshotLocked(snapshot *evide
 		if err != nil {
 			return nil, err
 		}
-		if ordinal+1 != count && segments[ordinal] != j.state.segmentFacts[ordinal] {
+		compareOld := ordinal < uint32(len(j.state.segmentFacts))
+		if prepared.rotation == nil && ordinal+1 == count {
+			compareOld = false
+		}
+		if compareOld && segments[ordinal] != j.state.segmentFacts[ordinal] {
 			return nil, evidencefs.ErrCorrupt
 		}
 	}
@@ -584,11 +626,27 @@ func (j *generationEvidenceJournal) knownStateFromSnapshotLocked(snapshot *evide
 	segmentRecords, segmentBytes := prepared.segmentRecords, prepared.segmentBytes
 	checkpointRecords := prepared.checkpointRecords
 	indexDebitRecords, indexDebitBytes := prepared.indexDebitRecords, prepared.indexDebitBytes
-	if candidate {
-		if indexFact.Size != j.state.indexFact.Size+uint64(len(prepared.checkpointFramed)) || segments[count-1].Size != j.state.segmentBytes+uint64(len(prepared.framed)) {
+	switch progress {
+	case preparedGenerationJournalCandidate:
+		expectedIndexSize := j.state.indexFact.Size + uint64(len(prepared.checkpointFramed))
+		expectedSegmentSize := j.state.segmentBytes + uint64(len(prepared.framed))
+		if prepared.rotation != nil {
+			expectedIndexSize += uint64(len(prepared.rotation.headerCheckpointFramed))
+			expectedSegmentSize = uint64(len(prepared.rotation.headerFramed) + len(prepared.framed))
+		}
+		if indexFact.Size != expectedIndexSize || segments[count-1].Size != expectedSegmentSize {
 			return nil, evidencefs.ErrCorrupt
 		}
-	} else {
+	case preparedGenerationJournalRotationHeader:
+		if prepared.rotation == nil || indexFact.Size != j.state.indexFact.Size+uint64(len(prepared.rotation.headerCheckpointFramed)) || segments[count-1].Size != uint64(len(prepared.rotation.headerFramed)) {
+			return nil, evidencefs.ErrCorrupt
+		}
+		cursorSource, recoverySource = prepared.rotation.headerCursor, prepared.rotation.headerRecovery
+		journalRecords, journalBytes = prepared.rotation.journalRecords, prepared.rotation.journalBytes
+		segmentRecords, segmentBytes = prepared.rotation.segmentRecords, prepared.rotation.segmentBytes
+		checkpointRecords = prepared.rotation.checkpointRecords
+		indexDebitRecords, indexDebitBytes = prepared.rotation.indexDebitRecords, prepared.rotation.indexDebitBytes
+	case preparedGenerationJournalPrevious:
 		if indexFact.Size != j.state.indexFact.Size || indexFact.ContentDigest != j.state.indexFact.ContentDigest || segments[count-1].Size != j.state.segmentFacts[count-1].Size || segments[count-1].ContentDigest != j.state.segmentFacts[count-1].ContentDigest {
 			return nil, evidencefs.ErrCorrupt
 		}
@@ -598,6 +656,8 @@ func (j *generationEvidenceJournal) knownStateFromSnapshotLocked(snapshot *evide
 		segmentRecords, segmentBytes = j.state.segmentRecords, j.state.segmentBytes
 		checkpointRecords = j.state.checkpointRecords
 		indexDebitRecords, indexDebitBytes = j.state.indexDebitRecords, j.state.indexDebitBytes
+	default:
+		return nil, evidencefs.ErrInvalidInput
 	}
 	cursor, err := renewGenerationJournalCursor(cursorSource)
 	if err != nil {
@@ -665,7 +725,7 @@ func renewGenerationRecovered[T any](value *OwnedRecovered[T], generation genera
 }
 
 func (j *generationEvidenceJournal) installUnknownLocked(prepared *preparedGenerationJournalAppend, filesystemResult evidencefs.GenerationAppendResult, cause error) (AppendResult, error) {
-	if prepared == nil || filesystemResult.Outcome() != evidencefs.AdmissionTransitionUnknown || filesystemResult.Snapshot() != nil || filesystemResult.NextSnapshotIdentity() != ([32]byte{}) || filesystemResult.PreviousSnapshotIdentity() != j.state.snapshotIdentity || filesystemResult.SegmentOrdinal() != j.state.cursor.segmentIndex || filesystemResult.JournalPreviousSize() != j.state.segmentBytes || filesystemResult.IndexPreviousSize() != j.state.indexFact.Size || filesystemResult.JournalFramedDigest() != sha256.Sum256(prepared.framed) || filesystemResult.CheckpointFramedDigest() != sha256.Sum256(prepared.checkpointFramed) {
+	if prepared == nil || prepared.rotation != nil || filesystemResult.Outcome() != evidencefs.AdmissionTransitionUnknown || filesystemResult.Snapshot() != nil || filesystemResult.NextSnapshotIdentity() != ([32]byte{}) || filesystemResult.PreviousSnapshotIdentity() != j.state.snapshotIdentity || filesystemResult.SegmentOrdinal() != j.state.cursor.segmentIndex || filesystemResult.JournalPreviousSize() != j.state.segmentBytes || filesystemResult.IndexPreviousSize() != j.state.indexFact.Size || filesystemResult.JournalFramedDigest() != sha256.Sum256(prepared.framed) || filesystemResult.CheckpointFramedDigest() != sha256.Sum256(prepared.checkpointFramed) {
 		if prepared != nil {
 			prepared.invalidate()
 		}
@@ -698,11 +758,17 @@ func (j *generationEvidenceJournal) restoreAfterPreMutationFailureLocked(prepare
 		return AppendResult{}, j.failLocked(cause, "generation-journal-append-pre-mutation")
 	}
 	prepared.invalidate()
-	appendResult, finishErr := finishConsumedAppend(j.state.cursor, j.generation, appendOutcomeUnknown, nil, prepared.frame.RecordDigest, prepared.checkpoint.RecordDigest)
+	var appendResult AppendResult
+	var finishErr error
+	if prepared.rotation == nil {
+		appendResult, finishErr = finishConsumedAppend(j.state.cursor, j.generation, appendOutcomeUnknown, nil, prepared.frame.RecordDigest, prepared.checkpoint.RecordDigest)
+	} else {
+		appendResult, finishErr = finishConsumedRotationAppend(j.state.cursor, j.generation, appendOutcomeUnknown, nil, prepared.frame.RecordDigest, prepared.checkpoint.RecordDigest, prepared.rotation.header.RecordDigest, prepared.rotation.headerCheckpoint.RecordDigest)
+	}
 	if finishErr != nil {
 		return AppendResult{}, j.failLocked(finishErr, "generation-journal-append-result")
 	}
-	next, stateErr := j.knownStateFromSnapshotLocked(j.state.snapshot, prepared, false)
+	next, stateErr := j.knownStateFromSnapshotLocked(j.state.snapshot, prepared, preparedGenerationJournalPrevious)
 	if stateErr != nil || !j.installStateLocked(next) {
 		if stateErr == nil {
 			stateErr = evidencefs.ErrLeaseInvalid
@@ -814,7 +880,18 @@ func generationEvidenceJournalStateDigest(state *generationEvidenceJournalState)
 			return [32]byte{}
 		}
 		writeAdmissionString(h, "unknown")
-		filesystemDigest := generationJournalUnknownFilesystemDigest(state.unknown.filesystem, state.unknown.prepared)
+		var filesystemDigest [32]byte
+		if state.unknown.rotation == nil {
+			if state.unknown.prepared.rotation != nil {
+				return [32]byte{}
+			}
+			filesystemDigest = generationJournalUnknownFilesystemDigest(state.unknown.filesystem, state.unknown.prepared)
+		} else {
+			if state.unknown.prepared.rotation == nil || state.unknown.filesystem.Outcome() != "" {
+				return [32]byte{}
+			}
+			filesystemDigest = generationJournalUnknownRotationDigest(*state.unknown.rotation, state.unknown.prepared)
+		}
 		if filesystemDigest == ([32]byte{}) {
 			return [32]byte{}
 		}
@@ -827,7 +904,7 @@ func generationEvidenceJournalStateDigest(state *generationEvidenceJournalState)
 }
 
 func preparedGenerationJournalAppendDigest(value *preparedGenerationJournalAppend) [32]byte {
-	if value == nil || value.frame.Validate() != nil || value.checkpoint.Validate() != nil || value.frame.PreviousRecordDigest == nil || value.checkpoint.Record.Checkpoint == nil || len(value.framed) == 0 || len(value.checkpointFramed) == 0 || value.nextCursor.valid == nil || value.nextCursor.previousRecordDigest == nil || value.previousRecovery == nil || value.recovery == nil || value.previousRecovery.tailDigest != *value.frame.PreviousRecordDigest || value.recovery.tailDigest != value.frame.RecordDigest || *value.nextCursor.previousRecordDigest != value.frame.RecordDigest || value.nextCursor.latestCheckpointRecordDigest == nil || *value.nextCursor.latestCheckpointRecordDigest != value.checkpoint.RecordDigest || value.nextCursor.nextSequence != value.frame.Sequence+1 || value.nextCursor.lineageIndexNextSequence != value.checkpoint.Sequence+1 || value.nextCursor.lineageIndexPreviousRecordDigest != value.checkpoint.RecordDigest || value.checkpoint.Record.Checkpoint.JournalTailDigest != value.frame.RecordDigest || value.checkpoint.Record.Checkpoint.JournalNextSequence != value.frame.Sequence+1 {
+	if value == nil || value.frame.Validate() != nil || value.checkpoint.Validate() != nil || value.frame.PreviousRecordDigest == nil || value.checkpoint.Record.Checkpoint == nil || len(value.framed) == 0 || len(value.checkpointFramed) == 0 || value.nextCursor.valid == nil || value.nextCursor.previousRecordDigest == nil || value.previousRecovery == nil || value.recovery == nil || value.recovery.tailDigest != value.frame.RecordDigest || *value.nextCursor.previousRecordDigest != value.frame.RecordDigest || value.nextCursor.latestCheckpointRecordDigest == nil || *value.nextCursor.latestCheckpointRecordDigest != value.checkpoint.RecordDigest || value.nextCursor.nextSequence != value.frame.Sequence+1 || value.nextCursor.lineageIndexNextSequence != value.checkpoint.Sequence+1 || value.nextCursor.lineageIndexPreviousRecordDigest != value.checkpoint.RecordDigest || value.checkpoint.Record.Checkpoint.JournalTailDigest != value.frame.RecordDigest || value.checkpoint.Record.Checkpoint.JournalNextSequence != value.frame.Sequence+1 {
 		return [32]byte{}
 	}
 	framed, frameErr := EncodeCanonicalEvidenceFrame(value.frame)
@@ -836,11 +913,22 @@ func preparedGenerationJournalAppendDigest(value *preparedGenerationJournalAppen
 		return [32]byte{}
 	}
 	previous := value.previousRecovery.cursor
-	if previous.previousRecordDigest == nil || value.frame.Sequence != previous.nextSequence || *value.frame.PreviousRecordDigest != *previous.previousRecordDigest || value.checkpoint.Sequence != previous.lineageIndexNextSequence || value.checkpoint.PreviousRecordDigest == nil || *value.checkpoint.PreviousRecordDigest != previous.lineageIndexPreviousRecordDigest || !equalDigestPointer(value.checkpoint.Record.Checkpoint.PreviousCheckpointRecordDigest, previous.latestCheckpointRecordDigest) || !sameCursorIdentity(value.recovery.cursor, value.nextCursor) {
+	if previous.previousRecordDigest == nil || !sameCursorIdentity(value.recovery.cursor, value.nextCursor) {
 		return [32]byte{}
 	}
 	h := sha256.New()
 	h.Write([]byte("cloud-agents-platform-prepared-generation-append/v1\x00"))
+	if value.rotation == nil {
+		if value.previousRecovery.tailDigest != *value.frame.PreviousRecordDigest || value.frame.Sequence != previous.nextSequence || *value.frame.PreviousRecordDigest != *previous.previousRecordDigest || value.checkpoint.Sequence != previous.lineageIndexNextSequence || value.checkpoint.PreviousRecordDigest == nil || *value.checkpoint.PreviousRecordDigest != previous.lineageIndexPreviousRecordDigest || !equalDigestPointer(value.checkpoint.Record.Checkpoint.PreviousCheckpointRecordDigest, previous.latestCheckpointRecordDigest) {
+			return [32]byte{}
+		}
+		writeAdmissionString(h, "existing")
+	} else {
+		writeAdmissionString(h, "rotation")
+		if !writePreparedGenerationJournalRotation(h, value, previous) {
+			return [32]byte{}
+		}
+	}
 	h.Write(value.framed)
 	h.Write(value.checkpointFramed)
 	writeGenerationJournalCursor(h, value.nextCursor)
@@ -859,6 +947,30 @@ func preparedGenerationJournalAppendDigest(value *preparedGenerationJournalAppen
 	return result
 }
 
+func writePreparedGenerationJournalRotation(h interface{ Write([]byte) (int, error) }, value *preparedGenerationJournalAppend, previous JournalCursor) bool {
+	rotation := value.rotation
+	if rotation == nil || rotation.header.Validate() != nil || rotation.header.Record.Header == nil || rotation.header.Record.Header.SegmentIndex != previous.segmentIndex+1 || rotation.header.PreviousRecordDigest == nil || *rotation.header.PreviousRecordDigest != *previous.previousRecordDigest || rotation.header.Sequence != previous.nextSequence || rotation.headerCheckpoint.Validate() != nil || rotation.headerCheckpoint.Record.Checkpoint == nil || len(rotation.headerFramed) == 0 || len(rotation.headerCheckpointFramed) == 0 || rotation.headerCursor.valid == nil || rotation.headerCursor.segmentIndex != rotation.header.Record.Header.SegmentIndex || rotation.headerCursor.previousRecordDigest == nil || *rotation.headerCursor.previousRecordDigest != rotation.header.RecordDigest || rotation.headerCursor.nextSequence != rotation.header.Sequence+1 || rotation.headerCursor.lineageIndexNextSequence != rotation.headerCheckpoint.Sequence+1 || rotation.headerCursor.lineageIndexPreviousRecordDigest != rotation.headerCheckpoint.RecordDigest || rotation.headerCursor.latestCheckpointRecordDigest == nil || *rotation.headerCursor.latestCheckpointRecordDigest != rotation.headerCheckpoint.RecordDigest || rotation.headerCheckpoint.Sequence != previous.lineageIndexNextSequence || rotation.headerCheckpoint.PreviousRecordDigest == nil || *rotation.headerCheckpoint.PreviousRecordDigest != previous.lineageIndexPreviousRecordDigest || !equalDigestPointer(rotation.headerCheckpoint.Record.Checkpoint.PreviousCheckpointRecordDigest, previous.latestCheckpointRecordDigest) || rotation.headerCheckpoint.Record.Checkpoint.JournalTailDigest != rotation.header.RecordDigest || rotation.headerCheckpoint.Record.Checkpoint.JournalNextSequence != rotation.header.Sequence+1 || rotation.headerRecovery == nil || rotation.headerRecovery.tailDigest != rotation.header.RecordDigest || !sameCursorIdentity(rotation.headerRecovery.cursor, rotation.headerCursor) || value.frame.Sequence != rotation.headerCursor.nextSequence || *value.frame.PreviousRecordDigest != rotation.header.RecordDigest || value.checkpoint.Sequence != rotation.headerCursor.lineageIndexNextSequence || value.checkpoint.PreviousRecordDigest == nil || *value.checkpoint.PreviousRecordDigest != rotation.headerCursor.lineageIndexPreviousRecordDigest || !equalDigestPointer(value.checkpoint.Record.Checkpoint.PreviousCheckpointRecordDigest, rotation.headerCursor.latestCheckpointRecordDigest) || value.nextCursor.segmentIndex != rotation.headerCursor.segmentIndex || rotation.journalRecords+1 != value.journalRecords || rotation.segmentRecords+1 != value.segmentRecords || rotation.checkpointRecords+1 != value.checkpointRecords || rotation.indexDebitRecords+1 != value.indexDebitRecords {
+		return false
+	}
+	headerFramed, headerErr := EncodeCanonicalEvidenceFrame(rotation.header)
+	headerCheckpointFramed, checkpointErr := EncodeCanonicalLineageFrame(rotation.headerCheckpoint)
+	if headerErr != nil || checkpointErr != nil || string(headerFramed) != string(rotation.headerFramed) || string(headerCheckpointFramed) != string(rotation.headerCheckpointFramed) || rotation.journalBytes > value.journalBytes || value.journalBytes-rotation.journalBytes != uint64(len(value.framed)) || rotation.segmentBytes > value.segmentBytes || value.segmentBytes-rotation.segmentBytes != uint64(len(value.framed)) || rotation.indexDebitBytes > value.indexDebitBytes || value.indexDebitBytes-rotation.indexDebitBytes != uint64(len(value.checkpointFramed)) {
+		return false
+	}
+	h.Write(rotation.headerFramed)
+	h.Write(rotation.headerCheckpointFramed)
+	writeGenerationJournalCursor(h, rotation.headerCursor)
+	headerRecovery := generationJournalRecoveryDigest(rotation.headerRecovery)
+	if headerRecovery == ([32]byte{}) {
+		return false
+	}
+	h.Write(headerRecovery[:])
+	for _, counter := range []uint64{rotation.journalRecords, rotation.journalBytes, rotation.segmentRecords, rotation.segmentBytes, rotation.checkpointRecords, rotation.indexDebitRecords, rotation.indexDebitBytes} {
+		writeAdmissionUint(h, counter)
+	}
+	return true
+}
+
 func generationJournalUnknownFilesystemDigest(result evidencefs.GenerationAppendResult, prepared *preparedGenerationJournalAppend) [32]byte {
 	if prepared == nil || result.Outcome() != evidencefs.AdmissionTransitionUnknown || result.Snapshot() != nil || result.NextSnapshotIdentity() != ([32]byte{}) || result.PreviousSnapshotIdentity() == ([32]byte{}) || result.JournalFramedDigest() != sha256.Sum256(prepared.framed) || result.CheckpointFramedDigest() != sha256.Sum256(prepared.checkpointFramed) {
 		return [32]byte{}
@@ -873,6 +985,29 @@ func generationJournalUnknownFilesystemDigest(result evidencefs.GenerationAppend
 	h.Write(checkpointDigest[:])
 	writeAdmissionUint(h, uint64(result.SegmentOrdinal()))
 	writeAdmissionUint(h, result.JournalPreviousSize())
+	writeAdmissionUint(h, result.IndexPreviousSize())
+	var digest [32]byte
+	copy(digest[:], h.Sum(nil))
+	return digest
+}
+
+func generationJournalUnknownRotationDigest(result evidencefs.GenerationRotationResult, prepared *preparedGenerationJournalAppend) [32]byte {
+	if prepared == nil || prepared.rotation == nil || result.Outcome() != evidencefs.AdmissionTransitionUnknown || result.Snapshot() != nil || result.NextSnapshotIdentity() != ([32]byte{}) || result.PreviousSnapshotIdentity() == ([32]byte{}) || result.SegmentOrdinal() != prepared.rotation.headerCursor.segmentIndex || result.RotationHeaderFramedDigest() != sha256.Sum256(prepared.rotation.headerFramed) || result.RotationCheckpointFramedDigest() != sha256.Sum256(prepared.rotation.headerCheckpointFramed) || result.CallerFramedDigest() != sha256.Sum256(prepared.framed) || result.CallerCheckpointFramedDigest() != sha256.Sum256(prepared.checkpointFramed) {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-generation-journal-unknown-rotation/v1\x00"))
+	previousIdentity := result.PreviousSnapshotIdentity()
+	headerDigest := result.RotationHeaderFramedDigest()
+	headerCheckpointDigest := result.RotationCheckpointFramedDigest()
+	callerDigest := result.CallerFramedDigest()
+	callerCheckpointDigest := result.CallerCheckpointFramedDigest()
+	h.Write(previousIdentity[:])
+	h.Write(headerDigest[:])
+	h.Write(headerCheckpointDigest[:])
+	h.Write(callerDigest[:])
+	h.Write(callerCheckpointDigest[:])
+	writeAdmissionUint(h, uint64(result.SegmentOrdinal()))
 	writeAdmissionUint(h, result.IndexPreviousSize())
 	var digest [32]byte
 	copy(digest[:], h.Sum(nil))
@@ -1074,6 +1209,9 @@ func (j *generationEvidenceJournal) reconcileUnknownLocked(ctx context.Context) 
 		return JournalCursor{}, nil, j.failLocked(evidencefs.ErrLeaseInvalid, "generation-journal-reconcile-state")
 	}
 	unknown := j.state.unknown
+	if unknown.rotation != nil {
+		return j.reconcileUnknownRotationLocked(ctx)
+	}
 	fresh, err := j.lease.Snapshot(ctx)
 	if err != nil {
 		return JournalCursor{}, nil, j.reconcileObservationFailure(err, "generation-journal-reconcile-snapshot")
@@ -1157,25 +1295,33 @@ func (j *generationEvidenceJournal) reconcileTransitionFailure(outcome evidencef
 }
 
 func (j *generationEvidenceJournal) truncateReconciledTailsLocked(ctx context.Context, snapshot *evidencefs.GenerationSnapshot, segmentSize, indexSize uint64) (*evidencefs.GenerationSnapshot, error) {
+	return j.truncateReconciledTailsAtLocked(ctx, snapshot, segmentSize, indexSize, j.state.unknown.filesystem.SegmentOrdinal(), "generation-journal-reconcile-truncate")
+}
+
+func (j *generationEvidenceJournal) truncateReconciledTailsAtLocked(ctx context.Context, snapshot *evidencefs.GenerationSnapshot, segmentSize, indexSize uint64, segmentOrdinal uint32, operation string) (*evidencefs.GenerationSnapshot, error) {
 	identity, err := snapshot.IdentityDigest()
 	if err != nil {
-		return nil, j.reconcileObservationFailure(err, "generation-journal-reconcile-truncate-identity")
+		return nil, j.reconcileObservationFailure(err, operation+"-identity")
 	}
 	result, err := j.lease.TruncateGenerationTails(ctx, snapshot, segmentSize, indexSize)
-	if result.Outcome() != evidencefs.AdmissionTransitionDurable || err != nil || !result.ValidFor(j.lease) || result.PreviousSnapshotIdentity() != identity || result.SegmentOrdinal() != j.state.unknown.filesystem.SegmentOrdinal() || result.SegmentNextSize() != segmentSize || result.IndexNextSize() != indexSize {
-		return nil, j.reconcileTransitionFailure(result.Outcome(), err, "generation-journal-reconcile-truncate")
+	if result.Outcome() != evidencefs.AdmissionTransitionDurable || err != nil || !result.ValidFor(j.lease) || result.PreviousSnapshotIdentity() != identity || result.SegmentOrdinal() != segmentOrdinal || result.SegmentNextSize() != segmentSize || result.IndexNextSize() != indexSize {
+		return nil, j.reconcileTransitionFailure(result.Outcome(), err, operation)
 	}
 	return result.Snapshot(), nil
 }
 
 func (j *generationEvidenceJournal) resyncReconciledSnapshotLocked(ctx context.Context, snapshot *evidencefs.GenerationSnapshot) (*evidencefs.GenerationSnapshot, error) {
+	return j.resyncReconciledSnapshotAtLocked(ctx, snapshot, j.state.unknown.filesystem.SegmentOrdinal(), "generation-journal-reconcile-resync")
+}
+
+func (j *generationEvidenceJournal) resyncReconciledSnapshotAtLocked(ctx context.Context, snapshot *evidencefs.GenerationSnapshot, segmentOrdinal uint32, operation string) (*evidencefs.GenerationSnapshot, error) {
 	identity, err := snapshot.IdentityDigest()
 	if err != nil {
-		return nil, j.reconcileObservationFailure(err, "generation-journal-reconcile-resync-identity")
+		return nil, j.reconcileObservationFailure(err, operation+"-identity")
 	}
 	result, err := j.lease.ResyncGenerationSnapshot(ctx, snapshot)
-	if result.Outcome() != evidencefs.AdmissionTransitionDurable || err != nil || !result.ValidFor(j.lease) || result.PreviousSnapshotIdentity() != identity || result.NextSnapshotIdentity() != identity || result.SegmentOrdinal() != j.state.unknown.filesystem.SegmentOrdinal() {
-		return nil, j.reconcileTransitionFailure(result.Outcome(), err, "generation-journal-reconcile-resync")
+	if result.Outcome() != evidencefs.AdmissionTransitionDurable || err != nil || !result.ValidFor(j.lease) || result.PreviousSnapshotIdentity() != identity || result.NextSnapshotIdentity() != identity || result.SegmentOrdinal() != segmentOrdinal {
+		return nil, j.reconcileTransitionFailure(result.Outcome(), err, operation)
 	}
 	return result.Snapshot(), nil
 }
@@ -1184,23 +1330,35 @@ func (j *generationEvidenceJournal) appendReconciledCheckpointLocked(ctx context
 	if prepared == nil || prepared.canonical == ([32]byte{}) || prepared.canonical != preparedGenerationJournalAppendDigest(prepared) {
 		return nil, j.failLocked(evidencefs.ErrLeaseInvalid, "generation-journal-reconcile-checkpoint-candidate")
 	}
+	return j.appendReconciledCheckpointBytesLocked(ctx, snapshot, prepared.checkpointFramed, "generation-journal-reconcile-checkpoint")
+}
+
+func (j *generationEvidenceJournal) appendReconciledCheckpointBytesLocked(ctx context.Context, snapshot *evidencefs.GenerationSnapshot, framed []byte, operation string) (*evidencefs.GenerationSnapshot, error) {
 	identity, err := snapshot.IdentityDigest()
 	if err != nil {
-		return nil, j.reconcileObservationFailure(err, "generation-journal-reconcile-checkpoint-identity")
+		return nil, j.reconcileObservationFailure(err, operation+"-identity")
 	}
 	indexFact, err := snapshot.IndexFact()
 	if err != nil {
-		return nil, j.reconcileObservationFailure(err, "generation-journal-reconcile-checkpoint-fact")
+		return nil, j.reconcileObservationFailure(err, operation+"-fact")
 	}
-	result, err := j.lease.AppendGenerationCheckpoint(ctx, snapshot, prepared.checkpointFramed)
-	if result.Outcome() != evidencefs.AdmissionTransitionDurable || err != nil || !result.ValidFor(j.lease) || result.PreviousSnapshotIdentity() != identity || result.IndexPreviousSize() != indexFact.Size || result.CheckpointFramedDigest() != sha256.Sum256(prepared.checkpointFramed) {
-		return nil, j.reconcileTransitionFailure(result.Outcome(), err, "generation-journal-reconcile-checkpoint")
+	result, err := j.lease.AppendGenerationCheckpoint(ctx, snapshot, framed)
+	if result.Outcome() != evidencefs.AdmissionTransitionDurable || err != nil || !result.ValidFor(j.lease) || result.PreviousSnapshotIdentity() != identity || result.IndexPreviousSize() != indexFact.Size || result.CheckpointFramedDigest() != sha256.Sum256(framed) {
+		return nil, j.reconcileTransitionFailure(result.Outcome(), err, operation)
 	}
 	return result.Snapshot(), nil
 }
 
 func (j *generationEvidenceJournal) installReconciledKnownLocked(snapshot *evidencefs.GenerationSnapshot, prepared *preparedGenerationJournalAppend, candidate bool) (JournalCursor, *RecoverySnapshot, error) {
-	next, err := j.knownStateFromSnapshotLocked(snapshot, prepared, candidate)
+	progress := preparedGenerationJournalPrevious
+	if candidate {
+		progress = preparedGenerationJournalCandidate
+	}
+	return j.installReconciledKnownProgressLocked(snapshot, prepared, progress)
+}
+
+func (j *generationEvidenceJournal) installReconciledKnownProgressLocked(snapshot *evidencefs.GenerationSnapshot, prepared *preparedGenerationJournalAppend, progress preparedGenerationJournalProgress) (JournalCursor, *RecoverySnapshot, error) {
+	next, err := j.knownStateFromSnapshotLocked(snapshot, prepared, progress)
 	if err != nil {
 		return JournalCursor{}, nil, j.failLocked(err, "generation-journal-reconcile-state")
 	}
