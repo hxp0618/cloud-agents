@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-14
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（brand-new admission locally reaches a concrete retained `EvidenceJournal` with existing/rotated-segment composite append、checkpoint 与 unknown reconciliation；successor/session、trusted mount 与 runner/DB remain open）；M1/P2–P6 PAUSED
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（brand-new admission locally reaches a receipt-bound retained `EvidenceJournal` plus sealed current `ActiveGeneration`/`EvidenceSession`；successor、trusted mount 与 runner/DB remain open）；M1/P2–P6 PAUSED
 
 ## 1. 决策表
 
@@ -69,8 +69,8 @@
 | G-BASELINE-M1       | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-BASELINE          | none                           | IN PROGRESS | `CAG-G-BASELINE-P0-20260810-R3`                                                 | P0 phase verified；M1 phase not started                                                                                                                                                                             | 2026-08-10    |
 | G-CONTRACT          | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / G-INVENTORY R3 / G-BASELINE-P0 R3`                       | P1-A1 bootstrap + SubjectRef/HTTP idempotency follow-up；official generation/closure record open                                                                                                                    | 2026-08-11    |
-| G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission durability/lock handoff/snapshot/replay/recovery/journal+rotation complete through pushed `93d3263`；runner/DB与closure open             | 2026-08-14    |
-| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Concrete retained brand-new `EvidenceJournal` with rotation at pushed `93d3263`；successor/session、trusted mount、active-generation与runner closure open                                                           | 2026-08-14    |
+| G-DATA              | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Projection adapters `e2541c5` + local matrix `a0eac37` complete；admission durability through receipt-bound current session complete at `5e0065a`；successor/runner/DB与closure open                                | 2026-08-14    |
+| G-AUTHORITY-P1      | none                           | IN PROGRESS | `ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / G-INVENTORY R3 / G-BASELINE-P0 R3` | Sealed current `ActiveGeneration`/`EvidenceSession` at `5e0065a`；successor full-root reacquisition、trusted mount、production sink 与 runner closure open                                                          | 2026-08-14    |
 | G-AUTHORITY-P2      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P3      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
 | G-AUTHORITY-P4      | none                           | NOT STARTED | none                                                                            | none                                                                                                                                                                                                                | none          |
@@ -173,6 +173,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       concrete brand-new `EvidenceJournal`，并在 `Replay` 内闭合 unknown repair/reclassification。
 - [x] `145ceb2`、`f0d9a66` 与 `93d3263` 已完成 retained segment rotation durability order、十态 byte-level
       classification、empty/torn response-lost segment 专用 discard，以及 migration cursor/recovery/quota/unknown Replay 绑定。
-- [ ] 实现 successor/continuation journal、`ActiveGeneration`/`EvidenceSession`、trusted-mount production
+- [x] `5e0065a` 已把 exact runtime/recovery publication receipts 提升为 journal 自身不可变持有事实，并从
+      `GenerationRecoveryReady` 封装 registry-revocable current `ActiveGeneration` 与 anti-copy `EvidenceSession`；session
+      snapshot 始终从当前 journal state 克隆，successor 入口不消费 one-shot authority 且继续 fail closed。
+- [ ] 实现 successor/continuation full-root reacquisition 与 adjacent index transition、trusted-mount production
       constructor、runner/DB `Connect` 与真实 ext4/XFS/cross-process/power-loss evidence；完成前 P1 Gates 继续
       `IN PROGRESS`。

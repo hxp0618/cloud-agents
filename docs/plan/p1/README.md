@@ -12,13 +12,13 @@
   x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
   P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)；P1-A2.1a-impl-2 PG adapters
   (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)；admission registration/publish/bind/reserve
-  chain (`8c9a72b` through pushed `93d3263`)，其中 brand-new generation 已完成 exact
+  chain (`8c9a72b` through `5e0065a`)，其中 brand-new generation 已完成 exact
   `GenerationReserved → segment-0 header → GenerationActivated` durability 与 root-wide lock release/opaque
   target+generation lock handoff，并推进到 compact evidencefs snapshot、strict replay 与 sealed same-verifier
-  `GenerationRecoveryReady`，以及 retained existing/rotated-segment `EvidenceJournal` composite append/checkpoint 与
-  unknown reconciliation
-- Current slice：在 concrete brand-new `EvidenceJournal` 与 segment rotation 之后实现 successor/continuation、
-  `ActiveGeneration`/`EvidenceSession` 与 runner/DB `Connect`；production trusted mount 仍 fail closed
+  `GenerationRecoveryReady`、receipt-bound retained existing/rotated-segment `EvidenceJournal` composite append/checkpoint、
+  unknown reconciliation，以及 sealed current `ActiveGeneration`/`EvidenceSession`
+- Current slice：为 current session 实现 successor/continuation 的 full-root reacquisition 与 adjacent
+  `GenerationSuperseded → GenerationReserved` transition，随后再接 runner/DB `Connect`；production trusted mount 仍 fail closed
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -55,11 +55,11 @@ Platform RC、Beta 或 GA。
 ## Current admission durability evidence
 
 - [`admission-generation-durability-20260813.md`](admission-generation-durability-20260813.md) 固定 source
-  `93d3263ce6f8dba167c42645c1005bc753e482b4`，记录 brand-new receipt-bound reservation、generation
+  `5e0065afededa163a186d4ee706bfb2cc437f63f`，记录 brand-new receipt-bound reservation、generation
   journal/segment-0 durability、exact activation append、root-wide lock release、retained normal-run journal、segment
-  rotation、unknown reconciliation、fault gates 与未实现边界。
+  rotation、unknown reconciliation、current active/session sealing、fault gates 与未实现边界。
 - 该记录是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；
-  concrete journal 仍没有 public `EvidenceSink`/session、`ActiveGeneration`、trusted mount 或 DB authority。固定实现将随
+  concrete current session 仍没有 public `EvidenceSink` constructor、successor、trusted mount 或 DB authority。固定实现将随
   本次 evidence commit 推送至 `origin/codex/cloud-agents-platform-p1`。
 
 ## Projection runner boundary (still open)
@@ -80,9 +80,10 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 `UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
 `G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 均不得标为 `VERIFIED`。
 
-在上述 projection 工作之后，admission durability 已推进到 sealed non-runnable `GenerationRecoveryReady`：root-wide 与
-non-target locks 已释放，只保留 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、
-same-verifier facts 与 typed publication receipt 复验，以及私有 brand-new cursor/recovery snapshot 绑定。
+在上述 projection 工作之后，admission durability 已从 sealed non-runnable `GenerationRecoveryReady` 继续推进到
+receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`：root-wide 与 non-target locks 已释放，只保留
+exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
+receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
 但这没有改变 Gate 结论：production
-trusted-mount constructor、journal cursor/checkpoint、runner/DB `Connect`、successor/reopen 与真实
+trusted-mount constructor、public sink、runner/DB `Connect`、successor/reopen 与真实
 ext4/XFS/power-loss 证据仍然开放。

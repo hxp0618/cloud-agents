@@ -3,20 +3,21 @@
 - Status：**LOCAL IMPLEMENTATION VERIFIED — GATE OPEN**
 - Scope：brand-new admission 的 receipt-bound reservation、generation journal/segment-0 创建、header durability、
   `GenerationActivated` durable append、root-wide lock release、retained generation snapshot、strict replay、same-verifier recovery
-  binding、existing/rotated-segment composite append/checkpoint、ten-state unknown classification 与 response-lost repair
-- Fixed source commit：`93d3263ce6f8dba167c42645c1005bc753e482b4`（已推送至 feature branch）
-- Fixed implementation tree：`5b538f3e0d1eb3fee7b34024e287e535be659884`（`93d3263^{tree}`，不含本次证据文档更新）
+  binding、existing/rotated-segment composite append/checkpoint、ten-state unknown classification、response-lost repair、
+  receipt-owned journal 与 sealed current `ActiveGeneration`/`EvidenceSession`
+- Fixed source commit：`5e0065afededa163a186d4ee706bfb2cc437f63f`（feature-branch implementation commit）
+- Fixed implementation tree：`d958b7241b6b621a20ea6240fcc48d9e205cf912`（`5e0065a^{tree}`，不含本次证据文档更新）
 - Branch：`codex/cloud-agents-platform-p1`
 - Date：2026-08-14 Asia/Shanghai
 - Toolchain：Go `1.26.5 darwin/arm64`
 - Record type：implementation evidence；**不是** Gate closure record
 
 本记录固定
-`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady → GenerationReplayReady → GenerationRecoveryReady → EvidenceJournal`
+`ReceiptBoundReady → ReservedDurablePermit → HeaderDurablePermit → GenerationReadyPermit → GenerationHandoffReady → GenerationReplayReady → GenerationRecoveryReady → EvidenceJournal → current ActiveGeneration/EvidenceSession`
 的本地实现证据。
 它证明 brand-new generation 在同一 active admission epoch 与 retained lock chain 下，按
 `GenerationReserved → exact segment-0 JournalHeader → GenerationActivated` 的顺序完成代码级 durability barrier。
-它不证明 production trusted mount、successor generation、`ActiveGeneration`/session、数据库连接、
+它不证明 production trusted mount、successor generation、public sink constructor、数据库连接、
 真实文件系统掉电恢复或 Platform RC。
 
 ## Fixed implementation commits
@@ -41,6 +42,7 @@
 | `145ceb2049a3b2d657dad5ce0ae27ac4c633c3ea` | evidencefs segment rotation          | exact new-segment/header/caller/checkpoint durability order                    |
 | `f0d9a665e53521d9fd18d0a5361074b6a1cd7541` | rotation unknown classification      | ten-state byte-level observation and relaxed response-lost replay classifier   |
 | `93d3263ce6f8dba167c42645c1005bc753e482b4` | migration rotation integration       | prepared/durable/unknown rotation journal binding and torn-segment discard     |
+| `5e0065afededa163a186d4ee706bfb2cc437f63f` | migration current evidence session   | receipt-owned journal plus sealed current active generation and session        |
 
 Key fixed file identities:
 
@@ -60,8 +62,8 @@ Key fixed file identities:
 | `internal/migration/evidence_admission_handoff_test.go`      | `eba777211843b3d444ab97432c5d5fe8603140d334db5f03d998a6a96148c801` |
 | `internal/migration/evidence_admission_history.go`           | `47d1926437af65155104764fe905ddae3a5e20e8af3ab66b67f785878e597ad0` |
 | `internal/migration/evidence_admission_history_test.go`      | `7e40d08539c0b034efd2d3d69a1f3b2dc20897e6f7874a8dd75f8263e4a5e989` |
-| `internal/migration/evidence_generation_recovery.go`         | `52f94dbd91e2704af6d5b834623fd82c512c108424b907a4003af84d78c6d0f6` |
-| `internal/migration/evidence_generation_recovery_test.go`    | `8f4df385d27398c375e657515928988329321c89111156ab556da3f285a37bb6` |
+| `internal/migration/evidence_generation_recovery.go`         | `7f83c22ae474f6b81f590b8971bf3c1c69ea7015d3351c7422bd4420ffa00e0f` |
+| `internal/migration/evidence_generation_recovery_test.go`    | `f5023382a43655504c30554589748914404b0151999cdd66f04c9b277e860aae` |
 | `internal/evidencefs/generation_append.go`                   | `387182e9575cfe745b0c9aad73411f6582a80a7232ddd792856754aa5a4405dd` |
 | `internal/evidencefs/generation_checkpoint.go`               | `503e55da43f837e174a61d0fb638a5b63b3fd0da68c08cb212ca8332d649f31c` |
 | `internal/evidencefs/generation_resync.go`                   | `9b187b594d096a43a1afdf12575375285395dd6019240d628d30236dd3951a9c` |
@@ -71,13 +73,15 @@ Key fixed file identities:
 | `internal/evidencefs/generation_rotate_reconcile.go`         | `4761afbee3d7770421d450cd773cfb0f18d7a18bc131bca33863bd8e007462bb` |
 | `internal/evidencefs/generation_rotate_discard.go`           | `0535490ad33acbe0662f6126e5894f53de749438be6ad6e797d3ce99209730eb` |
 | `internal/evidencefs/generation_rotate_test.go`              | `cc4d69eaa018f2e4c8d0594b358694506cf4a2448cff0cd8f00913d6e08a9d43` |
-| `internal/migration/evidence_generation_journal.go`          | `7f05a6e59c4e7ba608db59008905dc628fae8e7dc5443d691cfb5db5033aafd8` |
+| `internal/migration/evidence_generation_journal.go`          | `90576941406d370844757b62f13e9739dcb1dd8b19d3012f7c0e2db46dac09b5` |
 | `internal/migration/evidence_generation_journal_rotation.go` | `e5865bfc0d30ced1aa005a940f32d19a85b1970397a8e65679a378682458cd94` |
-| `internal/migration/evidence_generation_journal_test.go`     | `cf018969f33e2190ec8b580f93df5e1fc4823d757a931884f9492b85597d4d53` |
+| `internal/migration/evidence_generation_journal_test.go`     | `5606b47f4f58b67bc20ac9cdc91ed2c3656d1b451b9dfc922710ba301f89937b` |
 | `internal/migration/evidence_replay_structural.go`           | `6abebc1cf0517eb711b6f54b4d6fe06b6f5c96cee23eaae93744ff23a85b6005` |
 | `internal/migration/evidence_replay_structural_test.go`      | `eb8c839aefff7c0758113197d7f90ea01002736ec2209e808c3ac0967df4a600` |
-| `internal/migration/evidence_runtime.go`                     | `cb5dc0b0c803c6fd2ce9d1920b6ff81a7fbea26c84af583a681d6b7f1b42aeeb` |
+| `internal/migration/evidence_runtime.go`                     | `07361616e7a1b868ba0ecd50952889857210aec98aa522d2ad323c8e4980406f` |
 | `internal/migration/evidence_runtime_test.go`                | `4d77807af70e338ac3f13f7a7841c72179356a7d107d61dff5f12168b463b63c` |
+| `internal/migration/evidence_session.go`                     | `53b29b23b48200afcbba708c6951574a0977d03fe06614026aaadfe26a63d5f9` |
+| `internal/migration/evidence_session_test.go`                | `0a5d93998665eaad86e196565cf694409a01c6159398a68433dfb6172b61d415` |
 
 Paths in this table are relative to `services/control-plane/`.
 
@@ -137,6 +141,14 @@ lineage and root locks in reverse ownership order. No failure path deletes or re
   `generationEvidenceJournal`. `Replay` revalidates the current complete snapshot before returning cursor/recovery clones;
   `AppendDurable` prepares and validates the exact EvidenceFrame plus `GenerationCheckpoint`, consumes the one-shot owned record,
   and invokes the retained-lease existing-segment composite append. Only a durable lower result mints the next cursor.
+- The journal now copies both purpose-typed publication receipts out of the immutable handoff registry before consuming recovery
+  authority, binds their exact registry identities into its own binding/registry/digest, and revalidates owner, digest, size,
+  publication and same-store facts on every authority check. It no longer relies on a mutable predecessor value for receipt ownership.
+- `GenerationRecoveryReady.BindSession` closes the concrete journal on any later seal failure, clone-owns the current candidate,
+  and mints one copyable registry-revocable `ActiveGeneration` together with an anti-copy `EvidenceSession`. Session accessors use
+  the fixed lock order session → journal; `RecoverySnapshot` clones current state instead of caching a stale cursor. `Close` revokes
+  session/active registries before releasing journal locks even under cancellation. The successor method remains a non-consuming
+  `MIGRATION_PROJECTION_NOT_IMPLEMENTED` boundary until full-root reacquisition is implemented.
 - A lower pre-mutation result restores the previous byte state under a fresh cursor identity while returning no durable append
   result. A true unknown retains no live cursor and is classified on `Replay` as unchanged, journal torn, journal complete,
   checkpoint torn or composite complete. The upper layer then uses only the matching truncate/resync/checkpoint sequence and mints
@@ -159,19 +171,18 @@ lineage and root locks in reverse ownership order. No failure path deletes or re
 
 ## Local verification
 
-The fixed source commit passed the following local gates from `services/control-plane` with `GOWORK=off` and
-`GOFLAGS=-mod=readonly`:
+The fixed source commit passed the following local gates from `services/control-plane`:
 
 ```bash
 go test -count=1 ./internal/evidencefs ./internal/migration
 go test -count=1 ./...
-go test -race -count=1 ./...
+go test -race -count=1 ./internal/evidencefs ./internal/migration
 go vet ./...
 go build ./...
 
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -exec=/usr/bin/true ./internal/evidencefs ./internal/migration
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -exec=/usr/bin/true ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -exec=/usr/bin/true ./internal/evidencefs ./internal/migration
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -exec=/usr/bin/true ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...
 
 git diff --check
@@ -184,8 +195,9 @@ runtime consumer, exact release order, root-lock reacquisition after handoff, im
 cleanup through the original retained FDs. The retained journal additions cover exact composite preparation, caller-record
 non-consumption on quota/rotation preflight, prepared/recovery/schema mutation closure, ordered durable-ledger refresh, fresh cursor
 rebinding, every existing and rotated lower unknown byte classification, empty/torn segment discard, response-lost discard
-reclassification, logical adjacency across physical headers and the standalone checkpoint/resync/truncate fault matrices. A positive
-cross-package migration-to-real-evidencefs journal integration remains unavailable until the trusted production constructor exists;
+reclassification, logical adjacency across physical headers and the standalone checkpoint/resync/truncate fault matrices. The
+session addition covers literal/consumer-firewall rejection, immutable active-generation digest fields and artifact-byte clone ownership.
+A positive cross-package migration-to-real-evidencefs journal/session integration remains unavailable until the trusted production constructor exists;
 no exported fake constructor, unsafe bridge or weakened seal was added to manufacture that test.
 
 ## Explicitly open boundaries
@@ -194,9 +206,10 @@ no exported fake constructor, unsafe bridge or weakened seal was added to manufa
   constructor or cross-package end-to-end admission test.
 - Root-wide admission release and opaque target/generation lock transfer are locally implemented, but `GenerationHandoffReady`
   now advances through compact filesystem snapshot, strict brand-new replay and same-verifier recovery binding into
-  a concrete retained `EvidenceJournal`; no public production sink/session is minted.
-- Successor/continuation journal binding, `ActiveGeneration`, `EvidenceSession`, `Connect`, runner and database wiring are not
-  implemented by this slice. `NewEvidenceSink` therefore continues to reject before production I/O.
+  a receipt-owned retained `EvidenceJournal` and sealed current `ActiveGeneration`/`EvidenceSession`; no public production sink is minted.
+- Successor/continuation full-root reacquisition and adjacent index transition, `Connect`, runner and database wiring are not
+  implemented by this slice. `NewEvidenceSink` therefore continues to reject before production I/O, and the session successor
+  method returns stable `MIGRATION_PROJECTION_NOT_IMPLEMENTED` without consuming its authority.
 - Successor `GenerationSuperseded → adjacent GenerationReserved` and process-restart reconstruction of opaque in-memory authorities
   remain separate incomplete paths. The implemented unknown reconciliation covers response-lost I/O while the retained lease and
   process-local journal capability are still alive; it is not a crash-reopen constructor.
@@ -217,5 +230,6 @@ record in place.
 The remote recovered after three recorded `Internal Server Error` rejections (request IDs
 `81750123b6d8a1f0b0558de37214a30b`, `36abdfa32685cbecb3c19520073d893d`, and
 `28150b7e32b2ad721809a3d632e48720`). On 2026-08-14, the feature branch advanced through retained checkpoint append/heal,
-resync, tail repair, the concrete journal binder, segment rotation and ten-state rotation reconciliation at `93d3263`; all listed
+resync, tail repair, the concrete journal binder, segment rotation, ten-state rotation reconciliation and current session sealing at
+`5e0065a`; all listed
 implementation commits are present on `origin/codex/cloud-agents-platform-p1`.
