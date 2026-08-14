@@ -230,6 +230,14 @@ func TestHistoricalSuccessorReplayRejectsEveryAdjacentBoundaryMutation(t *testin
 
 func TestHistoricalSuccessorHandoffAuthorityDoesNotSpread(t *testing.T) {
 	const owner = "evidence_historical_supersession_handoff.go"
+	allowed := map[string]map[string]bool{
+		"evidence_generation_journal.go": {
+			"HistoricalSuccessorGenerationReplayReady":    true,
+			"historicalSuccessorGenerationHandoffDigest":  true,
+			"historicalSuccessorGenerationReplayDigest":   true,
+			"historicalSuccessorGenerationReplayReceipts": true,
+		},
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -252,7 +260,7 @@ func TestHistoricalSuccessorHandoffAuthorityDoesNotSpread(t *testing.T) {
 				strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationHandoff") ||
 				strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationHandoff") ||
 				strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationReplay") ||
-				strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationReplay")) {
+				strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationReplay")) && !allowed[name][identifier.Name] {
 				t.Fatalf("historical successor handoff authority spread into %s through %s", name, identifier.Name)
 			}
 			return true

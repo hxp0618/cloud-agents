@@ -9,8 +9,9 @@ import (
 )
 
 // HistoricalSuccessorGenerationRecoveryReady is same-verifier recovery
-// authority for an activated crash-recovered successor. It is non-runnable;
-// a historical B must be superseded again before current C can use a journal.
+// authority for an activated crash-recovered successor. It can enter the
+// normal journal/session path only while B is current; a historical B must be
+// superseded again before current C can use a journal.
 type HistoricalSuccessorGenerationRecoveryReady struct {
 	self                 *HistoricalSuccessorGenerationRecoveryReady
 	prior                *HistoricalSuccessorGenerationReplayReady
@@ -342,8 +343,9 @@ func (r *HistoricalSuccessorGenerationReplayReady) failHistoricalSuccessorRecove
 	return nil, mapEvidenceAdmissionError(cause, operation)
 }
 
-// Close invalidates recovery authority and releases the retained generation
-// lease. It cannot be copied into a journal or session.
+// Close invalidates unused recovery authority and releases the retained
+// generation lease. A successfully consumed current-B authority is instead
+// owned and closed by its concrete journal/session.
 func (r *HistoricalSuccessorGenerationRecoveryReady) Close() error {
 	if r == nil || r.self != r || r.consumed == nil || !r.consumed.CompareAndSwap(false, true) {
 		return admissionFailed("historical-successor-recovery-close", "historical successor recovery authority is unavailable", nil)

@@ -400,10 +400,190 @@ func TestGenerationEvidenceJournalDigestBindsSuccessorProvenance(t *testing.T) {
 	}
 }
 
+func TestGenerationEvidenceJournalDigestBindsHistoricalSuccessorProvenance(t *testing.T) {
+	replayFacts, identity, _, _, descriptor, _ := registeredGenerationReplayFixture(t, 1)
+	planned := &verifiedAdmissionRegisteredGeneration{descriptor: descriptor, canonical: [32]byte{31}}
+	replay := &HistoricalSuccessorGenerationReplayReady{binding: &historicalSuccessorGenerationReplayBinding{canonical: [32]byte{32}}}
+	ready := &HistoricalSuccessorGenerationRecoveryReady{
+		prior: replay, planned: planned, binding: &historicalSuccessorGenerationRecoveryBinding{canonical: [32]byte{33}}, consumed: &atomic.Bool{},
+	}
+	ready.consumed.Store(true)
+	candidateBinding := &verifiedEvidenceRunBinding{owner: identity.owner, canonical: [32]byte{34}}
+	journal := &generationEvidenceJournal{
+		historicalSuccessorPrior: ready, historicalSuccessorReplay: replay, candidateBinding: candidateBinding,
+		lease: &evidencefs.GenerationLease{}, generation: identity, reservation: replayFacts.reservation,
+		schema: cloneGenerationJournalSchema(replayFacts.schema),
+		runtimeReceipt: VerifiedContentReceipt{
+			kind: durableRuntimeContentObject, digest: testDigest("historical-successor-journal-runtime"), sizeBytes: 1,
+			binding: &verifiedContentReceiptBinding{},
+		},
+		recoveryReceipt: VerifiedDecisionRecoveryReceipt{
+			kind: durableDecisionRecoveryContentObject, digest: testDigest("historical-successor-journal-recovery"), sizeBytes: 1,
+			binding: &verifiedDecisionRecoveryReceiptBinding{},
+		},
+	}
+	journal.self = journal
+	want := generationEvidenceJournalDigest(journal)
+	if want == ([32]byte{}) || !generationJournalProvenanceShape(journal) || !generationJournalHistoryShape(journal) {
+		t.Fatal("historical successor journal provenance did not seal")
+	}
+	copyJournal := cloneRegisteredJournalDigestFixture(journal)
+	copyJournal.self = journal
+	if generationEvidenceJournalDigest(copyJournal) != ([32]byte{}) {
+		t.Fatal("copied historical successor journal retained digest authority")
+	}
+	for name, mutate := range map[string]func(*generationEvidenceJournal){
+		"source": func(value *generationEvidenceJournal) { value.historicalSuccessorPrior.binding.canonical[0]++ },
+		"replay": func(value *generationEvidenceJournal) { value.historicalSuccessorReplay.binding.canonical[0]++ },
+		"planned": func(value *generationEvidenceJournal) {
+			value.historicalSuccessorPrior.planned.canonical[0]++
+		},
+		"history": func(value *generationEvidenceJournal) {
+			value.history = &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}}
+		},
+		"candidate": func(value *generationEvidenceJournal) { value.candidateBinding.canonical[0]++ },
+		"generation": func(value *generationEvidenceJournal) {
+			value.generation.journalIdentityDigest = testDigest("other-historical-journal")
+		},
+		"reservation": func(value *generationEvidenceJournal) { value.reservation.ReservedRecords++ },
+		"schema": func(value *generationEvidenceJournal) {
+			value.schema.finalCatalogDigest = testDigest("other-historical-catalog")
+		},
+		"runtime": func(value *generationEvidenceJournal) {
+			value.runtimeReceipt.digest = testDigest("other-historical-runtime")
+		},
+		"recovery": func(value *generationEvidenceJournal) {
+			value.recoveryReceipt.digest = testDigest("other-historical-recovery")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := cloneRegisteredJournalDigestFixture(journal)
+			plannedCopy := *planned
+			replayCopy, replayBinding := *replay, *replay.binding
+			replayCopy.binding = &replayBinding
+			readyCopy, readyBinding := *ready, *ready.binding
+			readyCopy.prior, readyCopy.planned, readyCopy.binding = &replayCopy, &plannedCopy, &readyBinding
+			candidateCopy := *candidateBinding
+			value.historicalSuccessorPrior, value.historicalSuccessorReplay, value.candidateBinding = &readyCopy, &replayCopy, &candidateCopy
+			mutate(value)
+			if generationEvidenceJournalDigest(value) == want {
+				t.Fatal("historical successor journal mutation retained digest")
+			}
+		})
+	}
+	mixed := cloneRegisteredJournalDigestFixture(journal)
+	mixed.successorPrior = &SuccessorGenerationRecoveryReady{binding: &successorGenerationRecoveryBinding{}}
+	mixed.successorReplay = &SuccessorGenerationReplayReady{binding: &successorGenerationReplayBinding{}}
+	if generationJournalProvenanceShape(mixed) || generationEvidenceJournalDigest(mixed) != ([32]byte{}) {
+		t.Fatal("mixed historical and live successor provenance was accepted")
+	}
+}
+
+func TestHistoricalSuccessorGenerationReservationUsesRegisteredLineageArithmetic(t *testing.T) {
+	bundle := quotaAdmissionBundleForTest(t)
+	_, _, _, _, descriptor, _ := registeredGenerationReplayFixture(t, 1)
+	facts, err := bundle.quotaFactsForAdmission()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{maxAttempts: facts.maxAttempts, statementCounts: append([]uint64(nil), facts.statementCounts...)}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor.header.ReservedRecords = want.ReservedRecords
+	descriptor.header.ReservedBytes = want.ReservedBytes
+	descriptor.header.ReservedSegments = want.ReservedSegments
+	planned := &verifiedAdmissionRegisteredGeneration{descriptor: descriptor, bundle: bundle}
+	got, err := historicalSuccessorGenerationReservation(planned)
+	if err != nil || got != want {
+		t.Fatalf("reservation=%+v want=%+v err=%v", got, want, err)
+	}
+	for name, mutate := range map[string]func(*JournalHeader){
+		"records":  func(header *JournalHeader) { header.ReservedRecords++ },
+		"bytes":    func(header *JournalHeader) { header.ReservedBytes++ },
+		"segments": func(header *JournalHeader) { header.ReservedSegments++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			copyPlanned := *planned
+			copyPlanned.descriptor = descriptor
+			mutate(&copyPlanned.descriptor.header)
+			if reservation, err := historicalSuccessorGenerationReservation(&copyPlanned); reservation != (evidenceQuotaReservation{}) || !IsCode(err, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("mutated reservation=%+v err=%v", reservation, err)
+			}
+		})
+	}
+	if reservation, err := historicalSuccessorGenerationReservation(&verifiedAdmissionRegisteredGeneration{}); reservation != (evidenceQuotaReservation{}) || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal reservation=%+v err=%v", reservation, err)
+	}
+}
+
+func TestHistoricalSuccessorInitialIndexDebitIsReservedThenActivatedOnly(t *testing.T) {
+	ready := &HistoricalSuccessorGenerationReadyPermit{reservedFrameBytes: []byte{1, 2, 3}, activatedBytes: []byte{4, 5}}
+	records, bytes, err := historicalSuccessorGenerationInitialIndexDebit(ready)
+	if err != nil || records != 2 || bytes != 5 {
+		t.Fatalf("records=%d bytes=%d err=%v", records, bytes, err)
+	}
+	for name, value := range map[string]*HistoricalSuccessorGenerationReadyPermit{
+		"nil":               nil,
+		"missing reserved":  {activatedBytes: []byte{1}},
+		"missing activated": {reservedFrameBytes: []byte{1}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if records, bytes, err := historicalSuccessorGenerationInitialIndexDebit(value); records != 0 || bytes != 0 || !IsCode(err, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("records=%d bytes=%d err=%v", records, bytes, err)
+			}
+		})
+	}
+}
+
+func TestGenerationJournalSourceCountIncludesHistoricalSuccessorPair(t *testing.T) {
+	replay := &GenerationReplayReady{}
+	registered := &RegisteredGenerationRecoveryReady{}
+	successor := &SuccessorGenerationRecoveryReady{}
+	successorReplay := &SuccessorGenerationReplayReady{}
+	historical := &HistoricalSuccessorGenerationRecoveryReady{}
+	historicalReplay := &HistoricalSuccessorGenerationReplayReady{}
+	for name, test := range map[string]struct {
+		record generationEvidenceJournalRegistryRecord
+		want   int
+	}{
+		"brand new":                 {generationEvidenceJournalRegistryRecord{replay: replay}, 1},
+		"registered":                {generationEvidenceJournalRegistryRecord{registeredPrior: registered}, 1},
+		"successor":                 {generationEvidenceJournalRegistryRecord{successorPrior: successor, successorReplay: successorReplay}, 1},
+		"historical successor":      {generationEvidenceJournalRegistryRecord{historicalSuccessorPrior: historical, historicalSuccessorReplay: historicalReplay}, 1},
+		"missing successor replay":  {generationEvidenceJournalRegistryRecord{successorPrior: successor}, 2},
+		"missing historical replay": {generationEvidenceJournalRegistryRecord{historicalSuccessorPrior: historical}, 2},
+		"mixed sources":             {generationEvidenceJournalRegistryRecord{registeredPrior: registered, historicalSuccessorPrior: historical, historicalSuccessorReplay: historicalReplay}, 2},
+		"stray replay":              {generationEvidenceJournalRegistryRecord{replay: replay, historicalSuccessorReplay: historicalReplay}, 2},
+		"empty":                     {generationEvidenceJournalRegistryRecord{}, 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := generationJournalRecordSourceCount(test.record); got != test.want {
+				t.Fatalf("source count=%d want=%d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestGenerationJournalLosingBinderDoesNotRevokeWinningCursor(t *testing.T) {
+	consumed := &atomic.Bool{}
+	valid := &atomic.Bool{}
+	valid.Store(true)
+	if err := consumeGenerationJournalRecovery(consumed, "journal-cas-test", "consumed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := consumeGenerationJournalRecovery(consumed, "journal-cas-test", "consumed"); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("losing consume=%v", err)
+	}
+	if !valid.Load() {
+		t.Fatal("losing binder revoked the winning cursor validity cell")
+	}
+}
+
 func cloneRegisteredJournalDigestFixture(source *generationEvidenceJournal) *generationEvidenceJournal {
 	result := &generationEvidenceJournal{
-		prior: source.prior, registeredPrior: source.registeredPrior, successorPrior: source.successorPrior,
-		replay: source.replay, successorReplay: source.successorReplay, plan: source.plan,
+		prior: source.prior, registeredPrior: source.registeredPrior, successorPrior: source.successorPrior, historicalSuccessorPrior: source.historicalSuccessorPrior,
+		replay: source.replay, successorReplay: source.successorReplay, historicalSuccessorReplay: source.historicalSuccessorReplay, plan: source.plan,
 		history: source.history, candidateBinding: source.candidateBinding,
 		runtimeReceipt: source.runtimeReceipt, recoveryReceipt: source.recoveryReceipt,
 		lease: source.lease, generation: source.generation, reservation: source.reservation,
@@ -423,6 +603,9 @@ func TestGenerationEvidenceJournalRejectsLiteralAuthorityAndConsumerSpread(t *te
 	}
 	if journal, err := (&SuccessorGenerationRecoveryReady{}).BindJournal(context.Background(), candidate); journal != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("literal successor recovery entered journal binder: journal=%T err=%v", journal, err)
+	}
+	if journal, err := (&HistoricalSuccessorGenerationRecoveryReady{}).BindJournal(context.Background(), candidate); journal != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor recovery entered journal binder: journal=%T err=%v", journal, err)
 	}
 	literal := &generationEvidenceJournal{}
 	if _, _, err := literal.Replay(context.Background()); !IsCode(err, CodeEvidenceJournalFailed) {

@@ -315,6 +315,23 @@ func TestHistoricalSuccessorRecoveryCloseInvalidatesCursorAndRegistryChain(t *te
 
 func TestHistoricalSuccessorRecoveryAuthorityDoesNotSpread(t *testing.T) {
 	const owner = "evidence_historical_supersession_recovery.go"
+	allowedConsumers := map[string]map[string]bool{
+		"evidence_generation_journal.go": {
+			"HistoricalSuccessorGenerationRecoveryReady":              true,
+			"validHistoricalSuccessorGenerationRecoveryReady":         true,
+			"historicalSuccessorGenerationRecoveryDigest":             true,
+			"historicalSuccessorGenerationRecoveryReadyRecordMatches": true,
+			"closeConsumedHistoricalSuccessorGenerationRecovery":      true,
+		},
+		"evidence_session.go": {
+			"HistoricalSuccessorGenerationRecoveryReady":      true,
+			"validHistoricalSuccessorGenerationRecoveryReady": true,
+		},
+	}
+	allowedMethods := map[string]map[string]bool{
+		"HistoricalSuccessorGenerationReplayReady":   {"BindRecovery": true, "Close": true},
+		"HistoricalSuccessorGenerationRecoveryReady": {"RequiresSupersession": true, "BindJournal": true, "BindSession": true, "Close": true},
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -330,40 +347,93 @@ func TestHistoricalSuccessorRecoveryAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (strings.HasPrefix(identifier.Name, "HistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationRecovery")) {
+			if ok && (strings.HasPrefix(identifier.Name, "HistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationRecovery") || identifier.Name == "closeConsumedHistoricalSuccessorGenerationRecovery") && !allowedConsumers[name][identifier.Name] {
 				t.Fatalf("historical successor recovery authority spread into %s through %s", name, identifier.Name)
 			}
 			return true
 		})
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), owner, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	allowedMethods := map[string]map[string]bool{
-		"HistoricalSuccessorGenerationReplayReady":   {"BindRecovery": true},
-		"HistoricalSuccessorGenerationRecoveryReady": {"RequiresSupersession": true, "Close": true},
-	}
-	ast.Inspect(file, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok {
-			if selector, ok := call.Fun.(*ast.SelectorExpr); ok && (selector.Sel.Name == "Connect" || selector.Sel.Name == "Open" || selector.Sel.Name == "BindJournal") {
-				t.Fatalf("historical successor recovery called forbidden runtime entrypoint %s", selector.Sel.Name)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			if name == owner {
+				if call, ok := node.(*ast.CallExpr); ok {
+					if selector, ok := call.Fun.(*ast.SelectorExpr); ok && (selector.Sel.Name == "Connect" || selector.Sel.Name == "Open" || selector.Sel.Name == "BindJournal") {
+						t.Fatalf("historical successor recovery called forbidden runtime entrypoint %s", selector.Sel.Name)
+					}
+				}
 			}
-		}
-		function, ok := node.(*ast.FuncDecl)
-		if !ok || function.Recv == nil || len(function.Recv.List) != 1 || !ast.IsExported(function.Name.Name) {
+			function, ok := node.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || len(function.Recv.List) != 1 || !ast.IsExported(function.Name.Name) {
+				return true
+			}
+			star, ok := function.Recv.List[0].Type.(*ast.StarExpr)
+			if !ok {
+				return true
+			}
+			receiver, ok := star.X.(*ast.Ident)
+			if ok && allowedMethods[receiver.Name] != nil && !allowedMethods[receiver.Name][function.Name.Name] {
+				t.Fatalf("historical successor recovery stage %s exposed unexpected method %s in %s", receiver.Name, function.Name.Name, name)
+			}
 			return true
-		}
-		star, ok := function.Recv.List[0].Type.(*ast.StarExpr)
-		if !ok {
-			return true
-		}
-		receiver, ok := star.X.(*ast.Ident)
-		if ok && allowedMethods[receiver.Name] != nil && !allowedMethods[receiver.Name][function.Name.Name] {
-			t.Fatalf("historical successor recovery stage %s exposed unexpected method %s", receiver.Name, function.Name.Name)
-		}
-		return true
-	})
+		})
+	}
+}
+
+func TestHistoricalSuccessorRuntimeBindersRejectHistoricalBBeforeMutation(t *testing.T) {
+	for name, test := range map[string]struct {
+		file  string
+		start string
+		end   string
+		later []string
+	}{
+		"journal": {
+			file:  "evidence_generation_journal.go",
+			start: "func (r *HistoricalSuccessorGenerationRecoveryReady) BindJournal",
+			end:   "func consumeGenerationJournalRecovery",
+			later: []string{"contextAdmissionError(ctx)", ".Revalidate(ctx)", "consumeGenerationJournalRecovery("},
+		},
+		"session": {
+			file:  "evidence_session.go",
+			start: "func (r *HistoricalSuccessorGenerationRecoveryReady) BindSession",
+			end:   "func bindGenerationEvidenceSession",
+			later: []string{"r.BindJournal(ctx, candidate)"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(test.file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := string(raw)
+			start := strings.Index(source, test.start)
+			if start < 0 {
+				t.Fatal("runtime binder is absent")
+			}
+			endOffset := strings.Index(source[start:], test.end)
+			if endOffset < 0 {
+				t.Fatal("runtime binder boundary is absent")
+			}
+			method := source[start : start+endOffset]
+			guard := strings.Index(method, "if r.requiresSupersession")
+			if guard < 0 {
+				t.Fatal("historical currentness guard is absent")
+			}
+			for _, later := range test.later {
+				position := strings.Index(method, later)
+				if position < 0 || position <= guard {
+					t.Fatalf("%s is absent or precedes the historical currentness guard", later)
+				}
+			}
+		})
+	}
 }
 
 func TestRecoveryWitnessConstructorsHaveOnlyReviewedConsumers(t *testing.T) {
@@ -373,6 +443,9 @@ func TestRecoveryWitnessConstructorsHaveOnlyReviewedConsumers(t *testing.T) {
 			"buildRegisteredBrandNewRecoveryWitness": true,
 		},
 		"evidence_historical_supersession_recovery.go": {
+			"buildRegisteredBrandNewRecoveryWitness": true,
+		},
+		"evidence_generation_journal.go": {
 			"buildRegisteredBrandNewRecoveryWitness": true,
 		},
 	}

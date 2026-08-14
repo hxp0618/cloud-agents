@@ -100,6 +100,23 @@ func (r *RegisteredGenerationRecoveryReady) BindSession(ctx context.Context, can
 	return bindGenerationEvidenceSession(ctx, authority, candidate, decision, execution)
 }
 
+// BindSession consumes an activated crash-recovered successor only when B is
+// still the current decision. A historical B cannot enter the normal runtime
+// session path and must first take its dedicated header-only supersession.
+func (r *HistoricalSuccessorGenerationRecoveryReady) BindSession(ctx context.Context, candidate OwnedCurrentCandidate) (EvidenceSession, error) {
+	if r == nil || !validHistoricalSuccessorGenerationRecoveryReady(r, candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-evidence-session-bind", "historical successor recovery authority is unavailable", nil)
+	}
+	if r.requiresSupersession {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-evidence-session-bind", "historical successor must be superseded before session use", nil)
+	}
+	authority, err := r.BindJournal(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	return bindGenerationEvidenceSession(ctx, authority, candidate, candidate.verifiedRun.currentDecision, nil)
+}
+
 func bindGenerationEvidenceSession(ctx context.Context, authority EvidenceJournal, candidate OwnedCurrentCandidate, decision OwnedVerifiedDecision, execution *VerifiedRecoveryExecutionBindings) (EvidenceSession, error) {
 	journal, ok := authority.(*generationEvidenceJournal)
 	if !ok || journal == nil {

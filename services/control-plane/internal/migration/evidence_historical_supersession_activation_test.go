@@ -133,6 +133,9 @@ func TestHistoricalSuccessorActivationAuthorityDoesNotSpread(t *testing.T) {
 		"evidence_historical_supersession_handoff.go": {
 			"HistoricalSuccessorGenerationReadyPermit": true,
 		},
+		"evidence_generation_journal.go": {
+			"HistoricalSuccessorGenerationReadyPermit": true,
+		},
 	}
 	entries, err := os.ReadDir(".")
 	if err != nil {

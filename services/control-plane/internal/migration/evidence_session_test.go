@@ -20,6 +20,9 @@ func TestEvidenceSessionRejectsLiteralAuthority(t *testing.T) {
 	if session, err := (&RegisteredGenerationRecoveryReady{}).BindSession(context.Background(), candidate); session != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("literal registered recovery entered session binder: session=%T err=%v", session, err)
 	}
+	if session, err := (&HistoricalSuccessorGenerationRecoveryReady{}).BindSession(context.Background(), candidate); session != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor recovery entered session binder: session=%T err=%v", session, err)
+	}
 	literal := &generationEvidenceSession{}
 	if candidate := literal.CurrentCandidate(); candidate.binding != nil {
 		t.Fatal("literal session returned a candidate")
