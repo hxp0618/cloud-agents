@@ -28,6 +28,7 @@ type GenerationRotationResult struct {
 	rotationCheckpointFramed       []byte
 	callerFramed                   []byte
 	callerCheckpointFramed         []byte
+	segmentOpened                  bool
 }
 
 func (r GenerationRotationResult) Outcome() AdmissionTransitionOutcome { return r.outcome }
@@ -206,6 +207,7 @@ func (l *GenerationLease) AppendRotatedSegmentComposite(ctx context.Context, sna
 	if err != nil {
 		return finishFailure(filesystem("generation-rotation-segment-create"))
 	}
+	result.segmentOpened = true
 	segmentEmpty, err := l.store.ops.fstat(segmentFD)
 	if err != nil || !validRegular(segmentEmpty, l.store.uid, l.store.identity.device) || segmentEmpty.size != 0 {
 		return finishFailure(filesystem("generation-rotation-segment-empty"))
@@ -344,4 +346,5 @@ func clearGenerationRotationReconcile(result *GenerationRotationResult) {
 	result.rotationCheckpointFramed = nil
 	result.callerFramed = nil
 	result.callerCheckpointFramed = nil
+	result.segmentOpened = false
 }

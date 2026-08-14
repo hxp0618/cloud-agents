@@ -110,18 +110,19 @@ func TestGenerationRotatedSegmentCompositeMutationFailuresAreUnknown(t *testing.
 		fault      func(*fakeBackend)
 		segment    []byte
 		checkpoint []byte
+		reconcile  GenerationRotationReconcileState
 	}{
-		{name: "create", fault: func(f *fakeBackend) { f.failOpenNames[admissionSegmentName(1)] = errors.New("create") }},
-		{name: "empty-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 1 }},
-		{name: "directory-sync", fault: func(f *fakeBackend) { f.failFsyncAt = f.fsyncs + 1 }},
-		{name: "header-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 1 }},
-		{name: "header-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 2 }, segment: []byte("header")},
-		{name: "header-checkpoint-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 2 }, segment: []byte("header")},
-		{name: "header-checkpoint-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 3 }, segment: []byte("header"), checkpoint: []byte("header-checkpoint")},
-		{name: "caller-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 3 }, segment: []byte("header"), checkpoint: []byte("header-checkpoint")},
-		{name: "caller-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 4 }, segment: []byte("headercaller"), checkpoint: []byte("header-checkpoint")},
-		{name: "caller-checkpoint-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 4 }, segment: []byte("headercaller"), checkpoint: []byte("header-checkpoint")},
-		{name: "caller-checkpoint-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 5 }, segment: []byte("headercaller"), checkpoint: []byte("header-checkpointcaller-checkpoint")},
+		{name: "create", fault: func(f *fakeBackend) { f.failOpenNames[admissionSegmentName(1)] = errors.New("create") }, reconcile: GenerationRotationReconcileSegmentAbsent},
+		{name: "empty-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 1 }, reconcile: GenerationRotationReconcileSegmentEmpty},
+		{name: "directory-sync", fault: func(f *fakeBackend) { f.failFsyncAt = f.fsyncs + 1 }, reconcile: GenerationRotationReconcileSegmentEmpty},
+		{name: "header-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 1 }, reconcile: GenerationRotationReconcileSegmentEmpty},
+		{name: "header-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 2 }, segment: []byte("header"), reconcile: GenerationRotationReconcileHeaderComplete},
+		{name: "header-checkpoint-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 2 }, segment: []byte("header"), reconcile: GenerationRotationReconcileHeaderComplete},
+		{name: "header-checkpoint-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 3 }, segment: []byte("header"), checkpoint: []byte("header-checkpoint"), reconcile: GenerationRotationReconcileHeaderCompositeComplete},
+		{name: "caller-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 3 }, segment: []byte("header"), checkpoint: []byte("header-checkpoint"), reconcile: GenerationRotationReconcileHeaderCompositeComplete},
+		{name: "caller-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 4 }, segment: []byte("headercaller"), checkpoint: []byte("header-checkpoint"), reconcile: GenerationRotationReconcileCallerComplete},
+		{name: "caller-checkpoint-write", fault: func(f *fakeBackend) { f.failWriteAt = f.writes + 4 }, segment: []byte("headercaller"), checkpoint: []byte("header-checkpoint"), reconcile: GenerationRotationReconcileCallerComplete},
+		{name: "caller-checkpoint-sync", fault: func(f *fakeBackend) { f.failFdatasyncAt = f.fdatasyncs + 5 }, segment: []byte("headercaller"), checkpoint: []byte("header-checkpointcaller-checkpoint"), reconcile: GenerationRotationReconcileCompositeComplete},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -154,6 +155,92 @@ func TestGenerationRotatedSegmentCompositeMutationFailuresAreUnknown(t *testing.
 				t.Fatalf("index=%q want=%q", index.data, wantIndex)
 			}
 			delete(f.failOpenNames, admissionSegmentName(1))
+			state, reconcileErr := result.Reconcile(context.Background(), lease)
+			if reconcileErr != nil || state != test.reconcile || len(f.handles) != baselineHandles {
+				t.Fatalf("reconcile=%q want=%q err=%v handles=%d/%d", state, test.reconcile, reconcileErr, len(f.handles), baselineHandles)
+			}
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("close=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
+func TestGenerationRotationReconcileClassifiesEveryPartialSuffix(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		header    []byte
+		headerCP  []byte
+		caller    []byte
+		callerCP  []byte
+		failWrite int
+		want      GenerationRotationReconcileState
+	}{
+		{name: "header-torn", header: []byte("header"), headerCP: []byte("hcp"), caller: []byte("c"), callerCP: []byte("ccp"), failWrite: 2, want: GenerationRotationReconcileHeaderTorn},
+		{name: "header-checkpoint-torn", header: []byte("hdr"), headerCP: []byte("header-checkpoint"), caller: []byte("c"), callerCP: []byte("ccp"), failWrite: 3, want: GenerationRotationReconcileHeaderCheckpointTorn},
+		{name: "caller-torn", header: []byte("hdr"), headerCP: []byte("hcp"), caller: []byte("caller"), callerCP: []byte("ccp"), failWrite: 4, want: GenerationRotationReconcileCallerTorn},
+		{name: "caller-checkpoint-torn", header: []byte("hdr"), headerCP: []byte("hcp"), caller: []byte("cal"), callerCP: []byte("caller-checkpoint"), failWrite: 5, want: GenerationRotationReconcileCallerCheckpointTorn},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, lease, _, _ := generationLeaseForSnapshot(t, [][]byte{[]byte("segment-zero")})
+			snapshot, err := lease.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.partialWrite = 3
+			f.failWriteAt = f.writes + test.failWrite
+			result, err := lease.AppendRotatedSegmentComposite(context.Background(), snapshot, test.header, test.headerCP, test.caller, test.callerCP)
+			if !errors.Is(err, ErrUnknown) || result.Outcome() != AdmissionTransitionUnknown || !lease.Active() {
+				t.Fatalf("err=%v outcome=%q active=%v", err, result.Outcome(), lease.Active())
+			}
+			state, err := result.Reconcile(context.Background(), lease)
+			if err != nil || state != test.want {
+				t.Fatalf("state=%q want=%q err=%v", state, test.want, err)
+			}
+			if err := lease.Close(); err != nil || len(f.handles) != 0 {
+				t.Fatalf("close=%v handles=%d", err, len(f.handles))
+			}
+		})
+	}
+}
+
+func TestGenerationRotationReconcileRejectsDifferentOrUnorderedState(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*fakeBackend, [32]byte, [32]byte)
+	}{
+		{name: "different-new-suffix", mutate: func(f *fakeBackend, target, journal [32]byte) {
+			segment := generationNode(f, target, journal).children[admissionSegmentName(1)]
+			segment.data[len(segment.data)-1] ^= 1
+		}},
+		{name: "old-segment-drift", mutate: func(f *fakeBackend, target, journal [32]byte) {
+			segment := generationNode(f, target, journal).children[admissionSegmentName(0)]
+			segment.data[0] ^= 1
+		}},
+		{name: "checkpoint-ahead", mutate: func(f *fakeBackend, target, _ [32]byte) {
+			index := generationAppendIndexNode(f, target)
+			index.data = append(index.data, []byte("header-checkpointcaller-checkpoint")...)
+			index.stat.size = uint64(len(index.data))
+		}},
+		{name: "extra-segment", mutate: func(f *fakeBackend, target, journal [32]byte) {
+			generationNode(f, target, journal).children[admissionSegmentName(2)] = f.regular(admissionSegmentName(2), []byte("extra"))
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, lease, target, journal := generationLeaseForSnapshot(t, [][]byte{[]byte("segment-zero")})
+			snapshot, err := lease.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.failFdatasyncAt = f.fdatasyncs + 2
+			result, err := lease.AppendRotatedSegmentComposite(context.Background(), snapshot, []byte("header"), []byte("header-checkpoint"), []byte("caller"), []byte("caller-checkpoint"))
+			if !errors.Is(err, ErrUnknown) {
+				t.Fatal(err)
+			}
+			test.mutate(f, target, journal)
+			if state, err := result.Reconcile(context.Background(), lease); state != "" || !errors.Is(err, ErrCorrupt) || lease.Active() {
+				t.Fatalf("state=%q err=%v active=%v", state, err, lease.Active())
+			}
 			if err := lease.Close(); err != nil || len(f.handles) != 0 {
 				t.Fatalf("close=%v handles=%d", err, len(f.handles))
 			}
