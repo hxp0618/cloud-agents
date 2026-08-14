@@ -14,7 +14,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
-const admissionReplayDigestDomain = "cloud-agents-platform-evidence-admission-replay/v1\x00"
+const admissionReplayDigestDomain = "cloud-agents-platform-evidence-admission-replay/v2\x00"
 
 // admissionReplayTranscript is an owned description of a revision-zero
 // evidencefs inventory. It deliberately has no seal, self pointer, registry, or
@@ -41,6 +41,7 @@ type admissionReplayLineage struct {
 	id                                             [32]byte
 	index                                          admissionReplayFile
 	indexRecords                                   uint64
+	indexHeaderFramedBytes                         uint64
 	journals                                       []admissionReplayJournal
 	state                                          admissionReplayLineageState
 	generations                                    []admissionReplayGeneration
@@ -897,11 +898,16 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 	if transcript == nil {
 		return admissionCorrupt("admission-inspection", "transcript is unavailable", nil)
 	}
-	byGeneration := make(map[[64]byte][]*admissionReplayGeneration)
+	type inspectionTarget struct {
+		generation             *admissionReplayGeneration
+		mayOwnIndexHeader      bool
+		indexHeaderFramedBytes uint64
+	}
+	byGeneration := make(map[[64]byte][]inspectionTarget)
 	transcript.journalReservedBytes, transcript.indexReservedBytes = 0, 0
 	for lineageIndex := range transcript.lineages {
 		lineage := &transcript.lineages[lineageIndex]
-		register := func(generation *admissionReplayGeneration) error {
+		register := func(generation *admissionReplayGeneration, mayOwnIndexHeader bool) error {
 			if generation == nil {
 				return nil
 			}
@@ -911,15 +917,15 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 			copy(key[:32], lineage.id[:])
 			journal := digestRaw(generation.journalID)
 			copy(key[32:], journal[:])
-			byGeneration[key] = append(byGeneration[key], generation)
+			byGeneration[key] = append(byGeneration[key], inspectionTarget{generation, mayOwnIndexHeader, lineage.indexHeaderFramedBytes})
 			return nil
 		}
 		for generationIndex := range lineage.generations {
 			generation := &lineage.generations[generationIndex]
-			if err := register(generation); err != nil {
+			if err := register(generation, generationIndex == 0); err != nil {
 				return err
 			}
-			if err := register(generation.plannedSuccessor); err != nil {
+			if err := register(generation.plannedSuccessor, false); err != nil {
 				return err
 			}
 		}
@@ -932,16 +938,39 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 		var key [64]byte
 		copy(key[:32], ref.lineageID[:])
 		copy(key[32:], ref.journalID[:])
-		generations := byGeneration[key]
+		targets := byGeneration[key]
 		inspection := ref.runtime
-		if len(generations) == 0 || inspection == nil {
+		if len(targets) == 0 || inspection == nil {
 			return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
 		}
-		for _, generation := range generations {
-			if generation.header == nil || inspection.manifestDigest != generation.header.manifestDigest || inspection.schemaBundleDigest != generation.schemaBundleDigest || inspection.reservation.ReservedRecords != generation.reservedRecords || inspection.reservation.ReservedBytes != generation.reservedBytes || inspection.reservation.ReservedSegments != generation.reservedSegments {
+		withIndexHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{inspection.maxAttempts, inspection.statementCounts}, true)
+		if err != nil {
+			return admissionCorrupt("admission-inspection", "runtime bundle index-header reservation is invalid", err)
+		}
+		reservationMatches := func(generation *admissionReplayGeneration, reservation evidenceQuotaReservation) bool {
+			return reservation.ReservedRecords == generation.reservedRecords && reservation.ReservedBytes == generation.reservedBytes && reservation.ReservedSegments == generation.reservedSegments
+		}
+		for _, target := range targets {
+			generation := target.generation
+			if generation.header == nil || inspection.manifestDigest != generation.header.manifestDigest || inspection.schemaBundleDigest != generation.schemaBundleDigest {
+				return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
+			}
+			reservation := inspection.reservation
+			ownsIndexHeader := false
+			switch {
+			case reservationMatches(generation, reservation):
+			case target.mayOwnIndexHeader && reservationMatches(generation, withIndexHeader):
+				reservation, ownsIndexHeader = withIndexHeader, true
+			default:
 				return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
 			}
 			var consumedRecords, consumedBytes uint64
+			if ownsIndexHeader {
+				if target.indexHeaderFramedBytes == 0 || target.indexHeaderFramedBytes > lineageRecordFrameLimits[LineageRecordHeader] {
+					return admissionCorrupt("admission-inspection", "lineage header debit is unavailable or exceeds its reservation", nil)
+				}
+				consumedRecords, consumedBytes = 1, target.indexHeaderFramedBytes
+			}
 			for _, debit := range generation.indexDebits {
 				var err error
 				consumedRecords, err = admissionCheckedAdd(consumedRecords, 1)
@@ -953,13 +982,14 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 					return err
 				}
 			}
-			if consumedRecords > inspection.reservation.ReservedIndexRecords || consumedBytes > inspection.reservation.ReservedIndexBytes {
+			if consumedRecords > reservation.ReservedIndexRecords || consumedBytes > reservation.ReservedIndexBytes {
 				return admissionCorrupt("admission-inspection", "durable index debit exceeds generation reservation", nil)
 			}
-			generation.remainingIndexRecords = inspection.reservation.ReservedIndexRecords - consumedRecords
-			generation.remainingIndexBytes = inspection.reservation.ReservedIndexBytes - consumedBytes
+			generation.remainingIndexRecords = reservation.ReservedIndexRecords - consumedRecords
+			generation.remainingIndexBytes = reservation.ReservedIndexBytes - consumedBytes
 			owned := *inspection
 			owned.statementCounts = append([]uint64(nil), inspection.statementCounts...)
+			owned.reservation = reservation
 			generation.runtimeInspection = &owned
 		}
 		var addErr error
@@ -1160,6 +1190,15 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 	}
 	lineage := admissionReplayLineage{id: expected, index: indexFile, indexRecords: uint64(len(indexFrames))}
 	var references []admissionObjectReference
+	if indexBound {
+		indexHeaderBytes, encodeErr := EncodeCanonicalLineageFrame(indexFrames[0])
+		if encodeErr != nil || len(indexHeaderBytes) == 0 {
+			findings.addAt("02000003", admissionCorrupt("admission-index", "lineage header framing cannot be reconstructed", encodeErr))
+			indexBound = false
+		} else {
+			lineage.indexHeaderFramedBytes = uint64(len(indexHeaderBytes))
+		}
+	}
 	if indexBound {
 		lineage.generations, err = compactAdmissionGenerations(indexFrames)
 		if err != nil {
@@ -2021,6 +2060,7 @@ func admissionReplayCanonicalDigest(t *admissionReplayTranscript) [32]byte {
 		h.Write(lineage.id[:])
 		writeAdmissionFileDigest(h, lineage.index)
 		writeAdmissionUint(h, lineage.indexRecords)
+		writeAdmissionUint(h, lineage.indexHeaderFramedBytes)
 		for _, d := range []Digest{lineage.header.executionLineageDigest, lineage.indexHeaderRecordDigest, lineage.indexTailRecordDigest} {
 			h.Write([]byte(d))
 			h.Write([]byte{0})
