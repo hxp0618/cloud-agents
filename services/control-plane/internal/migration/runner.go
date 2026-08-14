@@ -126,14 +126,14 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 	if err != nil {
 		return RunResult{}, err
 	}
-	preflightErr := runner.runDatabaseAuthorityPreflight(ctx, request.TargetDSN, bundle, session, candidate)
+	preflightErr := runner.runDatabaseAuthorityPreflight(ctx, request.TargetDSN, bundle, plans, session, candidate)
 	if cleanupErr := closeRunnerEvidenceOwnership(session, candidate); cleanupErr != nil {
 		return RunResult{}, cleanupErr
 	}
 	if preflightErr != nil {
 		return RunResult{}, preflightErr
 	}
-	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-catalog-preflight", "database authority preflight completed but catalog and ledger wiring are not implemented", nil)
+	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-entry-execution", "database authority, ledger, and initial catalog preflight completed but transaction execution is not implemented", nil)
 }
 
 func verifyRunnerCurrentEvidence(ctx context.Context, verifier TrustVerifier, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {

@@ -151,6 +151,31 @@ func (session *pgxSession) Boundary(ctx context.Context, key int64) (BoundarySta
 	return state, nil
 }
 
+func (session *pgxSession) readRunnerLedgerPrefix(ctx context.Context) ([]LedgerRow, error) {
+	session.stateMu.Lock()
+	valid := !session.closed && !session.projectionActive && session.roleConfigured && session.settingsPolicy != nil && session.advisoryKey != nil
+	var key int64
+	var policy ExecutionPolicy
+	if valid {
+		key = *session.advisoryKey
+		policy = *session.settingsPolicy
+	}
+	session.stateMu.Unlock()
+	if !valid {
+		return nil, fail(CodeInvalidLedger, "runner-ledger-read", "runner session lifecycle does not permit a ledger read", nil)
+	}
+	rows, err := (SQLLedgerStore{}).Read(ctx, pgxQueryer{queryer: session.connection})
+	if err != nil {
+		return nil, err
+	}
+	boundary, boundaryErr := session.Boundary(ctx, key)
+	settingsErr := session.validateTrackedRoleAndSettings(ctx, policy)
+	if boundaryErr != nil || settingsErr != nil || boundary.TxStatus != 'I' || boundary.CurrentUser != MigrationOwnerRole || !boundary.LockHeld {
+		return nil, fail(CodeInvalidLedger, "runner-ledger-read", "runner ledger read escaped the exact role or lock boundary", nil)
+	}
+	return cloneProjectionValue(rows), nil
+}
+
 func (session *pgxSession) BeginMigration(ctx context.Context) (MigrationTransaction, error) {
 	session.stateMu.Lock()
 	allowed := !session.closed && !session.projectionActive && session.roleConfigured && session.settingsPolicy != nil && session.advisoryKey != nil
@@ -294,6 +319,7 @@ func (rows pgxRows) Err() error                { return rows.rows.Err() }
 func (rows pgxRows) Close()                    { rows.rows.Close() }
 
 var _ CommandTag = pgconn.CommandTag{}
+var _ runnerLedgerPrefixReader = (*pgxSession)(nil)
 
 func describePGXError(err error) string {
 	if pgError, ok := err.(*pgconn.PgError); ok {

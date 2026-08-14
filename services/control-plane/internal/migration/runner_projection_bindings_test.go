@@ -507,6 +507,25 @@ func exactPlanBundle(t *testing.T, schemaBundleDigest Digest, predecessor Catalo
 	descriptor.Classification = SQLClassificationDescriptor{
 		Profile: "postgresql-ddl-v1", Command: "CREATE", ObjectKind: "TABLE", TargetIdentity: "table:unquoted:cloud_agents/unquoted:t",
 	}
+	if len(predecessor.AcceptedStates) == 0 {
+		t.Fatal("exact plan predecessor has no accepted state")
+	}
+	before := predecessor.AcceptedStates[0]
+	for _, accepted := range predecessor.AcceptedStates {
+		if accepted.Absent != nil {
+			before = accepted
+			break
+		}
+	}
+	beforeDigest, err := before.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeKind := "schema_absent"
+	if before.Present != nil {
+		beforeKind = "schema_present"
+	}
+	descriptor.ExpectedTransition.CatalogBefore = CatalogStateDigestRef{Scope: cloneProjectionValue(acceptedScope(before)), StateKind: beforeKind, Digest: beforeDigest}
 	contract.SourceDescriptors[0].SQLSHA256 = DigestBytes(sqlRaw)
 	catalogRaw := mustJSON(t, contract)
 	sqlRecord := ArtifactRecord{Path: "services/control-plane/migrations/000001_test.sql", Mode: "100644", SizeBytes: uint64(len(sqlRaw)), SHA256: DigestBytes(sqlRaw)}

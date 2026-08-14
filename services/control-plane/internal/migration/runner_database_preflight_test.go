@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestRunnerClosesEvidenceWhenDatabaseConnectorIsUnconfigured(t *testing.T) {
@@ -117,6 +118,65 @@ func TestRunnerDatabasePreflightFaultsCloseEvidenceAndDatabase(t *testing.T) {
 	}
 }
 
+func TestRunnerLedgerAndInitialPreconditionFaultsRemainReadOnly(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		configure        func(*runnerPreflightSession, *runnerPreflightProjectorFactory, *RuntimeBundle)
+		wantCode         ErrorCode
+		wantOp           string
+		wantLedgerReads  int
+		wantPrecondition int
+	}{
+		{"ledger-first-read", func(s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
+			s.ledgerReadErr[1] = errors.New("secret-ledger-first")
+		}, CodeTransactionBoundary, "runner-ledger-preflight", 1, 0},
+		{"complete-ledger", func(s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, bundle *RuntimeBundle) {
+			s.ledgerRowsByRead = [][]LedgerRow{{ledgerRowFor(bundle.Manifest.SchemaBundle.Migrations[0], bundle.Manifest.SchemaBundleDigest)}}
+		}, CodeProjectionNotImplemented, "runner-complete-ledger-preflight", 1, 0},
+		{"precondition-projection", func(_ *runnerPreflightSession, f *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
+			f.preconditionErr = fail(CodeCatalogDrift, "fake", "secret", errors.New("secret-precondition"))
+		}, CodeCatalogDrift, "runner-initial-precondition", 1, 1},
+		{"precondition-result", func(_ *runnerPreflightSession, f *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
+			f.mutatePrecondition = func(result *ProjectionResult[CatalogStateProjection]) {
+				result.Digest = testDigest("wrong-precondition")
+			}
+		}, CodeCatalogDrift, "runner-initial-precondition", 1, 1},
+		{"precondition-metadata", func(_ *runnerPreflightSession, f *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
+			f.mutatePrecondition = func(result *ProjectionResult[CatalogStateProjection]) { result.Metadata.QueryCount++ }
+		}, CodeProjectionMetadataMismatch, "runner-initial-precondition", 1, 1},
+		{"ledger-second-read", func(s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
+			s.ledgerReadErr[2] = errors.New("secret-ledger-second")
+		}, CodeTransactionBoundary, "runner-ledger-preflight", 2, 1},
+		{"ledger-drift", func(s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, bundle *RuntimeBundle) {
+			row := ledgerRowFor(bundle.Manifest.SchemaBundle.Migrations[0], bundle.Manifest.SchemaBundleDigest)
+			s.ledgerRowsByRead = [][]LedgerRow{{}, {row}}
+		}, CodeInvalidLedger, "runner-ledger-preflight", 2, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw, decision := buildExactAdmissionRuntime(t)
+			bundle, err := LoadRuntimeBundle(raw, decision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := newRunnerPreflightSession()
+			factory := &runnerPreflightProjectorFactory{}
+			factory.initialize()
+			test.configure(session, factory, bundle)
+			sink := &runnerEvidenceSinkFake{}
+			verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
+			runner := Runner{Trust: verifier, Evidence: sink, Connector: &runnerPreflightConnector{session: session}, projectionFactory: factory, Ledger: &fakeLedgerStore{}}
+			_, err = runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+			var migrationErr *Error
+			if !errors.As(err, &migrationErr) || migrationErr.Code != test.wantCode || migrationErr.Op != test.wantOp || migrationErr.Err != nil || containsErrorText(err, "secret-") {
+				t.Fatalf("ledger/precondition fault mapping=%#v", migrationErr)
+			}
+			if sink.session == nil || sink.session.closeCalls != 1 || session.ledgerReadCalls != test.wantLedgerReads || len(factory.preconditionPhases) != test.wantPrecondition || session.unlockCalls != 1 || session.closeCalls != 1 || session.beginCalls != 0 || session.queryCalls != 0 || session.backend.ledgerReadCalls != 0 || session.backend.ledgerInsertCalls != 0 || session.backend.executeCalls != 0 || session.backend.commitCalls != 0 {
+				t.Fatalf("ledger/precondition fault crossed write boundary: session=%+v factory=%+v backend=%+v", session, factory, session.backend)
+			}
+		})
+	}
+}
+
 func TestRunnerAuthorityProjectionResultIsTotallyChecked(t *testing.T) {
 	fixture := newRunnerBindingFixture(t, []string{"000001"})
 	contract := fixture.authority
@@ -153,6 +213,48 @@ func TestRunnerAuthorityProjectionResultIsTotallyChecked(t *testing.T) {
 	}
 }
 
+func TestRunnerLedgerPrefixExcludesOnlyObservationalColumns(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	bundle, err := LoadRuntimeBundle(raw, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := ledgerRowFor(bundle.Manifest.SchemaBundle.Migrations[0], bundle.Manifest.SchemaBundleDigest)
+	row.AppliedAt = time.Unix(10, 0).UTC()
+	row.AppliedBy = "first-observer"
+	leftRow, err := commitIntentLedgerRowFromObserved(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.AppliedAt = time.Unix(20, 0).UTC()
+	row.AppliedBy = "second-observer"
+	rightRow, err := commitIntentLedgerRowFromObserved(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leftDigest, err := LedgerPrefixDigest([]CommitIntentLedgerRow{leftRow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightDigest, err := LedgerPrefixDigest([]CommitIntentLedgerRow{rightRow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := runnerLedgerPrefix{rows: []CommitIntentLedgerRow{leftRow}, digest: leftDigest, head: row.MigrationID}
+	right := runnerLedgerPrefix{rows: []CommitIntentLedgerRow{rightRow}, digest: rightDigest, head: row.MigrationID}
+	if !sameRunnerLedgerPrefix(left, right) {
+		t.Fatal("observational applied_at/applied_by changed the exact identity prefix")
+	}
+	right.rows[0].MigrationName += "-drift"
+	right.digest, err = LedgerPrefixDigest(right.rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sameRunnerLedgerPrefix(left, right) {
+		t.Fatal("ledger-backed identity drift was ignored")
+	}
+}
+
 func TestRunnerProjectionFactoryIsNotPubliclyInjectable(t *testing.T) {
 	field, ok := reflect.TypeOf(Runner{}).FieldByName("projectionFactory")
 	if !ok || field.PkgPath == "" {
@@ -170,7 +272,7 @@ func TestRunnerDatabasePreflightHasNoMigrationOrLedgerCallEdge(t *testing.T) {
 		"BeginMigration": true, "ExecuteStatement": true, "Commit": true,
 		"Queryer": true, "ServerMajor": true, "Insert": true, "Exec": true, "Query": true, "QueryRow": true,
 		"Ledger": true, "Catalog": true, "Intermediate": true,
-		"ProjectCatalog": true, "ProjectPrecondition": true, "ProjectTransitionState": true,
+		"ProjectCatalog": true, "ProjectTransitionState": true,
 	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		selector, ok := node.(*ast.SelectorExpr)
@@ -184,8 +286,9 @@ func TestRunnerDatabasePreflightHasNoMigrationOrLedgerCallEdge(t *testing.T) {
 func assertRunnerAuthorityPreflightLifecycle(t *testing.T, connector *runnerPreflightConnector, factory *runnerPreflightProjectorFactory) {
 	t.Helper()
 	session := connector.session
-	wantPhases := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole}
-	if connector.attempts != 1 || session == nil || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 1 || session.closeCalls != 1 || session.serverMajorCalls != 0 || session.boundaryCalls != 0 || session.beginCalls != 0 || session.queryCalls != 0 || !session.closed || session.locked || session.roleConfigured || !reflect.DeepEqual(session.snapshotPhases, wantPhases) || !reflect.DeepEqual(session.snapshotClosePhases, wantPhases) || !reflect.DeepEqual(factory.factoryPhases, wantPhases) || !reflect.DeepEqual(factory.projectionPhases, wantPhases) {
+	wantSnapshots := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole}
+	wantAuthority := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole}
+	if connector.attempts != 1 || session == nil || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 1 || session.closeCalls != 1 || session.serverMajorCalls != 0 || session.boundaryCalls != 0 || session.beginCalls != 0 || session.queryCalls != 0 || session.ledgerReadCalls != 2 || session.backend.ledgerReadCalls != 0 || session.backend.ledgerInsertCalls != 0 || session.backend.executeCalls != 0 || session.backend.commitCalls != 0 || !session.closed || session.locked || session.roleConfigured || !reflect.DeepEqual(session.snapshotPhases, wantSnapshots) || !reflect.DeepEqual(session.snapshotClosePhases, wantSnapshots) || !reflect.DeepEqual(factory.factoryPhases, wantSnapshots) || !reflect.DeepEqual(factory.projectionPhases, wantAuthority) || !reflect.DeepEqual(factory.preconditionPhases, []AuthorityPhase{AuthorityPhaseMigrationRole}) {
 		t.Fatalf("runner authority preflight lifecycle mismatch: connector=%+v session=%+v factory=%+v", connector, session, factory)
 	}
 }
@@ -220,6 +323,8 @@ type runnerPreflightSession struct {
 	snapshotMetadataMutate map[AuthorityPhase]func(*SnapshotMetadata)
 	snapshotPhases         []AuthorityPhase
 	snapshotClosePhases    []AuthorityPhase
+	ledgerRowsByRead       [][]LedgerRow
+	ledgerReadErr          map[int]error
 	setRoleCalls           int
 	lockCalls              int
 	unlockCalls            int
@@ -228,12 +333,13 @@ type runnerPreflightSession struct {
 	boundaryCalls          int
 	beginCalls             int
 	queryCalls             int
+	ledgerReadCalls        int
 }
 
 func newRunnerPreflightSession() *runnerPreflightSession {
 	return &runnerPreflightSession{
 		backend: &fakeBackend{}, snapshotOpenErr: map[AuthorityPhase]error{}, snapshotCloseErr: map[AuthorityPhase]error{},
-		snapshotMetadataMutate: map[AuthorityPhase]func(*SnapshotMetadata){},
+		snapshotMetadataMutate: map[AuthorityPhase]func(*SnapshotMetadata){}, ledgerReadErr: map[int]error{},
 	}
 }
 
@@ -274,6 +380,20 @@ func (session *runnerPreflightSession) AcquireAdvisoryLock(context.Context, int6
 func (session *runnerPreflightSession) Boundary(context.Context, int64) (BoundaryState, error) {
 	session.boundaryCalls++
 	return BoundaryState{TxStatus: 'I', CurrentUser: MigrationOwnerRole, LockHeld: session.locked}, nil
+}
+
+func (session *runnerPreflightSession) readRunnerLedgerPrefix(context.Context) ([]LedgerRow, error) {
+	session.ledgerReadCalls++
+	if session.closed || session.projectionActive || !session.roleConfigured || !session.locked {
+		return nil, errors.New("invalid ledger lifecycle")
+	}
+	if err := session.ledgerReadErr[session.ledgerReadCalls]; err != nil {
+		return nil, err
+	}
+	if session.ledgerReadCalls <= len(session.ledgerRowsByRead) {
+		return cloneProjectionValue(session.ledgerRowsByRead[session.ledgerReadCalls-1]), nil
+	}
+	return []LedgerRow{}, nil
 }
 
 func (session *runnerPreflightSession) BeginMigration(context.Context) (MigrationTransaction, error) {
@@ -371,11 +491,14 @@ func runnerPreflightSnapshotMetadata(phase AuthorityPhase) SnapshotMetadata {
 }
 
 type runnerPreflightProjectorFactory struct {
-	factoryErr       map[AuthorityPhase]error
-	projectionErr    map[AuthorityPhase]error
-	mutateResult     map[AuthorityPhase]func(*ProjectionResult[AuthorityProjection])
-	factoryPhases    []AuthorityPhase
-	projectionPhases []AuthorityPhase
+	factoryErr         map[AuthorityPhase]error
+	projectionErr      map[AuthorityPhase]error
+	preconditionErr    error
+	mutateResult       map[AuthorityPhase]func(*ProjectionResult[AuthorityProjection])
+	mutatePrecondition func(*ProjectionResult[CatalogStateProjection])
+	factoryPhases      []AuthorityPhase
+	projectionPhases   []AuthorityPhase
+	preconditionPhases []AuthorityPhase
 }
 
 func (factory *runnerPreflightProjectorFactory) initialize() {
@@ -422,6 +545,45 @@ func (projector *runnerPreflightProjector) ProjectAuthority(_ context.Context, s
 	return result, nil
 }
 
+func (projector *runnerPreflightProjector) ProjectPrecondition(_ context.Context, snapshot ProjectionSnapshot, scope VerifiedSchemaBundleScope, condition CatalogPrecondition) (ProjectionResult[CatalogStateProjection], error) {
+	phase := snapshot.Metadata().AuthorityPhase
+	projector.factory.preconditionPhases = append(projector.factory.preconditionPhases, phase)
+	if snapshot != projector.snapshot || phase != AuthorityPhaseMigrationRole {
+		return ProjectionResult[CatalogStateProjection]{}, errors.New("precondition snapshot swap")
+	}
+	if projector.factory.preconditionErr != nil {
+		return ProjectionResult[CatalogStateProjection]{}, projector.factory.preconditionErr
+	}
+	bound := scope.BoundPrecondition()
+	if !runnerCanonicalEqual(bound, condition) || len(bound.AcceptedStates) == 0 {
+		return ProjectionResult[CatalogStateProjection]{}, errors.New("precondition binding mismatch")
+	}
+	state := cloneProjectionValue(bound.AcceptedStates[0])
+	for _, accepted := range bound.AcceptedStates {
+		if accepted.Absent != nil {
+			state = cloneProjectionValue(accepted)
+			break
+		}
+	}
+	digest, err := state.ComputeDigest()
+	if err != nil {
+		return ProjectionResult[CatalogStateProjection]{}, err
+	}
+	resultScope := acceptedScope(state)
+	result := ProjectionResult[CatalogStateProjection]{
+		Projection: state, Digest: digest,
+		Metadata: ProjectionMetadata{
+			ProjectionKind: ProjectionKindCatalogState, DigestDomain: CatalogStateDigestDomain, AdapterProfile: PostgreSQLCatalogAdapter,
+			Snapshot: snapshot.Metadata(), VerifiedSubjectDigest: scope.SubjectDigest(), Scope: cloneScopePointer(&resultScope),
+			LimitsProfile: ProjectionLimitsProfile, QueryCount: 1, RowCount: 1, TotalBytes: 1, RedactionProfile: ProjectionRedactionProfile,
+		},
+	}
+	if projector.factory.mutatePrecondition != nil {
+		projector.factory.mutatePrecondition(&result)
+	}
+	return result, nil
+}
+
 func runnerPreflightProjectionResult(t *testing.T, snapshot SnapshotMetadata, contract VerifiedAuthorityContract, phase AuthorityPhase) ProjectionResult[AuthorityProjection] {
 	expected, err := contract.ExpectedProjection(phase)
 	if err != nil {
@@ -449,4 +611,5 @@ func runnerPreflightProjectionResult(t *testing.T, snapshot SnapshotMetadata, co
 }
 
 var _ runnerSessionProjectionSnapshotProvider = (*runnerPreflightSession)(nil)
+var _ runnerLedgerPrefixReader = (*runnerPreflightSession)(nil)
 var _ RunnerSessionProjectionSnapshot = (*runnerPreflightSnapshot)(nil)

@@ -337,7 +337,7 @@ func runPostgresPublicRunnerAuthorityPreflight(t *testing.T, ctx context.Context
 	runner := Runner{Trust: verifier, Evidence: sink, Connector: PGXConnector{}, Observer: observer}
 	_, err := runner.Run(ctx, RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: environment.MigrationURL})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-catalog-preflight" || migrationErr.Err != nil {
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-entry-execution" || migrationErr.Err != nil {
 		t.Fatalf("public runner authority preflight boundary: %#v", migrationErr)
 	}
 	if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {

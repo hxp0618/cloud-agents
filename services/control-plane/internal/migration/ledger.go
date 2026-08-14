@@ -135,6 +135,10 @@ ORDER BY migration_id`)
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
+		var pgError *pgconn.PgError
+		if len(result) == 0 && errors.As(err, &pgError) && pgError.Code == "42P01" {
+			return []LedgerRow{}, nil
+		}
 		return nil, fail(CodeInvalidLedger, "read", "migration ledger stream failed", err)
 	}
 	return result, nil

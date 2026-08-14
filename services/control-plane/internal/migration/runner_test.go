@@ -85,7 +85,7 @@ func TestPublicRunnerProjectsBothAuthorityPhasesBeforeCatalogBoundary(t *testing
 	before := liveVerifiedEvidenceRunBindings()
 	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-catalog-preflight" || migrationErr.Err != nil {
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-entry-execution" || migrationErr.Err != nil {
 		t.Fatalf("authority-preflight runner did not stop at the catalog boundary: %v", err)
 	}
 	if sink.calls != 1 || sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {

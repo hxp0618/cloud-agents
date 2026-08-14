@@ -17,6 +17,7 @@ type runnerAuthorityProjectorFactory interface {
 
 type runnerAuthorityProjector interface {
 	ProjectAuthority(context.Context, ProjectionSnapshot, VerifiedAuthorityContract, AuthorityPhase) (ProjectionResult[AuthorityProjection], error)
+	ProjectPrecondition(context.Context, ProjectionSnapshot, VerifiedSchemaBundleScope, CatalogPrecondition) (ProjectionResult[CatalogStateProjection], error)
 }
 
 type pgRunnerAuthorityProjectorFactory struct{}
@@ -27,7 +28,17 @@ func (pgRunnerAuthorityProjectorFactory) newRunnerAuthorityProjector(ctx context
 
 func (pgRunnerAuthorityProjectorFactory) runnerAuthorityProjectorFactorySealed() {}
 
-func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn string, bundle *RuntimeBundle, evidence EvidenceSession, candidate OwnedCurrentCandidate) error {
+type runnerLedgerPrefixReader interface {
+	readRunnerLedgerPrefix(context.Context) ([]LedgerRow, error)
+}
+
+type runnerLedgerPrefix struct {
+	rows   []CommitIntentLedgerRow
+	digest Digest
+	head   string
+}
+
+func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) error {
 	bindings, err := runnerCurrentProjectionBindings(evidence, candidate)
 	if err != nil {
 		return err
@@ -85,7 +96,95 @@ func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn str
 		return failClosed(fail(CodeProjectionMetadataMismatch, "runner-authority-preflight", "authority phases do not describe the same dedicated database session", nil))
 	}
 	runner.transition(StateLocked)
+	before, err := readRunnerLedgerPrefix(ctx, session, bundle)
+	if err != nil {
+		return failClosed(err)
+	}
+	if len(before.rows) != 0 {
+		if len(before.rows) == len(bundle.Manifest.SchemaBundle.Migrations) {
+			return failClosed(fail(CodeProjectionNotImplemented, "runner-complete-ledger-preflight", "final catalog verification for a complete ledger is not implemented", nil))
+		}
+		return failClosed(fail(CodeProjectionNotImplemented, "runner-existing-ledger-preflight", "non-empty ledger catalog preflight is not implemented", nil))
+	}
+	firstPlan, err := firstRunnerStatementPlan(bundle, plans)
+	if err != nil {
+		return failClosed(err)
+	}
+	if _, err := runner.projectRunnerInitialPrecondition(ctx, session, bindings.initialSchemaScope, firstPlan); err != nil {
+		return failClosed(err)
+	}
+	after, err := readRunnerLedgerPrefix(ctx, session, bundle)
+	if err != nil {
+		return failClosed(err)
+	}
+	if !sameRunnerLedgerPrefix(before, after) {
+		return failClosed(fail(CodeInvalidLedger, "runner-ledger-preflight", "ledger prefix changed across the initial catalog projection", nil))
+	}
 	return failClosed(nil)
+}
+
+func firstRunnerStatementPlan(bundle *RuntimeBundle, plans []StatementPlan) (StatementPlan, error) {
+	if bundle == nil || len(bundle.Manifest.SchemaBundle.Migrations) == 0 || len(plans) == 0 {
+		return StatementPlan{}, fail(CodeInvalidManifest, "runner-initial-precondition", "first migration statement plan is unavailable", nil)
+	}
+	entry := bundle.Manifest.SchemaBundle.Migrations[0]
+	plan := plans[0]
+	condition := entry.PredecessorCatalogContract
+	if len(condition.AcceptedStates) == 0 || plan.validateExact() != nil || plan.MigrationID != entry.ID || plan.StatementIndex != 0 || !equalProjectionScopes(plan.ExpectedTransition.CatalogBefore.Scope, acceptedScope(condition.AcceptedStates[0])) {
+		return StatementPlan{}, fail(CodeUntrusted, "runner-initial-precondition", "first migration statement plan differs from the signed predecessor", nil)
+	}
+	return plan, nil
+}
+
+func readRunnerLedgerPrefix(ctx context.Context, session DatabaseSession, bundle *RuntimeBundle) (runnerLedgerPrefix, error) {
+	reader, ok := session.(runnerLedgerPrefixReader)
+	if !ok {
+		return runnerLedgerPrefix{}, fail(CodeInvalidLedger, "runner-ledger-preflight", "dedicated runner session cannot read the closed ledger prefix", nil)
+	}
+	rows, err := reader.readRunnerLedgerPrefix(ctx)
+	if err != nil {
+		return runnerLedgerPrefix{}, mapRunnerDatabasePreflightError(err, "runner-ledger-preflight", "migration ledger prefix could not be read")
+	}
+	owned := cloneProjectionValue(rows)
+	snapshot, err := ValidateLedger(owned, bundle.Lineage)
+	if err != nil {
+		return runnerLedgerPrefix{}, mapRunnerDatabasePreflightError(err, "runner-ledger-preflight", "migration ledger prefix is invalid")
+	}
+	facts := runnerLedgerPrefix{rows: make([]CommitIntentLedgerRow, len(owned)), head: snapshot.Head}
+	for index := range owned {
+		facts.rows[index], err = commitIntentLedgerRowFromObserved(owned[index])
+		if err != nil {
+			return runnerLedgerPrefix{}, err
+		}
+	}
+	facts.digest, err = LedgerPrefixDigest(facts.rows)
+	if err != nil {
+		return runnerLedgerPrefix{}, err
+	}
+	return facts, nil
+}
+
+func commitIntentLedgerRowFromObserved(row LedgerRow) (CommitIntentLedgerRow, error) {
+	if row.SQLSizeBytes < 0 {
+		return CommitIntentLedgerRow{}, fail(CodeInvalidLedger, row.MigrationID, "ledger SQL size is negative", nil)
+	}
+	result := CommitIntentLedgerRow{
+		MigrationID: row.MigrationID, MigrationName: row.MigrationName, PredecessorID: cloneProjectionValue(row.PredecessorID),
+		Phase: row.Phase, SchemaFrom: row.SchemaFrom, SchemaTo: row.SchemaTo,
+		CompatibleBinaryMin: row.CompatibleBinaryMin, CompatibleBinaryMax: row.CompatibleBinaryMax,
+		SQLPath: row.SQLPath, SQLSizeBytes: uint64(row.SQLSizeBytes), SQLSHA256: row.SQLSHA256,
+		BundleDigest: row.BundleDigest, TransactionMode: row.TransactionMode, Reentrancy: row.Reentrancy,
+		RollbackBoundary: row.RollbackBoundary, RequiresLiveInstancePreflight: row.RequiresLiveInstancePreflight,
+		RequiresPITRPreflight: row.RequiresPITRPreflight,
+	}
+	if err := result.Validate(); err != nil {
+		return CommitIntentLedgerRow{}, fail(CodeInvalidLedger, row.MigrationID, "ledger identity cannot enter the exact prefix", nil)
+	}
+	return result, nil
+}
+
+func sameRunnerLedgerPrefix(left, right runnerLedgerPrefix) bool {
+	return left.digest.Validate() == nil && right.digest.Validate() == nil && left.digest == right.digest && left.head == right.head && runnerCanonicalEqual(left.rows, right.rows)
 }
 
 func runnerCurrentProjectionBindings(evidence EvidenceSession, candidate OwnedCurrentCandidate) (RunnerProjectionBindings, error) {
@@ -143,6 +242,45 @@ func (runner *Runner) projectRunnerAuthorityPhase(ctx context.Context, session D
 	return result, nil
 }
 
+func (runner *Runner) projectRunnerInitialPrecondition(ctx context.Context, session DatabaseSession, scope VerifiedSchemaBundleScope, plan StatementPlan) (ProjectionResult[CatalogStateProjection], error) {
+	snapshot, err := BeginRunnerSessionProjectionSnapshot(ctx, session, AuthorityPhaseMigrationRole)
+	if err != nil {
+		return ProjectionResult[CatalogStateProjection]{}, mapRunnerDatabasePreflightError(err, "runner-precondition-snapshot", "initial catalog snapshot could not be opened")
+	}
+	if snapshot == nil {
+		return ProjectionResult[CatalogStateProjection]{}, fail(CodeProjectionSnapshotInvalid, "runner-precondition-snapshot", "initial catalog snapshot is unavailable", nil)
+	}
+	metadata := snapshot.Metadata()
+	factory := runner.projectionFactory
+	if factory == nil {
+		factory = pgRunnerAuthorityProjectorFactory{}
+	}
+	projector, factoryErr := factory.newRunnerAuthorityProjector(ctx, snapshot)
+	condition := scope.BoundPrecondition()
+	var result ProjectionResult[CatalogStateProjection]
+	var projectionErr error
+	if factoryErr == nil && projector != nil {
+		result, projectionErr = projector.ProjectPrecondition(ctx, snapshot, scope, condition)
+	} else if factoryErr != nil {
+		projectionErr = mapRunnerDatabasePreflightError(factoryErr, "runner-precondition-projector", "initial catalog projector could not be constructed")
+	} else {
+		projectionErr = fail(CodeProjectionSnapshotInvalid, "runner-precondition-projector", "initial catalog projector is unavailable", nil)
+	}
+	closeCtx, cancel := cleanupContext()
+	closeErr := snapshot.RollbackAndReturnToRunner(closeCtx)
+	cancel()
+	if closeErr != nil {
+		return ProjectionResult[CatalogStateProjection]{}, mapRunnerDatabasePreflightError(closeErr, "runner-precondition-snapshot-close", "initial catalog snapshot could not return the dedicated session")
+	}
+	if projectionErr != nil {
+		return ProjectionResult[CatalogStateProjection]{}, mapRunnerDatabasePreflightError(projectionErr, "runner-initial-precondition", "initial catalog projection failed")
+	}
+	if err := validateRunnerInitialPreconditionResult(result, metadata, scope, condition, plan.ExpectedTransition.CatalogBefore); err != nil {
+		return ProjectionResult[CatalogStateProjection]{}, err
+	}
+	return result, nil
+}
+
 func validateRunnerAuthorityProjectionResult(result ProjectionResult[AuthorityProjection], snapshot SnapshotMetadata, contract VerifiedAuthorityContract, phase AuthorityPhase) error {
 	if err := snapshot.validate(); err != nil || snapshot.AuthorityPhase != phase {
 		return fail(CodeProjectionMetadataMismatch, "runner-authority-result", "snapshot metadata does not match the requested authority phase", nil)
@@ -157,6 +295,45 @@ func validateRunnerAuthorityProjectionResult(result ProjectionResult[AuthorityPr
 	digest, err := digestProjectionWrapper(AuthorityProjectionDigestDomain, result.Projection)
 	if err != nil || digest != result.Digest {
 		return fail(CodeAuthorityDrift, "runner-authority-result", "authority projection digest differs from its exact body", nil)
+	}
+	return nil
+}
+
+func validateRunnerInitialPreconditionResult(result ProjectionResult[CatalogStateProjection], snapshot SnapshotMetadata, scope VerifiedSchemaBundleScope, condition CatalogPrecondition, expected CatalogStateDigestRef) error {
+	if err := snapshot.validate(); err != nil || snapshot.AuthorityPhase != AuthorityPhaseMigrationRole {
+		return fail(CodeProjectionMetadataMismatch, "runner-initial-precondition", "initial catalog snapshot metadata is invalid", nil)
+	}
+	if err := scope.validatePrecondition(condition); err != nil || expected.Validate() != nil || !equalProjectionScopes(scope.Scope(), expected.Scope) {
+		return fail(CodeUntrusted, "runner-initial-precondition", "initial catalog scope differs from the exact first statement plan", nil)
+	}
+	if err := result.Metadata.validate(); err != nil || !runnerCanonicalEqual(result.Metadata.Snapshot, snapshot) || result.Metadata.VerifiedSubjectDigest != scope.SubjectDigest() || result.Metadata.QueryCount != 1 || result.Metadata.RowCount == 0 || result.Metadata.TotalBytes == 0 || result.Metadata.Scope == nil || !equalProjectionScopes(*result.Metadata.Scope, expected.Scope) {
+		return fail(CodeProjectionMetadataMismatch, "runner-initial-precondition", "initial catalog projection metadata is incomplete or mismatched", nil)
+	}
+	if err := result.Projection.Validate(); err != nil {
+		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog projection is invalid", nil)
+	}
+	stateKind := "schema_absent"
+	if result.Projection.Present != nil {
+		stateKind = "schema_present"
+	}
+	digest, err := result.Projection.ComputeDigest()
+	if err != nil || digest != result.Digest || digest != expected.Digest || stateKind != expected.StateKind {
+		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog state differs from the first statement predecessor", nil)
+	}
+	actualKey, err := canonicalContractKey(result.Projection)
+	if err != nil {
+		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog state cannot be canonicalized", nil)
+	}
+	matched := false
+	for _, accepted := range condition.AcceptedStates {
+		key, keyErr := canonicalContractKey(accepted)
+		if keyErr == nil && key == actualKey {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog state is outside the verified predecessor set", nil)
 	}
 	return nil
 }
