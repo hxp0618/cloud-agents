@@ -230,7 +230,7 @@ func TestRegisteredGenerationHandoffAuthorityDoesNotSpread(t *testing.T) {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_registered_generation_handoff.go" || name == "evidence_generation_journal.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_registered_generation_handoff.go" || name == "evidence_generation_journal.go" || name == "evidence_session.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)

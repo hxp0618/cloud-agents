@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"sync/atomic"
 	"testing"
 )
 
@@ -13,6 +14,9 @@ func TestEvidenceSessionRejectsLiteralAuthority(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("session-literal"))
 	if session, err := (&GenerationRecoveryReady{}).BindSession(context.Background(), candidate); session != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("literal recovery entered session binder: session=%T err=%v", session, err)
+	}
+	if session, err := (&RegisteredGenerationRecoveryReady{}).BindSession(context.Background(), candidate); session != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal registered recovery entered session binder: session=%T err=%v", session, err)
 	}
 	literal := &generationEvidenceSession{}
 	if candidate := literal.CurrentCandidate(); candidate.binding != nil {
@@ -77,6 +81,101 @@ func TestActiveGenerationDigestBindsImmutableFacts(t *testing.T) {
 				t.Fatal("mutation did not change active generation digest")
 			}
 		})
+	}
+	historical := active
+	historical.kind = activeGenerationAncestorRecovery
+	historical.recoveryExecutionBindings = &VerifiedRecoveryExecutionBindings{digest: testDigest("session-execution")}
+	historicalDigest := activeGenerationDigest(historical)
+	if historicalDigest == ([32]byte{}) || historicalDigest == baseline {
+		t.Fatal("historical recovery execution was not bound into active generation digest")
+	}
+	mutatedExecution := historical
+	mutatedExecution.recoveryExecutionBindings = &VerifiedRecoveryExecutionBindings{digest: testDigest("other-execution")}
+	if activeGenerationDigest(mutatedExecution) == historicalDigest {
+		t.Fatal("recovery execution digest mutation did not change active generation digest")
+	}
+	invalidCurrent := active
+	invalidCurrent.recoveryExecutionBindings = historical.recoveryExecutionBindings
+	if activeGenerationDigest(invalidCurrent) != ([32]byte{}) {
+		t.Fatal("current active generation accepted ancestor recovery execution")
+	}
+	invalidHistorical := historical
+	invalidHistorical.recoveryExecutionBindings = nil
+	if activeGenerationDigest(invalidHistorical) != ([32]byte{}) {
+		t.Fatal("ancestor active generation accepted missing recovery execution")
+	}
+}
+
+func TestRecoveryExecutionBindingsCloneAndMatchOwnedBoundary(t *testing.T) {
+	generation, original := sessionRecoveryExecutionBindingsFixture(t)
+	clone := cloneRecoveryExecutionBindings(original)
+	baseline := cloneRecoveryExecutionBindings(original)
+	currentDecision := original.subject.CurrentRunnerProjectionDecisionDigest
+	if clone == original || clone.snapshot == original.snapshot || !sameRecoveryExecutionBindings(clone, baseline, generation, currentDecision) {
+		t.Fatal("recovery execution clone did not retain an owned matching boundary")
+	}
+	original.snapshot.state = RecoveryTerminal
+	original.policy.AllowedOutcomes[0] = "confirmed_abort_terminal"
+	original.subject.ActionsProfile = "mutated"
+	if !sameRecoveryExecutionBindings(clone, baseline, generation, currentDecision) {
+		t.Fatal("owned recovery execution clone shared mutable nested state")
+	}
+	if sameRecoveryExecutionBindings(original, clone, generation, currentDecision) {
+		t.Fatal("mutated recovery execution still matched its owned clone")
+	}
+	tailSwap := cloneRecoveryExecutionBindings(clone)
+	tailSwap.snapshot.tailDigest = testDigest("other-snapshot-tail")
+	if sameRecoveryExecutionBindings(tailSwap, clone, generation, currentDecision) {
+		t.Fatal("snapshot tail swap matched recovery execution tail")
+	}
+	cursorSwap := cloneRecoveryExecutionBindings(clone)
+	cursorSwap.snapshot.cursor.valid = &atomic.Bool{}
+	if sameRecoveryExecutionBindings(cursorSwap, clone, generation, currentDecision) {
+		t.Fatal("snapshot cursor authority swap matched recovery execution boundary")
+	}
+	if sameRecoveryExecutionBindings(clone, baseline, generation, testDigest("other-current-decision")) {
+		t.Fatal("current decision swap matched recovery execution boundary")
+	}
+}
+
+func sessionRecoveryExecutionBindingsFixture(t *testing.T) (generationIdentity, *VerifiedRecoveryExecutionBindings) {
+	t.Helper()
+	owner := &evidenceOwnerToken{nonce: [16]byte{42}}
+	generation := generationIdentity{
+		owner: owner, executionLineageDigest: testDigest("session-execution-lineage"), journalIdentityDigest: testDigest("session-execution-journal"),
+		runnerProjectionDecisionDigest: testDigest("session-execution-old-decision"), schemaBundleDigest: testDigest("session-execution-schema"),
+	}
+	tail := testDigest("session-execution-tail")
+	valid := &atomic.Bool{}
+	valid.Store(true)
+	cursor := JournalCursor{
+		owner: owner, generation: generation, segmentIndex: 1, nextSequence: 7, previousRecordDigest: &tail,
+		lineageIndexNextSequence: 5, lineageIndexPreviousRecordDigest: testDigest("session-execution-index-tail"), valid: valid,
+	}
+	snapshot := &RecoverySnapshot{
+		owner: owner, generation: generation, cursor: cursor.clone(), tailDigest: tail,
+		state: RecoveryBrandNew, nextPermittedAction: RecoveryBeginFirstAttempt,
+	}
+	policy := recoveryPolicyFixtureSubject(generation)
+	policyDigest, err := policy.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := recoveryExecutionBindingsSubject{
+		HistoricalRecoveryPolicyDigest: policyDigest, ExecutionLineageDigest: generation.executionLineageDigest,
+		CurrentRunnerProjectionDecisionDigest: policy.SuccessorRunnerProjectionDecisionDigest, OldRunnerProjectionDecisionDigest: generation.runnerProjectionDecisionDigest,
+		OldJournalIdentityDigest: generation.journalIdentityDigest, OldSchemaBundleDigest: generation.schemaBundleDigest,
+		OldDecisionRecoveryArtifactSHA256: policy.OldDecisionRecoveryArtifactSHA256, OldDecisionRecoveryArtifactSizeBytes: policy.OldDecisionRecoveryArtifactSizeBytes,
+		OldJournalReplayTailDigest: tail, OldRecoveryState: string(snapshot.state), ActionsProfile: oldAttemptRecoveryActionsProfile,
+	}
+	digest, err := subject.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier := &recoveryVerifierOwner{token: owner}
+	return generation, &VerifiedRecoveryExecutionBindings{
+		owner: verifier, session: owner, generation: generation, tailDigest: tail, snapshot: snapshot,
+		policy: policy, subject: subject, digest: digest,
 	}
 }
 
