@@ -103,6 +103,10 @@ func TestPGProjectionPostgresMatrix(t *testing.T) {
 
 	connectedDigest := projectPostgresAuthorityIdle(t, ctx, connectedPool, authorityContract, AuthorityPhaseConnectedSession, environment)
 	migrationRoleDigest := projectPostgresAuthorityIdle(t, ctx, connectedPool, authorityContract, AuthorityPhaseMigrationRole, environment)
+	runnerConnectedDigest, runnerMigrationRoleDigest := projectPostgresRunnerSessionAuthority(t, ctx, environment, authorityContract)
+	if runnerConnectedDigest != connectedDigest || runnerMigrationRoleDigest != migrationRoleDigest {
+		t.Fatalf("same dedicated runner connection projection drifted: connected=%s/%s migration_role=%s/%s", runnerConnectedDigest, connectedDigest, runnerMigrationRoleDigest, migrationRoleDigest)
+	}
 	absentDigest := projectPostgresPreconditionIdle(t, ctx, connectedPool, verifiedSchema, condition, fixture.SchemaAbsent, environment)
 
 	migrationTxDigest, ownedWriteDigest := projectPostgresBorrowedTransaction(
@@ -269,6 +273,55 @@ func projectPostgresAuthorityIdle(t *testing.T, ctx context.Context, pool *pgxpo
 		t.Fatalf("%s authority digest differs from checked-in fixture: got=%s want=%s err=%v", phase, result.Digest, want, err)
 	}
 	return result.Digest
+}
+
+func projectPostgresRunnerSessionAuthority(t *testing.T, ctx context.Context, environment postgresProjectionEnvironment, contract VerifiedAuthorityContract) (Digest, Digest) {
+	t.Helper()
+	session, err := (PGXConnector{}).Connect(ctx, environment.MigrationURL)
+	if err != nil {
+		t.Fatalf("connect dedicated runner projection session: %v", err)
+	}
+	defer func() { _ = session.Close(context.Background()) }()
+	project := func(phase AuthorityPhase) Digest {
+		snapshot, err := BeginRunnerSessionProjectionSnapshot(ctx, session, phase)
+		if err != nil {
+			t.Fatalf("begin dedicated runner %s projection: %v", phase, err)
+		}
+		returned := false
+		defer func() {
+			if !returned {
+				_ = snapshot.RollbackAndReturnToRunner(context.Background())
+			}
+		}()
+		projector, err := NewPGProjector(ctx, snapshot)
+		if err != nil {
+			t.Fatalf("construct dedicated runner %s projector: %v", phase, err)
+		}
+		result, err := projector.ProjectAuthority(ctx, snapshot, contract, phase)
+		if err != nil {
+			t.Fatalf("project dedicated runner %s authority: %v", phase, err)
+		}
+		if err := snapshot.RollbackAndReturnToRunner(ctx); err != nil {
+			t.Fatalf("return dedicated runner %s session: %v", phase, err)
+		}
+		returned = true
+		assertPostgresSnapshotMetadata(t, result.Metadata.Snapshot, environment, phase, IdleReadSnapshot)
+		return result.Digest
+	}
+	connected := project(AuthorityPhaseConnectedSession)
+	policy := ExecutionPolicy{StatementTimeoutMS: 5000, LockTimeoutMS: 1000, IdleInTransactionSessionTimeoutMS: 60000}
+	if err := session.SetRoleAndSettings(ctx, policy); err != nil {
+		t.Fatalf("configure dedicated runner migration role: %v", err)
+	}
+	const advisoryKey int64 = 0x102030405060709
+	if err := session.AcquireAdvisoryLock(ctx, advisoryKey); err != nil {
+		t.Fatalf("acquire dedicated runner projection lock: %v", err)
+	}
+	migrationRole := project(AuthorityPhaseMigrationRole)
+	if err := session.UnlockAndReset(ctx, advisoryKey); err != nil {
+		t.Fatalf("release dedicated runner projection lock: %v", err)
+	}
+	return connected, migrationRole
 }
 
 func (contract VerifiedAuthorityContract) expectedProjectionForTest(phase AuthorityPhase) AuthorityProjection {

@@ -361,6 +361,129 @@ func BeginIdleReadSnapshot(ctx context.Context, pool *pgxpool.Pool, phase Author
 	return beginIdleReadSnapshot(ctx, pgxIdleSnapshotPool{pool: pool}, phase)
 }
 
+type runnerSessionProjectionSnapshotProvider interface {
+	beginRunnerSessionProjectionSnapshot(context.Context, AuthorityPhase) (RunnerSessionProjectionSnapshot, error)
+}
+
+// BeginRunnerSessionProjectionSnapshot borrows the exact DatabaseSession
+// already owned by Runner. The private provider method prevents callers from
+// substituting a pool-backed or foreign connection implementation.
+func BeginRunnerSessionProjectionSnapshot(ctx context.Context, session DatabaseSession, phase AuthorityPhase) (RunnerSessionProjectionSnapshot, error) {
+	provider, ok := session.(runnerSessionProjectionSnapshotProvider)
+	if !ok {
+		return nil, projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-begin", "session", 0, false, "dedicated runner session does not support projection snapshots")
+	}
+	return provider.beginRunnerSessionProjectionSnapshot(ctx, phase)
+}
+
+type runnerSessionSnapshotConnection interface {
+	Queryer
+	txStatus() byte
+	prepare(context.Context, AuthorityPhase) error
+	begin(context.Context) error
+	rollback(context.Context) error
+	validateReturn(context.Context, AuthorityPhase) error
+	invalidate(context.Context)
+	returnToRunner()
+}
+
+type ownedRunnerSessionProjectionSnapshot struct {
+	*fixedQueryProjectionSnapshot
+	connection runnerSessionSnapshotConnection
+	phase      AuthorityPhase
+	once       sync.Once
+	closeErr   error
+}
+
+func (*ownedRunnerSessionProjectionSnapshot) runnerSessionProjectionSnapshot() {}
+
+func (snapshot *ownedRunnerSessionProjectionSnapshot) RollbackAndReturnToRunner(ctx context.Context) error {
+	snapshot.once.Do(func() {
+		defer snapshot.connection.returnToRunner()
+		snapshot.mu.Lock()
+		snapshot.closed = true
+		snapshot.mu.Unlock()
+		if status := snapshot.connection.txStatus(); status != 'T' && status != 'E' {
+			snapshot.connection.invalidate(projectionCleanupContext(ctx))
+			snapshot.closeErr = projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "tx_status", snapshot.metadata.PostgresMajor, false, "runner projection transaction status is unknown before rollback")
+			return
+		}
+		rollbackCtx, cancel := projectionRollbackContext(ctx)
+		defer cancel()
+		if err := snapshot.connection.rollback(rollbackCtx); err != nil {
+			snapshot.connection.invalidate(projectionCleanupContext(ctx))
+			snapshot.closeErr = projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "rollback", snapshot.metadata.PostgresMajor, false, "runner projection snapshot rollback failed")
+			return
+		}
+		if snapshot.connection.txStatus() != 'I' {
+			snapshot.connection.invalidate(projectionCleanupContext(ctx))
+			snapshot.closeErr = projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "tx_status", snapshot.metadata.PostgresMajor, false, "runner session did not return to idle")
+			return
+		}
+		if err := snapshot.connection.validateReturn(rollbackCtx, snapshot.phase); err != nil {
+			snapshot.connection.invalidate(projectionCleanupContext(ctx))
+			snapshot.closeErr = mapRunnerSnapshotLifecycleError(err, "runner-snapshot-close", "return", snapshot.metadata.PostgresMajor, "runner session return validation failed")
+		}
+	})
+	return snapshot.closeErr
+}
+
+func beginRunnerSessionProjectionSnapshot(ctx context.Context, connection runnerSessionSnapshotConnection, phase AuthorityPhase) (RunnerSessionProjectionSnapshot, error) {
+	if connection == nil || phase != AuthorityPhaseConnectedSession && phase != AuthorityPhaseMigrationRole {
+		if connection != nil {
+			connection.returnToRunner()
+		}
+		return nil, projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "phase", 0, false, "runner projection phase is invalid")
+	}
+	failClosed := func(err error) (RunnerSessionProjectionSnapshot, error) {
+		status := connection.txStatus()
+		if status == 'T' || status == 'E' {
+			rollbackCtx, cancel := projectionRollbackContext(ctx)
+			_ = connection.rollback(rollbackCtx)
+			cancel()
+		}
+		connection.invalidate(projectionCleanupContext(ctx))
+		connection.returnToRunner()
+		return nil, err
+	}
+	if err := connection.prepare(ctx, phase); err != nil {
+		return failClosed(mapRunnerSnapshotLifecycleError(err, "runner-snapshot-begin", "prepare", 0, "runner session projection preparation failed"))
+	}
+	if connection.txStatus() != 'I' {
+		return failClosed(projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "tx_status", 0, false, "runner session is not idle before projection"))
+	}
+	started := time.Now()
+	if err := connection.begin(ctx); err != nil {
+		return failClosed(projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-begin", "begin", 0, false, "runner projection transaction could not begin"))
+	}
+	if connection.txStatus() != 'T' {
+		return failClosed(projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-begin", "tx_status", 0, false, "runner projection transaction status is invalid"))
+	}
+	if err := configureOwnedIdleSnapshot(ctx, connection); err != nil {
+		return failClosed(err)
+	}
+	metadata, err := readProjectionSnapshotMetadata(ctx, connection, IdleReadSnapshot, OwnedIdleSnapshot, phase, nil, nil)
+	if err != nil {
+		return failClosed(err)
+	}
+	if connection.txStatus() != 'T' {
+		return failClosed(projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-begin", "tx_status", metadata.PostgresMajor, false, "runner projection transaction status changed during validation"))
+	}
+	return &ownedRunnerSessionProjectionSnapshot{
+		fixedQueryProjectionSnapshot: &fixedQueryProjectionSnapshot{queryer: connection, metadata: metadata, started: started},
+		connection:                   connection,
+		phase:                        phase,
+	}, nil
+}
+
+func mapRunnerSnapshotLifecycleError(err error, op, path string, major uint16, message string) error {
+	var stable *Error
+	if errors.As(err, &stable) {
+		return fail(stable.Code, op, message, nil)
+	}
+	return projectionFailure(CodeProjectionSnapshotInvalid, op, path, major, false, message)
+}
+
 func beginIdleReadSnapshot(ctx context.Context, pool idleSnapshotPool, phase AuthorityPhase) (IdleProjectionSnapshot, error) {
 	if phase != AuthorityPhaseConnectedSession && phase != AuthorityPhaseMigrationRole {
 		return nil, projectionFailure(CodeProjectionMetadataMismatch, "snapshot-begin", "authority_phase", 0, false, "owned idle snapshot authority phase is invalid")
@@ -594,6 +717,160 @@ func migrationProjectionTxStatus(transaction MigrationTransaction) (byte, bool) 
 	return 0, false
 }
 
+func (session *pgxSession) beginRunnerSessionProjectionSnapshot(ctx context.Context, phase AuthorityPhase) (RunnerSessionProjectionSnapshot, error) {
+	if session == nil || session.connection == nil || phase != AuthorityPhaseConnectedSession && phase != AuthorityPhaseMigrationRole {
+		return nil, projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "phase", 0, false, "runner projection phase is invalid")
+	}
+	session.stateMu.Lock()
+	validState := !session.closed && !session.projectionActive
+	switch phase {
+	case AuthorityPhaseConnectedSession:
+		validState = validState && !session.roleConfigured && session.advisoryKey == nil
+	case AuthorityPhaseMigrationRole:
+		validState = validState && session.roleConfigured && session.advisoryKey != nil
+	}
+	if validState {
+		session.projectionActive = true
+	}
+	session.stateMu.Unlock()
+	if !validState {
+		return nil, projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "lifecycle", 0, false, "runner session lifecycle does not match the projection phase")
+	}
+	return beginRunnerSessionProjectionSnapshot(ctx, &pgxRunnerSessionSnapshotConnection{session: session}, phase)
+}
+
+type pgxRunnerSessionSnapshotConnection struct {
+	session *pgxSession
+	tx      pgx.Tx
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
+	if connection.tx == nil {
+		return nil, errors.New("runner projection transaction is unavailable")
+	}
+	return pgxQueryer{queryer: connection.tx}.Query(ctx, sql, args...)
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) QueryRow(ctx context.Context, sql string, args ...any) Row {
+	if connection.tx == nil {
+		return projectionErrorRow{err: errors.New("runner projection transaction is unavailable")}
+	}
+	return pgxQueryer{queryer: connection.tx}.QueryRow(ctx, sql, args...)
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) txStatus() byte {
+	return connection.session.connection.PgConn().TxStatus()
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) prepare(ctx context.Context, phase AuthorityPhase) error {
+	if connection.txStatus() != 'I' {
+		return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "tx_status", 0, false, "runner session is not idle")
+	}
+	switch phase {
+	case AuthorityPhaseConnectedSession:
+		if !connection.session.runnerConnectedProjectionState() {
+			return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "lifecycle", 0, false, "runner connected-session lifecycle is invalid")
+		}
+		if err := sanitizePGXProjectionSession(ctx, connection.session.connection); err != nil {
+			return projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-begin", "sanitation", 0, false, "runner connected session sanitation failed")
+		}
+	case AuthorityPhaseMigrationRole:
+		key, policy, ok := connection.session.runnerProjectionBoundary()
+		if !ok {
+			return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "lifecycle", 0, false, "runner migration role or advisory lock is unavailable")
+		}
+		boundary, err := connection.session.Boundary(ctx, key)
+		settingsErr := connection.session.validateTrackedRoleAndSettings(ctx, policy)
+		if err != nil || settingsErr != nil || boundary.TxStatus != 'I' || boundary.CurrentUser != MigrationOwnerRole || !boundary.LockHeld {
+			return projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-begin", "boundary", 0, false, "runner migration role boundary is invalid")
+		}
+	default:
+		return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-begin", "phase", 0, false, "runner projection phase is invalid")
+	}
+	return nil
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) begin(ctx context.Context) error {
+	tx, err := connection.session.connection.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly, DeferrableMode: pgx.NotDeferrable})
+	if err != nil {
+		return err
+	}
+	connection.tx = tx
+	return nil
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) rollback(ctx context.Context) error {
+	if connection.tx == nil {
+		return errors.New("runner projection transaction is unavailable")
+	}
+	err := connection.tx.Rollback(ctx)
+	if err == nil {
+		connection.tx = nil
+	}
+	return err
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) validateReturn(ctx context.Context, phase AuthorityPhase) error {
+	if connection.txStatus() != 'I' {
+		return projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "tx_status", 0, false, "runner session did not return to idle")
+	}
+	switch phase {
+	case AuthorityPhaseConnectedSession:
+		if !connection.session.runnerConnectedProjectionState() {
+			return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-close", "lifecycle", 0, false, "runner connected-session lifecycle changed")
+		}
+		query, ok := projectionFixedQuery(projectionQuerySnapshotRoleReadback)
+		if !ok {
+			return projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "query_id", 0, false, "runner role readback query is unavailable")
+		}
+		var sessionUser, currentUser string
+		if err := connection.session.connection.QueryRow(ctx, query, pgx.QueryExecModeSimpleProtocol).Scan(&sessionUser, &currentUser); err != nil || sessionUser == "" || currentUser != sessionUser {
+			return projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "current_user", 0, false, "runner connected session role changed")
+		}
+	case AuthorityPhaseMigrationRole:
+		key, policy, ok := connection.session.runnerProjectionBoundary()
+		if !ok {
+			return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-close", "lifecycle", 0, false, "runner migration role or advisory lock is unavailable")
+		}
+		boundary, err := connection.session.Boundary(ctx, key)
+		settingsErr := connection.session.validateTrackedRoleAndSettings(ctx, policy)
+		if err != nil || settingsErr != nil || boundary.TxStatus != 'I' || boundary.CurrentUser != MigrationOwnerRole || !boundary.LockHeld {
+			return projectionFailure(CodeProjectionSnapshotInvalid, "runner-snapshot-close", "boundary", 0, false, "runner migration role boundary changed")
+		}
+	default:
+		return projectionFailure(CodeProjectionMetadataMismatch, "runner-snapshot-close", "phase", 0, false, "runner projection phase is invalid")
+	}
+	return nil
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) invalidate(ctx context.Context) {
+	connection.session.stateMu.Lock()
+	connection.session.closed = true
+	connection.session.stateMu.Unlock()
+	_ = connection.session.connection.Close(ctx)
+}
+
+func (connection *pgxRunnerSessionSnapshotConnection) returnToRunner() {
+	connection.session.stateMu.Lock()
+	connection.session.projectionActive = false
+	connection.session.stateMu.Unlock()
+}
+
+func (session *pgxSession) runnerProjectionBoundary() (int64, ExecutionPolicy, bool) {
+	session.stateMu.Lock()
+	defer session.stateMu.Unlock()
+	if session.closed || !session.projectionActive || !session.roleConfigured || session.settingsPolicy == nil || session.advisoryKey == nil {
+		return 0, ExecutionPolicy{}, false
+	}
+	return *session.advisoryKey, *session.settingsPolicy, true
+}
+
+func (session *pgxSession) runnerConnectedProjectionState() bool {
+	session.stateMu.Lock()
+	defer session.stateMu.Unlock()
+	return !session.closed && session.projectionActive && !session.roleConfigured && session.settingsPolicy == nil && session.advisoryKey == nil
+}
+
 type idleSnapshotPool interface {
 	acquire(context.Context) (idleSnapshotConnection, error)
 }
@@ -646,12 +923,18 @@ func (connection *pgxIdleSnapshotConnection) sanitize(ctx context.Context) error
 	if connection.txStatus() != 'I' {
 		return errors.New("projection connection is not idle")
 	}
+	return sanitizePGXProjectionSession(ctx, connection.connection.Conn())
+}
+
+func sanitizePGXProjectionSession(ctx context.Context, raw *pgx.Conn) error {
+	if raw == nil || raw.PgConn().TxStatus() != 'I' {
+		return errors.New("projection connection is not idle")
+	}
 	resetQuery, resetOK := projectionFixedQuery(projectionQuerySnapshotReset)
 	readbackQuery, readbackOK := projectionFixedQuery(projectionQuerySnapshotSanitation)
 	if !resetOK || !readbackOK {
 		return errors.New("projection session sanitation query is unavailable")
 	}
-	raw := connection.connection.Conn()
 	// Clear pgx's local prepared-statement cache before DISCARD ALL clears the
 	// backend state. The reset itself uses the simple protocol and can therefore
 	// never become a prepared statement that invalidates its own client cache.
@@ -682,7 +965,6 @@ func (connection *pgxIdleSnapshotConnection) sanitize(ctx context.Context) error
 		lockTimeout != lockTimeoutBaseline || idleTimeout != idleTimeoutBaseline || preparedCount != 0 {
 		return errors.New("projection session sanitation readback differs from baseline")
 	}
-	connection.tx = nil
 	return nil
 }
 
@@ -739,4 +1021,6 @@ func (connection *pgxIdleSnapshotConnection) hijackAndClose(context.Context) {
 }
 
 var _ IdleProjectionSnapshot = (*ownedIdleProjectionSnapshot)(nil)
+var _ RunnerSessionProjectionSnapshot = (*ownedRunnerSessionProjectionSnapshot)(nil)
+var _ runnerSessionProjectionSnapshotProvider = (*pgxSession)(nil)
 var _ ProjectionSnapshot = (*fixedQueryProjectionSnapshot)(nil)

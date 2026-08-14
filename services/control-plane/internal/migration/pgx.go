@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -56,7 +57,16 @@ func (PGXConnector) Connect(ctx context.Context, dsn string) (DatabaseSession, e
 	return &pgxSession{connection: connection}, nil
 }
 
-type pgxSession struct{ connection *pgx.Conn }
+type pgxSession struct {
+	connection *pgx.Conn
+
+	stateMu          sync.Mutex
+	roleConfigured   bool
+	settingsPolicy   *ExecutionPolicy
+	advisoryKey      *int64
+	projectionActive bool
+	closed           bool
+}
 
 func (session *pgxSession) Queryer() Queryer { return pgxQueryer{queryer: session.connection} }
 
@@ -73,6 +83,12 @@ func (session *pgxSession) ServerMajor(ctx context.Context) (int, error) {
 }
 
 func (session *pgxSession) SetRoleAndSettings(ctx context.Context, policy ExecutionPolicy) error {
+	session.stateMu.Lock()
+	allowed := !session.closed && !session.projectionActive && !session.roleConfigured && session.advisoryKey == nil
+	session.stateMu.Unlock()
+	if !allowed {
+		return fail(CodeTransactionBoundary, "session-settings", "runner session lifecycle does not permit role configuration", nil)
+	}
 	if _, err := session.connection.Exec(ctx, "SET ROLE cloud_agents_migration_owner"); err != nil {
 		return fail(CodeAuthorityDrift, "set-role", "cannot assume the dedicated migration role", err)
 	}
@@ -91,6 +107,91 @@ func (session *pgxSession) SetRoleAndSettings(ctx context.Context, policy Execut
 			return fail(CodeTransactionBoundary, "session-settings", "cannot set a required session setting", err)
 		}
 	}
+	if err := session.validateTrackedRoleAndSettings(ctx, policy); err != nil {
+		return err
+	}
+	session.stateMu.Lock()
+	session.roleConfigured = true
+	policyCopy := policy
+	session.settingsPolicy = &policyCopy
+	session.stateMu.Unlock()
+	return nil
+}
+
+func (session *pgxSession) AcquireAdvisoryLock(ctx context.Context, key int64) error {
+	session.stateMu.Lock()
+	allowed := !session.closed && !session.projectionActive && session.roleConfigured && session.settingsPolicy != nil && session.advisoryKey == nil
+	session.stateMu.Unlock()
+	if !allowed {
+		return fail(CodeLockLost, "advisory-lock", "runner session lifecycle does not permit lock acquisition", nil)
+	}
+	var acquired any
+	if err := session.connection.QueryRow(ctx, "SELECT pg_catalog.pg_advisory_lock($1)", key).Scan(&acquired); err != nil {
+		return fail(CodeLockLost, "advisory-lock", "cannot acquire session advisory lock", err)
+	}
+	state, err := session.Boundary(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !state.LockHeld {
+		return fail(CodeLockLost, "advisory-lock", "lock was not visible after acquisition", nil)
+	}
+	session.stateMu.Lock()
+	keyCopy := key
+	session.advisoryKey = &keyCopy
+	session.stateMu.Unlock()
+	return nil
+}
+
+func (session *pgxSession) Boundary(ctx context.Context, key int64) (BoundaryState, error) {
+	state := BoundaryState{TxStatus: session.connection.PgConn().TxStatus()}
+	if err := session.connection.QueryRow(ctx, boundaryQuery, key).Scan(&state.CurrentUser, &state.LockHeld); err != nil {
+		return BoundaryState{}, fail(CodeTransactionBoundary, "boundary", "cannot read current user or advisory lock", err)
+	}
+	return state, nil
+}
+
+func (session *pgxSession) BeginMigration(ctx context.Context) (MigrationTransaction, error) {
+	session.stateMu.Lock()
+	allowed := !session.closed && !session.projectionActive && session.roleConfigured && session.settingsPolicy != nil && session.advisoryKey != nil
+	session.stateMu.Unlock()
+	if !allowed {
+		return nil, fail(CodeTransactionBoundary, "begin", "runner session lifecycle does not permit a migration transaction", nil)
+	}
+	tx, err := session.connection.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable, AccessMode: pgx.ReadWrite, DeferrableMode: pgx.NotDeferrable})
+	if err != nil {
+		return nil, fail(CodeTransactionBoundary, "begin", "cannot begin serializable migration transaction", err)
+	}
+	return &pgxMigrationTx{tx: tx}, nil
+}
+
+func (session *pgxSession) UnlockAndReset(ctx context.Context, key int64) error {
+	session.stateMu.Lock()
+	tracked := session.advisoryKey != nil && *session.advisoryKey == key && session.roleConfigured && !session.projectionActive && !session.closed
+	session.stateMu.Unlock()
+	if !tracked {
+		return fail(CodeLockLost, "unlock", "session does not own the exact tracked advisory lock", nil)
+	}
+	var unlocked bool
+	if err := session.connection.QueryRow(ctx, "SELECT pg_catalog.pg_advisory_unlock($1)", key).Scan(&unlocked); err != nil || !unlocked {
+		return fail(CodeLockLost, "unlock", "cannot release exact advisory lock", err)
+	}
+	if _, err := session.connection.Exec(ctx, "RESET ROLE"); err != nil {
+		return fail(CodeAuthorityDrift, "reset-role", "cannot reset migration role", err)
+	}
+	var same bool
+	if err := session.connection.QueryRow(ctx, "SELECT current_user = session_user").Scan(&same); err != nil || !same {
+		return fail(CodeAuthorityDrift, "reset-role", "current_user did not return to session_user", err)
+	}
+	session.stateMu.Lock()
+	session.roleConfigured = false
+	session.settingsPolicy = nil
+	session.advisoryKey = nil
+	session.stateMu.Unlock()
+	return nil
+}
+
+func (session *pgxSession) validateTrackedRoleAndSettings(ctx context.Context, policy ExecutionPolicy) error {
 	var currentUser, encoding, conforming, timezone, searchPath string
 	var statementTimeoutMS, lockTimeoutMS, idleTimeoutMS int64
 	if err := session.connection.QueryRow(ctx, `SELECT current_user,
@@ -110,53 +211,12 @@ current_setting('TimeZone'), current_setting('search_path'),
 	return nil
 }
 
-func (session *pgxSession) AcquireAdvisoryLock(ctx context.Context, key int64) error {
-	var acquired any
-	if err := session.connection.QueryRow(ctx, "SELECT pg_catalog.pg_advisory_lock($1)", key).Scan(&acquired); err != nil {
-		return fail(CodeLockLost, "advisory-lock", "cannot acquire session advisory lock", err)
-	}
-	state, err := session.Boundary(ctx, key)
-	if err != nil {
-		return err
-	}
-	if !state.LockHeld {
-		return fail(CodeLockLost, "advisory-lock", "lock was not visible after acquisition", nil)
-	}
-	return nil
+func (session *pgxSession) Close(ctx context.Context) error {
+	session.stateMu.Lock()
+	session.closed = true
+	session.stateMu.Unlock()
+	return session.connection.Close(ctx)
 }
-
-func (session *pgxSession) Boundary(ctx context.Context, key int64) (BoundaryState, error) {
-	state := BoundaryState{TxStatus: session.connection.PgConn().TxStatus()}
-	if err := session.connection.QueryRow(ctx, boundaryQuery, key).Scan(&state.CurrentUser, &state.LockHeld); err != nil {
-		return BoundaryState{}, fail(CodeTransactionBoundary, "boundary", "cannot read current user or advisory lock", err)
-	}
-	return state, nil
-}
-
-func (session *pgxSession) BeginMigration(ctx context.Context) (MigrationTransaction, error) {
-	tx, err := session.connection.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable, AccessMode: pgx.ReadWrite, DeferrableMode: pgx.NotDeferrable})
-	if err != nil {
-		return nil, fail(CodeTransactionBoundary, "begin", "cannot begin serializable migration transaction", err)
-	}
-	return &pgxMigrationTx{tx: tx}, nil
-}
-
-func (session *pgxSession) UnlockAndReset(ctx context.Context, key int64) error {
-	var unlocked bool
-	if err := session.connection.QueryRow(ctx, "SELECT pg_catalog.pg_advisory_unlock($1)", key).Scan(&unlocked); err != nil || !unlocked {
-		return fail(CodeLockLost, "unlock", "cannot release exact advisory lock", err)
-	}
-	if _, err := session.connection.Exec(ctx, "RESET ROLE"); err != nil {
-		return fail(CodeAuthorityDrift, "reset-role", "cannot reset migration role", err)
-	}
-	var same bool
-	if err := session.connection.QueryRow(ctx, "SELECT current_user = session_user").Scan(&same); err != nil || !same {
-		return fail(CodeAuthorityDrift, "reset-role", "current_user did not return to session_user", err)
-	}
-	return nil
-}
-
-func (session *pgxSession) Close(ctx context.Context) error { return session.connection.Close(ctx) }
 
 type pgxMigrationTx struct{ tx pgx.Tx }
 

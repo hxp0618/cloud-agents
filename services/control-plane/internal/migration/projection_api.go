@@ -185,6 +185,16 @@ type IdleProjectionSnapshot interface {
 	idleProjectionSnapshot()
 }
 
+// RunnerSessionProjectionSnapshot borrows the exact dedicated DatabaseSession
+// already owned by Runner. It can only rollback its RR/RO projection
+// transaction and return that same physical session; it cannot release to a
+// pool, set role, unlock, execute migration SQL, commit, or close the session.
+type RunnerSessionProjectionSnapshot interface {
+	ProjectionSnapshot
+	RollbackAndReturnToRunner(context.Context) error
+	runnerSessionProjectionSnapshot()
+}
+
 type Projector interface {
 	ProjectAuthority(context.Context, ProjectionSnapshot, VerifiedAuthorityContract, AuthorityPhase) (ProjectionResult[AuthorityProjection], error)
 	ProjectCatalog(context.Context, ProjectionSnapshot, VerifiedCatalogContract, ProjectionScope) (ProjectionResult[CatalogProjection], error)

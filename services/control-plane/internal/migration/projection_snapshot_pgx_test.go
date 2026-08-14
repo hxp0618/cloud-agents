@@ -12,6 +12,174 @@ import (
 
 const projectionSnapshotTestDigest Digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+func TestRunnerSessionSnapshotReturnsSameConnectionForBothOwnedPhases(t *testing.T) {
+	for _, phase := range []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole} {
+		t.Run(string(phase), func(t *testing.T) {
+			connection := newFakeRunnerSessionSnapshotConnection()
+			snapshot, err := beginRunnerSessionProjectionSnapshot(context.Background(), connection, phase)
+			if err != nil {
+				t.Fatal(err)
+			}
+			metadata := snapshot.Metadata()
+			wantUser := connection.sessionUser
+			if phase == AuthorityPhaseMigrationRole {
+				wantUser = MigrationOwnerRole
+			}
+			if metadata.Mode != IdleReadSnapshot || metadata.Ownership != OwnedIdleSnapshot || metadata.AuthorityPhase != phase || metadata.CurrentUser != wantUser || metadata.TxStatus != "T" {
+				t.Fatalf("runner snapshot metadata=%+v", metadata)
+			}
+			if err := snapshot.RollbackAndReturnToRunner(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err := snapshot.RollbackAndReturnToRunner(context.Background()); err != nil {
+				t.Fatalf("idempotent runner snapshot close=%v", err)
+			}
+			if connection.prepareCalls != 1 || connection.beginCalls != 1 || connection.rollbackCalls != 1 || connection.validateCalls != 1 || connection.returnCalls != 1 || connection.invalidateCalls != 0 || connection.releaseCalls != 0 || connection.hijackCalls != 0 || connection.setMigrationRoleCalls != 0 || connection.sanitizeCalls != 0 {
+				t.Fatalf("runner snapshot changed connection ownership: %+v", connection)
+			}
+			if _, err := snapshot.queryProjection(context.Background(), projectionQueryCapability); !IsCode(err, CodeProjectionSnapshotInvalid) {
+				t.Fatalf("closed runner snapshot query=%v", err)
+			}
+		})
+	}
+}
+
+func TestRunnerSessionSnapshotRejectsUnknownPhaseWithoutMutation(t *testing.T) {
+	connection := newFakeRunnerSessionSnapshotConnection()
+	if snapshot, err := beginRunnerSessionProjectionSnapshot(context.Background(), connection, AuthorityPhase("unknown")); snapshot != nil || !IsCode(err, CodeProjectionMetadataMismatch) || connection.returnCalls != 1 || connection.prepareCalls != 0 || connection.beginCalls != 0 || connection.invalidateCalls != 0 {
+		t.Fatalf("unknown runner phase mutated connection: snapshot=%v err=%v connection=%+v", snapshot, err, connection)
+	}
+	if snapshot, err := BeginRunnerSessionProjectionSnapshot(context.Background(), &fakeSession{}, AuthorityPhaseConnectedSession); snapshot != nil || !IsCode(err, CodeProjectionSnapshotInvalid) {
+		t.Fatalf("foreign DatabaseSession entered runner snapshot factory: snapshot=%v err=%v", snapshot, err)
+	}
+}
+
+func TestRunnerSessionSnapshotSurfaceCannotOwnRunnerLifecycle(t *testing.T) {
+	connection := newFakeRunnerSessionSnapshotConnection()
+	snapshot, err := beginRunnerSessionProjectionSnapshot(context.Background(), connection, AuthorityPhaseConnectedSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := any(snapshot)
+	for name, forbidden := range map[string]bool{
+		"commit":        implements[interface{ Commit(context.Context) error }](value),
+		"rollback":      implements[interface{ Rollback(context.Context) error }](value),
+		"close-session": implements[interface{ Close(context.Context) error }](value),
+		"unlock": implements[interface {
+			UnlockAndReset(context.Context, int64) error
+		}](value),
+		"execute-sql": implements[interface {
+			ExecuteStatement(context.Context, []byte) error
+		}](value),
+		"release-to-pool": implements[interface{ RollbackAndRelease(context.Context) error }](value),
+	} {
+		if forbidden {
+			t.Fatalf("runner projection snapshot exposed %s authority", name)
+		}
+	}
+	if err := snapshot.RollbackAndReturnToRunner(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPGXRunnerSnapshotTrackedLifecycleIsClosed(t *testing.T) {
+	session := &pgxSession{projectionActive: true}
+	if !session.runnerConnectedProjectionState() {
+		t.Fatal("exact connected-session lifecycle was rejected")
+	}
+	for name, mutate := range map[string]func(*pgxSession){
+		"closed":   func(s *pgxSession) { s.closed = true },
+		"inactive": func(s *pgxSession) { s.projectionActive = false },
+		"role":     func(s *pgxSession) { s.roleConfigured = true },
+		"policy":   func(s *pgxSession) { s.settingsPolicy = &ExecutionPolicy{} },
+		"lock":     func(s *pgxSession) { key := int64(7); s.advisoryKey = &key },
+	} {
+		t.Run("connected-"+name, func(t *testing.T) {
+			fault := &pgxSession{projectionActive: true}
+			mutate(fault)
+			if fault.runnerConnectedProjectionState() {
+				t.Fatal("invalid connected-session lifecycle was accepted")
+			}
+		})
+	}
+	key := int64(17)
+	policy := &ExecutionPolicy{StatementTimeoutMS: 5, LockTimeoutMS: 1, IdleInTransactionSessionTimeoutMS: 60}
+	migration := &pgxSession{projectionActive: true, roleConfigured: true, settingsPolicy: policy, advisoryKey: &key}
+	gotKey, gotPolicy, ok := migration.runnerProjectionBoundary()
+	if !ok || gotKey != key || gotPolicy.StatementTimeoutMS != policy.StatementTimeoutMS {
+		t.Fatalf("exact migration-role lifecycle rejected: key=%d policy=%+v ok=%v", gotKey, gotPolicy, ok)
+	}
+	for name, mutate := range map[string]func(*pgxSession){
+		"closed":   func(s *pgxSession) { s.closed = true },
+		"inactive": func(s *pgxSession) { s.projectionActive = false },
+		"role":     func(s *pgxSession) { s.roleConfigured = false },
+		"policy":   func(s *pgxSession) { s.settingsPolicy = nil },
+		"lock":     func(s *pgxSession) { s.advisoryKey = nil },
+	} {
+		t.Run("migration-"+name, func(t *testing.T) {
+			faultKey := key
+			faultPolicy := *policy
+			fault := &pgxSession{projectionActive: true, roleConfigured: true, settingsPolicy: &faultPolicy, advisoryKey: &faultKey}
+			mutate(fault)
+			if _, _, ok := fault.runnerProjectionBoundary(); ok {
+				t.Fatal("invalid migration-role lifecycle was accepted")
+			}
+		})
+	}
+}
+
+func implements[T any](value any) bool {
+	_, ok := value.(T)
+	return ok
+}
+
+func TestRunnerSessionSnapshotBeginFaultsInvalidateInsteadOfReturningConnection(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*fakeRunnerSessionSnapshotConnection)
+	}{
+		{"prepare", func(c *fakeRunnerSessionSnapshotConnection) { c.prepareErr = errors.New("secret-prepare") }},
+		{"not-idle", func(c *fakeRunnerSessionSnapshotConnection) { c.status = '?' }},
+		{"begin", func(c *fakeRunnerSessionSnapshotConnection) { c.beginErr = errors.New("secret-begin") }},
+		{"begin-status", func(c *fakeRunnerSessionSnapshotConnection) { c.beginStatus = '?' }},
+		{"metadata", func(c *fakeRunnerSessionSnapshotConnection) { c.rowErr = errors.New("secret-metadata") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			connection := newFakeRunnerSessionSnapshotConnection()
+			test.mutate(connection)
+			snapshot, err := beginRunnerSessionProjectionSnapshot(context.Background(), connection, AuthorityPhaseConnectedSession)
+			if snapshot != nil || err == nil || containsErrorText(err, "secret-") || connection.invalidateCalls != 1 || connection.returnCalls != 1 || connection.releaseCalls != 0 {
+				t.Fatalf("runner snapshot begin fault escaped fail-closed cleanup: snapshot=%v err=%v connection=%+v", snapshot, err, connection)
+			}
+		})
+	}
+}
+
+func TestRunnerSessionSnapshotCloseFaultsInvalidateAndNeverReturnUsableState(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*fakeRunnerSessionSnapshotConnection)
+	}{
+		{"unknown-status", func(c *fakeRunnerSessionSnapshotConnection) { c.status = '?' }},
+		{"rollback", func(c *fakeRunnerSessionSnapshotConnection) { c.rollbackErr = errors.New("secret-rollback") }},
+		{"rollback-status", func(c *fakeRunnerSessionSnapshotConnection) { c.rollbackStatus = '?' }},
+		{"return-boundary", func(c *fakeRunnerSessionSnapshotConnection) { c.validateErr = errors.New("secret-return") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			connection := newFakeRunnerSessionSnapshotConnection()
+			snapshot, err := beginRunnerSessionProjectionSnapshot(context.Background(), connection, AuthorityPhaseMigrationRole)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(connection)
+			err = snapshot.RollbackAndReturnToRunner(context.Background())
+			if !IsCode(err, CodeProjectionSnapshotInvalid) || containsErrorText(err, "secret-") || connection.invalidateCalls != 1 || connection.returnCalls != 1 || connection.releaseCalls != 0 {
+				t.Fatalf("runner snapshot close fault returned unsafe connection: err=%v connection=%+v", err, connection)
+			}
+		})
+	}
+}
+
 func TestOwnedIdleSnapshotSuccessAndReuse(t *testing.T) {
 	connection := newFakeIdleSnapshotConnection()
 	snapshot, err := beginIdleReadSnapshot(context.Background(), fakeIdleSnapshotPool{connection: connection}, AuthorityPhaseConnectedSession)
@@ -642,6 +810,54 @@ func stringContains(value, substring string) bool {
 type fakeIdleSnapshotPool struct {
 	connection *fakeIdleSnapshotConnection
 	err        error
+}
+
+type fakeRunnerSessionSnapshotConnection struct {
+	*fakeIdleSnapshotConnection
+	prepareErr      error
+	validateErr     error
+	prepareCalls    int
+	validateCalls   int
+	invalidateCalls int
+	returnCalls     int
+}
+
+func newFakeRunnerSessionSnapshotConnection() *fakeRunnerSessionSnapshotConnection {
+	return &fakeRunnerSessionSnapshotConnection{fakeIdleSnapshotConnection: newFakeIdleSnapshotConnection()}
+}
+
+func (connection *fakeRunnerSessionSnapshotConnection) prepare(ctx context.Context, phase AuthorityPhase) error {
+	connection.prepareCalls++
+	connection.lifecycle = append(connection.lifecycle, "runner_prepare_"+string(phase))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if connection.prepareErr != nil {
+		return connection.prepareErr
+	}
+	switch phase {
+	case AuthorityPhaseConnectedSession:
+		connection.currentRole = connection.sessionUser
+	case AuthorityPhaseMigrationRole:
+		connection.currentRole = MigrationOwnerRole
+	default:
+		return errors.New("unknown phase")
+	}
+	connection.metadata[3] = connection.currentRole
+	return nil
+}
+
+func (connection *fakeRunnerSessionSnapshotConnection) validateReturn(context.Context, AuthorityPhase) error {
+	connection.validateCalls++
+	return connection.validateErr
+}
+
+func (connection *fakeRunnerSessionSnapshotConnection) invalidate(context.Context) {
+	connection.invalidateCalls++
+}
+
+func (connection *fakeRunnerSessionSnapshotConnection) returnToRunner() {
+	connection.returnCalls++
 }
 
 func (pool fakeIdleSnapshotPool) acquire(context.Context) (idleSnapshotConnection, error) {
