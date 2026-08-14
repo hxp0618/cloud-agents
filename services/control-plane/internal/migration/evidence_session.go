@@ -3,7 +3,10 @@ package migration
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"sync"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 // activeGenerationBinding makes ActiveGeneration an immutable copyable value.
@@ -32,10 +35,11 @@ type activeGenerationRegistryRecord struct {
 
 var activeGenerationRegistry sync.Map
 
-// generationEvidenceSession is the first concrete normal-run session. It
-// owns exactly one current candidate and one retained generation journal. It
-// deliberately has no database, runner, successor reservation, or filesystem
-// reacquisition authority in this slice.
+// generationEvidenceSession is the concrete normal-run session. It owns one
+// current candidate and one retained generation journal. Its successor method
+// is the only reviewed migration-side orchestration seam for the irreversible
+// generation-lease -> full-root admission -> successor-generation handoff; it
+// still owns no database, runner, connection, or transaction capability.
 type generationEvidenceSession struct {
 	self      *generationEvidenceSession
 	mu        sync.Mutex
@@ -286,7 +290,7 @@ func (s *generationEvidenceSession) RecoverySnapshot() *RecoverySnapshot {
 	return cloneRecoverySnapshot(s.journal.state.recovery)
 }
 
-func (s *generationEvidenceSession) ReserveAndActivateSuccessor(ctx context.Context, authority *VerifiedLineageSupersessionAuthority) (ActiveGeneration, *RecoverySnapshot, error) {
+func (s *generationEvidenceSession) ReserveAndActivateSuccessor(ctx context.Context, authority *VerifiedLineageSupersessionAuthority) (active ActiveGeneration, snapshot *RecoverySnapshot, resultErr error) {
 	if s == nil || s.self != s {
 		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor", "session authority is unavailable", nil)
 	}
@@ -301,10 +305,466 @@ func (s *generationEvidenceSession) ReserveAndActivateSuccessor(ctx context.Cont
 	if authority == nil {
 		return ActiveGeneration{}, nil, fail(CodeEvidenceRecoveryRequired, "evidence-session-successor", "lineage supersession authority is unavailable", nil)
 	}
-	// Do not consume the one-shot supersession authority until the Store-bound
-	// full-root reacquisition and adjacent Superseded -> Reserved transition are
-	// implemented as one closed operation.
-	return ActiveGeneration{}, nil, fail(CodeProjectionNotImplemented, "evidence-session-successor", "successor filesystem handoff is not implemented", nil)
+	detached, err := s.detachForSuccessorLocked(authority)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	cleanup := sessionSuccessorCleanup{}
+	defer func() {
+		if cleanup.committed {
+			return
+		}
+		authority.consumed.CompareAndSwap(false, true)
+		if cleanupErr := cleanup.close(); cleanupErr != nil {
+			resultErr = cleanupErr
+		}
+	}()
+
+	reacquired, err := detached.lease.ReacquireAdmission(ctx)
+	detached.revokeSource()
+	if err != nil {
+		return ActiveGeneration{}, nil, mapEvidenceAdmissionError(err, "evidence-session-successor-reacquire")
+	}
+	if !reacquired.Valid() || reacquired.PreviousTarget() != detached.target || reacquired.PreviousJournal() != detached.journal || reacquired.PreviousLeaseDigest() == ([32]byte{}) {
+		if lease, _, admissionErr := reacquired.Admission(); admissionErr == nil {
+			cleanup.admission = lease
+		}
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-reacquire", "reacquired admission authority differs from the closed generation lease", nil)
+	}
+	lease, inventory, err := reacquired.Admission()
+	if err != nil || lease == nil || inventory == nil {
+		return ActiveGeneration{}, nil, mapEvidenceAdmissionError(err, "evidence-session-successor-reacquire")
+	}
+	cleanup.admission = lease
+	mutation, err := inventory.MutationToken()
+	if err != nil {
+		return ActiveGeneration{}, nil, mapEvidenceAdmissionError(err, "evidence-session-successor-token")
+	}
+	history, err := bindVerifiedAdmissionHistory(ctx, inventory, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	if history == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-history", "verified admission history is unavailable", nil)
+	}
+	cleanup.history = history
+	plan, err := bindVerifiedSuccessorAdmissionPlan(ctx, history, detached.candidate, authority)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	if plan == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-plan", "verified successor plan is unavailable", nil)
+	}
+	cleanup.plan = plan
+	permit, err := bindSuccessorAdmissionPermit(ctx, inventory, mutation, plan, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	if permit == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-permit", "successor admission permit is unavailable", nil)
+	}
+	cleanup.state = permit.state
+
+	runtimePublishedResult, err := permit.PublishRuntime(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	runtimePublished := runtimePublishedResult.Next()
+	if runtimePublishedResult.Outcome() != evidencefs.AdmissionTransitionDurable || runtimePublished == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-runtime-publish", "durable runtime publication authority is unavailable", nil)
+	}
+	cleanup.state = runtimePublished.state
+	runtimeBoundResult, err := runtimePublished.BindRuntime(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	runtimeBound := runtimeBoundResult.Next()
+	if runtimeBoundResult.Outcome() != evidencefs.AdmissionTransitionDurable || runtimeBound == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-runtime-bind", "durable runtime binding authority is unavailable", nil)
+	}
+	cleanup.state = runtimeBound.state
+	recoveryPublishedResult, err := runtimeBound.PublishDecisionRecovery(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	recoveryPublished := recoveryPublishedResult.Next()
+	if recoveryPublishedResult.Outcome() != evidencefs.AdmissionTransitionDurable || recoveryPublished == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-recovery-publish", "durable decision-recovery publication authority is unavailable", nil)
+	}
+	cleanup.state = recoveryPublished.state
+	recoveryBoundResult, err := recoveryPublished.BindDecisionRecovery(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	recoveryBound := recoveryBoundResult.Next()
+	if recoveryBoundResult.Outcome() != evidencefs.AdmissionTransitionDurable || recoveryBound == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-recovery-bind", "durable decision-recovery binding authority is unavailable", nil)
+	}
+	cleanup.state = recoveryBound.state
+	reserveReadyResult, err := recoveryBound.SealReserveReady(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	reserveReady := reserveReadyResult.Next()
+	if reserveReadyResult.Outcome() != evidencefs.AdmissionTransitionDurable || reserveReady == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-reserve-ready", "reserve-ready authority is unavailable", nil)
+	}
+	cleanup.state = reserveReady.state
+	receiptBound, err := reserveReady.BindReceiptPair(detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	if receiptBound == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-receipts", "successor receipt-pair authority is unavailable", nil)
+	}
+	cleanup.state = receiptBound.state
+	supersededResult, err := receiptBound.AppendGenerationSuperseded(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	adjacentReady := supersededResult.Next()
+	if supersededResult.Outcome() != evidencefs.AdmissionTransitionDurable || adjacentReady == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-supersede", "adjacent successor reservation authority is unavailable", nil)
+	}
+	cleanup.state = adjacentReady.state
+	reservedResult, err := adjacentReady.AppendGenerationReserved(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	reservedReady := reservedResult.Next()
+	if reservedResult.Outcome() != evidencefs.AdmissionTransitionDurable || reservedReady == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-reserve", "durable successor reservation authority is unavailable", nil)
+	}
+	cleanup.state = reservedReady.state
+	headerResult, err := reservedReady.CreateGenerationHeader(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	headerReady := headerResult.Next()
+	if headerResult.Outcome() != evidencefs.AdmissionTransitionDurable || headerReady == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-header", "durable successor header authority is unavailable", nil)
+	}
+	cleanup.state = headerReady.state
+	activationResult, err := headerReady.AppendGenerationActivated(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	generationReady := activationResult.Next()
+	if activationResult.Outcome() != evidencefs.AdmissionTransitionDurable || generationReady == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-activate", "durable successor activation authority is unavailable", nil)
+	}
+	cleanup.state = generationReady.state
+	handoffResult, err := generationReady.Handoff(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	handoff := handoffResult.Next()
+	if handoffResult.Outcome() != evidencefs.AdmissionTransitionDurable || handoff == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-handoff", "successor generation handoff authority is unavailable", nil)
+	}
+	cleanup.admission = nil
+	cleanup.handoff = handoff
+	replayResult, err := handoff.Replay(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	replay := replayResult.Next()
+	if replay == nil {
+		_, cleanupErr := handoff.failSuccessorReplay(evidencefs.ErrUnknown, "evidence-session-successor-replay-cleanup")
+		if cleanupErr != nil {
+			return ActiveGeneration{}, nil, cleanupErr
+		}
+		cleanup.handoff = nil
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-replay", "successor generation replay authority is unavailable", nil)
+	}
+	cleanup.replay = replay
+	recovery, err := replay.BindRecovery(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	if recovery == nil {
+		if cleanupErr := closeSuccessorGenerationReplay(replay, "evidence-session-successor-recovery-cleanup"); cleanupErr != nil {
+			return ActiveGeneration{}, nil, cleanupErr
+		}
+		cleanup.replay = nil
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-recovery", "successor generation recovery authority is unavailable", nil)
+	}
+	cleanup.recovery = recovery
+	journalAuthority, err := recovery.BindJournal(ctx, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	journal, ok := journalAuthority.(*generationEvidenceJournal)
+	if !ok || journal == nil {
+		if journalAuthority == nil {
+			if cleanupErr := closeConsumedSuccessorGenerationRecovery(recovery, "evidence-session-successor-journal-cleanup"); cleanupErr != nil {
+				return ActiveGeneration{}, nil, cleanupErr
+			}
+			cleanup.recovery = nil
+		} else if cleanupErr := journalAuthority.Close(context.Background()); cleanupErr != nil {
+			return ActiveGeneration{}, nil, cleanupErr
+		}
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-journal", "concrete successor journal authority is unavailable", nil)
+	}
+	cleanup.journal = journal
+	active, snapshot, err = s.installSuccessorLocked(ctx, journal, detached.candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	cleanup.committed = true
+	return active, snapshot, nil
+}
+
+// detachedGenerationSession is the immutable pre-reacquire cleanup record. It
+// deliberately retains the genuine GenerationLease only long enough to invoke
+// its one-way ReacquireAdmission transition; it cannot revive the old session,
+// journal, cursor, or migration authority registries.
+type detachedGenerationSession struct {
+	candidate OwnedCurrentCandidate
+	lease     *evidencefs.GenerationLease
+	target    [32]byte
+	journal   [32]byte
+	source    generationEvidenceJournalRegistryRecord
+}
+
+func (s *generationEvidenceSession) detachForSuccessorLocked(authority *VerifiedLineageSupersessionAuthority) (detachedGenerationSession, error) {
+	var detached detachedGenerationSession
+	if s == nil || s.self != s || !s.validLocked() || authority == nil {
+		return detached, admissionFailed("evidence-session-successor-detach", "session authority is unavailable", nil)
+	}
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || !validSessionSuccessorAuthorityLocked(s, journal, authority) {
+		return detached, fail(CodeEvidenceRecoveryRequired, "evidence-session-successor-detach", "current generation or supersession boundary is unavailable", nil)
+	}
+	registered, ok := generationEvidenceJournalRegistry.Load(journal)
+	record, recordOK := registered.(generationEvidenceJournalRegistryRecord)
+	if !ok || !recordOK || record.journal != journal || record.binding != journal.binding || record.lease != journal.lease || record.state != journal.state || record.canonical != journal.binding.canonical || record.stateCanonical != journal.state.canonical || generationJournalRecordSourceCount(record) != 1 {
+		return detached, admissionFailed("evidence-session-successor-detach", "immutable journal source is unavailable", nil)
+	}
+	target, targetErr := journal.lease.Target()
+	journalIdentity, journalErr := journal.lease.Journal()
+	if targetErr != nil || journalErr != nil || target != digestRaw(journal.generation.executionLineageDigest) || journalIdentity != digestRaw(journal.generation.journalIdentityDigest) {
+		return detached, fail(CodeEvidenceRecoveryRequired, "evidence-session-successor-detach", "generation filesystem identity differs", nil)
+	}
+	candidate, err := cloneSessionCandidate(s.candidate)
+	if err != nil {
+		return detached, err
+	}
+	detached = detachedGenerationSession{candidate: candidate, lease: journal.lease, target: target, journal: journalIdentity, source: record}
+
+	// From this point onward failure is irreversible. Revoke the public session,
+	// active generation, journal, and cursor before releasing the old locks, so
+	// no concurrent caller can observe two generations as current.
+	s.closed = true
+	journal.closed = true
+	generationEvidenceSessionRegistry.Delete(s)
+	activeGenerationRegistry.Delete(s.active.binding)
+	generationEvidenceJournalRegistry.Delete(journal)
+	journal.state.cursor.valid.Store(false)
+	return detached, nil
+}
+
+func validSessionSuccessorAuthorityLocked(s *generationEvidenceSession, journal *generationEvidenceJournal, authority *VerifiedLineageSupersessionAuthority) bool {
+	if s == nil || journal == nil || authority == nil || s.active.kind != activeGenerationAncestorRecovery || s.active.recoveryExecutionBindings == nil || s.active.journal != journal || journal.state == nil || journal.state.recovery == nil || journal.state.cursor.valid == nil || journal.state.unknown != nil || authority.owner == nil || authority.owner != s.candidate.verifiedRun.currentDecision.owner || authority.session == nil || authority.session != s.candidate.owner || authority.consumed.Load() || authority.digest.Validate() != nil || authority.tailDigest.Validate() != nil || authority.tailDigest != journal.state.recovery.tailDigest || !sameGenerationIdentity(authority.generation, s.active.identity) || !sameGenerationIdentity(journal.generation, s.active.identity) {
+		return false
+	}
+	execution := s.active.recoveryExecutionBindings
+	if execution.owner != authority.owner || execution.session != authority.session || !sameGenerationIdentity(execution.generation, authority.generation) || execution.tailDigest != authority.tailDigest || execution.snapshot == nil || execution.snapshot.tailDigest != authority.tailDigest || !sameCursorIdentity(execution.snapshot.cursor, journal.state.recovery.cursor) || generationJournalRecoveryDigest(execution.snapshot) != generationJournalRecoveryDigest(journal.state.recovery) {
+		return false
+	}
+	subjectDigest, digestErr := authority.subject.ComputeDigest()
+	if digestErr != nil || subjectDigest != authority.digest || authority.subject.RecoveryExecutionBindingsDigest != execution.digest || authority.subject.HistoricalRecoveryPolicyDigest != execution.subject.HistoricalRecoveryPolicyDigest || validateRecoveryAuthorityBindings(s.candidate.verifiedRun.currentDecision.digest, execution.policy, execution.subject, authority.subject) != nil || !equalDigestPointer(authority.subject.OldTerminalDigest, journal.state.recovery.lastTerminalDigest) || !equalDigestPointer(authority.subject.OldResolutionDigest, journal.state.recovery.lastResolutionDigest) {
+		return false
+	}
+	if authority.subject.ObservedOutcome == "activated_no_migration_progress" {
+		return journal.state.cursor.latestCheckpointRecordDigest == nil && authority.subject.OldActivationRecordDigest != nil && *authority.subject.OldActivationRecordDigest == journal.state.cursor.lineageIndexPreviousRecordDigest && authority.subject.OldInitialJournalTailDigest != nil && *authority.subject.OldInitialJournalTailDigest == journal.state.recovery.tailDigest
+	}
+	return journal.state.cursor.latestCheckpointRecordDigest != nil && authority.subject.OldCheckpointRecordDigest != nil && *authority.subject.OldCheckpointRecordDigest == *journal.state.cursor.latestCheckpointRecordDigest && *authority.subject.OldCheckpointRecordDigest == journal.state.cursor.lineageIndexPreviousRecordDigest
+}
+
+// revokeSource removes the migration-side authority graph after evidencefs has
+// already closed the old GenerationLease. Calling the ordinary Close helpers
+// here would attempt to close the same descriptor authority twice.
+func (d detachedGenerationSession) revokeSource() {
+	record := d.source
+	if record.state != nil && record.state.cursor.valid != nil {
+		record.state.cursor.valid.Store(false)
+	}
+	switch {
+	case record.registeredPrior != nil:
+		ready := record.registeredPrior
+		registeredGenerationRecoveryReadyRegistry.Delete(ready)
+		if ready.prior != nil {
+			registeredGenerationHandoffPermitRegistry.Delete(ready.prior)
+		}
+		if ready.history != nil && ready.history.binding != nil {
+			verifiedAdmissionHistoryRegistry.Delete(ready.history.binding)
+		}
+		if ready.cursor.valid != nil {
+			ready.cursor.valid.Store(false)
+		}
+		revokeVerifiedAdmissionRegisteredGeneration(ready.registered)
+	case record.successorPrior != nil:
+		ready := record.successorPrior
+		successorGenerationRecoveryRegistry.Delete(ready)
+		if ready.cursor.valid != nil {
+			ready.cursor.valid.Store(false)
+		}
+		if ready.prior != nil {
+			successorGenerationReplayRegistry.Delete(ready.prior)
+			if ready.prior.prior != nil {
+				successorGenerationHandoffRegistry.Delete(ready.prior.prior)
+			}
+			revokeSuccessorAdmissionStateChain(ready.prior.state)
+		}
+	case record.replay != nil:
+		generationRecoveryReadyRegistry.Delete(record.prior)
+		generationReplayReadyRegistry.Delete(record.replay)
+		if record.replay.prior != nil {
+			generationHandoffReadyRegistry.Delete(record.replay.prior)
+		}
+	}
+	if record.runtimeBinding != nil {
+		verifiedContentReceiptRegistry.Delete(record.runtimeBinding)
+	}
+	if record.recoveryBinding != nil {
+		verifiedDecisionRecoveryReceiptRegistry.Delete(record.recoveryBinding)
+	}
+	if record.journal != nil {
+		if record.journal.history != nil && record.journal.history.binding != nil {
+			verifiedAdmissionHistoryRegistry.Delete(record.journal.history.binding)
+		}
+		if record.journal.plan != nil && record.journal.plan.binding != nil {
+			verifiedAdmissionPlanRegistry.Delete(record.journal.plan.binding)
+		}
+		if record.journal.successorPrior != nil && record.journal.successorPrior.state != nil {
+			state := record.journal.successorPrior.state
+			if state.plan != nil && state.plan.binding != nil {
+				verifiedSuccessorAdmissionPlanRegistry.Delete(state.plan.binding)
+			}
+		}
+	}
+}
+
+type sessionSuccessorCleanup struct {
+	admission *evidencefs.AdmissionLease
+	history   *VerifiedAdmissionHistory
+	plan      *VerifiedSuccessorAdmissionPlan
+	state     *successorAdmissionState
+	handoff   *SuccessorGenerationHandoffReady
+	replay    *SuccessorGenerationReplayReady
+	recovery  *SuccessorGenerationRecoveryReady
+	journal   *generationEvidenceJournal
+	committed bool
+}
+
+func (c *sessionSuccessorCleanup) close() error {
+	if c == nil {
+		return nil
+	}
+	var cleanupErr error
+	switch {
+	case c.journal != nil:
+		c.journal.mu.Lock()
+		closed := c.journal.closed
+		c.journal.mu.Unlock()
+		if !closed {
+			cleanupErr = c.journal.Close(context.Background())
+		}
+	case c.recovery != nil && c.recovery.consumed != nil && !c.recovery.consumed.Load():
+		cleanupErr = c.recovery.Close()
+	case c.replay != nil && c.replay.consumed != nil && !c.replay.consumed.Load():
+		cleanupErr = c.replay.Close()
+	case c.handoff != nil && c.handoff.consumed != nil && !c.handoff.consumed.Load():
+		cleanupErr = c.handoff.Close()
+	case c.admission != nil:
+		cleanupErr = c.admission.Close()
+		if errors.Is(cleanupErr, evidencefs.ErrLeaseInvalid) && !c.admission.Active() {
+			cleanupErr = nil
+		} else if cleanupErr != nil {
+			cleanupErr = mapEvidenceAdmissionError(cleanupErr, "evidence-session-successor-cleanup")
+		}
+	}
+	c.revokeInMemory()
+	return cleanupErr
+}
+
+func (c *sessionSuccessorCleanup) revokeInMemory() {
+	revokeSuccessorAdmissionStateChain(c.state)
+	if c.plan != nil && c.plan.binding != nil {
+		verifiedSuccessorAdmissionPlanRegistry.Delete(c.plan.binding)
+	}
+	if c.history != nil {
+		if c.history.binding != nil {
+			verifiedAdmissionHistoryRegistry.Delete(c.history.binding)
+		}
+		revokeVerifiedAdmissionRegisteredGeneration(c.history.targetGeneration)
+	}
+}
+
+func revokeSuccessorAdmissionStateChain(state *successorAdmissionState) {
+	for current := state; current != nil; current = current.prior {
+		if current.binding != nil {
+			successorAdmissionStateRegistry.Delete(current.binding)
+		}
+		if current.runtimeReceipt.binding != nil {
+			verifiedContentReceiptRegistry.Delete(current.runtimeReceipt.binding)
+		}
+		if current.recoveryReceipt.binding != nil {
+			verifiedDecisionRecoveryReceiptRegistry.Delete(current.recoveryReceipt.binding)
+		}
+	}
+}
+
+func (s *generationEvidenceSession) installSuccessorLocked(ctx context.Context, journal *generationEvidenceJournal, candidate OwnedCurrentCandidate) (ActiveGeneration, *RecoverySnapshot, error) {
+	if s == nil || s.self != s || !s.closed || journal == nil || journal.self != journal || journal.successorPrior == nil || journal.successorReplay == nil || journal.registeredPrior != nil || journal.prior != nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-install", "successor session inputs are unavailable", nil)
+	}
+	_, snapshot, err := journal.Replay(ctx)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	if snapshot == nil {
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-install", "successor recovery snapshot is unavailable", nil)
+	}
+	ownedCandidate, err := cloneSessionCandidate(candidate)
+	if err != nil {
+		return ActiveGeneration{}, nil, err
+	}
+	active := ActiveGeneration{
+		identity: journal.generation, kind: activeGenerationCurrent, journal: journal,
+		ownedDecision:  ownedCandidate.verifiedRun.currentDecision,
+		contentReceipt: journal.runtimeReceipt, decisionRecoveryReceipt: journal.recoveryReceipt,
+	}
+	activeBinding := &activeGenerationBinding{
+		session: s, journal: journal, candidateBinding: ownedCandidate.binding,
+		runtimeBinding: journal.runtimeReceipt.binding, recoveryBinding: journal.recoveryReceipt.binding,
+	}
+	active.binding = activeBinding
+	activeBinding.canonical = activeGenerationDigest(active)
+	s.candidate, s.journal, s.active, s.closed = ownedCandidate, journal, active, false
+	s.binding = &generationEvidenceSessionBinding{
+		session: s, journal: journal, candidateBinding: ownedCandidate.binding, activeBinding: activeBinding,
+	}
+	s.binding.canonical = generationEvidenceSessionDigest(s)
+	activeGenerationRegistry.Store(activeBinding, activeGenerationRegistryRecord{
+		binding: activeBinding, session: s, journal: journal, candidateBinding: ownedCandidate.binding,
+		runtimeBinding: journal.runtimeReceipt.binding, recoveryBinding: journal.recoveryReceipt.binding,
+		canonical: activeBinding.canonical,
+	})
+	generationEvidenceSessionRegistry.Store(s, generationEvidenceSessionRegistryRecord{
+		session: s, binding: s.binding, journal: journal, candidateBinding: ownedCandidate.binding,
+		activeBinding: activeBinding, canonical: s.binding.canonical,
+	})
+	if !s.validLocked() {
+		activeGenerationRegistry.Delete(activeBinding)
+		generationEvidenceSessionRegistry.Delete(s)
+		s.closed = true
+		return ActiveGeneration{}, nil, admissionFailed("evidence-session-successor-install", "successor session authority could not be sealed", nil)
+	}
+	return s.active, cloneRecoverySnapshot(snapshot), nil
 }
 
 func (s *generationEvidenceSession) Close(ctx context.Context) error {

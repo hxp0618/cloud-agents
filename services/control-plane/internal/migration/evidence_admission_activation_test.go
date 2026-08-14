@@ -192,7 +192,7 @@ func TestGenerationReadyHasOnlyReviewedHandoffConsumer(t *testing.T) {
 			if ok && (identifier.Name == "GenerationReadyPermit" || identifier.Name == "validGenerationReadyPermit") {
 				t.Fatalf("generation-ready authority has an unreviewed production consumer: %s", name)
 			}
-			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "AppendGenerationActivated" {
+			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "AppendGenerationActivated" && name != "evidence_session.go" {
 				t.Fatalf("brand-new activation transition has an unreviewed production call: %s", name)
 			}
 			if function, ok := node.(*ast.FuncDecl); ok && function.Name.Name == "AppendGenerationActivated" && name != "evidence_successor_activation.go" {

@@ -6,6 +6,8 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -194,6 +196,211 @@ func TestCloneSessionCandidateOwnsArtifactBytes(t *testing.T) {
 	if !validOwnedCurrentCandidate(owned) {
 		t.Fatal("owned session candidate shared mutable artifact bytes")
 	}
+}
+
+func TestSessionSuccessorAuthorityPrevalidationBindsExactCurrentBoundary(t *testing.T) {
+	session, journal, authority := sessionSuccessorAuthorityFixture(t)
+	if !validSessionSuccessorAuthorityLocked(session, journal, authority) {
+		t.Fatal("exact successor authority did not match the current session boundary")
+	}
+	clone := func() *VerifiedLineageSupersessionAuthority {
+		return &VerifiedLineageSupersessionAuthority{
+			owner: authority.owner, session: authority.session, generation: authority.generation,
+			tailDigest: authority.tailDigest, subject: cloneProjectionValue(authority.subject), digest: authority.digest,
+		}
+	}
+	faults := map[string]func(*VerifiedLineageSupersessionAuthority){
+		"owner":   func(v *VerifiedLineageSupersessionAuthority) { v.owner = &recoveryVerifierOwner{} },
+		"session": func(v *VerifiedLineageSupersessionAuthority) { v.session = &evidenceOwnerToken{} },
+		"generation": func(v *VerifiedLineageSupersessionAuthority) {
+			v.generation.journalIdentityDigest = testDigest("other-journal")
+		},
+		"tail":   func(v *VerifiedLineageSupersessionAuthority) { v.tailDigest = testDigest("other-tail") },
+		"digest": func(v *VerifiedLineageSupersessionAuthority) { v.digest = testDigest("other-authority") },
+		"execution": func(v *VerifiedLineageSupersessionAuthority) {
+			v.subject.RecoveryExecutionBindingsDigest = testDigest("other-execution")
+		},
+		"checkpoint": func(v *VerifiedLineageSupersessionAuthority) {
+			v.subject.OldCheckpointRecordDigest = digestPointer(testDigest("other-checkpoint"))
+		},
+		"terminal": func(v *VerifiedLineageSupersessionAuthority) {
+			v.subject.OldTerminalDigest = digestPointer(testDigest("other-terminal"))
+		},
+		"successor": func(v *VerifiedLineageSupersessionAuthority) {
+			v.subject.SuccessorSchemaBundleDigest = testDigest("other-schema")
+		},
+		"continuation": func(v *VerifiedLineageSupersessionAuthority) {
+			v.subject.Continuation = &LineageContinuationContext{StartAction: "begin_next_attempt"}
+		},
+	}
+	for name, mutate := range faults {
+		t.Run(name, func(t *testing.T) {
+			value := clone()
+			mutate(value)
+			if validSessionSuccessorAuthorityLocked(session, journal, value) {
+				t.Fatal("mutated successor authority matched the current session boundary")
+			}
+		})
+	}
+	consumed := clone()
+	consumed.consumed.Store(true)
+	if validSessionSuccessorAuthorityLocked(session, journal, consumed) {
+		t.Fatal("consumed successor authority passed prevalidation")
+	}
+	current := session.active
+	session.active.kind = activeGenerationCurrent
+	if validSessionSuccessorAuthorityLocked(session, journal, clone()) {
+		t.Fatal("current generation entered historical successor path")
+	}
+	session.active = current
+	journal.state.cursor.latestCheckpointRecordDigest = digestPointer(testDigest("other-checkpoint"))
+	if validSessionSuccessorAuthorityLocked(session, journal, clone()) {
+		t.Fatal("stale checkpoint authority matched a changed journal boundary")
+	}
+}
+
+func TestDetachedRegisteredSourceRevocationDoesNotCloseLeaseTwice(t *testing.T) {
+	valid := &atomic.Bool{}
+	valid.Store(true)
+	runtimeBinding := &verifiedContentReceiptBinding{}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{}
+	registeredReplay := &verifiedAdmissionGenerationReplay{cursor: JournalCursor{valid: valid}}
+	registered := &verifiedAdmissionRegisteredGeneration{
+		replay:          registeredReplay,
+		runtimeReceipt:  VerifiedContentReceipt{binding: runtimeBinding},
+		recoveryReceipt: VerifiedDecisionRecoveryReceipt{binding: recoveryBinding},
+	}
+	historyBinding := &verifiedAdmissionHistoryBinding{}
+	history := &VerifiedAdmissionHistory{binding: historyBinding}
+	handoff := &RegisteredGenerationHandoffPermit{}
+	ready := &RegisteredGenerationRecoveryReady{
+		prior: handoff, history: history, registered: registered, cursor: JournalCursor{valid: valid},
+	}
+	state := &generationEvidenceJournalState{cursor: JournalCursor{valid: valid}}
+	registeredGenerationRecoveryReadyRegistry.Store(ready, true)
+	registeredGenerationHandoffPermitRegistry.Store(handoff, true)
+	verifiedAdmissionHistoryRegistry.Store(historyBinding, true)
+	verifiedContentReceiptRegistry.Store(runtimeBinding, runtimeBinding)
+	verifiedDecisionRecoveryReceiptRegistry.Store(recoveryBinding, recoveryBinding)
+	detachedGenerationSession{source: generationEvidenceJournalRegistryRecord{registeredPrior: ready, state: state}}.revokeSource()
+	if valid.Load() {
+		t.Fatal("detached registered cursor remained valid")
+	}
+	for _, entry := range []struct {
+		name     string
+		registry *sync.Map
+		key      any
+	}{
+		{"recovery", &registeredGenerationRecoveryReadyRegistry, ready},
+		{"handoff", &registeredGenerationHandoffPermitRegistry, handoff},
+		{"history", &verifiedAdmissionHistoryRegistry, historyBinding},
+		{"runtime receipt", &verifiedContentReceiptRegistry, runtimeBinding},
+		{"recovery receipt", &verifiedDecisionRecoveryReceiptRegistry, recoveryBinding},
+	} {
+		if _, ok := entry.registry.Load(entry.key); ok {
+			t.Fatalf("%s registry authority survived detached-source revocation", entry.name)
+		}
+	}
+}
+
+func TestSessionSuccessorCleanupRevokesEntireInMemoryAuthorityChain(t *testing.T) {
+	runtimeBinding := &verifiedContentReceiptBinding{}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{}
+	first := &successorAdmissionState{binding: &successorAdmissionStateBinding{}}
+	second := &successorAdmissionState{
+		prior: first, binding: &successorAdmissionStateBinding{},
+		runtimeReceipt:  VerifiedContentReceipt{binding: runtimeBinding},
+		recoveryReceipt: VerifiedDecisionRecoveryReceipt{binding: recoveryBinding},
+	}
+	plan := &VerifiedSuccessorAdmissionPlan{binding: &verifiedSuccessorAdmissionPlanBinding{}}
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{}}
+	for _, state := range []*successorAdmissionState{first, second} {
+		successorAdmissionStateRegistry.Store(state.binding, true)
+	}
+	verifiedContentReceiptRegistry.Store(runtimeBinding, runtimeBinding)
+	verifiedDecisionRecoveryReceiptRegistry.Store(recoveryBinding, recoveryBinding)
+	verifiedSuccessorAdmissionPlanRegistry.Store(plan.binding, true)
+	verifiedAdmissionHistoryRegistry.Store(history.binding, true)
+	cleanup := sessionSuccessorCleanup{state: second, plan: plan, history: history}
+	cleanup.revokeInMemory()
+	for name, registry := range map[string]struct {
+		registry *sync.Map
+		key      any
+	}{
+		"first state":      {&successorAdmissionStateRegistry, first.binding},
+		"second state":     {&successorAdmissionStateRegistry, second.binding},
+		"runtime receipt":  {&verifiedContentReceiptRegistry, runtimeBinding},
+		"recovery receipt": {&verifiedDecisionRecoveryReceiptRegistry, recoveryBinding},
+		"plan":             {&verifiedSuccessorAdmissionPlanRegistry, plan.binding},
+		"history":          {&verifiedAdmissionHistoryRegistry, history.binding},
+	} {
+		if _, ok := registry.registry.Load(registry.key); ok {
+			t.Fatalf("%s authority survived successor cleanup", name)
+		}
+	}
+}
+
+func TestEvidenceSessionSuccessorTransitionOrderIsClosed(t *testing.T) {
+	raw, err := os.ReadFile("evidence_session.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	start := strings.Index(source, "func (s *generationEvidenceSession) ReserveAndActivateSuccessor")
+	end := strings.Index(source[start:], "// detachedGenerationSession")
+	if start < 0 || end < 0 {
+		t.Fatal("successor session method boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{
+		".ReacquireAdmission(", ".MutationToken(", "bindVerifiedAdmissionHistory(", "bindVerifiedSuccessorAdmissionPlan(",
+		"bindSuccessorAdmissionPermit(", ".PublishRuntime(", ".BindRuntime(", ".PublishDecisionRecovery(",
+		".BindDecisionRecovery(", ".SealReserveReady(", ".BindReceiptPair(", ".AppendGenerationSuperseded(",
+		".AppendGenerationReserved(", ".CreateGenerationHeader(", ".AppendGenerationActivated(", ".Handoff(",
+		".Replay(", ".BindRecovery(", ".BindJournal(", ".installSuccessorLocked(",
+	}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("successor transition %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	if strings.Contains(method, "CodeProjectionNotImplemented") {
+		t.Fatal("successor session still contains an unimplemented projection exit")
+	}
+}
+
+func sessionSuccessorAuthorityFixture(t *testing.T) (*generationEvidenceSession, *generationEvidenceJournal, *VerifiedLineageSupersessionAuthority) {
+	t.Helper()
+	generation, execution := sessionRecoveryExecutionBindingsFixture(t)
+	checkpoint := testDigest("session-successor-checkpoint")
+	execution.snapshot.cursor.latestCheckpointRecordDigest = digestPointer(checkpoint)
+	execution.snapshot.cursor.lineageIndexPreviousRecordDigest = checkpoint
+	execution.snapshot.cursor.previousRecordDigest = digestPointer(execution.tailDigest)
+	execution.snapshot.tailDigest = execution.tailDigest
+	execution.snapshot.generation = generation
+	execution.snapshot.owner = generation.owner
+	execution.snapshot.cursor.owner = generation.owner
+	execution.snapshot.cursor.generation = generation
+	recovery := cloneRecoverySnapshot(execution.snapshot)
+	journal := &generationEvidenceJournal{generation: generation, state: &generationEvidenceJournalState{cursor: recovery.cursor.clone(), recovery: recovery}}
+	session := &generationEvidenceSession{
+		candidate: OwnedCurrentCandidate{owner: generation.owner, verifiedRun: VerifiedEvidenceRun{currentDecision: OwnedVerifiedDecision{owner: execution.owner, digest: execution.subject.CurrentRunnerProjectionDecisionDigest}}},
+		journal:   journal,
+		active:    ActiveGeneration{identity: generation, kind: activeGenerationAncestorRecovery, journal: journal, recoveryExecutionBindings: execution},
+	}
+	subject := supersessionSubject(*execution, checkpoint, "", "", nil, nil, "exact_committed_bundle_complete", nil)
+	digest, err := subject.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := &VerifiedLineageSupersessionAuthority{
+		owner: execution.owner, session: generation.owner, generation: generation,
+		tailDigest: execution.tailDigest, subject: subject, digest: digest,
+	}
+	return session, journal, authority
 }
 
 func TestEvidenceSessionInternalsDoNotSpread(t *testing.T) {

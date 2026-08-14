@@ -166,7 +166,7 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" || name == "evidence_successor_handoff.go" || name == "evidence_successor_recovery.go" || name == "evidence_generation_journal.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" || name == "evidence_successor_handoff.go" || name == "evidence_successor_recovery.go" || name == "evidence_generation_journal.go" || name == "evidence_session.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
