@@ -340,9 +340,70 @@ func TestGenerationEvidenceJournalDigestBindsRegisteredProvenance(t *testing.T) 
 	}
 }
 
+func TestGenerationEvidenceJournalDigestBindsSuccessorProvenance(t *testing.T) {
+	replayFacts, identity, _, _, _, _ := registeredGenerationReplayFixture(t, 5)
+	history := &VerifiedAdmissionHistory{reservation: replayFacts.reservation, binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{21}}}
+	state := &successorAdmissionState{history: history, binding: &successorAdmissionStateBinding{canonical: [32]byte{22}}}
+	replay := &SuccessorGenerationReplayReady{state: state, binding: &successorGenerationReplayBinding{canonical: [32]byte{23}}}
+	ready := &SuccessorGenerationRecoveryReady{state: state, prior: replay, binding: &successorGenerationRecoveryBinding{canonical: [32]byte{24}}}
+	candidateBinding := &verifiedEvidenceRunBinding{owner: identity.owner, canonical: [32]byte{25}}
+	journal := &generationEvidenceJournal{
+		successorPrior: ready, successorReplay: replay, history: history, candidateBinding: candidateBinding,
+		lease: &evidencefs.GenerationLease{}, generation: identity, reservation: replayFacts.reservation,
+		schema: cloneGenerationJournalSchema(replayFacts.schema),
+		runtimeReceipt: VerifiedContentReceipt{
+			kind: durableRuntimeContentObject, digest: testDigest("successor-journal-runtime"), sizeBytes: 1,
+			binding: &verifiedContentReceiptBinding{},
+		},
+		recoveryReceipt: VerifiedDecisionRecoveryReceipt{
+			kind: durableDecisionRecoveryContentObject, digest: testDigest("successor-journal-recovery"), sizeBytes: 1,
+			binding: &verifiedDecisionRecoveryReceiptBinding{},
+		},
+	}
+	journal.self = journal
+	want := generationEvidenceJournalDigest(journal)
+	if want == ([32]byte{}) || !generationJournalProvenanceShape(journal) {
+		t.Fatal("successor journal provenance did not seal")
+	}
+	for name, mutate := range map[string]func(*generationEvidenceJournal){
+		"source":    func(value *generationEvidenceJournal) { value.successorPrior.binding.canonical[0]++ },
+		"replay":    func(value *generationEvidenceJournal) { value.successorReplay.binding.canonical[0]++ },
+		"history":   func(value *generationEvidenceJournal) { value.history.binding.canonical[0]++ },
+		"candidate": func(value *generationEvidenceJournal) { value.candidateBinding.canonical[0]++ },
+		"generation": func(value *generationEvidenceJournal) {
+			value.generation.journalIdentityDigest = testDigest("other-journal")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := cloneRegisteredJournalDigestFixture(journal)
+			historyCopy, historyBinding := *history, *history.binding
+			historyCopy.binding = &historyBinding
+			stateCopy, stateBinding := *state, *state.binding
+			stateCopy.history, stateCopy.binding = &historyCopy, &stateBinding
+			replayCopy, replayBinding := *replay, *replay.binding
+			replayCopy.state, replayCopy.binding = &stateCopy, &replayBinding
+			readyCopy, readyBinding := *ready, *ready.binding
+			readyCopy.state, readyCopy.prior, readyCopy.binding = &stateCopy, &replayCopy, &readyBinding
+			candidateCopy := *candidateBinding
+			value.successorPrior, value.successorReplay = &readyCopy, &replayCopy
+			value.history, value.candidateBinding = &historyCopy, &candidateCopy
+			mutate(value)
+			if generationEvidenceJournalDigest(value) == want {
+				t.Fatal("successor journal mutation retained digest")
+			}
+		})
+	}
+	mixed := cloneRegisteredJournalDigestFixture(journal)
+	mixed.registeredPrior = &RegisteredGenerationRecoveryReady{binding: &registeredGenerationRecoveryReadyBinding{}}
+	if generationJournalProvenanceShape(mixed) || generationEvidenceJournalDigest(mixed) != ([32]byte{}) {
+		t.Fatal("mixed successor and registered provenance was accepted")
+	}
+}
+
 func cloneRegisteredJournalDigestFixture(source *generationEvidenceJournal) *generationEvidenceJournal {
 	result := &generationEvidenceJournal{
-		prior: source.prior, registeredPrior: source.registeredPrior, replay: source.replay, plan: source.plan,
+		prior: source.prior, registeredPrior: source.registeredPrior, successorPrior: source.successorPrior,
+		replay: source.replay, successorReplay: source.successorReplay, plan: source.plan,
 		history: source.history, candidateBinding: source.candidateBinding,
 		runtimeReceipt: source.runtimeReceipt, recoveryReceipt: source.recoveryReceipt,
 		lease: source.lease, generation: source.generation, reservation: source.reservation,
@@ -359,6 +420,9 @@ func TestGenerationEvidenceJournalRejectsLiteralAuthorityAndConsumerSpread(t *te
 	}
 	if journal, err := (&RegisteredGenerationRecoveryReady{}).BindJournal(context.Background(), candidate); journal != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
 		t.Fatalf("literal registered recovery entered journal binder: journal=%T err=%v", journal, err)
+	}
+	if journal, err := (&SuccessorGenerationRecoveryReady{}).BindJournal(context.Background(), candidate); journal != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal successor recovery entered journal binder: journal=%T err=%v", journal, err)
 	}
 	literal := &generationEvidenceJournal{}
 	if _, _, err := literal.Replay(context.Background()); !IsCode(err, CodeEvidenceJournalFailed) {

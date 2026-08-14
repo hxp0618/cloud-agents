@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 func TestSuccessorGenerationRecoveryRejectsLiteralAndRuntimeInterfaces(t *testing.T) {
@@ -152,5 +154,49 @@ func TestSuccessorGenerationRecoveryDigestRejectsCopyAndMutation(t *testing.T) {
 				t.Fatal("successor recovery mutation did not change digest")
 			}
 		})
+	}
+}
+
+func TestSuccessorRecoveryRegistryProvenanceSurvivesConsumedCursorInvalidation(t *testing.T) {
+	state := &successorAdmissionState{binding: &successorAdmissionStateBinding{canonical: [32]byte{1}}}
+	candidateBinding := &verifiedEvidenceRunBinding{canonical: [32]byte{2}}
+	lease := &evidencefs.GenerationLease{}
+	handoff := &SuccessorGenerationHandoffReady{state: state, candidateBinding: candidateBinding, lease: lease}
+	handoff.self = handoff
+	handoff.binding = &successorGenerationHandoffBinding{ready: handoff, state: state, stateBinding: state.binding, candidateBinding: candidateBinding, lease: lease, canonical: [32]byte{3}}
+	replay := &SuccessorGenerationReplayReady{prior: handoff, state: state, candidateBinding: candidateBinding, lease: lease, snapshot: &evidencefs.GenerationSnapshot{}}
+	replay.self = replay
+	replay.binding = &successorGenerationReplayBinding{ready: replay, prior: handoff, state: state, stateBinding: state.binding, candidateBinding: candidateBinding, lease: lease, snapshot: replay.snapshot, canonical: [32]byte{4}}
+	consumed := &atomic.Bool{}
+	consumed.Store(true)
+	valid := &atomic.Bool{}
+	ready := &SuccessorGenerationRecoveryReady{
+		prior: replay, state: state, candidateBinding: candidateBinding, cursor: JournalCursor{valid: valid},
+		recovery: &RecoverySnapshot{}, factsDigest: [32]byte{5}, consumed: consumed,
+	}
+	ready.self = ready
+	ready.binding = &successorGenerationRecoveryBinding{ready: ready, prior: replay, state: state, candidateBinding: candidateBinding, canonical: [32]byte{6}}
+	successorGenerationHandoffRegistry.Store(handoff, successorGenerationHandoffRecord{
+		ready: handoff, binding: handoff.binding, state: state, stateBinding: state.binding,
+		candidateBinding: candidateBinding, lease: lease, canonical: handoff.binding.canonical,
+	})
+	successorGenerationReplayRegistry.Store(replay, successorGenerationReplayRecord{
+		ready: replay, binding: replay.binding, prior: handoff, state: state, stateBinding: state.binding,
+		candidateBinding: candidateBinding, lease: lease, snapshot: replay.snapshot, canonical: replay.binding.canonical,
+	})
+	successorGenerationRecoveryRegistry.Store(ready, successorGenerationRecoveryRecord{
+		ready: ready, binding: ready.binding, prior: replay, state: state, candidateBinding: candidateBinding,
+		cursorValid: valid, canonical: ready.binding.canonical,
+	})
+	t.Cleanup(func() {
+		successorGenerationRecoveryRegistry.Delete(ready)
+		successorGenerationReplayRegistry.Delete(replay)
+		successorGenerationHandoffRegistry.Delete(handoff)
+	})
+	if valid.Load() {
+		t.Fatal("fixture cursor unexpectedly remained valid")
+	}
+	if !successorGenerationRecoveryReadyRecordMatches(ready) {
+		t.Fatal("consumed journal provenance depended on the obsolete cursor remaining valid")
 	}
 }

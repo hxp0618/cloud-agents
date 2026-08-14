@@ -226,12 +226,39 @@ func successorGenerationRecoveryDigest(ready *SuccessorGenerationRecoveryReady) 
 }
 
 func validSuccessorGenerationRecoveryReady(ready *SuccessorGenerationRecoveryReady, candidate OwnedCurrentCandidate) bool {
-	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.state == nil || ready.candidateBinding != candidate.binding || ready.binding.prior != ready.prior || ready.binding.state != ready.state || ready.binding.candidateBinding != ready.candidateBinding || ready.consumed == nil || ready.consumed.Load() || !validConsumedSuccessorGenerationReplayReady(ready.prior, candidate) || ready.state != ready.prior.state || ready.generation.owner != candidate.owner || ready.generation.journalIdentityDigest != ready.state.journal || ready.cursor.valid == nil || !ready.cursor.Valid() || !sameGenerationIdentity(ready.cursor.generation, ready.generation) || ready.recovery == nil || !validRecoverySnapshotForJournal(ready.recovery, ready.generation, ready.cursor) || ready.factsDigest == ([32]byte{}) || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != successorGenerationRecoveryDigest(ready) {
+	return validSuccessorGenerationRecoveryShape(ready, candidate, false)
+}
+
+func validConsumedSuccessorGenerationRecoveryReady(ready *SuccessorGenerationRecoveryReady, candidate OwnedCurrentCandidate) bool {
+	return validSuccessorGenerationRecoveryShape(ready, candidate, true)
+}
+
+func validSuccessorGenerationRecoveryShape(ready *SuccessorGenerationRecoveryReady, candidate OwnedCurrentCandidate, consumed bool) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.state == nil || ready.candidateBinding != candidate.binding || ready.binding.prior != ready.prior || ready.binding.state != ready.state || ready.binding.candidateBinding != ready.candidateBinding || ready.consumed == nil || ready.consumed.Load() != consumed || !validConsumedSuccessorGenerationReplayReady(ready.prior, candidate) || ready.state != ready.prior.state || ready.generation.owner != candidate.owner || ready.generation.journalIdentityDigest != ready.state.journal || ready.cursor.valid == nil || !ready.cursor.Valid() || !sameGenerationIdentity(ready.cursor.generation, ready.generation) || ready.recovery == nil || !validRecoverySnapshotForJournal(ready.recovery, ready.generation, ready.cursor) || ready.factsDigest == ([32]byte{}) || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != successorGenerationRecoveryDigest(ready) {
 		return false
 	}
 	registered, ok := successorGenerationRecoveryRegistry.Load(ready)
 	record, recordOK := registered.(successorGenerationRecoveryRecord)
 	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.state == ready.state && record.candidateBinding == ready.candidateBinding && record.cursorValid == ready.cursor.valid && record.canonical == ready.binding.canonical
+}
+
+func successorGenerationRecoveryReadyRecordMatches(ready *SuccessorGenerationRecoveryReady) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.state == nil || ready.candidateBinding == nil || ready.binding.prior != ready.prior || ready.binding.state != ready.state || ready.binding.candidateBinding != ready.candidateBinding || ready.consumed == nil || !ready.consumed.Load() || ready.cursor.valid == nil || ready.recovery == nil || ready.factsDigest == ([32]byte{}) || ready.binding.canonical == ([32]byte{}) {
+		return false
+	}
+	registered, ok := successorGenerationRecoveryRegistry.Load(ready)
+	record, recordOK := registered.(successorGenerationRecoveryRecord)
+	if !ok || !recordOK || record.ready != ready || record.binding != ready.binding || record.prior != ready.prior || record.state != ready.state || record.candidateBinding != ready.candidateBinding || record.cursorValid != ready.cursor.valid || record.canonical != ready.binding.canonical {
+		return false
+	}
+	replayValue, replayOK := successorGenerationReplayRegistry.Load(ready.prior)
+	replayRecord, replayRecordOK := replayValue.(successorGenerationReplayRecord)
+	if !replayOK || !replayRecordOK || replayRecord.ready != ready.prior || replayRecord.binding != ready.prior.binding || replayRecord.state != ready.state || replayRecord.candidateBinding != ready.candidateBinding || replayRecord.lease != ready.prior.lease || replayRecord.snapshot != ready.prior.snapshot || replayRecord.canonical != ready.prior.binding.canonical {
+		return false
+	}
+	handoffValue, handoffOK := successorGenerationHandoffRegistry.Load(ready.prior.prior)
+	handoffRecord, handoffRecordOK := handoffValue.(successorGenerationHandoffRecord)
+	return handoffOK && handoffRecordOK && handoffRecord.ready == ready.prior.prior && handoffRecord.binding == ready.prior.prior.binding && handoffRecord.state == ready.state && handoffRecord.stateBinding == ready.state.binding && handoffRecord.candidateBinding == ready.candidateBinding && handoffRecord.lease == ready.prior.lease && handoffRecord.canonical == ready.prior.prior.binding.canonical
 }
 
 func (r *SuccessorGenerationReplayReady) failSuccessorRecovery(cause error, operation string) (*SuccessorGenerationRecoveryReady, error) {
@@ -257,12 +284,19 @@ func (r *SuccessorGenerationRecoveryReady) Close() error {
 	if r.cursor.valid != nil {
 		r.cursor.valid.Store(false)
 	}
+	return closeConsumedSuccessorGenerationRecovery(r, "successor-generation-recovery-close")
+}
+
+func closeConsumedSuccessorGenerationRecovery(r *SuccessorGenerationRecoveryReady, operation string) error {
+	if r == nil || r.self != r || operation == "" {
+		return admissionFailed(operation, "successor recovery authority is unavailable", nil)
+	}
 	registered, ok := successorGenerationRecoveryRegistry.Load(r)
 	record, recordOK := registered.(successorGenerationRecoveryRecord)
 	successorGenerationRecoveryRegistry.Delete(r)
 	if !ok || !recordOK || record.ready != r || record.canonical == ([32]byte{}) || record.prior == nil || record.cursorValid == nil {
-		return admissionFailed("successor-generation-recovery-close", "immutable successor recovery authority is unavailable", nil)
+		return admissionFailed(operation, "immutable successor recovery authority is unavailable", nil)
 	}
 	record.cursorValid.Store(false)
-	return closeSuccessorGenerationReplay(record.prior, "successor-generation-recovery-close")
+	return closeSuccessorGenerationReplay(record.prior, operation)
 }

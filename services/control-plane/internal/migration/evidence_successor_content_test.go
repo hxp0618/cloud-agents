@@ -166,7 +166,7 @@ func TestSuccessorContentAuthorityDoesNotSpreadBeforeAdjacentIndexSlice(t *testi
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" || name == "evidence_successor_handoff.go" || name == "evidence_successor_recovery.go" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_successor_content.go" || name == "evidence_successor_index.go" || name == "evidence_successor_activation.go" || name == "evidence_successor_handoff.go" || name == "evidence_successor_recovery.go" || name == "evidence_generation_journal.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
@@ -198,10 +198,10 @@ func TestSuccessorContentConcreteTransitionGraphIsClosed(t *testing.T) {
 		"SuccessorGenerationReadyPermit":   "Handoff",
 		"SuccessorGenerationHandoffReady":  "Replay",
 		"SuccessorGenerationReplayReady":   "BindRecovery",
-		"SuccessorGenerationRecoveryReady": "",
+		"SuccessorGenerationRecoveryReady": "BindJournal",
 	}
 	seen := make(map[string]bool)
-	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go", "evidence_successor_activation.go", "evidence_successor_handoff.go", "evidence_successor_recovery.go"} {
+	for _, name := range []string{"evidence_successor_content.go", "evidence_successor_index.go", "evidence_successor_activation.go", "evidence_successor_handoff.go", "evidence_successor_recovery.go", "evidence_generation_journal.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
