@@ -655,6 +655,32 @@ func expandAdmissionGenerationReserved(lineage [32]byte, g admissionReplayGenera
 	return result, nil
 }
 
+func expandAdmissionGenerationSuperseded(lineage [32]byte, g admissionReplayGeneration) (GenerationSuperseded, error) {
+	if g.header == nil || g.supersessionRecordDigest == nil || g.plannedSuccessor == nil || g.supersessionAuthorityDigest.Validate() != nil || g.supersessionOutcome == "" {
+		return GenerationSuperseded{}, admissionCorrupt("admission-supersession", "compact supersession is incomplete", nil)
+	}
+	planned, err := expandAdmissionGenerationReserved(lineage, *g.plannedSuccessor)
+	if err != nil {
+		return GenerationSuperseded{}, err
+	}
+	result := GenerationSuperseded{
+		ExecutionLineageDigest:             digestString(lineage),
+		OldJournalIdentityDigest:           g.journalID,
+		OldRunnerProjectionDecisionDigest:  g.runnerProjectionDecisionDigest,
+		OldSchemaBundleDigest:              g.schemaBundleDigest,
+		OldCheckpointRecordDigest:          cloneDigestPointer(g.oldCheckpointRecordDigest),
+		OldActivationRecordDigest:          cloneDigestPointer(g.oldActivationRecordDigest),
+		OldInitialJournalTailDigest:        cloneDigestPointer(g.oldInitialJournalTailDigest),
+		LineageSupersessionAuthorityDigest: g.supersessionAuthorityDigest,
+		Outcome:                            g.supersessionOutcome,
+		PlannedGenerationReserved:          &planned,
+	}
+	if err := result.Validate(); err != nil {
+		return GenerationSuperseded{}, admissionCorrupt("admission-supersession", "compact supersession is invalid", err)
+	}
+	return result, nil
+}
+
 type admissionReplayJournal struct {
 	id       [32]byte
 	segments []admissionReplaySegment

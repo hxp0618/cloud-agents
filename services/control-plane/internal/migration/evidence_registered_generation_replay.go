@@ -12,25 +12,44 @@ import (
 // filesystem handle and cannot append; a later handoff must still compare its
 // exact file facts with a fresh evidencefs GenerationSnapshot.
 type verifiedAdmissionGenerationReplay struct {
-	indexFact          evidencefs.GenerationFileFact
-	segmentFacts       []evidencefs.GenerationFileFact
-	segmentRecords     []uint64
-	cursor             JournalCursor
-	recovery           *RecoverySnapshot
-	reservation        evidenceQuotaReservation
-	schema             verifiedRecoverySchemaWitness
-	journalRecords     uint64
-	journalBytes       uint64
-	checkpointRecords  uint64
-	indexDebitRecords  uint64
-	indexDebitBytes    uint64
-	indexHeaderDebited bool
-	canonical          [32]byte
+	indexFact           evidencefs.GenerationFileFact
+	segmentFacts        []evidencefs.GenerationFileFact
+	segmentRecords      []uint64
+	cursor              JournalCursor
+	recovery            *RecoverySnapshot
+	reservation         evidenceQuotaReservation
+	schema              verifiedRecoverySchemaWitness
+	journalRecords      uint64
+	journalBytes        uint64
+	checkpointRecords   uint64
+	indexDebitRecords   uint64
+	indexDebitBytes     uint64
+	indexHeaderDebited  bool
+	supersessionDebited bool
+	canonical           [32]byte
 }
 
 func bindVerifiedAdmissionGenerationReplay(lineage admissionReplayLineage, generation *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts) (*verifiedAdmissionGenerationReplay, error) {
-	if generation == nil || generation.activationRecordDigest == nil || generation.supersessionRecordDigest != nil {
+	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, false)
+}
+
+// bindVerifiedSupersededAdmissionGenerationReplay reconstructs the durable A
+// journal boundary for historical A -> B authorization. Unlike the ordinary
+// target-generation replay, it includes the already-durable Superseded index
+// debit and can never enter the registered-generation handoff path.
+func bindVerifiedSupersededAdmissionGenerationReplay(lineage admissionReplayLineage, generation *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts) (*verifiedAdmissionGenerationReplay, error) {
+	if generation == nil || generation.supersessionRecordDigest == nil || generation.plannedSuccessor == nil || lineage.state != admissionLineageSuperseded {
+		return nil, admissionCorrupt("admission-supersession-replay", "superseded generation boundary is incomplete", nil)
+	}
+	return bindVerifiedAdmissionGenerationReplayMode(lineage, generation, descriptor, facts, true)
+}
+
+func bindVerifiedAdmissionGenerationReplayMode(lineage admissionReplayLineage, generation *admissionReplayGeneration, descriptor GenerationDescriptor, facts *admissionHistoricalVerificationFacts, allowSuperseded bool) (*verifiedAdmissionGenerationReplay, error) {
+	if generation == nil || generation.activationRecordDigest == nil || generation.supersessionRecordDigest != nil && !allowSuperseded {
 		return nil, nil
+	}
+	if allowSuperseded && (generation.supersessionRecordDigest == nil || lineage.indexTailRecordDigest != *generation.supersessionRecordDigest) {
+		return nil, admissionCorrupt("admission-supersession-replay", "superseded index tail is not exact", nil)
 	}
 	if generation.header == nil || generation.summary == nil || generation.runtimeInspection == nil || !validAdmissionRecoveryFacts(facts) || descriptor.identity.owner == nil || descriptor.header.Validate() != nil || !sameGenerationHeader(descriptor.identity, descriptor.header) || descriptor.identity.executionLineageDigest != digestString(lineage.id) || lineage.indexRecords == 0 || lineage.indexTailRecordDigest.Validate() != nil || lineage.index.size == 0 || lineage.index.digest == ([32]byte{}) || lineage.index.identity == ([32]byte{}) {
 		return nil, admissionCorrupt("admission-target-replay", "target generation replay facts are incomplete", nil)
@@ -76,8 +95,9 @@ func bindVerifiedAdmissionGenerationReplay(lineage admissionReplayLineage, gener
 		indexFact:    evidencefs.GenerationFileFact{Ordinal: lineage.index.ordinal, Size: lineage.index.size, ContentDigest: lineage.index.digest, IdentityDigest: lineage.index.identity},
 		segmentFacts: make([]evidencefs.GenerationFileFact, len(journal.segments)), segmentRecords: make([]uint64, len(journal.segments)),
 		cursor: cursor, recovery: recovery, reservation: generation.runtimeInspection.reservation, schema: cloneGenerationJournalSchema(schema),
-		journalRecords:     journal.records,
-		indexHeaderDebited: generation.indexHeaderDebited,
+		journalRecords:      journal.records,
+		indexHeaderDebited:  generation.indexHeaderDebited,
+		supersessionDebited: allowSuperseded,
 	}
 	for index, segment := range journal.segments {
 		replay.segmentFacts[index] = evidencefs.GenerationFileFact{Ordinal: segment.file.ordinal, Size: segment.file.size, ContentDigest: segment.file.digest, IdentityDigest: segment.file.identity}
@@ -264,6 +284,11 @@ func verifiedAdmissionGenerationReplayDigest(value *verifiedAdmissionGenerationR
 	} else {
 		h.Write([]byte{0})
 	}
+	if value.supersessionDebited {
+		h.Write([]byte{1})
+	} else {
+		h.Write([]byte{0})
+	}
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
@@ -275,6 +300,9 @@ func validVerifiedAdmissionGenerationReplay(value *verifiedAdmissionGenerationRe
 	}
 	expectedIndexDebits := uint64(2) + value.checkpointRecords
 	if value.indexHeaderDebited {
+		expectedIndexDebits++
+	}
+	if value.supersessionDebited {
 		expectedIndexDebits++
 	}
 	if len(value.segmentFacts) == 0 || len(value.segmentFacts) != len(value.segmentRecords) || value.indexFact.Ordinal != 0 || value.indexFact.Size == 0 || value.indexFact.ContentDigest == ([32]byte{}) || value.indexFact.IdentityDigest == ([32]byte{}) || !value.cursor.Valid() || value.cursor.owner != identity.owner || !sameGenerationIdentity(value.cursor.generation, identity) || value.cursor.previousRecordDigest == nil || value.cursor.previousRecordDigest.Validate() != nil || value.cursor.lineageIndexNextSequence == 0 || value.cursor.lineageIndexPreviousRecordDigest.Validate() != nil || value.cursor.nextSequence != value.journalRecords || value.cursor.segmentIndex != uint32(len(value.segmentFacts)-1) || (value.cursor.latestCheckpointRecordDigest == nil) != (value.checkpointRecords == 0) || value.cursor.latestCheckpointRecordDigest != nil && value.cursor.latestCheckpointRecordDigest.Validate() != nil || value.journalRecords == 0 || value.journalBytes == 0 || value.reservation.ReservedRecords == 0 || value.reservation.ReservedJournalBytes == 0 || value.reservation.ReservedSegments == 0 || value.reservation.ReservedCheckpointRecords != value.reservation.ReservedRecords-1 || value.reservation.ReservedBytes != value.reservation.ReservedJournalBytes+value.reservation.ReservedIndexBytes || value.journalRecords > value.reservation.ReservedRecords || value.journalBytes > value.reservation.ReservedJournalBytes || uint64(len(value.segmentFacts)) > uint64(value.reservation.ReservedSegments) || value.checkpointRecords > value.reservation.ReservedCheckpointRecords || value.indexDebitRecords != expectedIndexDebits || value.indexDebitRecords > value.reservation.ReservedIndexRecords || value.indexDebitBytes == 0 || value.indexDebitBytes > value.reservation.ReservedIndexBytes || !validRecoverySnapshotForJournal(value.recovery, identity, value.cursor) || generationJournalSchemaDigest(value.schema, identity) == ([32]byte{}) || value.canonical == ([32]byte{}) || value.canonical != verifiedAdmissionGenerationReplayDigest(value, identity) {

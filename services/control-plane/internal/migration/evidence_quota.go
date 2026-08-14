@@ -464,18 +464,26 @@ func admitRootQuota(state *verifiedRootQuotaState, bundle *RuntimeBundle, candid
 // calculateRootQuotaAdmission contains the pure quota calculation after a
 // caller has obtained exact root facts from an authoritative snapshot.
 func calculateRootQuotaAdmission(rootFacts rootQuotaUsageFacts, bundle *RuntimeBundle, candidate OwnedCurrentCandidate) (rootQuotaAdmission, error) {
-	if !rootFacts.valid() {
-		return rootQuotaAdmission{}, filesystemFailure("quota-root", "root quota facts are invalid")
-	}
 	facts, err := bundle.quotaFactsForAdmission()
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
-	reservation, err := calculateEvidenceQuotaReservationForFacts(facts, rootFacts)
+	runtime, recovery, err := quotaCandidateArtifacts(facts, candidate)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}
-	runtime, recovery, err := quotaCandidateArtifacts(facts, candidate)
+	return calculateRootQuotaAdmissionForArtifacts(rootFacts, facts, runtime, recovery)
+}
+
+// calculateRootQuotaAdmissionForArtifacts is the recovery-only pure quota
+// calculator for a same-verifier historical generation. Callers must already
+// own the exact registered runtime and decision-recovery artifacts; raw
+// digest/size DTOs remain inadmissible.
+func calculateRootQuotaAdmissionForArtifacts(rootFacts rootQuotaUsageFacts, facts verifiedQuotaBundleFacts, runtime VerifiedRuntimeArtifact, recovery VerifiedDecisionRecoveryArtifact) (rootQuotaAdmission, error) {
+	if !rootFacts.valid() {
+		return rootQuotaAdmission{}, filesystemFailure("quota-root", "root quota facts are invalid")
+	}
+	reservation, err := calculateEvidenceQuotaReservationForFacts(facts, rootFacts)
 	if err != nil {
 		return rootQuotaAdmission{}, err
 	}

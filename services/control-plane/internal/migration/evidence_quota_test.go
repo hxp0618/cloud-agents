@@ -240,6 +240,10 @@ func TestRootQuotaAdmissionDedupeExactAndOneShot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	historical, err := calculateRootQuotaAdmissionForArtifacts(facts, bundle.quotaFacts, candidate.runtimeArtifact, candidate.decisionRecoveryArtifact)
+	if err != nil || historical != got {
+		t.Fatalf("historical artifact quota differs from current-candidate quota: current=%+v historical=%+v err=%v", got, historical, err)
+	}
 	if got.finalObjectCount != 2 || got.finalObjectBytes != runtime.sizeBytes+candidate.decisionRecoveryArtifact.sizeBytes {
 		t.Fatalf("dedupe=%+v", got)
 	}

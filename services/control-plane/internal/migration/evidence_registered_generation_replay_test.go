@@ -48,6 +48,7 @@ func TestVerifiedAdmissionGenerationReplayRejectsEveryBoundFactMutation(t *testi
 		"index records":      func(v *verifiedAdmissionGenerationReplay) { v.indexDebitRecords++ },
 		"index bytes":        func(v *verifiedAdmissionGenerationReplay) { v.indexDebitBytes++ },
 		"index header debit": func(v *verifiedAdmissionGenerationReplay) { v.indexHeaderDebited = true },
+		"supersession debit": func(v *verifiedAdmissionGenerationReplay) { v.supersessionDebited = true },
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -62,6 +63,60 @@ func TestVerifiedAdmissionGenerationReplayRejectsEveryBoundFactMutation(t *testi
 	copyValue.cursor = replay.cursor.clone()
 	if copyValue.canonical == ([32]byte{}) || !validVerifiedAdmissionGenerationReplay(&copyValue, identity) {
 		t.Fatal("ordinary nested replay copy should remain bound by its enclosing registered generation")
+	}
+}
+
+func TestVerifiedSupersededAdmissionGenerationReplayBindsOnlyExactPendingBoundary(t *testing.T) {
+	_, identity, lineage, generation, descriptor, facts := registeredGenerationReplayFixture(t, 5)
+	superseded := testDigest("target-replay-superseded")
+	planned := cloneAdmissionGeneration(generation)
+	planned.activationRecordDigest = nil
+	planned.latestCheckpointRecordDigest = nil
+	planned.latestCheckpointTailDigest = nil
+	planned.latestCheckpointNext = 0
+	planned.indexDebits = nil
+	planned.summary = nil
+	planned.currentTail = nil
+	planned.verificationTerminals = nil
+	planned.verificationFinals = nil
+	planned.verificationCommits = nil
+	planned.verificationRetries = nil
+	planned.verificationResolutions = nil
+	planned.verificationOpen = nil
+	generation.supersessionRecordDigest = &superseded
+	generation.plannedSuccessor = &planned
+	generation.indexDebits = append(generation.indexDebits, admissionReplayIndexDebit{kind: LineageRecordGenerationSuperseded, recordDigest: superseded, framedBytes: 17})
+	lineage.state = admissionLineageSuperseded
+	lineage.indexRecords++
+	lineage.indexTailRecordDigest = superseded
+	lineage.generations = []admissionReplayGeneration{cloneAdmissionGeneration(generation)}
+
+	replay, err := bindVerifiedSupersededAdmissionGenerationReplay(lineage, &generation, descriptor, facts)
+	if err != nil || replay == nil || !replay.supersessionDebited || !validVerifiedAdmissionGenerationReplay(replay, identity) || replay.indexDebitRecords != uint64(len(generation.indexDebits)) {
+		t.Fatalf("superseded replay was not sealed: replay=%+v err=%v", replay, err)
+	}
+	if ordinary, err := bindVerifiedAdmissionGenerationReplay(lineage, &generation, descriptor, facts); err != nil || ordinary != nil {
+		t.Fatalf("superseded replay entered ordinary binder: replay=%+v err=%v", ordinary, err)
+	}
+
+	for name, mutate := range map[string]func(*admissionReplayLineage, *admissionReplayGeneration){
+		"state": func(l *admissionReplayLineage, _ *admissionReplayGeneration) {
+			l.state = admissionLineageActiveCheckpointed
+		},
+		"tail": func(l *admissionReplayLineage, _ *admissionReplayGeneration) {
+			l.indexTailRecordDigest = testDigest("other-tail")
+		},
+		"planned":    func(_ *admissionReplayLineage, g *admissionReplayGeneration) { g.plannedSuccessor = nil },
+		"superseded": func(_ *admissionReplayLineage, g *admissionReplayGeneration) { g.supersessionRecordDigest = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidateLineage := lineage
+			candidateGeneration := cloneAdmissionGeneration(generation)
+			mutate(&candidateLineage, &candidateGeneration)
+			if value, err := bindVerifiedSupersededAdmissionGenerationReplay(candidateLineage, &candidateGeneration, descriptor, facts); value != nil || !IsCode(err, CodeEvidenceJournalCorrupt) {
+				t.Fatalf("invalid superseded boundary was accepted: replay=%+v err=%v", value, err)
+			}
+		})
 	}
 }
 
@@ -89,6 +144,10 @@ func TestVerifiedAdmissionGenerationReplayAuthorityDoesNotSpread(t *testing.T) {
 			"evidence_generation_journal.go":            true,
 		},
 		"bindVerifiedAdmissionGenerationReplay": {
+			"evidence_registered_generation_replay.go": true,
+			"evidence_admission_history.go":            true,
+		},
+		"bindVerifiedSupersededAdmissionGenerationReplay": {
 			"evidence_registered_generation_replay.go": true,
 			"evidence_admission_history.go":            true,
 		},
