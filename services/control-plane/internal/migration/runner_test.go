@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestPublicRunnerRejectsCheckedInMutableContractsWithZeroSideEffects(t *test
 	assertNoRunnerSideEffects(t, connector, backend)
 }
 
-func TestPublicRunnerExactAdmissionStopsAtUnwiredJournalWithZeroSideEffects(t *testing.T) {
+func TestPublicRunnerExactAdmissionStopsAtUnconfiguredEvidenceSinkWithZeroSideEffects(t *testing.T) {
 	raw, decision := buildExactAdmissionRuntime(t)
 	backend := &fakeBackend{}
 	connector := &fakeConnector{backend: backend}
@@ -58,14 +59,86 @@ func TestPublicRunnerExactAdmissionStopsAtUnwiredJournalWithZeroSideEffects(t *t
 	before := liveVerifiedEvidenceRunBindings()
 	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-evidence-journal" {
-		t.Fatalf("exact admission did not stop at the unwired journal boundary: %v", err)
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-evidence-sink" {
+		t.Fatalf("exact admission did not stop at the unconfigured sink boundary: %v", err)
 	}
 	assertPublicAdmissionCounts(t, verifier, source, observer)
 	if liveVerifiedEvidenceRunBindings() != before {
 		t.Fatalf("public runner left a discarded evidence candidate live: got=%d want=%d", liveVerifiedEvidenceRunBindings(), before)
 	}
 	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestPublicRunnerOpensAndClosesEvidenceBeforeUnwiredProjector(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	backend := &fakeBackend{}
+	connector := &fakeConnector{backend: backend}
+	verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
+	sink := &runnerEvidenceSinkFake{}
+	source := &memoryArtifactSource{data: raw}
+	observer := &recordingStateObserver{}
+	runner := Runner{
+		Trust: verifier, Evidence: sink, Connector: connector, Observer: observer,
+		Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{},
+	}
+	before := liveVerifiedEvidenceRunBindings()
+	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	var migrationErr *Error
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-projector" {
+		t.Fatalf("evidence-open runner did not stop at the unwired projector boundary: %v", err)
+	}
+	assertPublicAdmissionCounts(t, verifier, source, observer)
+	if sink.calls != 1 || sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
+		t.Fatalf("evidence session lifecycle mismatch: sink=%d session=%+v live=%d/%d", sink.calls, sink.session, liveVerifiedEvidenceRunBindings(), before)
+	}
+	assertNoRunnerSideEffects(t, connector, backend)
+}
+
+func TestPublicRunnerEvidenceOpenClosedResultAndCleanupFaults(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		configure  func(*runnerEvidenceSinkFake)
+		want       ErrorCode
+		wantClosed bool
+	}{
+		{"open-recovery-required", func(s *runnerEvidenceSinkFake) {
+			s.openErr = fail(CodeEvidenceRecoveryRequired, "fake", "secret", errors.New("secret"))
+		}, CodeEvidenceRecoveryRequired, false},
+		{"open-canceled", func(s *runnerEvidenceSinkFake) { s.openErr = context.Canceled }, CodeContextCanceled, false},
+		{"open-deadline", func(s *runnerEvidenceSinkFake) { s.openErr = context.DeadlineExceeded }, CodeDeadlineExceeded, false},
+		{"error-with-values", func(s *runnerEvidenceSinkFake) { s.openErr = errors.New("secret"); s.valuesWithError = true }, CodeEvidenceJournalFailed, true},
+		{"missing-session", func(s *runnerEvidenceSinkFake) { s.missingSession = true }, CodeEvidenceJournalFailed, true},
+		{"missing-snapshot", func(s *runnerEvidenceSinkFake) { s.missingSnapshot = true }, CodeEvidenceJournalFailed, true},
+		{"candidate-swap", func(s *runnerEvidenceSinkFake) { s.swapCandidate = true }, CodeEvidenceJournalFailed, true},
+		{"replay-corrupt", func(s *runnerEvidenceSinkFake) {
+			s.replayErr = fail(CodeEvidenceJournalCorrupt, "fake", "secret", errors.New("secret"))
+		}, CodeEvidenceJournalCorrupt, true},
+		{"replay-corrupt-dominates-context-cause", func(s *runnerEvidenceSinkFake) {
+			s.replayErr = fail(CodeEvidenceJournalCorrupt, "fake", "secret", context.Canceled)
+		}, CodeEvidenceJournalCorrupt, true},
+		{"close-failure-dominates", func(s *runnerEvidenceSinkFake) { s.sessionCloseErr = errors.New("secret-close") }, CodeEvidenceJournalFailed, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw, decision := buildExactAdmissionRuntime(t)
+			backend := &fakeBackend{}
+			connector := &fakeConnector{backend: backend}
+			verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
+			sink := &runnerEvidenceSinkFake{}
+			test.configure(sink)
+			source := &memoryArtifactSource{data: raw}
+			before := liveVerifiedEvidenceRunBindings()
+			runner := Runner{Trust: verifier, Evidence: sink, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
+			_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+			var migrationErr *Error
+			if !errors.As(err, &migrationErr) || migrationErr.Code != test.want || migrationErr.Err != nil || liveVerifiedEvidenceRunBindings() != before {
+				t.Fatalf("closed result mapping/cleanup mismatch: err=%#v live=%d/%d", migrationErr, liveVerifiedEvidenceRunBindings(), before)
+			}
+			if test.wantClosed && (sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1) {
+				t.Fatalf("returned session was not closed exactly once: %+v", sink.session)
+			}
+			assertNoRunnerSideEffects(t, connector, backend)
+		})
+	}
 }
 
 func TestPublicRunnerRequiresSameVerifierRecoveryBeforeArtifactRead(t *testing.T) {
@@ -750,6 +823,174 @@ type acceptingIntermediate struct{}
 func (acceptingIntermediate) ValidateIntermediate(context.Context, Queryer, int, MigrationEntry, SQLStatement, StatementPlan, CatalogProjection) error {
 	return nil
 }
+
+type runnerEvidenceSinkFake struct {
+	calls           int
+	openErr         error
+	valuesWithError bool
+	missingSession  bool
+	missingSnapshot bool
+	swapCandidate   bool
+	replayErr       error
+	sessionCloseErr error
+	session         *runnerEvidenceSessionFake
+}
+
+func (sink *runnerEvidenceSinkFake) Open(_ context.Context, run VerifiedEvidenceRun, runtime VerifiedRuntimeArtifact) (EvidenceSession, *RecoverySnapshot, error) {
+	sink.calls++
+	if sink.openErr != nil && !sink.valuesWithError {
+		return nil, nil, sink.openErr
+	}
+	candidate, err := ownedCurrentCandidateFromEvidenceRun(run, runtime)
+	if err != nil {
+		return nil, nil, err
+	}
+	session := newRunnerEvidenceSessionFake(candidate)
+	session.journal.replayErr = sink.replayErr
+	session.closeErr = sink.sessionCloseErr
+	if sink.swapCandidate {
+		session.candidate.binding = &verifiedEvidenceRunBinding{}
+	}
+	sink.session = session
+	if sink.openErr != nil {
+		return session, cloneRecoverySnapshot(session.snapshot), sink.openErr
+	}
+	if sink.missingSession {
+		snapshot := cloneRecoverySnapshot(session.snapshot)
+		_ = session.Close(context.Background())
+		return nil, snapshot, nil
+	}
+	if sink.missingSnapshot {
+		return session, nil, nil
+	}
+	return session, cloneRecoverySnapshot(session.snapshot), nil
+}
+
+func (*runnerEvidenceSinkFake) evidenceSinkSealed() {}
+
+type runnerEvidenceSessionFake struct {
+	candidate  OwnedCurrentCandidate
+	active     ActiveGeneration
+	journal    *runnerEvidenceJournalFake
+	snapshot   *RecoverySnapshot
+	closeErr   error
+	closeCalls int
+	closed     bool
+}
+
+func newRunnerEvidenceSessionFake(candidate OwnedCurrentCandidate) *runnerEvidenceSessionFake {
+	generation := generationIdentity{
+		owner: candidate.owner, executionLineageDigest: candidate.verifiedRun.executionLineageDigest,
+		journalIdentityDigest: testDigest("runner-open-journal"), runnerProjectionDecisionDigest: candidate.verifiedRun.runnerProjectionDecisionDigest,
+		schemaBundleDigest: candidate.verifiedRun.schemaBundleDigest,
+	}
+	tail := testDigest("runner-open-tail")
+	valid := &atomic.Bool{}
+	valid.Store(true)
+	cursor := JournalCursor{
+		owner: candidate.owner, generation: generation, segmentIndex: 0, nextSequence: 1,
+		previousRecordDigest: digestPointer(tail), lineageIndexNextSequence: 3,
+		lineageIndexPreviousRecordDigest: testDigest("runner-open-index-tail"), valid: valid,
+	}
+	snapshot := &RecoverySnapshot{
+		owner: candidate.owner, generation: generation, cursor: cursor, tailDigest: tail,
+		state: RecoveryBrandNew, nextPermittedAction: RecoveryBeginFirstAttempt,
+	}
+	journal := &runnerEvidenceJournalFake{cursor: cursor, snapshot: snapshot}
+	return &runnerEvidenceSessionFake{
+		candidate: candidate, journal: journal, snapshot: snapshot,
+		active: ActiveGeneration{identity: generation, kind: activeGenerationCurrent, journal: journal, ownedDecision: candidate.verifiedRun.currentDecision},
+	}
+}
+
+func (session *runnerEvidenceSessionFake) CurrentCandidate() OwnedCurrentCandidate {
+	if session == nil || session.closed {
+		return OwnedCurrentCandidate{}
+	}
+	candidate, err := cloneSessionCandidate(session.candidate)
+	if err != nil {
+		return OwnedCurrentCandidate{}
+	}
+	return candidate
+}
+
+func (session *runnerEvidenceSessionFake) ActiveGeneration() ActiveGeneration {
+	if session == nil || session.closed {
+		return ActiveGeneration{}
+	}
+	return session.active
+}
+
+func (session *runnerEvidenceSessionFake) Journal() EvidenceJournal {
+	if session == nil || session.closed {
+		return nil
+	}
+	return session.journal
+}
+
+func (session *runnerEvidenceSessionFake) RecoverySnapshot() *RecoverySnapshot {
+	if session == nil || session.closed {
+		return nil
+	}
+	return cloneRecoverySnapshot(session.snapshot)
+}
+
+func (*runnerEvidenceSessionFake) ReserveAndActivateSuccessor(context.Context, *VerifiedLineageSupersessionAuthority) (ActiveGeneration, *RecoverySnapshot, error) {
+	return ActiveGeneration{}, nil, fail(CodeProjectionNotImplemented, "runner-test", "not implemented", nil)
+}
+
+func (session *runnerEvidenceSessionFake) Close(ctx context.Context) error {
+	if session == nil || session.closed {
+		return errors.New("session already closed")
+	}
+	session.closeCalls++
+	session.closed = true
+	journalErr := session.journal.Close(ctx)
+	if session.closeErr != nil {
+		return session.closeErr
+	}
+	return journalErr
+}
+
+func (*runnerEvidenceSessionFake) evidenceSessionSealed() {}
+
+type runnerEvidenceJournalFake struct {
+	cursor      JournalCursor
+	snapshot    *RecoverySnapshot
+	replayErr   error
+	replayCalls int
+	closeCalls  int
+	closed      bool
+}
+
+func (journal *runnerEvidenceJournalFake) Replay(context.Context) (JournalCursor, *RecoverySnapshot, error) {
+	journal.replayCalls++
+	if journal.replayErr != nil {
+		return JournalCursor{}, nil, journal.replayErr
+	}
+	if journal.closed {
+		return JournalCursor{}, nil, errors.New("journal closed")
+	}
+	return journal.cursor.clone(), cloneRecoverySnapshot(journal.snapshot), nil
+}
+
+func (*runnerEvidenceJournalFake) AppendDurable(context.Context, JournalCursor, *OwnedEvidenceRecord) (AppendResult, error) {
+	return AppendResult{}, errors.New("append is not wired")
+}
+
+func (journal *runnerEvidenceJournalFake) Close(context.Context) error {
+	if journal.closed {
+		return errors.New("journal already closed")
+	}
+	journal.closeCalls++
+	journal.closed = true
+	if journal.cursor.valid != nil {
+		journal.cursor.valid.Store(false)
+	}
+	return nil
+}
+
+func (*runnerEvidenceJournalFake) evidenceJournalSealed() {}
 
 type sequenceTrustVerifier struct {
 	recoveryVerifierFake

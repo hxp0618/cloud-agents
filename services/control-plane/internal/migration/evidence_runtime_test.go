@@ -204,6 +204,84 @@ func TestOwnedCurrentCandidateRevocationIsExactAndOneShot(t *testing.T) {
 	}
 }
 
+func TestEvidenceOpenCandidateReconstructionOwnsAndRejectsEveryBindingSwap(t *testing.T) {
+	bundle := quotaAdmissionBundleForTest(t)
+	baseline := quotaCandidateForBundle(t, bundle, []byte("ignored-shape"))
+	run := baseline.verifiedRun
+	run.decisionRecoveryArtifact.bytes = append([]byte(nil), baseline.verifiedRun.decisionRecoveryArtifact.bytes...)
+	runtime := baseline.runtimeArtifact
+	runtime.bytes = append([]byte(nil), baseline.runtimeArtifact.bytes...)
+	reconstructed, err := ownedCurrentCandidateFromEvidenceRun(run, runtime)
+	if err != nil || !validOwnedCurrentCandidate(reconstructed) || reconstructed.binding != baseline.binding {
+		t.Fatalf("open-side candidate reconstruction failed: candidate=%+v err=%v", reconstructed, err)
+	}
+	run.decisionRecoveryArtifact.bytes[0] ^= 1
+	runtime.bytes[0] ^= 1
+	if !validOwnedCurrentCandidate(reconstructed) {
+		t.Fatal("open-side reconstruction retained caller byte aliases")
+	}
+	for name, mutate := range map[string]func(*VerifiedEvidenceRun, *VerifiedRuntimeArtifact){
+		"run binding": func(run *VerifiedEvidenceRun, _ *VerifiedRuntimeArtifact) {
+			run.binding = &verifiedEvidenceRunBinding{}
+		},
+		"runtime binding": func(_ *VerifiedEvidenceRun, runtime *VerifiedRuntimeArtifact) {
+			runtime.binding = &verifiedEvidenceRunBinding{}
+		},
+		"runtime bytes":  func(_ *VerifiedEvidenceRun, runtime *VerifiedRuntimeArtifact) { runtime.bytes[0] ^= 1 },
+		"recovery bytes": func(run *VerifiedEvidenceRun, _ *VerifiedRuntimeArtifact) { run.decisionRecoveryArtifact.bytes[0] ^= 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			faultRun := baseline.verifiedRun
+			faultRun.decisionRecoveryArtifact.bytes = append([]byte(nil), baseline.verifiedRun.decisionRecoveryArtifact.bytes...)
+			faultRuntime := baseline.runtimeArtifact
+			faultRuntime.bytes = append([]byte(nil), baseline.runtimeArtifact.bytes...)
+			mutate(&faultRun, &faultRuntime)
+			if candidate, err := ownedCurrentCandidateFromEvidenceRun(faultRun, faultRuntime); candidate.binding != nil || candidate.owner != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("binding swap reconstructed a candidate: candidate=%+v err=%v", candidate, err)
+			}
+		})
+	}
+	if !revokeOwnedCurrentCandidate(baseline) {
+		t.Fatal("open-side reconstruction fixture did not revoke")
+	}
+}
+
+func TestEvidenceOpenCandidateReconstructionHasOneProductionCallEdge(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			identifier, ok := call.Fun.(*ast.Ident)
+			if !ok || identifier.Name != "ownedCurrentCandidateFromEvidenceRun" {
+				return true
+			}
+			calls++
+			if name != "evidence_runtime.go" {
+				t.Fatalf("evidence Open candidate reconstruction spread into %s", name)
+			}
+			return true
+		})
+	}
+	if calls != 1 {
+		t.Fatalf("evidence Open candidate reconstruction call edges=%d want=1", calls)
+	}
+}
+
 func TestOwnedEvidenceRecordIsKindGenerationCursorBoundAndSingleUse(t *testing.T) {
 	document := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
 	frames := decodeEvidenceFrames(t, document["frames"])

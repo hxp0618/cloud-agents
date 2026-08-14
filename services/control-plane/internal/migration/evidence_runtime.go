@@ -224,15 +224,43 @@ func bindVerifiedEvidenceRun(decision VerifiedTrustDecision, bindings RunnerProj
 	verifiedEvidenceRunBindingRegistry.Store(binding, binding.canonical)
 	run.binding = binding
 	runtime.binding = binding
+	candidate, err := ownedCurrentCandidateFromEvidenceRun(run, runtime)
+	if err != nil {
+		verifiedEvidenceRunBindingRegistry.CompareAndDelete(binding, binding.canonical)
+		return VerifiedEvidenceRun{}, VerifiedRuntimeArtifact{}, OwnedCurrentCandidate{}, err
+	}
+	return run, runtime, candidate, nil
+}
+
+// ownedCurrentCandidateFromEvidenceRun is the only Open-side reconstruction
+// seam for the two values accepted by EvidenceSink.Open. It takes fresh owned
+// copies and requires the exact total-binder registry record; a sink cannot
+// assemble a candidate from individually plausible run and artifact values.
+func ownedCurrentCandidateFromEvidenceRun(run VerifiedEvidenceRun, runtime VerifiedRuntimeArtifact) (OwnedCurrentCandidate, error) {
+	binding := run.binding
+	if binding == nil || runtime.binding != binding || binding.canonical == ([32]byte{}) {
+		return OwnedCurrentCandidate{}, fail(CodeEvidenceRecoveryRequired, "evidence-run-open", "verified run and runtime artifact are not totally bound", nil)
+	}
+	registered, ok := verifiedEvidenceRunBindingRegistry.Load(binding)
+	if !ok || registered != binding.canonical {
+		return OwnedCurrentCandidate{}, fail(CodeEvidenceRecoveryRequired, "evidence-run-open", "verified run binding is unavailable", nil)
+	}
+	decisionBindings, err := run.currentDecision.decision.runnerProjectionBindings()
+	if err != nil {
+		return OwnedCurrentCandidate{}, fail(CodeEvidenceRecoveryRequired, "evidence-run-open", "current decision bindings are unavailable", nil)
+	}
 	candidateRun := run
 	candidateBindings := decisionBindings.ownedCopy()
-	candidateRun.currentDecision = ownedVerifiedDecisionCopy(current, candidateBindings)
-	candidateRun.decisionRecoveryArtifact = ownedDecisionRecoveryArtifactCopy(recovery)
+	candidateRun.currentDecision = ownedVerifiedDecisionCopy(run.currentDecision, candidateBindings)
+	candidateRun.decisionRecoveryArtifact = ownedDecisionRecoveryArtifactCopy(run.decisionRecoveryArtifact)
 	candidateRuntime := runtime
 	candidateRuntime.bytes = append([]byte(nil), runtime.bytes...)
-	candidateRecovery := ownedDecisionRecoveryArtifactCopy(recovery)
-	candidate := OwnedCurrentCandidate{owner: owner, verifiedRun: candidateRun, runtimeArtifact: candidateRuntime, decisionRecoveryArtifact: candidateRecovery, binding: binding}
-	return run, runtime, candidate, nil
+	candidateRecovery := ownedDecisionRecoveryArtifactCopy(run.decisionRecoveryArtifact)
+	candidate := OwnedCurrentCandidate{owner: run.owner, verifiedRun: candidateRun, runtimeArtifact: candidateRuntime, decisionRecoveryArtifact: candidateRecovery, binding: binding}
+	if !validOwnedCurrentCandidate(candidate) {
+		return OwnedCurrentCandidate{}, fail(CodeEvidenceRecoveryRequired, "evidence-run-open", "verified run candidate could not be reconstructed", nil)
+	}
+	return candidate, nil
 }
 
 func validOwnedCurrentDecision(current OwnedVerifiedDecision, bindings RunnerProjectionBindings) bool {

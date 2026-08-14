@@ -46,6 +46,7 @@ type StateObserver interface{ Transition(RunnerState) }
 
 type Runner struct {
 	Trust        TrustVerifier
+	Evidence     EvidenceSink
 	Connector    DatabaseConnector
 	Ledger       LedgerStore
 	Authority    AuthorityValidator
@@ -109,14 +110,24 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 	if err != nil {
 		return RunResult{}, err
 	}
-	_, _, candidate, err := bindVerifiedEvidenceRun(decision, bindings, current, raw, recoveryArtifact)
+	verifiedRun, runtimeArtifact, candidate, err := bindVerifiedEvidenceRun(decision, bindings, current, raw, recoveryArtifact)
 	if err != nil {
 		return RunResult{}, err
 	}
-	if !revokeOwnedCurrentCandidate(candidate) {
-		return RunResult{}, fail(CodeEvidenceJournalFailed, "runner-evidence-candidate-close", "discarded evidence candidate could not be revoked", nil)
+	if runner.Evidence == nil {
+		if cleanupErr := closeRunnerEvidenceOwnership(nil, candidate); cleanupErr != nil {
+			return RunResult{}, cleanupErr
+		}
+		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-evidence-sink", "verified evidence candidate admitted but no evidence sink is configured", nil)
 	}
-	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-evidence-journal", "exact plans admitted but evidence journal and projector wiring are not implemented", nil)
+	session, _, err := openRunnerEvidenceSession(ctx, runner.Evidence, verifiedRun, runtimeArtifact, candidate)
+	if err != nil {
+		return RunResult{}, err
+	}
+	if cleanupErr := closeRunnerEvidenceOwnership(session, candidate); cleanupErr != nil {
+		return RunResult{}, cleanupErr
+	}
+	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-projector", "evidence session admitted but projector and database wiring are not implemented", nil)
 }
 
 func verifyRunnerCurrentEvidence(ctx context.Context, verifier TrustVerifier, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {
