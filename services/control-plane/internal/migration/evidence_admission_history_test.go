@@ -33,7 +33,7 @@ func TestAdmissionHistoryAuthorityFailsClosedWithoutOpaqueInventory(t *testing.T
 	}
 }
 
-func TestMaterializedHistoricalSupersessionKeepsIntermediateSuccessorRecoveryRequired(t *testing.T) {
+func TestMaterializedHistoricalSupersessionFailsClosedWithoutRegisteredEvidence(t *testing.T) {
 	_, _, lineage, source, _, _ := registeredGenerationReplayFixture(t, 5)
 	planned := plannedSuccessorReplayFixture(source)
 	superseded := testDigest("history-intermediate-superseded")
@@ -52,7 +52,7 @@ func TestMaterializedHistoricalSupersessionKeepsIntermediateSuccessorRecoveryReq
 	current := OwnedVerifiedDecision{digest: currentDecision}
 	err := verifyMaterializedHistoricalSupersession(context.Background(), lineage, &lineage.generations[0], &lineage.generations[1], sourceEvidence, plannedEvidence, current)
 	if !IsCode(err, CodeEvidenceRecoveryRequired) {
-		t.Fatalf("intermediate historical successor was misclassified: %v", err)
+		t.Fatalf("unregistered historical successor was misclassified: %v", err)
 	}
 }
 

@@ -184,8 +184,26 @@ func TestHistoricalSupersessionAdjacentAuthorityRejectsLiteralsBeforeReplay(t *t
 	}
 }
 
+func TestHistoricalSupersessionPolicyErrorMappingIsClosed(t *testing.T) {
+	for name, test := range map[string]struct {
+		input error
+		code  ErrorCode
+	}{
+		"canceled": {context.Canceled, CodeContextCanceled},
+		"deadline": {context.DeadlineExceeded, CodeDeadlineExceeded},
+		"corrupt":  {admissionCorrupt("test", "stored mismatch", nil), CodeEvidenceJournalCorrupt},
+		"recovery": {fail(CodeUntrusted, "test", "verifier rejected", nil), CodeEvidenceRecoveryRequired},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := mapHistoricalSupersessionPolicyError(test.input); !IsCode(err, test.code) {
+				t.Fatalf("policy error mapping=%v want=%s", err, test.code)
+			}
+		})
+	}
+}
+
 func TestHistoricalSupersessionRecoveryAuthorityDoesNotSpread(t *testing.T) {
-	allowed := map[string]bool{"evidence_historical_supersession.go": true, "evidence_historical_supersession_activation.go": true, "evidence_admission_history.go": true}
+	allowed := map[string]bool{"evidence_historical_supersession.go": true, "evidence_historical_supersession_activation.go": true, "evidence_admission_history.go": true, "evidence_trust_recovery.go": true}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +219,7 @@ func TestHistoricalSupersessionRecoveryAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "HistoricalSupersessionAdjacentReserveReady" || identifier.Name == "HistoricalSuccessorReservedDurablePermit" || identifier.Name == "bindHistoricalSupersessionAdjacentReserveReady") {
+			if ok && (identifier.Name == "HistoricalSupersessionAdjacentReserveReady" || identifier.Name == "HistoricalSuccessorReservedDurablePermit" || identifier.Name == "bindHistoricalSupersessionAdjacentReserveReady" || identifier.Name == "recoverHistoricalSupersessionPolicy" || identifier.Name == "bindRecoveredHistoricalSupersessionPolicy" || identifier.Name == "bindHistoricalSupersessionRecoveryExecution" || identifier.Name == "recoveryPolicyAuthorizesDecision") {
 				t.Fatalf("historical supersession recovery authority spread into %s", name)
 			}
 			return true

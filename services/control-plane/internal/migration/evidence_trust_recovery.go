@@ -30,6 +30,7 @@ func bindVerifierOwnedDecision(verifier TrustVerifier, decision VerifiedTrustDec
 // second verifier through the runtime ABI.
 type historicalRecoveryVerifier interface {
 	recoverHistoricalDecision(context.Context, VerifiedTrustDecision, GenerationDescriptor, VerifiedDecisionRecoveryArtifact) (VerifiedTrustDecision, RunnerProjectionBindings, historicalRecoveryPolicySubject, error)
+	recoverHistoricalSupersessionPolicy(context.Context, VerifiedTrustDecision, GenerationDescriptor, VerifiedDecisionRecoveryArtifact, GenerationDescriptor, VerifiedDecisionRecoveryArtifact, GenerationSuperseded) (historicalRecoveryPolicySubject, error)
 	recoverHistoricalSupersession(context.Context, VerifiedTrustDecision, *VerifiedLineageSupersessionAuthority, GenerationSuperseded, VerifiedDecisionRecoveryArtifact, VerifiedRuntimeArtifact, VerifiedContentReceipt, VerifiedDecisionRecoveryArtifact, VerifiedDecisionRecoveryReceipt) (*verifiedHistoricalSupersessionReceipt, error)
 }
 
@@ -117,6 +118,50 @@ func (d OwnedVerifiedDecision) recoverHistoricalDecision(ctx context.Context, ge
 	}
 	ownedOld := OwnedVerifiedDecision{d.owner, old, subject.OldRunnerProjectionDecisionDigest, sameVerifierRecoveryCapability{d.owner}}
 	return ownedOld, bindings.ownedCopy(), VerifiedHistoricalRecoveryPolicy{d.owner, subject, digest}, nil
+}
+
+// recoverHistoricalSupersessionPolicy asks the same current verifier to
+// reconstruct the original A -> B recovery policy. The current C policy must
+// authorize both historical decisions; neither A's ordinary A -> C recovery
+// policy nor B's ordinary B -> C recovery policy can substitute for this
+// transition-specific subject.
+func (d OwnedVerifiedDecision) recoverHistoricalSupersessionPolicy(ctx context.Context, source, successor *verifiedAdmissionRegisteredGeneration, superseded GenerationSuperseded) (VerifiedHistoricalRecoveryPolicy, error) {
+	currentBindings, currentErr := d.decision.runnerProjectionBindings()
+	if currentErr != nil || !validOwnedCurrentDecision(d, currentBindings) || source == nil || successor == nil || source == successor || source.decision.digest == d.digest || source.decision.digest == successor.decision.digest || !validVerifiedAdmissionRegisteredGeneration(source, d) || !validVerifiedAdmissionRegisteredGeneration(successor, d) || !recoveryPolicyAuthorizesDecision(currentBindings, source.decision.digest) || successor.decision.digest != d.digest && !recoveryPolicyAuthorizesDecision(currentBindings, successor.decision.digest) {
+		return VerifiedHistoricalRecoveryPolicy{}, fail(CodeEvidenceRecoveryRequired, "historical-supersession-policy", "same-verifier historical decisions are unavailable or unauthorized", nil)
+	}
+	if err := superseded.Validate(); err != nil || superseded.PlannedGenerationReserved == nil || superseded.OldRunnerProjectionDecisionDigest != source.decision.digest || superseded.ExecutionLineageDigest != source.descriptor.identity.executionLineageDigest || superseded.OldJournalIdentityDigest != source.descriptor.identity.journalIdentityDigest || superseded.OldSchemaBundleDigest != source.descriptor.identity.schemaBundleDigest || !sameGenerationHeader(successor.descriptor.identity, superseded.PlannedGenerationReserved.PlannedSegment0Header) || !canonicalEqual(successor.descriptor.header, superseded.PlannedGenerationReserved.PlannedSegment0Header) {
+		return VerifiedHistoricalRecoveryPolicy{}, admissionCorrupt("historical-supersession-policy", "stored transition differs from registered generations", err)
+	}
+	sourceDescriptor := source.descriptor
+	sourceDescriptor.header = cloneProjectionValue(source.descriptor.header)
+	successorDescriptor := successor.descriptor
+	successorDescriptor.header = cloneProjectionValue(successor.descriptor.header)
+	subject, err := d.owner.verifier.recoverHistoricalSupersessionPolicy(ctx, d.decision, sourceDescriptor, ownedDecisionRecoveryArtifactCopy(source.recoveryArtifact), successorDescriptor, ownedDecisionRecoveryArtifactCopy(successor.recoveryArtifact), cloneProjectionValue(superseded))
+	if err != nil {
+		return VerifiedHistoricalRecoveryPolicy{}, err
+	}
+	return bindRecoveredHistoricalSupersessionPolicy(d.owner, currentBindings, source.descriptor, source.recoveryArtifact, successor.descriptor, successor.decision.digest, subject)
+}
+
+func bindRecoveredHistoricalSupersessionPolicy(owner *recoveryVerifierOwner, currentBindings RunnerProjectionBindings, sourceDescriptor GenerationDescriptor, sourceArtifact VerifiedDecisionRecoveryArtifact, successorDescriptor GenerationDescriptor, successorDecision Digest, subject historicalRecoveryPolicySubject) (VerifiedHistoricalRecoveryPolicy, error) {
+	digest, digestErr := subject.ComputeDigest()
+	if owner == nil || sourceDescriptor.identity.owner != owner.token || successorDescriptor.identity.owner != owner.token || sourceArtifact.owner != owner || sourceDescriptor.recoveryArtifactDigest != sourceArtifact.digest || sourceDescriptor.recoveryArtifactSize != sourceArtifact.sizeBytes || successorDecision.Validate() != nil || successorDescriptor.identity.runnerProjectionDecisionDigest != successorDecision || digestErr != nil || subject.RecoveryPolicySubjectDigest != currentBindings.recoveryPolicySubjectDigest || subject.ExecutionLineageDigest != sourceDescriptor.identity.executionLineageDigest || subject.OldJournalIdentityDigest != sourceDescriptor.identity.journalIdentityDigest || subject.OldRunnerProjectionDecisionDigest != sourceDescriptor.identity.runnerProjectionDecisionDigest || subject.OldSchemaBundleDigest != sourceDescriptor.identity.schemaBundleDigest || subject.OldDecisionRecoveryArtifactSHA256 != sourceArtifact.digest || subject.OldDecisionRecoveryArtifactSizeBytes != sourceArtifact.sizeBytes || subject.SuccessorRunnerProjectionDecisionDigest != successorDecision || subject.SuccessorSchemaBundleDigest != successorDescriptor.identity.schemaBundleDigest {
+		return VerifiedHistoricalRecoveryPolicy{}, fail(CodeEvidenceRecoveryRequired, "historical-supersession-policy", "verifier returned a foreign transition policy", digestErr)
+	}
+	return VerifiedHistoricalRecoveryPolicy{owner: owner, subject: cloneProjectionValue(subject), digest: digest}, nil
+}
+
+func recoveryPolicyAuthorizesDecision(bindings RunnerProjectionBindings, decision Digest) bool {
+	if decision.Validate() != nil {
+		return false
+	}
+	for _, authorization := range bindings.verifiedRecoveryPolicy.subject.OldDecisionAuthorizations {
+		if authorization.OldRunnerProjectionDecisionDigest == decision {
+			return true
+		}
+	}
+	return false
 }
 
 func (d OwnedVerifiedDecision) recoverHistoricalSupersession(ctx context.Context, authority *VerifiedLineageSupersessionAuthority, superseded GenerationSuperseded, oldArtifact VerifiedDecisionRecoveryArtifact, plannedRuntime VerifiedRuntimeArtifact, plannedRuntimeReceipt VerifiedContentReceipt, plannedRecovery VerifiedDecisionRecoveryArtifact, plannedRecoveryReceipt VerifiedDecisionRecoveryReceipt) (*verifiedHistoricalSupersessionReceipt, error) {
@@ -227,7 +272,15 @@ type VerifiedRecoveryExecutionBindings struct {
 }
 
 func bindRecoveryExecution(policy VerifiedHistoricalRecoveryPolicy, current, old OwnedVerifiedDecision, oldBindings RunnerProjectionBindings, generation GenerationDescriptor, snapshot *RecoverySnapshot) (VerifiedRecoveryExecutionBindings, error) {
-	if policy.owner == nil || current.owner != policy.owner || old.owner != policy.owner || policy.subject.OldRunnerProjectionDecisionDigest != old.digest || policy.subject.SuccessorRunnerProjectionDecisionDigest != current.digest || snapshot == nil || snapshot.owner != generation.identity.owner || !sameGenerationIdentity(snapshot.generation, generation.identity) || snapshot.tailDigest != generation.replayTailDigest || oldBindings.runnerProjectionDecisionDigest != old.digest {
+	return bindRecoveryExecutionForSuccessor(policy, current, old, oldBindings, generation, snapshot, current.digest)
+}
+
+func bindHistoricalSupersessionRecoveryExecution(policy VerifiedHistoricalRecoveryPolicy, current, old OwnedVerifiedDecision, oldBindings RunnerProjectionBindings, generation GenerationDescriptor, snapshot *RecoverySnapshot, successor Digest) (VerifiedRecoveryExecutionBindings, error) {
+	return bindRecoveryExecutionForSuccessor(policy, current, old, oldBindings, generation, snapshot, successor)
+}
+
+func bindRecoveryExecutionForSuccessor(policy VerifiedHistoricalRecoveryPolicy, current, old OwnedVerifiedDecision, oldBindings RunnerProjectionBindings, generation GenerationDescriptor, snapshot *RecoverySnapshot, successor Digest) (VerifiedRecoveryExecutionBindings, error) {
+	if policy.owner == nil || current.owner != policy.owner || old.owner != policy.owner || policy.subject.OldRunnerProjectionDecisionDigest != old.digest || successor.Validate() != nil || policy.subject.SuccessorRunnerProjectionDecisionDigest != successor || snapshot == nil || snapshot.owner != generation.identity.owner || !sameGenerationIdentity(snapshot.generation, generation.identity) || snapshot.tailDigest != generation.replayTailDigest || oldBindings.runnerProjectionDecisionDigest != old.digest {
 		return VerifiedRecoveryExecutionBindings{}, invalidEvidence("recovery-bindings", "decision, generation, or snapshot mismatch")
 	}
 	subject := recoveryExecutionBindingsSubject{

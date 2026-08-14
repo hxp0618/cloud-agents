@@ -291,13 +291,6 @@ func verifyMaterializedHistoricalSupersession(ctx context.Context, lineage admis
 	if !materializedAdmissionSuccessorIsAdjacent(lineage, sourceGeneration, actualSuccessor) || sourceEvidence == nil || plannedEvidence == nil {
 		return admissionCorrupt("admission-materialized-supersession", "stored supersession inputs are incomplete", nil)
 	}
-	// The currently implemented recovery policy binds one old generation to
-	// the exact current successor. A deeper A -> B -> current-C chain remains
-	// recovery-required until the verifier can reconstruct the intermediate
-	// A -> B policy; it is not evidence that the stored chain is corrupt.
-	if plannedEvidence.decision.digest != current.digest {
-		return fail(CodeEvidenceRecoveryRequired, "admission-materialized-supersession", "intermediate successor recovery authority is unavailable", nil)
-	}
 	source, err := retainMaterializedAdmissionHistoryGeneration(ctx, lineage, sourceGeneration, actualSuccessor, sourceEvidence, current)
 	if err != nil {
 		return err

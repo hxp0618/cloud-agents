@@ -293,7 +293,11 @@ func bindStoredHistoricalSupersession(ctx context.Context, current OwnedVerified
 	if source == nil || planned == nil || source.policy == nil || source.replay == nil || !source.replay.supersessionDebited || planned.replay != nil || !validVerifiedAdmissionRegisteredGeneration(source, current) || !validVerifiedAdmissionRegisteredGeneration(planned, current) || plannedRuntime.owner != current.owner.token || plannedRuntime.digest != planned.descriptor.header.OuterArtifactDigest || plannedRuntime.sizeBytes != planned.descriptor.header.OuterArtifactSizeBytes || uint64(len(plannedRuntime.bytes)) != plannedRuntime.sizeBytes || DigestBytes(plannedRuntime.bytes) != plannedRuntime.digest {
 		return nil, nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession-bind", "same-verifier registered generation inputs are unavailable", nil)
 	}
-	execution, err := bindRecoveryExecution(*source.policy, current, source.decision, source.bindings, source.descriptor, source.replay.recovery)
+	policy, err := current.recoverHistoricalSupersessionPolicy(ctx, source, planned, superseded)
+	if err != nil {
+		return nil, nil, mapHistoricalSupersessionPolicyError(err)
+	}
+	execution, err := bindHistoricalSupersessionRecoveryExecution(policy, current, source.decision, source.bindings, source.descriptor, source.replay.recovery, planned.decision.digest)
 	if err != nil {
 		return nil, nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession-bind", "source recovery execution cannot be rebound", nil)
 	}
@@ -319,7 +323,7 @@ func bindStoredHistoricalSupersession(ctx context.Context, current OwnedVerified
 			continuation: continuation,
 		}
 	}
-	authority, err := bindLineageSupersession(*source.policy, execution, boundary)
+	authority, err := bindLineageSupersession(policy, execution, boundary)
 	if err != nil {
 		return nil, nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession-bind", "stored supersession authority cannot be reconstructed", nil)
 	}
@@ -334,6 +338,16 @@ func bindStoredHistoricalSupersession(ctx context.Context, current OwnedVerified
 		return nil, nil, fail(CodeEvidenceRecoveryRequired, "historical-supersession-verifier", "current verifier cannot authorize the stored supersession", nil)
 	}
 	return authority, receipt, nil
+}
+
+func mapHistoricalSupersessionPolicyError(err error) error {
+	if errorsIsContext(err) {
+		return mapEvidenceAdmissionError(err, "historical-supersession-policy")
+	}
+	if IsCode(err, CodeEvidenceJournalCorrupt) {
+		return err
+	}
+	return fail(CodeEvidenceRecoveryRequired, "historical-supersession-policy", "original transition policy cannot be reconstructed", nil)
 }
 
 func errorsIsContext(err error) bool {
