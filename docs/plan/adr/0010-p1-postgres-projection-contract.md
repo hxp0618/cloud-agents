@@ -2172,7 +2172,7 @@ decision/authorization、continuation 和 root quota；不得沿用 handoff 前�
 4. consume N+3，把 exact verified B recovery candidate bind 到该 `Publication`，不 mint receipt，返回 N+4；
 5. consume N+4 seal package-private one-shot reserve-ready authority，返回 N+5；此步不 append index、不持久化 reservation。
 
-typed receipt binder 与 index append 在本切片仍是 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`/零调用；后续切片的 closed
+本段冻结时 typed receipt binder 与 index append 仍是 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`/零调用；后续 closed
 authority graph 只能是：
 
 - N+5 `ReserveReady.BindReceiptPair` 一次性 consume `ReserveReady`，在一次 atomic cross-bind 中同时 mint runtime/recovery
@@ -2189,6 +2189,11 @@ authority graph 只能是：
 objects，不能自证 receipt。superseded durable 后 nested planned header 必须足以按前述 registration-only recovery 路径恢复
 两个 B objects。任一 reacquire/replay/reverify/reauthorize/quota/append/sync 失败，旧 session 永久 invalid，只能由新
 `Open` 恢复；successor 仍必须完整 reserve/header/activate，不得直接 `Connect`。
+
+Implementation checkpoint（2026-08-14）：`fd48990`～`cebacea` 已在 feature branch 本地实现上述 live、in-process
+closed graph，包括 generation-lease→full-root reacquire、atomic receipt pair、adjacent Superseded/Reserved、successor
+activate/handoff/replay/recovery/journal 与同一 session current swap。该状态注记不改变规范，也不关闭
+`superseded_pending_reservation` 的 process-crash reopen、trusted mount、真实 ext4/XFS/power-loss、runner/DB、Gate 或发布边界。
 
 `LineageOpenState` 是 internal closed union：`ready|reserved_no_header|reserved_header_unactivated|index_stale_prefix|
 supersession_required|superseded_pending_reservation|orphan_generation|corrupt`。`ready` 才可进入 normal run；两个
@@ -2976,8 +2981,8 @@ history missing/unauthorized 与 stored corruption 的稳定分类；journal 全
 无 double count/under-count；exact maximum 与 +1；两个真实进程竞争下无 overcommit；每个 durability barrier 的
 before/short/after-write/before-sync/after-sync/response-lost/crash+reopen 都只产生唯一可恢复 state。任一 barrier unknown 后
 必须证明旧 lease/inventory/permit 均失效且 reopen full scan，durable object reuse 不 mint receipt/reservation。Done record
-必须附 fixed source SHA、commands/results/failure evidence 与 reviewer；它仍不得声称 receipt、runner/DB/cloud、trusted-mount
-production enablement 或 Gate closure，且 C3 wire fixture/digest diff 必须为空。
+必须附 fixed source SHA、commands/results/failure evidence 与 reviewer；即使本地 receipt/successor graph 已实现，它仍不得
+声称 runner/DB/cloud、trusted-mount production enablement 或 Gate closure，且 C3 wire fixture/digest diff 必须为空。
 
 ## 6. Statement intermediate state
 
