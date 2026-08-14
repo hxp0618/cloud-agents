@@ -92,7 +92,7 @@ func TestRegisteredReceiptConsumersAreRecoveryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"evidence_registered_receipt.go": true, "evidence_admission_history.go": true, "evidence_historical_supersession.go": true, "evidence_historical_supersession_activation.go": true, "evidence_registered_generation_handoff.go": true, "evidence_generation_journal.go": true, "evidence_session.go": true}
+	allowed := map[string]bool{"evidence_registered_receipt.go": true, "evidence_admission_history.go": true, "evidence_historical_supersession.go": true, "evidence_historical_supersession_activation.go": true, "evidence_historical_supersession_recovery.go": true, "evidence_registered_generation_handoff.go": true, "evidence_generation_journal.go": true, "evidence_session.go": true}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || allowed[name] || len(name) < 3 || name[len(name)-3:] != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {

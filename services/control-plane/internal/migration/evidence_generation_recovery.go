@@ -139,11 +139,22 @@ func buildBrandNewRecoveryWitness(candidate OwnedCurrentCandidate, generation ge
 	if !validOwnedCurrentCandidate(candidate) || !validAdmissionRecoveryFacts(facts) || generation.owner != candidate.owner || generation.executionLineageDigest != candidate.verifiedRun.executionLineageDigest || generation.runnerProjectionDecisionDigest != candidate.verifiedRun.runnerProjectionDecisionDigest || generation.schemaBundleDigest != candidate.verifiedRun.schemaBundleDigest || facts.manifestDigest != candidate.verifiedRun.manifestDigest || facts.runnerProjectionDecisionDigest != candidate.verifiedRun.runnerProjectionDecisionDigest || facts.schemaBundleDigest != candidate.verifiedRun.schemaBundleDigest || facts.authorityProfileDigest != candidate.verifiedRun.authorityProfileDigest || facts.authorityBindingDigest != candidate.verifiedRun.authorityBindingDigest {
 		return verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, fail(CodeEvidenceRecoveryRequired, "generation-recovery-witness", "same-verifier facts are incomplete", nil)
 	}
+	return buildBrandNewRecoveryWitnessFromFacts(
+		generation,
+		facts,
+		ownedContentReceiptWitness{"runtime", candidate.verifiedRun.outerArtifactDigest, candidate.verifiedRun.outerArtifactSizeBytes},
+		ownedContentReceiptWitness{"decision_recovery", candidate.verifiedRun.decisionRecoveryArtifactSHA256, candidate.verifiedRun.decisionRecoveryArtifactSizeBytes},
+	)
+}
+
+func buildBrandNewRecoveryWitnessFromFacts(generation generationIdentity, facts *admissionHistoricalVerificationFacts, runtimeReceipt, recoveryReceipt ownedContentReceiptWitness) (verifiedEvidenceChainWitness, verifiedRecoverySchemaWitness, error) {
+	if generation.owner == nil || generation.executionLineageDigest.Validate() != nil || generation.journalIdentityDigest.Validate() != nil || generation.runnerProjectionDecisionDigest.Validate() != nil || generation.schemaBundleDigest.Validate() != nil || !validAdmissionRecoveryFacts(facts) || facts.runnerProjectionDecisionDigest != generation.runnerProjectionDecisionDigest || facts.schemaBundleDigest != generation.schemaBundleDigest || runtimeReceipt.kind != "runtime" || runtimeReceipt.digest.Validate() != nil || runtimeReceipt.sizeBytes == 0 || runtimeReceipt.sizeBytes > maxRuntimeTarSize || recoveryReceipt.kind != "decision_recovery" || recoveryReceipt.digest.Validate() != nil || recoveryReceipt.sizeBytes == 0 || recoveryReceipt.sizeBytes > maxDecisionRecoveryArtifactBytes {
+		return verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, fail(CodeEvidenceRecoveryRequired, "generation-recovery-witness", "same-verifier facts or receipt facts are incomplete", nil)
+	}
 	chain := verifiedEvidenceChainWitness{
 		maxAttempts: map[string]uint32{}, finalStatementIndex: map[string]uint32{}, finalCatalogDigest: map[string]Digest{},
 		plans: map[string]exactStatementEvidenceWitness{}, retryReceipts: map[Digest]verifiedRetryReceipt{}, ambiguousBoundaries: map[Digest]ownedAmbiguousBoundaryWitness{},
-		runtimeReceipt:  ownedContentReceiptWitness{"runtime", candidate.verifiedRun.outerArtifactDigest, candidate.verifiedRun.outerArtifactSizeBytes},
-		recoveryReceipt: ownedContentReceiptWitness{"decision_recovery", candidate.verifiedRun.decisionRecoveryArtifactSHA256, candidate.verifiedRun.decisionRecoveryArtifactSizeBytes},
+		runtimeReceipt: runtimeReceipt, recoveryReceipt: recoveryReceipt,
 	}
 	for _, migration := range facts.orderedMigrations {
 		subjects := facts.statementSubjects[migration]
@@ -171,6 +182,26 @@ func buildBrandNewRecoveryWitness(candidate OwnedCurrentCandidate, generation ge
 		finalCatalogDigest: chain.finalCatalogDigest[facts.orderedMigrations[len(facts.orderedMigrations)-1]], chainWitness: chain,
 	}
 	return chain, schema, nil
+}
+
+func buildRegisteredBrandNewRecoveryWitness(planned *verifiedAdmissionRegisteredGeneration, current OwnedVerifiedDecision, header JournalHeader) (*admissionHistoricalVerificationFacts, verifiedEvidenceChainWitness, verifiedRecoverySchemaWitness, error) {
+	if planned == nil || header.Validate() != nil || !validVerifiedAdmissionRegisteredGeneration(planned, current) || !canonicalEqual(header, planned.descriptor.header) {
+		return nil, verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-recovery-facts", "registered successor facts are unavailable", nil)
+	}
+	facts, err := buildHistoricalVerificationFacts(planned.bundle, planned.bindings)
+	if err != nil || !validAdmissionRecoveryFacts(facts) || facts.manifestDigest != header.ManifestDigest || facts.runnerProjectionDecisionDigest != header.RunnerProjectionDecisionDigest || facts.schemaBundleDigest != header.SchemaBundleDigest || facts.authorityProfileDigest != header.AuthorityProfileDigest || facts.authorityBindingDigest != header.AuthorityBindingDigest {
+		return nil, verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-recovery-facts", "registered successor facts differ from the durable header", nil)
+	}
+	chain, schema, err := buildBrandNewRecoveryWitnessFromFacts(
+		planned.descriptor.identity,
+		facts,
+		ownedContentReceiptWitness{"runtime", planned.runtimeReceipt.digest, planned.runtimeReceipt.sizeBytes},
+		ownedContentReceiptWitness{"decision_recovery", planned.recoveryReceipt.digest, planned.recoveryReceipt.sizeBytes},
+	)
+	if err != nil {
+		return nil, verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, err
+	}
+	return facts, chain, schema, nil
 }
 
 func validGenerationReplayReceiptAuthority(replay *GenerationReplayReady, candidate OwnedCurrentCandidate, header JournalHeader) bool {
