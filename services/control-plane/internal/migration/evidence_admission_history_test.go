@@ -36,12 +36,14 @@ func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
 	facts := admissionHistoricalFactsFixture(t)
 	bindRecoveryFactsToCandidate(facts, candidate)
+	registered := registeredGenerationDigestFixture(t, candidate)
 	history := &VerifiedAdmissionHistory{
 		owner: candidate.verifiedRun.currentDecision.owner, candidateBinding: candidate.binding,
 		revision: 0, target: [32]byte{1}, fullSet: [32]byte{2}, transcriptCanonical: [32]byte{3},
 		currentFacts: facts,
 		rootFacts:    rootFactsForTest(t, nil), reservation: evidenceQuotaReservation{ReservedRecords: 1, ReservedJournalBytes: 2, ReservedSegments: 1, ReservedIndexRecords: 3, ReservedIndexBytes: 4},
-		quotaAdmission: rootQuotaAdmission{finalObjectCount: 1, finalObjectBytes: 2, journalCount: 3, journalReservedBytes: 4, indexCount: 5, indexReservedBytes: 6, targetIndexRecords: 7, targetIndexReservedBytes: 8},
+		quotaAdmission:   rootQuotaAdmission{finalObjectCount: 1, finalObjectBytes: 2, journalCount: 3, journalReservedBytes: 4, indexCount: 5, indexReservedBytes: 6, targetIndexRecords: 7, targetIndexReservedBytes: 8},
+		targetGeneration: registered,
 	}
 	want := admissionHistoryDigest(history)
 	mutations := []func(*VerifiedAdmissionHistory){
@@ -54,6 +56,12 @@ func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 			v.currentFacts.statementSubjects[v.currentFacts.orderedMigrations[0]][0][0]++
 		},
 		func(v *VerifiedAdmissionHistory) { v.reservation.ReservedCheckpointRecords++ }, func(v *VerifiedAdmissionHistory) { v.reservation.ReservedIndexBytes++ }, func(v *VerifiedAdmissionHistory) { v.reservation.ReservedBytes++ }, func(v *VerifiedAdmissionHistory) { v.quotaAdmission.targetIndexReservedBytes++ },
+		func(v *VerifiedAdmissionHistory) {
+			value := *v.targetGeneration
+			value.canonical[0]++
+			v.targetGeneration = &value
+		},
+		func(v *VerifiedAdmissionHistory) { v.targetGeneration = nil },
 	}
 	for index, mutate := range mutations {
 		value := *history
@@ -62,6 +70,99 @@ func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 			t.Fatalf("history digest omitted mutation %d", index)
 		}
 	}
+}
+
+func TestRegisteredGenerationDigestBindsEveryOwnedFact(t *testing.T) {
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
+	registered := registeredGenerationDigestFixture(t, candidate)
+	want := verifiedAdmissionRegisteredGenerationDigest(registered)
+	if want == ([32]byte{}) {
+		t.Fatal("registered generation digest is empty")
+	}
+	mutations := map[string]func(*verifiedAdmissionRegisteredGeneration){
+		"header": func(v *verifiedAdmissionRegisteredGeneration) { v.descriptor.header.ReservedRecords++ },
+		"replay tail": func(v *verifiedAdmissionRegisteredGeneration) {
+			v.descriptor.replayTailDigest = testDigest("other-tail")
+		},
+		"descriptor recovery": func(v *verifiedAdmissionRegisteredGeneration) {
+			v.descriptor.recoveryArtifactDigest = testDigest("other-descriptor-recovery")
+		},
+		"descriptor recovery size": func(v *verifiedAdmissionRegisteredGeneration) { v.descriptor.recoveryArtifactSize++ },
+		"decision":                 func(v *verifiedAdmissionRegisteredGeneration) { v.decision.digest = testDigest("other-decision") },
+		"bindings":                 func(v *verifiedAdmissionRegisteredGeneration) { v.bindings.expectedCanonical += "-drift" },
+		"bundle":                   func(v *verifiedAdmissionRegisteredGeneration) { v.bundle.ownedInputs.canonical[0]++ },
+		"artifact digest": func(v *verifiedAdmissionRegisteredGeneration) {
+			v.recoveryArtifact.digest = testDigest("other-artifact")
+		},
+		"artifact size":   func(v *verifiedAdmissionRegisteredGeneration) { v.recoveryArtifact.sizeBytes++ },
+		"runtime digest":  func(v *verifiedAdmissionRegisteredGeneration) { v.runtimeReceipt.digest = testDigest("other-runtime") },
+		"runtime size":    func(v *verifiedAdmissionRegisteredGeneration) { v.runtimeReceipt.sizeBytes++ },
+		"recovery digest": func(v *verifiedAdmissionRegisteredGeneration) { v.recoveryReceipt.digest = testDigest("other-receipt") },
+		"recovery size":   func(v *verifiedAdmissionRegisteredGeneration) { v.recoveryReceipt.sizeBytes++ },
+		"policy": func(v *verifiedAdmissionRegisteredGeneration) {
+			v.policy = &VerifiedHistoricalRecoveryPolicy{digest: testDigest("policy")}
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			value := cloneRegisteredGenerationDigestFixture(registered)
+			mutate(value)
+			if verifiedAdmissionRegisteredGenerationDigest(value) == want {
+				t.Fatal("registered generation digest omitted mutation")
+			}
+		})
+	}
+}
+
+func registeredGenerationDigestFixture(t *testing.T, candidate OwnedCurrentCandidate) *verifiedAdmissionRegisteredGeneration {
+	t.Helper()
+	bundle := quotaAdmissionBundleForTest(t)
+	bindings, err := candidate.verifiedRun.currentDecision.decision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := &VerifiedAdmissionHistory{
+		candidateBinding: candidate.binding, target: digestRaw(bindings.executionLineageDigest), rootFacts: rootFactsForTest(t, nil),
+		reservation: evidenceQuotaReservation{
+			ReservedRecords: 2, ReservedJournalBytes: 3, ReservedSegments: 1, ReservedIndexRecords: 4,
+			ReservedIndexBytes: lineageRecordFrameLimits[LineageRecordHeader] + lineageRecordFrameLimits[LineageRecordGenerationReserved],
+			ReservedBytes:      3 + lineageRecordFrameLimits[LineageRecordHeader] + lineageRecordFrameLimits[LineageRecordGenerationReserved],
+		},
+	}
+	_, reservedFrame, _, _, err := buildBrandNewAdmissionFrames(history, candidate)
+	if err != nil || reservedFrame.Record.Reserved == nil {
+		t.Fatalf("registered generation fixture: %v", err)
+	}
+	reserved := reservedFrame.Record.Reserved
+	header := cloneProjectionValue(reserved.PlannedSegment0Header)
+	descriptor := GenerationDescriptor{
+		identity: generationIdentity{candidate.owner, header.ExecutionLineageDigest, header.JournalIdentityDigest, header.RunnerProjectionDecisionDigest, header.SchemaBundleDigest},
+		header:   header, replayTailDigest: reserved.ExpectedSegment0HeaderDigest,
+		recoveryArtifactDigest: header.DecisionRecoveryArtifactSHA256, recoveryArtifactSize: header.DecisionRecoveryArtifactSizeBytes,
+	}
+	runtimeBinding := &verifiedContentReceiptBinding{owner: candidate.owner, kind: durableRuntimeContentObject, digest: header.OuterArtifactDigest, sizeBytes: header.OuterArtifactSizeBytes}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{owner: candidate.owner, kind: durableDecisionRecoveryContentObject, digest: header.DecisionRecoveryArtifactSHA256, sizeBytes: header.DecisionRecoveryArtifactSizeBytes}
+	registered := &verifiedAdmissionRegisteredGeneration{
+		descriptor: descriptor, decision: candidate.verifiedRun.currentDecision, bindings: bindings.ownedCopy(), bundle: bundle,
+		recoveryArtifact: ownedDecisionRecoveryArtifactCopy(candidate.decisionRecoveryArtifact),
+		runtimeReceipt:   VerifiedContentReceipt{owner: candidate.owner, kind: durableRuntimeContentObject, digest: runtimeBinding.digest, sizeBytes: runtimeBinding.sizeBytes, binding: runtimeBinding},
+		recoveryReceipt:  VerifiedDecisionRecoveryReceipt{owner: candidate.owner, kind: durableDecisionRecoveryContentObject, digest: recoveryBinding.digest, sizeBytes: recoveryBinding.sizeBytes, binding: recoveryBinding},
+	}
+	registered.canonical = verifiedAdmissionRegisteredGenerationDigest(registered)
+	if registered.canonical == ([32]byte{}) {
+		t.Fatal("registered generation fixture did not seal")
+	}
+	return registered
+}
+
+func cloneRegisteredGenerationDigestFixture(value *verifiedAdmissionRegisteredGeneration) *verifiedAdmissionRegisteredGeneration {
+	result := *value
+	result.descriptor.header = cloneProjectionValue(value.descriptor.header)
+	result.bindings = value.bindings.ownedCopy()
+	result.recoveryArtifact = ownedDecisionRecoveryArtifactCopy(value.recoveryArtifact)
+	bundle := *value.bundle
+	result.bundle = &bundle
+	return &result
 }
 
 func TestAdmissionHistoryRecoveryFactsAreDeepOwnedAndClosed(t *testing.T) {

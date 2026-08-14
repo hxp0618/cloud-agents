@@ -52,37 +52,41 @@ type VerifiedRuntimeArtifact struct {
 }
 
 type VerifiedContentReceipt struct {
-	owner       *evidenceOwnerToken
-	kind        durableContentObjectKind
-	digest      Digest
-	sizeBytes   uint64
-	publication *evidencefs.Publication
-	binding     *verifiedContentReceiptBinding
+	owner                 *evidenceOwnerToken
+	kind                  durableContentObjectKind
+	digest                Digest
+	sizeBytes             uint64
+	publication           *evidencefs.Publication
+	registeredPublication *evidencefs.RegisteredPublication
+	binding               *verifiedContentReceiptBinding
 }
 
 type VerifiedDecisionRecoveryReceipt struct {
-	owner       *evidenceOwnerToken
-	kind        durableContentObjectKind
-	digest      Digest
-	sizeBytes   uint64
-	publication *evidencefs.Publication
-	binding     *verifiedDecisionRecoveryReceiptBinding
+	owner                 *evidenceOwnerToken
+	kind                  durableContentObjectKind
+	digest                Digest
+	sizeBytes             uint64
+	publication           *evidencefs.Publication
+	registeredPublication *evidencefs.RegisteredPublication
+	binding               *verifiedDecisionRecoveryReceiptBinding
 }
 
 type verifiedContentReceiptBinding struct {
-	owner       *evidenceOwnerToken
-	kind        durableContentObjectKind
-	digest      Digest
-	sizeBytes   uint64
-	publication *evidencefs.Publication
+	owner                 *evidenceOwnerToken
+	kind                  durableContentObjectKind
+	digest                Digest
+	sizeBytes             uint64
+	publication           *evidencefs.Publication
+	registeredPublication *evidencefs.RegisteredPublication
 }
 
 type verifiedDecisionRecoveryReceiptBinding struct {
-	owner       *evidenceOwnerToken
-	kind        durableContentObjectKind
-	digest      Digest
-	sizeBytes   uint64
-	publication *evidencefs.Publication
+	owner                 *evidenceOwnerToken
+	kind                  durableContentObjectKind
+	digest                Digest
+	sizeBytes             uint64
+	publication           *evidencefs.Publication
+	registeredPublication *evidencefs.RegisteredPublication
 }
 
 var verifiedContentReceiptRegistry sync.Map
@@ -137,14 +141,14 @@ func mintDecisionRecoveryReceipt(owner *evidenceOwnerToken, artifact VerifiedDec
 }
 
 func validRuntimeReceipt(receipt VerifiedContentReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
-	if receipt.owner != owner || owner == nil || receipt.kind != durableRuntimeContentObject || receipt.digest != digest || receipt.sizeBytes != size || receipt.publication == nil || receipt.binding == nil || receipt.binding.owner != owner || receipt.binding.kind != receipt.kind || receipt.binding.digest != digest || receipt.binding.sizeBytes != size || receipt.binding.publication != receipt.publication || !receipt.publication.Matches(digestRaw(digest), size) {
+	if receipt.owner != owner || owner == nil || receipt.kind != durableRuntimeContentObject || receipt.digest != digest || receipt.sizeBytes != size || receipt.publication == nil || receipt.registeredPublication != nil || receipt.binding == nil || receipt.binding.owner != owner || receipt.binding.kind != receipt.kind || receipt.binding.digest != digest || receipt.binding.sizeBytes != size || receipt.binding.publication != receipt.publication || receipt.binding.registeredPublication != nil || !receipt.publication.Matches(digestRaw(digest), size) {
 		return false
 	}
 	registered, ok := verifiedContentReceiptRegistry.Load(receipt.binding)
 	return ok && registered == receipt.binding
 }
 func validDecisionRecoveryReceipt(receipt VerifiedDecisionRecoveryReceipt, owner *evidenceOwnerToken, digest Digest, size uint64) bool {
-	if receipt.owner != owner || owner == nil || receipt.kind != durableDecisionRecoveryContentObject || receipt.digest != digest || receipt.sizeBytes != size || receipt.publication == nil || receipt.binding == nil || receipt.binding.owner != owner || receipt.binding.kind != receipt.kind || receipt.binding.digest != digest || receipt.binding.sizeBytes != size || receipt.binding.publication != receipt.publication || !receipt.publication.Matches(digestRaw(digest), size) {
+	if receipt.owner != owner || owner == nil || receipt.kind != durableDecisionRecoveryContentObject || receipt.digest != digest || receipt.sizeBytes != size || receipt.publication == nil || receipt.registeredPublication != nil || receipt.binding == nil || receipt.binding.owner != owner || receipt.binding.kind != receipt.kind || receipt.binding.digest != digest || receipt.binding.sizeBytes != size || receipt.binding.publication != receipt.publication || receipt.binding.registeredPublication != nil || !receipt.publication.Matches(digestRaw(digest), size) {
 		return false
 	}
 	registered, ok := verifiedDecisionRecoveryReceiptRegistry.Load(receipt.binding)
