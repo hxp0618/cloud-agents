@@ -48,6 +48,7 @@ type backend interface {
 	isNotExist(error) bool
 	pread(int, []byte, int64) (int, error)
 	pwrite(int, []byte, int64) (int, error)
+	truncate(int, int64) error
 	write(int, []byte) (int, error)
 	fdatasync(int) error
 	fsync(int) error

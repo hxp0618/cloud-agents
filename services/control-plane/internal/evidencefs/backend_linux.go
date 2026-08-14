@@ -23,6 +23,8 @@ const (
 // mechanics do not mint trusted mount authority.
 type linuxBackend struct{}
 
+var _ backend = linuxBackend{}
+
 func (linuxBackend) openRoot(path string) (int, error) {
 	anchor, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
@@ -84,6 +86,7 @@ func (linuxBackend) fstat(fd int) (fileStat, error) {
 func (linuxBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
 	return unix.Pwrite(fd, source, offset)
 }
+func (linuxBackend) truncate(fd int, size int64) error { return unix.Ftruncate(fd, size) }
 
 func linuxFileStat(raw unix.Stat_t) (fileStat, error) {
 	if raw.Size < 0 {

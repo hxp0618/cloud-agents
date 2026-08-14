@@ -31,59 +31,64 @@ type fakeHandle struct {
 }
 
 type fakeBackend struct {
-	root               *fakeNode
-	handles            map[int]fakeHandle
-	nextFD             int
-	nextInode          uint64
-	uid                uint32
-	device             uint64
-	rootOpens          int
-	directoryOpens     map[string]int
-	mkdirs             []string
-	lstats             int
-	preads             int
-	writes             int
-	failWriteAt        int
-	onWrite            func(*fakeBackend, *fakeNode, int)
-	fdatasyncs         int
-	fdatasyncNames     []string
-	onFdatasync        func(*fakeBackend, *fakeNode, int)
-	fsyncs             int
-	renames            int
-	unlinks            int
-	partialWrite       int
-	renameConflict     bool
-	conflictContent    []byte
-	failFdatasync      bool
-	failFdatasyncAt    int
-	failFsync          bool
-	failUnlock         bool
-	failCloseNames     map[string]bool
-	failCloseAt        map[string]int
-	closeNameCounts    map[string]int
-	closeAttempts      []string
-	unlockAttempts     int
-	unlockInodes       []uint64
-	onUnlock           func(*fakeBackend, *fakeNode, int)
-	failRename         bool
-	replaceOnOpen      string
-	replaceOnOpenAt    int
-	replaceAfterLock   bool
-	failCloseAfterLock bool
-	openNameCounts     map[string]int
-	consumeDirents     bool
-	readDirErr         error
-	readDirCalls       int
-	onReadDir          func(*fakeBackend, *fakeNode, int)
-	preadCalls         int
-	onPread            func(*fakeBackend, *fakeNode, int)
-	tryLockAttempts    []string
-	onTryLock          func(*fakeBackend, *fakeNode, int)
-	busyInodeAttempts  map[uint64]int
-	failTryLockInodes  map[uint64]bool
-	failCloseName      string
-	failOpenNames      map[string]error
-	nonce              [16]byte
+	root                *fakeNode
+	handles             map[int]fakeHandle
+	nextFD              int
+	nextInode           uint64
+	uid                 uint32
+	device              uint64
+	rootOpens           int
+	directoryOpens      map[string]int
+	mkdirs              []string
+	lstats              int
+	preads              int
+	writes              int
+	failWriteAt         int
+	onWrite             func(*fakeBackend, *fakeNode, int)
+	truncates           int
+	truncateNames       []string
+	failTruncateAt      int
+	failTruncateAfterAt int
+	onTruncate          func(*fakeBackend, *fakeNode, int)
+	fdatasyncs          int
+	fdatasyncNames      []string
+	onFdatasync         func(*fakeBackend, *fakeNode, int)
+	fsyncs              int
+	renames             int
+	unlinks             int
+	partialWrite        int
+	renameConflict      bool
+	conflictContent     []byte
+	failFdatasync       bool
+	failFdatasyncAt     int
+	failFsync           bool
+	failUnlock          bool
+	failCloseNames      map[string]bool
+	failCloseAt         map[string]int
+	closeNameCounts     map[string]int
+	closeAttempts       []string
+	unlockAttempts      int
+	unlockInodes        []uint64
+	onUnlock            func(*fakeBackend, *fakeNode, int)
+	failRename          bool
+	replaceOnOpen       string
+	replaceOnOpenAt     int
+	replaceAfterLock    bool
+	failCloseAfterLock  bool
+	openNameCounts      map[string]int
+	consumeDirents      bool
+	readDirErr          error
+	readDirCalls        int
+	onReadDir           func(*fakeBackend, *fakeNode, int)
+	preadCalls          int
+	onPread             func(*fakeBackend, *fakeNode, int)
+	tryLockAttempts     []string
+	onTryLock           func(*fakeBackend, *fakeNode, int)
+	busyInodeAttempts   map[uint64]int
+	failTryLockInodes   map[uint64]bool
+	failCloseName       string
+	failOpenNames       map[string]error
+	nonce               [16]byte
 }
 
 func newFakeBackend() *fakeBackend {
@@ -337,6 +342,32 @@ func (f *fakeBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
 	copy(node.data[int(offset):end], source[:n])
 	node.stat.size = uint64(len(node.data))
 	return n, nil
+}
+
+func (f *fakeBackend) truncate(fd int, size int64) error {
+	f.truncates++
+	node, err := f.node(fd)
+	if err != nil || size < 0 {
+		return fakeNotExist
+	}
+	f.truncateNames = append(f.truncateNames, node.name)
+	if f.onTruncate != nil {
+		f.onTruncate(f, node, f.truncates)
+	}
+	if f.failTruncateAt > 0 && f.truncates == f.failTruncateAt {
+		return errors.New("truncate")
+	}
+	next := int(size)
+	if next < len(node.data) {
+		node.data = node.data[:next]
+	} else if next > len(node.data) {
+		node.data = append(node.data, make([]byte, next-len(node.data))...)
+	}
+	node.stat.size = uint64(next)
+	if f.failTruncateAfterAt > 0 && f.truncates == f.failTruncateAfterAt {
+		return errors.New("truncate")
+	}
+	return nil
 }
 
 func (f *fakeBackend) write(fd int, source []byte) (int, error) {
