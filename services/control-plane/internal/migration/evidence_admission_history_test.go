@@ -102,6 +102,7 @@ func TestRegisteredGenerationDigestBindsEveryOwnedFact(t *testing.T) {
 		"policy": func(v *verifiedAdmissionRegisteredGeneration) {
 			v.policy = &VerifiedHistoricalRecoveryPolicy{digest: testDigest("policy")}
 		},
+		"replay": func(v *verifiedAdmissionRegisteredGeneration) { v.replay.canonical[0]++ },
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -147,6 +148,7 @@ func registeredGenerationDigestFixture(t *testing.T, candidate OwnedCurrentCandi
 		recoveryArtifact: ownedDecisionRecoveryArtifactCopy(candidate.decisionRecoveryArtifact),
 		runtimeReceipt:   VerifiedContentReceipt{owner: candidate.owner, kind: durableRuntimeContentObject, digest: runtimeBinding.digest, sizeBytes: runtimeBinding.sizeBytes, binding: runtimeBinding},
 		recoveryReceipt:  VerifiedDecisionRecoveryReceipt{owner: candidate.owner, kind: durableDecisionRecoveryContentObject, digest: recoveryBinding.digest, sizeBytes: recoveryBinding.sizeBytes, binding: recoveryBinding},
+		replay:           &verifiedAdmissionGenerationReplay{canonical: [32]byte{9}},
 	}
 	registered.canonical = verifiedAdmissionRegisteredGenerationDigest(registered)
 	if registered.canonical == ([32]byte{}) {
@@ -162,6 +164,10 @@ func cloneRegisteredGenerationDigestFixture(value *verifiedAdmissionRegisteredGe
 	result.recoveryArtifact = ownedDecisionRecoveryArtifactCopy(value.recoveryArtifact)
 	bundle := *value.bundle
 	result.bundle = &bundle
+	if value.replay != nil {
+		replay := *value.replay
+		result.replay = &replay
+	}
 	return &result
 }
 

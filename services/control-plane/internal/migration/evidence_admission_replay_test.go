@@ -180,7 +180,7 @@ func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *test
 		t.Fatal(err)
 	}
 	got := transcript.lineages[0].generations[0]
-	if got.runtimeInspection == nil || got.remainingIndexBytes != inspection.reservation.ReservedIndexBytes-8 || got.remainingIndexRecords != inspection.reservation.ReservedIndexRecords-1 || transcript.journalReservedBytes != inspection.reservation.ReservedJournalBytes {
+	if got.runtimeInspection == nil || got.indexHeaderDebited || got.remainingIndexBytes != inspection.reservation.ReservedIndexBytes-8 || got.remainingIndexRecords != inspection.reservation.ReservedIndexRecords-1 || transcript.journalReservedBytes != inspection.reservation.ReservedJournalBytes {
 		t.Fatalf("runtime inspection did not bind generation: %+v", got)
 	}
 	t.Run("brand-new-lineage-header-debit", func(t *testing.T) {
@@ -201,7 +201,7 @@ func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *test
 			t.Fatal(err)
 		}
 		got := value.lineages[0].generations[0]
-		if got.runtimeInspection == nil || got.runtimeInspection.reservation != withHeader || got.remainingIndexRecords != withHeader.ReservedIndexRecords-2 || got.remainingIndexBytes != withHeader.ReservedIndexBytes-25 {
+		if got.runtimeInspection == nil || !got.indexHeaderDebited || got.runtimeInspection.reservation != withHeader || got.remainingIndexRecords != withHeader.ReservedIndexRecords-2 || got.remainingIndexBytes != withHeader.ReservedIndexBytes-25 {
 			t.Fatalf("lineage header reservation/debit was not restored: %+v", got)
 		}
 	})
@@ -284,6 +284,12 @@ func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *test
 		t.Fatal("lineage header framed-byte mutation did not change transcript digest")
 	}
 	transcript.lineages[0].indexHeaderFramedBytes--
+	before = admissionReplayCanonicalDigest(transcript)
+	transcript.lineages[0].generations[0].indexHeaderDebited = true
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("lineage header debit mutation did not change transcript digest")
+	}
+	transcript.lineages[0].generations[0].indexHeaderDebited = false
 	before = admissionReplayCanonicalDigest(transcript)
 	transcript.lineages[0].generations[0].runtimeInspection.maxAttempts++
 	if before == admissionReplayCanonicalDigest(transcript) {

@@ -79,6 +79,7 @@ type admissionReplayGeneration struct {
 	verificationCatalogContract                                                                                 [32]byte
 	runtimeInspection                                                                                           *admissionReplayRuntimeInspection
 	remainingIndexRecords, remainingIndexBytes                                                                  uint64
+	indexHeaderDebited                                                                                          bool
 	supersessionAuthorityDigest                                                                                 Digest
 	oldCheckpointRecordDigest, oldActivationRecordDigest, oldInitialJournalTailDigest                           *Digest
 }
@@ -913,6 +914,7 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 			}
 			generation.runtimeInspection = nil
 			generation.remainingIndexRecords, generation.remainingIndexBytes = 0, 0
+			generation.indexHeaderDebited = false
 			var key [64]byte
 			copy(key[:32], lineage.id[:])
 			journal := digestRaw(generation.journalID)
@@ -987,6 +989,7 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 			}
 			generation.remainingIndexRecords = reservation.ReservedIndexRecords - consumedRecords
 			generation.remainingIndexBytes = reservation.ReservedIndexBytes - consumedBytes
+			generation.indexHeaderDebited = ownsIndexHeader
 			owned := *inspection
 			owned.statementCounts = append([]uint64(nil), inspection.statementCounts...)
 			owned.reservation = reservation
@@ -2193,6 +2196,11 @@ func admissionReplayCanonicalDigest(t *admissionReplayTranscript) [32]byte {
 			}
 			writeAdmissionUint(h, generation.remainingIndexRecords)
 			writeAdmissionUint(h, generation.remainingIndexBytes)
+			if generation.indexHeaderDebited {
+				h.Write([]byte{1})
+			} else {
+				h.Write([]byte{0})
+			}
 		}
 	}
 	writeAdmissionUint(h, uint64(len(t.objects)))

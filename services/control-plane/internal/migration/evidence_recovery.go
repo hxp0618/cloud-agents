@@ -139,15 +139,39 @@ func buildRecoverySnapshot(frames []EvidenceFrame, cursor JournalCursor, generat
 	if cursor.nextSequence != frames[len(frames)-1].Sequence+1 || cursor.previousRecordDigest == nil || *cursor.previousRecordDigest != tail {
 		return nil, invalidEvidence("recovery-snapshot", "cursor tail")
 	}
+	var compact *admissionReplayRecoveryTail
+	for index := 1; index < len(frames); index++ {
+		if frames[index].RecordKind == EvidenceRecordHeader {
+			continue
+		}
+		if compact == nil {
+			compact = &admissionReplayRecoveryTail{}
+		}
+		if err := compact.observe(frames[index]); err != nil {
+			return nil, err
+		}
+	}
+	return buildRecoverySnapshotFromTail(*header, compact, cursor, generation, continuation, schema)
+}
+
+// buildRecoverySnapshotFromTail is the compact post-validation constructor
+// shared by live replay and ALL-history admission. Its caller must first prove
+// the complete journal/index structure and the same-verifier statement/schema
+// facts; this function owns only the bounded final attempt bodies.
+func buildRecoverySnapshotFromTail(header JournalHeader, tail *admissionReplayRecoveryTail, cursor JournalCursor, generation generationIdentity, continuation recoveredContinuation, schema verifiedRecoverySchemaWitness) (*RecoverySnapshot, error) {
+	if !cursor.Valid() || cursor.previousRecordDigest == nil || !sameGenerationIdentity(cursor.generation, generation) || schema.owner == nil || schema.owner != generation.owner || !sameGenerationIdentity(schema.generation, generation) || header.Validate() != nil || !sameGenerationHeader(generation, header) {
+		return nil, invalidEvidence("recovery-snapshot", "owner, generation, cursor, header, or schema")
+	}
+	journalTail := *cursor.previousRecordDigest
 	if continuation.owned != nil {
-		if continuation.inheritedWithoutContext || continuation.owned.owner != generation.owner || !sameGenerationIdentity(continuation.owned.generation, generation) || continuation.owned.tailDigest != tail || !sameCursorIdentity(continuation.owned.cursor, cursor) {
+		if continuation.inheritedWithoutContext || continuation.owned.owner != generation.owner || !sameGenerationIdentity(continuation.owned.generation, generation) || continuation.owned.tailDigest != journalTail || !sameCursorIdentity(continuation.owned.cursor, cursor) {
 			return nil, invalidEvidence("recovery-snapshot", "continuation injection")
 		}
 		if err := continuation.owned.value.Validate(); err != nil {
 			return nil, err
 		}
 	}
-	s := &RecoverySnapshot{owner: generation.owner, generation: generation, cursor: cursor.clone(), tailDigest: tail, state: RecoveryBrandNew, nextPermittedAction: RecoveryBeginFirstAttempt}
+	s := &RecoverySnapshot{owner: generation.owner, generation: generation, cursor: cursor.clone(), tailDigest: journalTail, state: RecoveryBrandNew, nextPermittedAction: RecoveryBeginFirstAttempt}
 	if continuation.owned != nil || continuation.inheritedWithoutContext {
 		s.state = RecoveryBrandNewInherited
 		s.lineageContinuation = cloneOwnedRecovered(continuation.owned)
@@ -165,68 +189,114 @@ func buildRecoverySnapshot(frames []EvidenceFrame, cursor JournalCursor, generat
 			}
 		}
 	}
-
-	var intentFrame, intermediateFrame, commitFrame, terminalFrame, resolutionFrame *EvidenceFrame
-	for i := 1; i < len(frames); i++ {
-		frame := &frames[i]
-		switch frame.RecordKind {
-		case EvidenceRecordStatementIntent:
-			intentFrame, intermediateFrame, commitFrame, terminalFrame, resolutionFrame = frame, nil, nil, nil, nil
-		case EvidenceRecordIntermediate:
-			intermediateFrame = frame
-		case EvidenceRecordCommitIntent:
-			commitFrame = frame
-		case EvidenceRecordAttemptTerminal:
-			terminalFrame, resolutionFrame = frame, nil
-		case EvidenceRecordAmbiguousResolution:
-			resolutionFrame = frame
-		}
-	}
-	if intentFrame == nil {
+	if tail == nil {
 		return s, nil
 	}
-	intent := cloneProjectionValue(*intentFrame.Record.StatementIntent)
-	s.migrationID, s.attemptIndex = recoveryStringPointer(intent.MigrationID), recoveryUint32Pointer(intent.AttemptIndex)
-	s.previousAttemptTerminalDigest = cloneDigestPointer(intent.PreviousAttemptTerminalDigest)
-	s.lastStatementIntentRecordDigest = digestPointer(intentFrame.RecordDigest)
-	s.lastStatementIntent = recoveredValue(generation, cursor, tail, intentFrame.RecordDigest, intent)
-	maxAttempts := schema.maxAttempts[intent.MigrationID]
+	if err := validateAdmissionRecoveryTail(tail); err != nil || tail.migrationID == "" || tail.attemptIndex == 0 || !admissionRecoveryTailOrderValid(tail) {
+		return nil, invalidEvidence("recovery-snapshot", "compact recovery tail")
+	}
+	s.migrationID, s.attemptIndex = recoveryStringPointer(tail.migrationID), recoveryUint32Pointer(tail.attemptIndex)
+	maxAttempts := schema.maxAttempts[tail.migrationID]
 	if maxAttempts == 0 {
 		return nil, invalidEvidence("recovery-snapshot", "missing max attempts")
 	}
-	if intermediateFrame == nil {
-		s.state = RecoveryDanglingStatementIntent
-		s.nextPermittedAction = recoveryAbortAction(intent.AttemptIndex, maxAttempts)
-		return s, nil
+	if tail.intent != nil {
+		intent := cloneProjectionValue(tail.intent.body)
+		s.previousAttemptTerminalDigest = cloneDigestPointer(intent.PreviousAttemptTerminalDigest)
+		s.lastStatementIntentRecordDigest = digestPointer(tail.intent.recordDigest)
+		s.lastStatementIntent = recoveredValue(generation, cursor, journalTail, tail.intent.recordDigest, intent)
 	}
-	intermediate := cloneProjectionValue(*intermediateFrame.Record.Intermediate)
-	s.lastIntermediateEvidenceRecordDigest = digestPointer(intermediateFrame.RecordDigest)
-	s.lastIntermediateStateDigest = digestPointer(intermediate.State.IntermediateStateDigest)
-	s.lastIntermediateEvidence = recoveredValue(generation, cursor, tail, intermediateFrame.RecordDigest, intermediate)
-	if commitFrame == nil && terminalFrame == nil {
-		s.state = RecoveryDanglingIntermediate
-		s.nextPermittedAction = recoveryAbortAction(intent.AttemptIndex, maxAttempts)
-		return s, nil
+	if tail.intermediate != nil {
+		intermediate := cloneProjectionValue(tail.intermediate.body)
+		s.lastIntermediateEvidenceRecordDigest = digestPointer(tail.intermediate.recordDigest)
+		s.lastIntermediateStateDigest = digestPointer(intermediate.State.IntermediateStateDigest)
+		s.lastIntermediateEvidence = recoveredValue(generation, cursor, journalTail, tail.intermediate.recordDigest, intermediate)
 	}
-	if commitFrame != nil {
-		commit := cloneProjectionValue(*commitFrame.Record.CommitIntent)
-		s.lastCommitIntentRecordDigest = digestPointer(commitFrame.RecordDigest)
-		s.commitIntent = recoveredValue(generation, cursor, tail, commitFrame.RecordDigest, commit)
+	if tail.commit != nil {
+		commit := cloneProjectionValue(tail.commit.body)
+		s.lastCommitIntentRecordDigest = digestPointer(tail.commit.recordDigest)
+		s.commitIntent = recoveredValue(generation, cursor, journalTail, tail.commit.recordDigest, commit)
 	}
-	if terminalFrame == nil {
+	if tail.terminal == nil {
+		if tail.intent == nil {
+			return nil, invalidEvidence("recovery-snapshot", "open recovery tail has no statement intent")
+		}
+		if tail.intermediate == nil {
+			s.state = RecoveryDanglingStatementIntent
+			s.nextPermittedAction = recoveryAbortAction(tail.attemptIndex, maxAttempts)
+			return s, nil
+		}
+		if tail.commit == nil {
+			s.state = RecoveryDanglingIntermediate
+			s.nextPermittedAction = recoveryAbortAction(tail.attemptIndex, maxAttempts)
+			return s, nil
+		}
 		s.state, s.nextPermittedAction = RecoveryDanglingCommitIntent, RecoveryReconcileCommit
 		return s, nil
 	}
-	terminal := cloneProjectionValue(*terminalFrame.Record.AttemptTerminal)
+	terminal := cloneProjectionValue(tail.terminal.body)
+	s.previousAttemptTerminalDigest = cloneDigestPointer(terminal.PreviousAttemptTerminalDigest)
 	s.lastTerminalDigest = digestPointer(terminal.TerminalDigest)
-	s.lastTerminal = recoveredValue(generation, cursor, tail, terminalFrame.RecordDigest, terminal)
-	if resolutionFrame != nil {
-		resolution := cloneProjectionValue(*resolutionFrame.Record.AmbiguousResolution)
-		s.lastResolutionDigest = digestPointer(resolution.ResolutionDigest)
-		s.lastResolution = recoveredValue(generation, cursor, tail, resolutionFrame.RecordDigest, resolution)
+	s.lastTerminal = recoveredValue(generation, cursor, journalTail, tail.terminal.recordDigest, terminal)
+	var resolution *AmbiguousResolutionState
+	if tail.resolution != nil {
+		value := cloneProjectionValue(tail.resolution.body)
+		resolution = &value
+		s.lastResolutionDigest = digestPointer(value.ResolutionDigest)
+		s.lastResolution = recoveredValue(generation, cursor, journalTail, tail.resolution.recordDigest, value)
 	}
-	setTerminalRecoveryState(s, terminal, resolutionFrame, schema, maxAttempts, intermediateFrame, commitFrame)
+	var intermediate *StatementIntermediateEvidence
+	if tail.intermediate != nil {
+		value := cloneProjectionValue(tail.intermediate.body)
+		intermediate = &value
+	}
+	var commit *CommitIntent
+	if tail.commit != nil {
+		value := cloneProjectionValue(tail.commit.body)
+		commit = &value
+	}
+	setTerminalRecoveryState(s, terminal, resolution, schema, maxAttempts, intermediate, commit)
 	return s, nil
+}
+
+func admissionRecoveryTailOrderValid(tail *admissionReplayRecoveryTail) bool {
+	if tail == nil {
+		return true
+	}
+	type boundary struct {
+		sequence uint64
+		previous *Digest
+		digest   Digest
+	}
+	var values []boundary
+	appendBoundary := func(sequence uint64, previous *Digest, digest Digest, migration string, attempt uint32) bool {
+		if migration != tail.migrationID || attempt != tail.attemptIndex || digest.Validate() != nil {
+			return false
+		}
+		values = append(values, boundary{sequence, previous, digest})
+		return true
+	}
+	if tail.intent != nil && !appendBoundary(tail.intent.sequence, tail.intent.previousRecordDigest, tail.intent.recordDigest, tail.intent.body.MigrationID, tail.intent.body.AttemptIndex) {
+		return false
+	}
+	if tail.intermediate != nil && !appendBoundary(tail.intermediate.sequence, tail.intermediate.previousRecordDigest, tail.intermediate.recordDigest, tail.intermediate.body.State.MigrationID, tail.intermediate.body.State.AttemptIndex) {
+		return false
+	}
+	if tail.commit != nil && !appendBoundary(tail.commit.sequence, tail.commit.previousRecordDigest, tail.commit.recordDigest, tail.commit.body.MigrationID, tail.commit.body.AttemptIndex) {
+		return false
+	}
+	if tail.terminal != nil && !appendBoundary(tail.terminal.sequence, tail.terminal.previousRecordDigest, tail.terminal.recordDigest, tail.terminal.body.MigrationID, tail.terminal.body.AttemptIndex) {
+		return false
+	}
+	if tail.resolution != nil && !appendBoundary(tail.resolution.sequence, tail.resolution.previousRecordDigest, tail.resolution.recordDigest, tail.resolution.body.MigrationID, tail.resolution.body.AttemptIndex) {
+		return false
+	}
+	for index := 1; index < len(values); index++ {
+		if values[index].sequence <= values[index-1].sequence || values[index].previous == nil || values[index].sequence == values[index-1].sequence+1 && *values[index].previous != values[index-1].digest {
+			return false
+		}
+	}
+	return len(values) != 0
 }
 
 func recoveredValue[T any](generation generationIdentity, cursor JournalCursor, tail, record Digest, value T) *OwnedRecovered[T] {
@@ -238,7 +308,7 @@ func recoveryAbortAction(attempt, max uint32) RecoveryAction {
 	}
 	return RecoveryAppendAbortedTerminal
 }
-func setTerminalRecoveryState(s *RecoverySnapshot, terminal AttemptTerminalState, resolution *EvidenceFrame, schema verifiedRecoverySchemaWitness, maxAttempts uint32, intermediate, commit *EvidenceFrame) {
+func setTerminalRecoveryState(s *RecoverySnapshot, terminal AttemptTerminalState, resolution *AmbiguousResolutionState, schema verifiedRecoverySchemaWitness, maxAttempts uint32, intermediate *StatementIntermediateEvidence, commit *CommitIntent) {
 	s.state = RecoveryTerminal
 	s.nextPermittedAction = RecoveryReturnFailure
 	switch terminal.Outcome {
@@ -257,8 +327,7 @@ func setTerminalRecoveryState(s *RecoverySnapshot, terminal AttemptTerminalState
 			s.state, s.nextPermittedAction = RecoveryAmbiguousUnresolved, RecoveryReconcileCommit
 			return
 		}
-		r := resolution.Record.AmbiguousResolution
-		switch r.Outcome {
+		switch resolution.Outcome {
 		case "resolved_committed":
 			if recoveryCommitIsFinal(terminal.MigrationID, schema, intermediate, commit) {
 				s.state, s.nextPermittedAction = RecoveryCompleted, RecoveryReturnSuccess
@@ -331,12 +400,12 @@ func validateRecoverySchemaWitness(schema verifiedRecoverySchemaWitness, frames 
 	return nil
 }
 
-func recoveryCommitIsFinal(migration string, schema verifiedRecoverySchemaWitness, intermediate, commit *EvidenceFrame) bool {
+func recoveryCommitIsFinal(migration string, schema verifiedRecoverySchemaWitness, intermediate *StatementIntermediateEvidence, commit *CommitIntent) bool {
 	index := migrationOrderIndex(schema.orderedMigrations, migration)
-	if index < 0 || index != len(schema.orderedMigrations)-1 || len(schema.durableObservedLedgerPrefix) != len(schema.orderedMigrations) || commit == nil || commit.Record.CommitIntent == nil || int(commit.Record.CommitIntent.ExpectedLedgerLength) != len(schema.orderedMigrations) || intermediate == nil || intermediate.Record.Intermediate == nil || intermediate.Record.Intermediate.PreledgerCatalogResult == nil {
+	if index < 0 || index != len(schema.orderedMigrations)-1 || len(schema.durableObservedLedgerPrefix) != len(schema.orderedMigrations) || commit == nil || int(commit.ExpectedLedgerLength) != len(schema.orderedMigrations) || intermediate == nil || intermediate.PreledgerCatalogResult == nil {
 		return false
 	}
-	return intermediate.Record.Intermediate.PreledgerCatalogResult.Digest == schema.finalCatalogDigest
+	return intermediate.PreledgerCatalogResult.Digest == schema.finalCatalogDigest
 }
 func migrationOrderIndex(order []string, id string) int {
 	for i := range order {

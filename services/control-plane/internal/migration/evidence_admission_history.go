@@ -41,6 +41,7 @@ type verifiedAdmissionRegisteredGeneration struct {
 	recoveryArtifact VerifiedDecisionRecoveryArtifact
 	runtimeReceipt   VerifiedContentReceipt
 	recoveryReceipt  VerifiedDecisionRecoveryReceipt
+	replay           *verifiedAdmissionGenerationReplay
 	canonical        [32]byte
 }
 
@@ -175,7 +176,8 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 		return nil, err
 	}
 	requiresTargetGeneration := targetState != "" && targetState != admissionLineageEmpty
-	if requiresTargetGeneration != (targetGeneration != nil) || targetGeneration != nil && digestRaw(targetGeneration.descriptor.identity.executionLineageDigest) != target {
+	requiresTargetReplay := admissionStateRequiresGenerationReplay(targetState)
+	if requiresTargetGeneration != (targetGeneration != nil) || targetGeneration != nil && (digestRaw(targetGeneration.descriptor.identity.executionLineageDigest) != target || requiresTargetReplay != (targetGeneration.replay != nil)) {
 		return nil, admissionFailed("admission-history", "target generation authority is incomplete or mismatched", nil)
 	}
 	history := &VerifiedAdmissionHistory{
@@ -320,6 +322,10 @@ func verifyAdmissionHistoryGeneration(ctx context.Context, lineage admissionRepl
 	if !retainRegistered {
 		return false, nil, nil
 	}
+	replay, err := bindVerifiedAdmissionGenerationReplay(lineage, generation, descriptor, facts)
+	if err != nil {
+		return false, nil, err
+	}
 	runtimePublication, err := runtimeView.RegisterPublication(ctx)
 	if err != nil {
 		return false, nil, mapEvidenceAdmissionError(err, "admission-history-runtime-publication")
@@ -334,7 +340,7 @@ func verifyAdmissionHistoryGeneration(ctx context.Context, lineage admissionRepl
 	}
 	verified := &verifiedAdmissionRegisteredGeneration{
 		descriptor: descriptor, decision: decision, bindings: bindings.ownedCopy(), policy: cloneHistoricalRecoveryPolicy(policy),
-		bundle: bundle, recoveryArtifact: ownedDecisionRecoveryArtifactCopy(artifact), runtimeReceipt: runtimeReceipt, recoveryReceipt: recoveryReceipt,
+		bundle: bundle, recoveryArtifact: ownedDecisionRecoveryArtifactCopy(artifact), runtimeReceipt: runtimeReceipt, recoveryReceipt: recoveryReceipt, replay: replay,
 	}
 	verified.canonical = verifiedAdmissionRegisteredGenerationDigest(verified)
 	if !validVerifiedAdmissionRegisteredGeneration(verified, current) {
@@ -492,7 +498,8 @@ func validVerifiedAdmissionHistory(history *VerifiedAdmissionHistory, candidate 
 		return false
 	}
 	requiresTargetGeneration := history.targetState != "" && history.targetState != admissionLineageEmpty
-	if requiresTargetGeneration != (history.targetGeneration != nil) || history.targetGeneration != nil && digestRaw(history.targetGeneration.descriptor.identity.executionLineageDigest) != history.target {
+	requiresTargetReplay := admissionStateRequiresGenerationReplay(history.targetState)
+	if requiresTargetGeneration != (history.targetGeneration != nil) || history.targetGeneration != nil && (digestRaw(history.targetGeneration.descriptor.identity.executionLineageDigest) != history.target || requiresTargetReplay != (history.targetGeneration.replay != nil) || history.targetGeneration.replay != nil && (history.targetGeneration.replay.cursor.lineageIndexNextSequence != history.targetIndexRecords || history.targetGeneration.replay.cursor.lineageIndexPreviousRecordDigest != history.targetIndexTail)) {
 		return false
 	}
 	registered, ok := verifiedAdmissionHistoryRegistry.Load(history.binding)
@@ -533,12 +540,16 @@ func cloneVerifiedAdmissionRegisteredGeneration(value *verifiedAdmissionRegister
 	result.bindings = value.bindings.ownedCopy()
 	result.policy = cloneHistoricalRecoveryPolicy(value.policy)
 	result.recoveryArtifact = ownedDecisionRecoveryArtifactCopy(value.recoveryArtifact)
+	result.replay = cloneVerifiedAdmissionGenerationReplay(value.replay)
 	return &result
 }
 
 func revokeVerifiedAdmissionRegisteredGeneration(value *verifiedAdmissionRegisteredGeneration) {
 	if value == nil {
 		return
+	}
+	if value.replay != nil && value.replay.cursor.valid != nil {
+		value.replay.cursor.valid.Store(false)
 	}
 	if value.runtimeReceipt.binding != nil {
 		verifiedContentReceiptRegistry.Delete(value.runtimeReceipt.binding)
@@ -557,7 +568,7 @@ func verifiedAdmissionRegisteredGenerationDigest(value *verifiedAdmissionRegiste
 		return [32]byte{}
 	}
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-verified-registered-generation/v1\x00"))
+	h.Write([]byte("cloud-agents-platform-verified-registered-generation/v2\x00"))
 	h.Write([]byte(header))
 	h.Write([]byte(value.bindings.expectedCanonical))
 	h.Write(value.bundle.ownedInputs.canonical[:])
@@ -574,13 +585,19 @@ func verifiedAdmissionRegisteredGenerationDigest(value *verifiedAdmissionRegiste
 		h.Write([]byte{1})
 		writeAdmissionString(h, value.policy.digest.String())
 	}
+	if value.replay == nil {
+		h.Write([]byte{0})
+	} else {
+		h.Write([]byte{1})
+		h.Write(value.replay.canonical[:])
+	}
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
 }
 
 func validVerifiedAdmissionRegisteredGeneration(value *verifiedAdmissionRegisteredGeneration, current OwnedVerifiedDecision) bool {
-	if value == nil || current.owner == nil || value.descriptor.identity.owner != current.owner.token || value.decision.owner != current.owner || value.decision.capability.owner != current.owner || value.bindings.runnerProjectionDecisionDigest != value.decision.digest || value.descriptor.identity.runnerProjectionDecisionDigest != value.decision.digest || value.descriptor.identity.executionLineageDigest != value.bindings.executionLineageDigest || value.descriptor.identity.schemaBundleDigest != value.bindings.schemaBundleDigest || value.descriptor.header.Validate() != nil || !sameGenerationHeader(value.descriptor.identity, value.descriptor.header) || value.bundle == nil || value.bundle.ownedInputs.canonical == ([32]byte{}) || value.bundle.ownedInputs.outerArtifactDigest != value.descriptor.header.OuterArtifactDigest || value.bundle.ownedInputs.outerArtifactSize != value.descriptor.header.OuterArtifactSizeBytes || !validRegisteredDecisionRecoveryArtifact(value.decision, value.bindings, value.descriptor, value.recoveryArtifact) || !validRegisteredRuntimeReceipt(value.runtimeReceipt, current.owner.token, value.descriptor.header.OuterArtifactDigest, value.descriptor.header.OuterArtifactSizeBytes) || !validRegisteredDecisionRecoveryReceipt(value.recoveryReceipt, current.owner.token, value.descriptor.header.DecisionRecoveryArtifactSHA256, value.descriptor.header.DecisionRecoveryArtifactSizeBytes) || !registeredReceiptsSameStore(value.runtimeReceipt, value.recoveryReceipt) || value.canonical == ([32]byte{}) || value.canonical != verifiedAdmissionRegisteredGenerationDigest(value) {
+	if value == nil || current.owner == nil || value.descriptor.identity.owner != current.owner.token || value.decision.owner != current.owner || value.decision.capability.owner != current.owner || value.bindings.runnerProjectionDecisionDigest != value.decision.digest || value.descriptor.identity.runnerProjectionDecisionDigest != value.decision.digest || value.descriptor.identity.executionLineageDigest != value.bindings.executionLineageDigest || value.descriptor.identity.schemaBundleDigest != value.bindings.schemaBundleDigest || value.descriptor.header.Validate() != nil || !sameGenerationHeader(value.descriptor.identity, value.descriptor.header) || value.bundle == nil || value.bundle.ownedInputs.canonical == ([32]byte{}) || value.bundle.ownedInputs.outerArtifactDigest != value.descriptor.header.OuterArtifactDigest || value.bundle.ownedInputs.outerArtifactSize != value.descriptor.header.OuterArtifactSizeBytes || !validRegisteredDecisionRecoveryArtifact(value.decision, value.bindings, value.descriptor, value.recoveryArtifact) || !validRegisteredRuntimeReceipt(value.runtimeReceipt, current.owner.token, value.descriptor.header.OuterArtifactDigest, value.descriptor.header.OuterArtifactSizeBytes) || !validRegisteredDecisionRecoveryReceipt(value.recoveryReceipt, current.owner.token, value.descriptor.header.DecisionRecoveryArtifactSHA256, value.descriptor.header.DecisionRecoveryArtifactSizeBytes) || !registeredReceiptsSameStore(value.runtimeReceipt, value.recoveryReceipt) || value.replay != nil && (!validVerifiedAdmissionGenerationReplay(value.replay, value.descriptor.identity) || value.replay.cursor.previousRecordDigest == nil || *value.replay.cursor.previousRecordDigest != value.descriptor.replayTailDigest || value.replay.reservation.ReservedRecords != value.descriptor.header.ReservedRecords || value.replay.reservation.ReservedBytes != value.descriptor.header.ReservedBytes || value.replay.reservation.ReservedSegments != value.descriptor.header.ReservedSegments) || value.canonical == ([32]byte{}) || value.canonical != verifiedAdmissionRegisteredGenerationDigest(value) {
 		return false
 	}
 	if _, _, err := value.bundle.ownedInputs.copyVerified(); err != nil {
@@ -598,4 +615,8 @@ func validVerifiedAdmissionRegisteredGeneration(value *verifiedAdmissionRegister
 	}
 	policyDigest, err := value.policy.subject.ComputeDigest()
 	return err == nil && policyDigest == value.policy.digest
+}
+
+func admissionStateRequiresGenerationReplay(state admissionReplayLineageState) bool {
+	return state == admissionLineageActiveInitial || state == admissionLineageActiveCheckpointed || state == admissionLineageActiveUnknownExtension
 }
