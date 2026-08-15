@@ -19,9 +19,12 @@
   unknown reconciliation，以及 sealed current `ActiveGeneration`/`EvidenceSession`；registered ancestor reopen 与 live
   successor 已完成 irreversible full-root reacquisition、adjacent
   `GenerationSuperseded → GenerationReserved`、successor activate/handoff/replay/recovery/journal 和同一 session current swap；
-  crash-reopened historical header-only successor 已在 `f654aae` 接入 production `BindSession` 的 B → C 闭图
-- Current slice：固定 trusted-mount provisioner/real ext4+xfs power-loss harness，随后再接 runner/DB `Connect`；production
-  constructor 继续 fail closed
+  crash-reopened historical header-only successor 已在 `f654aae` 接入 production `BindSession` 的 B → C 闭图；
+  `7b35a3f` 新增并由 `e230c74` 补齐 Linux/macOS SHA-256 tool portability 的 opt-in real Linux ext4/xfs
+  clean-restart matrix，在 test-only authority 下验证 actual publish/sync、cross-process flock、publisher kill、
+  fresh-process reopen 与 clean unmount/remount
+- Current slice：固定 trusted-mount provisioner 与 real ext4/xfs controller/host power-loss harness，随后再接 runner/DB
+  `Connect`；production constructor 继续 fail closed，`e230c74` clean-restart evidence 不构成 filesystem slice Done
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -66,8 +69,11 @@ Platform RC、Beta 或 GA。
   retained replay/recovery/journal 和 same-session current swap。
 - [`historical-successor-process-restart-20260816.md`](historical-successor-process-restart-20260816.md) 固定 source
   `f654aae`，记录 strict historical B replay 后的 one-way full-root reacquire、B → C materialization 与 current session wiring。
-- 三份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
-  仍没有 public `EvidenceSink` constructor、trusted mount、真实 process-restart/ext4+xfs power-loss 或 DB authority。
+- [`evidencefs-linux-filesystem-matrix-20260816.md`](evidencefs-linux-filesystem-matrix-20260816.md) 固定 source
+  `e230c74`，记录 OrbStack Linux/arm64 上真实 ext4/xfs loop mount、actual publish/sync、cross-process flock、
+  killed publisher 后 fresh process reopen 与 clean unmount/remount；production `Open` 同场继续 fail closed。
+- 四份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+  仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
 
@@ -92,5 +98,6 @@ receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`�
 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
 但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect` 与真实
-process-restart/ext4/XFS/power-loss 证据仍然开放。`f654aae` 已闭合 process-crash successor 的 production 代码路径，
-但因 production constructor 仍 pre-mutation reject，尚无真实进程重启正向证据。
+controller/host power-loss 证据仍然开放。`e230c74` 只在 package-private test authority 下完成 real ext4/xfs
+process-kill + clean-remount evidence；因 production constructor 仍 pre-mutation reject，它不是 production restart
+正向证据，也不允许越过 filesystem slice 进入 A2.1b。
