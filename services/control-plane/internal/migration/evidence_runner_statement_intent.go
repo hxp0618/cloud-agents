@@ -15,6 +15,7 @@ type runnerStatementIntentRecordRequest struct {
 	candidateBinding *verifiedEvidenceRunBinding
 	generation       generationIdentity
 	recoveryDigest   [32]byte
+	maxAttempts      uint32
 	plan             StatementPlan
 	authorityBefore  ProjectionResultEvidence
 	catalogBefore    ProjectionResultEvidence
@@ -54,11 +55,32 @@ func bindBrandNewRunnerStatementIntentRecord(plan StatementPlan, authorityBefore
 	if err != nil || headerFrame.Validate() != nil || headerFrame.RecordDigest != *cursor.previousRecordDigest || recovery.tailDigest != headerFrame.RecordDigest {
 		return nil, invalidEvidence("runner-statement-intent-record", "segment-zero header differs from the active cursor")
 	}
+	intent, err := buildBrandNewRunnerStatementIntent(
+		ownedPlan, authorityBefore, catalogBefore, catalogContractDigest,
+		header.SchemaBundleDigest, header.AuthorityProfileDigest, header.AuthorityBindingDigest,
+	)
+	if err != nil {
+		return nil, err
+	}
+	witness := ownedStatementIntentWitness{ownedAppendContext{
+		generation: generation,
+		cursor:     cursor.clone(),
+		prefix:     []EvidenceFrame{cloneProjectionValue(headerFrame)},
+		chain:      cloneRunnerEvidenceChainWitness(chain),
+	}, ownedPlan}
+	return bindOwnedEvidenceRecord(EvidenceRecord{StatementIntent: &intent}, witness)
+}
+
+func buildBrandNewRunnerStatementIntent(plan StatementPlan, authorityBefore, catalogBefore ProjectionResultEvidence, catalogContractDigest, schemaBundleDigest, authorityProfileDigest, authorityBindingDigest Digest) (StatementIntent, error) {
+	ownedPlan, err := cloneRunnerStatementIntentPlan(plan)
+	if err != nil || ownedPlan.StatementIndex != 0 || catalogContractDigest.Validate() != nil || schemaBundleDigest.Validate() != nil || authorityProfileDigest.Validate() != nil || authorityBindingDigest.Validate() != nil || !runnerStatementIntentProjectionEvidenceMatches(ownedPlan, authorityBefore, catalogBefore) {
+		return StatementIntent{}, invalidEvidence("runner-statement-intent-record", "plan, projection, catalog, or generation binding")
+	}
 	intent := StatementIntent{
-		SchemaBundleDigest:              header.SchemaBundleDigest,
+		SchemaBundleDigest:              schemaBundleDigest,
 		CatalogContractDigest:           catalogContractDigest,
-		AuthorityProfileDigest:          header.AuthorityProfileDigest,
-		AuthorityBindingDigest:          header.AuthorityBindingDigest,
+		AuthorityProfileDigest:          authorityProfileDigest,
+		AuthorityBindingDigest:          authorityBindingDigest,
 		MigrationID:                     ownedPlan.MigrationID,
 		AttemptIndex:                    1,
 		StatementIndex:                  ownedPlan.StatementIndex,
@@ -78,15 +100,9 @@ func bindBrandNewRunnerStatementIntentRecord(plan StatementPlan, authorityBefore
 		PreviousIntermediateStateDigest: nil,
 	}
 	if err := intent.Validate(); err != nil || intent.CatalogBeforeDigest != ownedPlan.ExpectedTransition.CatalogBefore.Digest {
-		return nil, invalidEvidence("runner-statement-intent-record", "statement intent differs from the exact first-statement plan")
+		return StatementIntent{}, invalidEvidence("runner-statement-intent-record", "statement intent differs from the exact first-statement plan")
 	}
-	witness := ownedStatementIntentWitness{ownedAppendContext{
-		generation: generation,
-		cursor:     cursor.clone(),
-		prefix:     []EvidenceFrame{cloneProjectionValue(headerFrame)},
-		chain:      cloneRunnerEvidenceChainWitness(chain),
-	}, ownedPlan}
-	return bindOwnedEvidenceRecord(EvidenceRecord{StatementIntent: &intent}, witness)
+	return intent, nil
 }
 
 func runnerStatementIntentProjectionEvidenceMatches(plan StatementPlan, authorityBefore, catalogBefore ProjectionResultEvidence) bool {

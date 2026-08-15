@@ -144,7 +144,8 @@ func TestRunnerStatementIntentRecordBinderHasNoUnreviewedConsumerOrMutationEdge(
 	symbols := map[string]bool{
 		"runnerStatementIntentRecordBinder": true, "runnerStatementIntentRecordRequest": true,
 		"bindRunnerStatementIntentRecord": true, "runnerStatementIntentRecordBinderSealed": true,
-		"bindBrandNewRunnerStatementIntentRecord": true, "runnerStatementIntentVerifiedSubject": true,
+		"bindBrandNewRunnerStatementIntentRecord": true, "buildBrandNewRunnerStatementIntent": true,
+		"runnerStatementIntentVerifiedSubject": true,
 	}
 	allowed := map[string]map[string]bool{
 		"evidence_runner_statement_intent.go": nil,
@@ -152,6 +153,10 @@ func TestRunnerStatementIntentRecordBinderHasNoUnreviewedConsumerOrMutationEdge(
 			"runnerStatementIntentRecordRequest": true, "bindRunnerStatementIntentRecord": true,
 			"runnerStatementIntentRecordBinderSealed": true, "bindBrandNewRunnerStatementIntentRecord": true,
 			"runnerStatementIntentVerifiedSubject": true,
+		},
+		"runner_statement_intent.go": {
+			"runnerStatementIntentRecordBinder": true, "runnerStatementIntentRecordRequest": true,
+			"bindRunnerStatementIntentRecord": true,
 		},
 	}
 	for _, path := range paths {

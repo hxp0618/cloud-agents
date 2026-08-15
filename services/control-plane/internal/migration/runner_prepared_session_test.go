@@ -90,16 +90,18 @@ func TestRunnerPreparedCurrentSessionRejectsLiteralCopyAndFieldDrift(t *testing.
 }
 
 func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	recoveryArtifact := runnerDecisionRecoveryArtifact(t, decision)
 	for _, test := range []struct {
 		name     string
 		mutate   func(*RecoverySnapshot)
 		wantCode ErrorCode
 		wantOp   string
 	}{
-		{"brand-new", nil, CodeProjectionNotImplemented, "runner-statement-intent"},
+		{"brand-new", nil, CodeProjectionNotImplemented, "runner-statement-execute"},
 		{"inherited-header-only", func(snapshot *RecoverySnapshot) {
 			snapshot.state = RecoveryBrandNewInherited
-		}, CodeProjectionNotImplemented, "runner-statement-intent"},
+		}, CodeProjectionNotImplemented, "runner-statement-execute"},
 		{"wrong-action", func(snapshot *RecoverySnapshot) {
 			snapshot.nextPermittedAction = RecoveryBeginNextAttempt
 		}, CodeProjectionNotImplemented, "runner-recovery-dispatch"},
@@ -113,12 +115,11 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 		}, CodeProjectionNotImplemented, "runner-recovery-dispatch"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			raw, decision := buildExactAdmissionRuntime(t)
 			sink := &runnerEvidenceSinkFake{mutateSnapshot: test.mutate}
 			database := newRunnerPreflightSession()
 			factory := &runnerPreflightProjectorFactory{}
 			factory.initialize()
-			verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
+			verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: append([]byte(nil), recoveryArtifact...)}
 			runner := Runner{Trust: verifier, Evidence: sink, Connector: &runnerPreflightConnector{session: database}, projectionFactory: factory}
 			_, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			var migrationErr *Error
@@ -126,10 +127,10 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 				t.Fatalf("recovery dispatch=%#v", migrationErr)
 			}
 			wantBegin := 0
-			if test.wantOp == "runner-statement-intent" {
+			if test.wantOp == "runner-statement-execute" {
 				wantBegin = 1
 			}
-			if sink.session == nil || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+2*wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != 0 || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 {
+			if sink.session == nil || sink.session.bindCalls != wantBegin || sink.session.journal.appendCalls != wantBegin || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+2*wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != 0 || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 || liveRunnerDurableCurrentStatementIntents() != 0 {
 				t.Fatalf("recovery dispatch crossed write or cleanup boundary: sink=%+v database=%+v transaction=%+v factory=%+v live=%d/%d/%d", sink.session, database, database.transaction, factory, liveRunnerPreparedCurrentSessions(), liveRunnerPreparedCurrentTransactions(), liveRunnerPreparedCurrentStatements())
 			}
 		})
@@ -415,6 +416,11 @@ type runnerPreparedCurrentSessionFixture struct {
 func newRunnerPreparedCurrentSessionFixture(t *testing.T) runnerPreparedCurrentSessionFixture {
 	t.Helper()
 	raw, decision := buildExactAdmissionRuntime(t)
+	return newRunnerPreparedCurrentSessionFixtureFromRuntime(t, raw, decision)
+}
+
+func newRunnerPreparedCurrentSessionFixtureFromRuntime(t *testing.T, raw []byte, decision VerifiedTrustDecision) runnerPreparedCurrentSessionFixture {
+	t.Helper()
 	bundle, err := LoadRuntimeBundle(raw, decision)
 	if err != nil {
 		t.Fatal(err)

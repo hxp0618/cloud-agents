@@ -311,7 +311,7 @@ func (s *generationEvidenceSession) bindRunnerStatementIntentRecord(ctx context.
 	journal := s.journal
 	journal.mu.Lock()
 	defer journal.mu.Unlock()
-	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || generationJournalRecoveryDigest(journal.state.recovery) != request.recoveryDigest {
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || request.maxAttempts == 0 || journal.schema.maxAttempts[request.plan.MigrationID] != request.maxAttempts || generationJournalRecoveryDigest(journal.state.recovery) != request.recoveryDigest {
 		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-statement-intent-record", "current journal boundary differs from the prepared statement", nil)
 	}
 	header, ok := generationJournalHeader(journal)

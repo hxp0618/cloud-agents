@@ -337,10 +337,10 @@ func runPostgresPublicRunnerAuthorityPreflight(t *testing.T, ctx context.Context
 	runner := Runner{Trust: verifier, Evidence: sink, Connector: PGXConnector{}, Observer: observer}
 	_, err := runner.Run(ctx, RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: environment.MigrationURL})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-statement-intent" || migrationErr.Err != nil {
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-statement-execute" || migrationErr.Err != nil {
 		t.Fatalf("public runner authority preflight boundary: %#v", migrationErr)
 	}
-	if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
+	if sink.session == nil || sink.session.bindCalls != 1 || sink.session.journal.appendCalls != 1 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
 		t.Fatalf("public runner authority preflight leaked evidence authority: session=%+v live=%d/%d", sink.session, liveVerifiedEvidenceRunBindings(), before)
 	}
 	if !reflect.DeepEqual(observer.transitions, []RunnerState{StateVerifyTrust, StateLoadBundle, StateConnect, StateLocked}) {

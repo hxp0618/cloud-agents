@@ -57,6 +57,26 @@ func TestRunnerPreparedCurrentStatementRejectsLiteralCopyReplayAndFieldDrift(t *
 	assertPreparedStatementDrift(t, statement)
 	statement.statementIndex = originalIndex
 
+	originalMaxAttempts := statement.maxAttempts
+	statement.maxAttempts++
+	assertPreparedStatementDrift(t, statement)
+	statement.maxAttempts = originalMaxAttempts
+
+	originalSQL := statement.plan.sqlBytes[0]
+	statement.plan.sqlBytes[0] ^= 0xff
+	assertPreparedStatementDrift(t, statement)
+	statement.plan.sqlBytes[0] = originalSQL
+
+	originalAuthorityDatabase := statement.authorityBefore.Metadata.Snapshot.DatabaseName
+	statement.authorityBefore.Metadata.Snapshot.DatabaseName = "drifted_authority_database"
+	assertPreparedStatementDrift(t, statement)
+	statement.authorityBefore.Metadata.Snapshot.DatabaseName = originalAuthorityDatabase
+
+	originalCatalogScope := statement.catalogBefore.Metadata.Scope.ScopeKind
+	statement.catalogBefore.Metadata.Scope.ScopeKind = "drifted_catalog_scope"
+	assertPreparedStatementDrift(t, statement)
+	statement.catalogBefore.Metadata.Scope.ScopeKind = originalCatalogScope
+
 	originalEvidenceState := fixture.evidence.snapshot.state
 	fixture.evidence.snapshot.state = RecoveryDivergent
 	assertPreparedStatementDrift(t, statement)
@@ -188,6 +208,11 @@ func TestRunnerPreparedStatementHasOnlyReviewedProductionConsumers(t *testing.T)
 	allowed := map[string]map[string]bool{
 		"runner_statement_preflight.go": nil,
 		"runner.go":                     {"prepareCurrentStatement": true, "closeRunnerPreparedCurrentStatement": true},
+		"runner_statement_intent.go": {
+			"runnerPreparedCurrentStatement": true, "runnerPreparedCurrentStatementRegistryRecord": true,
+			"runnerPreparedCurrentStatementRegistry": true, "validRunnerPreparedCurrentStatement": true,
+			"closeRunnerPreparedCurrentStatement": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
@@ -232,6 +257,16 @@ func TestRunnerStatementPreflightHasNoEvidenceExecutionOrCommitCallEdge(t *testi
 func newRunnerPreparedCurrentTransactionFixture(t *testing.T) (runnerPreparedCurrentSessionFixture, *runnerPreparedCurrentTransaction, *runnerPreflightProjectorFactory) {
 	t.Helper()
 	fixture := newRunnerPreparedCurrentSessionFixture(t)
+	return newRunnerPreparedCurrentTransactionFixtureFromSession(t, fixture)
+}
+
+func newRunnerPreparedCurrentTransactionFixtureFromRuntime(t *testing.T, raw []byte, decision VerifiedTrustDecision) (runnerPreparedCurrentSessionFixture, *runnerPreparedCurrentTransaction, *runnerPreflightProjectorFactory) {
+	t.Helper()
+	return newRunnerPreparedCurrentTransactionFixtureFromSession(t, newRunnerPreparedCurrentSessionFixtureFromRuntime(t, raw, decision))
+}
+
+func newRunnerPreparedCurrentTransactionFixtureFromSession(t *testing.T, fixture runnerPreparedCurrentSessionFixture) (runnerPreparedCurrentSessionFixture, *runnerPreparedCurrentTransaction, *runnerPreflightProjectorFactory) {
+	t.Helper()
 	prepared, err := bindRunnerPreparedCurrentSession(
 		fixture.database, fixture.evidence, fixture.key, fixture.candidate, fixture.snapshot,
 		fixture.ledger, fixture.authority, fixture.precondition, fixture.bundle, fixture.plans,

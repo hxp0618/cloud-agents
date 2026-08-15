@@ -75,8 +75,9 @@ type databaseState struct {
 // projections on the same dedicated database connection. It seals the exact
 // header-only current dispatch, repeats its transaction-wide predecessor, then
 // repeats authority plus catalog-before at statement_index=0 inside the same
-// SERIALIZABLE/READ WRITE transaction, and unconditionally rolls back. No
-// statement intent, migration SQL, ledger row, evidence record, or commit is
+// SERIALIZABLE/READ WRITE transaction. It durably appends that exact owned
+// StatementIntent and matching lineage checkpoint before unconditionally
+// rolling the transaction back. No migration SQL, ledger row, or commit is
 // reachable from this slice.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
@@ -138,9 +139,13 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 			statement, statementErr := runner.prepareCurrentStatement(ctx, transaction, bundle, plans)
 			preflightErr = statementErr
 			if preflightErr == nil {
-				preflightErr = closeRunnerPreparedCurrentStatement(statement, nil)
+				durable, appendErr := runner.appendCurrentStatementIntent(ctx, statement)
+				preflightErr = appendErr
 				if preflightErr == nil {
-					preflightErr = fail(CodeProjectionNotImplemented, "runner-statement-intent", "statement-zero preflight is sealed but durable statement intent is not implemented", nil)
+					preflightErr = closeRunnerDurableCurrentStatementIntent(durable, nil)
+					if preflightErr == nil {
+						preflightErr = fail(CodeProjectionNotImplemented, "runner-statement-execute", "durable statement intent is sealed but migration SQL execution is not implemented", nil)
+					}
 				}
 			}
 		}

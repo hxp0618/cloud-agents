@@ -72,6 +72,8 @@ type runnerTransactionProjectionFacts struct {
 	snapshotDigest  [32]byte
 	authorityDigest Digest
 	catalogDigest   Digest
+	authorityResult ProjectionResultEvidence
+	catalogResult   ProjectionResultEvidence
 }
 
 var runnerPreparedCurrentTransactionRegistry sync.Map
@@ -172,8 +174,10 @@ func (runner *Runner) projectRunnerTransactionPreflight(ctx context.Context, tra
 	facts := runnerTransactionProjectionFacts{
 		snapshotDigest:  runnerTransactionSnapshotDigest(metadata),
 		authorityDigest: authority.Digest, catalogDigest: precondition.Digest,
+		authorityResult: ProjectionResultEvidence{Digest: authority.Digest, Metadata: cloneProjectionValue(authority.Metadata)},
+		catalogResult:   ProjectionResultEvidence{Digest: precondition.Digest, Metadata: cloneProjectionValue(precondition.Metadata)},
 	}
-	if facts.snapshotDigest == ([32]byte{}) {
+	if facts.snapshotDigest == ([32]byte{}) || facts.authorityResult.Validate() != nil || facts.catalogResult.Validate() != nil {
 		return runnerTransactionProjectionFacts{}, fail(CodeProjectionMetadataMismatch, operation+"-snapshot", "transaction snapshot identity could not be sealed", nil)
 	}
 	return facts, nil

@@ -25,10 +25,14 @@ type runnerPreparedCurrentStatement struct {
 	dispatch             runnerPreparedDispatch
 	database             runnerPreparedDatabaseIdentity
 	statementIndex       uint32
+	maxAttempts          uint32
+	plan                 StatementPlan
 	statementPlanDigest  [32]byte
 	snapshotDigest       [32]byte
 	authorityDigest      Digest
 	catalogDigest        Digest
+	authorityBefore      ProjectionResultEvidence
+	catalogBefore        ProjectionResultEvidence
 	canonical            [32]byte
 	closed               bool
 }
@@ -149,16 +153,18 @@ func consumeRunnerPreparedCurrentTransaction(prepared *runnerPreparedCurrentTran
 }
 
 func bindRunnerPreparedCurrentStatement(seed runnerPreparedCurrentStatementSeed, facts runnerTransactionProjectionFacts) (*runnerPreparedCurrentStatement, error) {
-	planDigest := runnerStatementPlanDigest(seed.plan)
-	if seed.transaction == nil || !runnerOwnedPointer(seed.transaction) || planDigest == ([32]byte{}) || facts.snapshotDigest == ([32]byte{}) || facts.authorityDigest != seed.transactionAuthority || facts.catalogDigest != seed.transactionPredecessor || !runnerPreparedEvidenceMatches(seed.evidence, seed.candidateBinding, seed.generation, seed.recoveryDigest) {
+	ownedPlan, planErr := cloneRunnerStatementIntentPlan(seed.plan)
+	planDigest := runnerStatementPlanDigest(ownedPlan)
+	if planErr != nil || seed.transaction == nil || !runnerOwnedPointer(seed.transaction) || planDigest == ([32]byte{}) || seed.policy.MaxAttempts == 0 || seed.policy.MaxAttempts > uint64(^uint32(0)) || facts.snapshotDigest == ([32]byte{}) || facts.authorityDigest != seed.transactionAuthority || facts.catalogDigest != seed.transactionPredecessor || facts.authorityResult.Digest != facts.authorityDigest || facts.catalogResult.Digest != facts.catalogDigest || facts.authorityResult.Validate() != nil || facts.catalogResult.Validate() != nil || !runnerPreparedEvidenceMatches(seed.evidence, seed.candidateBinding, seed.generation, seed.recoveryDigest) {
 		return nil, fail(CodeTransactionBoundary, "runner-statement-seal", "statement preflight inputs are unavailable or changed", nil)
 	}
 	prepared := &runnerPreparedCurrentStatement{
 		session: seed.session, transaction: seed.transaction, evidence: seed.evidence, key: seed.key,
 		candidateBinding: seed.candidateBinding, generation: seed.generation, recoveryDigest: seed.recoveryDigest,
 		transactionCanonical: seed.transactionCanonical, dispatch: seed.dispatch, database: seed.database,
-		statementIndex: seed.plan.StatementIndex, statementPlanDigest: planDigest,
+		statementIndex: ownedPlan.StatementIndex, maxAttempts: uint32(seed.policy.MaxAttempts), plan: ownedPlan, statementPlanDigest: planDigest,
 		snapshotDigest: facts.snapshotDigest, authorityDigest: facts.authorityDigest, catalogDigest: facts.catalogDigest,
+		authorityBefore: cloneProjectionValue(facts.authorityResult), catalogBefore: cloneProjectionValue(facts.catalogResult),
 	}
 	prepared.self = prepared
 	binding := &runnerPreparedCurrentStatementBinding{
@@ -196,7 +202,7 @@ func validRunnerPreparedCurrentStatement(prepared *runnerPreparedCurrentStatemen
 }
 
 func runnerPreparedCurrentStatementDigest(prepared *runnerPreparedCurrentStatement) [32]byte {
-	if prepared == nil || prepared.self != prepared || prepared.closed || prepared.session == nil || prepared.transaction == nil || prepared.evidence == nil || prepared.candidateBinding == nil || prepared.candidateBinding.owner == nil || prepared.generation.owner != prepared.candidateBinding.owner || prepared.candidateBinding.canonical == ([32]byte{}) || prepared.recoveryDigest == ([32]byte{}) || prepared.transactionCanonical == ([32]byte{}) || prepared.statementIndex != 0 || prepared.statementPlanDigest == ([32]byte{}) || prepared.snapshotDigest == ([32]byte{}) || prepared.authorityDigest.Validate() != nil || prepared.catalogDigest.Validate() != nil || prepared.database.postgresMajor == 0 || prepared.database.serverVersionNum == 0 || prepared.database.databaseName == "" || prepared.database.sessionUser == "" || prepared.database.currentUser != MigrationOwnerRole || prepared.dispatch.recoveryState != RecoveryBrandNew && prepared.dispatch.recoveryState != RecoveryBrandNewInherited || prepared.dispatch.action != RecoveryBeginFirstAttempt || !migrationIDPattern.MatchString(prepared.dispatch.migrationID) || prepared.dispatch.attemptIndex != 1 || prepared.dispatch.entryIndex != 0 || prepared.dispatch.planCount == 0 || prepared.dispatch.planDigest == ([32]byte{}) {
+	if prepared == nil || prepared.self != prepared || prepared.closed || prepared.session == nil || prepared.transaction == nil || prepared.evidence == nil || prepared.candidateBinding == nil || prepared.candidateBinding.owner == nil || prepared.generation.owner != prepared.candidateBinding.owner || prepared.candidateBinding.canonical == ([32]byte{}) || prepared.recoveryDigest == ([32]byte{}) || prepared.transactionCanonical == ([32]byte{}) || prepared.statementIndex != 0 || prepared.maxAttempts == 0 || prepared.plan.validateExact() != nil || prepared.plan.StatementIndex != prepared.statementIndex || runnerStatementPlanDigest(prepared.plan) != prepared.statementPlanDigest || prepared.statementPlanDigest == ([32]byte{}) || prepared.snapshotDigest == ([32]byte{}) || prepared.authorityDigest.Validate() != nil || prepared.catalogDigest.Validate() != nil || prepared.authorityBefore.Validate() != nil || prepared.catalogBefore.Validate() != nil || prepared.authorityBefore.Digest != prepared.authorityDigest || prepared.catalogBefore.Digest != prepared.catalogDigest || !runnerCanonicalEqual(prepared.authorityBefore.Metadata.Snapshot, prepared.catalogBefore.Metadata.Snapshot) || prepared.database.postgresMajor == 0 || prepared.database.serverVersionNum == 0 || prepared.database.databaseName == "" || prepared.database.sessionUser == "" || prepared.database.currentUser != MigrationOwnerRole || prepared.dispatch.recoveryState != RecoveryBrandNew && prepared.dispatch.recoveryState != RecoveryBrandNewInherited || prepared.dispatch.action != RecoveryBeginFirstAttempt || !migrationIDPattern.MatchString(prepared.dispatch.migrationID) || prepared.dispatch.attemptIndex != 1 || prepared.dispatch.entryIndex != 0 || prepared.dispatch.planCount == 0 || prepared.dispatch.planDigest == ([32]byte{}) {
 		return [32]byte{}
 	}
 	h := sha256.New()
@@ -207,6 +213,13 @@ func runnerPreparedCurrentStatementDigest(prepared *runnerPreparedCurrentStateme
 	h.Write(prepared.statementPlanDigest[:])
 	h.Write(prepared.snapshotDigest[:])
 	h.Write(prepared.dispatch.planDigest[:])
+	for _, evidence := range []ProjectionResultEvidence{prepared.authorityBefore, prepared.catalogBefore} {
+		canonical, err := canonicalContractKey(evidence)
+		if err != nil || canonical == "" {
+			return [32]byte{}
+		}
+		writeAdmissionString(h, canonical)
+	}
 	for _, value := range []Digest{prepared.generation.executionLineageDigest, prepared.generation.journalIdentityDigest, prepared.generation.runnerProjectionDecisionDigest, prepared.generation.schemaBundleDigest, prepared.authorityDigest, prepared.catalogDigest} {
 		if value.Validate() != nil {
 			return [32]byte{}
@@ -226,6 +239,7 @@ func runnerPreparedCurrentStatementDigest(prepared *runnerPreparedCurrentStateme
 	writeAdmissionUint(h, uint64(prepared.dispatch.entryIndex))
 	writeAdmissionUint(h, uint64(prepared.dispatch.planCount))
 	writeAdmissionUint(h, uint64(prepared.statementIndex))
+	writeAdmissionUint(h, uint64(prepared.maxAttempts))
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
@@ -262,6 +276,9 @@ func closeRunnerPreparedCurrentStatement(prepared *runnerPreparedCurrentStatemen
 	prepared.transaction = nil
 	prepared.evidence = nil
 	prepared.binding = nil
+	prepared.plan = StatementPlan{}
+	prepared.authorityBefore = ProjectionResultEvidence{}
+	prepared.catalogBefore = ProjectionResultEvidence{}
 	if !valid {
 		primary = fail(CodeTransactionBoundary, "runner-statement-close", "statement preflight authority changed before close", nil)
 	}

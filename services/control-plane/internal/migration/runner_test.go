@@ -69,7 +69,7 @@ func TestPublicRunnerExactAdmissionStopsAtUnconfiguredEvidenceSinkWithZeroSideEf
 	assertNoRunnerSideEffects(t, connector, backend)
 }
 
-func TestPublicRunnerProjectsAllPreexecutionAuthorityPhasesBeforeStatementIntent(t *testing.T) {
+func TestPublicRunnerProjectsAllPreexecutionAuthorityPhasesAndDurablyAppendsStatementIntent(t *testing.T) {
 	raw, decision := buildExactAdmissionRuntime(t)
 	connector := &runnerPreflightConnector{session: newRunnerPreflightSession()}
 	factory := &runnerPreflightProjectorFactory{}
@@ -85,10 +85,10 @@ func TestPublicRunnerProjectsAllPreexecutionAuthorityPhasesBeforeStatementIntent
 	before := liveVerifiedEvidenceRunBindings()
 	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-statement-intent" || migrationErr.Err != nil {
-		t.Fatalf("authority-preflight runner did not stop at the statement-intent boundary: %v", err)
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-statement-execute" || migrationErr.Err != nil {
+		t.Fatalf("authority-preflight runner did not stop after the durable statement-intent boundary: %v", err)
 	}
-	if sink.calls != 1 || sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
+	if sink.calls != 1 || sink.session == nil || sink.session.bindCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.appendCalls != 1 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
 		t.Fatalf("evidence session lifecycle mismatch: sink=%d session=%+v live=%d/%d", sink.calls, sink.session, liveVerifiedEvidenceRunBindings(), before)
 	}
 	wantTransitions := []RunnerState{StateVerifyTrust, StateLoadBundle, StateConnect, StateLocked}
@@ -845,16 +845,17 @@ func (acceptingIntermediate) ValidateIntermediate(context.Context, Queryer, int,
 }
 
 type runnerEvidenceSinkFake struct {
-	calls           int
-	openErr         error
-	valuesWithError bool
-	missingSession  bool
-	missingSnapshot bool
-	swapCandidate   bool
-	replayErr       error
-	sessionCloseErr error
-	mutateSnapshot  func(*RecoverySnapshot)
-	session         *runnerEvidenceSessionFake
+	calls            int
+	openErr          error
+	valuesWithError  bool
+	missingSession   bool
+	missingSnapshot  bool
+	swapCandidate    bool
+	replayErr        error
+	sessionCloseErr  error
+	mutateSnapshot   func(*RecoverySnapshot)
+	configureSession func(*runnerEvidenceSessionFake)
+	session          *runnerEvidenceSessionFake
 }
 
 func (sink *runnerEvidenceSinkFake) Open(_ context.Context, run VerifiedEvidenceRun, runtime VerifiedRuntimeArtifact) (EvidenceSession, *RecoverySnapshot, error) {
@@ -869,6 +870,9 @@ func (sink *runnerEvidenceSinkFake) Open(_ context.Context, run VerifiedEvidence
 	session := newRunnerEvidenceSessionFake(candidate)
 	session.journal.replayErr = sink.replayErr
 	session.closeErr = sink.sessionCloseErr
+	if sink.configureSession != nil {
+		sink.configureSession(session)
+	}
 	if sink.mutateSnapshot != nil {
 		sink.mutateSnapshot(session.snapshot)
 	}
@@ -893,13 +897,19 @@ func (sink *runnerEvidenceSinkFake) Open(_ context.Context, run VerifiedEvidence
 func (*runnerEvidenceSinkFake) evidenceSinkSealed() {}
 
 type runnerEvidenceSessionFake struct {
-	candidate  OwnedCurrentCandidate
-	active     ActiveGeneration
-	journal    *runnerEvidenceJournalFake
-	snapshot   *RecoverySnapshot
-	closeErr   error
-	closeCalls int
-	closed     bool
+	candidate            OwnedCurrentCandidate
+	active               ActiveGeneration
+	journal              *runnerEvidenceJournalFake
+	snapshot             *RecoverySnapshot
+	bindErr              error
+	bindCalls            int
+	bindNoJournal        bool
+	bindNoRecord         bool
+	mutateBoundIntent    func(*StatementIntent)
+	mutateBoundAuthority func(*JournalCursor, *OwnedEvidenceRecord)
+	closeErr             error
+	closeCalls           int
+	closed               bool
 }
 
 func newRunnerEvidenceSessionFake(candidate OwnedCurrentCandidate) *runnerEvidenceSessionFake {
@@ -921,10 +931,12 @@ func newRunnerEvidenceSessionFake(candidate OwnedCurrentCandidate) *runnerEviden
 		state: RecoveryBrandNew, nextPermittedAction: RecoveryBeginFirstAttempt,
 	}
 	journal := &runnerEvidenceJournalFake{cursor: cursor, snapshot: snapshot}
-	return &runnerEvidenceSessionFake{
+	session := &runnerEvidenceSessionFake{
 		candidate: candidate, journal: journal, snapshot: snapshot,
 		active: ActiveGeneration{identity: generation, kind: activeGenerationCurrent, journal: journal, ownedDecision: candidate.verifiedRun.currentDecision},
 	}
+	journal.session = session
+	return session
 }
 
 func (session *runnerEvidenceSessionFake) CurrentCandidate() OwnedCurrentCandidate {
@@ -963,6 +975,60 @@ func (*runnerEvidenceSessionFake) ReserveAndActivateSuccessor(context.Context, *
 	return ActiveGeneration{}, nil, fail(CodeProjectionNotImplemented, "runner-test", "not implemented", nil)
 }
 
+func (session *runnerEvidenceSessionFake) bindRunnerStatementIntentRecord(ctx context.Context, request runnerStatementIntentRecordRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	session.bindCalls++
+	if err := ctx.Err(); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if session.bindErr != nil {
+		return nil, JournalCursor{}, nil, session.bindErr
+	}
+	if session.closed || request.candidateBinding == nil || request.candidateBinding != session.candidate.binding || !sameGenerationIdentity(request.generation, session.active.identity) || request.maxAttempts == 0 || generationJournalRecoveryDigest(session.snapshot) != request.recoveryDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-test-statement-bind", "statement binder inputs differ", nil)
+	}
+	bindings, err := session.candidate.verifiedRun.currentDecision.decision.runnerProjectionBindings()
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	catalogContract, err := runnerStatementIntentVerifiedSubject(bindings, request.plan, request.authorityBefore, request.catalogBefore)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	intent, err := buildBrandNewRunnerStatementIntent(
+		request.plan, request.authorityBefore, request.catalogBefore, catalogContract,
+		request.generation.schemaBundleDigest, bindings.authorityProfileDigest, bindings.authorityBindingDigest,
+	)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if session.mutateBoundIntent != nil {
+		session.mutateBoundIntent(&intent)
+	}
+	cursor := session.journal.cursor.clone()
+	ownedPlan, err := cloneRunnerStatementIntentPlan(request.plan)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	witness := ownedStatementIntentWitness{ownedAppendContext: ownedAppendContext{generation: request.generation, cursor: cursor.clone()}, plan: ownedPlan}
+	owned := &OwnedEvidenceRecord{
+		wire: EvidenceRecord{StatementIntent: &intent}, witness: witness,
+		generation: request.generation, cursor: cursor.clone(), consumed: &atomic.Bool{},
+	}
+	if session.mutateBoundAuthority != nil {
+		session.mutateBoundAuthority(&cursor, owned)
+	}
+	session.journal.maxAttempts = request.maxAttempts
+	if session.bindNoJournal {
+		return nil, cursor, owned, nil
+	}
+	if session.bindNoRecord {
+		return session.journal, cursor, nil, nil
+	}
+	return session.journal, cursor, owned, nil
+}
+
+func (*runnerEvidenceSessionFake) runnerStatementIntentRecordBinderSealed() {}
+
 func (session *runnerEvidenceSessionFake) Close(ctx context.Context) error {
 	if session == nil || session.closed {
 		return errors.New("session already closed")
@@ -979,12 +1045,21 @@ func (session *runnerEvidenceSessionFake) Close(ctx context.Context) error {
 func (*runnerEvidenceSessionFake) evidenceSessionSealed() {}
 
 type runnerEvidenceJournalFake struct {
-	cursor      JournalCursor
-	snapshot    *RecoverySnapshot
-	replayErr   error
-	replayCalls int
-	closeCalls  int
-	closed      bool
+	session               *runnerEvidenceSessionFake
+	cursor                JournalCursor
+	snapshot              *RecoverySnapshot
+	maxAttempts           uint32
+	replayErr             error
+	replayCalls           int
+	appendErr             error
+	appendValuesWithError bool
+	appendOutcome         appendOutcome
+	mutateAppendResult    func(*AppendResult)
+	mutateAppendSnapshot  func(*RecoverySnapshot)
+	appendCalls           int
+	appendedRecord        EvidenceRecord
+	closeCalls            int
+	closed                bool
 }
 
 func (journal *runnerEvidenceJournalFake) Replay(context.Context) (JournalCursor, *RecoverySnapshot, error) {
@@ -998,8 +1073,79 @@ func (journal *runnerEvidenceJournalFake) Replay(context.Context) (JournalCursor
 	return journal.cursor.clone(), cloneRecoverySnapshot(journal.snapshot), nil
 }
 
-func (*runnerEvidenceJournalFake) AppendDurable(context.Context, JournalCursor, *OwnedEvidenceRecord) (AppendResult, error) {
-	return AppendResult{}, errors.New("append is not wired")
+func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cursor JournalCursor, owned *OwnedEvidenceRecord) (AppendResult, error) {
+	journal.appendCalls++
+	if err := ctx.Err(); err != nil {
+		return AppendResult{}, err
+	}
+	if journal.closed {
+		return AppendResult{}, errors.New("journal closed")
+	}
+	if journal.appendErr != nil && !journal.appendValuesWithError {
+		return AppendResult{}, journal.appendErr
+	}
+	record, err := owned.consume(cursor.generation, cursor)
+	if err != nil || record.StatementIntent == nil || record.StatementIntent.Validate() != nil {
+		if err == nil {
+			err = errors.New("invalid statement intent")
+		}
+		return AppendResult{}, err
+	}
+	journal.appendedRecord = cloneEvidenceRecord(record)
+	frame := EvidenceFrame{
+		FormatVersion: EvidenceFrameFormat, Sequence: cursor.nextSequence,
+		PreviousRecordDigest: cloneDigestPointer(cursor.previousRecordDigest),
+		RecordKind:           EvidenceRecordStatementIntent, Record: cloneEvidenceRecord(record),
+	}
+	frame.RecordDigest, err = frame.ComputeDigest()
+	if err != nil || frame.Validate() != nil {
+		return AppendResult{}, errors.New("invalid statement frame")
+	}
+	checkpoint := DigestBytes([]byte("runner-test-checkpoint:" + frame.RecordDigest.String()))
+	outcome := journal.appendOutcome
+	if outcome == "" {
+		outcome = appendOutcomeDurable
+	}
+	var durable *JournalCursor
+	if outcome == appendOutcomeDurable {
+		valid := &atomic.Bool{}
+		valid.Store(true)
+		next := cursor.clone()
+		next.valid = valid
+		next.nextSequence++
+		next.previousRecordDigest = digestPointer(frame.RecordDigest)
+		next.lineageIndexNextSequence++
+		next.lineageIndexPreviousRecordDigest = checkpoint
+		next.latestCheckpointRecordDigest = digestPointer(checkpoint)
+		durable = &next
+	}
+	result, err := finishConsumedAppend(cursor, cursor.generation, outcome, durable, frame.RecordDigest, checkpoint)
+	if err != nil {
+		return AppendResult{}, err
+	}
+	if outcome == appendOutcomeDurable {
+		next := result.DurableCursor()
+		action := recoveryAbortAction(record.StatementIntent.AttemptIndex, journal.maxAttempts)
+		snapshot := &RecoverySnapshot{
+			owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+			state: RecoveryDanglingStatementIntent, migrationID: cloneStringPointer(&record.StatementIntent.MigrationID),
+			attemptIndex:                    cloneUint32Pointer(&record.StatementIntent.AttemptIndex),
+			lastStatementIntent:             recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.StatementIntent),
+			lastStatementIntentRecordDigest: digestPointer(frame.RecordDigest), nextPermittedAction: action,
+		}
+		if journal.mutateAppendSnapshot != nil {
+			journal.mutateAppendSnapshot(snapshot)
+		}
+		journal.cursor = next.clone()
+		journal.snapshot = snapshot
+		if journal.session != nil {
+			journal.session.snapshot = snapshot
+		}
+	}
+	if journal.mutateAppendResult != nil {
+		journal.mutateAppendResult(&result)
+	}
+	return result, journal.appendErr
 }
 
 func (journal *runnerEvidenceJournalFake) Close(context.Context) error {
