@@ -68,6 +68,17 @@ func TestHistoricalSuccessorRecoveryRejectsLiteralAndRuntimeInterfaces(t *testin
 	if err := forgedPlan.close(); !IsCode(err, CodeEvidenceJournalFailed) {
 		t.Fatalf("partially forged historical successor plan close=%v", err)
 	}
+	if ready, err := (&historicalSuccessorAdmissionPlanReady{}).bindPermit(context.Background(), candidate); ready != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor permit bind: ready=%+v err=%v", ready, err)
+	}
+	if err := (&historicalSuccessorAdmissionPermitReady{}).close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("literal historical successor permit close=%v", err)
+	}
+	forgedPermit := &historicalSuccessorAdmissionPermitReady{consumed: &atomic.Bool{}}
+	forgedPermit.self = forgedPermit
+	if err := forgedPermit.close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("partially forged historical successor permit close=%v", err)
+	}
 }
 
 func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.T) {
@@ -263,6 +274,114 @@ func TestHistoricalSuccessorAdmissionPlanMemoryRevocationIsComplete(t *testing.T
 	}
 }
 
+func TestHistoricalSuccessorAdmissionPermitDigestBindsTokenAndPreparedState(t *testing.T) {
+	prior := &historicalSuccessorAdmissionPlanReady{binding: &historicalSuccessorAdmissionPlanBinding{canonical: [32]byte{1}}}
+	candidateBinding := &verifiedEvidenceRunBinding{canonical: [32]byte{2}}
+	authority := &VerifiedLineageSupersessionAuthority{digest: testDigest("historical-successor-permit-authority")}
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{3}}}
+	plan := &VerifiedSuccessorAdmissionPlan{binding: &verifiedSuccessorAdmissionPlanBinding{canonical: [32]byte{4}}}
+	state := &successorAdmissionState{binding: &successorAdmissionStateBinding{canonical: [32]byte{5}}}
+	permit := &SuccessorAdmissionPermit{state: state}
+	ready := &historicalSuccessorAdmissionPermitReady{
+		prior: prior, candidateBinding: candidateBinding, authority: authority,
+		admission: &evidencefs.AdmissionLease{}, inventory: &evidencefs.AdmissionInventory{}, mutation: &evidencefs.AdmissionMutationToken{},
+		history: history, plan: plan, permit: permit, state: state,
+		target: [32]byte{6}, revision: 0, fullSet: [32]byte{7}, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	baseline := historicalSuccessorAdmissionPermitDigest(ready)
+	if baseline == ([32]byte{}) {
+		t.Fatal("historical successor admission-permit digest was not minted")
+	}
+	for name, mutate := range map[string]func(*historicalSuccessorAdmissionPermitReady){
+		"prior":     func(value *historicalSuccessorAdmissionPermitReady) { value.prior.binding.canonical[0]++ },
+		"candidate": func(value *historicalSuccessorAdmissionPermitReady) { value.candidateBinding.canonical[0]++ },
+		"authority": func(value *historicalSuccessorAdmissionPermitReady) {
+			value.authority.digest = testDigest("historical-successor-permit-other-authority")
+		},
+		"history":  func(value *historicalSuccessorAdmissionPermitReady) { value.history.binding.canonical[0]++ },
+		"plan":     func(value *historicalSuccessorAdmissionPermitReady) { value.plan.binding.canonical[0]++ },
+		"state":    func(value *historicalSuccessorAdmissionPermitReady) { value.state.binding.canonical[0]++ },
+		"target":   func(value *historicalSuccessorAdmissionPermitReady) { value.target[0]++ },
+		"revision": func(value *historicalSuccessorAdmissionPermitReady) { value.revision++ },
+		"full set": func(value *historicalSuccessorAdmissionPermitReady) { value.fullSet[0]++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *ready
+			copyPrior := *prior
+			copyPriorBinding := *prior.binding
+			copyPrior.binding = &copyPriorBinding
+			copyCandidateBinding := *candidateBinding
+			copyHistory := *history
+			copyHistoryBinding := *history.binding
+			copyHistory.binding = &copyHistoryBinding
+			copyPlan := *plan
+			copyPlanBinding := *plan.binding
+			copyPlan.binding = &copyPlanBinding
+			copyState := *state
+			copyStateBinding := *state.binding
+			copyState.binding = &copyStateBinding
+			copyPermit := *permit
+			copyPermit.state = &copyState
+			value.prior, value.candidateBinding = &copyPrior, &copyCandidateBinding
+			value.authority = &VerifiedLineageSupersessionAuthority{digest: authority.digest}
+			value.history, value.plan = &copyHistory, &copyPlan
+			value.permit, value.state, value.self = &copyPermit, &copyState, &value
+			mutate(&value)
+			if historicalSuccessorAdmissionPermitDigest(&value) == baseline {
+				t.Fatal("historical successor admission-permit mutation retained canonical digest")
+			}
+		})
+	}
+}
+
+func TestHistoricalSuccessorAdmissionPermitMemoryRevocationIncludesPreparedState(t *testing.T) {
+	cursorValid := &atomic.Bool{}
+	cursorValid.Store(true)
+	runtimeBinding := &verifiedContentReceiptBinding{}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{}
+	registered := &verifiedAdmissionRegisteredGeneration{
+		replay:         &verifiedAdmissionGenerationReplay{cursor: JournalCursor{valid: cursorValid}},
+		runtimeReceipt: VerifiedContentReceipt{binding: runtimeBinding}, recoveryReceipt: VerifiedDecisionRecoveryReceipt{binding: recoveryBinding},
+	}
+	historyBinding := &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}
+	history := &VerifiedAdmissionHistory{binding: historyBinding, targetGeneration: registered}
+	planBinding := &verifiedSuccessorAdmissionPlanBinding{canonical: [32]byte{2}}
+	plan := &VerifiedSuccessorAdmissionPlan{binding: planBinding, consumed: &atomic.Bool{}}
+	stateBinding := &successorAdmissionStateBinding{canonical: [32]byte{3}}
+	state := &successorAdmissionState{binding: stateBinding, consumed: &atomic.Bool{}, runtimeReceipt: VerifiedContentReceipt{binding: runtimeBinding}, recoveryReceipt: VerifiedDecisionRecoveryReceipt{binding: recoveryBinding}}
+	verifiedContentReceiptRegistry.Store(runtimeBinding, true)
+	verifiedDecisionRecoveryReceiptRegistry.Store(recoveryBinding, true)
+	verifiedAdmissionHistoryRegistry.Store(historyBinding, historyBinding.canonical)
+	verifiedSuccessorAdmissionPlanRegistry.Store(planBinding, planBinding.canonical)
+	successorAdmissionStateRegistry.Store(stateBinding, successorAdmissionStateRecord{})
+	t.Cleanup(func() {
+		verifiedContentReceiptRegistry.Delete(runtimeBinding)
+		verifiedDecisionRecoveryReceiptRegistry.Delete(recoveryBinding)
+		verifiedAdmissionHistoryRegistry.Delete(historyBinding)
+		verifiedSuccessorAdmissionPlanRegistry.Delete(planBinding)
+		successorAdmissionStateRegistry.Delete(stateBinding)
+	})
+	revokeHistoricalSuccessorAdmissionPermitMemory(state, history, plan)
+	if cursorValid.Load() || !plan.consumed.Load() {
+		t.Fatalf("revoked permit state cursor=%v planConsumed=%v", cursorValid.Load(), plan.consumed.Load())
+	}
+	for name, entry := range map[string]struct {
+		registry *sync.Map
+		key      any
+	}{
+		"runtime receipt":  {&verifiedContentReceiptRegistry, runtimeBinding},
+		"recovery receipt": {&verifiedDecisionRecoveryReceiptRegistry, recoveryBinding},
+		"history":          {&verifiedAdmissionHistoryRegistry, historyBinding},
+		"plan":             {&verifiedSuccessorAdmissionPlanRegistry, planBinding},
+		"prepared state":   {&successorAdmissionStateRegistry, stateBinding},
+	} {
+		if _, ok := entry.registry.Load(entry.key); ok {
+			t.Fatalf("%s registry survived permit revocation", name)
+		}
+	}
+}
+
 func TestRetireHistoricalSuccessorSupersessionSourceRevokesOldGraphWithoutClosingAgain(t *testing.T) {
 	cursorValid := &atomic.Bool{}
 	cursorValid.Store(true)
@@ -360,6 +479,38 @@ func TestHistoricalSuccessorAdmissionPlanOrderIsClosed(t *testing.T) {
 	for _, forbidden := range []string{".MutationToken(", ".AppendTargetIndex(", ".Publish", ".BindRuntime(", ".CreateGenerationHeader(", ".AppendGenerationActivated("} {
 		if strings.Contains(method, forbidden) {
 			t.Fatalf("historical successor admission-plan called forbidden edge %s", forbidden)
+		}
+	}
+}
+
+func TestHistoricalSuccessorAdmissionPermitOrderIsClosed(t *testing.T) {
+	raw, err := os.ReadFile("evidence_historical_supersession_recovery.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	start := strings.Index(source, "func (r *historicalSuccessorAdmissionPlanReady) bindPermit")
+	end := strings.Index(source[start:], "func historicalSuccessorAdmissionPermitDigest")
+	if start < 0 || end < 0 {
+		t.Fatal("historical successor admission-permit method boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{
+		"contextAdmissionError(ctx)", ".CompareAndSwap(false, true)", ".MutationToken()",
+		"bindSuccessorAdmissionPermit(", "historicalSuccessorAdmissionPermitRegistry.Store(",
+		"historicalSuccessorAdmissionPlanRegistry.Delete(", "validHistoricalSuccessorAdmissionPermitReady(",
+	}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("historical successor admission-permit step %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	for _, forbidden := range []string{".AppendTargetIndex(", ".Publish", ".BindRuntime(", ".CreateGenerationHeader(", ".AppendGenerationActivated("} {
+		if strings.Contains(method, forbidden) {
+			t.Fatalf("historical successor admission-permit called forbidden edge %s", forbidden)
 		}
 	}
 }
