@@ -11,11 +11,13 @@ mount -t tmpfs tmpfs /run
 
 filesystem=""
 mode=""
+barrier=""
 IFS= read -r kernel_command_line </proc/cmdline
 for argument in $kernel_command_line; do
   case "$argument" in
     evidencefs_fs=*) filesystem=${argument#evidencefs_fs=} ;;
     evidencefs_mode=*) mode=${argument#evidencefs_mode=} ;;
+    evidencefs_barrier=*) barrier=${argument#evidencefs_barrier=} ;;
   esac
 done
 
@@ -28,7 +30,7 @@ case "$filesystem" in
     ;;
 esac
 case "$mode" in
-  create-object | verify-object | create-generation | verify-all) ;;
+  create-object | verify-object | create-generation | verify-all | crash-object | classify-object) ;;
   *)
     echo "invalid evidencefs guest mode" >&2
     poweroff -f
@@ -40,7 +42,7 @@ modprobe virtio_blk 2>/dev/null || true
 modprobe "$filesystem" 2>/dev/null || true
 mkdir -p /mnt/evidence
 
-if [ "$mode" = create-object ]; then
+if [ "$mode" = create-object ] || [ "$mode" = crash-object ]; then
   if [ "$filesystem" = ext4 ]; then
     mkfs.ext4 -q -F /dev/vdb
   else
@@ -50,7 +52,7 @@ fi
 
 mount -t "$filesystem" /dev/vdb /mnt/evidence
 
-if [ "$mode" = create-object ]; then
+if [ "$mode" = create-object ] || [ "$mode" = crash-object ]; then
   if [ -d /mnt/evidence/lost+found ]; then
     rmdir /mnt/evidence/lost+found
   fi
@@ -107,6 +109,29 @@ case "$mode" in
     run_test CLOUD_AGENTS_EVIDENCEFS_VERIFY_EXISTING=1
     umount /mnt/evidence
     echo "EVIDENCEFS_QEMU_VERIFY_ALL_PASS filesystem=$filesystem"
+    ;;
+  crash-object)
+    if [ -z "$barrier" ]; then
+      echo "object crash barrier is required" >&2
+      poweroff -f
+      exit 1
+    fi
+    run_holder \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER=publish-crash \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier" || true
+    echo "object crash helper exited before guest power loss" >&2
+    ;;
+  classify-object)
+    if [ -z "$barrier" ]; then
+      echo "object classification barrier is required" >&2
+      poweroff -f
+      exit 1
+    fi
+    run_test \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER=classify-object-crash \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier"
+    umount /mnt/evidence
+    echo "EVIDENCEFS_QEMU_CLASSIFY_OBJECT_PASS filesystem=$filesystem barrier=$barrier"
     ;;
 esac
 

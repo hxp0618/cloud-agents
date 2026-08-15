@@ -104,6 +104,11 @@ start_guest() {
   mode=$2
   data_image=$3
   log_file=$4
+  barrier=$5
+  barrier_argument=""
+  if [ -n "$barrier" ]; then
+    barrier_argument=" evidencefs_barrier=$barrier"
+  fi
   : >"$log_file"
   qemu-system-aarch64 \
     -machine virt,accel=tcg,gic-version=3 \
@@ -118,7 +123,7 @@ start_guest() {
     -serial stdio \
     -kernel "$kernel" \
     -initrd "$initramfs" \
-    -append "console=ttyAMA0 root=/dev/vda rootfstype=ext4 ro init=/sbin/evidencefs-powerloss-init evidencefs_fs=$filesystem evidencefs_mode=$mode" \
+    -append "console=ttyAMA0 root=/dev/vda rootfstype=ext4 ro init=/sbin/evidencefs-powerloss-init evidencefs_fs=$filesystem evidencefs_mode=$mode$barrier_argument" \
     -object rng-random,filename=/dev/urandom,id=rng0 \
     -device virtio-rng-pci,rng=rng0,addr=0x3 \
     -drive "if=none,file=$root_image,format=raw,readonly=on,id=root" \
@@ -135,7 +140,7 @@ kill_guest_after_marker() {
   data_image=$3
   marker=$4
   log_file="$work_dir/$filesystem-$mode.log"
-  start_guest "$filesystem" "$mode" "$data_image" "$log_file"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" ""
   wait_for_marker "$log_file" "$marker"
   kill -KILL "$qemu_pid"
   if wait "$qemu_pid" 2>/dev/null; then
@@ -152,7 +157,7 @@ verify_guest() {
   data_image=$3
   marker=$4
   log_file="$work_dir/$filesystem-$mode.log"
-  start_guest "$filesystem" "$mode" "$data_image" "$log_file"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" ""
   wait_for_marker "$log_file" "$marker"
   if ! wait "$qemu_pid"; then
     qemu_pid=""
@@ -163,6 +168,48 @@ verify_guest() {
   qemu_pid=""
   echo "EVIDENCEFS_QEMU_RESTART filesystem=$filesystem mode=$mode marker=$marker result=PASS"
 }
+
+kill_object_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-object-$barrier-crash.log"
+  start_guest "$filesystem" crash-object "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU object barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_OBJECT_BARRIER filesystem=$filesystem barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_object_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_QEMU_CLASSIFY_OBJECT_PASS filesystem=$filesystem barrier=$barrier"
+  log_file="$work_dir/$filesystem-object-$barrier-classify.log"
+  start_guest "$filesystem" classify-object "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU object barrier classifier failed: $barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_OBJECT_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "object barrier classifier omitted recovery facts: $barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_OBJECT_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+object_barriers="before-temp-write after-short-temp-write after-temp-write before-temp-fdatasync after-temp-fdatasync before-rename after-rename before-final-fdatasync after-final-fdatasync before-directory-fsync after-directory-fsync"
 
 for filesystem in ext4 xfs; do
   data_image="$work_dir/$filesystem-evidence.img"
@@ -176,6 +223,26 @@ for filesystem in ext4 xfs; do
   kill_guest_after_marker "$filesystem" create-generation "$data_image" EVIDENCEFS_INTEGRATION_GENERATION_DURABLE_AND_LOCKED
   verify_guest "$filesystem" verify-all "$data_image" "EVIDENCEFS_QEMU_VERIFY_ALL_PASS filesystem=$filesystem"
   echo "EVIDENCEFS_QEMU_MATRIX filesystem=$filesystem result=PASS"
+  rm -f "$data_image"
+  barrier_count=0
+  for barrier in $object_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-object-barrier.img"
+    rm -f "$barrier_image"
+    if [ "$filesystem" = ext4 ]; then
+      truncate -s 192M "$barrier_image"
+    else
+      truncate -s 512M "$barrier_image"
+    fi
+    kill_object_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    classify_object_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 11 ]; then
+    echo "unexpected object crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_OBJECT_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
 done
 
 trap - EXIT INT TERM

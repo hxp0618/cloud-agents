@@ -25,10 +25,12 @@ const (
 	linuxIntegrationRootEnv     = "CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_ROOT"
 	linuxIntegrationFSEnv       = "CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_FS"
 	linuxIntegrationHelperEnv   = "CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER"
+	linuxIntegrationBarrierEnv  = "CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER"
 	linuxIntegrationVerifyEnv   = "CLOUD_AGENTS_EVIDENCEFS_VERIFY_EXISTING"
 
 	linuxIntegrationObjectReady     = "EVIDENCEFS_INTEGRATION_OBJECT_PUBLISHED_AND_ROOT_LOCKED"
 	linuxIntegrationGenerationReady = "EVIDENCEFS_INTEGRATION_GENERATION_DURABLE_AND_LOCKED"
+	linuxIntegrationBarrierReady    = "EVIDENCEFS_INTEGRATION_CRASH_BARRIER"
 	linuxIntegrationPayload         = "cloud-agents-evidencefs-linux-integration-v1"
 	linuxIntegrationTargetSubject   = "cloud-agents-evidencefs-linux-target-v1"
 	linuxIntegrationJournalSubject  = "cloud-agents-evidencefs-linux-journal-v1"
@@ -77,6 +79,12 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 		return
 	case "verify-generation":
 		verifyLinuxIntegrationGeneration(t, rootPath)
+		return
+	case "publish-crash":
+		publishLinuxIntegrationObjectAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-object-crash":
+		classifyLinuxIntegrationObjectCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
 	case "":
 	default:
@@ -133,6 +141,186 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	verifyLinuxIntegrationGeneration(t, rootPath)
 	verifyLinuxIntegrationInFreshProcess(t, "verify-generation", "durable generation")
 	t.Logf("EVIDENCEFS_LINUX_INTEGRATION filesystem=%s mount_id=%d object=%s target=%s journal=%s segments=2", filesystem, mountID, hex.EncodeToString(linuxIntegrationDigest[:]), hex.EncodeToString(linuxIntegrationTarget[:]), hex.EncodeToString(linuxIntegrationJournal[:]))
+}
+
+// linuxIntegrationCrashBackend delegates to the real syscall backend and only
+// pauses at fixed object-publication durability boundaries.
+type linuxIntegrationCrashBackend struct {
+	linuxBackend
+	barrier        string
+	writeCalls     int
+	dataSyncCalls  int
+	renameCalls    int
+	directoryCalls int
+}
+
+var _ backend = (*linuxIntegrationCrashBackend)(nil)
+
+func (b *linuxIntegrationCrashBackend) hit(point string) {
+	if b == nil || b.barrier != point {
+		return
+	}
+	if _, err := fmt.Fprintf(os.Stdout, "%s barrier=%s\n", linuxIntegrationBarrierReady, point); err != nil {
+		panic(err)
+	}
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
+func (b *linuxIntegrationCrashBackend) write(fd int, source []byte) (int, error) {
+	b.writeCalls++
+	if b.writeCalls == 1 {
+		b.hit("before-temp-write")
+		if b.barrier == "after-short-temp-write" {
+			limit := len(source) / 2
+			if limit == 0 {
+				limit = 1
+			}
+			count, err := b.linuxBackend.write(fd, source[:limit])
+			if err == nil && count == limit {
+				b.hit("after-short-temp-write")
+			}
+			return count, err
+		}
+	}
+	count, err := b.linuxBackend.write(fd, source)
+	if b.writeCalls == 1 && err == nil && count == len(source) {
+		b.hit("after-temp-write")
+	}
+	return count, err
+}
+
+func (b *linuxIntegrationCrashBackend) fdatasync(fd int) error {
+	b.dataSyncCalls++
+	before, after := "", ""
+	switch b.dataSyncCalls {
+	case 1:
+		before, after = "before-temp-fdatasync", "after-temp-fdatasync"
+	case 2:
+		before, after = "before-final-fdatasync", "after-final-fdatasync"
+	}
+	b.hit(before)
+	err := b.linuxBackend.fdatasync(fd)
+	if err == nil {
+		b.hit(after)
+	}
+	return err
+}
+
+func (b *linuxIntegrationCrashBackend) renameNoReplace(parent int, oldName, newName string) error {
+	b.renameCalls++
+	if b.renameCalls == 1 {
+		b.hit("before-rename")
+	}
+	err := b.linuxBackend.renameNoReplace(parent, oldName, newName)
+	if b.renameCalls == 1 && err == nil {
+		b.hit("after-rename")
+	}
+	return err
+}
+
+func (b *linuxIntegrationCrashBackend) fsync(fd int) error {
+	b.directoryCalls++
+	if b.directoryCalls == 1 {
+		b.hit("before-directory-fsync")
+	}
+	err := b.linuxBackend.fsync(fd)
+	if b.directoryCalls == 1 && err == nil {
+		b.hit("after-directory-fsync")
+	}
+	return err
+}
+
+func publishLinuxIntegrationObjectAtCrashBarrier(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationObjectCrashBarrier(barrier) {
+		t.Fatal("unknown object crash barrier")
+	}
+	ops := &linuxIntegrationCrashBackend{barrier: barrier}
+	root, err := newRootWithAuthority(context.Background(), rootPath, uint32(os.Getuid()), ops, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := root.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scan, err := lease.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	publication, err := lease.Publish(context.Background(), scan, linuxIntegrationDigest, []byte(linuxIntegrationPayload))
+	t.Fatalf("publish crossed crash barrier: publication=%v err=%v", publication, err)
+}
+
+func classifyLinuxIntegrationObjectCrashState(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationObjectCrashBarrier(barrier) {
+		t.Fatal("unknown object crash barrier")
+	}
+	if root, err := Open(context.Background(), rootPath); root != nil || !errors.Is(err, ErrTrustedMountAuthority) {
+		t.Fatalf("production Open bypassed trusted mount authority: root=%v err=%v", root, err)
+	}
+	root := newLinuxIntegrationRoot(t, rootPath)
+	lease, err := root.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	scan, err := lease.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalCount, finalBytes := scan.FinalUsage()
+	tempCount, tempBytes := scan.TemporaryUsage()
+	hasFinal := scan.HasObject(linuxIntegrationDigest, uint64(len(linuxIntegrationPayload)))
+	state := ""
+	switch {
+	case hasFinal && finalCount == 1 && finalBytes == uint64(len(linuxIntegrationPayload)) && tempCount == 0 && tempBytes == 0:
+		state = "final"
+	case !hasFinal && finalCount == 0 && finalBytes == 0 && tempCount == 0 && tempBytes == 0:
+		state = "absent"
+	case !hasFinal && finalCount == 0 && finalBytes == 0 && tempCount == 1 && tempBytes <= uint64(len(linuxIntegrationPayload)):
+		state = "temp"
+	default:
+		t.Fatalf("invalid object crash state: final=%v count=%d/%d temp=%d/%d", hasFinal, finalCount, finalBytes, tempCount, tempBytes)
+	}
+	if !validLinuxIntegrationObjectCrashState(barrier, state, tempBytes) {
+		t.Fatalf("barrier %q rejected recovery state=%q temp_bytes=%d", barrier, state, tempBytes)
+	}
+	t.Logf("EVIDENCEFS_INTEGRATION_OBJECT_CRASH_RECOVERY barrier=%s state=%s final_count=%d final_bytes=%d temp_count=%d temp_bytes=%d", barrier, state, finalCount, finalBytes, tempCount, tempBytes)
+}
+
+func validLinuxIntegrationObjectCrashBarrier(barrier string) bool {
+	switch barrier {
+	case "before-temp-write", "after-short-temp-write", "after-temp-write",
+		"before-temp-fdatasync", "after-temp-fdatasync", "before-rename",
+		"after-rename", "before-final-fdatasync", "after-final-fdatasync",
+		"before-directory-fsync", "after-directory-fsync":
+		return true
+	default:
+		return false
+	}
+}
+
+func validLinuxIntegrationObjectCrashState(barrier, state string, tempBytes uint64) bool {
+	switch barrier {
+	case "before-temp-write", "after-short-temp-write", "after-temp-write", "before-temp-fdatasync":
+		return state == "absent" || (state == "temp" && tempBytes <= uint64(len(linuxIntegrationPayload)))
+	case "after-temp-fdatasync", "before-rename":
+		return state == "absent" || (state == "temp" && tempBytes == uint64(len(linuxIntegrationPayload)))
+	case "after-rename", "before-final-fdatasync", "after-final-fdatasync", "before-directory-fsync":
+		return state == "absent" || state == "final" || (state == "temp" && tempBytes == uint64(len(linuxIntegrationPayload)))
+	case "after-directory-fsync":
+		return state == "final"
+	default:
+		return false
+	}
 }
 
 type linuxIntegrationHolder struct {
