@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "snapshot": {
-    "generated_at": "2026-08-12T10:16:34Z",
+    "generated_at": "2026-08-15T18:20:12Z",
     "module": "github.com/hxp0618/cloud-agents/services/control-plane",
     "go": "go1.26.5",
     "goos": "linux",
@@ -13,17 +13,17 @@
     "gosumdb": "sum.golang.org",
     "goprivate": "",
     "gonosumdb": "",
-    "source_commit": "5403ece2ef4d6903ef02fb8525f990c3c665c49a",
-    "source_commit_tree_oid": "bcc8e45ca59b8ebc0014834ebd204d2ae38299e1",
+    "source_commit": "f0f1aceec07d6e4d7813f1483f26e7ef9528c245",
+    "source_commit_tree_oid": "aef7a5bdb503c65e16065b50dda6bce51cf4535d",
     "source_commit_tree_oid_algorithm": "sha1",
-    "control_plane_tree_oid": "2be8cf17ea8e71863bae04b1589501a6467ce7b9",
+    "control_plane_tree_oid": "0e336f00df4434e98d32dbc57c0b0b292ccb9f23",
     "control_plane_tree_oid_algorithm": "sha1",
-    "control_plane_tracked_manifest_sha256": "55037541ffd0f41b22e42d2ad4c2bf00f01f935c55f3b01fb8811f8e6bbfb41b",
-    "control_plane_tracked_file_count": 144,
-    "control_plane_go_source_manifest_sha256": "22a41b466b6d181765b6b3203a36fda88430cae6362b82dfe1958cfbd2f7d21f",
-    "control_plane_go_source_file_count": 80,
+    "control_plane_tracked_manifest_sha256": "0b13d2e414d95ce741ebe7df21739c700adf70e5179a8839ec8ed4cfaab52876",
+    "control_plane_tracked_file_count": 274,
+    "control_plane_go_source_manifest_sha256": "a2fc88bc895a251644552067b8e646390933251de6ec00946c0fedc8e5bb1f7b",
+    "control_plane_go_source_file_count": 210,
     "source_tree_committed": true,
-    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source 5403ece2ef4d6903ef02fb8525f990c3c665c49a; this three-file supply-chain refresh is derived after and excluded from that source commit identity"
+    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source f0f1aceec07d6e4d7813f1483f26e7ef9528c245; this three-file supply-chain refresh is derived after and excluded from that source commit identity"
   },
   "inputs": {
     "go_mod_sha256": "ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7",
@@ -51,7 +51,11 @@
     "production_package_count": 30,
     "darwin_production_package_count": 29,
     "direct_requirement_count": 3,
-    "direct_requirements": ["github.com/jackc/pgx/v5 v5.10.0", "golang.org/x/sys v0.44.0", "golang.org/x/text v0.39.0"],
+    "direct_requirements": [
+      "github.com/jackc/pgx/v5 v5.10.0",
+      "golang.org/x/sys v0.44.0",
+      "golang.org/x/text v0.39.0"
+    ],
     "production_patents_file_count": 3,
     "notice_scope": "production-linked-only",
     "production_platform": "linux/amd64 and linux/arm64 CGO_ENABLED=0; both closures are identical",
@@ -86,7 +90,7 @@
       "canonical_response_sha256": "597de9d918195ae56f69090341f0a38ab47139b85ab19c2a11ec52f916e5f861"
     },
     "invalidation": "Any advisory database, scanner, module graph, source import, build tag, toolchain, version, checksum, license text, additional IP rights grant, or distribution-scope change requires a new snapshot. An empty result is not permanent safety evidence.",
-    "inheritance": "Not inherited: module/symbol scans and the 16-module OSV query were refreshed after x/sys entered the selected Linux production closure; all zero-finding results remain non-bit-safe time-bound evidence."
+    "inheritance": "Inherited unchanged from source-bound refresh 53b2463: module graph and Linux/Darwin non-test closures are byte-identical, and no new govulncheck or OSV scan was run; all zero-finding results remain non-bit-safe time-bound evidence from 2026-08-12."
   },
   "modules": [
     {

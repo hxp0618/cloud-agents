@@ -3,7 +3,7 @@
   "specVersion": "1.6",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-12T10:16:34Z",
+    "timestamp": "2026-08-15T18:20:12Z",
     "tools": {
       "components": [
         {
@@ -20,11 +20,11 @@
     },
     "component": {
       "type": "application",
-      "bom-ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@5403ece2ef4d6903ef02fb8525f990c3c665c49a",
+      "bom-ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@f0f1aceec07d6e4d7813f1483f26e7ef9528c245",
       "group": "github.com/hxp0618/cloud-agents/services",
       "name": "control-plane",
-      "version": "5403ece2ef4d6903ef02fb8525f990c3c665c49a",
-      "purl": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@5403ece2ef4d6903ef02fb8525f990c3c665c49a",
+      "version": "f0f1aceec07d6e4d7813f1483f26e7ef9528c245",
+      "purl": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@f0f1aceec07d6e4d7813f1483f26e7ef9528c245",
       "properties": [
         {
           "name": "cloud-agents:go-mod-sha256",
@@ -36,23 +36,23 @@
         },
         {
           "name": "cloud-agents:source-commit",
-          "value": "5403ece2ef4d6903ef02fb8525f990c3c665c49a"
+          "value": "f0f1aceec07d6e4d7813f1483f26e7ef9528c245"
         },
         {
           "name": "cloud-agents:source-commit-tree-oid",
-          "value": "bcc8e45ca59b8ebc0014834ebd204d2ae38299e1"
+          "value": "aef7a5bdb503c65e16065b50dda6bce51cf4535d"
         },
         {
           "name": "cloud-agents:control-plane-tree-oid",
-          "value": "2be8cf17ea8e71863bae04b1589501a6467ce7b9"
+          "value": "0e336f00df4434e98d32dbc57c0b0b292ccb9f23"
         },
         {
           "name": "cloud-agents:control-plane-tracked-manifest-sha256",
-          "value": "55037541ffd0f41b22e42d2ad4c2bf00f01f935c55f3b01fb8811f8e6bbfb41b"
+          "value": "0b13d2e414d95ce741ebe7df21739c700adf70e5179a8839ec8ed4cfaab52876"
         },
         {
           "name": "cloud-agents:control-plane-go-source-manifest-sha256",
-          "value": "22a41b466b6d181765b6b3203a36fda88430cae6362b82dfe1958cfbd2f7d21f"
+          "value": "a2fc88bc895a251644552067b8e646390933251de6ec00946c0fedc8e5bb1f7b"
         },
         {
           "name": "cloud-agents:non-test-production-package-list-sha256",
@@ -254,7 +254,10 @@
       "properties": [
         { "name": "cloud-agents:dependency-classification", "value": "production-linked" },
         { "name": "cloud-agents:distribution-scope", "value": "linux-linked-and-noticed" },
-        { "name": "cloud-agents:platform-scope", "value": "linux/amd64 and linux/arm64 CGO_ENABLED=0" },
+        {
+          "name": "cloud-agents:platform-scope",
+          "value": "linux/amd64 and linux/arm64 CGO_ENABLED=0"
+        },
         {
           "name": "cloud-agents:module-sum",
           "value": "h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ="
@@ -503,7 +506,7 @@
   ],
   "dependencies": [
     {
-      "ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@5403ece2ef4d6903ef02fb8525f990c3c665c49a",
+      "ref": "pkg:golang/github.com/hxp0618/cloud-agents/services/control-plane@f0f1aceec07d6e4d7813f1483f26e7ef9528c245",
       "dependsOn": [
         "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
         "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",

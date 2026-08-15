@@ -1,12 +1,12 @@
 # P1 dependency implementation closure：golang.org/x/sys v0.44.0
 
 - Status：**APPROVED — dependency implementation closure only**
-- Scope：固定 source commit `5403ece2ef4d6903ef02fb8525f990c3c665c49a` 的
+- Scope：固定 source commit `f0f1aceec07d6e4d7813f1483f26e7ef9528c245` 的
   `services/control-plane` source、module graph，以及 Linux/Darwin non-test import closure
 - Reviewed dependency：`golang.org/x/sys v0.44.0`
 - Accountable owner：hxp0618
 - Evidence owner：Codex P1 supply-chain worker
-- Review snapshot：2026-08-12T10:16:34Z
+- Source refresh snapshot：2026-08-15T18:20:12Z
 - Toolchain：Go `1.26.5 darwin/arm64`，`GOWORK=off`，`GOTOOLCHAIN=local`，
   `GOFLAGS=-mod=readonly`
 - Prohibited：`replace`、fork、vendor patch、floating version、blank import、Darwin production fallback
@@ -30,11 +30,11 @@ power-loss/restart、runner/DB/cloud、RC/release Gate 仍然开放。
 
 | Evidence | Exact value |
 | --- | --- |
-| Source commit | `5403ece2ef4d6903ef02fb8525f990c3c665c49a` |
-| Repository tree OID（Git SHA-1） | `bcc8e45ca59b8ebc0014834ebd204d2ae38299e1` |
-| `services/control-plane` subtree OID（Git SHA-1） | `2be8cf17ea8e71863bae04b1589501a6467ce7b9` |
-| 144-file tracked manifest SHA-256 | `55037541ffd0f41b22e42d2ad4c2bf00f01f935c55f3b01fb8811f8e6bbfb41b` |
-| 80-file tracked Go-source manifest SHA-256 | `22a41b466b6d181765b6b3203a36fda88430cae6362b82dfe1958cfbd2f7d21f` |
+| Source commit | `f0f1aceec07d6e4d7813f1483f26e7ef9528c245` |
+| Repository tree OID（Git SHA-1） | `aef7a5bdb503c65e16065b50dda6bce51cf4535d` |
+| `services/control-plane` subtree OID（Git SHA-1） | `0e336f00df4434e98d32dbc57c0b0b292ccb9f23` |
+| 274-file tracked manifest SHA-256 | `0b13d2e414d95ce741ebe7df21739c700adf70e5179a8839ec8ed4cfaab52876` |
+| 210-file tracked Go-source manifest SHA-256 | `a2fc88bc895a251644552067b8e646390933251de6ec00946c0fedc8e5bb1f7b` |
 | `go.mod` SHA-256 | `ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7` |
 | `go.sum` SHA-256 | `8d46b65698d18e97869fa31da700c24f3bfbc8b091afefd5584b3aaa1824d977` |
 | sorted `go list -m all` SHA-256 | `0f98de7d6500cfc9bda9c5d76cb269b714e2cd31a18857b7433e33fe540e7793` |
@@ -100,8 +100,8 @@ identity 是 exact version、module `h1` 与 proxy zip digest。SumDB response �
 
 | Derived artifact | SHA-256 |
 | --- | --- |
-| `services/control-plane/dependency-lock.json` | `359829c97e9f2d6cda10dbda6f3f42b32a15f48f6ef60f7a14070dec8d7ad2e4` |
-| `services/control-plane/sbom.cdx.json` | `f230db79a56514d23ddee6ae544a1d55f65d1345e9c00fe68330c5f26d39e319` |
+| `services/control-plane/dependency-lock.json` | `f5764e7c0a3e28d1b7c16dfe9e0684bcbc788b955d36c48be184ca47a3e7c256` |
+| `services/control-plane/sbom.cdx.json` | `10e97be62d601725ba0c81ac31d6e41e04bc22b1ed950464a3d984f88bedd75a` |
 | `services/control-plane/THIRD_PARTY_NOTICES.md` | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
 
 ## Vulnerability snapshot
@@ -114,10 +114,11 @@ identity 是 exact version、module `h1` 与 proxy zip digest。SumDB response �
 | Linux symbol scan | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`；0 findings | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5` |
 | OSV querybatch | 16 exact selected modules；16 responses；0 findings | query `937ac9fb9495cc4ea13990a2cdead2c17f85fbfb817f610057051097aeb8d720`；canonical response `597de9d918195ae56f69090341f0a38ab47139b85ab19c2a11ec52f916e5f861` |
 
-本次没有继承旧 15-module/29-package 结论；在 x/sys 进入 Linux production closure 后重新执行 module scan、Linux
-symbol scan 与 16-module OSV query。`GO-2026-5024` 影响 Windows API，且 v0.44.0 是 first-fixed version；这里没有
-用 platform suppression 替代 fixed version。任一 advisory DB、scanner、module graph、source import、build tag、
-version、sum、license/PATENTS 或 distribution scope 变化，都要求刷新判断。
+本次 source-bound refresh 没有重新执行联网扫描。module graph、Linux/Darwin non-test closure、exact versions 与 sums
+均同 `53b2463` byte-identical，因此继承其 2026-08-12 module/symbol/OSV 时点结果；这不构成 2026-08-16 的新安全
+结论。`GO-2026-5024` 影响 Windows API，且 v0.44.0 是 first-fixed version；这里没有用 platform suppression 替代
+fixed version。任一 advisory DB、scanner、module graph、source import、build tag、version、sum、license/PATENTS
+或 distribution scope 变化，都要求刷新判断。
 
 ## Verification and fail-closed runtime boundary
 
