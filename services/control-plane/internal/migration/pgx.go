@@ -51,6 +51,14 @@ type runnerTransactionProjectionProfile interface {
 	runnerTransactionProjectionProfileSealed()
 }
 
+// runnerTransactionLedger is the only runner-facing transaction seam that may
+// insert one exact signed ledger row. Insert and readback are deliberately one
+// operation so no caller can retain an unchecked ledger mutation authority.
+type runnerTransactionLedger interface {
+	insertAndReadRunnerLedgerRow(context.Context, MigrationEntry, Digest) ([]LedgerRow, error)
+	runnerTransactionLedgerSealed()
+}
+
 type PGXConnector struct{}
 
 func (PGXConnector) Connect(ctx context.Context, dsn string) (DatabaseSession, error) {
@@ -288,6 +296,33 @@ func (transaction *pgxMigrationTx) ExecuteStatement(ctx context.Context, raw []b
 	}
 	return nil
 }
+
+func (transaction *pgxMigrationTx) insertAndReadRunnerLedgerRow(ctx context.Context, entry MigrationEntry, bundleDigest Digest) ([]LedgerRow, error) {
+	if transaction == nil || transaction.tx == nil || transaction.tx.Conn() == nil || transaction.tx.Conn().PgConn().TxStatus() != 'T' || bundleDigest.Validate() != nil {
+		return nil, fail(CodeInvalidLedger, "runner-ledger-write", "migration transaction cannot mutate the exact ledger", nil)
+	}
+	if row := commitIntentLedgerRow(entry, bundleDigest); row.Validate() != nil {
+		return nil, fail(CodeInvalidLedger, "runner-ledger-write", "signed ledger row is invalid", nil)
+	}
+	if err := (SQLLedgerStore{}).Insert(ctx, transaction, entry, bundleDigest); err != nil {
+		return nil, err
+	}
+	if transaction.tx.Conn().PgConn().TxStatus() != 'T' {
+		return nil, fail(CodeInvalidLedger, "runner-ledger-write", "ledger insert changed the transaction boundary", nil)
+	}
+	rows, err := (SQLLedgerStore{}).Read(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
+	if transaction.tx.Conn().PgConn().TxStatus() != 'T' {
+		return nil, fail(CodeInvalidLedger, "runner-ledger-readback", "ledger readback changed the transaction boundary", nil)
+	}
+	return cloneProjectionValue(rows), nil
+}
+
+func (*pgxMigrationTx) runnerTransactionLedgerSealed() {}
+
+var _ runnerTransactionLedger = (*pgxMigrationTx)(nil)
 
 func (transaction *pgxMigrationTx) Boundary(ctx context.Context, key int64) (BoundaryState, error) {
 	state := BoundaryState{TxStatus: transaction.tx.Conn().PgConn().TxStatus()}

@@ -499,6 +499,12 @@ type runnerPreflightTransaction struct {
 	executeErr          error
 	executeMutate       func([]byte)
 	executedSQL         [][]byte
+	ledgerInsertErr     error
+	ledgerReadErr       error
+	ledgerReadMutate    func([]LedgerRow) []LedgerRow
+	pendingLedger       *LedgerRow
+	ledgerInsertCalls   int
+	ledgerReadCalls     int
 	boundaryCalls       int
 	commitCalls         int
 	rollbackCalls       int
@@ -590,6 +596,35 @@ func (transaction *runnerPreflightTransaction) ExecuteStatement(ctx context.Cont
 	return transaction.executeErr
 }
 
+func (transaction *runnerPreflightTransaction) insertAndReadRunnerLedgerRow(ctx context.Context, entry MigrationEntry, digest Digest) ([]LedgerRow, error) {
+	transaction.ledgerInsertCalls++
+	transaction.session.backend.ledgerInsertCalls++
+	transaction.steps = append(transaction.steps, "ledger-insert")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !transaction.active || transaction.status != 'T' || transaction.profile != "execution" {
+		return nil, errors.New("invalid ledger transaction lifecycle")
+	}
+	if transaction.ledgerInsertErr != nil {
+		return nil, transaction.ledgerInsertErr
+	}
+	row := ledgerRowFor(entry, digest)
+	transaction.pendingLedger = &row
+	transaction.ledgerReadCalls++
+	transaction.steps = append(transaction.steps, "ledger-readback")
+	if transaction.ledgerReadErr != nil {
+		return nil, transaction.ledgerReadErr
+	}
+	rows := []LedgerRow{cloneProjectionValue(row)}
+	if transaction.ledgerReadMutate != nil {
+		rows = transaction.ledgerReadMutate(rows)
+	}
+	return cloneProjectionValue(rows), nil
+}
+
+func (*runnerPreflightTransaction) runnerTransactionLedgerSealed() {}
+
 func (transaction *runnerPreflightTransaction) Boundary(context.Context, int64) (BoundaryState, error) {
 	transaction.boundaryCalls++
 	transaction.steps = append(transaction.steps, "boundary")
@@ -616,6 +651,7 @@ func (transaction *runnerPreflightTransaction) Rollback(context.Context) error {
 		if !transaction.rollbackLeavesOpen {
 			transaction.active = false
 			transaction.status = 'I'
+			transaction.pendingLedger = nil
 		}
 		return transaction.rollbackErr
 	}
@@ -624,6 +660,7 @@ func (transaction *runnerPreflightTransaction) Rollback(context.Context) error {
 	}
 	transaction.active = false
 	transaction.status = 'I'
+	transaction.pendingLedger = nil
 	return nil
 }
 
