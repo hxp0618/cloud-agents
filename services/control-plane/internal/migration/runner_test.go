@@ -69,7 +69,7 @@ func TestPublicRunnerExactAdmissionStopsAtUnconfiguredEvidenceSinkWithZeroSideEf
 	assertNoRunnerSideEffects(t, connector, backend)
 }
 
-func TestPublicRunnerProjectsBothAuthorityPhasesBeforeCatalogBoundary(t *testing.T) {
+func TestPublicRunnerProjectsAllPreexecutionAuthorityPhasesBeforeStatementIntent(t *testing.T) {
 	raw, decision := buildExactAdmissionRuntime(t)
 	connector := &runnerPreflightConnector{session: newRunnerPreflightSession()}
 	factory := &runnerPreflightProjectorFactory{}
@@ -85,8 +85,8 @@ func TestPublicRunnerProjectsBothAuthorityPhasesBeforeCatalogBoundary(t *testing
 	before := liveVerifiedEvidenceRunBindings()
 	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
 	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-entry-execution" || migrationErr.Err != nil {
-		t.Fatalf("authority-preflight runner did not stop at the catalog boundary: %v", err)
+	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-statement-intent" || migrationErr.Err != nil {
+		t.Fatalf("authority-preflight runner did not stop at the statement-intent boundary: %v", err)
 	}
 	if sink.calls != 1 || sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
 		t.Fatalf("evidence session lifecycle mismatch: sink=%d session=%+v live=%d/%d", sink.calls, sink.session, liveVerifiedEvidenceRunBindings(), before)

@@ -312,17 +312,21 @@ func validateRunnerAuthorityProjectionResult(result ProjectionResult[AuthorityPr
 }
 
 func validateRunnerInitialPreconditionResult(result ProjectionResult[CatalogStateProjection], snapshot SnapshotMetadata, scope VerifiedSchemaBundleScope, condition CatalogPrecondition, expected CatalogStateDigestRef) error {
-	if err := snapshot.validate(); err != nil || snapshot.AuthorityPhase != AuthorityPhaseMigrationRole {
-		return fail(CodeProjectionMetadataMismatch, "runner-initial-precondition", "initial catalog snapshot metadata is invalid", nil)
+	return validateRunnerPreconditionResult(result, snapshot, scope, condition, expected, AuthorityPhaseMigrationRole, "runner-initial-precondition")
+}
+
+func validateRunnerPreconditionResult(result ProjectionResult[CatalogStateProjection], snapshot SnapshotMetadata, scope VerifiedSchemaBundleScope, condition CatalogPrecondition, expected CatalogStateDigestRef, phase AuthorityPhase, op string) error {
+	if err := snapshot.validate(); err != nil || snapshot.AuthorityPhase != phase || phase != AuthorityPhaseMigrationRole && phase != AuthorityPhaseMigrationTransaction {
+		return fail(CodeProjectionMetadataMismatch, op, "catalog snapshot metadata is invalid", nil)
 	}
 	if err := scope.validatePrecondition(condition); err != nil || expected.Validate() != nil || !equalProjectionScopes(scope.Scope(), expected.Scope) {
-		return fail(CodeUntrusted, "runner-initial-precondition", "initial catalog scope differs from the exact first statement plan", nil)
+		return fail(CodeUntrusted, op, "catalog scope differs from the exact first statement plan", nil)
 	}
 	if err := result.Metadata.validate(); err != nil || !runnerCanonicalEqual(result.Metadata.Snapshot, snapshot) || result.Metadata.VerifiedSubjectDigest != scope.SubjectDigest() || result.Metadata.QueryCount != 1 || result.Metadata.RowCount == 0 || result.Metadata.TotalBytes == 0 || result.Metadata.Scope == nil || !equalProjectionScopes(*result.Metadata.Scope, expected.Scope) {
-		return fail(CodeProjectionMetadataMismatch, "runner-initial-precondition", "initial catalog projection metadata is incomplete or mismatched", nil)
+		return fail(CodeProjectionMetadataMismatch, op, "catalog projection metadata is incomplete or mismatched", nil)
 	}
 	if err := result.Projection.Validate(); err != nil {
-		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog projection is invalid", nil)
+		return fail(CodeCatalogDrift, op, "catalog projection is invalid", nil)
 	}
 	stateKind := "schema_absent"
 	if result.Projection.Present != nil {
@@ -330,11 +334,11 @@ func validateRunnerInitialPreconditionResult(result ProjectionResult[CatalogStat
 	}
 	digest, err := result.Projection.ComputeDigest()
 	if err != nil || digest != result.Digest || digest != expected.Digest || stateKind != expected.StateKind {
-		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog state differs from the first statement predecessor", nil)
+		return fail(CodeCatalogDrift, op, "catalog state differs from the first statement predecessor", nil)
 	}
 	actualKey, err := canonicalContractKey(result.Projection)
 	if err != nil {
-		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog state cannot be canonicalized", nil)
+		return fail(CodeCatalogDrift, op, "catalog state cannot be canonicalized", nil)
 	}
 	matched := false
 	for _, accepted := range condition.AcceptedStates {
@@ -345,7 +349,7 @@ func validateRunnerInitialPreconditionResult(result ProjectionResult[CatalogStat
 		}
 	}
 	if !matched {
-		return fail(CodeCatalogDrift, "runner-initial-precondition", "initial catalog state is outside the verified predecessor set", nil)
+		return fail(CodeCatalogDrift, op, "catalog state is outside the verified predecessor set", nil)
 	}
 	return nil
 }

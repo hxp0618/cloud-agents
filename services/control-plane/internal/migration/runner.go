@@ -71,10 +71,12 @@ type databaseState struct {
 }
 
 // Run is the public production gate. It admits one evidence session, proves the
-// connected-session and migration-role authority projections on the same
-// dedicated database connection, and seals the exact header-only current
-// dispatch. The prepared authority is still closed without beginning a
-// migration transaction.
+// connected-session, migration-role, and migration-transaction authority
+// projections on the same dedicated database connection. It seals the exact
+// header-only current dispatch, repeats its predecessor inside one borrowed
+// SERIALIZABLE/READ WRITE snapshot, and then unconditionally rolls back. No
+// statement intent, migration SQL, ledger row, evidence record, or commit is
+// reachable from this slice.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err
@@ -129,9 +131,13 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 	}
 	prepared, preflightErr := runner.prepareCurrentDatabaseSession(ctx, request.TargetDSN, bundle, plans, session, snapshot, candidate)
 	if preflightErr == nil {
-		preflightErr = closeRunnerPreparedCurrentSession(prepared, nil)
+		transaction, transactionErr := runner.prepareCurrentTransaction(ctx, prepared, bundle, plans)
+		preflightErr = transactionErr
 		if preflightErr == nil {
-			preflightErr = fail(CodeProjectionNotImplemented, "runner-entry-execution", "prepared current runner dispatch is sealed but transaction execution is not implemented", nil)
+			preflightErr = closeRunnerPreparedCurrentTransaction(transaction, nil)
+			if preflightErr == nil {
+				preflightErr = fail(CodeProjectionNotImplemented, "runner-statement-intent", "transaction-wide current preflight is sealed but statement intent is not implemented", nil)
+			}
 		}
 	} else {
 		preflightErr = closeRunnerPreparedCurrentSession(prepared, preflightErr)

@@ -96,10 +96,10 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 		wantCode ErrorCode
 		wantOp   string
 	}{
-		{"brand-new", nil, CodeProjectionNotImplemented, "runner-entry-execution"},
+		{"brand-new", nil, CodeProjectionNotImplemented, "runner-statement-intent"},
 		{"inherited-header-only", func(snapshot *RecoverySnapshot) {
 			snapshot.state = RecoveryBrandNewInherited
-		}, CodeProjectionNotImplemented, "runner-entry-execution"},
+		}, CodeProjectionNotImplemented, "runner-statement-intent"},
 		{"wrong-action", func(snapshot *RecoverySnapshot) {
 			snapshot.nextPermittedAction = RecoveryBeginNextAttempt
 		}, CodeProjectionNotImplemented, "runner-recovery-dispatch"},
@@ -125,8 +125,12 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 			if !errors.As(err, &migrationErr) || migrationErr.Code != test.wantCode || migrationErr.Op != test.wantOp || migrationErr.Err != nil {
 				t.Fatalf("recovery dispatch=%#v", migrationErr)
 			}
-			if sink.session == nil || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1 || database.beginCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 {
-				t.Fatalf("recovery dispatch crossed write or cleanup boundary: sink=%+v database=%+v factory=%+v live=%d", sink.session, database, factory, liveRunnerPreparedCurrentSessions())
+			wantBegin := 0
+			if test.wantOp == "runner-statement-intent" {
+				wantBegin = 1
+			}
+			if sink.session == nil || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != 0 || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 {
+				t.Fatalf("recovery dispatch crossed write or cleanup boundary: sink=%+v database=%+v transaction=%+v factory=%+v live=%d/%d", sink.session, database, database.transaction, factory, liveRunnerPreparedCurrentSessions(), liveRunnerPreparedCurrentTransactions())
 			}
 		})
 	}
@@ -340,6 +344,11 @@ func TestRunnerPreparedSessionHasOnlyReviewedProductionConsumers(t *testing.T) {
 			"prepareCurrentDatabaseSession": true, "runnerPreparedCurrentSession": true, "bindRunnerPreparedCurrentSession": true,
 		},
 		"runner.go": {"prepareCurrentDatabaseSession": true, "closeRunnerPreparedCurrentSession": true},
+		"runner_transaction_preflight.go": {
+			"runnerPreparedCurrentSession": true, "runnerPreparedCurrentSessionBinding": true,
+			"runnerPreparedCurrentSessionRegistryRecord": true, "validRunnerPreparedCurrentSession": true,
+			"closeRunnerPreparedCurrentSession": true, "runnerPreparedCurrentSessionRegistry": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
@@ -430,6 +439,7 @@ func newRunnerPreparedCurrentSessionFixture(t *testing.T) runnerPreparedCurrentS
 	evidence := newRunnerEvidenceSessionFake(candidate)
 	database := newRunnerPreflightSession()
 	database.roleConfigured, database.locked = true, true
+	database.executionPolicy = bundle.Manifest.ExecutionPolicy
 	metadata := runnerPreflightSnapshotMetadata(AuthorityPhaseMigrationRole)
 	authority := runnerPreflightProjectionResult(t, metadata, bindings.verifiedAuthority, AuthorityPhaseMigrationRole)
 	factory := &runnerPreflightProjectorFactory{}

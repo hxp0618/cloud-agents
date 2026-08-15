@@ -111,7 +111,11 @@ func TestRunnerDatabasePreflightFaultsCloseEvidenceAndDatabase(t *testing.T) {
 			if !errors.As(err, &migrationErr) || migrationErr.Code != test.wantCode || migrationErr.Err != nil || containsErrorText(err, "secret-") {
 				t.Fatalf("preflight fault escaped stable mapping: err=%#v", migrationErr)
 			}
-			if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || session.closeCalls != test.wantClose || session.beginCalls != 0 || session.queryCalls != 0 {
+			wantBegin := 0
+			if test.name == "unlock" || test.name == "database-close" {
+				wantBegin = 1
+			}
+			if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || session.closeCalls != test.wantClose || session.beginCalls != wantBegin || session.transaction.rollbackCalls != wantBegin || session.transaction.executeCalls != 0 || session.transaction.execCalls != 0 || session.transaction.commitCalls != 0 || session.queryCalls != 0 {
 				t.Fatalf("fault cleanup crossed a forbidden boundary: evidence=%+v session=%+v", sink.session, session)
 			}
 			if session.locked && session.closeErr == nil {
@@ -292,9 +296,13 @@ func assertRunnerAuthorityPreflightLifecycle(t *testing.T, connector *runnerPref
 	t.Helper()
 	session := connector.session
 	wantSnapshots := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole}
-	wantAuthority := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole}
-	if connector.attempts != 1 || session == nil || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 1 || session.closeCalls != 1 || session.serverMajorCalls != 0 || session.boundaryCalls != 0 || session.beginCalls != 0 || session.queryCalls != 0 || session.ledgerReadCalls != 2 || session.backend.ledgerReadCalls != 0 || session.backend.ledgerInsertCalls != 0 || session.backend.executeCalls != 0 || session.backend.commitCalls != 0 || !session.closed || session.locked || session.roleConfigured || !reflect.DeepEqual(session.snapshotPhases, wantSnapshots) || !reflect.DeepEqual(session.snapshotClosePhases, wantSnapshots) || !reflect.DeepEqual(factory.factoryPhases, wantSnapshots) || !reflect.DeepEqual(factory.projectionPhases, wantAuthority) || !reflect.DeepEqual(factory.preconditionPhases, []AuthorityPhase{AuthorityPhaseMigrationRole}) {
-		t.Fatalf("runner authority preflight lifecycle mismatch: connector=%+v session=%+v factory=%+v", connector, session, factory)
+	wantFactory := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction}
+	wantAuthority := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction}
+	wantPrecondition := []AuthorityPhase{AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction}
+	wantTransactionSteps := []string{"begin", "profile-enter", "metadata", "profile-restore", "boundary", "rollback"}
+	transaction := session.transaction
+	if connector.attempts != 1 || session == nil || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 1 || session.closeCalls != 1 || session.serverMajorCalls != 0 || session.boundaryCalls != 0 || session.beginCalls != 1 || session.queryCalls != 0 || session.ledgerReadCalls != 2 || transaction == nil || transaction.profileEnterCalls != 1 || transaction.profileRestoreCalls != 1 || transaction.profile != "execution" || transaction.metadata[7] != int64(300000) || transaction.metadata[8] != int64(30000) || transaction.metadata[9] != int64(60000) || transaction.metadataReadCalls != 1 || transaction.queryCalls != 0 || transaction.execCalls != 0 || transaction.executeCalls != 0 || transaction.boundaryCalls != 1 || transaction.commitCalls != 0 || transaction.rollbackCalls != 1 || transaction.active || transaction.status != 'I' || !reflect.DeepEqual(transaction.steps, wantTransactionSteps) || session.backend.ledgerReadCalls != 0 || session.backend.ledgerInsertCalls != 0 || session.backend.executeCalls != 0 || session.backend.commitCalls != 0 || !session.closed || session.locked || session.roleConfigured || !reflect.DeepEqual(session.snapshotPhases, wantSnapshots) || !reflect.DeepEqual(session.snapshotClosePhases, wantSnapshots) || !reflect.DeepEqual(factory.factoryPhases, wantFactory) || !reflect.DeepEqual(factory.projectionPhases, wantAuthority) || !reflect.DeepEqual(factory.preconditionPhases, wantPrecondition) || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 {
+		t.Fatalf("runner authority preflight lifecycle mismatch: connector=%+v session=%+v transaction=%+v factory=%+v", connector, session, transaction, factory)
 	}
 }
 
@@ -316,6 +324,7 @@ func (connector *runnerPreflightConnector) Connect(context.Context, string) (Dat
 type runnerPreflightSession struct {
 	backend                *fakeBackend
 	roleConfigured         bool
+	executionPolicy        ExecutionPolicy
 	locked                 bool
 	projectionActive       bool
 	closed                 bool
@@ -323,6 +332,9 @@ type runnerPreflightSession struct {
 	lockErr                error
 	unlockErr              error
 	closeErr               error
+	beginErr               error
+	beginReturnsOnError    bool
+	beginReturnsNil        bool
 	snapshotOpenErr        map[AuthorityPhase]error
 	snapshotCloseErr       map[AuthorityPhase]error
 	snapshotMetadataMutate map[AuthorityPhase]func(*SnapshotMetadata)
@@ -342,14 +354,17 @@ type runnerPreflightSession struct {
 	beginCalls             int
 	queryCalls             int
 	ledgerReadCalls        int
+	transaction            *runnerPreflightTransaction
 }
 
 func newRunnerPreflightSession() *runnerPreflightSession {
-	return &runnerPreflightSession{
+	session := &runnerPreflightSession{
 		backend: &fakeBackend{}, snapshotOpenErr: map[AuthorityPhase]error{}, snapshotCloseErr: map[AuthorityPhase]error{},
 		snapshotMetadataMutate: map[AuthorityPhase]func(*SnapshotMetadata){}, snapshotMetadataNth: map[int]func(*SnapshotMetadata){},
 		ledgerReadErr: map[int]error{}, afterLedgerRead: map[int]func(){},
 	}
+	session.transaction = newRunnerPreflightTransaction(session)
+	return session
 }
 
 func (session *runnerPreflightSession) Queryer() Queryer {
@@ -362,7 +377,7 @@ func (session *runnerPreflightSession) ServerMajor(context.Context) (int, error)
 	return 16, nil
 }
 
-func (session *runnerPreflightSession) SetRoleAndSettings(context.Context, ExecutionPolicy) error {
+func (session *runnerPreflightSession) SetRoleAndSettings(_ context.Context, policy ExecutionPolicy) error {
 	session.setRoleCalls++
 	if session.closed || session.projectionActive || session.roleConfigured || session.locked {
 		return errors.New("invalid role lifecycle")
@@ -371,6 +386,7 @@ func (session *runnerPreflightSession) SetRoleAndSettings(context.Context, Execu
 		return session.settingsErr
 	}
 	session.roleConfigured = true
+	session.executionPolicy = policy
 	return nil
 }
 
@@ -410,7 +426,25 @@ func (session *runnerPreflightSession) readRunnerLedgerPrefix(context.Context) (
 
 func (session *runnerPreflightSession) BeginMigration(context.Context) (MigrationTransaction, error) {
 	session.beginCalls++
-	return nil, errors.New("migration transaction is forbidden in authority preflight")
+	if session.closed || session.projectionActive || !session.roleConfigured || !session.locked || session.transaction.active {
+		return nil, errors.New("invalid migration transaction lifecycle")
+	}
+	session.transaction.active = true
+	session.transaction.status = 'T'
+	session.transaction.profile = "execution"
+	session.transaction.steps = append(session.transaction.steps, "begin")
+	session.transaction.setTimeoutMetadata(session.executionPolicy.StatementTimeoutMS, session.executionPolicy.LockTimeoutMS, session.executionPolicy.IdleInTransactionSessionTimeoutMS)
+	if session.beginErr != nil && !session.beginReturnsOnError {
+		session.transaction.active = false
+		session.transaction.status = 'I'
+		return nil, session.beginErr
+	}
+	if session.beginReturnsNil {
+		session.transaction.active = false
+		session.transaction.status = 'I'
+		return nil, session.beginErr
+	}
+	return session.transaction, session.beginErr
 }
 
 func (session *runnerPreflightSession) UnlockAndReset(_ context.Context, key int64) error {
@@ -419,8 +453,12 @@ func (session *runnerPreflightSession) UnlockAndReset(_ context.Context, key int
 	if session.unlockErr != nil {
 		return session.unlockErr
 	}
+	if session.transaction.active {
+		return errors.New("cannot unlock while migration transaction remains active")
+	}
 	session.locked = false
 	session.roleConfigured = false
+	session.executionPolicy = ExecutionPolicy{}
 	return nil
 }
 
@@ -428,8 +466,180 @@ func (session *runnerPreflightSession) Close(context.Context) error {
 	session.closeCalls++
 	session.closed = true
 	session.locked = false
+	session.transaction.active = false
+	session.transaction.status = 'I'
 	if session.closeErr != nil {
 		return session.closeErr
+	}
+	return nil
+}
+
+type runnerPreflightTransaction struct {
+	session             *runnerPreflightSession
+	active              bool
+	status              byte
+	metadata            []any
+	afterMetadataScan   func()
+	metadataReadErr     error
+	boundaryErr         error
+	boundaryMutate      func(*BoundaryState)
+	rollbackErr         error
+	rollbackLeavesOpen  bool
+	profileEnterErr     error
+	profileRestoreErr   error
+	profile             string
+	profileEnterCalls   int
+	profileRestoreCalls int
+	metadataReadCalls   int
+	queryCalls          int
+	execCalls           int
+	executeCalls        int
+	boundaryCalls       int
+	commitCalls         int
+	rollbackCalls       int
+	steps               []string
+}
+
+func newRunnerPreflightTransaction(session *runnerPreflightSession) *runnerPreflightTransaction {
+	expected := minimalAuthorityProjection(AuthorityPhaseMigrationTransaction)
+	return &runnerPreflightTransaction{
+		session: session,
+		status:  'I',
+		metadata: []any{
+			"160000", expected.DatabaseName, expected.SessionUser, expected.CurrentUser,
+			"serializable", "off", "off",
+			projectionQueryTimeout.Milliseconds(), projectionLockTimeout.Milliseconds(), projectionIdleInTransactionTimeout.Milliseconds(),
+		},
+	}
+}
+
+func (transaction *runnerPreflightTransaction) projectionTxStatus() byte { return transaction.status }
+
+func (transaction *runnerPreflightTransaction) enterRunnerProjectionProfile(context.Context) error {
+	transaction.profileEnterCalls++
+	transaction.steps = append(transaction.steps, "profile-enter")
+	if transaction.profileEnterErr != nil {
+		return transaction.profileEnterErr
+	}
+	if !transaction.active || transaction.status != 'T' || transaction.profile != "execution" {
+		return errors.New("invalid projection profile transition")
+	}
+	transaction.profile = "projection"
+	transaction.setTimeoutMetadata(uint64(projectionQueryTimeout.Milliseconds()), uint64(projectionLockTimeout.Milliseconds()), uint64(projectionIdleInTransactionTimeout.Milliseconds()))
+	return nil
+}
+
+func (transaction *runnerPreflightTransaction) restoreRunnerExecutionProfile(_ context.Context, policy ExecutionPolicy) error {
+	transaction.profileRestoreCalls++
+	transaction.steps = append(transaction.steps, "profile-restore")
+	if transaction.profileRestoreErr != nil {
+		return transaction.profileRestoreErr
+	}
+	if !transaction.active || transaction.status != 'T' || transaction.profile != "projection" || !runnerCanonicalEqual(policy, transaction.session.executionPolicy) {
+		return errors.New("invalid execution profile transition")
+	}
+	transaction.profile = "execution"
+	transaction.setTimeoutMetadata(policy.StatementTimeoutMS, policy.LockTimeoutMS, policy.IdleInTransactionSessionTimeoutMS)
+	return nil
+}
+
+func (*runnerPreflightTransaction) runnerTransactionProjectionProfileSealed() {}
+
+func (transaction *runnerPreflightTransaction) setTimeoutMetadata(statementTimeoutMS, lockTimeoutMS, idleTimeoutMS uint64) {
+	transaction.metadata[7] = int64(statementTimeoutMS)
+	transaction.metadata[8] = int64(lockTimeoutMS)
+	transaction.metadata[9] = int64(idleTimeoutMS)
+}
+
+func (transaction *runnerPreflightTransaction) Query(context.Context, string, ...any) (Rows, error) {
+	transaction.queryCalls++
+	return nil, errors.New("raw transaction query is forbidden in runner preflight")
+}
+
+func (transaction *runnerPreflightTransaction) QueryRow(ctx context.Context, _ string, _ ...any) Row {
+	transaction.metadataReadCalls++
+	transaction.steps = append(transaction.steps, "metadata")
+	return runnerPreflightMetadataRow{ctx: ctx, values: transaction.metadata, err: transaction.metadataReadErr, afterScan: transaction.afterMetadataScan}
+}
+
+func (transaction *runnerPreflightTransaction) Exec(context.Context, string, ...any) (CommandTag, error) {
+	transaction.execCalls++
+	return nil, errors.New("transaction exec is forbidden in runner preflight")
+}
+
+func (transaction *runnerPreflightTransaction) ExecuteStatement(context.Context, []byte) error {
+	transaction.executeCalls++
+	transaction.session.backend.executeCalls++
+	return errors.New("migration statement execution is forbidden in runner preflight")
+}
+
+func (transaction *runnerPreflightTransaction) Boundary(context.Context, int64) (BoundaryState, error) {
+	transaction.boundaryCalls++
+	transaction.steps = append(transaction.steps, "boundary")
+	if transaction.boundaryErr != nil {
+		return BoundaryState{}, transaction.boundaryErr
+	}
+	boundary := BoundaryState{TxStatus: transaction.status, CurrentUser: MigrationOwnerRole, LockHeld: transaction.session.locked}
+	if transaction.boundaryMutate != nil {
+		transaction.boundaryMutate(&boundary)
+	}
+	return boundary, nil
+}
+
+func (transaction *runnerPreflightTransaction) Commit(context.Context) error {
+	transaction.commitCalls++
+	transaction.session.backend.commitCalls++
+	return errors.New("transaction commit is forbidden in runner preflight")
+}
+
+func (transaction *runnerPreflightTransaction) Rollback(context.Context) error {
+	transaction.rollbackCalls++
+	transaction.steps = append(transaction.steps, "rollback")
+	if transaction.rollbackErr != nil {
+		if !transaction.rollbackLeavesOpen {
+			transaction.active = false
+			transaction.status = 'I'
+		}
+		return transaction.rollbackErr
+	}
+	if transaction.rollbackLeavesOpen {
+		return nil
+	}
+	transaction.active = false
+	transaction.status = 'I'
+	return nil
+}
+
+type runnerPreflightMetadataRow struct {
+	ctx       context.Context
+	values    []any
+	err       error
+	afterScan func()
+}
+
+func (row runnerPreflightMetadataRow) Scan(targets ...any) error {
+	if row.err != nil {
+		return row.err
+	}
+	if err := row.ctx.Err(); err != nil {
+		return err
+	}
+	if len(targets) != len(row.values) {
+		return errors.New("transaction metadata target count differs")
+	}
+	for index := range targets {
+		target := reflect.ValueOf(targets[index])
+		if target.Kind() != reflect.Pointer || target.IsNil() {
+			return errors.New("transaction metadata target is not writable")
+		}
+		value := reflect.ValueOf(row.values[index])
+		if !value.IsValid() || !value.Type().AssignableTo(target.Elem().Type()) {
+			return errors.New("transaction metadata type differs")
+		}
+		target.Elem().Set(value)
+	}
+	if row.afterScan != nil {
+		row.afterScan()
 	}
 	return nil
 }
@@ -564,7 +774,7 @@ func (projector *runnerPreflightProjector) ProjectAuthority(_ context.Context, s
 func (projector *runnerPreflightProjector) ProjectPrecondition(_ context.Context, snapshot ProjectionSnapshot, scope VerifiedSchemaBundleScope, condition CatalogPrecondition) (ProjectionResult[CatalogStateProjection], error) {
 	phase := snapshot.Metadata().AuthorityPhase
 	projector.factory.preconditionPhases = append(projector.factory.preconditionPhases, phase)
-	if snapshot != projector.snapshot || phase != AuthorityPhaseMigrationRole {
+	if snapshot != projector.snapshot || phase != AuthorityPhaseMigrationRole && phase != AuthorityPhaseMigrationTransaction {
 		return ProjectionResult[CatalogStateProjection]{}, errors.New("precondition snapshot swap")
 	}
 	if projector.factory.preconditionErr != nil {

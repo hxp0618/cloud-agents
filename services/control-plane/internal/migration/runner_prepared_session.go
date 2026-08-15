@@ -202,10 +202,17 @@ func validRunnerPreparedCurrentSession(prepared *runnerPreparedCurrentSession) b
 	if !ok || !recordOK || record.prepared != prepared || record.binding != prepared.binding || record.key != prepared.key || record.candidateBinding != prepared.candidateBinding || record.canonical != prepared.canonical || !sameRunnerOwnedPointer(record.session, prepared.session) || !sameRunnerOwnedPointer(record.evidence, prepared.evidence) {
 		return false
 	}
-	current := prepared.evidence.CurrentCandidate()
-	active := prepared.evidence.ActiveGeneration()
-	snapshot := prepared.evidence.RecoverySnapshot()
-	return validOwnedCurrentCandidate(current) && current.binding == prepared.candidateBinding && active.kind == activeGenerationCurrent && sameGenerationIdentity(active.identity, prepared.generation) && active.ownedDecision.owner == current.verifiedRun.currentDecision.owner && active.ownedDecision.digest == prepared.generation.runnerProjectionDecisionDigest && active.ownedDecision.decision.exactlyMatches(current.verifiedRun.currentDecision.decision) && active.recoveryExecutionBindings == nil && snapshot != nil && validRecoverySnapshotForJournal(snapshot, prepared.generation, snapshot.cursor) && generationJournalRecoveryDigest(snapshot) == prepared.recoveryDigest && runnerBrandNewRecoverySnapshot(snapshot)
+	return runnerPreparedEvidenceMatches(prepared.evidence, prepared.candidateBinding, prepared.generation, prepared.recoveryDigest)
+}
+
+func runnerPreparedEvidenceMatches(evidence EvidenceSession, candidateBinding *verifiedEvidenceRunBinding, generation generationIdentity, recoveryDigest [32]byte) bool {
+	if evidence == nil || candidateBinding == nil || recoveryDigest == ([32]byte{}) {
+		return false
+	}
+	current := evidence.CurrentCandidate()
+	active := evidence.ActiveGeneration()
+	snapshot := evidence.RecoverySnapshot()
+	return validOwnedCurrentCandidate(current) && current.binding == candidateBinding && active.kind == activeGenerationCurrent && sameGenerationIdentity(active.identity, generation) && active.ownedDecision.owner == current.verifiedRun.currentDecision.owner && active.ownedDecision.digest == generation.runnerProjectionDecisionDigest && active.ownedDecision.decision.exactlyMatches(current.verifiedRun.currentDecision.decision) && active.recoveryExecutionBindings == nil && snapshot != nil && validRecoverySnapshotForJournal(snapshot, generation, snapshot.cursor) && generationJournalRecoveryDigest(snapshot) == recoveryDigest && runnerBrandNewRecoverySnapshot(snapshot)
 }
 
 func runnerPreparedCurrentSessionDigest(prepared *runnerPreparedCurrentSession) [32]byte {

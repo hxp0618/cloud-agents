@@ -40,6 +40,17 @@ type MigrationTransaction interface {
 	Rollback(context.Context) error
 }
 
+// runnerTransactionProjectionProfile is a package-private lifecycle seam for
+// the concrete runner-owned transaction. It switches only the three bounded
+// timeout settings between the fixed projection profile and the already
+// verified execution policy. It cannot accept SQL, change role/isolation, or
+// alter transaction ownership.
+type runnerTransactionProjectionProfile interface {
+	enterRunnerProjectionProfile(context.Context) error
+	restoreRunnerExecutionProfile(context.Context, ExecutionPolicy) error
+	runnerTransactionProjectionProfileSealed()
+}
+
 type PGXConnector struct{}
 
 func (PGXConnector) Connect(ctx context.Context, dsn string) (DatabaseSession, error) {
@@ -245,6 +256,15 @@ func (session *pgxSession) Close(ctx context.Context) error {
 
 type pgxMigrationTx struct{ tx pgx.Tx }
 
+const runnerTransactionTimeoutProfileQuery = `SELECT pg_catalog.set_config('statement_timeout', $1, true),
+pg_catalog.set_config('lock_timeout', $2, true),
+pg_catalog.set_config('idle_in_transaction_session_timeout', $3, true)`
+
+const runnerTransactionTimeoutReadbackQuery = `SELECT
+(SELECT setting::pg_catalog.int8 FROM pg_catalog.pg_settings WHERE name = 'statement_timeout' AND unit = 'ms'),
+(SELECT setting::pg_catalog.int8 FROM pg_catalog.pg_settings WHERE name = 'lock_timeout' AND unit = 'ms'),
+(SELECT setting::pg_catalog.int8 FROM pg_catalog.pg_settings WHERE name = 'idle_in_transaction_session_timeout' AND unit = 'ms')`
+
 func (transaction *pgxMigrationTx) Query(ctx context.Context, sql string, args ...any) (Rows, error) {
 	rows, err := transaction.tx.Query(ctx, sql, args...)
 	if err != nil {
@@ -284,6 +304,40 @@ func (transaction *pgxMigrationTx) Rollback(ctx context.Context) error {
 	return transaction.tx.Rollback(ctx)
 }
 
+func (transaction *pgxMigrationTx) enterRunnerProjectionProfile(ctx context.Context) error {
+	return transaction.setRunnerTransactionTimeoutProfile(ctx, uint64(projectionQueryTimeout.Milliseconds()), uint64(projectionLockTimeout.Milliseconds()), uint64(projectionIdleInTransactionTimeout.Milliseconds()))
+}
+
+func (transaction *pgxMigrationTx) restoreRunnerExecutionProfile(ctx context.Context, policy ExecutionPolicy) error {
+	if err := policy.Validate(); err != nil {
+		return fail(CodeTransactionBoundary, "transaction-execution-profile", "verified execution policy is invalid", nil)
+	}
+	return transaction.setRunnerTransactionTimeoutProfile(ctx, policy.StatementTimeoutMS, policy.LockTimeoutMS, policy.IdleInTransactionSessionTimeoutMS)
+}
+
+func (*pgxMigrationTx) runnerTransactionProjectionProfileSealed() {}
+
+func (transaction *pgxMigrationTx) setRunnerTransactionTimeoutProfile(ctx context.Context, statementTimeoutMS, lockTimeoutMS, idleTimeoutMS uint64) error {
+	if transaction == nil || transaction.tx == nil || transaction.tx.Conn() == nil || transaction.tx.Conn().PgConn().TxStatus() != 'T' || statementTimeoutMS == 0 || lockTimeoutMS == 0 || idleTimeoutMS == 0 {
+		return fail(CodeTransactionBoundary, "transaction-timeout-profile", "migration transaction timeout profile cannot be changed at this boundary", nil)
+	}
+	profileCtx, cancel := context.WithTimeout(ctx, projectionQueryTimeout)
+	defer cancel()
+	var statement, lock, idle string
+	if err := transaction.tx.QueryRow(profileCtx, runnerTransactionTimeoutProfileQuery,
+		strconv.FormatUint(statementTimeoutMS, 10)+"ms",
+		strconv.FormatUint(lockTimeoutMS, 10)+"ms",
+		strconv.FormatUint(idleTimeoutMS, 10)+"ms",
+	).Scan(&statement, &lock, &idle); err != nil {
+		return fail(CodeTransactionBoundary, "transaction-timeout-profile", "migration transaction timeout profile could not be configured", nil)
+	}
+	var observedStatement, observedLock, observedIdle int64
+	if err := transaction.tx.QueryRow(profileCtx, runnerTransactionTimeoutReadbackQuery).Scan(&observedStatement, &observedLock, &observedIdle); err != nil || observedStatement != int64(statementTimeoutMS) || observedLock != int64(lockTimeoutMS) || observedIdle != int64(idleTimeoutMS) || transaction.tx.Conn().PgConn().TxStatus() != 'T' {
+		return fail(CodeTransactionBoundary, "transaction-timeout-profile", "migration transaction timeout profile exact readback failed", nil)
+	}
+	return nil
+}
+
 const boundaryQuery = `SELECT current_user, EXISTS (
   SELECT 1 FROM pg_catalog.pg_locks
   WHERE locktype = 'advisory' AND pid = pg_catalog.pg_backend_pid()
@@ -320,6 +374,7 @@ func (rows pgxRows) Close()                    { rows.rows.Close() }
 
 var _ CommandTag = pgconn.CommandTag{}
 var _ runnerLedgerPrefixReader = (*pgxSession)(nil)
+var _ runnerTransactionProjectionProfile = (*pgxMigrationTx)(nil)
 
 func describePGXError(err error) string {
 	if pgError, ok := err.(*pgconn.PgError); ok {
