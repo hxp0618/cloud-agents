@@ -547,6 +547,74 @@ func TestSupersessionAuthorityRejectsSessionGenerationTailSwapAndOneShot(t *test
 	}
 }
 
+func TestHeaderOnlySupersessionAuthorityCarriesActivatedGenerationContinuation(t *testing.T) {
+	owner := &evidenceOwnerToken{nonce: [16]byte{41}}
+	generation := generationIdentity{owner, testDigest("header-only-lineage"), testDigest("header-only-journal"), testDigest("header-only-old-decision"), testDigest("header-only-old-schema")}
+	policySubject := recoveryPolicyFixtureSubject(generation)
+	policySubject.AllowedOutcomes = []string{"activated_no_migration_progress"}
+	policySubject.OutcomeConstraints = []historicalOutcomeConstraint{{Outcome: "activated_no_migration_progress", Continuation: historicalOutcomeContinuation{Kind: "exact_carry_old_generation"}}}
+	policyDigest, err := policySubject.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifierOwner := &recoveryVerifierOwner{verifier: &recoveryVerifierFake{}, token: owner}
+	policy := VerifiedHistoricalRecoveryPolicy{owner: verifierOwner, subject: policySubject, digest: policyDigest}
+	tail := testDigest("header-only-tail")
+	snapshot := &RecoverySnapshot{owner: owner, generation: generation, tailDigest: tail, state: RecoveryBrandNewInherited}
+	executionSubject := recoveryExecutionBindingsSubject{
+		HistoricalRecoveryPolicyDigest: policyDigest, ExecutionLineageDigest: generation.executionLineageDigest,
+		CurrentRunnerProjectionDecisionDigest: policySubject.SuccessorRunnerProjectionDecisionDigest,
+		OldRunnerProjectionDecisionDigest:     generation.runnerProjectionDecisionDigest, OldJournalIdentityDigest: generation.journalIdentityDigest,
+		OldSchemaBundleDigest: generation.schemaBundleDigest, OldDecisionRecoveryArtifactSHA256: policySubject.OldDecisionRecoveryArtifactSHA256,
+		OldDecisionRecoveryArtifactSizeBytes: policySubject.OldDecisionRecoveryArtifactSizeBytes, OldJournalReplayTailDigest: tail,
+		OldRecoveryState: string(snapshot.state), ActionsProfile: oldAttemptRecoveryActionsProfile,
+	}
+	executionDigest, err := executionSubject.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := VerifiedRecoveryExecutionBindings{owner: verifierOwner, session: owner, generation: generation, tailDigest: tail, snapshot: snapshot, policy: policySubject, subject: executionSubject, digest: executionDigest}
+	activation := testDigest("header-only-activation")
+	terminal := testDigest("header-only-previous-terminal")
+	continuation := &LineageContinuationContext{
+		StartAction: "begin_next_attempt", MigrationID: "000001", AttemptIndex: 2,
+		PreviousAttemptTerminalDigest: digestPointer(terminal), SourceJournalIdentityDigest: testDigest("header-only-source-journal"),
+		SourceCheckpointRecordDigest: testDigest("header-only-source-checkpoint"), SourceTerminalDigest: terminal,
+	}
+	evidence := &ownedHeaderOnlySupersessionEvidence{owner: owner, generation: generation, tailDigest: tail, activationDigest: activation, initialTailDigest: tail, continuation: cloneProjectionValue(continuation)}
+	authority, err := bindLineageSupersession(policy, bindings, evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authority.subject.ObservedOutcome != "activated_no_migration_progress" || authority.subject.OldActivationRecordDigest == nil || *authority.subject.OldActivationRecordDigest != activation || authority.subject.OldInitialJournalTailDigest == nil || *authority.subject.OldInitialJournalTailDigest != tail || authority.subject.OldCheckpointRecordDigest != nil || !canonicalEqual(authority.subject.Continuation, continuation) || validateRecoveryAuthorityBindings(policySubject.SuccessorRunnerProjectionDecisionDigest, policySubject, executionSubject, authority.subject) != nil {
+		t.Fatal("header-only supersession authority lost the activated generation boundary")
+	}
+	for name, mutate := range map[string]func(*ownedHeaderOnlySupersessionEvidence){
+		"generation": func(value *ownedHeaderOnlySupersessionEvidence) {
+			value.generation.journalIdentityDigest = testDigest("header-only-other-journal")
+		},
+		"tail": func(value *ownedHeaderOnlySupersessionEvidence) {
+			value.tailDigest = testDigest("header-only-other-tail")
+		},
+		"initial tail": func(value *ownedHeaderOnlySupersessionEvidence) {
+			value.initialTailDigest = testDigest("header-only-other-initial-tail")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := &ownedHeaderOnlySupersessionEvidence{owner: owner, generation: generation, tailDigest: tail, activationDigest: activation, initialTailDigest: tail, continuation: cloneProjectionValue(continuation)}
+			mutate(candidate)
+			if _, err := bindLineageSupersession(policy, bindings, candidate); err == nil {
+				t.Fatal("mutated header-only supersession evidence was accepted")
+			}
+		})
+	}
+	changedActivation := &ownedHeaderOnlySupersessionEvidence{owner: owner, generation: generation, tailDigest: tail, activationDigest: testDigest("header-only-other-activation"), initialTailDigest: tail, continuation: cloneProjectionValue(continuation)}
+	changedAuthority, err := bindLineageSupersession(policy, bindings, changedActivation)
+	if err != nil || changedAuthority.digest == authority.digest {
+		t.Fatalf("activation boundary did not change header-only authority identity: authority=%+v err=%v", changedAuthority, err)
+	}
+}
+
 func TestFirstVerificationConstructorRequiresCanonicalRecoveryABIAndExactDecisionIdentity(t *testing.T) {
 	raw, err := os.ReadFile(migrationFixturePath(t, "golden/decision-recovery-inputs-v1.json"))
 	if err != nil {

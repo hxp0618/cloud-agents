@@ -35,6 +35,73 @@ func TestHistoricalSuccessorRecoveryRejectsLiteralAndRuntimeInterfaces(t *testin
 	if err := (&HistoricalSuccessorGenerationRecoveryReady{}).Close(); !IsCode(err, CodeEvidenceJournalFailed) {
 		t.Fatalf("literal historical recovery close=%v", err)
 	}
+	if ready, err := (&HistoricalSuccessorGenerationRecoveryReady{}).bindHeaderOnlySupersession(candidate); ready != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal header-only supersession bind: ready=%+v err=%v", ready, err)
+	}
+	if err := (&historicalSuccessorSupersessionReady{}).close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("literal header-only supersession close=%v", err)
+	}
+	forged := &historicalSuccessorSupersessionReady{consumed: &atomic.Bool{}}
+	forged.self = forged
+	if err := forged.close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("partially forged header-only supersession close=%v", err)
+	}
+}
+
+func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.T) {
+	prior := &HistoricalSuccessorGenerationRecoveryReady{binding: &historicalSuccessorGenerationRecoveryBinding{canonical: [32]byte{1}}}
+	candidateBinding := &verifiedEvidenceRunBinding{canonical: [32]byte{2}}
+	authority := &VerifiedLineageSupersessionAuthority{digest: testDigest("historical-successor-resupersession-authority")}
+	terminal := testDigest("historical-successor-resupersession-terminal")
+	continuation := &LineageContinuationContext{
+		StartAction: "begin_next_attempt", MigrationID: "000001", AttemptIndex: 2,
+		PreviousAttemptTerminalDigest: digestPointer(terminal),
+		SourceJournalIdentityDigest:   testDigest("historical-successor-resupersession-source-journal"),
+		SourceCheckpointRecordDigest:  testDigest("historical-successor-resupersession-source-checkpoint"),
+		SourceTerminalDigest:          terminal,
+	}
+	ready := &historicalSuccessorSupersessionReady{
+		prior: prior, candidateBinding: candidateBinding, authority: authority,
+		activation: testDigest("historical-successor-resupersession-activation"), initialTail: testDigest("historical-successor-resupersession-tail"), continuation: continuation, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	baseline := historicalSuccessorSupersessionDigest(ready)
+	if baseline == ([32]byte{}) {
+		t.Fatal("header-only supersession digest was not minted")
+	}
+	for name, mutate := range map[string]func(*historicalSuccessorSupersessionReady){
+		"prior":     func(value *historicalSuccessorSupersessionReady) { value.prior.binding.canonical[0]++ },
+		"candidate": func(value *historicalSuccessorSupersessionReady) { value.candidateBinding.canonical[0]++ },
+		"authority": func(value *historicalSuccessorSupersessionReady) {
+			value.authority.digest = testDigest("historical-successor-resupersession-other-authority")
+		},
+		"activation": func(value *historicalSuccessorSupersessionReady) {
+			value.activation = testDigest("historical-successor-resupersession-other-activation")
+		},
+		"tail": func(value *historicalSuccessorSupersessionReady) {
+			value.initialTail = testDigest("historical-successor-resupersession-other-tail")
+		},
+		"continuation": func(value *historicalSuccessorSupersessionReady) {
+			value.continuation.AttemptIndex++
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			copyReady := *ready
+			copyPrior := *prior
+			copyPriorBinding := *prior.binding
+			copyPrior.binding = &copyPriorBinding
+			copyCandidateBinding := *candidateBinding
+			copyReady.prior = &copyPrior
+			copyReady.candidateBinding = &copyCandidateBinding
+			copyReady.authority = &VerifiedLineageSupersessionAuthority{digest: authority.digest}
+			copyReady.continuation = cloneProjectionValue(continuation)
+			copyReady.self = &copyReady
+			mutate(&copyReady)
+			if historicalSuccessorSupersessionDigest(&copyReady) == baseline {
+				t.Fatal("header-only supersession mutation retained canonical digest")
+			}
+		})
+	}
 }
 
 func TestHistoricalSuccessorRequiresSupersessionUsesImmutableRegistry(t *testing.T) {
@@ -347,7 +414,7 @@ func TestHistoricalSuccessorRecoveryAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (strings.HasPrefix(identifier.Name, "HistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationRecovery") || identifier.Name == "closeConsumedHistoricalSuccessorGenerationRecovery") && !allowedConsumers[name][identifier.Name] {
+			if ok && (strings.HasPrefix(identifier.Name, "HistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorSupersession") || identifier.Name == "closeConsumedHistoricalSuccessorGenerationRecovery") && !allowedConsumers[name][identifier.Name] {
 				t.Fatalf("historical successor recovery authority spread into %s through %s", name, identifier.Name)
 			}
 			return true

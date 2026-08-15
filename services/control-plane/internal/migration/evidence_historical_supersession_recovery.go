@@ -49,6 +49,43 @@ type historicalSuccessorGenerationRecoveryRecord struct {
 
 var historicalSuccessorGenerationRecoveryRegistry sync.Map
 
+// historicalSuccessorSupersessionReady is the only bridge from an activated
+// crash-recovered B that is historical relative to current C into the
+// header-only B -> C supersession path. It owns the consumed B recovery chain
+// and its retained generation lease until a later admission reacquire consumes
+// it. It is not a journal, session, filesystem mutation, or runner authority.
+type historicalSuccessorSupersessionReady struct {
+	self             *historicalSuccessorSupersessionReady
+	prior            *HistoricalSuccessorGenerationRecoveryReady
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	activation       Digest
+	initialTail      Digest
+	continuation     *LineageContinuationContext
+	consumed         *atomic.Bool
+	binding          *historicalSuccessorSupersessionBinding
+}
+
+type historicalSuccessorSupersessionBinding struct {
+	ready            *historicalSuccessorSupersessionReady
+	prior            *HistoricalSuccessorGenerationRecoveryReady
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	canonical        [32]byte
+}
+
+type historicalSuccessorSupersessionRecord struct {
+	ready            *historicalSuccessorSupersessionReady
+	binding          *historicalSuccessorSupersessionBinding
+	prior            *HistoricalSuccessorGenerationRecoveryReady
+	priorBinding     *historicalSuccessorGenerationRecoveryBinding
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	canonical        [32]byte
+}
+
+var historicalSuccessorSupersessionRegistry sync.Map
+
 // RequiresSupersession reports whether the activated B is still historical
 // relative to current C. It is diagnostic and grants no mutation authority.
 func (r *HistoricalSuccessorGenerationRecoveryReady) RequiresSupersession() bool {
@@ -58,6 +95,120 @@ func (r *HistoricalSuccessorGenerationRecoveryReady) RequiresSupersession() bool
 	value, ok := historicalSuccessorGenerationRecoveryRegistry.Load(r)
 	record, recordOK := value.(historicalSuccessorGenerationRecoveryRecord)
 	return ok && recordOK && record.ready == r && record.binding == r.binding && record.requiresSupersession && record.requiresSupersession == r.requiresSupersession && record.canonical == r.binding.canonical
+}
+
+// bindHeaderOnlySupersession consumes historical B recovery authority and
+// reconstructs the exact activated-no-migration-progress B -> C authority. The
+// continuation is copied only from B's durable GenerationReserved body; it is
+// never guessed from current runtime inputs.
+func (r *HistoricalSuccessorGenerationRecoveryReady) bindHeaderOnlySupersession(candidate OwnedCurrentCandidate) (*historicalSuccessorSupersessionReady, error) {
+	if r == nil || !validHistoricalSuccessorGenerationRecoveryReady(r, candidate) || !r.requiresSupersession || r.executionBindings == nil || r.planned == nil || r.planned.policy == nil || r.prior == nil || r.prior.prior == nil || r.prior.prior.prior == nil || r.prior.prior.prior.reservedFrame.Record.Reserved == nil {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-resupersession", "historical successor supersession inputs are unavailable", nil)
+	}
+	reserved := r.prior.prior.prior.reservedFrame.Record.Reserved
+	continuation := cloneProjectionValue(reserved.Continuation)
+	activation := r.cursor.lineageIndexPreviousRecordDigest
+	initialTail := r.recovery.tailDigest
+	evidence := &ownedHeaderOnlySupersessionEvidence{
+		owner: candidate.owner, generation: r.generation, tailDigest: initialTail,
+		activationDigest: activation, initialTailDigest: initialTail, continuation: continuation,
+	}
+	if !r.consumed.CompareAndSwap(false, true) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-resupersession", "historical successor recovery authority was already consumed", nil)
+	}
+	authority, err := bindLineageSupersession(*r.planned.policy, *r.executionBindings, evidence)
+	if err != nil {
+		return failHistoricalSuccessorSupersessionBind(r, err)
+	}
+	ready := &historicalSuccessorSupersessionReady{
+		prior: r, candidateBinding: candidate.binding, authority: authority,
+		activation: activation, initialTail: initialTail, continuation: continuation, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	ready.binding = &historicalSuccessorSupersessionBinding{
+		ready: ready, prior: r, candidateBinding: candidate.binding, authority: authority,
+	}
+	ready.binding.canonical = historicalSuccessorSupersessionDigest(ready)
+	historicalSuccessorSupersessionRegistry.Store(ready, historicalSuccessorSupersessionRecord{
+		ready: ready, binding: ready.binding, prior: r, priorBinding: r.binding,
+		candidateBinding: candidate.binding, authority: authority, canonical: ready.binding.canonical,
+	})
+	if !validHistoricalSuccessorSupersessionReady(ready, candidate) {
+		historicalSuccessorSupersessionRegistry.Delete(ready)
+		authority.consumed.CompareAndSwap(false, true)
+		return failHistoricalSuccessorSupersessionBind(r, fail(CodeEvidenceRecoveryRequired, "historical-successor-resupersession", "historical successor supersession authority could not be sealed", nil))
+	}
+	return ready, nil
+}
+
+func failHistoricalSuccessorSupersessionBind(r *HistoricalSuccessorGenerationRecoveryReady, cause error) (*historicalSuccessorSupersessionReady, error) {
+	if cleanupErr := closeConsumedHistoricalSuccessorGenerationRecovery(r, "historical-successor-resupersession-cleanup"); cleanupErr != nil {
+		return nil, cleanupErr
+	}
+	if errorsIsContext(cause) {
+		return nil, cause
+	}
+	return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-resupersession", "historical successor supersession authority cannot be reconstructed", nil)
+}
+
+func historicalSuccessorSupersessionDigest(ready *historicalSuccessorSupersessionReady) [32]byte {
+	if ready == nil || ready.self != ready || ready.prior == nil || ready.prior.binding == nil || ready.candidateBinding == nil || ready.authority == nil || ready.consumed == nil || ready.activation.Validate() != nil || ready.initialTail.Validate() != nil {
+		return [32]byte{}
+	}
+	continuation, err := canonicalContractKey(ready.continuation)
+	if err != nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-historical-successor-resupersession-ready/v1\x00"))
+	h.Write(ready.prior.binding.canonical[:])
+	h.Write(ready.candidateBinding.canonical[:])
+	writeAdmissionString(h, ready.authority.digest.String())
+	writeAdmissionString(h, ready.activation.String())
+	writeAdmissionString(h, ready.initialTail.String())
+	writeAdmissionString(h, continuation)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validHistoricalSuccessorSupersessionReady(ready *historicalSuccessorSupersessionReady, candidate OwnedCurrentCandidate) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.binding.prior != ready.prior || ready.prior.binding == nil || ready.prior.prior == nil || ready.prior.prior.prior == nil || ready.prior.prior.prior.prior == nil || ready.candidateBinding != candidate.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.authority == nil || ready.binding.authority != ready.authority || ready.consumed == nil || ready.consumed.Load() || !validOwnedCurrentCandidate(candidate) || !ready.prior.requiresSupersession || ready.prior.executionBindings == nil || ready.prior.planned == nil || ready.prior.planned.policy == nil || !historicalSuccessorGenerationRecoveryReadyRecordMatches(ready.prior) || ready.prior.binding.canonical != historicalSuccessorGenerationRecoveryDigest(ready.prior) || ready.authority.owner != candidate.verifiedRun.currentDecision.owner || ready.authority.session != candidate.owner || ready.authority.consumed.Load() || !sameGenerationIdentity(ready.authority.generation, ready.prior.generation) || ready.authority.tailDigest != ready.prior.recovery.tailDigest || ready.activation != ready.prior.cursor.lineageIndexPreviousRecordDigest || ready.initialTail != ready.prior.recovery.tailDigest || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != historicalSuccessorSupersessionDigest(ready) {
+		return false
+	}
+	reserved := ready.prior.prior.prior.prior.reservedFrame.Record.Reserved
+	if reserved == nil || !canonicalEqual(ready.continuation, reserved.Continuation) {
+		return false
+	}
+	subject := cloneProjectionValue(ready.authority.subject)
+	digest, digestErr := subject.ComputeDigest()
+	if digestErr != nil || digest != ready.authority.digest || subject.ObservedOutcome != "activated_no_migration_progress" || subject.OldActivationRecordDigest == nil || *subject.OldActivationRecordDigest != ready.activation || subject.OldInitialJournalTailDigest == nil || *subject.OldInitialJournalTailDigest != ready.initialTail || subject.OldCheckpointRecordDigest != nil || subject.OldTerminalDigest != nil || subject.OldResolutionDigest != nil || !canonicalEqual(subject.Continuation, ready.continuation) || validateRecoveryAuthorityBindings(candidate.verifiedRun.currentDecision.digest, ready.prior.planned.policy.subject, ready.prior.executionBindings.subject, subject) != nil {
+		return false
+	}
+	value, ok := historicalSuccessorSupersessionRegistry.Load(ready)
+	record, recordOK := value.(historicalSuccessorSupersessionRecord)
+	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.priorBinding == ready.prior.binding && record.candidateBinding == ready.candidateBinding && record.authority == ready.authority && record.canonical == ready.binding.canonical
+}
+
+func (r *historicalSuccessorSupersessionReady) close() error {
+	if r == nil || r.self != r || r.consumed == nil || !r.consumed.CompareAndSwap(false, true) {
+		return admissionFailed("historical-successor-resupersession-close", "historical successor supersession authority is unavailable", nil)
+	}
+	value, ok := historicalSuccessorSupersessionRegistry.Load(r)
+	record, recordOK := value.(historicalSuccessorSupersessionRecord)
+	historicalSuccessorSupersessionRegistry.Delete(r)
+	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical
+	if r.authority != nil {
+		r.authority.consumed.CompareAndSwap(false, true)
+	}
+	cleanupErr := closeConsumedHistoricalSuccessorGenerationRecovery(r.prior, "historical-successor-resupersession-close")
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	if !validRecord {
+		return admissionFailed("historical-successor-resupersession-close", "immutable historical successor supersession authority is unavailable", nil)
+	}
+	return nil
 }
 
 // BindRecovery consumes strict replay, rebinds B's own registered facts and
