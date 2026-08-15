@@ -154,7 +154,7 @@ for filesystem in ext4 xfs; do
       xfs_manifest=$(apk manifest xfsprogs | LC_ALL=C sort | sha256sum | cut -d " " -f 1)
       echo "EVIDENCEFS_LINUX_ENV filesystem=$EVIDENCEFS_MATRIX_FS kernel=$(uname -r) image_id='"$image_id"' packages=$(apk list --installed e2fsprogs xfsprogs | LC_ALL=C sort | tr \"\\n\" ,) e2fs_manifest_sha256=$e2fs_manifest xfs_manifest_sha256=$xfs_manifest"
       grep " /mnt/evidence " /proc/self/mountinfo
-      /usr/local/bin/evidencefs.test -test.run "^TestLinuxIntegrationObjectRestartAndCrossProcessLock$" -test.count=1 -test.v
+      /usr/local/bin/evidencefs.test -test.run "^TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks$" -test.count=1 -test.v
       sync
       umount /mnt/evidence
       mounted=0
@@ -166,7 +166,7 @@ for filesystem in ext4 xfs; do
       losetup -d "$loopdev"
       associated=0
       CLOUD_AGENTS_EVIDENCEFS_VERIFY_EXISTING=1 \
-        /usr/local/bin/evidencefs.test -test.run "^TestLinuxIntegrationObjectRestartAndCrossProcessLock$" -test.count=1 -test.v
+        /usr/local/bin/evidencefs.test -test.run "^TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks$" -test.count=1 -test.v
       umount /mnt/evidence
       mounted=0
       trap - EXIT INT TERM
