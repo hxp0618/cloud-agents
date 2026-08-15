@@ -49,8 +49,8 @@ func TestRunnerCommitProtocolClassifiesOnlyCompleteDriverOutcomes(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			transaction := &commitProtocolFake{status: 'T', statusAfter: test.status, closedAfter: test.closed, commitErr: test.err}
-			observation, err := invokeRunnerCommitProtocol(context.Background(), transaction)
-			if err != nil || !validRunnerCommitProtocolObservation(observation) || transaction.commitCalls != 1 {
+			observation, commitCalled, err := invokeRunnerCommitProtocol(context.Background(), transaction)
+			if err != nil || !commitCalled || !validRunnerCommitProtocolObservation(observation) || transaction.commitCalls != 1 {
 				t.Fatalf("invoke result: observation=%+v transaction=%+v err=%v", observation, transaction, err)
 			}
 			facts, err := consumeRunnerCommitProtocolObservation(observation, transaction)
@@ -86,9 +86,9 @@ func TestRunnerCommitProtocolRejectsUnavailablePreflightWithoutCommit(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			transaction := test.build()
-			observation, err := invokeRunnerCommitProtocol(test.ctx(), transaction)
+			observation, commitCalled, err := invokeRunnerCommitProtocol(test.ctx(), transaction)
 			var stable *Error
-			if observation != nil || !errors.As(err, &stable) || stable.Code != test.wantCode || stable.Op != "runner-commit-protocol" || stable.Err != nil || liveRunnerCommitProtocolObservations() != 0 {
+			if observation != nil || commitCalled || !errors.As(err, &stable) || stable.Code != test.wantCode || stable.Op != "runner-commit-protocol" || stable.Err != nil || liveRunnerCommitProtocolObservations() != 0 {
 				t.Fatalf("preflight result: observation=%+v err=%#v", observation, stable)
 			}
 			if fake, ok := transaction.(*commitProtocolFake); ok && fake.commitCalls != 0 {
@@ -100,8 +100,8 @@ func TestRunnerCommitProtocolRejectsUnavailablePreflightWithoutCommit(t *testing
 
 func TestRunnerCommitProtocolObservationRejectsLiteralCopyAndDrift(t *testing.T) {
 	transaction := &commitProtocolFake{status: 'T', statusAfter: 'I'}
-	observation, err := invokeRunnerCommitProtocol(context.Background(), transaction)
-	if err != nil || !validRunnerCommitProtocolObservation(observation) {
+	observation, commitCalled, err := invokeRunnerCommitProtocol(context.Background(), transaction)
+	if err != nil || !commitCalled || !validRunnerCommitProtocolObservation(observation) {
 		t.Fatalf("invoke: observation=%+v err=%v", observation, err)
 	}
 	valueType := reflect.TypeOf(*observation)
@@ -172,13 +172,19 @@ func TestRunnerCommitProtocolHasOneCommitAndNoProductionConsumer(t *testing.T) {
 		"runnerCommitProtocolRegistry": true, "invokeRunnerCommitProtocol": true,
 		"classifyRunnerCommitProtocol": true, "sealRunnerCommitProtocolObservation": true,
 		"consumeRunnerCommitProtocolObservation": true, "validRunnerCommitProtocolObservation": true,
-		"claimRunnerCommitProtocol": true, "runnerCommitProtocolStatus": true,
+		"validRunnerCommitProtocolFacts": true,
+		"claimRunnerCommitProtocol":      true, "runnerCommitProtocolStatus": true,
 		"runnerCommitProtocolConnectionClosed": true, "runnerCommitProtocolSealed": true,
 	}
 	pgxAllowed := map[string]bool{
 		"runnerCommitProtocol": true, "claimRunnerCommitProtocol": true,
 		"runnerCommitProtocolStatus": true, "runnerCommitProtocolConnectionClosed": true,
 		"runnerCommitProtocolSealed": true,
+	}
+	runnerAllowed := map[string]bool{
+		"runnerCommitProtocol": true, "runnerCommitProtocolFacts": true,
+		"invokeRunnerCommitProtocol": true, "consumeRunnerCommitProtocolObservation": true,
+		"validRunnerCommitProtocolFacts": true, "runnerCommitProtocolConnectionClosed": true,
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
@@ -194,7 +200,8 @@ func TestRunnerCommitProtocolHasOneCommitAndNoProductionConsumer(t *testing.T) {
 			if !ok || !symbols[identifier.Name] {
 				return true
 			}
-			if name != "pgx.go" || !pgxAllowed[identifier.Name] {
+			allowed := name == "pgx.go" && pgxAllowed[identifier.Name] || name == "runner_transaction_commit.go" && runnerAllowed[identifier.Name]
+			if !allowed {
 				t.Fatalf("commit protocol %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

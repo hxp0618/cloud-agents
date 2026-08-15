@@ -432,6 +432,9 @@ func (session *runnerPreflightSession) BeginMigration(context.Context) (Migratio
 	}
 	session.transaction.active = true
 	session.transaction.status = 'T'
+	session.transaction.commitClaimed = false
+	session.transaction.commitConnectionClosed = false
+	session.transaction.commitClosedAfter = false
 	session.transaction.profile = "execution"
 	session.transaction.steps = append(session.transaction.steps, "begin")
 	session.transaction.setTimeoutMetadata(session.executionPolicy.StatementTimeoutMS, session.executionPolicy.LockTimeoutMS, session.executionPolicy.IdleInTransactionSessionTimeoutMS)
@@ -476,46 +479,51 @@ func (session *runnerPreflightSession) Close(context.Context) error {
 }
 
 type runnerPreflightTransaction struct {
-	session             *runnerPreflightSession
-	active              bool
-	status              byte
-	metadata            []any
-	afterMetadataScan   func()
-	metadataReadErr     error
-	boundaryErr         error
-	boundaryMutate      func(*BoundaryState)
-	rollbackErr         error
-	rollbackLeavesOpen  bool
-	profileEnterErr     error
-	profileRestoreErr   error
-	profile             string
-	profileEnterCalls   int
-	profileRestoreCalls int
-	metadataReadCalls   int
-	queryCalls          int
-	execCalls           int
-	executeCalls        int
-	executeAllowed      bool
-	executeErr          error
-	executeMutate       func([]byte)
-	executedSQL         [][]byte
-	ledgerInsertErr     error
-	ledgerReadErr       error
-	ledgerReadMutate    func([]LedgerRow) []LedgerRow
-	pendingLedger       *LedgerRow
-	ledgerInsertCalls   int
-	ledgerReadCalls     int
-	boundaryCalls       int
-	commitCalls         int
-	rollbackCalls       int
-	steps               []string
+	session                *runnerPreflightSession
+	active                 bool
+	status                 byte
+	metadata               []any
+	afterMetadataScan      func()
+	metadataReadErr        error
+	boundaryErr            error
+	boundaryMutate         func(*BoundaryState)
+	rollbackErr            error
+	rollbackLeavesOpen     bool
+	profileEnterErr        error
+	profileRestoreErr      error
+	profile                string
+	profileEnterCalls      int
+	profileRestoreCalls    int
+	metadataReadCalls      int
+	queryCalls             int
+	execCalls              int
+	executeCalls           int
+	executeAllowed         bool
+	executeErr             error
+	executeMutate          func([]byte)
+	executedSQL            [][]byte
+	ledgerInsertErr        error
+	ledgerReadErr          error
+	ledgerReadMutate       func([]LedgerRow) []LedgerRow
+	pendingLedger          *LedgerRow
+	ledgerInsertCalls      int
+	ledgerReadCalls        int
+	boundaryCalls          int
+	commitCalls            int
+	commitClaimed          bool
+	commitErr              error
+	commitStatusAfter      byte
+	commitConnectionClosed bool
+	commitClosedAfter      bool
+	rollbackCalls          int
+	steps                  []string
 }
 
 func newRunnerPreflightTransaction(session *runnerPreflightSession) *runnerPreflightTransaction {
 	expected := minimalAuthorityProjection(AuthorityPhaseMigrationTransaction)
 	return &runnerPreflightTransaction{
 		session: session,
-		status:  'I',
+		status:  'I', commitStatusAfter: 'I',
 		metadata: []any{
 			"160000", expected.DatabaseName, expected.SessionUser, expected.CurrentUser,
 			"serializable", "off", "off",
@@ -641,8 +649,30 @@ func (transaction *runnerPreflightTransaction) Boundary(context.Context, int64) 
 func (transaction *runnerPreflightTransaction) Commit(context.Context) error {
 	transaction.commitCalls++
 	transaction.session.backend.commitCalls++
-	return errors.New("transaction commit is forbidden in runner preflight")
+	transaction.active = false
+	transaction.status = transaction.commitStatusAfter
+	transaction.commitConnectionClosed = transaction.commitClosedAfter
+	transaction.pendingLedger = nil
+	return transaction.commitErr
 }
+
+func (transaction *runnerPreflightTransaction) claimRunnerCommitProtocol() bool {
+	if transaction.commitClaimed || !transaction.active || transaction.status != 'T' || transaction.profile != "execution" {
+		return false
+	}
+	transaction.commitClaimed = true
+	return true
+}
+
+func (transaction *runnerPreflightTransaction) runnerCommitProtocolStatus() byte {
+	return transaction.status
+}
+
+func (transaction *runnerPreflightTransaction) runnerCommitProtocolConnectionClosed() bool {
+	return transaction.commitConnectionClosed
+}
+
+func (*runnerPreflightTransaction) runnerCommitProtocolSealed() {}
 
 func (transaction *runnerPreflightTransaction) Rollback(context.Context) error {
 	transaction.rollbackCalls++

@@ -71,23 +71,24 @@ type runnerCommitProtocolFacts struct {
 
 var runnerCommitProtocolRegistry sync.Map
 
-func invokeRunnerCommitProtocol(ctx context.Context, transaction MigrationTransaction) (*runnerCommitProtocolObservation, error) {
+func invokeRunnerCommitProtocol(ctx context.Context, transaction MigrationTransaction) (*runnerCommitProtocolObservation, bool, error) {
 	protocol, ok := transaction.(runnerCommitProtocol)
 	if ctx == nil || !ok || protocol == nil || !runnerOwnedPointer(protocol) {
-		return nil, fail(CodeTransactionBoundary, "runner-commit-protocol", "transaction commit protocol is unavailable", nil)
+		return nil, false, fail(CodeTransactionBoundary, "runner-commit-protocol", "transaction commit protocol is unavailable", nil)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, mapRunnerCommitProtocolPreflightError(err)
+		return nil, false, mapRunnerCommitProtocolPreflightError(err)
 	}
 	if !protocol.claimRunnerCommitProtocol() || protocol.runnerCommitProtocolStatus() != 'T' || protocol.runnerCommitProtocolConnectionClosed() {
-		return nil, fail(CodeTransactionBoundary, "runner-commit-protocol", "transaction commit protocol is not at the exact open boundary", nil)
+		return nil, false, fail(CodeTransactionBoundary, "runner-commit-protocol", "transaction commit protocol is not at the exact open boundary", nil)
 	}
 
 	commitErr := protocol.Commit(ctx)
 	status := protocol.runnerCommitProtocolStatus()
 	connectionClosed := protocol.runnerCommitProtocolConnectionClosed()
 	facts := classifyRunnerCommitProtocol(commitErr, status, connectionClosed)
-	return sealRunnerCommitProtocolObservation(protocol, facts)
+	observation, err := sealRunnerCommitProtocolObservation(protocol, facts)
+	return observation, true, err
 }
 
 func classifyRunnerCommitProtocol(err error, status byte, connectionClosed bool) runnerCommitProtocolFacts {

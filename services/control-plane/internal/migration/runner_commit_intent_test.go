@@ -321,6 +321,11 @@ func TestRunnerDurableCommitIntentHasNoProductionConsumer(t *testing.T) {
 		"consumeRunnerReadbackCurrentLedger": true, "bindRunnerDurableCommitIntent": true,
 		"validRunnerDurableCommitIntent": true, "closeRunnerDurableCommitIntent": true,
 	}
+	commitConsumer := map[string]bool{
+		"runnerDurableCommitIntent": true, "runnerDurableCommitIntentRegistryRecord": true,
+		"runnerDurableCommitIntentRegistry": true, "validRunnerDurableCommitIntent": true,
+		"closeRunnerDurableCommitIntent": true,
+	}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "runner_commit_intent.go" {
@@ -332,7 +337,7 @@ func TestRunnerDurableCommitIntentHasNoProductionConsumer(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !(name == "runner_transaction_commit.go" && commitConsumer[identifier.Name]) {
 				t.Fatalf("durable commit intent %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true
