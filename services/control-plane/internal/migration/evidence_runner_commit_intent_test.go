@@ -155,6 +155,10 @@ func TestRunnerCommitIntentRecordBinderHasNoUnreviewedConsumerOrMutationEdge(t *
 			"runnerCommitIntentRecordBinderSealed": true, "bindBrandNewRunnerCommitIntentRecord": true,
 			"runnerCommitIntentVerifiedSubjects": true,
 		},
+		"runner_commit_intent.go": {
+			"runnerCommitIntentRecordBinder": true, "runnerCommitIntentRecordRequest": true,
+			"bindRunnerCommitIntentRecord": true, "buildRunnerCommitIntent": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
