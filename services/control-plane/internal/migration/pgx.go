@@ -206,7 +206,9 @@ func (session *pgxSession) BeginMigration(ctx context.Context) (MigrationTransac
 	if err != nil {
 		return nil, fail(CodeTransactionBoundary, "begin", "cannot begin serializable migration transaction", err)
 	}
-	return &pgxMigrationTx{tx: tx}, nil
+	transaction := &pgxMigrationTx{tx: tx}
+	transaction.self = transaction
+	return transaction, nil
 }
 
 func (session *pgxSession) UnlockAndReset(ctx context.Context, key int64) error {
@@ -262,7 +264,13 @@ func (session *pgxSession) Close(ctx context.Context) error {
 	return session.connection.Close(ctx)
 }
 
-type pgxMigrationTx struct{ tx pgx.Tx }
+type pgxMigrationTx struct {
+	self *pgxMigrationTx
+	tx   pgx.Tx
+
+	commitMu      sync.Mutex
+	commitClaimed bool
+}
 
 const runnerTransactionTimeoutProfileQuery = `SELECT pg_catalog.set_config('statement_timeout', $1, true),
 pg_catalog.set_config('lock_timeout', $2, true),
@@ -351,6 +359,34 @@ func (transaction *pgxMigrationTx) restoreRunnerExecutionProfile(ctx context.Con
 }
 
 func (*pgxMigrationTx) runnerTransactionProjectionProfileSealed() {}
+
+func (transaction *pgxMigrationTx) claimRunnerCommitProtocol() bool {
+	if transaction == nil || transaction.self != transaction || transaction.tx == nil || transaction.tx.Conn() == nil {
+		return false
+	}
+	transaction.commitMu.Lock()
+	defer transaction.commitMu.Unlock()
+	if transaction.commitClaimed {
+		return false
+	}
+	transaction.commitClaimed = true
+	return true
+}
+
+func (transaction *pgxMigrationTx) runnerCommitProtocolStatus() byte {
+	if transaction == nil || transaction.self != transaction || transaction.tx == nil || transaction.tx.Conn() == nil {
+		return 0
+	}
+	return transaction.tx.Conn().PgConn().TxStatus()
+}
+
+func (transaction *pgxMigrationTx) runnerCommitProtocolConnectionClosed() bool {
+	return transaction == nil || transaction.self != transaction || transaction.tx == nil || transaction.tx.Conn() == nil || transaction.tx.Conn().PgConn().IsClosed()
+}
+
+func (*pgxMigrationTx) runnerCommitProtocolSealed() {}
+
+var _ runnerCommitProtocol = (*pgxMigrationTx)(nil)
 
 func (transaction *pgxMigrationTx) setRunnerTransactionTimeoutProfile(ctx context.Context, statementTimeoutMS, lockTimeoutMS, idleTimeoutMS uint64) error {
 	if transaction == nil || transaction.tx == nil || transaction.tx.Conn() == nil || transaction.tx.Conn().PgConn().TxStatus() != 'T' || statementTimeoutMS == 0 || lockTimeoutMS == 0 || idleTimeoutMS == 0 {
