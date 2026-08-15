@@ -105,6 +105,29 @@ func (l *GenerationLease) Active() bool {
 	return l.activeLocked()
 }
 
+// Released reports whether this exact, non-copied lease has irreversibly
+// entered its closed state and all owned descriptors have been handed to the
+// release path. It does not claim that unlock/close succeeded: a cleanup
+// ambiguity still reports released after poisoning Store, because retrying
+// Close would only be a second close attempt. In contrast, an otherwise
+// inactive lease whose Store was poisoned before Close reports false.
+func (l *GenerationLease) Released() bool {
+	if l == nil || l.self != l || l.seal == nil || l.mu == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.closed || l.valid || l.store == nil || l.binding == nil || l.binding.lease != l || l.binding.store != l.store ||
+		l.binding.target != l.target || l.binding.journal != l.journal || !sameIdentity(l.binding.lineage, l.lineage.stat) ||
+		!sameIdentity(l.binding.generation, l.generation.stat) || l.lineage.fd != -1 || l.generation.fd != -1 ||
+		l.lineage.name != hex.EncodeToString(l.target[:]) || l.generation.lineage != l.lineage.name ||
+		l.generation.name != hex.EncodeToString(l.journal[:]) || l.binding.canonical == ([32]byte{}) {
+		return false
+	}
+	_, registered := generationLeaseRegistry.Load(l)
+	return !registered
+}
+
 func (l *GenerationLease) activeLocked() bool {
 	if l == nil || l.self != l || l.seal == nil || l.store == nil || !l.store.usable() || l.binding == nil ||
 		l.binding.lease != l || l.binding.store != l.store || l.binding.target != l.target || l.binding.journal != l.journal ||

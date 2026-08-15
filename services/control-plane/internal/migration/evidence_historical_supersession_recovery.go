@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"sync"
 	"sync/atomic"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
 // HistoricalSuccessorGenerationRecoveryReady is same-verifier recovery
@@ -85,6 +88,53 @@ type historicalSuccessorSupersessionRecord struct {
 }
 
 var historicalSuccessorSupersessionRegistry sync.Map
+
+// historicalSuccessorAdmissionReady proves that the historical B generation
+// lease was irreversibly released before the same private evidencefs Store
+// reacquired full-root admission for the exact lineage. It retains the B -> C
+// authority but cannot mutate the filesystem until ALL-history replay binds a
+// new successor plan.
+type historicalSuccessorAdmissionReady struct {
+	self             *historicalSuccessorAdmissionReady
+	prior            *historicalSuccessorSupersessionReady
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	reacquired       evidencefs.GenerationAdmissionReacquireResult
+	admission        *evidencefs.AdmissionLease
+	inventory        *evidencefs.AdmissionInventory
+	target           [32]byte
+	previousJournal  [32]byte
+	previousLease    [32]byte
+	revision         uint64
+	fullSet          [32]byte
+	consumed         *atomic.Bool
+	binding          *historicalSuccessorAdmissionBinding
+}
+
+type historicalSuccessorAdmissionBinding struct {
+	ready            *historicalSuccessorAdmissionReady
+	prior            *historicalSuccessorSupersessionReady
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	admission        *evidencefs.AdmissionLease
+	inventory        *evidencefs.AdmissionInventory
+	canonical        [32]byte
+}
+
+type historicalSuccessorAdmissionRecord struct {
+	ready            *historicalSuccessorAdmissionReady
+	binding          *historicalSuccessorAdmissionBinding
+	prior            *historicalSuccessorSupersessionReady
+	priorBinding     *historicalSuccessorSupersessionBinding
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	reacquired       evidencefs.GenerationAdmissionReacquireResult
+	admission        *evidencefs.AdmissionLease
+	inventory        *evidencefs.AdmissionInventory
+	canonical        [32]byte
+}
+
+var historicalSuccessorAdmissionRegistry sync.Map
 
 // RequiresSupersession reports whether the activated B is still historical
 // relative to current C. It is diagnostic and grants no mutation authority.
@@ -207,6 +257,185 @@ func (r *historicalSuccessorSupersessionReady) close() error {
 	}
 	if !validRecord {
 		return admissionFailed("historical-successor-resupersession-close", "immutable historical successor supersession authority is unavailable", nil)
+	}
+	return nil
+}
+
+// reacquireAdmission consumes the header-only B -> C bridge and performs the
+// evidencefs-owned release-before-reacquire transition. Even an already
+// canceled context is passed through: evidencefs first invalidates B's old
+// generation lease, then attempts the full-root acquisition.
+func (r *historicalSuccessorSupersessionReady) reacquireAdmission(ctx context.Context, candidate OwnedCurrentCandidate) (*historicalSuccessorAdmissionReady, error) {
+	if !validHistoricalSuccessorSupersessionReady(r, candidate) || r.prior == nil || r.prior.prior == nil || r.prior.prior.lease == nil {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-reacquire", "historical successor supersession authority is unavailable", nil)
+	}
+	if !r.consumed.CompareAndSwap(false, true) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-reacquire", "historical successor supersession authority was already consumed", nil)
+	}
+	oldLease := r.prior.prior.lease
+	reacquired, err := oldLease.ReacquireAdmission(ctx)
+	oldReleased := oldLease.Released()
+	retireErr := retireHistoricalSuccessorSupersessionSource(r, !oldReleased)
+	if err != nil {
+		r.authority.consumed.CompareAndSwap(false, true)
+		if retireErr != nil {
+			return nil, retireErr
+		}
+		return nil, mapEvidenceAdmissionError(err, "historical-successor-reacquire")
+	}
+	if retireErr != nil {
+		r.authority.consumed.CompareAndSwap(false, true)
+		if admission, _, admissionErr := reacquired.Admission(); admissionErr == nil && admission != nil {
+			if cleanupErr := admission.Close(); cleanupErr != nil {
+				return nil, mapEvidenceAdmissionError(cleanupErr, "historical-successor-reacquire-cleanup")
+			}
+		}
+		return nil, retireErr
+	}
+	admission, inventory, err := reacquired.Admission()
+	if err != nil || admission == nil || inventory == nil {
+		r.authority.consumed.CompareAndSwap(false, true)
+		return nil, mapEvidenceAdmissionError(err, "historical-successor-reacquire")
+	}
+	failAfterReacquire := func(cause error, operation string) (*historicalSuccessorAdmissionReady, error) {
+		r.authority.consumed.CompareAndSwap(false, true)
+		cleanupErr := admission.Close()
+		if cleanupErr != nil && !(errors.Is(cleanupErr, evidencefs.ErrLeaseInvalid) && !admission.Active()) {
+			return nil, mapEvidenceAdmissionError(cleanupErr, operation+"-cleanup")
+		}
+		if cause == nil {
+			cause = evidencefs.ErrUnknown
+		}
+		return nil, mapEvidenceAdmissionError(cause, operation)
+	}
+	if !reacquired.Valid() || reacquired.PreviousTarget() != digestRaw(candidate.verifiedRun.executionLineageDigest) || reacquired.PreviousJournal() != digestRaw(r.prior.generation.journalIdentityDigest) || reacquired.PreviousLeaseDigest() == ([32]byte{}) {
+		return failAfterReacquire(evidencefs.ErrUnknown, "historical-successor-reacquire-bind")
+	}
+	if err := inventory.Revalidate(ctx); err != nil {
+		return failAfterReacquire(err, "historical-successor-reacquire-revalidate")
+	}
+	revision, revisionErr := inventory.Revision()
+	target, targetErr := inventory.Target()
+	fullSet, fullSetErr := inventory.FullSetDigest()
+	if revisionErr != nil || targetErr != nil || fullSetErr != nil {
+		for _, accessorErr := range []error{revisionErr, targetErr, fullSetErr} {
+			if accessorErr != nil {
+				return failAfterReacquire(accessorErr, "historical-successor-reacquire-inventory")
+			}
+		}
+	}
+	if revision != 0 || target != reacquired.PreviousTarget() || fullSet == ([32]byte{}) {
+		return failAfterReacquire(evidencefs.ErrUnknown, "historical-successor-reacquire-inventory")
+	}
+	ready := &historicalSuccessorAdmissionReady{
+		prior: r, candidateBinding: candidate.binding, authority: r.authority, reacquired: reacquired,
+		admission: admission, inventory: inventory, target: target, previousJournal: reacquired.PreviousJournal(), previousLease: reacquired.PreviousLeaseDigest(),
+		revision: revision, fullSet: fullSet, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	ready.binding = &historicalSuccessorAdmissionBinding{
+		ready: ready, prior: r, candidateBinding: candidate.binding, authority: r.authority, admission: admission, inventory: inventory,
+	}
+	ready.binding.canonical = historicalSuccessorAdmissionDigest(ready)
+	historicalSuccessorAdmissionRegistry.Store(ready, historicalSuccessorAdmissionRecord{
+		ready: ready, binding: ready.binding, prior: r, priorBinding: r.binding, candidateBinding: candidate.binding,
+		authority: r.authority, reacquired: reacquired, admission: admission, inventory: inventory, canonical: ready.binding.canonical,
+	})
+	if !validHistoricalSuccessorAdmissionReady(ready, candidate) {
+		historicalSuccessorAdmissionRegistry.Delete(ready)
+		return failAfterReacquire(evidencefs.ErrUnknown, "historical-successor-reacquire-seal")
+	}
+	historicalSuccessorSupersessionRegistry.Delete(r)
+	return ready, nil
+}
+
+func retireHistoricalSuccessorSupersessionSource(ready *historicalSuccessorSupersessionReady, closeLease bool) error {
+	if ready == nil || ready.prior == nil {
+		return admissionFailed("historical-successor-reacquire-retire", "historical successor source is unavailable", nil)
+	}
+	historicalSuccessorSupersessionRegistry.Delete(ready)
+	if closeLease {
+		return closeConsumedHistoricalSuccessorGenerationRecovery(ready.prior, "historical-successor-reacquire-retire")
+	}
+	recovery := ready.prior
+	historicalSuccessorGenerationRecoveryRegistry.Delete(recovery)
+	if recovery.cursor.valid != nil {
+		recovery.cursor.valid.Store(false)
+	}
+	if recovery.prior != nil {
+		historicalSuccessorGenerationReplayRegistry.Delete(recovery.prior)
+		if recovery.prior.prior != nil {
+			historicalSuccessorGenerationHandoffRegistry.Delete(recovery.prior.prior)
+			if recovery.prior.prior.prior != nil {
+				revokeVerifiedAdmissionRegisteredGeneration(recovery.prior.prior.prior.source)
+				revokeVerifiedAdmissionRegisteredGeneration(recovery.prior.prior.prior.planned)
+			}
+		}
+	}
+	return nil
+}
+
+func historicalSuccessorAdmissionDigest(ready *historicalSuccessorAdmissionReady) [32]byte {
+	if ready == nil || ready.self != ready || ready.prior == nil || ready.prior.binding == nil || ready.candidateBinding == nil || ready.authority == nil || ready.admission == nil || ready.inventory == nil || ready.consumed == nil || ready.target == ([32]byte{}) || ready.previousJournal == ([32]byte{}) || ready.previousLease == ([32]byte{}) || ready.fullSet == ([32]byte{}) {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-historical-successor-admission-ready/v1\x00"))
+	h.Write(ready.prior.binding.canonical[:])
+	h.Write(ready.candidateBinding.canonical[:])
+	writeAdmissionString(h, ready.authority.digest.String())
+	h.Write(ready.target[:])
+	h.Write(ready.previousJournal[:])
+	h.Write(ready.previousLease[:])
+	h.Write(ready.fullSet[:])
+	writeAdmissionUint(h, ready.revision)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validHistoricalSuccessorAdmissionReady(ready *historicalSuccessorAdmissionReady, candidate OwnedCurrentCandidate) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.binding.prior != ready.prior || ready.prior.binding == nil || ready.prior.prior == nil || ready.candidateBinding != candidate.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.authority == nil || ready.binding.authority != ready.authority || ready.admission == nil || ready.binding.admission != ready.admission || ready.inventory == nil || ready.binding.inventory != ready.inventory || ready.consumed == nil || ready.consumed.Load() || !validOwnedCurrentCandidate(candidate) || ready.authority != ready.prior.authority || ready.authority.consumed.Load() || ready.target != digestRaw(candidate.verifiedRun.executionLineageDigest) || ready.previousJournal != digestRaw(ready.prior.prior.generation.journalIdentityDigest) || ready.previousLease == ([32]byte{}) || ready.revision != 0 || ready.fullSet == ([32]byte{}) || !ready.reacquired.Valid() || ready.reacquired.PreviousTarget() != ready.target || ready.reacquired.PreviousJournal() != ready.previousJournal || ready.reacquired.PreviousLeaseDigest() != ready.previousLease || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != historicalSuccessorAdmissionDigest(ready) {
+		return false
+	}
+	admission, inventory, err := ready.reacquired.Admission()
+	if err != nil || admission != ready.admission || inventory != ready.inventory || !admission.Active() {
+		return false
+	}
+	revision, revisionErr := inventory.Revision()
+	target, targetErr := inventory.Target()
+	fullSet, fullSetErr := inventory.FullSetDigest()
+	if revisionErr != nil || revision != ready.revision || targetErr != nil || target != ready.target || fullSetErr != nil || fullSet != ready.fullSet {
+		return false
+	}
+	value, ok := historicalSuccessorAdmissionRegistry.Load(ready)
+	record, recordOK := value.(historicalSuccessorAdmissionRecord)
+	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.priorBinding == ready.prior.binding && record.candidateBinding == ready.candidateBinding && record.authority == ready.authority && record.reacquired.Valid() && record.admission == ready.admission && record.inventory == ready.inventory && record.canonical == ready.binding.canonical
+}
+
+func (r *historicalSuccessorAdmissionReady) close() error {
+	if r == nil || r.self != r || r.consumed == nil || !r.consumed.CompareAndSwap(false, true) {
+		return admissionFailed("historical-successor-admission-close", "historical successor admission authority is unavailable", nil)
+	}
+	value, ok := historicalSuccessorAdmissionRegistry.Load(r)
+	record, recordOK := value.(historicalSuccessorAdmissionRecord)
+	historicalSuccessorAdmissionRegistry.Delete(r)
+	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.admission == r.admission && record.inventory == r.inventory && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical
+	if r.authority != nil {
+		r.authority.consumed.CompareAndSwap(false, true)
+	}
+	var cleanupErr error
+	if r.admission != nil {
+		cleanupErr = r.admission.Close()
+		if errors.Is(cleanupErr, evidencefs.ErrLeaseInvalid) && !r.admission.Active() {
+			cleanupErr = nil
+		}
+	}
+	if cleanupErr != nil {
+		return mapEvidenceAdmissionError(cleanupErr, "historical-successor-admission-close")
+	}
+	if !validRecord {
+		return admissionFailed("historical-successor-admission-close", "immutable historical successor admission authority is unavailable", nil)
 	}
 	return nil
 }

@@ -46,6 +46,17 @@ func TestHistoricalSuccessorRecoveryRejectsLiteralAndRuntimeInterfaces(t *testin
 	if err := forged.close(); !IsCode(err, CodeEvidenceJournalFailed) {
 		t.Fatalf("partially forged header-only supersession close=%v", err)
 	}
+	if ready, err := (&historicalSuccessorSupersessionReady{}).reacquireAdmission(context.Background(), candidate); ready != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor reacquire: ready=%+v err=%v", ready, err)
+	}
+	if err := (&historicalSuccessorAdmissionReady{}).close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("literal historical successor admission close=%v", err)
+	}
+	forgedAdmission := &historicalSuccessorAdmissionReady{consumed: &atomic.Bool{}}
+	forgedAdmission.self = forgedAdmission
+	if err := forgedAdmission.close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("partially forged historical successor admission close=%v", err)
+	}
 }
 
 func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.T) {
@@ -101,6 +112,118 @@ func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.
 				t.Fatal("header-only supersession mutation retained canonical digest")
 			}
 		})
+	}
+}
+
+func TestHistoricalSuccessorAdmissionDigestBindsReacquireFacts(t *testing.T) {
+	prior := &historicalSuccessorSupersessionReady{binding: &historicalSuccessorSupersessionBinding{canonical: [32]byte{1}}}
+	candidateBinding := &verifiedEvidenceRunBinding{canonical: [32]byte{2}}
+	authority := &VerifiedLineageSupersessionAuthority{digest: testDigest("historical-successor-admission-authority")}
+	ready := &historicalSuccessorAdmissionReady{
+		prior: prior, candidateBinding: candidateBinding, authority: authority,
+		admission: &evidencefs.AdmissionLease{}, inventory: &evidencefs.AdmissionInventory{},
+		target: [32]byte{3}, previousJournal: [32]byte{4}, previousLease: [32]byte{5}, revision: 0, fullSet: [32]byte{6}, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	baseline := historicalSuccessorAdmissionDigest(ready)
+	if baseline == ([32]byte{}) {
+		t.Fatal("historical successor admission digest was not minted")
+	}
+	for name, mutate := range map[string]func(*historicalSuccessorAdmissionReady){
+		"prior":     func(value *historicalSuccessorAdmissionReady) { value.prior.binding.canonical[0]++ },
+		"candidate": func(value *historicalSuccessorAdmissionReady) { value.candidateBinding.canonical[0]++ },
+		"authority": func(value *historicalSuccessorAdmissionReady) {
+			value.authority.digest = testDigest("historical-successor-admission-other-authority")
+		},
+		"target":   func(value *historicalSuccessorAdmissionReady) { value.target[0]++ },
+		"journal":  func(value *historicalSuccessorAdmissionReady) { value.previousJournal[0]++ },
+		"lease":    func(value *historicalSuccessorAdmissionReady) { value.previousLease[0]++ },
+		"revision": func(value *historicalSuccessorAdmissionReady) { value.revision++ },
+		"full set": func(value *historicalSuccessorAdmissionReady) { value.fullSet[0]++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			copyReady := *ready
+			copyPrior := *prior
+			copyPriorBinding := *prior.binding
+			copyPrior.binding = &copyPriorBinding
+			copyCandidateBinding := *candidateBinding
+			copyReady.prior = &copyPrior
+			copyReady.candidateBinding = &copyCandidateBinding
+			copyReady.authority = &VerifiedLineageSupersessionAuthority{digest: authority.digest}
+			copyReady.self = &copyReady
+			mutate(&copyReady)
+			if historicalSuccessorAdmissionDigest(&copyReady) == baseline {
+				t.Fatal("historical successor admission mutation retained canonical digest")
+			}
+		})
+	}
+}
+
+func TestRetireHistoricalSuccessorSupersessionSourceRevokesOldGraphWithoutClosingAgain(t *testing.T) {
+	cursorValid := &atomic.Bool{}
+	cursorValid.Store(true)
+	planned := &verifiedAdmissionRegisteredGeneration{}
+	generationReady := &HistoricalSuccessorGenerationReadyPermit{planned: planned}
+	handoff := &HistoricalSuccessorGenerationHandoffReady{prior: generationReady}
+	replay := &HistoricalSuccessorGenerationReplayReady{prior: handoff}
+	recovery := &HistoricalSuccessorGenerationRecoveryReady{prior: replay, planned: planned, cursor: JournalCursor{valid: cursorValid}}
+	ready := &historicalSuccessorSupersessionReady{prior: recovery}
+	historicalSuccessorGenerationRecoveryRegistry.Store(recovery, historicalSuccessorGenerationRecoveryRecord{})
+	historicalSuccessorGenerationReplayRegistry.Store(replay, historicalSuccessorGenerationReplayRecord{})
+	historicalSuccessorGenerationHandoffRegistry.Store(handoff, historicalSuccessorGenerationHandoffRecord{})
+	historicalSuccessorSupersessionRegistry.Store(ready, historicalSuccessorSupersessionRecord{})
+	t.Cleanup(func() {
+		historicalSuccessorGenerationRecoveryRegistry.Delete(recovery)
+		historicalSuccessorGenerationReplayRegistry.Delete(replay)
+		historicalSuccessorGenerationHandoffRegistry.Delete(handoff)
+		historicalSuccessorSupersessionRegistry.Delete(ready)
+	})
+	if err := retireHistoricalSuccessorSupersessionSource(ready, false); err != nil {
+		t.Fatal(err)
+	}
+	if cursorValid.Load() {
+		t.Fatal("retired historical successor cursor remained valid")
+	}
+	for name, entry := range map[string]struct {
+		registry *sync.Map
+		key      any
+	}{
+		"recovery":       {&historicalSuccessorGenerationRecoveryRegistry, recovery},
+		"replay":         {&historicalSuccessorGenerationReplayRegistry, replay},
+		"handoff":        {&historicalSuccessorGenerationHandoffRegistry, handoff},
+		"resupersession": {&historicalSuccessorSupersessionRegistry, ready},
+	} {
+		if _, ok := entry.registry.Load(entry.key); ok {
+			t.Fatalf("%s registry survived source retirement", name)
+		}
+	}
+}
+
+func TestHistoricalSuccessorReacquireOrderIsClosed(t *testing.T) {
+	raw, err := os.ReadFile("evidence_historical_supersession_recovery.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	start := strings.Index(source, "func (r *historicalSuccessorSupersessionReady) reacquireAdmission")
+	end := strings.Index(source[start:], "func retireHistoricalSuccessorSupersessionSource")
+	if start < 0 || end < 0 {
+		t.Fatal("historical successor reacquire method boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{".ReacquireAdmission(", ".Released()", "retireHistoricalSuccessorSupersessionSource(", ".Admission()", ".Revalidate(", ".Revision()", ".Target()", ".FullSetDigest()"}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("historical successor reacquire step %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	for _, forbidden := range []string{".AcquireAdmission(", ".MutationToken(", ".HandoffGeneration(", "Connect(", "Begin("} {
+		if strings.Contains(method, forbidden) {
+			t.Fatalf("historical successor reacquire called forbidden edge %s", forbidden)
+		}
 	}
 }
 
@@ -414,7 +537,7 @@ func TestHistoricalSuccessorRecoveryAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (strings.HasPrefix(identifier.Name, "HistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorSupersession") || identifier.Name == "closeConsumedHistoricalSuccessorGenerationRecovery") && !allowedConsumers[name][identifier.Name] {
+			if ok && (strings.HasPrefix(identifier.Name, "HistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationRecovery") || strings.HasPrefix(identifier.Name, "historicalSuccessorSupersession") || strings.HasPrefix(identifier.Name, "historicalSuccessorAdmission") || identifier.Name == "closeConsumedHistoricalSuccessorGenerationRecovery") && !allowedConsumers[name][identifier.Name] {
 				t.Fatalf("historical successor recovery authority spread into %s through %s", name, identifier.Name)
 			}
 			return true
