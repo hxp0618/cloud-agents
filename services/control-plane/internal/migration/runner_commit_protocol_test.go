@@ -186,6 +186,7 @@ func TestRunnerCommitProtocolHasOneCommitAndNoProductionConsumer(t *testing.T) {
 		"invokeRunnerCommitProtocol": true, "consumeRunnerCommitProtocolObservation": true,
 		"validRunnerCommitProtocolFacts": true, "runnerCommitProtocolConnectionClosed": true,
 	}
+	evidenceAllowed := map[string]bool{"runnerCommitProtocolCommitted": true}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "runner_commit_protocol.go" {
@@ -200,7 +201,7 @@ func TestRunnerCommitProtocolHasOneCommitAndNoProductionConsumer(t *testing.T) {
 			if !ok || !symbols[identifier.Name] {
 				return true
 			}
-			allowed := name == "pgx.go" && pgxAllowed[identifier.Name] || name == "runner_transaction_commit.go" && runnerAllowed[identifier.Name]
+			allowed := name == "pgx.go" && pgxAllowed[identifier.Name] || name == "runner_transaction_commit.go" && runnerAllowed[identifier.Name] || name == "evidence_runner_committed_terminal.go" && evidenceAllowed[identifier.Name]
 			if !allowed {
 				t.Fatalf("commit protocol %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}

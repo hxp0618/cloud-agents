@@ -241,6 +241,15 @@ func TestRunnerClosedCurrentCommitHasNoProductionConsumer(t *testing.T) {
 		"consumeRunnerDurableCommitIntent": true, "bindRunnerClosedCurrentCommit": true,
 		"validRunnerClosedCurrentCommit": true, "closeRunnerClosedCurrentCommit": true,
 	}
+	committedTerminalConsumers := map[string]map[string]bool{
+		"evidence_runner_committed_terminal.go": {
+			"runnerClosedCurrentCommit": true, "runnerClosedCurrentCommitRegistryRecord": true,
+			"runnerClosedCurrentCommitRegistry": true, "validRunnerClosedCurrentCommit": true,
+		},
+		"evidence_session.go": {
+			"runnerClosedCurrentCommit": true, "validRunnerClosedCurrentCommit": true,
+		},
+	}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "runner_transaction_commit.go" {
@@ -252,7 +261,7 @@ func TestRunnerClosedCurrentCommitHasNoProductionConsumer(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !committedTerminalConsumers[name][identifier.Name] {
 				t.Fatalf("closed transaction commit %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

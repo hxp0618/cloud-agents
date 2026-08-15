@@ -415,6 +415,47 @@ func (s *generationEvidenceSession) bindRunnerCommitIntentRecord(ctx context.Con
 
 func (*generationEvidenceSession) runnerCommitIntentRecordBinderSealed() {}
 
+func (s *generationEvidenceSession) bindRunnerCommittedTerminalRecord(ctx context.Context, closed *runnerClosedCurrentCommit) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if s == nil || s.self != s || !validRunnerClosedCurrentCommit(closed) || !sameRunnerOwnedPointer(closed.evidence, s) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-record", "current evidence or committed outcome authority is unavailable", nil)
+	}
+	seed, err := claimRunnerCommittedTerminalSeed(closed)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || seed.candidateBinding == nil || seed.candidateBinding != s.candidate.binding || seed.evidence != s || !sameRunnerOwnedPointer(seed.journal, s.journal) || s.active.kind != activeGenerationCurrent || s.active.recoveryExecutionBindings != nil || !sameGenerationIdentity(seed.generation, s.active.identity) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-record", "current evidence session differs from the committed outcome", nil)
+	}
+	bindings, err := s.candidate.verifiedRun.currentDecision.decision.runnerProjectionBindings()
+	if err != nil || bindings.runnerProjectionDecisionDigest != seed.generation.runnerProjectionDecisionDigest || bindings.schemaBundleDigest != seed.generation.schemaBundleDigest || bindings.authorityProfileDigest != seed.commit.AuthorityProfileDigest || bindings.authorityBindingDigest != seed.commit.AuthorityBindingDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-record", "current verifier bindings differ from the committed outcome", nil)
+	}
+
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	entryIndex := int(seed.dispatch.entryIndex)
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || seed.maxAttempts == 0 || entryIndex < 0 || entryIndex >= len(journal.schema.orderedMigrations) || journal.schema.orderedMigrations[entryIndex] != seed.intent.MigrationID || journal.schema.maxAttempts[seed.intent.MigrationID] != seed.maxAttempts || journal.schema.finalStatementIndex[seed.intent.MigrationID] != seed.plan.StatementIndex || seed.intermediate.PreledgerCatalogResult == nil || journal.schema.finalCatalogDigest != seed.intermediate.PreledgerCatalogResult.Digest || generationJournalRecoveryDigest(journal.state.recovery) != seed.recoveryDigest || !sameCursorIdentity(journal.state.cursor, seed.cursor) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-record", "current journal boundary differs from the committed outcome", nil)
+	}
+	header, ok := generationJournalHeader(journal)
+	if !ok {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-record", "current generation header authority is unavailable", nil)
+	}
+	owned, err := bindBrandNewRunnerCommittedTerminalRecord(seed, journal.generation, journal.state.cursor, journal.state.recovery, header, journal.schema.chainWitness)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	return journal, journal.state.cursor.clone(), owned, nil
+}
+
+func (*generationEvidenceSession) runnerCommittedTerminalRecordBinderSealed() {}
+
 // RecoverySnapshot always clones the journal's current state. An append makes
 // every older cursor invalid, so a session must never cache the snapshot that
 // existed when it was first sealed.
