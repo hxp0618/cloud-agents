@@ -372,6 +372,49 @@ func (s *generationEvidenceSession) bindRunnerIntermediateRecord(ctx context.Con
 
 func (*generationEvidenceSession) runnerIntermediateRecordBinderSealed() {}
 
+func (s *generationEvidenceSession) bindRunnerCommitIntentRecord(ctx context.Context, request runnerCommitIntentRecordRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if s == nil || s.self != s {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-commit-intent-record", "current evidence session authority is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || request.candidateBinding == nil || request.candidateBinding != s.candidate.binding || s.active.kind != activeGenerationCurrent || s.active.recoveryExecutionBindings != nil || !sameGenerationIdentity(request.generation, s.active.identity) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-commit-intent-record", "current evidence session differs from the ledger readback", nil)
+	}
+	bindings, err := s.candidate.verifiedRun.currentDecision.decision.runnerProjectionBindings()
+	if err != nil || bindings.runnerProjectionDecisionDigest != request.generation.runnerProjectionDecisionDigest || bindings.schemaBundleDigest != request.generation.schemaBundleDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-commit-intent-record", "current verifier bindings differ from the active generation", nil)
+	}
+	if err := runnerCommitIntentVerifiedSubjects(bindings, request); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	emptyLedgerDigest, emptyErr := LedgerPrefixDigest([]CommitIntentLedgerRow{})
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || request.maxAttempts == 0 || request.planCount != 1 || journal.schema.maxAttempts[request.plan.MigrationID] != request.maxAttempts || journal.schema.finalStatementIndex[request.plan.MigrationID] != request.plan.StatementIndex || journal.schema.finalCatalogDigest != request.intermediate.PreledgerCatalogResult.Digest || len(journal.schema.orderedMigrations) == 0 || journal.schema.orderedMigrations[0] != request.intent.MigrationID || len(journal.schema.signedExpectedLedgerRows) == 0 || !canonicalEqual(journal.schema.signedExpectedLedgerRows[0], request.ledgerRow) || len(journal.schema.durableObservedLedgerPrefix) != 0 || emptyErr != nil || journal.schema.durableObservedLedgerDigest != emptyLedgerDigest || generationJournalRecoveryDigest(journal.state.recovery) != request.recoveryDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-commit-intent-record", "current journal or signed ledger boundary differs from the readback", nil)
+	}
+	header, ok := generationJournalHeader(journal)
+	if !ok {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-commit-intent-record", "current generation header authority is unavailable", nil)
+	}
+	owned, err := bindBrandNewRunnerCommitIntentRecord(
+		request, journal.generation, journal.state.cursor, journal.state.recovery,
+		header, journal.schema.chainWitness,
+	)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	return journal, journal.state.cursor.clone(), owned, nil
+}
+
+func (*generationEvidenceSession) runnerCommitIntentRecordBinderSealed() {}
+
 // RecoverySnapshot always clones the journal's current state. An append makes
 // every older cursor invalid, so a session must never cache the snapshot that
 // existed when it was first sealed.
