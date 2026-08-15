@@ -22,6 +22,17 @@ func TestBrandNewRecoveryWitnessIsSameVerifierBound(t *testing.T) {
 	if len(chain.maxAttempts) != len(facts.orderedMigrations) || len(chain.finalStatementIndex) != len(facts.orderedMigrations) || len(schema.orderedMigrations) != len(facts.orderedMigrations) || schema.owner != candidate.owner || !sameGenerationIdentity(schema.generation, generation) {
 		t.Fatal("same-verifier recovery witness is incomplete")
 	}
+	emptyDigest, err := LedgerPrefixDigest([]CommitIntentLedgerRow{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nullDigest, err := LedgerPrefixDigest(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if schema.durableObservedLedgerPrefix == nil || schema.durableObservedLedgerDigest != emptyDigest || emptyDigest == nullDigest {
+		t.Fatal("brand-new recovery did not bind the ADR rows=[] ledger prefix")
+	}
 	if err := validateRecoverySchemaWitness(schema, []EvidenceFrame{{}}); err != nil {
 		t.Fatal(err)
 	}

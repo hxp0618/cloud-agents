@@ -70,10 +70,11 @@ type databaseState struct {
 	catalog CatalogProjection
 }
 
-// Run is the public production gate. It now admits one evidence session and
-// proves the connected-session and migration-role authority projections on the
-// same dedicated database connection. Catalog, ledger, and migration execution
-// remain fail-closed and unreachable.
+// Run is the public production gate. It admits one evidence session, proves the
+// connected-session and migration-role authority projections on the same
+// dedicated database connection, and seals the exact header-only current
+// dispatch. The prepared authority is still closed without beginning a
+// migration transaction.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err
@@ -122,18 +123,23 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 		}
 		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-evidence-sink", "verified evidence candidate admitted but no evidence sink is configured", nil)
 	}
-	session, _, err := openRunnerEvidenceSession(ctx, runner.Evidence, verifiedRun, runtimeArtifact, candidate)
+	session, snapshot, err := openRunnerEvidenceSession(ctx, runner.Evidence, verifiedRun, runtimeArtifact, candidate)
 	if err != nil {
 		return RunResult{}, err
 	}
-	preflightErr := runner.runDatabaseAuthorityPreflight(ctx, request.TargetDSN, bundle, plans, session, candidate)
+	prepared, preflightErr := runner.prepareCurrentDatabaseSession(ctx, request.TargetDSN, bundle, plans, session, snapshot, candidate)
+	if preflightErr == nil {
+		preflightErr = closeRunnerPreparedCurrentSession(prepared, nil)
+		if preflightErr == nil {
+			preflightErr = fail(CodeProjectionNotImplemented, "runner-entry-execution", "prepared current runner dispatch is sealed but transaction execution is not implemented", nil)
+		}
+	} else {
+		preflightErr = closeRunnerPreparedCurrentSession(prepared, preflightErr)
+	}
 	if cleanupErr := closeRunnerEvidenceOwnership(session, candidate); cleanupErr != nil {
 		return RunResult{}, cleanupErr
 	}
-	if preflightErr != nil {
-		return RunResult{}, preflightErr
-	}
-	return RunResult{}, fail(CodeProjectionNotImplemented, "runner-entry-execution", "database authority, ledger, and initial catalog preflight completed but transaction execution is not implemented", nil)
+	return RunResult{}, preflightErr
 }
 
 func verifyRunnerCurrentEvidence(ctx context.Context, verifier TrustVerifier, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {

@@ -38,20 +38,20 @@ type runnerLedgerPrefix struct {
 	head   string
 }
 
-func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) error {
+func (runner *Runner) prepareCurrentDatabaseSession(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, openedSnapshot *RecoverySnapshot, candidate OwnedCurrentCandidate) (*runnerPreparedCurrentSession, error) {
 	bindings, err := runnerCurrentProjectionBindings(evidence, candidate)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if runner.Connector == nil {
-		return fail(CodeProjectionNotImplemented, "runner-database-connector", "evidence session is active but no database connector is configured", nil)
+		return nil, fail(CodeProjectionNotImplemented, "runner-database-connector", "evidence session is active but no database connector is configured", nil)
 	}
 	if bundle == nil || dsn == "" || bindings.schemaBundleDigest != bundle.Manifest.SchemaBundleDigest {
-		return fail(CodeUntrusted, "runner-database-preflight", "database preflight inputs differ from the active evidence generation", nil)
+		return nil, fail(CodeUntrusted, "runner-database-preflight", "database preflight inputs differ from the active evidence generation", nil)
 	}
 	key, err := bundle.Manifest.SchemaBundle.AdvisoryLock.Key()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	runner.transition(StateConnect)
 	session, connectErr := runner.Connector.Connect(ctx, dsn)
@@ -62,11 +62,11 @@ func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn str
 		} else {
 			primary = mapRunnerDatabasePreflightError(primary, "runner-connect", "dedicated database connection failed")
 		}
-		return closeRunnerDatabasePreflight(session, 0, false, primary)
+		return nil, closeRunnerDatabasePreflight(session, 0, false, primary)
 	}
 	locked := false
-	failClosed := func(primary error) error {
-		return closeRunnerDatabasePreflight(session, key, locked, primary)
+	failClosed := func(primary error) (*runnerPreparedCurrentSession, error) {
+		return nil, closeRunnerDatabasePreflight(session, key, locked, primary)
 	}
 
 	connected, err := runner.projectRunnerAuthorityPhase(ctx, session, bindings.verifiedAuthority, AuthorityPhaseConnectedSession)
@@ -110,8 +110,12 @@ func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn str
 	if err != nil {
 		return failClosed(err)
 	}
-	if _, err := runner.projectRunnerInitialPrecondition(ctx, session, bindings.initialSchemaScope, firstPlan); err != nil {
+	precondition, err := runner.projectRunnerInitialPrecondition(ctx, session, bindings.initialSchemaScope, firstPlan)
+	if err != nil {
 		return failClosed(err)
+	}
+	if !sameRunnerDatabaseIdentity(migrationRole.Metadata.Snapshot, precondition.Metadata.Snapshot) {
+		return failClosed(fail(CodeProjectionMetadataMismatch, "runner-initial-precondition", "initial catalog projection does not describe the locked database session", nil))
 	}
 	after, err := readRunnerLedgerPrefix(ctx, session, bundle)
 	if err != nil {
@@ -120,7 +124,15 @@ func (runner *Runner) runDatabaseAuthorityPreflight(ctx context.Context, dsn str
 	if !sameRunnerLedgerPrefix(before, after) {
 		return failClosed(fail(CodeInvalidLedger, "runner-ledger-preflight", "ledger prefix changed across the initial catalog projection", nil))
 	}
-	return failClosed(nil)
+	prepared, err := bindRunnerPreparedCurrentSession(session, evidence, key, candidate, openedSnapshot, before, migrationRole, precondition, bundle, plans)
+	if err != nil {
+		return failClosed(err)
+	}
+	return prepared, nil
+}
+
+func sameRunnerDatabaseIdentity(left, right SnapshotMetadata) bool {
+	return left.validate() == nil && right.validate() == nil && left.AuthorityPhase == AuthorityPhaseMigrationRole && right.AuthorityPhase == AuthorityPhaseMigrationRole && runnerCanonicalEqual(left, right)
 }
 
 func firstRunnerStatementPlan(bundle *RuntimeBundle, plans []StatementPlan) (StatementPlan, error) {

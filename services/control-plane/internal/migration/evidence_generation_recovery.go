@@ -170,7 +170,8 @@ func buildBrandNewRecoveryWitnessFromFacts(generation generationIdentity, facts 
 	if err != nil {
 		return verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, err
 	}
-	emptyDigest, err := LedgerPrefixDigest(nil)
+	emptyPrefix := []CommitIntentLedgerRow{}
+	emptyDigest, err := LedgerPrefixDigest(emptyPrefix)
 	if err != nil {
 		return verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, err
 	}
@@ -178,7 +179,7 @@ func buildBrandNewRecoveryWitnessFromFacts(generation generationIdentity, facts 
 		owner: generation.owner, generation: generation, finalStatementIndex: cloneUint32Map(chain.finalStatementIndex),
 		maxAttempts: cloneUint32Map(chain.maxAttempts), orderedMigrations: append([]string(nil), facts.orderedMigrations...),
 		signedExpectedLedgerRows: signed, signedExpectedLedgerDigest: signedDigest,
-		durableObservedLedgerPrefix: nil, durableObservedLedgerDigest: emptyDigest,
+		durableObservedLedgerPrefix: emptyPrefix, durableObservedLedgerDigest: emptyDigest,
 		finalCatalogDigest: chain.finalCatalogDigest[facts.orderedMigrations[len(facts.orderedMigrations)-1]], chainWitness: chain,
 	}
 	return chain, schema, nil

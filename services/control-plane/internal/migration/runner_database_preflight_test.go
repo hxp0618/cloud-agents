@@ -82,6 +82,9 @@ func TestRunnerDatabasePreflightFaultsCloseEvidenceAndDatabase(t *testing.T) {
 		{"same-session-metadata", func(_ *runnerPreflightConnector, s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *runnerEvidenceSinkFake) {
 			s.snapshotMetadataMutate[AuthorityPhaseMigrationRole] = func(metadata *SnapshotMetadata) { metadata.ServerVersionNum++ }
 		}, CodeProjectionMetadataMismatch, 1},
+		{"precondition-session-metadata", func(_ *runnerPreflightConnector, s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *runnerEvidenceSinkFake) {
+			s.snapshotMetadataNth[3] = func(metadata *SnapshotMetadata) { metadata.DatabaseName += "_drift" }
+		}, CodeProjectionMetadataMismatch, 1},
 		{"unlock", func(_ *runnerPreflightConnector, s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *runnerEvidenceSinkFake) {
 			s.unlockErr = errors.New("secret-unlock")
 		}, CodeTransactionBoundary, 1},
@@ -264,23 +267,25 @@ func TestRunnerProjectionFactoryIsNotPubliclyInjectable(t *testing.T) {
 }
 
 func TestRunnerDatabasePreflightHasNoMigrationOrLedgerCallEdge(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "runner_database_preflight.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	forbidden := map[string]bool{
 		"BeginMigration": true, "ExecuteStatement": true, "Commit": true,
 		"Queryer": true, "ServerMajor": true, "Insert": true, "Exec": true, "Query": true, "QueryRow": true,
 		"Ledger": true, "Catalog": true, "Intermediate": true,
 		"ProjectCatalog": true, "ProjectTransitionState": true,
 	}
-	ast.Inspect(file, func(node ast.Node) bool {
-		selector, ok := node.(*ast.SelectorExpr)
-		if ok && forbidden[selector.Sel.Name] {
-			t.Fatalf("database authority preflight acquired forbidden %s call edge", selector.Sel.Name)
+	for _, name := range []string{"runner_database_preflight.go", "runner_prepared_session.go"} {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return true
-	})
+		ast.Inspect(file, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if ok && forbidden[selector.Sel.Name] {
+				t.Fatalf("%s acquired forbidden %s call edge", name, selector.Sel.Name)
+			}
+			return true
+		})
+	}
 }
 
 func assertRunnerAuthorityPreflightLifecycle(t *testing.T, connector *runnerPreflightConnector, factory *runnerPreflightProjectorFactory) {
@@ -321,13 +326,16 @@ type runnerPreflightSession struct {
 	snapshotOpenErr        map[AuthorityPhase]error
 	snapshotCloseErr       map[AuthorityPhase]error
 	snapshotMetadataMutate map[AuthorityPhase]func(*SnapshotMetadata)
+	snapshotMetadataNth    map[int]func(*SnapshotMetadata)
 	snapshotPhases         []AuthorityPhase
 	snapshotClosePhases    []AuthorityPhase
 	ledgerRowsByRead       [][]LedgerRow
 	ledgerReadErr          map[int]error
+	afterLedgerRead        map[int]func()
 	setRoleCalls           int
 	lockCalls              int
 	unlockCalls            int
+	unlockKeys             []int64
 	closeCalls             int
 	serverMajorCalls       int
 	boundaryCalls          int
@@ -339,7 +347,8 @@ type runnerPreflightSession struct {
 func newRunnerPreflightSession() *runnerPreflightSession {
 	return &runnerPreflightSession{
 		backend: &fakeBackend{}, snapshotOpenErr: map[AuthorityPhase]error{}, snapshotCloseErr: map[AuthorityPhase]error{},
-		snapshotMetadataMutate: map[AuthorityPhase]func(*SnapshotMetadata){}, ledgerReadErr: map[int]error{},
+		snapshotMetadataMutate: map[AuthorityPhase]func(*SnapshotMetadata){}, snapshotMetadataNth: map[int]func(*SnapshotMetadata){},
+		ledgerReadErr: map[int]error{}, afterLedgerRead: map[int]func(){},
 	}
 }
 
@@ -390,6 +399,9 @@ func (session *runnerPreflightSession) readRunnerLedgerPrefix(context.Context) (
 	if err := session.ledgerReadErr[session.ledgerReadCalls]; err != nil {
 		return nil, err
 	}
+	if after := session.afterLedgerRead[session.ledgerReadCalls]; after != nil {
+		after()
+	}
 	if session.ledgerReadCalls <= len(session.ledgerRowsByRead) {
 		return cloneProjectionValue(session.ledgerRowsByRead[session.ledgerReadCalls-1]), nil
 	}
@@ -401,8 +413,9 @@ func (session *runnerPreflightSession) BeginMigration(context.Context) (Migratio
 	return nil, errors.New("migration transaction is forbidden in authority preflight")
 }
 
-func (session *runnerPreflightSession) UnlockAndReset(context.Context, int64) error {
+func (session *runnerPreflightSession) UnlockAndReset(_ context.Context, key int64) error {
 	session.unlockCalls++
+	session.unlockKeys = append(session.unlockKeys, key)
 	if session.unlockErr != nil {
 		return session.unlockErr
 	}
@@ -441,6 +454,9 @@ func (session *runnerPreflightSession) beginRunnerSessionProjectionSnapshot(_ co
 	session.snapshotPhases = append(session.snapshotPhases, phase)
 	metadata := runnerPreflightSnapshotMetadata(phase)
 	if mutate := session.snapshotMetadataMutate[phase]; mutate != nil {
+		mutate(&metadata)
+	}
+	if mutate := session.snapshotMetadataNth[len(session.snapshotPhases)]; mutate != nil {
 		mutate(&metadata)
 	}
 	return &runnerPreflightSnapshot{session: session, phase: phase, metadata: metadata}, nil

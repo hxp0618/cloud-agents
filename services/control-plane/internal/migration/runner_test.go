@@ -853,6 +853,7 @@ type runnerEvidenceSinkFake struct {
 	swapCandidate   bool
 	replayErr       error
 	sessionCloseErr error
+	mutateSnapshot  func(*RecoverySnapshot)
 	session         *runnerEvidenceSessionFake
 }
 
@@ -868,6 +869,9 @@ func (sink *runnerEvidenceSinkFake) Open(_ context.Context, run VerifiedEvidence
 	session := newRunnerEvidenceSessionFake(candidate)
 	session.journal.replayErr = sink.replayErr
 	session.closeErr = sink.sessionCloseErr
+	if sink.mutateSnapshot != nil {
+		sink.mutateSnapshot(session.snapshot)
+	}
 	if sink.swapCandidate {
 		session.candidate.binding = &verifiedEvidenceRunBinding{}
 	}
