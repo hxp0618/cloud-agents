@@ -919,6 +919,12 @@ type runnerEvidenceSessionFake struct {
 	commitNoRecord              bool
 	mutateBoundCommit           func(*CommitIntent)
 	mutateCommitAuthority       func(*JournalCursor, *OwnedEvidenceRecord)
+	terminalBindErr             error
+	terminalBindCalls           int
+	terminalNoJournal           bool
+	terminalNoRecord            bool
+	mutateBoundTerminal         func(*AttemptTerminalState)
+	mutateTerminalAuthority     func(*JournalCursor, *OwnedEvidenceRecord)
 	closeErr                    error
 	closeCalls                  int
 	closed                      bool
@@ -942,7 +948,7 @@ func newRunnerEvidenceSessionFake(candidate OwnedCurrentCandidate) *runnerEviden
 		owner: candidate.owner, generation: generation, cursor: cursor, tailDigest: tail,
 		state: RecoveryBrandNew, nextPermittedAction: RecoveryBeginFirstAttempt,
 	}
-	journal := &runnerEvidenceJournalFake{cursor: cursor, snapshot: snapshot}
+	journal := &runnerEvidenceJournalFake{cursor: cursor, snapshot: snapshot, bundleComplete: true}
 	session := &runnerEvidenceSessionFake{
 		candidate: candidate, journal: journal, snapshot: snapshot,
 		active: ActiveGeneration{identity: generation, kind: activeGenerationCurrent, journal: journal, ownedDecision: candidate.verifiedRun.currentDecision},
@@ -1149,6 +1155,52 @@ func (session *runnerEvidenceSessionFake) bindRunnerCommitIntentRecord(ctx conte
 
 func (*runnerEvidenceSessionFake) runnerCommitIntentRecordBinderSealed() {}
 
+func (session *runnerEvidenceSessionFake) bindRunnerCommittedTerminalRecord(ctx context.Context, closed *runnerClosedCurrentCommit) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	session.terminalBindCalls++
+	if err := ctx.Err(); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if session.terminalBindErr != nil {
+		return nil, JournalCursor{}, nil, session.terminalBindErr
+	}
+	if session.closed || closed == nil || !validRunnerClosedCurrentCommit(closed) || !sameRunnerOwnedPointer(closed.evidence, session) || !sameRunnerOwnedPointer(closed.journal, session.journal) || closed.candidateBinding != session.candidate.binding || !sameGenerationIdentity(closed.generation, session.active.identity) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-test-terminal-bind", "committed terminal inputs differ", nil)
+	}
+	seed, err := claimRunnerCommittedTerminalSeed(closed)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	terminal, err := buildRunnerCommittedTerminal(seed)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if session.mutateBoundTerminal != nil {
+		session.mutateBoundTerminal(&terminal)
+	}
+	cursor := session.journal.cursor.clone()
+	witness := ownedAttemptTerminalWitness{
+		ownedAppendContext: ownedAppendContext{generation: seed.generation, cursor: cursor.clone()},
+		terminalDigest:     terminal.TerminalDigest, maxAttempts: seed.maxAttempts,
+	}
+	owned := &OwnedEvidenceRecord{
+		wire: EvidenceRecord{AttemptTerminal: &terminal}, witness: witness,
+		generation: seed.generation, cursor: cursor.clone(), consumed: &atomic.Bool{},
+	}
+	if session.mutateTerminalAuthority != nil {
+		session.mutateTerminalAuthority(&cursor, owned)
+	}
+	session.journal.maxAttempts = seed.maxAttempts
+	if session.terminalNoJournal {
+		return nil, cursor, owned, nil
+	}
+	if session.terminalNoRecord {
+		return session.journal, cursor, nil, nil
+	}
+	return session.journal, cursor, owned, nil
+}
+
+func (*runnerEvidenceSessionFake) runnerCommittedTerminalRecordBinderSealed() {}
+
 func (session *runnerEvidenceSessionFake) Close(ctx context.Context) error {
 	if session == nil || session.closed {
 		return errors.New("session already closed")
@@ -1169,6 +1221,7 @@ type runnerEvidenceJournalFake struct {
 	cursor                JournalCursor
 	snapshot              *RecoverySnapshot
 	maxAttempts           uint32
+	bundleComplete        bool
 	replayErr             error
 	replayCalls           int
 	appendErr             error
@@ -1214,6 +1267,8 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 			kind = EvidenceRecordIntermediate
 		case record.CommitIntent != nil:
 			kind = EvidenceRecordCommitIntent
+		case record.AttemptTerminal != nil:
+			kind = EvidenceRecordAttemptTerminal
 		default:
 			err = errors.New("unsupported runner evidence record")
 		}
@@ -1303,6 +1358,31 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 				lastIntermediateStateDigest:          cloneDigestPointer(previousSnapshot.lastIntermediateStateDigest),
 				commitIntent:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.CommitIntent),
 				lastCommitIntentRecordDigest:         digestPointer(frame.RecordDigest), nextPermittedAction: RecoveryReconcileCommit,
+			}
+		case EvidenceRecordAttemptTerminal:
+			if previousSnapshot == nil || previousSnapshot.lastStatementIntent == nil || previousSnapshot.lastStatementIntentRecordDigest == nil || previousSnapshot.lastIntermediateEvidence == nil || previousSnapshot.lastIntermediateEvidenceRecordDigest == nil || previousSnapshot.lastIntermediateStateDigest == nil || previousSnapshot.commitIntent == nil || previousSnapshot.lastCommitIntentRecordDigest == nil {
+				return AppendResult{}, errors.New("terminal predecessors are unavailable")
+			}
+			intent := previousSnapshot.lastStatementIntent.value
+			intermediate := previousSnapshot.lastIntermediateEvidence.value
+			commit := previousSnapshot.commitIntent.value
+			state, action := RecoveryTerminal, RecoveryBeginFirstAttemptNextEntry
+			if journal.bundleComplete {
+				state, action = RecoveryCompleted, RecoveryReturnSuccess
+			}
+			snapshot = &RecoverySnapshot{
+				owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+				state: state, migrationID: cloneStringPointer(&record.AttemptTerminal.MigrationID),
+				attemptIndex: cloneUint32Pointer(&record.AttemptTerminal.AttemptIndex), previousAttemptTerminalDigest: cloneDigestPointer(intent.PreviousAttemptTerminalDigest),
+				lastStatementIntent:                  recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastStatementIntentRecordDigest, intent),
+				lastStatementIntentRecordDigest:      cloneDigestPointer(previousSnapshot.lastStatementIntentRecordDigest),
+				lastIntermediateEvidence:             recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastIntermediateEvidenceRecordDigest, intermediate),
+				lastIntermediateEvidenceRecordDigest: cloneDigestPointer(previousSnapshot.lastIntermediateEvidenceRecordDigest),
+				lastIntermediateStateDigest:          cloneDigestPointer(previousSnapshot.lastIntermediateStateDigest),
+				commitIntent:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastCommitIntentRecordDigest, commit),
+				lastCommitIntentRecordDigest:         cloneDigestPointer(previousSnapshot.lastCommitIntentRecordDigest),
+				lastTerminal:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.AttemptTerminal),
+				lastTerminalDigest:                   digestPointer(record.AttemptTerminal.TerminalDigest), nextPermittedAction: action,
 			}
 		}
 		if journal.mutateAppendSnapshot != nil {

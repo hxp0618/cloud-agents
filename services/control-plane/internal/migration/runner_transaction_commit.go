@@ -354,3 +354,13 @@ func closeRunnerClosedCurrentCommit(prepared *runnerClosedCurrentCommit, primary
 	}
 	return primary
 }
+
+func closeRunnerClosedCurrentCommitIfRegistered(prepared *runnerClosedCurrentCommit, primary error) error {
+	if prepared == nil {
+		return primary
+	}
+	if _, loaded := runnerClosedCurrentCommitRegistry.Load(prepared); !loaded {
+		return primary
+	}
+	return closeRunnerClosedCurrentCommit(prepared, primary)
+}

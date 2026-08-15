@@ -249,6 +249,9 @@ func TestRunnerClosedCurrentCommitHasNoProductionConsumer(t *testing.T) {
 		"evidence_session.go": {
 			"runnerClosedCurrentCommit": true, "validRunnerClosedCurrentCommit": true,
 		},
+		"runner_committed_terminal.go": {
+			"runnerClosedCurrentCommit": true, "closeRunnerClosedCurrentCommit": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)

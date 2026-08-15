@@ -37,7 +37,7 @@ type runnerCommittedTerminalSeed struct {
 	lifecycleOrder           ownedLifecycleOrderAuthority
 }
 
-func claimRunnerCommittedTerminalSeed(closed *runnerClosedCurrentCommit) (runnerCommittedTerminalSeed, error) {
+func snapshotRunnerCommittedTerminalSeed(closed *runnerClosedCurrentCommit) (runnerCommittedTerminalSeed, error) {
 	if !validRunnerClosedCurrentCommit(closed) || closed.protocol.outcome != runnerCommitProtocolCommitted || closed.protocol.rejectionReason != "" || !closed.protocol.commitCalled || !closed.protocol.readyForQuery {
 		return runnerCommittedTerminalSeed{}, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-claim", "committed transaction outcome is unavailable or changed", nil)
 	}
@@ -45,15 +45,10 @@ func claimRunnerCommittedTerminalSeed(closed *runnerClosedCurrentCommit) (runner
 	if err != nil {
 		return runnerCommittedTerminalSeed{}, fail(CodeUntrusted, "runner-committed-terminal-claim", "exact final statement plan is unavailable", nil)
 	}
-	registered, loaded := runnerClosedCurrentCommitRegistry.LoadAndDelete(closed)
-	record, recordOK := registered.(runnerClosedCurrentCommitRegistryRecord)
-	if !loaded || !recordOK || record.prepared != closed || record.binding != closed.binding || record.candidateBinding != closed.candidateBinding || record.cursorValid != closed.cursor.valid || record.canonical != closed.canonical || !sameRunnerOwnedPointer(record.evidence, closed.evidence) || !sameRunnerOwnedPointer(record.journal, closed.journal) {
-		return runnerCommittedTerminalSeed{}, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-claim", "committed transaction outcome could not be consumed exactly once", nil)
-	}
 	seed := runnerCommittedTerminalSeed{
-		evidence: record.evidence, journal: record.journal, key: closed.key,
-		candidateBinding: record.candidateBinding, generation: closed.generation,
-		commitCanonical: record.canonical, recoveryDigest: closed.recoveryDigest,
+		evidence: closed.evidence, journal: closed.journal, key: closed.key,
+		candidateBinding: closed.candidateBinding, generation: closed.generation,
+		commitCanonical: closed.canonical, recoveryDigest: closed.recoveryDigest,
 		dispatch: closed.dispatch, database: closed.database, maxAttempts: closed.maxAttempts,
 		policy: cloneProjectionValue(closed.policy), plan: plan,
 		intent: cloneProjectionValue(closed.intent), intermediate: cloneProjectionValue(closed.intermediate),
@@ -62,6 +57,19 @@ func claimRunnerCommittedTerminalSeed(closed *runnerClosedCurrentCommit) (runner
 		commitRecordDigest: closed.commitRecordDigest, checkpointDigest: closed.checkpointDigest,
 		ledgerPrefixDigest: closed.ledgerPrefixDigest, connectionCloseProven: closed.connectionCloseProven,
 		oldLifecycleID: closed.oldLifecycleID, lifecycleOrder: closed.lifecycleOrder,
+	}
+	return seed, nil
+}
+
+func claimRunnerCommittedTerminalSeed(closed *runnerClosedCurrentCommit) (runnerCommittedTerminalSeed, error) {
+	seed, err := snapshotRunnerCommittedTerminalSeed(closed)
+	if err != nil {
+		return runnerCommittedTerminalSeed{}, err
+	}
+	registered, loaded := runnerClosedCurrentCommitRegistry.LoadAndDelete(closed)
+	record, recordOK := registered.(runnerClosedCurrentCommitRegistryRecord)
+	if !loaded || !recordOK || record.prepared != closed || record.binding != closed.binding || record.candidateBinding != closed.candidateBinding || record.cursorValid != closed.cursor.valid || record.canonical != closed.canonical || !sameRunnerOwnedPointer(record.evidence, closed.evidence) || !sameRunnerOwnedPointer(record.journal, closed.journal) || record.canonical != seed.commitCanonical {
+		return runnerCommittedTerminalSeed{}, fail(CodeEvidenceRecoveryRequired, "runner-committed-terminal-claim", "committed transaction outcome could not be consumed exactly once", nil)
 	}
 	closed.released = true
 	closed.evidence = nil

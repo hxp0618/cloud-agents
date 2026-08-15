@@ -158,6 +158,11 @@ func TestRunnerCommittedTerminalBinderHasNoUnreviewedConsumerOrMutationEdge(t *t
 			"runnerCommittedTerminalRecordBinderSealed": true, "claimRunnerCommittedTerminalSeed": true,
 			"bindBrandNewRunnerCommittedTerminalRecord": true,
 		},
+		"runner_committed_terminal.go": {
+			"runnerCommittedTerminalRecordBinder": true, "bindRunnerCommittedTerminalRecord": true,
+			"runnerCommittedTerminalSeed": true, "snapshotRunnerCommittedTerminalSeed": true,
+			"buildRunnerCommittedTerminal": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
