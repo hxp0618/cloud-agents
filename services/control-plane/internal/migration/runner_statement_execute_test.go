@@ -38,6 +38,9 @@ func TestRunnerExecutedCurrentStatementConsumesDurableIntentAndExecutesExactByte
 	if fixture.evidence.snapshot.state != RecoveryDanglingStatementIntent || fixture.evidence.snapshot.tailDigest != executed.intentRecordDigest || executed.recoveryDigest != generationJournalRecoveryDigest(fixture.evidence.snapshot) {
 		t.Fatalf("SQL execution changed durable evidence: executed=%+v snapshot=%+v", executed, fixture.evidence.snapshot)
 	}
+	if executed.policy.Validate() != nil || executed.policy.MaxAttempts != uint64(executed.maxAttempts) || !runnerCanonicalEqual(executed.policy, fixture.bundle.Manifest.ExecutionPolicy) {
+		t.Fatalf("executed authority lost the exact execution policy: executed=%+v policy=%+v", executed, executed.policy)
+	}
 	if replay, replayErr := runner.executeCurrentStatement(context.Background(), durable); replay != nil || !IsCode(replayErr, CodeTransactionBoundary) || transaction.executeCalls != 1 || !validRunnerExecutedCurrentStatement(executed) {
 		t.Fatalf("consumed durable intent replayed execution or damaged successor: replay=%+v err=%v transaction=%+v", replay, replayErr, transaction)
 	}
@@ -79,6 +82,11 @@ func TestRunnerExecutedCurrentStatementRejectsLiteralCopyAndFieldDrift(t *testin
 	executed.plan.sqlBytes[0] ^= 0xff
 	assertExecutedStatementDrift(t, executed)
 	executed.plan.sqlBytes[0] = originalSQL
+
+	originalIdleTimeout := executed.policy.IdleInTransactionSessionTimeoutMS
+	executed.policy.IdleInTransactionSessionTimeoutMS++
+	assertExecutedStatementDrift(t, executed)
+	executed.policy.IdleInTransactionSessionTimeoutMS = originalIdleTimeout
 
 	originalRecord := executed.intentRecordDigest
 	executed.intentRecordDigest = testDigest("other-intent-record")

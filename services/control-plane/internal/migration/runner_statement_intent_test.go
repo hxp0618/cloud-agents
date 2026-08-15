@@ -28,6 +28,9 @@ func TestRunnerDurableCurrentStatementIntentConsumesPreparedAuthorityExactlyOnce
 	if durable.intentRecordDigest != journal.snapshot.tailDigest || durable.checkpointDigest != journal.cursor.lineageIndexPreviousRecordDigest || !sameCursorIdentity(durable.cursor, journal.cursor) || durable.recoveryDigest != generationJournalRecoveryDigest(journal.snapshot) {
 		t.Fatalf("durable cursor/recovery binding differs: durable=%+v cursor=%+v snapshot=%+v", durable, journal.cursor, journal.snapshot)
 	}
+	if durable.policy.Validate() != nil || durable.policy.MaxAttempts != uint64(durable.maxAttempts) || !runnerCanonicalEqual(durable.policy, fixture.bundle.Manifest.ExecutionPolicy) {
+		t.Fatalf("durable intent lost the exact execution policy: durable=%+v policy=%+v", durable, durable.policy)
+	}
 	if journal.snapshot.state != RecoveryDanglingStatementIntent || journal.snapshot.nextPermittedAction != RecoveryAppendAbortedRetryable || journal.snapshot.lastStatementIntent == nil || !canonicalEqual(journal.snapshot.lastStatementIntent.value, durable.intent) {
 		t.Fatalf("durable recovery state is not the exact dangling intent: %+v", journal.snapshot)
 	}
@@ -74,6 +77,11 @@ func TestRunnerDurableCurrentStatementIntentRejectsLiteralCopyAndFieldDrift(t *t
 	durable.plan.sqlBytes[0] ^= 0xff
 	assertDurableStatementIntentDrift(t, durable)
 	durable.plan.sqlBytes[0] = originalPlan
+
+	originalStatementTimeout := durable.policy.StatementTimeoutMS
+	durable.policy.StatementTimeoutMS++
+	assertDurableStatementIntentDrift(t, durable)
+	durable.policy.StatementTimeoutMS = originalStatementTimeout
 
 	originalMetadata := durable.intent.AuthorityBeforeResult.Metadata.Snapshot.DatabaseName
 	durable.intent.AuthorityBeforeResult.Metadata.Snapshot.DatabaseName = "drifted_database"

@@ -29,6 +29,7 @@ type runnerExecutedCurrentStatement struct {
 	dispatch                 runnerPreparedDispatch
 	database                 runnerPreparedDatabaseIdentity
 	maxAttempts              uint32
+	policy                   ExecutionPolicy
 	plan                     StatementPlan
 	intent                   StatementIntent
 	cursor                   JournalCursor
@@ -77,6 +78,7 @@ type runnerExecutedCurrentStatementSeed struct {
 	dispatch                 runnerPreparedDispatch
 	database                 runnerPreparedDatabaseIdentity
 	maxAttempts              uint32
+	policy                   ExecutionPolicy
 	plan                     StatementPlan
 	intent                   StatementIntent
 	cursor                   JournalCursor
@@ -151,7 +153,8 @@ func consumeRunnerDurableCurrentStatementIntent(durable *runnerDurableCurrentSta
 		key: record.key, candidateBinding: record.candidateBinding, generation: durable.generation,
 		statementIntentCanonical: record.canonical, recoveryDigest: durable.recoveryDigest,
 		dispatch: durable.dispatch, database: durable.database, maxAttempts: durable.maxAttempts,
-		plan: plan, intent: cloneProjectionValue(durable.intent), cursor: durable.cursor.clone(),
+		policy: cloneProjectionValue(durable.policy),
+		plan:   plan, intent: cloneProjectionValue(durable.intent), cursor: durable.cursor.clone(),
 		intentRecordDigest: durable.intentRecordDigest, checkpointDigest: durable.checkpointDigest,
 	}
 	durable.closed = true
@@ -160,6 +163,7 @@ func consumeRunnerDurableCurrentStatementIntent(durable *runnerDurableCurrentSta
 	durable.evidence = nil
 	durable.journal = nil
 	durable.binding = nil
+	durable.policy = ExecutionPolicy{}
 	durable.plan = StatementPlan{}
 	durable.intent = StatementIntent{}
 	return seed, sql, nil
@@ -184,7 +188,8 @@ func bindRunnerExecutedCurrentStatement(seed runnerExecutedCurrentStatementSeed,
 		key: seed.key, candidateBinding: seed.candidateBinding, generation: seed.generation,
 		statementIntentCanonical: seed.statementIntentCanonical, recoveryDigest: seed.recoveryDigest,
 		dispatch: seed.dispatch, database: seed.database, maxAttempts: seed.maxAttempts,
-		plan: plan, intent: cloneProjectionValue(seed.intent), cursor: seed.cursor.clone(),
+		policy: cloneProjectionValue(seed.policy),
+		plan:   plan, intent: cloneProjectionValue(seed.intent), cursor: seed.cursor.clone(),
 		intentRecordDigest: seed.intentRecordDigest, checkpointDigest: seed.checkpointDigest,
 		executedStatementDigest: executedDigest,
 	}
@@ -229,18 +234,23 @@ func validRunnerExecutedCurrentStatement(prepared *runnerExecutedCurrentStatemen
 		key: prepared.key, candidateBinding: prepared.candidateBinding, generation: prepared.generation,
 		statementIntentCanonical: prepared.statementIntentCanonical, recoveryDigest: prepared.recoveryDigest,
 		dispatch: prepared.dispatch, database: prepared.database, maxAttempts: prepared.maxAttempts,
-		plan: prepared.plan, intent: prepared.intent, cursor: prepared.cursor,
+		policy: prepared.policy,
+		plan:   prepared.plan, intent: prepared.intent, cursor: prepared.cursor,
 		intentRecordDigest: prepared.intentRecordDigest, checkpointDigest: prepared.checkpointDigest,
 	}
 	return runnerExecutedStatementEvidenceMatches(seed)
 }
 
 func runnerExecutedCurrentStatementDigest(prepared *runnerExecutedCurrentStatement) [32]byte {
-	if prepared == nil || prepared.self != prepared || prepared.closed || prepared.session == nil || prepared.transaction == nil || prepared.evidence == nil || prepared.journal == nil || prepared.candidateBinding == nil || prepared.candidateBinding.owner == nil || prepared.generation.owner != prepared.candidateBinding.owner || prepared.candidateBinding.canonical == ([32]byte{}) || prepared.statementIntentCanonical == ([32]byte{}) || prepared.recoveryDigest == ([32]byte{}) || prepared.maxAttempts == 0 || prepared.plan.validateExact() != nil || prepared.plan.StatementIndex != 0 || prepared.intent.Validate() != nil || prepared.intent.StatementIndex != prepared.plan.StatementIndex || prepared.intent.StatementSHA256 != prepared.plan.StatementSHA256 || prepared.intent.SchemaBundleDigest != prepared.generation.schemaBundleDigest || !planMatchesIntent(exactStatementWitnessFromPlan(prepared.plan, prepared.intent.AttemptIndex), prepared.intent) || !runnerStatementIntentProjectionEvidenceMatches(prepared.plan, prepared.intent.AuthorityBeforeResult, prepared.intent.CatalogBeforeResult) || prepared.executedStatementDigest.Validate() != nil || prepared.executedStatementDigest != prepared.plan.StatementSHA256 || !prepared.cursor.Valid() || !sameGenerationIdentity(prepared.cursor.generation, prepared.generation) || prepared.cursor.nextSequence != 2 || prepared.cursor.previousRecordDigest == nil || *prepared.cursor.previousRecordDigest != prepared.intentRecordDigest || prepared.intentRecordDigest.Validate() != nil || prepared.checkpointDigest.Validate() != nil || prepared.cursor.latestCheckpointRecordDigest == nil || *prepared.cursor.latestCheckpointRecordDigest != prepared.checkpointDigest || prepared.database.postgresMajor == 0 || prepared.database.serverVersionNum == 0 || prepared.database.databaseName == "" || prepared.database.sessionUser == "" || prepared.database.currentUser != MigrationOwnerRole || prepared.dispatch.recoveryState != RecoveryBrandNew && prepared.dispatch.recoveryState != RecoveryBrandNewInherited || prepared.dispatch.action != RecoveryBeginFirstAttempt || prepared.dispatch.migrationID != prepared.intent.MigrationID || prepared.dispatch.attemptIndex != prepared.intent.AttemptIndex || prepared.dispatch.entryIndex != 0 || prepared.dispatch.planCount == 0 || prepared.dispatch.planDigest == ([32]byte{}) {
+	if prepared == nil || prepared.self != prepared || prepared.closed || prepared.session == nil || prepared.transaction == nil || prepared.evidence == nil || prepared.journal == nil || prepared.candidateBinding == nil || prepared.candidateBinding.owner == nil || prepared.generation.owner != prepared.candidateBinding.owner || prepared.candidateBinding.canonical == ([32]byte{}) || prepared.statementIntentCanonical == ([32]byte{}) || prepared.recoveryDigest == ([32]byte{}) || prepared.maxAttempts == 0 || prepared.policy.Validate() != nil || prepared.policy.MaxAttempts != uint64(prepared.maxAttempts) || prepared.plan.validateExact() != nil || prepared.plan.StatementIndex != 0 || prepared.intent.Validate() != nil || prepared.intent.StatementIndex != prepared.plan.StatementIndex || prepared.intent.StatementSHA256 != prepared.plan.StatementSHA256 || prepared.intent.SchemaBundleDigest != prepared.generation.schemaBundleDigest || !planMatchesIntent(exactStatementWitnessFromPlan(prepared.plan, prepared.intent.AttemptIndex), prepared.intent) || !runnerStatementIntentProjectionEvidenceMatches(prepared.plan, prepared.intent.AuthorityBeforeResult, prepared.intent.CatalogBeforeResult) || prepared.executedStatementDigest.Validate() != nil || prepared.executedStatementDigest != prepared.plan.StatementSHA256 || !prepared.cursor.Valid() || !sameGenerationIdentity(prepared.cursor.generation, prepared.generation) || prepared.cursor.nextSequence != 2 || prepared.cursor.previousRecordDigest == nil || *prepared.cursor.previousRecordDigest != prepared.intentRecordDigest || prepared.intentRecordDigest.Validate() != nil || prepared.checkpointDigest.Validate() != nil || prepared.cursor.latestCheckpointRecordDigest == nil || *prepared.cursor.latestCheckpointRecordDigest != prepared.checkpointDigest || prepared.database.postgresMajor == 0 || prepared.database.serverVersionNum == 0 || prepared.database.databaseName == "" || prepared.database.sessionUser == "" || prepared.database.currentUser != MigrationOwnerRole || prepared.dispatch.recoveryState != RecoveryBrandNew && prepared.dispatch.recoveryState != RecoveryBrandNewInherited || prepared.dispatch.action != RecoveryBeginFirstAttempt || prepared.dispatch.migrationID != prepared.intent.MigrationID || prepared.dispatch.attemptIndex != prepared.intent.AttemptIndex || prepared.dispatch.entryIndex != 0 || prepared.dispatch.planCount == 0 || prepared.dispatch.planDigest == ([32]byte{}) {
 		return [32]byte{}
 	}
 	intentCanonical, err := canonicalContractKey(prepared.intent)
 	if err != nil || intentCanonical == "" {
+		return [32]byte{}
+	}
+	policyCanonical, err := canonicalContractKey(prepared.policy)
+	if err != nil || policyCanonical == "" {
 		return [32]byte{}
 	}
 	h := sha256.New()
@@ -250,6 +260,7 @@ func runnerExecutedCurrentStatementDigest(prepared *runnerExecutedCurrentStateme
 	h.Write(prepared.recoveryDigest[:])
 	writeAdmissionString(h, prepared.plan.exactCanonical)
 	writeAdmissionString(h, intentCanonical)
+	writeAdmissionString(h, policyCanonical)
 	for _, value := range []Digest{
 		prepared.generation.executionLineageDigest, prepared.generation.journalIdentityDigest,
 		prepared.generation.runnerProjectionDecisionDigest, prepared.generation.schemaBundleDigest,
@@ -299,6 +310,7 @@ func closeRunnerExecutedCurrentStatement(prepared *runnerExecutedCurrentStatemen
 	prepared.evidence = nil
 	prepared.journal = nil
 	prepared.binding = nil
+	prepared.policy = ExecutionPolicy{}
 	prepared.plan = StatementPlan{}
 	prepared.intent = StatementIntent{}
 	if !valid {

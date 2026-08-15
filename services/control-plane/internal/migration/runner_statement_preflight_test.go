@@ -62,6 +62,11 @@ func TestRunnerPreparedCurrentStatementRejectsLiteralCopyReplayAndFieldDrift(t *
 	assertPreparedStatementDrift(t, statement)
 	statement.maxAttempts = originalMaxAttempts
 
+	originalLockTimeout := statement.policy.LockTimeoutMS
+	statement.policy.LockTimeoutMS++
+	assertPreparedStatementDrift(t, statement)
+	statement.policy.LockTimeoutMS = originalLockTimeout
+
 	originalSQL := statement.plan.sqlBytes[0]
 	statement.plan.sqlBytes[0] ^= 0xff
 	assertPreparedStatementDrift(t, statement)
