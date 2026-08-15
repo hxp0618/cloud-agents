@@ -495,6 +495,10 @@ type runnerPreflightTransaction struct {
 	queryCalls          int
 	execCalls           int
 	executeCalls        int
+	executeAllowed      bool
+	executeErr          error
+	executeMutate       func([]byte)
+	executedSQL         [][]byte
 	boundaryCalls       int
 	commitCalls         int
 	rollbackCalls       int
@@ -568,10 +572,22 @@ func (transaction *runnerPreflightTransaction) Exec(context.Context, string, ...
 	return nil, errors.New("transaction exec is forbidden in runner preflight")
 }
 
-func (transaction *runnerPreflightTransaction) ExecuteStatement(context.Context, []byte) error {
+func (transaction *runnerPreflightTransaction) ExecuteStatement(ctx context.Context, raw []byte) error {
 	transaction.executeCalls++
 	transaction.session.backend.executeCalls++
-	return errors.New("migration statement execution is forbidden in runner preflight")
+	transaction.steps = append(transaction.steps, "execute")
+	owned := append([]byte(nil), raw...)
+	transaction.executedSQL = append(transaction.executedSQL, owned)
+	if !transaction.executeAllowed {
+		return errors.New("migration statement execution is forbidden in runner preflight")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if transaction.executeMutate != nil {
+		transaction.executeMutate(raw)
+	}
+	return transaction.executeErr
 }
 
 func (transaction *runnerPreflightTransaction) Boundary(context.Context, int64) (BoundaryState, error) {

@@ -339,6 +339,13 @@ func TestRunnerDurableStatementIntentHasOnlyReviewedProductionConsumers(t *testi
 	allowed := map[string]map[string]bool{
 		"runner_statement_intent.go": nil,
 		"runner.go":                  {"appendCurrentStatementIntent": true, "closeRunnerDurableCurrentStatementIntent": true},
+		"runner_statement_execute.go": {
+			"runnerDurableCurrentStatementIntent":               true,
+			"runnerDurableCurrentStatementIntentRegistryRecord": true,
+			"runnerDurableCurrentStatementIntentRegistry":       true,
+			"validRunnerDurableCurrentStatementIntent":          true,
+			"closeRunnerDurableCurrentStatementIntent":          true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
