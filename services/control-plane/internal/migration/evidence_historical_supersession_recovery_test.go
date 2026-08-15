@@ -57,6 +57,17 @@ func TestHistoricalSuccessorRecoveryRejectsLiteralAndRuntimeInterfaces(t *testin
 	if err := forgedAdmission.close(); !IsCode(err, CodeEvidenceJournalFailed) {
 		t.Fatalf("partially forged historical successor admission close=%v", err)
 	}
+	if ready, err := (&historicalSuccessorAdmissionReady{}).bindSuccessorPlan(context.Background(), candidate); ready != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor plan bind: ready=%+v err=%v", ready, err)
+	}
+	if err := (&historicalSuccessorAdmissionPlanReady{}).close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("literal historical successor plan close=%v", err)
+	}
+	forgedPlan := &historicalSuccessorAdmissionPlanReady{consumed: &atomic.Bool{}}
+	forgedPlan.self = forgedPlan
+	if err := forgedPlan.close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("partially forged historical successor plan close=%v", err)
+	}
 }
 
 func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.T) {
@@ -159,6 +170,99 @@ func TestHistoricalSuccessorAdmissionDigestBindsReacquireFacts(t *testing.T) {
 	}
 }
 
+func TestHistoricalSuccessorAdmissionPlanDigestBindsReplayAndPlanFacts(t *testing.T) {
+	prior := &historicalSuccessorAdmissionReady{binding: &historicalSuccessorAdmissionBinding{canonical: [32]byte{1}}}
+	candidateBinding := &verifiedEvidenceRunBinding{canonical: [32]byte{2}}
+	authority := &VerifiedLineageSupersessionAuthority{digest: testDigest("historical-successor-plan-authority")}
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{3}}}
+	plan := &VerifiedSuccessorAdmissionPlan{binding: &verifiedSuccessorAdmissionPlanBinding{canonical: [32]byte{4}}}
+	ready := &historicalSuccessorAdmissionPlanReady{
+		prior: prior, candidateBinding: candidateBinding, authority: authority,
+		admission: &evidencefs.AdmissionLease{}, inventory: &evidencefs.AdmissionInventory{}, history: history, plan: plan,
+		target: [32]byte{5}, revision: 0, fullSet: [32]byte{6}, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	baseline := historicalSuccessorAdmissionPlanDigest(ready)
+	if baseline == ([32]byte{}) {
+		t.Fatal("historical successor admission-plan digest was not minted")
+	}
+	for name, mutate := range map[string]func(*historicalSuccessorAdmissionPlanReady){
+		"prior":     func(value *historicalSuccessorAdmissionPlanReady) { value.prior.binding.canonical[0]++ },
+		"candidate": func(value *historicalSuccessorAdmissionPlanReady) { value.candidateBinding.canonical[0]++ },
+		"authority": func(value *historicalSuccessorAdmissionPlanReady) {
+			value.authority.digest = testDigest("historical-successor-plan-other-authority")
+		},
+		"history":  func(value *historicalSuccessorAdmissionPlanReady) { value.history.binding.canonical[0]++ },
+		"plan":     func(value *historicalSuccessorAdmissionPlanReady) { value.plan.binding.canonical[0]++ },
+		"target":   func(value *historicalSuccessorAdmissionPlanReady) { value.target[0]++ },
+		"revision": func(value *historicalSuccessorAdmissionPlanReady) { value.revision++ },
+		"full set": func(value *historicalSuccessorAdmissionPlanReady) { value.fullSet[0]++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *ready
+			copyPrior := *prior
+			copyPriorBinding := *prior.binding
+			copyPrior.binding = &copyPriorBinding
+			copyCandidateBinding := *candidateBinding
+			copyHistory := *history
+			copyHistoryBinding := *history.binding
+			copyHistory.binding = &copyHistoryBinding
+			copyPlan := *plan
+			copyPlanBinding := *plan.binding
+			copyPlan.binding = &copyPlanBinding
+			value.prior, value.candidateBinding = &copyPrior, &copyCandidateBinding
+			value.authority = &VerifiedLineageSupersessionAuthority{digest: authority.digest}
+			value.history, value.plan, value.self = &copyHistory, &copyPlan, &value
+			mutate(&value)
+			if historicalSuccessorAdmissionPlanDigest(&value) == baseline {
+				t.Fatal("historical successor admission-plan mutation retained canonical digest")
+			}
+		})
+	}
+}
+
+func TestHistoricalSuccessorAdmissionPlanMemoryRevocationIsComplete(t *testing.T) {
+	cursorValid := &atomic.Bool{}
+	cursorValid.Store(true)
+	runtimeBinding := &verifiedContentReceiptBinding{}
+	recoveryBinding := &verifiedDecisionRecoveryReceiptBinding{}
+	registered := &verifiedAdmissionRegisteredGeneration{
+		replay:         &verifiedAdmissionGenerationReplay{cursor: JournalCursor{valid: cursorValid}},
+		runtimeReceipt: VerifiedContentReceipt{binding: runtimeBinding}, recoveryReceipt: VerifiedDecisionRecoveryReceipt{binding: recoveryBinding},
+	}
+	historyBinding := &verifiedAdmissionHistoryBinding{canonical: [32]byte{1}}
+	history := &VerifiedAdmissionHistory{binding: historyBinding, targetGeneration: registered}
+	planBinding := &verifiedSuccessorAdmissionPlanBinding{canonical: [32]byte{2}}
+	plan := &VerifiedSuccessorAdmissionPlan{binding: planBinding, consumed: &atomic.Bool{}}
+	verifiedContentReceiptRegistry.Store(runtimeBinding, true)
+	verifiedDecisionRecoveryReceiptRegistry.Store(recoveryBinding, true)
+	verifiedAdmissionHistoryRegistry.Store(historyBinding, historyBinding.canonical)
+	verifiedSuccessorAdmissionPlanRegistry.Store(planBinding, planBinding.canonical)
+	t.Cleanup(func() {
+		verifiedContentReceiptRegistry.Delete(runtimeBinding)
+		verifiedDecisionRecoveryReceiptRegistry.Delete(recoveryBinding)
+		verifiedAdmissionHistoryRegistry.Delete(historyBinding)
+		verifiedSuccessorAdmissionPlanRegistry.Delete(planBinding)
+	})
+	revokeHistoricalSuccessorAdmissionPlanMemory(history, plan)
+	if cursorValid.Load() || !plan.consumed.Load() {
+		t.Fatalf("revoked plan state cursor=%v planConsumed=%v", cursorValid.Load(), plan.consumed.Load())
+	}
+	for name, entry := range map[string]struct {
+		registry *sync.Map
+		key      any
+	}{
+		"runtime receipt":  {&verifiedContentReceiptRegistry, runtimeBinding},
+		"recovery receipt": {&verifiedDecisionRecoveryReceiptRegistry, recoveryBinding},
+		"history":          {&verifiedAdmissionHistoryRegistry, historyBinding},
+		"plan":             {&verifiedSuccessorAdmissionPlanRegistry, planBinding},
+	} {
+		if _, ok := entry.registry.Load(entry.key); ok {
+			t.Fatalf("%s registry survived plan revocation", name)
+		}
+	}
+}
+
 func TestRetireHistoricalSuccessorSupersessionSourceRevokesOldGraphWithoutClosingAgain(t *testing.T) {
 	cursorValid := &atomic.Bool{}
 	cursorValid.Store(true)
@@ -223,6 +327,39 @@ func TestHistoricalSuccessorReacquireOrderIsClosed(t *testing.T) {
 	for _, forbidden := range []string{".AcquireAdmission(", ".MutationToken(", ".HandoffGeneration(", "Connect(", "Begin("} {
 		if strings.Contains(method, forbidden) {
 			t.Fatalf("historical successor reacquire called forbidden edge %s", forbidden)
+		}
+	}
+}
+
+func TestHistoricalSuccessorAdmissionPlanOrderIsClosed(t *testing.T) {
+	raw, err := os.ReadFile("evidence_historical_supersession_recovery.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	start := strings.Index(source, "func (r *historicalSuccessorAdmissionReady) bindSuccessorPlan")
+	end := strings.Index(source[start:], "func historicalSuccessorAdmissionHistoryMatches")
+	if start < 0 || end < 0 {
+		t.Fatal("historical successor admission-plan method boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{
+		"contextAdmissionError(ctx)", ".CompareAndSwap(false, true)", "bindVerifiedAdmissionHistory(",
+		"historicalSuccessorAdmissionHistoryMatches(", "bindVerifiedSuccessorAdmissionPlan(",
+		"historicalSuccessorAdmissionPlanRegistry.Store(", "historicalSuccessorAdmissionRegistry.Delete(",
+		"validHistoricalSuccessorAdmissionPlanReady(",
+	}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("historical successor admission-plan step %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	for _, forbidden := range []string{".MutationToken(", ".AppendTargetIndex(", ".Publish", ".BindRuntime(", ".CreateGenerationHeader(", ".AppendGenerationActivated("} {
+		if strings.Contains(method, forbidden) {
+			t.Fatalf("historical successor admission-plan called forbidden edge %s", forbidden)
 		}
 	}
 }

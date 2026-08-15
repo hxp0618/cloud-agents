@@ -136,6 +136,54 @@ type historicalSuccessorAdmissionRecord struct {
 
 var historicalSuccessorAdmissionRegistry sync.Map
 
+// historicalSuccessorAdmissionPlanReady owns the full-root admission after
+// ALL-history replay has reconstructed the exact header-only B and the
+// existing successor planner has consumed the retained B -> C authority. It
+// still exposes no mutation token and cannot append either adjacent frame.
+type historicalSuccessorAdmissionPlanReady struct {
+	self             *historicalSuccessorAdmissionPlanReady
+	prior            *historicalSuccessorAdmissionReady
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	admission        *evidencefs.AdmissionLease
+	inventory        *evidencefs.AdmissionInventory
+	history          *VerifiedAdmissionHistory
+	plan             *VerifiedSuccessorAdmissionPlan
+	target           [32]byte
+	revision         uint64
+	fullSet          [32]byte
+	consumed         *atomic.Bool
+	binding          *historicalSuccessorAdmissionPlanBinding
+}
+
+type historicalSuccessorAdmissionPlanBinding struct {
+	ready            *historicalSuccessorAdmissionPlanReady
+	prior            *historicalSuccessorAdmissionReady
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	admission        *evidencefs.AdmissionLease
+	inventory        *evidencefs.AdmissionInventory
+	history          *VerifiedAdmissionHistory
+	plan             *VerifiedSuccessorAdmissionPlan
+	canonical        [32]byte
+}
+
+type historicalSuccessorAdmissionPlanRecord struct {
+	ready            *historicalSuccessorAdmissionPlanReady
+	binding          *historicalSuccessorAdmissionPlanBinding
+	prior            *historicalSuccessorAdmissionReady
+	priorBinding     *historicalSuccessorAdmissionBinding
+	candidateBinding *verifiedEvidenceRunBinding
+	authority        *VerifiedLineageSupersessionAuthority
+	admission        *evidencefs.AdmissionLease
+	inventory        *evidencefs.AdmissionInventory
+	history          *VerifiedAdmissionHistory
+	plan             *VerifiedSuccessorAdmissionPlan
+	canonical        [32]byte
+}
+
+var historicalSuccessorAdmissionPlanRegistry sync.Map
+
 // RequiresSupersession reports whether the activated B is still historical
 // relative to current C. It is diagnostic and grants no mutation authority.
 func (r *HistoricalSuccessorGenerationRecoveryReady) RequiresSupersession() bool {
@@ -247,7 +295,7 @@ func (r *historicalSuccessorSupersessionReady) close() error {
 	value, ok := historicalSuccessorSupersessionRegistry.Load(r)
 	record, recordOK := value.(historicalSuccessorSupersessionRecord)
 	historicalSuccessorSupersessionRegistry.Delete(r)
-	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical
+	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical && r.binding.canonical == historicalSuccessorSupersessionDigest(r)
 	if r.authority != nil {
 		r.authority.consumed.CompareAndSwap(false, true)
 	}
@@ -395,7 +443,11 @@ func historicalSuccessorAdmissionDigest(ready *historicalSuccessorAdmissionReady
 }
 
 func validHistoricalSuccessorAdmissionReady(ready *historicalSuccessorAdmissionReady, candidate OwnedCurrentCandidate) bool {
-	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.binding.prior != ready.prior || ready.prior.binding == nil || ready.prior.prior == nil || ready.candidateBinding != candidate.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.authority == nil || ready.binding.authority != ready.authority || ready.admission == nil || ready.binding.admission != ready.admission || ready.inventory == nil || ready.binding.inventory != ready.inventory || ready.consumed == nil || ready.consumed.Load() || !validOwnedCurrentCandidate(candidate) || ready.authority != ready.prior.authority || ready.authority.consumed.Load() || ready.target != digestRaw(candidate.verifiedRun.executionLineageDigest) || ready.previousJournal != digestRaw(ready.prior.prior.generation.journalIdentityDigest) || ready.previousLease == ([32]byte{}) || ready.revision != 0 || ready.fullSet == ([32]byte{}) || !ready.reacquired.Valid() || ready.reacquired.PreviousTarget() != ready.target || ready.reacquired.PreviousJournal() != ready.previousJournal || ready.reacquired.PreviousLeaseDigest() != ready.previousLease || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != historicalSuccessorAdmissionDigest(ready) {
+	return validHistoricalSuccessorAdmissionShape(ready, candidate, false, false)
+}
+
+func validHistoricalSuccessorAdmissionShape(ready *historicalSuccessorAdmissionReady, candidate OwnedCurrentCandidate, consumed, authorityConsumed bool) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.binding.prior != ready.prior || ready.prior.binding == nil || ready.prior.prior == nil || ready.candidateBinding != candidate.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.authority == nil || ready.binding.authority != ready.authority || ready.admission == nil || ready.binding.admission != ready.admission || ready.inventory == nil || ready.binding.inventory != ready.inventory || ready.consumed == nil || ready.consumed.Load() != consumed || !validOwnedCurrentCandidate(candidate) || ready.authority != ready.prior.authority || ready.authority.consumed.Load() != authorityConsumed || ready.target != digestRaw(candidate.verifiedRun.executionLineageDigest) || ready.previousJournal != digestRaw(ready.prior.prior.generation.journalIdentityDigest) || ready.previousLease == ([32]byte{}) || ready.revision != 0 || ready.fullSet == ([32]byte{}) || !ready.reacquired.Valid() || ready.reacquired.PreviousTarget() != ready.target || ready.reacquired.PreviousJournal() != ready.previousJournal || ready.reacquired.PreviousLeaseDigest() != ready.previousLease || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != historicalSuccessorAdmissionDigest(ready) {
 		return false
 	}
 	admission, inventory, err := ready.reacquired.Admission()
@@ -420,7 +472,7 @@ func (r *historicalSuccessorAdmissionReady) close() error {
 	value, ok := historicalSuccessorAdmissionRegistry.Load(r)
 	record, recordOK := value.(historicalSuccessorAdmissionRecord)
 	historicalSuccessorAdmissionRegistry.Delete(r)
-	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.admission == r.admission && record.inventory == r.inventory && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical
+	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.admission == r.admission && record.inventory == r.inventory && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical && r.binding.canonical == historicalSuccessorAdmissionDigest(r)
 	if r.authority != nil {
 		r.authority.consumed.CompareAndSwap(false, true)
 	}
@@ -436,6 +488,180 @@ func (r *historicalSuccessorAdmissionReady) close() error {
 	}
 	if !validRecord {
 		return admissionFailed("historical-successor-admission-close", "immutable historical successor admission authority is unavailable", nil)
+	}
+	return nil
+}
+
+// bindSuccessorPlan consumes the reacquired full-root owner, replays every
+// registered lineage/generation/object, proves that the target is still the
+// exact header-only B, and lets the existing successor planner consume the
+// retained B -> C authority. No mutation token is requested in this step.
+func (r *historicalSuccessorAdmissionReady) bindSuccessorPlan(ctx context.Context, candidate OwnedCurrentCandidate) (*historicalSuccessorAdmissionPlanReady, error) {
+	if !validHistoricalSuccessorAdmissionReady(r, candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-plan", "historical successor admission authority is unavailable", nil)
+	}
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, err
+	}
+	if !r.consumed.CompareAndSwap(false, true) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-plan", "historical successor admission authority was already consumed", nil)
+	}
+	history, err := bindVerifiedAdmissionHistory(ctx, r.inventory, candidate)
+	if err != nil {
+		return failHistoricalSuccessorAdmissionPlan(r, nil, nil, err, "historical-successor-plan-history")
+	}
+	if !historicalSuccessorAdmissionHistoryMatches(r, history, candidate) {
+		return failHistoricalSuccessorAdmissionPlan(r, history, nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-plan-history", "fresh history differs from the recovered header-only generation", nil), "historical-successor-plan-history")
+	}
+	plan, err := bindVerifiedSuccessorAdmissionPlan(ctx, history, candidate, r.authority)
+	if err != nil {
+		return failHistoricalSuccessorAdmissionPlan(r, history, nil, err, "historical-successor-plan-bind")
+	}
+	ready := &historicalSuccessorAdmissionPlanReady{
+		prior: r, candidateBinding: candidate.binding, authority: r.authority,
+		admission: r.admission, inventory: r.inventory, history: history, plan: plan,
+		target: r.target, revision: r.revision, fullSet: r.fullSet, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	ready.binding = &historicalSuccessorAdmissionPlanBinding{
+		ready: ready, prior: r, candidateBinding: candidate.binding, authority: r.authority,
+		admission: r.admission, inventory: r.inventory, history: history, plan: plan,
+	}
+	ready.binding.canonical = historicalSuccessorAdmissionPlanDigest(ready)
+	historicalSuccessorAdmissionPlanRegistry.Store(ready, historicalSuccessorAdmissionPlanRecord{
+		ready: ready, binding: ready.binding, prior: r, priorBinding: r.binding, candidateBinding: candidate.binding,
+		authority: r.authority, admission: r.admission, inventory: r.inventory, history: history, plan: plan,
+		canonical: ready.binding.canonical,
+	})
+	historicalSuccessorAdmissionRegistry.Delete(r)
+	if !validHistoricalSuccessorAdmissionPlanReady(ready, candidate) {
+		historicalSuccessorAdmissionPlanRegistry.Delete(ready)
+		return failHistoricalSuccessorAdmissionPlan(r, history, plan, evidencefs.ErrUnknown, "historical-successor-plan-seal")
+	}
+	return ready, nil
+}
+
+func historicalSuccessorAdmissionHistoryMatches(ready *historicalSuccessorAdmissionReady, history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate) bool {
+	if !validHistoricalSuccessorAdmissionShape(ready, candidate, true, false) || !validVerifiedAdmissionHistory(history, candidate) {
+		return false
+	}
+	registered := history.targetGeneration
+	if registered == nil || registered.replay == nil || registered.replay.recovery == nil || ready.prior == nil || ready.prior.prior == nil || ready.prior.prior.recovery == nil || registered.replay.cursor.previousRecordDigest == nil {
+		return false
+	}
+	return history.inventory == ready.inventory && history.revision == ready.revision && history.target == ready.target && history.fullSet == ready.fullSet &&
+		history.targetState == admissionLineageActiveInitial && history.targetIndexRecords == ready.prior.prior.cursor.lineageIndexNextSequence &&
+		history.targetIndexTail == ready.prior.activation && registered.replay.cursor.lineageIndexNextSequence == history.targetIndexRecords &&
+		registered.replay.cursor.lineageIndexPreviousRecordDigest == ready.prior.activation && registered.replay.cursor.latestCheckpointRecordDigest == nil &&
+		sameGenerationIdentity(registered.descriptor.identity, ready.prior.prior.generation) && registered.descriptor.replayTailDigest == ready.prior.initialTail &&
+		*registered.replay.cursor.previousRecordDigest == ready.prior.initialTail && generationJournalRecoveryDigest(registered.replay.recovery) == generationJournalRecoveryDigest(ready.prior.prior.recovery)
+}
+
+func historicalSuccessorAdmissionPlanDigest(ready *historicalSuccessorAdmissionPlanReady) [32]byte {
+	if ready == nil || ready.self != ready || ready.prior == nil || ready.prior.binding == nil || ready.candidateBinding == nil || ready.authority == nil || ready.admission == nil || ready.inventory == nil || ready.history == nil || ready.history.binding == nil || ready.plan == nil || ready.plan.binding == nil || ready.target == ([32]byte{}) || ready.fullSet == ([32]byte{}) || ready.consumed == nil {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte("cloud-agents-platform-historical-successor-admission-plan-ready/v1\x00"))
+	h.Write(ready.prior.binding.canonical[:])
+	h.Write(ready.candidateBinding.canonical[:])
+	writeAdmissionString(h, ready.authority.digest.String())
+	h.Write(ready.history.binding.canonical[:])
+	h.Write(ready.plan.binding.canonical[:])
+	h.Write(ready.target[:])
+	h.Write(ready.fullSet[:])
+	writeAdmissionUint(h, ready.revision)
+	var result [32]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
+func validHistoricalSuccessorAdmissionPlanReady(ready *historicalSuccessorAdmissionPlanReady, candidate OwnedCurrentCandidate) bool {
+	if ready == nil || ready.self != ready || ready.binding == nil || ready.binding.ready != ready || ready.prior == nil || ready.binding.prior != ready.prior || ready.prior.self != ready.prior || ready.prior.binding == nil || ready.prior.binding.canonical == ([32]byte{}) || ready.prior.binding.canonical != historicalSuccessorAdmissionDigest(ready.prior) || ready.prior.consumed == nil || !ready.prior.consumed.Load() || ready.candidateBinding != candidate.binding || ready.binding.candidateBinding != ready.candidateBinding || ready.authority == nil || ready.binding.authority != ready.authority || !ready.authority.consumed.Load() || ready.authority != ready.prior.authority || ready.admission == nil || ready.binding.admission != ready.admission || ready.admission != ready.prior.admission || ready.inventory == nil || ready.binding.inventory != ready.inventory || ready.inventory != ready.prior.inventory || ready.history == nil || ready.binding.history != ready.history || ready.plan == nil || ready.binding.plan != ready.plan || ready.plan.history != ready.history || ready.plan.authority != ready.authority || ready.consumed == nil || ready.consumed.Load() || ready.target != ready.prior.target || ready.revision != ready.prior.revision || ready.fullSet != ready.prior.fullSet || ready.binding.canonical == ([32]byte{}) || ready.binding.canonical != historicalSuccessorAdmissionPlanDigest(ready) || !validOwnedCurrentCandidate(candidate) || !validVerifiedAdmissionHistory(ready.history, candidate) || !validVerifiedSuccessorAdmissionPlan(ready.plan, ready.history, candidate) || !ready.admission.Active() {
+		return false
+	}
+	if _, oldRegistered := historicalSuccessorAdmissionRegistry.Load(ready.prior); oldRegistered {
+		return false
+	}
+	revision, revisionErr := ready.inventory.Revision()
+	target, targetErr := ready.inventory.Target()
+	fullSet, fullSetErr := ready.inventory.FullSetDigest()
+	if revisionErr != nil || revision != ready.revision || targetErr != nil || target != ready.target || fullSetErr != nil || fullSet != ready.fullSet {
+		return false
+	}
+	value, ok := historicalSuccessorAdmissionPlanRegistry.Load(ready)
+	record, recordOK := value.(historicalSuccessorAdmissionPlanRecord)
+	return ok && recordOK && record.ready == ready && record.binding == ready.binding && record.prior == ready.prior && record.priorBinding == ready.prior.binding && record.candidateBinding == ready.candidateBinding && record.authority == ready.authority && record.admission == ready.admission && record.inventory == ready.inventory && record.history == ready.history && record.plan == ready.plan && record.canonical == ready.binding.canonical
+}
+
+func failHistoricalSuccessorAdmissionPlan(ready *historicalSuccessorAdmissionReady, history *VerifiedAdmissionHistory, plan *VerifiedSuccessorAdmissionPlan, cause error, operation string) (*historicalSuccessorAdmissionPlanReady, error) {
+	if ready != nil {
+		historicalSuccessorAdmissionRegistry.Delete(ready)
+		if ready.authority != nil {
+			ready.authority.consumed.CompareAndSwap(false, true)
+		}
+	}
+	cleanupErr := error(nil)
+	if ready != nil && ready.admission != nil {
+		cleanupErr = ready.admission.Close()
+	}
+	revokeHistoricalSuccessorAdmissionPlanMemory(history, plan)
+	if cleanupErr != nil {
+		return nil, mapEvidenceAdmissionError(cleanupErr, operation+"-cleanup")
+	}
+	if cause == nil {
+		cause = evidencefs.ErrUnknown
+	}
+	for _, code := range []ErrorCode{CodeContextCanceled, CodeDeadlineExceeded, CodeEvidenceJournalCorrupt, CodeEvidenceJournalFailed, CodeEvidenceJournalLimitExceeded, CodeEvidenceRecoveryRequired} {
+		if IsCode(cause, code) {
+			return nil, cause
+		}
+	}
+	return nil, mapEvidenceAdmissionError(cause, operation)
+}
+
+func revokeHistoricalSuccessorAdmissionPlanMemory(history *VerifiedAdmissionHistory, plan *VerifiedSuccessorAdmissionPlan) {
+	if plan != nil {
+		if plan.consumed != nil {
+			plan.consumed.CompareAndSwap(false, true)
+		}
+		if plan.binding != nil {
+			verifiedSuccessorAdmissionPlanRegistry.Delete(plan.binding)
+		}
+	}
+	if history != nil {
+		if history.binding != nil {
+			verifiedAdmissionHistoryRegistry.Delete(history.binding)
+		}
+		revokeVerifiedAdmissionRegisteredGeneration(history.targetGeneration)
+	}
+}
+
+func (r *historicalSuccessorAdmissionPlanReady) close() error {
+	if r == nil || r.self != r || r.consumed == nil || !r.consumed.CompareAndSwap(false, true) {
+		return admissionFailed("historical-successor-plan-close", "historical successor plan authority is unavailable", nil)
+	}
+	value, ok := historicalSuccessorAdmissionPlanRegistry.Load(r)
+	record, recordOK := value.(historicalSuccessorAdmissionPlanRecord)
+	historicalSuccessorAdmissionPlanRegistry.Delete(r)
+	validRecord := r.binding != nil && r.prior != nil && r.prior.binding != nil && ok && recordOK && record.ready == r && record.binding == r.binding && record.prior == r.prior && record.priorBinding == r.prior.binding && record.candidateBinding == r.candidateBinding && record.authority == r.authority && record.admission == r.admission && record.inventory == r.inventory && record.history == r.history && record.plan == r.plan && record.canonical != ([32]byte{}) && record.canonical == r.binding.canonical && r.binding.canonical == historicalSuccessorAdmissionPlanDigest(r)
+	admission, history, plan := r.admission, r.history, r.plan
+	if ok && recordOK && record.ready == r {
+		admission, history, plan = record.admission, record.history, record.plan
+	}
+	if r.authority != nil {
+		r.authority.consumed.CompareAndSwap(false, true)
+	}
+	var cleanupErr error
+	if admission != nil {
+		cleanupErr = admission.Close()
+	}
+	revokeHistoricalSuccessorAdmissionPlanMemory(history, plan)
+	if cleanupErr != nil {
+		return mapEvidenceAdmissionError(cleanupErr, "historical-successor-plan-close")
+	}
+	if !validRecord {
+		return admissionFailed("historical-successor-plan-close", "immutable historical successor plan authority is unavailable", nil)
 	}
 	return nil
 }
