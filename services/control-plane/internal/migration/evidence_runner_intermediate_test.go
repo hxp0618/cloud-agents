@@ -155,6 +155,10 @@ func TestRunnerIntermediateRecordBinderHasNoUnreviewedConsumerOrMutationEdge(t *
 			"runnerIntermediateRecordBinderSealed": true, "bindBrandNewRunnerFinalIntermediateRecord": true,
 			"runnerFinalIntermediateVerifiedSubjects": true,
 		},
+		"runner_final_intermediate.go": {
+			"runnerIntermediateRecordBinder": true, "runnerIntermediateRecordRequest": true,
+			"bindRunnerIntermediateRecord": true, "buildRunnerFinalIntermediateEvidence": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)

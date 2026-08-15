@@ -334,7 +334,7 @@ func TestRunnerProjectedPreledgerHasNoProductionConsumer(t *testing.T) {
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
-		if strings.HasSuffix(name, "_test.go") || name == "runner_preledger.go" {
+		if strings.HasSuffix(name, "_test.go") || name == "runner_preledger.go" || name == "runner_final_intermediate.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)

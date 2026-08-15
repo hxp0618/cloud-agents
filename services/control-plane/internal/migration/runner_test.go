@@ -897,19 +897,25 @@ func (sink *runnerEvidenceSinkFake) Open(_ context.Context, run VerifiedEvidence
 func (*runnerEvidenceSinkFake) evidenceSinkSealed() {}
 
 type runnerEvidenceSessionFake struct {
-	candidate            OwnedCurrentCandidate
-	active               ActiveGeneration
-	journal              *runnerEvidenceJournalFake
-	snapshot             *RecoverySnapshot
-	bindErr              error
-	bindCalls            int
-	bindNoJournal        bool
-	bindNoRecord         bool
-	mutateBoundIntent    func(*StatementIntent)
-	mutateBoundAuthority func(*JournalCursor, *OwnedEvidenceRecord)
-	closeErr             error
-	closeCalls           int
-	closed               bool
+	candidate                   OwnedCurrentCandidate
+	active                      ActiveGeneration
+	journal                     *runnerEvidenceJournalFake
+	snapshot                    *RecoverySnapshot
+	bindErr                     error
+	bindCalls                   int
+	bindNoJournal               bool
+	bindNoRecord                bool
+	mutateBoundIntent           func(*StatementIntent)
+	mutateBoundAuthority        func(*JournalCursor, *OwnedEvidenceRecord)
+	intermediateBindErr         error
+	intermediateBindCalls       int
+	intermediateNoJournal       bool
+	intermediateNoRecord        bool
+	mutateBoundIntermediate     func(*StatementIntermediateEvidence)
+	mutateIntermediateAuthority func(*JournalCursor, *OwnedEvidenceRecord)
+	closeErr                    error
+	closeCalls                  int
+	closed                      bool
 }
 
 func newRunnerEvidenceSessionFake(candidate OwnedCurrentCandidate) *runnerEvidenceSessionFake {
@@ -1029,6 +1035,61 @@ func (session *runnerEvidenceSessionFake) bindRunnerStatementIntentRecord(ctx co
 
 func (*runnerEvidenceSessionFake) runnerStatementIntentRecordBinderSealed() {}
 
+func (session *runnerEvidenceSessionFake) bindRunnerIntermediateRecord(ctx context.Context, request runnerIntermediateRecordRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	session.intermediateBindCalls++
+	if err := ctx.Err(); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if session.intermediateBindErr != nil {
+		return nil, JournalCursor{}, nil, session.intermediateBindErr
+	}
+	if session.closed || request.candidateBinding == nil || request.candidateBinding != session.candidate.binding || !sameGenerationIdentity(request.generation, session.active.identity) || request.maxAttempts == 0 || generationJournalRecoveryDigest(session.snapshot) != request.recoveryDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-test-intermediate-bind", "intermediate binder inputs differ", nil)
+	}
+	bindings, err := session.candidate.verifiedRun.currentDecision.decision.runnerProjectionBindings()
+	if err != nil || runnerFinalIntermediateVerifiedSubjects(bindings, request) != nil {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-test-intermediate-bind", "intermediate verified subjects differ", nil)
+	}
+	intermediate, err := buildRunnerFinalIntermediateEvidence(request)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if session.mutateBoundIntermediate != nil {
+		session.mutateBoundIntermediate(&intermediate)
+	}
+	cursor := session.journal.cursor.clone()
+	plan, err := cloneRunnerStatementIntentPlan(request.plan)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	priorIntent := EvidenceFrame{
+		FormatVersion: EvidenceFrameFormat, Sequence: cursor.nextSequence - 1,
+		RecordKind: EvidenceRecordStatementIntent, Record: EvidenceRecord{StatementIntent: cloneStatementIntentPointer(&request.intent)},
+		RecordDigest: *cursor.previousRecordDigest,
+	}
+	witness := ownedIntermediateWitness{
+		ownedAppendContext: ownedAppendContext{generation: request.generation, cursor: cursor.clone()},
+		plan:               plan, stateDigest: request.state.IntermediateStateDigest, priorIntent: priorIntent,
+	}
+	owned := &OwnedEvidenceRecord{
+		wire: EvidenceRecord{Intermediate: &intermediate}, witness: witness,
+		generation: request.generation, cursor: cursor.clone(), consumed: &atomic.Bool{},
+	}
+	if session.mutateIntermediateAuthority != nil {
+		session.mutateIntermediateAuthority(&cursor, owned)
+	}
+	session.journal.maxAttempts = request.maxAttempts
+	if session.intermediateNoJournal {
+		return nil, cursor, owned, nil
+	}
+	if session.intermediateNoRecord {
+		return session.journal, cursor, nil, nil
+	}
+	return session.journal, cursor, owned, nil
+}
+
+func (*runnerEvidenceSessionFake) runnerIntermediateRecordBinderSealed() {}
+
 func (session *runnerEvidenceSessionFake) Close(ctx context.Context) error {
 	if session == nil || session.closed {
 		return errors.New("session already closed")
@@ -1085,17 +1146,29 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 		return AppendResult{}, journal.appendErr
 	}
 	record, err := owned.consume(cursor.generation, cursor)
-	if err != nil || record.StatementIntent == nil || record.StatementIntent.Validate() != nil {
+	kind := EvidenceRecordKind("")
+	if err == nil {
+		switch {
+		case record.StatementIntent != nil:
+			kind = EvidenceRecordStatementIntent
+		case record.Intermediate != nil:
+			kind = EvidenceRecordIntermediate
+		default:
+			err = errors.New("unsupported runner evidence record")
+		}
+	}
+	if err != nil || validateEvidenceRecord(record) != nil {
 		if err == nil {
-			err = errors.New("invalid statement intent")
+			err = errors.New("invalid runner evidence record")
 		}
 		return AppendResult{}, err
 	}
+	previousSnapshot := cloneRecoverySnapshot(journal.snapshot)
 	journal.appendedRecord = cloneEvidenceRecord(record)
 	frame := EvidenceFrame{
 		FormatVersion: EvidenceFrameFormat, Sequence: cursor.nextSequence,
 		PreviousRecordDigest: cloneDigestPointer(cursor.previousRecordDigest),
-		RecordKind:           EvidenceRecordStatementIntent, Record: cloneEvidenceRecord(record),
+		RecordKind:           kind, Record: cloneEvidenceRecord(record),
 	}
 	frame.RecordDigest, err = frame.ComputeDigest()
 	if err != nil || frame.Validate() != nil {
@@ -1125,13 +1198,33 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 	}
 	if outcome == appendOutcomeDurable {
 		next := result.DurableCursor()
-		action := recoveryAbortAction(record.StatementIntent.AttemptIndex, journal.maxAttempts)
-		snapshot := &RecoverySnapshot{
-			owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
-			state: RecoveryDanglingStatementIntent, migrationID: cloneStringPointer(&record.StatementIntent.MigrationID),
-			attemptIndex:                    cloneUint32Pointer(&record.StatementIntent.AttemptIndex),
-			lastStatementIntent:             recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.StatementIntent),
-			lastStatementIntentRecordDigest: digestPointer(frame.RecordDigest), nextPermittedAction: action,
+		var snapshot *RecoverySnapshot
+		switch kind {
+		case EvidenceRecordStatementIntent:
+			action := recoveryAbortAction(record.StatementIntent.AttemptIndex, journal.maxAttempts)
+			snapshot = &RecoverySnapshot{
+				owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+				state: RecoveryDanglingStatementIntent, migrationID: cloneStringPointer(&record.StatementIntent.MigrationID),
+				attemptIndex:                    cloneUint32Pointer(&record.StatementIntent.AttemptIndex),
+				lastStatementIntent:             recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.StatementIntent),
+				lastStatementIntentRecordDigest: digestPointer(frame.RecordDigest), nextPermittedAction: action,
+			}
+		case EvidenceRecordIntermediate:
+			if previousSnapshot == nil || previousSnapshot.lastStatementIntent == nil || previousSnapshot.lastStatementIntentRecordDigest == nil {
+				return AppendResult{}, errors.New("intermediate predecessor is unavailable")
+			}
+			intent := previousSnapshot.lastStatementIntent.value
+			action := recoveryAbortAction(record.Intermediate.State.AttemptIndex, journal.maxAttempts)
+			snapshot = &RecoverySnapshot{
+				owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+				state: RecoveryDanglingIntermediate, migrationID: cloneStringPointer(&record.Intermediate.State.MigrationID),
+				attemptIndex: cloneUint32Pointer(&record.Intermediate.State.AttemptIndex), previousAttemptTerminalDigest: cloneDigestPointer(intent.PreviousAttemptTerminalDigest),
+				lastStatementIntent:                  recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastStatementIntentRecordDigest, intent),
+				lastStatementIntentRecordDigest:      cloneDigestPointer(previousSnapshot.lastStatementIntentRecordDigest),
+				lastIntermediateEvidence:             recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.Intermediate),
+				lastIntermediateEvidenceRecordDigest: digestPointer(frame.RecordDigest),
+				lastIntermediateStateDigest:          digestPointer(record.Intermediate.State.IntermediateStateDigest), nextPermittedAction: action,
+			}
 		}
 		if journal.mutateAppendSnapshot != nil {
 			journal.mutateAppendSnapshot(snapshot)
