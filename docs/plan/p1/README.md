@@ -12,15 +12,16 @@
   x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
   P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)；P1-A2.1a-impl-2 PG adapters
   (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)；admission registration/publish/bind/reserve
-  chain (`8c9a72b` through `cebacea`)，其中 brand-new generation 已完成 exact
+  chain (`8c9a72b` through `f654aae`)，其中 brand-new generation 已完成 exact
   `GenerationReserved → segment-0 header → GenerationActivated` durability 与 root-wide lock release/opaque
   target+generation lock handoff，并推进到 compact evidencefs snapshot、strict replay 与 sealed same-verifier
   `GenerationRecoveryReady`、receipt-bound retained existing/rotated-segment `EvidenceJournal` composite append/checkpoint、
   unknown reconciliation，以及 sealed current `ActiveGeneration`/`EvidenceSession`；registered ancestor reopen 与 live
   successor 已完成 irreversible full-root reacquisition、adjacent
-  `GenerationSuperseded → GenerationReserved`、successor activate/handoff/replay/recovery/journal 和同一 session current swap
-- Current slice：实现 process-restart `superseded_pending_reservation` recovery，随后再接 runner/DB `Connect`；production
-  trusted mount 仍 fail closed
+  `GenerationSuperseded → GenerationReserved`、successor activate/handoff/replay/recovery/journal 和同一 session current swap；
+  crash-reopened historical header-only successor 已在 `f654aae` 接入 production `BindSession` 的 B → C 闭图
+- Current slice：固定 trusted-mount provisioner/real ext4+xfs power-loss harness，随后再接 runner/DB `Connect`；production
+  constructor 继续 fail closed
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -63,8 +64,10 @@ Platform RC、Beta 或 GA。
 - [`successor-generation-session-20260814.md`](successor-generation-session-20260814.md) 固定 source `cebacea`，记录
   registered ancestor session、generation-lease→full-root reacquire、successor content/receipt/index/header/activation、
   retained replay/recovery/journal 和 same-session current swap。
-- 两份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
-  仍没有 public `EvidenceSink` constructor、trusted mount、process-crash successor reopen 或 DB authority。
+- [`historical-successor-process-restart-20260816.md`](historical-successor-process-restart-20260816.md) 固定 source
+  `f654aae`，记录 strict historical B replay 后的 one-way full-root reacquire、B → C materialization 与 current session wiring。
+- 三份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+  仍没有 public `EvidenceSink` constructor、trusted mount、真实 process-restart/ext4+xfs power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
 
@@ -88,6 +91,6 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`：root-wide 与 non-target locks 已释放，只保留
 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
-但这没有改变 Gate 结论：production
-trusted-mount constructor、public sink、runner/DB `Connect`、process-crash successor reopen 与真实
-ext4/XFS/power-loss 证据仍然开放。
+但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect` 与真实
+process-restart/ext4/XFS/power-loss 证据仍然开放。`f654aae` 已闭合 process-crash successor 的 production 代码路径，
+但因 production constructor 仍 pre-mutation reject，尚无真实进程重启正向证据。
