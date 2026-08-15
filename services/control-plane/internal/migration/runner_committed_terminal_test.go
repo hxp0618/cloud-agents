@@ -276,6 +276,10 @@ func TestRunnerDurableCommittedTerminalHasNoProductionConsumer(t *testing.T) {
 		"appendCommittedTerminal": true, "bindRunnerDurableCommittedTerminal": true,
 		"validRunnerDurableCommittedTerminal": true, "closeRunnerDurableCommittedTerminal": true,
 	}
+	consumer := map[string]bool{
+		"appendCommittedTerminal": true, "validRunnerDurableCommittedTerminal": true,
+		"closeRunnerDurableCommittedTerminal": true,
+	}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "runner_committed_terminal.go" {
@@ -287,7 +291,7 @@ func TestRunnerDurableCommittedTerminalHasNoProductionConsumer(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !(name == "runner_current_execution.go" && consumer[identifier.Name]) {
 				t.Fatalf("durable committed terminal %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

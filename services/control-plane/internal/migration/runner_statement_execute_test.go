@@ -271,6 +271,7 @@ func TestRunnerExecutedStatementHasNoProductionConsumer(t *testing.T) {
 		"consumeRunnerDurableCurrentStatementIntent": true, "bindRunnerExecutedCurrentStatement": true,
 		"validRunnerExecutedCurrentStatement": true, "closeRunnerExecutedCurrentStatement": true,
 	}
+	consumer := map[string]bool{"executeCurrentStatement": true}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "runner_statement_execute.go" || name == "runner_statement_after.go" {
@@ -282,7 +283,7 @@ func TestRunnerExecutedStatementHasNoProductionConsumer(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !(name == "runner_current_execution.go" && consumer[identifier.Name]) {
 				t.Fatalf("executed statement authority %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

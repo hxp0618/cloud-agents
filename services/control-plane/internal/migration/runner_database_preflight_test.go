@@ -87,7 +87,7 @@ func TestRunnerDatabasePreflightFaultsCloseEvidenceAndDatabase(t *testing.T) {
 		}, CodeProjectionMetadataMismatch, 1},
 		{"unlock", func(_ *runnerPreflightConnector, s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *runnerEvidenceSinkFake) {
 			s.unlockErr = errors.New("secret-unlock")
-		}, CodeTransactionBoundary, 1},
+		}, CodeInvalidSQL, 1},
 		{"database-close", func(_ *runnerPreflightConnector, s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *runnerEvidenceSinkFake) {
 			s.closeErr = errors.New("secret-close")
 		}, CodeTransactionBoundary, 1},
@@ -115,7 +115,7 @@ func TestRunnerDatabasePreflightFaultsCloseEvidenceAndDatabase(t *testing.T) {
 			if test.name == "unlock" || test.name == "database-close" {
 				wantBegin = 1
 			}
-			if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || session.closeCalls != test.wantClose || session.beginCalls != wantBegin || session.transaction.rollbackCalls != wantBegin || session.transaction.executeCalls != 0 || session.transaction.execCalls != 0 || session.transaction.commitCalls != 0 || session.queryCalls != 0 {
+			if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || session.closeCalls != test.wantClose || session.beginCalls != wantBegin || session.transaction.rollbackCalls != wantBegin || session.transaction.executeCalls != wantBegin || session.transaction.execCalls != 0 || session.transaction.commitCalls != 0 || session.queryCalls != 0 {
 				t.Fatalf("fault cleanup crossed a forbidden boundary: evidence=%+v session=%+v", sink.session, session)
 			}
 			if session.locked && session.closeErr == nil {

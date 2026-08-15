@@ -72,13 +72,13 @@ type databaseState struct {
 
 // Run is the public production gate. It admits one evidence session, proves the
 // connected-session, migration-role, and migration-transaction authority
-// projections on the same dedicated database connection. It seals the exact
-// header-only current dispatch, repeats its transaction-wide predecessor, then
-// repeats authority plus catalog-before at statement_index=0 inside the same
-// SERIALIZABLE/READ WRITE transaction. It durably appends that exact owned
-// StatementIntent and matching lineage checkpoint before unconditionally
-// rolling the transaction back. No migration SQL, ledger row, or commit is
-// reachable from this slice.
+// projections on the same dedicated database connection, and executes the
+// closed single-entry/single-statement path. Every state transition consumes
+// the preceding sealed authority: StatementIntent durability precedes SQL,
+// final Intermediate durability precedes the ledger row, CommitIntent
+// durability precedes Commit, and a committed terminal plus checkpoint precede
+// success. Unsupported multi-entry or multi-statement bundles stop before any
+// evidence session or database side effect.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err
@@ -113,6 +113,9 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 			return RunResult{}, err
 		}
 	}
+	if err := validateRunnerCurrentExecutionScope(bundle, plans); err != nil {
+		return RunResult{}, err
+	}
 	current, recoveryArtifact, err := bindVerifierOwnedDecision(runner.Trust, decision, bindings.runnerProjectionDecisionDigest, recoveryArtifactBytes)
 	if err != nil {
 		return RunResult{}, err
@@ -131,6 +134,7 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 	if err != nil {
 		return RunResult{}, err
 	}
+	result := RunResult{}
 	prepared, preflightErr := runner.prepareCurrentDatabaseSession(ctx, request.TargetDSN, bundle, plans, session, snapshot, candidate)
 	if preflightErr == nil {
 		transaction, transactionErr := runner.prepareCurrentTransaction(ctx, prepared, bundle, plans)
@@ -142,10 +146,7 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 				durable, appendErr := runner.appendCurrentStatementIntent(ctx, statement)
 				preflightErr = appendErr
 				if preflightErr == nil {
-					preflightErr = closeRunnerDurableCurrentStatementIntent(durable, nil)
-					if preflightErr == nil {
-						preflightErr = fail(CodeProjectionNotImplemented, "runner-statement-execute", "durable statement intent is sealed but migration SQL execution is not implemented", nil)
-					}
+					result, preflightErr = runner.runCurrentSingleEntry(ctx, durable, bundle, plans)
 				}
 			}
 		}
@@ -155,7 +156,11 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 	if cleanupErr := closeRunnerEvidenceOwnership(session, candidate); cleanupErr != nil {
 		return RunResult{}, cleanupErr
 	}
-	return RunResult{}, preflightErr
+	if preflightErr != nil {
+		return RunResult{}, preflightErr
+	}
+	runner.transition(StateComplete)
+	return result, nil
 }
 
 func verifyRunnerCurrentEvidence(ctx context.Context, verifier TrustVerifier, candidate CandidateEnvelope) (VerifiedTrustDecision, []byte, error) {

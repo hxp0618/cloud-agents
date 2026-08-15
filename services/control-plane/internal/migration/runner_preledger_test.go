@@ -332,6 +332,7 @@ func TestRunnerProjectedPreledgerHasNoProductionConsumer(t *testing.T) {
 		"consumeRunnerProjectedCurrentStatementAfter": true, "bindRunnerProjectedCurrentPreledger": true,
 		"validRunnerProjectedCurrentPreledger": true, "closeRunnerProjectedCurrentPreledger": true,
 	}
+	consumer := map[string]bool{"projectCurrentPreledger": true}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "runner_preledger.go" || name == "runner_final_intermediate.go" {
@@ -343,7 +344,7 @@ func TestRunnerProjectedPreledgerHasNoProductionConsumer(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !(name == "runner_current_execution.go" && consumer[identifier.Name]) {
 				t.Fatalf("pre-ledger authority %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

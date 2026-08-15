@@ -98,10 +98,10 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 		wantCode ErrorCode
 		wantOp   string
 	}{
-		{"brand-new", nil, CodeProjectionNotImplemented, "runner-statement-execute"},
+		{"brand-new", nil, CodeInvalidSQL, "runner-statement-execute"},
 		{"inherited-header-only", func(snapshot *RecoverySnapshot) {
 			snapshot.state = RecoveryBrandNewInherited
-		}, CodeProjectionNotImplemented, "runner-statement-execute"},
+		}, CodeInvalidSQL, "runner-statement-execute"},
 		{"wrong-action", func(snapshot *RecoverySnapshot) {
 			snapshot.nextPermittedAction = RecoveryBeginNextAttempt
 		}, CodeProjectionNotImplemented, "runner-recovery-dispatch"},
@@ -130,7 +130,7 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 			if test.wantOp == "runner-statement-execute" {
 				wantBegin = 1
 			}
-			if sink.session == nil || sink.session.bindCalls != wantBegin || sink.session.journal.appendCalls != wantBegin || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+2*wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != 0 || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 || liveRunnerDurableCurrentStatementIntents() != 0 {
+			if sink.session == nil || sink.session.bindCalls != wantBegin || sink.session.journal.appendCalls != wantBegin || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+2*wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != wantBegin || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != wantBegin || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 || liveRunnerDurableCurrentStatementIntents() != 0 {
 				t.Fatalf("recovery dispatch crossed write or cleanup boundary: sink=%+v database=%+v transaction=%+v factory=%+v live=%d/%d/%d", sink.session, database, database.transaction, factory, liveRunnerPreparedCurrentSessions(), liveRunnerPreparedCurrentTransactions(), liveRunnerPreparedCurrentStatements())
 			}
 		})

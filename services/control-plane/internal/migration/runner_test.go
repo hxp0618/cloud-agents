@@ -69,10 +69,12 @@ func TestPublicRunnerExactAdmissionStopsAtUnconfiguredEvidenceSinkWithZeroSideEf
 	assertNoRunnerSideEffects(t, connector, backend)
 }
 
-func TestPublicRunnerProjectsAllPreexecutionAuthorityPhasesAndDurablyAppendsStatementIntent(t *testing.T) {
+func TestPublicRunnerCommitsExactSingleEntryAndDurablyClosesEvidence(t *testing.T) {
 	raw, decision := buildExactAdmissionRuntime(t)
 	connector := &runnerPreflightConnector{session: newRunnerPreflightSession()}
+	connector.session.transaction.executeAllowed = true
 	factory := &runnerPreflightProjectorFactory{}
+	factory.transitionState = runnerPublicCompletionTransitionState(t, raw, decision)
 	verifier := &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)}
 	sink := &runnerEvidenceSinkFake{}
 	source := &memoryArtifactSource{data: raw}
@@ -83,19 +85,113 @@ func TestPublicRunnerProjectsAllPreexecutionAuthorityPhasesAndDurablyAppendsStat
 		projectionFactory: factory,
 	}
 	before := liveVerifiedEvidenceRunBindings()
-	_, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
-	var migrationErr *Error
-	if !errors.As(err, &migrationErr) || migrationErr.Code != CodeProjectionNotImplemented || migrationErr.Op != "runner-statement-execute" || migrationErr.Err != nil {
-		t.Fatalf("authority-preflight runner did not stop after the durable statement-intent boundary: %v", err)
+	result, err := runner.Run(context.Background(), RunRequest{Artifact: source, TargetDSN: "test-only"})
+	if err != nil {
+		t.Fatalf("single-entry runner: result=%+v err=%v", result, err)
 	}
-	if sink.calls != 1 || sink.session == nil || sink.session.bindCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.appendCalls != 1 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
+	bundle, loadErr := LoadRuntimeBundle(raw, decision)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	entry := bundle.Manifest.SchemaBundle.Migrations[0]
+	if result.SchemaBundleDigest != bundle.Manifest.SchemaBundleDigest || result.ManifestDigest != bundle.Manifest.ManifestDigest || result.FinalHead != entry.ID || !reflect.DeepEqual(result.Applied, []string{entry.ID}) || len(result.AmbiguousRecovered) != 0 {
+		t.Fatalf("single-entry result differs: got=%+v entry=%+v", result, entry)
+	}
+	if sink.calls != 1 || sink.session == nil || sink.session.bindCalls != 1 || sink.session.intermediateBindCalls != 1 || sink.session.commitBindCalls != 1 || sink.session.terminalBindCalls != 1 || sink.session.journal.replayCalls != 1 || sink.session.journal.appendCalls != 4 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.snapshot.cursor.Valid() || liveVerifiedEvidenceRunBindings() != before {
 		t.Fatalf("evidence session lifecycle mismatch: sink=%d session=%+v live=%d/%d", sink.calls, sink.session, liveVerifiedEvidenceRunBindings(), before)
 	}
-	wantTransitions := []RunnerState{StateVerifyTrust, StateLoadBundle, StateConnect, StateLocked}
+	wantTransitions := []RunnerState{StateVerifyTrust, StateLoadBundle, StateConnect, StateLocked, StateMigrate, StateComplete}
 	if verifier.calls != 1 || source.reads != 1 || !reflect.DeepEqual(observer.transitions, wantTransitions) {
 		t.Fatalf("runner preflight ordering mismatch: verify=%d read=%d transitions=%v", verifier.calls, source.reads, observer.transitions)
 	}
-	assertRunnerAuthorityPreflightLifecycle(t, connector, factory)
+	assertRunnerCompletedSingleEntryLifecycle(t, connector, factory)
+}
+
+func runnerPublicCompletionTransitionState(t *testing.T, raw []byte, decision VerifiedTrustDecision) *CatalogStateProjection {
+	t.Helper()
+	bundle, err := LoadRuntimeBundle(raw, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := decision.runnerProjectionBindings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, err := buildExactStatementPlans(bundle, bindings, time.Now())
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("public completion plans=%d err=%v", len(plans), err)
+	}
+	catalog, ok := exactCatalogBindingForHead(bindings.executableCatalogs, plans[0].MigrationID)
+	if !ok {
+		t.Fatal("public completion catalog binding is unavailable")
+	}
+	expected := catalog.verifiedCatalog.ExpectedProjection()
+	state := &CatalogStateProjection{Present: &SchemaPresentProjection{
+		State: "schema_present", Scope: cloneProjectionValue(plans[0].ExpectedTransition.CatalogAfter.Scope),
+		Body: cloneProjectionValue(expected.Body),
+	}}
+	digest, err := state.ComputeDigest()
+	if err != nil || digest != plans[0].ExpectedTransition.CatalogAfter.Digest {
+		t.Fatalf("public completion state: digest=%s want=%s err=%v", digest, plans[0].ExpectedTransition.CatalogAfter.Digest, err)
+	}
+	return state
+}
+
+func assertRunnerCompletedSingleEntryLifecycle(t *testing.T, connector *runnerPreflightConnector, factory *runnerPreflightProjectorFactory) {
+	t.Helper()
+	session := connector.session
+	transaction := session.transaction
+	if connector.attempts != 1 || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 0 || session.closeCalls != 1 || session.beginCalls != 1 || session.ledgerReadCalls != 2 || transaction.executeCalls != 1 || transaction.ledgerInsertCalls != 1 || transaction.ledgerReadCalls != 1 || transaction.commitCalls != 1 || transaction.rollbackCalls != 0 || transaction.execCalls != 0 || transaction.queryCalls != 0 || session.backend.executeCalls != 1 || session.backend.ledgerInsertCalls != 1 || session.backend.commitCalls != 1 || !session.closed || transaction.active || transaction.status != 'I' || transaction.pendingLedger != nil || factory.transitionState == nil || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 || liveRunnerDurableCurrentStatementIntents() != 0 || liveRunnerExecutedCurrentStatements() != 0 || liveRunnerProjectedCurrentStatementAfters() != 0 || liveRunnerProjectedCurrentPreledgers() != 0 || liveRunnerDurableFinalIntermediates() != 0 || liveRunnerReadbackCurrentLedgers() != 0 || liveRunnerDurableCommitIntents() != 0 || liveRunnerClosedCurrentCommits() != 0 || liveRunnerDurableCommittedTerminals() != 0 {
+		t.Fatalf("completed runner lifecycle mismatch: connector=%+v session=%+v transaction=%+v factory=%+v", connector, session, transaction, factory)
+	}
+}
+
+func TestPublicRunnerLateTerminalFailureClosesEvidenceAfterOneCommit(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		configure  func(*runnerEvidenceSessionFake)
+		wantOp     string
+		wantAppend int
+	}{
+		{"bind", func(session *runnerEvidenceSessionFake) {
+			session.terminalBindErr = errors.New("secret-terminal-bind")
+		}, "runner-committed-terminal-bind", 3},
+		{"recovery", func(session *runnerEvidenceSessionFake) {
+			session.journal.mutateAppendSnapshot = func(snapshot *RecoverySnapshot) {
+				if snapshot.lastTerminal != nil {
+					snapshot.state = RecoveryDivergent
+				}
+			}
+		}, "runner-committed-terminal-evidence", 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw, decision := buildExactAdmissionRuntime(t)
+			database := newRunnerPreflightSession()
+			database.transaction.executeAllowed = true
+			factory := &runnerPreflightProjectorFactory{transitionState: runnerPublicCompletionTransitionState(t, raw, decision)}
+			sink := &runnerEvidenceSinkFake{configureSession: test.configure}
+			observer := &recordingStateObserver{}
+			runner := Runner{
+				Trust:    &sequenceTrustVerifier{fallback: decision, recoveryArtifact: runnerDecisionRecoveryArtifact(t, decision)},
+				Evidence: sink, Connector: &runnerPreflightConnector{session: database}, Observer: observer,
+				projectionFactory: factory,
+			}
+			before := liveVerifiedEvidenceRunBindings()
+			result, err := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
+			var migrationErr *Error
+			if !errors.As(err, &migrationErr) || migrationErr.Code != CodeEvidenceJournalFailed || migrationErr.Op != test.wantOp || migrationErr.Err != nil || containsErrorText(err, "secret-") || !reflect.DeepEqual(result, RunResult{}) {
+				t.Fatalf("late terminal result=%+v err=%#v", result, migrationErr)
+			}
+			if sink.session == nil || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 || sink.session.journal.appendCalls != test.wantAppend || database.transaction.commitCalls != 1 || database.transaction.rollbackCalls != 0 || database.transaction.executeCalls != 1 || database.transaction.ledgerInsertCalls != 1 || database.closeCalls != 1 || database.unlockCalls != 0 || database.backend.commitCalls != 1 || liveVerifiedEvidenceRunBindings() != before || liveRunnerClosedCurrentCommits() != 0 || liveRunnerDurableCommittedTerminals() != 0 {
+				t.Fatalf("late terminal cleanup escaped: sink=%+v database=%+v transaction=%+v live=%d/%d", sink.session, database, database.transaction, liveRunnerClosedCurrentCommits(), liveRunnerDurableCommittedTerminals())
+			}
+			for _, state := range observer.transitions {
+				if state == StateComplete {
+					t.Fatalf("late terminal failure reached complete: %v", observer.transitions)
+				}
+			}
+		})
+	}
 }
 
 func TestPublicRunnerEvidenceOpenClosedResultAndCleanupFaults(t *testing.T) {

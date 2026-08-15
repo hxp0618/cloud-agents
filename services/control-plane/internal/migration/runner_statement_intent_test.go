@@ -347,6 +347,11 @@ func TestRunnerDurableStatementIntentHasOnlyReviewedProductionConsumers(t *testi
 	allowed := map[string]map[string]bool{
 		"runner_statement_intent.go": nil,
 		"runner.go":                  {"appendCurrentStatementIntent": true, "closeRunnerDurableCurrentStatementIntent": true},
+		"runner_current_execution.go": {
+			"runnerDurableCurrentStatementIntent":      true,
+			"executeCurrentStatement":                  true,
+			"closeRunnerDurableCurrentStatementIntent": true,
+		},
 		"runner_statement_execute.go": {
 			"runnerDurableCurrentStatementIntent":               true,
 			"runnerDurableCurrentStatementIntentRegistryRecord": true,
