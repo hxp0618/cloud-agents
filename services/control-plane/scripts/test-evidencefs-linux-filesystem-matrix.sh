@@ -15,6 +15,20 @@ if ! docker version >/dev/null 2>&1; then
   exit 1
 fi
 
+sha256_file() {
+  local file=$1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+    return
+  fi
+  echo "sha256sum or shasum is required" >&2
+  return 1
+}
+
 harness_image=${CLOUD_AGENTS_EVIDENCEFS_HARNESS_IMAGE:-}
 if [[ $harness_image != *@sha256:* ]]; then
   echo "CLOUD_AGENTS_EVIDENCEFS_HARNESS_IMAGE must be an exact local image digest" >&2
@@ -84,7 +98,7 @@ GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
   GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 \
   go -C "$module_dir" test -c -tags=evidencefsintegration \
   -o "$binary" ./internal/evidencefs
-binary_sha256=$(shasum -a 256 "$binary" | awk '{print $1}')
+binary_sha256=$(sha256_file "$binary")
 
 for filesystem in ext4 xfs; do
   active_container="cag-p1-evidencefs-${filesystem}-$$-$RANDOM"
