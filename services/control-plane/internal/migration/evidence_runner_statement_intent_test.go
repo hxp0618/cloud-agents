@@ -158,6 +158,9 @@ func TestRunnerStatementIntentRecordBinderHasNoUnreviewedConsumerOrMutationEdge(
 			"runnerStatementIntentRecordBinder": true, "runnerStatementIntentRecordRequest": true,
 			"bindRunnerStatementIntentRecord": true,
 		},
+		"evidence_runner_intermediate.go": {
+			"runnerStatementIntentVerifiedSubject": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)

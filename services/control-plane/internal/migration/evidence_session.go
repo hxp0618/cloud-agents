@@ -330,6 +330,48 @@ func (s *generationEvidenceSession) bindRunnerStatementIntentRecord(ctx context.
 
 func (*generationEvidenceSession) runnerStatementIntentRecordBinderSealed() {}
 
+func (s *generationEvidenceSession) bindRunnerIntermediateRecord(ctx context.Context, request runnerIntermediateRecordRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if s == nil || s.self != s {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-intermediate-record", "current evidence session authority is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || request.candidateBinding == nil || request.candidateBinding != s.candidate.binding || s.active.kind != activeGenerationCurrent || s.active.recoveryExecutionBindings != nil || !sameGenerationIdentity(request.generation, s.active.identity) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-intermediate-record", "current evidence session differs from the projected intermediate", nil)
+	}
+	bindings, err := s.candidate.verifiedRun.currentDecision.decision.runnerProjectionBindings()
+	if err != nil || bindings.runnerProjectionDecisionDigest != request.generation.runnerProjectionDecisionDigest || bindings.schemaBundleDigest != request.generation.schemaBundleDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-intermediate-record", "current verifier bindings differ from the active generation", nil)
+	}
+	if err := runnerFinalIntermediateVerifiedSubjects(bindings, request); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || request.maxAttempts == 0 || journal.schema.maxAttempts[request.plan.MigrationID] != request.maxAttempts || journal.schema.finalStatementIndex[request.plan.MigrationID] != request.plan.StatementIndex || journal.schema.finalCatalogDigest != request.preledgerCatalog.Digest || generationJournalRecoveryDigest(journal.state.recovery) != request.recoveryDigest {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-intermediate-record", "current journal boundary differs from the projected intermediate", nil)
+	}
+	header, ok := generationJournalHeader(journal)
+	if !ok {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-intermediate-record", "current generation header authority is unavailable", nil)
+	}
+	owned, err := bindBrandNewRunnerFinalIntermediateRecord(
+		request, journal.generation, journal.state.cursor, journal.state.recovery,
+		header, journal.schema.chainWitness,
+	)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	return journal, journal.state.cursor.clone(), owned, nil
+}
+
+func (*generationEvidenceSession) runnerIntermediateRecordBinderSealed() {}
+
 // RecoverySnapshot always clones the journal's current state. An append makes
 // every older cursor invalid, so a session must never cache the snapshot that
 // existed when it was first sealed.
