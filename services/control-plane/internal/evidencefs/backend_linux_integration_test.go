@@ -86,6 +86,12 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	case "classify-object-crash":
 		classifyLinuxIntegrationObjectCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
+	case "generation-append-crash":
+		appendLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-append-crash":
+		classifyLinuxIntegrationGenerationAppendCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
 	case "":
 	default:
 		t.Fatal("unknown integration helper mode")
@@ -157,7 +163,14 @@ type linuxIntegrationCrashBackend struct {
 var _ backend = (*linuxIntegrationCrashBackend)(nil)
 
 func (b *linuxIntegrationCrashBackend) hit(point string) {
-	if b == nil || b.barrier != point {
+	if b == nil {
+		return
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, point)
+}
+
+func blockLinuxIntegrationCrashBarrier(barrier, point string) {
+	if barrier != point {
 		return
 	}
 	if _, err := fmt.Fprintf(os.Stdout, "%s barrier=%s\n", linuxIntegrationBarrierReady, point); err != nil {
@@ -166,6 +179,117 @@ func (b *linuxIntegrationCrashBackend) hit(point string) {
 	for {
 		time.Sleep(time.Hour)
 	}
+}
+
+// linuxIntegrationGenerationAppendCrashBackend stays dormant while the
+// baseline generation is made durable, then delegates the candidate append to
+// real Linux pwrite/fdatasync calls around one fixed crash boundary.
+type linuxIntegrationGenerationAppendCrashBackend struct {
+	linuxBackend
+	barrier         string
+	armed           bool
+	journalFD       int
+	indexFD         int
+	journalExpected int
+	journalWritten  int
+	indexExpected   int
+	indexWritten    int
+}
+
+var _ backend = (*linuxIntegrationGenerationAppendCrashBackend)(nil)
+
+func (b *linuxIntegrationGenerationAppendCrashBackend) arm(barrier string) {
+	b.barrier = barrier
+	b.journalFD = -1
+	b.indexFD = -1
+	b.journalExpected = 0
+	b.journalWritten = 0
+	b.indexExpected = 0
+	b.indexWritten = 0
+	b.armed = true
+}
+
+func (b *linuxIntegrationGenerationAppendCrashBackend) openFileAtReadWrite(parent int, name string) (int, error) {
+	fd, err := b.linuxBackend.openFileAtReadWrite(parent, name)
+	if !b.armed || err != nil {
+		return fd, err
+	}
+	switch name {
+	case "index.caj":
+		if b.indexFD >= 0 {
+			panic("generation append opened index twice")
+		}
+		b.indexFD = fd
+	case admissionSegmentName(0):
+		if b.journalFD >= 0 {
+			panic("generation append opened journal segment twice")
+		}
+		b.journalFD = fd
+	}
+	return fd, nil
+}
+
+func (b *linuxIntegrationGenerationAppendCrashBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
+	if !b.armed {
+		return b.linuxBackend.pwrite(fd, source, offset)
+	}
+	var expected, written *int
+	before, short, after := "", "", ""
+	switch fd {
+	case b.journalFD:
+		expected, written = &b.journalExpected, &b.journalWritten
+		before, short, after = "before-journal-write", "after-short-journal-write", "after-journal-write"
+	case b.indexFD:
+		expected, written = &b.indexExpected, &b.indexWritten
+		before, short, after = "before-index-write", "after-short-index-write", "after-index-write"
+	default:
+		return b.linuxBackend.pwrite(fd, source, offset)
+	}
+	if *written == 0 {
+		*expected = len(source)
+		blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	}
+	if *written == 0 && b.barrier == short {
+		limit := len(source) / 2
+		if limit == 0 {
+			limit = 1
+		}
+		count, err := b.linuxBackend.pwrite(fd, source[:limit], offset)
+		if count > 0 {
+			*written += count
+		}
+		if err == nil && count == limit {
+			blockLinuxIntegrationCrashBarrier(b.barrier, short)
+		}
+		return count, err
+	}
+	count, err := b.linuxBackend.pwrite(fd, source, offset)
+	if count > 0 {
+		*written += count
+	}
+	if err == nil && *written == *expected {
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return count, err
+}
+
+func (b *linuxIntegrationGenerationAppendCrashBackend) fdatasync(fd int) error {
+	if !b.armed {
+		return b.linuxBackend.fdatasync(fd)
+	}
+	before, after := "", ""
+	switch fd {
+	case b.journalFD:
+		before, after = "before-journal-fdatasync", "after-journal-fdatasync"
+	case b.indexFD:
+		before, after = "before-index-fdatasync", "after-index-fdatasync"
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.fdatasync(fd)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
 }
 
 func (b *linuxIntegrationCrashBackend) write(fd int, source []byte) (int, error) {
@@ -323,6 +447,140 @@ func validLinuxIntegrationObjectCrashState(barrier, state string, tempBytes uint
 	}
 }
 
+func appendLinuxIntegrationGenerationAtCrashBarrier(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationGenerationAppendCrashBarrier(barrier) {
+		t.Fatal("unknown generation append crash barrier")
+	}
+	ops := &linuxIntegrationGenerationAppendCrashBackend{}
+	generation, snapshot := createLinuxIntegrationBaseGeneration(t, rootPath, ops)
+	ops.arm(barrier)
+	result, err := generation.AppendExistingSegmentComposite(context.Background(), snapshot, []byte(linuxIntegrationExistingJournalFrame), []byte(linuxIntegrationExistingCheckpointFrame))
+	t.Fatalf("generation append crossed crash barrier: outcome=%q snapshot=%v err=%v", result.Outcome(), result.Snapshot(), err)
+}
+
+func classifyLinuxIntegrationGenerationAppendCrashState(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationGenerationAppendCrashBarrier(barrier) {
+		t.Fatal("unknown generation append crash barrier")
+	}
+	if root, err := Open(context.Background(), rootPath); root != nil || !errors.Is(err, ErrTrustedMountAuthority) {
+		t.Fatalf("production Open bypassed trusted mount authority: root=%v err=%v", root, err)
+	}
+	root := newLinuxIntegrationRoot(t, rootPath)
+	lease, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	target, targetErr := inventory.Target()
+	lineageIDs, lineageIDsErr := inventory.LineageIDs()
+	lineage, lineageErr := inventory.Lineage(linuxIntegrationTarget)
+	if targetErr != nil || lineageIDsErr != nil || lineageErr != nil || target != linuxIntegrationTarget || len(lineageIDs) != 1 || lineageIDs[0] != linuxIntegrationTarget {
+		t.Fatalf("target=%x ids=%x errors=%v/%v/%v", target, lineageIDs, targetErr, lineageIDsErr, lineageErr)
+	}
+	indexView, err := lineage.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := indexView.ReadAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	journals, err := lineage.Journals()
+	if err != nil || len(journals) != 1 {
+		t.Fatalf("journals=%d err=%v", len(journals), err)
+	}
+	journal, err := journals[0].ID()
+	if err != nil || journal != linuxIntegrationJournal {
+		t.Fatalf("journal=%x err=%v", journal, err)
+	}
+	segments, err := journals[0].Segments()
+	if err != nil || len(segments) != 1 {
+		t.Fatalf("segments=%d err=%v", len(segments), err)
+	}
+	ordinal, ordinalErr := segments[0].Ordinal()
+	segment, segmentErr := segments[0].ReadAll(context.Background())
+	if ordinalErr != nil || segmentErr != nil || ordinal != 0 {
+		t.Fatalf("segment ordinal=%d errors=%v/%v", ordinal, ordinalErr, segmentErr)
+	}
+	state, ok := classifyLinuxIntegrationGenerationAppendBytes(index, segment)
+	if !ok {
+		t.Fatalf("invalid generation append crash bytes: index=%q segment=%q", index, segment)
+	}
+	if !validLinuxIntegrationGenerationAppendCrashState(barrier, state) {
+		t.Fatalf("barrier %q rejected generation append recovery state=%q", barrier, state)
+	}
+	if err := inventory.Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("EVIDENCEFS_INTEGRATION_GENERATION_APPEND_CRASH_RECOVERY barrier=%s state=%s index_bytes=%d segment_bytes=%d", barrier, state, len(index), len(segment))
+}
+
+func validLinuxIntegrationGenerationAppendCrashBarrier(barrier string) bool {
+	switch barrier {
+	case "before-journal-write", "after-short-journal-write", "after-journal-write",
+		"before-journal-fdatasync", "after-journal-fdatasync", "before-index-write",
+		"after-short-index-write", "after-index-write", "before-index-fdatasync",
+		"after-index-fdatasync":
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyLinuxIntegrationGenerationAppendBytes(index, segment []byte) (GenerationAppendReconcileState, bool) {
+	indexBase := linuxIntegrationBaseIndex()
+	segmentBase := linuxIntegrationBaseSegmentZero()
+	if !bytes.HasPrefix(index, indexBase) || !bytes.HasPrefix(segment, segmentBase) {
+		return "", false
+	}
+	journalState, journalOK := generationReconcileSuffixState(segment, uint64(len(segmentBase)), []byte(linuxIntegrationExistingJournalFrame))
+	checkpointState, checkpointOK := generationReconcileSuffixState(index, uint64(len(indexBase)), []byte(linuxIntegrationExistingCheckpointFrame))
+	if !journalOK || !checkpointOK {
+		return "", false
+	}
+	switch {
+	case journalState == generationSuffixAbsent && checkpointState == generationSuffixAbsent:
+		return GenerationAppendReconcileUnchanged, true
+	case journalState == generationSuffixPartial && checkpointState == generationSuffixAbsent:
+		return GenerationAppendReconcileJournalTorn, true
+	case journalState == generationSuffixComplete && checkpointState == generationSuffixAbsent:
+		return GenerationAppendReconcileJournalComplete, true
+	case journalState == generationSuffixComplete && checkpointState == generationSuffixPartial:
+		return GenerationAppendReconcileCheckpointTorn, true
+	case journalState == generationSuffixComplete && checkpointState == generationSuffixComplete:
+		return GenerationAppendReconcileCompositeComplete, true
+	default:
+		return "", false
+	}
+}
+
+func validLinuxIntegrationGenerationAppendCrashState(barrier string, state GenerationAppendReconcileState) bool {
+	switch barrier {
+	case "before-journal-write":
+		return state == GenerationAppendReconcileUnchanged
+	case "after-short-journal-write":
+		return state == GenerationAppendReconcileUnchanged || state == GenerationAppendReconcileJournalTorn
+	case "after-journal-write", "before-journal-fdatasync":
+		return state == GenerationAppendReconcileUnchanged || state == GenerationAppendReconcileJournalTorn || state == GenerationAppendReconcileJournalComplete
+	case "after-journal-fdatasync", "before-index-write":
+		return state == GenerationAppendReconcileJournalComplete
+	case "after-short-index-write":
+		return state == GenerationAppendReconcileJournalComplete || state == GenerationAppendReconcileCheckpointTorn
+	case "after-index-write", "before-index-fdatasync":
+		return state == GenerationAppendReconcileJournalComplete || state == GenerationAppendReconcileCheckpointTorn || state == GenerationAppendReconcileCompositeComplete
+	case "after-index-fdatasync":
+		return state == GenerationAppendReconcileCompositeComplete
+	default:
+		return false
+	}
+}
+
 type linuxIntegrationHolder struct {
 	command *exec.Cmd
 	stdin   io.WriteCloser
@@ -421,19 +679,48 @@ func publishAndHoldLinuxIntegrationObject(t *testing.T, rootPath string) {
 }
 
 func createAndHoldLinuxIntegrationGeneration(t *testing.T, rootPath string) {
-	root := newLinuxIntegrationRoot(t, rootPath)
+	generation, snapshot := createLinuxIntegrationBaseGeneration(t, rootPath, linuxBackend{})
+	appended, err := generation.AppendExistingSegmentComposite(context.Background(), snapshot, []byte(linuxIntegrationExistingJournalFrame), []byte(linuxIntegrationExistingCheckpointFrame))
+	if err != nil || appended.Outcome() != AdmissionTransitionDurable || !appended.ValidFor(generation) {
+		t.Fatalf("existing append outcome=%q valid=%v err=%v", appended.Outcome(), appended.ValidFor(generation), err)
+	}
+	rotated, err := generation.AppendRotatedSegmentComposite(context.Background(), appended.Snapshot(), []byte(linuxIntegrationRotationHeaderFrame), []byte(linuxIntegrationRotationCheckpointFrame), []byte(linuxIntegrationRotationCallerFrame), []byte(linuxIntegrationRotationCallerCheckpoint))
+	if err != nil || rotated.Outcome() != AdmissionTransitionDurable || !rotated.ValidFor(generation) {
+		t.Fatalf("rotation outcome=%q valid=%v err=%v", rotated.Outcome(), rotated.ValidFor(generation), err)
+	}
+	verifyLinuxIntegrationSnapshot(t, rotated.Snapshot())
+	if err := rotated.Snapshot().Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintln(os.Stdout, linuxIntegrationGenerationReady); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
+		t.Fatal(err)
+	}
+	if err := generation.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func createLinuxIntegrationBaseGeneration(t *testing.T, rootPath string, ops backend) (*GenerationLease, *GenerationSnapshot) {
+	t.Helper()
+	root, err := newRootWithAuthority(context.Background(), rootPath, uint32(os.Getuid()), ops, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	admission, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var generation *GenerationLease
-	defer func() {
+	t.Cleanup(func() {
 		if generation != nil {
 			_ = generation.Close()
 		} else if admission != nil {
 			_ = admission.Close()
 		}
-	}()
+	})
 
 	token, err := inventory.MutationToken()
 	if err != nil {
@@ -477,28 +764,7 @@ func createAndHoldLinuxIntegrationGeneration(t *testing.T, rootPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appended, err := generation.AppendExistingSegmentComposite(context.Background(), snapshot, []byte(linuxIntegrationExistingJournalFrame), []byte(linuxIntegrationExistingCheckpointFrame))
-	if err != nil || appended.Outcome() != AdmissionTransitionDurable || !appended.ValidFor(generation) {
-		t.Fatalf("existing append outcome=%q valid=%v err=%v", appended.Outcome(), appended.ValidFor(generation), err)
-	}
-	rotated, err := generation.AppendRotatedSegmentComposite(context.Background(), appended.Snapshot(), []byte(linuxIntegrationRotationHeaderFrame), []byte(linuxIntegrationRotationCheckpointFrame), []byte(linuxIntegrationRotationCallerFrame), []byte(linuxIntegrationRotationCallerCheckpoint))
-	if err != nil || rotated.Outcome() != AdmissionTransitionDurable || !rotated.ValidFor(generation) {
-		t.Fatalf("rotation outcome=%q valid=%v err=%v", rotated.Outcome(), rotated.ValidFor(generation), err)
-	}
-	verifyLinuxIntegrationSnapshot(t, rotated.Snapshot())
-	if err := rotated.Snapshot().Revalidate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fmt.Fprintln(os.Stdout, linuxIntegrationGenerationReady); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
-		t.Fatal(err)
-	}
-	if err := generation.Close(); err != nil {
-		t.Fatal(err)
-	}
-	generation = nil
+	return generation, snapshot
 }
 
 func verifyLinuxIntegrationSnapshot(t *testing.T, snapshot *GenerationSnapshot) {
@@ -589,8 +855,16 @@ func linuxIntegrationExpectedIndex() []byte {
 	return []byte(linuxIntegrationIndexHeader + linuxIntegrationActivationIndexFrame + linuxIntegrationExistingCheckpointFrame + linuxIntegrationRotationCheckpointFrame + linuxIntegrationRotationCallerCheckpoint)
 }
 
+func linuxIntegrationBaseIndex() []byte {
+	return []byte(linuxIntegrationIndexHeader + linuxIntegrationActivationIndexFrame)
+}
+
 func linuxIntegrationExpectedSegmentZero() []byte {
 	return []byte(linuxIntegrationGenerationHeader + linuxIntegrationExistingJournalFrame)
+}
+
+func linuxIntegrationBaseSegmentZero() []byte {
+	return []byte(linuxIntegrationGenerationHeader)
 }
 
 func linuxIntegrationExpectedSegmentOne() []byte {
