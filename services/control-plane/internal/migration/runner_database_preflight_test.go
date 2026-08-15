@@ -296,12 +296,13 @@ func assertRunnerAuthorityPreflightLifecycle(t *testing.T, connector *runnerPref
 	t.Helper()
 	session := connector.session
 	wantSnapshots := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole}
-	wantFactory := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction}
-	wantAuthority := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction}
-	wantPrecondition := []AuthorityPhase{AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction}
-	wantTransactionSteps := []string{"begin", "profile-enter", "metadata", "profile-restore", "boundary", "rollback"}
+	wantFactory := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction, AuthorityPhaseMigrationTransaction}
+	wantAuthority := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction, AuthorityPhaseMigrationTransaction}
+	wantPrecondition := []AuthorityPhase{AuthorityPhaseMigrationRole, AuthorityPhaseMigrationTransaction, AuthorityPhaseMigrationTransaction}
+	wantTransactionSteps := []string{"begin", "profile-enter", "metadata", "profile-restore", "boundary", "profile-enter", "metadata", "profile-restore", "boundary", "rollback"}
 	transaction := session.transaction
-	if connector.attempts != 1 || session == nil || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 1 || session.closeCalls != 1 || session.serverMajorCalls != 0 || session.boundaryCalls != 0 || session.beginCalls != 1 || session.queryCalls != 0 || session.ledgerReadCalls != 2 || transaction == nil || transaction.profileEnterCalls != 1 || transaction.profileRestoreCalls != 1 || transaction.profile != "execution" || transaction.metadata[7] != int64(300000) || transaction.metadata[8] != int64(30000) || transaction.metadata[9] != int64(60000) || transaction.metadataReadCalls != 1 || transaction.queryCalls != 0 || transaction.execCalls != 0 || transaction.executeCalls != 0 || transaction.boundaryCalls != 1 || transaction.commitCalls != 0 || transaction.rollbackCalls != 1 || transaction.active || transaction.status != 'I' || !reflect.DeepEqual(transaction.steps, wantTransactionSteps) || session.backend.ledgerReadCalls != 0 || session.backend.ledgerInsertCalls != 0 || session.backend.executeCalls != 0 || session.backend.commitCalls != 0 || !session.closed || session.locked || session.roleConfigured || !reflect.DeepEqual(session.snapshotPhases, wantSnapshots) || !reflect.DeepEqual(session.snapshotClosePhases, wantSnapshots) || !reflect.DeepEqual(factory.factoryPhases, wantFactory) || !reflect.DeepEqual(factory.projectionPhases, wantAuthority) || !reflect.DeepEqual(factory.preconditionPhases, wantPrecondition) || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 {
+	statementSnapshots := len(factory.snapshotMetadata) == 5 && factory.snapshotMetadata[3].MigrationID != nil && factory.snapshotMetadata[4].MigrationID != nil && *factory.snapshotMetadata[3].MigrationID == "000001" && *factory.snapshotMetadata[4].MigrationID == "000001" && factory.snapshotMetadata[3].StatementIndex == nil && factory.snapshotMetadata[4].StatementIndex != nil && *factory.snapshotMetadata[4].StatementIndex == 0
+	if connector.attempts != 1 || session == nil || session.setRoleCalls != 1 || session.lockCalls != 1 || session.unlockCalls != 1 || session.closeCalls != 1 || session.serverMajorCalls != 0 || session.boundaryCalls != 0 || session.beginCalls != 1 || session.queryCalls != 0 || session.ledgerReadCalls != 2 || transaction == nil || transaction.profileEnterCalls != 2 || transaction.profileRestoreCalls != 2 || transaction.profile != "execution" || transaction.metadata[7] != int64(300000) || transaction.metadata[8] != int64(30000) || transaction.metadata[9] != int64(60000) || transaction.metadataReadCalls != 2 || transaction.queryCalls != 0 || transaction.execCalls != 0 || transaction.executeCalls != 0 || transaction.boundaryCalls != 2 || transaction.commitCalls != 0 || transaction.rollbackCalls != 1 || transaction.active || transaction.status != 'I' || !reflect.DeepEqual(transaction.steps, wantTransactionSteps) || session.backend.ledgerReadCalls != 0 || session.backend.ledgerInsertCalls != 0 || session.backend.executeCalls != 0 || session.backend.commitCalls != 0 || !session.closed || session.locked || session.roleConfigured || !reflect.DeepEqual(session.snapshotPhases, wantSnapshots) || !reflect.DeepEqual(session.snapshotClosePhases, wantSnapshots) || !reflect.DeepEqual(factory.factoryPhases, wantFactory) || !reflect.DeepEqual(factory.projectionPhases, wantAuthority) || !reflect.DeepEqual(factory.preconditionPhases, wantPrecondition) || !statementSnapshots || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 {
 		t.Fatalf("runner authority preflight lifecycle mismatch: connector=%+v session=%+v transaction=%+v factory=%+v", connector, session, transaction, factory)
 	}
 }
@@ -725,6 +726,7 @@ type runnerPreflightProjectorFactory struct {
 	factoryPhases      []AuthorityPhase
 	projectionPhases   []AuthorityPhase
 	preconditionPhases []AuthorityPhase
+	snapshotMetadata   []SnapshotMetadata
 }
 
 func (factory *runnerPreflightProjectorFactory) initialize() {
@@ -743,6 +745,7 @@ func (factory *runnerPreflightProjectorFactory) newRunnerAuthorityProjector(_ co
 	factory.initialize()
 	phase := snapshot.Metadata().AuthorityPhase
 	factory.factoryPhases = append(factory.factoryPhases, phase)
+	factory.snapshotMetadata = append(factory.snapshotMetadata, cloneProjectionValue(snapshot.Metadata()))
 	if err := factory.factoryErr[phase]; err != nil {
 		return nil, err
 	}

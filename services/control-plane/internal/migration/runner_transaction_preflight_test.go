@@ -274,6 +274,11 @@ func TestRunnerPreparedTransactionHasOnlyReviewedProductionConsumers(t *testing.
 	allowed := map[string]map[string]bool{
 		"runner_transaction_preflight.go": nil,
 		"runner.go":                       {"prepareCurrentTransaction": true, "closeRunnerPreparedCurrentTransaction": true},
+		"runner_statement_preflight.go": {
+			"runnerPreparedCurrentTransaction": true, "runnerPreparedCurrentTransactionBinding": true,
+			"runnerPreparedCurrentTransactionRegistryRecord": true, "runnerPreparedCurrentTransactionRegistry": true,
+			"validRunnerPreparedCurrentTransaction": true, "closeRunnerPreparedCurrentTransaction": true,
+		},
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)

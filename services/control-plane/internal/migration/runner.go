@@ -73,8 +73,9 @@ type databaseState struct {
 // Run is the public production gate. It admits one evidence session, proves the
 // connected-session, migration-role, and migration-transaction authority
 // projections on the same dedicated database connection. It seals the exact
-// header-only current dispatch, repeats its predecessor inside one borrowed
-// SERIALIZABLE/READ WRITE snapshot, and then unconditionally rolls back. No
+// header-only current dispatch, repeats its transaction-wide predecessor, then
+// repeats authority plus catalog-before at statement_index=0 inside the same
+// SERIALIZABLE/READ WRITE transaction, and unconditionally rolls back. No
 // statement intent, migration SQL, ledger row, evidence record, or commit is
 // reachable from this slice.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
@@ -134,9 +135,13 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 		transaction, transactionErr := runner.prepareCurrentTransaction(ctx, prepared, bundle, plans)
 		preflightErr = transactionErr
 		if preflightErr == nil {
-			preflightErr = closeRunnerPreparedCurrentTransaction(transaction, nil)
+			statement, statementErr := runner.prepareCurrentStatement(ctx, transaction, bundle, plans)
+			preflightErr = statementErr
 			if preflightErr == nil {
-				preflightErr = fail(CodeProjectionNotImplemented, "runner-statement-intent", "transaction-wide current preflight is sealed but statement intent is not implemented", nil)
+				preflightErr = closeRunnerPreparedCurrentStatement(statement, nil)
+				if preflightErr == nil {
+					preflightErr = fail(CodeProjectionNotImplemented, "runner-statement-intent", "statement-zero preflight is sealed but durable statement intent is not implemented", nil)
+				}
 			}
 		}
 	} else {

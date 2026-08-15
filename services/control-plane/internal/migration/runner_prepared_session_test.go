@@ -129,8 +129,8 @@ func TestPublicRunnerDispatchesOnlyExactBrandNewRecovery(t *testing.T) {
 			if test.wantOp == "runner-statement-intent" {
 				wantBegin = 1
 			}
-			if sink.session == nil || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != 0 || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 {
-				t.Fatalf("recovery dispatch crossed write or cleanup boundary: sink=%+v database=%+v transaction=%+v factory=%+v live=%d/%d", sink.session, database, database.transaction, factory, liveRunnerPreparedCurrentSessions(), liveRunnerPreparedCurrentTransactions())
+			if sink.session == nil || sink.session.closeCalls != 1 || database.ledgerReadCalls != 2 || len(factory.preconditionPhases) != 1+2*wantBegin || database.beginCalls != wantBegin || database.transaction.rollbackCalls != wantBegin || database.transaction.executeCalls != 0 || database.transaction.execCalls != 0 || database.transaction.commitCalls != 0 || database.queryCalls != 0 || database.backend.ledgerInsertCalls != 0 || database.backend.executeCalls != 0 || database.backend.commitCalls != 0 || database.unlockCalls != 1 || database.closeCalls != 1 || liveRunnerPreparedCurrentSessions() != 0 || liveRunnerPreparedCurrentTransactions() != 0 || liveRunnerPreparedCurrentStatements() != 0 {
+				t.Fatalf("recovery dispatch crossed write or cleanup boundary: sink=%+v database=%+v transaction=%+v factory=%+v live=%d/%d/%d", sink.session, database, database.transaction, factory, liveRunnerPreparedCurrentSessions(), liveRunnerPreparedCurrentTransactions(), liveRunnerPreparedCurrentStatements())
 			}
 		})
 	}

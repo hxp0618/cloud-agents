@@ -68,6 +68,12 @@ type runnerPreparedCurrentTransactionSeed struct {
 	firstPlan         StatementPlan
 }
 
+type runnerTransactionProjectionFacts struct {
+	snapshotDigest  [32]byte
+	authorityDigest Digest
+	catalogDigest   Digest
+}
+
 var runnerPreparedCurrentTransactionRegistry sync.Map
 
 func (runner *Runner) prepareCurrentTransaction(ctx context.Context, prepared *runnerPreparedCurrentSession, bundle *RuntimeBundle, plans []StatementPlan) (*runnerPreparedCurrentTransaction, error) {
@@ -86,55 +92,12 @@ func (runner *Runner) prepareCurrentTransaction(ctx context.Context, prepared *r
 	if transaction == nil || !runnerOwnedPointer(transaction) {
 		return failClosed(transaction, fail(CodeTransactionBoundary, "runner-transaction-begin", "migration transaction ownership is unavailable", nil))
 	}
-	profile, profileOK := transaction.(runnerTransactionProjectionProfile)
-	if !profileOK {
-		return failClosed(transaction, fail(CodeTransactionBoundary, "runner-transaction-profile", "migration transaction cannot enter the closed projection profile", nil))
-	}
-	if profileErr := profile.enterRunnerProjectionProfile(ctx); profileErr != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(profileErr, "runner-transaction-profile", "migration transaction projection profile could not be configured"))
-	}
-	snapshot, snapshotErr := BorrowMigrationProjectionSnapshot(ctx, transaction, seed.dispatch.migrationID, nil)
-	if snapshotErr != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(snapshotErr, "runner-transaction-snapshot", "transaction-wide projection snapshot could not be borrowed"))
-	}
-	if snapshot == nil {
-		return failClosed(transaction, fail(CodeProjectionSnapshotInvalid, "runner-transaction-snapshot", "transaction-wide projection snapshot is unavailable", nil))
-	}
-	metadata := snapshot.Metadata()
-	if !sameRunnerPreparedDatabaseIdentity(seed.database, metadata) || metadata.MigrationID == nil || *metadata.MigrationID != seed.dispatch.migrationID || metadata.StatementIndex != nil {
-		return failClosed(transaction, fail(CodeProjectionMetadataMismatch, "runner-transaction-snapshot", "transaction snapshot differs from the prepared database identity or dispatch", nil))
-	}
-	factory := runner.projectionFactory
-	if factory == nil {
-		factory = pgRunnerAuthorityProjectorFactory{}
-	}
-	projector, factoryErr := factory.newRunnerAuthorityProjector(ctx, snapshot)
-	if factoryErr != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(factoryErr, "runner-transaction-projector", "transaction-wide projector could not be constructed"))
-	}
-	if projector == nil {
-		return failClosed(transaction, fail(CodeProjectionSnapshotInvalid, "runner-transaction-projector", "transaction-wide projector is unavailable", nil))
-	}
-	authority, authorityErr := projector.ProjectAuthority(ctx, snapshot, seed.bindings.verifiedAuthority, AuthorityPhaseMigrationTransaction)
-	if authorityErr != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(authorityErr, "runner-transaction-authority", "transaction authority projection failed"))
-	}
-	if err := validateRunnerAuthorityProjectionResult(authority, metadata, seed.bindings.verifiedAuthority, AuthorityPhaseMigrationTransaction); err != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(err, "runner-transaction-authority", "transaction authority projection result is invalid"))
-	}
-	condition := seed.bindings.initialSchemaScope.BoundPrecondition()
-	precondition, preconditionErr := projector.ProjectPrecondition(ctx, snapshot, seed.bindings.initialSchemaScope, condition)
-	if preconditionErr != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(preconditionErr, "runner-transaction-precondition", "transaction predecessor projection failed"))
-	}
-	if err := validateRunnerPreconditionResult(precondition, metadata, seed.bindings.initialSchemaScope, condition, seed.firstPlan.ExpectedTransition.CatalogBefore, AuthorityPhaseMigrationTransaction, "runner-transaction-precondition"); err != nil {
-		return failClosed(transaction, err)
-	}
-	if precondition.Digest != seed.firstPlan.ExpectedTransition.CatalogBefore.Digest || precondition.Digest != seed.preparedCatalog || !runnerCanonicalEqual(authority.Metadata.Snapshot, precondition.Metadata.Snapshot) {
-		return failClosed(transaction, fail(CodeProjectionMetadataMismatch, "runner-transaction-precondition", "transaction authority or predecessor projection changed before dispatch", nil))
-	}
-	if restoreErr := profile.restoreRunnerExecutionProfile(ctx, seed.policy); restoreErr != nil {
-		return failClosed(transaction, mapRunnerDatabasePreflightError(restoreErr, "runner-transaction-execution-profile", "verified migration execution profile could not be restored"))
+	facts, projectionErr := runner.projectRunnerTransactionPreflight(
+		ctx, transaction, seed.policy, seed.database, seed.dispatch.migrationID, nil,
+		seed.bindings, seed.firstPlan, nil, seed.preparedCatalog, "runner-transaction",
+	)
+	if projectionErr != nil {
+		return failClosed(transaction, projectionErr)
 	}
 	boundary, boundaryErr := transaction.Boundary(ctx, seed.key)
 	status, statusOK := migrationProjectionTxStatus(transaction)
@@ -144,11 +107,83 @@ func (runner *Runner) prepareCurrentTransaction(ctx context.Context, prepared *r
 	if !runnerPreparedEvidenceMatches(seed.evidence, seed.candidateBinding, seed.generation, seed.recoveryDigest) {
 		return failClosed(transaction, fail(CodeEvidenceJournalFailed, "runner-transaction-evidence", "current evidence authority changed during transaction-wide preflight", nil))
 	}
-	preparedTransaction, bindErr := bindRunnerPreparedCurrentTransaction(seed, transaction, metadata, authority, precondition)
+	preparedTransaction, bindErr := bindRunnerPreparedCurrentTransaction(seed, transaction, facts)
 	if bindErr != nil {
 		return failClosed(transaction, bindErr)
 	}
 	return preparedTransaction, nil
+}
+
+func (runner *Runner) projectRunnerTransactionPreflight(ctx context.Context, transaction MigrationTransaction, policy ExecutionPolicy, database runnerPreparedDatabaseIdentity, migrationID string, statementIndex *uint32, bindings RunnerProjectionBindings, plan StatementPlan, expectedAuthority *Digest, expectedCatalog Digest, operation string) (runnerTransactionProjectionFacts, error) {
+	profile, profileOK := transaction.(runnerTransactionProjectionProfile)
+	if !profileOK {
+		return runnerTransactionProjectionFacts{}, fail(CodeTransactionBoundary, operation+"-profile", "migration transaction cannot enter the closed projection profile", nil)
+	}
+	if profileErr := profile.enterRunnerProjectionProfile(ctx); profileErr != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(profileErr, operation+"-profile", "migration transaction projection profile could not be configured")
+	}
+	snapshot, snapshotErr := BorrowMigrationProjectionSnapshot(ctx, transaction, migrationID, statementIndex)
+	if snapshotErr != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(snapshotErr, operation+"-snapshot", "migration transaction projection snapshot could not be borrowed")
+	}
+	if snapshot == nil {
+		return runnerTransactionProjectionFacts{}, fail(CodeProjectionSnapshotInvalid, operation+"-snapshot", "migration transaction projection snapshot is unavailable", nil)
+	}
+	metadata := snapshot.Metadata()
+	if !sameRunnerPreparedDatabaseIdentity(database, metadata) || metadata.MigrationID == nil || *metadata.MigrationID != migrationID || !sameRunnerStatementIndex(metadata.StatementIndex, statementIndex) {
+		return runnerTransactionProjectionFacts{}, fail(CodeProjectionMetadataMismatch, operation+"-snapshot", "transaction snapshot differs from the prepared database identity or dispatch", nil)
+	}
+	factory := runner.projectionFactory
+	if factory == nil {
+		factory = pgRunnerAuthorityProjectorFactory{}
+	}
+	projector, factoryErr := factory.newRunnerAuthorityProjector(ctx, snapshot)
+	if factoryErr != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(factoryErr, operation+"-projector", "migration transaction projector could not be constructed")
+	}
+	if projector == nil {
+		return runnerTransactionProjectionFacts{}, fail(CodeProjectionSnapshotInvalid, operation+"-projector", "migration transaction projector is unavailable", nil)
+	}
+	authority, authorityErr := projector.ProjectAuthority(ctx, snapshot, bindings.verifiedAuthority, AuthorityPhaseMigrationTransaction)
+	if authorityErr != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(authorityErr, operation+"-authority", "migration transaction authority projection failed")
+	}
+	if err := validateRunnerAuthorityProjectionResult(authority, metadata, bindings.verifiedAuthority, AuthorityPhaseMigrationTransaction); err != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(err, operation+"-authority", "migration transaction authority projection result is invalid")
+	}
+	condition := bindings.initialSchemaScope.BoundPrecondition()
+	precondition, preconditionErr := projector.ProjectPrecondition(ctx, snapshot, bindings.initialSchemaScope, condition)
+	if preconditionErr != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(preconditionErr, operation+"-precondition", "migration transaction predecessor projection failed")
+	}
+	if err := validateRunnerPreconditionResult(precondition, metadata, bindings.initialSchemaScope, condition, plan.ExpectedTransition.CatalogBefore, AuthorityPhaseMigrationTransaction, operation+"-precondition"); err != nil {
+		return runnerTransactionProjectionFacts{}, err
+	}
+	authorityMatches := expectedAuthority == nil
+	if expectedAuthority != nil {
+		authorityMatches = (*expectedAuthority).Validate() == nil && authority.Digest == *expectedAuthority
+	}
+	if expectedCatalog.Validate() != nil || precondition.Digest != plan.ExpectedTransition.CatalogBefore.Digest || precondition.Digest != expectedCatalog || !authorityMatches || !runnerCanonicalEqual(authority.Metadata.Snapshot, precondition.Metadata.Snapshot) {
+		return runnerTransactionProjectionFacts{}, fail(CodeProjectionMetadataMismatch, operation+"-precondition", "transaction authority or predecessor projection changed before dispatch", nil)
+	}
+	if restoreErr := profile.restoreRunnerExecutionProfile(ctx, policy); restoreErr != nil {
+		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(restoreErr, operation+"-execution-profile", "verified migration execution profile could not be restored")
+	}
+	facts := runnerTransactionProjectionFacts{
+		snapshotDigest:  runnerTransactionSnapshotDigest(metadata),
+		authorityDigest: authority.Digest, catalogDigest: precondition.Digest,
+	}
+	if facts.snapshotDigest == ([32]byte{}) {
+		return runnerTransactionProjectionFacts{}, fail(CodeProjectionMetadataMismatch, operation+"-snapshot", "transaction snapshot identity could not be sealed", nil)
+	}
+	return facts, nil
+}
+
+func sameRunnerStatementIndex(left, right *uint32) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func consumeRunnerPreparedCurrentSession(prepared *runnerPreparedCurrentSession, bundle *RuntimeBundle, plans []StatementPlan) (runnerPreparedCurrentTransactionSeed, error) {
@@ -191,16 +226,15 @@ func consumeRunnerPreparedCurrentSession(prepared *runnerPreparedCurrentSession,
 	return seed, nil
 }
 
-func bindRunnerPreparedCurrentTransaction(seed runnerPreparedCurrentTransactionSeed, transaction MigrationTransaction, metadata SnapshotMetadata, authority ProjectionResult[AuthorityProjection], precondition ProjectionResult[CatalogStateProjection]) (*runnerPreparedCurrentTransaction, error) {
-	snapshotDigest := runnerTransactionSnapshotDigest(metadata)
-	if snapshotDigest == ([32]byte{}) || transaction == nil || !runnerOwnedPointer(transaction) || authority.Digest.Validate() != nil || precondition.Digest.Validate() != nil || !runnerPreparedEvidenceMatches(seed.evidence, seed.candidateBinding, seed.generation, seed.recoveryDigest) {
+func bindRunnerPreparedCurrentTransaction(seed runnerPreparedCurrentTransactionSeed, transaction MigrationTransaction, facts runnerTransactionProjectionFacts) (*runnerPreparedCurrentTransaction, error) {
+	if facts.snapshotDigest == ([32]byte{}) || transaction == nil || !runnerOwnedPointer(transaction) || facts.authorityDigest.Validate() != nil || facts.catalogDigest.Validate() != nil || !runnerPreparedEvidenceMatches(seed.evidence, seed.candidateBinding, seed.generation, seed.recoveryDigest) {
 		return nil, fail(CodeTransactionBoundary, "runner-transaction-seal", "transaction-wide preflight inputs are unavailable or changed", nil)
 	}
 	prepared := &runnerPreparedCurrentTransaction{
 		session: seed.session, transaction: transaction, evidence: seed.evidence, key: seed.key,
 		candidateBinding: seed.candidateBinding, generation: seed.generation, recoveryDigest: seed.recoveryDigest,
 		preparedCanonical: seed.preparedCanonical, dispatch: seed.dispatch, database: seed.database,
-		snapshotDigest: snapshotDigest, authorityDigest: authority.Digest, catalogDigest: precondition.Digest,
+		snapshotDigest: facts.snapshotDigest, authorityDigest: facts.authorityDigest, catalogDigest: facts.catalogDigest,
 	}
 	prepared.self = prepared
 	binding := &runnerPreparedCurrentTransactionBinding{
@@ -272,7 +306,7 @@ func runnerPreparedCurrentTransactionDigest(prepared *runnerPreparedCurrentTrans
 }
 
 func runnerTransactionSnapshotDigest(metadata SnapshotMetadata) [32]byte {
-	if err := metadata.validate(); err != nil || metadata.AuthorityPhase != AuthorityPhaseMigrationTransaction || metadata.Mode != MigrationSnapshot || metadata.Ownership != BorrowedMigrationSnapshot || metadata.MigrationID == nil || metadata.StatementIndex != nil {
+	if err := metadata.validate(); err != nil || metadata.AuthorityPhase != AuthorityPhaseMigrationTransaction || metadata.Mode != MigrationSnapshot || metadata.Ownership != BorrowedMigrationSnapshot || metadata.MigrationID == nil {
 		return [32]byte{}
 	}
 	canonical, err := canonicalContractKey(metadata)
