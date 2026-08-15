@@ -738,15 +738,19 @@ type runnerPreflightProjectorFactory struct {
 	projectionErr      map[AuthorityPhase]error
 	preconditionErr    error
 	transitionErr      error
+	catalogErr         error
 	mutateResult       map[AuthorityPhase]func(*ProjectionResult[AuthorityProjection])
 	mutatePrecondition func(*ProjectionResult[CatalogStateProjection])
 	mutateTransition   func(*ProjectionResult[CatalogStateProjection])
+	mutateCatalog      func(*ProjectionResult[CatalogProjection])
 	transitionState    *CatalogStateProjection
 	factoryPhases      []AuthorityPhase
 	projectionPhases   []AuthorityPhase
 	preconditionPhases []AuthorityPhase
 	transitionPhases   []AuthorityPhase
 	transitionScopes   []ProjectionScope
+	catalogPhases      []AuthorityPhase
+	catalogScopes      []ProjectionScope
 	snapshotMetadata   []SnapshotMetadata
 }
 
@@ -862,6 +866,35 @@ func (projector *runnerPreflightProjector) ProjectTransitionState(_ context.Cont
 	}
 	if projector.factory.mutateTransition != nil {
 		projector.factory.mutateTransition(&result)
+	}
+	return result, nil
+}
+
+func (projector *runnerPreflightProjector) ProjectCatalog(_ context.Context, snapshot ProjectionSnapshot, contract VerifiedCatalogContract, scope ProjectionScope) (ProjectionResult[CatalogProjection], error) {
+	phase := snapshot.Metadata().AuthorityPhase
+	projector.factory.catalogPhases = append(projector.factory.catalogPhases, phase)
+	projector.factory.catalogScopes = append(projector.factory.catalogScopes, cloneProjectionValue(scope))
+	if snapshot != projector.snapshot || phase != AuthorityPhaseMigrationTransaction || contract.validate() != nil || scope.Validate() != nil || !equalProjectionScopes(scope, contract.Scope()) {
+		return ProjectionResult[CatalogProjection]{}, errors.New("catalog snapshot or binding mismatch")
+	}
+	if projector.factory.catalogErr != nil {
+		return ProjectionResult[CatalogProjection]{}, projector.factory.catalogErr
+	}
+	projection := contract.ExpectedProjection()
+	digest, err := digestProjectionWrapper(CatalogProjectionDigestDomain, projection)
+	if err != nil {
+		return ProjectionResult[CatalogProjection]{}, err
+	}
+	result := ProjectionResult[CatalogProjection]{
+		Projection: projection, Digest: digest,
+		Metadata: ProjectionMetadata{
+			ProjectionKind: ProjectionKindCatalog, DigestDomain: CatalogProjectionDigestDomain, AdapterProfile: PostgreSQLCatalogAdapter,
+			Snapshot: snapshot.Metadata(), VerifiedSubjectDigest: contract.SubjectDigest(), Scope: cloneScopePointer(&scope),
+			LimitsProfile: ProjectionLimitsProfile, QueryCount: 1, RowCount: 1, TotalBytes: 1, RedactionProfile: ProjectionRedactionProfile,
+		},
+	}
+	if projector.factory.mutateCatalog != nil {
+		projector.factory.mutateCatalog(&result)
 	}
 	return result, nil
 }

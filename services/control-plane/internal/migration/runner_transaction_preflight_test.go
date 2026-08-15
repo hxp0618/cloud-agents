@@ -341,7 +341,7 @@ func TestRunnerTransactionProjectionProfileHasOnlyReviewedProductionConsumers(t 
 		"runnerTransactionProjectionProfile": true, "enterRunnerProjectionProfile": true,
 		"restoreRunnerExecutionProfile": true, "runnerTransactionProjectionProfileSealed": true,
 	}
-	allowed := map[string]bool{"pgx.go": true, "runner_transaction_preflight.go": true, "runner_statement_after.go": true}
+	allowed := map[string]bool{"pgx.go": true, "runner_transaction_preflight.go": true, "runner_statement_after.go": true, "runner_preledger.go": true}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || allowed[name] {

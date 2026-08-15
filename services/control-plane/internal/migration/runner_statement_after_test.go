@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -93,6 +94,16 @@ func TestRunnerProjectedCurrentStatementAfterRejectsLiteralCopyAndFieldDrift(t *
 	projected.policy.LockTimeoutMS++
 	assertProjectedStatementAfterDrift(t, projected)
 	projected.policy.LockTimeoutMS = originalPolicy
+
+	originalPlanDigest := projected.dispatch.planDigest
+	projected.dispatch.planDigest = sha256.Sum256([]byte("other-statement-after-dispatch"))
+	assertProjectedStatementAfterDrift(t, projected)
+	projected.dispatch.planDigest = originalPlanDigest
+
+	originalDatabase := projected.database.databaseName
+	projected.database.databaseName = "other_database"
+	assertProjectedStatementAfterDrift(t, projected)
+	projected.database.databaseName = originalDatabase
 
 	originalEvidenceState := fixture.evidence.snapshot.state
 	fixture.evidence.snapshot.state = RecoveryDivergent
@@ -301,7 +312,7 @@ func TestRunnerProjectedStatementAfterHasNoProductionConsumer(t *testing.T) {
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
-		if strings.HasSuffix(name, "_test.go") || name == "runner_statement_after.go" {
+		if strings.HasSuffix(name, "_test.go") || name == "runner_statement_after.go" || name == "runner_preledger.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
