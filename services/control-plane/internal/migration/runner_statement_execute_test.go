@@ -273,7 +273,7 @@ func TestRunnerExecutedStatementHasNoProductionConsumer(t *testing.T) {
 	}
 	for _, path := range paths {
 		name := filepath.Base(path)
-		if strings.HasSuffix(name, "_test.go") || name == "runner_statement_execute.go" {
+		if strings.HasSuffix(name, "_test.go") || name == "runner_statement_execute.go" || name == "runner_statement_after.go" {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)

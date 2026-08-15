@@ -18,6 +18,7 @@ type runnerAuthorityProjectorFactory interface {
 type runnerAuthorityProjector interface {
 	ProjectAuthority(context.Context, ProjectionSnapshot, VerifiedAuthorityContract, AuthorityPhase) (ProjectionResult[AuthorityProjection], error)
 	ProjectPrecondition(context.Context, ProjectionSnapshot, VerifiedSchemaBundleScope, CatalogPrecondition) (ProjectionResult[CatalogStateProjection], error)
+	ProjectTransitionState(context.Context, ProjectionSnapshot, VerifiedCatalogContract, ProjectionScope) (ProjectionResult[CatalogStateProjection], error)
 }
 
 type pgRunnerAuthorityProjectorFactory struct{}

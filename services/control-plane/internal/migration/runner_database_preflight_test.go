@@ -737,11 +737,16 @@ type runnerPreflightProjectorFactory struct {
 	factoryErr         map[AuthorityPhase]error
 	projectionErr      map[AuthorityPhase]error
 	preconditionErr    error
+	transitionErr      error
 	mutateResult       map[AuthorityPhase]func(*ProjectionResult[AuthorityProjection])
 	mutatePrecondition func(*ProjectionResult[CatalogStateProjection])
+	mutateTransition   func(*ProjectionResult[CatalogStateProjection])
+	transitionState    *CatalogStateProjection
 	factoryPhases      []AuthorityPhase
 	projectionPhases   []AuthorityPhase
 	preconditionPhases []AuthorityPhase
+	transitionPhases   []AuthorityPhase
+	transitionScopes   []ProjectionScope
 	snapshotMetadata   []SnapshotMetadata
 }
 
@@ -825,6 +830,38 @@ func (projector *runnerPreflightProjector) ProjectPrecondition(_ context.Context
 	}
 	if projector.factory.mutatePrecondition != nil {
 		projector.factory.mutatePrecondition(&result)
+	}
+	return result, nil
+}
+
+func (projector *runnerPreflightProjector) ProjectTransitionState(_ context.Context, snapshot ProjectionSnapshot, contract VerifiedCatalogContract, scope ProjectionScope) (ProjectionResult[CatalogStateProjection], error) {
+	phase := snapshot.Metadata().AuthorityPhase
+	projector.factory.transitionPhases = append(projector.factory.transitionPhases, phase)
+	projector.factory.transitionScopes = append(projector.factory.transitionScopes, cloneProjectionValue(scope))
+	if snapshot != projector.snapshot || phase != AuthorityPhaseMigrationTransaction || contract.validate() != nil || scope.Validate() != nil {
+		return ProjectionResult[CatalogStateProjection]{}, errors.New("transition snapshot or binding mismatch")
+	}
+	if projector.factory.transitionErr != nil {
+		return ProjectionResult[CatalogStateProjection]{}, projector.factory.transitionErr
+	}
+	if projector.factory.transitionState == nil {
+		return ProjectionResult[CatalogStateProjection]{}, errors.New("transition state is unavailable")
+	}
+	state := cloneProjectionValue(*projector.factory.transitionState)
+	digest, err := state.ComputeDigest()
+	if err != nil {
+		return ProjectionResult[CatalogStateProjection]{}, err
+	}
+	result := ProjectionResult[CatalogStateProjection]{
+		Projection: state, Digest: digest,
+		Metadata: ProjectionMetadata{
+			ProjectionKind: ProjectionKindCatalogState, DigestDomain: CatalogStateDigestDomain, AdapterProfile: PostgreSQLCatalogAdapter,
+			Snapshot: snapshot.Metadata(), VerifiedSubjectDigest: contract.SubjectDigest(), Scope: cloneScopePointer(&scope),
+			LimitsProfile: ProjectionLimitsProfile, QueryCount: 1, RowCount: 1, TotalBytes: 1, RedactionProfile: ProjectionRedactionProfile,
+		},
+	}
+	if projector.factory.mutateTransition != nil {
+		projector.factory.mutateTransition(&result)
 	}
 	return result, nil
 }
