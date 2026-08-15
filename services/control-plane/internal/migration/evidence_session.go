@@ -100,21 +100,156 @@ func (r *RegisteredGenerationRecoveryReady) BindSession(ctx context.Context, can
 	return bindGenerationEvidenceSession(ctx, authority, candidate, decision, execution)
 }
 
-// BindSession consumes an activated crash-recovered successor only when B is
-// still the current decision. A historical B cannot enter the normal runtime
-// session path and must first take its dedicated header-only supersession.
+// BindSession consumes an activated crash-recovered successor. A historical B
+// first takes the dedicated header-only B -> C supersession graph; a current B
+// enters the existing journal/session binder directly.
 func (r *HistoricalSuccessorGenerationRecoveryReady) BindSession(ctx context.Context, candidate OwnedCurrentCandidate) (EvidenceSession, error) {
 	if r == nil || !validHistoricalSuccessorGenerationRecoveryReady(r, candidate) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-evidence-session-bind", "historical successor recovery authority is unavailable", nil)
 	}
 	if r.requiresSupersession {
-		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-evidence-session-bind", "historical successor must be superseded before session use", nil)
+		return r.bindSupersededSession(ctx, candidate)
 	}
 	authority, err := r.BindJournal(ctx, candidate)
 	if err != nil {
 		return nil, err
 	}
 	return bindGenerationEvidenceSession(ctx, authority, candidate, candidate.verifiedRun.currentDecision, nil)
+}
+
+// bindSupersededSession is the sole production consumer of the private
+// crash-reopen B -> C bridge. Each step consumes the prior concrete owner, so
+// neither a partially reacquired admission nor an intermediate authority can
+// escape this call.
+func (r *HistoricalSuccessorGenerationRecoveryReady) bindSupersededSession(ctx context.Context, candidate OwnedCurrentCandidate) (EvidenceSession, error) {
+	supersession, err := r.bindHeaderOnlySupersession(candidate)
+	if err != nil {
+		return nil, err
+	}
+	if supersession == nil {
+		return nil, admissionFailed("historical-successor-session-supersession", "historical successor supersession authority is unavailable", nil)
+	}
+	admission, err := supersession.reacquireAdmission(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if admission == nil {
+		return nil, admissionFailed("historical-successor-session-reacquire", "historical successor admission authority is unavailable", nil)
+	}
+	plan, err := admission.bindSuccessorPlan(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, admissionFailed("historical-successor-session-plan", "historical successor plan authority is unavailable", nil)
+	}
+	permit, err := plan.bindPermit(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if permit == nil {
+		return nil, admissionFailed("historical-successor-session-permit", "historical successor permit authority is unavailable", nil)
+	}
+	generation, err := permit.materializeSuccessor(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if generation == nil {
+		return nil, admissionFailed("historical-successor-session-generation", "historical successor generation authority is unavailable", nil)
+	}
+	return generation.bindSession(ctx, candidate)
+}
+
+// bindSession consumes the crash-reopen generation-ready owner through the
+// already-reviewed successor handoff, replay, same-verifier recovery, journal,
+// and session graph. It never exposes an intermediate retained-lock authority.
+func (r *historicalSuccessorAdmissionGenerationReady) bindSession(ctx context.Context, candidate OwnedCurrentCandidate) (session EvidenceSession, resultErr error) {
+	if !validHistoricalSuccessorAdmissionGenerationReady(r, candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-session", "historical successor generation authority is unavailable", nil)
+	}
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, err
+	}
+	if !r.consumed.CompareAndSwap(false, true) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "historical-successor-session", "historical successor generation authority was already consumed", nil)
+	}
+	historicalSuccessorAdmissionGenerationRegistry.Delete(r)
+	cleanup := sessionSuccessorCleanup{admission: r.admission, history: r.history, plan: r.plan, state: r.state}
+	defer func() {
+		if cleanup.committed {
+			return
+		}
+		if cleanupErr := cleanup.close(); cleanupErr != nil {
+			resultErr = cleanupErr
+		}
+	}()
+
+	handoffResult, err := r.generation.Handoff(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	handoff := handoffResult.Next()
+	if handoffResult.Outcome() != evidencefs.AdmissionTransitionDurable || handoff == nil {
+		return nil, admissionFailed("historical-successor-session-handoff", "durable successor handoff authority is unavailable", nil)
+	}
+	cleanup.admission = nil
+	cleanup.handoff = handoff
+
+	replayResult, err := handoff.Replay(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	replay := replayResult.Next()
+	if replay == nil {
+		_, cleanupErr := handoff.failSuccessorReplay(evidencefs.ErrUnknown, "historical-successor-session-replay-cleanup")
+		if cleanupErr != nil {
+			return nil, cleanupErr
+		}
+		cleanup.handoff = nil
+		return nil, admissionFailed("historical-successor-session-replay", "successor replay authority is unavailable", nil)
+	}
+	cleanup.replay = replay
+
+	recovery, err := replay.BindRecovery(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if recovery == nil {
+		if cleanupErr := closeSuccessorGenerationReplay(replay, "historical-successor-session-recovery-cleanup"); cleanupErr != nil {
+			return nil, cleanupErr
+		}
+		cleanup.replay = nil
+		return nil, admissionFailed("historical-successor-session-recovery", "successor recovery authority is unavailable", nil)
+	}
+	cleanup.recovery = recovery
+
+	journalAuthority, err := recovery.BindJournal(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	journal, ok := journalAuthority.(*generationEvidenceJournal)
+	if !ok || journal == nil {
+		if journalAuthority == nil {
+			if cleanupErr := closeConsumedSuccessorGenerationRecovery(recovery, "historical-successor-session-journal-cleanup"); cleanupErr != nil {
+				return nil, cleanupErr
+			}
+			cleanup.recovery = nil
+		} else if cleanupErr := journalAuthority.Close(context.Background()); cleanupErr != nil {
+			return nil, cleanupErr
+		}
+		return nil, admissionFailed("historical-successor-session-journal", "concrete successor journal authority is unavailable", nil)
+	}
+	cleanup.journal = journal
+
+	session, err = bindGenerationEvidenceSession(ctx, journal, candidate, candidate.verifiedRun.currentDecision, nil)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, admissionFailed("historical-successor-session-bind", "successor evidence session is unavailable", nil)
+	}
+	cleanup.committed = true
+	return session, nil
 }
 
 func bindGenerationEvidenceSession(ctx context.Context, authority EvidenceJournal, candidate OwnedCurrentCandidate, decision OwnedVerifiedDecision, execution *VerifiedRecoveryExecutionBindings) (EvidenceSession, error) {

@@ -90,6 +90,9 @@ func TestHistoricalSuccessorRecoveryRejectsLiteralAndRuntimeInterfaces(t *testin
 	if err := forgedGeneration.close(); !IsCode(err, CodeEvidenceJournalFailed) {
 		t.Fatalf("partially forged historical successor generation close=%v", err)
 	}
+	if session, err := (&historicalSuccessorAdmissionGenerationReady{}).bindSession(context.Background(), candidate); session != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor session: session=%+v err=%v", session, err)
+	}
 }
 
 func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.T) {
@@ -621,6 +624,80 @@ func TestHistoricalSuccessorMaterializationOrderIsClosed(t *testing.T) {
 	}
 }
 
+func TestHistoricalSuccessorGenerationSessionOrderIsClosed(t *testing.T) {
+	raw, err := os.ReadFile("evidence_session.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	start := strings.Index(source, "func (r *historicalSuccessorAdmissionGenerationReady) bindSession")
+	end := strings.Index(source[start:], "func bindGenerationEvidenceSession")
+	if start < 0 || end < 0 {
+		t.Fatal("historical successor session method boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{
+		"contextAdmissionError(ctx)", ".CompareAndSwap(false, true)",
+		"historicalSuccessorAdmissionGenerationRegistry.Delete(", ".Handoff(", ".Replay(",
+		".BindRecovery(", ".BindJournal(", "bindGenerationEvidenceSession(", "cleanup.committed = true",
+	}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("historical successor session step %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	for _, forbidden := range []string{".ReacquireAdmission(", ".PublishRuntime(", ".AppendGenerationSuperseded(", ".CreateGenerationHeader(", ".AppendGenerationActivated("} {
+		if strings.Contains(method, forbidden) {
+			t.Fatalf("historical successor session crossed forbidden admission edge %s", forbidden)
+		}
+	}
+}
+
+func TestHistoricalSuccessorBindSessionWiresCrashReopenGraph(t *testing.T) {
+	raw, err := os.ReadFile("evidence_session.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	publicStart := strings.Index(source, "func (r *HistoricalSuccessorGenerationRecoveryReady) BindSession")
+	start := strings.Index(source, "func (r *HistoricalSuccessorGenerationRecoveryReady) bindSupersededSession")
+	if publicStart < 0 || start < 0 || publicStart >= start {
+		t.Fatal("historical successor public session branch is unavailable")
+	}
+	publicMethod := source[publicStart:start]
+	branch := strings.Index(publicMethod, "if r.requiresSupersession")
+	wiring := strings.Index(publicMethod, "return r.bindSupersededSession(ctx, candidate)")
+	currentBind := strings.Index(publicMethod, "r.BindJournal(ctx, candidate)")
+	if branch < 0 || wiring <= branch || currentBind <= wiring {
+		t.Fatal("historical successor session does not enter one-way reacquire before the current-generation journal binder")
+	}
+	end := strings.Index(source[start:], "func (r *historicalSuccessorAdmissionGenerationReady) bindSession")
+	if start < 0 || end < 0 {
+		t.Fatal("historical successor crash-reopen session boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{
+		".bindHeaderOnlySupersession(", ".reacquireAdmission(", ".bindSuccessorPlan(",
+		".bindPermit(", ".materializeSuccessor(", ".bindSession(",
+	}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("historical successor crash-reopen step %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	for _, forbidden := range []string{".MutationToken(", ".PublishRuntime(", ".AppendGenerationSuperseded(", ".Handoff(", ".BindJournal("} {
+		if strings.Contains(method, forbidden) {
+			t.Fatalf("historical successor crash-reopen wiring crossed private transition %s", forbidden)
+		}
+	}
+}
+
 func TestHistoricalSuccessorRequiresSupersessionUsesImmutableRegistry(t *testing.T) {
 	ready := &HistoricalSuccessorGenerationRecoveryReady{requiresSupersession: true, consumed: &atomic.Bool{}}
 	ready.self = ready
@@ -910,6 +987,8 @@ func TestHistoricalSuccessorRecoveryAuthorityDoesNotSpread(t *testing.T) {
 		"evidence_session.go": {
 			"HistoricalSuccessorGenerationRecoveryReady":      true,
 			"validHistoricalSuccessorGenerationRecoveryReady": true,
+			"historicalSuccessorAdmissionGenerationReady":     true,
+			"historicalSuccessorAdmissionGenerationRegistry":  true,
 		},
 	}
 	allowedMethods := map[string]map[string]bool{
@@ -987,7 +1066,7 @@ func TestHistoricalSuccessorRuntimeBindersRejectHistoricalBBeforeMutation(t *tes
 		"session": {
 			file:  "evidence_session.go",
 			start: "func (r *HistoricalSuccessorGenerationRecoveryReady) BindSession",
-			end:   "func bindGenerationEvidenceSession",
+			end:   "func (r *historicalSuccessorAdmissionGenerationReady) bindSession",
 			later: []string{"r.BindJournal(ctx, candidate)"},
 		},
 	} {
