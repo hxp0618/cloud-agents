@@ -79,6 +79,17 @@ func TestHistoricalSuccessorRecoveryRejectsLiteralAndRuntimeInterfaces(t *testin
 	if err := forgedPermit.close(); !IsCode(err, CodeEvidenceJournalFailed) {
 		t.Fatalf("partially forged historical successor permit close=%v", err)
 	}
+	if ready, err := (&historicalSuccessorAdmissionPermitReady{}).materializeSuccessor(context.Background(), candidate); ready != nil || !IsCode(err, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("literal historical successor materialization: ready=%+v err=%v", ready, err)
+	}
+	if err := (&historicalSuccessorAdmissionGenerationReady{}).close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("literal historical successor generation close=%v", err)
+	}
+	forgedGeneration := &historicalSuccessorAdmissionGenerationReady{consumed: &atomic.Bool{}}
+	forgedGeneration.self = forgedGeneration
+	if err := forgedGeneration.close(); !IsCode(err, CodeEvidenceJournalFailed) {
+		t.Fatalf("partially forged historical successor generation close=%v", err)
+	}
 }
 
 func TestHistoricalSuccessorSupersessionDigestBindsEveryOrdinaryFact(t *testing.T) {
@@ -382,6 +393,67 @@ func TestHistoricalSuccessorAdmissionPermitMemoryRevocationIncludesPreparedState
 	}
 }
 
+func TestHistoricalSuccessorAdmissionGenerationDigestBindsDurableState(t *testing.T) {
+	prior := &historicalSuccessorAdmissionPermitReady{binding: &historicalSuccessorAdmissionPermitBinding{canonical: [32]byte{1}}}
+	candidateBinding := &verifiedEvidenceRunBinding{canonical: [32]byte{2}}
+	authority := &VerifiedLineageSupersessionAuthority{digest: testDigest("historical-successor-generation-authority")}
+	history := &VerifiedAdmissionHistory{binding: &verifiedAdmissionHistoryBinding{canonical: [32]byte{3}}}
+	plan := &VerifiedSuccessorAdmissionPlan{binding: &verifiedSuccessorAdmissionPlanBinding{canonical: [32]byte{4}}}
+	state := &successorAdmissionState{binding: &successorAdmissionStateBinding{canonical: [32]byte{5}}}
+	generation := &SuccessorGenerationReadyPermit{state: state}
+	ready := &historicalSuccessorAdmissionGenerationReady{
+		prior: prior, candidateBinding: candidateBinding, authority: authority,
+		admission: &evidencefs.AdmissionLease{}, inventory: &evidencefs.AdmissionInventory{}, mutation: &evidencefs.AdmissionMutationToken{},
+		history: history, plan: plan, generation: generation, state: state,
+		target: [32]byte{6}, revision: 10, fullSet: [32]byte{7}, consumed: &atomic.Bool{},
+	}
+	ready.self = ready
+	baseline := historicalSuccessorAdmissionGenerationDigest(ready)
+	if baseline == ([32]byte{}) {
+		t.Fatal("historical successor admission-generation digest was not minted")
+	}
+	for name, mutate := range map[string]func(*historicalSuccessorAdmissionGenerationReady){
+		"prior":     func(value *historicalSuccessorAdmissionGenerationReady) { value.prior.binding.canonical[0]++ },
+		"candidate": func(value *historicalSuccessorAdmissionGenerationReady) { value.candidateBinding.canonical[0]++ },
+		"authority": func(value *historicalSuccessorAdmissionGenerationReady) {
+			value.authority.digest = testDigest("historical-successor-generation-other-authority")
+		},
+		"history":  func(value *historicalSuccessorAdmissionGenerationReady) { value.history.binding.canonical[0]++ },
+		"plan":     func(value *historicalSuccessorAdmissionGenerationReady) { value.plan.binding.canonical[0]++ },
+		"state":    func(value *historicalSuccessorAdmissionGenerationReady) { value.state.binding.canonical[0]++ },
+		"target":   func(value *historicalSuccessorAdmissionGenerationReady) { value.target[0]++ },
+		"revision": func(value *historicalSuccessorAdmissionGenerationReady) { value.revision++ },
+		"full set": func(value *historicalSuccessorAdmissionGenerationReady) { value.fullSet[0]++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := *ready
+			copyPrior := *prior
+			copyPriorBinding := *prior.binding
+			copyPrior.binding = &copyPriorBinding
+			copyCandidateBinding := *candidateBinding
+			copyHistory := *history
+			copyHistoryBinding := *history.binding
+			copyHistory.binding = &copyHistoryBinding
+			copyPlan := *plan
+			copyPlanBinding := *plan.binding
+			copyPlan.binding = &copyPlanBinding
+			copyState := *state
+			copyStateBinding := *state.binding
+			copyState.binding = &copyStateBinding
+			copyGeneration := *generation
+			copyGeneration.state = &copyState
+			value.prior, value.candidateBinding = &copyPrior, &copyCandidateBinding
+			value.authority = &VerifiedLineageSupersessionAuthority{digest: authority.digest}
+			value.history, value.plan = &copyHistory, &copyPlan
+			value.generation, value.state, value.self = &copyGeneration, &copyState, &value
+			mutate(&value)
+			if historicalSuccessorAdmissionGenerationDigest(&value) == baseline {
+				t.Fatal("historical successor admission-generation mutation retained canonical digest")
+			}
+		})
+	}
+}
+
 func TestRetireHistoricalSuccessorSupersessionSourceRevokesOldGraphWithoutClosingAgain(t *testing.T) {
 	cursorValid := &atomic.Bool{}
 	cursorValid.Store(true)
@@ -511,6 +583,40 @@ func TestHistoricalSuccessorAdmissionPermitOrderIsClosed(t *testing.T) {
 	for _, forbidden := range []string{".AppendTargetIndex(", ".Publish", ".BindRuntime(", ".CreateGenerationHeader(", ".AppendGenerationActivated("} {
 		if strings.Contains(method, forbidden) {
 			t.Fatalf("historical successor admission-permit called forbidden edge %s", forbidden)
+		}
+	}
+}
+
+func TestHistoricalSuccessorMaterializationOrderIsClosed(t *testing.T) {
+	raw, err := os.ReadFile("evidence_historical_supersession_recovery.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	start := strings.Index(source, "func (r *historicalSuccessorAdmissionPermitReady) materializeSuccessor")
+	end := strings.Index(source[start:], "func historicalSuccessorAdmissionGenerationDigest")
+	if start < 0 || end < 0 {
+		t.Fatal("historical successor materialization method boundary is unavailable")
+	}
+	method := source[start : start+end]
+	steps := []string{
+		"contextAdmissionError(ctx)", ".CompareAndSwap(false, true)", ".PublishRuntime(", ".BindRuntime(",
+		".PublishDecisionRecovery(", ".BindDecisionRecovery(", ".SealReserveReady(", ".BindReceiptPair(",
+		".AppendGenerationSuperseded(", ".AppendGenerationReserved(", ".CreateGenerationHeader(",
+		".AppendGenerationActivated(", "historicalSuccessorAdmissionGenerationRegistry.Store(",
+		"historicalSuccessorAdmissionPermitRegistry.Delete(", "validHistoricalSuccessorAdmissionGenerationReady(",
+	}
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(method, step)
+		if position < 0 || position <= previous {
+			t.Fatalf("historical successor materialization step %s is absent or out of order", step)
+		}
+		previous = position
+	}
+	for _, forbidden := range []string{".Handoff(", ".Replay(", ".BindRecovery(", ".BindJournal(", ".BindSession("} {
+		if strings.Contains(method, forbidden) {
+			t.Fatalf("historical successor materialization crossed forbidden runtime edge %s", forbidden)
 		}
 	}
 }
