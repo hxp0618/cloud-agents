@@ -40,9 +40,11 @@
   交叉绑定 one-shot recovery，闭合到 sealed `RecoveredHeaderDurablePermit`；`cdedda7` 再追加 byte-exact adjacent
   `GenerationActivated`、重跑 fresh ALL-history 并闭合到既有 `RegisteredGenerationHandoffPermit`，复用已审
   handoff/replay/session 路径；`a3c7651` 又实现 required-syscall probe，并由同一固定 Linux binary 在 fresh ext4/XFS
-  loop mount 上完成 online runtime validation，但没有取得 trusted mount authority
-- Current slice：固定 non-forgeable trusted-mount provisioner、production constructor wiring、remaining repair per-barrier
-  virtual matrix、physical controller/host power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
+  loop mount 上完成 online runtime validation，但没有取得 trusted mount authority；`7d78e3d` 再以 isolated QEMU
+  fresh raw ext4/XFS disk 覆盖 generation resync 4、tail truncate 8、checkpoint heal 5 与 rotation discard 4 个
+  barrier，每项均 whole-guest kill/fresh-mount classification
+- Current slice：固定 non-forgeable trusted-mount provisioner、production constructor wiring、physical controller/host
+  power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
   `f650fae`/`a3c7651` 的 test-only physical evidence 与 `70269e1`/`7b52509`/`cdedda7` 的 migration authority evidence
   都不构成 positive trusted-mount cross-package integration 或 filesystem slice Done
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
@@ -129,7 +131,10 @@ Platform RC、Beta 或 GA。
 - [`evidencefs-required-syscall-probe-20260816.md`](evidencefs-required-syscall-probe-20260816.md) 固定 source
   `a3c7651`，记录 package-private online probe、fault cleanup 与同一固定 Linux binary 的 fresh ext4/XFS runtime PASS；
   production `Open` 仍拒绝，不外推到 trusted-mount authority、power loss 或 Gate closure。
-- 十五份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+- [`evidencefs-qemu-generation-repair-barrier-matrix-20260816.md`](evidencefs-qemu-generation-repair-barrier-matrix-20260816.md)
+  固定 source `7d78e3d`，记录 ext4/XFS 上 resync/truncate/checkpoint/discard 共 21 个 exact syscall barrier 的
+  whole-QEMU kill 与 sealed fresh-mount classification；不外推到 trusted mount、physical controller 或 Gate closure。
+- 十六份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
   仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
