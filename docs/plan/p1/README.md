@@ -32,10 +32,13 @@
   create/write/data-sync/directory-sync barrier 与十态 fresh-mount classification；`be7cae8` 再覆盖 generation
   activation index append 的 5 个 exact-FD write/data-sync barrier 与三态 fresh-mount classification；`139d53a`
   再覆盖 target registration create 的 25 个 mkdir/lock/index barrier 与 torn-prefix recovery 的 21 个
-  parent/lock/truncate/rewrite/sync barrier，且每项 fresh boot 均闭合到 exact `registered_empty`
-- Current slice：固定 trusted-mount provisioner、production required-syscall probe、remaining header/
-  repair per-barrier virtual matrix 与 physical controller/host power-loss harness，随后再接 runner/DB `Connect`；
-  production constructor 继续 fail closed，`139d53a` test-only evidence 不构成 filesystem slice Done
+  parent/lock/truncate/rewrite/sync barrier，且每项 fresh boot 均闭合到 exact `registered_empty`；`f650fae`
+  再覆盖 generation-header create 的 21 个 directory/lock/segment barrier 与从 durable 28-byte torn segment
+  开始的 23 个 recovery barrier，全部 fresh boot 均闭合到 exact 57-byte segment-0/`Revalidate`
+- Current slice：固定 trusted-mount provisioner、production required-syscall probe、remaining repair per-barrier
+  virtual matrix 与 physical controller/host power-loss harness，随后再接 migration-owned verified prefix-reopen
+  binder 和 runner/DB `Connect`；production constructor 继续 fail closed，`f650fae` test-only evidence 不构成
+  filesystem slice Done
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -100,14 +103,18 @@ Platform RC、Beta 或 GA。
   directory-sync barrier 的 whole-QEMU kill 与 sealed fresh-mount ten-state classification；不外推到 generation
   registration/header/activation/repair barriers。
 - [`evidencefs-qemu-generation-activation-barrier-matrix-20260816.md`](evidencefs-qemu-generation-activation-barrier-matrix-20260816.md)
-	固定 source `be7cae8`，记录 ext4/xfs 上 generation activation index append 5 个 exact-FD write/data-sync
-	barrier 的 whole-QEMU kill 与 sealed fresh-mount three-state classification；不外推到 header/repair
-	barriers。
+  固定 source `be7cae8`，记录 ext4/xfs 上 generation activation index append 5 个 exact-FD write/data-sync
+  barrier 的 whole-QEMU kill 与 sealed fresh-mount three-state classification；不外推到 header/repair
+  barriers。
 - [`evidencefs-qemu-target-registration-barrier-matrix-20260816.md`](evidencefs-qemu-target-registration-barrier-matrix-20260816.md)
   固定 source `139d53a`，记录 ext4/xfs 上 target registration create 25 个与 torn-prefix recovery 21 个
   exact-syscall barrier 的 whole-QEMU kill、sealed fresh-mount classification、fresh mutation token recovery 与最终
   `registered_empty`/`Revalidate`；不外推到 generation header/repair barriers。
-- 十一份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+- [`evidencefs-qemu-generation-header-barrier-matrix-20260816.md`](evidencefs-qemu-generation-header-barrier-matrix-20260816.md)
+  固定 source `f650fae`，记录 ext4/xfs 上 generation-header create 21 个与 torn-prefix recovery 23 个
+  exact-syscall barrier 的 whole-QEMU kill、sealed prefix/journal classification、fresh token completion 与最终 exact
+  57-byte segment-0/`Revalidate`；不外推到 production verified reopen binder、remaining repair 或 physical controller。
+- 十二份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
   仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
@@ -132,9 +139,10 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`：root-wide 与 non-target locks 已释放，只保留
 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
-但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect`、remaining
-header/repair per-barrier matrix 与真实 physical controller power-loss 证据仍然开放。`b6cfa88`、`daa6b9f`、
-`0e242ee`、`be7cae8`、`139d53a` 只在 package-private test authority 下完成 isolated QEMU guest 的 object
-publish、existing-segment append、retained rotation、activation 与 target registration/recovery barrier kill/recovery；
+但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect`、verified
+generation-prefix reopen binder、remaining repair per-barrier matrix 与真实 physical controller power-loss 证据仍然开放。
+`b6cfa88`、`daa6b9f`、`0e242ee`、`be7cae8`、`139d53a`、`f650fae` 只在 package-private test authority 下完成
+isolated QEMU guest 的 object publish、existing-segment append、retained rotation、activation、target registration/recovery
+与 generation header create/recovery barrier kill/recovery；
 production constructor 仍 pre-mutation reject，它们不是
 production restart 正向证据，也不允许越过 filesystem slice 进入 A2.1b。
