@@ -39,11 +39,12 @@
   historical generation、exact durable `GenerationReserved`、registered receipts 与 fresh evidencefs mutation token
   交叉绑定 one-shot recovery，闭合到 sealed `RecoveredHeaderDurablePermit`；`cdedda7` 再追加 byte-exact adjacent
   `GenerationActivated`、重跑 fresh ALL-history 并闭合到既有 `RegisteredGenerationHandoffPermit`，复用已审
-  handoff/replay/session 路径
-- Current slice：固定 trusted-mount provisioner、production required-syscall probe、remaining repair per-barrier virtual
-  matrix、physical controller/host power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
-  `f650fae` 的 test-only physical evidence 与 `70269e1`/`7b52509`/`cdedda7` 的 migration authority evidence 都不构成
-  positive trusted-mount cross-package integration 或 filesystem slice Done
+  handoff/replay/session 路径；`a3c7651` 又实现 required-syscall probe，并由同一固定 Linux binary 在 fresh ext4/XFS
+  loop mount 上完成 online runtime validation，但没有取得 trusted mount authority
+- Current slice：固定 non-forgeable trusted-mount provisioner、production constructor wiring、remaining repair per-barrier
+  virtual matrix、physical controller/host power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
+  `f650fae`/`a3c7651` 的 test-only physical evidence 与 `70269e1`/`7b52509`/`cdedda7` 的 migration authority evidence
+  都不构成 positive trusted-mount cross-package integration 或 filesystem slice Done
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -125,7 +126,10 @@ Platform RC、Beta 或 GA。
 - [`generation-prefix-activation-handoff-20260816.md`](generation-prefix-activation-handoff-20260816.md) 固定 source
   `cdedda7`，记录 recovered-header exact adjacent activation、fresh ALL-history rebind 与既有 retained-lock handoff bridge；
   不外推到 positive trusted-mount integration、runner/DB 或 Gate closure。
-- 十四份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+- [`evidencefs-required-syscall-probe-20260816.md`](evidencefs-required-syscall-probe-20260816.md) 固定 source
+  `a3c7651`，记录 package-private online probe、fault cleanup 与同一固定 Linux binary 的 fresh ext4/XFS runtime PASS；
+  production `Open` 仍拒绝，不外推到 trusted-mount authority、power loss 或 Gate closure。
+- 十五份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
   仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
@@ -150,12 +154,13 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`：root-wide 与 non-target locks 已释放，只保留
 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
-但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect`、positive trusted-mount
-cross-package activation/handoff integration、remaining repair per-barrier matrix，以及真实 physical controller power-loss
-证据仍然开放。
+但这没有改变 Gate 结论：production trusted-mount constructor/wiring、public sink、runner/DB `Connect`、positive
+trusted-mount cross-package activation/handoff integration、remaining repair per-barrier matrix，以及真实 physical
+controller power-loss 证据仍然开放。
 `b6cfa88`、`daa6b9f`、`0e242ee`、`be7cae8`、`139d53a`、`f650fae` 只在 package-private test authority 下完成
 isolated QEMU guest 的 object publish、existing-segment append、retained rotation、activation、target registration/recovery
 与 generation header create/recovery barrier kill/recovery；
+`a3c7651` 只完成 package-private required-syscall probe 和 fresh ext4/XFS online validation，
 `70269e1`/`7b52509`/`cdedda7` 则只完成 migration ordinary transcript、composite recovery authority 与 existing-handoff
-bridge；production constructor 仍 pre-mutation reject，这些记录都不是 positive trusted-mount cross-package restart
-证据，也不允许越过 filesystem slice 进入 A2.1b。
+bridge；production constructor 仍 pre-mutation reject，这些记录都不是 positive trusted-mount cross-package restart 证据，
+也不允许越过 filesystem slice 进入 A2.1b。
