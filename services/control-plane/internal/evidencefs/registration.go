@@ -37,7 +37,7 @@ func (r AdmissionTransitionResult) PreviousRevision() uint64            { return
 // binder cannot complete. It can only reduce authority; it never closes locks
 // or mutates disk, so the genuine AdmissionLease remains explicitly closable.
 func (r AdmissionTransitionResult) Invalidate() error {
-	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || (r.candidateKind != "target_lineage" && r.candidateKind != "target_lineage_reuse" && r.candidateKind != "inventory_advance" && r.candidateKind != "target_index_append") || r.candidateRevision != r.previousRevision+1 {
+	if r.outcome != AdmissionTransitionDurable || r.inventory == nil || (r.candidateKind != "target_lineage" && r.candidateKind != "target_lineage_recovery" && r.candidateKind != "target_lineage_reuse" && r.candidateKind != "inventory_advance" && r.candidateKind != "target_index_append") || r.candidateRevision != r.previousRevision+1 {
 		return ErrLeaseInvalid
 	}
 	l := r.inventory.lease
@@ -49,7 +49,7 @@ func (r AdmissionTransitionResult) Invalidate() error {
 	if !r.inventory.validLocked() || r.inventory.revision != r.candidateRevision {
 		return ErrLeaseInvalid
 	}
-	if r.candidateKind == "target_lineage" || r.candidateKind == "target_lineage_reuse" {
+	if r.candidateKind == "target_lineage" || r.candidateKind == "target_lineage_recovery" || r.candidateKind == "target_lineage_reuse" {
 		lineage := r.inventory.lineageMap[r.inventory.target]
 		if lineage == nil || lineage.index == nil || lineage.index.digest != r.candidateDigest {
 			l.revokeLocked()
@@ -73,9 +73,10 @@ func (t *AdmissionMutationToken) ReuseTargetLineage(ctx context.Context, invento
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	pre.previousRevision = inventory.revision
-	if !t.validLocked(inventory) || inventory.absent != nil || len(indexHeader) == 0 || uint64(len(indexHeader)) > maximumAdmissionIndexBytes || inventory.revision == ^uint64(0) {
+	if !t.validLocked(inventory) || inventory.absent != nil || inventory.registration == nil || inventory.registration.state != TargetRegistrationRegisteredEmpty || len(indexHeader) == 0 || uint64(len(indexHeader)) > maximumAdmissionIndexBytes || inventory.revision == ^uint64(0) {
 		return pre, ErrInvalidInput
 	}
+	indexHeader = append([]byte(nil), indexHeader...)
 	pre.candidateRevision = inventory.revision + 1
 	if !inventory.snapshotMatchesLocked() {
 		t.consumed = true
@@ -88,7 +89,8 @@ func (t *AdmissionMutationToken) ReuseTargetLineage(ctx context.Context, invento
 		return pre, ErrInvalidInput
 	}
 	lockIndex := sort.Search(len(l.locks), func(index int) bool { return l.locks[index].name >= name })
-	if lockIndex == len(l.locks) || l.locks[lockIndex].name != name || !sameIdentity(l.locks[lockIndex].stat, inventory.slot.discovery.lineages[lockIndex].lock) {
+	discovered, discoveredOK := discoveredLineageByName(inventory.slot.discovery, name)
+	if lockIndex == len(l.locks) || l.locks[lockIndex].name != name || !discoveredOK || !sameIdentity(l.locks[lockIndex].stat, discovered.lock) {
 		t.consumed = true
 		l.revokeLocked()
 		return pre, ErrLeaseInvalid
@@ -167,7 +169,7 @@ func (t *AdmissionMutationToken) ReuseTargetLineage(ctx context.Context, invento
 		return unknownResult(err)
 	}
 	rootFD, lineagesFD, lineageFD, lockFD, indexFD = -1, -1, -1, -1, -1
-	discovery, err := l.store.discoverAdmissionRoot(ctx)
+	discovery, err := l.discoverAdmissionRootForInventory(ctx, inventory)
 	if err != nil || !sameAdmissionDiscovery(inventory.slot.discovery, discovery) {
 		if err == nil {
 			err = filesystem("target-reuse-discovery")
@@ -208,9 +210,10 @@ func (t *AdmissionMutationToken) CreateTargetLineage(ctx context.Context, invent
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	pre.previousRevision = inventory.revision
-	if !t.validLocked(inventory) || inventory.absent == nil || inventory.absent.owner != inventory || len(indexHeader) == 0 || uint64(len(indexHeader)) > maximumAdmissionIndexBytes || inventory.revision == ^uint64(0) {
+	if !t.validLocked(inventory) || inventory.absent == nil || inventory.absent.owner != inventory || inventory.registration == nil || inventory.registration.state != TargetRegistrationAbsent || len(indexHeader) == 0 || uint64(len(indexHeader)) > maximumAdmissionIndexBytes || inventory.revision == ^uint64(0) {
 		return pre, ErrInvalidInput
 	}
+	indexHeader = append([]byte(nil), indexHeader...)
 	pre.candidateRevision = inventory.revision + 1
 	if !inventory.snapshotMatchesLocked() {
 		t.consumed = true
@@ -358,7 +361,7 @@ func (t *AdmissionMutationToken) CreateTargetLineage(ctx context.Context, invent
 		return unknownResult(err)
 	}
 	rootFD, lineagesFD, lineageFD, indexFD = -1, -1, -1, -1
-	discovery, err := l.store.discoverAdmissionRoot(ctx)
+	discovery, err := l.store.discoverAdmissionRootForTarget(ctx, name, true)
 	if err != nil {
 		return unknownResult(err)
 	}

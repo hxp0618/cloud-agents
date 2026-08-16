@@ -121,7 +121,7 @@ func (t *AdmissionMutationToken) AppendTargetIndex(ctx context.Context, inventor
 		return unknownResult(err)
 	}
 	rootFD, lineagesFD, lineageFD, indexFD = -1, -1, -1, -1
-	discovery, err := l.store.discoverAdmissionRoot(ctx)
+	discovery, err := l.discoverAdmissionRootForInventory(ctx, inventory)
 	if err != nil || !targetIndexAppendDiscoveryMatches(inventory.slot.discovery, discovery, lineage.name, after) {
 		if err == nil {
 			err = filesystem("target-index-append-discovery")
@@ -133,6 +133,10 @@ func (t *AdmissionMutationToken) AppendTargetIndex(ctx context.Context, inventor
 	if err != nil {
 		return unknownResult(err)
 	}
+	// The first post-header index append ends registered_empty even though no
+	// generation directory exists yet. Membership remains bound by lineageMap;
+	// the physical two-file shape alone must never remint the empty fact.
+	next.registration = nil
 	nextLineage := next.lineageMap[inventory.target]
 	wantDigest := sha256.Sum256(append(append([]byte(nil), oldBytes...), framed...))
 	if nextLineage == nil || nextLineage.index == nil || nextLineage.index.stat.size != after.size || nextLineage.index.digest != wantDigest || next.fullSet == inventory.fullSet {

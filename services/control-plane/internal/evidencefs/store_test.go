@@ -487,6 +487,9 @@ func (f *fakeBackend) tryLock(fd int) (bool, error) {
 		f.busyInodeAttempts[node.stat.inode]--
 		return false, nil
 	}
+	if handle := f.handles[fd]; handle.locked {
+		return true, nil
+	}
 	if node.locked {
 		return false, nil
 	}

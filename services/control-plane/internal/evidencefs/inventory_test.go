@@ -468,10 +468,7 @@ func TestAdmissionReadDetectsSameSizeMutationAndDirectorySwap(t *testing.T) {
 		f := newFakeBackend()
 		lineageNode := addAdmissionLineage(f, digestForTest(1), 0, 0)
 		store := testStore(t, f)
-		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
-		if err != nil {
-			t.Fatal(err)
-		}
+		lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, digestForTest(1))
 		index, _ := func() (*AdmissionFileView, error) {
 			lineage, _ := inventory.Lineage(digestForTest(1))
 			return lineage.Index()
@@ -488,10 +485,7 @@ func TestAdmissionReadDetectsSameSizeMutationAndDirectorySwap(t *testing.T) {
 		f := newFakeBackend()
 		addAdmissionLineage(f, digestForTest(1), 0, 0)
 		store := testStore(t, f)
-		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
-		if err != nil {
-			t.Fatal(err)
-		}
+		lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, digestForTest(1))
 		lineage, _ := inventory.Lineage(digestForTest(1))
 		index, _ := lineage.Index()
 		old := f.root.children["lineages"]
@@ -509,10 +503,7 @@ func TestAdmissionReadReturnsOwnedBytesAndDetectsInodeSwap(t *testing.T) {
 	f := newFakeBackend()
 	lineageNode := addAdmissionLineage(f, digestForTest(1), 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, digestForTest(1))
 	lineage, _ := inventory.Lineage(digestForTest(1))
 	index, _ := lineage.Index()
 	first, err := index.ReadAll(context.Background())
@@ -536,10 +527,7 @@ func TestAdmissionAccessorMismatchCloseFailureAndRepeatedFDStability(t *testing.
 	f := newFakeBackend()
 	addAdmissionLineage(f, digestForTest(1), 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, digestForTest(1))
 	lineage, _ := inventory.Lineage(digestForTest(1))
 	index, _ := lineage.Index()
 	baseline := len(f.handles)
@@ -797,7 +785,8 @@ func TestAdmissionInventoryRevisionAdvanceInvalidatesOldViews(t *testing.T) {
 	f := newFakeBackend()
 	addAdmissionLineage(f, digestForTest(1), 0, 0)
 	store := testStore(t, f)
-	lease, old, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+	lease, old := acquireRegisteredAdmissionForTest(t, f, store, digestForTest(1))
+	oldRevision, err := old.Revision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -806,15 +795,15 @@ func TestAdmissionInventoryRevisionAdvanceInvalidatesOldViews(t *testing.T) {
 		t.Fatal(err)
 	}
 	discovery := cloneAdmissionDiscovery(lease.current.discovery)
-	next, err := lease.buildAdmissionInventory(context.Background(), digestForTest(1), 1, discovery)
+	next, err := lease.buildAdmissionInventory(context.Background(), digestForTest(1), oldRevision+1, discovery)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nextSlot := newAdmissionSlot(lease.epoch, next, 1)
+	nextSlot := newAdmissionSlot(lease.epoch, next, oldRevision+1)
 	next.discovery, next.objectSet = admissionDiscovery{}, admissionObjectDiscovery{}
 	old.slot.active = false
 	lease.current, next.slot = nextSlot, nextSlot
-	if revision, err := next.Revision(); err != nil || revision != 1 {
+	if revision, err := next.Revision(); err != nil || revision != oldRevision+1 {
 		t.Fatalf("next revision=%d err=%v", revision, err)
 	}
 	if _, err := old.Revision(); !errors.Is(err, ErrLeaseInvalid) {

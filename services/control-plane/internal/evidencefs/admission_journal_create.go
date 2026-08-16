@@ -262,7 +262,7 @@ func (t *AdmissionMutationToken) CreateGenerationHeader(ctx context.Context, inv
 		return unknownResult(err)
 	}
 	rootFD, lineagesFD, lineageFD, journalFD, segmentFD = -1, -1, -1, -1, -1
-	discovery, err := l.store.discoverAdmissionRoot(ctx)
+	discovery, err := l.discoverAdmissionRootForInventory(ctx, inventory)
 	if err != nil || !generationHeaderDiscoveryMatches(inventory.slot.discovery, discovery, lineage.name, journalName, lineageAfter, journalAfter, lockStat, segmentStat) {
 		if err == nil {
 			err = filesystem("generation-header-discovery")

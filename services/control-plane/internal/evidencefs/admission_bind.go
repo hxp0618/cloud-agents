@@ -68,7 +68,7 @@ func (t *AdmissionMutationToken) BindPublishedObject(ctx context.Context, invent
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	pre.previousRevision = inventory.revision
-	if !t.validLocked(inventory) || inventory.revision == ^uint64(0) || size == 0 {
+	if !t.validLocked(inventory) || !targetRegisteredForMutationLocked(inventory) || inventory.revision == ^uint64(0) || size == 0 {
 		return pre, ErrInvalidInput
 	}
 	pre.candidateRevision = inventory.revision + 1
@@ -86,7 +86,7 @@ func (t *AdmissionMutationToken) BindPublishedObject(ctx context.Context, invent
 	if !transientExact {
 		return pre, ErrInvalidInput
 	}
-	discovery, err := l.store.discoverAdmissionRoot(ctx)
+	discovery, err := l.discoverAdmissionRootForInventory(ctx, inventory)
 	if err != nil || !sameAdmissionDiscovery(inventory.slot.discovery, discovery) {
 		if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			return pre, err

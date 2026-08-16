@@ -21,10 +21,12 @@ type admissionSlot struct {
 	files        map[*AdmissionFileView]fileExpectation
 	objects      map[*AdmissionObjectView]objectExpectation
 	absent       *TargetAbsentFact
+	registration *TargetRegistrationFact
 	target       [32]byte
 	fullSet      [32]byte
 	lineageOrder []*AdmissionLineageView
 	objectOrder  []*AdmissionObjectView
+	lineageLocks []heldLineageLock
 	journalLocks []heldJournalLock
 	discovery    admissionDiscovery
 	objectSet    admissionObjectDiscovery
@@ -122,9 +124,9 @@ type heldLineageLock struct {
 }
 
 // AdmissionLease owns the root writer lock, every registered lineage writer
-// lock, and each generation-journal lock created during this epoch. It is
-// sealed and cannot be reconstructed from paths, descriptors, or filesystem
-// identities.
+// lock, an observed target-prefix writer lock when present, and each
+// generation-journal lock created during this epoch. It is sealed and cannot
+// be reconstructed from paths, descriptors, or filesystem identities.
 type AdmissionLease struct {
 	self         *AdmissionLease
 	seal         *struct{}
@@ -226,6 +228,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 	if s == nil || !s.usable() {
 		return nil, nil, filesystem("admission-store")
 	}
+	requested := targetName(target)
 	for attempt := 0; attempt < maximumAdmissionAttempts; attempt++ {
 		if err := contextError(ctx); err != nil {
 			return nil, nil, err
@@ -234,7 +237,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 		if err != nil {
 			return nil, nil, err
 		}
-		first, err := s.discoverAdmissionRoot(ctx)
+		first, err := s.discoverAdmissionRootForTarget(ctx, requested, false)
 		if err != nil {
 			if rootLease.Close() != nil {
 				s.poison()
@@ -264,7 +267,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 			}
 			continue
 		}
-		second, err := s.discoverAdmissionRoot(ctx)
+		second, err := s.discoverAdmissionRootForTarget(ctx, requested, false)
 		if err != nil || !sameAdmissionDiscovery(first, second) {
 			cleanupFailed := releaseLineageLocks(s, locks)
 			cleanupFailed = rootLease.Close() != nil || cleanupFailed
@@ -314,9 +317,10 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory, revi
 	slot := &admissionSlot{
 		epoch: epoch, revision: revision, inventory: inventory, active: true,
 		lineages: map[*AdmissionLineageView]lineageExpectation{}, journals: map[*AdmissionJournalView]journalExpectation{},
-		files: map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent,
+		files: map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent, registration: inventory.registration,
 		target: inventory.target, fullSet: inventory.fullSet,
 		lineageOrder: append([]*AdmissionLineageView(nil), inventory.lineages...), objectOrder: append([]*AdmissionObjectView(nil), inventory.objects...),
+		lineageLocks: append([]heldLineageLock(nil), inventory.lease.locks...),
 		journalLocks: append([]heldJournalLock(nil), inventory.lease.journalLocks...),
 		discovery:    cloneAdmissionDiscovery(inventory.discovery), objectSet: cloneAdmissionObjectDiscovery(inventory.objectSet),
 	}
@@ -335,6 +339,9 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory, revi
 		slot.objects[object] = objectExpectation{file: object.file, digest: object.digest, temporary: object.temporary}
 		slot.files[object.file] = expectedFile(object.file, nil, nil)
 	}
+	if inventory.registration != nil && inventory.registration.index != nil {
+		slot.files[inventory.registration.index] = expectedFile(inventory.registration.index, nil, nil)
+	}
 	slot.graph = admissionSlotGraphDigest(slot)
 	return slot
 }
@@ -346,8 +353,16 @@ func expectedFile(file *AdmissionFileView, lineage *AdmissionLineageView, journa
 }
 
 func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscovery) ([]heldLineageLock, bool, error) {
-	locks := make([]heldLineageLock, 0, len(discovery.lineages))
+	candidates := make([]discoveredLineageLock, 0, len(discovery.lineages)+1)
 	for _, lineage := range discovery.lineages {
+		candidates = append(candidates, discoveredLineageLock{name: lineage.name, stat: lineage.lock})
+	}
+	if discovery.registration != nil && discovery.registration.lock != nil {
+		candidates = append(candidates, discoveredLineageLock{name: discovery.registration.name, stat: *discovery.registration.lock})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+	locks := make([]heldLineageLock, 0, len(candidates))
+	for _, candidate := range candidates {
 		if err := contextError(ctx); err != nil {
 			return locks, false, err
 		}
@@ -367,7 +382,7 @@ func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscov
 			_ = s.checkedClose(lineagesFD)
 			return locks, false, filesystem("admission-root-close")
 		}
-		lineageFD, lineageStat, err := s.openVerifiedDirectory(lineagesFD, lineage.name)
+		lineageFD, lineageStat, err := s.openVerifiedDirectory(lineagesFD, candidate.name)
 		closeFailed = s.checkedClose(lineagesFD) != nil
 		if err != nil {
 			if lineageFD >= 0 {
@@ -379,7 +394,8 @@ func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscov
 			_ = s.checkedClose(lineageFD)
 			return locks, false, filesystem("admission-lineages-close")
 		}
-		if !sameDirectoryIdentity(lineageStat, lineage.stat) {
+		directory, present := admissionLineageDirectory(discovery, candidate.name)
+		if !present || !sameDirectoryIdentity(lineageStat, directory) {
 			if lineageFD >= 0 {
 				closeFailed = s.checkedClose(lineageFD) != nil || closeFailed
 			}
@@ -400,7 +416,7 @@ func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscov
 			_ = s.checkedClose(lockFD)
 			return locks, false, filesystem("admission-lineage-close")
 		}
-		if !sameIdentity(lockStat, lineage.lock) {
+		if !sameIdentity(lockStat, candidate.stat) {
 			if lockFD >= 0 {
 				closeFailed = s.checkedClose(lockFD) != nil || closeFailed
 			}
@@ -411,7 +427,7 @@ func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscov
 		}
 		// Retain the current fd before tryLock. On an ambiguous try error the
 		// common cleanup path attempts unlock as well as close.
-		locks = append(locks, heldLineageLock{name: lineage.name, fd: lockFD, stat: lockStat})
+		locks = append(locks, heldLineageLock{name: candidate.name, fd: lockFD, stat: lockStat})
 		ok, lockErr := s.ops.tryLock(lockFD)
 		if lockErr != nil {
 			return locks, false, filesystem("admission-lineage-try-lock")
@@ -423,9 +439,36 @@ func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscov
 	return locks, false, nil
 }
 
+type discoveredLineageLock struct {
+	name string
+	stat fileStat
+}
+
+func admissionLineageDirectory(discovery admissionDiscovery, name string) (fileStat, bool) {
+	if discovery.registration != nil && discovery.registration.name == name {
+		return discovery.registration.directory, true
+	}
+	for _, lineage := range discovery.lineages {
+		if lineage.name == name {
+			return lineage.stat, true
+		}
+	}
+	return fileStat{}, false
+}
+
+func discoveredLineageByName(discovery admissionDiscovery, name string) (discoveredLineage, bool) {
+	for _, lineage := range discovery.lineages {
+		if lineage.name == name {
+			return lineage, true
+		}
+	}
+	return discoveredLineage{}, false
+}
+
 type admissionDiscovery struct {
 	lineagesDirectory *fileStat
 	lineages          []discoveredLineage
+	registration      *discoveredTargetRegistration
 }
 
 type discoveredLineage struct {
@@ -547,7 +590,11 @@ func objectDiscoveryMatchesScan(discovery admissionObjectDiscovery, scan *Scan) 
 	return finalCount == scan.finalCount && finalBytes == scan.finalBytes && tempCount == scan.tempCount && tempBytes == scan.tempBytes
 }
 
-func (s *Store) discoverAdmissionRoot(ctx context.Context) (result admissionDiscovery, resultErr error) {
+func (s *Store) discoverAdmissionRoot(ctx context.Context) (admissionDiscovery, error) {
+	return s.discoverAdmissionRootForTarget(ctx, "", false)
+}
+
+func (s *Store) discoverAdmissionRootForTarget(ctx context.Context, target string, promoteEmpty bool) (result admissionDiscovery, resultErr error) {
 	rootFD, err := s.freshRoot()
 	if err != nil {
 		return admissionDiscovery{}, err
@@ -595,6 +642,16 @@ func (s *Store) discoverAdmissionRoot(ctx context.Context) (result admissionDisc
 		if !finalNamePattern.MatchString(name) {
 			return admissionDiscovery{}, filesystem("lineage-name")
 		}
+		if name == target {
+			registration, full, targetErr := s.discoverTargetRegistration(lineagesFD, name, promoteEmpty)
+			if targetErr != nil {
+				return admissionDiscovery{}, targetErr
+			}
+			if !full {
+				discovery.registration = registration
+				continue
+			}
+		}
 		lineage, err := s.discoverLineage(lineagesFD, name)
 		if err != nil {
 			return admissionDiscovery{}, err
@@ -602,6 +659,82 @@ func (s *Store) discoverAdmissionRoot(ctx context.Context) (result admissionDisc
 		discovery.lineages = append(discovery.lineages, lineage)
 	}
 	return discovery, nil
+}
+
+func (s *Store) discoverTargetRegistration(lineagesFD int, name string, promoteEmpty bool) (result *discoveredTargetRegistration, full bool, resultErr error) {
+	fd, st, err := s.openVerifiedDirectory(lineagesFD, name)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() {
+		if closeErr := s.checkedClose(fd); closeErr != nil {
+			result, full, resultErr = nil, false, closeErr
+		}
+	}()
+	names, err := s.ops.readDirNames(fd, maximumAdmissionJournalsPerLineage+2)
+	if err != nil {
+		if s.ops.isOverflow(err) {
+			return nil, false, corrupt("target-registration-entry-count")
+		}
+		return nil, false, filesystem("target-registration-list")
+	}
+	sort.Strings(names)
+	registration := &discoveredTargetRegistration{state: TargetRegistrationPrefixDirectory, name: name, directory: st}
+	if len(names) == 0 {
+		return registration, false, nil
+	}
+	if len(names) == 1 && names[0] == "writer.lock" {
+		lock, err := s.statVerifiedRegular(fd, "writer.lock")
+		if err != nil {
+			return nil, false, err
+		}
+		if lock.size != 0 {
+			return nil, false, corrupt("target-registration-lock-size")
+		}
+		registration.state, registration.lock = TargetRegistrationPrefixLock, &lock
+		return registration, false, nil
+	}
+	if len(names) == 2 && names[0] == "index.caj" && names[1] == "writer.lock" {
+		if promoteEmpty {
+			return nil, true, nil
+		}
+		lock, err := s.statVerifiedRegular(fd, "writer.lock")
+		if err != nil {
+			return nil, false, err
+		}
+		index, err := s.statVerifiedRegular(fd, "index.caj")
+		if err != nil {
+			return nil, false, err
+		}
+		if lock.size != 0 || index.size > maximumAdmissionIndexBytes {
+			return nil, false, corrupt("target-registration-prefix-shape")
+		}
+		registration.state, registration.lock, registration.index = TargetRegistrationPrefixIndex, &lock, &index
+		return registration, false, nil
+	}
+	seenLock, seenIndex := false, false
+	for _, child := range names {
+		switch child {
+		case "writer.lock":
+			if seenLock {
+				return nil, false, corrupt("target-registration-duplicate-lock")
+			}
+			seenLock = true
+		case "index.caj":
+			if seenIndex {
+				return nil, false, corrupt("target-registration-duplicate-index")
+			}
+			seenIndex = true
+		default:
+			if !finalNamePattern.MatchString(child) {
+				return nil, false, corrupt("target-registration-entry")
+			}
+		}
+	}
+	if !seenLock || !seenIndex {
+		return nil, false, corrupt("target-registration-required-entry")
+	}
+	return nil, true, nil
 }
 
 func (s *Store) discoverLineage(lineagesFD int, name string) (result discoveredLineage, resultErr error) {
@@ -728,7 +861,7 @@ func (s *Store) checkedClose(fd int) error {
 }
 
 func sameAdmissionDiscovery(a, b admissionDiscovery) bool {
-	if (a.lineagesDirectory == nil) != (b.lineagesDirectory == nil) || len(a.lineages) != len(b.lineages) {
+	if (a.lineagesDirectory == nil) != (b.lineagesDirectory == nil) || len(a.lineages) != len(b.lineages) || !sameTargetRegistrationDiscovery(a.registration, b.registration) {
 		return false
 	}
 	if a.lineagesDirectory != nil && !sameDirectoryIdentity(*a.lineagesDirectory, *b.lineagesDirectory) {
@@ -752,6 +885,22 @@ func sameAdmissionDiscovery(a, b admissionDiscovery) bool {
 		}
 	}
 	return true
+}
+
+func sameTargetRegistrationDiscovery(a, b *discoveredTargetRegistration) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	if a.state != b.state || a.name != b.name || !sameDirectoryIdentity(a.directory, b.directory) || (a.lock == nil) != (b.lock == nil) || (a.index == nil) != (b.index == nil) {
+		return false
+	}
+	if a.lock != nil && !sameIdentity(*a.lock, *b.lock) {
+		return false
+	}
+	return a.index == nil || sameIdentity(*a.index, *b.index)
 }
 
 func sameDirectoryIdentity(a, b fileStat) bool {

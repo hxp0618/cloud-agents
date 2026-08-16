@@ -48,6 +48,64 @@ func testStore(t *testing.T, f *fakeBackend) *Store {
 	return store
 }
 
+// acquireRegisteredAdmissionForTest upgrades the legacy empty-lineage fixture
+// through the production prefix recovery transition. It is deliberately
+// test-only: production callers must supply a migration-verified header and
+// fresh composite permit rather than treating inventoried bytes as authority.
+func acquireRegisteredAdmissionForTest(t *testing.T, f *fakeBackend, store *Store, target [32]byte) (*AdmissionLease, *AdmissionInventory) {
+	t.Helper()
+	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fact, err := inventory.TargetRegistration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fact != nil {
+		state, err := fact.State()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state == TargetRegistrationPrefixIndex {
+			index, err := fact.Index()
+			if err != nil || index == nil {
+				t.Fatalf("prefix index=%v err=%v", index, err)
+			}
+			header, err := index.ReadAll(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			token, err := inventory.MutationToken()
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := token.RecoverTargetLineage(context.Background(), inventory, header)
+			if err != nil || result.Outcome() != AdmissionTransitionDurable || result.Inventory() == nil {
+				t.Fatalf("fixture recovery result=%+v err=%v", result, err)
+			}
+			inventory = result.Inventory()
+		}
+	}
+	if _, err := inventory.Lineage(target); err != nil {
+		_ = lease.Close()
+		t.Fatalf("registered target missing: %v", err)
+	}
+	// Prefix recovery is fixture setup; transition tests establish their own
+	// mutation-call baselines after this point.
+	f.mkdirs = nil
+	f.writes = 0
+	f.truncates = 0
+	f.truncateNames = nil
+	f.fdatasyncs = 0
+	f.fdatasyncNames = nil
+	f.fsyncs = 0
+	f.fsyncNames = nil
+	f.unlinks = 0
+	f.renames = 0
+	return lease, inventory
+}
+
 func TestAcquireAdmissionEmptyAndTargetAbsentCreatesNothing(t *testing.T) {
 	f := newFakeBackend()
 	store := testStore(t, f)
@@ -382,8 +440,27 @@ func TestAcquireAdmissionOpenErrorsFailImmediatelyWithoutRetry(t *testing.T) {
 }
 
 func TestAcquireAdmissionRejectsHalfRegistrationAndClosedGrammar(t *testing.T) {
+	t.Run("lock-prefix-is-recovery-state", func(t *testing.T) {
+		f := newFakeBackend()
+		delete(addAdmissionLineage(f, digestForTest(1), 0, 0).children, "index.caj")
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fact, err := inventory.TargetRegistration()
+		if err != nil || fact == nil {
+			t.Fatalf("fact=%v err=%v", fact, err)
+		}
+		state, err := fact.State()
+		if err != nil || state != TargetRegistrationPrefixLock {
+			t.Fatalf("state=%q err=%v", state, err)
+		}
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
 	tests := map[string]func(*fakeBackend){
-		"missing-index": func(f *fakeBackend) { delete(addAdmissionLineage(f, digestForTest(1), 0, 0).children, "index.caj") },
 		"unknown": func(f *fakeBackend) {
 			addAdmissionLineage(f, digestForTest(1), 0, 0).children["unknown"] = f.regular("unknown", nil)
 		},
@@ -415,7 +492,11 @@ func TestAcquireAdmissionRejectsHalfRegistrationAndClosedGrammar(t *testing.T) {
 			mutate(f)
 			store := testStore(t, f)
 			lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
-			if lease != nil || inventory != nil || !errors.Is(err, ErrFilesystem) {
+			want := ErrFilesystem
+			if name == "unknown" {
+				want = ErrCorrupt
+			}
+			if lease != nil || inventory != nil || !errors.Is(err, want) {
 				t.Fatalf("lease=%v inventory=%v err=%v", lease, inventory, err)
 			}
 		})

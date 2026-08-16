@@ -30,21 +30,22 @@ const (
 // AdmissionInventory is revision-bound physical authority for the complete
 // registered root set. It contains no decoded C3 or quota conclusions.
 type AdmissionInventory struct {
-	self       *AdmissionInventory
-	seal       *struct{}
-	store      *Store
-	lease      *AdmissionLease
-	epoch      *admissionEpoch
-	slot       *admissionSlot
-	revision   uint64
-	target     [32]byte
-	lineages   []*AdmissionLineageView
-	lineageMap map[[32]byte]*AdmissionLineageView
-	objects    []*AdmissionObjectView
-	absent     *TargetAbsentFact
-	fullSet    [32]byte
-	discovery  admissionDiscovery
-	objectSet  admissionObjectDiscovery
+	self         *AdmissionInventory
+	seal         *struct{}
+	store        *Store
+	lease        *AdmissionLease
+	epoch        *admissionEpoch
+	slot         *admissionSlot
+	revision     uint64
+	target       [32]byte
+	lineages     []*AdmissionLineageView
+	lineageMap   map[[32]byte]*AdmissionLineageView
+	objects      []*AdmissionObjectView
+	absent       *TargetAbsentFact
+	registration *TargetRegistrationFact
+	fullSet      [32]byte
+	discovery    admissionDiscovery
+	objectSet    admissionObjectDiscovery
 }
 
 type AdmissionLineageView struct {
@@ -135,7 +136,7 @@ func (i *AdmissionInventory) validLocked() bool {
 		i.slot != nil && i.slot == i.lease.current && i.slot.epoch == i.epoch &&
 		i.slot.revision == i.revision &&
 		i.slot.inventory == i && i.slot.active && i.slot.target == i.target && i.slot.fullSet == i.fullSet &&
-		sameLineagePointers(i.slot.lineageOrder, i.lineages) && sameObjectPointers(i.slot.objectOrder, i.objects) && i.slot.absent == i.absent && i.lease.activeLocked()
+		sameLineagePointers(i.slot.lineageOrder, i.lineages) && sameObjectPointers(i.slot.objectOrder, i.objects) && i.slot.absent == i.absent && i.slot.registration == i.registration && i.lease.activeLocked()
 }
 
 func (i *AdmissionInventory) withValid(fn func() error) error {
@@ -206,7 +207,7 @@ func (i *AdmissionInventory) Revalidate(ctx context.Context) error {
 }
 
 func (i *AdmissionInventory) snapshotMatchesLocked() bool {
-	if i == nil || i.slot == nil || admissionBaselineDigest(i.slot.discovery, i.slot.objectSet) != i.slot.baseline || admissionSlotGraphDigest(i.slot) != i.slot.graph || len(i.slot.discovery.lineages) != len(i.lineages) || len(i.slot.objectSet.objects) != len(i.objects) || len(i.slot.lineages) != len(i.lineages) || len(i.lineageMap) != len(i.lineages) || len(i.slot.objects) != len(i.objects) || !sameHeldJournalLocks(i.slot.journalLocks, i.lease.journalLocks) || !journalLocksMatchDiscovery(i.slot.journalLocks, i.slot.discovery) {
+	if i == nil || i.slot == nil || admissionBaselineDigest(i.slot.discovery, i.slot.objectSet) != i.slot.baseline || admissionSlotGraphDigest(i.slot) != i.slot.graph || len(i.slot.discovery.lineages) != len(i.lineages) || len(i.slot.objectSet.objects) != len(i.objects) || len(i.slot.lineages) != len(i.lineages) || len(i.lineageMap) != len(i.lineages) || len(i.slot.objects) != len(i.objects) || !sameHeldLineageLocks(i.slot.lineageLocks, i.lease.locks) || !lineageLocksMatchDiscovery(i.slot.lineageLocks, i.slot.discovery) || !sameHeldJournalLocks(i.slot.journalLocks, i.lease.journalLocks) || !journalLocksMatchDiscovery(i.slot.journalLocks, i.slot.discovery) {
 		return false
 	}
 	if i.absent == nil {
@@ -214,6 +215,13 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 			return false
 		}
 	} else if i.absent.self != i.absent || i.absent.seal == nil || i.absent.owner != i || !i.absent.binding.validFor(i) || i.slot.absent != i.absent || i.absent.target != i.target || i.absent.fullSet != i.fullSet {
+		return false
+	}
+	if i.registration == nil {
+		if i.absent != nil || i.lineageMap[i.target] == nil {
+			return false
+		}
+	} else if !targetRegistrationFactValidLocked(i, i.registration) {
 		return false
 	}
 	if len(i.lineages) != 0 && i.slot.discovery.lineagesDirectory == nil {
@@ -226,7 +234,8 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 		}
 		discovered := i.slot.discovery.lineages[index]
 		expected, ok := i.slot.lineages[lineage]
-		if !ok || expected.id != lineage.id || expected.name != lineage.name || expected.index != lineage.index || !sameJournalPointers(expected.journals, lineage.journals) || discovered.name != expected.name || lineage.index == nil || !sameIdentity(discovered.index, lineage.index.stat) || len(discovered.journals) != len(expected.journals) || index >= len(i.lease.locks) || i.lease.locks[index].name != discovered.name || !sameIdentity(discovered.lock, i.lease.locks[index].stat) {
+		held, heldOK := heldLineageLockByName(i.lease.locks, discovered.name)
+		if !ok || expected.id != lineage.id || expected.name != lineage.name || expected.index != lineage.index || !sameJournalPointers(expected.journals, lineage.journals) || discovered.name != expected.name || lineage.index == nil || !sameIdentity(discovered.index, lineage.index.stat) || len(discovered.journals) != len(expected.journals) || !heldOK || !sameIdentity(discovered.lock, held.stat) {
 			return false
 		}
 		indexExpected, ok := i.slot.files[lineage.index]
@@ -263,7 +272,14 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 			return false
 		}
 	}
-	return len(i.lease.locks) == len(i.lineages) && len(i.slot.journals) == journalCount && len(i.slot.files) == fileCount
+	if i.registration != nil && i.registration.state == TargetRegistrationPrefixIndex {
+		fileCount++
+	}
+	wantLocks := len(i.lineages)
+	if i.registration != nil && (i.registration.state == TargetRegistrationPrefixLock || i.registration.state == TargetRegistrationPrefixIndex) {
+		wantLocks++
+	}
+	return len(i.lease.locks) == wantLocks && len(i.slot.journals) == journalCount && len(i.slot.files) == fileCount
 }
 
 func inventoryFileGraphValid(owner *AdmissionInventory, file *AdmissionFileView, expected fileExpectation) bool {
@@ -348,7 +364,7 @@ func (f *TargetAbsentFact) Target() ([32]byte, error) {
 		return target, ErrLeaseInvalid
 	}
 	err := f.owner.withValid(func() error {
-		if f.owner.absent != f || f.owner.slot.absent != f || f.target != f.owner.target || f.fullSet != f.owner.fullSet {
+		if f.owner.absent != f || f.owner.slot.absent != f || f.owner.registration == nil || f.owner.registration.state != TargetRegistrationAbsent || f.target != f.owner.target || f.fullSet != f.owner.fullSet {
 			return ErrLeaseInvalid
 		}
 		target = f.target
@@ -363,7 +379,7 @@ func (f *TargetAbsentFact) FullSetDigest() ([32]byte, error) {
 		return digest, ErrLeaseInvalid
 	}
 	err := f.owner.withValid(func() error {
-		if f.owner.absent != f || f.owner.slot.absent != f || f.target != f.owner.target || f.fullSet != f.owner.fullSet {
+		if f.owner.absent != f || f.owner.slot.absent != f || f.owner.registration == nil || f.owner.registration.state != TargetRegistrationAbsent || f.target != f.owner.target || f.fullSet != f.owner.fullSet {
 			return ErrLeaseInvalid
 		}
 		digest = f.fullSet
@@ -643,6 +659,12 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 			}
 		}
 	}
+	if discovery.registration != nil && discovery.registration.index != nil {
+		if discovery.registration.index.size > maximumAdmissionIndexBytes || discovery.registration.index.size > maximumAdmissionIndexAggregate-indexBytes {
+			return nil, corrupt("target-registration-index-bytes")
+		}
+		indexBytes += discovery.registration.index.size
+	}
 	// Reuse the object-store scanner so its closed object/temp grammar and
 	// physical limits remain the single object admission implementation.
 	objectsBefore, err := l.discoverAdmissionObjects()
@@ -675,7 +697,11 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 	writeFullSetEntry(full, "directory", "objects", objectsAfter.objectsStat, [32]byte{})
 	writeFullSetEntry(full, "directory", "objects/sha256", objectsAfter.shaStat, [32]byte{})
 	writeFullSetCount(full, uint64(len(discovery.lineages)))
-	writeFullSetCount(full, uint64(len(discovery.lineages))) // one index per registered lineage
+	indexCount := len(discovery.lineages)
+	if discovery.registration != nil && discovery.registration.index != nil {
+		indexCount++
+	}
+	writeFullSetCount(full, uint64(indexCount))
 	writeFullSetCount(full, uint64(journalCount))
 	writeFullSetCount(full, uint64(segmentCount))
 	writeFullSetCount(full, uint64(len(scan.objects)))
@@ -721,6 +747,38 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 		inventory.lineages = append(inventory.lineages, view)
 		inventory.lineageMap[lineageID] = view
 	}
+	if registration := discovery.registration; registration != nil {
+		fact := &TargetRegistrationFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), state: registration.state, target: target, name: registration.name}
+		fact.self = fact
+		writeFullSetEntry(full, "target-registration-directory", registration.name, registration.directory, [32]byte{})
+		if registration.lock != nil {
+			writeFullSetEntry(full, "target-registration-lock", registration.name+"/writer.lock", *registration.lock, [32]byte{})
+		}
+		if registration.index != nil {
+			index, err := l.mintInventoryFile(ctx, inventory, inventoryIndex, registration.name, "", "index.caj", 0,
+				[]inventoryDirectory{{name: "lineages", stat: *discovery.lineagesDirectory}, {name: registration.name, stat: registration.directory}}, *registration.index)
+			if err != nil {
+				return nil, err
+			}
+			fact.index = index
+			writeFullSetView(full, index)
+		}
+		inventory.registration = fact
+	}
+	if inventory.registration == nil {
+		if lineage := inventory.lineageMap[target]; lineage != nil && len(lineage.journals) == 0 {
+			fact := &TargetRegistrationFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), state: TargetRegistrationRegisteredEmpty, target: target, name: targetName(target)}
+			fact.self = fact
+			inventory.registration = fact
+		} else if lineage == nil {
+			absent := &TargetAbsentFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), target: target}
+			absent.self = absent
+			inventory.absent = absent
+			fact := &TargetRegistrationFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), state: TargetRegistrationAbsent, target: target, name: targetName(target)}
+			fact.self = fact
+			inventory.registration = fact
+		}
+	}
 	objectParents := []inventoryDirectory{{name: "objects", stat: objectsAfter.objectsStat}, {name: "sha256", stat: objectsAfter.shaStat}}
 	for _, object := range objectsAfter.objects {
 		file, err := l.mintInventoryFile(ctx, inventory, inventoryObject, "", "", object.name, 0, objectParents, object.stat)
@@ -746,10 +804,11 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 		return nil, err
 	}
 	copy(inventory.fullSet[:], full.Sum(nil))
-	if _, present := inventory.lineageMap[target]; !present {
-		fact := &TargetAbsentFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), target: target, fullSet: inventory.fullSet}
-		fact.self = fact
-		inventory.absent = fact
+	if inventory.registration != nil {
+		inventory.registration.fullSet = inventory.fullSet
+	}
+	if inventory.absent != nil {
+		inventory.absent.fullSet = inventory.fullSet
 	}
 	return inventory, nil
 }
@@ -762,7 +821,7 @@ func (l *AdmissionLease) verifyTerminalInventory(ctx context.Context, discovery 
 		if err := contextError(ctx); err != nil {
 			return admissionDiscovery{}, admissionObjectDiscovery{}, err
 		}
-		root, err := l.store.discoverAdmissionRoot(ctx)
+		root, err := l.discoverAdmissionRootForInventory(ctx, inventory)
 		if err != nil {
 			return admissionDiscovery{}, admissionObjectDiscovery{}, err
 		}
@@ -809,6 +868,15 @@ func (l *AdmissionLease) verifyTerminalInventory(ctx context.Context, discovery 
 			}
 		}
 	}
+	if inventory.registration != nil && inventory.registration.index != nil {
+		bytes, err := l.readInventoryFileRaw(ctx, inventory.registration.index)
+		if err != nil || sha256.Sum256(bytes) != inventory.registration.index.digest {
+			if err != nil {
+				return err
+			}
+			return corrupt("admission-terminal-registration-index")
+		}
+	}
 	for _, object := range inventory.objects {
 		bytes, err := l.readInventoryFileRaw(ctx, object.file)
 		if err != nil || sha256.Sum256(bytes) != object.digest {
@@ -847,6 +915,18 @@ func cloneAdmissionDiscovery(value admissionDiscovery) admissionDiscovery {
 			result.lineages[index].journals[journal].segments = append([]fileStat(nil), value.lineages[index].journals[journal].segments...)
 		}
 	}
+	if value.registration != nil {
+		registration := *value.registration
+		if value.registration.lock != nil {
+			lock := *value.registration.lock
+			registration.lock = &lock
+		}
+		if value.registration.index != nil {
+			index := *value.registration.index
+			registration.index = &index
+		}
+		result.registration = &registration
+	}
 	return result
 }
 
@@ -878,6 +958,15 @@ func admissionBaselineDigest(discovery admissionDiscovery, objects admissionObje
 			}
 		}
 	}
+	if registration := discovery.registration; registration != nil {
+		writeFullSetEntry(h, "target-registration-directory", registration.name, registration.directory, [32]byte{})
+		if registration.lock != nil {
+			writeFullSetEntry(h, "target-registration-lock", registration.name+"/writer.lock", *registration.lock, [32]byte{})
+		}
+		if registration.index != nil {
+			writeFullSetEntry(h, "target-registration-index", registration.name+"/index.caj", *registration.index, [32]byte{})
+		}
+	}
 	writeFullSetEntry(h, "directory", "objects", objects.objectsStat, [32]byte{})
 	writeFullSetEntry(h, "directory", "objects/sha256", objects.shaStat, [32]byte{})
 	writeFullSetCount(h, uint64(len(objects.objects)))
@@ -902,6 +991,21 @@ func admissionSlotGraphDigest(slot *admissionSlot) [32]byte {
 	h.Write(slot.target[:])
 	h.Write(slot.fullSet[:])
 	writeFullSetCount(h, slot.revision)
+	if slot.registration == nil {
+		writeFullSetCount(h, 0)
+	} else {
+		writeFullSetCount(h, 1)
+		h.Write([]byte(slot.registration.state))
+		h.Write([]byte{0})
+		h.Write([]byte(slot.registration.name))
+		h.Write([]byte{0})
+		if slot.registration.index == nil {
+			writeFullSetCount(h, 0)
+		} else {
+			writeFullSetCount(h, 1)
+			writeSlotFileExpectation(h, slot.files[slot.registration.index])
+		}
+	}
 	writeFullSetCount(h, uint64(len(slot.lineageOrder)))
 	for _, lineage := range slot.lineageOrder {
 		expected, ok := slot.lineages[lineage]
@@ -946,6 +1050,13 @@ func admissionSlotGraphDigest(slot *admissionSlot) [32]byte {
 			h.Write([]byte{0})
 		}
 	}
+	writeFullSetCount(h, uint64(len(slot.lineageLocks)))
+	for _, lock := range slot.lineageLocks {
+		h.Write([]byte(lock.name))
+		h.Write([]byte{0})
+		writeFullSetCount(h, uint64(lock.fd))
+		writeFullSetEntry(h, "lineage-lock", lock.name, lock.stat, [32]byte{})
+	}
 	writeFullSetCount(h, uint64(len(slot.journalLocks)))
 	for _, lock := range slot.journalLocks {
 		h.Write([]byte(lock.lineage))
@@ -966,6 +1077,59 @@ func sameHeldJournalLocks(a, b []heldJournalLock) bool {
 	}
 	for index := range a {
 		if a[index].lineage != b[index].lineage || a[index].name != b[index].name || a[index].fd != b[index].fd || !sameIdentity(a[index].stat, b[index].stat) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameHeldLineageLocks(a, b []heldLineageLock) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index].name != b[index].name || a[index].fd != b[index].fd || !sameIdentity(a[index].stat, b[index].stat) {
+			return false
+		}
+	}
+	return true
+}
+
+func heldLineageLockByName(locks []heldLineageLock, name string) (heldLineageLock, bool) {
+	for _, lock := range locks {
+		if lock.name == name {
+			return lock, true
+		}
+	}
+	return heldLineageLock{}, false
+}
+
+func lineageLocksMatchDiscovery(locks []heldLineageLock, discovery admissionDiscovery) bool {
+	want := len(discovery.lineages)
+	if discovery.registration != nil && discovery.registration.lock != nil {
+		want++
+	}
+	if len(locks) != want {
+		return false
+	}
+	for index, lock := range locks {
+		if lock.name == "" || lock.fd < 0 || index > 0 && locks[index-1].name >= lock.name {
+			return false
+		}
+		matched := false
+		if discovery.registration != nil && discovery.registration.name == lock.name && discovery.registration.lock != nil && sameIdentity(*discovery.registration.lock, lock.stat) {
+			matched = true
+		}
+		for _, lineage := range discovery.lineages {
+			if lineage.name == lock.name && sameIdentity(lineage.lock, lock.stat) {
+				if matched {
+					return false
+				}
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}

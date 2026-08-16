@@ -12,7 +12,8 @@ func TestAdmissionPublishObjectDurableAdvancesInventory(t *testing.T) {
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
+	previousRevision, err := inventory.Revision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,14 +28,14 @@ func TestAdmissionPublishObjectDurableAdvancesInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := token.PublishObject(context.Background(), inventory, digest, content)
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "content_object" || result.CandidateDigest() != digest || result.CandidateSequence() != 0 || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 || result.Size() != uint64(len(content)) || result.Reused() {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "content_object" || result.CandidateDigest() != digest || result.CandidateSequence() != 0 || result.CandidateRevision() != previousRevision+1 || result.PreviousRevision() != previousRevision || result.Size() != uint64(len(content)) || result.Reused() {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	next, publication := result.Inventory(), result.Publication()
 	if next == nil || publication == nil || !result.ValidFor(next) || publication.Matches(digest, uint64(len(content))) {
 		t.Fatalf("next=%v publication=%v transientMatches=%v", next, publication, publication != nil && publication.Matches(digest, uint64(len(content))))
 	}
-	if revision, err := next.Revision(); err != nil || revision != 1 {
+	if revision, err := next.Revision(); err != nil || revision != previousRevision+1 {
 		t.Fatalf("revision=%d err=%v", revision, err)
 	}
 	newFullSet, err := next.FullSetDigest()
@@ -74,10 +75,7 @@ func TestAdmissionPublishObjectDurablyReusesExistingFinal(t *testing.T) {
 	content := []byte("candidate-runtime-object")
 	digest := f.addFinal(content)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	oldFullSet, err := inventory.FullSetDigest()
 	if err != nil {
 		t.Fatal(err)
@@ -127,11 +125,10 @@ func TestAdmissionPublishObjectPreMutationFailurePreservesAuthority(t *testing.T
 
 func TestAdmissionPublishObjectPreScanCancellationPreservesAuthority(t *testing.T) {
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -154,11 +151,10 @@ func TestAdmissionPublishObjectPreScanCancellationPreservesAuthority(t *testing.
 
 func TestAdmissionPublishObjectUnknownRevokesEpoch(t *testing.T) {
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -177,11 +173,10 @@ func TestAdmissionPublishObjectUnknownRevokesEpoch(t *testing.T) {
 
 func TestAdmissionPublicationDurableResultCanInvalidate(t *testing.T) {
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)

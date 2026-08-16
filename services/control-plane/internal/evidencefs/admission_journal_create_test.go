@@ -15,7 +15,8 @@ func TestAdmissionCreateGenerationHeaderDurableAndRetainsLock(t *testing.T) {
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
+	previousRevision, err := inventory.Revision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestAdmissionCreateGenerationHeaderDurableAndRetainsLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := token.CreateGenerationHeader(context.Background(), inventory, journal, header)
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "generation_header" || result.HeaderDigest() != sha256.Sum256(header) || result.HeaderSize() != uint64(len(header)) || result.Journal() != journal || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "generation_header" || result.HeaderDigest() != sha256.Sum256(header) || result.HeaderSize() != uint64(len(header)) || result.Journal() != journal || result.CandidateRevision() != previousRevision+1 || result.PreviousRevision() != previousRevision {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	next := result.Inventory()
@@ -105,10 +106,7 @@ func TestAdmissionCreateGenerationHeaderPostMutationFailureIsUnknown(t *testing.
 			target := digestForTest(9)
 			addAdmissionLineage(f, target, 0, 0)
 			store := testStore(t, f)
-			lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-			if err != nil {
-				t.Fatal(err)
-			}
+			lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 			token, err := inventory.MutationToken()
 			if err != nil {
 				t.Fatal(err)
@@ -135,10 +133,7 @@ func TestAdmissionCreateGenerationHeaderDurableResultCanInvalidate(t *testing.T)
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -163,10 +158,7 @@ func TestAdmissionCreateGenerationHeaderRetainedLockIsSlotBound(t *testing.T) {
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -189,10 +181,7 @@ func TestAdmissionCreateGenerationHeaderCloseAttemptsJournalAndLineageCleanup(t 
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -217,10 +206,7 @@ func TestAdmissionCreateGenerationHeaderPreservesAcquisitionOrderForCleanup(t *t
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	for _, journal := range [][32]byte{digestForTest(90), digestForTest(80)} {
 		token, tokenErr := inventory.MutationToken()
 		if tokenErr != nil {

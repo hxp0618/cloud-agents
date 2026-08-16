@@ -17,10 +17,7 @@ func generationLeaseForSnapshot(t *testing.T, segments [][]byte) (*fakeBackend, 
 	}
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	admission, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	admission, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)

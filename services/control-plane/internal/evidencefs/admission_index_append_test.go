@@ -17,7 +17,8 @@ func TestAdmissionAppendTargetIndexDurableAdvancesExactEOF(t *testing.T) {
 	lineage.children["index.caj"].data = append([]byte(nil), prefix...)
 	lineage.children["index.caj"].stat.size = uint64(len(prefix))
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
+	previousRevision, err := inventory.Revision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +32,15 @@ func TestAdmissionAppendTargetIndexDurableAdvancesExactEOF(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := token.AppendTargetIndex(context.Background(), inventory, frame)
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "target_index_append" || result.CandidateDigest() != sha256.Sum256(frame) || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "target_index_append" || result.CandidateDigest() != sha256.Sum256(frame) || result.CandidateRevision() != previousRevision+1 || result.PreviousRevision() != previousRevision {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	next := result.Inventory()
 	if next == nil {
 		t.Fatal("durable append returned no inventory")
+	}
+	if fact, err := next.TargetRegistration(); err != nil || fact != nil {
+		t.Fatalf("post-append registration fact=%v err=%v", fact, err)
 	}
 	nextLineage, err := next.Lineage(target)
 	if err != nil {
@@ -92,10 +96,7 @@ func TestAdmissionAppendTargetIndexPreMutationFailuresPreserveAuthority(t *testi
 	lineage.children["index.caj"].data = nil
 	lineage.children["index.caj"].virtualZero = true
 	store = testStore(t, f)
-	lease, inventory, err = store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory = acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err = inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -128,10 +129,7 @@ func TestAdmissionAppendTargetIndexPostWriteFailureIsUnknown(t *testing.T) {
 			lineage.children["index.caj"].data = []byte("header")
 			lineage.children["index.caj"].stat.size = uint64(len("header"))
 			store := testStore(t, f)
-			lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-			if err != nil {
-				t.Fatal(err)
-			}
+			lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 			token, err := inventory.MutationToken()
 			if err != nil {
 				t.Fatal(err)
@@ -157,10 +155,7 @@ func TestAdmissionAppendTargetIndexDurableResultCanInvalidate(t *testing.T) {
 	target := digestForTest(9)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)

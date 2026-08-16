@@ -23,11 +23,17 @@ func TestCreateTargetLineageDurableAdvancesInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	header := []byte("opaque-verified-lineage-index-header")
+	wantHeader := append([]byte(nil), header...)
+	f.onWrite = func(_ *fakeBackend, node *fakeNode, call int) {
+		if node.name == "index.caj" && call == 1 {
+			clear(header)
+		}
+	}
 	result, err := token.CreateTargetLineage(context.Background(), inventory, header)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome() != AdmissionTransitionDurable || result.PreviousRevision() != 0 || result.CandidateRevision() != 1 || result.CandidateKind() != "target_lineage" || result.CandidateDigest() != sha256.Sum256(header) {
+	if result.Outcome() != AdmissionTransitionDurable || result.PreviousRevision() != 0 || result.CandidateRevision() != 1 || result.CandidateKind() != "target_lineage" || result.CandidateDigest() != sha256.Sum256(wantHeader) {
 		t.Fatalf("result=%+v", result)
 	}
 	next := result.Inventory()
@@ -52,7 +58,7 @@ func TestCreateTargetLineageDurableAdvancesInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, err := index.ReadAll(context.Background())
-	if err != nil || !bytes.Equal(stored, header) {
+	if err != nil || !bytes.Equal(stored, wantHeader) {
 		t.Fatalf("stored=%q err=%v", stored, err)
 	}
 	if err := next.Revalidate(context.Background()); err != nil {
@@ -331,7 +337,8 @@ func TestReuseTargetLineageDurableAdvancesOnlyRevision(t *testing.T) {
 	lineage.children["index.caj"].data = append([]byte(nil), header...)
 	lineage.children["index.caj"].stat.size = uint64(len(header))
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
+	previousRevision, err := inventory.Revision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +351,7 @@ func TestReuseTargetLineageDurableAdvancesOnlyRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := token.ReuseTargetLineage(context.Background(), inventory, header)
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "target_lineage_reuse" || result.CandidateDigest() != sha256.Sum256(header) || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "target_lineage_reuse" || result.CandidateDigest() != sha256.Sum256(header) || result.CandidateRevision() != previousRevision+1 || result.PreviousRevision() != previousRevision {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	next := result.Inventory()
@@ -355,7 +362,7 @@ func TestReuseTargetLineageDurableAdvancesOnlyRevision(t *testing.T) {
 	if err != nil || newFullSet != oldFullSet {
 		t.Fatalf("full set changed: old=%x new=%x err=%v", oldFullSet, newFullSet, err)
 	}
-	if revision, err := next.Revision(); err != nil || revision != 1 {
+	if revision, err := next.Revision(); err != nil || revision != previousRevision+1 {
 		t.Fatalf("revision=%d err=%v", revision, err)
 	}
 	if f.mkdirs != nil || f.writes != 0 || f.fdatasyncs != 2 || f.fsyncs != 2 {
@@ -379,10 +386,7 @@ func TestReuseTargetLineagePreMutationMismatchPreservesAuthority(t *testing.T) {
 	lineage.children["index.caj"].data = []byte("header")
 	lineage.children["index.caj"].stat.size = uint64(len("header"))
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -403,10 +407,7 @@ func TestReuseTargetLineageSyncFailureIsUnknown(t *testing.T) {
 	lineage.children["index.caj"].data = []byte("header")
 	lineage.children["index.caj"].stat.size = uint64(len("header"))
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -431,10 +432,7 @@ func TestAdmissionTransitionReuseResultCanInvalidate(t *testing.T) {
 	lineage.children["index.caj"].data = []byte("header")
 	lineage.children["index.caj"].stat.size = uint64(len("header"))
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)

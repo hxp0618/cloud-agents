@@ -19,10 +19,7 @@ func admissionWithGenerationForHandoff(t *testing.T, lineageCount int) (*fakeBac
 		addAdmissionLineage(f, id, 0, 0)
 	}
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -198,10 +195,7 @@ func TestAdmissionHandoffReleasesOtherGenerationBeforeOtherLineages(t *testing.T
 	addAdmissionLineage(f, digestForTest(1), 0, 0)
 	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	admission, inventory, err := store.AcquireAdmission(context.Background(), target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	admission, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	for _, journal := range [][32]byte{digestForTest(70), digestForTest(80)} {
 		token, tokenErr := inventory.MutationToken()
 		if tokenErr != nil {

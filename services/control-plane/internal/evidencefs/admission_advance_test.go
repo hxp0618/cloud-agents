@@ -8,8 +8,11 @@ import (
 
 func TestAdmissionInventoryAdvanceConsumesTokenAndKeepsFullSet(t *testing.T) {
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
+	previousRevision, err := inventory.Revision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +25,7 @@ func TestAdmissionInventoryAdvanceConsumesTokenAndKeepsFullSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := token.Advance(context.Background(), inventory)
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "inventory_advance" || result.CandidateSequence() != 0 || result.CandidateRevision() != 1 || result.PreviousRevision() != 0 || result.Inventory() == nil {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "inventory_advance" || result.CandidateSequence() != 0 || result.CandidateRevision() != previousRevision+1 || result.PreviousRevision() != previousRevision || result.Inventory() == nil {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	nextFullSet, err := result.Inventory().FullSetDigest()
@@ -42,11 +45,10 @@ func TestAdmissionInventoryAdvanceConsumesTokenAndKeepsFullSet(t *testing.T) {
 
 func TestAdmissionInventoryAdvancePreCancelPreservesAuthority(t *testing.T) {
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -64,11 +66,10 @@ func TestAdmissionInventoryAdvancePreCancelPreservesAuthority(t *testing.T) {
 
 func TestAdmissionInventoryAdvanceDurableResultCanInvalidate(t *testing.T) {
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)

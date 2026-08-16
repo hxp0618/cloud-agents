@@ -10,11 +10,10 @@ import (
 func admissionPublishedFixture(t *testing.T) (*fakeBackend, *AdmissionLease, *AdmissionInventory, *AdmissionMutationToken, *Publication, [32]byte, []byte) {
 	t.Helper()
 	f := newFakeBackend()
+	target := digestForTest(9)
+	addAdmissionLineage(f, target, 0, 0)
 	store := testStore(t, f)
-	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(9))
-	if err != nil {
-		t.Fatal(err)
-	}
+	lease, inventory := acquireRegisteredAdmissionForTest(t, f, store, target)
 	token, err := inventory.MutationToken()
 	if err != nil {
 		t.Fatal(err)
@@ -34,12 +33,16 @@ func admissionPublishedFixture(t *testing.T) (*fakeBackend, *AdmissionLease, *Ad
 
 func TestAdmissionBindPublishedObjectAdvancesAndBinds(t *testing.T) {
 	f, lease, inventory, token, publication, digest, content := admissionPublishedFixture(t)
+	previousRevision, err := inventory.Revision()
+	if err != nil {
+		t.Fatal(err)
+	}
 	oldFullSet, err := inventory.FullSetDigest()
 	if err != nil {
 		t.Fatal(err)
 	}
 	result, err := token.BindPublishedObject(context.Background(), inventory, publication, digest, uint64(len(content)))
-	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "content_binding" || result.CandidateDigest() != digest || result.CandidateSequence() != 0 || result.CandidateRevision() != 2 || result.PreviousRevision() != 1 || result.Size() != uint64(len(content)) {
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.CandidateKind() != "content_binding" || result.CandidateDigest() != digest || result.CandidateSequence() != 0 || result.CandidateRevision() != previousRevision+1 || result.PreviousRevision() != previousRevision || result.Size() != uint64(len(content)) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	next := result.Inventory()
