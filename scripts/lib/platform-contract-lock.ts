@@ -63,12 +63,13 @@ const IN_REPO_TOOLS = [
   },
   {
     id: "platform-go-module-boundary-checker",
-    kind: "in-repo-typescript-go-ast",
+    kind: "in-repo-typescript-go-ast-xmod-policy",
     entrypoint: "scripts/check-platform-go-modules.ts",
     sources: [
       "scripts/check-platform-go-modules.ts",
       "scripts/go/importcheck/main.go",
       "scripts/lib/platform-go-modules.ts",
+      "services/control-plane/internal/tools/modpolicy/main.go",
     ],
   },
   {

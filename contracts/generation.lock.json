@@ -59,13 +59,14 @@
     },
     {
       "id": "platform-go-module-boundary-checker",
-      "kind": "in-repo-typescript-go-ast",
+      "kind": "in-repo-typescript-go-ast-xmod-policy",
       "entrypoint": "scripts/check-platform-go-modules.ts",
-      "sourceManifestSha256": "sha256:a3a51f7a10ba9a8dcad73cf59c21688250b39a96eac26022fc7ce70d1b34175d",
+      "sourceManifestSha256": "sha256:349d7602ad50ad30a32b2df194effbe8ac7a263117bea162e84bf8bdc6126b98",
       "sources": [
         "scripts/check-platform-go-modules.ts",
         "scripts/go/importcheck/main.go",
-        "scripts/lib/platform-go-modules.ts"
+        "scripts/lib/platform-go-modules.ts",
+        "services/control-plane/internal/tools/modpolicy/main.go"
       ],
       "license": "MIT"
     },
@@ -73,7 +74,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:8c04f8ae4282f8a1ad1090972944e13c6cd3356d9685fecb094f3729e1f5bb66",
+      "sourceManifestSha256": "sha256:0a92722843629e84bde3355182ca046722587e64e94b8e061569afc66d31dbba",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -464,7 +465,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:0f2288eaf5ab3c04ed4c521762a773afb839ac6b39ddb87716af35e912d233c1",
+      "inputManifestSha256": "sha256:f8a22c0074f7e2ec69182562057467db9052960fda82f64b1dcb624d17b9ca4a",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",
