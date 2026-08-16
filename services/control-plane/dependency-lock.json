@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "snapshot": {
-    "generated_at": "2026-08-15T18:20:12Z",
+    "generated_at": "2026-08-16T16:29:15Z",
     "module": "github.com/hxp0618/cloud-agents/services/control-plane",
-    "go": "go1.26.5",
+    "go": "go1.26.6",
     "goos": "linux",
     "goarch": "amd64",
     "gowork": "off",
@@ -13,23 +13,23 @@
     "gosumdb": "sum.golang.org",
     "goprivate": "",
     "gonosumdb": "",
-    "source_commit": "f0f1aceec07d6e4d7813f1483f26e7ef9528c245",
-    "source_commit_tree_oid": "aef7a5bdb503c65e16065b50dda6bce51cf4535d",
+    "source_commit": "b3f8d9aeed0ec10eef8edcbab0029f1c20cee2ae",
+    "source_commit_tree_oid": "1329ddaba419248a10757a2ffe05cc688f6b077c",
     "source_commit_tree_oid_algorithm": "sha1",
-    "control_plane_tree_oid": "0e336f00df4434e98d32dbc57c0b0b292ccb9f23",
+    "control_plane_tree_oid": "ad38008c9d449fb5600348bcb038ded42667c4ac",
     "control_plane_tree_oid_algorithm": "sha1",
-    "control_plane_tracked_manifest_sha256": "0b13d2e414d95ce741ebe7df21739c700adf70e5179a8839ec8ed4cfaab52876",
-    "control_plane_tracked_file_count": 274,
-    "control_plane_go_source_manifest_sha256": "a2fc88bc895a251644552067b8e646390933251de6ec00946c0fedc8e5bb1f7b",
-    "control_plane_go_source_file_count": 210,
+    "control_plane_tracked_manifest_sha256": "ebcf89683cff3a9bbf8fc3b6ef68528cd819c1f4e09aeff737b2cc2731fc5c0b",
+    "control_plane_tracked_file_count": 294,
+    "control_plane_go_source_manifest_sha256": "f68ca7d7ccf61479bc2eafec6eadf388f1b4dfb9f588444ae767fd3fbe3540f5",
+    "control_plane_go_source_file_count": 226,
     "source_tree_committed": true,
-    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source f0f1aceec07d6e4d7813f1483f26e7ef9528c245; this three-file supply-chain refresh is derived after and excluded from that source commit identity"
+    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source b3f8d9aeed0ec10eef8edcbab0029f1c20cee2ae; this derived supply/evidence refresh is excluded from that source commit identity"
   },
   "inputs": {
-    "go_mod_sha256": "ec30f2a2af4c9a80aeec1538f9aff7d78e1ad1fd5b323195c49d0826d7062bc7",
-    "go_sum_sha256": "8d46b65698d18e97869fa31da700c24f3bfbc8b091afefd5584b3aaa1824d977",
-    "selected_module_list_sha256": "0f98de7d6500cfc9bda9c5d76cb269b714e2cd31a18857b7433e33fe540e7793",
-    "module_graph_sha256": "28d53b4b26eb41e956644aeced541d33df787590a2e91c9fc81cb15973bf6416",
+    "go_mod_sha256": "a4d98dcbd65803a22bcf946cf042d17484e714500c0502b616d68742a02f1d14",
+    "go_sum_sha256": "c5e16bfbadc2461fd349b94ce6487aadcb2edea11fa0aa37fd29bc2f46bfc88c",
+    "selected_module_list_sha256": "d92f23836990be0c7e967b5bb5deb1b34d67e248e707a569726d06f2914d7ef4",
+    "module_graph_sha256": "a52ef78c1e0db672077c4d6c713afaa693d923fc29ea630e0d97831a8beb397f",
     "production_module_list_sha256": "48ca0dbaba0f918d99091decd0520a70327c36badb7d74c7cbbe1e180cd66e5f",
     "production_package_list_sha256": "12a56c91f56460e9757560f00234c06cec462f248df6a770d41172168e9a8d08",
     "darwin_production_module_list_sha256": "12203596417e4926a8292ad208df4d410ef0d6e89627320e2c4fe08858a5154b",
@@ -50,9 +50,10 @@
     "graph_only_module_count": 9,
     "production_package_count": 30,
     "darwin_production_package_count": 29,
-    "direct_requirement_count": 3,
+    "direct_requirement_count": 4,
     "direct_requirements": [
       "github.com/jackc/pgx/v5 v5.10.0",
+      "golang.org/x/mod v0.40.0",
       "golang.org/x/sys v0.44.0",
       "golang.org/x/text v0.39.0"
     ],
@@ -60,14 +61,15 @@
     "notice_scope": "production-linked-only",
     "production_platform": "linux/amd64 and linux/arm64 CGO_ENABLED=0; both closures are identical",
     "non_linux_boundary": "Darwin excludes build-tagged golang.org/x/sys/unix and the production filesystem constructor remains fail-closed before mutation",
-    "graph_only_definition": "selected by go list -m all but absent from the Linux non-test go list -deps ./... module set"
+    "graph_only_definition": "selected by go list -m all but absent from the Linux non-test go list -deps ./... module set",
+    "test_only_dependency_boundary": "golang.org/x/mod v0.40.0 is a direct requirement consumed only by internal/modpolicy/policy_test.go; it and selected x/tools v0.49.0 are absent from Linux and Darwin non-test production closures"
   },
   "vulnerability_snapshot": {
     "non_bit_safe": true,
     "govulncheck": {
       "version": "v1.6.0",
       "database": "https://vuln.go.dev",
-      "database_updated_at": "2026-08-11T23:21:33Z",
+      "database_updated_at": "2026-08-14T16:22:54Z",
       "module_scan": {
         "command": "govulncheck -scan=module",
         "exit_code": 0,
@@ -86,11 +88,11 @@
       "ecosystem": "Go",
       "queried_module_count": 16,
       "finding_count": 0,
-      "query_sha256": "937ac9fb9495cc4ea13990a2cdead2c17f85fbfb817f610057051097aeb8d720",
-      "canonical_response_sha256": "597de9d918195ae56f69090341f0a38ab47139b85ab19c2a11ec52f916e5f861"
+      "query_sha256": "d3582ad8e9b31aac6dc9fa2f548cf407f5b2a7858db16822129f0df56bb2450d",
+      "canonical_response_sha256": "ab5a0787744e90d4b9bef630420e8085dd8045f7cd5fe87fc0b5acc7b6a55b93"
     },
     "invalidation": "Any advisory database, scanner, module graph, source import, build tag, toolchain, version, checksum, license text, additional IP rights grant, or distribution-scope change requires a new snapshot. An empty result is not permanent safety evidence.",
-    "inheritance": "Inherited unchanged from source-bound refresh 53b2463: module graph and Linux/Darwin non-test closures are byte-identical, and no new govulncheck or OSV scan was run; all zero-finding results remain non-bit-safe time-bound evidence from 2026-08-12."
+    "inheritance": "Fresh source-bound govulncheck module/symbol and 16-module OSV scans were run for b3f8d9aeed0ec10eef8edcbab0029f1c20cee2ae; no zero-finding result is inherited from an older graph."
   },
   "modules": [
     {
@@ -303,26 +305,26 @@
     },
     {
       "path": "golang.org/x/mod",
-      "version": "v0.37.0",
+      "version": "v0.40.0",
       "classification": "graph-only",
-      "module_sum": "h1:vF1DjpVEshcIqoEaauuHebaLk1O1forxjxBaVn884JQ=",
-      "go_mod_sum": "h1:m8S8VeM9r4dzDwjrKO0a1sZP3YjeMamRRlD+fmR2Q/0=",
-      "proxy_zip_sha256": "91e8e4e9b74a8706dae808b66538d4ab22befd00c11f34134eb97ff572d52e85",
-      "proxy_go_mod_sha256": "538472fdf094dd5e49dc40e70468fa931a93c241eba07fb946a98747c94ab4df",
-      "sumdb_lookup_sha256": "237830a2def8a203da6557cc37c65f7c32a1f99cce8e2588ffb35ff25674258e",
+      "module_sum": "h1:hUv+3cXcdRHz08UmSiOob7sadHig73uo5bkXxQ/tvUs=",
+      "go_mod_sum": "h1:0/weTWkPWGBikyTWAX3dkjVztMmBA5hM0DH6BElSupE=",
+      "proxy_zip_sha256": "a191080b1494c194059ae71aa1d300741a8e24dfb6e28cd32580dbdcc52a0598",
+      "proxy_go_mod_sha256": "7458cd1a66875b76fb962428ffb61aee84acfd871a32e56b4efb43b3b8d2a70d",
+      "sumdb_lookup_sha256": "c4fa37719eb23113d907f97d832d97563815435be69050a470c773959a59425e",
       "license": "BSD-3-Clause",
       "license_text_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
       "effective_packages": []
     },
     {
       "path": "golang.org/x/tools",
-      "version": "v0.47.0",
+      "version": "v0.49.0",
       "classification": "graph-only",
-      "module_sum": "h1:7Kn5x/d1svx/PzryTsqeoZN4TZwqeH5pGWjefhLi/1Q=",
-      "go_mod_sum": "h1:dFHnyTvFWY212G+h7ZY4Vsp/K3U4/7W9TyVaAul8uCA=",
-      "proxy_zip_sha256": "143d132b519da1454db967febb65241796805d7c9d4752034341c1376fd3d7f1",
-      "proxy_go_mod_sha256": "eb46e44850fb4dca48f7b680cac5177682cb0e302b307d4d3dbd7ed9df05fc0f",
-      "sumdb_lookup_sha256": "fc85d7ba3b7efbdab2f0bedc304235877f5a06e6310e167d12ca60bc9e0ddb2e",
+      "module_sum": "h1:3NI7VXzL9+1WZD52Dx2ttoPwD5DWrFGpl9mFZDlmisI=",
+      "go_mod_sum": "h1:SJNXV9DBKT0UbdttsQjbfJlAE/q+y36++zo3uL3N0Oo=",
+      "proxy_zip_sha256": "babd2d5a0ccf4eac49b6c9785be2b9e39b261097ad8b8a6b92578b9f248703d5",
+      "proxy_go_mod_sha256": "86e34efea35b8aa52aabff0ea18c0ef217f074dff67ef7b4c700ae833968cf62",
+      "sumdb_lookup_sha256": "ac9c5957f1e3a8ea10e09dcf9b4aabe12f00cb3e6afc18f5934b00b86bcaba29",
       "license": "BSD-3-Clause",
       "license_text_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
       "effective_packages": []

@@ -43,8 +43,9 @@
   loop mount 上完成 online runtime validation，但没有取得 trusted mount authority；`7d78e3d` 再以 isolated QEMU
   fresh raw ext4/XFS disk 覆盖 generation resync 4、tail truncate 8、checkpoint heal 5 与 rotation discard 4 个
   barrier，每项均 whole-guest kill/fresh-mount classification；`77d92c5` 将 P1 Go pin 从 `1.26.5` 升到三项
-  reachable stdlib finding 的共同 first-fixed `1.26.6`，并重跑 module/race/cross-build/clean-restart/QEMU repair，
-  但 fresh OSV 同时发现 graph-only `x/mod v0.37.0` blocker，故 Supply Gate 继续 OPEN
+  reachable stdlib finding 的共同 first-fixed `1.26.6`，并重跑 module/race/cross-build/clean-restart/QEMU repair；
+  `aeed4b2`/`b3f8d9a` 又以 test-only module-policy gate 固定 first-fixed `x/mod v0.40.0`，保持 production
+  closure 不变并将 fresh OSV/govulncheck 归零；Supply Gate 仍因最终 artifact scan/immutable closure 保持 OPEN
 - Current slice：固定 non-forgeable trusted-mount provisioner、production constructor wiring、physical controller/host
   power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
   `f650fae`/`a3c7651` 的 test-only physical evidence 与 `70269e1`/`7b52509`/`cdedda7` 的 migration authority evidence
@@ -70,6 +71,9 @@ Platform RC、Beta 或 GA。
   已在真实 `go.mod/go.sum` 落盘
 - [`pgx-v5.10.0-x-text-v0.39.0-implemented-closure.md`](dependency-reviews/pgx-v5.10.0-x-text-v0.39.0-implemented-closure.md)：
   **APPROVED — dependency implementation closure only**；artifacts 已由 `93f742f` 集成，但
+  `G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
+- [`x-mod-v0.40.0.md`](dependency-reviews/x-mod-v0.40.0.md)：**APPROVED — test-gate dependency security
+  closure only**；修复 `GO-2026-6179/6180`，保持 Linux/Darwin production closure 和 NOTICE same-bits，
   `G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
 
 ## Data kernel decisions
@@ -139,6 +143,9 @@ Platform RC、Beta 或 GA。
 - [`go-toolchain-1.26.6-security-refresh-20260816.md`](go-toolchain-1.26.6-security-refresh-20260816.md) 固定 source
   `77d92c5`，记录 Go 1.26.5 reachable stdlib finding → 1.26.6 remediation、穷尽 race 分片、三平台 compile、
   ext4/XFS clean-restart、42-barrier QEMU repair 与 fresh vulnerability scan；同时保留 `x/mod v0.37.0` OSV blocker。
+- [`dependency-reviews/x-mod-v0.40.0.md`](dependency-reviews/x-mod-v0.40.0.md) 固定 source `b3f8d9a`，记录
+  test-only exact direct floor、`x/mod v0.40.0`/`x/tools v0.49.0` provenance、16-module fresh zero-finding scan，
+  以及 unchanged Linux 7/30、Darwin 6/29 production closure。
 - 十七份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
   仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
