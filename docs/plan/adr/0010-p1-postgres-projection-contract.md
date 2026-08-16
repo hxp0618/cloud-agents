@@ -2472,6 +2472,37 @@ production filesystem source，其 exact version、license/SBOM、source provena
 review/integration 已闭合。production constructor 继续 fail closed 的剩余原因只是 trusted mount authority 尚未实现；该闭合
 不构成 real required-syscall probe/runtime validation、`ext4`/`xfs` 或 power-loss/restart durability evidence，也不授权绕过
 下述 environment matrix。
+
+trusted provisioner authority 的首期传递协议固定为 **root-owned local attestation capability**，不得换成 caller interface、
+任意 raw FD/path adoption、context value、environment variable、mountinfo-only self-authorization 或可由 runner 自签的 key。
+独立 root provisioner 必须在与 runner 相同的 boot 和 mount namespace 内，经具名 operator confirmation 验证该 dedicated
+mount 后，把 capability 原子写入固定 `/run/cloud-agents/evidencefs-mounts/`；basename 只能是
+`sha256(canonical_root_path).authority`。authority directory 的 root→leaf component 必须 no-follow 打开并验证为 UID 0、
+group/world 不可写的真实 directory；authority file 必须是 UID 0、无 write bit、`st_nlink=1` 的 bounded regular file。
+runner 必须 `euid != 0` 且 effective capability set 为空；否则 root-owned file 对 runner 不再不可伪造，production `Open`
+必须拒绝。固定 authority root 不能由 caller、flag、env 或 API option 改写。
+
+attestation closed body 至少绑定：format version、128-bit provisioner nonce、canonical root-path SHA-256、runner UID、Linux
+boot ID、mount-namespace device/inode、mount ID、filesystem type（仅 `ext4|xfs`）、root `st_dev/st_ino`、root owner/mode 与
+mount major:minor/source identity。它不是 bearer secret；不可伪造性来自固定受保护路径、root ownership 和无 capability 的
+非 root runner。复制 attestation bytes 到 runner 可写位置不产生 authority。provisioner 不得在 evidence root 内创建或修复
+任何 directory/lock/index/object；root grammar 仍须预先存在且由下述 `Open`/probe fail closed 验证。
+
+production `Open(ctx, canonical_root_path)` 只从上述固定 basename 读取 capability，先完成 no-follow authority metadata/
+closed-body/boot/namespace 校验，再打开 root 并将 current mount ID、filesystem type、device/inode/owner/mode 与 attestation
+byte-exact 交叉绑定，最后才进入 existing required-syscall probe。authority read、root open 或 probe 任一 close/identity/
+parse failure 均不返回 Root。Root 后续每次 fresh reopen 还必须重验同一 mount namespace、mount ID、filesystem type 与
+root identity；任何 drift 立即 poison，不能只比较可由 whole-filesystem bind 保持不变的 dev/inode。删除 authority 只阻止
+future `Open`；已经成功绑定且持续重验 mount identity 的进程内 Root 不因 capability file 删除自动变成 clean revocation。
+provision/revoke command 必须 root-only，revoke 只能删除 exact derived basename并同步 authority directory；非 Linux 构建只保留
+稳定 unsupported/rejecting behavior。
+
+最小 fault matrix 必须覆盖：authority root 任一 symlink/non-directory/owner/mode drift，file symlink/device/FIFO/socket/hardlink/
+owner/write-bit/oversize/torn/duplicate/unknown field，wrong path digest/UID/boot/namespace/mount ID/fs type/dev/inode/source，runner
+root/effective capabilities，provision write/rename/fsync response loss，revoke unlink/fsync failure，root 在 attestation read 后替换，
+probe failure，以及 successful Open 后 mount-ID/namespace drift。普通 caller、migration sibling、test literal/copy、旧 boot/
+namespace attestation 与 copied bytes 必须都不能 mint production Root。positive integration 只能在 fresh root-provisioned ext4 与
+XFS mount 上运行，并在结束后删除 authority file/directory entry、mount/image 与 helper artifact；它不替代 physical power-loss evidence。
 journal/object root 只支持上述 allowlist，且启动时 required syscall probe 必须
 成功：POSIX advisory lock 跨进程互斥、atomic no-replace publish
 （`renameat2(RENAME_NOREPLACE)` 或同目录 link/unlink 等价）、regular-file `fdatasync` 与 parent-directory `fsync`。
