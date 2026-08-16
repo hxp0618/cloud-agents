@@ -79,6 +79,9 @@ Platform RC、Beta 或 GA。
 - [`x-mod-v0.40.0.md`](dependency-reviews/x-mod-v0.40.0.md)：**APPROVED — test-gate dependency security
   closure only**；修复 `GO-2026-6179/6180`，保持 Linux/Darwin production closure 和 NOTICE same-bits，
   `G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
+- [`control-plane-supply-refresh-20260817.md`](control-plane-supply-refresh-20260817.md)：固定 source `c0658f4` 的
+  generation lock、dependency lock、CycloneDX 1.6 SBOM 与 fresh govulncheck/OSV refresh；module graph、production
+  closure 和 NOTICE same-bits，`G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
 
 ## Data kernel decisions
 
