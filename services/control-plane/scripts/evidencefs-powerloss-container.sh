@@ -16,7 +16,7 @@ case "$apk_repository" in
     ;;
 esac
 case "$matrix_scope" in
-  full | generation-header) ;;
+  full | generation-header | generation-repair) ;;
   *)
     echo "unsupported evidencefs power-loss matrix scope" >&2
     exit 1
@@ -465,6 +465,78 @@ classify_generation_header_barrier_guest() {
   echo "EVIDENCEFS_QEMU_GENERATION_HEADER_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
 }
 
+kill_generation_repair_barrier_guest() {
+  filesystem=$1
+  scenario=$2
+  barrier=$3
+  data_image=$4
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-repair-$scenario-$barrier-crash.log"
+  start_guest "$filesystem" "crash-generation-$scenario" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation repair barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_repair_barrier_guest() {
+  filesystem=$1
+  scenario=$2
+  barrier=$3
+  data_image=$4
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_REPAIR_PASS filesystem=$filesystem scenario=$scenario barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-repair-$scenario-$barrier-classify.log"
+  start_guest "$filesystem" "classify-generation-$scenario" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation repair classifier failed: scenario=$scenario barrier=$barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_REPAIR_CRASH_RECOVERY scenario=$scenario barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation repair classifier omitted recovery facts: scenario=$scenario barrier=$barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+run_generation_repair_scenario() {
+  filesystem=$1
+  scenario=$2
+  barriers=$3
+  expected=$4
+  barrier_count=0
+  for barrier in $barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-repair-$scenario-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_repair_barrier_guest "$filesystem" "$scenario" "$barrier" "$barrier_image"
+    classify_generation_repair_barrier_guest "$filesystem" "$scenario" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne "$expected" ]; then
+    echo "unexpected generation repair crash barrier count: scenario=$scenario count=$barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_SCENARIO filesystem=$filesystem scenario=$scenario barriers=$barrier_count result=PASS"
+}
+
+run_generation_repair_matrix() {
+  filesystem=$1
+  run_generation_repair_scenario "$filesystem" resync "$generation_resync_barriers" 4
+  run_generation_repair_scenario "$filesystem" truncate "$generation_truncate_barriers" 8
+  run_generation_repair_scenario "$filesystem" checkpoint "$generation_checkpoint_barriers" 5
+  run_generation_repair_scenario "$filesystem" discard "$generation_discard_barriers" 4
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_MATRIX filesystem=$filesystem barriers=21 result=PASS"
+}
+
 create_evidence_image() {
   filesystem=$1
   data_image=$2
@@ -484,8 +556,16 @@ generation_header_recovery_barriers="generation-header-recovery-before-parent-fs
 generation_append_barriers="before-journal-write after-short-journal-write after-journal-write before-journal-fdatasync after-journal-fdatasync before-index-write after-short-index-write after-index-write before-index-fdatasync after-index-fdatasync"
 generation_rotation_barriers="before-segment-create after-segment-create before-empty-fdatasync after-empty-fdatasync before-segment-directory-fsync after-segment-directory-fsync before-header-write after-short-header-write after-header-write before-header-fdatasync after-header-fdatasync before-header-checkpoint-write after-short-header-checkpoint-write after-header-checkpoint-write before-header-checkpoint-fdatasync after-header-checkpoint-fdatasync before-caller-write after-short-caller-write after-caller-write before-caller-fdatasync after-caller-fdatasync before-caller-checkpoint-write after-short-caller-checkpoint-write after-caller-checkpoint-write before-caller-checkpoint-fdatasync after-caller-checkpoint-fdatasync"
 generation_activation_barriers="before-activation-write after-short-activation-write after-activation-write before-activation-fdatasync after-activation-fdatasync"
+generation_resync_barriers="before-resync-segment-fdatasync after-resync-segment-fdatasync before-resync-index-fdatasync after-resync-index-fdatasync"
+generation_truncate_barriers="before-truncate-segment after-truncate-segment before-truncate-segment-fdatasync after-truncate-segment-fdatasync before-truncate-index after-truncate-index before-truncate-index-fdatasync after-truncate-index-fdatasync"
+generation_checkpoint_barriers="before-checkpoint-write after-short-checkpoint-write after-checkpoint-write before-checkpoint-fdatasync after-checkpoint-fdatasync"
+generation_discard_barriers="before-discard-unlink after-discard-unlink before-discard-directory-fsync after-discard-directory-fsync"
 
 for filesystem in ext4 xfs; do
+  if [ "$matrix_scope" = generation-repair ]; then
+    run_generation_repair_matrix "$filesystem"
+    continue
+  fi
   if [ "$matrix_scope" = full ]; then
   data_image="$work_dir/$filesystem-evidence.img"
   create_evidence_image "$filesystem" "$data_image"
@@ -620,12 +700,13 @@ for filesystem in ext4 xfs; do
     exit 1
   fi
   echo "EVIDENCEFS_QEMU_GENERATION_ACTIVATION_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+  run_generation_repair_matrix "$filesystem"
 done
 
 trap - EXIT INT TERM
 cleanup
-if [ "$matrix_scope" = full ]; then
-  echo "Evidencefs Linux ext4/xfs QEMU power-loss matrix: PASS"
-else
-  echo "Evidencefs Linux ext4/xfs QEMU generation-header power-loss matrix: PASS"
-fi
+case "$matrix_scope" in
+  full) echo "Evidencefs Linux ext4/xfs QEMU power-loss matrix: PASS" ;;
+  generation-header) echo "Evidencefs Linux ext4/xfs QEMU generation-header power-loss matrix: PASS" ;;
+  generation-repair) echo "Evidencefs Linux ext4/xfs QEMU generation-repair power-loss matrix: PASS" ;;
+esac

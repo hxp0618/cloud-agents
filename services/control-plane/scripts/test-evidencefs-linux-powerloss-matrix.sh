@@ -45,7 +45,7 @@ case $apk_repository in
     ;;
 esac
 case $matrix_scope in
-  full | generation-header) ;;
+  full | generation-header | generation-repair) ;;
   *)
     echo "CLOUD_AGENTS_EVIDENCEFS_MATRIX_SCOPE is not allowed" >&2
     exit 1
@@ -136,8 +136,8 @@ if [[ $loop_after != "$loop_before" ]]; then
 fi
 
 echo "EVIDENCEFS_QEMU_HOST image_ref=$harness_image image_id=$image_id arch=$image_os/$image_arch test_binary_sha256=$binary_sha256 result=PASS"
-if [[ $matrix_scope == full ]]; then
-  echo "Evidencefs Linux ext4/xfs isolated QEMU power-loss matrix: PASS"
-else
-  echo "Evidencefs Linux ext4/xfs isolated QEMU generation-header power-loss matrix: PASS"
-fi
+case $matrix_scope in
+  full) echo "Evidencefs Linux ext4/xfs isolated QEMU power-loss matrix: PASS" ;;
+  generation-header) echo "Evidencefs Linux ext4/xfs isolated QEMU generation-header power-loss matrix: PASS" ;;
+  generation-repair) echo "Evidencefs Linux ext4/xfs isolated QEMU generation-repair power-loss matrix: PASS" ;;
+esac

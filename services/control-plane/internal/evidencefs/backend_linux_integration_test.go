@@ -105,6 +105,30 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	case "classify-generation-activation-crash":
 		classifyLinuxIntegrationGenerationActivationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
+	case "generation-resync-crash":
+		resyncLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-resync-crash":
+		classifyLinuxIntegrationGenerationRepairCrashState(t, rootPath, "resync", os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "generation-truncate-crash":
+		truncateLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-truncate-crash":
+		classifyLinuxIntegrationGenerationRepairCrashState(t, rootPath, "truncate", os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "generation-checkpoint-crash":
+		checkpointLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-checkpoint-crash":
+		classifyLinuxIntegrationGenerationRepairCrashState(t, rootPath, "checkpoint", os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "generation-discard-crash":
+		discardLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-discard-crash":
+		classifyLinuxIntegrationGenerationRepairCrashState(t, rootPath, "discard", os.Getenv(linuxIntegrationBarrierEnv))
+		return
 	case "target-registration-crash":
 		createLinuxIntegrationTargetAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
