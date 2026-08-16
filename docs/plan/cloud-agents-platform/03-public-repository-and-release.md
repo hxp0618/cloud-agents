@@ -37,9 +37,10 @@ cloud-agents/
 ## 2. Module 与 import 规则
 
 - TS Runtime 七包保持独立 semver；
-- P1 Go toolchain 固定为 `1.26.5`；根 `.mise.toml`、三个 module 的 `toolchain go1.26.5`、generator、CI 与
+- P1 Go toolchain 固定为 `1.26.6`；根 `.mise.toml`、三个 module 的 `toolchain go1.26.6`、generator、CI 与
   release provenance 必须记录同一完整 patch version，不能退化成 `1.26` 或 `latest`；变更 toolchain 需要
-  新的决策与 same-bits 证据；
+  新的决策与 same-bits 证据；原 `1.26.5` 已因 current symbol scan 命中三个 first-fixed-at-`1.26.6` 的标准库
+  漏洞而 supersede；
 - Go SDK module：`github.com/hxp0618/cloud-agents/sdk/go`，tag `sdk/go/vX.Y.Z`；
 - Go Control Plane module：`github.com/hxp0618/cloud-agents/services/control-plane`，tag
   `services/control-plane/vX.Y.Z`；

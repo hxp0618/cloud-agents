@@ -34,7 +34,7 @@
 | D-024 | 开发与 focused Gate 本地优先；固定 SHA 接近收口后再做云端终验                                                               | APPROVED | 避免开发循环反复占用云主机并混淆证据层级                                         |
 | D-025 | Management/Agent/Host 用 OpenAPI HTTP/JSON；Worker/Adapter 用 Proto + ConnectRPC/mTLS                                       | APPROVED | ADR-0007；每个平面只有一个 wire authority                                        |
 | D-026 | JSON Schema、OpenAPI、Proto 分别拥有 model、route、worker/adapter service authority                                         | APPROVED | ADR-0007；legacy contract 仅作 oracle                                            |
-| D-027 | CP/Worker import SDK；SDK 不 import service；Go 1.26.5；发布禁 replace                                                      | APPROVED | ADR-0007；go.work 仅本地开发                                                     |
+| D-027 | CP/Worker import SDK；SDK 不 import service；Go 1.26.6；发布禁 replace                                                      | APPROVED | ADR-0007；1.26.5 security superseded；go.work 仅本地开发                         |
 | D-028 | P1 支持 PostgreSQL 15–17；pgx/v5 + 手写 SQL；禁 GORM/AutoMigrate                                                            | APPROVED | ADR-0007；新 migration lineage                                                   |
 | D-029 | tenant 表使用 composite FK + FORCE RLS；runtime/migration role 分离                                                         | APPROVED | ADR-0007；RLS 是 defense in depth                                                |
 | D-030 | NamespaceRef 结构化并以 RFC 8785 canonical JSON + SHA-256 标识                                                              | APPROVED | ADR-0007；拒绝调用方自报 canonical string                                        |

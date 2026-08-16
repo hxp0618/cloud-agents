@@ -100,9 +100,10 @@ wire 协作。外部 consumer 只能依赖 `sdk/go` 或公共 service API，serv
 
 ### 4. Go toolchain
 
-P1 固定 Go `1.26.5`。三个 module、生成器容器/二进制、CI 与 evidence 必须记录该完整 patch version；不得只写
-`1.26` 或使用浮动 `latest`。升级 Go 属于新的、独立评审的 toolchain decision，并使受影响的 build/test/
-generation evidence 失效。
+P1 固定 Go `1.26.6`。三个 module、生成器容器/二进制、CI 与 evidence 必须记录该完整 patch version；不得只写
+`1.26` 或使用浮动 `latest`。原 `1.26.5` pin 因 2026-08-13 发布的 `GO-2026-6090`、`GO-2026-6088`、
+`GO-2026-5972` 在当前 Control Plane symbol scan 中可达而失效；`1.26.6` 是三项在 Go 1.26 line 的共同 first-fixed
+版本。升级 Go 属于新的、独立评审的 toolchain decision，并使受影响的 build/test/generation evidence 失效。
 
 ### 5. PostgreSQL 与数据访问
 
@@ -211,7 +212,7 @@ live-instance preflight：
 
 - 三个 Go module 和所有 contract/SDK generator 都必须使用 checked-in dependency/tool lock；direct
   dependency、generator binary/container、plugin、template/config 分别记录 version 与不可变 digest。
-- generation 必须在 clean archive、固定 Go `1.26.5` 和固定 generator lock 下可复现；重新生成后 dirty diff、
+- generation 必须在 clean archive、固定 Go `1.26.6` 和固定 generator lock 下可复现；重新生成后 dirty diff、
   provenance 缺失、跨 module `replace` 或 contract digest 不匹配均 fail closed。
 - 新增或升级第三方 dependency 前，必须记录用途、来源、version/digest、transitive license、notice、已知安全
   风险与替代项。repo owner hxp0618 是 accountable dependency/license 决策 owner；未参与该 dependency 实现的

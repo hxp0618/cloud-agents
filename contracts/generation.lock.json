@@ -29,11 +29,11 @@
   "runtimes": {
     "node": "24.13.1",
     "bun": "1.3.14",
-    "go": "1.26.5"
+    "go": "1.26.6"
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:cfeb77e1453c20f0c5f05732564d2ef6182cf00f4892ec05a775bc369f575bfc",
+    "manifestSha256": "sha256:fafc6c16e1abc34f3ec5b40a9849521271e922e71ab4161bea12b4fd999eef5b",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -61,7 +61,7 @@
       "id": "platform-go-module-boundary-checker",
       "kind": "in-repo-typescript-go-ast",
       "entrypoint": "scripts/check-platform-go-modules.ts",
-      "sourceManifestSha256": "sha256:a55620632d37812d299b6329b670fb6b4a8626bbc65ae5b35100a4020154f4fa",
+      "sourceManifestSha256": "sha256:a3a51f7a10ba9a8dcad73cf59c21688250b39a96eac26022fc7ce70d1b34175d",
       "sources": [
         "scripts/check-platform-go-modules.ts",
         "scripts/go/importcheck/main.go",
@@ -73,7 +73,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:e0eecc41af48b6396d588043409b4a209edc2bb6677700058aa7211676531c3a",
+      "sourceManifestSha256": "sha256:8c04f8ae4282f8a1ad1090972944e13c6cd3356d9685fecb094f3729e1f5bb66",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -87,7 +87,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:9d16ea243c7ecd084f100923d1c84f657e4e97431017d68a2328e0bf46a038cd",
+      "sourceManifestSha256": "sha256:c31f5772f87dd680138ad8ec1e83d63f0cc07f87b81d7d8be9530ec2514184cc",
       "sources": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -199,7 +199,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:9d16ea243c7ecd084f100923d1c84f657e4e97431017d68a2328e0bf46a038cd",
+      "inputManifestSha256": "sha256:c31f5772f87dd680138ad8ec1e83d63f0cc07f87b81d7d8be9530ec2514184cc",
       "inputs": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
@@ -464,7 +464,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d12f9c8914f0f50f6f369fbd5e65a99a07d5b12c32a5a29cdd1c61c3adc5b61f",
+      "inputManifestSha256": "sha256:0f2288eaf5ab3c04ed4c521762a773afb839ac6b39ddb87716af35e912d233c1",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",

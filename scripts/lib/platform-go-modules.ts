@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
 export const PLATFORM_GO_VERSION = "1.26.0";
-export const PLATFORM_GO_TOOLCHAIN = "go1.26.5";
+export const PLATFORM_GO_TOOLCHAIN = "go1.26.6";
 
 const GO_IMPORT_CHECKER = resolve(import.meta.dirname, "../go/importcheck/main.go");
 const ISOLATED_GO_ENV = {

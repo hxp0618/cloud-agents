@@ -6,8 +6,8 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd -- "$script_dir/../../.." && pwd -P)
 module_dir="$repo_root/services/control-plane"
 
-if [[ $(go version | awk '{print $3}') != "go1.26.5" ]]; then
-  echo "Go 1.26.5 is required" >&2
+if [[ $(go version | awk '{print $3}') != "go1.26.6" ]]; then
+  echo "Go 1.26.6 is required" >&2
   exit 1
 fi
 if ! docker version >/dev/null 2>&1; then

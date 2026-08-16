@@ -535,7 +535,7 @@ GUC 仍为 cleared state；再调用 `require_tenant_id()` 证明两种 cleared 
 
 ### 12. Build provenance、shared fixtures 与 release 边界
 
-build checker 使用 fixed Node 24.13.1/Bun 1.3.14/Go 1.26.5 从 clean source 生成 schema/manifest/bootstrap
+build checker 使用 fixed Node 24.13.1/Bun 1.3.14/Go 1.26.6 从 clean source 生成 schema/manifest/bootstrap
 digests 与 runtime tar。`runner_release_digest` 的 signed provenance 必须包含：source commit/tree、runner binary/
 image digest、selected Go dependency closure/完整 `go.mod/go.sum`、generator/checker/lexer/catalog validator/tenant helper
 source closure、fixtures、SBOM、THIRD_PARTY_NOTICES、secret/vulnerability evidence。

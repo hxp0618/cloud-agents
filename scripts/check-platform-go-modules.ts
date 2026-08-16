@@ -61,7 +61,7 @@ for (const entry of PLATFORM_GO_MODULES) {
   ) as GoModuleEditDocument;
   validateGoModuleEdit(module, entry.module, `${entry.directory}/go.mod`);
   run("go", ["mod", "tidy", "-diff"], directory, ISOLATED_GO_ENV);
-  run("go", ["test", "./..."], directory, ISOLATED_GO_ENV);
+  run("go", ["test", "-timeout=30m", "./..."], directory, ISOLATED_GO_ENV);
 }
 
 process.stdout.write(

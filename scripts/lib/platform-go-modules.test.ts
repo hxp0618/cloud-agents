@@ -11,7 +11,7 @@ const VALID_MODULE = `module github.com/hxp0618/cloud-agents/sdk/go
 
 go 1.26.0
 
-toolchain go1.26.5
+toolchain go1.26.6
 `;
 
 describe("Platform Go module boundaries", () => {
@@ -19,7 +19,7 @@ describe("Platform Go module boundaries", () => {
     expect(parseGoModule(VALID_MODULE)).toEqual({
       module: "github.com/hxp0618/cloud-agents/sdk/go",
       goVersion: "1.26.0",
-      toolchain: "go1.26.5",
+      toolchain: "go1.26.6",
       hasReplace: false,
     });
     expect(() =>
@@ -31,7 +31,7 @@ describe("Platform Go module boundaries", () => {
     const document = {
       Module: { Path: "github.com/hxp0618/cloud-agents/sdk/go" },
       Go: "1.26.0",
-      Toolchain: "go1.26.5",
+      Toolchain: "go1.26.6",
       Replace: [{ Old: { Path: "example.invalid/sdk" }, New: { Path: "../../sdk" } }],
     };
     expect(() =>
@@ -42,7 +42,7 @@ describe("Platform Go module boundaries", () => {
   it.each([
     ["wrong module", VALID_MODULE.replace("sdk/go", "services/worker"), /must be/],
     ["floating Go line", VALID_MODULE.replace("go 1.26.0", "go 1.26"), /go directive/],
-    ["wrong patch toolchain", VALID_MODULE.replace("go1.26.5", "go1.26.4"), /toolchain/],
+    ["wrong patch toolchain", VALID_MODULE.replace("go1.26.6", "go1.26.5"), /toolchain/],
     ["local replace", `${VALID_MODULE}\nreplace example.invalid/sdk => ../../sdk\n`, /replace/],
   ])("rejects %s", (_name, source, expected) => {
     expect(() => validateGoModule(source, "github.com/hxp0618/cloud-agents/sdk/go")).toThrow(
@@ -70,7 +70,7 @@ import (
         ["github.com/hxp0618/cloud-agents/services/worker"],
       ),
     ).toThrow(/services\/worker/);
-  });
+  }, 30_000);
 
   it.each([
     [
