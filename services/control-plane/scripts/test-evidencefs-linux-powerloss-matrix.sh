@@ -30,10 +30,19 @@ sha256_file() {
 }
 
 harness_image=${CLOUD_AGENTS_EVIDENCEFS_HARNESS_IMAGE:-}
+apk_repository=${CLOUD_AGENTS_EVIDENCEFS_APK_REPOSITORY:-}
 if [[ $harness_image != *@sha256:* ]]; then
   echo "CLOUD_AGENTS_EVIDENCEFS_HARNESS_IMAGE must be an exact local image digest" >&2
   exit 1
 fi
+
+case $apk_repository in
+  "" | https://dl-cdn.alpinelinux.org/alpine | https://mirrors.tuna.tsinghua.edu.cn/alpine) ;;
+  *)
+    echo "CLOUD_AGENTS_EVIDENCEFS_APK_REPOSITORY is not an allowed exact repository" >&2
+    exit 1
+    ;;
+esac
 if ! docker image inspect "$harness_image" >/dev/null 2>&1; then
   echo "Missing exact local image: $harness_image" >&2
   echo "Pull it explicitly before rerunning; this matrix never pulls implicitly." >&2
@@ -91,6 +100,10 @@ GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
 binary_sha256=$(sha256_file "$binary")
 
 active_container="cag-p1-evidencefs-qemu-$$-$RANDOM"
+repository_args=()
+if [[ -n $apk_repository ]]; then
+  repository_args+=(--env "EVIDENCEFS_POWERLOSS_APK_REPOSITORY=$apk_repository")
+fi
 docker run --rm --pull=never --privileged \
   --name "$active_container" \
   --label "$ownership_label=$run_id" \
@@ -98,6 +111,7 @@ docker run --rm --pull=never --privileged \
   --mount "type=bind,src=$binary,dst=/inputs/evidencefs.test,readonly" \
   --mount "type=bind,src=$script_dir/evidencefs-powerloss-guest-init.sh,dst=/inputs/evidencefs-powerloss-guest-init.sh,readonly" \
   --mount "type=bind,src=$script_dir/evidencefs-powerloss-container.sh,dst=/usr/local/bin/evidencefs-powerloss-container,readonly" \
+  "${repository_args[@]}" \
   "$harness_image" /usr/local/bin/evidencefs-powerloss-container
 active_container=""
 

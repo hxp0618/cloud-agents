@@ -5,6 +5,18 @@ set -eu
 work_dir=${EVIDENCEFS_POWERLOSS_WORK_DIR:-/work}
 test_binary=${EVIDENCEFS_POWERLOSS_TEST_BINARY:-/inputs/evidencefs.test}
 guest_init=${EVIDENCEFS_POWERLOSS_GUEST_INIT:-/inputs/evidencefs-powerloss-guest-init.sh}
+apk_repository=${EVIDENCEFS_POWERLOSS_APK_REPOSITORY:-https://dl-cdn.alpinelinux.org/alpine}
+
+case "$apk_repository" in
+  https://dl-cdn.alpinelinux.org/alpine | https://mirrors.tuna.tsinghua.edu.cn/alpine) ;;
+  *)
+    echo "unsupported evidencefs power-loss APK repository" >&2
+    exit 1
+    ;;
+esac
+sed -i "s#https://dl-cdn.alpinelinux.org/alpine#$apk_repository#g" /etc/apk/repositories
+repositories_sha256=$(sha256sum /etc/apk/repositories | cut -d ' ' -f 1)
+echo "EVIDENCEFS_QEMU_APK repository=$apk_repository repositories_sha256=$repositories_sha256"
 
 if [ ! -d "$work_dir" ] || [ ! -x "$test_binary" ] || [ ! -f "$guest_init" ]; then
   echo "power-loss container inputs are incomplete" >&2
