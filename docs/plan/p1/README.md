@@ -42,7 +42,9 @@
   handoff/replay/session 路径；`a3c7651` 又实现 required-syscall probe，并由同一固定 Linux binary 在 fresh ext4/XFS
   loop mount 上完成 online runtime validation，但没有取得 trusted mount authority；`7d78e3d` 再以 isolated QEMU
   fresh raw ext4/XFS disk 覆盖 generation resync 4、tail truncate 8、checkpoint heal 5 与 rotation discard 4 个
-  barrier，每项均 whole-guest kill/fresh-mount classification
+  barrier，每项均 whole-guest kill/fresh-mount classification；`77d92c5` 将 P1 Go pin 从 `1.26.5` 升到三项
+  reachable stdlib finding 的共同 first-fixed `1.26.6`，并重跑 module/race/cross-build/clean-restart/QEMU repair，
+  但 fresh OSV 同时发现 graph-only `x/mod v0.37.0` blocker，故 Supply Gate 继续 OPEN
 - Current slice：固定 non-forgeable trusted-mount provisioner、production constructor wiring、physical controller/host
   power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
   `f650fae`/`a3c7651` 的 test-only physical evidence 与 `70269e1`/`7b52509`/`cdedda7` 的 migration authority evidence
@@ -134,7 +136,10 @@ Platform RC、Beta 或 GA。
 - [`evidencefs-qemu-generation-repair-barrier-matrix-20260816.md`](evidencefs-qemu-generation-repair-barrier-matrix-20260816.md)
   固定 source `7d78e3d`，记录 ext4/XFS 上 resync/truncate/checkpoint/discard 共 21 个 exact syscall barrier 的
   whole-QEMU kill 与 sealed fresh-mount classification；不外推到 trusted mount、physical controller 或 Gate closure。
-- 十六份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+- [`go-toolchain-1.26.6-security-refresh-20260816.md`](go-toolchain-1.26.6-security-refresh-20260816.md) 固定 source
+  `77d92c5`，记录 Go 1.26.5 reachable stdlib finding → 1.26.6 remediation、穷尽 race 分片、三平台 compile、
+  ext4/XFS clean-restart、42-barrier QEMU repair 与 fresh vulnerability scan；同时保留 `x/mod v0.37.0` OSV blocker。
+- 十七份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
   仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
