@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/mountauthority"
 )
 
 const (
@@ -59,9 +61,13 @@ type backend interface {
 	unlock(int) error
 	close(int) error
 	random([]byte) error
+	observeMount(int, string) (mountauthority.Observation, error)
 }
 
-type mountAuthority struct{ seal *struct{} }
+type mountAuthority struct {
+	seal  *struct{}
+	claim *mountauthority.Claim
+}
 
 // Root owns the admitted root identity. Its fields are intentionally opaque.
 type Root struct {
@@ -73,6 +79,7 @@ type Root struct {
 	path     string
 	uid      uint32
 	identity fileStat
+	mount    mountauthority.Observation
 }
 
 // Store and RootLease name the object-store and root-wide lease APIs while the
@@ -80,14 +87,13 @@ type Root struct {
 type Store = Root
 type RootLease = Lease
 
-// Open is the sole production constructor. Admission remains fail closed
-// because no trusted provisioning component can mint mountAuthority yet.
+// Open is the sole production constructor. The platform-specific helper may
+// mint mountAuthority only from the fixed root-owned local attestation.
 func Open(ctx context.Context, rootPath string) (*Root, error) {
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
-	_ = rootPath
-	return nil, ErrTrustedMountAuthority
+	return openProductionRoot(ctx, rootPath)
 }
 
 func OpenStore(ctx context.Context, rootPath string) (*Store, error) { return Open(ctx, rootPath) }
@@ -104,11 +110,18 @@ func newRootWithAuthority(ctx context.Context, rootPath string, uid uint32, ops 
 		return nil, filesystem("root-open")
 	}
 	st, statErr := ops.fstat(fd)
+	observed, mountErr := ops.observeMount(fd, rootPath)
 	closeErr := ops.close(fd)
-	if statErr != nil || closeErr != nil || !validDirectory(st, uid, st.device) {
+	if statErr != nil || mountErr != nil || closeErr != nil || !validDirectory(st, uid, st.device) || !mountMatchesRoot(observed, st, rootPath) {
 		return nil, filesystem("root-identity")
 	}
-	root := &Root{seal: &struct{}{}, ops: ops, path: rootPath, uid: uid, identity: st}
+	if authority.claim != nil {
+		claimUID, ok := authority.claim.RunnerUID()
+		if !ok || claimUID != uid || !authority.claim.Matches(observed) {
+			return nil, ErrTrustedMountAuthority
+		}
+	}
+	root := &Root{seal: &struct{}{}, ops: ops, path: rootPath, uid: uid, identity: st, mount: observed}
 	root.self = root
 	return root, nil
 }
@@ -137,16 +150,21 @@ func (r *Root) freshRoot() (int, error) {
 	}
 	st, err := r.ops.fstat(fd)
 	if err != nil || !sameNodeIdentity(st, r.identity) || !validDirectory(st, r.uid, r.identity.device) {
-		if r.ops.close(fd) != nil {
-			r.poison()
-		}
+		_ = r.ops.close(fd)
+		r.poison()
 		return -1, filesystem("root-replaced")
+	}
+	observed, mountErr := r.ops.observeMount(fd, r.path)
+	if mountErr != nil || !mountMatchesRoot(observed, st, r.path) || observed != r.mount {
+		_ = r.ops.close(fd)
+		r.poison()
+		return -1, filesystem("root-mount-replaced")
 	}
 	return fd, nil
 }
 
 func (r *Root) usable() bool {
-	if r == nil || r.self != r || r.seal == nil || r.ops == nil || r.identity.inode == 0 {
+	if r == nil || r.self != r || r.seal == nil || r.ops == nil || r.identity.inode == 0 || r.mount.MountID == 0 {
 		return false
 	}
 	r.mu.Lock()
@@ -423,6 +441,11 @@ func sameIdentity(a, b fileStat) bool {
 
 func sameNodeIdentity(a, b fileStat) bool {
 	return a.device == b.device && a.inode == b.inode && a.kind == b.kind
+}
+
+func mountMatchesRoot(observed mountauthority.Observation, st fileStat, rootPath string) bool {
+	pathDigest, err := mountauthority.RootPathDigest(rootPath)
+	return err == nil && observed.Valid() && observed.RootPathDigest == pathDigest && observed.RootDevice == st.device && observed.RootInode == st.inode && observed.RootUID == st.uid && observed.RootMode == st.mode
 }
 
 func contextError(ctx context.Context) error {

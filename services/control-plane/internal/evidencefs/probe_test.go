@@ -175,7 +175,8 @@ func TestRequiredSyscallProbeHasNoProductionAuthorityConsumer(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, symbol := range []string{"newRootWithRequiredProbe(", "newRootWithAuthority(", ".probeRequiredSyscalls("} {
-			if strings.Contains(string(raw), symbol) {
+			allowedProductionOpen := name == "open_linux.go" && symbol == "newRootWithRequiredProbe(" && strings.Contains(string(raw), "mountauthority.Load(")
+			if strings.Contains(string(raw), symbol) && !allowedProductionOpen {
 				t.Fatalf("required probe acquired an unreviewed production authority consumer %s: %s", symbol, name)
 			}
 		}

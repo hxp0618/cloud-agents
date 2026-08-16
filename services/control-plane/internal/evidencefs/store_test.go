@@ -8,6 +8,8 @@ import (
 	"io"
 	"sort"
 	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/mountauthority"
 )
 
 var (
@@ -100,6 +102,8 @@ type fakeBackend struct {
 	nonce               [16]byte
 	randomCalls         int
 	failRandomAt        int
+	mount               mountauthority.Observation
+	failMount           bool
 }
 
 func newFakeBackend() *fakeBackend {
@@ -111,6 +115,8 @@ func newFakeBackend() *fakeBackend {
 	f.failTryLockInodes = map[uint64]bool{}
 	f.failOpenNames = map[string]error{}
 	f.root = f.directory("root")
+	pathDigest, _ := mountauthority.RootPathDigest("/evidence")
+	f.mount = mountauthority.Observation{RootPathDigest: pathDigest, BootID: [16]byte{1}, MountNamespaceDev: 2, MountNamespaceInode: 3, MountID: 4, FilesystemType: 0xef53, RootDevice: f.root.stat.device, RootInode: f.root.stat.inode, RootUID: f.root.stat.uid, RootMode: f.root.stat.mode, DeviceMajor: 0, DeviceMinor: 7, SourceDigest: sha256.Sum256([]byte("fake-mount-source")), OptionsDigest: sha256.Sum256([]byte("fake-mount-options"))}
 	objects := f.directory("objects")
 	sha := f.directory("sha256")
 	objects.children["sha256"] = sha
@@ -573,6 +579,19 @@ func (f *fakeBackend) random(target []byte) error {
 	return nil
 }
 
+func (f *fakeBackend) observeMount(_ int, rootPath string) (mountauthority.Observation, error) {
+	if f.failMount {
+		return mountauthority.Observation{}, errors.New("mount")
+	}
+	observed := f.mount
+	observed.RootPathDigest, _ = mountauthority.RootPathDigest(rootPath)
+	observed.RootDevice = f.root.stat.device
+	observed.RootInode = f.root.stat.inode
+	observed.RootUID = f.root.stat.uid
+	observed.RootMode = f.root.stat.mode
+	return observed, nil
+}
+
 func testLease(t *testing.T, f *fakeBackend) *Lease {
 	t.Helper()
 	root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
@@ -591,6 +610,39 @@ func TestProductionOpenFailsClosed(t *testing.T) {
 	root, err := Open(context.Background(), "/evidence")
 	if root != nil || !errors.Is(err, ErrTrustedMountAuthority) {
 		t.Fatalf("root=%v err=%v", root, err)
+	}
+}
+
+func TestRootMountIdentityFailureAndDriftMintNoAuthority(t *testing.T) {
+	f := newFakeBackend()
+	f.failMount = true
+	if root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}}); root != nil || !errors.Is(err, ErrFilesystem) {
+		t.Fatalf("root=%v err=%v", root, err)
+	}
+
+	mutations := map[string]func(*mountauthority.Observation){
+		"boot":             func(observed *mountauthority.Observation) { observed.BootID[0] ^= 1 },
+		"namespace-device": func(observed *mountauthority.Observation) { observed.MountNamespaceDev++ },
+		"namespace-inode":  func(observed *mountauthority.Observation) { observed.MountNamespaceInode++ },
+		"mount-id":         func(observed *mountauthority.Observation) { observed.MountID++ },
+		"filesystem":       func(observed *mountauthority.Observation) { observed.FilesystemType++ },
+		"device-major":     func(observed *mountauthority.Observation) { observed.DeviceMajor++ },
+		"device-minor":     func(observed *mountauthority.Observation) { observed.DeviceMinor++ },
+		"source":           func(observed *mountauthority.Observation) { observed.SourceDigest[0] ^= 1 },
+		"options":          func(observed *mountauthority.Observation) { observed.OptionsDigest[0] ^= 1 },
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeBackend()
+			root, err := newRootWithAuthority(context.Background(), "/evidence", f.uid, f, mountAuthority{seal: &struct{}{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutate(&f.mount)
+			if lease, err := root.Acquire(context.Background()); lease != nil || !errors.Is(err, ErrFilesystem) || root.usable() || len(f.handles) != 0 {
+				t.Fatalf("lease=%v err=%v usable=%v handles=%v", lease, err, root.usable(), f.handles)
+			}
+		})
 	}
 }
 

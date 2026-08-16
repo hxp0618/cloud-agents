@@ -3,9 +3,11 @@
 package evidencefs
 
 import (
+	"context"
 	"errors"
 	"strings"
 
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/mountauthority"
 	"golang.org/x/sys/unix"
 )
 
@@ -160,4 +162,8 @@ func (linuxBackend) random(target []byte) error {
 		offset += n
 	}
 	return nil
+}
+
+func (linuxBackend) observeMount(fd int, rootPath string) (mountauthority.Observation, error) {
+	return mountauthority.ObserveFD(context.Background(), fd, rootPath)
 }
