@@ -14,7 +14,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
-const admissionReplayDigestDomain = "cloud-agents-platform-evidence-admission-replay/v2\x00"
+const admissionReplayDigestDomain = "cloud-agents-platform-evidence-admission-replay/v3\x00"
 
 // admissionReplayTranscript is an owned description of a revision-zero
 // evidencefs inventory. It deliberately has no seal, self pointer, registry, or
@@ -43,10 +43,29 @@ type admissionReplayLineage struct {
 	indexRecords                                   uint64
 	indexHeaderFramedBytes                         uint64
 	journals                                       []admissionReplayJournal
+	prefixes                                       []admissionReplayGenerationPrefix
 	state                                          admissionReplayLineageState
 	generations                                    []admissionReplayGeneration
 	header                                         admissionReplayLineageHeader
 	indexHeaderRecordDigest, indexTailRecordDigest Digest
+}
+
+type admissionReplayGenerationPrefixState string
+
+const (
+	admissionGenerationPrefixDirectory admissionReplayGenerationPrefixState = "generation_prefix_directory"
+	admissionGenerationPrefixLock      admissionReplayGenerationPrefixState = "generation_prefix_lock"
+	admissionGenerationPrefixSegment   admissionReplayGenerationPrefixState = "generation_segment_prefix"
+)
+
+// admissionReplayGenerationPrefix is an ordinary, non-authorizing physical
+// fact. The inventory full-set binds directory/lock identity; a segment prefix
+// additionally retains its exact file identity/digest/size. Only the final
+// durable GenerationReserved in a lineage may own one of these facts.
+type admissionReplayGenerationPrefix struct {
+	journalID [32]byte
+	state     admissionReplayGenerationPrefixState
+	segment   *admissionReplayFile
 }
 type admissionReplayLineageHeader struct {
 	executionLineageDigest                                        Digest
@@ -849,7 +868,7 @@ func replayAdmissionInventory(ctx context.Context, inventory *evidencefs.Admissi
 		if err != nil {
 			return nil, mapEvidenceAdmissionError(err, "admission-lineage")
 		}
-		lineage, refs, lineageCorrupt, err := replayAdmissionLineage(ctx, view, id, globalJournals)
+		lineage, refs, lineageCorrupt, err := replayAdmissionLineage(ctx, view, id, fullSet, globalJournals)
 		if err != nil {
 			return nil, err
 		}
@@ -872,6 +891,13 @@ func replayAdmissionInventory(ctx context.Context, inventory *evidencefs.Admissi
 				transcript.journalBytes, err = admissionSaturatingAdd(transcript.journalBytes, segment.file.size)
 				corrupt.addAt("08000001", err)
 			}
+		}
+		for _, prefix := range lineage.prefixes {
+			if prefix.segment == nil {
+				continue
+			}
+			transcript.journalBytes, err = admissionSaturatingAdd(transcript.journalBytes, prefix.segment.size)
+			corrupt.addAt("08000002", err)
 		}
 		if transcript.journalBytes > rootJournalMaximumBytes || uint64(len(globalJournals)) > rootJournalMaximumCount {
 			corrupt.add(admissionCorrupt("admission-journal-usage", "stored root journal usage exceeds maximum", nil))
@@ -1040,6 +1066,14 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 				}
 			}
 		}
+		for _, prefix := range lineage.prefixes {
+			if prefix.journalID != ref.journalID || prefix.segment == nil {
+				continue
+			}
+			if prefix.segment.size > inspection.reservation.ReservedJournalBytes {
+				return admissionCorrupt("admission-inspection", "physical generation prefix exceeds verified reservation", nil)
+			}
+		}
 	}
 	for lineageIndex := range transcript.lineages {
 		for generationIndex := range transcript.lineages[lineageIndex].generations {
@@ -1106,7 +1140,7 @@ func rootQuotaUsageFactsFromAdmissionTranscript(transcript *admissionReplayTrans
 		if err != nil {
 			return rootQuotaUsageFacts{}, err
 		}
-		facts.journalCount, err = admissionCheckedAdd(facts.journalCount, uint64(len(lineage.journals)))
+		facts.journalCount, err = admissionCheckedAdd(facts.journalCount, uint64(len(lineage.journals)+len(lineage.prefixes)))
 		if err != nil {
 			return rootQuotaUsageFacts{}, err
 		}
@@ -1177,7 +1211,7 @@ func validateAdmissionTargetXOR(target, fullSet [32]byte, present bool, fact *ev
 	return nil
 }
 
-func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLineageView, expected [32]byte, global map[[32]byte]bool) (admissionReplayLineage, []admissionObjectReference, error, error) {
+func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLineageView, expected, fullSet [32]byte, global map[[32]byte]bool) (admissionReplayLineage, []admissionObjectReference, error, error) {
 	findings := &admissionCorruptAccumulator{}
 	actual, err := view.ID()
 	if err != nil {
@@ -1217,6 +1251,10 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 	if err != nil {
 		return admissionReplayLineage{}, nil, nil, mapEvidenceAdmissionError(err, "admission-journals")
 	}
+	registrationFacts, err := view.GenerationRegistrations()
+	if err != nil {
+		return admissionReplayLineage{}, nil, nil, mapEvidenceAdmissionError(err, "admission-generation-prefixes")
+	}
 	lineage := admissionReplayLineage{id: expected, index: indexFile, indexRecords: uint64(len(indexFrames))}
 	var references []admissionObjectReference
 	if indexBound {
@@ -1245,6 +1283,48 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 					references = append(references, admissionGenerationReferences(expected, *generation.plannedSuccessor)...)
 				}
 			}
+		}
+	}
+	var previousRegistration [32]byte
+	for ordinal, fact := range registrationFacts {
+		key := fmt.Sprintf("03%06d", ordinal)
+		if fact == nil {
+			findings.addAt(key, admissionCorrupt("admission-generation-prefix", "generation prefix fact is unavailable", nil))
+			continue
+		}
+		state, stateErr := fact.State()
+		lineageID, lineageErr := fact.Lineage()
+		journalID, journalErr := fact.Journal()
+		factFullSet, fullSetErr := fact.FullSetDigest()
+		for _, accessorErr := range []error{stateErr, lineageErr, journalErr, fullSetErr} {
+			if accessorErr != nil {
+				return admissionReplayLineage{}, nil, nil, mapEvidenceAdmissionError(accessorErr, "admission-generation-prefix")
+			}
+		}
+		prefixState := admissionReplayGenerationPrefixState("")
+		switch state {
+		case evidencefs.GenerationRegistrationPrefixDirectory:
+			prefixState = admissionGenerationPrefixDirectory
+		case evidencefs.GenerationRegistrationPrefixLock:
+			prefixState = admissionGenerationPrefixLock
+		default:
+			findings.addAt(key, admissionCorrupt("admission-generation-prefix", "generation prefix state is invalid", nil))
+		}
+		if lineageID != expected || factFullSet != fullSet || journalID == ([32]byte{}) {
+			findings.addAt(key, admissionCorrupt("admission-generation-prefix", "generation prefix binding differs from inventory", nil))
+		}
+		if ordinal > 0 && bytes.Compare(previousRegistration[:], journalID[:]) >= 0 {
+			findings.addAt(key, admissionCorrupt("admission-generation-prefix", "generation prefix ids are not strictly ordered", nil))
+		}
+		if global[journalID] {
+			findings.addAt(key, admissionCorrupt("admission-generation-prefix", "generation identity is registered more than once", nil))
+		}
+		global[journalID], previousRegistration = true, journalID
+		lineage.prefixes = append(lineage.prefixes, admissionReplayGenerationPrefix{journalID: journalID, state: prefixState})
+	}
+	if indexBound {
+		if err := validateAdmissionGenerationPrefixes(lineage.generations, lineage.prefixes); err != nil {
+			findings.addAt("03999999", err)
 		}
 	}
 	segmentZero := make(map[Digest]EvidenceFrame, len(journalViews))
@@ -1281,14 +1361,23 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 		}
 		collector := &admissionReplayJournalCollector{}
 		generationIndex := -1
+		var recoverableHeaderBytes []byte
 		for index := range lineage.generations {
 			if lineage.generations[index].journalID == journalDigest {
 				generationIndex = index
 				collector.initial = cloneAdmissionContinuation(lineage.generations[index].continuation)
+				if lineage.generations[index].activationRecordDigest == nil {
+					_, recoverableHeaderBytes, err = admissionReplayPlannedHeader(lineage.generations[index])
+					if err != nil {
+						findings.addAt(key(4), err)
+						recoverableHeaderBytes = nil
+					}
+				}
 				break
 			}
 		}
 		drainOnly := !journalIDValid
+		recoverablePrefix := false
 		for segmentOrdinal, segmentView := range segments {
 			file, raw, fileFinding, fileFatal := readAdmissionFile(ctx, segmentView, uint32(segmentOrdinal))
 			if fileFatal != nil {
@@ -1297,6 +1386,12 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 			if fileFinding != nil {
 				findings.addAt(key(4), fileFinding)
 				drainOnly = true
+			}
+			if !drainOnly && segmentOrdinal == 0 && len(segments) == 1 && len(recoverableHeaderBytes) != 0 && len(raw) < len(recoverableHeaderBytes) && bytes.Equal(raw, recoverableHeaderBytes[:len(raw)]) {
+				owned := file
+				lineage.prefixes = append(lineage.prefixes, admissionReplayGenerationPrefix{journalID: journalID, state: admissionGenerationPrefixSegment, segment: &owned})
+				recoverablePrefix = true
+				continue
 			}
 			if drainOnly {
 				appendAdmissionDrainedSegment(file, raw, key(4), &journal, findings)
@@ -1328,6 +1423,9 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 			journal.records, err = admissionSaturatingAdd(journal.records, records)
 			findings.addAt(key(4), err)
 			journal.tail = tail
+		}
+		if recoverablePrefix {
+			continue
 		}
 		var replay *evidenceStructuralReplay
 		var structuralErr error
@@ -1379,6 +1477,11 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 		journalIDs[journalDigest] = true
 		lineage.journals = append(lineage.journals, journal)
 	}
+	if indexBound {
+		if err := validateAdmissionGenerationPrefixes(lineage.generations, lineage.prefixes); err != nil {
+			findings.addAt("05999999", err)
+		}
+	}
 	lineageBound := indexBound && plan != nil
 	if lineageBound {
 		if _, err = plan.finish(segmentZero, journalIDs); err != nil {
@@ -1391,7 +1494,7 @@ func replayAdmissionLineage(ctx context.Context, view *evidencefs.AdmissionLinea
 		lineage.generations = nil
 		return lineage, nil, findings.first, nil
 	}
-	lineage.state, err = classifyAdmissionLineageStateCompact(indexFrames, lineage.journals)
+	lineage.state, err = classifyAdmissionLineageStateWithPrefixes(indexFrames, lineage.journals, lineage.prefixes)
 	if err != nil {
 		return admissionReplayLineage{}, nil, err, nil
 	}
@@ -2013,7 +2116,62 @@ func writeAdmissionReservation(h interface{ Write([]byte) (int, error) }, value 
 	}
 }
 
+func admissionReplayPlannedHeader(generation admissionReplayGeneration) (EvidenceFrame, []byte, error) {
+	if generation.header == nil || generation.activationRecordDigest != nil || generation.supersessionRecordDigest != nil {
+		return EvidenceFrame{}, nil, admissionCorrupt("admission-generation-prefix", "recoverable planned header is unavailable", nil)
+	}
+	header, err := expandAdmissionHeaderFacts(*generation.header)
+	if err != nil || header.Validate() != nil || header.JournalIdentityDigest != generation.journalID {
+		return EvidenceFrame{}, nil, admissionCorrupt("admission-generation-prefix", "planned header facts are invalid", err)
+	}
+	frame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &header}}
+	frame.RecordDigest, err = frame.ComputeDigest()
+	if err != nil || frame.RecordDigest != generation.expectedSegment0HeaderDigest || frame.Validate() != nil {
+		return EvidenceFrame{}, nil, admissionCorrupt("admission-generation-prefix", "planned header digest is invalid", err)
+	}
+	raw, err := EncodeCanonicalEvidenceFrame(frame)
+	if err != nil || len(raw) == 0 {
+		return EvidenceFrame{}, nil, admissionCorrupt("admission-generation-prefix", "planned header bytes are unavailable", err)
+	}
+	return cloneProjectionValue(frame), append([]byte(nil), raw...), nil
+}
+
+func validateAdmissionGenerationPrefixes(generations []admissionReplayGeneration, prefixes []admissionReplayGenerationPrefix) error {
+	if len(prefixes) == 0 {
+		return nil
+	}
+	if len(prefixes) != 1 || len(generations) == 0 {
+		return admissionCorrupt("admission-generation-prefix", "generation prefix cardinality is invalid", nil)
+	}
+	generation := generations[len(generations)-1]
+	prefix := prefixes[0]
+	if generation.activationRecordDigest != nil || generation.supersessionRecordDigest != nil || prefix.journalID != digestRaw(generation.journalID) {
+		return admissionCorrupt("admission-generation-prefix", "generation prefix is not owned by the final reservation", nil)
+	}
+	switch prefix.state {
+	case admissionGenerationPrefixDirectory, admissionGenerationPrefixLock:
+		if prefix.segment != nil {
+			return admissionCorrupt("admission-generation-prefix", "directory or lock prefix carries a segment", nil)
+		}
+	case admissionGenerationPrefixSegment:
+		_, headerBytes, err := admissionReplayPlannedHeader(generation)
+		if err != nil {
+			return err
+		}
+		if prefix.segment == nil || prefix.segment.ordinal != 0 || prefix.segment.size >= uint64(len(headerBytes)) || prefix.segment.digest == ([32]byte{}) || prefix.segment.identity == ([32]byte{}) {
+			return admissionCorrupt("admission-generation-prefix", "segment prefix identity is invalid", nil)
+		}
+	default:
+		return admissionCorrupt("admission-generation-prefix", "generation prefix state is invalid", nil)
+	}
+	return nil
+}
+
 func classifyAdmissionLineageStateCompact(index []LineageIndexFrame, journals []admissionReplayJournal) (admissionReplayLineageState, error) {
+	return classifyAdmissionLineageStateWithPrefixes(index, journals, nil)
+}
+
+func classifyAdmissionLineageStateWithPrefixes(index []LineageIndexFrame, journals []admissionReplayJournal, prefixes []admissionReplayGenerationPrefix) (admissionReplayLineageState, error) {
 	var reserved *GenerationReserved
 	var activated *GenerationActivated
 	var checkpoint *GenerationCheckpoint
@@ -2031,6 +2189,9 @@ func classifyAdmissionLineageStateCompact(index []LineageIndexFrame, journals []
 		}
 	}
 	if reserved == nil {
+		if len(prefixes) != 0 {
+			return "", admissionCorrupt("admission-lineage-state", "generation prefix has no durable reservation", nil)
+		}
 		return admissionLineageEmpty, nil
 	}
 	wanted := digestRaw(reserved.JournalIdentityDigest)
@@ -2042,11 +2203,26 @@ func classifyAdmissionLineageStateCompact(index []LineageIndexFrame, journals []
 			break
 		}
 	}
+	prefixed := false
+	for _, candidate := range prefixes {
+		if candidate.journalID == wanted {
+			if prefixed {
+				return "", admissionCorrupt("admission-lineage-state", "generation prefix is duplicated", nil)
+			}
+			prefixed = true
+		}
+	}
 	if activated == nil {
+		if registered && prefixed {
+			return "", admissionCorrupt("admission-lineage-state", "reserved generation has both header and prefix", nil)
+		}
 		if registered {
 			return admissionLineageReservedHeader, nil
 		}
 		return admissionLineageReservedUnregistered, nil
+	}
+	if prefixed || len(prefixes) != 0 {
+		return "", admissionCorrupt("admission-lineage-state", "active generation still carries a prefix", nil)
 	}
 	if superseded != nil {
 		return admissionLineageSuperseded, nil
@@ -2109,6 +2285,17 @@ func admissionReplayCanonicalDigest(t *admissionReplayTranscript) [32]byte {
 			for _, segment := range journal.segments {
 				writeAdmissionFileDigest(h, segment.file)
 				writeAdmissionUint(h, segment.records)
+			}
+		}
+		writeAdmissionUint(h, uint64(len(lineage.prefixes)))
+		for _, prefix := range lineage.prefixes {
+			h.Write(prefix.journalID[:])
+			writeAdmissionString(h, string(prefix.state))
+			if prefix.segment == nil {
+				h.Write([]byte{0})
+			} else {
+				h.Write([]byte{1})
+				writeAdmissionFileDigest(h, *prefix.segment)
 			}
 		}
 		writeAdmissionUint(h, uint64(len(lineage.generations)))
@@ -2585,6 +2772,14 @@ func cloneAdmissionReplayTranscript(value *admissionReplayTranscript) *admission
 		for j := range value.lineages[i].journals {
 			owned.lineages[i].journals[j] = value.lineages[i].journals[j]
 			owned.lineages[i].journals[j].segments = append([]admissionReplaySegment(nil), value.lineages[i].journals[j].segments...)
+		}
+		owned.lineages[i].prefixes = make([]admissionReplayGenerationPrefix, len(value.lineages[i].prefixes))
+		for j := range value.lineages[i].prefixes {
+			owned.lineages[i].prefixes[j] = value.lineages[i].prefixes[j]
+			if value.lineages[i].prefixes[j].segment != nil {
+				segment := *value.lineages[i].prefixes[j].segment
+				owned.lineages[i].prefixes[j].segment = &segment
+			}
 		}
 	}
 	owned.objects = append([]admissionReplayObject(nil), value.objects...)

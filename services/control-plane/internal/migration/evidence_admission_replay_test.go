@@ -1129,6 +1129,86 @@ func TestAdmissionStrictLineageStateKeepsOneUnknownExtension(t *testing.T) {
 	}
 }
 
+func TestAdmissionRecoverableGenerationPrefixIsBoundToFinalReservation(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	index := decodeLineageFrames(t, fixture["frames"])
+	reservedFrames := cloneProjectionValue(index[:2])
+	generations, err := compactAdmissionGenerations(reservedFrames)
+	if err != nil || len(generations) != 1 {
+		t.Fatalf("generations=%d err=%v", len(generations), err)
+	}
+	generation := generations[0]
+	frame, headerBytes, err := admissionReplayPlannedHeader(generation)
+	if err != nil || frame.RecordDigest != generation.expectedSegment0HeaderDigest || len(headerBytes) < 2 {
+		t.Fatalf("frame=%+v bytes=%d err=%v", frame, len(headerBytes), err)
+	}
+	journal := digestRaw(generation.journalID)
+	segmentRaw := headerBytes[:len(headerBytes)-1]
+	segment := admissionReplayFile{ordinal: 0, size: uint64(len(segmentRaw)), digest: sha256.Sum256(segmentRaw), identity: [32]byte{9}}
+	states := []admissionReplayGenerationPrefix{
+		{journalID: journal, state: admissionGenerationPrefixDirectory},
+		{journalID: journal, state: admissionGenerationPrefixLock},
+		{journalID: journal, state: admissionGenerationPrefixSegment, segment: &segment},
+	}
+	for _, prefix := range states {
+		prefix := prefix
+		t.Run(string(prefix.state), func(t *testing.T) {
+			if err := validateAdmissionGenerationPrefixes(generations, []admissionReplayGenerationPrefix{prefix}); err != nil {
+				t.Fatal(err)
+			}
+			state, err := classifyAdmissionLineageStateWithPrefixes(reservedFrames, nil, []admissionReplayGenerationPrefix{prefix})
+			if err != nil || state != admissionLineageReservedUnregistered {
+				t.Fatalf("state=%q err=%v", state, err)
+			}
+		})
+	}
+	bad := states[2]
+	bad.journalID[0] ^= 1
+	if err := validateAdmissionGenerationPrefixes(generations, []admissionReplayGenerationPrefix{bad}); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("foreign prefix accepted: %v", err)
+	}
+	if err := validateAdmissionGenerationPrefixes(generations, append(states[:1:1], states[1])); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("multiple prefixes accepted: %v", err)
+	}
+	activatedGenerations, err := compactAdmissionGenerations(cloneProjectionValue(index[:3]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAdmissionGenerationPrefixes(activatedGenerations, states[:1]); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("active prefix accepted: %v", err)
+	}
+	if _, err := classifyAdmissionLineageStateWithPrefixes(cloneProjectionValue(index[:3]), []admissionReplayJournal{{id: journal, records: 1}}, states[:1]); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("active lineage prefix accepted: %v", err)
+	}
+}
+
+func TestAdmissionGenerationPrefixCanonicalAndCloneAreExact(t *testing.T) {
+	t.Parallel()
+	segment := admissionReplayFile{ordinal: 0, size: 7, digest: [32]byte{3}, identity: [32]byte{4}}
+	transcript := &admissionReplayTranscript{
+		revision: 0, fullSetDigest: [32]byte{1}, target: [32]byte{2},
+		lineages: []admissionReplayLineage{{
+			id: [32]byte{2}, prefixes: []admissionReplayGenerationPrefix{{journalID: [32]byte{5}, state: admissionGenerationPrefixSegment, segment: &segment}},
+		}},
+	}
+	transcript.canonical = admissionReplayCanonicalDigest(transcript)
+	owned := cloneAdmissionReplayTranscript(transcript)
+	if owned == nil || owned.lineages[0].prefixes[0].segment == transcript.lineages[0].prefixes[0].segment || owned.canonical != admissionReplayCanonicalDigest(owned) {
+		t.Fatal("generation prefix was not deeply owned")
+	}
+	before := transcript.canonical
+	transcript.lineages[0].prefixes[0].state = admissionGenerationPrefixLock
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("generation prefix state is absent from canonical digest")
+	}
+	transcript = cloneAdmissionReplayTranscript(owned)
+	transcript.lineages[0].prefixes[0].segment.identity[0] ^= 1
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("generation prefix file identity is absent from canonical digest")
+	}
+}
+
 func TestAdmissionTranscriptIsOwnedAndHasNoAuthorityConsumer(t *testing.T) {
 	t.Parallel()
 	transcript := &admissionReplayTranscript{
@@ -1276,6 +1356,28 @@ func TestAdmissionTranscriptRecomputesRootAndTargetQuotaFacts(t *testing.T) {
 	absentFacts, err := rootQuotaUsageFactsFromAdmissionTranscript(absent)
 	if err != nil || absentFacts.targetIndexPresent || absentFacts.targetIndexRecords != 0 || absentFacts.targetIndexReservedBytes != 0 {
 		t.Fatalf("absent target quota facts differ: %+v err=%v", absentFacts, err)
+	}
+}
+
+func TestAdmissionGenerationPrefixCountsAsPhysicalJournal(t *testing.T) {
+	t.Parallel()
+	target := [32]byte{1}
+	transcript := &admissionReplayTranscript{
+		revision: 0, fullSetDigest: [32]byte{2}, target: target,
+		lineages: []admissionReplayLineage{{
+			id: target, index: admissionReplayFile{size: 9}, indexRecords: 2,
+			prefixes: []admissionReplayGenerationPrefix{{journalID: [32]byte{3}, state: admissionGenerationPrefixDirectory}},
+			generations: []admissionReplayGeneration{{
+				runtimeInspection:     &admissionReplayRuntimeInspection{reservation: evidenceQuotaReservation{ReservedJournalBytes: 17}},
+				remainingIndexRecords: 1, remainingIndexBytes: 11,
+			}},
+		}},
+		journalReservedBytes: 17, indexBytes: 9, indexReservedBytes: 11,
+	}
+	transcript.canonical = admissionReplayCanonicalDigest(transcript)
+	facts, err := rootQuotaUsageFactsFromAdmissionTranscript(transcript)
+	if err != nil || facts.journalCount != 1 || facts.journalReservedBytes != 17 || facts.targetIndexReservedRecords != 1 || facts.targetIndexReservedBytes != 11 || !facts.valid() {
+		t.Fatalf("generation prefix quota facts=%+v err=%v", facts, err)
 	}
 }
 
