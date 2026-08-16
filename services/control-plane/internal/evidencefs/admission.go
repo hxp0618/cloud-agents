@@ -12,27 +12,28 @@ const maximumAdmissionAttempts = 64
 type admissionEpoch struct{ seal *struct{} }
 
 type admissionSlot struct {
-	epoch        *admissionEpoch
-	revision     uint64
-	inventory    *AdmissionInventory
-	active       bool
-	lineages     map[*AdmissionLineageView]lineageExpectation
-	journals     map[*AdmissionJournalView]journalExpectation
-	files        map[*AdmissionFileView]fileExpectation
-	objects      map[*AdmissionObjectView]objectExpectation
-	absent       *TargetAbsentFact
-	registration *TargetRegistrationFact
-	target       [32]byte
-	fullSet      [32]byte
-	lineageOrder []*AdmissionLineageView
-	objectOrder  []*AdmissionObjectView
-	lineageLocks []heldLineageLock
-	journalLocks []heldJournalLock
-	discovery    admissionDiscovery
-	objectSet    admissionObjectDiscovery
-	baseline     [32]byte
-	graph        [32]byte
-	mutation     *AdmissionMutationToken
+	epoch         *admissionEpoch
+	revision      uint64
+	inventory     *AdmissionInventory
+	active        bool
+	lineages      map[*AdmissionLineageView]lineageExpectation
+	journals      map[*AdmissionJournalView]journalExpectation
+	registrations map[*GenerationRegistrationFact]generationRegistrationExpectation
+	files         map[*AdmissionFileView]fileExpectation
+	objects       map[*AdmissionObjectView]objectExpectation
+	absent        *TargetAbsentFact
+	registration  *TargetRegistrationFact
+	target        [32]byte
+	fullSet       [32]byte
+	lineageOrder  []*AdmissionLineageView
+	objectOrder   []*AdmissionObjectView
+	lineageLocks  []heldLineageLock
+	journalLocks  []heldJournalLock
+	discovery     admissionDiscovery
+	objectSet     admissionObjectDiscovery
+	baseline      [32]byte
+	graph         [32]byte
+	mutation      *AdmissionMutationToken
 }
 
 // AdmissionMutationToken is evidencefs-owned one-shot filesystem authority
@@ -83,10 +84,11 @@ func (t *AdmissionMutationToken) validLocked(i *AdmissionInventory) bool {
 }
 
 type lineageExpectation struct {
-	id       [32]byte
-	name     string
-	index    *AdmissionFileView
-	journals []*AdmissionJournalView
+	id            [32]byte
+	name          string
+	index         *AdmissionFileView
+	journals      []*AdmissionJournalView
+	registrations []*GenerationRegistrationFact
 }
 
 type journalExpectation struct {
@@ -95,6 +97,17 @@ type journalExpectation struct {
 	lineage  string
 	parent   *AdmissionLineageView
 	segments []*AdmissionFileView
+}
+
+type generationRegistrationExpectation struct {
+	state     GenerationRegistrationState
+	lineage   [32]byte
+	journal   [32]byte
+	name      string
+	parent    *AdmissionLineageView
+	directory fileStat
+	lock      fileStat
+	hasLock   bool
 }
 
 type fileExpectation struct {
@@ -317,7 +330,8 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory, revi
 	slot := &admissionSlot{
 		epoch: epoch, revision: revision, inventory: inventory, active: true,
 		lineages: map[*AdmissionLineageView]lineageExpectation{}, journals: map[*AdmissionJournalView]journalExpectation{},
-		files: map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent, registration: inventory.registration,
+		registrations: map[*GenerationRegistrationFact]generationRegistrationExpectation{},
+		files:         map[*AdmissionFileView]fileExpectation{}, objects: map[*AdmissionObjectView]objectExpectation{}, absent: inventory.absent, registration: inventory.registration,
 		target: inventory.target, fullSet: inventory.fullSet,
 		lineageOrder: append([]*AdmissionLineageView(nil), inventory.lineages...), objectOrder: append([]*AdmissionObjectView(nil), inventory.objects...),
 		lineageLocks: append([]heldLineageLock(nil), inventory.lease.locks...),
@@ -325,14 +339,22 @@ func newAdmissionSlot(epoch *admissionEpoch, inventory *AdmissionInventory, revi
 		discovery:    cloneAdmissionDiscovery(inventory.discovery), objectSet: cloneAdmissionObjectDiscovery(inventory.objectSet),
 	}
 	slot.baseline = admissionBaselineDigest(slot.discovery, slot.objectSet)
-	for _, lineage := range inventory.lineages {
-		slot.lineages[lineage] = lineageExpectation{id: lineage.id, name: lineage.name, index: lineage.index, journals: append([]*AdmissionJournalView(nil), lineage.journals...)}
+	for lineageIndex, lineage := range inventory.lineages {
+		slot.lineages[lineage] = lineageExpectation{id: lineage.id, name: lineage.name, index: lineage.index, journals: append([]*AdmissionJournalView(nil), lineage.journals...), registrations: append([]*GenerationRegistrationFact(nil), lineage.registrations...)}
 		slot.files[lineage.index] = expectedFile(lineage.index, lineage, nil)
 		for _, journal := range lineage.journals {
 			slot.journals[journal] = journalExpectation{id: journal.id, name: journal.name, lineage: journal.lineage, parent: lineage, segments: append([]*AdmissionFileView(nil), journal.segments...)}
 			for _, segment := range journal.segments {
 				slot.files[segment] = expectedFile(segment, lineage, journal)
 			}
+		}
+		for registrationIndex, registration := range lineage.registrations {
+			discovered := inventory.discovery.lineages[lineageIndex].registrations[registrationIndex]
+			expected := generationRegistrationExpectation{state: registration.state, lineage: registration.lineage, journal: registration.journal, name: registration.name, parent: lineage, directory: discovered.stat}
+			if discovered.lock != nil {
+				expected.lock, expected.hasLock = *discovered.lock, true
+			}
+			slot.registrations[registration] = expected
 		}
 	}
 	for _, object := range inventory.objects {
@@ -472,11 +494,12 @@ type admissionDiscovery struct {
 }
 
 type discoveredLineage struct {
-	name     string
-	stat     fileStat
-	lock     fileStat
-	index    fileStat
-	journals []discoveredJournal
+	name          string
+	stat          fileStat
+	lock          fileStat
+	index         fileStat
+	journals      []discoveredJournal
+	registrations []discoveredGenerationRegistration
 }
 
 type discoveredJournal struct {
@@ -484,6 +507,13 @@ type discoveredJournal struct {
 	stat     fileStat
 	lock     fileStat
 	segments []fileStat
+}
+
+type discoveredGenerationRegistration struct {
+	state GenerationRegistrationState
+	name  string
+	stat  fileStat
+	lock  *fileStat
 }
 
 type admissionObjectDiscovery struct {
@@ -772,15 +802,20 @@ func (s *Store) discoverLineage(lineagesFD int, name string) (result discoveredL
 			seenIndex = true
 			result.index, err = s.statVerifiedRegular(fd, child)
 		default:
-			if !finalNamePattern.MatchString(child) || len(result.journals) == maximumAdmissionJournalsPerLineage {
+			if !finalNamePattern.MatchString(child) || len(result.journals)+len(result.registrations) == maximumAdmissionJournalsPerLineage {
 				return discoveredLineage{}, filesystem("lineage-entry")
 			}
 			var journal discoveredJournal
-			journal, err = s.discoverJournal(fd, child)
-			result.journals = append(result.journals, journal)
-		}
-		if err != nil {
-			return discoveredLineage{}, err
+			var registration *discoveredGenerationRegistration
+			journal, registration, err = s.discoverJournal(fd, child)
+			if err != nil {
+				return discoveredLineage{}, err
+			}
+			if registration == nil {
+				result.journals = append(result.journals, journal)
+			} else {
+				result.registrations = append(result.registrations, *registration)
+			}
 		}
 	}
 	if !seenLock || !seenIndex {
@@ -789,52 +824,70 @@ func (s *Store) discoverLineage(lineagesFD int, name string) (result discoveredL
 	return result, nil
 }
 
-func (s *Store) discoverJournal(lineageFD int, name string) (result discoveredJournal, resultErr error) {
+func (s *Store) discoverJournal(lineageFD int, name string) (result discoveredJournal, registration *discoveredGenerationRegistration, resultErr error) {
 	fd, st, err := s.openVerifiedDirectory(lineageFD, name)
 	if err != nil {
-		return discoveredJournal{}, err
+		return discoveredJournal{}, nil, err
 	}
 	defer func() {
 		if closeErr := s.checkedClose(fd); closeErr != nil {
-			result, resultErr = discoveredJournal{}, closeErr
+			result, registration, resultErr = discoveredJournal{}, nil, closeErr
 		}
 	}()
 	names, err := s.ops.readDirNames(fd, maximumAdmissionSegments+1)
 	if err != nil {
 		if s.ops.isOverflow(err) {
-			return discoveredJournal{}, limit("journal-entry-count")
+			return discoveredJournal{}, nil, limit("journal-entry-count")
 		}
-		return discoveredJournal{}, filesystem("journal-list")
+		return discoveredJournal{}, nil, filesystem("journal-list")
 	}
 	sort.Strings(names)
+	prefix := &discoveredGenerationRegistration{state: GenerationRegistrationPrefixDirectory, name: name, stat: st}
+	if len(names) == 0 {
+		return discoveredJournal{}, prefix, nil
+	}
+	if len(names) == 1 && names[0] == "writer.lock" {
+		lock, lockErr := s.statVerifiedRegular(fd, "writer.lock")
+		if lockErr != nil {
+			return discoveredJournal{}, nil, lockErr
+		}
+		if lock.size != 0 {
+			return discoveredJournal{}, nil, corrupt("generation-registration-lock-size")
+		}
+		prefix.state, prefix.lock = GenerationRegistrationPrefixLock, &lock
+		return discoveredJournal{}, prefix, nil
+	}
 	result = discoveredJournal{name: name, stat: st}
 	seenLock := false
 	for _, child := range names {
 		if child == "writer.lock" {
 			if seenLock {
-				return discoveredJournal{}, filesystem("journal-duplicate-lock")
+				return discoveredJournal{}, nil, corrupt("journal-duplicate-lock")
 			}
 			seenLock = true
 			result.lock, err = s.statVerifiedRegular(fd, child)
 			if err != nil {
-				return discoveredJournal{}, err
+				return discoveredJournal{}, nil, err
+			}
+			if result.lock.size != 0 {
+				return discoveredJournal{}, nil, corrupt("journal-lock-size")
 			}
 			continue
 		}
 		ordinal := len(result.segments)
 		if ordinal == maximumAdmissionSegments || child != admissionSegmentName(ordinal) {
-			return discoveredJournal{}, filesystem("journal-segment-order")
+			return discoveredJournal{}, nil, corrupt("journal-segment-order")
 		}
 		segment, err := s.statVerifiedRegular(fd, child)
 		if err != nil {
-			return discoveredJournal{}, err
+			return discoveredJournal{}, nil, err
 		}
 		result.segments = append(result.segments, segment)
 	}
 	if !seenLock || len(result.segments) == 0 {
-		return discoveredJournal{}, filesystem("journal-required-entry")
+		return discoveredJournal{}, nil, corrupt("journal-required-entry")
 	}
-	return result, nil
+	return result, nil, nil
 }
 
 func (s *Store) statVerifiedRegular(parent int, name string) (fileStat, error) {
@@ -869,7 +922,7 @@ func sameAdmissionDiscovery(a, b admissionDiscovery) bool {
 	}
 	for index := range a.lineages {
 		x, y := a.lineages[index], b.lineages[index]
-		if x.name != y.name || !sameDirectoryIdentity(x.stat, y.stat) || !sameIdentity(x.lock, y.lock) || !sameIdentity(x.index, y.index) || len(x.journals) != len(y.journals) {
+		if x.name != y.name || !sameDirectoryIdentity(x.stat, y.stat) || !sameIdentity(x.lock, y.lock) || !sameIdentity(x.index, y.index) || len(x.journals) != len(y.journals) || len(x.registrations) != len(y.registrations) {
 			return false
 		}
 		for journalIndex := range x.journals {
@@ -883,8 +936,20 @@ func sameAdmissionDiscovery(a, b admissionDiscovery) bool {
 				}
 			}
 		}
+		for registrationIndex := range x.registrations {
+			if !sameGenerationRegistrationDiscovery(x.registrations[registrationIndex], y.registrations[registrationIndex]) {
+				return false
+			}
+		}
 	}
 	return true
+}
+
+func sameGenerationRegistrationDiscovery(a, b discoveredGenerationRegistration) bool {
+	if a.state != b.state || a.name != b.name || !sameDirectoryIdentity(a.stat, b.stat) || (a.lock == nil) != (b.lock == nil) {
+		return false
+	}
+	return a.lock == nil || sameIdentity(*a.lock, *b.lock)
 }
 
 func sameTargetRegistrationDiscovery(a, b *discoveredTargetRegistration) bool {

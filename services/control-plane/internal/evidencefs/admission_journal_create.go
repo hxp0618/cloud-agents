@@ -85,6 +85,7 @@ func (r AdmissionJournalTransitionResult) validLocked(inventory *AdmissionInvent
 // CreateGenerationHeader creates and locks a deterministic generation journal,
 // writes exact opaque segment-0 bytes, and advances the full inventory.
 func (t *AdmissionMutationToken) CreateGenerationHeader(ctx context.Context, inventory *AdmissionInventory, journal [32]byte, header []byte) (AdmissionJournalTransitionResult, error) {
+	header = append([]byte(nil), header...)
 	headerDigest := sha256.Sum256(header)
 	candidate := admissionJournalCandidateDigest(journal, headerDigest, uint64(len(header)))
 	pre := AdmissionJournalTransitionResult{outcome: AdmissionTransitionPreMutationFailure, candidateDigest: candidate, journal: journal, headerDigest: headerDigest, headerSize: uint64(len(header))}
@@ -108,10 +109,10 @@ func (t *AdmissionMutationToken) CreateGenerationHeader(ctx context.Context, inv
 	totalJournals := 0
 	var journalBytes uint64
 	for _, value := range inventory.lineages {
-		if value == nil || len(value.journals) > maximumAdmissionJournals-totalJournals {
+		if value == nil || len(value.journals)+len(value.registrations) > maximumAdmissionJournals-totalJournals {
 			return pre, ErrLimit
 		}
-		totalJournals += len(value.journals)
+		totalJournals += len(value.journals) + len(value.registrations)
 		for _, existingJournal := range value.journals {
 			if existingJournal == nil {
 				return pre, ErrLeaseInvalid
@@ -124,7 +125,7 @@ func (t *AdmissionMutationToken) CreateGenerationHeader(ctx context.Context, inv
 			}
 		}
 	}
-	if lineage == nil || len(lineage.journals) == maximumAdmissionJournalsPerLineage || totalJournals == maximumAdmissionJournals || uint64(len(header)) > maximumAdmissionJournalBytes-journalBytes {
+	if lineage == nil || len(lineage.journals)+len(lineage.registrations) == maximumAdmissionJournalsPerLineage || totalJournals == maximumAdmissionJournals || uint64(len(header)) > maximumAdmissionJournalBytes-journalBytes {
 		return pre, ErrLimit
 	}
 	lineageIndex := indexOfLineage(inventory, lineage)
@@ -135,7 +136,7 @@ func (t *AdmissionMutationToken) CreateGenerationHeader(ctx context.Context, inv
 	}
 	expectedLineage := inventory.slot.discovery.lineages[lineageIndex]
 	journalName := hex.EncodeToString(journal[:])
-	if findAdmissionJournal(lineage, journal) != nil {
+	if findAdmissionJournal(lineage, journal) != nil || findGenerationRegistration(lineage, journal) != nil {
 		return pre, ErrInvalidInput
 	}
 	if err := contextError(ctx); err != nil {
@@ -319,7 +320,7 @@ func generationHeaderDiscoveryMatches(previous, next admissionDiscovery, lineage
 			continue
 		}
 		seen = true
-		if before.name != after.name || !sameDirectoryAfterChildMkdir(before.stat, after.stat) || !sameDirectoryIdentity(after.stat, lineageAfter) || !sameIdentity(before.lock, after.lock) || !sameIdentity(before.index, after.index) || len(after.journals) != len(before.journals)+1 {
+		if before.name != after.name || !sameDirectoryAfterChildMkdir(before.stat, after.stat) || !sameDirectoryIdentity(after.stat, lineageAfter) || !sameIdentity(before.lock, after.lock) || !sameIdentity(before.index, after.index) || len(after.journals) != len(before.journals)+1 || len(before.registrations) != len(after.registrations) {
 			return false
 		}
 		filtered := make([]discoveredJournal, 0, len(before.journals))
@@ -337,6 +338,11 @@ func generationHeaderDiscoveryMatches(previous, next admissionDiscovery, lineage
 		for journal := range filtered {
 			if !sameAdmissionJournalDiscovery(before.journals[journal], filtered[journal]) {
 				return false
+			}
+			for registration := range before.registrations {
+				if !sameGenerationRegistrationDiscovery(before.registrations[registration], after.registrations[registration]) {
+					return false
+				}
 			}
 		}
 	}

@@ -493,7 +493,7 @@ func TestAcquireAdmissionRejectsHalfRegistrationAndClosedGrammar(t *testing.T) {
 			store := testStore(t, f)
 			lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
 			want := ErrFilesystem
-			if name == "unknown" {
+			if name == "unknown" || name == "segment-gap" {
 				want = ErrCorrupt
 			}
 			if lease != nil || inventory != nil || !errors.Is(err, want) {

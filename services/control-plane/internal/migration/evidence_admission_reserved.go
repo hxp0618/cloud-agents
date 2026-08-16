@@ -206,6 +206,10 @@ func validateRegisteredEmptyReservationInput(ctx context.Context, inventory *evi
 	if err != nil {
 		return mapEvidenceAdmissionError(err, "admission-generation-reserve-journals")
 	}
+	registrations, err := lineage.GenerationRegistrations()
+	if err != nil {
+		return mapEvidenceAdmissionError(err, "admission-generation-reserve-registrations")
+	}
 	index, err := lineage.Index()
 	if err != nil {
 		return mapEvidenceAdmissionError(err, "admission-generation-reserve-index")
@@ -227,7 +231,7 @@ func validateRegisteredEmptyReservationInput(ctx context.Context, inventory *evi
 			}
 		}
 	}
-	if inventoryTarget != target || lineageID != target || target != digestRaw(plan.lineageHeaderFrame.Record.Header.ExecutionLineageDigest) || absent != nil || len(journals) != 0 || !bytes.Equal(indexBytes, plan.lineageHeaderBytes) || sha256.Sum256(indexBytes) != sha256.Sum256(plan.lineageHeaderBytes) {
+	if inventoryTarget != target || lineageID != target || target != digestRaw(plan.lineageHeaderFrame.Record.Header.ExecutionLineageDigest) || absent != nil || len(journals) != 0 || len(registrations) != 0 || !bytes.Equal(indexBytes, plan.lineageHeaderBytes) || sha256.Sum256(indexBytes) != sha256.Sum256(plan.lineageHeaderBytes) {
 		return admissionCorrupt("admission-generation-reserve", "target is not exact registered-empty state", nil)
 	}
 	return nil
@@ -242,6 +246,10 @@ func validateReservedInventory(ctx context.Context, inventory *evidencefs.Admiss
 	journals, err := lineage.Journals()
 	if err != nil {
 		return zero, mapEvidenceAdmissionError(err, "admission-generation-reserve-journals")
+	}
+	registrations, err := lineage.GenerationRegistrations()
+	if err != nil {
+		return zero, mapEvidenceAdmissionError(err, "admission-generation-reserve-registrations")
 	}
 	index, err := lineage.Index()
 	if err != nil {
@@ -265,7 +273,7 @@ func validateReservedInventory(ctx context.Context, inventory *evidencefs.Admiss
 		}
 	}
 	wantDigest := sha256.Sum256(want)
-	if absent != nil || len(journals) != 0 || !bytes.Equal(raw, want) || uint64(len(want)) != size || digest != wantDigest {
+	if absent != nil || len(journals) != 0 || len(registrations) != 0 || !bytes.Equal(raw, want) || uint64(len(want)) != size || digest != wantDigest {
 		return zero, admissionCorrupt("admission-generation-reserve", "durable reservation index differs from the exact planned prefix", nil)
 	}
 	return digest, nil

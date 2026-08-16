@@ -162,11 +162,16 @@ func targetIndexAppendDiscoveryMatches(previous, next admissionDiscovery, target
 		before, after := previous.lineages[index], next.lineages[index]
 		if before.name == target {
 			seen = true
-			if after.name != target || !sameDirectoryIdentity(before.stat, after.stat) || !sameIdentity(before.lock, after.lock) || !sameIdentity(after.index, nextIndex) || len(before.journals) != len(after.journals) {
+			if after.name != target || !sameDirectoryIdentity(before.stat, after.stat) || !sameIdentity(before.lock, after.lock) || !sameIdentity(after.index, nextIndex) || len(before.journals) != len(after.journals) || len(before.registrations) != len(after.registrations) {
 				return false
 			}
 			for journal := range before.journals {
 				if !sameAdmissionJournalDiscovery(before.journals[journal], after.journals[journal]) {
+					return false
+				}
+			}
+			for registration := range before.registrations {
+				if !sameGenerationRegistrationDiscovery(before.registrations[registration], after.registrations[registration]) {
 					return false
 				}
 			}
@@ -180,11 +185,16 @@ func targetIndexAppendDiscoveryMatches(previous, next admissionDiscovery, target
 }
 
 func sameAdmissionLineageDiscovery(a, b discoveredLineage) bool {
-	if a.name != b.name || !sameDirectoryIdentity(a.stat, b.stat) || !sameIdentity(a.lock, b.lock) || !sameIdentity(a.index, b.index) || len(a.journals) != len(b.journals) {
+	if a.name != b.name || !sameDirectoryIdentity(a.stat, b.stat) || !sameIdentity(a.lock, b.lock) || !sameIdentity(a.index, b.index) || len(a.journals) != len(b.journals) || len(a.registrations) != len(b.registrations) {
 		return false
 	}
 	for index := range a.journals {
 		if !sameAdmissionJournalDiscovery(a.journals[index], b.journals[index]) {
+			return false
+		}
+	}
+	for index := range a.registrations {
+		if !sameGenerationRegistrationDiscovery(a.registrations[index], b.registrations[index]) {
 			return false
 		}
 	}

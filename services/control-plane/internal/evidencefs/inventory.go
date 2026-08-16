@@ -49,14 +49,15 @@ type AdmissionInventory struct {
 }
 
 type AdmissionLineageView struct {
-	self     *AdmissionLineageView
-	seal     *struct{}
-	owner    *AdmissionInventory
-	binding  admissionBinding
-	id       [32]byte
-	name     string
-	index    *AdmissionFileView
-	journals []*AdmissionJournalView
+	self          *AdmissionLineageView
+	seal          *struct{}
+	owner         *AdmissionInventory
+	binding       admissionBinding
+	id            [32]byte
+	name          string
+	index         *AdmissionFileView
+	journals      []*AdmissionJournalView
+	registrations []*GenerationRegistrationFact
 }
 
 type AdmissionJournalView struct {
@@ -227,7 +228,7 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 	if len(i.lineages) != 0 && i.slot.discovery.lineagesDirectory == nil {
 		return false
 	}
-	journalCount, fileCount := 0, len(i.objects)+len(i.lineages)
+	journalCount, registrationCount, fileCount := 0, 0, len(i.objects)+len(i.lineages)
 	for index, lineage := range i.lineages {
 		if lineage == nil || lineage.self != lineage || lineage.seal == nil || lineage.owner != i || !lineage.binding.validFor(i) || i.lineageMap[lineage.id] != lineage {
 			return false
@@ -235,7 +236,7 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 		discovered := i.slot.discovery.lineages[index]
 		expected, ok := i.slot.lineages[lineage]
 		held, heldOK := heldLineageLockByName(i.lease.locks, discovered.name)
-		if !ok || expected.id != lineage.id || expected.name != lineage.name || expected.index != lineage.index || !sameJournalPointers(expected.journals, lineage.journals) || discovered.name != expected.name || lineage.index == nil || !sameIdentity(discovered.index, lineage.index.stat) || len(discovered.journals) != len(expected.journals) || !heldOK || !sameIdentity(discovered.lock, held.stat) {
+		if !ok || expected.id != lineage.id || expected.name != lineage.name || expected.index != lineage.index || !sameJournalPointers(expected.journals, lineage.journals) || !sameGenerationRegistrationPointers(expected.registrations, lineage.registrations) || discovered.name != expected.name || lineage.index == nil || !sameIdentity(discovered.index, lineage.index.stat) || len(discovered.journals) != len(expected.journals) || len(discovered.registrations) != len(expected.registrations) || !heldOK || !sameIdentity(discovered.lock, held.stat) {
 			return false
 		}
 		indexExpected, ok := i.slot.files[lineage.index]
@@ -260,6 +261,12 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 				}
 			}
 		}
+		for registrationIndex, registration := range expected.registrations {
+			registrationCount++
+			if registration == nil || registration.self != registration || registration.seal == nil || registration.owner != i || !registration.binding.validFor(i) || !generationRegistrationFactValidLocked(i, registration) || discovered.registrations[registrationIndex].name != registration.name {
+				return false
+			}
+		}
 	}
 	for index, object := range i.objects {
 		discovered := i.slot.objectSet.objects[index]
@@ -279,7 +286,7 @@ func (i *AdmissionInventory) snapshotMatchesLocked() bool {
 	if i.registration != nil && (i.registration.state == TargetRegistrationPrefixLock || i.registration.state == TargetRegistrationPrefixIndex) {
 		wantLocks++
 	}
-	return len(i.lease.locks) == wantLocks && len(i.slot.journals) == journalCount && len(i.slot.files) == fileCount
+	return len(i.lease.locks) == wantLocks && len(i.slot.journals) == journalCount && len(i.slot.registrations) == registrationCount && len(i.slot.files) == fileCount
 }
 
 func inventoryFileGraphValid(owner *AdmissionInventory, file *AdmissionFileView, expected fileExpectation) bool {
@@ -406,13 +413,25 @@ func (v *AdmissionLineageView) Journals() ([]*AdmissionJournalView, error) {
 	return result, err
 }
 
+// GenerationRegistrations returns only incomplete directory/lock prefixes.
+// Journals with segment-0 are returned by Journals, even when their opaque
+// bytes are empty or torn.
+func (v *AdmissionLineageView) GenerationRegistrations() ([]*GenerationRegistrationFact, error) {
+	var result []*GenerationRegistrationFact
+	err := v.valid(func() error {
+		result = append([]*GenerationRegistrationFact(nil), v.registrations...)
+		return nil
+	})
+	return result, err
+}
+
 func (v *AdmissionLineageView) valid(fn func() error) error {
 	if v == nil || v.self != v || v.seal == nil || v.owner == nil || !v.binding.validFor(v.owner) {
 		return ErrLeaseInvalid
 	}
 	return v.owner.withValid(func() error {
 		expected, registered := v.owner.slot.lineages[v]
-		if !registered || expected.id != v.id || expected.name != v.name || expected.index != v.index || !sameJournalPointers(expected.journals, v.journals) || v.owner.lineageMap[v.id] != v || v.name == "" {
+		if !registered || expected.id != v.id || expected.name != v.name || expected.index != v.index || !sameJournalPointers(expected.journals, v.journals) || !sameGenerationRegistrationPointers(expected.registrations, v.registrations) || v.owner.lineageMap[v.id] != v || v.name == "" {
 			return ErrLeaseInvalid
 		}
 		return fn()
@@ -639,13 +658,14 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 	}
 	var indexBytes, journalBytes uint64
 	journalCount := 0
+	registrationCount := 0
 	segmentCount := 0
 	for _, lineage := range discovery.lineages {
 		if lineage.index.size > maximumAdmissionIndexBytes || lineage.index.size > maximumAdmissionIndexAggregate-indexBytes {
 			return nil, limit("index-bytes")
 		}
 		indexBytes += lineage.index.size
-		journalCount += len(lineage.journals)
+		journalCount += len(lineage.journals) + len(lineage.registrations)
 		if journalCount > maximumAdmissionJournals {
 			return nil, limit("journal-count")
 		}
@@ -658,6 +678,7 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 				journalBytes += segment.size
 			}
 		}
+		registrationCount += len(lineage.registrations)
 	}
 	if discovery.registration != nil && discovery.registration.index != nil {
 		if discovery.registration.index.size > maximumAdmissionIndexBytes || discovery.registration.index.size > maximumAdmissionIndexAggregate-indexBytes {
@@ -703,6 +724,7 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 	}
 	writeFullSetCount(full, uint64(indexCount))
 	writeFullSetCount(full, uint64(journalCount))
+	writeFullSetCount(full, uint64(registrationCount))
 	writeFullSetCount(full, uint64(segmentCount))
 	writeFullSetCount(full, uint64(len(scan.objects)))
 	writeFullSetCount(full, scan.tempCount)
@@ -744,6 +766,19 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 			}
 			view.journals = append(view.journals, journalView)
 		}
+		for _, registration := range lineage.registrations {
+			journalID, ok := decodeCanonicalDigest(registration.name)
+			if !ok {
+				return nil, filesystem("generation-registration-decode")
+			}
+			fact := &GenerationRegistrationFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), state: registration.state, lineage: lineageID, journal: journalID, name: registration.name}
+			fact.self = fact
+			writeFullSetEntry(full, "generation-registration-directory", lineage.name+"/"+registration.name, registration.stat, [32]byte{})
+			if registration.lock != nil {
+				writeFullSetEntry(full, "generation-registration-lock", lineage.name+"/"+registration.name+"/writer.lock", *registration.lock, [32]byte{})
+			}
+			view.registrations = append(view.registrations, fact)
+		}
 		inventory.lineages = append(inventory.lineages, view)
 		inventory.lineageMap[lineageID] = view
 	}
@@ -766,7 +801,7 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 		inventory.registration = fact
 	}
 	if inventory.registration == nil {
-		if lineage := inventory.lineageMap[target]; lineage != nil && len(lineage.journals) == 0 {
+		if lineage := inventory.lineageMap[target]; lineage != nil && len(lineage.journals) == 0 && len(lineage.registrations) == 0 {
 			fact := &TargetRegistrationFact{seal: &struct{}{}, owner: inventory, binding: inventory.bindingForView(), state: TargetRegistrationRegisteredEmpty, target: target, name: targetName(target)}
 			fact.self = fact
 			inventory.registration = fact
@@ -809,6 +844,11 @@ func (l *AdmissionLease) buildAdmissionInventory(ctx context.Context, target [32
 	}
 	if inventory.absent != nil {
 		inventory.absent.fullSet = inventory.fullSet
+	}
+	for _, lineage := range inventory.lineages {
+		for _, registration := range lineage.registrations {
+			registration.fullSet = inventory.fullSet
+		}
 	}
 	return inventory, nil
 }
@@ -914,6 +954,13 @@ func cloneAdmissionDiscovery(value admissionDiscovery) admissionDiscovery {
 		for journal := range result.lineages[index].journals {
 			result.lineages[index].journals[journal].segments = append([]fileStat(nil), value.lineages[index].journals[journal].segments...)
 		}
+		result.lineages[index].registrations = append([]discoveredGenerationRegistration(nil), value.lineages[index].registrations...)
+		for registration := range result.lineages[index].registrations {
+			if value.lineages[index].registrations[registration].lock != nil {
+				lock := *value.lineages[index].registrations[registration].lock
+				result.lineages[index].registrations[registration].lock = &lock
+			}
+		}
 	}
 	if value.registration != nil {
 		registration := *value.registration
@@ -955,6 +1002,13 @@ func admissionBaselineDigest(discovery admissionDiscovery, objects admissionObje
 			writeFullSetCount(h, uint64(len(journal.segments)))
 			for ordinal, segment := range journal.segments {
 				writeFullSetEntry(h, "segment", lineage.name+"/"+journal.name+"/"+admissionSegmentName(ordinal), segment, [32]byte{})
+			}
+		}
+		writeFullSetCount(h, uint64(len(lineage.registrations)))
+		for _, registration := range lineage.registrations {
+			writeFullSetEntry(h, "generation-registration-directory", lineage.name+"/"+registration.name, registration.stat, [32]byte{})
+			if registration.lock != nil {
+				writeFullSetEntry(h, "generation-registration-lock", lineage.name+"/"+registration.name+"/writer.lock", *registration.lock, [32]byte{})
 			}
 		}
 	}
@@ -1032,6 +1086,24 @@ func admissionSlotGraphDigest(slot *admissionSlot) [32]byte {
 			writeFullSetCount(h, uint64(len(journalExpected.segments)))
 			for _, segment := range journalExpected.segments {
 				writeSlotFileExpectation(h, slot.files[segment])
+			}
+		}
+		writeFullSetCount(h, uint64(len(expected.registrations)))
+		for _, registration := range expected.registrations {
+			registrationExpected, ok := slot.registrations[registration]
+			if !ok {
+				writeFullSetCount(h, ^uint64(0))
+				continue
+			}
+			h.Write([]byte(registrationExpected.state))
+			h.Write([]byte{0})
+			h.Write(registrationExpected.lineage[:])
+			h.Write(registrationExpected.journal[:])
+			h.Write([]byte(registrationExpected.name))
+			h.Write([]byte{0})
+			writeFullSetEntry(h, "generation-registration-directory", registrationExpected.name, registrationExpected.directory, [32]byte{})
+			if registrationExpected.hasLock {
+				writeFullSetEntry(h, "generation-registration-lock", registrationExpected.name+"/writer.lock", registrationExpected.lock, [32]byte{})
 			}
 		}
 	}

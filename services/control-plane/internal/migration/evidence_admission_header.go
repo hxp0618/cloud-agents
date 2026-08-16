@@ -244,13 +244,14 @@ func validateHeaderInventory(ctx context.Context, inventory *evidencefs.Admissio
 	lineageID, lineageIDErr := lineage.ID()
 	index, indexErr := lineage.Index()
 	journals, journalsErr := lineage.Journals()
+	registrations, registrationsErr := lineage.GenerationRegistrations()
 	absent, absentErr := inventory.TargetAbsent()
-	for _, accessorErr := range []error{lineageIDErr, indexErr, journalsErr, absentErr} {
+	for _, accessorErr := range []error{lineageIDErr, indexErr, journalsErr, registrationsErr, absentErr} {
 		if accessorErr != nil {
 			return zero, mapEvidenceAdmissionError(accessorErr, "admission-generation-header-inventory")
 		}
 	}
-	if lineageID != target || absent != nil || len(journals) != 1 {
+	if lineageID != target || absent != nil || len(journals) != 1 || len(registrations) != 0 {
 		return zero, admissionCorrupt("admission-generation-header", "target header inventory shape is invalid", nil)
 	}
 	indexRaw, err := index.ReadAll(ctx)

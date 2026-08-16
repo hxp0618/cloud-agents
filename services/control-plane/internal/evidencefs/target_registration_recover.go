@@ -287,7 +287,7 @@ func (t *AdmissionMutationToken) RecoverTargetLineage(ctx context.Context, inven
 		return unknownResult(err)
 	}
 	registered := next.lineageMap[inventory.target]
-	if registered == nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 || next.absent != nil || next.registration == nil || next.registration.state != TargetRegistrationRegisteredEmpty {
+	if registered == nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 || len(registered.registrations) != 0 || next.absent != nil || next.registration == nil || next.registration.state != TargetRegistrationRegisteredEmpty {
 		return unknownResult(filesystem("target-recovery-missing"))
 	}
 	nextSlot := newAdmissionSlot(l.epoch, next, nextRevision)
@@ -309,7 +309,7 @@ func targetRecoveryDiscoveryMatches(previous, next admissionDiscovery, target st
 	seen := false
 	for _, lineage := range next.lineages {
 		if lineage.name == target {
-			if seen || !sameRegistrationDirectoryAfterRecovery(previous.registration, lineage.stat) || !sameIdentity(lineage.lock, lock) || !sameIdentity(lineage.index, index) || len(lineage.journals) != 0 {
+			if seen || !sameRegistrationDirectoryAfterRecovery(previous.registration, lineage.stat) || !sameIdentity(lineage.lock, lock) || !sameIdentity(lineage.index, index) || len(lineage.journals) != 0 || len(lineage.registrations) != 0 {
 				return false
 			}
 			seen = true

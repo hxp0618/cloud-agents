@@ -85,7 +85,7 @@ func (t *AdmissionMutationToken) ReuseTargetLineage(ctx context.Context, invento
 	}
 	lineage := inventory.lineageMap[inventory.target]
 	name := hex.EncodeToString(inventory.target[:])
-	if lineage == nil || lineage.index == nil || lineage.name != name || lineage.index.digest != digest || lineage.index.stat.size != uint64(len(indexHeader)) || len(lineage.journals) != 0 {
+	if lineage == nil || lineage.index == nil || lineage.name != name || lineage.index.digest != digest || lineage.index.stat.size != uint64(len(indexHeader)) || len(lineage.journals) != 0 || len(lineage.registrations) != 0 {
 		return pre, ErrInvalidInput
 	}
 	lockIndex := sort.Search(len(l.locks), func(index int) bool { return l.locks[index].name >= name })
@@ -182,7 +182,7 @@ func (t *AdmissionMutationToken) ReuseTargetLineage(ctx context.Context, invento
 		return unknownResult(err)
 	}
 	registered := next.lineageMap[inventory.target]
-	if registered == nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 || next.absent != nil {
+	if registered == nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 || len(registered.registrations) != 0 || next.absent != nil {
 		return unknownResult(filesystem("target-reuse-missing"))
 	}
 	nextSlot := newAdmissionSlot(l.epoch, next, nextRevision)
@@ -374,7 +374,7 @@ func (t *AdmissionMutationToken) CreateTargetLineage(ctx context.Context, invent
 		return unknownResult(err)
 	}
 	registered, present := next.lineageMap[inventory.target]
-	if !present || next.absent != nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 {
+	if !present || next.absent != nil || registered.index == nil || registered.index.digest != digest || registered.index.stat.size != uint64(len(indexHeader)) || len(registered.journals) != 0 || len(registered.registrations) != 0 {
 		return unknownResult(filesystem("target-registration-missing"))
 	}
 	if err := contextError(ctx); err != nil {

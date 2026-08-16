@@ -113,7 +113,7 @@ func targetRegistrationFactValidLocked(owner *AdmissionInventory, fact *TargetRe
 		return ok && inventoryFileGraphValid(owner, fact.index, expected)
 	case TargetRegistrationRegisteredEmpty:
 		lineage := owner.lineageMap[owner.target]
-		return owner.slot.discovery.registration == nil && owner.absent == nil && lineage != nil && len(lineage.journals) == 0 && fact.index == nil
+		return owner.slot.discovery.registration == nil && owner.absent == nil && lineage != nil && len(lineage.journals) == 0 && len(lineage.registrations) == 0 && fact.index == nil
 	default:
 		return false
 	}
