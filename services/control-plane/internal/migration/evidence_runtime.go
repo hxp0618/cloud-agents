@@ -10,9 +10,9 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
-// EvidenceSink is the sealed runtime boundary frozen by ADR-0010. There is no
-// production implementation in this slice: the filesystem implementation is
-// admitted only after its platform and dependency gates have passed.
+// EvidenceSink is the sealed runtime boundary frozen by ADR-0010. Its
+// production implementation admits only an evidencefs Store opened from the
+// fixed local mount-attestation authority.
 type EvidenceSink interface {
 	Open(context.Context, VerifiedEvidenceRun, VerifiedRuntimeArtifact) (EvidenceSession, *RecoverySnapshot, error)
 	evidenceSinkSealed()
@@ -33,12 +33,6 @@ type EvidenceJournal interface {
 	AppendDurable(context.Context, JournalCursor, *OwnedEvidenceRecord) (AppendResult, error)
 	Close(context.Context) error
 	evidenceJournalSealed()
-}
-
-// NewEvidenceSink deliberately remains rejecting until the real filesystem
-// slice is admitted. It cannot fall back to an in-memory or best-effort sink.
-func NewEvidenceSink() (EvidenceSink, error) {
-	return nil, fail(CodeProjectionNotImplemented, "evidence-sink", "production evidence filesystem is not implemented", nil)
 }
 
 type evidenceOwnerToken struct{ nonce [16]byte }

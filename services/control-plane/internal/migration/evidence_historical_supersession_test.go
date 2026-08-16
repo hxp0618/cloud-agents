@@ -219,7 +219,7 @@ func TestHistoricalSupersessionRecoveryAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "HistoricalSupersessionAdjacentReserveReady" || identifier.Name == "HistoricalSuccessorReservedDurablePermit" || identifier.Name == "bindHistoricalSupersessionAdjacentReserveReady" || identifier.Name == "recoverHistoricalSupersessionPolicy" || identifier.Name == "bindRecoveredHistoricalSupersessionPolicy" || identifier.Name == "bindHistoricalSupersessionRecoveryExecution" || identifier.Name == "recoveryPolicyAuthorizesDecision") {
+			if ok && (identifier.Name == "HistoricalSupersessionAdjacentReserveReady" || identifier.Name == "HistoricalSuccessorReservedDurablePermit" || identifier.Name == "bindHistoricalSupersessionAdjacentReserveReady" || identifier.Name == "recoverHistoricalSupersessionPolicy" || identifier.Name == "bindRecoveredHistoricalSupersessionPolicy" || identifier.Name == "bindHistoricalSupersessionRecoveryExecution" || identifier.Name == "recoveryPolicyAuthorizesDecision") && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("historical supersession recovery authority spread into %s", name)
 			}
 			return true

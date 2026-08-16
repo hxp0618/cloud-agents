@@ -260,7 +260,7 @@ func TestHistoricalSuccessorHandoffAuthorityDoesNotSpread(t *testing.T) {
 				strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationHandoff") ||
 				strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationHandoff") ||
 				strings.HasPrefix(identifier.Name, "validHistoricalSuccessorGenerationReplay") ||
-				strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationReplay")) && !allowed[name][identifier.Name] {
+				strings.HasPrefix(identifier.Name, "validConsumedHistoricalSuccessorGenerationReplay")) && !allowed[name][identifier.Name] && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("historical successor handoff authority spread into %s through %s", name, identifier.Name)
 			}
 			return true

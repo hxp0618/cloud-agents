@@ -131,7 +131,7 @@ func TestGenerationHandoffReadyIsNotRuntimeAuthorityAndHasNoConsumer(t *testing.
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "GenerationHandoffReady" || identifier.Name == "validGenerationHandoffReady") {
+			if ok && (identifier.Name == "GenerationHandoffReady" || identifier.Name == "validGenerationHandoffReady") && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("handoff-ready authority has unreviewed consumer: %s", name)
 			}
 			return true
@@ -322,7 +322,7 @@ func TestGenerationReplayReadyIsNotRuntimeAuthority(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "GenerationReplayReady" || identifier.Name == "validGenerationReplayReady") {
+			if ok && (identifier.Name == "GenerationReplayReady" || identifier.Name == "validGenerationReplayReady") && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("replay-ready authority has unreviewed consumer: %s", name)
 			}
 			return true

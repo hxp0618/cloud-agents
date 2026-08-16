@@ -334,7 +334,7 @@ func TestGenerationLeaseReacquiresFullRootFromSameStore(t *testing.T) {
 	if err := generation.Close(); !errors.Is(err, ErrLeaseInvalid) {
 		t.Fatalf("old lease close=%v", err)
 	}
-	if got, want := len(f.handles), 1+2+1; got != want {
+	if got, want := len(f.handles), 2+2+1; got != want {
 		t.Fatalf("reacquired handles=%d want=%d", got, want)
 	}
 	if err := lease.Close(); err != nil || len(f.handles) != 0 {

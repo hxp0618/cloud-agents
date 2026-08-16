@@ -482,6 +482,26 @@ func (v *AdmissionFileView) IdentityDigest() ([32]byte, error) {
 	return identity, err
 }
 
+// GenerationIdentityDigest returns the non-authoritative file identity domain
+// used by a later GenerationSnapshot. The inventory identity remains the
+// stronger full-root graph binding; this additional digest only permits an
+// exact comparison after AdmissionLease transfers the same file and locks to a
+// GenerationLease.
+func (v *AdmissionFileView) GenerationIdentityDigest() ([32]byte, error) {
+	var identity [32]byte
+	err := v.valid(func() error {
+		if v.role != inventoryIndex && v.role != inventorySegment {
+			return ErrInvalidInput
+		}
+		identity = generationSnapshotFileIdentity(v.role, v.name, v.ordinal, v.stat, v.digest)
+		if identity == ([32]byte{}) {
+			return ErrLeaseInvalid
+		}
+		return nil
+	})
+	return identity, err
+}
+
 func (v *AdmissionFileView) Ordinal() (uint32, error) {
 	var ordinal uint32
 	err := v.valid(func() error { ordinal = v.ordinal; return nil })
@@ -1209,6 +1229,13 @@ func lineageLocksMatchDiscovery(locks []heldLineageLock, discovery admissionDisc
 }
 
 func journalLocksMatchDiscovery(locks []heldJournalLock, discovery admissionDiscovery) bool {
+	want := 0
+	for _, lineage := range discovery.lineages {
+		want += len(lineage.journals)
+	}
+	if len(locks) != want {
+		return false
+	}
 	for index, lock := range locks {
 		if lock.lineage == "" || lock.name == "" || lock.fd < 0 {
 			return false

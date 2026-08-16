@@ -382,9 +382,9 @@ func registeredGenerationReplayFixture(t *testing.T, frameCount int) (*verifiedA
 	lineageID := digestRaw(header.ExecutionLineageDigest)
 	journalID := digestRaw(header.JournalIdentityDigest)
 	lineage := admissionReplayLineage{
-		id: lineageID, index: admissionReplayFile{ordinal: 0, size: 512, digest: [32]byte{1}, identity: [32]byte{2}}, indexRecords: indexRecords,
+		id: lineageID, index: admissionReplayFile{ordinal: 0, size: 512, digest: [32]byte{1}, identity: [32]byte{2}, handoffIdentity: [32]byte{12}}, indexRecords: indexRecords,
 		indexHeaderFramedBytes: 17, indexTailRecordDigest: indexTail,
-		journals:    []admissionReplayJournal{{id: journalID, segments: []admissionReplaySegment{{file: admissionReplayFile{ordinal: 0, size: uint64(len(raw)), digest: journalRaw, identity: [32]byte{3}}, records: uint64(frameCount)}}, records: uint64(frameCount), tail: frames[len(frames)-1].RecordDigest}},
+		journals:    []admissionReplayJournal{{id: journalID, segments: []admissionReplaySegment{{file: admissionReplayFile{ordinal: 0, size: uint64(len(raw)), digest: journalRaw, identity: [32]byte{3}, handoffIdentity: [32]byte{13}}, records: uint64(frameCount)}}, records: uint64(frameCount), tail: frames[len(frames)-1].RecordDigest}},
 		generations: []admissionReplayGeneration{cloneAdmissionGeneration(generation)},
 	}
 	owner := &evidenceOwnerToken{nonce: [16]byte{77}}

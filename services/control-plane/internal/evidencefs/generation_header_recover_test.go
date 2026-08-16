@@ -73,6 +73,7 @@ func TestAdmissionRecoverGenerationHeaderPhysicalStates(t *testing.T) {
 				}
 			}
 			writesBefore, truncatesBefore := f.writes, f.truncates
+			tryLocksBefore := len(f.tryLockAttempts)
 			token, err := inventory.MutationToken()
 			if err != nil {
 				t.Fatal(err)
@@ -105,8 +106,8 @@ func TestAdmissionRecoverGenerationHeaderPhysicalStates(t *testing.T) {
 			if err := next.Revalidate(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			if (f.writes > writesBefore) != test.wantWrites || (f.truncates > truncatesBefore) != test.wantTrunc || len(lease.journalLocks) != 1 {
-				t.Fatalf("writes=%d/%d truncates=%d/%d locks=%v", writesBefore, f.writes, truncatesBefore, f.truncates, lease.journalLocks)
+			if (f.writes > writesBefore) != test.wantWrites || (f.truncates > truncatesBefore) != test.wantTrunc || len(lease.journalLocks) != 1 || len(f.tryLockAttempts)-tryLocksBefore != test.wantFacts {
+				t.Fatalf("writes=%d/%d truncates=%d/%d locks=%v recoveryTries=%d", writesBefore, f.writes, truncatesBefore, f.truncates, lease.journalLocks, len(f.tryLockAttempts)-tryLocksBefore)
 			}
 			if err := lease.Close(); err != nil || len(f.handles) != 0 {
 				t.Fatalf("close=%v handles=%d", err, len(f.handles))

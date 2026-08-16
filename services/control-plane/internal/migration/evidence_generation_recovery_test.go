@@ -169,7 +169,7 @@ func TestGenerationRecoveryReadyIsNotRuntimeOrAppendAuthority(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "GenerationRecoveryReady" || identifier.Name == "validGenerationRecoveryReady") {
+			if ok && (identifier.Name == "GenerationRecoveryReady" || identifier.Name == "validGenerationRecoveryReady") && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("recovery-ready authority has unreviewed consumer in %s", name)
 			}
 			return true

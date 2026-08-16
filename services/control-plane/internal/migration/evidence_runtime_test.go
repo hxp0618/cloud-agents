@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -11,6 +12,58 @@ import (
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
+
+var reviewedEvidenceSinkAuthorityUses = map[string]int{
+	"AppendGenerationActivated":                      3,
+	"GenerationHandoffReady":                         2,
+	"GenerationReadyPermit":                          1,
+	"GenerationRecoveryReady":                        2,
+	"GenerationReplayReady":                          2,
+	"HistoricalSuccessorGenerationHandoffReady":      2,
+	"HistoricalSuccessorGenerationReadyPermit":       1,
+	"HistoricalSuccessorGenerationRecoveryReady":     2,
+	"HistoricalSuccessorGenerationReplayReady":       2,
+	"HistoricalSuccessorHeaderDurablePermit":         1,
+	"HistoricalSuccessorReservedDurablePermit":       1,
+	"HistoricalSupersessionAdjacentReserveReady":     1,
+	"RegisteredGenerationHandoffPermit":              3,
+	"RegisteredGenerationRecoveryReady":              1,
+	"bindHistoricalSupersessionAdjacentReserveReady": 1,
+	"bindRegisteredGenerationHandoff":                1,
+	"historicalSuccessorGenerationHandoffRegistry":   1,
+	"historicalSuccessorGenerationRecoveryRegistry":  1,
+	"historicalSuccessorGenerationReplayRegistry":    1,
+}
+
+func reviewedEvidenceSinkAuthorityUse(fileName, identifier string) bool {
+	_, allowed := reviewedEvidenceSinkAuthorityUses[identifier]
+	return fileName == "evidence_sink.go" && allowed
+}
+
+func TestEvidenceSinkAuthorityCompositionRootUsesAreExact(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "evidence_sink.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if ok {
+			if _, tracked := reviewedEvidenceSinkAuthorityUses[identifier.Name]; tracked {
+				got[identifier.Name]++
+			}
+		}
+		return true
+	})
+	if len(got) != len(reviewedEvidenceSinkAuthorityUses) {
+		t.Fatalf("evidence sink authority uses=%v want=%v", got, reviewedEvidenceSinkAuthorityUses)
+	}
+	for identifier, want := range reviewedEvidenceSinkAuthorityUses {
+		if got[identifier] != want {
+			t.Fatalf("evidence sink authority %s uses=%d want=%d", identifier, got[identifier], want)
+		}
+	}
+}
 
 func TestDurableContentReceiptBindersRejectLiteralPublicationAuthority(t *testing.T) {
 	owner := &evidenceOwnerToken{nonce: [16]byte{41}}
@@ -246,12 +299,12 @@ func TestEvidenceOpenCandidateReconstructionOwnsAndRejectsEveryBindingSwap(t *te
 	}
 }
 
-func TestEvidenceOpenCandidateReconstructionHasOneProductionCallEdge(t *testing.T) {
+func TestEvidenceOpenCandidateReconstructionHasExactProductionCallEdges(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	calls := 0
+	calls := map[string]int{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || filepath.Ext(name) != ".go" || len(name) >= 8 && name[len(name)-8:] == "_test.go" {
@@ -270,15 +323,15 @@ func TestEvidenceOpenCandidateReconstructionHasOneProductionCallEdge(t *testing.
 			if !ok || identifier.Name != "ownedCurrentCandidateFromEvidenceRun" {
 				return true
 			}
-			calls++
-			if name != "evidence_runtime.go" {
+			calls[name]++
+			if name != "evidence_runtime.go" && name != "evidence_sink.go" {
 				t.Fatalf("evidence Open candidate reconstruction spread into %s", name)
 			}
 			return true
 		})
 	}
-	if calls != 1 {
-		t.Fatalf("evidence Open candidate reconstruction call edges=%d want=1", calls)
+	if calls["evidence_runtime.go"] != 1 || calls["evidence_sink.go"] != 1 || len(calls) != 2 {
+		t.Fatalf("evidence candidate reconstruction call edges=%v want one in each reviewed composition root", calls)
 	}
 }
 
@@ -431,12 +484,41 @@ func TestOwnedRecordRejectsMultipleBranchesAndAppendResultShapeFaults(t *testing
 	}
 }
 
-func TestEvidenceRuntimeProductionConstructorRejectsAndHasNoForbiddenImports(t *testing.T) {
-	if sink, err := NewEvidenceSink(); sink != nil || !IsCode(err, CodeProjectionNotImplemented) {
-		t.Fatalf("production sink accepted: %T %v", sink, err)
+func TestEvidenceRuntimeProductionConstructorSealsCanonicalLocatorAndHasNoForbiddenImports(t *testing.T) {
+	for name, rootPath := range map[string]string{
+		"empty": "", "relative": "evidence", "unclean": "/var/lib/../evidence", "filesystem-root": "/",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if sink, err := NewEvidenceSink(rootPath); sink != nil || !IsCode(err, CodeEvidenceJournalFailed) {
+				t.Fatalf("invalid sink locator accepted: %T %v", sink, err)
+			}
+		})
+	}
+	sink, err := NewEvidenceSink("/evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	concrete, ok := sink.(*evidenceFSSink)
+	if !ok || !concrete.valid() {
+		t.Fatalf("production sink was not sealed: %T", sink)
+	}
+	copySink := *concrete
+	if copySink.valid() || (&evidenceFSSink{rootPath: "/evidence"}).valid() || (&evidenceFSSink{}).valid() {
+		t.Fatal("copied or literal sink acquired production authority")
+	}
+	if session, snapshot, openErr := copySink.Open(context.Background(), VerifiedEvidenceRun{}, VerifiedRuntimeArtifact{}); session != nil || snapshot != nil || !IsCode(openErr, CodeEvidenceJournalFailed) {
+		t.Fatalf("copied sink returned a non-closed result: session=%T snapshot=%+v err=%v", session, snapshot, openErr)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if session, snapshot, openErr := sink.Open(canceled, VerifiedEvidenceRun{}, VerifiedRuntimeArtifact{}); session != nil || snapshot != nil || !IsCode(openErr, CodeContextCanceled) {
+		t.Fatalf("canceled Open returned a non-closed result: session=%T snapshot=%+v err=%v", session, snapshot, openErr)
+	}
+	if session, snapshot, openErr := sink.Open(context.Background(), VerifiedEvidenceRun{}, VerifiedRuntimeArtifact{}); session != nil || snapshot != nil || !IsCode(openErr, CodeEvidenceRecoveryRequired) {
+		t.Fatalf("unbound candidate reached the filesystem: session=%T snapshot=%+v err=%v", session, snapshot, openErr)
 	}
 	root := filepath.Dir(mustSourceFile(t))
-	for _, name := range []string{"evidence_runtime.go", "evidence_recovery.go", "evidence_trust_recovery.go"} {
+	for _, name := range []string{"evidence_runtime.go", "evidence_sink.go", "evidence_recovery.go", "evidence_trust_recovery.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, name), nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatal(err)
@@ -448,6 +530,35 @@ func TestEvidenceRuntimeProductionConstructorRejectsAndHasNoForbiddenImports(t *
 			}
 		}
 		ast.Inspect(file, func(ast.Node) bool { return true })
+	}
+}
+
+func TestEvidenceSinkSessionBindTransfersCleanupOnlyOnClosedSuccess(t *testing.T) {
+	releaseCalls := 0
+	cleanup := &evidenceSinkOpenCleanup{release: func() error { releaseCalls++; return nil }}
+	session := &runnerEvidenceSessionFake{journal: &runnerEvidenceJournalFake{}}
+	bindErr := admissionCorrupt("test-bind", "bind failed", nil)
+	if got, err := finishEvidenceSessionBind(session, bindErr, cleanup, "test-session"); got != nil || err != bindErr || session.closeCalls != 1 || cleanup.release == nil {
+		t.Fatalf("defensive bind result=%T err=%v closes=%d release=%v", got, err, session.closeCalls, cleanup.release != nil)
+	}
+	if err := cleanup.release(); err != nil || releaseCalls != 1 {
+		t.Fatalf("retained cleanup err=%v calls=%d", err, releaseCalls)
+	}
+	cleanup = &evidenceSinkOpenCleanup{release: func() error { releaseCalls++; return nil }}
+	session = &runnerEvidenceSessionFake{journal: &runnerEvidenceJournalFake{}, closeErr: admissionCorrupt("test-close", "close failed", nil)}
+	if got, err := finishEvidenceSessionBind(session, bindErr, cleanup, "test-session"); got != nil || !IsCode(err, CodeEvidenceJournalFailed) || session.closeCalls != 1 || cleanup.release == nil {
+		t.Fatalf("cleanup dominance result=%T err=%v closes=%d release=%v", got, err, session.closeCalls, cleanup.release != nil)
+	}
+
+	cleanup = &evidenceSinkOpenCleanup{release: func() error { releaseCalls++; return nil }}
+	if got, err := finishEvidenceSessionBind(nil, nil, cleanup, "test-session"); got != nil || !IsCode(err, CodeEvidenceJournalFailed) || cleanup.release == nil {
+		t.Fatalf("nil bind result=%T err=%v release=%v", got, err, cleanup.release != nil)
+	}
+
+	cleanup = &evidenceSinkOpenCleanup{release: func() error { releaseCalls++; return nil }}
+	session = &runnerEvidenceSessionFake{journal: &runnerEvidenceJournalFake{}}
+	if got, err := finishEvidenceSessionBind(session, nil, cleanup, "test-session"); got != session || err != nil || cleanup.release != nil || session.closed {
+		t.Fatalf("successful bind result=%T err=%v release=%v closed=%v", got, err, cleanup.release != nil, session.closed)
 	}
 }
 

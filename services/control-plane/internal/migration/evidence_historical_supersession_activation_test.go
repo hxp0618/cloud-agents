@@ -152,7 +152,7 @@ func TestHistoricalSuccessorActivationAuthorityDoesNotSpread(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "HistoricalSuccessorHeaderDurablePermit" || identifier.Name == "HistoricalSuccessorGenerationReadyPermit") && !allowed[name][identifier.Name] {
+			if ok && (identifier.Name == "HistoricalSuccessorHeaderDurablePermit" || identifier.Name == "HistoricalSuccessorGenerationReadyPermit") && !allowed[name][identifier.Name] && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("historical successor activation authority spread into %s", name)
 			}
 			return true

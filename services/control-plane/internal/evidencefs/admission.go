@@ -137,9 +137,10 @@ type heldLineageLock struct {
 }
 
 // AdmissionLease owns the root writer lock, every registered lineage writer
-// lock, an observed target-prefix writer lock when present, and each
-// generation-journal lock created during this epoch. It is sealed and cannot
-// be reconstructed from paths, descriptors, or filesystem identities.
+// lock, an observed target-prefix writer lock when present, every existing
+// registered generation-journal lock, and each generation-journal lock created
+// or recovered during this epoch. It is sealed and cannot be reconstructed
+// from paths, descriptors, or filesystem identities.
 type AdmissionLease struct {
 	self         *AdmissionLease
 	seal         *struct{}
@@ -232,8 +233,9 @@ func releaseLineageLocks(store *Store, locks []heldLineageLock) bool {
 }
 
 // AcquireAdmission returns revision-zero full-root physical inventory while
-// retaining the root lock and every existing registered lineage writer lock.
-// An absent target is observed only; this method never creates an entry.
+// retaining the root lock and every existing registered lineage and generation
+// writer lock. An absent target is observed only; this method never creates an
+// entry.
 func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*AdmissionLease, *AdmissionInventory, error) {
 	if err := contextError(ctx); err != nil {
 		return nil, nil, err
@@ -260,8 +262,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 		}
 		locks, retry, lockErr := s.tryAdmissionLocks(ctx, first)
 		if lockErr != nil || retry {
-			cleanupFailed := releaseLineageLocks(s, locks)
-			cleanupFailed = rootLease.Close() != nil || cleanupFailed
+			cleanupFailed := releaseAdmissionAttempt(s, rootLease, locks, nil)
 			if cleanupFailed {
 				s.poison()
 				return nil, nil, filesystem("admission-lock-cleanup")
@@ -282,8 +283,7 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 		}
 		second, err := s.discoverAdmissionRootForTarget(ctx, requested, false)
 		if err != nil || !sameAdmissionDiscovery(first, second) {
-			cleanupFailed := releaseLineageLocks(s, locks)
-			cleanupFailed = rootLease.Close() != nil || cleanupFailed
+			cleanupFailed := releaseAdmissionAttempt(s, rootLease, locks, nil)
 			if cleanupFailed {
 				s.poison()
 				return nil, nil, filesystem("admission-postlock-cleanup")
@@ -299,16 +299,54 @@ func (s *Store) AcquireAdmission(ctx context.Context, target [32]byte) (*Admissi
 			}
 			continue
 		}
+		journalLocks, retry, lockErr := s.tryAdmissionJournalLocks(ctx, second)
+		if lockErr != nil || retry {
+			cleanupFailed := releaseAdmissionAttempt(s, rootLease, locks, journalLocks)
+			if cleanupFailed {
+				s.poison()
+				return nil, nil, filesystem("admission-journal-lock-cleanup")
+			}
+			if lockErr != nil {
+				return nil, nil, lockErr
+			}
+			if err := contextError(ctx); err != nil {
+				return nil, nil, err
+			}
+			if attempt+1 == maximumAdmissionAttempts {
+				return nil, nil, filesystem("admission-journal-lock-exhausted")
+			}
+			if err := lockBackoff(ctx, attempt); err != nil {
+				return nil, nil, err
+			}
+			continue
+		}
+		third, err := s.discoverAdmissionRootForTarget(ctx, requested, false)
+		if err != nil || !sameAdmissionDiscovery(second, third) {
+			cleanupFailed := releaseAdmissionAttempt(s, rootLease, locks, journalLocks)
+			if cleanupFailed {
+				s.poison()
+				return nil, nil, filesystem("admission-journal-postlock-cleanup")
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			if attempt+1 == maximumAdmissionAttempts {
+				return nil, nil, filesystem("admission-journal-discovery-exhausted")
+			}
+			if err := lockBackoff(ctx, attempt); err != nil {
+				return nil, nil, err
+			}
+			continue
+		}
 		epoch := &admissionEpoch{seal: &struct{}{}}
-		lease := &AdmissionLease{seal: &struct{}{}, store: s, rootLease: rootLease, epoch: epoch, locks: locks, valid: true}
+		lease := &AdmissionLease{seal: &struct{}{}, store: s, rootLease: rootLease, epoch: epoch, locks: locks, journalLocks: journalLocks, valid: true}
 		lease.self = lease
-		inventory, err := lease.buildAdmissionInventory(ctx, target, 0, second)
+		inventory, err := lease.buildAdmissionInventory(ctx, target, 0, third)
 		if err == nil && (!s.usable() || !rootLease.Active()) {
 			err = filesystem("admission-inventory-cleanup")
 		}
 		if err != nil {
-			cleanupFailed := releaseLineageLocks(s, locks)
-			cleanupFailed = rootLease.Close() != nil || cleanupFailed
+			cleanupFailed := releaseAdmissionAttempt(s, rootLease, locks, journalLocks)
 			lease.valid, lease.closed = false, true
 			if cleanupFailed {
 				s.poison()
@@ -459,6 +497,129 @@ func (s *Store) tryAdmissionLocks(ctx context.Context, discovery admissionDiscov
 		}
 	}
 	return locks, false, nil
+}
+
+type discoveredJournalLock struct {
+	lineageName string
+	journalName string
+	lineageStat fileStat
+	journalStat fileStat
+	lockStat    fileStat
+}
+
+func (s *Store) tryAdmissionJournalLocks(ctx context.Context, discovery admissionDiscovery) ([]heldJournalLock, bool, error) {
+	candidates := make([]discoveredJournalLock, 0)
+	for _, lineage := range discovery.lineages {
+		for _, journal := range lineage.journals {
+			candidates = append(candidates, discoveredJournalLock{
+				lineageName: lineage.name, journalName: journal.name,
+				lineageStat: lineage.stat, journalStat: journal.stat, lockStat: journal.lock,
+			})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].lineageName != candidates[j].lineageName {
+			return candidates[i].lineageName < candidates[j].lineageName
+		}
+		return candidates[i].journalName < candidates[j].journalName
+	})
+	locks := make([]heldJournalLock, 0, len(candidates))
+	for _, candidate := range candidates {
+		if err := contextError(ctx); err != nil {
+			return locks, false, err
+		}
+		rootFD, err := s.freshRoot()
+		if err != nil {
+			return locks, false, err
+		}
+		lineagesFD, _, err := s.openVerifiedDirectory(rootFD, "lineages")
+		closeFailed := s.checkedClose(rootFD) != nil
+		if err != nil {
+			if lineagesFD >= 0 {
+				closeFailed = s.checkedClose(lineagesFD) != nil || closeFailed
+			}
+			return locks, false, filesystem("admission-journal-lineages-open")
+		}
+		if closeFailed {
+			_ = s.checkedClose(lineagesFD)
+			return locks, false, filesystem("admission-journal-root-close")
+		}
+		lineageFD, lineageStat, err := s.openVerifiedDirectory(lineagesFD, candidate.lineageName)
+		closeFailed = s.checkedClose(lineagesFD) != nil
+		if err != nil {
+			if lineageFD >= 0 {
+				closeFailed = s.checkedClose(lineageFD) != nil || closeFailed
+			}
+			return locks, false, filesystem("admission-journal-lineage-open")
+		}
+		if closeFailed {
+			_ = s.checkedClose(lineageFD)
+			return locks, false, filesystem("admission-journal-lineages-close")
+		}
+		if !sameDirectoryIdentity(lineageStat, candidate.lineageStat) {
+			closeFailed = s.checkedClose(lineageFD) != nil
+			if closeFailed {
+				return locks, false, filesystem("admission-journal-lineage-close")
+			}
+			return locks, true, nil
+		}
+		journalFD, journalStat, err := s.openVerifiedDirectory(lineageFD, candidate.journalName)
+		closeFailed = s.checkedClose(lineageFD) != nil
+		if err != nil {
+			if journalFD >= 0 {
+				closeFailed = s.checkedClose(journalFD) != nil || closeFailed
+			}
+			return locks, false, filesystem("admission-journal-open")
+		}
+		if closeFailed {
+			_ = s.checkedClose(journalFD)
+			return locks, false, filesystem("admission-journal-lineage-close")
+		}
+		if !sameDirectoryIdentity(journalStat, candidate.journalStat) {
+			closeFailed = s.checkedClose(journalFD) != nil
+			if closeFailed {
+				return locks, false, filesystem("admission-journal-close")
+			}
+			return locks, true, nil
+		}
+		lockFD, lockStat, err := s.openVerifiedRegular(journalFD, "writer.lock")
+		closeFailed = s.checkedClose(journalFD) != nil
+		if err != nil {
+			if lockFD >= 0 {
+				closeFailed = s.checkedClose(lockFD) != nil || closeFailed
+			}
+			return locks, false, filesystem("admission-journal-lock-open")
+		}
+		if closeFailed {
+			_ = s.checkedClose(lockFD)
+			return locks, false, filesystem("admission-journal-directory-close")
+		}
+		if !sameIdentity(lockStat, candidate.lockStat) {
+			closeFailed = s.checkedClose(lockFD) != nil
+			if closeFailed {
+				return locks, false, filesystem("admission-journal-lock-close")
+			}
+			return locks, true, nil
+		}
+		locks = append(locks, heldJournalLock{lineage: candidate.lineageName, name: candidate.journalName, fd: lockFD, stat: lockStat})
+		ok, lockErr := s.ops.tryLock(lockFD)
+		if lockErr != nil {
+			return locks, false, filesystem("admission-journal-try-lock")
+		}
+		if !ok {
+			return locks, true, nil
+		}
+	}
+	return locks, false, nil
+}
+
+func releaseAdmissionAttempt(store *Store, rootLease *RootLease, lineages []heldLineageLock, journals []heldJournalLock) bool {
+	failed := releaseJournalLocks(store, journals)
+	failed = releaseLineageLocks(store, lineages) || failed
+	if rootLease == nil || rootLease.Close() != nil {
+		failed = true
+	}
+	return failed
 }
 
 type discoveredLineageLock struct {

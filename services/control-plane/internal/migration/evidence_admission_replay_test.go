@@ -1185,7 +1185,7 @@ func TestAdmissionRecoverableGenerationPrefixIsBoundToFinalReservation(t *testin
 
 func TestAdmissionGenerationPrefixCanonicalAndCloneAreExact(t *testing.T) {
 	t.Parallel()
-	segment := admissionReplayFile{ordinal: 0, size: 7, digest: [32]byte{3}, identity: [32]byte{4}}
+	segment := admissionReplayFile{ordinal: 0, size: 7, digest: [32]byte{3}, identity: [32]byte{4}, handoffIdentity: [32]byte{6}}
 	transcript := &admissionReplayTranscript{
 		revision: 0, fullSetDigest: [32]byte{1}, target: [32]byte{2},
 		lineages: []admissionReplayLineage{{
@@ -1206,6 +1206,11 @@ func TestAdmissionGenerationPrefixCanonicalAndCloneAreExact(t *testing.T) {
 	transcript.lineages[0].prefixes[0].segment.identity[0] ^= 1
 	if before == admissionReplayCanonicalDigest(transcript) {
 		t.Fatal("generation prefix file identity is absent from canonical digest")
+	}
+	transcript = cloneAdmissionReplayTranscript(owned)
+	transcript.lineages[0].prefixes[0].segment.handoffIdentity[0] ^= 1
+	if before == admissionReplayCanonicalDigest(transcript) {
+		t.Fatal("generation handoff identity is absent from canonical digest")
 	}
 }
 

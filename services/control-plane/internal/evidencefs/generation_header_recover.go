@@ -56,6 +56,7 @@ func (t *AdmissionMutationToken) RecoverGenerationHeader(ctx context.Context, in
 	var observedDirectory fileStat
 	var observedLock fileStat
 	var observedSegment *AdmissionFileView
+	heldJournalLockIndex := -1
 	if registration != nil {
 		if !generationRegistrationFactValidLocked(inventory, registration) || registration.name != journalName {
 			t.consumed = true
@@ -90,10 +91,20 @@ func (t *AdmissionMutationToken) RecoverGenerationHeader(ctx context.Context, in
 		}
 		observed := expectedLineage.journals[journalIndex]
 		observedDirectory, observedLock, observedSegment = observed.stat, observed.lock, journalView.segments[0]
-		for _, held := range l.journalLocks {
+		for index, held := range l.journalLocks {
 			if held.lineage == lineage.name && held.name == journalName {
-				return pre, ErrInvalidInput
+				if heldJournalLockIndex >= 0 || !sameIdentity(held.stat, observedLock) {
+					t.consumed = true
+					l.revokeLocked()
+					return pre, ErrLeaseInvalid
+				}
+				heldJournalLockIndex = index
 			}
+		}
+		if heldJournalLockIndex < 0 {
+			t.consumed = true
+			l.revokeLocked()
+			return pre, ErrLeaseInvalid
 		}
 	}
 
@@ -219,7 +230,10 @@ func (t *AdmissionMutationToken) RecoverGenerationHeader(ctx context.Context, in
 	if l.store.ops.fsync(lineageFD) != nil {
 		return fail(filesystem("generation-recovery-parent-sync"))
 	}
-	if registration != nil && registration.state == GenerationRegistrationPrefixDirectory {
+	if heldJournalLockIndex >= 0 {
+		lockFD = l.journalLocks[heldJournalLockIndex].fd
+		lockRetained = true
+	} else if registration != nil && registration.state == GenerationRegistrationPrefixDirectory {
 		lockFD, err = l.store.ops.openFileAt(journalFD, "writer.lock", true)
 		if err != nil {
 			return fail(filesystem("generation-recovery-lock-create"))
@@ -243,13 +257,15 @@ func (t *AdmissionMutationToken) RecoverGenerationHeader(ctx context.Context, in
 	if lockSyncFailed || journalLockSyncFailed {
 		return fail(filesystem("generation-recovery-lock-sync"))
 	}
-	lockTried = true
-	locked, lockErr := l.store.ops.tryLock(lockFD)
-	if lockErr != nil || !locked {
-		return fail(filesystem("generation-recovery-lock-acquire"))
+	if heldJournalLockIndex < 0 {
+		lockTried = true
+		locked, lockErr := l.store.ops.tryLock(lockFD)
+		if lockErr != nil || !locked {
+			return fail(filesystem("generation-recovery-lock-acquire"))
+		}
+		l.journalLocks = append(l.journalLocks, heldJournalLock{lineage: lineage.name, name: journalName, fd: lockFD, stat: observedLock})
+		lockRetained = true
 	}
-	l.journalLocks = append(l.journalLocks, heldJournalLock{lineage: lineage.name, name: journalName, fd: lockFD, stat: observedLock})
-	lockRetained = true
 	if err := contextError(ctx); err != nil {
 		return fail(err)
 	}

@@ -713,10 +713,11 @@ type admissionReplaySegment struct {
 }
 
 type admissionReplayFile struct {
-	ordinal  uint32
-	size     uint64
-	digest   [32]byte
-	identity [32]byte
+	ordinal         uint32
+	size            uint64
+	digest          [32]byte
+	identity        [32]byte
+	handoffIdentity [32]byte
 }
 
 type admissionReplayObject struct {
@@ -1650,12 +1651,16 @@ func readAdmissionFile(ctx context.Context, view *evidencefs.AdmissionFileView, 
 	if fatal := capture(err, "admission-file-identity"); fatal != nil {
 		return admissionReplayFile{}, nil, finding, fatal
 	}
+	handoffIdentity, err := view.GenerationIdentityDigest()
+	if fatal := capture(err, "admission-file-handoff-identity"); fatal != nil {
+		return admissionReplayFile{}, nil, finding, fatal
+	}
 	ordinal, err := view.Ordinal()
 	if fatal := capture(err, "admission-file-ordinal"); fatal != nil {
 		return admissionReplayFile{}, nil, finding, fatal
 	}
-	fact := admissionReplayFile{ordinal: ordinal, size: size, digest: digest, identity: identity}
-	if ordinal != expectedOrdinal || digest == ([32]byte{}) || identity == ([32]byte{}) {
+	fact := admissionReplayFile{ordinal: ordinal, size: size, digest: digest, identity: identity, handoffIdentity: handoffIdentity}
+	if ordinal != expectedOrdinal || digest == ([32]byte{}) || identity == ([32]byte{}) || handoffIdentity == ([32]byte{}) {
 		if finding == nil {
 			finding = admissionCorrupt("admission-file", "file identity or ordinal is invalid", nil)
 		}
@@ -2482,6 +2487,7 @@ func writeAdmissionFileDigest(h interface{ Write([]byte) (int, error) }, file ad
 	writeAdmissionUint(h, file.size)
 	_, _ = h.Write(file.digest[:])
 	_, _ = h.Write(file.identity[:])
+	_, _ = h.Write(file.handoffIdentity[:])
 }
 
 func writeAdmissionUint(h interface{ Write([]byte) (int, error) }, value uint64) {

@@ -132,7 +132,7 @@ func bindVerifiedAdmissionGenerationReplayMode(lineage admissionReplayLineage, g
 		return nil, admissionCorrupt("admission-target-replay", "target recovery snapshot differs from verified journal summary", err)
 	}
 	replay := &verifiedAdmissionGenerationReplay{
-		indexFact:    evidencefs.GenerationFileFact{Ordinal: lineage.index.ordinal, Size: lineage.index.size, ContentDigest: lineage.index.digest, IdentityDigest: lineage.index.identity},
+		indexFact:    evidencefs.GenerationFileFact{Ordinal: lineage.index.ordinal, Size: lineage.index.size, ContentDigest: lineage.index.digest, IdentityDigest: lineage.index.handoffIdentity},
 		segmentFacts: make([]evidencefs.GenerationFileFact, len(journal.segments)), segmentRecords: make([]uint64, len(journal.segments)),
 		cursor: cursor, recovery: recovery, reservation: generation.runtimeInspection.reservation, schema: cloneGenerationJournalSchema(schema),
 		journalRecords:      journal.records,
@@ -140,7 +140,7 @@ func bindVerifiedAdmissionGenerationReplayMode(lineage admissionReplayLineage, g
 		supersessionDebited: allowSuperseded,
 	}
 	for index, segment := range journal.segments {
-		replay.segmentFacts[index] = evidencefs.GenerationFileFact{Ordinal: segment.file.ordinal, Size: segment.file.size, ContentDigest: segment.file.digest, IdentityDigest: segment.file.identity}
+		replay.segmentFacts[index] = evidencefs.GenerationFileFact{Ordinal: segment.file.ordinal, Size: segment.file.size, ContentDigest: segment.file.digest, IdentityDigest: segment.file.handoffIdentity}
 		replay.segmentRecords[index] = segment.records
 		var addErr error
 		replay.journalBytes, addErr = admissionCheckedAdd(replay.journalBytes, segment.file.size)

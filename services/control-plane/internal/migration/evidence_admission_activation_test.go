@@ -189,10 +189,10 @@ func TestGenerationReadyHasOnlyReviewedHandoffConsumer(t *testing.T) {
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "GenerationReadyPermit" || identifier.Name == "validGenerationReadyPermit") {
+			if ok && (identifier.Name == "GenerationReadyPermit" || identifier.Name == "validGenerationReadyPermit") && !reviewedEvidenceSinkAuthorityUse(name, identifier.Name) {
 				t.Fatalf("generation-ready authority has an unreviewed production consumer: %s", name)
 			}
-			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "AppendGenerationActivated" && name != "evidence_session.go" && name != "evidence_historical_supersession_recovery.go" {
+			if selector, ok := node.(*ast.SelectorExpr); ok && selector.Sel.Name == "AppendGenerationActivated" && name != "evidence_session.go" && name != "evidence_historical_supersession_recovery.go" && !reviewedEvidenceSinkAuthorityUse(name, selector.Sel.Name) {
 				t.Fatalf("brand-new activation transition has an unreviewed production call: %s", name)
 			}
 			if function, ok := node.(*ast.FuncDecl); ok && function.Name.Name == "AppendGenerationActivated" && name != "evidence_successor_activation.go" && name != "evidence_historical_supersession_activation.go" && name != "evidence_generation_prefix_activation.go" {

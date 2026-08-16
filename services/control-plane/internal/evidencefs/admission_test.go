@@ -263,6 +263,88 @@ func TestAcquireAdmissionCanonicalLocksAndPresentTarget(t *testing.T) {
 	}
 }
 
+func TestAcquireAdmissionExistingGenerationLocksAreCanonicalAndHandoffReady(t *testing.T) {
+	f := newFakeBackend()
+	f.addFinal([]byte("identity-domain-object"))
+	for _, value := range []int{2, 1} {
+		addAdmissionLineage(f, digestForTest(value), 2, 1)
+	}
+	store := testStore(t, f)
+	target := digestForTest(2)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lease.journalLocks) != 4 {
+		t.Fatalf("generation locks=%v", lease.journalLocks)
+	}
+	for index, lock := range lease.journalLocks {
+		wantLineage := fmt.Sprintf("%x", digestForTest(index/2+1))
+		wantJournal := fmt.Sprintf("%x", digestForTest(index%2+1000))
+		if lock.lineage != wantLineage || lock.name != wantJournal {
+			t.Fatalf("generation lock %d=%s/%s want=%s/%s", index, lock.lineage, lock.name, wantLineage, wantJournal)
+		}
+	}
+	lineage, err := inventory.Lineage(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := lineage.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexHandoffIdentity, err := index.GenerationIdentityDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	journals, err := lineage.Journals()
+	if err != nil || len(journals) != 2 {
+		t.Fatalf("journals=%v err=%v", journals, err)
+	}
+	segments, err := journals[0].Segments()
+	if err != nil || len(segments) != 1 {
+		t.Fatalf("segments=%v err=%v", segments, err)
+	}
+	segmentHandoffIdentity, err := segments[0].GenerationIdentityDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyIndex := *index
+	if _, err := copyIndex.GenerationIdentityDigest(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("copied inventory file acquired handoff identity: %v", err)
+	}
+	objects, err := inventory.Objects()
+	if err != nil || len(objects) != 1 {
+		t.Fatalf("objects=%v err=%v", objects, err)
+	}
+	if _, err := objects[0].file.GenerationIdentityDigest(); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("object acquired generation identity: %v", err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation, err := token.HandoffGeneration(context.Background(), inventory, digestForTest(1000))
+	if err != nil || generation == nil || !generation.Active() || lease.Active() {
+		t.Fatalf("fresh handoff generation=%v active=%v admission=%v err=%v", generation, generation != nil && generation.Active(), lease.Active(), err)
+	}
+	snapshot, err := generation.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexFact, indexErr := snapshot.IndexFact()
+	segmentFact, segmentErr := snapshot.SegmentFact(0)
+	if indexErr != nil || segmentErr != nil || indexFact.IdentityDigest != indexHandoffIdentity || segmentFact.IdentityDigest != segmentHandoffIdentity {
+		t.Fatalf("handoff identities index=%x/%x segment=%x/%x errors=%v/%v", indexFact.IdentityDigest, indexHandoffIdentity, segmentFact.IdentityDigest, segmentHandoffIdentity, indexErr, segmentErr)
+	}
+	if err := generation.Close(); err != nil || len(f.handles) != 0 {
+		t.Fatalf("generation close=%v handles=%d", err, len(f.handles))
+	}
+	if _, err := index.GenerationIdentityDigest(); !errors.Is(err, ErrLeaseInvalid) {
+		t.Fatalf("closed inventory file retained handoff identity: %v", err)
+	}
+}
+
 func TestAcquireAdmissionOneAndSixtyFourLineages(t *testing.T) {
 	for _, count := range []int{1, 64} {
 		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
@@ -284,7 +366,7 @@ func TestAcquireAdmissionOneAndSixtyFourLineages(t *testing.T) {
 	}
 }
 
-func TestAcquireAdmissionHoldsOnlyRootAndLineageFDsThenClosesAll(t *testing.T) {
+func TestAcquireAdmissionHoldsOnlyRootLineageAndGenerationFDsThenClosesAll(t *testing.T) {
 	f := newFakeBackend()
 	for value := 1; value <= 3; value++ {
 		addAdmissionLineage(f, digestForTest(value), 1, 2)
@@ -294,7 +376,7 @@ func TestAcquireAdmissionHoldsOnlyRootAndLineageFDsThenClosesAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(f.handles), 2+3; got != want {
+	if got, want := len(f.handles), 2+3+3; got != want {
 		t.Fatalf("live fds=%d want=%d", got, want)
 	}
 	if err := lease.Close(); err != nil {
@@ -303,6 +385,116 @@ func TestAcquireAdmissionHoldsOnlyRootAndLineageFDsThenClosesAll(t *testing.T) {
 	if len(f.handles) != 0 {
 		t.Fatalf("fd leak=%v", f.handles)
 	}
+}
+
+func TestAcquireAdmissionGenerationBusyRetriesAndTryErrorCleansAll(t *testing.T) {
+	t.Run("busy-retry", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 1, 1)
+		journal := lineage.children[fmt.Sprintf("%x", digestForTest(1000))]
+		f.busyInodeAttempts[journal.children["writer.lock"].stat.inode] = 1
+		store := testStore(t, f)
+		lease, _, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil || lease == nil || len(lease.journalLocks) != 1 || len(f.tryLockAttempts) < 6 {
+			var generationLocks []heldJournalLock
+			if lease != nil {
+				generationLocks = lease.journalLocks
+			}
+			t.Fatalf("lease=%v err=%v generationLocks=%v tries=%v", lease, err, generationLocks, f.tryLockAttempts)
+		}
+		if err := lease.Close(); err != nil || len(f.handles) != 0 {
+			t.Fatalf("close=%v handles=%d", err, len(f.handles))
+		}
+	})
+
+	t.Run("try-error", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 1, 1)
+		journal := lineage.children[fmt.Sprintf("%x", digestForTest(1000))]
+		f.failTryLockInodes[journal.children["writer.lock"].stat.inode] = true
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if lease != nil || inventory != nil || !errors.Is(err, ErrFilesystem) || len(f.handles) != 0 || f.unlockAttempts < 3 {
+			t.Fatalf("lease=%v inventory=%v err=%v handles=%d unlocks=%d", lease, inventory, err, len(f.handles), f.unlockAttempts)
+		}
+	})
+
+	t.Run("busy-cleanup-failure-poisons", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 1, 1)
+		journal := lineage.children[fmt.Sprintf("%x", digestForTest(1000))]
+		journalLock := journal.children["writer.lock"]
+		f.busyInodeAttempts[journalLock.stat.inode] = 1
+		f.onTryLock = func(value *fakeBackend, node *fakeNode, _ int) {
+			if node.stat.inode == journalLock.stat.inode {
+				value.failCloseAt["writer.lock"] = value.closeNameCounts["writer.lock"] + 1
+				value.onTryLock = nil
+			}
+		}
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if lease != nil || inventory != nil || !errors.Is(err, ErrFilesystem) || store.usable() || len(f.handles) != 0 {
+			t.Fatalf("lease=%v inventory=%v err=%v usable=%v handles=%d closes=%v", lease, inventory, err, store.usable(), len(f.handles), f.closeAttempts)
+		}
+	})
+
+	t.Run("post-lock-identity-drift-retries", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 1, 1)
+		journal := lineage.children[fmt.Sprintf("%x", digestForTest(1000))]
+		journalLock := journal.children["writer.lock"]
+		mutated := false
+		f.onTryLock = func(_ *fakeBackend, node *fakeNode, _ int) {
+			if !mutated && node.stat.inode == journalLock.stat.inode {
+				journal.stat.inode += 10_000
+				mutated = true
+			}
+		}
+		store := testStore(t, f)
+		lease, _, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if err != nil || lease == nil || !mutated || len(f.tryLockAttempts) < 6 {
+			t.Fatalf("lease=%v err=%v mutated=%v tries=%v", lease, err, mutated, f.tryLockAttempts)
+		}
+		if err := lease.Close(); err != nil || len(f.handles) != 0 {
+			t.Fatalf("close=%v handles=%d", err, len(f.handles))
+		}
+	})
+
+	t.Run("cancel-after-first-generation-lock-cleans-all", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 2, 1)
+		first := lineage.children[fmt.Sprintf("%x", digestForTest(1000))].children["writer.lock"]
+		ctx, cancel := context.WithCancel(context.Background())
+		f.onTryLock = func(_ *fakeBackend, node *fakeNode, _ int) {
+			if node.stat.inode == first.stat.inode {
+				cancel()
+			}
+		}
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(ctx, digestForTest(1))
+		if lease != nil || inventory != nil || !errors.Is(err, context.Canceled) || len(f.handles) != 0 || f.root.children["lineages.lock"].locked {
+			t.Fatalf("lease=%v inventory=%v err=%v handles=%d rootLocked=%v", lease, inventory, err, len(f.handles), f.root.children["lineages.lock"].locked)
+		}
+	})
+
+	t.Run("hard-open-after-first-generation-lock-does-not-retry", func(t *testing.T) {
+		f := newFakeBackend()
+		lineage := addAdmissionLineage(f, digestForTest(1), 2, 1)
+		firstName := fmt.Sprintf("%x", digestForTest(1000))
+		secondName := fmt.Sprintf("%x", digestForTest(1001))
+		first := lineage.children[firstName].children["writer.lock"]
+		f.onTryLock = func(value *fakeBackend, node *fakeNode, _ int) {
+			if node.stat.inode == first.stat.inode {
+				value.failOpenNames[secondName] = fakeNotExist
+				value.onTryLock = nil
+			}
+		}
+		store := testStore(t, f)
+		lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+		if lease != nil || inventory != nil || !errors.Is(err, ErrFilesystem) || len(f.handles) != 0 || len(f.tryLockAttempts) != 3 {
+			t.Fatalf("lease=%v inventory=%v err=%v handles=%d tries=%v", lease, inventory, err, len(f.handles), f.tryLockAttempts)
+		}
+	})
 }
 
 func TestAcquireAdmissionBusyRetriesReleaseAll(t *testing.T) {

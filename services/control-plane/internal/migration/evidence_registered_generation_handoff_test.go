@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -228,6 +229,7 @@ func TestRegisteredGenerationHandoffAuthorityDoesNotSpread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sinkUses := map[string]int{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "evidence_registered_generation_handoff.go" || name == "evidence_generation_prefix_activation.go" || name == "evidence_generation_journal.go" || name == "evidence_session.go" {
@@ -240,9 +242,21 @@ func TestRegisteredGenerationHandoffAuthorityDoesNotSpread(t *testing.T) {
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
 			if ok && guarded[identifier.Name] {
+				if name == "evidence_sink.go" {
+					sinkUses[identifier.Name]++
+					return true
+				}
 				t.Fatalf("registered generation handoff authority %s spread into %s", identifier.Name, name)
 			}
 			return true
 		})
+	}
+	wantSinkUses := map[string]int{
+		"RegisteredGenerationHandoffPermit": 3,
+		"RegisteredGenerationRecoveryReady": 1,
+		"bindRegisteredGenerationHandoff":   1,
+	}
+	if !reflect.DeepEqual(sinkUses, wantSinkUses) {
+		t.Fatalf("registered generation handoff composition-root uses=%v want=%v", sinkUses, wantSinkUses)
 	}
 }
