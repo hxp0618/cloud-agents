@@ -37,12 +37,13 @@
   开始的 23 个 recovery barrier，全部 fresh boot 均闭合到 exact 57-byte segment-0/`Revalidate`；`70269e1`
   让 migration pass-1 消费 directory/lock/segment generation-prefix facts，`7b52509` 再以 same-verifier
   historical generation、exact durable `GenerationReserved`、registered receipts 与 fresh evidencefs mutation token
-  交叉绑定 one-shot recovery，闭合到 sealed `RecoveredHeaderDurablePermit`
-- Current slice：从 `RecoveredHeaderDurablePermit` 追加 byte-exact adjacent `GenerationActivated`，再完成 retained-lock
-  handoff 与 fresh replay/session；同时固定 trusted-mount provisioner、production required-syscall probe、remaining repair
-  per-barrier virtual matrix、physical controller/host power-loss harness 和 runner/DB `Connect`；production constructor
-  继续 fail closed，`f650fae` 的 test-only physical evidence 与 `70269e1`/`7b52509` 的 migration authority evidence
-  都不构成 positive trusted-mount cross-package integration 或 filesystem slice Done
+  交叉绑定 one-shot recovery，闭合到 sealed `RecoveredHeaderDurablePermit`；`cdedda7` 再追加 byte-exact adjacent
+  `GenerationActivated`、重跑 fresh ALL-history 并闭合到既有 `RegisteredGenerationHandoffPermit`，复用已审
+  handoff/replay/session 路径
+- Current slice：固定 trusted-mount provisioner、production required-syscall probe、remaining repair per-barrier virtual
+  matrix、physical controller/host power-loss harness 和 runner/DB `Connect`；production constructor 继续 fail closed，
+  `f650fae` 的 test-only physical evidence 与 `70269e1`/`7b52509`/`cdedda7` 的 migration authority evidence 都不构成
+  positive trusted-mount cross-package integration 或 filesystem slice Done
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -121,7 +122,10 @@ Platform RC、Beta 或 GA。
 - [`generation-prefix-reopen-binder-20260816.md`](generation-prefix-reopen-binder-20260816.md) 固定 source
   `7b52509`，记录 migration-owned pass-1 generation-prefix transcript 与 same-verifier one-shot recovery binder，闭合到
   sealed `RecoveredHeaderDurablePermit`；不外推到 adjacent activation、handoff、trusted-mount integration 或 Gate closure。
-- 十三份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
+- [`generation-prefix-activation-handoff-20260816.md`](generation-prefix-activation-handoff-20260816.md) 固定 source
+  `cdedda7`，记录 recovered-header exact adjacent activation、fresh ALL-history rebind 与既有 retained-lock handoff bridge；
+  不外推到 positive trusted-mount integration、runner/DB 或 Gate closure。
+- 十四份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
   仍没有 public `EvidenceSink` constructor、trusted mount、production process-restart/power-loss 或 DB authority。
 
 ## Projection runner boundary (still open)
@@ -146,12 +150,12 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`：root-wide 与 non-target locks 已释放，只保留
 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
-但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect`、recovered-header exact
-`GenerationActivated` append 与 retained-lock handoff、remaining repair per-barrier matrix，以及真实 physical controller
-power-loss 证据仍然开放。
+但这没有改变 Gate 结论：production trusted-mount constructor、public sink、runner/DB `Connect`、positive trusted-mount
+cross-package activation/handoff integration、remaining repair per-barrier matrix，以及真实 physical controller power-loss
+证据仍然开放。
 `b6cfa88`、`daa6b9f`、`0e242ee`、`be7cae8`、`139d53a`、`f650fae` 只在 package-private test authority 下完成
 isolated QEMU guest 的 object publish、existing-segment append、retained rotation、activation、target registration/recovery
 与 generation header create/recovery barrier kill/recovery；
-`70269e1`/`7b52509` 则只完成 migration ordinary transcript 与 composite authority；production constructor 仍
-pre-mutation reject，这些记录都不是 positive trusted-mount cross-package restart 证据，也不允许越过 filesystem
-slice 进入 A2.1b。
+`70269e1`/`7b52509`/`cdedda7` 则只完成 migration ordinary transcript、composite recovery authority 与 existing-handoff
+bridge；production constructor 仍 pre-mutation reject，这些记录都不是 positive trusted-mount cross-package restart
+证据，也不允许越过 filesystem slice 进入 A2.1b。
