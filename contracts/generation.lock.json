@@ -59,14 +59,14 @@
     },
     {
       "id": "platform-go-module-boundary-checker",
-      "kind": "in-repo-typescript-go-ast-xmod-policy",
+      "kind": "in-repo-typescript-go-ast-xmod-test-policy",
       "entrypoint": "scripts/check-platform-go-modules.ts",
-      "sourceManifestSha256": "sha256:349d7602ad50ad30a32b2df194effbe8ac7a263117bea162e84bf8bdc6126b98",
+      "sourceManifestSha256": "sha256:aa8cd811c0c59043edab1bab6599cb583e66d02322161b2ba2077d4c65355c21",
       "sources": [
         "scripts/check-platform-go-modules.ts",
         "scripts/go/importcheck/main.go",
         "scripts/lib/platform-go-modules.ts",
-        "services/control-plane/internal/tools/modpolicy/main.go"
+        "services/control-plane/internal/modpolicy/policy_test.go"
       ],
       "license": "MIT"
     },
@@ -74,7 +74,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:0a92722843629e84bde3355182ca046722587e64e94b8e061569afc66d31dbba",
+      "sourceManifestSha256": "sha256:1507806ef2d59efbe761160e92cd1d84473103e195fc9012ac96e26dde9d032c",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",

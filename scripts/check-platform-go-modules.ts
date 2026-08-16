@@ -20,13 +20,7 @@ const ISOLATED_GO_ENV = {
   ...PINNED_GO_ENV,
   GOWORK: "off",
 } as const;
-const MODULE_POLICY_CHECKER = "./internal/tools/modpolicy";
-// v0.40.0 is the first x/mod release fixing GO-2026-6179 and GO-2026-6180.
-const GO_MODULE_SECURITY_FLOORS = {
-  "github.com/hxp0618/cloud-agents/services/control-plane": [
-    { path: "golang.org/x/mod", version: "v0.40.0", direct: true },
-  ],
-} as const;
+const MODULE_POLICY_PACKAGE = "./internal/modpolicy";
 
 const goVersion = run("go", ["version"], root, PINNED_GO_ENV).trim();
 if (!goVersion.startsWith(`go version ${PLATFORM_GO_TOOLCHAIN} `)) {
@@ -63,25 +57,9 @@ if ((workspace.Replace?.length ?? 0) !== 0) {
 
 run(
   "go",
-  ["run", MODULE_POLICY_CHECKER],
+  ["test", "-count=1", MODULE_POLICY_PACKAGE],
   resolve(root, "services/control-plane"),
   ISOLATED_GO_ENV,
-  JSON.stringify({
-    goVersion: PLATFORM_GO_VERSION,
-    toolchain: PLATFORM_GO_TOOLCHAIN,
-    workspace: {
-      file: "go.work",
-      source: workspaceSource,
-      expectedUses,
-    },
-    modules: PLATFORM_GO_MODULES.map((entry) => ({
-      file: `${entry.directory}/go.mod`,
-      source: readFileSync(resolve(root, entry.directory, "go.mod"), "utf8"),
-      expectedModule: entry.module,
-      minimumRequires:
-        GO_MODULE_SECURITY_FLOORS[entry.module as keyof typeof GO_MODULE_SECURITY_FLOORS] ?? [],
-    })),
-  }),
 );
 
 for (const entry of PLATFORM_GO_MODULES) {
@@ -103,13 +81,11 @@ function run(
   args: ReadonlyArray<string>,
   cwd: string,
   environment: Readonly<Record<string, string>> = {},
-  input?: string,
 ): string {
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
     env: { ...process.env, ...environment },
-    input,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
