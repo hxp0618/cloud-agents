@@ -198,9 +198,13 @@ type historicalSuccessorGenerationReadyBinding struct {
 var historicalSuccessorGenerationReadyRegistry sync.Map
 
 func bindRegisteredActivationHeader(generation generationIdentity, reserved GenerationReserved, runtime VerifiedContentReceipt, recovery VerifiedDecisionRecoveryReceipt) (ownedActivationHeader, error) {
+	return bindRegisteredActivationHeaderForOperation("historical-successor-header", generation, reserved, runtime, recovery)
+}
+
+func bindRegisteredActivationHeaderForOperation(operation string, generation generationIdentity, reserved GenerationReserved, runtime VerifiedContentReceipt, recovery VerifiedDecisionRecoveryReceipt) (ownedActivationHeader, error) {
 	header := reserved.PlannedSegment0Header
-	if reserved.Validate() != nil || !sameGenerationHeader(generation, header) || !validRegisteredRuntimeReceipt(runtime, generation.owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) || !validRegisteredDecisionRecoveryReceipt(recovery, generation.owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) || !registeredReceiptsSameStore(runtime, recovery) {
-		return ownedActivationHeader{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-header", "registered reservation receipts are unavailable or mismatched", nil)
+	if operation == "" || reserved.Validate() != nil || !sameGenerationHeader(generation, header) || !validRegisteredRuntimeReceipt(runtime, generation.owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) || !validRegisteredDecisionRecoveryReceipt(recovery, generation.owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) || !registeredReceiptsSameStore(runtime, recovery) {
+		return ownedActivationHeader{}, fail(CodeEvidenceRecoveryRequired, operation, "registered reservation receipts are unavailable or mismatched", nil)
 	}
 	return ownedActivationHeader{header: cloneProjectionValue(header), generation: generation, reserved: cloneProjectionValue(reserved)}, nil
 }
