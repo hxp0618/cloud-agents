@@ -343,6 +343,57 @@ classify_generation_activation_barrier_guest() {
   echo "EVIDENCEFS_QEMU_GENERATION_ACTIVATION_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
 }
 
+kill_target_registration_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=crash-target-registration
+  if [ "$scenario" = recovery ]; then
+    mode=crash-target-registration-recovery
+  fi
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-target-registration-$scenario-$barrier-crash.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU target registration barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_target_registration_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=classify-target-registration
+  marker="EVIDENCEFS_QEMU_CLASSIFY_TARGET_REGISTRATION_PASS filesystem=$filesystem barrier=$barrier"
+  if [ "$scenario" = recovery ]; then
+    mode=classify-target-registration-recovery
+    marker="EVIDENCEFS_QEMU_CLASSIFY_TARGET_REGISTRATION_RECOVERY_PASS filesystem=$filesystem barrier=$barrier"
+  fi
+  log_file="$work_dir/$filesystem-target-registration-$scenario-$barrier-classify.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU target registration classifier failed: scenario=$scenario barrier=$barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_TARGET_REGISTRATION_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "target registration classifier omitted recovery facts: scenario=$scenario barrier=$barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
 create_evidence_image() {
   filesystem=$1
   data_image=$2
@@ -355,6 +406,8 @@ create_evidence_image() {
 }
 
 object_barriers="before-temp-write after-short-temp-write after-temp-write before-temp-fdatasync after-temp-fdatasync before-rename after-rename before-final-fdatasync after-final-fdatasync before-directory-fsync after-directory-fsync"
+target_registration_barriers="before-target-lineages-create after-target-lineages-create before-target-lineages-parent-fsync after-target-lineages-parent-fsync before-target-directory-create after-target-directory-create before-target-directory-parent-fsync after-target-directory-parent-fsync before-target-lock-create after-target-lock-create before-target-lock-fdatasync after-target-lock-fdatasync before-target-lock-directory-fsync after-target-lock-directory-fsync before-target-lock-flock after-target-lock-flock before-target-index-create after-target-index-create before-target-index-write after-short-target-index-write after-target-index-write before-target-index-fdatasync after-target-index-fdatasync before-target-index-directory-fsync after-target-index-directory-fsync"
+target_registration_recovery_barriers="before-recovery-parent-fsync after-recovery-parent-fsync before-recovery-lock-fdatasync after-recovery-lock-fdatasync before-recovery-lock-directory-fsync after-recovery-lock-directory-fsync before-recovery-lock-flock after-recovery-lock-flock before-recovery-index-open after-recovery-index-open before-recovery-index-truncate after-recovery-index-truncate before-recovery-truncate-fdatasync after-recovery-truncate-fdatasync before-recovery-index-write after-short-recovery-index-write after-recovery-index-write before-recovery-index-fdatasync after-recovery-index-fdatasync before-recovery-index-directory-fsync after-recovery-index-directory-fsync"
 generation_append_barriers="before-journal-write after-short-journal-write after-journal-write before-journal-fdatasync after-journal-fdatasync before-index-write after-short-index-write after-index-write before-index-fdatasync after-index-fdatasync"
 generation_rotation_barriers="before-segment-create after-segment-create before-empty-fdatasync after-empty-fdatasync before-segment-directory-fsync after-segment-directory-fsync before-header-write after-short-header-write after-header-write before-header-fdatasync after-header-fdatasync before-header-checkpoint-write after-short-header-checkpoint-write after-header-checkpoint-write before-header-checkpoint-fdatasync after-header-checkpoint-fdatasync before-caller-write after-short-caller-write after-caller-write before-caller-fdatasync after-caller-fdatasync before-caller-checkpoint-write after-short-caller-checkpoint-write after-caller-checkpoint-write before-caller-checkpoint-fdatasync after-caller-checkpoint-fdatasync"
 generation_activation_barriers="before-activation-write after-short-activation-write after-activation-write before-activation-fdatasync after-activation-fdatasync"
@@ -382,6 +435,36 @@ for filesystem in ext4 xfs; do
     exit 1
   fi
   echo "EVIDENCEFS_QEMU_OBJECT_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $target_registration_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-target-registration-create-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    classify_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 25 ]; then
+    echo "unexpected target registration create crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_CREATE_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $target_registration_recovery_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-target-registration-recovery-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    classify_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 21 ]; then
+    echo "unexpected target registration recovery crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_RECOVERY_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
 
   barrier_count=0
   for barrier in $generation_append_barriers; do

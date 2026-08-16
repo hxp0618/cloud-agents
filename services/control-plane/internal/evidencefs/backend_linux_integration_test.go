@@ -104,6 +104,18 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	case "classify-generation-activation-crash":
 		classifyLinuxIntegrationGenerationActivationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
+	case "target-registration-crash":
+		createLinuxIntegrationTargetAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-target-registration-crash":
+		classifyLinuxIntegrationTargetRegistrationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv), false)
+		return
+	case "target-registration-recovery-crash":
+		recoverLinuxIntegrationTargetAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-target-registration-recovery-crash":
+		classifyLinuxIntegrationTargetRegistrationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv), true)
+		return
 	case "":
 	default:
 		t.Fatal("unknown integration helper mode")
@@ -191,6 +203,386 @@ func blockLinuxIntegrationCrashBarrier(barrier, point string) {
 	for {
 		time.Sleep(time.Hour)
 	}
+}
+
+// linuxIntegrationTargetRegistrationCrashBackend is armed only after the
+// revision-zero absent-target inventory has been minted. It binds each marker
+// to the exact root, lineages directory, target directory, lock, or index
+// descriptor used by CreateTargetLineage.
+type linuxIntegrationTargetRegistrationCrashBackend struct {
+	linuxBackend
+	barrier              string
+	armed                bool
+	rootFD               int
+	lineagesFD           int
+	lineageFD            int
+	lockFD               int
+	indexFD              int
+	indexExpected        int
+	indexWritten         int
+	lockDirectorySynced  bool
+	indexDirectorySynced bool
+}
+
+var _ backend = (*linuxIntegrationTargetRegistrationCrashBackend)(nil)
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) arm(barrier string) {
+	b.barrier = barrier
+	b.rootFD, b.lineagesFD, b.lineageFD, b.lockFD, b.indexFD = -1, -1, -1, -1, -1
+	b.indexExpected, b.indexWritten = 0, 0
+	b.lockDirectorySynced, b.indexDirectorySynced = false, false
+	b.armed = true
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) openRoot(path string) (int, error) {
+	fd, err := b.linuxBackend.openRoot(path)
+	if b.armed && err == nil && b.rootFD < 0 {
+		b.rootFD = fd
+	}
+	return fd, err
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) openDirAt(parent int, name string) (int, error) {
+	fd, err := b.linuxBackend.openDirAt(parent, name)
+	if !b.armed || err != nil {
+		return fd, err
+	}
+	switch {
+	case parent == b.rootFD && name == "lineages":
+		b.lineagesFD = fd
+	case parent == b.lineagesFD && name == targetName(linuxIntegrationTarget):
+		b.lineageFD = fd
+	}
+	return fd, nil
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) mkdirAt(parent int, name string) error {
+	if !b.armed {
+		return b.linuxBackend.mkdirAt(parent, name)
+	}
+	before, after := "", ""
+	switch {
+	case parent == b.rootFD && name == "lineages":
+		before, after = "before-target-lineages-create", "after-target-lineages-create"
+	case parent == b.lineagesFD && name == targetName(linuxIntegrationTarget):
+		before, after = "before-target-directory-create", "after-target-directory-create"
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.mkdirAt(parent, name)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) openFileAt(parent int, name string, create bool) (int, error) {
+	if !b.armed || !create || parent != b.lineageFD || (name != "writer.lock" && name != "index.caj") {
+		return b.linuxBackend.openFileAt(parent, name, create)
+	}
+	before, after := "before-target-lock-create", "after-target-lock-create"
+	if name == "index.caj" {
+		before, after = "before-target-index-create", "after-target-index-create"
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	fd, err := b.linuxBackend.openFileAt(parent, name, create)
+	if err != nil {
+		return fd, err
+	}
+	if name == "writer.lock" {
+		b.lockFD = fd
+	} else {
+		b.indexFD = fd
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	return fd, nil
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) write(fd int, source []byte) (int, error) {
+	if !b.armed || fd != b.indexFD {
+		return b.linuxBackend.write(fd, source)
+	}
+	if b.indexWritten == 0 {
+		b.indexExpected = len(source)
+		blockLinuxIntegrationCrashBarrier(b.barrier, "before-target-index-write")
+	}
+	if b.indexWritten == 0 && b.barrier == "after-short-target-index-write" {
+		limit := len(source) / 2
+		if limit == 0 {
+			limit = 1
+		}
+		count, err := b.linuxBackend.write(fd, source[:limit])
+		if count > 0 {
+			b.indexWritten += count
+		}
+		if err == nil && count == limit {
+			blockLinuxIntegrationCrashBarrier(b.barrier, "after-short-target-index-write")
+		}
+		return count, err
+	}
+	count, err := b.linuxBackend.write(fd, source)
+	if count > 0 {
+		b.indexWritten += count
+	}
+	if err == nil && b.indexWritten == b.indexExpected {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-target-index-write")
+	}
+	return count, err
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) fdatasync(fd int) error {
+	if !b.armed {
+		return b.linuxBackend.fdatasync(fd)
+	}
+	before, after := "", ""
+	switch fd {
+	case b.lockFD:
+		before, after = "before-target-lock-fdatasync", "after-target-lock-fdatasync"
+	case b.indexFD:
+		before, after = "before-target-index-fdatasync", "after-target-index-fdatasync"
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.fdatasync(fd)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) fsync(fd int) error {
+	if !b.armed {
+		return b.linuxBackend.fsync(fd)
+	}
+	before, after := "", ""
+	switch fd {
+	case b.rootFD:
+		before, after = "before-target-lineages-parent-fsync", "after-target-lineages-parent-fsync"
+	case b.lineagesFD:
+		before, after = "before-target-directory-parent-fsync", "after-target-directory-parent-fsync"
+	case b.lineageFD:
+		if !b.lockDirectorySynced {
+			before, after = "before-target-lock-directory-fsync", "after-target-lock-directory-fsync"
+		} else if !b.indexDirectorySynced {
+			before, after = "before-target-index-directory-fsync", "after-target-index-directory-fsync"
+		}
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.fsync(fd)
+	if err == nil {
+		if fd == b.lineageFD && !b.lockDirectorySynced {
+			b.lockDirectorySynced = true
+		} else if fd == b.lineageFD {
+			b.indexDirectorySynced = true
+		}
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+func (b *linuxIntegrationTargetRegistrationCrashBackend) tryLock(fd int) (bool, error) {
+	if !b.armed || fd != b.lockFD {
+		return b.linuxBackend.tryLock(fd)
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-target-lock-flock")
+	locked, err := b.linuxBackend.tryLock(fd)
+	if err == nil && locked {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-target-lock-flock")
+	}
+	return locked, err
+}
+
+// linuxIntegrationTargetRecoveryCrashBackend observes the exact retained
+// prefix lock during AcquireAdmission, then is armed for RecoverTargetLineage.
+// The baseline prefix is fully durable and has a torn index, so every recovery
+// mutation barrier is measured independently of prefix construction.
+type linuxIntegrationTargetRecoveryCrashBackend struct {
+	linuxBackend
+	barrier          string
+	armed            bool
+	rootFD           int
+	lineagesFD       int
+	lineageFD        int
+	indexFD          int
+	candidateLockFD  int
+	retainedLockFD   int
+	lineageSyncCalls int
+	indexSyncCalls   int
+	indexExpected    int
+	indexWritten     int
+}
+
+var _ backend = (*linuxIntegrationTargetRecoveryCrashBackend)(nil)
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) arm(barrier string) bool {
+	if b.retainedLockFD < 0 {
+		return false
+	}
+	b.barrier = barrier
+	b.rootFD, b.lineagesFD, b.lineageFD, b.indexFD = -1, -1, -1, -1
+	b.lineageSyncCalls, b.indexSyncCalls = 0, 0
+	b.indexExpected, b.indexWritten = 0, 0
+	b.armed = true
+	return true
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) openRoot(path string) (int, error) {
+	fd, err := b.linuxBackend.openRoot(path)
+	if b.armed && err == nil && b.rootFD < 0 {
+		b.rootFD = fd
+	}
+	return fd, err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) openDirAt(parent int, name string) (int, error) {
+	fd, err := b.linuxBackend.openDirAt(parent, name)
+	if !b.armed || err != nil {
+		return fd, err
+	}
+	switch {
+	case parent == b.rootFD && name == "lineages":
+		b.lineagesFD = fd
+	case parent == b.lineagesFD && name == targetName(linuxIntegrationTarget):
+		b.lineageFD = fd
+	}
+	return fd, nil
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) openFileAt(parent int, name string, create bool) (int, error) {
+	fd, err := b.linuxBackend.openFileAt(parent, name, create)
+	if !b.armed && err == nil && !create && name == "writer.lock" {
+		b.candidateLockFD = fd
+	}
+	return fd, err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) openFileAtReadWrite(parent int, name string) (int, error) {
+	if !b.armed || parent != b.lineageFD || name != "index.caj" {
+		return b.linuxBackend.openFileAtReadWrite(parent, name)
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-recovery-index-open")
+	fd, err := b.linuxBackend.openFileAtReadWrite(parent, name)
+	if err == nil {
+		b.indexFD = fd
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-recovery-index-open")
+	}
+	return fd, err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) tryLock(fd int) (bool, error) {
+	if !b.armed {
+		locked, err := b.linuxBackend.tryLock(fd)
+		if err == nil && locked && fd == b.candidateLockFD {
+			b.retainedLockFD = fd
+		}
+		return locked, err
+	}
+	if fd != b.retainedLockFD {
+		return b.linuxBackend.tryLock(fd)
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-recovery-lock-flock")
+	locked, err := b.linuxBackend.tryLock(fd)
+	if err == nil && locked {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-recovery-lock-flock")
+	}
+	return locked, err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) close(fd int) error {
+	if !b.armed && fd == b.candidateLockFD && fd != b.retainedLockFD {
+		b.candidateLockFD = -1
+	}
+	return b.linuxBackend.close(fd)
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) truncate(fd int, size int64) error {
+	if !b.armed || fd != b.indexFD || size != 0 {
+		return b.linuxBackend.truncate(fd, size)
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-recovery-index-truncate")
+	err := b.linuxBackend.truncate(fd, size)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-recovery-index-truncate")
+	}
+	return err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
+	if !b.armed || fd != b.indexFD {
+		return b.linuxBackend.pwrite(fd, source, offset)
+	}
+	if b.indexWritten == 0 {
+		b.indexExpected = len(source)
+		blockLinuxIntegrationCrashBarrier(b.barrier, "before-recovery-index-write")
+	}
+	if b.indexWritten == 0 && b.barrier == "after-short-recovery-index-write" {
+		limit := len(source) / 2
+		if limit == 0 {
+			limit = 1
+		}
+		count, err := b.linuxBackend.pwrite(fd, source[:limit], offset)
+		if count > 0 {
+			b.indexWritten += count
+		}
+		if err == nil && count == limit {
+			blockLinuxIntegrationCrashBarrier(b.barrier, "after-short-recovery-index-write")
+		}
+		return count, err
+	}
+	count, err := b.linuxBackend.pwrite(fd, source, offset)
+	if count > 0 {
+		b.indexWritten += count
+	}
+	if err == nil && b.indexWritten == b.indexExpected {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-recovery-index-write")
+	}
+	return count, err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) fdatasync(fd int) error {
+	if !b.armed {
+		return b.linuxBackend.fdatasync(fd)
+	}
+	before, after := "", ""
+	switch {
+	case fd == b.retainedLockFD:
+		before, after = "before-recovery-lock-fdatasync", "after-recovery-lock-fdatasync"
+	case fd == b.indexFD && b.indexSyncCalls == 0:
+		before, after = "before-recovery-truncate-fdatasync", "after-recovery-truncate-fdatasync"
+	case fd == b.indexFD:
+		before, after = "before-recovery-index-fdatasync", "after-recovery-index-fdatasync"
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.fdatasync(fd)
+	if err == nil {
+		if fd == b.indexFD {
+			b.indexSyncCalls++
+		}
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+func (b *linuxIntegrationTargetRecoveryCrashBackend) fsync(fd int) error {
+	if !b.armed {
+		return b.linuxBackend.fsync(fd)
+	}
+	before, after := "", ""
+	switch {
+	case fd == b.lineagesFD:
+		before, after = "before-recovery-parent-fsync", "after-recovery-parent-fsync"
+	case fd == b.lineageFD && b.lineageSyncCalls == 0:
+		before, after = "before-recovery-lock-directory-fsync", "after-recovery-lock-directory-fsync"
+	case fd == b.lineageFD:
+		before, after = "before-recovery-index-directory-fsync", "after-recovery-index-directory-fsync"
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.fsync(fd)
+	if err == nil {
+		if fd == b.lineageFD {
+			b.lineageSyncCalls++
+		}
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
 }
 
 // linuxIntegrationGenerationAppendCrashBackend stays dormant while the
@@ -615,6 +1007,339 @@ func (b *linuxIntegrationCrashBackend) fsync(fd int) error {
 		b.hit("after-directory-fsync")
 	}
 	return err
+}
+
+func createLinuxIntegrationTargetAtCrashBarrier(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationTargetRegistrationCrashBarrier(barrier) {
+		t.Fatal("unknown target registration crash barrier")
+	}
+	ops := &linuxIntegrationTargetRegistrationCrashBackend{}
+	root, err := newRootWithAuthority(context.Background(), rootPath, uint32(os.Getuid()), ops, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lease.Close() }()
+	fact, err := inventory.TargetRegistration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := fact.State()
+	if err != nil || state != TargetRegistrationAbsent {
+		t.Fatalf("target registration baseline state=%q err=%v", state, err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops.arm(barrier)
+	result, err := token.CreateTargetLineage(context.Background(), inventory, []byte(linuxIntegrationIndexHeader))
+	t.Fatalf("target registration crossed crash barrier: outcome=%q inventory=%v err=%v", result.Outcome(), result.Inventory(), err)
+}
+
+func recoverLinuxIntegrationTargetAtCrashBarrier(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationTargetRecoveryCrashBarrier(barrier) {
+		t.Fatal("unknown target registration recovery crash barrier")
+	}
+	header := []byte(linuxIntegrationIndexHeader)
+	prepareLinuxIntegrationTargetRegistrationPrefix(t, rootPath, header[:len(header)/2])
+	ops := &linuxIntegrationTargetRecoveryCrashBackend{candidateLockFD: -1, retainedLockFD: -1}
+	root, err := newRootWithAuthority(context.Background(), rootPath, uint32(os.Getuid()), ops, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lease.Close() }()
+	fact, err := inventory.TargetRegistration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := fact.State()
+	if err != nil || state != TargetRegistrationPrefixIndex {
+		t.Fatalf("target recovery baseline state=%q err=%v", state, err)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ops.arm(barrier) {
+		t.Fatal("target recovery did not retain the observed prefix lock")
+	}
+	result, err := token.RecoverTargetLineage(context.Background(), inventory, header)
+	t.Fatalf("target recovery crossed crash barrier: outcome=%q inventory=%v err=%v", result.Outcome(), result.Inventory(), err)
+}
+
+func prepareLinuxIntegrationTargetRegistrationPrefix(t *testing.T, rootPath string, prefix []byte) {
+	t.Helper()
+	ops := linuxBackend{}
+	closeFD := func(fd int) {
+		if err := ops.close(fd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rootFD, err := ops.openRoot(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.mkdirAt(rootFD, "lineages"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.fsync(rootFD); err != nil {
+		t.Fatal(err)
+	}
+	lineagesFD, err := ops.openDirAt(rootFD, "lineages")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := targetName(linuxIntegrationTarget)
+	if err := ops.mkdirAt(lineagesFD, name); err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.fsync(lineagesFD); err != nil {
+		t.Fatal(err)
+	}
+	lineageFD, err := ops.openDirAt(lineagesFD, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockFD, err := ops.openFileAt(lineageFD, "writer.lock", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.fdatasync(lockFD); err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.fsync(lineageFD); err != nil {
+		t.Fatal(err)
+	}
+	closeFD(lockFD)
+	indexFD, err := ops.openFileAt(lineageFD, "index.caj", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for offset := 0; offset < len(prefix); {
+		written, writeErr := ops.write(indexFD, prefix[offset:])
+		if writeErr != nil || written <= 0 || written > len(prefix)-offset {
+			t.Fatalf("prefix write=%d remaining=%d err=%v", written, len(prefix)-offset, writeErr)
+		}
+		offset += written
+	}
+	if err := ops.fdatasync(indexFD); err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.fsync(lineageFD); err != nil {
+		t.Fatal(err)
+	}
+	closeFD(indexFD)
+	closeFD(lineageFD)
+	closeFD(lineagesFD)
+	closeFD(rootFD)
+}
+
+func classifyLinuxIntegrationTargetRegistrationCrashState(t *testing.T, rootPath, barrier string, recovery bool) {
+	t.Helper()
+	if recovery {
+		if !validLinuxIntegrationTargetRecoveryCrashBarrier(barrier) {
+			t.Fatal("unknown target registration recovery crash barrier")
+		}
+	} else if !validLinuxIntegrationTargetRegistrationCrashBarrier(barrier) {
+		t.Fatal("unknown target registration crash barrier")
+	}
+	if root, err := Open(context.Background(), rootPath); root != nil || !errors.Is(err, ErrTrustedMountAuthority) {
+		t.Fatalf("production Open bypassed trusted mount authority: root=%v err=%v", root, err)
+	}
+	root := newLinuxIntegrationRoot(t, rootPath)
+	lease, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	fact, err := inventory.TargetRegistration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrationState, err := fact.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := string(registrationState)
+	indexBytes := uint64(0)
+	if registrationState == TargetRegistrationPrefixIndex {
+		view, err := fact.Index()
+		if err != nil || view == nil {
+			t.Fatalf("prefix index view=%v err=%v", view, err)
+		}
+		raw, err := view.ReadAll(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		indexBytes = uint64(len(raw))
+		header := []byte(linuxIntegrationIndexHeader)
+		switch {
+		case len(raw) == 0:
+			state += "_empty"
+		case len(raw) < len(header) && bytes.Equal(raw, header[:len(raw)]):
+			state += "_torn"
+		case bytes.Equal(raw, header):
+			state += "_complete"
+		default:
+			t.Fatalf("invalid target prefix index bytes=%d", len(raw))
+		}
+	}
+	if recovery {
+		if !validLinuxIntegrationTargetRecoveryCrashState(barrier, state) {
+			t.Fatalf("recovery barrier %q rejected state=%q bytes=%d", barrier, state, indexBytes)
+		}
+	} else if !validLinuxIntegrationTargetRegistrationCrashState(barrier, state) {
+		t.Fatalf("registration barrier %q rejected state=%q bytes=%d", barrier, state, indexBytes)
+	}
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result AdmissionTransitionResult
+	if registrationState == TargetRegistrationAbsent {
+		result, err = token.CreateTargetLineage(context.Background(), inventory, []byte(linuxIntegrationIndexHeader))
+	} else {
+		result, err = token.RecoverTargetLineage(context.Background(), inventory, []byte(linuxIntegrationIndexHeader))
+	}
+	if err != nil || result.Outcome() != AdmissionTransitionDurable || result.Inventory() == nil {
+		t.Fatalf("fresh target recovery state=%q outcome=%q inventory=%v err=%v", state, result.Outcome(), result.Inventory(), err)
+	}
+	next := result.Inventory()
+	nextFact, err := next.TargetRegistration()
+	if err != nil || nextFact == nil {
+		t.Fatalf("next registration fact=%v err=%v", nextFact, err)
+	}
+	nextState, err := nextFact.State()
+	if err != nil || nextState != TargetRegistrationRegisteredEmpty {
+		t.Fatalf("next registration state=%q err=%v", nextState, err)
+	}
+	lineage, err := next.Lineage(linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := lineage.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := index.ReadAll(context.Background())
+	if err != nil || !bytes.Equal(raw, []byte(linuxIntegrationIndexHeader)) {
+		t.Fatalf("recovered index=%q err=%v", raw, err)
+	}
+	journals, err := lineage.Journals()
+	if err != nil || len(journals) != 0 {
+		t.Fatalf("recovered journals=%d err=%v", len(journals), err)
+	}
+	if err := next.Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("EVIDENCEFS_INTEGRATION_TARGET_REGISTRATION_CRASH_RECOVERY barrier=%s state=%s index_bytes=%d transition=%s final_state=%s", barrier, state, indexBytes, result.CandidateKind(), nextState)
+}
+
+func validLinuxIntegrationTargetRegistrationCrashBarrier(barrier string) bool {
+	switch barrier {
+	case "before-target-lineages-create", "after-target-lineages-create",
+		"before-target-lineages-parent-fsync", "after-target-lineages-parent-fsync",
+		"before-target-directory-create", "after-target-directory-create",
+		"before-target-directory-parent-fsync", "after-target-directory-parent-fsync",
+		"before-target-lock-create", "after-target-lock-create",
+		"before-target-lock-fdatasync", "after-target-lock-fdatasync",
+		"before-target-lock-directory-fsync", "after-target-lock-directory-fsync",
+		"before-target-lock-flock", "after-target-lock-flock",
+		"before-target-index-create", "after-target-index-create",
+		"before-target-index-write", "after-short-target-index-write", "after-target-index-write",
+		"before-target-index-fdatasync", "after-target-index-fdatasync",
+		"before-target-index-directory-fsync", "after-target-index-directory-fsync":
+		return true
+	default:
+		return false
+	}
+}
+
+func validLinuxIntegrationTargetRegistrationCrashState(barrier, state string) bool {
+	switch barrier {
+	case "before-target-lineages-create", "after-target-lineages-create",
+		"before-target-lineages-parent-fsync", "after-target-lineages-parent-fsync",
+		"before-target-directory-create":
+		return state == string(TargetRegistrationAbsent)
+	case "after-target-directory-create", "before-target-directory-parent-fsync":
+		return state == string(TargetRegistrationAbsent) || state == string(TargetRegistrationPrefixDirectory)
+	case "after-target-directory-parent-fsync", "before-target-lock-create":
+		return state == string(TargetRegistrationPrefixDirectory)
+	case "after-target-lock-create", "before-target-lock-fdatasync", "after-target-lock-fdatasync", "before-target-lock-directory-fsync":
+		return state == string(TargetRegistrationPrefixDirectory) || state == string(TargetRegistrationPrefixLock)
+	case "after-target-lock-directory-fsync", "before-target-lock-flock", "after-target-lock-flock", "before-target-index-create":
+		return state == string(TargetRegistrationPrefixLock)
+	case "after-target-index-create", "before-target-index-write":
+		return state == string(TargetRegistrationPrefixLock) || state == string(TargetRegistrationPrefixIndex)+"_empty"
+	case "after-short-target-index-write":
+		return state == string(TargetRegistrationPrefixLock) || state == string(TargetRegistrationPrefixIndex)+"_empty" || state == string(TargetRegistrationPrefixIndex)+"_torn"
+	case "after-target-index-write", "before-target-index-fdatasync":
+		return state == string(TargetRegistrationPrefixLock) || state == string(TargetRegistrationPrefixIndex)+"_empty" || state == string(TargetRegistrationPrefixIndex)+"_torn" || state == string(TargetRegistrationPrefixIndex)+"_complete"
+	case "after-target-index-fdatasync", "before-target-index-directory-fsync":
+		return state == string(TargetRegistrationPrefixLock) || state == string(TargetRegistrationPrefixIndex)+"_complete"
+	case "after-target-index-directory-fsync":
+		return state == string(TargetRegistrationPrefixIndex)+"_complete"
+	default:
+		return false
+	}
+}
+
+func validLinuxIntegrationTargetRecoveryCrashBarrier(barrier string) bool {
+	switch barrier {
+	case "before-recovery-parent-fsync", "after-recovery-parent-fsync",
+		"before-recovery-lock-fdatasync", "after-recovery-lock-fdatasync",
+		"before-recovery-lock-directory-fsync", "after-recovery-lock-directory-fsync",
+		"before-recovery-lock-flock", "after-recovery-lock-flock",
+		"before-recovery-index-open", "after-recovery-index-open",
+		"before-recovery-index-truncate", "after-recovery-index-truncate",
+		"before-recovery-truncate-fdatasync", "after-recovery-truncate-fdatasync",
+		"before-recovery-index-write", "after-short-recovery-index-write", "after-recovery-index-write",
+		"before-recovery-index-fdatasync", "after-recovery-index-fdatasync",
+		"before-recovery-index-directory-fsync", "after-recovery-index-directory-fsync":
+		return true
+	default:
+		return false
+	}
+}
+
+func validLinuxIntegrationTargetRecoveryCrashState(barrier, state string) bool {
+	torn := string(TargetRegistrationPrefixIndex) + "_torn"
+	empty := string(TargetRegistrationPrefixIndex) + "_empty"
+	complete := string(TargetRegistrationPrefixIndex) + "_complete"
+	switch barrier {
+	case "before-recovery-parent-fsync", "after-recovery-parent-fsync",
+		"before-recovery-lock-fdatasync", "after-recovery-lock-fdatasync",
+		"before-recovery-lock-directory-fsync", "after-recovery-lock-directory-fsync",
+		"before-recovery-lock-flock", "after-recovery-lock-flock",
+		"before-recovery-index-open", "after-recovery-index-open", "before-recovery-index-truncate":
+		return state == torn
+	case "after-recovery-index-truncate", "before-recovery-truncate-fdatasync":
+		return state == torn || state == empty
+	case "after-recovery-truncate-fdatasync", "before-recovery-index-write":
+		return state == empty
+	case "after-short-recovery-index-write":
+		return state == empty || state == torn
+	case "after-recovery-index-write", "before-recovery-index-fdatasync":
+		return state == empty || state == torn || state == complete
+	case "after-recovery-index-fdatasync", "before-recovery-index-directory-fsync", "after-recovery-index-directory-fsync":
+		return state == complete
+	default:
+		return false
+	}
 }
 
 func publishLinuxIntegrationObjectAtCrashBarrier(t *testing.T, rootPath, barrier string) {
