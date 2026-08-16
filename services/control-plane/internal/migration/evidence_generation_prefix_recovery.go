@@ -86,8 +86,9 @@ type generationPrefixRecoveryPermitRegistryRecord struct {
 var generationPrefixRecoveryPermitRegistry sync.Map
 
 // RecoveredHeaderDurablePermit proves that the exact stored planned header is
-// durable under the retained generation lock. It deliberately has no runtime,
-// DB, cursor, activation, or handoff consumer in this slice.
+// durable under the retained generation lock. Its only mutation consumer is
+// the adjacent activation bridge; it is not itself runtime, DB, cursor,
+// handoff, or session authority.
 type RecoveredHeaderDurablePermit struct {
 	self             *RecoveredHeaderDurablePermit
 	prior            *GenerationPrefixRecoveryPermit
@@ -746,7 +747,7 @@ func validGenerationPrefixRecoveryPermit(permit *GenerationPrefixRecoveryPermit,
 }
 
 func validRecoveredHeaderDurablePermit(permit *RecoveredHeaderDurablePermit, candidate OwnedCurrentCandidate) bool {
-	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.prior.binding == nil || permit.history != permit.prior.history || permit.registered != permit.prior.registered || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.history != permit.history || permit.binding.registered != permit.registered || permit.binding.candidateBinding != candidate.binding || permit.binding.inventory != permit.inventory || permit.binding.mutation != permit.mutation || permit.inventory == nil || permit.mutation == nil || permit.consumed == nil || permit.consumed.Load() || permit.prior.consumed == nil || !permit.prior.consumed.Load() || !permit.mutation.ValidFor(permit.inventory) || !validConsumedGenerationPrefixHistory(permit.history, permit.registered, candidate) || permit.input.canonical != permit.prior.input.canonical || permit.fsResult.Inventory() != permit.inventory || !permit.fsResult.ValidFor(permit.inventory) || permit.fsResult.Outcome() != evidencefs.AdmissionTransitionDurable || permit.fsResult.Journal() != digestRaw(permit.input.journal) || permit.fsResult.HeaderDigest() != permit.input.headerBytesDigest || permit.fsResult.HeaderSize() != uint64(len(permit.input.headerBytes)) || permit.fsResult.PreviousRevision() != permit.input.revision || permit.fsResult.CandidateRevision() != permit.revision || permit.revision != permit.input.revision+1 || permit.fullSet == permit.input.fullSet || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != recoveredHeaderDurablePermitDigest(permit) {
+	if permit == nil || permit.self != permit || permit.binding == nil || permit.binding.permit != permit || permit.prior == nil || permit.prior.binding == nil || permit.history != permit.prior.history || permit.registered != permit.prior.registered || permit.candidateBinding != candidate.binding || permit.binding.prior != permit.prior || permit.binding.history != permit.history || permit.binding.registered != permit.registered || permit.binding.candidateBinding != candidate.binding || permit.binding.inventory != permit.inventory || permit.binding.mutation != permit.mutation || permit.inventory == nil || permit.mutation == nil || permit.consumed == nil || permit.consumed.Load() || permit.prior.consumed == nil || !permit.prior.consumed.Load() || !permit.mutation.ValidFor(permit.inventory) || !validRetiredGenerationPrefixHistory(permit.history, permit.registered, candidate) || permit.input.canonical != permit.prior.input.canonical || permit.fsResult.Inventory() != permit.inventory || !permit.fsResult.ValidFor(permit.inventory) || permit.fsResult.Outcome() != evidencefs.AdmissionTransitionDurable || permit.fsResult.Journal() != digestRaw(permit.input.journal) || permit.fsResult.HeaderDigest() != permit.input.headerBytesDigest || permit.fsResult.HeaderSize() != uint64(len(permit.input.headerBytes)) || permit.fsResult.PreviousRevision() != permit.input.revision || permit.fsResult.CandidateRevision() != permit.revision || permit.revision != permit.input.revision+1 || permit.fullSet == permit.input.fullSet || permit.binding.canonical == ([32]byte{}) || permit.binding.canonical != recoveredHeaderDurablePermitDigest(permit) {
 		return false
 	}
 	recordValue, ok := recoveredHeaderDurablePermitRegistry.Load(permit)
@@ -766,12 +767,27 @@ func validRecoveredHeaderDurablePermit(permit *RecoveredHeaderDurablePermit, can
 }
 
 func validConsumedGenerationPrefixHistory(history *VerifiedAdmissionHistory, registered *verifiedAdmissionRegisteredGeneration, candidate OwnedCurrentCandidate) bool {
+	return validGenerationPrefixHistoryState(history, registered, candidate, true)
+}
+
+// validRetiredGenerationPrefixHistory keeps the exact immutable verifier,
+// receipt, and pass-one provenance after evidencefs has advanced away from the
+// source inventory revision. Requiring the old AdmissionInventory to remain
+// current here would make every durable header transition impossible to seal.
+func validRetiredGenerationPrefixHistory(history *VerifiedAdmissionHistory, registered *verifiedAdmissionRegisteredGeneration, candidate OwnedCurrentCandidate) bool {
+	return validGenerationPrefixHistoryState(history, registered, candidate, false)
+}
+
+func validGenerationPrefixHistoryState(history *VerifiedAdmissionHistory, registered *verifiedAdmissionRegisteredGeneration, candidate OwnedCurrentCandidate, requireCurrentInventory bool) bool {
 	if history == nil || history.binding == nil || registered == nil || history.targetGeneration != registered || registered.handoffConsumed == nil || !registered.handoffConsumed.Load() || registered.replay != nil || !generationPrefixRecoveryState(history.targetState) || history.owner == nil || history.owner != candidate.verifiedRun.currentDecision.owner || history.candidateBinding != candidate.binding || history.binding.owner != history.owner || history.binding.candidateBinding != candidate.binding || history.binding.inventory != history.inventory || history.binding.history != history || history.inventory == nil || !validOwnedCurrentCandidate(candidate) || admissionRecoveryFactsDigest(history.currentFacts) == ([32]byte{}) || !history.rootFacts.valid() || history.binding.canonical == ([32]byte{}) || history.binding.canonical != admissionHistoryDigest(history) || !validVerifiedAdmissionRegisteredGenerationFacts(registered, candidate.verifiedRun.currentDecision) || digestRaw(registered.descriptor.identity.executionLineageDigest) != history.target {
 		return false
 	}
 	stored, ok := verifiedAdmissionHistoryRegistry.Load(history.binding)
 	if !ok || stored != history.binding.canonical {
 		return false
+	}
+	if !requireCurrentInventory {
+		return true
 	}
 	revision, err := history.inventory.Revision()
 	if err != nil || revision != history.revision {

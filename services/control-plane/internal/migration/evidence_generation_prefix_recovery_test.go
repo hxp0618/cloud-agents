@@ -11,7 +11,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/evidencefs"
 )
 
-func TestGenerationPrefixRecoverySliceHasNoActivationHandoffOrDBConsumer(t *testing.T) {
+func TestGenerationPrefixHeaderRecoveryFileDoesNotCrossActivationHandoffOrDB(t *testing.T) {
 	raw, err := os.ReadFile("evidence_generation_prefix_recovery.go")
 	if err != nil {
 		t.Fatal(err)
