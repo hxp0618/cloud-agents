@@ -116,6 +116,18 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	case "classify-target-registration-recovery-crash":
 		classifyLinuxIntegrationTargetRegistrationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv), true)
 		return
+	case "generation-header-crash":
+		createLinuxIntegrationGenerationHeaderAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-header-crash":
+		classifyLinuxIntegrationGenerationHeaderCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv), "create")
+		return
+	case "generation-header-recovery-crash":
+		recoverLinuxIntegrationGenerationHeaderAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-header-recovery-crash":
+		classifyLinuxIntegrationGenerationHeaderCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv), "recovery")
+		return
 	case "":
 	default:
 		t.Fatal("unknown integration helper mode")

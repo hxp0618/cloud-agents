@@ -31,6 +31,7 @@ sha256_file() {
 
 harness_image=${CLOUD_AGENTS_EVIDENCEFS_HARNESS_IMAGE:-}
 apk_repository=${CLOUD_AGENTS_EVIDENCEFS_APK_REPOSITORY:-}
+matrix_scope=${CLOUD_AGENTS_EVIDENCEFS_MATRIX_SCOPE:-full}
 if [[ $harness_image != *@sha256:* ]]; then
   echo "CLOUD_AGENTS_EVIDENCEFS_HARNESS_IMAGE must be an exact local image digest" >&2
   exit 1
@@ -40,6 +41,13 @@ case $apk_repository in
   "" | https://dl-cdn.alpinelinux.org/alpine | https://mirrors.tuna.tsinghua.edu.cn/alpine) ;;
   *)
     echo "CLOUD_AGENTS_EVIDENCEFS_APK_REPOSITORY is not an allowed exact repository" >&2
+    exit 1
+    ;;
+esac
+case $matrix_scope in
+  full | generation-header) ;;
+  *)
+    echo "CLOUD_AGENTS_EVIDENCEFS_MATRIX_SCOPE is not allowed" >&2
     exit 1
     ;;
 esac
@@ -104,6 +112,7 @@ repository_args=()
 if [[ -n $apk_repository ]]; then
   repository_args+=(--env "EVIDENCEFS_POWERLOSS_APK_REPOSITORY=$apk_repository")
 fi
+repository_args+=(--env "EVIDENCEFS_POWERLOSS_MATRIX_SCOPE=$matrix_scope")
 docker run --rm --pull=never --privileged \
   --name "$active_container" \
   --label "$ownership_label=$run_id" \
@@ -127,4 +136,8 @@ if [[ $loop_after != "$loop_before" ]]; then
 fi
 
 echo "EVIDENCEFS_QEMU_HOST image_ref=$harness_image image_id=$image_id arch=$image_os/$image_arch test_binary_sha256=$binary_sha256 result=PASS"
-echo "Evidencefs Linux ext4/xfs isolated QEMU power-loss matrix: PASS"
+if [[ $matrix_scope == full ]]; then
+  echo "Evidencefs Linux ext4/xfs isolated QEMU power-loss matrix: PASS"
+else
+  echo "Evidencefs Linux ext4/xfs isolated QEMU generation-header power-loss matrix: PASS"
+fi

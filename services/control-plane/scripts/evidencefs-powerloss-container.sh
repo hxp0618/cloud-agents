@@ -6,11 +6,19 @@ work_dir=${EVIDENCEFS_POWERLOSS_WORK_DIR:-/work}
 test_binary=${EVIDENCEFS_POWERLOSS_TEST_BINARY:-/inputs/evidencefs.test}
 guest_init=${EVIDENCEFS_POWERLOSS_GUEST_INIT:-/inputs/evidencefs-powerloss-guest-init.sh}
 apk_repository=${EVIDENCEFS_POWERLOSS_APK_REPOSITORY:-https://dl-cdn.alpinelinux.org/alpine}
+matrix_scope=${EVIDENCEFS_POWERLOSS_MATRIX_SCOPE:-full}
 
 case "$apk_repository" in
   https://dl-cdn.alpinelinux.org/alpine | https://mirrors.tuna.tsinghua.edu.cn/alpine) ;;
   *)
     echo "unsupported evidencefs power-loss APK repository" >&2
+    exit 1
+    ;;
+esac
+case "$matrix_scope" in
+  full | generation-header) ;;
+  *)
+    echo "unsupported evidencefs power-loss matrix scope" >&2
     exit 1
     ;;
 esac
@@ -406,6 +414,57 @@ classify_target_registration_barrier_guest() {
   echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
 }
 
+kill_generation_header_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=crash-generation-header
+  if [ "$scenario" = recovery ]; then
+    mode=crash-generation-header-recovery
+  fi
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-header-$scenario-$barrier-crash.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation header barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_header_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=classify-generation-header
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_HEADER_PASS filesystem=$filesystem barrier=$barrier"
+  if [ "$scenario" = recovery ]; then
+    mode=classify-generation-header-recovery
+    marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_HEADER_RECOVERY_PASS filesystem=$filesystem barrier=$barrier"
+  fi
+  log_file="$work_dir/$filesystem-generation-header-$scenario-$barrier-classify.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation header classifier failed: scenario=$scenario barrier=$barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_HEADER_CRASH_RECOVERY scenario=$scenario barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation header classifier omitted recovery facts: scenario=$scenario barrier=$barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
 create_evidence_image() {
   filesystem=$1
   data_image=$2
@@ -420,11 +479,14 @@ create_evidence_image() {
 object_barriers="before-temp-write after-short-temp-write after-temp-write before-temp-fdatasync after-temp-fdatasync before-rename after-rename before-final-fdatasync after-final-fdatasync before-directory-fsync after-directory-fsync"
 target_registration_barriers="before-target-lineages-create after-target-lineages-create before-target-lineages-parent-fsync after-target-lineages-parent-fsync before-target-directory-create after-target-directory-create before-target-directory-parent-fsync after-target-directory-parent-fsync before-target-lock-create after-target-lock-create before-target-lock-fdatasync after-target-lock-fdatasync before-target-lock-directory-fsync after-target-lock-directory-fsync before-target-lock-flock after-target-lock-flock before-target-index-create after-target-index-create before-target-index-write after-short-target-index-write after-target-index-write before-target-index-fdatasync after-target-index-fdatasync before-target-index-directory-fsync after-target-index-directory-fsync"
 target_registration_recovery_barriers="before-recovery-parent-fsync after-recovery-parent-fsync before-recovery-lock-fdatasync after-recovery-lock-fdatasync before-recovery-lock-directory-fsync after-recovery-lock-directory-fsync before-recovery-lock-flock after-recovery-lock-flock before-recovery-index-open after-recovery-index-open before-recovery-index-truncate after-recovery-index-truncate before-recovery-truncate-fdatasync after-recovery-truncate-fdatasync before-recovery-index-write after-short-recovery-index-write after-recovery-index-write before-recovery-index-fdatasync after-recovery-index-fdatasync before-recovery-index-directory-fsync after-recovery-index-directory-fsync"
+generation_header_barriers="generation-header-before-directory-create generation-header-after-directory-create generation-header-before-parent-fsync generation-header-after-parent-fsync generation-header-before-lock-create generation-header-after-lock-create generation-header-before-lock-fdatasync generation-header-after-lock-fdatasync generation-header-before-lock-directory-fsync generation-header-after-lock-directory-fsync generation-header-before-lock-flock generation-header-after-lock-flock generation-header-before-segment-create generation-header-after-segment-create generation-header-before-segment-write generation-header-after-short-segment-write generation-header-after-segment-write generation-header-before-segment-fdatasync generation-header-after-segment-fdatasync generation-header-before-segment-directory-fsync generation-header-after-segment-directory-fsync"
+generation_header_recovery_barriers="generation-header-recovery-before-parent-fsync generation-header-recovery-after-parent-fsync generation-header-recovery-before-lock-open generation-header-recovery-after-lock-open generation-header-recovery-before-lock-fdatasync generation-header-recovery-after-lock-fdatasync generation-header-recovery-before-lock-directory-fsync generation-header-recovery-after-lock-directory-fsync generation-header-recovery-before-lock-flock generation-header-recovery-after-lock-flock generation-header-recovery-before-segment-open generation-header-recovery-after-segment-open generation-header-recovery-before-segment-truncate generation-header-recovery-after-segment-truncate generation-header-recovery-before-truncate-fdatasync generation-header-recovery-after-truncate-fdatasync generation-header-recovery-before-segment-write generation-header-recovery-after-short-segment-write generation-header-recovery-after-segment-write generation-header-recovery-before-segment-fdatasync generation-header-recovery-after-segment-fdatasync generation-header-recovery-before-segment-directory-fsync generation-header-recovery-after-segment-directory-fsync"
 generation_append_barriers="before-journal-write after-short-journal-write after-journal-write before-journal-fdatasync after-journal-fdatasync before-index-write after-short-index-write after-index-write before-index-fdatasync after-index-fdatasync"
 generation_rotation_barriers="before-segment-create after-segment-create before-empty-fdatasync after-empty-fdatasync before-segment-directory-fsync after-segment-directory-fsync before-header-write after-short-header-write after-header-write before-header-fdatasync after-header-fdatasync before-header-checkpoint-write after-short-header-checkpoint-write after-header-checkpoint-write before-header-checkpoint-fdatasync after-header-checkpoint-fdatasync before-caller-write after-short-caller-write after-caller-write before-caller-fdatasync after-caller-fdatasync before-caller-checkpoint-write after-short-caller-checkpoint-write after-caller-checkpoint-write before-caller-checkpoint-fdatasync after-caller-checkpoint-fdatasync"
 generation_activation_barriers="before-activation-write after-short-activation-write after-activation-write before-activation-fdatasync after-activation-fdatasync"
 
 for filesystem in ext4 xfs; do
+  if [ "$matrix_scope" = full ]; then
   data_image="$work_dir/$filesystem-evidence.img"
   create_evidence_image "$filesystem" "$data_image"
   kill_guest_after_marker "$filesystem" create-object "$data_image" EVIDENCEFS_INTEGRATION_OBJECT_PUBLISHED_AND_ROOT_LOCKED
@@ -477,6 +539,42 @@ for filesystem in ext4 xfs; do
     exit 1
   fi
   echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_RECOVERY_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+  fi
+
+  barrier_count=0
+  for barrier in $generation_header_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-header-create-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    classify_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 21 ]; then
+    echo "unexpected generation header create crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_CREATE_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $generation_header_recovery_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-header-recovery-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    classify_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 23 ]; then
+    echo "unexpected generation header recovery crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_RECOVERY_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  if [ "$matrix_scope" = generation-header ]; then
+    echo "EVIDENCEFS_QEMU_GENERATION_HEADER_SCOPE filesystem=$filesystem result=PASS"
+    continue
+  fi
 
   barrier_count=0
   for barrier in $generation_append_barriers; do
@@ -526,4 +624,8 @@ done
 
 trap - EXIT INT TERM
 cleanup
-echo "Evidencefs Linux ext4/xfs QEMU power-loss matrix: PASS"
+if [ "$matrix_scope" = full ]; then
+  echo "Evidencefs Linux ext4/xfs QEMU power-loss matrix: PASS"
+else
+  echo "Evidencefs Linux ext4/xfs QEMU generation-header power-loss matrix: PASS"
+fi

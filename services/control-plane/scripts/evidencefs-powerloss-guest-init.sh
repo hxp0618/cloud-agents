@@ -30,7 +30,7 @@ case "$filesystem" in
     ;;
 esac
 case "$mode" in
-  create-object | verify-object | create-generation | verify-all | crash-object | classify-object | crash-target-registration | classify-target-registration | crash-target-registration-recovery | classify-target-registration-recovery | crash-generation-append | classify-generation-append | crash-generation-rotation | classify-generation-rotation | crash-generation-activation | classify-generation-activation) ;;
+  create-object | verify-object | create-generation | verify-all | crash-object | classify-object | crash-target-registration | classify-target-registration | crash-target-registration-recovery | classify-target-registration-recovery | crash-generation-header | classify-generation-header | crash-generation-header-recovery | classify-generation-header-recovery | crash-generation-append | classify-generation-append | crash-generation-rotation | classify-generation-rotation | crash-generation-activation | classify-generation-activation) ;;
   *)
     echo "invalid evidencefs guest mode" >&2
     poweroff -f
@@ -42,7 +42,7 @@ modprobe virtio_blk 2>/dev/null || true
 modprobe "$filesystem" 2>/dev/null || true
 mkdir -p /mnt/evidence
 
-if [ "$mode" = create-object ] || [ "$mode" = crash-object ] || [ "$mode" = crash-target-registration ] || [ "$mode" = crash-target-registration-recovery ] || [ "$mode" = crash-generation-append ] || [ "$mode" = crash-generation-rotation ] || [ "$mode" = crash-generation-activation ]; then
+if [ "$mode" = create-object ] || [ "$mode" = crash-object ] || [ "$mode" = crash-target-registration ] || [ "$mode" = crash-target-registration-recovery ] || [ "$mode" = crash-generation-header ] || [ "$mode" = crash-generation-header-recovery ] || [ "$mode" = crash-generation-append ] || [ "$mode" = crash-generation-rotation ] || [ "$mode" = crash-generation-activation ]; then
   if [ "$filesystem" = ext4 ]; then
     mkfs.ext4 -q -F /dev/vdb
   else
@@ -52,7 +52,7 @@ fi
 
 mount -t "$filesystem" /dev/vdb /mnt/evidence
 
-if [ "$mode" = create-object ] || [ "$mode" = crash-object ] || [ "$mode" = crash-target-registration ] || [ "$mode" = crash-target-registration-recovery ] || [ "$mode" = crash-generation-append ] || [ "$mode" = crash-generation-rotation ] || [ "$mode" = crash-generation-activation ]; then
+if [ "$mode" = create-object ] || [ "$mode" = crash-object ] || [ "$mode" = crash-target-registration ] || [ "$mode" = crash-target-registration-recovery ] || [ "$mode" = crash-generation-header ] || [ "$mode" = crash-generation-header-recovery ] || [ "$mode" = crash-generation-append ] || [ "$mode" = crash-generation-rotation ] || [ "$mode" = crash-generation-activation ]; then
   if [ -d /mnt/evidence/lost+found ]; then
     rmdir /mnt/evidence/lost+found
   fi
@@ -178,6 +178,52 @@ case "$mode" in
       CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier"
     umount /mnt/evidence
     echo "EVIDENCEFS_QEMU_CLASSIFY_TARGET_REGISTRATION_RECOVERY_PASS filesystem=$filesystem barrier=$barrier"
+    ;;
+  crash-generation-header)
+    if [ -z "$barrier" ]; then
+      echo "generation header crash barrier is required" >&2
+      poweroff -f
+      exit 1
+    fi
+    run_holder \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER=generation-header-crash \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier" || true
+    echo "generation header crash helper exited before guest power loss" >&2
+    ;;
+  classify-generation-header)
+    if [ -z "$barrier" ]; then
+      echo "generation header classification barrier is required" >&2
+      poweroff -f
+      exit 1
+    fi
+    run_test \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER=classify-generation-header-crash \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier"
+    umount /mnt/evidence
+    echo "EVIDENCEFS_QEMU_CLASSIFY_GENERATION_HEADER_PASS filesystem=$filesystem barrier=$barrier"
+    ;;
+  crash-generation-header-recovery)
+    if [ -z "$barrier" ]; then
+      echo "generation header recovery crash barrier is required" >&2
+      poweroff -f
+      exit 1
+    fi
+    run_holder \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER=generation-header-recovery-crash \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier" || true
+    echo "generation header recovery crash helper exited before guest power loss" >&2
+    ;;
+  classify-generation-header-recovery)
+    if [ -z "$barrier" ]; then
+      echo "generation header recovery classification barrier is required" >&2
+      poweroff -f
+      exit 1
+    fi
+    run_test \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_HELPER=classify-generation-header-recovery-crash \
+      CLOUD_AGENTS_EVIDENCEFS_INTEGRATION_BARRIER="$barrier"
+    umount /mnt/evidence
+    echo "EVIDENCEFS_QEMU_CLASSIFY_GENERATION_HEADER_RECOVERY_PASS filesystem=$filesystem barrier=$barrier"
     ;;
   crash-generation-append)
     if [ -z "$barrier" ]; then
