@@ -98,6 +98,12 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	case "classify-generation-rotation-crash":
 		classifyLinuxIntegrationGenerationRotationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
+	case "generation-activation-crash":
+		activateLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-activation-crash":
+		classifyLinuxIntegrationGenerationActivationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
 	case "":
 	default:
 		t.Fatal("unknown integration helper mode")
@@ -294,6 +300,84 @@ func (b *linuxIntegrationGenerationAppendCrashBackend) fdatasync(fd int) error {
 	err := b.linuxBackend.fdatasync(fd)
 	if err == nil {
 		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+// linuxIntegrationGenerationActivationCrashBackend stays dormant while the
+// target and generation header are made durable. Once armed, it binds the
+// candidate activation append to the exact existing index descriptor.
+type linuxIntegrationGenerationActivationCrashBackend struct {
+	linuxBackend
+	barrier  string
+	armed    bool
+	indexFD  int
+	expected int
+	written  int
+}
+
+var _ backend = (*linuxIntegrationGenerationActivationCrashBackend)(nil)
+
+func (b *linuxIntegrationGenerationActivationCrashBackend) arm(barrier string) {
+	b.barrier = barrier
+	b.indexFD = -1
+	b.expected = 0
+	b.written = 0
+	b.armed = true
+}
+
+func (b *linuxIntegrationGenerationActivationCrashBackend) openFileAtReadWrite(parent int, name string) (int, error) {
+	fd, err := b.linuxBackend.openFileAtReadWrite(parent, name)
+	if !b.armed || err != nil || name != "index.caj" {
+		return fd, err
+	}
+	if b.indexFD >= 0 {
+		panic("generation activation opened index twice")
+	}
+	b.indexFD = fd
+	return fd, nil
+}
+
+func (b *linuxIntegrationGenerationActivationCrashBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
+	if !b.armed || fd != b.indexFD {
+		return b.linuxBackend.pwrite(fd, source, offset)
+	}
+	if b.written == 0 {
+		b.expected = len(source)
+		blockLinuxIntegrationCrashBarrier(b.barrier, "before-activation-write")
+	}
+	if b.written == 0 && b.barrier == "after-short-activation-write" {
+		limit := len(source) / 2
+		if limit == 0 {
+			limit = 1
+		}
+		count, err := b.linuxBackend.pwrite(fd, source[:limit], offset)
+		if count > 0 {
+			b.written += count
+		}
+		if err == nil && count == limit {
+			blockLinuxIntegrationCrashBarrier(b.barrier, "after-short-activation-write")
+		}
+		return count, err
+	}
+	count, err := b.linuxBackend.pwrite(fd, source, offset)
+	if count > 0 {
+		b.written += count
+	}
+	if err == nil && b.written == b.expected {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-activation-write")
+	}
+	return count, err
+}
+
+func (b *linuxIntegrationGenerationActivationCrashBackend) fdatasync(fd int) error {
+	if !b.armed || fd != b.indexFD {
+		return b.linuxBackend.fdatasync(fd)
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-activation-fdatasync")
+	err := b.linuxBackend.fdatasync(fd)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-activation-fdatasync")
 	}
 	return err
 }
@@ -758,6 +842,138 @@ func validLinuxIntegrationGenerationAppendCrashState(barrier string, state Gener
 	}
 }
 
+type linuxIntegrationGenerationActivationState string
+
+const (
+	linuxIntegrationGenerationActivationUnchanged linuxIntegrationGenerationActivationState = "unchanged"
+	linuxIntegrationGenerationActivationTorn      linuxIntegrationGenerationActivationState = "activation_torn"
+	linuxIntegrationGenerationActivationComplete  linuxIntegrationGenerationActivationState = "activation_complete"
+)
+
+func activateLinuxIntegrationGenerationAtCrashBarrier(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationGenerationActivationCrashBarrier(barrier) {
+		t.Fatal("unknown generation activation crash barrier")
+	}
+	ops := &linuxIntegrationGenerationActivationCrashBackend{}
+	_, inventory := createLinuxIntegrationPreActivation(t, rootPath, ops)
+	ops.arm(barrier)
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := token.AppendTargetIndex(context.Background(), inventory, []byte(linuxIntegrationActivationIndexFrame))
+	t.Fatalf("generation activation crossed crash barrier: outcome=%q inventory=%v err=%v", result.Outcome(), result.Inventory(), err)
+}
+
+func classifyLinuxIntegrationGenerationActivationCrashState(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationGenerationActivationCrashBarrier(barrier) {
+		t.Fatal("unknown generation activation crash barrier")
+	}
+	if root, err := Open(context.Background(), rootPath); root != nil || !errors.Is(err, ErrTrustedMountAuthority) {
+		t.Fatalf("production Open bypassed trusted mount authority: root=%v err=%v", root, err)
+	}
+	root := newLinuxIntegrationRoot(t, rootPath)
+	lease, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	target, targetErr := inventory.Target()
+	lineageIDs, lineageIDsErr := inventory.LineageIDs()
+	lineage, lineageErr := inventory.Lineage(linuxIntegrationTarget)
+	if targetErr != nil || lineageIDsErr != nil || lineageErr != nil || target != linuxIntegrationTarget || len(lineageIDs) != 1 || lineageIDs[0] != linuxIntegrationTarget {
+		t.Fatalf("target=%x ids=%x errors=%v/%v/%v", target, lineageIDs, targetErr, lineageIDsErr, lineageErr)
+	}
+	indexView, err := lineage.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := indexView.ReadAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	journals, err := lineage.Journals()
+	if err != nil || len(journals) != 1 {
+		t.Fatalf("journals=%d err=%v", len(journals), err)
+	}
+	journal, err := journals[0].ID()
+	if err != nil || journal != linuxIntegrationJournal {
+		t.Fatalf("journal=%x err=%v", journal, err)
+	}
+	segments, err := journals[0].Segments()
+	if err != nil || len(segments) != 1 {
+		t.Fatalf("segments=%d err=%v", len(segments), err)
+	}
+	ordinal, ordinalErr := segments[0].Ordinal()
+	segment, segmentErr := segments[0].ReadAll(context.Background())
+	if ordinalErr != nil || segmentErr != nil || ordinal != 0 || !bytes.Equal(segment, linuxIntegrationBaseSegmentZero()) {
+		t.Fatalf("segment ordinal=%d bytes=%q errors=%v/%v", ordinal, segment, ordinalErr, segmentErr)
+	}
+	state, ok := classifyLinuxIntegrationGenerationActivationBytes(index)
+	if !ok {
+		t.Fatalf("invalid generation activation crash index: %q", index)
+	}
+	if !validLinuxIntegrationGenerationActivationCrashState(barrier, state) {
+		t.Fatalf("barrier %q rejected generation activation recovery state=%q", barrier, state)
+	}
+	if err := inventory.Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("EVIDENCEFS_INTEGRATION_GENERATION_ACTIVATION_CRASH_RECOVERY barrier=%s state=%s index_bytes=%d segment_bytes=%d", barrier, state, len(index), len(segment))
+}
+
+func validLinuxIntegrationGenerationActivationCrashBarrier(barrier string) bool {
+	switch barrier {
+	case "before-activation-write", "after-short-activation-write", "after-activation-write",
+		"before-activation-fdatasync", "after-activation-fdatasync":
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyLinuxIntegrationGenerationActivationBytes(index []byte) (linuxIntegrationGenerationActivationState, bool) {
+	base := []byte(linuxIntegrationIndexHeader)
+	if !bytes.HasPrefix(index, base) {
+		return "", false
+	}
+	state, ok := generationReconcileSuffixState(index, uint64(len(base)), []byte(linuxIntegrationActivationIndexFrame))
+	if !ok {
+		return "", false
+	}
+	switch state {
+	case generationSuffixAbsent:
+		return linuxIntegrationGenerationActivationUnchanged, true
+	case generationSuffixPartial:
+		return linuxIntegrationGenerationActivationTorn, true
+	case generationSuffixComplete:
+		return linuxIntegrationGenerationActivationComplete, true
+	default:
+		return "", false
+	}
+}
+
+func validLinuxIntegrationGenerationActivationCrashState(barrier string, state linuxIntegrationGenerationActivationState) bool {
+	switch barrier {
+	case "before-activation-write":
+		return state == linuxIntegrationGenerationActivationUnchanged
+	case "after-short-activation-write":
+		return state == linuxIntegrationGenerationActivationUnchanged || state == linuxIntegrationGenerationActivationTorn
+	case "after-activation-write", "before-activation-fdatasync":
+		return state == linuxIntegrationGenerationActivationUnchanged || state == linuxIntegrationGenerationActivationTorn || state == linuxIntegrationGenerationActivationComplete
+	case "after-activation-fdatasync":
+		return state == linuxIntegrationGenerationActivationComplete
+	default:
+		return false
+	}
+}
+
 func rotateLinuxIntegrationGenerationAtCrashBarrier(t *testing.T, rootPath, barrier string) {
 	t.Helper()
 	if !validLinuxIntegrationGenerationRotationCrashBarrier(barrier) {
@@ -1067,6 +1283,41 @@ func createAndHoldLinuxIntegrationGeneration(t *testing.T, rootPath string) {
 	if err := generation.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func createLinuxIntegrationPreActivation(t *testing.T, rootPath string, ops backend) (*AdmissionLease, *AdmissionInventory) {
+	t.Helper()
+	root, err := newRootWithAuthority(context.Background(), rootPath, uint32(os.Getuid()), ops, mountAuthority{seal: &struct{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if admission != nil {
+			_ = admission.Close()
+		}
+	})
+	token, err := inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, err := token.CreateTargetLineage(context.Background(), inventory, []byte(linuxIntegrationIndexHeader))
+	if err != nil || registered.Outcome() != AdmissionTransitionDurable || registered.Inventory() == nil {
+		t.Fatalf("pre-activation target registration outcome=%q inventory=%v err=%v", registered.Outcome(), registered.Inventory(), err)
+	}
+	inventory = registered.Inventory()
+	token, err = inventory.MutationToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := token.CreateGenerationHeader(context.Background(), inventory, linuxIntegrationJournal, []byte(linuxIntegrationGenerationHeader))
+	if err != nil || created.Outcome() != AdmissionTransitionDurable || created.Inventory() == nil || !created.ValidFor(created.Inventory()) {
+		t.Fatalf("pre-activation generation create outcome=%q inventory=%v valid=%v err=%v", created.Outcome(), created.Inventory(), created.ValidFor(created.Inventory()), err)
+	}
+	return admission, created.Inventory()
 }
 
 func createLinuxIntegrationBaseGeneration(t *testing.T, rootPath string, ops backend) (*GenerationLease, *GenerationSnapshot) {
