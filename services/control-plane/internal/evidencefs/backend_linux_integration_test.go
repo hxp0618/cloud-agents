@@ -92,6 +92,12 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	case "classify-generation-append-crash":
 		classifyLinuxIntegrationGenerationAppendCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
 		return
+	case "generation-rotation-crash":
+		rotateLinuxIntegrationGenerationAtCrashBarrier(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
+	case "classify-generation-rotation-crash":
+		classifyLinuxIntegrationGenerationRotationCrashState(t, rootPath, os.Getenv(linuxIntegrationBarrierEnv))
+		return
 	case "":
 	default:
 		t.Fatal("unknown integration helper mode")
@@ -288,6 +294,177 @@ func (b *linuxIntegrationGenerationAppendCrashBackend) fdatasync(fd int) error {
 	err := b.linuxBackend.fdatasync(fd)
 	if err == nil {
 		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+// linuxIntegrationGenerationRotationCrashBackend stays dormant through the
+// durable base generation and existing-segment append. Once armed, it binds
+// each crash boundary to the exact index, new segment, or journal-directory
+// descriptor used by the candidate rotation composite.
+type linuxIntegrationGenerationRotationCrashBackend struct {
+	linuxBackend
+	barrier          string
+	armed            bool
+	indexFD          int
+	segmentFD        int
+	journalDirectory int
+	indexWrites      linuxIntegrationRotationWriteState
+	segmentWrites    linuxIntegrationRotationWriteState
+}
+
+type linuxIntegrationRotationWriteState struct {
+	completed int
+	expected  int
+	written   int
+}
+
+var _ backend = (*linuxIntegrationGenerationRotationCrashBackend)(nil)
+
+func (b *linuxIntegrationGenerationRotationCrashBackend) arm(barrier string) {
+	b.barrier = barrier
+	b.indexFD = -1
+	b.segmentFD = -1
+	b.journalDirectory = -1
+	b.indexWrites = linuxIntegrationRotationWriteState{}
+	b.segmentWrites = linuxIntegrationRotationWriteState{}
+	b.armed = true
+}
+
+func (b *linuxIntegrationGenerationRotationCrashBackend) openFileAtReadWrite(parent int, name string) (int, error) {
+	fd, err := b.linuxBackend.openFileAtReadWrite(parent, name)
+	if !b.armed || err != nil || name != "index.caj" {
+		return fd, err
+	}
+	if b.indexFD >= 0 {
+		panic("generation rotation opened index twice")
+	}
+	b.indexFD = fd
+	return fd, nil
+}
+
+func (b *linuxIntegrationGenerationRotationCrashBackend) openFileAt(parent int, name string, create bool) (int, error) {
+	if !b.armed || !create || name != admissionSegmentName(1) {
+		return b.linuxBackend.openFileAt(parent, name, create)
+	}
+	if b.segmentFD >= 0 || b.journalDirectory >= 0 {
+		panic("generation rotation created segment twice")
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-segment-create")
+	fd, err := b.linuxBackend.openFileAt(parent, name, create)
+	if err != nil {
+		return fd, err
+	}
+	b.segmentFD = fd
+	b.journalDirectory = parent
+	blockLinuxIntegrationCrashBarrier(b.barrier, "after-segment-create")
+	return fd, nil
+}
+
+func (b *linuxIntegrationGenerationRotationCrashBackend) pwrite(fd int, source []byte, offset int64) (int, error) {
+	if !b.armed {
+		return b.linuxBackend.pwrite(fd, source, offset)
+	}
+	var state *linuxIntegrationRotationWriteState
+	var before, short, after string
+	switch fd {
+	case b.segmentFD:
+		state = &b.segmentWrites
+		switch state.completed {
+		case 0:
+			before, short, after = "before-header-write", "after-short-header-write", "after-header-write"
+		case 1:
+			before, short, after = "before-caller-write", "after-short-caller-write", "after-caller-write"
+		default:
+			panic("generation rotation wrote segment more than twice")
+		}
+	case b.indexFD:
+		state = &b.indexWrites
+		switch state.completed {
+		case 0:
+			before, short, after = "before-header-checkpoint-write", "after-short-header-checkpoint-write", "after-header-checkpoint-write"
+		case 1:
+			before, short, after = "before-caller-checkpoint-write", "after-short-caller-checkpoint-write", "after-caller-checkpoint-write"
+		default:
+			panic("generation rotation wrote index more than twice")
+		}
+	default:
+		return b.linuxBackend.pwrite(fd, source, offset)
+	}
+	if state.written == 0 {
+		state.expected = len(source)
+		blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	}
+	if state.written == 0 && b.barrier == short {
+		limit := len(source) / 2
+		if limit == 0 {
+			limit = 1
+		}
+		count, err := b.linuxBackend.pwrite(fd, source[:limit], offset)
+		if count > 0 {
+			state.written += count
+		}
+		if err == nil && count == limit {
+			blockLinuxIntegrationCrashBarrier(b.barrier, short)
+		}
+		return count, err
+	}
+	count, err := b.linuxBackend.pwrite(fd, source, offset)
+	if count > 0 {
+		state.written += count
+	}
+	if err == nil && state.written == state.expected {
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+		state.completed++
+		state.expected = 0
+		state.written = 0
+	}
+	return count, err
+}
+
+func (b *linuxIntegrationGenerationRotationCrashBackend) fdatasync(fd int) error {
+	if !b.armed {
+		return b.linuxBackend.fdatasync(fd)
+	}
+	before, after := "", ""
+	switch fd {
+	case b.segmentFD:
+		switch b.segmentWrites.completed {
+		case 0:
+			before, after = "before-empty-fdatasync", "after-empty-fdatasync"
+		case 1:
+			before, after = "before-header-fdatasync", "after-header-fdatasync"
+		case 2:
+			before, after = "before-caller-fdatasync", "after-caller-fdatasync"
+		default:
+			panic("generation rotation synced unexpected segment state")
+		}
+	case b.indexFD:
+		switch b.indexWrites.completed {
+		case 1:
+			before, after = "before-header-checkpoint-fdatasync", "after-header-checkpoint-fdatasync"
+		case 2:
+			before, after = "before-caller-checkpoint-fdatasync", "after-caller-checkpoint-fdatasync"
+		default:
+			panic("generation rotation synced unexpected index state")
+		}
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, before)
+	err := b.linuxBackend.fdatasync(fd)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, after)
+	}
+	return err
+}
+
+func (b *linuxIntegrationGenerationRotationCrashBackend) fsync(fd int) error {
+	if !b.armed || fd != b.journalDirectory {
+		return b.linuxBackend.fsync(fd)
+	}
+	blockLinuxIntegrationCrashBarrier(b.barrier, "before-segment-directory-fsync")
+	err := b.linuxBackend.fsync(fd)
+	if err == nil {
+		blockLinuxIntegrationCrashBarrier(b.barrier, "after-segment-directory-fsync")
 	}
 	return err
 }
@@ -581,6 +758,195 @@ func validLinuxIntegrationGenerationAppendCrashState(barrier string, state Gener
 	}
 }
 
+func rotateLinuxIntegrationGenerationAtCrashBarrier(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationGenerationRotationCrashBarrier(barrier) {
+		t.Fatal("unknown generation rotation crash barrier")
+	}
+	ops := &linuxIntegrationGenerationRotationCrashBackend{}
+	generation, snapshot := createLinuxIntegrationBaseGeneration(t, rootPath, ops)
+	appended, err := generation.AppendExistingSegmentComposite(context.Background(), snapshot, []byte(linuxIntegrationExistingJournalFrame), []byte(linuxIntegrationExistingCheckpointFrame))
+	if err != nil || appended.Outcome() != AdmissionTransitionDurable || !appended.ValidFor(generation) {
+		t.Fatalf("rotation baseline append outcome=%q valid=%v err=%v", appended.Outcome(), appended.ValidFor(generation), err)
+	}
+	if err := appended.Snapshot().Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ops.arm(barrier)
+	result, err := generation.AppendRotatedSegmentComposite(context.Background(), appended.Snapshot(), []byte(linuxIntegrationRotationHeaderFrame), []byte(linuxIntegrationRotationCheckpointFrame), []byte(linuxIntegrationRotationCallerFrame), []byte(linuxIntegrationRotationCallerCheckpoint))
+	t.Fatalf("generation rotation crossed crash barrier: outcome=%q snapshot=%v err=%v", result.Outcome(), result.Snapshot(), err)
+}
+
+func classifyLinuxIntegrationGenerationRotationCrashState(t *testing.T, rootPath, barrier string) {
+	t.Helper()
+	if !validLinuxIntegrationGenerationRotationCrashBarrier(barrier) {
+		t.Fatal("unknown generation rotation crash barrier")
+	}
+	if root, err := Open(context.Background(), rootPath); root != nil || !errors.Is(err, ErrTrustedMountAuthority) {
+		t.Fatalf("production Open bypassed trusted mount authority: root=%v err=%v", root, err)
+	}
+	root := newLinuxIntegrationRoot(t, rootPath)
+	lease, inventory, err := root.AcquireAdmission(context.Background(), linuxIntegrationTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	target, targetErr := inventory.Target()
+	lineageIDs, lineageIDsErr := inventory.LineageIDs()
+	lineage, lineageErr := inventory.Lineage(linuxIntegrationTarget)
+	if targetErr != nil || lineageIDsErr != nil || lineageErr != nil || target != linuxIntegrationTarget || len(lineageIDs) != 1 || lineageIDs[0] != linuxIntegrationTarget {
+		t.Fatalf("target=%x ids=%x errors=%v/%v/%v", target, lineageIDs, targetErr, lineageIDsErr, lineageErr)
+	}
+	indexView, err := lineage.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := indexView.ReadAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	journals, err := lineage.Journals()
+	if err != nil || len(journals) != 1 {
+		t.Fatalf("journals=%d err=%v", len(journals), err)
+	}
+	journal, err := journals[0].ID()
+	if err != nil || journal != linuxIntegrationJournal {
+		t.Fatalf("journal=%x err=%v", journal, err)
+	}
+	segments, err := journals[0].Segments()
+	if err != nil || len(segments) < 1 || len(segments) > 2 {
+		t.Fatalf("segments=%d err=%v", len(segments), err)
+	}
+	segmentZeroOrdinal, segmentZeroOrdinalErr := segments[0].Ordinal()
+	segmentZero, segmentZeroErr := segments[0].ReadAll(context.Background())
+	if segmentZeroOrdinalErr != nil || segmentZeroErr != nil || segmentZeroOrdinal != 0 {
+		t.Fatalf("segment zero ordinal=%d errors=%v/%v", segmentZeroOrdinal, segmentZeroOrdinalErr, segmentZeroErr)
+	}
+	segmentOnePresent := len(segments) == 2
+	var segmentOne []byte
+	if segmentOnePresent {
+		segmentOneOrdinal, ordinalErr := segments[1].Ordinal()
+		segmentOne, err = segments[1].ReadAll(context.Background())
+		if ordinalErr != nil || err != nil || segmentOneOrdinal != 1 {
+			t.Fatalf("segment one ordinal=%d errors=%v/%v", segmentOneOrdinal, ordinalErr, err)
+		}
+	}
+	state, ok := classifyLinuxIntegrationGenerationRotationBytes(index, segmentZero, segmentOnePresent, segmentOne)
+	if !ok {
+		t.Fatalf("invalid generation rotation crash bytes: index=%q segment0=%q segment1_present=%v segment1=%q", index, segmentZero, segmentOnePresent, segmentOne)
+	}
+	if !validLinuxIntegrationGenerationRotationCrashState(barrier, state) {
+		t.Fatalf("barrier %q rejected generation rotation recovery state=%q", barrier, state)
+	}
+	if err := inventory.Revalidate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("EVIDENCEFS_INTEGRATION_GENERATION_ROTATION_CRASH_RECOVERY barrier=%s state=%s index_bytes=%d segment0_bytes=%d segment1_present=%v segment1_bytes=%d", barrier, state, len(index), len(segmentZero), segmentOnePresent, len(segmentOne))
+}
+
+func validLinuxIntegrationGenerationRotationCrashBarrier(barrier string) bool {
+	switch barrier {
+	case "before-segment-create", "after-segment-create",
+		"before-empty-fdatasync", "after-empty-fdatasync",
+		"before-segment-directory-fsync", "after-segment-directory-fsync",
+		"before-header-write", "after-short-header-write", "after-header-write",
+		"before-header-fdatasync", "after-header-fdatasync",
+		"before-header-checkpoint-write", "after-short-header-checkpoint-write", "after-header-checkpoint-write",
+		"before-header-checkpoint-fdatasync", "after-header-checkpoint-fdatasync",
+		"before-caller-write", "after-short-caller-write", "after-caller-write",
+		"before-caller-fdatasync", "after-caller-fdatasync",
+		"before-caller-checkpoint-write", "after-short-caller-checkpoint-write", "after-caller-checkpoint-write",
+		"before-caller-checkpoint-fdatasync", "after-caller-checkpoint-fdatasync":
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyLinuxIntegrationGenerationRotationBytes(index, segmentZero []byte, segmentOnePresent bool, segmentOne []byte) (GenerationRotationReconcileState, bool) {
+	indexBase := linuxIntegrationRotationBaseIndex()
+	if !bytes.HasPrefix(index, indexBase) || !bytes.Equal(segmentZero, linuxIntegrationExpectedSegmentZero()) {
+		return "", false
+	}
+	indexState, indexOK := classifyGenerationRotationSuffix(index, uint64(len(indexBase)), []byte(linuxIntegrationRotationCheckpointFrame), []byte(linuxIntegrationRotationCallerCheckpoint))
+	if !indexOK {
+		return "", false
+	}
+	if !segmentOnePresent {
+		if indexState == generationRotationSuffixAbsent {
+			return GenerationRotationReconcileSegmentAbsent, true
+		}
+		return "", false
+	}
+	segmentState, segmentOK := classifyGenerationRotationSuffix(segmentOne, 0, []byte(linuxIntegrationRotationHeaderFrame), []byte(linuxIntegrationRotationCallerFrame))
+	if !segmentOK {
+		return "", false
+	}
+	switch {
+	case segmentState == generationRotationSuffixAbsent && indexState == generationRotationSuffixAbsent:
+		return GenerationRotationReconcileSegmentEmpty, true
+	case segmentState == generationRotationSuffixFirstPartial && indexState == generationRotationSuffixAbsent:
+		return GenerationRotationReconcileHeaderTorn, true
+	case segmentState == generationRotationSuffixFirstComplete && indexState == generationRotationSuffixAbsent:
+		return GenerationRotationReconcileHeaderComplete, true
+	case segmentState == generationRotationSuffixFirstComplete && indexState == generationRotationSuffixFirstPartial:
+		return GenerationRotationReconcileHeaderCheckpointTorn, true
+	case segmentState == generationRotationSuffixFirstComplete && indexState == generationRotationSuffixFirstComplete:
+		return GenerationRotationReconcileHeaderCompositeComplete, true
+	case segmentState == generationRotationSuffixSecondPartial && indexState == generationRotationSuffixFirstComplete:
+		return GenerationRotationReconcileCallerTorn, true
+	case segmentState == generationRotationSuffixSecondComplete && indexState == generationRotationSuffixFirstComplete:
+		return GenerationRotationReconcileCallerComplete, true
+	case segmentState == generationRotationSuffixSecondComplete && indexState == generationRotationSuffixSecondPartial:
+		return GenerationRotationReconcileCallerCheckpointTorn, true
+	case segmentState == generationRotationSuffixSecondComplete && indexState == generationRotationSuffixSecondComplete:
+		return GenerationRotationReconcileCompositeComplete, true
+	default:
+		return "", false
+	}
+}
+
+func validLinuxIntegrationGenerationRotationCrashState(barrier string, state GenerationRotationReconcileState) bool {
+	switch barrier {
+	case "before-segment-create":
+		return state == GenerationRotationReconcileSegmentAbsent
+	case "after-segment-create", "before-empty-fdatasync", "after-empty-fdatasync", "before-segment-directory-fsync":
+		return state == GenerationRotationReconcileSegmentAbsent || state == GenerationRotationReconcileSegmentEmpty
+	case "after-segment-directory-fsync", "before-header-write":
+		return state == GenerationRotationReconcileSegmentEmpty
+	case "after-short-header-write":
+		return state == GenerationRotationReconcileSegmentEmpty || state == GenerationRotationReconcileHeaderTorn
+	case "after-header-write", "before-header-fdatasync":
+		return state == GenerationRotationReconcileSegmentEmpty || state == GenerationRotationReconcileHeaderTorn || state == GenerationRotationReconcileHeaderComplete
+	case "after-header-fdatasync", "before-header-checkpoint-write":
+		return state == GenerationRotationReconcileHeaderComplete
+	case "after-short-header-checkpoint-write":
+		return state == GenerationRotationReconcileHeaderComplete || state == GenerationRotationReconcileHeaderCheckpointTorn
+	case "after-header-checkpoint-write", "before-header-checkpoint-fdatasync":
+		return state == GenerationRotationReconcileHeaderComplete || state == GenerationRotationReconcileHeaderCheckpointTorn || state == GenerationRotationReconcileHeaderCompositeComplete
+	case "after-header-checkpoint-fdatasync", "before-caller-write":
+		return state == GenerationRotationReconcileHeaderCompositeComplete
+	case "after-short-caller-write":
+		return state == GenerationRotationReconcileHeaderCompositeComplete || state == GenerationRotationReconcileCallerTorn
+	case "after-caller-write", "before-caller-fdatasync":
+		return state == GenerationRotationReconcileHeaderCompositeComplete || state == GenerationRotationReconcileCallerTorn || state == GenerationRotationReconcileCallerComplete
+	case "after-caller-fdatasync", "before-caller-checkpoint-write":
+		return state == GenerationRotationReconcileCallerComplete
+	case "after-short-caller-checkpoint-write":
+		return state == GenerationRotationReconcileCallerComplete || state == GenerationRotationReconcileCallerCheckpointTorn
+	case "after-caller-checkpoint-write", "before-caller-checkpoint-fdatasync":
+		return state == GenerationRotationReconcileCallerComplete || state == GenerationRotationReconcileCallerCheckpointTorn || state == GenerationRotationReconcileCompositeComplete
+	case "after-caller-checkpoint-fdatasync":
+		return state == GenerationRotationReconcileCompositeComplete
+	default:
+		return false
+	}
+}
+
 type linuxIntegrationHolder struct {
 	command *exec.Cmd
 	stdin   io.WriteCloser
@@ -857,6 +1223,10 @@ func linuxIntegrationExpectedIndex() []byte {
 
 func linuxIntegrationBaseIndex() []byte {
 	return []byte(linuxIntegrationIndexHeader + linuxIntegrationActivationIndexFrame)
+}
+
+func linuxIntegrationRotationBaseIndex() []byte {
+	return []byte(linuxIntegrationIndexHeader + linuxIntegrationActivationIndexFrame + linuxIntegrationExistingCheckpointFrame)
 }
 
 func linuxIntegrationExpectedSegmentZero() []byte {

@@ -249,6 +249,46 @@ classify_generation_append_barrier_guest() {
   echo "EVIDENCEFS_QEMU_GENERATION_APPEND_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
 }
 
+kill_generation_rotation_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-rotation-$barrier-crash.log"
+  start_guest "$filesystem" crash-generation-rotation "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation rotation barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_ROTATION_BARRIER filesystem=$filesystem barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_rotation_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_ROTATION_PASS filesystem=$filesystem barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-rotation-$barrier-classify.log"
+  start_guest "$filesystem" classify-generation-rotation "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation rotation barrier classifier failed: $barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_ROTATION_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation rotation barrier classifier omitted recovery facts: $barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_ROTATION_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
 create_evidence_image() {
   filesystem=$1
   data_image=$2
@@ -262,6 +302,7 @@ create_evidence_image() {
 
 object_barriers="before-temp-write after-short-temp-write after-temp-write before-temp-fdatasync after-temp-fdatasync before-rename after-rename before-final-fdatasync after-final-fdatasync before-directory-fsync after-directory-fsync"
 generation_append_barriers="before-journal-write after-short-journal-write after-journal-write before-journal-fdatasync after-journal-fdatasync before-index-write after-short-index-write after-index-write before-index-fdatasync after-index-fdatasync"
+generation_rotation_barriers="before-segment-create after-segment-create before-empty-fdatasync after-empty-fdatasync before-segment-directory-fsync after-segment-directory-fsync before-header-write after-short-header-write after-header-write before-header-fdatasync after-header-fdatasync before-header-checkpoint-write after-short-header-checkpoint-write after-header-checkpoint-write before-header-checkpoint-fdatasync after-header-checkpoint-fdatasync before-caller-write after-short-caller-write after-caller-write before-caller-fdatasync after-caller-fdatasync before-caller-checkpoint-write after-short-caller-checkpoint-write after-caller-checkpoint-write before-caller-checkpoint-fdatasync after-caller-checkpoint-fdatasync"
 
 for filesystem in ext4 xfs; do
   data_image="$work_dir/$filesystem-evidence.img"
@@ -301,6 +342,21 @@ for filesystem in ext4 xfs; do
     exit 1
   fi
   echo "EVIDENCEFS_QEMU_GENERATION_APPEND_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $generation_rotation_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-rotation-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_rotation_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    classify_generation_rotation_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 26 ]; then
+    echo "unexpected generation rotation crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_ROTATION_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
 done
 
 trap - EXIT INT TERM
