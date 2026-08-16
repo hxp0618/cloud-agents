@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -183,6 +184,47 @@ func TestLinuxIntegrationDurabilityRestartAndCrossProcessLocks(t *testing.T) {
 	verifyLinuxIntegrationGeneration(t, rootPath)
 	verifyLinuxIntegrationInFreshProcess(t, "verify-generation", "durable generation")
 	t.Logf("EVIDENCEFS_LINUX_INTEGRATION filesystem=%s mount_id=%d object=%s target=%s journal=%s segments=2", filesystem, mountID, hex.EncodeToString(linuxIntegrationDigest[:]), hex.EncodeToString(linuxIntegrationTarget[:]), hex.EncodeToString(linuxIntegrationJournal[:]))
+}
+
+// TestLinuxRequiredSyscallProbe exercises the online capability probe against
+// the explicitly supplied ext4/xfs integration mount. It still uses the
+// package-private test authority and therefore does not make Open usable.
+func TestLinuxRequiredSyscallProbe(t *testing.T) {
+	if os.Getenv(linuxIntegrationRequiredEnv) != "1" {
+		t.Skip("real Linux evidencefs integration was not explicitly required")
+	}
+	rootPath := os.Getenv(linuxIntegrationRootEnv)
+	filesystem := os.Getenv(linuxIntegrationFSEnv)
+	if rootPath == "" || !filepath.IsAbs(rootPath) || filepath.Clean(rootPath) != rootPath {
+		t.Fatal("integration root must be an absolute canonical path")
+	}
+	mountID := requireLinuxIntegrationMount(t, rootPath, filesystem)
+	before := linuxIntegrationDirectoryNames(t, filepath.Join(rootPath, "objects", "sha256"))
+	root, err := newRootWithRequiredProbe(context.Background(), rootPath, uint32(os.Getuid()), linuxBackend{}, mountAuthority{seal: &struct{}{}})
+	if err != nil || root == nil || !root.usable() {
+		t.Fatalf("required syscall probe failed: root=%v err=%v", root, err)
+	}
+	after := linuxIntegrationDirectoryNames(t, filepath.Join(rootPath, "objects", "sha256"))
+	if !slices.Equal(before, after) {
+		t.Fatalf("required syscall probe changed object inventory: before=%v after=%v", before, after)
+	}
+	if opened, openErr := Open(context.Background(), rootPath); opened != nil || !errors.Is(openErr, ErrTrustedMountAuthority) {
+		t.Fatalf("required probe bypassed trusted mount authority: root=%v err=%v", opened, openErr)
+	}
+	t.Logf("EVIDENCEFS_LINUX_REQUIRED_SYSCALL_PROBE filesystem=%s mount_id=%d", filesystem, mountID)
+}
+
+func linuxIntegrationDirectoryNames(t *testing.T, path string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
 }
 
 // linuxIntegrationCrashBackend delegates to the real syscall backend and only

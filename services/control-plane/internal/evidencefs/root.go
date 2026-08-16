@@ -113,6 +113,20 @@ func newRootWithAuthority(ctx context.Context, rootPath string, uid uint32, ops 
 	return root, nil
 }
 
+// newRootWithRequiredProbe remains package-private and is not a production
+// authority constructor. A future trusted provisioner may call it only after
+// minting mountAuthority from an external non-forgeable mount capability.
+func newRootWithRequiredProbe(ctx context.Context, rootPath string, uid uint32, ops backend, authority mountAuthority) (*Root, error) {
+	root, err := newRootWithAuthority(ctx, rootPath, uid, ops, authority)
+	if err != nil {
+		return nil, err
+	}
+	if err := root.probeRequiredSyscalls(ctx); err != nil {
+		return nil, err
+	}
+	return root, nil
+}
+
 func (r *Root) freshRoot() (int, error) {
 	if !r.usable() {
 		return -1, filesystem("root-unavailable")

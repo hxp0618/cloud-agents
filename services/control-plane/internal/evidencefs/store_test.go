@@ -76,6 +76,10 @@ type fakeBackend struct {
 	unlockInodes        []uint64
 	onUnlock            func(*fakeBackend, *fakeNode, int)
 	failRename          bool
+	failRenameAt        int
+	failRenameAfterAt   int
+	replaceRenameAt     int
+	copyRenameAt        int
 	replaceOnOpen       string
 	replaceOnOpenAt     int
 	replaceAfterLock    bool
@@ -94,6 +98,8 @@ type fakeBackend struct {
 	failCloseName       string
 	failOpenNames       map[string]error
 	nonce               [16]byte
+	randomCalls         int
+	failRandomAt        int
 }
 
 func newFakeBackend() *fakeBackend {
@@ -433,22 +439,32 @@ func (f *fakeBackend) renameNoReplace(parent int, oldName, newName string) error
 	if f.failRename {
 		return errors.New("rename")
 	}
+	if f.failRenameAt > 0 && f.renames == f.failRenameAt {
+		return errors.New("rename")
+	}
 	if f.renameConflict {
 		if _, exists := parentNode.children[newName]; !exists {
 			parentNode.children[newName] = f.regular(newName, f.conflictContent)
 		}
 		return fakeExist
 	}
-	if _, exists := parentNode.children[newName]; exists {
+	if _, exists := parentNode.children[newName]; exists && f.replaceRenameAt != f.renames {
 		return fakeExist
 	}
 	node, exists := parentNode.children[oldName]
 	if !exists {
 		return fakeNotExist
 	}
+	if f.copyRenameAt > 0 && f.renames == f.copyRenameAt {
+		parentNode.children[newName] = node
+		return nil
+	}
 	delete(parentNode.children, oldName)
 	node.name = newName
 	parentNode.children[newName] = node
+	if f.failRenameAfterAt > 0 && f.renames == f.failRenameAfterAt {
+		return errors.New("rename after mutation")
+	}
 	return nil
 }
 
@@ -548,7 +564,12 @@ func (f *fakeBackend) random(target []byte) error {
 	if len(target) != len(f.nonce) {
 		return errors.New("nonce size")
 	}
+	f.randomCalls++
+	if f.failRandomAt > 0 && f.randomCalls == f.failRandomAt {
+		return errors.New("random")
+	}
 	copy(target, f.nonce[:])
+	target[len(target)-1] ^= byte(f.randomCalls - 1)
 	return nil
 }
 
