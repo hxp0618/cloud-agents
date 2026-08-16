@@ -47,11 +47,13 @@
   `aeed4b2`/`b3f8d9a` 又以 test-only module-policy gate 固定 first-fixed `x/mod v0.40.0`，保持 production
   closure 不变并将 fresh OSV/govulncheck 归零；`381b04a` 新增 root-only non-forgeable trusted-mount
   provision/revoke、Linux production constructor 与 fresh mount revalidation，并用固定 production binary 在真实 fresh
-  ext4/XFS direct loop mount 上完成 non-root positive `Open` 和 revoke 后 negative reopen；Supply Gate 仍因最终 artifact
-  scan/immutable closure 保持 OPEN
-- Current slice：migration-owned admission adapter、positive production-opened cross-package activation/handoff、physical
-  controller/host power-loss harness 和 runner/DB `Connect`；`381b04a` 已关闭 trusted-mount constructor 本身，但不构成
-  migration receipt/permit、filesystem slice Done 或任何 Gate closure
+  ext4/XFS direct loop mount 上完成 non-root positive `Open` 和 revoke 后 negative reopen；`3fe05ec` 再新增 public
+  production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
+  并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
+  final artifact scan/immutable closure 保持 OPEN
+- Current slice：runner/CLI configuration 与 pre-DB phase wiring、runner/DB `Connect`、physical controller/host power-loss
+  harness；`3fe05ec` 已关闭 public sink 和 scoped positive production-opened cross-package activation/handoff，但不构成
+  runner/DB、filesystem slice Done 或任何 Gate closure
 - Remaining P1 slices：P1-A2.1b-impl-1～3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -143,6 +145,10 @@ Platform RC、Beta 或 GA。
   `381b04a`，记录 root-only provision/revoke、opaque mount claim、production Linux `Open`/fresh revalidation、fault/static
   gates，以及同一固定 binary 在真实 ext4/XFS 上的 UID 1001 positive open 与 revoke-negative reopen；不外推到 migration
   cross-package binding、physical controller power loss、runner/DB 或 Gate closure。
+- [`migration-production-evidence-sink-20260817.md`](migration-production-evidence-sink-20260817.md) 固定 source
+  `3fe05ec`，记录 public production `EvidenceSink`、full-root all-lineage/all-generation nonblocking lock authority、exact
+  inventory→handoff identity、closed cleanup，以及真实 ext4/XFS brand-new/registered reopen/revocation matrix；不外推到
+  runner/DB、physical controller power loss 或 Gate closure。
 - [`evidencefs-qemu-generation-repair-barrier-matrix-20260816.md`](evidencefs-qemu-generation-repair-barrier-matrix-20260816.md)
   固定 source `7d78e3d`，记录 ext4/XFS 上 resync/truncate/checkpoint/discard 共 21 个 exact syscall barrier 的
   whole-QEMU kill 与 sealed fresh-mount classification；不外推到 trusted mount、physical controller 或 Gate closure。
@@ -152,8 +158,9 @@ Platform RC、Beta 或 GA。
 - [`dependency-reviews/x-mod-v0.40.0.md`](dependency-reviews/x-mod-v0.40.0.md) 固定 source `b3f8d9a`，记录
   test-only exact direct floor、`x/mod v0.40.0`/`x/tools v0.49.0` provenance、16-module fresh zero-finding scan，
   以及 unchanged Linux 7/30、Darwin 6/29 production closure。
-- 十九份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；concrete session
-  仍没有 public `EvidenceSink` constructor、production migration cross-package construction、physical power-loss 或 DB authority。
+- 二十份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；public production
+  `EvidenceSink` 已存在并通过 scoped real ext4/XFS cross-package replay，但仍没有 runner/DB、physical controller
+  power-loss 或 immutable Gate authority。
 
 ## Projection runner boundary (still open)
 
@@ -177,14 +184,16 @@ crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catal
 receipt-bound concrete journal 与 current `ActiveGeneration`/`EvidenceSession`：root-wide 与 non-target locks 已释放，只保留
 exact target lineage + generation lock pair，并已完成 compact snapshot/strict replay、same-verifier facts、typed publication
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
-但这没有改变 Gate 结论：`381b04a` 只关闭 production trusted-mount constructor/wiring 和 scoped positive
-production `Open`；public sink、runner/DB `Connect`、positive production-opened cross-package activation/handoff
-integration，以及真实 physical controller power-loss 证据仍然开放。
+但这没有改变 Gate 结论：`381b04a` 关闭 production trusted-mount constructor/wiring 和 scoped positive
+production `Open`，`3fe05ec` 再关闭 public sink 与 scoped production-opened cross-package
+brand-new/registered activation-handoff；runner/CLI configuration、runner/DB `Connect` 与真实 physical controller
+power-loss 证据仍然开放。
 `b6cfa88`、`daa6b9f`、`0e242ee`、`be7cae8`、`139d53a`、`f650fae` 只在 package-private test authority 下完成
 isolated QEMU guest 的 object publish、existing-segment append、retained rotation、activation、target registration/recovery
 与 generation header create/recovery barrier kill/recovery；
 `a3c7651` 完成 package-private required-syscall probe 和 fresh ext4/XFS online validation，`381b04a` 再用 root-owned
 mount authority 驱动同一 probe through production `Open`，
-`70269e1`/`7b52509`/`cdedda7` 则只完成 migration ordinary transcript、composite recovery authority 与 existing-handoff
-bridge；这些记录尚未在同一 production-opened store 内 cross-bind，因此还不是 positive trusted-mount
-cross-package restart 证据，也不允许越过 filesystem slice 进入 A2.1b。
+`70269e1`/`7b52509`/`cdedda7` 完成 migration ordinary transcript、composite recovery authority 与 existing-handoff
+bridge，`3fe05ec` 已将这些 reviewed seams 接入同一 production-opened store 并在 fresh ext4/XFS 上重放。该 scoped
+cross-package 证据不等于 runner/DB integration、filesystem slice reviewer-signed Done，也不允许直接把 A2.1b 或任何 Gate
+标为完成。

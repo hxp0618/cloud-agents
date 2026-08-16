@@ -1523,11 +1523,16 @@ same-package literal 修复。`AdmissionInventory` 与 `AdmissionPermit` 只能�
 `Scan`、raw usage DTO、caller counter 或 foreign fd 永远不能升格。
 
 唯一 acquisition 是 evidencefs `Store.AcquireAdmission`：先取得 `<root>/lineages.lock` root lease，在该 lease 下按 closed
-root grammar 枚举全部 registered lineage，再按 canonical lineage digest byte order 对每个 `writer.lock` 只做
-nonblocking try-lock。任一 lineage busy 时，必须逆序释放本轮已取得的全部 lineage locks，再释放 root lease，执行
-bounded、context-aware backoff 后从 root discovery 重新开始；不得持 root 等待 busy lineage，不得跳过 busy/current 以外的
-lineage，也不得接受 migration 传入的 path/fd 或 dev-inode assertion。成功返回的 `AdmissionLease` 独占 root 与此次枚举的
-全部 lineage locks；单-lineage `AcquireRootThenTryLineage` 仍服务普通 open/handoff，但不能冒充 full-root inventory authority。
+root grammar 枚举全部 registered lineage，再按 canonical lineage digest byte order 对每个 lineage `writer.lock` 只做
+nonblocking try-lock；重新发现 lineage set 稳定后，再枚举全部 registered generation，并按
+`(lineage digest, journal digest)` canonical byte order 对每个 generation `writer.lock` 只做 nonblocking try-lock。任一
+lineage/generation busy、hard-open error、context cancellation 或 post-lock discovery drift 都必须逆序释放本轮已取得的
+全部 generation locks，再逆序释放全部 lineage locks，最后释放 root lease；只有 busy/drift 可执行 bounded、
+context-aware backoff 后从 root discovery 重新开始，hard error 不得伪装成 retry。不得持 root 等待 busy writer，不得
+跳过 busy/current 以外的 lineage/generation，也不得接受 migration 传入的 path/fd 或 dev-inode assertion。成功返回的
+`AdmissionLease` 独占 root、此次枚举的全部 lineage locks 和全部 existing registered generation locks，并在 terminal
+rediscovery 后 exact 验证三组集合；这使后续 generation handoff 只能转移同一已验证 fd，而不能 adopt/re-lock foreign fd。
+单-lineage `AcquireRootThenTryLineage` 仍服务普通 open/handoff，但不能冒充 full-root inventory authority。
 第一阶段只锁定并 inventory **existing registered set**；若 requested target 不存在，inventory 只携带由 closed root scan
 产生的 typed `target_absent` fact，不创建 directory/index/lock，也不把不存在的 target 伪装成 registered member。该 fact 必须
 绑定 target canonical digest、root lease、epoch/revision 与 existing full-set digest，不能由 migration 自报。
@@ -2194,6 +2199,12 @@ Implementation checkpoint（2026-08-14）：`fd48990`～`cebacea` 已在 feature
 closed graph，包括 generation-lease→full-root reacquire、atomic receipt pair、adjacent Superseded/Reserved、successor
 activate/handoff/replay/recovery/journal 与同一 session current swap。该状态注记不改变规范，也不关闭
 `superseded_pending_reservation` 的 process-crash reopen、trusted mount、真实 ext4/XFS/power-loss、runner/DB、Gate 或发布边界。
+Implementation checkpoint（2026-08-17）：`381b04a` 已实现 root-only trusted-mount authority 与 production
+`evidencefs.OpenStore`，`3fe05ec` 再以 public `NewEvidenceSink(rootPath)` 将 fresh production store、full-root
+ALL-history admission、brand-new/registered/prefix/historical-successor closed graph 与 `EvidenceSession` 组合，并在 fresh
+ext4/XFS 上完成 brand-new、registered reopen 与 revocation-negative replay。该状态关闭 scoped production-opened
+cross-package constructor/integration 缺口，但仍不关闭 runner/DB、physical controller power-loss、reviewer-signed
+filesystem Done、任何 aggregate Gate 或发布边界。
 
 `LineageOpenState` 是 internal closed union：`ready|reserved_no_header|reserved_header_unactivated|index_stale_prefix|
 supersession_required|superseded_pending_reservation|orphan_generation|corrupt`。`ready` 才可进入 normal run；两个
@@ -2469,9 +2480,10 @@ crash/power-loss durability evidence。即使 OS/mount/syscall consistency check
 non-forgeable mount authority 时 production constructor 仍必须在任何 probe 或 mutation 前拒绝，不能凭 kernel mountinfo
 推断 direct local mount。当前 committed source 已将 `golang.org/x/sys/unix v0.44.0` 作为 direct dependency 链接到 Linux
 production filesystem source，其 exact version、license/SBOM、source provenance 与实际 syscall surface 的 dependency
-review/integration 已闭合。production constructor 继续 fail closed 的剩余原因只是 trusted mount authority 尚未实现；该闭合
-不构成 real required-syscall probe/runtime validation、`ext4`/`xfs` 或 power-loss/restart durability evidence，也不授权绕过
-下述 environment matrix。
+review/integration 已闭合；`381b04a` 随后实现上述 trusted mount authority 与 real required-syscall probe，`3fe05ec` 再把
+production-opened store 接入 public migration `EvidenceSink`，并在 fresh ext4/XFS 上完成 scoped brand-new/registered/
+revocation matrix。该状态仍不构成 physical controller power-loss、runner/DB、reviewer-signed filesystem Done 或 Gate
+closure，也不授权绕过下述 environment matrix。
 
 trusted provisioner authority 的首期传递协议固定为 **root-owned local attestation capability**，不得换成 caller interface、
 任意 raw FD/path adoption、context value、environment variable、mountinfo-only self-authorization 或可由 runner 自签的 key。
@@ -2936,9 +2948,11 @@ Entry 必须全部满足：C3 wire/flat digest same-bits fixtures 已固定且�
 `TrustVerifier` 的 historical recovery capability 与 binder API 已可由 package-private seam 消费；Linux `ext4`/`xfs`
 测试环境的 mount identity、trusted mount authority 与 power-loss harness 已固定；`golang.org/x/sys/unix v0.44.0` 已作为
 Linux production-linked direct dependency 完成 exact version、license/SBOM、source provenance、实际 syscall surface 与
-module/lock integration review。dependency Entry 对当前 committed source 已闭合；trusted mount authority 和 real
-required-syscall probe/runtime validation、`ext4`/`xfs` power-loss/restart evidence 尚未闭合，所以 production constructor
-仍保持 pre-mutation rejecting，不能用 Darwin/APFS 或 fake 测试替代。
+module/lock integration review。dependency Entry 对当前 committed source 已闭合；`381b04a` 已关闭 trusted mount
+authority、required-syscall probe 与 production `evidencefs.OpenStore`，`3fe05ec` 又关闭 public migration
+`EvidenceSink` 的 scoped production-opened ext4/XFS brand-new/registered/revocation matrix，所以 production constructor
+不再是 pre-mutation rejecting。physical controller/host power-loss、runner/DB integration 与 reviewer-signed filesystem
+Done 仍未闭合，不能用 Darwin/APFS、fake 或该 scoped clean-run matrix 替代。
 
 full-root admission 子切片的额外 Entry 是：object-only `Scan` 与 root-lock adapter 已各自通过当前 ref 的 focused/full/race/
 vet/cross-build review；C3 wire fixtures 保持 byte-identical；historical verifier 能从两枚 registered objects 恢复 runtime
@@ -3012,8 +3026,9 @@ history missing/unauthorized 与 stored corruption 的稳定分类；journal 全
 无 double count/under-count；exact maximum 与 +1；两个真实进程竞争下无 overcommit；每个 durability barrier 的
 before/short/after-write/before-sync/after-sync/response-lost/crash+reopen 都只产生唯一可恢复 state。任一 barrier unknown 后
 必须证明旧 lease/inventory/permit 均失效且 reopen full scan，durable object reuse 不 mint receipt/reservation。Done record
-必须附 fixed source SHA、commands/results/failure evidence 与 reviewer；即使本地 receipt/successor graph 已实现，它仍不得
-声称 runner/DB/cloud、trusted-mount production enablement 或 Gate closure，且 C3 wire fixture/digest diff 必须为空。
+必须附 fixed source SHA、commands/results/failure evidence 与 reviewer；即使 trusted-mount production constructor 与
+scoped public sink matrix 已实现，它仍不得声称 runner/DB/cloud、physical controller power-loss、reviewer-signed Done 或
+Gate closure，且 C3 wire fixture/digest diff 必须为空。
 
 ## 6. Statement intermediate state
 
