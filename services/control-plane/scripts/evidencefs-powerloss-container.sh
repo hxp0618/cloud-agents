@@ -71,20 +71,22 @@ chmod 0755 "$root_mount/sbin/evidencefs-powerloss-init" "$root_mount/usr/local/b
 sync
 umount "$root_mount"
 root_mounted=0
+blockdev --flushbufs "$root_loop"
+losetup -d "$root_loop"
+root_loop=""
 set +e
-e2fsck -pf "$root_loop" >/dev/null
+e2fsck -pf "$root_image" >"$work_dir/guest-root-fsck.log" 2>&1
 root_check_status=$?
 set -e
 case "$root_check_status" in
   0 | 1) ;;
   *)
+    sed -n '1,120p' "$work_dir/guest-root-fsck.log" >&2
     echo "QEMU guest root filesystem did not pass post-build fsck: $root_check_status" >&2
     exit 1
     ;;
 esac
-blockdev --flushbufs "$root_loop"
-losetup -d "$root_loop"
-root_loop=""
+sync
 
 package_manifest=$(apk manifest linux-virt qemu-img qemu-system-aarch64 e2fsprogs xfsprogs | LC_ALL=C sort | sha256sum | cut -d ' ' -f 1)
 echo "EVIDENCEFS_QEMU_ENV kernel_package=linux-virt-6.12.103-r0 qemu=qemu-system-aarch64-10.0.0-r1 package_manifest_sha256=$package_manifest guest_package_manifest_sha256=$guest_package_manifest"
