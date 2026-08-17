@@ -293,12 +293,42 @@ func TestRBACMutationServiceMapsConflictAndUnknownCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = unknownService.CreateMembership(context.Background(), tenantID, actor, CreateMembershipInput{
+	unknownResult, err := unknownService.CreateMembership(context.Background(), tenantID, actor, CreateMembershipInput{
 		ExpectedTenantRevision: 7, MembershipUID: "membership-new", MembershipName: "membership-new",
 		Subject: actor, Scope: authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-new", ReasonCode: "operator-request",
 	})
-	if !errors.Is(err, ErrMutationCommitUnknown) || unknownConnection.hijackCalls != 1 {
-		t.Fatalf("unknown commit error/hijack = %v/%d", err, unknownConnection.hijackCalls)
+	if !errors.Is(err, ErrMutationCommitUnknown) || unknownResult != (MutationResult{}) || unknownConnection.hijackCalls != 1 {
+		t.Fatalf("unknown commit result/error/hijack = %#v/%v/%d", unknownResult, err, unknownConnection.hijackCalls)
+	}
+}
+
+func TestRBACMutationServiceReturnsNoResultWhenCommitFails(t *testing.T) {
+	tenantID := "tenant-alpha"
+	actor := mutationActor()
+	digest, err := actor.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction := &fakeTransaction{
+		rows: append(
+			mutationAuthorizationRows(t, tenantID, actor, digest, authz.ScopeTenant, tenantID),
+			rowValues("membership-new", int64(8), "active"),
+		),
+		commitErr: &pgconn.PgError{Code: "40001", Message: "serialization failure at commit"},
+	}
+	connection := newFakeConnection(transaction)
+	connection.outsideRows = []rowScanner{rowValues((*string)(nil))}
+	service, err := newRBACMutationService(newTenantTransactionRunner(&fakePool{connection: connection}, time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.CreateMembership(context.Background(), tenantID, actor, CreateMembershipInput{
+		ExpectedTenantRevision: 7, MembershipUID: "membership-new", MembershipName: "membership-new",
+		Subject: actor, Scope: authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-new", ReasonCode: "operator-request",
+	})
+	if !errors.Is(err, ErrMutationConflict) || result != (MutationResult{}) || connection.hijackCalls != 1 {
+		t.Fatalf("failed commit result/error/hijack = %#v/%v/%d", result, err, connection.hijackCalls)
 	}
 }
 

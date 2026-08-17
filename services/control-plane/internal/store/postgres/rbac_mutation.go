@@ -372,7 +372,7 @@ func (service *RBACMutationService) withAuthorizedMutation(
 		result, mutationErr = operation(handle)
 		return mutationErr
 	})
-	return result, err
+	return settledMutationResult(result, err)
 }
 
 func (service *RBACMutationService) withStoredScopeMutation(
@@ -396,7 +396,17 @@ func (service *RBACMutationService) withStoredScopeMutation(
 		result, err = operation(handle)
 		return err
 	})
-	return result, err
+	return settledMutationResult(result, err)
+}
+
+func settledMutationResult(result MutationResult, err error) (MutationResult, error) {
+	if err != nil {
+		// A row returned by a SECURITY DEFINER function is not durability
+		// evidence. Commit may still fail or its response may be lost, so no
+		// result escapes unless the transaction outcome is confirmed.
+		return MutationResult{}, err
+	}
+	return result, nil
 }
 
 func authorizeMutation(
