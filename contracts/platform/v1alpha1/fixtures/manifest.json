@@ -108,6 +108,13 @@
       "expectedSemanticValid": true
     },
     {
+      "name": "builtin-role-catalog-v1",
+      "schema": "../schemas/builtin-role-catalog-v1.schema.json",
+      "instance": "golden/builtin-role-catalog-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
       "name": "role-binding",
       "schema": "../schemas/role-binding.schema.json",
       "instance": "golden/role-binding.json",

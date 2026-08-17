@@ -81,6 +81,49 @@ describe("NamespaceRef RFC 8785 profile", () => {
 });
 
 describe("platform semantic constraints", () => {
+  it("freezes the v1 built-in role catalog without implicit permission expansion", () => {
+    const catalog = JSON.parse(
+      readFileSync(
+        "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
+        "utf8",
+      ),
+    ) as { roles: Array<Record<string, unknown>> };
+    expect(validatePlatformSemantics(catalog).valid).toBe(true);
+
+    const reordered = structuredClone(catalog);
+    [reordered.roles[0], reordered.roles[1]] = [reordered.roles[1]!, reordered.roles[0]!];
+    expect(validatePlatformSemantics(reordered)).toEqual({
+      valid: false,
+      errors: [{ code: "BUILTIN_ROLE_CATALOG_ORDER_MISMATCH", path: "/roles" }],
+    });
+
+    const expanded = structuredClone(catalog);
+    const viewer = expanded.roles.find((role) => role.name === "project.viewer");
+    (viewer?.permissions as string[]).push("projects.bind");
+    expect(validatePlatformSemantics(expanded)).toEqual({
+      valid: false,
+      errors: [
+        {
+          code: "BUILTIN_ROLE_PERMISSION_SET_MISMATCH",
+          path: `/roles/${expanded.roles.indexOf(viewer!)}/permissions`,
+        },
+      ],
+    });
+
+    const wrongScope = structuredClone(catalog);
+    const operator = wrongScope.roles.find((role) => role.name === "project.operator");
+    if (operator) operator.scopeLevel = "organization";
+    expect(validatePlatformSemantics(wrongScope)).toEqual({
+      valid: false,
+      errors: [
+        {
+          code: "ROLE_SCOPE_MISMATCH",
+          path: `/roles/${wrongScope.roles.indexOf(operator!)}/scopeLevel`,
+        },
+      ],
+    });
+  });
+
   it("compares normalized NamespaceRef tuples by canonical digest", () => {
     const instance = {
       kind: "Project",

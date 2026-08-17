@@ -60,6 +60,7 @@ describe("Platform contract generation lock", () => {
     expect(inputs).toEqual(inputs.toSorted());
     expect(new Set(inputs).size).toBe(inputs.length);
     expect(inputs).toContain("docs/plan/adr/0010-p1-postgres-projection-contract.md");
+    expect(inputs).toContain("docs/plan/adr/0011-p1-membership-rbac-contract.md");
     expect(inputs).toContain("scripts/lib/platform-migration-projection.ts");
     expect(inputs).toContain("scripts/lib/platform-migration-projection.test.ts");
     expect(inputs).toContain("services/control-plane/migrations/catalog/authority-v1.json");

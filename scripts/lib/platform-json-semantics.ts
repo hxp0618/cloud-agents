@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 export type JsonRecord = Record<string, unknown>;
 
 export type SemanticErrorCode =
+  | "BUILTIN_ROLE_CATALOG_ORDER_MISMATCH"
+  | "BUILTIN_ROLE_PERMISSION_SET_MISMATCH"
   | "CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH"
   | "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH"
   | "CANONICAL_NAMESPACE_REF_DIGEST_MISMATCH"
@@ -76,6 +78,204 @@ const ROLE_SCOPE = new Map<string, string>([
   ["project.operator", "project"],
   ["project.developer", "project"],
   ["project.viewer", "project"],
+]);
+const BUILTIN_ROLE_CATALOG_V1 = new Map<
+  string,
+  Readonly<{ scope: string; permissions: readonly string[] }>
+>([
+  [
+    "organization.admin",
+    {
+      scope: "organization",
+      permissions: [
+        "memberships.bind",
+        "memberships.create",
+        "memberships.delete",
+        "memberships.get",
+        "memberships.list",
+        "memberships.update",
+        "memberships.watch",
+        "operations.get",
+        "operations.list",
+        "operations.watch",
+        "organizations.delete",
+        "organizations.get",
+        "organizations.list",
+        "organizations.update",
+        "organizations.watch",
+        "projects.act",
+        "projects.create",
+        "projects.delete",
+        "projects.get",
+        "projects.list",
+        "projects.update",
+        "projects.watch",
+        "role-bindings.bind",
+        "role-bindings.create",
+        "role-bindings.delete",
+        "role-bindings.get",
+        "role-bindings.list",
+        "role-bindings.watch",
+        "roles.get",
+        "roles.list",
+        "roles.watch",
+      ],
+    },
+  ],
+  [
+    "platform.admin",
+    {
+      scope: "platform",
+      permissions: [
+        "memberships.bind",
+        "memberships.create",
+        "memberships.delete",
+        "memberships.get",
+        "memberships.list",
+        "memberships.update",
+        "memberships.watch",
+        "operations.get",
+        "operations.list",
+        "operations.watch",
+        "organizations.create",
+        "organizations.delete",
+        "organizations.get",
+        "organizations.list",
+        "organizations.update",
+        "organizations.watch",
+        "projects.act",
+        "projects.create",
+        "projects.delete",
+        "projects.get",
+        "projects.list",
+        "projects.update",
+        "projects.watch",
+        "role-bindings.bind",
+        "role-bindings.create",
+        "role-bindings.delete",
+        "role-bindings.get",
+        "role-bindings.list",
+        "role-bindings.watch",
+        "roles.get",
+        "roles.list",
+        "roles.watch",
+        "tenants.get",
+        "tenants.update",
+      ],
+    },
+  ],
+  [
+    "project.admin",
+    {
+      scope: "project",
+      permissions: [
+        "memberships.bind",
+        "memberships.create",
+        "memberships.delete",
+        "memberships.get",
+        "memberships.list",
+        "memberships.update",
+        "memberships.watch",
+        "operations.get",
+        "operations.list",
+        "operations.watch",
+        "projects.act",
+        "projects.delete",
+        "projects.get",
+        "projects.list",
+        "projects.update",
+        "projects.watch",
+        "role-bindings.bind",
+        "role-bindings.create",
+        "role-bindings.delete",
+        "role-bindings.get",
+        "role-bindings.list",
+        "role-bindings.watch",
+        "roles.get",
+        "roles.list",
+        "roles.watch",
+      ],
+    },
+  ],
+  [
+    "project.developer",
+    {
+      scope: "project",
+      permissions: [
+        "operations.get",
+        "operations.list",
+        "operations.watch",
+        "projects.get",
+        "projects.list",
+        "projects.update",
+        "projects.watch",
+      ],
+    },
+  ],
+  [
+    "project.operator",
+    {
+      scope: "project",
+      permissions: [
+        "operations.get",
+        "operations.list",
+        "operations.watch",
+        "projects.act",
+        "projects.get",
+        "projects.list",
+        "projects.watch",
+      ],
+    },
+  ],
+  [
+    "project.viewer",
+    {
+      scope: "project",
+      permissions: ["projects.get", "projects.list", "projects.watch"],
+    },
+  ],
+  [
+    "tenant.admin",
+    {
+      scope: "tenant",
+      permissions: [
+        "memberships.bind",
+        "memberships.create",
+        "memberships.delete",
+        "memberships.get",
+        "memberships.list",
+        "memberships.update",
+        "memberships.watch",
+        "operations.get",
+        "operations.list",
+        "operations.watch",
+        "organizations.create",
+        "organizations.delete",
+        "organizations.get",
+        "organizations.list",
+        "organizations.update",
+        "organizations.watch",
+        "projects.act",
+        "projects.create",
+        "projects.delete",
+        "projects.get",
+        "projects.list",
+        "projects.update",
+        "projects.watch",
+        "role-bindings.bind",
+        "role-bindings.create",
+        "role-bindings.delete",
+        "role-bindings.get",
+        "role-bindings.list",
+        "role-bindings.watch",
+        "roles.get",
+        "roles.list",
+        "roles.watch",
+        "tenants.get",
+        "tenants.update",
+      ],
+    },
+  ],
 ]);
 
 /**
@@ -321,6 +521,8 @@ export function validatePlatformSemantics(
   const spec = optionalRecord(instance.spec);
   const kind = typeof instance.kind === "string" ? instance.kind : undefined;
 
+  if (kind === "BuiltinRoleCatalog") validateBuiltinRoleCatalog(instance, errors);
+
   if (metadata && spec && metadata.tenantRef !== undefined && spec.tenantRef !== undefined) {
     compareRefs(
       metadata.tenantRef,
@@ -393,6 +595,40 @@ export function validatePlatformSemantics(
   }
 
   return finish(deduplicate(errors));
+}
+
+function validateBuiltinRoleCatalog(instance: JsonRecord, errors: SemanticError[]): void {
+  if (!Array.isArray(instance.roles)) return;
+  const expectedNames = [...BUILTIN_ROLE_CATALOG_V1.keys()];
+  const actualNames = instance.roles.map((role) =>
+    isRecord(role) && typeof role.name === "string" ? role.name : "",
+  );
+  if (
+    actualNames.length !== expectedNames.length ||
+    actualNames.some((name, index) => name !== expectedNames[index])
+  ) {
+    errors.push({ code: "BUILTIN_ROLE_CATALOG_ORDER_MISMATCH", path: "/roles" });
+  }
+  instance.roles.forEach((value, index) => {
+    if (!isRecord(value) || typeof value.name !== "string") return;
+    const expected = BUILTIN_ROLE_CATALOG_V1.get(value.name);
+    if (!expected) return;
+    if (value.scopeLevel !== expected.scope) {
+      errors.push({ code: "ROLE_SCOPE_MISMATCH", path: `/roles/${index}/scopeLevel` });
+    }
+    if (
+      !Array.isArray(value.permissions) ||
+      value.permissions.length !== expected.permissions.length ||
+      value.permissions.some(
+        (permission, permissionIndex) => permission !== expected.permissions[permissionIndex],
+      )
+    ) {
+      errors.push({
+        code: "BUILTIN_ROLE_PERMISSION_SET_MISMATCH",
+        path: `/roles/${index}/permissions`,
+      });
+    }
+  });
 }
 
 export function assertExpectedSemanticResult(

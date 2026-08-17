@@ -77,6 +77,13 @@ const P1_A1_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonRecord>
   ],
   "platform/v1alpha1/fixtures/manifest.json": [
     {
+      name: "builtin-role-catalog-v1",
+      schema: "../schemas/builtin-role-catalog-v1.schema.json",
+      instance: "golden/builtin-role-catalog-v1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
       name: "project-create-request",
       schema: "../schemas/project-create-request.schema.json",
       instance: "golden/project-create-request.json",

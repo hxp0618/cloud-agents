@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:835a870f1bbe9d9ccca4903b6be6440cd1a572cf8c287c05e6ee49060f7e5286",
+    "manifestSha256": "sha256:f6240231ac0acce6d7d390a54eb0773d6047e5e6e2ecc98f851cc7caa10426e5",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -49,7 +49,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:179a697642fb84da0e0920ada2041ef9702cc767494fd68e922720626918041a",
+      "sourceManifestSha256": "sha256:2b9dd20be736f2b9ce705dccf47780f22f29e2909f14fcd936463c7ccae8771f",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -74,7 +74,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:1507806ef2d59efbe761160e92cd1d84473103e195fc9012ac96e26dde9d032c",
+      "sourceManifestSha256": "sha256:ddfe9f3cbce2a1c5d9d7abe3a5f3fab2ffc7a940a21fe996733a337b70dce34b",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -88,10 +88,11 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:96a65b2cceb43bcc3d4b09ec38efde5aa28873f8845b9496cc987916e738ee74",
+      "sourceManifestSha256": "sha256:296c0034279698ee5a36b08354b899064d3eef86aa79dcfa39253501f7dd14f7",
       "sources": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
+        "docs/plan/adr/0011-p1-membership-rbac-contract.md",
         "scripts/check-platform-migration-bundle.ts",
         "scripts/generate-platform-migration-bundle.ts",
         "scripts/lib/platform-migration-bundle.test.ts",
@@ -193,17 +194,18 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:835a870f1bbe9d9ccca4903b6be6440cd1a572cf8c287c05e6ee49060f7e5286",
+      "inputManifestSha256": "sha256:f6240231ac0acce6d7d390a54eb0773d6047e5e6e2ecc98f851cc7caa10426e5",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:96a65b2cceb43bcc3d4b09ec38efde5aa28873f8845b9496cc987916e738ee74",
+      "inputManifestSha256": "sha256:296c0034279698ee5a36b08354b899064d3eef86aa79dcfa39253501f7dd14f7",
       "inputs": [
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
+        "docs/plan/adr/0011-p1-membership-rbac-contract.md",
         "scripts/check-platform-migration-bundle.ts",
         "scripts/generate-platform-migration-bundle.ts",
         "scripts/lib/platform-migration-bundle.test.ts",

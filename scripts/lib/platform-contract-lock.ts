@@ -23,6 +23,7 @@ const PLATFORM_GO_INPUTS = [
 const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0009-p1-migration-bundle-runner.md",
   "docs/plan/adr/0010-p1-postgres-projection-contract.md",
+  "docs/plan/adr/0011-p1-membership-rbac-contract.md",
   "scripts/check-platform-migration-bundle.ts",
   "scripts/generate-platform-migration-bundle.ts",
   "scripts/lib/platform-migration-bundle.test.ts",

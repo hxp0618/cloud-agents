@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/builtin-role-catalog-v1.schema.json",
+  "title": "BuiltinRoleCatalogV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "catalogRevision", "publishedAt", "roles"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "BuiltinRoleCatalog"
+    },
+    "catalogRevision": {
+      "const": "1"
+    },
+    "publishedAt": {
+      "const": "2026-08-17T00:00:00Z"
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "scopeLevel", "state", "permissions"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "platform.admin",
+              "tenant.admin",
+              "organization.admin",
+              "project.admin",
+              "project.operator",
+              "project.developer",
+              "project.viewer"
+            ]
+          },
+          "version": {
+            "const": 1
+          },
+          "scopeLevel": {
+            "type": "string",
+            "enum": ["platform", "tenant", "organization", "project"]
+          },
+          "state": {
+            "const": "active"
+          },
+          "permissions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "permission.schema.json"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "roles are bytewise name-sorted and contain every v1 built-in role exactly once",
+    "scopeLevel equals the frozen scope for the role name",
+    "each permission list is bytewise sorted and exactly equals the frozen role-version set",
+    "platform.admin contains the exact union of all registered v1 permissions",
+    "future permissions never enter role version 1 implicitly"
+  ]
+}
