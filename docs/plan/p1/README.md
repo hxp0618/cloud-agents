@@ -53,9 +53,10 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.1b-impl-3 matrix/review；`3b3f8f6` 关闭 package-private expression normalizer 与本地
-  same-bits，但不启用 exported `ProjectCatalog`、runner/CLI 或数据库读写；runner/DB、physical controller/host power-loss 仍开放
-- Remaining P1 slices：P1-A2.1b-impl-3、P1-A2.2～P1-A2.4、
+- Current slice：P1-A2.1b-impl-3 supply/reviewer closure；`bbb0bf2` 已让 exported `ProjectCatalog` 仅对
+  complete opaque verified subject 成功，并完成 PG15/16/17 × A/B × idle/borrowed × normal/race matrix；
+  checked-in production catalog/CLI、production trust root、数据库写入与 aggregate Gate 仍保持拒绝
+- Remaining P1 slices：P1-A2.1b-impl-3 supply/independent review、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -188,7 +189,8 @@ expression normalizer 与 semantic dependency rebinding，并在本地 PG15/16/1
 checked-in 000001/000002 same-bits。该证据不外推到 x86_64、云环境或 Gate closure。
 
 Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。
-Signed expected subject 的 production verifier、deployment trust-root wiring、exported expression projector、
+`bbb0bf2` 已关闭 complete synthetic signed subject 的 exported expression/catalog projector 与本地双快照矩阵；
+Signed expected subject 的 production verifier、deployment trust-root wiring、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
 `UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
 `G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 均不得标为 `VERIFIED`。

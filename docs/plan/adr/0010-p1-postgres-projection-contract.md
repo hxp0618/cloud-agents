@@ -3391,7 +3391,10 @@ introspection 未实现前继续 `NOT_IMPLEMENTED`/`UNPUBLISHED`。
    `cloud-agents-sql-expression/v1` normalizer，先以 fixture same-bits 验证，再接 runner。
 6. **A2.1b-impl-3：matrix/review**：执行三版本×双实例×两 snapshot mode 和 fault matrix；补齐 signed expected
    subject、dependency/provenance、SBOM/notice、reviewer closure record。完成前保持生产 CLI、Gate 和 release
-   状态不变。
+   状态不变。`bbb0bf2` 已关闭 complete verified catalog entry、signed representative subject 与本地
+   PG15/16/17 × A/B × idle/borrowed × normal/race matrix；固定实现证据见
+   [`postgres-catalog-matrix-20260817.md`](../p1/postgres-catalog-matrix-20260817.md)。Supply 派生刷新与
+   independent reviewer closure 仍开放，因此本项尚不得宣称 aggregate Done。
 
 实现提交必须只触碰对应切片的源码、fixture、ADR/README 和 evidence；不得修改 main、合并宿主分支、发布公开
 npm/Go channel、写生产数据库或把 `NOT_IMPLEMENTED` 改成 `IMPLEMENTED` 以制造进度。
