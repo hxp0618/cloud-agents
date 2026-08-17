@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.1a contract/fixture）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.1b-impl-2 expression next）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -56,7 +56,8 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 ## 执行边界
 
 P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R3 两个 independently reviewed closure record 完成；
-P1 当前进入 P1-A2.1a contract/fixture。Inventory R2 因 66 个公开 target 的 ABI/authority 方向冲突被
+P1-A2.1b-impl-1 catalog structure 已由 `ed37295` 完成，当前进入 P1-A2.1b-impl-2 expression。Inventory R2 因
+66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
 SDK、数据模型、authority 与安全基础，以及 source modules/本地 ephemeral Postgres 验证；不得由 P0/P1
 启动结论外推：

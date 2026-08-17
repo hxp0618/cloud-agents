@@ -3384,7 +3384,9 @@ introspection 未实现前继续 `NOT_IMPLEMENTED`/`UNPUBLISHED`。
    rejecting boundary；不得在本切片实现/生成 A2.1b relation/function/dependency/expression expected state，不得改变
    catalog publication/runtime status、生产 CLI、Gate、release 或部署状态。
 4. **A2.1b-impl-1：catalog**：实现 relation/function/child object projection、internal dependency closure 和
-   denied object set；不改变 migration SQL。
+   denied object set；不改变 migration SQL。`ed37295` 已关闭 ordinary structural implementation 与本地
+   PG15/16/17 same-bits matrix，但保留 expression slots、exported `ProjectCatalog` 和 runner binding 为 rejecting
+   boundary；固定证据见 [`postgres-catalog-structure-20260817.md`](../p1/postgres-catalog-structure-20260817.md)。
 5. **A2.1b-impl-2：expression**：实现 PG15/16/17 `pg_node_tree`/deparse adapter 与
    `cloud-agents-sql-expression/v1` normalizer，先以 fixture same-bits 验证，再接 runner。
 6. **A2.1b-impl-3：matrix/review**：执行三版本×双实例×两 snapshot mode 和 fault matrix；补齐 signed expected
