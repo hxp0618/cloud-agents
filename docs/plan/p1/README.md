@@ -54,9 +54,10 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.2-impl-2 data/evaluator；`f988e45` 已冻结 exact built-in role catalog v1、34 个显式
-  permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
-  当前尚未创建 RBAC tables 或 runtime evaluator，checked-in production catalog/CLI、production trust root、
+- Current slice：P1-A2.2-impl-3 mutation/service/review；`f988e45` 已冻结 exact built-in role catalog v1、34 个
+  显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
+  `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
+  focused matrix。Membership/RoleBinding mutation service、checked-in production catalog/CLI、production trust root、
   数据库写入与 aggregate Gate 仍保持拒绝
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
@@ -92,6 +93,9 @@ Platform RC、Beta 或 GA。
 - [`builtin-role-catalog-contract-20260817.md`](builtin-role-catalog-contract-20260817.md)：固定 `f988e45` 的
   A2.2-impl-1 exact built-in role catalog v1、34 个显式 permission 与 Membership/RBAC authority contract；只关闭
   contract/catalog 实现边界，不构成 runtime、PostgreSQL 或 immutable Gate evidence
+- [`membership-rbac-data-evaluator-20260817.md`](membership-rbac-data-evaluator-20260817.md)：固定 `e36e1cf` 的
+  A2.2-impl-2 migration-owned Membership/RoleBinding storage、tenant-bound read-only evaluator 与本地 PG15/16/17
+  normal/race focused matrix；不构成 mutation service、production catalog publication 或 immutable Gate evidence
 
 ## Data kernel decisions
 

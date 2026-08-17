@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.1b-impl-3 matrix/review next）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 mutation/service/review next）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -16,7 +16,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 解释顺序：
 
 1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
-   [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)；
+   [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)；
 2. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 3. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 4. `legacy/` 历史计划；
@@ -43,6 +43,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0008`](adr/0008-p1-postgres-data-kernel.md)                                                        | P1 PostgreSQL data kernel 决定                  |
 | [`ADR-0009`](adr/0009-p1-migration-bundle-runner.md)                                                     | P1 migration bundle/runner/trust 决定           |
 | [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)                                                | P1 PostgreSQL authority/catalog projection 决定 |
+| [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)                                                    | P1 Membership/RBAC authority 决定               |
 
 ## 历史与参考
 
@@ -56,8 +57,8 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 ## 执行边界
 
 P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R3 两个 independently reviewed closure record 完成；
-P1-A2.1b-impl-1 catalog structure 与 impl-2 expression normalizer 已分别由 `ed37295`、`3b3f8f6` 完成，当前进入
-P1-A2.1b-impl-3 matrix/review。Inventory R2 因
+P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 catalog contract 与 impl-2 data/read evaluator 已分别由
+`f988e45`、`e36e1cf` 完成，当前进入 A2.2-impl-3 mutation/service/review。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
 SDK、数据模型、authority 与安全基础，以及 source modules/本地 ephemeral Postgres 验证；不得由 P0/P1
