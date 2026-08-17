@@ -168,6 +168,7 @@ const (
 	projectionQueryCatalogFunctionArguments
 	projectionQueryCatalogInternalObjects
 	projectionQueryCatalogDependencies
+	projectionQueryCatalogExpressions
 )
 
 type projectionQueryStats struct {

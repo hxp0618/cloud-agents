@@ -1107,6 +1107,9 @@ func (body CatalogProjectionBody) Validate() error {
 	if !strictlySorted(deniedKeys) {
 		return invalidProjection("catalog-projection", "denied objects are duplicate or unsorted")
 	}
+	if err := validateCatalogExpressionClosure(body); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1316,8 +1319,13 @@ func validateColumnProjections(relation RelationProjection) error {
 		default:
 			return invalidProjection("catalog-projection", "column generated mode is outside the PG15-PG17 profile")
 		}
-		if column.Default != nil || column.Generated != "none" {
-			return invalidProjection("catalog-projection", "A2.1b expression projection is required for column defaults or generated columns")
+		if column.Generated == "stored" && column.Default == nil {
+			return invalidProjection("catalog-projection", "generated column lacks its normalized expression")
+		}
+		if column.Default != nil {
+			if err := validateExpressionNodeType(*column.Default, column.Type); err != nil {
+				return err
+			}
 		}
 		switch column.Storage {
 		case "plain", "external", "extended", "main":
@@ -1367,8 +1375,22 @@ func validateConstraintProjections(relation RelationProjection) error {
 			if err := constraint.ReferencedRelation.Validate(); err != nil {
 				return err
 			}
-		case "check", "exclusion":
-			return invalidProjection("catalog-projection", "A2.1b expression projection is required for check or exclusion constraints")
+		case "check":
+			if constraint.ReferencedRelation != nil || len(constraint.ReferencedColumns) != 0 || constraint.Expression == nil {
+				return invalidProjection("catalog-projection", "check constraint lacks its normalized expression")
+			}
+			if err := validateExpressionNodeType(*constraint.Expression, TypeIdentity{Schema: "pg_catalog", Name: "bool"}); err != nil {
+				return err
+			}
+		case "exclusion":
+			if constraint.ReferencedRelation != nil || len(constraint.ReferencedColumns) != 0 {
+				return invalidProjection("catalog-projection", "exclusion constraint carries foreign-key state")
+			}
+			if constraint.Expression != nil {
+				if err := validateExpressionNodeType(*constraint.Expression, TypeIdentity{Schema: "pg_catalog", Name: "bool"}); err != nil {
+					return err
+				}
+			}
 		default:
 			return invalidProjection("catalog-projection", "constraint type is outside the closed profile")
 		}
@@ -1425,7 +1447,9 @@ func validateIndexProjections(relation RelationProjection) error {
 			return invalidProjection("catalog-projection", "index projection is sparse")
 		}
 		if projected.Predicate != nil {
-			return invalidProjection("catalog-projection", "A2.1b expression projection is required for partial indexes")
+			if err := validateExpressionNodeType(*projected.Predicate, TypeIdentity{Schema: "pg_catalog", Name: "bool"}); err != nil {
+				return err
+			}
 		}
 		for termIndex, term := range projected.Terms {
 			if term.Ordinal != uint32(termIndex+1) || term.OpclassOptions == nil {
@@ -1440,7 +1464,12 @@ func validateIndexProjections(relation RelationProjection) error {
 					return invalidProjection("catalog-projection", "index term references an unknown column")
 				}
 			case "expression":
-				return invalidProjection("catalog-projection", "A2.1b expression projection is required for expression indexes")
+				if term.Column != nil || term.Expression == nil {
+					return invalidProjection("catalog-projection", "expression index term is incomplete")
+				}
+				if err := validateExpressionNode(*term.Expression); err != nil {
+					return err
+				}
 			default:
 				return invalidProjection("catalog-projection", "index term kind is outside the closed profile")
 			}
@@ -1499,8 +1528,12 @@ func validatePolicyProjections(relation RelationProjection) error {
 		if !strictlySorted(policy.Roles) || len(policy.Roles) == 0 {
 			return invalidProjection("catalog-projection", "policy roles are empty, duplicate, or unsorted")
 		}
-		if policy.Using != nil || policy.WithCheck != nil {
-			return invalidProjection("catalog-projection", "A2.1b expression projection is required for row security policies")
+		for _, expression := range []*ExpressionNode{policy.Using, policy.WithCheck} {
+			if expression != nil {
+				if err := validateExpressionNodeType(*expression, TypeIdentity{Schema: "pg_catalog", Name: "bool"}); err != nil {
+					return err
+				}
+			}
 		}
 		keys[index] = policy.Name
 	}
@@ -1531,7 +1564,9 @@ func validateTriggerProjections(relation RelationProjection) error {
 			return invalidProjection("catalog-projection", "trigger event type is empty")
 		}
 		if trigger.When != nil {
-			return invalidProjection("catalog-projection", "A2.1b expression projection is required for trigger predicates")
+			if err := validateExpressionNodeType(*trigger.When, TypeIdentity{Schema: "pg_catalog", Name: "bool"}); err != nil {
+				return err
+			}
 		}
 		if trigger.Internal != (trigger.Identity.Internal != nil) {
 			return invalidProjection("catalog-projection", "trigger internal flag differs from its normalized identity")
@@ -1583,7 +1618,9 @@ func validateFunctionProjections(functions []FunctionProjection) error {
 				return err
 			}
 			if argument.Default != nil {
-				return invalidProjection("catalog-projection", "A2.1b expression projection is required for function argument defaults")
+				if err := validateExpressionNodeType(*argument.Default, argument.Type); err != nil {
+					return err
+				}
 			}
 		}
 		if err := function.ExplicitACL.Validate(); err != nil {

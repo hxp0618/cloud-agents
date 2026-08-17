@@ -133,7 +133,7 @@ func TestPGCatalogPG17MaintainNormalizationIsOwnerOnly(t *testing.T) {
 }
 
 func TestPGCatalogQueryRegistryHasClosedStructuralFacts(t *testing.T) {
-	for id := projectionQueryCatalogRelations; id <= projectionQueryCatalogDependencies; id++ {
+	for id := projectionQueryCatalogRelations; id <= projectionQueryCatalogExpressions; id++ {
 		query, ok := projectionFixedQuery(id)
 		if !ok || query == "" {
 			t.Fatalf("catalog query %d is absent", id)
@@ -152,37 +152,51 @@ func TestPGCatalogQueryRegistryHasClosedStructuralFacts(t *testing.T) {
 	}
 }
 
-func TestPGCatalogStructureCannotReachProductionProjectorBeforeExpressionSlice(t *testing.T) {
+func TestPGCatalogInternalCompletionCannotReachProductionProjector(t *testing.T) {
+	allowed := map[string]struct{}{
+		"projection_expression.go\x00readCatalogStructureWithExpressions\x00readCatalogStructure": {},
+		"projection_expression.go\x00readCatalogExpressions\x00completeBody":                      {},
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") || name == "projection_catalog.go" {
+		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				var called string
+				switch target := call.Fun.(type) {
+				case *ast.Ident:
+					called = target.Name
+				case *ast.SelectorExpr:
+					called = target.Sel.Name
+				}
+				if called != "readCatalogStructure" && called != "readCatalogStructureWithExpressions" && called != "completeBody" {
+					return true
+				}
+				key := name + "\x00" + function.Name.Name + "\x00" + called
+				if _, ok := allowed[key]; !ok {
+					t.Errorf("%s:%s calls internal catalog completion seam %s", name, function.Name.Name, called)
+				}
 				return true
-			}
-			var called string
-			switch function := call.Fun.(type) {
-			case *ast.Ident:
-				called = function.Name
-			case *ast.SelectorExpr:
-				called = function.Sel.Name
-			}
-			if called == "readCatalogStructure" || called == "completeBody" {
-				t.Errorf("%s calls %s before the expression slice", name, called)
-			}
-			return true
-		})
+			})
+		}
 	}
 }
 
@@ -235,6 +249,7 @@ func pgCatalogTestSnapshot(scope ProjectionScope, withDefault, withExtraRelation
 		projectionQueryCatalogFunctionArguments: {{rows: [][]any{}}},
 		projectionQueryCatalogInternalObjects:   {{rows: [][]any{}}},
 		projectionQueryCatalogDependencies:      {{rows: [][]any{}}},
+		projectionQueryCatalogExpressions:       {{rows: [][]any{}}},
 	}
 	return &pgTestSnapshot{metadata: pgTestMetadata(17), queries: queries}
 }

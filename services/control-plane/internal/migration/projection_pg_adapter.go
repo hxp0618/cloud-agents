@@ -317,6 +317,8 @@ grantee COLLATE "C" NULLS FIRST, privilege_type COLLATE "C" NULLS FIRST`, true
 		return projectionCatalogInternalObjectsQuery, true
 	case projectionQueryCatalogDependencies:
 		return projectionCatalogDependenciesQuery, true
+	case projectionQueryCatalogExpressions:
+		return projectionCatalogExpressionsQuery, true
 	default:
 		return "", false
 	}
@@ -498,7 +500,7 @@ func (projector *PGProjector) ProjectCatalog(_ context.Context, snapshot Project
 	if !equalProjectionScopes(scope, contract.Scope()) {
 		return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionInvalidScope, "catalog.scope", projector.major, "catalog projection scope differs from the verified contract")
 	}
-	return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionNotImplemented, "catalog", projector.major, "A2.1b relation and expression projection is not implemented")
+	return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionNotImplemented, "catalog", projector.major, "A2.1b expression projection and production binding are not implemented")
 }
 
 func (projector *PGProjector) ProjectPrecondition(ctx context.Context, snapshot ProjectionSnapshot, verifiedScope VerifiedSchemaBundleScope, condition CatalogPrecondition) (ProjectionResult[CatalogStateProjection], error) {

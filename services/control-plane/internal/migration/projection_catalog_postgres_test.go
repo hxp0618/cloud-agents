@@ -26,7 +26,7 @@ func TestPGCatalogFixedQueriesParseOnPostgres(t *testing.T) {
 		t.Fatalf("create catalog parse schema: %v", err)
 	}
 	defer func() { _, _ = connection.Exec(context.Background(), `DROP SCHEMA IF EXISTS cloud_agents CASCADE`) }()
-	for id := projectionQueryCatalogRelations; id <= projectionQueryCatalogDependencies; id++ {
+	for id := projectionQueryCatalogRelations; id <= projectionQueryCatalogExpressions; id++ {
 		query, ok := projectionFixedQuery(id)
 		if !ok {
 			t.Fatalf("catalog query id %d is missing", id)
@@ -69,6 +69,7 @@ CREATE TABLE cloud_agents.child (
  CONSTRAINT child_name_check CHECK (pg_catalog.length(name) > 0)
 );
 CREATE INDEX child_parent_idx ON cloud_agents.child(parent_id);
+CREATE INDEX child_name_lower_idx ON cloud_agents.child((pg_catalog.lower(name))) WHERE parent_id > 0;
 ALTER TABLE cloud_agents.child ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cloud_agents.child FORCE ROW LEVEL SECURITY;
 CREATE POLICY child_public ON cloud_agents.child TO PUBLIC USING (parent_id > 0);
@@ -77,7 +78,7 @@ LANGUAGE plpgsql AS $body$ BEGIN RETURN NEW; END $body$;
 CREATE FUNCTION cloud_agents.add_one(value integer, delta integer DEFAULT 1)
 RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $body$ SELECT value + delta $body$;
 CREATE TRIGGER child_touch BEFORE UPDATE ON cloud_agents.child
-FOR EACH ROW EXECUTE FUNCTION cloud_agents.child_touch_fn()`
+FOR EACH ROW WHEN (NEW.parent_id > 0) EXECUTE FUNCTION cloud_agents.child_touch_fn()`
 	if _, err := connection.Exec(ctx, ddl); err != nil {
 		t.Fatalf("create representative catalog: %v", err)
 	}
@@ -87,6 +88,7 @@ FOR EACH ROW EXECUTE FUNCTION cloud_agents.child_touch_fn()`
 		{Relation: &RelationObjectIdentity{Kind: "relation", Identity: TypeIdentity{Schema: projectionTargetSchema, Name: "parent"}}},
 		{Relation: &RelationObjectIdentity{Kind: "relation", Identity: TypeIdentity{Schema: projectionTargetSchema, Name: "child"}}},
 		{Index: &IndexObjectIdentity{Kind: "index", Identity: TypeIdentity{Schema: projectionTargetSchema, Name: "child_parent_idx"}, Relation: TypeIdentity{Schema: projectionTargetSchema, Name: "child"}}},
+		{Index: &IndexObjectIdentity{Kind: "index", Identity: TypeIdentity{Schema: projectionTargetSchema, Name: "child_name_lower_idx"}, Relation: TypeIdentity{Schema: projectionTargetSchema, Name: "child"}}},
 		{Policy: &PolicyObjectIdentity{Kind: "policy", Relation: TypeIdentity{Schema: projectionTargetSchema, Name: "child"}, Name: "child_public"}},
 		{Function: &SQLObjectIdentity{Kind: "function", Identity: SQLIdentity{Schema: projectionTargetSchema, Name: "child_touch_fn", Arguments: []TypeIdentity{}}}},
 		{Function: &SQLObjectIdentity{Kind: "function", Identity: SQLIdentity{Schema: projectionTargetSchema, Name: "add_one", Arguments: []TypeIdentity{{Schema: "pg_catalog", Name: "int4"}, {Schema: "pg_catalog", Name: "int4"}}}}},
@@ -133,7 +135,7 @@ FOR EACH ROW EXECUTE FUNCTION cloud_agents.child_touch_fn()`
 			}
 		}
 	}
-	if child.Identity.Name == "" || len(child.Columns) != 4 || len(child.Constraints) != 3 || len(child.Indexes) != 2 || len(child.Policies) != 1 || !userTriggerSeen || len(internalTriggerKeys) != 4 {
+	if child.Identity.Name == "" || len(child.Columns) != 4 || len(child.Constraints) != 3 || len(child.Indexes) != 3 || len(child.Policies) != 1 || !userTriggerSeen || len(internalTriggerKeys) != 4 {
 		t.Fatalf("representative child closure mismatch: child=%+v internal_triggers=%d user_trigger=%v", child, len(internalTriggerKeys), userTriggerSeen)
 	}
 	var defaultArgumentSeen bool
@@ -156,6 +158,18 @@ FOR EACH ROW EXECUTE FUNCTION cloud_agents.child_touch_fn()`
 	if _, err := structure.completeBody(projector.major); !IsCode(err, CodeProjectionNotImplemented) {
 		t.Fatalf("representative expression slots escaped completion boundary: %v", err)
 	}
+	resolved, err := projector.readCatalogStructureWithExpressions(ctx, snapshot, scope, []string{}, []string{"postgres"})
+	if err != nil {
+		t.Fatalf("normalize representative catalog expressions: %v", err)
+	}
+	if len(resolved.expressions) != 0 {
+		t.Fatalf("representative catalog retained unresolved expression slots: %+v", resolved.expressions)
+	}
+	resolvedCanonical, err := canonicalContractKey(resolved.body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("PG_CATALOG_EXPRESSIONS major=%d digest=%s", projector.major, DigestBytes([]byte(resolvedCanonical)))
 	canonical, err := canonicalContractKey(struct {
 		Body        CatalogProjectionBody     `json:"body"`
 		Expressions []pgCatalogExpressionSlot `json:"expressions"`
@@ -232,6 +246,18 @@ CREATE ROLE cloud_agents_bootstrap_admin NOLOGIN`
 			t.Fatal(err)
 		}
 		t.Logf("PG_CHECKED_IN_CATALOG major=%d head=%s digest=%s", projector.major, head, DigestBytes([]byte(canonical)))
+		resolved, err := projector.readCatalogStructureWithExpressions(ctx, snapshot, scope, []string{MigrationOwnerRole}, []string{MigrationOwnerRole, "postgres"})
+		if err != nil {
+			t.Fatalf("normalize checked-in catalog expressions %s: %v", head, err)
+		}
+		if len(resolved.expressions) != 0 {
+			t.Fatalf("checked-in catalog %s retained unresolved expression slots", head)
+		}
+		resolvedCanonical, err := canonicalContractKey(resolved.body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("PG_CHECKED_IN_EXPRESSIONS major=%d head=%s digest=%s", projector.major, head, DigestBytes([]byte(resolvedCanonical)))
 	}
 }
 
