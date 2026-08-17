@@ -12,7 +12,8 @@
   x/text v0.39.0 dependency implementation closure artifacts (`93f742f`，不关闭 `G-SUPPLY-CHAIN`)；
   P1-A2.1a-impl-1 strict projection contract/fixture (`b36f45a`)；P1-A2.1a-impl-2 PG adapters
   (`e2541c5`) 与本地 PG15/16/17 fresh A/B matrix (`a0eac37`)；P1-A2.1b-impl-1 relation/function/child-object
-  structure、internal dependency closure、denied set 与本地 PG15/16/17 same-bits matrix (`ed37295`)；admission registration/publish/bind/reserve
+  structure、internal dependency closure、denied set 与本地 PG15/16/17 same-bits matrix (`ed37295`)；impl-2 expression
+  normalizer 与本地三版本 expression same-bits (`3b3f8f6`)；admission registration/publish/bind/reserve
   chain (`8c9a72b` through `f654aae`)，其中 brand-new generation 已完成 exact
   `GenerationReserved → segment-0 header → GenerationActivated` durability 与 root-wide lock release/opaque
   target+generation lock handoff，并推进到 compact evidencefs snapshot、strict replay 与 sealed same-verifier
@@ -52,9 +53,9 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.1b-impl-2 expression normalizer；`ed37295` 只关闭 ordinary catalog structure，不启用
-  exported `ProjectCatalog`、runner/CLI 或数据库读写；runner/DB、physical controller/host power-loss 仍开放
-- Remaining P1 slices：P1-A2.1b-impl-2～3、P1-A2.2～P1-A2.4、
+- Current slice：P1-A2.1b-impl-3 matrix/review；`3b3f8f6` 关闭 package-private expression normalizer 与本地
+  same-bits，但不启用 exported `ProjectCatalog`、runner/CLI 或数据库读写；runner/DB、physical controller/host power-loss 仍开放
+- Remaining P1 slices：P1-A2.1b-impl-3、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -155,6 +156,9 @@ Platform RC、Beta 或 GA。
 - [`postgres-catalog-structure-20260817.md`](postgres-catalog-structure-20260817.md) 固定 source `ed37295`，记录
   A2.1b-impl-1 relation/function/child object、internal dependency closure、denied set、expression rejecting boundary 与
   本地 PG15/16/17 same-bits matrix；exported projector、runner/DB、signed subject 和 Gate 仍保持关闭。
+- [`postgres-catalog-expression-20260817.md`](postgres-catalog-expression-20260817.md) 固定 source `3b3f8f6`，记录
+  closed `pg_node_tree`/deparse expression normalizer、owner/type/dependency rebinding、fault tests 与 PG15/16/17
+  same-bits；exported projector、runner/DB、signed subject 和 Gate 仍保持关闭。
 - [`evidencefs-qemu-generation-repair-barrier-matrix-20260816.md`](evidencefs-qemu-generation-repair-barrier-matrix-20260816.md)
   固定 source `7d78e3d`，记录 ext4/XFS 上 resync/truncate/checkpoint/discard 共 21 个 exact syscall barrier 的
   whole-QEMU kill 与 sealed fresh-mount classification；不外推到 trusted mount、physical controller 或 Gate closure。
@@ -164,7 +168,7 @@ Platform RC、Beta 或 GA。
 - [`dependency-reviews/x-mod-v0.40.0.md`](dependency-reviews/x-mod-v0.40.0.md) 固定 source `b3f8d9a`，记录
   test-only exact direct floor、`x/mod v0.40.0`/`x/tools v0.49.0` provenance、16-module fresh zero-finding scan，
   以及 unchanged Linux 7/30、Darwin 6/29 production closure。
-- 二十一份记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；public production
+- 以上记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；public production
   `EvidenceSink` 已存在并通过 scoped real ext4/XFS cross-package replay，但仍没有 runner/DB、physical controller
   power-loss 或 immutable Gate authority。
 
@@ -179,11 +183,12 @@ exact-byte bundle、strict classifier、transaction-local tenant helper 和 Post
 generation-lock/source provenance，以及 scoped predecessor ABI。`e2541c5` 完成 verified wrapper、sealed snapshot、
 PG15/16/17 capability/authority/namespace/default-ACL projector；`a0eac37` 在本地 `linux/arm64` 用固定 PG15.18、
 16.14、17.10 镜像完成 fresh A/B、normal/race 两轮矩阵。`ed37295` 又完成 relation/function/child-object ordinary
-structure、internal dependency closure 和 expression slot rejecting boundary，并在本地 PG15/16/17 arm64 镜像保持
-代表性结构与 checked-in 000001/000002 same-bits。该证据不外推到 x86_64、云环境或 Gate closure。
+structure、internal dependency closure 和 expression slot rejecting boundary；`3b3f8f6` 完成 package-private
+expression normalizer 与 semantic dependency rebinding，并在本地 PG15/16/17 arm64 镜像保持代表性结构、表达式与
+checked-in 000001/000002 same-bits。该证据不外推到 x86_64、云环境或 Gate closure。
 
 Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。
-Signed expected subject 的 production verifier、deployment trust-root wiring、expression projector、
+Signed expected subject 的 production verifier、deployment trust-root wiring、exported expression projector、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
 `UNPUBLISHED_BOOTSTRAP_MUTABLE` / `NOT_IMPLEMENTED`，生产 CLI 继续在读取数据库前拒绝；因此
 `G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 均不得标为 `VERIFIED`。
