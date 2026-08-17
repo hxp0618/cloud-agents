@@ -53,10 +53,10 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.1b-impl-3 supply/reviewer closure；`bbb0bf2` 已让 exported `ProjectCatalog` 仅对
+- Current slice：P1-A2.1b-impl-3 independent reviewer closure；`bbb0bf2` 已让 exported `ProjectCatalog` 仅对
   complete opaque verified subject 成功，并完成 PG15/16/17 × A/B × idle/borrowed × normal/race matrix；
   checked-in production catalog/CLI、production trust root、数据库写入与 aggregate Gate 仍保持拒绝
-- Remaining P1 slices：P1-A2.1b-impl-3 supply/independent review、P1-A2.2～P1-A2.4、
+- Remaining P1 slices：P1-A2.1b-impl-3 independent review、P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -81,7 +81,7 @@ Platform RC、Beta 或 GA。
 - [`x-mod-v0.40.0.md`](dependency-reviews/x-mod-v0.40.0.md)：**APPROVED — test-gate dependency security
   closure only**；修复 `GO-2026-6179/6180`，保持 Linux/Darwin production closure 和 NOTICE same-bits，
   `G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
-- [`control-plane-supply-refresh-20260817.md`](control-plane-supply-refresh-20260817.md)：固定 source `c0658f4` 的
+- [`control-plane-supply-refresh-20260817.md`](control-plane-supply-refresh-20260817.md)：固定 source `6e58e06` 的
   generation lock、dependency lock、CycloneDX 1.6 SBOM 与 fresh govulncheck/OSV refresh；module graph、production
   closure 和 NOTICE same-bits，`G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
 

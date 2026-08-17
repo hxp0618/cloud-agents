@@ -121,5 +121,6 @@ This is implementation and local conformance evidence, not an independently sign
   deployment, Platform RC, Beta, GA or release is enabled by this slice.
 - No x86_64 live database matrix, cloud PostgreSQL, N-1/PITR, controller/host power-loss or immutable
   reviewer signature is claimed.
-- Supply-chain lock/SBOM/provenance refresh and independent reviewer closure remain the next impl-3
-  boundaries. Until both close, every aggregate P1 Gate remains `IN PROGRESS`.
+- The source-bound supply-chain lock/SBOM/provenance refresh now fixes this implementation at `6e58e06`;
+  independent reviewer closure remains the next impl-3 boundary. Until it closes, every aggregate P1
+  Gate remains `IN PROGRESS`.
