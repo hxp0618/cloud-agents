@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "snapshot": {
-    "generated_at": "2026-08-17T04:10:44Z",
+    "generated_at": "2026-08-17T09:23:16Z",
     "module": "github.com/hxp0618/cloud-agents/services/control-plane",
     "go": "go1.26.6",
     "goos": "linux",
@@ -13,17 +13,17 @@
     "gosumdb": "sum.golang.org",
     "goprivate": "",
     "gonosumdb": "",
-    "source_commit": "6e58e06b146fc3eb1ac7706837adffdeee1d8fa1",
-    "source_commit_tree_oid": "5bb74ef0b8152bd96c2b65d44421b50f3e78b1a0",
+    "source_commit": "de36ca343cb2790c8ba44186807d6c933bd98500",
+    "source_commit_tree_oid": "03c93f024de599fdb8a3178b38b18359070af925",
     "source_commit_tree_oid_algorithm": "sha1",
-    "control_plane_tree_oid": "9ff00173a454e61f5bef26f34e0b6b6ffd0b6770",
+    "control_plane_tree_oid": "88db04ed5d6fde8895805819ad41fbd267b64868",
     "control_plane_tree_oid_algorithm": "sha1",
-    "control_plane_tracked_manifest_sha256": "14d7d4614b56858baf6d77075614577f05ab5a9cc3db0588f7b97652b63e045c",
-    "control_plane_tracked_file_count": 320,
-    "control_plane_go_source_manifest_sha256": "f88b226a0a133ba437f9c2a6bf23caef536edda286e89272b7eca1439c6e560e",
-    "control_plane_go_source_file_count": 250,
+    "control_plane_tracked_manifest_sha256": "d8fb4a46d2e6a28785cad1f59929e073d5b5bb72fa6c76525dba61a77370d9b3",
+    "control_plane_tracked_file_count": 335,
+    "control_plane_go_source_manifest_sha256": "0b210ad21b500b45a6bbfb51e33263f1686c92bb4eb4f153fcba4fb4ab7563fe",
+    "control_plane_go_source_file_count": 258,
     "source_tree_committed": true,
-    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source 6e58e06b146fc3eb1ac7706837adffdeee1d8fa1; this derived supply/evidence refresh is excluded from that source commit identity"
+    "source_tree_boundary": "Linux and Darwin non-test import closures replayed from exact committed source de36ca343cb2790c8ba44186807d6c933bd98500; this derived supply/evidence refresh is excluded from that source commit identity"
   },
   "inputs": {
     "go_mod_sha256": "a4d98dcbd65803a22bcf946cf042d17484e714500c0502b616d68742a02f1d14",
@@ -39,7 +39,7 @@
   "assertions": {
     "go_mod_tidy_diff_empty": true,
     "go_mod_verify": "all modules verified",
-    "go_test_all": "NOT CLAIMED: go test -count=1 ./internal/migration reached the default 10m timeout in TestRunnerPreledgerProjectionFaultsRollbackWithoutAppendingEvidenceOrLedger/snapshot; focused catalog normal/race and all-package compile-only checks passed",
+    "go_test_all": "GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go test ./... -count=1 -timeout=25m passed; internal/migration completed in 1162.809s",
     "go_build_all": "go build ./... passed",
     "go_vet_all": "go vet ./... passed",
     "replace_count": 0,
@@ -92,7 +92,7 @@
       "canonical_response_sha256": "ab5a0787744e90d4b9bef630420e8085dd8045f7cd5fe87fc0b5acc7b6a55b93"
     },
     "invalidation": "Any advisory database, scanner, module graph, source import, build tag, toolchain, version, checksum, license text, additional IP rights grant, or distribution-scope change requires a new snapshot. An empty result is not permanent safety evidence.",
-    "inheritance": "Fresh source-bound govulncheck module/symbol and 16-module OSV scans were run for 6e58e06b146fc3eb1ac7706837adffdeee1d8fa1; no zero-finding result is inherited from an older source."
+    "inheritance": "Fresh source-bound govulncheck module/symbol and 16-module OSV scans were run for de36ca343cb2790c8ba44186807d6c933bd98500; no zero-finding result is inherited from an older source."
   },
   "modules": [
     {
