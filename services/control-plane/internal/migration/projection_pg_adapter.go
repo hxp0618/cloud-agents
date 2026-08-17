@@ -295,6 +295,28 @@ FROM projected
 ORDER BY owner COLLATE "C", schema_name COLLATE "C" NULLS FIRST,
 object_kind COLLATE "C", grantor COLLATE "C" NULLS FIRST,
 grantee COLLATE "C" NULLS FIRST, privilege_type COLLATE "C" NULLS FIRST`, true
+	case projectionQueryCatalogRelations:
+		return projectionCatalogRelationsQuery, true
+	case projectionQueryCatalogColumns:
+		return projectionCatalogColumnsQuery, true
+	case projectionQueryCatalogConstraints:
+		return projectionCatalogConstraintsQuery, true
+	case projectionQueryCatalogIndexes:
+		return projectionCatalogIndexesQuery, true
+	case projectionQueryCatalogIndexTerms:
+		return projectionCatalogIndexTermsQuery, true
+	case projectionQueryCatalogPolicies:
+		return projectionCatalogPoliciesQuery, true
+	case projectionQueryCatalogTriggers:
+		return projectionCatalogTriggersQuery, true
+	case projectionQueryCatalogFunctions:
+		return projectionCatalogFunctionsQuery, true
+	case projectionQueryCatalogFunctionArguments:
+		return projectionCatalogFunctionArgumentsQuery, true
+	case projectionQueryCatalogInternalObjects:
+		return projectionCatalogInternalObjectsQuery, true
+	case projectionQueryCatalogDependencies:
+		return projectionCatalogDependenciesQuery, true
 	default:
 		return "", false
 	}

@@ -16,18 +16,36 @@ type pgNamespaceProjection struct {
 	Body   CatalogProjectionBody
 }
 
+type pgNamespaceObject struct {
+	Kind    string
+	Name    string
+	Subkind string
+	Owner   string
+}
+
 func (projector *PGProjector) readNamespace(ctx context.Context, snapshot ProjectionSnapshot, scope ProjectionScope, defaultACLOwners, objectCreatorClosure []string) (pgNamespaceProjection, error) {
+	projection, _, err := projector.readNamespaceMode(ctx, snapshot, scope, defaultACLOwners, objectCreatorClosure, false)
+	return projection, err
+}
+
+func (projector *PGProjector) readCatalogNamespace(ctx context.Context, snapshot ProjectionSnapshot, scope ProjectionScope, defaultACLOwners, objectCreatorClosure []string) (pgNamespaceProjection, []pgNamespaceObject, error) {
+	return projector.readNamespaceMode(ctx, snapshot, scope, defaultACLOwners, objectCreatorClosure, true)
+}
+
+func (projector *PGProjector) readNamespaceMode(ctx context.Context, snapshot ProjectionSnapshot, scope ProjectionScope, defaultACLOwners, objectCreatorClosure []string, catalogMode bool) (pgNamespaceProjection, []pgNamespaceObject, error) {
 	if err := scope.Validate(); err != nil {
-		return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionInvalidScope, "namespace.scope", projector.major, "projection scope is invalid")
+		return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionInvalidScope, "namespace.scope", projector.major, "projection scope is invalid")
 	}
-	for _, object := range scope.DeclaredObjects {
-		if object.Schema == nil || object.Schema.Kind != "schema" || object.Schema.Name != projectionTargetSchema {
-			return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.scope.declared_objects", projector.major, "A2.1a scope contains an object deferred to A2.1b")
+	if !catalogMode {
+		for _, object := range scope.DeclaredObjects {
+			if object.Schema == nil || object.Schema.Kind != "schema" || object.Schema.Name != projectionTargetSchema {
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.scope.declared_objects", projector.major, "A2.1a scope contains an object deferred to A2.1b")
+			}
 		}
 	}
 	rows, cancel, err := queryProjectionBounded(ctx, snapshot, projectionQueryNamespace, projectionTargetSchema)
 	if err != nil {
-		return pgNamespaceProjection{}, err
+		return pgNamespaceProjection{}, nil, err
 	}
 	defer cancel()
 	defer rows.Close()
@@ -35,6 +53,7 @@ func (projector *PGProjector) readNamespace(ctx context.Context, snapshot Projec
 	var absent, schemaSeen bool
 	var schema SchemaProjection
 	var acl *aclAccumulator
+	objects := make([]pgNamespaceObject, 0)
 	for rows.Next() {
 		var rowKind string
 		var namespace, owner *string
@@ -43,92 +62,101 @@ func (projector *PGProjector) readNamespace(ctx context.Context, snapshot Projec
 		var isGrantable *bool
 		var value1, value2, value3 *string
 		if err := rows.Scan(&rowKind, &namespace, &owner, &aclIsNull, &grantor, &grantee, &privilege, &isGrantable, &value1, &value2, &value3); err != nil {
-			return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.scan", projector.major, "namespace projection scan failed")
+			return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.scan", projector.major, "namespace projection scan failed")
 		}
 		if err := budget.add("namespace", rowKind, nullableString(namespace), nullableString(owner), nullableString(grantor), nullableString(grantee), nullableString(privilege), nullableString(value1), nullableString(value2), nullableString(value3)); err != nil {
-			return pgNamespaceProjection{}, err
+			return pgNamespaceProjection{}, nil, err
 		}
 		switch rowKind {
 		case "absent":
 			if absent || schemaSeen || namespace == nil || *namespace != projectionTargetSchema {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.absent", projector.major, "schema absence row is invalid")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.absent", projector.major, "schema absence row is invalid")
 			}
 			absent = true
 		case "schema":
 			if absent || schemaSeen || namespace == nil || owner == nil || *namespace != projectionTargetSchema {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema", projector.major, "schema identity row is duplicate or invalid")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema", projector.major, "schema identity row is duplicate or invalid")
 			}
 			schemaSeen = true
 			schema = SchemaProjection{Name: *namespace, Owner: *owner, Comment: value1, SecurityLabels: []SecurityLabel{}}
 			acl = newACLAccumulator(projector.major, aclIsNull, "catalog_explicit")
 		case "schema_acl":
 			if !schemaSeen {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema_acl", projector.major, "schema ACL row is sparse or out of order")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema_acl", projector.major, "schema ACL row is sparse or out of order")
 			}
 			if grantor == nil || grantee == nil {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.schema_acl.principal", projector.major, "schema ACL references an unknown principal")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.schema_acl.principal", projector.major, "schema ACL references an unknown principal")
 			}
 			if privilege == nil || isGrantable == nil {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema_acl", projector.major, "schema ACL row is sparse")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema_acl", projector.major, "schema ACL row is sparse")
 			}
 			if err := acl.add("namespace.schema_acl", *grantor, *grantee, *privilege, *isGrantable, schemaPrivileges); err != nil {
-				return pgNamespaceProjection{}, err
+				return pgNamespaceProjection{}, nil, err
 			}
 		case "security_label":
 			if !schemaSeen || value1 == nil || value2 == nil {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.security_labels", projector.major, "security label row is sparse or out of order")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.security_labels", projector.major, "security label row is sparse or out of order")
 			}
 			if uint64(len(schema.SecurityLabels)) >= projectionMaxSecurityLabelsPerObject {
-				return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionLimitExceeded, "namespace.security_labels", projector.major, "security label limit exceeded")
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionLimitExceeded, "namespace.security_labels", projector.major, "security label limit exceeded")
 			}
 			schema.SecurityLabels = append(schema.SecurityLabels, SecurityLabel{Provider: *value1, Label: *value2})
 		case "relation", "function", "type", "extension", "collation", "operator", "opclass", "opfamily", "conversion", "ts_config", "ts_dict", "ts_parser", "ts_template", "statistic_ext":
-			return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.objects."+rowKind, projector.major, "A2.1a detected an object deferred to A2.1b")
+			if !catalogMode {
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.objects."+rowKind, projector.major, "A2.1a detected an object deferred to A2.1b")
+			}
+			if namespace == nil || *namespace != projectionTargetSchema || value1 == nil || owner == nil || *value1 == "" || *owner == "" {
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.objects."+rowKind, projector.major, "catalog object inventory row is sparse")
+			}
+			objects = append(objects, pgNamespaceObject{Kind: rowKind, Name: *value1, Subkind: nullableString(value2), Owner: *owner})
+			if uint64(len(objects)) > projectionMaxCatalogObjects {
+				return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionLimitExceeded, "namespace.objects", projector.major, "catalog object limit exceeded")
+			}
 		default:
-			return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.row_kind", projector.major, "namespace query returned an unknown object kind")
+			return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.row_kind", projector.major, "namespace query returned an unknown object kind")
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.iteration", projector.major, "namespace projection iteration failed")
+		return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.iteration", projector.major, "namespace projection iteration failed")
 	}
 	if absent {
-		return pgNamespaceProjection{Absent: true}, nil
+		return pgNamespaceProjection{Absent: true}, []pgNamespaceObject{}, nil
 	}
 	if !schemaSeen || acl == nil {
-		return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema", projector.major, "namespace query omitted schema state")
+		return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "namespace.schema", projector.major, "namespace query omitted schema state")
 	}
 	schema.ExplicitACL = acl.projection()
 	schema.EffectiveACL, err = effectiveSchemaACL(schema.Owner, schema.ExplicitACL)
 	if err != nil {
-		return pgNamespaceProjection{}, err
+		return pgNamespaceProjection{}, nil, err
 	}
 	if err := projector.reconcileObjectCreators(ctx, snapshot, objectCreatorClosure); err != nil {
-		return pgNamespaceProjection{}, err
+		return pgNamespaceProjection{}, nil, err
 	}
 	sort.Slice(schema.SecurityLabels, func(left, right int) bool {
 		return schema.SecurityLabels[left].Provider < schema.SecurityLabels[right].Provider
 	})
 	for index := 1; index < len(schema.SecurityLabels); index++ {
 		if schema.SecurityLabels[index-1].Provider == schema.SecurityLabels[index].Provider {
-			return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.security_labels", projector.major, "security label provider is duplicate")
+			return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionUnknownObject, "namespace.security_labels", projector.major, "security label provider is duplicate")
 		}
 	}
 	defaultACL, err := projector.readDefaultACL(ctx, snapshot, defaultACLOwners, objectCreatorClosure)
 	if err != nil {
-		return pgNamespaceProjection{}, err
+		return pgNamespaceProjection{}, nil, err
 	}
 	totalACLEntries := uint64(len(schema.ExplicitACL.Entries) + len(schema.EffectiveACL))
 	for _, row := range defaultACL {
 		totalACLEntries += uint64(len(row.ACL.Entries))
 	}
 	if totalACLEntries > projectionMaxACLEntries {
-		return pgNamespaceProjection{}, pgProjectionFailure(CodeProjectionLimitExceeded, "namespace.acl_entries", projector.major, "namespace ACL entry limit exceeded")
+		return pgNamespaceProjection{}, nil, pgProjectionFailure(CodeProjectionLimitExceeded, "namespace.acl_entries", projector.major, "namespace ACL entry limit exceeded")
 	}
 	return pgNamespaceProjection{Body: CatalogProjectionBody{
 		Schema: schema, DefaultACL: defaultACL,
 		Relations: []RelationProjection{}, Functions: []FunctionProjection{}, Dependencies: []DependencyProjection{},
 		ObjectCount: uint32(len(scope.DeclaredObjects)), DeclaredObjects: cloneProjectionValue(scope.DeclaredObjects), DeniedObjects: []DeniedObjectProjection{},
-	}}, nil
+	}}, objects, nil
 }
 
 func (projector *PGProjector) reconcileObjectCreators(ctx context.Context, queryer catalogQueryer, expected []string) error {

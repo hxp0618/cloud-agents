@@ -147,7 +147,7 @@ func pgCapabilityRow(major uint16) []any {
 
 func TestProjectionFixedQueryRegistryIsClosedAndPG15ParseSafe(t *testing.T) {
 	ordinalCollation := regexp.MustCompile(`(?i)ORDER\s+BY\s+[0-9]+\s+COLLATE`)
-	for id := projectionQuerySnapshotMetadata; id <= projectionQueryDefaultACLs; id++ {
+	for id := projectionQuerySnapshotMetadata; id <= projectionQueryCatalogDependencies; id++ {
 		query, ok := projectionFixedQuery(id)
 		if !ok || strings.TrimSpace(query) == "" {
 			t.Fatalf("query id %d is absent", id)

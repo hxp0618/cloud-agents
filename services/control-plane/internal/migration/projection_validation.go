@@ -984,8 +984,14 @@ func (body CatalogProjectionBody) Validate() error {
 	if body.ObjectCount != uint32(len(body.DeclaredObjects)) {
 		return invalidProjection("catalog-projection", "object_count differs from the declared object closure")
 	}
-	if len(body.Relations) != 0 || len(body.Functions) != 0 {
-		return invalidProjection("catalog-projection", "A2.1a namespace projection cannot carry relation or function projections")
+	if err := validateRelationProjections(body.Relations); err != nil {
+		return err
+	}
+	if err := validateFunctionProjections(body.Functions); err != nil {
+		return err
+	}
+	if err := validateProjectedDeclaredCoverage(body); err != nil {
+		return err
 	}
 	labelKeys := make([]string, len(body.Schema.SecurityLabels))
 	for index, label := range body.Schema.SecurityLabels {
@@ -1100,6 +1106,559 @@ func (body CatalogProjectionBody) Validate() error {
 	}
 	if !strictlySorted(deniedKeys) {
 		return invalidProjection("catalog-projection", "denied objects are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validateProjectedDeclaredCoverage(body CatalogProjectionBody) error {
+	declared := make(map[string]ObjectIdentityProjection, len(body.DeclaredObjects))
+	for _, identity := range body.DeclaredObjects {
+		key, err := canonicalContractKey(identity)
+		if err != nil {
+			return err
+		}
+		declared[key] = identity
+	}
+	actual := make(map[string]struct{})
+	requiredDeclared := make(map[string]struct{})
+	addActual := func(identity ObjectIdentityProjection, required bool) error {
+		key, err := canonicalContractKey(identity)
+		if err != nil {
+			return err
+		}
+		actual[key] = struct{}{}
+		if required {
+			requiredDeclared[key] = struct{}{}
+		}
+		return nil
+	}
+	if err := addActual(ObjectIdentityProjection{Schema: &SchemaObjectIdentity{Kind: "schema", Name: body.Schema.Name}}, false); err != nil {
+		return err
+	}
+	for _, relation := range body.Relations {
+		if err := addActual(ObjectIdentityProjection{Relation: &RelationObjectIdentity{Kind: "relation", Identity: relation.Identity}}, true); err != nil {
+			return err
+		}
+		for _, column := range relation.Columns {
+			if err := addActual(ObjectIdentityProjection{Column: &ColumnObjectIdentity{Kind: "column", Relation: relation.Identity, Name: column.Name}}, false); err != nil {
+				return err
+			}
+		}
+		for _, constraint := range relation.Constraints {
+			if err := addActual(ObjectIdentityProjection{Constraint: &ConstraintObjectIdentity{Kind: "constraint", Relation: relation.Identity, Name: constraint.Name}}, false); err != nil {
+				return err
+			}
+		}
+		for _, index := range relation.Indexes {
+			constraintOwned := false
+			for _, constraint := range relation.Constraints {
+				if constraint.Name != index.Name {
+					continue
+				}
+				constraintOwned = constraint.Type == "primary_key" && index.Primary || constraint.Type == "unique" && index.Unique && !index.Primary || constraint.Type == "exclusion" && index.Exclusion
+				if constraintOwned {
+					break
+				}
+			}
+			if err := addActual(ObjectIdentityProjection{Index: &IndexObjectIdentity{Kind: "index", Identity: TypeIdentity{Schema: relation.Identity.Schema, Name: index.Name}, Relation: relation.Identity}}, !constraintOwned); err != nil {
+				return err
+			}
+		}
+		for _, policy := range relation.Policies {
+			if err := addActual(ObjectIdentityProjection{Policy: &PolicyObjectIdentity{Kind: "policy", Relation: relation.Identity, Name: policy.Name}}, true); err != nil {
+				return err
+			}
+		}
+		for _, trigger := range relation.Triggers {
+			if trigger.Identity.Trigger != nil {
+				if err := addActual(trigger.Identity, true); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	for _, function := range body.Functions {
+		if err := addActual(ObjectIdentityProjection{Function: &SQLObjectIdentity{Kind: "function", Identity: function.Identity}}, true); err != nil {
+			return err
+		}
+	}
+	for key := range requiredDeclared {
+		if _, ok := declared[key]; !ok {
+			return invalidProjection("catalog-projection", "projected top-level object is outside declared_objects")
+		}
+	}
+	for key, identity := range declared {
+		switch identity.Kind() {
+		case "schema", "relation", "column", "index", "policy", "function", "constraint", "trigger":
+			if _, ok := actual[key]; !ok {
+				return invalidProjection("catalog-projection", "declared object is absent from the catalog projection")
+			}
+		}
+	}
+	for _, denied := range body.DeniedObjects {
+		key, err := canonicalContractKey(denied.Object)
+		if err != nil {
+			return err
+		}
+		if _, ok := declared[key]; ok {
+			return invalidProjection("catalog-projection", "denied object overlaps declared_objects")
+		}
+	}
+	return nil
+}
+
+func validateRelationProjections(relations []RelationProjection) error {
+	keys := make([]string, len(relations))
+	for relationIndex, relation := range relations {
+		if err := relation.Identity.Validate(); err != nil || relation.Identity.Schema != projectionTargetSchema || relation.Owner == "" {
+			return invalidProjection("catalog-projection", "relation identity or owner is invalid")
+		}
+		switch relation.Relkind {
+		case "table", "partitioned_table", "view", "materialized_view", "foreign_table", "sequence":
+		default:
+			return invalidProjection("catalog-projection", "relation kind is outside the closed profile")
+		}
+		switch relation.Persistence {
+		case "permanent", "unlogged", "temporary":
+		default:
+			return invalidProjection("catalog-projection", "relation persistence is outside the closed profile")
+		}
+		if relation.AccessMethod != nil && *relation.AccessMethod == "" {
+			return invalidProjection("catalog-projection", "non-null relation access method is empty")
+		}
+		if relation.Relkind == "table" || relation.Relkind == "partitioned_table" || relation.Relkind == "materialized_view" {
+			if relation.AccessMethod == nil {
+				return invalidProjection("catalog-projection", "stored relation is missing its access method")
+			}
+		} else if relation.AccessMethod != nil {
+			return invalidProjection("catalog-projection", "non-stored relation carries an access method")
+		}
+		if relation.ExplicitACL.Entries == nil || relation.Reloptions == nil || relation.Columns == nil || relation.Constraints == nil || relation.Indexes == nil || relation.Policies == nil || relation.Triggers == nil {
+			return invalidProjection("catalog-projection", "relation projection is sparse")
+		}
+		if err := relation.ExplicitACL.Validate(); err != nil {
+			return err
+		}
+		if err := validateACLOrigins(relation.ExplicitACL.Entries, "catalog_explicit"); err != nil {
+			return err
+		}
+		allowedPrivileges := []string{"DELETE", "INSERT", "REFERENCES", "SELECT", "TRIGGER", "TRUNCATE", "UPDATE"}
+		if relation.Relkind == "sequence" {
+			allowedPrivileges = []string{"SELECT", "UPDATE", "USAGE"}
+		}
+		if err := validateACLPrivileges(relation.ExplicitACL.Entries, allowedPrivileges...); err != nil {
+			return err
+		}
+		if !strictlySorted(relation.Reloptions) && len(relation.Reloptions) > 1 {
+			return invalidProjection("catalog-projection", "relation options are duplicate or unsorted")
+		}
+		switch relation.ReplicaIdentity {
+		case "default", "nothing", "full", "index":
+		default:
+			return invalidProjection("catalog-projection", "relation replica identity is outside the closed profile")
+		}
+		if relation.RLSForced && !relation.RLSEnabled {
+			return invalidProjection("catalog-projection", "forced row security requires row security to be enabled")
+		}
+		if err := validateColumnProjections(relation); err != nil {
+			return err
+		}
+		if err := validateConstraintProjections(relation); err != nil {
+			return err
+		}
+		if err := validateIndexProjections(relation); err != nil {
+			return err
+		}
+		if err := validatePolicyProjections(relation); err != nil {
+			return err
+		}
+		if err := validateTriggerProjections(relation); err != nil {
+			return err
+		}
+		keys[relationIndex] = relation.Identity.Schema + "\x00" + relation.Identity.Name
+	}
+	if !strictlySorted(keys) {
+		return invalidProjection("catalog-projection", "relations are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validateColumnProjections(relation RelationProjection) error {
+	var previousAttnum uint32
+	names := make(map[string]struct{}, len(relation.Columns))
+	for index, column := range relation.Columns {
+		if column.Attnum == 0 || index > 0 && column.Attnum <= previousAttnum || column.Name == "" {
+			return invalidProjection("catalog-projection", "columns are duplicate, unsorted, or incomplete")
+		}
+		if _, duplicate := names[column.Name]; duplicate {
+			return invalidProjection("catalog-projection", "column identity is duplicate")
+		}
+		names[column.Name] = struct{}{}
+		previousAttnum = column.Attnum
+		if err := column.Type.Validate(); err != nil {
+			return err
+		}
+		if _, err := ValidateSignedIntegerDecimal(column.TypmodInt32Decimal, 32); err != nil {
+			return err
+		}
+		if column.Collation != nil {
+			if err := column.Collation.Validate(); err != nil {
+				return err
+			}
+		}
+		switch column.Identity {
+		case "none", "always", "by_default":
+		default:
+			return invalidProjection("catalog-projection", "column identity mode is outside the closed profile")
+		}
+		switch column.Generated {
+		case "none", "stored":
+		default:
+			return invalidProjection("catalog-projection", "column generated mode is outside the PG15-PG17 profile")
+		}
+		if column.Default != nil || column.Generated != "none" {
+			return invalidProjection("catalog-projection", "A2.1b expression projection is required for column defaults or generated columns")
+		}
+		switch column.Storage {
+		case "plain", "external", "extended", "main":
+		default:
+			return invalidProjection("catalog-projection", "column storage mode is outside the closed profile")
+		}
+		switch column.Compression {
+		case "default", "pglz", "lz4":
+		default:
+			return invalidProjection("catalog-projection", "column compression is outside the closed profile")
+		}
+		if column.ExplicitACL.Entries == nil {
+			return invalidProjection("catalog-projection", "column ACL is sparse")
+		}
+		if err := column.ExplicitACL.Validate(); err != nil {
+			return err
+		}
+		if err := validateACLOrigins(column.ExplicitACL.Entries, "catalog_explicit"); err != nil {
+			return err
+		}
+		if err := validateACLPrivileges(column.ExplicitACL.Entries, "INSERT", "REFERENCES", "SELECT", "UPDATE"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateConstraintProjections(relation RelationProjection) error {
+	keys := make([]string, len(relation.Constraints))
+	columnSet := make(map[string]struct{}, len(relation.Columns))
+	for _, column := range relation.Columns {
+		columnSet[column.Name] = struct{}{}
+	}
+	for index, constraint := range relation.Constraints {
+		if constraint.Name == "" || constraint.Columns == nil || constraint.ReferencedColumns == nil {
+			return invalidProjection("catalog-projection", "constraint is sparse")
+		}
+		switch constraint.Type {
+		case "primary_key", "unique":
+			if constraint.ReferencedRelation != nil || len(constraint.ReferencedColumns) != 0 || constraint.Expression != nil {
+				return invalidProjection("catalog-projection", "key constraint carries foreign or expression state")
+			}
+		case "foreign_key":
+			if constraint.ReferencedRelation == nil || len(constraint.Columns) == 0 || len(constraint.Columns) != len(constraint.ReferencedColumns) || constraint.Expression != nil {
+				return invalidProjection("catalog-projection", "foreign key constraint is incomplete")
+			}
+			if err := constraint.ReferencedRelation.Validate(); err != nil {
+				return err
+			}
+		case "check", "exclusion":
+			return invalidProjection("catalog-projection", "A2.1b expression projection is required for check or exclusion constraints")
+		default:
+			return invalidProjection("catalog-projection", "constraint type is outside the closed profile")
+		}
+		if err := validateDistinctColumnNames("constraint columns", constraint.Columns, columnSet); err != nil {
+			return err
+		}
+		if err := validateDistinctNames("referenced constraint columns", constraint.ReferencedColumns); err != nil {
+			return err
+		}
+		if constraint.Deferred && !constraint.Deferrable {
+			return invalidProjection("catalog-projection", "initially deferred constraint is not deferrable")
+		}
+		if err := validateConstraintActionProfile(constraint); err != nil {
+			return err
+		}
+		keys[index] = constraint.Name
+	}
+	if !strictlySorted(keys) {
+		return invalidProjection("catalog-projection", "constraints are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validateConstraintActionProfile(constraint ConstraintProjection) error {
+	if constraint.Type != "foreign_key" {
+		if constraint.Match != "none" || constraint.Update != "none" || constraint.Delete != "none" {
+			return invalidProjection("catalog-projection", "non-foreign constraint carries referential actions")
+		}
+		return nil
+	}
+	switch constraint.Match {
+	case "simple", "full", "partial":
+	default:
+		return invalidProjection("catalog-projection", "foreign key match type is outside the closed profile")
+	}
+	for _, action := range []string{constraint.Update, constraint.Delete} {
+		switch action {
+		case "no_action", "restrict", "cascade", "set_null", "set_default":
+		default:
+			return invalidProjection("catalog-projection", "foreign key action is outside the closed profile")
+		}
+	}
+	return nil
+}
+
+func validateIndexProjections(relation RelationProjection) error {
+	keys := make([]string, len(relation.Indexes))
+	columnSet := make(map[string]struct{}, len(relation.Columns))
+	for _, column := range relation.Columns {
+		columnSet[column.Name] = struct{}{}
+	}
+	for index, projected := range relation.Indexes {
+		if projected.Name == "" || projected.AccessMethod == "" || projected.Terms == nil || projected.Includes == nil {
+			return invalidProjection("catalog-projection", "index projection is sparse")
+		}
+		if projected.Predicate != nil {
+			return invalidProjection("catalog-projection", "A2.1b expression projection is required for partial indexes")
+		}
+		for termIndex, term := range projected.Terms {
+			if term.Ordinal != uint32(termIndex+1) || term.OpclassOptions == nil {
+				return invalidProjection("catalog-projection", "index term ordinal or options are invalid")
+			}
+			switch term.TermKind {
+			case "column":
+				if term.Column == nil || term.Expression != nil {
+					return invalidProjection("catalog-projection", "column index term is incomplete")
+				}
+				if _, ok := columnSet[*term.Column]; !ok {
+					return invalidProjection("catalog-projection", "index term references an unknown column")
+				}
+			case "expression":
+				return invalidProjection("catalog-projection", "A2.1b expression projection is required for expression indexes")
+			default:
+				return invalidProjection("catalog-projection", "index term kind is outside the closed profile")
+			}
+			if term.Opclass == nil {
+				return invalidProjection("catalog-projection", "index term is missing its operator class")
+			}
+			if err := term.Opclass.Validate(); err != nil {
+				return err
+			}
+			if !strictlySorted(term.OpclassOptions) && len(term.OpclassOptions) > 1 {
+				return invalidProjection("catalog-projection", "index operator class options are duplicate or unsorted")
+			}
+			if term.Collation != nil {
+				if err := term.Collation.Validate(); err != nil {
+					return err
+				}
+			}
+			switch term.Order {
+			case "asc", "desc":
+			default:
+				return invalidProjection("catalog-projection", "index order is outside the closed profile")
+			}
+			switch term.Nulls {
+			case "first", "last":
+			default:
+				return invalidProjection("catalog-projection", "index null ordering is outside the closed profile")
+			}
+			if term.ExclusionOperator != nil {
+				if err := term.ExclusionOperator.Validate(); err != nil {
+					return err
+				}
+			}
+		}
+		if err := validateDistinctColumnNames("index includes", projected.Includes, columnSet); err != nil {
+			return err
+		}
+		keys[index] = projected.Name
+	}
+	if !strictlySorted(keys) {
+		return invalidProjection("catalog-projection", "indexes are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validatePolicyProjections(relation RelationProjection) error {
+	keys := make([]string, len(relation.Policies))
+	for index, policy := range relation.Policies {
+		if policy.Name == "" || policy.Roles == nil {
+			return invalidProjection("catalog-projection", "policy projection is sparse")
+		}
+		switch policy.Command {
+		case "all", "select", "insert", "update", "delete":
+		default:
+			return invalidProjection("catalog-projection", "policy command is outside the closed profile")
+		}
+		if !strictlySorted(policy.Roles) || len(policy.Roles) == 0 {
+			return invalidProjection("catalog-projection", "policy roles are empty, duplicate, or unsorted")
+		}
+		if policy.Using != nil || policy.WithCheck != nil {
+			return invalidProjection("catalog-projection", "A2.1b expression projection is required for row security policies")
+		}
+		keys[index] = policy.Name
+	}
+	if !strictlySorted(keys) {
+		return invalidProjection("catalog-projection", "policies are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validateTriggerProjections(relation RelationProjection) error {
+	keys := make([]string, len(relation.Triggers))
+	for index, trigger := range relation.Triggers {
+		if err := trigger.Identity.Validate(); err != nil || trigger.OwningRelation != relation.Identity {
+			return invalidProjection("catalog-projection", "trigger identity or owning relation is invalid")
+		}
+		if err := trigger.Function.Validate(); err != nil {
+			return err
+		}
+		if trigger.Columns == nil || trigger.Arguments == nil {
+			return invalidProjection("catalog-projection", "trigger projection is sparse")
+		}
+		switch trigger.Enabled {
+		case "origin", "always", "replica", "disabled":
+		default:
+			return invalidProjection("catalog-projection", "trigger enabled state is outside the closed profile")
+		}
+		if trigger.Type == 0 {
+			return invalidProjection("catalog-projection", "trigger event type is empty")
+		}
+		if trigger.When != nil {
+			return invalidProjection("catalog-projection", "A2.1b expression projection is required for trigger predicates")
+		}
+		if trigger.Internal != (trigger.Identity.Internal != nil) {
+			return invalidProjection("catalog-projection", "trigger internal flag differs from its normalized identity")
+		}
+		key, err := canonicalContractKey(trigger.Identity)
+		if err != nil {
+			return err
+		}
+		keys[index] = key
+	}
+	if !strictlySorted(keys) {
+		return invalidProjection("catalog-projection", "triggers are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validateFunctionProjections(functions []FunctionProjection) error {
+	keys := make([]string, len(functions))
+	for functionIndex, function := range functions {
+		if err := function.Identity.Validate(); err != nil || function.Identity.Schema != projectionTargetSchema || function.Language == "" || function.Owner == "" || function.Arguments == nil || function.Config == nil || function.ExplicitACL.Entries == nil {
+			return invalidProjection("catalog-projection", "function projection is sparse or has invalid identity")
+		}
+		switch function.Kind {
+		case "function", "procedure", "aggregate", "window":
+		default:
+			return invalidProjection("catalog-projection", "function kind is outside the closed profile")
+		}
+		if err := function.Returns.Validate(); err != nil {
+			return err
+		}
+		if function.VariadicType != nil {
+			if err := function.VariadicType.Validate(); err != nil {
+				return err
+			}
+		}
+		for argumentIndex, argument := range function.Arguments {
+			if argument.Ordinal != uint32(argumentIndex+1) {
+				return invalidProjection("catalog-projection", "function argument ordinals are not contiguous")
+			}
+			if argument.Name != nil && *argument.Name == "" {
+				return invalidProjection("catalog-projection", "non-null function argument name is empty")
+			}
+			switch argument.Mode {
+			case "in", "out", "inout", "variadic", "table":
+			default:
+				return invalidProjection("catalog-projection", "function argument mode is outside the closed profile")
+			}
+			if err := argument.Type.Validate(); err != nil {
+				return err
+			}
+			if argument.Default != nil {
+				return invalidProjection("catalog-projection", "A2.1b expression projection is required for function argument defaults")
+			}
+		}
+		if err := function.ExplicitACL.Validate(); err != nil {
+			return err
+		}
+		if err := validateACLOrigins(function.ExplicitACL.Entries, "catalog_explicit"); err != nil {
+			return err
+		}
+		if err := validateACLPrivileges(function.ExplicitACL.Entries, "EXECUTE"); err != nil {
+			return err
+		}
+		switch function.Volatility {
+		case "immutable", "stable", "volatile":
+		default:
+			return invalidProjection("catalog-projection", "function volatility is outside the closed profile")
+		}
+		switch function.Parallel {
+		case "safe", "restricted", "unsafe":
+		default:
+			return invalidProjection("catalog-projection", "function parallel mode is outside the closed profile")
+		}
+		if !strictlySorted(function.Config) && len(function.Config) > 1 {
+			return invalidProjection("catalog-projection", "function config is duplicate or unsorted")
+		}
+		if err := ValidateExactNumeric(function.Cost); err != nil {
+			return err
+		}
+		if err := ValidateExactNumeric(function.Rows); err != nil {
+			return err
+		}
+		if err := requireDigest("catalog-projection.function.prosrc_sha256", function.ProsrcSHA256); err != nil {
+			return err
+		}
+		if function.Probin != nil && *function.Probin == "" {
+			return invalidProjection("catalog-projection", "non-null function probin is empty")
+		}
+		key, err := canonicalContractKey(function.Identity)
+		if err != nil {
+			return err
+		}
+		keys[functionIndex] = key
+	}
+	if !strictlySorted(keys) {
+		return invalidProjection("catalog-projection", "functions are duplicate or unsorted")
+	}
+	return nil
+}
+
+func validateDistinctColumnNames(path string, values []string, available map[string]struct{}) error {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			return invalidProjection("catalog-projection", path+" contain an empty name")
+		}
+		if _, duplicate := seen[value]; duplicate {
+			return invalidProjection("catalog-projection", path+" are duplicate")
+		}
+		if _, ok := available[value]; !ok {
+			return invalidProjection("catalog-projection", path+" reference an unknown column")
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
+}
+
+func validateDistinctNames(path string, values []string) error {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			return invalidProjection("catalog-projection", path+" contain an empty name")
+		}
+		if _, duplicate := seen[value]; duplicate {
+			return invalidProjection("catalog-projection", path+" are duplicate")
+		}
+		seen[value] = struct{}{}
 	}
 	return nil
 }

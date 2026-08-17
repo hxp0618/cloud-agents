@@ -157,6 +157,17 @@ const (
 	projectionQueryNamespace
 	projectionQueryNamespaceCreators
 	projectionQueryDefaultACLs
+	projectionQueryCatalogRelations
+	projectionQueryCatalogColumns
+	projectionQueryCatalogConstraints
+	projectionQueryCatalogIndexes
+	projectionQueryCatalogIndexTerms
+	projectionQueryCatalogPolicies
+	projectionQueryCatalogTriggers
+	projectionQueryCatalogFunctions
+	projectionQueryCatalogFunctionArguments
+	projectionQueryCatalogInternalObjects
+	projectionQueryCatalogDependencies
 )
 
 type projectionQueryStats struct {
