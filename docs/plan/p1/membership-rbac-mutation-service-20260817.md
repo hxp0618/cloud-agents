@@ -1,10 +1,11 @@
 # P1-A2.2-impl-3 Membership/RBAC mutation service — 2026-08-17
 
 - Status：**IMPLEMENTED — mutation/service/matrix/supply slice；independent review pending**
-- Fixed implementation：`350b53c72b62ea2bb33b8399aeabb1a1c8727a4c`
+- Fixed implementation：`2dc443d043b0c7aa535422b15cbd409660e73985`
 - Base implementation：`de36ca343cb2790c8ba44186807d6c933bd98500`
-- Fixed repository tree：`921c7171da4319a8b6ce92fd0d552b8e6f66626f`
-- Fixed `services/control-plane` subtree：`9e782e74dcaa16b89a4238b9f3b7b4ab2ac84b26`
+- Authority follow-ups：`350b53c → afe6cb2 → 1ff7713 → 2dc443d`
+- Fixed repository tree：`baac4d7ba09f6f1b38178341df9357764e75051f`
+- Fixed `services/control-plane` subtree：`141e3dedcb230e18cf209462ebaa5c449ebcdbd9`
 - Governing decision：[`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)
 - Toolchain：Node `24.13.1` / Bun `1.3.14` / Go `1.26.6`
 - Accountable owner：hxp0618
@@ -22,7 +23,8 @@ operation/outbox coordination, write a production database, close an immutable/a
 The fixed implementation adds:
 
 1. forward migration `000004`, with four internal helpers and exactly five `SECURITY DEFINER` runtime
-   entrypoints: Membership create/suspend/revoke and RoleBinding bind/revoke;
+   entrypoints, plus append-only `000005`, which replaces only `bind_role` without changing its signature,
+   owner or ACL;
 2. exact `pg_catalog, cloud_agents` search paths, direct nondelegable runtime-principal validation,
    transaction-local tenant binding and a final same-transaction blanket PUBLIC function revoke;
 3. a package-internal `RBACMutationService` exposing only the five typed methods. Every method validates
@@ -34,46 +36,54 @@ The fixed implementation adds:
    returns `ErrMutationCommitUnknown` and releases no `MutationResult`; any failed commit likewise returns a
    zero result, while a cleanup failure after confirmed commit discards the connection without returning a
    retry-inviting mutation failure;
-6. schema head `000004`, strict TS/Go SQL classification, generated catalog/manifest/runtime bundle, archived
-   exact `000003` predecessor and refreshed quota facts.
+6. schema head `000005`, strict TS/Go SQL classification, generated catalog/manifest/runtime bundle, retained
+   exact predecessor evidence and refreshed quota facts;
+7. a closed Membership→RoleBinding authority edge: bind requires an exact-subject active, unexpired
+   Membership covering the requested scope, and authorization candidates require that Membership's tenant
+   resource version to predate the binding. Suspend/revoke or later re-admission therefore cannot reactivate
+   an older binding, while another still-active earlier Membership may continue to cover it.
 
 Runtime retains no table DML and no helper-function authority. Ordinary mutation rejects platform scope and
 `platform.admin`; those remain outside this tenant runtime boundary.
 
 ## 2. Fixed bits and generated identity
 
-| Artifact                                      | SHA-256                                                            |
-| --------------------------------------------- | ------------------------------------------------------------------ |
-| `000004_expand_membership_rbac_mutations.sql` | `7664c8e67e8ee5f561395bd58f7156ac437ba0ac20547216dedbcc89dbc3cba7` |
-| archived `000003` schema bundle               | `a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820` |
-| `schema-bundle.json` raw file                 | `aa2b1d13c1230a66df90e8af7f6f1d6cbbc1e3fb16f5c334d4cbafed30ca4053` |
-| `manifest.json` raw file                      | `c4c7471671aa1c932c0f845a7bea956bcb65501a8e4debb230901d8efa195f77` |
-| `catalog/schema-000004.json`                  | `0b9246f8d2ceded8d26cdf401841d2078cf9ccce96d6946269f5f805769dc043` |
-| Go mutation service                           | `15e274f13a22cf77b01d1d42fc1b1b03e2a891ab404116c5ee696ca3c3797140` |
-| Go mutation unit tests                        | `19c4d28c4cdcc41c5d5c108c24d291051f4143da4507272e192e57bc71480ed3` |
-| Go mutation integration test                  | `bd69c2ca9ed50b48c285700bcd41f00baeb6e6d1b5cbc133ba6b2f3c8c3eb233` |
-| PostgreSQL matrix script                      | `52591f18cef8d1d68dae404fffaeeed68ad947cec844948cbde47653963fd1c4` |
-| generation lock                               | `d9f80ce224991009157c3d9e126b5900b08e6551ed3f62d644061651de1e27da` |
-| source-bound dependency lock                  | `a5356cd8d9da860f246cb2992739b48aeef347a466fa7f5dc2557577292e571e` |
-| CycloneDX 1.6 SBOM                            | `c3496ec99169d635fb0d4e7278947d44d612358b05fbd74c182dd063555fa1fd` |
-| `THIRD_PARTY_NOTICES.md`                      | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
+| Artifact                                        | SHA-256                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------ |
+| `000004_expand_membership_rbac_mutations.sql`   | `7664c8e67e8ee5f561395bd58f7156ac437ba0ac20547216dedbcc89dbc3cba7` |
+| `000005_close_membership_binding_authority.sql` | `9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b` |
+| archived `000003` schema bundle                 | `a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820` |
+| `schema-bundle.json` raw file                   | `42f4d02a85e37111f722851a034bd886c7a8666d7590887933cb7b4e58ab2202` |
+| `manifest.json` raw file                        | `10e537aca7799838406574833fcd4f3fe7d51ad80aa37597b591695bea398147` |
+| `catalog/schema-000004.json`                    | `0b9246f8d2ceded8d26cdf401841d2078cf9ccce96d6946269f5f805769dc043` |
+| `catalog/schema-000005.json`                    | `a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4` |
+| Go RBAC candidate reader                        | `3cad9aa14ff064af8b402a1727f040c0c3ca8a1cb7ff180aefd1b01a4791b65e` |
+| Go candidate-reader unit tests                  | `5f62ea4d0562b7fc686f40bfd84396e8f368c4f6b072a79640458387b6dcf201` |
+| Go mutation service                             | `6f7781ad9ef8bb342919e031b4eee0aa199eb3f5ea3bd2f0f5a6d959ea70e283` |
+| Go mutation unit tests                          | `e812b18486e5452072f5b04d8c3162d60058c4f020bd9eb3796e2b2fd052f347` |
+| Go mutation integration test                    | `a72d62df21e63e6423d1609ca10c51a4903ace5f9ff7169748ec3ffdf6a8bc93` |
+| PostgreSQL matrix script                        | `7a2195e172b85e54ed27c867808ad7a2b2b9c4cf9d88ab6e45057cf1a829a6b1` |
+| generation lock                                 | `20e8d1fb0a6c0217a3b74e7876d0c18ab698ff5b791bcbcc5111112f42e79b08` |
+| source-bound dependency lock                    | `cbb19c26c5035c369e9a0b38a1036c0ea96dff859cc06de9e63ae2b4c1a7ae26` |
+| CycloneDX 1.6 SBOM                              | `38adf9b594c26f602f87d8582710a566c11c036cf5857424375525f384f94c78` |
+| `THIRD_PARTY_NOTICES.md`                        | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
 
 The generated identities are:
 
-- schema bundle digest `sha256:49f5f50076bb06ceeb68c7b8d6f2a37260ec7aca50681bf4d28149364039be91`;
-- manifest digest `sha256:09353c9be78d97cd61657bdc6b19b635fec240a905369139b866d8c3237632f0`;
-- deterministic runtime tar `sha256:c0108b92ea4712b491b58a9bd85e958798f77777cfe7ae4abb5140f04c25b8c4`
-  at 388,096 bytes;
+- schema bundle digest `sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484`;
+- manifest digest `sha256:286824767ff87fb91260849a40aff95f15ce874698bc44fc8480689465f71a25`;
+- deterministic runtime tar `sha256:d7f7030684b8c5dab963a8a803a3d0c0d5415c263d3436bc5d38f5a711545b98`
+  at 501,248 bytes;
 - unchanged bootstrap bundle/tar `sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c`
   / `sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175`;
-- statement counts `[20, 71, 46, 20]`, ten journal segments, 988 journal records, 987 checkpoint
-  records, 157,024,256 journal bytes, 991 index records, 16,465,920 index bytes and 173,490,176 combined
+- statement counts `[20, 71, 46, 20, 1]`, ten journal segments, 1,003 journal records, 1,002 checkpoint
+  records, 158,597,120 journal bytes, 1,006 index records, 16,711,680 index bytes and 175,308,800 combined
   reserved bytes. No evidence quota limit was widened.
 
 ## 3. PostgreSQL 15/16/17 mutation matrix
 
 The fixed script used only the existing exact local images, created a fresh UTF8/C/C database for each major,
-applied migrations `000001` through `000004`, seeded deterministic actor authority through the migration owner,
+applied migrations `000001` through `000005`, seeded deterministic actor authority through the migration owner,
 and ran the authorization and five-operation mutation integration tests in normal and race modes:
 
 | PostgreSQL | `server_version_num` | Exact image digest                                                                 | Result             |
@@ -84,10 +94,11 @@ and ran the authorization and five-operation mutation integration tests in norma
 
 Each major proved the five-step lifecycle, before/after authorization, exact and future expiry, cross-tenant
 actor denial, one-winner/two-contender serialization with no tenant-revision gap, audit/resource fact identity,
-and privilege counts `5/0/0/9/0/0` for runtime entrypoints/helpers/direct DML/owner/PUBLIC/bootstrap. A direct
-cross-tenant function call failed inside a rollback-only transaction. A temporary runtime-group member with
-`CREATEROLE` was rejected by the direct-login fence and removed after the fault. This is local arm64 evidence,
-not x86_64/cloud/production or immutable Gate evidence.
+binding-without-Membership and wider-scope rejection, and deny-after-revoke-and-re-admission for the historical
+binding. Privilege counts remain `5/0/0/9/0/0` for runtime entrypoints/helpers/direct DML/owner/PUBLIC/bootstrap.
+A direct cross-tenant function call failed inside a rollback-only transaction. A temporary runtime-group member
+with `CREATEROLE` was rejected by the direct-login fence and removed after the fault. This is local arm64
+evidence, not x86_64/cloud/production or immutable Gate evidence.
 
 ## 4. Verification and source-bound supply evidence
 
@@ -102,23 +113,34 @@ The base implementation `de36ca3` passed:
   shell syntax, secret scan, dirty-file formatting and `git diff --check`;
 - all six PG15/16/17 normal/race matrix legs above.
 
-The fixed follow-up `350b53c` changes only the Go result-settlement helper and its unit faults. It passed the
-focused mutation suite in normal/race modes, the complete `internal/store/postgres` package in normal/race
-modes, package vet/build and `git diff --check`. A delta-only scan applied the repository's four secret-shape
-rules to all eight changed files since `230f1e3` and passed; the full-history scan was not rerun for this
-follow-up. The previously passed full migration and six-leg PostgreSQL matrix were not rerun because SQL,
-schema/catalog fixtures, module inputs and transaction behavior are byte-identical; this record does not
-relabel those base runs as a fresh full rerun.
+The result-settlement follow-up `350b53c` passed its focused and complete store normal/race tests. Authority
+follow-up `afe6cb2` added append-only `000005`; `1ff7713` bound that migration into the contract-lock input
+closure; final implementation `2dc443d` reduced the migration to one `bind_role` replacement and added the
+candidate-reader version fence so the frozen evidence quota remains unchanged in policy and within limits.
+
+For exact source `2dc443d`, this refresh passed:
+
+- strict migration SQL and deterministic bundle tests (`19` tests / `443` expectations), current contract and
+  migration checker/generator `--check`, and the exact five-migration quota assertion;
+- affected PostgreSQL candidate-reader and mutation service tests in normal/race modes, plus selected
+  checked-in bundle/admission/quota tests in normal/race modes;
+- the fresh PG15/16/17 matrix in section 3, including authorization and mutation normal/race on every major;
+- repository lint, exact Go `1.26.6` vet/build, Linux amd64/arm64 CGO=0 cross-build, `go mod tidy -diff`,
+  `go mod verify`, shell syntax, applicable format checks and `git diff --check`;
+- the repository's full-history four-rule secret scan with no unallowlisted secret-shaped content.
+
+A fresh full `go test ./...` or complete `internal/migration` rerun is not claimed for `2dc443d`; the current
+normal/race evidence is deliberately restricted to the changed bundle/quota/store boundary.
 
 The source-bound refresh mechanically fixes:
 
 | Evidence                                    | Exact value                                                        |
 | ------------------------------------------- | ------------------------------------------------------------------ |
-| Source commit                               | `350b53c72b62ea2bb33b8399aeabb1a1c8727a4c`                         |
-| Repository tree OID                         | `921c7171da4319a8b6ce92fd0d552b8e6f66626f`                         |
-| `services/control-plane` subtree OID        | `9e782e74dcaa16b89a4238b9f3b7b4ab2ac84b26`                         |
-| 335-file tracked manifest SHA-256           | `9610a836174add6974e8fa549184f0944e9b4541cf6f723cfa0cea1c5fc7d259` |
-| 258-file tracked Go-source manifest SHA-256 | `24e97df1d7e5fa3a74ed8a37438666f18cd07d73b0c52db8a71c3ef221ffe0ff` |
+| Source commit                               | `2dc443d043b0c7aa535422b15cbd409660e73985`                         |
+| Repository tree OID                         | `baac4d7ba09f6f1b38178341df9357764e75051f`                         |
+| `services/control-plane` subtree OID        | `141e3dedcb230e18cf209462ebaa5c449ebcdbd9`                         |
+| 337-file tracked manifest SHA-256           | `ca5795f0fe9100164778b0d5fc8b307efee64f1280ec94533ef2426fdb74418b` |
+| 258-file tracked Go-source manifest SHA-256 | `7253371288f7f7bc3fdc17019bd235ab9ff5ecdd2e2a33e68644ce0b51b8aa3e` |
 
 `go.mod`, `go.sum`, the 16-module selected graph and all production import closures remain same-bits. Linux
 amd64/arm64 both retain 7 modules / 30 packages with hashes
@@ -128,14 +150,17 @@ hashes `12203596417e4926a8292ad208df4d410ef0d6e89627320e2c4fe08858a5154b` /
 `07d05153aff50a4db408a9e4d34c4a298a21f5ccd5615b9940e4e8521e0de354`. NOTICE and its three PATENTS
 bindings are unchanged.
 
-Fresh source-bound `govulncheck v1.6.0` module and Linux/amd64 symbol scans for `350b53c` used a scanner built
-with exact Go `1.26.6` and database timestamp
-`2026-08-14T16:22:54Z`; both returned no findings with output SHA-256
-`3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5`. A fresh OSV query over all 16
-selected modules returned 16 responses and zero findings; query/canonical-response SHA-256 remain
-`b0ab3c0cbc9e84fba34f1b183c9ae65dfa58c635a823d06c33914619f763d911` /
-`ab5a0787744e90d4b9bef630420e8085dd8045f7cd5fe87fc0b5acc7b6a55b93`. These empty results are time-bound
-and non-bit-safe, not permanent safety facts.
+The CycloneDX document retains 16 unique component refs and exactly seven root production dependencies. It
+passed Ajv `8.20.0` validation against the fixed CycloneDX specification `1.6` bom/SPDX/JSF schemas with
+SHA-256 `3e92dddbc30cf7f6a02b80f0942b1a4cfd4fb1c26f1dfc4310afa9d613cafb93`,
+`baa9d3bd1ed57b6751b0887edead6b5063ff53ff7429cf85d476c6c94af0166e` and
+`8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae`.
+
+The recorded `govulncheck v1.6.0` module/Linux-amd64 symbol and 16-module OSV zero-finding results belong to
+source `350b53c` and database timestamp `2026-08-14T16:22:54Z`. They were not rerun for `2dc443d`; the
+dependency lock and SBOM therefore mark current-source vulnerability-scan inheritance `NOT_CLAIMED`.
+Historical output/query hashes remain recorded for provenance only. No zero-finding result is presented as
+current or permanent safety evidence.
 
 Repository-wide `fmt:check` is not newly claimed because historical fixed evidence files outside this slice
 remain intentionally unformatted by the current formatter. Every changed implementation/evidence file passes
