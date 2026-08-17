@@ -129,13 +129,17 @@ SQL
     --set=cloud_agents_database=cagtest \
     --set=cloud_agents_database_owner=cag_db_owner \
     -f /workspace/services/control-plane/migrations/bootstrap/database.sql >/dev/null
-  docker exec -e PGPASSWORD="$test_password" "$active_container" \
-    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cag_migration -d cagtest \
-    -c 'SET ROLE cloud_agents_migration_owner' \
-    -f /workspace/services/control-plane/migrations/000001_expand_migration_kernel.sql \
-    -f /workspace/services/control-plane/migrations/000002_expand_tenancy.sql \
-    -f /workspace/services/control-plane/migrations/000003_expand_membership_rbac.sql \
-    -f /workspace/services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql >/dev/null
+  for migration in \
+    000001_expand_migration_kernel.sql \
+    000002_expand_tenancy.sql \
+    000003_expand_membership_rbac.sql \
+    000004_expand_membership_rbac_mutations.sql; do
+    docker exec -e PGPASSWORD="$test_password" "$active_container" \
+      psql -X -v ON_ERROR_STOP=1 --single-transaction \
+      -h 127.0.0.1 -U cag_migration -d cagtest \
+      -c 'SET ROLE cloud_agents_migration_owner' \
+      -f "/workspace/services/control-plane/migrations/$migration" >/dev/null
+  done
 
   for tenant in 001 002 mutation-normal mutation-race; do
     bootstrap_result=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
