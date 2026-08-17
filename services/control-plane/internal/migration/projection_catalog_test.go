@@ -156,6 +156,8 @@ func TestPGCatalogInternalCompletionCannotReachProductionProjector(t *testing.T)
 	allowed := map[string]struct{}{
 		"projection_expression.go\x00readCatalogStructureWithExpressions\x00readCatalogStructure": {},
 		"projection_expression.go\x00readCatalogExpressions\x00completeBody":                      {},
+		"projection_pg_adapter.go\x00ProjectCatalog\x00readCatalogStructureWithExpressions":       {},
+		"projection_pg_adapter.go\x00ProjectCatalog\x00completeBody":                              {},
 	}
 	entries, err := os.ReadDir(".")
 	if err != nil {

@@ -390,7 +390,18 @@ func bindVerifiedRunnerProjectionDecision(decision VerifiedTrustDecision, verifi
 		if err := verifiedSubject.validateAt(now); err != nil {
 			return VerifiedTrustDecision{}, err
 		}
-		verifiedCatalog := verifiedSubject.verifiedCatalog
+		verifiedCatalog, err := bindVerifiedCatalogContractWithOwners(
+			verifiedSubject.artifactDigest,
+			verifiedSubject.verifiedCatalog.Scope(),
+			verifiedSubject.verifiedCatalog.ExpectedProjection(),
+			initialSchemaScope.DefaultACLOwners(),
+			initialSchemaScope.ObjectCreatorClosure(),
+			verifiedSubject.verifiedCatalog.verifiedDecisionExpiresAt,
+			verifiedSubject.verifiedCatalog.verifiedDecisionSecurityEpoch,
+		)
+		if err != nil {
+			return VerifiedTrustDecision{}, err
+		}
 		head := verifiedCatalog.expected.SchemaHead
 		if head == "" || (index > 0 && previousHead >= head) {
 			return VerifiedTrustDecision{}, fail(CodeUntrusted, "runner-projection-bindings", "catalog subjects are duplicate or not canonically sorted", nil)
@@ -556,6 +567,8 @@ func (bindings RunnerProjectionBindings) validateAt(now time.Time) error {
 		}
 		if catalog.schemaHead != catalog.catalogContract.SchemaHead || catalog.schemaHead != catalog.verifiedCatalog.expected.SchemaHead || catalog.catalogContractDigest != catalog.verifiedCatalog.subjectDigest ||
 			!runnerCanonicalEqual(catalog.catalogContract.ExpectedProjection, catalog.verifiedCatalog.expected) ||
+			!equalStrings(catalog.verifiedCatalog.defaultACLOwners, bindings.initialSchemaScope.defaultACLOwners) ||
+			!equalStrings(catalog.verifiedCatalog.objectCreatorClosure, bindings.initialSchemaScope.objectCreatorClosure) ||
 			!catalog.expiresAt.Equal(catalog.verifiedCatalog.verifiedDecisionExpiresAt) || catalog.securityEpoch != catalog.verifiedCatalog.verifiedDecisionSecurityEpoch {
 			return fail(CodeUntrusted, "runner-projection-bindings", "catalog binding differs from its verified wrapper", nil)
 		}
@@ -820,6 +833,8 @@ func cloneVerifiedCatalogContract(contract VerifiedCatalogContract) VerifiedCata
 	owned := contract
 	owned.scope = cloneProjectionValue(contract.scope)
 	owned.expected = cloneProjectionValue(contract.expected)
+	owned.defaultACLOwners = append([]string(nil), contract.defaultACLOwners...)
+	owned.objectCreatorClosure = append([]string(nil), contract.objectCreatorClosure...)
 	return owned
 }
 

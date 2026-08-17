@@ -297,15 +297,26 @@ func TestPGProjectPreconditionUsesBoundCloneAfterValidation(t *testing.T) {
 	}
 }
 
-func TestPGCatalogAndTransitionRemainNotImplemented(t *testing.T) {
+func TestPGCatalogProjectsSignedFullBodyAndKeepsTransitionClosed(t *testing.T) {
 	major := uint16(16)
 	metadata := pgTestMetadata(major)
 	head := "000001"
-	scope := ProjectionScope{ScopeKind: "final", SchemaHead: &head, DeclaredObjects: []ObjectIdentityProjection{}}
-	expected := CatalogProjection{SchemaHead: head, Body: pgEmptyNamespaceBody()}
-	contract, err := bindVerifiedCatalogContract(projectionTestDigest, scope, expected, time.Now().Add(time.Hour), 1)
+	declared := []ObjectIdentityProjection{{Schema: &SchemaObjectIdentity{Kind: "schema", Name: projectionTargetSchema}}}
+	scope := ProjectionScope{ScopeKind: "final", SchemaHead: &head, DeclaredObjects: cloneProjectionValue(declared)}
+	body := pgEmptyNamespaceBody()
+	body.ObjectCount = 1
+	body.DeclaredObjects = cloneProjectionValue(declared)
+	expected := CatalogProjection{SchemaHead: head, Body: body}
+	owners := []string{MigrationOwnerRole}
+	creators := []string{MigrationOwnerRole}
+	contract, err := bindVerifiedCatalogContractWithOwners(projectionTestDigest, scope, expected, owners, creators, time.Now().Add(time.Hour), 1)
 	if err != nil {
 		t.Fatal(err)
+	}
+	owners[0] = RuntimeRole
+	creators[0] = RuntimeRole
+	if contract.defaultACLOwners[0] != MigrationOwnerRole || contract.objectCreatorClosure[0] != MigrationOwnerRole {
+		t.Fatal("catalog constructor retained caller-owned principal closure")
 	}
 	expected.Body.Schema.Comment = pgString("caller mutation")
 	boundExpected := contract.ExpectedProjection()
@@ -313,7 +324,7 @@ func TestPGCatalogAndTransitionRemainNotImplemented(t *testing.T) {
 		t.Fatalf("catalog constructor retained caller aliases: %+v", boundExpected.Body.Schema.Comment)
 	}
 	expected.Body.Schema.Comment = nil
-	tampered, err := bindVerifiedCatalogContract(projectionTestDigest, scope, expected, time.Now().Add(time.Hour), 1)
+	tampered, err := bindVerifiedCatalogContractWithOwners(projectionTestDigest, scope, expected, []string{MigrationOwnerRole}, []string{MigrationOwnerRole}, time.Now().Add(time.Hour), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,18 +340,62 @@ func TestPGCatalogAndTransitionRemainNotImplemented(t *testing.T) {
 		"expired": {expiresAt: time.Now().Add(-time.Second), epoch: 1},
 		"epoch0":  {expiresAt: time.Now().Add(time.Hour), epoch: 0},
 	} {
-		if _, err := bindVerifiedCatalogContract(projectionTestDigest, scope, expected, decision.expiresAt, decision.epoch); !IsCode(err, CodeUntrusted) {
+		if _, err := bindVerifiedCatalogContractWithOwners(projectionTestDigest, scope, expected, []string{MigrationOwnerRole}, []string{MigrationOwnerRole}, decision.expiresAt, decision.epoch); !IsCode(err, CodeUntrusted) {
 			t.Fatalf("catalog %s trust decision was accepted: %v", name, err)
 		}
 	}
-	snapshot := &pgTestSnapshot{metadata: metadata, queries: map[projectionQueryID][]pgTestQuery{}}
 	projector := &PGProjector{major: major, capabilities: pgProjectionCapabilities{Major: major, ServerVersionNum: metadata.ServerVersionNum}, normalizer: pg16Normalizer{}}
-	if _, err := projector.ProjectCatalog(context.Background(), snapshot, contract, scope); !IsCode(err, CodeProjectionNotImplemented) {
-		t.Fatalf("namespace-only catalog projection escaped A2.1b boundary: %v", err)
+	if _, err := projector.ProjectCatalog(nil, pgEmptyCatalogSnapshot(major), contract, scope); !IsCode(err, CodeProjectionCatalogQueryFailed) {
+		t.Fatalf("nil catalog context error = %v", err)
+	}
+	if _, err := projector.ProjectCatalog(context.Background(), nil, contract, scope); !IsCode(err, CodeProjectionSnapshotInvalid) {
+		t.Fatalf("nil catalog snapshot error = %v", err)
+	}
+	otherHead := "000002"
+	otherScope := ProjectionScope{ScopeKind: "final", SchemaHead: &otherHead, DeclaredObjects: cloneProjectionValue(declared)}
+	if _, err := projector.ProjectCatalog(context.Background(), pgEmptyCatalogSnapshot(major), contract, otherScope); !IsCode(err, CodeProjectionInvalidScope) {
+		t.Fatalf("catalog scope swap error = %v", err)
+	}
+	unbound, err := bindVerifiedCatalogContract(projectionTestDigest, scope, expected, time.Now().Add(time.Hour), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := projector.ProjectCatalog(context.Background(), &pgTestSnapshot{metadata: metadata, queries: map[projectionQueryID][]pgTestQuery{}}, unbound, scope); !IsCode(err, CodeUntrusted) {
+		t.Fatalf("uncombined catalog subject reached projection queries: %v", err)
+	}
+	snapshot := pgEmptyCatalogSnapshot(major)
+	result, err := projector.ProjectCatalog(context.Background(), snapshot, contract, scope)
+	if err != nil {
+		t.Fatalf("signed full catalog projection failed: %v", err)
+	}
+	if result.Projection.SchemaHead != head || result.Digest == "" || result.Metadata.ProjectionKind != ProjectionKindCatalog || result.Metadata.Scope == nil || !equalProjectionScopes(*result.Metadata.Scope, scope) || result.Metadata.QueryCount == 0 {
+		t.Fatalf("signed full catalog result is incomplete: projection=%+v metadata=%+v", result.Projection, result.Metadata)
+	}
+	drift := pgEmptyCatalogSnapshot(major)
+	drift.queries[projectionQueryNamespace][0].rows[0][2] = pgString(RuntimeRole)
+	if _, err := projector.ProjectCatalog(context.Background(), drift, contract, scope); !IsCode(err, CodeCatalogDrift) {
+		t.Fatalf("signed full catalog drift code = %v", err)
+	}
+	closureDrift := cloneVerifiedCatalogContract(contract)
+	closureDrift.objectCreatorClosure[0] = RuntimeRole
+	if _, err := projector.ProjectCatalog(context.Background(), pgEmptyCatalogSnapshot(major), closureDrift, scope); !IsCode(err, CodeAuthorityDrift) {
+		t.Fatalf("catalog principal closure drift code = %v", err)
 	}
 	if _, err := projector.ProjectTransitionState(context.Background(), snapshot, contract, scope); !IsCode(err, CodeProjectionNotImplemented) {
 		t.Fatalf("transition projection escaped A2.1b boundary: %v", err)
 	}
+}
+
+func pgEmptyCatalogSnapshot(major uint16) *pgTestSnapshot {
+	queries := map[projectionQueryID][]pgTestQuery{
+		projectionQueryNamespace:         {{rows: [][]any{pgNamespaceRow("schema", pgString(projectionTargetSchema), pgString(MigrationOwnerRole), true, nil, nil, nil, nil, nil, nil, nil)}}},
+		projectionQueryNamespaceCreators: {{rows: [][]any{{MigrationOwnerRole}}}},
+		projectionQueryDefaultACLs:       {{rows: [][]any{}}},
+	}
+	for id := projectionQueryCatalogRelations; id <= projectionQueryCatalogExpressions; id++ {
+		queries[id] = []pgTestQuery{{rows: [][]any{}}}
+	}
+	return &pgTestSnapshot{metadata: pgTestMetadata(major), queries: queries}
 }
 
 func pgEmptyNamespaceBody() CatalogProjectionBody {

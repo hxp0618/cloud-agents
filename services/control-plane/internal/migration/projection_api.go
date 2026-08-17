@@ -321,6 +321,8 @@ type VerifiedCatalogContract struct {
 	subjectDigest                 Digest
 	scope                         ProjectionScope
 	expected                      CatalogProjection
+	defaultACLOwners              []string
+	objectCreatorClosure          []string
 	bindingCanonical              string
 	bindingDigest                 Digest
 	verifiedDecisionExpiresAt     time.Time
@@ -350,6 +352,35 @@ func (contract VerifiedCatalogContract) validateAt(now time.Time) error {
 	if contract.scope.SchemaHead == nil || *contract.scope.SchemaHead != contract.expected.SchemaHead {
 		return projectionFailure(CodeProjectionMetadataMismatch, "verified-catalog", "schema_head", 0, false, "catalog projection and scope schema heads differ")
 	}
+	if len(contract.defaultACLOwners) != 0 || len(contract.objectCreatorClosure) != 0 {
+		if err := validateVerifiedPrincipalClosure("catalog_default_acl_owners", contract.defaultACLOwners); err != nil {
+			return err
+		}
+		if err := validateVerifiedPrincipalClosure("catalog_object_creator_closure", contract.objectCreatorClosure); err != nil {
+			return err
+		}
+		creators := make(map[string]struct{}, len(contract.objectCreatorClosure))
+		for _, principal := range contract.objectCreatorClosure {
+			creators[principal] = struct{}{}
+		}
+		for _, owner := range contract.defaultACLOwners {
+			if _, ok := creators[owner]; !ok {
+				return projectionFailure(CodeAuthorityDrift, "verified-catalog", "default_acl_owners", 0, false, "catalog default ACL owner is outside the signed object creator closure")
+			}
+		}
+		if _, ok := creators[contract.expected.Body.Schema.Owner]; !ok {
+			return projectionFailure(CodeAuthorityDrift, "verified-catalog", "schema_owner", 0, false, "catalog schema owner is outside the signed object creator closure")
+		}
+		allowedDefaultOwners := make(map[string]struct{}, len(contract.defaultACLOwners))
+		for _, owner := range contract.defaultACLOwners {
+			allowedDefaultOwners[owner] = struct{}{}
+		}
+		for _, row := range contract.expected.Body.DefaultACL {
+			if _, ok := allowedDefaultOwners[row.Owner]; !ok {
+				return projectionFailure(CodeAuthorityDrift, "verified-catalog", "default_acl_projection", 0, false, "catalog expected default ACL owner is outside the signed allowlist")
+			}
+		}
+	}
 	canonical, digest, err := canonicalVerifiedBinding(contract.catalogBinding())
 	if err != nil || contract.bindingCanonical == "" || canonical != contract.bindingCanonical || digest != contract.bindingDigest {
 		return projectionFailure(CodeUntrusted, "verified-catalog", "catalog_binding", 0, false, "catalog scope or expected projection differs from its verified binding")
@@ -358,16 +389,19 @@ func (contract VerifiedCatalogContract) validateAt(now time.Time) error {
 }
 
 type verifiedCatalogBinding struct {
-	SubjectDigest Digest            `json:"subject_digest"`
-	Scope         ProjectionScope   `json:"scope"`
-	Expected      CatalogProjection `json:"expected"`
-	ExpiresAt     string            `json:"expires_at"`
-	SecurityEpoch uint64            `json:"security_epoch"`
+	SubjectDigest        Digest            `json:"subject_digest"`
+	Scope                ProjectionScope   `json:"scope"`
+	Expected             CatalogProjection `json:"expected"`
+	DefaultACLOwners     []string          `json:"default_acl_owners"`
+	ObjectCreatorClosure []string          `json:"object_creator_closure"`
+	ExpiresAt            string            `json:"expires_at"`
+	SecurityEpoch        uint64            `json:"security_epoch"`
 }
 
 func (contract VerifiedCatalogContract) catalogBinding() verifiedCatalogBinding {
 	return verifiedCatalogBinding{
 		SubjectDigest: contract.subjectDigest, Scope: contract.scope, Expected: contract.expected,
+		DefaultACLOwners: contract.defaultACLOwners, ObjectCreatorClosure: contract.objectCreatorClosure,
 		ExpiresAt: canonicalProjectionExpiry(contract.verifiedDecisionExpiresAt), SecurityEpoch: contract.verifiedDecisionSecurityEpoch,
 	}
 }
@@ -375,10 +409,15 @@ func (contract VerifiedCatalogContract) catalogBinding() verifiedCatalogBinding 
 // bindVerifiedCatalogContract is the only package-private path that promotes
 // catalog inputs to an opaque verified wrapper.
 func bindVerifiedCatalogContract(subject Digest, scope ProjectionScope, expected CatalogProjection, expiresAt time.Time, securityEpoch uint64) (VerifiedCatalogContract, error) {
+	return bindVerifiedCatalogContractWithOwners(subject, scope, expected, nil, nil, expiresAt, securityEpoch)
+}
+
+func bindVerifiedCatalogContractWithOwners(subject Digest, scope ProjectionScope, expected CatalogProjection, defaultACLOwners, objectCreatorClosure []string, expiresAt time.Time, securityEpoch uint64) (VerifiedCatalogContract, error) {
 	ownedScope := cloneProjectionValue(scope)
 	ownedExpected := cloneProjectionValue(expected)
 	contract := VerifiedCatalogContract{
 		verified: true, subjectDigest: subject, scope: ownedScope, expected: ownedExpected,
+		defaultACLOwners: append([]string(nil), defaultACLOwners...), objectCreatorClosure: append([]string(nil), objectCreatorClosure...),
 		verifiedDecisionExpiresAt: expiresAt, verifiedDecisionSecurityEpoch: securityEpoch,
 	}
 	canonical, digest, err := canonicalVerifiedBinding(contract.catalogBinding())
@@ -399,6 +438,16 @@ func (contract VerifiedCatalogContract) Scope() ProjectionScope {
 }
 func (contract VerifiedCatalogContract) ExpectedProjection() CatalogProjection {
 	return cloneProjectionValue(contract.expected)
+}
+
+func (contract VerifiedCatalogContract) projectionPrincipalClosure() ([]string, []string, error) {
+	if err := contract.validate(); err != nil {
+		return nil, nil, err
+	}
+	if len(contract.defaultACLOwners) == 0 || len(contract.objectCreatorClosure) == 0 {
+		return nil, nil, projectionFailure(CodeUntrusted, "verified-catalog", "owner_closure", 0, false, "catalog projection owner closure is not bound to the combined trust decision")
+	}
+	return append([]string(nil), contract.defaultACLOwners...), append([]string(nil), contract.objectCreatorClosure...), nil
 }
 
 // VerifiedSchemaBundleScope is the only authority for projecting an inline

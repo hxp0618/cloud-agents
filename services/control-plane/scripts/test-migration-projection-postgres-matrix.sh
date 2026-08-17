@@ -24,6 +24,7 @@ declare -a matrix=(
 run_id="migration-projection-matrix-$$-$RANDOM"
 ownership_label="com.hxp0618.cloud-agents.test-run"
 active_container=""
+catalog_same_bits=""
 
 cleanup() {
   if [[ -z "$active_container" ]]; then
@@ -163,7 +164,8 @@ SQL
       exit "$normal_status"
     fi
     normal_same_bits=$(printf '%s\n' "$normal_output" | sed -n 's/.*POSTGRES_PROJECTION_SAME_BITS .* digest=\(sha256:[0-9a-f]*\) .*/\1/p' | tail -1)
-    if [[ -z "$normal_same_bits" ]]; then
+    normal_catalog_bits=$(printf '%s\n' "$normal_output" | sed -n 's/.*POSTGRES_PROJECTION_SAME_BITS .* catalog_idle=\(sha256:[0-9a-f]*\) .*/\1/p' | tail -1)
+    if [[ -z "$normal_same_bits" || -z "$normal_catalog_bits" ]]; then
       echo "Normal projection matrix did not emit same-bits evidence" >&2
       exit 1
     fi
@@ -188,8 +190,13 @@ SQL
       exit "$race_status"
     fi
     race_same_bits=$(printf '%s\n' "$race_output" | sed -n 's/.*POSTGRES_PROJECTION_SAME_BITS .* digest=\(sha256:[0-9a-f]*\) .*/\1/p' | tail -1)
+    race_catalog_bits=$(printf '%s\n' "$race_output" | sed -n 's/.*POSTGRES_PROJECTION_SAME_BITS .* catalog_idle=\(sha256:[0-9a-f]*\) .*/\1/p' | tail -1)
     if [[ $race_same_bits != "$normal_same_bits" ]]; then
       echo "Normal/race same-bits mismatch for PostgreSQL $postgres_major/$instance: $normal_same_bits vs $race_same_bits" >&2
+      exit 1
+    fi
+    if [[ $race_catalog_bits != "$normal_catalog_bits" ]]; then
+      echo "Normal/race catalog same-bits mismatch for PostgreSQL $postgres_major/$instance: $normal_catalog_bits vs $race_catalog_bits" >&2
       exit 1
     fi
     if [[ -z "$major_same_bits" ]]; then
@@ -198,8 +205,14 @@ SQL
       echo "Fresh database A/B same-bits mismatch for PostgreSQL $postgres_major: $major_same_bits vs $normal_same_bits" >&2
       exit 1
     fi
+    if [[ -z "$catalog_same_bits" ]]; then
+      catalog_same_bits="$normal_catalog_bits"
+    elif [[ $catalog_same_bits != "$normal_catalog_bits" ]]; then
+      echo "PostgreSQL 15/16/17 catalog same-bits mismatch: $catalog_same_bits vs $normal_catalog_bits" >&2
+      exit 1
+    fi
 
-    echo "POSTGRES_PROJECTION_EVIDENCE major=$postgres_major instance=$instance version_num=$observed_version image_ref=$image local_image_id=$local_image_id arch=$image_os/$image_arch profile=UTF8/C/C same_bits=$normal_same_bits exact_version=$exact_version"
+    echo "POSTGRES_PROJECTION_EVIDENCE major=$postgres_major instance=$instance version_num=$observed_version image_ref=$image local_image_id=$local_image_id arch=$image_os/$image_arch profile=UTF8/C/C same_bits=$normal_same_bits catalog_same_bits=$normal_catalog_bits exact_version=$exact_version"
     cleanup
   done
 done

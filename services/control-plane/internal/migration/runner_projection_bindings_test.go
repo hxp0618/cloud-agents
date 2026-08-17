@@ -31,6 +31,9 @@ func TestRunnerProjectionBindingsCanonicalDecisionsAndLineageExclusions(t *testi
 	if bindings.releaseTrustDecisionDigest == bindings.runnerProjectionDecisionDigest || bindings.runnerProjectionDecisionDigest == bindings.executionLineageDigest {
 		t.Fatalf("decision domains collided: release=%s combined=%s lineage=%s", bindings.releaseTrustDecisionDigest, bindings.runnerProjectionDecisionDigest, bindings.executionLineageDigest)
 	}
+	if len(bindings.executableCatalogs) != 1 || !reflect.DeepEqual(bindings.executableCatalogs[0].verifiedCatalog.defaultACLOwners, fixture.initialScope.DefaultACLOwners()) || !reflect.DeepEqual(bindings.executableCatalogs[0].verifiedCatalog.objectCreatorClosure, fixture.initialScope.ObjectCreatorClosure()) {
+		t.Fatalf("combined catalog did not retain the signed schema owner closure: %+v", bindings.executableCatalogs)
+	}
 
 	rotated := newRunnerBindingFixture(t, []string{"000001"})
 	rotated.decision.expiresAt = fixture.expiresAt.Add(30 * time.Minute)
@@ -118,6 +121,17 @@ func TestRunnerProjectionBindingsRejectCatalogOrderDuplicateAndMutation(t *testi
 		},
 		"schema scope alias": func(value *RunnerProjectionBindings) {
 			value.initialSchemaScope.defaultACLOwners[0] = RuntimeRole
+		},
+		"catalog owner closure swap": func(value *RunnerProjectionBindings) {
+			catalog := value.executableCatalogs[0]
+			replacement, bindErr := bindVerifiedCatalogContractWithOwners(
+				catalog.catalogContractDigest, catalog.verifiedCatalog.Scope(), catalog.verifiedCatalog.ExpectedProjection(),
+				[]string{MigrationOwnerRole}, []string{MigrationOwnerRole, RuntimeRole}, catalog.verifiedCatalog.verifiedDecisionExpiresAt, catalog.verifiedCatalog.verifiedDecisionSecurityEpoch,
+			)
+			if bindErr != nil {
+				t.Fatalf("bind alternate catalog owner closure: %v", bindErr)
+			}
+			value.executableCatalogs[0].verifiedCatalog = replacement
 		},
 	} {
 		mutated, err := bound.runnerProjectionBindings()

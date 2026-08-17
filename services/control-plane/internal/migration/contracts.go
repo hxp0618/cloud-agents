@@ -249,6 +249,9 @@ func DecodeCatalogContract(data []byte) (*CatalogContract, error) {
 		if err := validateObjectIdentityClosure(contract.DeclaredObjectIdentities); err != nil {
 			return nil, err
 		}
+		if err := contract.ProjectionModel.Validate(); err != nil {
+			return nil, err
+		}
 		if contract.ExpectedProjection.SchemaHead != contract.SchemaHead {
 			return nil, fail(CodeInvalidManifest, "catalog-contract", "expected projection head differs from catalog head", nil)
 		}
@@ -475,6 +478,8 @@ func buildExactStatementPlans(bundle *RuntimeBundle, bindings RunnerProjectionBi
 		if canonicalErr != nil || contractCanonical != catalogBinding.catalogCanonical ||
 			!reflect.DeepEqual(catalogBinding.catalogContract, *contract) ||
 			!reflect.DeepEqual(catalogBinding.verifiedCatalog.expected, contract.ExpectedProjection) ||
+			!equalStrings(catalogBinding.verifiedCatalog.defaultACLOwners, bindings.initialSchemaScope.defaultACLOwners) ||
+			!equalStrings(catalogBinding.verifiedCatalog.objectCreatorClosure, bindings.initialSchemaScope.objectCreatorClosure) ||
 			!equalProjectionScopes(catalogBinding.verifiedCatalog.scope, ProjectionScope{ScopeKind: "final", SchemaHead: &contract.SchemaHead, DeclaredObjects: cloneObjectIdentities(contract.DeclaredObjectIdentities)}) {
 			return nil, fail(CodeUntrusted, entry.ID, "catalog contract differs from its complete verified binding", canonicalErr)
 		}

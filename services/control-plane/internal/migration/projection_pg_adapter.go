@@ -487,7 +487,13 @@ func (projector *PGProjector) ProjectAuthority(ctx context.Context, snapshot Pro
 	return ProjectionResult[AuthorityProjection]{Projection: projection, Digest: digest, Metadata: projectionMetadata}, nil
 }
 
-func (projector *PGProjector) ProjectCatalog(_ context.Context, snapshot ProjectionSnapshot, contract VerifiedCatalogContract, scope ProjectionScope) (ProjectionResult[CatalogProjection], error) {
+func (projector *PGProjector) ProjectCatalog(ctx context.Context, snapshot ProjectionSnapshot, contract VerifiedCatalogContract, scope ProjectionScope) (ProjectionResult[CatalogProjection], error) {
+	if ctx == nil {
+		return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionCatalogQueryFailed, "catalog.context", 0, "catalog projection context is unavailable")
+	}
+	if snapshot == nil {
+		return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionSnapshotInvalid, "snapshot", 0, "projection snapshot or adapter is unavailable")
+	}
 	if err := projector.validateSnapshot(snapshot, snapshot.Metadata().AuthorityPhase); err != nil {
 		return ProjectionResult[CatalogProjection]{}, err
 	}
@@ -500,7 +506,35 @@ func (projector *PGProjector) ProjectCatalog(_ context.Context, snapshot Project
 	if !equalProjectionScopes(scope, contract.Scope()) {
 		return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionInvalidScope, "catalog.scope", projector.major, "catalog projection scope differs from the verified contract")
 	}
-	return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeProjectionNotImplemented, "catalog", projector.major, "A2.1b expression projection and production binding are not implemented")
+	defaultACLOwners, objectCreatorClosure, err := contract.projectionPrincipalClosure()
+	if err != nil {
+		return ProjectionResult[CatalogProjection]{}, err
+	}
+	expected := contract.ExpectedProjection()
+	before := snapshot.projectionStats()
+	structure, err := projector.readCatalogStructureWithExpressions(ctx, snapshot, scope, defaultACLOwners, objectCreatorClosure)
+	if err != nil {
+		return ProjectionResult[CatalogProjection]{}, err
+	}
+	body, err := structure.completeBody(projector.major)
+	if err != nil {
+		return ProjectionResult[CatalogProjection]{}, err
+	}
+	projection := CatalogProjection{SchemaHead: expected.SchemaHead, Body: body}
+	actualKey, actualErr := canonicalContractKey(projection)
+	expectedKey, expectedErr := canonicalContractKey(expected)
+	if actualErr != nil || expectedErr != nil || actualKey != expectedKey {
+		return ProjectionResult[CatalogProjection]{}, pgProjectionFailure(CodeCatalogDrift, "catalog.expected", projector.major, "actual catalog differs from the verified binding")
+	}
+	digest, err := digestProjectionWrapper(CatalogProjectionDigestDomain, projection)
+	if err != nil {
+		return ProjectionResult[CatalogProjection]{}, err
+	}
+	metadata, err := projector.resultMetadata(snapshot, before, ProjectionKindCatalog, CatalogProjectionDigestDomain, PostgreSQLCatalogAdapter, contract.SubjectDigest(), &scope)
+	if err != nil {
+		return ProjectionResult[CatalogProjection]{}, err
+	}
+	return ProjectionResult[CatalogProjection]{Projection: projection, Digest: digest, Metadata: metadata}, nil
 }
 
 func (projector *PGProjector) ProjectPrecondition(ctx context.Context, snapshot ProjectionSnapshot, verifiedScope VerifiedSchemaBundleScope, condition CatalogPrecondition) (ProjectionResult[CatalogStateProjection], error) {

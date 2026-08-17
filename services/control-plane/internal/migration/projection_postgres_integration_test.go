@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,6 +30,7 @@ type postgresProjectionFixture struct {
 	AuthorityExpected AuthorityExpectedProjections
 	SchemaAbsent      CatalogStateProjection
 	SchemaPresent     CatalogStateProjection
+	CatalogRaw        []byte
 }
 
 type postgresProjectionEnvironment struct {
@@ -57,6 +59,18 @@ func TestPGProjectionPostgresCheckedInExpected(t *testing.T) {
 			}
 			if err := verified.validatePrecondition(verified.BoundPrecondition()); err != nil {
 				t.Fatalf("validate checked-in PG%d predecessor wrapper: %v", major, err)
+			}
+			subject, err := bindVerifiedExecutableCatalogSubject(fixture.CatalogRaw, DigestBytes(fixture.CatalogRaw), time.Now().Add(time.Hour), 1, time.Now())
+			if err != nil {
+				t.Fatalf("bind checked-in PG%d representative catalog subject: %v", major, err)
+			}
+			combined, err := bindVerifiedCatalogContractWithOwners(
+				subject.artifactDigest, subject.verifiedCatalog.Scope(), subject.verifiedCatalog.ExpectedProjection(),
+				[]string{MigrationOwnerRole}, []string{MigrationOwnerRole, "postgres"},
+				subject.verifiedCatalog.verifiedDecisionExpiresAt, subject.verifiedCatalog.verifiedDecisionSecurityEpoch,
+			)
+			if err != nil || combined.validate() != nil {
+				t.Fatalf("combine checked-in PG%d representative catalog authority: contract=%v validate=%v", major, err, combined.validate())
 			}
 		})
 	}
@@ -102,6 +116,18 @@ func TestPGProjectionPostgresMatrix(t *testing.T) {
 		t.Fatalf("bind checked-in predecessor accepted_states to verified wrapper: %v", err)
 	}
 	condition = verifiedSchema.BoundPrecondition()
+	catalogSubject, err := bindVerifiedExecutableCatalogSubject(fixture.CatalogRaw, DigestBytes(fixture.CatalogRaw), time.Now().Add(time.Hour), 1, time.Now())
+	if err != nil {
+		t.Fatalf("bind checked-in representative catalog subject: %v", err)
+	}
+	verifiedCatalog, err := bindVerifiedCatalogContractWithOwners(
+		catalogSubject.artifactDigest, catalogSubject.verifiedCatalog.Scope(), catalogSubject.verifiedCatalog.ExpectedProjection(),
+		[]string{MigrationOwnerRole}, []string{MigrationOwnerRole, "postgres"},
+		catalogSubject.verifiedCatalog.verifiedDecisionExpiresAt, catalogSubject.verifiedCatalog.verifiedDecisionSecurityEpoch,
+	)
+	if err != nil {
+		t.Fatalf("combine representative catalog with signed owner closure: %v", err)
+	}
 
 	connectedDigest := projectPostgresAuthorityIdle(t, ctx, connectedPool, authorityContract, AuthorityPhaseConnectedSession, environment)
 	migrationRoleDigest := projectPostgresAuthorityIdle(t, ctx, connectedPool, authorityContract, AuthorityPhaseMigrationRole, environment)
@@ -127,6 +153,17 @@ func TestPGProjectionPostgresMatrix(t *testing.T) {
 		testPostgresAuthorityDrift(t, ctx, admin, connectedPool, authorityContract, environment)
 		testPostgresCatalogDrift(t, ctx, admin, connectedPool, verifiedSchema, condition, environment)
 	})
+	execPostgresStatements(t, ctx, admin, "DROP SCHEMA cloud_agents CASCADE")
+	createPostgresProjectionSchema(t, ctx, admin)
+	createPostgresRepresentativeCatalog(t, ctx, admin)
+	catalogIdleDigest := projectPostgresCatalogIdle(t, ctx, connectedPool, verifiedCatalog, environment)
+	catalogMigrationDigest := projectPostgresCatalogBorrowed(t, ctx, environment, verifiedCatalog)
+	if catalogIdleDigest != catalogMigrationDigest {
+		t.Fatalf("idle and borrowed full catalog projections differ: idle=%s migration=%s", catalogIdleDigest, catalogMigrationDigest)
+	}
+	t.Run("catalog-full-drift", func(t *testing.T) {
+		testPostgresFullCatalogDrift(t, ctx, admin, connectedPool, verifiedCatalog, environment)
+	})
 	t.Run("snapshot-cleanup", func(t *testing.T) {
 		testPostgresCanceledSnapshotCleanup(t, ctx, connectedPool, environment)
 		testPostgresTerminatedBackendHijack(t, ctx, admin, environment)
@@ -134,11 +171,11 @@ func TestPGProjectionPostgresMatrix(t *testing.T) {
 
 	summaryInput := strings.Join([]string{
 		string(connectedDigest), string(migrationRoleDigest), string(migrationTxDigest),
-		string(absentDigest), string(presentDigest),
+		string(absentDigest), string(presentDigest), string(catalogIdleDigest), string(catalogMigrationDigest),
 	}, "|")
 	summary := sha256.Sum256([]byte(summaryInput))
-	t.Logf("POSTGRES_PROJECTION_SAME_BITS instance=%s major=%d digest=sha256:%x authority_connected=%s authority_migration_role=%s authority_migration_tx=%s schema_absent=%s schema_present=%s",
-		environment.Instance, environment.Major, summary, connectedDigest, migrationRoleDigest, migrationTxDigest, absentDigest, presentDigest)
+	t.Logf("POSTGRES_PROJECTION_SAME_BITS instance=%s major=%d digest=sha256:%x authority_connected=%s authority_migration_role=%s authority_migration_tx=%s schema_absent=%s schema_present=%s catalog_idle=%s catalog_migration=%s catalog_subject=%s",
+		environment.Instance, environment.Major, summary, connectedDigest, migrationRoleDigest, migrationTxDigest, absentDigest, presentDigest, catalogIdleDigest, catalogMigrationDigest, verifiedCatalog.SubjectDigest())
 }
 
 func requirePostgresProjectionEnvironment(t *testing.T) postgresProjectionEnvironment {
@@ -175,10 +212,23 @@ func requirePostgresProjectionEnvironment(t *testing.T) postgresProjectionEnviro
 
 func loadPostgresProjectionFixture(t *testing.T, major uint16) postgresProjectionFixture {
 	t.Helper()
+	catalogRaw, err := os.ReadFile(filepath.Join("testdata", "postgres_projection", "catalog-representative.json"))
+	if err != nil {
+		t.Fatalf("read checked-in representative catalog: %v", err)
+	}
+	catalog, err := DecodeCatalogContract(catalogRaw)
+	if err != nil {
+		t.Fatalf("strict-decode checked-in representative catalog: %v", err)
+	}
+	scope := postgresRepresentativeCatalogScope()
+	if catalog.ExpectedProjection.SchemaHead != *scope.SchemaHead || !equalObjectIdentityClosures(catalog.DeclaredObjectIdentities, scope.DeclaredObjects) || !equalObjectIdentityClosures(catalog.ExpectedProjection.Body.DeclaredObjects, scope.DeclaredObjects) {
+		t.Fatal("checked-in representative catalog differs from its DDL scope")
+	}
 	return postgresProjectionFixture{
 		AuthorityExpected: loadPostgresAuthorityExpected(t, major),
 		SchemaAbsent:      loadPostgresProjectionJSON[CatalogStateProjection](t, "schema-absent.json"),
 		SchemaPresent:     loadPostgresProjectionJSON[CatalogStateProjection](t, "schema-present.json"),
+		CatalogRaw:        append([]byte(nil), catalogRaw...),
 	}
 }
 
@@ -406,6 +456,124 @@ func projectPostgresPreconditionIdle(t *testing.T, ctx context.Context, pool *pg
 	return result.Digest
 }
 
+func projectPostgresCatalogIdle(t *testing.T, ctx context.Context, pool *pgxpool.Pool, contract VerifiedCatalogContract, environment postgresProjectionEnvironment) Digest {
+	t.Helper()
+	snapshot, err := BeginIdleReadSnapshot(ctx, pool, AuthorityPhaseConnectedSession)
+	if err != nil {
+		t.Fatalf("begin full catalog idle snapshot: %v", err)
+	}
+	defer func() {
+		if err := snapshot.RollbackAndRelease(context.Background()); err != nil {
+			t.Fatalf("rollback full catalog idle snapshot: %v", err)
+		}
+	}()
+	projector, err := NewPGProjector(ctx, snapshot)
+	if err != nil {
+		t.Fatalf("probe full catalog idle capability: %v", err)
+	}
+	result, err := projector.ProjectCatalog(ctx, snapshot, contract, contract.Scope())
+	if err != nil {
+		if IsCode(err, CodeCatalogDrift) {
+			structure, readErr := projector.readCatalogStructureWithExpressions(ctx, snapshot, contract.Scope(), contract.defaultACLOwners, contract.objectCreatorClosure)
+			if readErr == nil {
+				body, bodyErr := structure.completeBody(environment.Major)
+				if bodyErr == nil {
+					actualKey, _ := canonicalContractKey(CatalogProjection{SchemaHead: contract.ExpectedProjection().SchemaHead, Body: body})
+					expectedKey, _ := canonicalContractKey(contract.ExpectedProjection())
+					t.Fatalf("project checked-in full catalog through idle snapshot: %v; %s", err, firstProjectionDifference(actualKey, expectedKey))
+				}
+			}
+		}
+		t.Fatalf("project checked-in full catalog through idle snapshot: %v", err)
+	}
+	assertPostgresCatalogProjectionResult(t, result, contract, environment, IdleReadSnapshot)
+	return result.Digest
+}
+
+func firstProjectionDifference(actual, expected string) string {
+	limit := len(actual)
+	if len(expected) < limit {
+		limit = len(expected)
+	}
+	index := 0
+	for index < limit && actual[index] == expected[index] {
+		index++
+	}
+	start := index - 96
+	if start < 0 {
+		start = 0
+	}
+	actualEnd := index + 192
+	if actualEnd > len(actual) {
+		actualEnd = len(actual)
+	}
+	expectedEnd := index + 192
+	if expectedEnd > len(expected) {
+		expectedEnd = len(expected)
+	}
+	return fmt.Sprintf("first_diff=%d actual_digest=%s expected_digest=%s actual=%q expected=%q", index, DigestBytes([]byte(actual)), DigestBytes([]byte(expected)), actual[start:actualEnd], expected[start:expectedEnd])
+}
+
+func projectPostgresCatalogBorrowed(t *testing.T, ctx context.Context, environment postgresProjectionEnvironment, contract VerifiedCatalogContract) Digest {
+	t.Helper()
+	session, err := (PGXConnector{}).Connect(ctx, environment.MigrationURL)
+	if err != nil {
+		t.Fatalf("connect full catalog borrowed session: %v", err)
+	}
+	defer func() { _ = session.Close(context.Background()) }()
+	policy := ExecutionPolicy{StatementTimeoutMS: 5000, LockTimeoutMS: 1000, IdleInTransactionSessionTimeoutMS: 60000}
+	if err := session.SetRoleAndSettings(ctx, policy); err != nil {
+		t.Fatalf("configure full catalog borrowed session: %v", err)
+	}
+	const advisoryKey int64 = 0x10203040506070a
+	if err := session.AcquireAdvisoryLock(ctx, advisoryKey); err != nil {
+		t.Fatalf("acquire full catalog borrowed lock: %v", err)
+	}
+	transaction, err := session.BeginMigration(ctx)
+	if err != nil {
+		t.Fatalf("begin full catalog borrowed transaction: %v", err)
+	}
+	defer func() { _ = transaction.Rollback(context.Background()) }()
+	scope := contract.Scope()
+	snapshot, err := BorrowMigrationProjectionSnapshot(ctx, transaction, *scope.SchemaHead, nil)
+	if err != nil {
+		t.Fatalf("borrow full catalog migration snapshot: %v", err)
+	}
+	projector, err := NewPGProjector(ctx, snapshot)
+	if err != nil {
+		t.Fatalf("probe full catalog borrowed capability: %v", err)
+	}
+	result, err := projector.ProjectCatalog(ctx, snapshot, contract, scope)
+	if err != nil {
+		t.Fatalf("project checked-in full catalog through borrowed snapshot: %v", err)
+	}
+	assertPostgresCatalogProjectionResult(t, result, contract, environment, MigrationSnapshot)
+	if err := transaction.Rollback(ctx); err != nil {
+		t.Fatalf("rollback full catalog borrowed transaction: %v", err)
+	}
+	if err := session.UnlockAndReset(ctx, advisoryKey); err != nil {
+		t.Fatalf("release full catalog borrowed lock/session: %v", err)
+	}
+	return result.Digest
+}
+
+func assertPostgresCatalogProjectionResult(t *testing.T, result ProjectionResult[CatalogProjection], contract VerifiedCatalogContract, environment postgresProjectionEnvironment, mode SnapshotMode) {
+	t.Helper()
+	expected := contract.ExpectedProjection()
+	want, err := digestProjectionWrapper(CatalogProjectionDigestDomain, expected)
+	if err != nil || result.Digest != want || !runnerCanonicalEqual(result.Projection, expected) {
+		t.Fatalf("full catalog differs from checked-in signed subject: got=%s want=%s err=%v", result.Digest, want, err)
+	}
+	if result.Metadata.ProjectionKind != ProjectionKindCatalog || result.Metadata.DigestDomain != CatalogProjectionDigestDomain || result.Metadata.AdapterProfile != PostgreSQLCatalogAdapter || result.Metadata.VerifiedSubjectDigest != contract.SubjectDigest() || result.Metadata.Scope == nil || !equalProjectionScopes(*result.Metadata.Scope, contract.Scope()) || result.Metadata.QueryCount == 0 || result.Metadata.RowCount == 0 || result.Metadata.TotalBytes == 0 {
+		t.Fatalf("full catalog result metadata is incomplete: %+v", result.Metadata)
+	}
+	phase := AuthorityPhaseConnectedSession
+	if mode == MigrationSnapshot {
+		phase = AuthorityPhaseMigrationTransaction
+	}
+	assertPostgresSnapshotMetadata(t, result.Metadata.Snapshot, environment, phase, mode)
+}
+
 func projectPostgresBorrowedTransaction(t *testing.T, ctx context.Context, environment postgresProjectionEnvironment, authority VerifiedAuthorityContract, verifiedSchema VerifiedSchemaBundleScope, condition CatalogPrecondition, expectedPresent CatalogStateProjection) (Digest, Digest) {
 	t.Helper()
 	session, err := (PGXConnector{}).Connect(ctx, environment.MigrationURL)
@@ -550,6 +718,46 @@ func createPostgresProjectionSchema(t *testing.T, ctx context.Context, admin *pg
 	)
 }
 
+func createPostgresRepresentativeCatalog(t *testing.T, ctx context.Context, admin *pgx.Conn) {
+	t.Helper()
+	execPostgresStatements(t, ctx, admin, `SET ROLE cloud_agents_migration_owner`, `
+CREATE TABLE cloud_agents.probe (
+ value integer NOT NULL DEFAULT 1,
+ generated_value integer GENERATED ALWAYS AS (value + 1) STORED,
+ CONSTRAINT probe_value_check CHECK (value > 0)
+);
+CREATE INDEX probe_value_expression_idx ON cloud_agents.probe((value + 1)) WHERE value > 0;
+ALTER TABLE cloud_agents.probe ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cloud_agents.probe FORCE ROW LEVEL SECURITY;
+CREATE POLICY probe_public ON cloud_agents.probe TO PUBLIC USING (value > 0);
+CREATE FUNCTION cloud_agents.probe_touch_fn() RETURNS trigger
+LANGUAGE plpgsql AS $body$ BEGIN RETURN NEW; END $body$;
+CREATE FUNCTION cloud_agents.add_one(value integer, delta integer DEFAULT 1)
+RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $body$ SELECT value + delta $body$;
+CREATE TRIGGER probe_touch BEFORE UPDATE ON cloud_agents.probe
+FOR EACH ROW WHEN (NEW.value > 0) EXECUTE FUNCTION cloud_agents.probe_touch_fn()
+`, `RESET ROLE`)
+}
+
+func postgresRepresentativeCatalogScope() ProjectionScope {
+	head := "900001"
+	declared := []ObjectIdentityProjection{
+		{Schema: &SchemaObjectIdentity{Kind: "schema", Name: projectionTargetSchema}},
+		{Relation: &RelationObjectIdentity{Kind: "relation", Identity: TypeIdentity{Schema: projectionTargetSchema, Name: "probe"}}},
+		{Index: &IndexObjectIdentity{Kind: "index", Identity: TypeIdentity{Schema: projectionTargetSchema, Name: "probe_value_expression_idx"}, Relation: TypeIdentity{Schema: projectionTargetSchema, Name: "probe"}}},
+		{Policy: &PolicyObjectIdentity{Kind: "policy", Relation: TypeIdentity{Schema: projectionTargetSchema, Name: "probe"}, Name: "probe_public"}},
+		{Function: &SQLObjectIdentity{Kind: "function", Identity: SQLIdentity{Schema: projectionTargetSchema, Name: "probe_touch_fn", Arguments: []TypeIdentity{}}}},
+		{Function: &SQLObjectIdentity{Kind: "function", Identity: SQLIdentity{Schema: projectionTargetSchema, Name: "add_one", Arguments: []TypeIdentity{{Schema: "pg_catalog", Name: "int4"}, {Schema: "pg_catalog", Name: "int4"}}}}},
+		{Trigger: &TriggerObjectIdentity{Kind: "trigger", Relation: TypeIdentity{Schema: projectionTargetSchema, Name: "probe"}, Name: "probe_touch"}},
+	}
+	sort.Slice(declared, func(left, right int) bool {
+		leftKey, _ := canonicalContractKey(declared[left])
+		rightKey, _ := canonicalContractKey(declared[right])
+		return leftKey < rightKey
+	})
+	return ProjectionScope{ScopeKind: "final", SchemaHead: &head, DeclaredObjects: declared}
+}
+
 func assertPostgresSchemaAbsent(t *testing.T, ctx context.Context, admin *pgx.Conn) {
 	t.Helper()
 	var exists bool
@@ -653,6 +861,47 @@ func assertPostgresCatalogError(t *testing.T, ctx context.Context, pool *pgxpool
 	assertPostgresCapabilities(t, projector, environment)
 	if _, err := projector.ProjectPrecondition(ctx, snapshot, verified, condition); !IsCode(err, code) {
 		t.Fatalf("catalog drift code=%s err=%v", code, err)
+	}
+}
+
+func testPostgresFullCatalogDrift(t *testing.T, ctx context.Context, admin *pgx.Conn, pool *pgxpool.Pool, contract VerifiedCatalogContract, environment postgresProjectionEnvironment) {
+	t.Helper()
+	t.Run("expression", func(t *testing.T) {
+		execPostgresStatements(t, ctx, admin, "ALTER TABLE cloud_agents.probe ALTER COLUMN value SET DEFAULT 2")
+		defer execPostgresCleanupStatements(t, admin, "ALTER TABLE cloud_agents.probe ALTER COLUMN value SET DEFAULT 1")
+		assertPostgresFullCatalogError(t, ctx, pool, contract, environment, CodeCatalogDrift)
+	})
+	t.Run("function-source", func(t *testing.T) {
+		execPostgresStatements(t, ctx, admin, `CREATE OR REPLACE FUNCTION cloud_agents.add_one(value integer, delta integer DEFAULT 1) RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $body$ SELECT value + delta + 1 $body$`)
+		defer execPostgresCleanupStatements(t, admin, `CREATE OR REPLACE FUNCTION cloud_agents.add_one(value integer, delta integer DEFAULT 1) RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $body$ SELECT value + delta $body$`)
+		assertPostgresFullCatalogError(t, ctx, pool, contract, environment, CodeCatalogDrift)
+	})
+	t.Run("creator-closure", func(t *testing.T) {
+		execPostgresStatements(t, ctx, admin, "GRANT CREATE ON SCHEMA cloud_agents TO "+postgresProjectionDatabaseOwner)
+		defer execPostgresCleanupStatements(t, admin, "REVOKE CREATE ON SCHEMA cloud_agents FROM "+postgresProjectionDatabaseOwner)
+		assertPostgresFullCatalogError(t, ctx, pool, contract, environment, CodeAuthorityDrift)
+	})
+	t.Run("unknown-object", func(t *testing.T) {
+		execPostgresStatements(t, ctx, admin, "CREATE TABLE cloud_agents.unbound_relation (id bigint)")
+		defer execPostgresCleanupStatements(t, admin, "DROP TABLE cloud_agents.unbound_relation")
+		assertPostgresFullCatalogError(t, ctx, pool, contract, environment, CodeProjectionUnknownObject)
+	})
+}
+
+func assertPostgresFullCatalogError(t *testing.T, ctx context.Context, pool *pgxpool.Pool, contract VerifiedCatalogContract, environment postgresProjectionEnvironment, code ErrorCode) {
+	t.Helper()
+	snapshot, err := BeginIdleReadSnapshot(ctx, pool, AuthorityPhaseConnectedSession)
+	if err != nil {
+		t.Fatalf("begin full catalog drift snapshot: %v", err)
+	}
+	defer func() { _ = snapshot.RollbackAndRelease(context.Background()) }()
+	projector, err := NewPGProjector(ctx, snapshot)
+	if err != nil {
+		t.Fatalf("probe full catalog drift capability: %v", err)
+	}
+	assertPostgresCapabilities(t, projector, environment)
+	if _, err := projector.ProjectCatalog(ctx, snapshot, contract, contract.Scope()); !IsCode(err, code) {
+		t.Fatalf("full catalog drift code=%s err=%v", code, err)
 	}
 }
 

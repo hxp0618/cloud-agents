@@ -80,6 +80,51 @@ func (model bootstrapCatalogProjectionModel) Validate() error {
 	return nil
 }
 
+func (model CatalogProjectionModel) Validate() error {
+	expected := catalogProjectionModelV1()
+	if !equalStrings(model.SchemaFields, expected.SchemaFields) ||
+		!equalStrings(model.DefaultACLFields, expected.DefaultACLFields) ||
+		!equalStrings(model.RelationFields, expected.RelationFields) ||
+		!equalStrings(model.ColumnFields, expected.ColumnFields) ||
+		!equalStrings(model.ConstraintFields, expected.ConstraintFields) ||
+		!equalStrings(model.IndexFields, expected.IndexFields) ||
+		!equalStrings(model.PolicyFields, expected.PolicyFields) ||
+		!equalStrings(model.TriggerFields, expected.TriggerFields) ||
+		!equalStrings(model.FunctionFields, expected.FunctionFields) ||
+		model.ExpressionProfile != expected.ExpressionProfile ||
+		!equalStrings(model.DeniedObjectKinds, expected.DeniedObjectKinds) {
+		return invalidProjection("catalog-contract", "projection model differs from the frozen A2.1b field allowlist")
+	}
+	return nil
+}
+
+func catalogProjectionModelV1() CatalogProjectionModel {
+	return CatalogProjectionModel{
+		SchemaFields:     []string{"name", "owner", "explicit_acl", "effective_acl", "comment", "security_labels"},
+		DefaultACLFields: []string{"owner", "schema", "object_kind", "acl"},
+		RelationFields: []string{
+			"identity", "relkind", "persistence", "access_method", "owner", "explicit_acl", "reloptions", "replica_identity",
+			"rls_enabled", "rls_forced", "columns", "constraints", "indexes", "policies", "triggers",
+		},
+		ColumnFields: []string{
+			"attnum", "name", "type", "typmod_int32_decimal", "collation", "nullable", "identity", "generated", "default", "storage", "compression", "explicit_acl",
+		},
+		ConstraintFields: []string{
+			"name", "type", "columns", "referenced_relation", "referenced_columns", "match", "update", "delete", "deferrable", "deferred", "validated", "expression",
+		},
+		IndexFields: []string{
+			"name", "access_method", "terms", "includes", "unique", "primary", "valid", "ready", "live", "immediate", "clustered", "check_xmin", "nulls_not_distinct", "exclusion", "replica_identity", "predicate",
+		},
+		PolicyFields:  []string{"name", "permissive", "command", "roles", "using", "with_check"},
+		TriggerFields: []string{"identity", "owning_relation", "owning_constraint", "function", "enabled", "type", "columns", "arguments", "when", "internal"},
+		FunctionFields: []string{
+			"identity", "kind", "language", "arguments", "variadic_type", "returns", "return_set", "owner", "explicit_acl", "security_definer", "volatility", "parallel", "leakproof", "strict", "config", "cost", "rows", "prosrc_sha256", "probin",
+		},
+		ExpressionProfile: expressionProfileV1,
+		DeniedObjectKinds: []string{"dependency_outside_closure", "unbound_internal_object", "undeclared_object", "unsupported_object_kind"},
+	}
+}
+
 func (binding AuthorityBinding) Validate() error {
 	if binding.FormatVersion != AuthorityBindingFormat || !deploymentIDPattern.MatchString(binding.DeploymentID) || binding.SecurityEpoch == 0 {
 		return invalidProjection("authority-binding", "invalid binding identity or security epoch")

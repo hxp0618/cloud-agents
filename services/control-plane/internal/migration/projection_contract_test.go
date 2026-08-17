@@ -447,6 +447,15 @@ func TestExecutableContractsCannotUseBootstrapSparseShape(t *testing.T) {
 	if _, err := DecodeCatalogContract(sparse); !IsCode(err, CodeInvalidJSON) {
 		t.Fatalf("executable catalog accepted sparse projection shape: %v", err)
 	}
+	modelMutated := map[string]any{}
+	if err := json.Unmarshal(raw, &modelMutated); err != nil {
+		t.Fatal(err)
+	}
+	model := modelMutated["projection_model"].(map[string]any)
+	model["relation_fields"] = []string{"identity"}
+	if _, err := DecodeCatalogContract(mustJSON(t, modelMutated)); !IsCode(err, CodeInvalidManifest) {
+		t.Fatalf("executable catalog accepted a projection-model field closure mutation: %v", err)
+	}
 
 	bootstrap := object
 	bootstrap["publication_status"] = "UNPUBLISHED_BOOTSTRAP_MUTABLE"
@@ -740,11 +749,7 @@ func minimalCatalogContract(t *testing.T, publicationStatus, introspectionStatus
 				},
 			}},
 		}},
-		ProjectionModel: CatalogProjectionModel{
-			SchemaFields: []string{}, DefaultACLFields: []string{}, RelationFields: []string{}, ColumnFields: []string{},
-			ConstraintFields: []string{}, IndexFields: []string{}, PolicyFields: []string{}, TriggerFields: []string{},
-			FunctionFields: []string{}, ExpressionProfile: "cloud-agents-sql-expression/v1", DeniedObjectKinds: []string{},
-		},
+		ProjectionModel:          catalogProjectionModelV1(),
 		DeclaredObjectIdentities: []ObjectIdentityProjection{},
 		ExpectedProjection:       CatalogProjection{SchemaHead: "000001", Body: body},
 	}
