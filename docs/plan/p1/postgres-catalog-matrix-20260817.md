@@ -7,7 +7,7 @@
 - Branch：`codex/cloud-agents-platform-p1`
 - Evidence date：2026-08-17 Asia/Shanghai
 - Executor：Codex P1 implementation executor
-- Independent Gate reviewer：**not assigned**
+- Independent implementation reviewer：**APPROVED**；fixed review input `401206a`，P0/P1/P2=`0/0/0`
 
 ## 1. Closed implementation boundary
 
@@ -121,6 +121,7 @@ This is implementation and local conformance evidence, not an independently sign
   deployment, Platform RC, Beta, GA or release is enabled by this slice.
 - No x86_64 live database matrix, cloud PostgreSQL, N-1/PITR, controller/host power-loss or immutable
   reviewer signature is claimed.
-- The source-bound supply-chain lock/SBOM/provenance refresh now fixes this implementation at `6e58e06`;
-  independent reviewer closure remains the next impl-3 boundary. Until it closes, every aggregate P1
-  Gate remains `IN PROGRESS`.
+- The source-bound supply-chain lock/SBOM/provenance refresh fixes this implementation at `6e58e06`, and
+  the [independent catalog review](postgres-catalog-independent-review-20260817.md) approves the fixed
+  `bbb0bf2 → 6e58e06 → 401206a` chain with P0/P1/P2=`0/0/0`. That closes impl-3 implementation/review
+  only; every aggregate P1 Gate remains `IN PROGRESS`.

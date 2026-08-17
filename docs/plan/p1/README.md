@@ -53,10 +53,11 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.1b-impl-3 independent reviewer closure；`bbb0bf2` 已让 exported `ProjectCatalog` 仅对
-  complete opaque verified subject 成功，并完成 PG15/16/17 × A/B × idle/borrowed × normal/race matrix；
-  checked-in production catalog/CLI、production trust root、数据库写入与 aggregate Gate 仍保持拒绝
-- Remaining P1 slices：P1-A2.1b-impl-3 independent review、P1-A2.2～P1-A2.4、
+- Current slice：P1-A2.2 Membership/RBAC contract/authority entry；`bbb0bf2` 已让 exported `ProjectCatalog` 仅对
+  complete opaque verified subject 成功，`401206a` 完成 source-bound supply refresh，独立 review 再以
+  P0/P1/P2=`0/0/0` 关闭 A2.1b-impl-3 implementation/review；checked-in production catalog/CLI、production
+  trust root、数据库写入与 aggregate Gate 仍保持拒绝
+- Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
@@ -84,6 +85,9 @@ Platform RC、Beta 或 GA。
 - [`control-plane-supply-refresh-20260817.md`](control-plane-supply-refresh-20260817.md)：固定 source `6e58e06` 的
   generation lock、dependency lock、CycloneDX 1.6 SBOM 与 fresh govulncheck/OSV refresh；module graph、production
   closure 和 NOTICE same-bits，`G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
+- [`postgres-catalog-independent-review-20260817.md`](postgres-catalog-independent-review-20260817.md)：固定
+  `bbb0bf2 → 6e58e06 → 401206a` 的 A2.1b-impl-3 independent implementation review；P0/P1/P2=`0/0/0`，不构成
+  immutable Gate signature
 
 ## Data kernel decisions
 

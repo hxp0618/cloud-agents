@@ -7,7 +7,7 @@
 - Snapshot：`2026-08-17T04:10:44Z`
 - Toolchain：Node `24.13.1`、Bun `1.3.14`、Go `1.26.6 darwin/arm64`
 - Evidence owner：Codex P1 supply refresh executor
-- Independent Gate reviewer：**not assigned**
+- Independent implementation reviewer：**APPROVED**；fixed review input `401206a`，P0/P1/P2=`0/0/0`
 
 ## 1. Refresh decision
 
@@ -57,14 +57,14 @@ remain fail closed.
 
 | Artifact                                        | SHA-256                                                            | Decision                                 |
 | ----------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------- |
-| `contracts/generation.lock.json`                | `a7a7f044547b9289ec17b9e6fc7ad166da7b75bf979763cf1d92fe8fbb2d97a0` | current for amended ADR-0010 inputs      |
+| `contracts/generation.lock.json`                | `46ad8ac9811e46cec7c28b712bfd7dc5fe3c25f8eaecac2e8bd6a79ef2eb647d` | current for amended ADR-0010 inputs      |
 | `services/control-plane/dependency-lock.json`   | `96923e86b4a8385a2e95ba7dbe0212654a6c957af00ae07e00def92e129ac634` | current source/closure/security metadata |
 | `services/control-plane/sbom.cdx.json`          | `b24852ea156b24bfce6e228a303493a2bb923009cf69935046906acfd774f141` | CycloneDX 1.6, 16 unique components      |
 | `services/control-plane/THIRD_PARTY_NOTICES.md` | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` | exact same bits; no legal-scope change   |
 
-The generation lock changes only the migration-checker source/input manifest from
-`91da131c2573aa1ecc51f305be8f9635ac8d33a0d1a7095188863156ff55a0d4` to
-`0c2895b850665274b695eadf18ead4dda7e4205f3e9cf0127c3d4489e909ce26`. C3 schemas, fixtures, generated
+The reviewer-closure update advances only the migration-checker source/input manifest from
+`0c2895b850665274b695eadf18ead4dda7e4205f3e9cf0127c3d4489e909ce26` to
+`96a65b2cceb43bcc3d4b09ec38efde5aa28873f8845b9496cc987916e738ee74`. C3 schemas, fixtures, generated
 files, bundle manifest and deterministic runtime/bootstrap tar bytes remain same-bits.
 
 The SBOM retains 16 unique component refs and the root depends on exactly the 7 Linux
@@ -110,4 +110,5 @@ This refresh makes current source, dependency and SBOM metadata internally consi
 binary/artifact scan, distribution manifest, independent immutable closure or release attestation.
 `G-SUPPLY-CHAIN` therefore remains `IN PROGRESS`, as do `G-DATA`, `G-AUTHORITY-P1` and
 `G-SECURITY-P1`. It does not authorize runner/DB integration, deployment, Platform RC, Beta, GA, merge
-or release.
+or release. The subsequent [independent catalog review](postgres-catalog-independent-review-20260817.md)
+approves this fixed supply input only as part of A2.1b-impl-3 implementation closure.

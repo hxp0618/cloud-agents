@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-17
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（`ed37295` 已关闭 A2.1b-impl-1 ordinary catalog structure，`3b3f8f6` 已关闭 package-private A2.1b-impl-2 expression normalizer 与本地 PG15/16/17 same-bits，`bbb0bf2` 已关闭 opaque verified `ProjectCatalog` 与 PG15/16/17 × A/B × idle/borrowed × normal/race matrix；当前进入 A2.1b-impl-3 independent review；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 均到达 current `EvidenceSession`；test-only authority 的 real ext4/xfs process-kill/clean-remount、isolated QEMU whole-guest power-cycle、object-publish 11-barrier、existing-generation-append 10-barrier、retained-generation-rotation 26-barrier、generation-activation 5-barrier、target-registration create 25-barrier/torn-prefix recovery 21-barrier、generation-header create 21-barrier/torn-prefix recovery 23-barrier 与 generation repair 21-barrier matrix 已通过；migration-owned generation-prefix pass-1/binder 在 `70269e1`/`7b52509` 闭合到 `RecoveredHeaderDurablePermit`，`cdedda7` 再闭合 exact adjacent activation 与 existing retained-lock handoff bridge；`a3c7651` 实现 required-syscall probe，`381b04a` 关闭 root-only trusted-mount provision/revoke 与 Linux production `Open`，`3fe05ec` 再关闭 public production `EvidenceSink`、full-root all-generation lock set 与真实 fresh ext4/XFS brand-new/registered/revocation cross-package matrix；runner/CLI configuration、runner/DB、physical controller power-loss 与 immutable Gates remain open）；M1/P2–P6 PAUSED
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（`ed37295` 已关闭 A2.1b-impl-1 ordinary catalog structure，`3b3f8f6` 已关闭 package-private A2.1b-impl-2 expression normalizer 与本地 PG15/16/17 same-bits，`bbb0bf2` 已关闭 opaque verified `ProjectCatalog` 与 PG15/16/17 × A/B × idle/borrowed × normal/race matrix，`401206a` 与 independent review 再关闭 A2.1b-impl-3 supply/review；当前进入 A2.2 Membership/RBAC contract/authority entry；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 均到达 current `EvidenceSession`；test-only authority 的 real ext4/xfs process-kill/clean-remount、isolated QEMU whole-guest power-cycle、object-publish 11-barrier、existing-generation-append 10-barrier、retained-generation-rotation 26-barrier、generation-activation 5-barrier、target-registration create 25-barrier/torn-prefix recovery 21-barrier、generation-header create 21-barrier/torn-prefix recovery 23-barrier 与 generation repair 21-barrier matrix 已通过；migration-owned generation-prefix pass-1/binder 在 `70269e1`/`7b52509` 闭合到 `RecoveredHeaderDurablePermit`，`cdedda7` 再闭合 exact adjacent activation 与 existing retained-lock handoff bridge；`a3c7651` 实现 required-syscall probe，`381b04a` 关闭 root-only trusted-mount provision/revoke 与 Linux production `Open`，`3fe05ec` 再关闭 public production `EvidenceSink`、full-root all-generation lock set 与真实 fresh ext4/XFS brand-new/registered/revocation cross-package matrix；runner/CLI configuration、runner/DB、physical controller power-loss 与 immutable Gates remain open）；M1/P2–P6 PAUSED
 
 ## 1. 决策表
 
@@ -154,7 +154,8 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 - [x] ADR-0010 冻结 PostgreSQL signed expected projection、deployment authority binding、snapshot 与
       P1-A2.1a/P1-A2.1b 顺序；A2.1a-impl-1/2 已由 `b36f45a`、`e2541c5`、`a0eac37` 完成，
       A2.1b-impl-1 ordinary catalog structure 与 impl-2 expression 又由 `ed37295`、`3b3f8f6` 完成；`bbb0bf2`
-      再完成 opaque verified `ProjectCatalog` 与完整本地 matrix；当前仅余 A2.1b-impl-3 independent review。
+      再完成 opaque verified `ProjectCatalog` 与完整本地 matrix；`401206a` 与 independent review 已关闭
+      A2.1b-impl-3 implementation/review，当前进入 A2.2 Membership/RBAC contract/authority entry。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
@@ -280,6 +281,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       24-leg matrix 保持 catalog projection same-bits，见
       [verified catalog matrix evidence](../p1/postgres-catalog-matrix-20260817.md)。固定 source `6e58e06` 的 supply
       refresh 已完成；production checked-in catalog/CLI、trust root、DB mutation 与 aggregate Gates 仍拒绝。
+- [x] A2.1b-impl-3 [independent catalog review](../p1/postgres-catalog-independent-review-20260817.md) 固定
+      `bbb0bf2 → 6e58e06 → 401206a`，P0/P1/P2=`0/0/0`；仅关闭 implementation/review，不构成 immutable Gate
+      signature，也不改变 production rejecting boundary。
 - [x] `7d78e3d` 已在 fresh raw ext4/xfs evidence disk 上逐一覆盖 generation snapshot resync 4、tail truncate 8、
       checkpoint heal 5 与 response-lost rotation discard 4 个 exact-FD syscall barrier；每项 whole-QEMU `SIGKILL` 后
       均由 new QEMU process 通过 sealed inventory views 分类并完成 `Revalidate`；见
