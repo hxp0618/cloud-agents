@@ -57,8 +57,9 @@
 - Current slice：P1-A2.2-impl-3 independent review；`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
   `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
-  focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure、
-  本地 PG15/16/17 normal/race mutation matrix 与 source-bound supply refresh。独立 implementation review、checked-in
+  focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地
+  PG15/16/17 normal/race mutation matrix，`350b53c` 又让 failed/unknown commit 的公开结果严格归零并刷新
+  source-bound supply evidence。独立 implementation review、checked-in
   production catalog publication/CLI trust root、production database write 与 aggregate Gate 仍保持拒绝
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
@@ -97,9 +98,10 @@ Platform RC、Beta 或 GA。
 - [`membership-rbac-data-evaluator-20260817.md`](membership-rbac-data-evaluator-20260817.md)：固定 `e36e1cf` 的
   A2.2-impl-2 migration-owned Membership/RoleBinding storage、tenant-bound read-only evaluator 与本地 PG15/16/17
   normal/race focused matrix；不构成 mutation service、production catalog publication 或 immutable Gate evidence
-- [`membership-rbac-mutation-service-20260817.md`](membership-rbac-mutation-service-20260817.md)：固定 `de36ca3` 的
-  A2.2-impl-3 五个 typed mutation、same-transaction authorization/CAS/audit、PG15/16/17 normal/race matrix 与
-  source-bound supply refresh；独立 implementation review 仍待办，不构成 production DB/HTTP/A2.3 或 immutable Gate evidence
+- [`membership-rbac-mutation-service-20260817.md`](membership-rbac-mutation-service-20260817.md)：固定
+  `de36ca3 → 350b53c` 的 A2.2-impl-3 五个 typed mutation、same-transaction authorization/CAS/audit、failed/unknown
+  commit zero-result closure、PG15/16/17 normal/race matrix 与 source-bound supply refresh；独立 implementation
+  review 仍待办，不构成 production DB/HTTP/A2.3 或 immutable Gate evidence
 
 ## Data kernel decisions
 
