@@ -241,7 +241,11 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 		addConstraint := len(subcommand) >= 3 && subcommand[0] == "ADD" && subcommand[1] == "CONSTRAINT" && !hasTopLevelComma(subcommand[2:])
 		dropResourceKindConstraint := migrationID == "000003" &&
 			stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"})
-		if !exact && !addConstraint && !dropResourceKindConstraint {
+		dropAuditFactConstraint := migrationID == "000004" &&
+			stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"}) ||
+			migrationID == "000004" &&
+				stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"})
+		if !exact && !addConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		plan := StatementPlan{Command: "ALTER", ObjectKind: "TABLE", MayChangeOwner: len(subcommand) > 0 && subcommand[0] == "OWNER"}
@@ -250,6 +254,9 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 			return StatementPlan{}, err
 		}
 		if dropResourceKindConstraint && resolved.TargetIdentity != "table:unquoted:cloud_agents/unquoted:resource_changes" {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		if dropAuditFactConstraint && resolved.TargetIdentity != "table:unquoted:cloud_agents/unquoted:audit_facts" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		return resolved, nil
@@ -302,6 +309,17 @@ func classifyExactCatalogSeed(entry MigrationEntry, statement SQLStatement, toke
 }
 
 func classifyGrantRevoke(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
+	if migrationID == "000004" && stringSliceEqual(tokens, []string{
+		"REVOKE", "EXECUTE", "ON", "ALL", "FUNCTIONS", "IN", "SCHEMA", "CLOUD_AGENTS", "FROM", "PUBLIC", ";",
+	}) {
+		grantee := "PUBLIC"
+		return StatementPlan{
+			Command:        "REVOKE",
+			ObjectKind:     "ALL_FUNCTIONS",
+			TargetIdentity: "schema:unquoted:cloud_agents",
+			Grantee:        &grantee,
+		}, nil
+	}
 	on := topLevelToken(tokens, "ON", 1)
 	directionWord := "TO"
 	if tokens[0] == "REVOKE" {

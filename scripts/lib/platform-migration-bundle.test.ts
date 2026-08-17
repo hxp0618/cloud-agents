@@ -27,7 +27,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000003.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000004.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -38,16 +38,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23",
+      "sha256:49f5f50076bb06ceeb68c7b8d6f2a37260ec7aca50681bf4d28149364039be91",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:febb9bd6c27ab25a0ed5014feff137dbd3d06b0d4c4c98c7852c6bea2362891d",
+      "sha256:09353c9be78d97cd61657bdc6b19b635fec240a905369139b866d8c3237632f0",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:c56cc51c0d8b0808fa0eca719c9e80574774961785ea566ca1672bd5e4b1990a",
+      "sha256:c0108b92ea4712b491b58a9bd85e958798f77777cfe7ae4abb5140f04c25b8c4",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -222,6 +222,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000001_expand_migration_kernel.sql",
         "services/control-plane/migrations/000002_expand_tenancy.sql",
         "services/control-plane/migrations/000003_expand_membership_rbac.sql",
+        "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -247,6 +248,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000001_expand_migration_kernel.sql",
       "services/control-plane/migrations/000002_expand_tenancy.sql",
       "services/control-plane/migrations/000003_expand_membership_rbac.sql",
+      "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [
@@ -287,7 +289,7 @@ describe("migration bundle bootstrap", () => {
       expect(source.includes(fault.from), fault.name).toBe(true);
       sql.set(fault.path, new TextEncoder().encode(source.replace(fault.from, fault.to)));
       const drift = structuredClone(catalog) as Record<string, unknown>;
-      drift.source_descriptors = migrationStatementSourceDescriptors(sql);
+      drift.source_descriptors = migrationStatementSourceDescriptors(sql).slice(0, 3);
       expect(() => validateCatalogStatementBindings(drift, sql), fault.name).toThrow(
         /CATALOG_TARGET_NOT_DECLARED/,
       );

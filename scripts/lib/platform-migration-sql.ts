@@ -259,7 +259,15 @@ export function classifyMigrationStatement(
         targetIdentity === "table:unquoted:cloud_agents/unquoted:resource_changes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"].join("\0");
-      if (!exact && !addConstraint && !dropResourceKindConstraint) reject(tokens);
+      const dropAuditFactConstraint =
+        migrationId === "000004" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:audit_facts" &&
+        new Set([
+          ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0"),
+          ["DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"].join("\0"),
+        ]).has(subcommand.join("\0"));
+      if (!exact && !addConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint)
+        reject(tokens);
       return classification("ALTER", "TABLE", targetIdentity, null);
     }
     if (kind === "FUNCTION") {
@@ -317,6 +325,25 @@ export function classifyMigrationStatement(
     return classification("INSERT", "TABLE", targetIdentity, null);
   }
   if (first === "GRANT" || first === "REVOKE") {
+    if (
+      migrationId === "000004" &&
+      tokens.join("\0") ===
+        [
+          "REVOKE",
+          "EXECUTE",
+          "ON",
+          "ALL",
+          "FUNCTIONS",
+          "IN",
+          "SCHEMA",
+          "CLOUD_AGENTS",
+          "FROM",
+          "PUBLIC",
+          ";",
+        ].join("\0")
+    ) {
+      return classification("REVOKE", "ALL_FUNCTIONS", "schema:unquoted:cloud_agents", "PUBLIC");
+    }
     const on = findTopLevelToken(tokens, "ON", 1);
     const direction = findTopLevelToken(tokens, first === "GRANT" ? "TO" : "FROM", on + 1);
     const objectKind = tokens[on + 1];

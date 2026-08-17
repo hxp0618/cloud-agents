@@ -63,6 +63,7 @@ const SQL_PATHS = [
   `${ROOT}/000001_expand_migration_kernel.sql`,
   `${ROOT}/000002_expand_tenancy.sql`,
   `${ROOT}/000003_expand_membership_rbac.sql`,
+  `${ROOT}/000004_expand_membership_rbac_mutations.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -71,12 +72,19 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000001.json`,
   `${ROOT}/catalog/schema-000002.json`,
   `${ROOT}/catalog/schema-000003.json`,
+  `${ROOT}/catalog/schema-000004.json`,
 ] as const;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d";
+  "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 5456;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 7334;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
+  "sha256:a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820";
+const ANCESTOR_SCHEMA_BUNDLE_DIGEST =
+  "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d";
+const ANCESTOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${ANCESTOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
+const ANCESTOR_SCHEMA_BUNDLE_SIZE = 5456;
+const ANCESTOR_SCHEMA_BUNDLE_SHA256 =
   "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae";
 const BUILTIN_ROLE_CATALOG_PATH =
   "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json";
@@ -201,6 +209,18 @@ const DECLARED_IDENTITIES_000003 = [
   "policy:unquoted:cloud_agents/unquoted:role_bindings_runtime_tenant",
   "policy:unquoted:cloud_agents/unquoted:role_bindings_migration_owner",
 ] as const;
+const DECLARED_IDENTITIES_000004 = [
+  ...DECLARED_IDENTITIES_000003,
+  "function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:require_runtime_mutation_principal()",
+  "function:unquoted:cloud_agents/unquoted:allocate_tenant_revision(unquoted:text,unquoted:bigint,unquoted:timestamptz)",
+  "function:unquoted:cloud_agents/unquoted:create_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:transition_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:suspend_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:revoke_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:revoke_role_binding(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -222,6 +242,22 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     );
   }
   files.set(PREDECESSOR_SCHEMA_BUNDLE_PATH, predecessorSchemaBundleBytes);
+  const ancestorSchemaBundleBytes = readExactFile(root, ANCESTOR_SCHEMA_BUNDLE_PATH);
+  if (
+    ancestorSchemaBundleBytes.length !== ANCESTOR_SCHEMA_BUNDLE_SIZE ||
+    digestBytes(ancestorSchemaBundleBytes) !== ANCESTOR_SCHEMA_BUNDLE_SHA256
+  ) {
+    throw new MigrationValidationError("ANCESTOR_DESCRIPTOR", ANCESTOR_SCHEMA_BUNDLE_PATH);
+  }
+  const ancestorSchemaBundle = requiredObject(parseStrictMigrationJson(ancestorSchemaBundleBytes));
+  validateSchemaBundleSelf(ancestorSchemaBundle);
+  if (ancestorSchemaBundle.schema_bundle_digest !== ANCESTOR_SCHEMA_BUNDLE_DIGEST) {
+    throw new MigrationValidationError(
+      "ANCESTOR_SELF_DIGEST",
+      String(ancestorSchemaBundle.schema_bundle_digest),
+    );
+  }
+  files.set(ANCESTOR_SCHEMA_BUNDLE_PATH, ancestorSchemaBundleBytes);
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
@@ -244,7 +280,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000003",
+    schema_head: "000004",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -284,6 +320,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[3])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[4])!,
       }),
+      migrationEntry({
+        id: "000004",
+        name: "expand_membership_rbac_mutations",
+        predecessor: "000003",
+        schemaFrom: "000003",
+        sql: sqlArtifacts.get(SQL_PATHS[3])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[4])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[5])!,
+      }),
     ],
   };
   const schemaBundleDigest = migrationDigest({
@@ -308,6 +353,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const runtimePaths = [
     SCHEMA_BUNDLE_PATH,
     PREDECESSOR_SCHEMA_BUNDLE_PATH,
+    ANCESTOR_SCHEMA_BUNDLE_PATH,
     ...SQL_PATHS,
     ...CATALOG_PATHS,
   ].toSorted();
@@ -372,6 +418,13 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
           bytes: readExactFile(root, PREDECESSOR_SCHEMA_BUNDLE_PATH),
         },
       ],
+      [
+        ANCESTOR_SCHEMA_BUNDLE_DIGEST,
+        {
+          path: ANCESTOR_SCHEMA_BUNDLE_PATH,
+          bytes: readExactFile(root, ANCESTOR_SCHEMA_BUNDLE_PATH),
+        },
+      ],
     ]),
   );
   const schemaBundleDocument = requiredObject(
@@ -422,11 +475,13 @@ export function validateCatalogStatementBindings(
     ["000001", generatedCatalogs.get(CATALOG_PATHS[2])!.source_descriptors!],
     ["000002", generatedCatalogs.get(CATALOG_PATHS[3])!.source_descriptors!],
     ["000003", generatedCatalogs.get(CATALOG_PATHS[4])!.source_descriptors!],
+    ["000004", generatedCatalogs.get(CATALOG_PATHS[5])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
     ["000002", DECLARED_IDENTITIES_000002],
     ["000003", DECLARED_IDENTITIES_000003],
+    ["000004", DECLARED_IDENTITIES_000004],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -885,7 +940,13 @@ function projectLedgerBackedColumns(row: JsonObject): JsonObject {
 }
 
 export function migrationBundlePaths(): ReadonlyArray<string> {
-  return [MANIFEST_PATH, SCHEMA_BUNDLE_PATH, PREDECESSOR_SCHEMA_BUNDLE_PATH, ...CATALOG_PATHS];
+  return [
+    MANIFEST_PATH,
+    SCHEMA_BUNDLE_PATH,
+    PREDECESSOR_SCHEMA_BUNDLE_PATH,
+    ANCESTOR_SCHEMA_BUNDLE_PATH,
+    ...CATALOG_PATHS,
+  ];
 }
 
 export function migrationStatementSourceDescriptors(
@@ -966,6 +1027,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000001 = typedIdentities(DECLARED_IDENTITIES_000001);
   const declared000002 = typedIdentities(DECLARED_IDENTITIES_000002);
   const declared000003 = typedIdentities(DECLARED_IDENTITIES_000003);
+  const declared000004 = typedIdentities(DECLARED_IDENTITIES_000004);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1014,7 +1076,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   });
   const schema000001 = contract("000001", rawSources.slice(0, 1), declared000001);
   const schema000002 = contract("000002", rawSources.slice(0, 2), declared000002);
-  const schema000003 = contract("000003", rawSources, declared000003);
+  const schema000003 = contract("000003", rawSources.slice(0, 3), declared000003);
+  const schema000004 = contract("000004", rawSources, declared000004);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1063,6 +1126,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[2], schema000001],
     [CATALOG_PATHS[3], schema000002],
     [CATALOG_PATHS[4], schema000003],
+    [CATALOG_PATHS[5], schema000004],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }

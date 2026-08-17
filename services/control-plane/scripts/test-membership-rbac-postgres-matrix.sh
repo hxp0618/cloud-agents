@@ -134,9 +134,10 @@ SQL
     -c 'SET ROLE cloud_agents_migration_owner' \
     -f /workspace/services/control-plane/migrations/000001_expand_migration_kernel.sql \
     -f /workspace/services/control-plane/migrations/000002_expand_tenancy.sql \
-    -f /workspace/services/control-plane/migrations/000003_expand_membership_rbac.sql >/dev/null
+    -f /workspace/services/control-plane/migrations/000003_expand_membership_rbac.sql \
+    -f /workspace/services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql >/dev/null
 
-  for tenant in 001 002; do
+  for tenant in 001 002 mutation-normal mutation-race; do
     bootstrap_result=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
       psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_bootstrap -d cagtest \
       -c "SELECT * FROM cloud_agents.bootstrap_platform_tenant('tenant-$tenant','tenant-$tenant','Tenant $tenant','audit-$tenant','bootstrap');")
@@ -145,6 +146,58 @@ SQL
       exit 1
     fi
   done
+
+  docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cag_migration -d cagtest <<'SQL' >/dev/null
+SET ROLE cloud_agents_migration_owner;
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO cloud_agents.resource_changes (
+    tenant_id, tenant_uid, resource_version, resource_kind, resource_uid,
+    change_kind, actor_database_principal, occurred_at
+)
+SELECT
+    tenant_id, tenant_id, resource_version, resource_kind, resource_uid,
+    'created', 'cag_migration', occurred_at
+FROM (VALUES
+    ('tenant-mutation-normal', 2::bigint, 'membership'::text, 'membership-admin', '2026-08-17T09:00:00Z'::timestamptz),
+    ('tenant-mutation-normal', 3::bigint, 'role_binding'::text, 'role-binding-admin', '2026-08-17T09:00:01Z'::timestamptz),
+    ('tenant-mutation-race', 2::bigint, 'membership'::text, 'membership-admin', '2026-08-17T09:00:00Z'::timestamptz),
+    ('tenant-mutation-race', 3::bigint, 'role_binding'::text, 'role-binding-admin', '2026-08-17T09:00:01Z'::timestamptz)
+) AS seed(tenant_id, resource_version, resource_kind, resource_uid, occurred_at);
+INSERT INTO cloud_agents.memberships (
+    tenant_id, tenant_ref_id, membership_uid, membership_name,
+    subject_kind, subject_issuer, subject_value, subject_digest,
+    scope_level, scope_tenant_uid, scope_organization_uid, scope_project_uid,
+    state, expires_at, resource_version, created_at, updated_at
+)
+SELECT
+    tenant_id, tenant_id, 'membership-admin', 'membership-admin',
+    'user', 'https://identity.example.test/', 'user-admin',
+    'sha256:0403af0ad3826bcac1d20a2a58361e97d94508730794a9b0b1bf94bd7ab7b2bc',
+    'tenant', tenant_id, NULL, NULL, 'active', NULL, 2,
+    '2026-08-17T09:00:00Z', '2026-08-17T09:00:00Z'
+FROM (VALUES ('tenant-mutation-normal'), ('tenant-mutation-race')) AS seed(tenant_id);
+INSERT INTO cloud_agents.role_bindings (
+    tenant_id, tenant_ref_id, role_binding_uid, role_binding_name,
+    subject_kind, subject_issuer, subject_value, subject_digest,
+    role_name, role_version, scope_level,
+    scope_tenant_uid, scope_organization_uid, scope_project_uid,
+    state, expires_at, resource_version, created_at, updated_at
+)
+SELECT
+    tenant_id, tenant_id, 'role-binding-admin', 'role-binding-admin',
+    'user', 'https://identity.example.test/', 'user-admin',
+    'sha256:0403af0ad3826bcac1d20a2a58361e97d94508730794a9b0b1bf94bd7ab7b2bc',
+    'tenant.admin', 1, 'tenant', tenant_id, NULL, NULL,
+    'active', NULL, 3, '2026-08-17T09:00:01Z', '2026-08-17T09:00:01Z'
+FROM (VALUES ('tenant-mutation-normal'), ('tenant-mutation-race')) AS seed(tenant_id);
+UPDATE cloud_agents.tenant_resource_versions
+SET current_revision = 3, updated_at = '2026-08-17T09:00:01Z'
+WHERE tenant_id IN ('tenant-mutation-normal', 'tenant-mutation-race')
+    AND tenant_uid = tenant_id;
+COMMIT;
+SQL
 
   docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
     psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cag_migration -d cagtest <<'SQL' >/dev/null
@@ -224,6 +277,7 @@ SQL
 
   host_port=$(docker port "$active_container" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')
   database_url="postgres://cag_runtime:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
+  migration_database_url="postgres://cag_migration:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
@@ -231,11 +285,80 @@ SQL
       -run '^TestTenantAuthorizationPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
+  CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
+  CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-normal' \
+  CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
+  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+    go -C "$module_dir" test \
+      -run '^TestTenantRBACMutationPostgresConformance$' \
+      -count=1 -v ./internal/store/postgres
+  CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
       -run '^TestTenantAuthorizationPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
+  CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
+  CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
+  CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-race' \
+  CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
+  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+    go -C "$module_dir" test -race \
+      -run '^TestTenantRBACMutationPostgresConformance$' \
+      -count=1 -v ./internal/store/postgres
+
+  cross_tenant_fault=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+BEGIN;
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-002', true);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-mutation-normal', 10, 'direct-cross-tenant', 'direct-cross-tenant',
+    'user', 'https://identity.example.test/', 'direct-cross-tenant',
+    'tenant', 'tenant-mutation-normal', NULL,
+    'audit-direct-cross-tenant', 'conformance'
+);
+ROLLBACK;
+SQL
+)
+  if [[ $cross_tenant_fault != *"ERROR:  membership create input is invalid"* ]]; then
+    echo "Direct cross-tenant mutation did not fail closed:" >&2
+    echo "$cross_tenant_fault" >&2
+    exit 1
+  fi
+
+  if [[ $postgres_major -eq 15 ]]; then
+    rogue_membership_grant='GRANT cloud_agents_runtime TO cag_runtime_rogue;'
+  else
+    rogue_membership_grant='GRANT cloud_agents_runtime TO cag_runtime_rogue WITH INHERIT TRUE, SET TRUE;'
+  fi
+  docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d cagtest <<SQL >/dev/null
+CREATE ROLE cag_runtime_rogue LOGIN NOSUPERUSER INHERIT NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '$test_password';
+$rogue_membership_grant
+SQL
+  rogue_member_fault=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+BEGIN;
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-mutation-normal', true);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-mutation-normal', 10, 'unsafe-member-denied', 'unsafe-member-denied',
+    'user', 'https://identity.example.test/', 'unsafe-member-denied',
+    'tenant', 'tenant-mutation-normal', NULL,
+    'audit-unsafe-member-denied', 'conformance'
+);
+ROLLBACK;
+SQL
+)
+  docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d cagtest <<'SQL' >/dev/null
+REVOKE cloud_agents_runtime FROM cag_runtime_rogue;
+DROP ROLE cag_runtime_rogue;
+SQL
+  if [[ $rogue_member_fault != *"ERROR:  runtime mutation group has unsafe member cag_runtime_rogue"* ]]; then
+    echo "Unsafe runtime-group member did not fence mutation authority:" >&2
+    echo "$rogue_member_fault" >&2
+    exit 1
+  fi
 
   echo "PostgreSQL $postgres_major membership RBAC matrix: PASS ($preflight)"
   cleanup

@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001`, `000002`, then `000003`, under the migration advisory lock. Each
+   `000001` through `000004`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -72,7 +72,17 @@ silently alter this schema.
    expiry, containment, role version/scope and permission before returning an
    allow. The ordinary tenant runtime path never consumes `platform.admin` as
    authority. No raw Membership/RoleBinding write capability or public HTTP
-   mutation route exists in this slice.
+   mutation route exists in that read-only slice.
+7. `000004` adds exactly five SECURITY DEFINER mutation functions and the
+   package-internal `RBACMutationService`: membership create/suspend/revoke and
+   role-binding bind/revoke. Every call rechecks the runtime principal closure,
+   binds one tenant-local transaction, authorizes `tenant.admin` in that same
+   transaction, performs a compare-and-swap transition, allocates exactly one
+   tenant revision, and appends the matching resource-change and audit facts.
+   Runtime receives EXECUTE only on those five entry points, never on their
+   helpers and never raw table DML; PUBLIC and bootstrap EXECUTE are revoked.
+   Commit ambiguity is returned as an explicit unknown outcome and is never
+   retried automatically. No public HTTP mutation route exists in this slice.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -117,17 +127,20 @@ forward migration; it must not rewrite this applied migration or introduce raw
 credential/secret payloads. The bootstrap seam records a bounded reason code,
 not caller-supplied free-form detail.
 
-The runtime group receives tenant-scoped `SELECT` only in this slice, including
-the global built-in role catalog and tenant Membership/RoleBinding facts.
-Project, Membership and RoleBinding creation are not granted raw table writes.
-The later typed mutation slice must allocate and publish each tenant revision
-atomically through a forward migration and a reviewed store path; A2.3 still
-owns durable operation/outbox coordination.
+The runtime group receives tenant-scoped `SELECT`, plus EXECUTE on the five
+typed mutation entry points, including access to the global built-in role
+catalog and tenant Membership/RoleBinding facts. Project, Membership and
+RoleBinding mutation is never granted as raw table write authority. Each typed
+mutation allocates and publishes its tenant revision atomically through the
+forward migration and reviewed store path; A2.3 still owns durable
+operation/outbox coordination.
 
-The local read-path conformance matrix always starts fresh exact PostgreSQL
-15/16/17 containers, applies all three migrations, seeds only deterministic
-tenant facts through the migration-owner role, and runs the typed runtime
-authorization test in normal and race modes:
+The local conformance matrix always starts fresh exact PostgreSQL 15/16/17
+containers, applies all four migrations, seeds only deterministic tenant facts
+through the migration-owner role, and runs both the typed runtime authorization
+and five-operation mutation tests in normal and race modes. It also proves that
+runtime has no helper-function or direct DML authority and that neither PUBLIC
+nor bootstrap inherits mutation-function EXECUTE:
 
 ```sh
 ./services/control-plane/scripts/test-membership-rbac-postgres-matrix.sh

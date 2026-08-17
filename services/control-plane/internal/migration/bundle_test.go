@@ -220,16 +220,16 @@ func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
 func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
 	t.Parallel()
 	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
-	if manifest.SchemaBundleDigest != "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d" {
+	if manifest.SchemaBundleDigest != "sha256:49f5f50076bb06ceeb68c7b8d6f2a37260ec7aca50681bf4d28149364039be91" {
 		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
 	}
 	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
 		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
 	}
-	if manifest.ManifestDigest != "sha256:8004dc400a6fcce45d32082c8f9537d772f278a84224edabb07e9f83a489561a" {
+	if manifest.ManifestDigest != "sha256:09353c9be78d97cd61657bdc6b19b635fec240a905369139b866d8c3237632f0" {
 		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
 	}
-	if DigestBytes(runtimeTar) != "sha256:81480333ef2aafe4169ec2656af137479d94e7c6c986a2202c21754495296f07" {
+	if DigestBytes(runtimeTar) != "sha256:c0108b92ea4712b491b58a9bd85e958798f77777cfe7ae4abb5140f04c25b8c4" {
 		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
 	}
 	authority := manifest.SchemaBundle.ProjectionScopeAuthority
@@ -424,6 +424,7 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 		"ALTER TABLE cloud_agents.t OWNER TO cloud_agents_migration_owner DROP CONSTRAINT x;",
 		"INSERT INTO cloud_agents.builtin_roles VALUES ('attacker');",
 		"ALTER TABLE cloud_agents.resource_changes DROP CONSTRAINT resource_changes_tenant_fk;",
+		"ALTER TABLE cloud_agents.audit_facts DROP CONSTRAINT audit_facts_tenant_fk;",
 	} {
 		statements, err := SplitPostgreSQLStatements([]byte(sql))
 		if err != nil {
@@ -444,6 +445,40 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 	if err != nil || plan.TargetIdentity != "table:unquoted:cloud_agents/unquoted:t" {
 		t.Fatalf("strict grammar rejected exact allowed form: plan=%+v err=%v", plan, err)
 	}
+	mutationSQL := mustRead(t, filepath.Join(migrationRoot(t), "000004_expand_membership_rbac_mutations.sql"))
+	mutationStatements, err := SplitPostgreSQLStatements(mutationSQL)
+	if err != nil || len(mutationStatements) != 20 {
+		t.Fatalf("split exact mutation migration: statements=%d err=%v", len(mutationStatements), err)
+	}
+	for _, statement := range mutationStatements[:2] {
+		if _, err := classifier.Classify(MigrationEntry{ID: "000004"}, statement); err != nil {
+			t.Fatalf("exact audit constraint drop was rejected: %v", err)
+		}
+		if _, err := classifier.Classify(MigrationEntry{ID: "000003"}, statement); !IsCode(err, CodeInvalidSQL) {
+			t.Fatalf("audit constraint drop escaped migration identity: %v", err)
+		}
+	}
+	revokeAll := mutationStatements[len(mutationStatements)-1]
+	plan, err = classifier.Classify(MigrationEntry{ID: "000004"}, revokeAll)
+	if err != nil || plan.Command != "REVOKE" || plan.ObjectKind != "ALL_FUNCTIONS" || plan.TargetIdentity != "schema:unquoted:cloud_agents" || plan.Grantee == nil || *plan.Grantee != "PUBLIC" {
+		t.Fatalf("exact migration-owned public function revoke was rejected: plan=%+v err=%v", plan, err)
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000003"}, revokeAll); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("public function revoke escaped migration identity: %v", err)
+	}
+	for _, sql := range []string{
+		"REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA other FROM PUBLIC;",
+		"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cloud_agents TO PUBLIC;",
+		"REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA cloud_agents FROM PUBLIC, cloud_agents_runtime;",
+	} {
+		statements, splitErr := SplitPostgreSQLStatements([]byte(sql))
+		if splitErr != nil || len(statements) != 1 {
+			t.Fatalf("split revoke fault %q: statements=%d err=%v", sql, len(statements), splitErr)
+		}
+		if _, err := classifier.Classify(MigrationEntry{ID: "000004"}, statements[0]); !IsCode(err, CodeInvalidSQL) {
+			t.Errorf("strict DDL grammar accepted revoke fault %q: %v", sql, err)
+		}
+	}
 }
 
 func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
@@ -454,7 +489,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000003" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000004" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

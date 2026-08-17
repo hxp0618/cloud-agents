@@ -13,6 +13,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "services/control-plane/migrations/000001_expand_migration_kernel.sql",
       "services/control-plane/migrations/000002_expand_tenancy.sql",
       "services/control-plane/migrations/000003_expand_membership_rbac.sql",
+      "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
     ].entries()) {
       const bytes = readFileSync(resolve(root, file));
       const statements = splitPostgresStatements(bytes);
@@ -25,7 +26,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
         ).toBe("postgresql-ddl-v1");
       }
     }
-    expect(counts).toEqual([20, 71, 46]);
+    expect(counts).toEqual([20, 71, 46, 20]);
   });
 
   it("ignores semicolons in comments, strings, identifiers and dollar bodies", () => {
@@ -138,6 +139,51 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(() => classifyMigrationStatement(statements[0]!, "000002")).toThrow(
       /SQL_STATEMENT_PROFILE_REJECTED/,
     );
+
+    const mutationStatements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
+        ),
+      ),
+    );
+    expect(classifyMigrationStatement(mutationStatements[0]!, "000004").command).toBe("ALTER");
+    expect(classifyMigrationStatement(mutationStatements[1]!, "000004").command).toBe("ALTER");
+    expect(classifyMigrationStatement(mutationStatements.at(-1)!, "000004")).toEqual({
+      profile: "postgresql-ddl-v1",
+      command: "REVOKE",
+      object_kind: "ALL_FUNCTIONS",
+      target_identity: "schema:unquoted:cloud_agents",
+      grantee: "PUBLIC",
+      special_case: null,
+    });
+    expect(() => classifyMigrationStatement(mutationStatements[0]!, "000003")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+    expect(() => classifyMigrationStatement(mutationStatements.at(-1)!, "000003")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+    const wrongAuditDrop = splitPostgresStatements(
+      new TextEncoder().encode(
+        "ALTER TABLE cloud_agents.audit_facts DROP CONSTRAINT audit_facts_tenant_fk;",
+      ),
+    )[0]!;
+    expect(() => classifyMigrationStatement(wrongAuditDrop, "000004")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+    for (const sql of [
+      "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA other FROM PUBLIC;",
+      "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cloud_agents TO PUBLIC;",
+      "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA cloud_agents FROM PUBLIC, cloud_agents_runtime;",
+    ]) {
+      expect(() =>
+        classifyMigrationStatement(
+          splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+          "000004",
+        ),
+      ).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/);
+    }
   });
 
   it("preserves quoted identity spelling while folding unquoted identifiers", () => {
