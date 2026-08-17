@@ -2,7 +2,7 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 mutation/service/review next）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 review remediation blocked by frozen lineage-index quota）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
 - 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)
@@ -28,7 +28,11 @@ decision digest 的下游证据不得继承。P1-A2.1a-impl-1 strict projection 
 完成；P1-A2.1a-impl-2 PG15/16/17 adapters 与本地矩阵已由 `e2541c5` / `a0eac37` 完成；
 P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 contract/catalog 与 impl-2 data/read evaluator 已由
 `f988e45`、`e36e1cf` 完成，production mutation/catalog publication 仍 fail closed。当前只进入
-P1-A2.2-impl-3 mutation/service/review；P1 仍只允许在公共仓实施 contracts、
+P1-A2.2-impl-3 mutation/service/review；independent review 发现 Go/direct PostgreSQL subject issuer language
+不一致。Append-only `000006` remediation candidate 的本地 PG15/16/17 matrix 已通过，但 frozen ADR-0010
+whole-bundle reservation 会超过 16 MiB lineage-index maximum；尚无获批 rollover/versioned quota profile。
+因此 remediation、A2.2-impl-3 reviewed closure 与 A2.3 均暂停，精确容量与恢复边界见
+[`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
 仍不授权：
 
