@@ -183,19 +183,23 @@ export function classifyMigrationStatement(
     };
   }
   if (first === "CREATE") {
-    const kind = tokens[1];
+    const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
+    if (orReplace && (migrationId !== "000005" || tokens[3] !== "FUNCTION")) reject(tokens);
+    const kindOffset = orReplace ? 3 : 1;
+    const targetOffset = orReplace ? 4 : 2;
+    const kind = tokens[kindOffset];
     if (!kind || !new Set(["TABLE", "INDEX", "POLICY", "FUNCTION"]).has(kind)) {
       reject(tokens);
     }
     let targetIdentity: string;
     if (kind === "TABLE" || kind === "FUNCTION") {
-      requireCloudAgentsQualified(tokens, 2);
+      requireCloudAgentsQualified(tokens, targetOffset);
       if (kind === "TABLE") {
-        const closing = matchingCloseParenthesis(tokens, 5);
-        if (closing !== tokens.length - 2) reject(tokens);
-        targetIdentity = qualifiedIdentity("table", tokens, 2);
+        const closing = matchingCloseParenthesis(tokens, targetOffset + 3);
+        if (orReplace || closing !== tokens.length - 2) reject(tokens);
+        targetIdentity = qualifiedIdentity("table", tokens, targetOffset);
       } else {
-        const signatureEnd = matchingCloseParenthesis(tokens, 5);
+        const signatureEnd = matchingCloseParenthesis(tokens, targetOffset + 3);
         const body = tokens.lastIndexOf("$BODY$");
         const options = tokens.slice(signatureEnd + 1, body - 1);
         if (
@@ -219,7 +223,7 @@ export function classifyMigrationStatement(
           )
         )
           reject(tokens);
-        targetIdentity = qualifiedIdentity("function", tokens, 2, signatureEnd);
+        targetIdentity = qualifiedIdentity("function", tokens, targetOffset, signatureEnd);
       }
     } else if (kind === "INDEX") {
       const on = tokens.indexOf("ON");
@@ -235,6 +239,15 @@ export function classifyMigrationStatement(
       validateCreatePolicyTail(tokens, on + 4);
       targetIdentity = qualifiedDerivedIdentity("policy", tokens, on + 1, tokens[2]!);
     } else {
+      reject(tokens);
+    }
+    if (
+      orReplace &&
+      !new Set([
+        "function:unquoted:cloud_agents/unquoted:create_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+        "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+      ]).has(targetIdentity!)
+    ) {
       reject(tokens);
     }
     return classification("CREATE", kind!, targetIdentity!, null);

@@ -27,7 +27,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000004.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000005.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -38,16 +38,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:49f5f50076bb06ceeb68c7b8d6f2a37260ec7aca50681bf4d28149364039be91",
+      "sha256:e39cf178c5261069bb47d516e7abc78d172e0211852fa814898304aabaac0839",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:09353c9be78d97cd61657bdc6b19b635fec240a905369139b866d8c3237632f0",
+      "sha256:0a31a009f9297917038e24bf782143714a8521737003d7cad44bfa91e384d92b",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:c0108b92ea4712b491b58a9bd85e958798f77777cfe7ae4abb5140f04c25b8c4",
+      "sha256:2bcf5e909659de31437f774876c1264de721fe7ed6d2e0e6caf175717fd427de",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -223,6 +223,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000002_expand_tenancy.sql",
         "services/control-plane/migrations/000003_expand_membership_rbac.sql",
         "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
+        "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -249,6 +250,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000002_expand_tenancy.sql",
       "services/control-plane/migrations/000003_expand_membership_rbac.sql",
       "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
+      "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [
@@ -294,6 +296,20 @@ describe("migration bundle bootstrap", () => {
         /CATALOG_TARGET_NOT_DECLARED/,
       );
     }
+    const replacementSQL = new Map(original);
+    const replacementSource = new TextDecoder().decode(replacementSQL.get(paths[4])!);
+    replacementSQL.set(
+      paths[4],
+      new TextEncoder().encode(
+        replacementSource.replace(
+          "CREATE OR REPLACE FUNCTION cloud_agents.create_membership",
+          "CREATE OR REPLACE FUNCTION cloud_agents.unknown_membership",
+        ),
+      ),
+    );
+    expect(() => migrationStatementSourceDescriptors(replacementSQL)).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
   });
 
   it("validates ancestor strict-prefix and ledger monotonicity", () => {

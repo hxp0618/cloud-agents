@@ -94,6 +94,14 @@ func TestTenantRBACMutationPostgresConformance(t *testing.T) {
 	}); !errors.Is(err, ErrMutationInvalidInput) {
 		t.Fatalf("equal expiry error = %v, want ErrMutationInvalidInput", err)
 	}
+	orphanBinding, err := service.BindRole(ctx, tenantID, actor, BindRoleInput{
+		ExpectedTenantRevision: 3, RoleBindingUID: "orphan-binding-denied", RoleBindingName: "orphan-binding-denied",
+		Subject: target, RoleName: "tenant.admin", RoleVersion: 1, Scope: scope,
+		AuditFactUID: "audit-orphan-binding-denied", ReasonCode: "conformance",
+	})
+	if !errors.Is(err, ErrMutationConflict) || orphanBinding != (MutationResult{}) {
+		t.Fatalf("orphan binding result/error = %#v/%v, want zero/ErrMutationConflict", orphanBinding, err)
+	}
 
 	membership, err := service.CreateMembership(ctx, tenantID, actor, CreateMembershipInput{
 		ExpectedTenantRevision: 3, MembershipUID: "membership-target", MembershipName: "membership-target",
@@ -126,6 +134,13 @@ func TestTenantRBACMutationPostgresConformance(t *testing.T) {
 		AuditFactUID: "audit-membership-revoke", ReasonCode: "conformance",
 	})
 	assertMutationIntegrationResult(t, revokedMembership, err, tenantID, "membership-target", 7, authz.MembershipRevoked)
+	resurrectingMembership, err := service.CreateMembership(ctx, tenantID, actor, CreateMembershipInput{
+		ExpectedTenantRevision: 7, MembershipUID: "membership-target-recreated", MembershipName: "membership-target-recreated",
+		Subject: target, Scope: scope, AuditFactUID: "audit-membership-resurrection-denied", ReasonCode: "conformance",
+	})
+	if !errors.Is(err, ErrMutationConflict) || resurrectingMembership != (MutationResult{}) {
+		t.Fatalf("resurrecting membership result/error = %#v/%v, want zero/ErrMutationConflict", resurrectingMembership, err)
+	}
 	revokedBinding, err := service.RevokeRoleBinding(ctx, tenantID, actor, RevokeRoleBindingInput{
 		ExpectedTenantRevision: 7, RoleBindingUID: "role-binding-target", ExpectedResourceVersion: 5,
 		AuditFactUID: "audit-role-binding-revoke", ReasonCode: "conformance",

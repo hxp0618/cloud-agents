@@ -345,6 +345,9 @@ func (service *RBACMutationService) validateCommon(
 	if service == nil || service.runner == nil || service.runner.clock == nil {
 		return ErrNilMutationRunner
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !validMutationIdentifier(tenantID) || actor.Validate() != nil || expectedTenantRevision < 1 ||
 		expectedTenantRevision == math.MaxInt64 || !validMutationIdentifier(auditFactUID) ||
 		!validMutationIdentifier(reasonCode) {

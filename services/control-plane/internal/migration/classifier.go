@@ -186,20 +186,30 @@ func (classifier NarrowDDLClassifier) Classify(entry MigrationEntry, statement S
 }
 
 func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
-	if len(tokens) < 3 || !oneOf(tokens[1], "TABLE", "INDEX", "POLICY", "FUNCTION") {
+	kindOffset := 1
+	targetOffset := 2
+	orReplace := len(tokens) > 4 && tokens[1] == "OR" && tokens[2] == "REPLACE"
+	if orReplace {
+		if migrationID != "000005" || tokens[3] != "FUNCTION" {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		kindOffset = 3
+		targetOffset = 4
+	}
+	if len(tokens) <= targetOffset || !oneOf(tokens[kindOffset], "TABLE", "INDEX", "POLICY", "FUNCTION") {
 		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 	}
-	kind := tokens[1]
+	kind := tokens[kindOffset]
 	switch kind {
 	case "TABLE":
-		if !cloudAgentsQualified(typed, 2) || matchingParen(tokens, 5) != len(tokens)-2 {
+		if orReplace || !cloudAgentsQualified(typed, targetOffset) || matchingParen(tokens, targetOffset+3) != len(tokens)-2 {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 	case "FUNCTION":
-		if !cloudAgentsQualified(typed, 2) {
+		if !cloudAgentsQualified(typed, targetOffset) {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
-		signatureEnd := matchingParen(tokens, 5)
+		signatureEnd := matchingParen(tokens, targetOffset+3)
 		body := lastToken(tokens, "$BODY$")
 		if signatureEnd < 0 || body <= signatureEnd || body != len(tokens)-2 || tokens[body-1] != "AS" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
@@ -210,18 +220,35 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 			}
 		}
 	case "INDEX":
+		if orReplace {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
 		on := topLevelToken(tokens, "ON", 0)
 		if on != 3 || !cloudAgentsQualified(typed, on+1) || matchingParen(tokens, on+4) != len(tokens)-2 {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 	case "POLICY":
+		if orReplace {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
 		on := topLevelToken(tokens, "ON", 0)
 		if on != 3 || !cloudAgentsQualified(typed, on+1) || !validCreatePolicyTail(tokens, on+4) {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 	}
 	plan := StatementPlan{Command: "CREATE", ObjectKind: kind}
-	return planWithTarget(plan, typed)
+	resolved, err := planWithTarget(plan, typed)
+	if err != nil {
+		return StatementPlan{}, err
+	}
+	if orReplace && !oneOf(
+		resolved.TargetIdentity,
+		"function:unquoted:cloud_agents/unquoted:create_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+		"function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+	) {
+		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	}
+	return resolved, nil
 }
 
 func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
@@ -399,7 +426,9 @@ func deriveTargetIdentity(plan StatementPlan, typed []SQLToken) (string, error) 
 	start, derivedName := -1, -1
 	switch plan.Command {
 	case "CREATE":
-		if plan.ObjectKind == "TABLE" || plan.ObjectKind == "FUNCTION" {
+		if plan.ObjectKind == "FUNCTION" && len(typed) > 4 && typed[1].Text == "OR" && typed[2].Text == "REPLACE" && typed[3].Text == "FUNCTION" {
+			start = 4
+		} else if plan.ObjectKind == "TABLE" || plan.ObjectKind == "FUNCTION" {
 			start = 2
 		} else {
 			derivedName = 2

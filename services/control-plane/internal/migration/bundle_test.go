@@ -220,16 +220,16 @@ func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
 func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
 	t.Parallel()
 	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
-	if manifest.SchemaBundleDigest != "sha256:49f5f50076bb06ceeb68c7b8d6f2a37260ec7aca50681bf4d28149364039be91" {
+	if manifest.SchemaBundleDigest != "sha256:e39cf178c5261069bb47d516e7abc78d172e0211852fa814898304aabaac0839" {
 		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
 	}
 	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
 		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
 	}
-	if manifest.ManifestDigest != "sha256:09353c9be78d97cd61657bdc6b19b635fec240a905369139b866d8c3237632f0" {
+	if manifest.ManifestDigest != "sha256:0a31a009f9297917038e24bf782143714a8521737003d7cad44bfa91e384d92b" {
 		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
 	}
-	if DigestBytes(runtimeTar) != "sha256:c0108b92ea4712b491b58a9bd85e958798f77777cfe7ae4abb5140f04c25b8c4" {
+	if DigestBytes(runtimeTar) != "sha256:2bcf5e909659de31437f774876c1264de721fe7ed6d2e0e6caf175717fd427de" {
 		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
 	}
 	authority := manifest.SchemaBundle.ProjectionScopeAuthority
@@ -479,6 +479,36 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 			t.Errorf("strict DDL grammar accepted revoke fault %q: %v", sql, err)
 		}
 	}
+	authoritySQL := mustRead(t, filepath.Join(migrationRoot(t), "000005_close_membership_binding_authority.sql"))
+	authorityStatements, err := SplitPostgreSQLStatements(authoritySQL)
+	if err != nil || len(authorityStatements) != 6 {
+		t.Fatalf("split exact authority closure migration: statements=%d err=%v", len(authorityStatements), err)
+	}
+	for _, statement := range authorityStatements {
+		plan, err := classifier.Classify(MigrationEntry{ID: "000005"}, statement)
+		if err != nil {
+			t.Fatalf("exact authority closure statement %d was rejected: %v", statement.Index, err)
+		}
+		if statement.Index == 0 && (plan.Command != "CREATE" || plan.ObjectKind != "FUNCTION" || !strings.Contains(plan.TargetIdentity, "/unquoted:create_membership(")) {
+			t.Fatalf("replacement function classification drifted: %+v", plan)
+		}
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000004"}, authorityStatements[0]); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("replacement function escaped migration identity: %v", err)
+	}
+	driftedAuthoritySQL := bytes.Replace(
+		authoritySQL,
+		[]byte("CREATE OR REPLACE FUNCTION cloud_agents.create_membership("),
+		[]byte("CREATE OR REPLACE FUNCTION cloud_agents.unknown_membership("),
+		1,
+	)
+	driftedStatements, err := SplitPostgreSQLStatements(driftedAuthoritySQL)
+	if err != nil || len(driftedStatements) != 6 {
+		t.Fatalf("split replacement target drift: statements=%d err=%v", len(driftedStatements), err)
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000005"}, driftedStatements[0]); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("replacement function target escaped exact allowlist: %v", err)
+	}
 }
 
 func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
@@ -489,7 +519,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000004" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000005" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

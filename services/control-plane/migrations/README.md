@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000004`, under the migration advisory lock. Each
+   `000001` through `000005`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -83,6 +83,13 @@ silently alter this schema.
    helpers and never raw table DML; PUBLIC and bootstrap EXECUTE are revoked.
    Commit ambiguity is returned as an explicit unknown outcome and is never
    retried automatically. No public HTTP mutation route exists in this slice.
+8. `000005` preserves the exact bytes of applied `000004` while closing the
+   Membership/RoleBinding admission invariant. It replaces the bodies of the
+   existing Membership-create and RoleBinding-bind functions without changing
+   their names, signatures, ownership, ACLs, or the five-operation runtime API. A
+   RoleBinding requires an exact-subject active, unexpired Membership that
+   contains its scope, and Membership re-admission cannot reactivate an active
+   historical binding that no other eligible Membership already covers.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -128,7 +135,7 @@ credential/secret payloads. The bootstrap seam records a bounded reason code,
 not caller-supplied free-form detail.
 
 The runtime group receives tenant-scoped `SELECT`, plus EXECUTE on the five
-typed mutation entry points, including access to the global built-in role
+effective typed mutation entry points, including access to the global built-in role
 catalog and tenant Membership/RoleBinding facts. Project, Membership and
 RoleBinding mutation is never granted as raw table write authority. Each typed
 mutation allocates and publishes its tenant revision atomically through the
@@ -136,7 +143,7 @@ forward migration and reviewed store path; A2.3 still owns durable
 operation/outbox coordination.
 
 The local conformance matrix always starts fresh exact PostgreSQL 15/16/17
-containers, applies all four migrations, seeds only deterministic tenant facts
+containers, applies all five migrations, seeds only deterministic tenant facts
 through the migration-owner role, and runs both the typed runtime authorization
 and five-operation mutation tests in normal and race modes. It also proves that
 runtime has no helper-function or direct DML authority and that neither PUBLIC

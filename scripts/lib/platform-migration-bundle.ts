@@ -64,6 +64,7 @@ const SQL_PATHS = [
   `${ROOT}/000002_expand_tenancy.sql`,
   `${ROOT}/000003_expand_membership_rbac.sql`,
   `${ROOT}/000004_expand_membership_rbac_mutations.sql`,
+  `${ROOT}/000005_close_membership_binding_authority.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -73,6 +74,7 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000002.json`,
   `${ROOT}/catalog/schema-000003.json`,
   `${ROOT}/catalog/schema-000004.json`,
+  `${ROOT}/catalog/schema-000005.json`,
 ] as const;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
   "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23";
@@ -221,6 +223,7 @@ const DECLARED_IDENTITIES_000004 = [
   "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
   "function:unquoted:cloud_agents/unquoted:revoke_role_binding(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
 ] as const;
+const DECLARED_IDENTITIES_000005 = DECLARED_IDENTITIES_000004;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -280,7 +283,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000004",
+    schema_head: "000005",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -328,6 +331,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         sql: sqlArtifacts.get(SQL_PATHS[3])!,
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[4])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[5])!,
+      }),
+      migrationEntry({
+        id: "000005",
+        name: "close_membership_binding_authority",
+        predecessor: "000004",
+        schemaFrom: "000004",
+        sql: sqlArtifacts.get(SQL_PATHS[4])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[5])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[6])!,
       }),
     ],
   };
@@ -476,12 +488,14 @@ export function validateCatalogStatementBindings(
     ["000002", generatedCatalogs.get(CATALOG_PATHS[3])!.source_descriptors!],
     ["000003", generatedCatalogs.get(CATALOG_PATHS[4])!.source_descriptors!],
     ["000004", generatedCatalogs.get(CATALOG_PATHS[5])!.source_descriptors!],
+    ["000005", generatedCatalogs.get(CATALOG_PATHS[6])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
     ["000002", DECLARED_IDENTITIES_000002],
     ["000003", DECLARED_IDENTITIES_000003],
     ["000004", DECLARED_IDENTITIES_000004],
+    ["000005", DECLARED_IDENTITIES_000005],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -1028,6 +1042,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000002 = typedIdentities(DECLARED_IDENTITIES_000002);
   const declared000003 = typedIdentities(DECLARED_IDENTITIES_000003);
   const declared000004 = typedIdentities(DECLARED_IDENTITIES_000004);
+  const declared000005 = typedIdentities(DECLARED_IDENTITIES_000005);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1077,7 +1092,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000001 = contract("000001", rawSources.slice(0, 1), declared000001);
   const schema000002 = contract("000002", rawSources.slice(0, 2), declared000002);
   const schema000003 = contract("000003", rawSources.slice(0, 3), declared000003);
-  const schema000004 = contract("000004", rawSources, declared000004);
+  const schema000004 = contract("000004", rawSources.slice(0, 4), declared000004);
+  const schema000005 = contract("000005", rawSources, declared000005);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1127,6 +1143,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[3], schema000002],
     [CATALOG_PATHS[4], schema000003],
     [CATALOG_PATHS[5], schema000004],
+    [CATALOG_PATHS[6], schema000005],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }

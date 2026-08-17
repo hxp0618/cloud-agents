@@ -76,6 +76,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "CREATE FUNCTION cloud_agents.f() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$ EXTRA;",
       "CREATE FUNCTION cloud_agents.f() RETURNS void LANGUAGE sql TABLESPACE unsafe AS $$ SELECT 1 $$;",
       "CREATE FUNCTION cloud_agents.f() RETURNS void LANGUAGE sql WITH unsafe AS $$ SELECT 1 $$;",
+      "CREATE OR REPLACE FUNCTION cloud_agents.create_membership() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;",
     ];
     for (const sql of rejected) {
       const statement = splitPostgresStatements(new TextEncoder().encode(sql))[0]!;

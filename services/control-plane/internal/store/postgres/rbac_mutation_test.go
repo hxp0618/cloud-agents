@@ -195,6 +195,22 @@ func TestRBACMutationServiceDenialAndInputAreFailClosed(t *testing.T) {
 	if !errors.Is(err, ErrMutationInvalidInput) || pool.acquireCalls != 0 {
 		t.Fatalf("invalid mutation error/acquires = %v/%d", err, pool.acquireCalls)
 	}
+
+	canceledPool := &fakePool{}
+	canceledRunner := newTenantTransactionRunner(canceledPool, time.Second)
+	canceledService, err := newRBACMutationService(canceledRunner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledResult, err := canceledService.CreateMembership(canceledContext, tenantID, actor, CreateMembershipInput{
+		ExpectedTenantRevision: 7, MembershipUID: "membership-new", MembershipName: "membership-new",
+		Subject: actor, Scope: authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-new", ReasonCode: "operator-request",
+	})
+	if !errors.Is(err, context.Canceled) || canceledResult != (MutationResult{}) || canceledPool.acquireCalls != 0 {
+		t.Fatalf("canceled mutation result/error/acquires = %#v/%v/%d", canceledResult, err, canceledPool.acquireCalls)
+	}
 }
 
 func TestRBACMutationServiceRejectsTargetAndResultDriftBeforeCommit(t *testing.T) {

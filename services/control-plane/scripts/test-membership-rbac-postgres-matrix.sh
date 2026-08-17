@@ -133,7 +133,8 @@ SQL
     000001_expand_migration_kernel.sql \
     000002_expand_tenancy.sql \
     000003_expand_membership_rbac.sql \
-    000004_expand_membership_rbac_mutations.sql; do
+    000004_expand_membership_rbac_mutations.sql \
+    000005_close_membership_binding_authority.sql; do
     docker exec -e PGPASSWORD="$test_password" "$active_container" \
       psql -X -v ON_ERROR_STOP=1 --single-transaction \
       -h 127.0.0.1 -U cag_migration -d cagtest \
@@ -279,6 +280,14 @@ SQL
     exit 1
   fi
 
+  entrypoint_acl=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest \
+    -c "SELECT count(*) FILTER (WHERE routine.proname IN ('create_membership','bind_role') AND pg_catalog.has_function_privilege(current_user,routine.oid,'EXECUTE')), count(*) FILTER (WHERE routine.proname IN ('create_membership_checked','bind_role_checked') AND pg_catalog.has_function_privilege(current_user,routine.oid,'EXECUTE')) FROM pg_catalog.pg_proc AS routine JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid=routine.pronamespace WHERE namespace.nspname='cloud_agents' AND routine.proname IN ('create_membership','bind_role','create_membership_checked','bind_role_checked');")
+  if [[ $entrypoint_acl != "2|0" ]]; then
+    echo "Unexpected stable/replacement mutation EXECUTE closure: $entrypoint_acl" >&2
+    exit 1
+  fi
+
   host_port=$(docker port "$active_container" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')
   database_url="postgres://cag_runtime:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
   migration_database_url="postgres://cag_migration:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
@@ -327,6 +336,86 @@ SQL
   if [[ $cross_tenant_fault != *"ERROR:  membership create input is invalid"* ]]; then
     echo "Direct cross-tenant mutation did not fail closed:" >&2
     echo "$cross_tenant_fault" >&2
+    exit 1
+  fi
+
+  covered_scope_result=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+BEGIN;
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-001', true);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-001', 6, 'membership-project-extra', 'membership-project-extra',
+    'user', 'https://identity.example.test/', 'user-alpha',
+    'project', 'project-alpha', NULL,
+    'audit-membership-project-extra', 'conformance'
+);
+ROLLBACK;
+SQL
+  )
+  if [[ $covered_scope_result != *"membership-project-extra|7|active"* ]]; then
+    echo "An already-covered binding incorrectly blocked a narrower Membership:" >&2
+    echo "$covered_scope_result" >&2
+    exit 1
+  fi
+
+  covered_binding_result=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+BEGIN;
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-001', true);
+SELECT * FROM cloud_agents.bind_role(
+    'tenant-001', 6, 'role-binding-project-extra', 'role-binding-project-extra',
+    'user', 'https://identity.example.test/', 'user-alpha',
+    'project.operator', 1, 'project', 'project-alpha', NULL,
+    'audit-role-binding-project-extra', 'conformance'
+);
+ROLLBACK;
+SQL
+  )
+  if [[ $covered_binding_result != *"role-binding-project-extra|7|active"* ]]; then
+    echo "An organization Membership did not cover its project RoleBinding:" >&2
+    echo "$covered_binding_result" >&2
+    exit 1
+  fi
+
+  wider_binding_fault=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+BEGIN;
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-001', true);
+SELECT * FROM cloud_agents.bind_role(
+    'tenant-001', 6, 'role-binding-too-wide', 'role-binding-too-wide',
+    'user', 'https://identity.example.test/', 'user-alpha',
+    'tenant.admin', 1, 'tenant', 'tenant-001', NULL,
+    'audit-role-binding-too-wide', 'conformance'
+);
+ROLLBACK;
+SQL
+  )
+  if [[ $wider_binding_fault != *"ERROR:  role binding requires an eligible membership"* ]]; then
+    echo "A RoleBinding wider than the eligible Membership did not fail closed:" >&2
+    echo "$wider_binding_fault" >&2
+    exit 1
+  fi
+
+  stale_binding_fault=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+BEGIN;
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-001', true);
+SELECT * FROM cloud_agents.revoke_membership(
+    'tenant-001', 6, 'membership-alpha', 4,
+    'audit-membership-alpha-revoke', 'conformance'
+);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-001', 7, 'membership-alpha-recreated', 'membership-alpha-recreated',
+    'user', 'https://identity.example.test/', 'user-alpha',
+    'project', 'project-alpha', NULL,
+    'audit-membership-alpha-recreated', 'conformance'
+);
+ROLLBACK;
+SQL
+  )
+  if [[ $stale_binding_fault != *"ERROR:  membership creation would reactivate a stale role binding"* ]]; then
+    echo "A new Membership reactivated a stale RoleBinding:" >&2
+    echo "$stale_binding_fault" >&2
     exit 1
   fi
 
