@@ -12,6 +12,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
     for (const [index, file] of [
       "services/control-plane/migrations/000001_expand_migration_kernel.sql",
       "services/control-plane/migrations/000002_expand_tenancy.sql",
+      "services/control-plane/migrations/000003_expand_membership_rbac.sql",
     ].entries()) {
       const bytes = readFileSync(resolve(root, file));
       const statements = splitPostgresStatements(bytes);
@@ -24,7 +25,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
         ).toBe("postgresql-ddl-v1");
       }
     }
-    expect(counts).toEqual([20, 71]);
+    expect(counts).toEqual([20, 71, 46]);
   });
 
   it("ignores semicolons in comments, strings, identifiers and dollar bodies", () => {
@@ -90,7 +91,12 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(() => splitPostgresStatements(new TextEncoder().encode(";"))).toThrow(
       /EMPTY_SQL_STATEMENT/,
     );
-    for (const sql of ["BEGIN;", "SELECT 1;", "CREATE ROLE attacker;"]) {
+    for (const sql of [
+      "BEGIN;",
+      "SELECT 1;",
+      "CREATE ROLE attacker;",
+      "INSERT INTO cloud_agents.builtin_roles VALUES ('attacker');",
+    ]) {
       const statement = splitPostgresStatements(new TextEncoder().encode(sql))[0]!;
       expect(() => classifyMigrationStatement(statement, "000002")).toThrow(
         /SQL_STATEMENT_PROFILE_REJECTED/,
@@ -101,6 +107,36 @@ describe("postgresql-lex-v1 bootstrap", () => {
     )[0]!;
     expect(() => classifyMigrationStatement(doStatement, "000001")).toThrow(
       /SQL_DO_SPECIAL_CASE_MISMATCH/,
+    );
+  });
+
+  it("admits only the exact migration-owned role seed and resource-kind replacement", () => {
+    const bytes = readFileSync(
+      resolve(root, "services/control-plane/migrations/000003_expand_membership_rbac.sql"),
+    );
+    const statements = splitPostgresStatements(bytes);
+    expect(classifyMigrationStatement(statements[0]!, "000003").command).toBe("ALTER");
+    expect(classifyMigrationStatement(statements[44]!, "000003").command).toBe("INSERT");
+    expect(classifyMigrationStatement(statements[45]!, "000003").command).toBe("INSERT");
+    expect(classifyMigrationStatement(statements[45]!, "000003").special_case).toBeNull();
+
+    const mutatedSeed = new TextEncoder().encode(
+      new TextDecoder().decode(statements[44]!.bytes).replace("project.viewer", "project.attacker"),
+    );
+    expect(() =>
+      classifyMigrationStatement(splitPostgresStatements(mutatedSeed)[0]!, "000003"),
+    ).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/);
+
+    const wrongDrop = splitPostgresStatements(
+      new TextEncoder().encode(
+        "ALTER TABLE cloud_agents.resource_changes DROP CONSTRAINT resource_changes_tenant_fk;",
+      ),
+    )[0]!;
+    expect(() => classifyMigrationStatement(wrongDrop, "000003")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
+    );
+    expect(() => classifyMigrationStatement(statements[0]!, "000002")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/,
     );
   });
 

@@ -24,6 +24,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0009-p1-migration-bundle-runner.md",
   "docs/plan/adr/0010-p1-postgres-projection-contract.md",
   "docs/plan/adr/0011-p1-membership-rbac-contract.md",
+  "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
   "scripts/check-platform-migration-bundle.ts",
   "scripts/generate-platform-migration-bundle.ts",
   "scripts/lib/platform-migration-bundle.test.ts",
@@ -39,6 +40,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "scripts/lib/platform-migration-ustar.ts",
   "services/control-plane/migrations/000001_expand_migration_kernel.sql",
   "services/control-plane/migrations/000002_expand_tenancy.sql",
+  "services/control-plane/migrations/000003_expand_membership_rbac.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
@@ -46,6 +48,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/schema-bundle.json",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
+  "services/control-plane/migrations/archive",
   "services/control-plane/migrations/catalog",
   "services/control-plane/migrations/fixtures",
 ] as const;

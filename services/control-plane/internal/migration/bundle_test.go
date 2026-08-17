@@ -422,6 +422,8 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 		"GRANT SELECT ON TABLE cloud_agents.t TO cloud_agents_runtime WITH GRANT OPTION;",
 		"GRANT SELECT ON TABLE cloud_agents.t TO cloud_agents_runtime EXTRA;",
 		"ALTER TABLE cloud_agents.t OWNER TO cloud_agents_migration_owner DROP CONSTRAINT x;",
+		"INSERT INTO cloud_agents.builtin_roles VALUES ('attacker');",
+		"ALTER TABLE cloud_agents.resource_changes DROP CONSTRAINT resource_changes_tenant_fk;",
 	} {
 		statements, err := SplitPostgreSQLStatements([]byte(sql))
 		if err != nil {
@@ -452,7 +454,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000002" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000003" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

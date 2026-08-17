@@ -176,6 +176,8 @@ func (classifier NarrowDDLClassifier) Classify(entry MigrationEntry, statement S
 		return classifyCreate(entry.ID, statement.Tokens, tokens)
 	case "ALTER":
 		return classifyAlterStrict(entry.ID, statement.Tokens, tokens)
+	case "INSERT":
+		return classifyExactCatalogSeed(entry, statement, tokens)
 	case "GRANT", "REVOKE":
 		return classifyGrantRevoke(entry.ID, statement.Tokens, tokens)
 	default:
@@ -237,11 +239,20 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 			stringSliceEqual(subcommand, []string{"ENABLE", "ROW", "LEVEL", "SECURITY"}) ||
 			stringSliceEqual(subcommand, []string{"FORCE", "ROW", "LEVEL", "SECURITY"})
 		addConstraint := len(subcommand) >= 3 && subcommand[0] == "ADD" && subcommand[1] == "CONSTRAINT" && !hasTopLevelComma(subcommand[2:])
-		if !exact && !addConstraint {
+		dropResourceKindConstraint := migrationID == "000003" &&
+			stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"})
+		if !exact && !addConstraint && !dropResourceKindConstraint {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		plan := StatementPlan{Command: "ALTER", ObjectKind: "TABLE", MayChangeOwner: len(subcommand) > 0 && subcommand[0] == "OWNER"}
-		return planWithTarget(plan, typed)
+		resolved, err := planWithTarget(plan, typed)
+		if err != nil {
+			return StatementPlan{}, err
+		}
+		if dropResourceKindConstraint && resolved.TargetIdentity != "table:unquoted:cloud_agents/unquoted:resource_changes" {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
+		return resolved, nil
 	case "FUNCTION":
 		if !cloudAgentsQualified(typed, 2) {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
@@ -268,6 +279,26 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 	default:
 		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 	}
+}
+
+func classifyExactCatalogSeed(entry MigrationEntry, statement SQLStatement, tokens []string) (StatementPlan, error) {
+	if len(tokens) < 6 || tokens[1] != "INTO" || !cloudAgentsQualified(statement.Tokens, 2) {
+		return StatementPlan{}, rejectSQLProfile(entry.ID, tokens)
+	}
+	wantTarget := ""
+	switch {
+	case entry.ID == "000003" && statement.Index == 44 && statement.SHA256 == Digest("sha256:004150417e326e671f4a8aa198ab9c8f955dedfa21966f3525b9ddf451d393be"):
+		wantTarget = "table:unquoted:cloud_agents/unquoted:builtin_roles"
+	case entry.ID == "000003" && statement.Index == 45 && statement.SHA256 == Digest("sha256:0e9974a61b7e24895ab1c824c89b35c74d52bf6b49b51b0d675134eb7796b8a8"):
+		wantTarget = "table:unquoted:cloud_agents/unquoted:builtin_role_permissions"
+	default:
+		return StatementPlan{}, rejectSQLProfile(entry.ID, tokens)
+	}
+	plan, err := planWithTarget(StatementPlan{Command: "INSERT", ObjectKind: "TABLE"}, statement.Tokens)
+	if err != nil || plan.TargetIdentity != wantTarget {
+		return StatementPlan{}, rejectSQLProfile(entry.ID, tokens)
+	}
+	return plan, nil
 }
 
 func classifyGrantRevoke(migrationID string, typed []SQLToken, tokens []string) (StatementPlan, error) {
@@ -357,6 +388,8 @@ func deriveTargetIdentity(plan StatementPlan, typed []SQLToken) (string, error) 
 			start = topLevelToken(tokens, "ON", 0) + 1
 		}
 	case "ALTER":
+		start = 2
+	case "INSERT":
 		start = 2
 	case "GRANT", "REVOKE":
 		start = topLevelToken(tokens, "ON", 0) + 2

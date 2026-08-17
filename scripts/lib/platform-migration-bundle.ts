@@ -62,6 +62,7 @@ const SCHEMA_BUNDLE_PATH = `${ROOT}/schema-bundle.json`;
 const SQL_PATHS = [
   `${ROOT}/000001_expand_migration_kernel.sql`,
   `${ROOT}/000002_expand_tenancy.sql`,
+  `${ROOT}/000003_expand_membership_rbac.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -69,7 +70,16 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/global-table-authority-v1.json`,
   `${ROOT}/catalog/schema-000001.json`,
   `${ROOT}/catalog/schema-000002.json`,
+  `${ROOT}/catalog/schema-000003.json`,
 ] as const;
+const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
+  "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d";
+const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 5456;
+const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
+  "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae";
+const BUILTIN_ROLE_CATALOG_PATH =
+  "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json";
 const PROJECTION_FIXTURE_ROOT = `${ROOT}/fixtures/projection`;
 const PROJECTION_FIXTURE_PATHS = [
   `${PROJECTION_FIXTURE_ROOT}/manifest.json`,
@@ -166,10 +176,57 @@ const DECLARED_IDENTITIES_000002 = [
   "policy:unquoted:cloud_agents/unquoted:projects_migration_owner",
   "function:unquoted:cloud_agents/unquoted:bootstrap_platform_tenant(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
 ] as const;
+const DECLARED_IDENTITIES_000003 = [
+  ...DECLARED_IDENTITIES_000002,
+  "table:unquoted:cloud_agents/unquoted:builtin_roles",
+  "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
+  "index:unquoted:cloud_agents/unquoted:builtin_role_permissions_role_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:memberships",
+  "index:unquoted:cloud_agents/unquoted:memberships_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:memberships_scope_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:memberships_scope_organization_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:memberships_scope_project_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:memberships_change_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:memberships_subject_lookup_idx",
+  "table:unquoted:cloud_agents/unquoted:role_bindings",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_scope_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_scope_organization_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_scope_project_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_role_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_change_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:role_bindings_subject_lookup_idx",
+  "policy:unquoted:cloud_agents/unquoted:memberships_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:memberships_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:role_bindings_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:role_bindings_migration_owner",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
+  const predecessorSchemaBundleBytes = readExactFile(root, PREDECESSOR_SCHEMA_BUNDLE_PATH);
+  if (
+    predecessorSchemaBundleBytes.length !== PREDECESSOR_SCHEMA_BUNDLE_SIZE ||
+    digestBytes(predecessorSchemaBundleBytes) !== PREDECESSOR_SCHEMA_BUNDLE_SHA256
+  ) {
+    throw new MigrationValidationError("ANCESTOR_DESCRIPTOR", PREDECESSOR_SCHEMA_BUNDLE_PATH);
+  }
+  const predecessorSchemaBundle = requiredObject(
+    parseStrictMigrationJson(predecessorSchemaBundleBytes),
+  );
+  validateSchemaBundleSelf(predecessorSchemaBundle);
+  if (predecessorSchemaBundle.schema_bundle_digest !== PREDECESSOR_SCHEMA_BUNDLE_DIGEST) {
+    throw new MigrationValidationError(
+      "ANCESTOR_SELF_DIGEST",
+      String(predecessorSchemaBundle.schema_bundle_digest),
+    );
+  }
+  files.set(PREDECESSOR_SCHEMA_BUNDLE_PATH, predecessorSchemaBundleBytes);
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
+  validateBuiltinRoleSeedFixture(
+    sqlBytes.get(SQL_PATHS[2])!,
+    readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
+  );
   const generatedProjection = buildProjectionDocuments(sqlBytes);
   for (const [path, document] of generatedProjection.catalogDocuments) {
     files.set(path, prettyJson(document));
@@ -187,7 +244,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000002",
+    schema_head: "000003",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -195,7 +252,10 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     },
     global_table_authority: catalogArtifacts.get(CATALOG_PATHS[1])!,
     projection_scope_authority: INITIAL_PROJECTION_SCOPE_AUTHORITY,
-    predecessor_schema_bundle: null,
+    predecessor_schema_bundle: {
+      schema_bundle_digest: PREDECESSOR_SCHEMA_BUNDLE_DIGEST,
+      ...artifactRecord(PREDECESSOR_SCHEMA_BUNDLE_PATH, predecessorSchemaBundleBytes),
+    },
     migrations: [
       migrationEntry({
         id: "000001",
@@ -214,6 +274,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         sql: sqlArtifacts.get(SQL_PATHS[1])!,
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[2])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[3])!,
+      }),
+      migrationEntry({
+        id: "000003",
+        name: "expand_membership_rbac",
+        predecessor: "000002",
+        schemaFrom: "000002",
+        sql: sqlArtifacts.get(SQL_PATHS[2])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[3])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[4])!,
       }),
     ],
   };
@@ -236,7 +305,12 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     domain: "cloud-agents-platform-bootstrap-bundle/v1",
     bootstrap_bundle: bootstrapBundle,
   });
-  const runtimePaths = [SCHEMA_BUNDLE_PATH, ...SQL_PATHS, ...CATALOG_PATHS].toSorted();
+  const runtimePaths = [
+    SCHEMA_BUNDLE_PATH,
+    PREDECESSOR_SCHEMA_BUNDLE_PATH,
+    ...SQL_PATHS,
+    ...CATALOG_PATHS,
+  ].toSorted();
   const runtimeArtifacts = runtimePaths.map((path) =>
     artifactRecord(path, files.get(path) ?? sqlBytes.get(path)!),
   );
@@ -288,6 +362,18 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
     if (path.endsWith(".json")) parseStrictMigrationJson(actual);
   }
   validateManifestShape(expected.manifest);
+  validateSchemaAncestorChain(
+    expected.schemaBundleFile,
+    new Map([
+      [
+        PREDECESSOR_SCHEMA_BUNDLE_DIGEST,
+        {
+          path: PREDECESSOR_SCHEMA_BUNDLE_PATH,
+          bytes: readExactFile(root, PREDECESSOR_SCHEMA_BUNDLE_PATH),
+        },
+      ],
+    ]),
+  );
   const schemaBundleDocument = requiredObject(
     parseStrictMigrationJson(readExactFile(root, SCHEMA_BUNDLE_PATH)),
   );
@@ -335,10 +421,12 @@ export function validateCatalogStatementBindings(
   const expectedSourcesByHead = new Map<string, MigrationJson>([
     ["000001", generatedCatalogs.get(CATALOG_PATHS[2])!.source_descriptors!],
     ["000002", generatedCatalogs.get(CATALOG_PATHS[3])!.source_descriptors!],
+    ["000003", generatedCatalogs.get(CATALOG_PATHS[4])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
     ["000002", DECLARED_IDENTITIES_000002],
+    ["000003", DECLARED_IDENTITIES_000003],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -797,7 +885,7 @@ function projectLedgerBackedColumns(row: JsonObject): JsonObject {
 }
 
 export function migrationBundlePaths(): ReadonlyArray<string> {
-  return [MANIFEST_PATH, SCHEMA_BUNDLE_PATH, ...CATALOG_PATHS];
+  return [MANIFEST_PATH, SCHEMA_BUNDLE_PATH, PREDECESSOR_SCHEMA_BUNDLE_PATH, ...CATALOG_PATHS];
 }
 
 export function migrationStatementSourceDescriptors(
@@ -819,6 +907,54 @@ export function migrationStatementSourceDescriptors(
   }));
 }
 
+export function validateBuiltinRoleSeedFixture(
+  sqlBytes: Uint8Array,
+  catalogBytes: Uint8Array,
+): void {
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 46) {
+    throw new MigrationValidationError("BUILTIN_ROLE_SEED_MISMATCH", "statement count");
+  }
+  const catalog = requiredObject(parseStrictMigrationJson(catalogBytes));
+  if (
+    catalog.apiVersion !== "platform.cloud-agents.dev/v1alpha1" ||
+    catalog.kind !== "BuiltinRoleCatalog" ||
+    catalog.catalogRevision !== "1" ||
+    catalog.publishedAt !== "2026-08-17T00:00:00Z"
+  ) {
+    throw new MigrationValidationError("BUILTIN_ROLE_SEED_MISMATCH", "catalog identity");
+  }
+  const roles = requiredArray(catalog.roles).map(requiredObject);
+  const expectedRoleStrings: string[] = [];
+  const expectedPermissionStrings: string[] = [];
+  for (const role of roles) {
+    const name = requiredString(role.name, "role name");
+    const scope = requiredString(role.scopeLevel, "role scope");
+    const state = requiredString(role.state, "role state");
+    if (role.version !== 1 || state !== "active") {
+      throw new MigrationValidationError("BUILTIN_ROLE_SEED_MISMATCH", name);
+    }
+    expectedRoleStrings.push(name, scope, state, String(catalog.publishedAt));
+    expectedPermissionStrings.push(
+      name,
+      ...requiredArray(role.permissions).map((permission) =>
+        requiredString(permission, "role permission"),
+      ),
+    );
+  }
+  if (
+    sqlStringLiterals(statements[44]!.bytes).join("\0") !== expectedRoleStrings.join("\0") ||
+    sqlStringLiterals(statements[45]!.bytes).join("\0") !== expectedPermissionStrings.join("\0")
+  ) {
+    throw new MigrationValidationError("BUILTIN_ROLE_SEED_MISMATCH", "seed rows");
+  }
+}
+
+function sqlStringLiterals(bytes: Uint8Array): string[] {
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  return [...text.matchAll(/'([^']*)'/gu)].map((match) => match[1]!);
+}
+
 type ProjectionDocuments = {
   readonly catalogDocuments: ReadonlyMap<string, JsonObject>;
   readonly fixtureDocuments: ReadonlyMap<string, JsonObject>;
@@ -829,6 +965,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const rawSources = migrationStatementSourceDescriptors(sqlBytes);
   const declared000001 = typedIdentities(DECLARED_IDENTITIES_000001);
   const declared000002 = typedIdentities(DECLARED_IDENTITIES_000002);
+  const declared000003 = typedIdentities(DECLARED_IDENTITIES_000003);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -876,7 +1013,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     executable_expected_projection_status: "NOT_IMPLEMENTED_A2_1B_REQUIRED",
   });
   const schema000001 = contract("000001", rawSources.slice(0, 1), declared000001);
-  const schema000002 = contract("000002", rawSources, declared000002);
+  const schema000002 = contract("000002", rawSources.slice(0, 2), declared000002);
+  const schema000003 = contract("000003", rawSources, declared000003);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -924,6 +1062,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[1], globalAuthorityContract()],
     [CATALOG_PATHS[2], schema000001],
     [CATALOG_PATHS[3], schema000002],
+    [CATALOG_PATHS[4], schema000003],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
@@ -1412,6 +1551,9 @@ function indexOwningRelation(index: string): string {
     "platform_tenants",
     "organizations",
     "projects",
+    "builtin_role_permissions",
+    "memberships",
+    "role_bindings",
   ];
   const relation = prefixes.find((prefix) => index.startsWith(`${prefix}_`));
   if (!relation) throw new MigrationValidationError("INDEX_OWNING_RELATION", index);

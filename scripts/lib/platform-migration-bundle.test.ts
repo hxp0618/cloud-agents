@@ -7,6 +7,7 @@ import {
   buildMigrationBundle,
   migrationLedgerProjection,
   migrationStatementSourceDescriptors,
+  validateBuiltinRoleSeedFixture,
   validateCatalogStatementBindings,
   validateCheckedInMigrationBundle,
   validateLedgerPrefix,
@@ -26,7 +27,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000002.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000003.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -37,16 +38,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d",
+      "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:8004dc400a6fcce45d32082c8f9537d772f278a84224edabb07e9f83a489561a",
+      "sha256:febb9bd6c27ab25a0ed5014feff137dbd3d06b0d4c4c98c7852c6bea2362891d",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:81480333ef2aafe4169ec2656af137479d94e7c6c986a2202c21754495296f07",
+      "sha256:c56cc51c0d8b0808fa0eca719c9e80574774961785ea566ca1672bd5e4b1990a",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -83,6 +84,10 @@ describe("migration bundle bootstrap", () => {
       [
         "services/control-plane/migrations/catalog/schema-000002.json",
         "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9",
+      ],
+      [
+        "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
+        "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae",
       ],
       [
         "services/control-plane/migrations/fixtures/projection/golden/authority-binding-v1.json",
@@ -174,6 +179,24 @@ describe("migration bundle bootstrap", () => {
     }
   });
 
+  it("cross-binds the exact migration seed to the built-in role catalog fixture", () => {
+    const sql = readFileSync(
+      resolve(root, "services/control-plane/migrations/000003_expand_membership_rbac.sql"),
+    );
+    const catalog = readFileSync(
+      resolve(root, "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json"),
+    );
+    expect(() => validateBuiltinRoleSeedFixture(sql, catalog)).not.toThrow();
+
+    const drifted = JSON.parse(catalog.toString("utf8")) as {
+      roles: Array<{ permissions: string[] }>;
+    };
+    drifted.roles[0]!.permissions[0] = "memberships.future";
+    expect(() =>
+      validateBuiltinRoleSeedFixture(sql, new TextEncoder().encode(JSON.stringify(drifted))),
+    ).toThrow(/BUILTIN_ROLE_SEED_MISMATCH/u);
+  });
+
   it("rejects detached deployment authority from the runtime artifact closure", () => {
     expect(() =>
       validateRuntimeArtifactSafety([
@@ -190,7 +213,7 @@ describe("migration bundle bootstrap", () => {
   it("binds every catalog statement descriptor to exact SQL classification", () => {
     const catalog = JSON.parse(
       readFileSync(
-        resolve(root, "services/control-plane/migrations/catalog/schema-000002.json"),
+        resolve(root, "services/control-plane/migrations/catalog/schema-000003.json"),
         "utf8",
       ),
     ) as Record<string, unknown>;
@@ -198,6 +221,7 @@ describe("migration bundle bootstrap", () => {
       [
         "services/control-plane/migrations/000001_expand_migration_kernel.sql",
         "services/control-plane/migrations/000002_expand_tenancy.sql",
+        "services/control-plane/migrations/000003_expand_membership_rbac.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -215,13 +239,14 @@ describe("migration bundle bootstrap", () => {
   it("rejects unknown catalog targets even when SQL and source descriptors drift together", () => {
     const catalog = JSON.parse(
       readFileSync(
-        resolve(root, "services/control-plane/migrations/catalog/schema-000002.json"),
+        resolve(root, "services/control-plane/migrations/catalog/schema-000003.json"),
         "utf8",
       ),
     ) as Record<string, unknown>;
     const paths = [
       "services/control-plane/migrations/000001_expand_migration_kernel.sql",
       "services/control-plane/migrations/000002_expand_tenancy.sql",
+      "services/control-plane/migrations/000003_expand_membership_rbac.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [

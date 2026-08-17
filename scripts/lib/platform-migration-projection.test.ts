@@ -566,7 +566,7 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
   });
 
   it("keeps runtime cumulative catalogs explicitly non-executable until A2.1b", () => {
-    for (const head of ["000001", "000002"]) {
+    for (const head of ["000001", "000002", "000003"]) {
       const catalog = JSON.parse(
         readFileSync(
           resolve(root, `services/control-plane/migrations/catalog/schema-${head}.json`),

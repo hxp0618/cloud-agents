@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -58,6 +59,7 @@ type PlatformTenant struct {
 // Implementations become invalid as soon as the callback returns.
 type TenantReadCapability interface {
 	GetPlatformTenant(context.Context) (PlatformTenant, error)
+	Authorize(context.Context, authz.Request) (authz.Decision, error)
 }
 
 // TenantReadCallback runs inside one read-only, tenant-bound transaction.
@@ -68,6 +70,7 @@ type TenantReadCallback func(context.Context, TenantReadCapability) error
 type TenantTransactionRunner struct {
 	pool           physicalPool
 	cleanupTimeout time.Duration
+	clock          func() time.Time
 }
 
 // NewTenantTransactionRunner binds the runtime helper to a pgxpool. Each call
@@ -88,6 +91,7 @@ func newTenantTransactionRunner(pool physicalPool, cleanupTimeout time.Duration)
 	return &TenantTransactionRunner{
 		pool:           pool,
 		cleanupTimeout: cleanupTimeout,
+		clock:          time.Now,
 	}
 }
 
@@ -140,6 +144,8 @@ func (runner *TenantTransactionRunner) WithTenantRead(
 	handle := &tenantReadHandle{
 		active:      true,
 		transaction: transaction,
+		tenantID:    tenantID,
+		clock:       runner.clock,
 	}
 
 	callbackErr, panicValue, panicked := invokeTenantCallback(ctx, callback, handle)
@@ -271,6 +277,8 @@ type tenantReadHandle struct {
 	mutex       sync.Mutex
 	active      bool
 	transaction tenantTransaction
+	tenantID    string
+	clock       func() time.Time
 }
 
 func (handle *tenantReadHandle) GetPlatformTenant(ctx context.Context) (PlatformTenant, error) {
@@ -304,6 +312,8 @@ func (handle *tenantReadHandle) invalidate() {
 	defer handle.mutex.Unlock()
 	handle.active = false
 	handle.transaction = nil
+	handle.tenantID = ""
+	handle.clock = nil
 }
 
 type rowScanner interface {

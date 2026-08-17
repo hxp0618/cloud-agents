@@ -26,6 +26,31 @@ const ALLOWED_GRANTEES = new Set([
   "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
 ]);
 const INITIAL_DO_SHA256 = "sha256:4cce367246af1fe1e08191df7d48bf8b9dad7ee2696b754f6c2df9f66c559281";
+const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
+  string,
+  {
+    readonly migrationId: string;
+    readonly statementIndex: number;
+    readonly targetIdentity: string;
+  }
+> = new Map([
+  [
+    "sha256:004150417e326e671f4a8aa198ab9c8f955dedfa21966f3525b9ddf451d393be",
+    {
+      migrationId: "000003",
+      statementIndex: 44,
+      targetIdentity: "table:unquoted:cloud_agents/unquoted:builtin_roles",
+    },
+  ],
+  [
+    "sha256:0e9974a61b7e24895ab1c824c89b35c74d52bf6b49b51b0d675134eb7796b8a8",
+    {
+      migrationId: "000003",
+      statementIndex: 45,
+      targetIdentity: "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
+    },
+  ],
+]);
 
 export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlStatementSlice> {
   const statements: SqlStatementSlice[] = [];
@@ -228,8 +253,14 @@ export function classifyMigrationStatement(
         subcommand[0] === "ADD" &&
         subcommand[1] === "CONSTRAINT" &&
         !hasTopLevelComma(subcommand.slice(2));
-      if (!exact && !addConstraint) reject(tokens);
-      return classification("ALTER", "TABLE", qualifiedIdentity("table", tokens, 2), null);
+      const targetIdentity = qualifiedIdentity("table", tokens, 2);
+      const dropResourceKindConstraint =
+        migrationId === "000003" &&
+        targetIdentity === "table:unquoted:cloud_agents/unquoted:resource_changes" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"].join("\0");
+      if (!exact && !addConstraint && !dropResourceKindConstraint) reject(tokens);
+      return classification("ALTER", "TABLE", targetIdentity, null);
     }
     if (kind === "FUNCTION") {
       requireCloudAgentsQualified(tokens, 2);
@@ -269,6 +300,21 @@ export function classifyMigrationStatement(
       );
     }
     reject(tokens);
+  }
+  if (first === "INSERT") {
+    const special = EXACT_INSERT_SPECIAL_CASES.get(statement.sha256);
+    if (
+      !special ||
+      migrationId !== special.migrationId ||
+      statement.index !== special.statementIndex ||
+      tokens[1] !== "INTO"
+    ) {
+      reject(tokens);
+    }
+    requireCloudAgentsQualified(tokens, 2);
+    const targetIdentity = qualifiedIdentity("table", tokens, 2);
+    if (targetIdentity !== special.targetIdentity) reject(tokens);
+    return classification("INSERT", "TABLE", targetIdentity, null);
   }
   if (first === "GRANT" || first === "REVOKE") {
     const on = findTopLevelToken(tokens, "ON", 1);
