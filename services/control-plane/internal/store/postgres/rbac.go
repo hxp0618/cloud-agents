@@ -163,6 +163,7 @@ const readAuthorizationCandidatesSQL = `WITH candidate_rows AS (
         AND binding.subject_kind = membership.subject_kind
         AND binding.subject_issuer = membership.subject_issuer
         AND binding.subject_value = membership.subject_value
+        AND membership.resource_version < binding.resource_version
     LEFT JOIN cloud_agents.projects AS membership_project
         ON membership.scope_level = 'project'
         AND membership_project.tenant_id = membership.tenant_id

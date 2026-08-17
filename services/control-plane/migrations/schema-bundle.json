@@ -227,8 +227,8 @@
         "sql_artifact": {
           "path": "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
           "mode": "100644",
-          "size_bytes": 15608,
-          "sha256": "sha256:6750fd17201ed92bc33dba8b2906d1694b0375766edbe6ea4de6a9bcf0c1e5f3"
+          "size_bytes": 6550,
+          "sha256": "sha256:9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b"
         },
         "transaction_mode": "transactional",
         "reentrancy": "ledger_guarded",
@@ -244,11 +244,11 @@
         "catalog_contract": {
           "path": "services/control-plane/migrations/catalog/schema-000005.json",
           "mode": "100644",
-          "size_bytes": 105272,
-          "sha256": "sha256:323f1ca5b78dc19c9d5526fc3195303e2a97bb5dea1960e3d96dbc450dc81c82"
+          "size_bytes": 101801,
+          "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
         }
       }
     ]
   },
-  "schema_bundle_digest": "sha256:e39cf178c5261069bb47d516e7abc78d172e0211852fa814898304aabaac0839"
+  "schema_bundle_digest": "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484"
 }

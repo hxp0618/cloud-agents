@@ -396,8 +396,8 @@ SQL
     exit 1
   fi
 
-  stale_binding_fault=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
-    psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+  stale_binding_replay=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
 BEGIN;
 SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-001', true);
 SELECT * FROM cloud_agents.revoke_membership(
@@ -410,12 +410,27 @@ SELECT * FROM cloud_agents.create_membership(
     'project', 'project-alpha', NULL,
     'audit-membership-alpha-recreated', 'conformance'
 );
+SELECT CASE WHEN NOT EXISTS (
+    SELECT 1
+    FROM cloud_agents.memberships AS membership
+    JOIN cloud_agents.role_bindings AS binding
+        ON binding.tenant_id = membership.tenant_id
+        AND binding.subject_kind = membership.subject_kind
+        AND binding.subject_issuer = membership.subject_issuer
+        AND binding.subject_value = membership.subject_value
+        AND membership.resource_version < binding.resource_version
+    WHERE membership.tenant_id = cloud_agents.require_tenant_id()
+        AND membership.membership_uid = 'membership-alpha-recreated'
+        AND membership.state = 'active'
+        AND binding.role_binding_uid = 'role-binding-alpha'
+        AND binding.state = 'active'
+) THEN 'stale-binding-ineligible' ELSE 'stale-binding-resurrected' END;
 ROLLBACK;
 SQL
   )
-  if [[ $stale_binding_fault != *"ERROR:  membership creation would reactivate a stale role binding"* ]]; then
+  if [[ $stale_binding_replay != *"membership-alpha-recreated|8|active"* || $stale_binding_replay != *"stale-binding-ineligible"* ]]; then
     echo "A new Membership reactivated a stale RoleBinding:" >&2
-    echo "$stale_binding_fault" >&2
+    echo "$stale_binding_replay" >&2
     exit 1
   fi
 

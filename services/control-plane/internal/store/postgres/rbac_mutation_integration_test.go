@@ -134,18 +134,19 @@ func TestTenantRBACMutationPostgresConformance(t *testing.T) {
 		AuditFactUID: "audit-membership-revoke", ReasonCode: "conformance",
 	})
 	assertMutationIntegrationResult(t, revokedMembership, err, tenantID, "membership-target", 7, authz.MembershipRevoked)
-	resurrectingMembership, err := service.CreateMembership(ctx, tenantID, actor, CreateMembershipInput{
+	recreatedMembership, err := service.CreateMembership(ctx, tenantID, actor, CreateMembershipInput{
 		ExpectedTenantRevision: 7, MembershipUID: "membership-target-recreated", MembershipName: "membership-target-recreated",
-		Subject: target, Scope: scope, AuditFactUID: "audit-membership-resurrection-denied", ReasonCode: "conformance",
+		Subject: target, Scope: scope, AuditFactUID: "audit-membership-readmission", ReasonCode: "conformance",
 	})
-	if !errors.Is(err, ErrMutationConflict) || resurrectingMembership != (MutationResult{}) {
-		t.Fatalf("resurrecting membership result/error = %#v/%v, want zero/ErrMutationConflict", resurrectingMembership, err)
-	}
+	assertMutationIntegrationResult(t, recreatedMembership, err, tenantID, "membership-target-recreated", 8, authz.MembershipActive)
+	assertPostgresDeny(t, authorizePostgres(t, ctx, runner, tenantID, authz.Request{
+		Subject: target, Permission: permissionMembershipCreate, Resource: scope,
+	}), authz.DenyNoEligibleBinding)
 	revokedBinding, err := service.RevokeRoleBinding(ctx, tenantID, actor, RevokeRoleBindingInput{
-		ExpectedTenantRevision: 7, RoleBindingUID: "role-binding-target", ExpectedResourceVersion: 5,
+		ExpectedTenantRevision: 8, RoleBindingUID: "role-binding-target", ExpectedResourceVersion: 5,
 		AuditFactUID: "audit-role-binding-revoke", ReasonCode: "conformance",
 	})
-	assertMutationIntegrationResult(t, revokedBinding, err, tenantID, "role-binding-target", 8, authz.BindingRevoked)
+	assertMutationIntegrationResult(t, revokedBinding, err, tenantID, "role-binding-target", 9, authz.BindingRevoked)
 
 	concurrentResults := make(chan MutationResult, 2)
 	concurrentErrors := make(chan error, 2)
@@ -157,7 +158,7 @@ func TestTenantRBACMutationPostgresConformance(t *testing.T) {
 			defer wait.Done()
 			uid := fmt.Sprintf("membership-race-%d", index)
 			result, mutationErr := service.CreateMembership(ctx, tenantID, actor, CreateMembershipInput{
-				ExpectedTenantRevision: 8, MembershipUID: uid, MembershipName: uid,
+				ExpectedTenantRevision: 9, MembershipUID: uid, MembershipName: uid,
 				Subject: authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: fmt.Sprintf("race-%d", index)},
 				Scope:   scope, AuditFactUID: fmt.Sprintf("audit-race-%d", index), ReasonCode: "conformance",
 			})
@@ -179,17 +180,17 @@ func TestTenantRBACMutationPostgresConformance(t *testing.T) {
 	for mutationErr := range concurrentErrors {
 		errorsSeen = append(errorsSeen, mutationErr)
 	}
-	if len(results) != 1 || results[0].ResourceVersion != 9 || len(errorsSeen) != 1 || !errors.Is(errorsSeen[0], ErrMutationConflict) {
+	if len(results) != 1 || results[0].ResourceVersion != 10 || len(errorsSeen) != 1 || !errors.Is(errorsSeen[0], ErrMutationConflict) {
 		t.Fatalf("concurrent results/errors = %#v/%v", results, errorsSeen)
 	}
 
 	futureExpiry := now.Add(time.Hour)
 	gapProof, err := service.CreateMembership(ctx, tenantID, actor, CreateMembershipInput{
-		ExpectedTenantRevision: 9, MembershipUID: "membership-after-race", MembershipName: "membership-after-race",
+		ExpectedTenantRevision: 10, MembershipUID: "membership-after-race", MembershipName: "membership-after-race",
 		Subject: authz.SubjectRef{Kind: "serviceAccount", Issuer: "spiffe://identity.example.test/", Subject: "after-race"},
 		Scope:   scope, ExpiresAt: &futureExpiry, AuditFactUID: "audit-after-race", ReasonCode: "conformance",
 	})
-	assertMutationIntegrationResult(t, gapProof, err, tenantID, "membership-after-race", 10, authz.MembershipActive)
+	assertMutationIntegrationResult(t, gapProof, err, tenantID, "membership-after-race", 11, authz.MembershipActive)
 
 	assertRBACMutationDurableFacts(t, ctx, verificationPool, tenantID, target)
 	if _, err := service.CreateMembership(ctx, "tenant-002", actor, CreateMembershipInput{
@@ -348,19 +349,19 @@ FROM cloud_agents.tenant_resource_versions
 WHERE tenant_id = cloud_agents.require_tenant_id() AND tenant_uid = tenant_id`).Scan(&revision); err != nil {
 		t.Fatalf("read final tenant revision: %v", err)
 	}
-	if revision != 10 {
-		t.Fatalf("final tenant revision = %d, want 10", revision)
+	if revision != 11 {
+		t.Fatalf("final tenant revision = %d, want 11", revision)
 	}
 	var actions []string
 	if err := transaction.QueryRow(ctx, `SELECT pg_catalog.array_agg(action ORDER BY resource_version)
 FROM cloud_agents.audit_facts
 WHERE tenant_id = cloud_agents.require_tenant_id()
-    AND resource_version BETWEEN 4 AND 8`).Scan(&actions); err != nil {
+    AND resource_version BETWEEN 4 AND 9`).Scan(&actions); err != nil {
 		t.Fatalf("read mutation audit actions: %v", err)
 	}
 	wantActions := []string{
 		"membership.create", "role_binding.bind", "membership.suspend",
-		"membership.revoke", "role_binding.revoke",
+		"membership.revoke", "membership.create", "role_binding.revoke",
 	}
 	if len(actions) != len(wantActions) {
 		t.Fatalf("audit actions = %#v", actions)
@@ -373,7 +374,7 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
 	var actorPrincipals []string
 	if err := transaction.QueryRow(ctx, `SELECT pg_catalog.array_agg(DISTINCT actor_database_principal ORDER BY actor_database_principal)
 FROM cloud_agents.audit_facts
-WHERE tenant_id = cloud_agents.require_tenant_id() AND resource_version BETWEEN 4 AND 10`).Scan(&actorPrincipals); err != nil {
+WHERE tenant_id = cloud_agents.require_tenant_id() AND resource_version BETWEEN 4 AND 11`).Scan(&actorPrincipals); err != nil {
 		t.Fatalf("read mutation audit principals: %v", err)
 	}
 	if len(actorPrincipals) != 1 || actorPrincipals[0] != "cag_runtime" {
@@ -395,11 +396,11 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND membership_uid = 'members
 	var versions []int64
 	if err := transaction.QueryRow(ctx, `SELECT pg_catalog.array_agg(resource_version ORDER BY resource_version)
 FROM cloud_agents.resource_changes
-WHERE tenant_id = cloud_agents.require_tenant_id() AND resource_version BETWEEN 4 AND 10`).Scan(&versions); err != nil {
+WHERE tenant_id = cloud_agents.require_tenant_id() AND resource_version BETWEEN 4 AND 11`).Scan(&versions); err != nil {
 		t.Fatalf("read mutation resource versions: %v", err)
 	}
 	sort.Slice(versions, func(i, j int) bool { return versions[i] < versions[j] })
-	wantVersions := []int64{4, 5, 6, 7, 8, 9, 10}
+	wantVersions := []int64{4, 5, 6, 7, 8, 9, 10, 11}
 	if len(versions) != len(wantVersions) {
 		t.Fatalf("resource versions = %#v", versions)
 	}

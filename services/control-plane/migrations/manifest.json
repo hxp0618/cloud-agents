@@ -227,8 +227,8 @@
         "sql_artifact": {
           "path": "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
           "mode": "100644",
-          "size_bytes": 15608,
-          "sha256": "sha256:6750fd17201ed92bc33dba8b2906d1694b0375766edbe6ea4de6a9bcf0c1e5f3"
+          "size_bytes": 6550,
+          "sha256": "sha256:9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b"
         },
         "transaction_mode": "transactional",
         "reentrancy": "ledger_guarded",
@@ -244,13 +244,13 @@
         "catalog_contract": {
           "path": "services/control-plane/migrations/catalog/schema-000005.json",
           "mode": "100644",
-          "size_bytes": 105272,
-          "sha256": "sha256:323f1ca5b78dc19c9d5526fc3195303e2a97bb5dea1960e3d96dbc450dc81c82"
+          "size_bytes": 101801,
+          "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
         }
       }
     ]
   },
-  "schema_bundle_digest": "sha256:e39cf178c5261069bb47d516e7abc78d172e0211852fa814898304aabaac0839",
+  "schema_bundle_digest": "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484",
   "bootstrap_bundle": {
     "artifacts": [
       {
@@ -314,8 +314,8 @@
     {
       "path": "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
       "mode": "100644",
-      "size_bytes": 15608,
-      "sha256": "sha256:6750fd17201ed92bc33dba8b2906d1694b0375766edbe6ea4de6a9bcf0c1e5f3"
+      "size_bytes": 6550,
+      "sha256": "sha256:9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b"
     },
     {
       "path": "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
@@ -368,15 +368,15 @@
     {
       "path": "services/control-plane/migrations/catalog/schema-000005.json",
       "mode": "100644",
-      "size_bytes": 105272,
-      "sha256": "sha256:323f1ca5b78dc19c9d5526fc3195303e2a97bb5dea1960e3d96dbc450dc81c82"
+      "size_bytes": 101801,
+      "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
     },
     {
       "path": "services/control-plane/migrations/schema-bundle.json",
       "mode": "100644",
-      "size_bytes": 10355,
-      "sha256": "sha256:0531f572815f27c227150bf25e4146a5f1e782ee1b39520f3156aa9b9a37fa39"
+      "size_bytes": 10354,
+      "sha256": "sha256:42f4d02a85e37111f722851a034bd886c7a8666d7590887933cb7b4e58ab2202"
     }
   ],
-  "manifest_digest": "sha256:0a31a009f9297917038e24bf782143714a8521737003d7cad44bfa91e384d92b"
+  "manifest_digest": "sha256:286824767ff87fb91260849a40aff95f15ce874698bc44fc8480689465f71a25"
 }

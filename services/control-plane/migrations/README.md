@@ -85,11 +85,11 @@ silently alter this schema.
    retried automatically. No public HTTP mutation route exists in this slice.
 8. `000005` preserves the exact bytes of applied `000004` while closing the
    Membership/RoleBinding admission invariant. It replaces the bodies of the
-   existing Membership-create and RoleBinding-bind functions without changing
-   their names, signatures, ownership, ACLs, or the five-operation runtime API. A
-   RoleBinding requires an exact-subject active, unexpired Membership that
-   contains its scope, and Membership re-admission cannot reactivate an active
-   historical binding that no other eligible Membership already covers.
+   existing RoleBinding-bind function without changing its name, signature,
+   ownership, ACLs, or the five-operation runtime API. A RoleBinding requires an
+   exact-subject active, unexpired Membership that contains its scope. Candidate
+   reads additionally require that Membership authority to predate the binding,
+   so later Membership re-admission cannot reactivate a historical binding.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:

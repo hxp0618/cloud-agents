@@ -38,16 +38,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:e39cf178c5261069bb47d516e7abc78d172e0211852fa814898304aabaac0839",
+      "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:0a31a009f9297917038e24bf782143714a8521737003d7cad44bfa91e384d92b",
+      "sha256:286824767ff87fb91260849a40aff95f15ce874698bc44fc8480689465f71a25",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:2bcf5e909659de31437f774876c1264de721fe7ed6d2e0e6caf175717fd427de",
+      "sha256:d7f7030684b8c5dab963a8a803a3d0c0d5415c263d3436bc5d38f5a711545b98",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -302,8 +302,8 @@ describe("migration bundle bootstrap", () => {
       paths[4],
       new TextEncoder().encode(
         replacementSource.replace(
-          "CREATE OR REPLACE FUNCTION cloud_agents.create_membership",
-          "CREATE OR REPLACE FUNCTION cloud_agents.unknown_membership",
+          "CREATE OR REPLACE FUNCTION cloud_agents.bind_role",
+          "CREATE OR REPLACE FUNCTION cloud_agents.unknown_binding",
         ),
       ),
     );

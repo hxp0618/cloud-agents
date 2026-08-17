@@ -80,6 +80,9 @@ func TestTenantAuthorizationUsesOneBoundReadTransactionAndExactQueries(t *testin
 	if strings.Contains(readAuthorizationCandidatesSQL, "binding.subject_digest = membership.subject_digest") || strings.Contains(readAuthorizationCandidatesSQL, "membership.subject_digest = $4") {
 		t.Fatal("candidate query hides stored subject digest drift")
 	}
+	if !strings.Contains(readAuthorizationCandidatesSQL, "membership.resource_version < binding.resource_version") {
+		t.Fatal("candidate query admits membership authority created after the role binding")
+	}
 	for _, query := range transaction.queries[2:] {
 		if !strings.Contains(query.sql, "cloud_agents.") || strings.Contains(query.sql, tenantID) {
 			t.Fatalf("query is not fully qualified or embedded tenant input: %s", query.sql)
