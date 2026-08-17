@@ -36,7 +36,9 @@ A2.2 is split into three reviewable implementation slices:
 3. **A2.2-impl-3 mutation/matrix/review**：typed create/suspend/revoke/bind functions, PostgreSQL 15–17
    isolation/concurrency/expiry faults, source-bound supply evidence and independent review.
 
-The current commit is allowed to implement only item 1.
+Implementation status at 2026-08-17: impl-1 is fixed by `f988e45`; impl-2 is fixed by `e36e1cf` and its
+evidence record `6f001a6`. The active boundary is impl-3 only. Neither completed slice changes the aggregate
+Gate or production-release boundary.
 
 ## 3. Built-in role catalog v1
 
@@ -145,7 +147,7 @@ It cannot change public deny/error to allow.
 
 ## 7. Impl-2 database contract
 
-The next slice must add exactly four tables:
+Impl-2 adds exactly four tables:
 
 - global `builtin_roles` and `builtin_role_permissions`, migration-owned and runtime read-only;
 - tenant-owned `memberships` and `role_bindings`, each carrying `tenant_id`, exact subject fields/digest,
@@ -159,6 +161,50 @@ caller-provided role catalog or cross-tenant lookup is exposed by the store.
 Impl-2 seeds catalog revision 1 from the same checked-in fixture/derived SQL facts and verifies exact
 catalog equality on replay. It must not add custom role tables, operation/outbox tables, audit expansion,
 HTTP mutation handlers or production bootstrap credentials.
+
+### 7.1 Impl-3 mutation contract
+
+Impl-3 adds exactly five ordinary tenant mutation operations: Membership create, suspend and revoke, plus
+RoleBinding bind and revoke. There is no generic action/state string, raw SQL callback, table DML capability or
+caller-supplied permission decision.
+
+Each public Go operation must:
+
+1. validate the actor, target SubjectRef, scope, expiry, expected revisions and opaque identifiers before a
+   database connection can mutate state;
+2. open one tenant-bound `SERIALIZABLE`, read-write transaction and evaluate the actor through the impl-2
+   default-deny evaluator in that same transaction;
+3. require `memberships.create`, `memberships.update`, `memberships.delete`, `role-bindings.bind` or
+   `role-bindings.delete` respectively at the database-resolved target scope;
+4. call one fixed typed database function and never retry the callback or an unknown commit result;
+5. invalidate every transaction-local handle before commit/rollback and discard a connection whose outcome or
+   tenant-setting cleanup is not proven.
+
+The five callable database functions are owned by `cloud_agents_migration_owner`, use a fixed
+`pg_catalog, cloud_agents` search path and are the only mutation surface granted to
+`cloud_agents_runtime`. Runtime keeps `SELECT`-only table grants. Every function revalidates the exact direct,
+nondelegable runtime LOGIN membership from `SESSION_USER`, the transaction-local tenant setting and the closed
+input shape. Internal helper functions receive no runtime/PUBLIC execute grant.
+
+Every accepted mutation locks `tenant_resource_versions`, requires the caller's exact current tenant revision,
+allocates exactly `current + 1`, applies the resource create/state transition, writes the matching
+`resource_changes` row and one redacted `audit_facts` row, and updates the counter in the same transaction.
+Suspend/revoke also require the exact current resource version. A rejection, uniqueness/FK failure,
+serialization failure or rollback consumes no revision. Mutation action/resource pairs are fixed as:
+
+| Operation          | Required permission    | Resource change | Audit action          |
+| ------------------ | ---------------------- | --------------- | --------------------- |
+| create Membership  | `memberships.create`   | `created`       | `membership.create`   |
+| suspend Membership | `memberships.update`   | `updated`       | `membership.suspend`  |
+| revoke Membership  | `memberships.delete`   | `deleted`       | `membership.revoke`   |
+| bind RoleBinding   | `role-bindings.bind`   | `created`       | `role_binding.bind`   |
+| revoke RoleBinding | `role-bindings.delete` | `deleted`       | `role_binding.revoke` |
+
+Ordinary mutation rejects platform scope and `platform.admin`; that binding remains reserved for a separately
+reviewed audited bootstrap function. Create/bind rejects an expiry at or before the operation clock. Membership
+revoke is terminal, suspend accepts only active state, RoleBinding revoke accepts only active state, and no
+resume/update-scope/update-subject operation is implied. Impl-3 still adds no HTTP handler, public wire shape,
+idempotency/operation/outbox table, external-PDP allow, production credential or production database write.
 
 ## 8. Required faults
 
