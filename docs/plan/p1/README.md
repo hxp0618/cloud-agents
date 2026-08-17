@@ -4,7 +4,8 @@
 - Fixed decisions：[`ADR-0007`](../adr/0007-p1-contract-data-toolchain-foundation.md)、
   [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)、
   [`ADR-0009`](../adr/0009-p1-migration-bundle-runner.md)、
-  [`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)
+  [`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)、
+  [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -53,10 +54,10 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.2 Membership/RBAC contract/authority entry；`bbb0bf2` 已让 exported `ProjectCatalog` 仅对
-  complete opaque verified subject 成功，`401206a` 完成 source-bound supply refresh，独立 review 再以
-  P0/P1/P2=`0/0/0` 关闭 A2.1b-impl-3 implementation/review；checked-in production catalog/CLI、production
-  trust root、数据库写入与 aggregate Gate 仍保持拒绝
+- Current slice：P1-A2.2-impl-2 data/evaluator；`f988e45` 已冻结 exact built-in role catalog v1、34 个显式
+  permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
+  当前尚未创建 RBAC tables 或 runtime evaluator，checked-in production catalog/CLI、production trust root、
+  数据库写入与 aggregate Gate 仍保持拒绝
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -88,6 +89,9 @@ Platform RC、Beta 或 GA。
 - [`postgres-catalog-independent-review-20260817.md`](postgres-catalog-independent-review-20260817.md)：固定
   `bbb0bf2 → 6e58e06 → 401206a` 的 A2.1b-impl-3 independent implementation review；P0/P1/P2=`0/0/0`，不构成
   immutable Gate signature
+- [`builtin-role-catalog-contract-20260817.md`](builtin-role-catalog-contract-20260817.md)：固定 `f988e45` 的
+  A2.2-impl-1 exact built-in role catalog v1、34 个显式 permission 与 Membership/RBAC authority contract；只关闭
+  contract/catalog 实现边界，不构成 runtime、PostgreSQL 或 immutable Gate evidence
 
 ## Data kernel decisions
 
@@ -98,6 +102,8 @@ Platform RC、Beta 或 GA。
 - [`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)：冻结 signed expected authority/catalog contract、
   version-neutral typed projection、snapshot/transaction 边界及 P1-A2.1a/P1-A2.1b 实施顺序；细化 verified
   authority binding，但不改变 schema ledger 或 Gate 语义。
+- [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)：冻结 Membership admission、RoleBinding explicit allow、
+  resolved request-scope containment、exact built-in role catalog、deny-only external PDP 与 A2.2 三切片顺序。
 
 ## Current admission durability evidence
 

@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-17
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（`ed37295` 已关闭 A2.1b-impl-1 ordinary catalog structure，`3b3f8f6` 已关闭 package-private A2.1b-impl-2 expression normalizer 与本地 PG15/16/17 same-bits，`bbb0bf2` 已关闭 opaque verified `ProjectCatalog` 与 PG15/16/17 × A/B × idle/borrowed × normal/race matrix，`401206a` 与 independent review 再关闭 A2.1b-impl-3 supply/review；当前进入 A2.2 Membership/RBAC contract/authority entry；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 均到达 current `EvidenceSession`；test-only authority 的 real ext4/xfs process-kill/clean-remount、isolated QEMU whole-guest power-cycle、object-publish 11-barrier、existing-generation-append 10-barrier、retained-generation-rotation 26-barrier、generation-activation 5-barrier、target-registration create 25-barrier/torn-prefix recovery 21-barrier、generation-header create 21-barrier/torn-prefix recovery 23-barrier 与 generation repair 21-barrier matrix 已通过；migration-owned generation-prefix pass-1/binder 在 `70269e1`/`7b52509` 闭合到 `RecoveredHeaderDurablePermit`，`cdedda7` 再闭合 exact adjacent activation 与 existing retained-lock handoff bridge；`a3c7651` 实现 required-syscall probe，`381b04a` 关闭 root-only trusted-mount provision/revoke 与 Linux production `Open`，`3fe05ec` 再关闭 public production `EvidenceSink`、full-root all-generation lock set 与真实 fresh ext4/XFS brand-new/registered/revocation cross-package matrix；runner/CLI configuration、runner/DB、physical controller power-loss 与 immutable Gates remain open）；M1/P2–P6 PAUSED
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（`ed37295` 已关闭 A2.1b-impl-1 ordinary catalog structure，`3b3f8f6` 已关闭 package-private A2.1b-impl-2 expression normalizer 与本地 PG15/16/17 same-bits，`bbb0bf2` 已关闭 opaque verified `ProjectCatalog` 与 PG15/16/17 × A/B × idle/borrowed × normal/race matrix，`401206a` 与 independent review 再关闭 A2.1b-impl-3 supply/review；`f988e45` 已关闭 A2.2-impl-1 exact built-in role catalog contract，当前进入 A2.2-impl-2 data/evaluator；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 均到达 current `EvidenceSession`；test-only authority 的 real ext4/xfs process-kill/clean-remount、isolated QEMU whole-guest power-cycle、object-publish 11-barrier、existing-generation-append 10-barrier、retained-generation-rotation 26-barrier、generation-activation 5-barrier、target-registration create 25-barrier/torn-prefix recovery 21-barrier、generation-header create 21-barrier/torn-prefix recovery 23-barrier 与 generation repair 21-barrier matrix 已通过；migration-owned generation-prefix pass-1/binder 在 `70269e1`/`7b52509` 闭合到 `RecoveredHeaderDurablePermit`，`cdedda7` 再闭合 exact adjacent activation 与 existing retained-lock handoff bridge；`a3c7651` 实现 required-syscall probe，`381b04a` 关闭 root-only trusted-mount provision/revoke 与 Linux production `Open`，`3fe05ec` 再关闭 public production `EvidenceSink`、full-root all-generation lock set 与真实 fresh ext4/XFS brand-new/registered/revocation cross-package matrix；runner/CLI configuration、runner/DB、physical controller power-loss 与 immutable Gates remain open）；M1/P2–P6 PAUSED
 
 ## 1. 决策表
 
@@ -45,6 +45,7 @@
 | D-035 | P1 固定 global-table allowlist、三数据库角色、transaction-local tenant GUC 与 migration manifest                            | APPROVED | ADR-0008；首条公共 migration 前冻结                                              |
 | D-036 | Schema/bootstrap/manifest/runner digest 分离；runner 只消费外部验签的 expected artifact                                     | APPROVED | ADR-0009；避免同 head 安全修复伪造 migration                                     |
 | D-037 | PostgreSQL authority/catalog 使用 signed expected contract 与 version-neutral typed projection，并按 P1-A2.1a/P1-A2.1b 拆分 | APPROVED | ADR-0010；细化 verified authority binding，不改变 schema ledger、Gate 或发布语义 |
+| D-038 | Membership admission + RoleBinding explicit allow；role version exact、future permission 不扩张、PDP deny-only              | APPROVED | ADR-0011；A2.2 分 contract/catalog、data/evaluator、mutation/matrix 三切片       |
 
 ## 2. 阶段追踪
 
@@ -156,6 +157,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       A2.1b-impl-1 ordinary catalog structure 与 impl-2 expression 又由 `ed37295`、`3b3f8f6` 完成；`bbb0bf2`
       再完成 opaque verified `ProjectCatalog` 与完整本地 matrix；`401206a` 与 independent review 已关闭
       A2.1b-impl-3 implementation/review，当前进入 A2.2 Membership/RBAC contract/authority entry。
+- [x] ADR-0011 冻结 Membership→RoleBinding→resolved request scope 的 default-deny authority、built-in role catalog
+      v1 exact permission sets、deny-only external PDP 与 A2.2 三切片顺序；`f988e45` 已关闭
+      [impl-1 contract/catalog](../p1/builtin-role-catalog-contract-20260817.md)，当前进入 impl-2 data/evaluator。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
