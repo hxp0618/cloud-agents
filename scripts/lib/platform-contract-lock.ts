@@ -43,6 +43,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/000003_expand_membership_rbac.sql",
   "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
   "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
+  "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",

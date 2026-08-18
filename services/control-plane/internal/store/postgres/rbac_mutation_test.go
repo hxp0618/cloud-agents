@@ -195,6 +195,23 @@ func TestRBACMutationServiceDenialAndInputAreFailClosed(t *testing.T) {
 	if !errors.Is(err, ErrMutationInvalidInput) || pool.acquireCalls != 0 {
 		t.Fatalf("invalid mutation error/acquires = %v/%d", err, pool.acquireCalls)
 	}
+	for _, invalidIssuer := range []string{"https://identity.example.test/%zz", "https://identity.example.test/\ncontrol"} {
+		invalidSubject := actor
+		invalidSubject.Issuer = invalidIssuer
+		membershipResult, membershipErr := invalidService.CreateMembership(context.Background(), tenantID, actor, CreateMembershipInput{
+			ExpectedTenantRevision: 7, MembershipUID: "membership-invalid-issuer", MembershipName: "membership-invalid-issuer",
+			Subject: invalidSubject, Scope: authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-invalid-issuer", ReasonCode: "operator-request",
+		})
+		bindingResult, bindingErr := invalidService.BindRole(context.Background(), tenantID, actor, BindRoleInput{
+			ExpectedTenantRevision: 7, RoleBindingUID: "binding-invalid-issuer", RoleBindingName: "binding-invalid-issuer",
+			Subject: invalidSubject, RoleName: "tenant.admin", RoleVersion: 1,
+			Scope: authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-binding-invalid-issuer", ReasonCode: "operator-request",
+		})
+		if !errors.Is(membershipErr, ErrMutationInvalidInput) || membershipResult != (MutationResult{}) ||
+			!errors.Is(bindingErr, ErrMutationInvalidInput) || bindingResult != (MutationResult{}) || pool.acquireCalls != 0 {
+			t.Fatalf("invalid issuer %q results/errors/acquires = %#v/%v %#v/%v/%d", invalidIssuer, membershipResult, membershipErr, bindingResult, bindingErr, pool.acquireCalls)
+		}
+	}
 
 	canceledPool := &fakePool{}
 	canceledRunner := newTenantTransactionRunner(canceledPool, time.Second)

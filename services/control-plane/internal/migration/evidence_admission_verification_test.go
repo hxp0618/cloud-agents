@@ -82,13 +82,15 @@ func TestAdmissionGenerationVerificationClosesHistoricalFacts(t *testing.T) {
 	}
 
 	mutations := map[string]func(*admissionReplayGeneration){
-		"manifest":        func(v *admissionReplayGeneration) { v.header.manifestDigest = testDigest("pass2-manifest") },
-		"statement chain": func(v *admissionReplayGeneration) { v.verificationTerminals[0].statementChain[0] ^= 1 },
-		"retry bound":     func(v *admissionReplayGeneration) { v.verificationTerminals[0].attemptIndex = facts.maxAttempts + 1 },
-		"catalog":         func(v *admissionReplayGeneration) { v.verificationCatalogContract[0] ^= 1 },
-		"final catalog":   func(v *admissionReplayGeneration) { v.verificationFinals[0].preledgerCatalog[0] ^= 1 },
-		"commit":          func(v *admissionReplayGeneration) { v.verificationCommits[0].commitBody[0] ^= 1 },
-		"statement count": func(v *admissionReplayGeneration) { v.runtimeInspection.statementCounts[0]++ },
+		"manifest":           func(v *admissionReplayGeneration) { v.header.manifestDigest = testDigest("pass2-manifest") },
+		"header profile":     func(v *admissionReplayGeneration) { v.header.limitsProfile = EvidenceLimitsProfile },
+		"inspection profile": func(v *admissionReplayGeneration) { v.runtimeInspection.lineageQuotaProfile = EvidenceLimitsProfile },
+		"statement chain":    func(v *admissionReplayGeneration) { v.verificationTerminals[0].statementChain[0] ^= 1 },
+		"retry bound":        func(v *admissionReplayGeneration) { v.verificationTerminals[0].attemptIndex = facts.maxAttempts + 1 },
+		"catalog":            func(v *admissionReplayGeneration) { v.verificationCatalogContract[0] ^= 1 },
+		"final catalog":      func(v *admissionReplayGeneration) { v.verificationFinals[0].preledgerCatalog[0] ^= 1 },
+		"commit":             func(v *admissionReplayGeneration) { v.verificationCommits[0].commitBody[0] ^= 1 },
+		"statement count":    func(v *admissionReplayGeneration) { v.runtimeInspection.statementCounts[0]++ },
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -166,10 +168,19 @@ func admissionVerifiedGenerationFixture(t *testing.T, facts *admissionHistorical
 	if err != nil {
 		t.Fatal(err)
 	}
-	header := &admissionReplayHeaderFacts{manifestDigest: facts.manifestDigest, runnerProjectionDecisionDigest: facts.runnerProjectionDecisionDigest, schemaBundleDigest: facts.schemaBundleDigest, authorityProfileDigest: facts.authorityProfileDigest, authorityBindingDigest: facts.authorityBindingDigest}
+	counts := []uint64{uint64(len(subjects))}
+	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: facts.lineageQuotaProfile, maxAttempts: uint64(facts.maxAttempts), statementCounts: counts}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := &admissionReplayHeaderFacts{
+		manifestDigest: facts.manifestDigest, runnerProjectionDecisionDigest: facts.runnerProjectionDecisionDigest, schemaBundleDigest: facts.schemaBundleDigest,
+		authorityProfileDigest: facts.authorityProfileDigest, authorityBindingDigest: facts.authorityBindingDigest, limitsProfile: facts.lineageQuotaProfile,
+		reservedRecords: reservation.ReservedRecords, reservedBytes: reservation.ReservedBytes, reservedSegments: reservation.ReservedSegments,
+	}
 	return admissionReplayGeneration{
 		runnerProjectionDecisionDigest: facts.runnerProjectionDecisionDigest, schemaBundleDigest: facts.schemaBundleDigest, header: header,
-		runtimeInspection:           &admissionReplayRuntimeInspection{manifestDigest: facts.manifestDigest, schemaBundleDigest: facts.schemaBundleDigest, maxAttempts: uint64(facts.maxAttempts), statementCounts: []uint64{uint64(len(subjects))}},
+		runtimeInspection:           &admissionReplayRuntimeInspection{manifestDigest: facts.manifestDigest, schemaBundleDigest: facts.schemaBundleDigest, lineageQuotaProfile: facts.lineageQuotaProfile, maxAttempts: uint64(facts.maxAttempts), statementCounts: counts, reservation: reservation},
 		verificationCatalogContract: facts.catalogContractDigest[migration],
 		verificationTerminals:       []admissionReplayTerminalEvent{{migrationID: 1, attemptIndex: 1, statementCount: uint32(len(subjects)), lastStatementIndex: uint32(len(subjects) - 1), outcome: 1, flags: admissionTerminalHasFinal | admissionTerminalHasCommit | admissionTerminalHasStatements, terminalDigest: digestRaw(testDigest("pass2-terminal")), statementChain: chain}},
 		verificationFinals:          []admissionReplayTerminalFinal{{ordinal: 0, lastIntermediateRecord: digestRaw(testDigest("pass2-intermediate")), preledgerCatalog: facts.finalCatalogDigest[migration]}},

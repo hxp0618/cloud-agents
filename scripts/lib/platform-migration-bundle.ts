@@ -65,6 +65,7 @@ const SQL_PATHS = [
   `${ROOT}/000003_expand_membership_rbac.sql`,
   `${ROOT}/000004_expand_membership_rbac_mutations.sql`,
   `${ROOT}/000005_close_membership_binding_authority.sql`,
+  `${ROOT}/000006_close_subject_issuer_validation.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -75,6 +76,7 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000003.json`,
   `${ROOT}/catalog/schema-000004.json`,
   `${ROOT}/catalog/schema-000005.json`,
+  `${ROOT}/catalog/schema-000006.json`,
 ] as const;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
   "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23";
@@ -224,6 +226,7 @@ const DECLARED_IDENTITIES_000004 = [
   "function:unquoted:cloud_agents/unquoted:revoke_role_binding(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
 ] as const;
 const DECLARED_IDENTITIES_000005 = DECLARED_IDENTITIES_000004;
+const DECLARED_IDENTITIES_000006 = DECLARED_IDENTITIES_000005;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -283,7 +286,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000005",
+    schema_head: "000006",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -341,6 +344,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[5])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[6])!,
       }),
+      migrationEntry({
+        id: "000006",
+        name: "close_subject_issuer_validation",
+        predecessor: "000005",
+        schemaFrom: "000005",
+        sql: sqlArtifacts.get(SQL_PATHS[5])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[6])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[7])!,
+      }),
     ],
   };
   const schemaBundleDigest = migrationDigest({
@@ -373,7 +385,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     artifactRecord(path, files.get(path) ?? sqlBytes.get(path)!),
   );
   const manifestWithoutDigest: JsonObject = {
-    format_version: "cloud-agents-platform-migration-manifest/v1",
+    format_version: "cloud-agents-platform-migration-manifest/v2",
     schema_bundle: schemaBundle,
     schema_bundle_digest: schemaBundleDigest,
     bootstrap_bundle: bootstrapBundle,
@@ -390,6 +402,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
       lock_timeout_ms: 30000,
       idle_in_transaction_session_timeout_ms: 60000,
       max_attempts: 3,
+      lineage_quota_profile: "cloud-agents-platform-lineage-quota-profile/v2",
     },
     runtime_artifacts: runtimeArtifacts,
   };
@@ -489,6 +502,7 @@ export function validateCatalogStatementBindings(
     ["000003", generatedCatalogs.get(CATALOG_PATHS[4])!.source_descriptors!],
     ["000004", generatedCatalogs.get(CATALOG_PATHS[5])!.source_descriptors!],
     ["000005", generatedCatalogs.get(CATALOG_PATHS[6])!.source_descriptors!],
+    ["000006", generatedCatalogs.get(CATALOG_PATHS[7])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -496,6 +510,7 @@ export function validateCatalogStatementBindings(
     ["000003", DECLARED_IDENTITIES_000003],
     ["000004", DECLARED_IDENTITIES_000004],
     ["000005", DECLARED_IDENTITIES_000005],
+    ["000006", DECLARED_IDENTITIES_000006],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -1043,6 +1058,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000003 = typedIdentities(DECLARED_IDENTITIES_000003);
   const declared000004 = typedIdentities(DECLARED_IDENTITIES_000004);
   const declared000005 = typedIdentities(DECLARED_IDENTITIES_000005);
+  const declared000006 = typedIdentities(DECLARED_IDENTITIES_000006);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1093,7 +1109,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000002 = contract("000002", rawSources.slice(0, 2), declared000002);
   const schema000003 = contract("000003", rawSources.slice(0, 3), declared000003);
   const schema000004 = contract("000004", rawSources.slice(0, 4), declared000004);
-  const schema000005 = contract("000005", rawSources, declared000005);
+  const schema000005 = contract("000005", rawSources.slice(0, 5), declared000005);
+  const schema000006 = contract("000006", rawSources, declared000006);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1144,6 +1161,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[4], schema000003],
     [CATALOG_PATHS[5], schema000004],
     [CATALOG_PATHS[6], schema000005],
+    [CATALOG_PATHS[7], schema000006],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
@@ -2131,8 +2149,29 @@ function validateManifestShape(manifest: JsonObject): void {
     "runtime_artifacts",
     "manifest_digest",
   ]);
-  if (manifest.format_version !== "cloud-agents-platform-migration-manifest/v1")
+  if (manifest.format_version !== "cloud-agents-platform-migration-manifest/v2")
     throw new MigrationValidationError("MANIFEST_VERSION", String(manifest.format_version));
+  const policy = requiredObject(manifest.execution_policy);
+  assertKeys(policy, [
+    "statement_profile",
+    "catalog_profile",
+    "authority_contract",
+    "isolation_level",
+    "access_mode",
+    "postgres_major_min",
+    "postgres_major_max",
+    "statement_timeout_ms",
+    "lock_timeout_ms",
+    "idle_in_transaction_session_timeout_ms",
+    "max_attempts",
+    "lineage_quota_profile",
+  ]);
+  if (policy.lineage_quota_profile !== "cloud-agents-platform-lineage-quota-profile/v2") {
+    throw new MigrationValidationError(
+      "LINEAGE_QUOTA_PROFILE",
+      String(policy.lineage_quota_profile),
+    );
+  }
   for (const field of [
     "schema_bundle_digest",
     "bootstrap_bundle_digest",

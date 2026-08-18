@@ -15,6 +15,7 @@ import (
 
 const (
 	ManifestFormatVersion     = "cloud-agents-platform-migration-manifest/v1"
+	ManifestFormatVersionV2   = "cloud-agents-platform-migration-manifest/v2"
 	SchemaBundleFormatVersion = "cloud-agents-platform-schema-bundle/v1"
 	SchemaBundleDomain        = "cloud-agents-platform-schema-bundle/v1"
 	BootstrapBundleDomain     = "cloud-agents-platform-bootstrap-bundle/v1"
@@ -254,6 +255,7 @@ type ExecutionPolicy struct {
 	LockTimeoutMS                     uint64         `json:"lock_timeout_ms"`
 	IdleInTransactionSessionTimeoutMS uint64         `json:"idle_in_transaction_session_timeout_ms"`
 	MaxAttempts                       uint64         `json:"max_attempts"`
+	LineageQuotaProfile               string         `json:"lineage_quota_profile,omitempty"`
 }
 
 type Manifest struct {
@@ -308,8 +310,11 @@ func DecodeSchemaBundleDocument(data []byte) (*SchemaBundleDocument, error) {
 }
 
 func (manifest *Manifest) Validate(value JSONValue) error {
-	if manifest.FormatVersion != ManifestFormatVersion {
+	if manifest.FormatVersion != ManifestFormatVersion && manifest.FormatVersion != ManifestFormatVersionV2 {
 		return fail(CodeInvalidManifest, "manifest", "unsupported format_version", nil)
+	}
+	if err := manifest.ExecutionPolicy.ValidateForManifest(manifest.FormatVersion); err != nil {
+		return err
 	}
 	if err := manifest.SchemaBundle.Validate(); err != nil {
 		return err
@@ -321,9 +326,6 @@ func (manifest *Manifest) Validate(value JSONValue) error {
 		return err
 	}
 	if err := validateArtifacts(manifest.RuntimeArtifacts, true); err != nil {
-		return err
-	}
-	if err := manifest.ExecutionPolicy.Validate(); err != nil {
 		return err
 	}
 	object := value.(map[string]JSONValue)
@@ -462,10 +464,42 @@ func (policy ExecutionPolicy) Validate() error {
 	if policy.StatementProfile != "postgresql-ddl-v1" || policy.CatalogProfile != "cloud-agents-platform-catalog/v1" || policy.IsolationLevel != "serializable" || policy.AccessMode != "read_write" {
 		return fail(CodeUnsupported, "execution_policy", "unsupported execution profile", nil)
 	}
+	if policy.LineageQuotaProfile != "" && policy.LineageQuotaProfile != LineageQuotaProfileV2 {
+		return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "unsupported lineage quota profile", nil)
+	}
 	if policy.AuthorityContract.Path != "services/control-plane/migrations/catalog/authority-v1.json" || policy.PostgresMajorMin != 15 || policy.PostgresMajorMax != 17 || policy.StatementTimeoutMS != 300000 || policy.LockTimeoutMS != 30000 || policy.IdleInTransactionSessionTimeoutMS != 60000 || policy.MaxAttempts != 3 {
 		return fail(CodeInvalidManifest, "execution_policy", "manifest v1 authority, PostgreSQL range, timeout, or retry policy differs from the fixed profile", nil)
 	}
 	return policy.AuthorityContract.Validate()
+}
+
+func (policy ExecutionPolicy) ValidateForManifest(format string) error {
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	switch format {
+	case ManifestFormatVersion:
+		if policy.LineageQuotaProfile != "" {
+			return fail(CodeInvalidManifest, "execution_policy.lineage_quota_profile", "v1 manifests cannot select a new quota profile", nil)
+		}
+	case ManifestFormatVersionV2:
+		if policy.LineageQuotaProfile != LineageQuotaProfileV2 {
+			return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "manifest v2 requires the exact lineage quota profile", nil)
+		}
+	default:
+		return fail(CodeInvalidManifest, "manifest", "unsupported format_version", nil)
+	}
+	return nil
+}
+
+func (policy ExecutionPolicy) SelectedLineageQuotaProfile(format string) (string, error) {
+	if err := policy.ValidateForManifest(format); err != nil {
+		return "", err
+	}
+	if format == ManifestFormatVersion {
+		return EvidenceLimitsProfile, nil
+	}
+	return policy.LineageQuotaProfile, nil
 }
 
 func validateArtifacts(records []ArtifactRecord, sorted bool) error {

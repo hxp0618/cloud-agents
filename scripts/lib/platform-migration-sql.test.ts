@@ -15,6 +15,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "services/control-plane/migrations/000003_expand_membership_rbac.sql",
       "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
       "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
+      "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
     ].entries()) {
       const bytes = readFileSync(resolve(root, file));
       const statements = splitPostgresStatements(bytes);
@@ -27,7 +28,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
         ).toBe("postgresql-ddl-v1");
       }
     }
-    expect(counts).toEqual([20, 71, 46, 20, 1]);
+    expect(counts).toEqual([20, 71, 46, 20, 1, 1]);
   });
 
   it("ignores semicolons in comments, strings, identifiers and dollar bodies", () => {

@@ -29,6 +29,7 @@ const (
 // against exact SQL statement boundaries after runtime closure validation.
 type verifiedQuotaBundleFacts struct {
 	schemaBundleDigest  Digest
+	lineageQuotaProfile string
 	maxAttempts         uint64
 	statementCounts     []uint64
 	runtimeInputs       [32]byte
@@ -41,17 +42,19 @@ type verifiedQuotaBundleFacts struct {
 // the closed numeric input shared by verified admission and stored-history
 // contradiction checks.
 type quotaBundleArithmeticFacts struct {
-	maxAttempts     uint64
-	statementCounts []uint64
+	lineageQuotaProfile string
+	maxAttempts         uint64
+	statementCounts     []uint64
 }
 
 func bindVerifiedQuotaBundleFacts(manifest *Manifest, files map[string][]byte, runtimeInputs [32]byte, outerArtifactDigest Digest, outerArtifactSize uint64) (verifiedQuotaBundleFacts, error) {
-	maxAttempts, statementCounts, err := inspectQuotaBundleFacts(manifest, files)
+	profile, maxAttempts, statementCounts, err := inspectQuotaBundleFacts(manifest, files)
 	if err != nil {
 		return verifiedQuotaBundleFacts{}, err
 	}
 	facts := verifiedQuotaBundleFacts{
 		schemaBundleDigest:  manifest.SchemaBundleDigest,
+		lineageQuotaProfile: profile,
 		maxAttempts:         maxAttempts,
 		statementCounts:     statementCounts,
 		runtimeInputs:       runtimeInputs,
@@ -61,59 +64,71 @@ func bindVerifiedQuotaBundleFacts(manifest *Manifest, files map[string][]byte, r
 	if err := requireDigest("quota.schema_bundle_digest", facts.schemaBundleDigest); err != nil {
 		return verifiedQuotaBundleFacts{}, err
 	}
-	facts.canonical = quotaBundleFactsDigest(facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
+	facts.canonical = quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 	return facts, nil
 }
 
 // inspectQuotaBundleFacts performs strict bundle/SQL boundary inspection but
 // returns ordinary arithmetic inputs only. The verified binder above remains
 // the sole authority constructor.
-func inspectQuotaBundleFacts(manifest *Manifest, files map[string][]byte) (uint64, []uint64, error) {
+func inspectQuotaBundleFacts(manifest *Manifest, files map[string][]byte) (string, uint64, []uint64, error) {
 	if manifest == nil || manifest.ExecutionPolicy.MaxAttempts == 0 || len(manifest.SchemaBundle.Migrations) == 0 {
-		return 0, nil, quotaLimit("bundle facts are unavailable")
+		return "", 0, nil, quotaLimit("bundle facts are unavailable")
+	}
+	profile, err := manifest.ExecutionPolicy.SelectedLineageQuotaProfile(manifest.FormatVersion)
+	if err != nil {
+		return "", 0, nil, err
 	}
 	statementCounts := make([]uint64, len(manifest.SchemaBundle.Migrations))
 	for entryIndex, entry := range manifest.SchemaBundle.Migrations {
 		catalogRaw, ok := files[entry.CatalogContract.Path]
 		if !ok || uint64(len(catalogRaw)) != entry.CatalogContract.SizeBytes || DigestBytes(catalogRaw) != entry.CatalogContract.SHA256 {
-			return 0, nil, fail(CodeInvalidArtifact, entry.CatalogContract.Path, "quota catalog artifact differs from its descriptor", nil)
+			return "", 0, nil, fail(CodeInvalidArtifact, entry.CatalogContract.Path, "quota catalog artifact differs from its descriptor", nil)
 		}
 		contract, err := DecodeCatalogContract(catalogRaw)
 		if err != nil {
-			return 0, nil, err
+			return "", 0, nil, err
 		}
 		source, err := exactMigrationSource(contract.SourceDescriptors, entry.ID)
 		if err != nil {
-			return 0, nil, err
+			return "", 0, nil, err
 		}
 		if source.SQLSHA256 != entry.SQLArtifact.SHA256 {
-			return 0, nil, fail(CodeInvalidManifest, entry.ID, "quota source SQL digest differs from manifest", nil)
+			return "", 0, nil, fail(CodeInvalidManifest, entry.ID, "quota source SQL digest differs from manifest", nil)
 		}
 		sqlRaw, ok := files[entry.SQLArtifact.Path]
 		if !ok || uint64(len(sqlRaw)) != entry.SQLArtifact.SizeBytes || DigestBytes(sqlRaw) != entry.SQLArtifact.SHA256 {
-			return 0, nil, fail(CodeInvalidArtifact, entry.SQLArtifact.Path, "quota SQL artifact differs from its descriptor", nil)
+			return "", 0, nil, fail(CodeInvalidArtifact, entry.SQLArtifact.Path, "quota SQL artifact differs from its descriptor", nil)
 		}
 		statements, err := SplitPostgreSQLStatements(sqlRaw)
 		if err != nil {
-			return 0, nil, err
+			return "", 0, nil, err
 		}
 		if len(statements) == 0 || len(statements) != len(source.Statements) {
-			return 0, nil, fail(CodeInvalidSQL, entry.ID, "quota statement count differs from signed source descriptor", nil)
+			return "", 0, nil, fail(CodeInvalidSQL, entry.ID, "quota statement count differs from signed source descriptor", nil)
 		}
 		for index, statement := range statements {
 			descriptor := source.Statements[index]
 			if descriptor.Index != uint64(index) || descriptor.Start != uint64(statement.Start) || descriptor.End != uint64(statement.End) || descriptor.SHA256 != statement.SHA256 {
-				return 0, nil, fail(CodeInvalidSQL, entry.ID, "quota statement boundary differs from signed source descriptor", nil)
+				return "", 0, nil, fail(CodeInvalidSQL, entry.ID, "quota statement boundary differs from signed source descriptor", nil)
 			}
 		}
 		statementCounts[entryIndex] = uint64(len(statements))
 	}
-	return manifest.ExecutionPolicy.MaxAttempts, statementCounts, nil
+	return profile, manifest.ExecutionPolicy.MaxAttempts, statementCounts, nil
 }
 
-func quotaBundleFactsDigest(schema Digest, attempts uint64, counts []uint64, runtimeInputs [32]byte, outerArtifactDigest Digest, outerArtifactSize uint64) [32]byte {
+func quotaBundleFactsDigest(profile string, schema Digest, attempts uint64, counts []uint64, runtimeInputs [32]byte, outerArtifactDigest Digest, outerArtifactSize uint64) [32]byte {
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v1\x00"))
+	if profile == LineageQuotaProfileV2 {
+		h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v2\x00"))
+		h.Write([]byte(profile))
+		h.Write([]byte{0})
+	} else {
+		// Keep the v1 subject byte-for-byte identical: profile selection was not
+		// serialized by the historical bundle-facts digest.
+		h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v1\x00"))
+	}
 	h.Write([]byte(schema))
 	h.Write(runtimeInputs[:])
 	h.Write([]byte(outerArtifactDigest))
@@ -142,10 +157,11 @@ func (facts verifiedQuotaBundleFacts) valid() bool {
 			return false
 		}
 	}
-	return facts.canonical == quotaBundleFactsDigest(facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
+	return (facts.lineageQuotaProfile == EvidenceLimitsProfile || facts.lineageQuotaProfile == LineageQuotaProfileV2) && facts.canonical == quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 }
 
 type evidenceQuotaReservation struct {
+	lineageQuotaProfile       string
 	ReservedRecords           uint64
 	ReservedJournalBytes      uint64
 	ReservedSegments          uint32
@@ -153,6 +169,16 @@ type evidenceQuotaReservation struct {
 	ReservedIndexRecords      uint64
 	ReservedIndexBytes        uint64
 	ReservedBytes             uint64
+}
+
+// quotaReservationProfile keeps the pre-profile in-memory fixtures and
+// historical v1 reservation values byte-compatible while making every new
+// reservation carry the selected profile explicitly.
+func quotaReservationProfile(reservation evidenceQuotaReservation) string {
+	if reservation.lineageQuotaProfile == "" {
+		return EvidenceLimitsProfile
+	}
+	return reservation.lineageQuotaProfile
 }
 
 func calculateEvidenceQuotaReservation(facts verifiedQuotaBundleFacts, root *verifiedRootQuotaState) (evidenceQuotaReservation, error) {
@@ -173,7 +199,7 @@ func calculateEvidenceQuotaReservationForFacts(facts verifiedQuotaBundleFacts, r
 	if !rootFacts.valid() {
 		return evidenceQuotaReservation{}, filesystemFailure("quota-root", "root quota facts are invalid")
 	}
-	return calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{facts.maxAttempts, facts.statementCounts}, !rootFacts.targetIndexPresent)
+	return calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{facts.lineageQuotaProfile, facts.maxAttempts, facts.statementCounts}, !rootFacts.targetIndexPresent)
 }
 
 // calculateEvidenceQuotaReservationFromArithmeticFacts is authority-free
@@ -189,7 +215,11 @@ func calculateEvidenceQuotaReservationFromArithmeticFacts(facts quotaBundleArith
 			return evidenceQuotaReservation{}, quotaLimit("bundle facts are unavailable")
 		}
 	}
-	reservation := evidenceQuotaReservation{ReservedRecords: 1, ReservedJournalBytes: evidenceRecordFrameLimits[EvidenceRecordHeader], ReservedSegments: 1}
+	checkpointMaximum, profileErr := checkpointMaximumForProfile(facts.lineageQuotaProfile)
+	if profileErr != nil {
+		return evidenceQuotaReservation{}, quotaLimit("bundle lineage quota profile is unavailable")
+	}
+	reservation := evidenceQuotaReservation{lineageQuotaProfile: facts.lineageQuotaProfile, ReservedRecords: 1, ReservedJournalBytes: evidenceRecordFrameLimits[EvidenceRecordHeader], ReservedSegments: 1}
 	segmentRecords := uint64(1)
 	segmentBytes := evidenceRecordFrameLimits[EvidenceRecordHeader]
 	appendCaller := func(size uint64) error {
@@ -264,7 +294,7 @@ func calculateEvidenceQuotaReservationFromArithmeticFacts(facts quotaBundleArith
 			return evidenceQuotaReservation{}, err
 		}
 	}
-	checkpointBytes, overflow := quotaMul(lineageRecordFrameLimits[LineageRecordGenerationCheckpoint], reservation.ReservedCheckpointRecords)
+	checkpointBytes, overflow := quotaMul(checkpointMaximum, reservation.ReservedCheckpointRecords)
 	if overflow {
 		return evidenceQuotaReservation{}, quotaLimit("checkpoint reservation overflow")
 	}
@@ -431,7 +461,8 @@ func (bundle *RuntimeBundle) quotaFactsForAdmission() (verifiedQuotaBundleFacts,
 	if err != nil {
 		return verifiedQuotaBundleFacts{}, err
 	}
-	if !bundle.quotaFacts.valid() || bundle.quotaFacts.runtimeInputs != bundle.ownedInputs.canonical || bundle.quotaFacts.schemaBundleDigest != manifest.SchemaBundleDigest || bundle.quotaFacts.maxAttempts != manifest.ExecutionPolicy.MaxAttempts || bundle.quotaFacts.outerArtifactDigest != bundle.ownedInputs.outerArtifactDigest || bundle.quotaFacts.outerArtifactSize != bundle.ownedInputs.outerArtifactSize {
+	profile, profileErr := manifest.ExecutionPolicy.SelectedLineageQuotaProfile(manifest.FormatVersion)
+	if profileErr != nil || !bundle.quotaFacts.valid() || bundle.quotaFacts.lineageQuotaProfile != profile || bundle.quotaFacts.runtimeInputs != bundle.ownedInputs.canonical || bundle.quotaFacts.schemaBundleDigest != manifest.SchemaBundleDigest || bundle.quotaFacts.maxAttempts != manifest.ExecutionPolicy.MaxAttempts || bundle.quotaFacts.outerArtifactDigest != bundle.ownedInputs.outerArtifactDigest || bundle.quotaFacts.outerArtifactSize != bundle.ownedInputs.outerArtifactSize {
 		return verifiedQuotaBundleFacts{}, fail(CodeUntrusted, "evidence-quota", "bundle quota authority differs from owned runtime inputs", nil)
 	}
 	rebound, err := bindVerifiedQuotaBundleFacts(manifest, files, bundle.ownedInputs.canonical, bundle.ownedInputs.outerArtifactDigest, bundle.ownedInputs.outerArtifactSize)

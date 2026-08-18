@@ -489,7 +489,22 @@ func EncodeCanonicalEvidenceFrame(frame EvidenceFrame) ([]byte, error) {
 }
 
 func EncodeCanonicalLineageFrame(frame LineageIndexFrame) ([]byte, error) {
-	if err := checkEncodedFrameLimit(frame, maxLineageFrameBytes, lineageRecordFrameLimits[frame.RecordKind]); err != nil {
+	return encodeCanonicalLineageFrameForProfile(frame, EvidenceLimitsProfile)
+}
+
+func encodeCanonicalLineageFrameForProfile(frame LineageIndexFrame, profile string) ([]byte, error) {
+	if !validEvidenceLimitsProfile(profile) {
+		return nil, frameIOLimit("encode-frame", "lineage quota profile is unavailable")
+	}
+	recordMaximum := lineageRecordFrameLimits[frame.RecordKind]
+	if frame.RecordKind == LineageRecordGenerationCheckpoint {
+		var err error
+		recordMaximum, err = checkpointMaximumForProfile(profile)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := checkEncodedFrameLimit(frame, maxLineageFrameBytes, recordMaximum); err != nil {
 		return nil, err
 	}
 	if err := frame.Validate(); err != nil {

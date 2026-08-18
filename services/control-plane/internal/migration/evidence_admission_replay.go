@@ -559,6 +559,7 @@ type admissionReplayHeaderFacts struct {
 	manifestDigest, runnerReleaseDigest, schemaBundleDigest, authorityProfileDigest, authorityBindingDigest, quotaReservationDigest Digest
 	reservedRecords, reservedBytes                                                                                                  uint64
 	reservedSegments                                                                                                                uint32
+	limitsProfile                                                                                                                   string
 }
 type admissionReplayContinuation struct {
 	startAction, migrationID                                                        string
@@ -641,7 +642,7 @@ func expandAdmissionHeaderFacts(h admissionReplayHeaderFacts) (JournalHeader, er
 		OuterArtifactDigest: h.outerArtifactDigest, OuterArtifactSizeBytes: h.outerArtifactSize, DecisionRecoveryArtifactSHA256: h.recoveryArtifactDigest,
 		DecisionRecoveryArtifactSizeBytes: h.recoveryArtifactSize, ManifestDigest: h.manifestDigest, RunnerReleaseDigest: h.runnerReleaseDigest,
 		SchemaBundleDigest: h.schemaBundleDigest, AuthorityProfileDigest: h.authorityProfileDigest, AuthorityBindingDigest: h.authorityBindingDigest,
-		LimitsProfile: EvidenceLimitsProfile, QuotaReservationDigest: h.quotaReservationDigest, ReservedRecords: h.reservedRecords,
+		LimitsProfile: h.limitsProfile, QuotaReservationDigest: h.quotaReservationDigest, ReservedRecords: h.reservedRecords,
 		ReservedBytes: h.reservedBytes, ReservedSegments: h.reservedSegments,
 	}
 	if err := result.Validate(); err != nil {
@@ -788,6 +789,7 @@ type admissionReplayReference struct {
 
 type admissionReplayRuntimeInspection struct {
 	manifestDigest, schemaBundleDigest Digest
+	lineageQuotaProfile                string
 	maxAttempts                        uint64
 	statementCounts                    []uint64
 	reservation                        evidenceQuotaReservation
@@ -998,7 +1000,7 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 		if len(targets) == 0 || inspection == nil {
 			return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
 		}
-		withIndexHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{inspection.maxAttempts, inspection.statementCounts}, true)
+		withIndexHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: inspection.lineageQuotaProfile, maxAttempts: inspection.maxAttempts, statementCounts: inspection.statementCounts}, true)
 		if err != nil {
 			return admissionCorrupt("admission-inspection", "runtime bundle index-header reservation is invalid", err)
 		}
@@ -1007,8 +1009,12 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 		}
 		for _, target := range targets {
 			generation := target.generation
-			if generation.header == nil || inspection.manifestDigest != generation.header.manifestDigest || inspection.schemaBundleDigest != generation.schemaBundleDigest {
+			if generation.header == nil || !validEvidenceLimitsProfile(generation.header.limitsProfile) || inspection.lineageQuotaProfile != generation.header.limitsProfile || inspection.manifestDigest != generation.header.manifestDigest || inspection.schemaBundleDigest != generation.schemaBundleDigest {
 				return admissionCorrupt("admission-inspection", "runtime bundle differs from stored generation reservation", nil)
+			}
+			checkpointMaximum, profileErr := checkpointMaximumForProfile(generation.header.limitsProfile)
+			if profileErr != nil {
+				return admissionCorrupt("admission-inspection", "stored generation quota profile is invalid", profileErr)
 			}
 			reservation := inspection.reservation
 			ownsIndexHeader := false
@@ -1027,6 +1033,9 @@ func attachAdmissionInspections(transcript *admissionReplayTranscript) error {
 				consumedRecords, consumedBytes = 1, target.indexHeaderFramedBytes
 			}
 			for _, debit := range generation.indexDebits {
+				if debit.kind == LineageRecordGenerationCheckpoint && debit.framedBytes > checkpointMaximum {
+					return admissionCorrupt("admission-inspection", "stored checkpoint exceeds its generation quota profile", nil)
+				}
 				var err error
 				consumedRecords, err = admissionCheckedAdd(consumedRecords, 1)
 				if err != nil {
@@ -1604,7 +1613,7 @@ func cloneAdmissionContinuation(value *admissionReplayContinuation) *admissionRe
 }
 
 func compactAdmissionHeaderFacts(h JournalHeader) admissionReplayHeaderFacts {
-	return admissionReplayHeaderFacts{h.JournalIdentityDigest, h.ReleaseTrustDecisionDigest, h.RunnerProjectionDecisionDigest, h.ExecutionLineageDigest, h.OuterArtifactDigest, h.OuterArtifactSizeBytes, h.DecisionRecoveryArtifactSHA256, h.DecisionRecoveryArtifactSizeBytes, h.ManifestDigest, h.RunnerReleaseDigest, h.SchemaBundleDigest, h.AuthorityProfileDigest, h.AuthorityBindingDigest, h.QuotaReservationDigest, h.ReservedRecords, h.ReservedBytes, h.ReservedSegments}
+	return admissionReplayHeaderFacts{h.JournalIdentityDigest, h.ReleaseTrustDecisionDigest, h.RunnerProjectionDecisionDigest, h.ExecutionLineageDigest, h.OuterArtifactDigest, h.OuterArtifactSizeBytes, h.DecisionRecoveryArtifactSHA256, h.DecisionRecoveryArtifactSizeBytes, h.ManifestDigest, h.RunnerReleaseDigest, h.SchemaBundleDigest, h.AuthorityProfileDigest, h.AuthorityBindingDigest, h.QuotaReservationDigest, h.ReservedRecords, h.ReservedBytes, h.ReservedSegments, h.LimitsProfile}
 }
 
 func admissionGenerationReferences(lineage [32]byte, generation admissionReplayGeneration) []admissionObjectReference {
@@ -2070,15 +2079,15 @@ func inspectAdmissionRuntimeObject(raw []byte) (admissionReplayRuntimeInspection
 	if err != nil {
 		return admissionReplayRuntimeInspection{}, admissionCorrupt("admission-runtime-object", "registered runtime object is invalid", err)
 	}
-	maxAttempts, statementCounts, err := inspectQuotaBundleFacts(decoded.manifest, decoded.files)
+	profile, maxAttempts, statementCounts, err := inspectQuotaBundleFacts(decoded.manifest, decoded.files)
 	if err != nil {
 		return admissionReplayRuntimeInspection{}, admissionCorrupt("admission-runtime-object", "registered runtime quota facts are invalid", err)
 	}
-	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{maxAttempts, statementCounts}, false)
+	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: profile, maxAttempts: maxAttempts, statementCounts: statementCounts}, false)
 	if err != nil {
 		return admissionReplayRuntimeInspection{}, admissionCorrupt("admission-runtime-object", "registered runtime reservation is invalid", err)
 	}
-	return admissionReplayRuntimeInspection{decoded.manifest.ManifestDigest, decoded.manifest.SchemaBundleDigest, maxAttempts, append([]uint64(nil), statementCounts...), reservation}, nil
+	return admissionReplayRuntimeInspection{decoded.manifest.ManifestDigest, decoded.manifest.SchemaBundleDigest, profile, maxAttempts, append([]uint64(nil), statementCounts...), reservation}, nil
 }
 
 func inspectAdmissionRecoveryObject(raw []byte, digest Digest, size uint64) ([32]byte, Digest, Digest, error) {
@@ -2099,8 +2108,17 @@ func inspectAdmissionRecoveryObject(raw []byte, digest Digest, size uint64) ([32
 }
 
 func (i admissionReplayRuntimeInspection) digest() [32]byte {
+	if !validEvidenceLimitsProfile(i.lineageQuotaProfile) {
+		return [32]byte{}
+	}
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v1\x00"))
+	if i.lineageQuotaProfile == LineageQuotaProfileV2 {
+		h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v2\x00"))
+		writeAdmissionString(h, i.lineageQuotaProfile)
+	} else {
+		// Keep historical v1 inspection subjects byte-for-byte identical.
+		h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v1\x00"))
+	}
 	for _, digest := range []Digest{i.manifestDigest, i.schemaBundleDigest} {
 		h.Write([]byte(digest))
 	}
@@ -2515,6 +2533,7 @@ func writeAdmissionHeaderFacts(h interface{ Write([]byte) (int, error) }, value 
 	writeAdmissionUint(h, value.reservedRecords)
 	writeAdmissionUint(h, value.reservedBytes)
 	writeAdmissionUint(h, uint64(value.reservedSegments))
+	writeAdmissionString(h, value.limitsProfile)
 }
 
 func writeAdmissionSummary(h interface{ Write([]byte) (int, error) }, s evidenceJournalSummary) {

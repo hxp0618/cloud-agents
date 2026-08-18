@@ -7,6 +7,7 @@ import "fmt"
 // neither executable SQL bytes nor a StatementPlan exactness sentinel.
 type admissionHistoricalVerificationFacts struct {
 	maxAttempts                                                        uint32
+	lineageQuotaProfile                                                string
 	manifestDigest, runnerProjectionDecisionDigest, schemaBundleDigest Digest
 	authorityProfileDigest, authorityBindingDigest                     Digest
 	orderedMigrations                                                  []string
@@ -36,9 +37,14 @@ func buildHistoricalVerificationFacts(bundle *RuntimeBundle, bindings RunnerProj
 	if manifest.ExecutionPolicy.MaxAttempts == 0 || manifest.ExecutionPolicy.MaxAttempts > uint64(^uint32(0)) {
 		return nil, fail(CodeInvalidManifest, "admission-historical-verification", "historical retry bound is invalid", nil)
 	}
+	quotaProfile, err := manifest.ExecutionPolicy.SelectedLineageQuotaProfile(manifest.FormatVersion)
+	if err != nil {
+		return nil, err
+	}
 	facts := &admissionHistoricalVerificationFacts{
-		maxAttempts:    uint32(manifest.ExecutionPolicy.MaxAttempts),
-		manifestDigest: manifest.ManifestDigest, runnerProjectionDecisionDigest: bindings.runnerProjectionDecisionDigest,
+		maxAttempts:         uint32(manifest.ExecutionPolicy.MaxAttempts),
+		lineageQuotaProfile: quotaProfile,
+		manifestDigest:      manifest.ManifestDigest, runnerProjectionDecisionDigest: bindings.runnerProjectionDecisionDigest,
 		schemaBundleDigest: manifest.SchemaBundleDigest, authorityProfileDigest: bindings.authorityProfileDigest, authorityBindingDigest: bindings.authorityBindingDigest,
 		orderedMigrations:         make([]string, 0, len(manifest.SchemaBundle.Migrations)),
 		statementSubjects:         make(map[string][][32]byte, len(manifest.SchemaBundle.Migrations)),
@@ -95,7 +101,7 @@ func verifyAdmissionGeneration(generation *admissionReplayGeneration, facts *adm
 	}
 	header := generation.header
 	inspection := generation.runtimeInspection
-	if header.manifestDigest != facts.manifestDigest || generation.runnerProjectionDecisionDigest != facts.runnerProjectionDecisionDigest || generation.schemaBundleDigest != facts.schemaBundleDigest || header.runnerProjectionDecisionDigest != facts.runnerProjectionDecisionDigest || header.schemaBundleDigest != facts.schemaBundleDigest || header.authorityProfileDigest != facts.authorityProfileDigest || header.authorityBindingDigest != facts.authorityBindingDigest || inspection.manifestDigest != facts.manifestDigest || inspection.schemaBundleDigest != facts.schemaBundleDigest || inspection.maxAttempts != uint64(facts.maxAttempts) || len(inspection.statementCounts) != len(facts.orderedMigrations) {
+	if header.manifestDigest != facts.manifestDigest || header.limitsProfile != facts.lineageQuotaProfile || generation.runnerProjectionDecisionDigest != facts.runnerProjectionDecisionDigest || generation.schemaBundleDigest != facts.schemaBundleDigest || header.runnerProjectionDecisionDigest != facts.runnerProjectionDecisionDigest || header.schemaBundleDigest != facts.schemaBundleDigest || header.authorityProfileDigest != facts.authorityProfileDigest || header.authorityBindingDigest != facts.authorityBindingDigest || inspection.manifestDigest != facts.manifestDigest || inspection.lineageQuotaProfile != facts.lineageQuotaProfile || inspection.schemaBundleDigest != facts.schemaBundleDigest || inspection.maxAttempts != uint64(facts.maxAttempts) || len(inspection.statementCounts) != len(facts.orderedMigrations) {
 		return admissionCorrupt("admission-pass2", "historical generation differs from recovered authority", nil)
 	}
 	for index, migration := range facts.orderedMigrations {

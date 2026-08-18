@@ -184,7 +184,12 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
-    if (orReplace && (migrationId !== "000005" || tokens[3] !== "FUNCTION")) reject(tokens);
+    if (
+      orReplace &&
+      (!new Set(["000005", "000006"]).has(migrationId) || tokens[3] !== "FUNCTION")
+    ) {
+      reject(tokens);
+    }
     const kindOffset = orReplace ? 3 : 1;
     const targetOffset = orReplace ? 4 : 2;
     const kind = tokens[kindOffset];
@@ -241,14 +246,18 @@ export function classifyMigrationStatement(
     } else {
       reject(tokens);
     }
-    if (
-      orReplace &&
-      !new Set([
-        "function:unquoted:cloud_agents/unquoted:create_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
-        "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
-      ]).has(targetIdentity!)
-    ) {
-      reject(tokens);
+    if (orReplace) {
+      const expectedReplacement = new Map([
+        [
+          "000005",
+          "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+        ],
+        [
+          "000006",
+          "function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)",
+        ],
+      ]).get(migrationId);
+      if (targetIdentity !== expectedReplacement) reject(tokens);
     }
     return classification("CREATE", kind!, targetIdentity!, null);
   }

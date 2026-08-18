@@ -236,6 +236,10 @@ func (j *generationEvidenceJournal) prepareRotatedAppendLocked(cursor JournalCur
 	if j == nil || j.state == nil || len(inspected) < 2 || inspectedCandidate.RecordKind == EvidenceRecordHeader || cursor.previousRecordDigest == nil || cursor.segmentIndex == ^uint32(0) || uint32(len(j.state.segmentFacts)) != cursor.segmentIndex+1 || len(j.state.segmentFacts) >= int(j.reservation.ReservedSegments) || uint32(len(j.state.segmentFacts)) >= maxEvidenceReservedSegments {
 		return nil, fail(CodeEvidenceJournalLimitExceeded, "generation-journal-rotation", "candidate cannot enter another reserved segment", nil)
 	}
+	profile, ok := generationJournalLimitsProfile(j)
+	if !ok {
+		return nil, fail(CodeEvidenceRecoveryRequired, "generation-journal-rotation", "generation quota profile is unavailable", nil)
+	}
 	prefix := cloneProjectionValue(inspected[:len(inspected)-1])
 	baseHeader := prefix[0].Record.Header
 	if baseHeader == nil || baseHeader.SegmentIndex != 0 || !sameGenerationHeader(j.generation, *baseHeader) {
@@ -266,7 +270,7 @@ func (j *generationEvidenceJournal) prepareRotatedAppendLocked(cursor JournalCur
 	if err != nil {
 		return nil, err
 	}
-	headerCheckpoint, headerCheckpointFramed, err := buildGenerationJournalCheckpoint(j.generation, cursor, headerFrame, headerSummary)
+	headerCheckpoint, headerCheckpointFramed, err := buildGenerationJournalCheckpoint(j.generation, cursor, headerFrame, headerSummary, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +305,7 @@ func (j *generationEvidenceJournal) prepareRotatedAppendLocked(cursor JournalCur
 		headerCursor.valid.Store(false)
 		return nil, err
 	}
-	callerCheckpoint, callerCheckpointFramed, err := buildGenerationJournalCheckpoint(j.generation, headerCursor, callerFrame, callerSummary)
+	callerCheckpoint, callerCheckpointFramed, err := buildGenerationJournalCheckpoint(j.generation, headerCursor, callerFrame, callerSummary, profile)
 	if err != nil {
 		headerCursor.valid.Store(false)
 		return nil, err
@@ -363,7 +367,8 @@ func (j *generationEvidenceJournal) prepareRotatedAppendLocked(cursor JournalCur
 		return nil, err
 	}
 	p := &preparedGenerationJournalAppend{
-		frame: callerFrame, framed: callerFramed, checkpoint: callerCheckpoint, checkpointFramed: callerCheckpointFramed,
+		limitsProfile: profile,
+		frame:         callerFrame, framed: callerFramed, checkpoint: callerCheckpoint, checkpointFramed: callerCheckpointFramed,
 		nextCursor: nextCursor, previousRecovery: cloneRecoverySnapshot(j.state.recovery), recovery: recovery,
 		rotation: headerState,
 	}

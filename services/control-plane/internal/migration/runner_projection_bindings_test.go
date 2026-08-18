@@ -547,9 +547,16 @@ func exactPlanBundle(t *testing.T, schemaBundleDigest Digest, predecessor Catalo
 	authorityRaw := append([]byte(nil), authorityProfile.raw...)
 	authorityRecord := ArtifactRecord{Path: "services/control-plane/migrations/catalog/authority-v1.json", Mode: "100644", SizeBytes: uint64(len(authorityRaw)), SHA256: DigestBytes(authorityRaw)}
 	entry := MigrationEntry{ID: "000001", SQLArtifact: sqlRecord, CatalogContract: catalogRecord, PredecessorCatalogContract: cloneProjectionValue(predecessor)}
+	policy := ExecutionPolicy{
+		StatementProfile: "postgresql-ddl-v1", CatalogProfile: "cloud-agents-platform-catalog/v1", AuthorityContract: authorityRecord,
+		IsolationLevel: "serializable", AccessMode: "read_write", PostgresMajorMin: 15, PostgresMajorMax: 17,
+		StatementTimeoutMS: 300000, LockTimeoutMS: 30000, IdleInTransactionSessionTimeoutMS: 60000, MaxAttempts: 3,
+		LineageQuotaProfile: LineageQuotaProfileV2,
+	}
 	manifest := &Manifest{
+		FormatVersion:      ManifestFormatVersionV2,
 		SchemaBundleDigest: schemaBundleDigest,
-		ExecutionPolicy:    ExecutionPolicy{AuthorityContract: authorityRecord},
+		ExecutionPolicy:    policy,
 		SchemaBundle: SchemaBundle{
 			SchemaHead: "000001", ProjectionScopeAuthority: ProjectionScopeAuthority{
 				DefaultACLOwners: []string{MigrationOwnerRole}, ObjectCreatorClosure: []string{MigrationOwnerRole},

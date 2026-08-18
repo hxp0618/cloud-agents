@@ -303,7 +303,7 @@ func registeredGenerationReplayFixture(t *testing.T, frameCount int) (*verifiedA
 	}
 	migration := intent.MigrationID
 	facts := &admissionHistoricalVerificationFacts{
-		maxAttempts: witness.maxAttempts[migration], manifestDigest: header.ManifestDigest,
+		maxAttempts: witness.maxAttempts[migration], lineageQuotaProfile: header.LimitsProfile, manifestDigest: header.ManifestDigest,
 		runnerProjectionDecisionDigest: header.RunnerProjectionDecisionDigest, schemaBundleDigest: header.SchemaBundleDigest,
 		authorityProfileDigest: header.AuthorityProfileDigest, authorityBindingDigest: header.AuthorityBindingDigest,
 		orderedMigrations: []string{migration}, statementSubjects: map[string][][32]byte{migration: {statementSubject}},
@@ -315,7 +315,7 @@ func registeredGenerationReplayFixture(t *testing.T, frameCount int) (*verifiedA
 	if !validAdmissionRecoveryFacts(facts) {
 		t.Fatal("replay fixture facts are invalid")
 	}
-	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{uint64(facts.maxAttempts), []uint64{1}}, false)
+	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: EvidenceLimitsProfile, maxAttempts: uint64(facts.maxAttempts), statementCounts: []uint64{1}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func registeredGenerationReplayFixture(t *testing.T, frameCount int) (*verifiedA
 		verificationCommits: append([]admissionReplayTerminalCommit(nil), collector.commits...), verificationRetries: append([]admissionReplayTerminalRetry(nil), collector.retries...),
 		verificationResolutions: append([]admissionReplayTerminalResolution(nil), collector.resolutions...), verificationOpen: collector.openAttempt(),
 		verificationCatalogContract: collector.catalogContract,
-		runtimeInspection:           &admissionReplayRuntimeInspection{manifestDigest: header.ManifestDigest, schemaBundleDigest: header.SchemaBundleDigest, maxAttempts: uint64(facts.maxAttempts), statementCounts: []uint64{1}, reservation: reservation},
+		runtimeInspection:           &admissionReplayRuntimeInspection{manifestDigest: header.ManifestDigest, schemaBundleDigest: header.SchemaBundleDigest, lineageQuotaProfile: header.LimitsProfile, maxAttempts: uint64(facts.maxAttempts), statementCounts: []uint64{1}, reservation: reservation},
 	}
 	if err := verifyAdmissionGeneration(&generation, facts); err != nil {
 		t.Fatalf("fixture verification: %v", err)

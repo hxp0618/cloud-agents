@@ -82,7 +82,7 @@ func (r *GenerationReplayReady) BindRecovery(ctx context.Context, candidate Owne
 		return r.failRecovery(admissionCorrupt("generation-recovery-plan", "reserved generation plan is unavailable", nil), "generation-recovery-plan")
 	}
 	facts := cloneAdmissionHistoricalVerificationFacts(r.history.currentFacts)
-	if !validAdmissionRecoveryFacts(facts) || facts.runnerProjectionDecisionDigest != bindings.runnerProjectionDecisionDigest || facts.schemaBundleDigest != bindings.schemaBundleDigest || facts.manifestDigest != candidate.verifiedRun.manifestDigest || facts.authorityProfileDigest != bindings.authorityProfileDigest || facts.authorityBindingDigest != bindings.authorityBindingDigest {
+	if !validAdmissionRecoveryFacts(facts) || facts.lineageQuotaProfile != frames[0].Record.Header.LimitsProfile || facts.runnerProjectionDecisionDigest != bindings.runnerProjectionDecisionDigest || facts.schemaBundleDigest != bindings.schemaBundleDigest || facts.manifestDigest != candidate.verifiedRun.manifestDigest || facts.authorityProfileDigest != bindings.authorityProfileDigest || facts.authorityBindingDigest != bindings.authorityBindingDigest {
 		return r.failRecovery(fail(CodeEvidenceRecoveryRequired, "generation-recovery-facts", "admission-history verifier facts are unavailable", nil), "generation-recovery-facts")
 	}
 	generation := generationIdentity{candidate.owner, r.plan.reservedFrame.Record.Reserved.ExecutionLineageDigest, r.journal, bindings.runnerProjectionDecisionDigest, bindings.schemaBundleDigest}
@@ -190,7 +190,7 @@ func buildRegisteredBrandNewRecoveryWitness(planned *verifiedAdmissionRegistered
 		return nil, verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-recovery-facts", "registered successor facts are unavailable", nil)
 	}
 	facts, err := buildHistoricalVerificationFacts(planned.bundle, planned.bindings)
-	if err != nil || !validAdmissionRecoveryFacts(facts) || facts.manifestDigest != header.ManifestDigest || facts.runnerProjectionDecisionDigest != header.RunnerProjectionDecisionDigest || facts.schemaBundleDigest != header.SchemaBundleDigest || facts.authorityProfileDigest != header.AuthorityProfileDigest || facts.authorityBindingDigest != header.AuthorityBindingDigest {
+	if err != nil || !validAdmissionRecoveryFacts(facts) || facts.manifestDigest != header.ManifestDigest || facts.lineageQuotaProfile != header.LimitsProfile || facts.runnerProjectionDecisionDigest != header.RunnerProjectionDecisionDigest || facts.schemaBundleDigest != header.SchemaBundleDigest || facts.authorityProfileDigest != header.AuthorityProfileDigest || facts.authorityBindingDigest != header.AuthorityBindingDigest {
 		return nil, verifiedEvidenceChainWitness{}, verifiedRecoverySchemaWitness{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-recovery-facts", "registered successor facts differ from the durable header", nil)
 	}
 	chain, schema, err := buildBrandNewRecoveryWitnessFromFacts(
@@ -260,7 +260,13 @@ func admissionRecoveryFactsDigest(facts *admissionHistoricalVerificationFacts) [
 		return [32]byte{}
 	}
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-generation-recovery-facts/v1\x00"))
+	if facts.lineageQuotaProfile == LineageQuotaProfileV2 {
+		h.Write([]byte("cloud-agents-platform-generation-recovery-facts/v2\x00"))
+		writeAdmissionString(h, facts.lineageQuotaProfile)
+	} else {
+		// Historical v1 facts retain their exact digest subject.
+		h.Write([]byte("cloud-agents-platform-generation-recovery-facts/v1\x00"))
+	}
 	writeAdmissionUint(h, uint64(facts.maxAttempts))
 	for _, value := range []Digest{facts.manifestDigest, facts.runnerProjectionDecisionDigest, facts.schemaBundleDigest, facts.authorityProfileDigest, facts.authorityBindingDigest} {
 		writeAdmissionString(h, value.String())
@@ -286,7 +292,7 @@ func admissionRecoveryFactsDigest(facts *admissionHistoricalVerificationFacts) [
 }
 
 func validAdmissionRecoveryFacts(facts *admissionHistoricalVerificationFacts) bool {
-	if facts == nil || facts.maxAttempts == 0 || len(facts.orderedMigrations) == 0 || len(facts.ledgerRows) != len(facts.orderedMigrations) || len(facts.statementSubjects) != len(facts.orderedMigrations) || len(facts.finalCatalogDigest) != len(facts.orderedMigrations) || len(facts.catalogContractDigest) != len(facts.orderedMigrations) || len(facts.attemptPredecessorCatalog) != len(facts.orderedMigrations) {
+	if facts == nil || !validEvidenceLimitsProfile(facts.lineageQuotaProfile) || facts.maxAttempts == 0 || len(facts.orderedMigrations) == 0 || len(facts.ledgerRows) != len(facts.orderedMigrations) || len(facts.statementSubjects) != len(facts.orderedMigrations) || len(facts.finalCatalogDigest) != len(facts.orderedMigrations) || len(facts.catalogContractDigest) != len(facts.orderedMigrations) || len(facts.attemptPredecessorCatalog) != len(facts.orderedMigrations) {
 		return false
 	}
 	for _, value := range []Digest{facts.manifestDigest, facts.runnerProjectionDecisionDigest, facts.schemaBundleDigest, facts.authorityProfileDigest, facts.authorityBindingDigest} {

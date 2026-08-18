@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -120,6 +121,179 @@ func TestLineageCheckpointFramedLimitIsExact16KiB(t *testing.T) {
 	}
 	if err := validateFramedSizeLimit(maximum+1, maxLineageFrameBytes, maximum); err == nil {
 		t.Fatal("16 KiB + 1 accepted")
+	}
+}
+
+func TestLineageCheckpointFramedLimitIsProfileBound(t *testing.T) {
+	t.Parallel()
+	profiles := []struct {
+		name string
+		id   string
+		max  uint64
+	}{
+		{name: "v1", id: EvidenceLimitsProfile, max: 16 << 10},
+		{name: "v2", id: LineageQuotaProfileV2, max: v2GenerationCheckpointMaximum},
+	}
+	for _, profile := range profiles {
+		t.Run(profile.name, func(t *testing.T) {
+			got, err := checkpointMaximumForProfile(profile.id)
+			if err != nil || got != profile.max {
+				t.Fatalf("profile maximum=%d err=%v, want %d", got, err, profile.max)
+			}
+			if err := validateFramedSizeLimit(profile.max, maxLineageFrameBytes, profile.max); err != nil {
+				t.Fatalf("exact profile maximum rejected: %v", err)
+			}
+			if err := validateFramedSizeLimit(profile.max+1, maxLineageFrameBytes, profile.max); err == nil {
+				t.Fatal("profile maximum + 1 accepted")
+			}
+		})
+	}
+
+	// The generic decoder retains the historical 16 KiB physical ceiling. A
+	// v2 writer must still reject a valid checkpoint that fits that ceiling but
+	// exceeds the selected 4 KiB closed quota.
+	frames := fixtureArrayMembers(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"), "frames")
+	var oversized LineageIndexFrame
+	for _, raw := range frames {
+		var frame LineageIndexFrame
+		if _, err := DecodeStrict(raw, &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.RecordKind == LineageRecordGenerationCheckpoint {
+			oversized = frame
+			break
+		}
+	}
+	if oversized.Record.Checkpoint == nil {
+		t.Fatal("golden lineage fixture has no checkpoint")
+	}
+	oversized.Record.Checkpoint.RecoveryState = strings.Repeat("x", 5000)
+	var err error
+	oversized.RecordDigest, err = oversized.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1Framed, err := EncodeCanonicalLineageFrame(oversized)
+	if err != nil {
+		t.Fatalf("historical 16 KiB encoder rejected fixture: %v", err)
+	}
+	if uint64(len(v1Framed)) <= v2GenerationCheckpointMaximum || uint64(len(v1Framed)) > lineageRecordFrameLimits[LineageRecordGenerationCheckpoint] {
+		t.Fatalf("test checkpoint does not straddle profile ceilings: %d", len(v1Framed))
+	}
+	if _, err := encodeCanonicalLineageFrameForProfile(oversized, LineageQuotaProfileV2); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+		t.Fatalf("v2 oversized checkpoint was accepted: %v", err)
+	}
+}
+
+func TestProfileAwareCheckpointEncoderUsesInclusiveWireBoundary(t *testing.T) {
+	t.Parallel()
+	var base LineageIndexFrame
+	for _, raw := range fixtureArrayMembers(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"), "frames") {
+		var frame LineageIndexFrame
+		if _, err := DecodeStrict(raw, &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.RecordKind == LineageRecordGenerationCheckpoint {
+			base = frame
+			break
+		}
+	}
+	if base.Record.Checkpoint == nil {
+		t.Fatal("golden lineage fixture has no checkpoint")
+	}
+
+	// RecoveryState is an unconstrained, canonical string field. It gives this
+	// test a deterministic way to construct a valid frame at the exact wire
+	// boundary without weakening the typed checkpoint validator.
+	var exact LineageIndexFrame
+	var exactFramed []byte
+	for size := 0; size <= 16<<10; size++ {
+		candidate := cloneProjectionValue(base)
+		candidate.Record.Checkpoint.RecoveryState = strings.Repeat("x", size)
+		var err error
+		candidate.RecordDigest, err = candidate.ComputeDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		framed, err := EncodeCanonicalLineageFrame(candidate)
+		if err != nil {
+			continue
+		}
+		if len(framed) == int(v2GenerationCheckpointMaximum) {
+			exact, exactFramed = candidate, framed
+			break
+		}
+	}
+	if len(exactFramed) != int(v2GenerationCheckpointMaximum) {
+		t.Fatalf("could not construct an exact v2 checkpoint boundary: %d", len(exactFramed))
+	}
+	encoded, err := encodeCanonicalLineageFrameForProfile(exact, LineageQuotaProfileV2)
+	if err != nil || len(encoded) != int(v2GenerationCheckpointMaximum) {
+		t.Fatalf("exact v2 checkpoint was not accepted: len=%d err=%v", len(encoded), err)
+	}
+
+	plusOne := cloneProjectionValue(exact)
+	plusOne.Record.Checkpoint.RecoveryState += "x"
+	plusOne.RecordDigest, err = plusOne.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if framed, err := EncodeCanonicalLineageFrame(plusOne); err != nil || len(framed) != int(v2GenerationCheckpointMaximum)+1 {
+		t.Fatalf("test +1 frame did not cross the boundary: len=%d err=%v", len(framed), err)
+	}
+	if _, err := encodeCanonicalLineageFrameForProfile(plusOne, LineageQuotaProfileV2); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+		t.Fatalf("v2 checkpoint boundary +1 was accepted: %v", err)
+	}
+}
+
+func TestGeneratedV2CheckpointFullShapeFits4096(t *testing.T) {
+	t.Parallel()
+	migration := "000006"
+	attempt := uint32(3)
+	digests := []Digest{
+		testDigest("checkpoint-execution-lineage"), testDigest("checkpoint-journal"),
+		testDigest("checkpoint-runner"), testDigest("checkpoint-schema"),
+		testDigest("checkpoint-tail"), testDigest("checkpoint-intent"),
+		testDigest("checkpoint-intermediate"), testDigest("checkpoint-commit"),
+		testDigest("checkpoint-terminal"), testDigest("checkpoint-previous-attempt"),
+		testDigest("checkpoint-state"), testDigest("checkpoint-previous-checkpoint"),
+	}
+	gen := generationIdentity{
+		executionLineageDigest:         digests[0],
+		journalIdentityDigest:          digests[1],
+		runnerProjectionDecisionDigest: digests[2],
+		schemaBundleDigest:             digests[3],
+	}
+	previousIndex := digests[11]
+	checkpointSummary := evidenceJournalSummary{
+		recoveryState:                        "ambiguous_unresolved",
+		migrationID:                          &migration,
+		attemptIndex:                         &attempt,
+		lastStatementIntentRecordDigest:      digestPointer(digests[5]),
+		lastIntermediateEvidenceRecordDigest: digestPointer(digests[6]),
+		lastCommitIntentRecordDigest:         digestPointer(digests[7]),
+		lastTerminalDigest:                   digestPointer(digests[8]),
+		previousAttemptTerminalDigest:        digestPointer(digests[9]),
+		lastIntermediateStateDigest:          digestPointer(digests[10]),
+	}
+	cursor := JournalCursor{
+		generation:                       gen,
+		nextSequence:                     2,
+		previousRecordDigest:             digestPointer(digests[4]),
+		lineageIndexNextSequence:         7,
+		lineageIndexPreviousRecordDigest: previousIndex,
+		latestCheckpointRecordDigest:     digestPointer(previousIndex),
+	}
+	frame := EvidenceFrame{Sequence: 2, PreviousRecordDigest: digestPointer(digests[4]), RecordDigest: digests[4]}
+	_, framed, err := buildGenerationJournalCheckpoint(gen, cursor, frame, checkpointSummary, LineageQuotaProfileV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uint64(len(framed)) > v2GenerationCheckpointMaximum {
+		t.Fatalf("full generated v2 checkpoint exceeds 4096 bytes: %d", len(framed))
+	}
+	if len(framed) == 0 {
+		t.Fatal("generated v2 checkpoint was empty")
 	}
 }
 

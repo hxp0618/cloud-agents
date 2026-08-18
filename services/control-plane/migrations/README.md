@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000005`, under the migration advisory lock. Each
+   `000001` through `000006`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -90,6 +90,13 @@ silently alter this schema.
    exact-subject active, unexpired Membership that contains its scope. Candidate
    reads additionally require that Membership authority to predate the binding,
    so later Membership re-admission cannot reactivate a historical binding.
+9. `000006` preserves the exact bytes of all earlier migrations while replacing
+   only `subject_ref_digest(text,text,text)`. It makes the database mutation
+   boundary enforce the same non-normalizing absolute-URI lexical profile as the
+   Go `SubjectRef`: an ASCII letter begins the scheme, the remaining scheme bytes
+   are ASCII letters/digits/`+.-`, a colon terminates it, ASCII controls and DEL
+   are forbidden, and each percent sign has exactly two ASCII hexadecimal bytes.
+   Rejection happens before tenant revision allocation or durable mutation.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -143,11 +150,13 @@ forward migration and reviewed store path; A2.3 still owns durable
 operation/outbox coordination.
 
 The local conformance matrix always starts fresh exact PostgreSQL 15/16/17
-containers, applies all five migrations, seeds only deterministic tenant facts
+containers, applies all six migrations, seeds only deterministic tenant facts
 through the migration-owner role, and runs both the typed runtime authorization
 and five-operation mutation tests in normal and race modes. It also proves that
 runtime has no helper-function or direct DML authority and that neither PUBLIC
-nor bootstrap inherits mutation-function EXECUTE:
+nor bootstrap inherits mutation-function EXECUTE. Direct invalid-percent and
+ASCII-control issuer calls must fail without consuming a tenant revision or
+writing Membership, RoleBinding, resource-change, or audit facts:
 
 ```sh
 ./services/control-plane/scripts/test-membership-rbac-postgres-matrix.sh

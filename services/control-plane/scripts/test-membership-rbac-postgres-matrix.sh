@@ -134,7 +134,8 @@ SQL
     000002_expand_tenancy.sql \
     000003_expand_membership_rbac.sql \
     000004_expand_membership_rbac_mutations.sql \
-    000005_close_membership_binding_authority.sql; do
+    000005_close_membership_binding_authority.sql \
+    000006_close_subject_issuer_validation.sql; do
     docker exec -e PGPASSWORD="$test_password" "$active_container" \
       psql -X -v ON_ERROR_STOP=1 --single-transaction \
       -h 127.0.0.1 -U cag_migration -d cagtest \
@@ -336,6 +337,57 @@ SQL
   if [[ $cross_tenant_fault != *"ERROR:  membership create input is invalid"* ]]; then
     echo "Direct cross-tenant mutation did not fail closed:" >&2
     echo "$cross_tenant_fault" >&2
+    exit 1
+  fi
+
+  issuer_profile_faults=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'
+SELECT pg_catalog.set_config('cloud_agents.tenant_id', 'tenant-001', false);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-001', 6, 'fault-issuer-membership-percent', 'fault-issuer-membership-percent',
+    'user', 'https://identity.example.test/%zz', 'fault-issuer-percent',
+    'tenant', 'tenant-001', NULL,
+    'fault-audit-membership-percent', 'conformance'
+);
+SELECT * FROM cloud_agents.bind_role(
+    'tenant-001', 6, 'fault-issuer-binding-percent', 'fault-issuer-binding-percent',
+    'user', 'https://identity.example.test/%zz', 'fault-issuer-percent',
+    'tenant.admin', 1, 'tenant', 'tenant-001', NULL,
+    'fault-audit-binding-percent', 'conformance'
+);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-001', 6, 'fault-issuer-membership-short-percent', 'fault-issuer-membership-short-percent',
+    'user', 'https://identity.example.test/%a', 'fault-issuer-short-percent',
+    'tenant', 'tenant-001', NULL,
+    'fault-audit-membership-short-percent', 'conformance'
+);
+SELECT * FROM cloud_agents.create_membership(
+    'tenant-001', 6, 'fault-issuer-membership-control', 'fault-issuer-membership-control',
+    'user', E'https://identity.example.test/\ncontrol', 'fault-issuer-control',
+    'tenant', 'tenant-001', NULL,
+    'fault-audit-membership-control', 'conformance'
+);
+SELECT * FROM cloud_agents.bind_role(
+    'tenant-001', 6, 'fault-issuer-binding-control', 'fault-issuer-binding-control',
+    'user', E'https://identity.example.test/\ncontrol', 'fault-issuer-control',
+    'tenant.admin', 1, 'tenant', 'tenant-001', NULL,
+    'fault-audit-binding-control', 'conformance'
+);
+SQL
+  )
+  issuer_profile_error_count=$(awk \
+    'index($0, "ERROR:  subject reference is outside the closed mutation profile") { count++ } END { print count + 0 }' \
+    <<<"$issuer_profile_faults")
+  if [[ $issuer_profile_error_count -ne 5 ]]; then
+    echo "Closed subject issuer profile did not reject all direct mutation faults:" >&2
+    echo "$issuer_profile_faults" >&2
+    exit 1
+  fi
+  issuer_profile_state=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -q -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_migration -d cagtest \
+    -c "SET ROLE cloud_agents_migration_owner; SELECT current_revision, (SELECT count(*) FROM cloud_agents.memberships WHERE tenant_id='tenant-001' AND membership_uid LIKE 'fault-issuer-%'), (SELECT count(*) FROM cloud_agents.role_bindings WHERE tenant_id='tenant-001' AND role_binding_uid LIKE 'fault-issuer-%'), (SELECT count(*) FROM cloud_agents.resource_changes WHERE tenant_id='tenant-001' AND resource_uid LIKE 'fault-issuer-%'), (SELECT count(*) FROM cloud_agents.audit_facts WHERE tenant_id='tenant-001' AND audit_fact_uid LIKE 'fault-audit-%') FROM cloud_agents.tenant_resource_versions WHERE tenant_id='tenant-001' AND tenant_uid='tenant-001';")
+  if [[ $issuer_profile_state != "6|0|0|0|0" ]]; then
+    echo "Rejected subject issuer faults changed durable tenant state: $issuer_profile_state" >&2
     exit 1
   fi
 

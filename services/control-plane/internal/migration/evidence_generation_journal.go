@@ -388,9 +388,9 @@ func historicalSuccessorGenerationReservation(planned *verifiedAdmissionRegister
 	if err != nil {
 		return evidenceQuotaReservation{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-generation-journal-bind", "registered successor runtime closure is unavailable", nil)
 	}
-	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{maxAttempts: facts.maxAttempts, statementCounts: append([]uint64(nil), facts.statementCounts...)}, false)
+	reservation, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: facts.lineageQuotaProfile, maxAttempts: facts.maxAttempts, statementCounts: append([]uint64(nil), facts.statementCounts...)}, false)
 	header := planned.descriptor.header
-	if err != nil || reservation.ReservedRecords != header.ReservedRecords || reservation.ReservedBytes != header.ReservedBytes || reservation.ReservedSegments != header.ReservedSegments {
+	if err != nil || !validEvidenceLimitsProfile(facts.lineageQuotaProfile) || header.LimitsProfile != facts.lineageQuotaProfile || quotaReservationProfile(reservation) != header.LimitsProfile || reservation.ReservedRecords != header.ReservedRecords || reservation.ReservedBytes != header.ReservedBytes || reservation.ReservedSegments != header.ReservedSegments {
 		return evidenceQuotaReservation{}, fail(CodeEvidenceRecoveryRequired, "historical-successor-generation-journal-bind", "registered successor reservation differs from runtime closure", nil)
 	}
 	return reservation, nil
@@ -693,6 +693,7 @@ func (j *generationEvidenceJournal) Close(ctx context.Context) error {
 func (j *generationEvidenceJournal) evidenceJournalSealed() {}
 
 type preparedGenerationJournalAppend struct {
+	limitsProfile     string
 	frame             EvidenceFrame
 	framed            []byte
 	checkpoint        LineageIndexFrame
@@ -768,7 +769,11 @@ func (j *generationEvidenceJournal) prepareAppendLocked(cursor JournalCursor, re
 	if err != nil {
 		return nil, err
 	}
-	checkpoint, checkpointFramed, err := buildGenerationJournalCheckpoint(j.generation, cursor, frame, summary)
+	profile, ok := generationJournalLimitsProfile(j)
+	if !ok {
+		return nil, fail(CodeEvidenceRecoveryRequired, "generation-journal-append", "generation quota profile is unavailable", nil)
+	}
+	checkpoint, checkpointFramed, err := buildGenerationJournalCheckpoint(j.generation, cursor, frame, summary, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -788,7 +793,8 @@ func (j *generationEvidenceJournal) prepareAppendLocked(cursor JournalCursor, re
 		return nil, err
 	}
 	p := &preparedGenerationJournalAppend{
-		frame: frame, framed: framed, checkpoint: checkpoint, checkpointFramed: checkpointFramed,
+		limitsProfile: profile,
+		frame:         frame, framed: framed, checkpoint: checkpoint, checkpointFramed: checkpointFramed,
 		nextCursor: nextCursor, previousRecovery: cloneRecoverySnapshot(j.state.recovery), recovery: recovery,
 	}
 	p.journalRecords, err = admissionCheckedAdd(j.state.journalRecords, 1)
@@ -886,7 +892,7 @@ func inspectGenerationJournalRecord(record *OwnedEvidenceRecord, generation gene
 	return frames, chain, frame, nil
 }
 
-func buildGenerationJournalCheckpoint(generation generationIdentity, cursor JournalCursor, frame EvidenceFrame, summary evidenceJournalSummary) (LineageIndexFrame, []byte, error) {
+func buildGenerationJournalCheckpoint(generation generationIdentity, cursor JournalCursor, frame EvidenceFrame, summary evidenceJournalSummary, profile string) (LineageIndexFrame, []byte, error) {
 	checkpoint := GenerationCheckpoint{
 		ExecutionLineageDigest: generation.executionLineageDigest, JournalIdentityDigest: generation.journalIdentityDigest,
 		RunnerProjectionDecisionDigest: generation.runnerProjectionDecisionDigest, SchemaBundleDigest: generation.schemaBundleDigest,
@@ -907,7 +913,7 @@ func buildGenerationJournalCheckpoint(generation generationIdentity, cursor Jour
 	if err != nil || lineage.Validate() != nil {
 		return LineageIndexFrame{}, nil, invalidEvidence("generation-journal-checkpoint", "checkpoint frame is invalid")
 	}
-	framed, err := EncodeCanonicalLineageFrame(lineage)
+	framed, err := encodeCanonicalLineageFrameForProfile(lineage, profile)
 	if err != nil {
 		return LineageIndexFrame{}, nil, err
 	}
@@ -1278,6 +1284,7 @@ func generationEvidenceJournalDigest(j *generationEvidenceJournal) [32]byte {
 	writeAdmissionUint(h, j.runtimeReceipt.sizeBytes)
 	writeAdmissionString(h, string(j.recoveryReceipt.kind))
 	writeAdmissionUint(h, j.recoveryReceipt.sizeBytes)
+	writeAdmissionString(h, quotaReservationProfile(j.reservation))
 	for _, value := range []uint64{j.reservation.ReservedRecords, j.reservation.ReservedJournalBytes, uint64(j.reservation.ReservedSegments), j.reservation.ReservedCheckpointRecords, j.reservation.ReservedIndexRecords, j.reservation.ReservedIndexBytes, j.reservation.ReservedBytes} {
 		writeAdmissionUint(h, value)
 	}
@@ -1366,6 +1373,23 @@ func generationJournalHeader(j *generationEvidenceJournal) (JournalHeader, bool)
 	return header, header.Validate() == nil && sameGenerationHeader(j.generation, header)
 }
 
+func generationJournalLimitsProfile(j *generationEvidenceJournal) (string, bool) {
+	if j == nil {
+		return "", false
+	}
+	reservationProfile := quotaReservationProfile(j.reservation)
+	if !validEvidenceLimitsProfile(reservationProfile) {
+		return "", false
+	}
+	if header, ok := generationJournalHeader(j); ok {
+		if header.LimitsProfile != reservationProfile {
+			return "", false
+		}
+		return header.LimitsProfile, true
+	}
+	return reservationProfile, true
+}
+
 func validGenerationJournalReceiptPair(runtime VerifiedContentReceipt, recovery VerifiedDecisionRecoveryReceipt, owner *evidenceOwnerToken, header JournalHeader) bool {
 	if runtime.publication != nil || recovery.publication != nil {
 		return validRuntimeReceipt(runtime, owner, header.OuterArtifactDigest, header.OuterArtifactSizeBytes) && validDecisionRecoveryReceipt(recovery, owner, header.DecisionRecoveryArtifactSHA256, header.DecisionRecoveryArtifactSizeBytes) && runtime.publication.SameStore(recovery.publication)
@@ -1425,11 +1449,11 @@ func generationEvidenceJournalStateDigest(state *generationEvidenceJournalState)
 }
 
 func preparedGenerationJournalAppendDigest(value *preparedGenerationJournalAppend) [32]byte {
-	if value == nil || value.frame.Validate() != nil || value.checkpoint.Validate() != nil || value.frame.PreviousRecordDigest == nil || value.checkpoint.Record.Checkpoint == nil || len(value.framed) == 0 || len(value.checkpointFramed) == 0 || value.nextCursor.valid == nil || value.nextCursor.previousRecordDigest == nil || value.previousRecovery == nil || value.recovery == nil || value.recovery.tailDigest != value.frame.RecordDigest || *value.nextCursor.previousRecordDigest != value.frame.RecordDigest || value.nextCursor.latestCheckpointRecordDigest == nil || *value.nextCursor.latestCheckpointRecordDigest != value.checkpoint.RecordDigest || value.nextCursor.nextSequence != value.frame.Sequence+1 || value.nextCursor.lineageIndexNextSequence != value.checkpoint.Sequence+1 || value.nextCursor.lineageIndexPreviousRecordDigest != value.checkpoint.RecordDigest || value.checkpoint.Record.Checkpoint.JournalTailDigest != value.frame.RecordDigest || value.checkpoint.Record.Checkpoint.JournalNextSequence != value.frame.Sequence+1 {
+	if value == nil || !validEvidenceLimitsProfile(value.limitsProfile) || value.frame.Validate() != nil || value.checkpoint.Validate() != nil || value.frame.PreviousRecordDigest == nil || value.checkpoint.Record.Checkpoint == nil || len(value.framed) == 0 || len(value.checkpointFramed) == 0 || value.nextCursor.valid == nil || value.nextCursor.previousRecordDigest == nil || value.previousRecovery == nil || value.recovery == nil || value.recovery.tailDigest != value.frame.RecordDigest || *value.nextCursor.previousRecordDigest != value.frame.RecordDigest || value.nextCursor.latestCheckpointRecordDigest == nil || *value.nextCursor.latestCheckpointRecordDigest != value.checkpoint.RecordDigest || value.nextCursor.nextSequence != value.frame.Sequence+1 || value.nextCursor.lineageIndexNextSequence != value.checkpoint.Sequence+1 || value.nextCursor.lineageIndexPreviousRecordDigest != value.checkpoint.RecordDigest || value.checkpoint.Record.Checkpoint.JournalTailDigest != value.frame.RecordDigest || value.checkpoint.Record.Checkpoint.JournalNextSequence != value.frame.Sequence+1 {
 		return [32]byte{}
 	}
 	framed, frameErr := EncodeCanonicalEvidenceFrame(value.frame)
-	checkpointFramed, checkpointErr := EncodeCanonicalLineageFrame(value.checkpoint)
+	checkpointFramed, checkpointErr := encodeCanonicalLineageFrameForProfile(value.checkpoint, value.limitsProfile)
 	if frameErr != nil || checkpointErr != nil || string(framed) != string(value.framed) || string(checkpointFramed) != string(value.checkpointFramed) {
 		return [32]byte{}
 	}
@@ -1439,6 +1463,7 @@ func preparedGenerationJournalAppendDigest(value *preparedGenerationJournalAppen
 	}
 	h := sha256.New()
 	h.Write([]byte("cloud-agents-platform-prepared-generation-append/v1\x00"))
+	writeAdmissionString(h, value.limitsProfile)
 	if value.rotation == nil {
 		if value.previousRecovery.tailDigest != *value.frame.PreviousRecordDigest || value.frame.Sequence != previous.nextSequence || *value.frame.PreviousRecordDigest != *previous.previousRecordDigest || value.checkpoint.Sequence != previous.lineageIndexNextSequence || value.checkpoint.PreviousRecordDigest == nil || *value.checkpoint.PreviousRecordDigest != previous.lineageIndexPreviousRecordDigest || !equalDigestPointer(value.checkpoint.Record.Checkpoint.PreviousCheckpointRecordDigest, previous.latestCheckpointRecordDigest) {
 			return [32]byte{}
@@ -1474,7 +1499,7 @@ func writePreparedGenerationJournalRotation(h interface{ Write([]byte) (int, err
 		return false
 	}
 	headerFramed, headerErr := EncodeCanonicalEvidenceFrame(rotation.header)
-	headerCheckpointFramed, checkpointErr := EncodeCanonicalLineageFrame(rotation.headerCheckpoint)
+	headerCheckpointFramed, checkpointErr := encodeCanonicalLineageFrameForProfile(rotation.headerCheckpoint, value.limitsProfile)
 	if headerErr != nil || checkpointErr != nil || string(headerFramed) != string(rotation.headerFramed) || string(headerCheckpointFramed) != string(rotation.headerCheckpointFramed) || rotation.journalBytes > value.journalBytes || value.journalBytes-rotation.journalBytes != uint64(len(value.framed)) || rotation.segmentBytes > value.segmentBytes || value.segmentBytes-rotation.segmentBytes != uint64(len(value.framed)) || rotation.indexDebitBytes > value.indexDebitBytes || value.indexDebitBytes-rotation.indexDebitBytes != uint64(len(value.checkpointFramed)) {
 		return false
 	}

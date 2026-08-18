@@ -26,6 +26,7 @@ type VerifiedAdmissionHistory struct {
 	targetIndexRecords  uint64
 	targetIndexTail     Digest
 	currentFacts        *admissionHistoricalVerificationFacts
+	quotaProfile        string
 	rootFacts           rootQuotaUsageFacts
 	reservation         evidenceQuotaReservation
 	quotaAdmission      rootQuotaAdmission
@@ -267,6 +268,7 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 		target: target, fullSet: fullSet, transcriptCanonical: transcript.canonical,
 		targetState: targetState, targetHeader: targetHeader, targetIndexRecords: targetRecords, targetIndexTail: targetTail,
 		currentFacts: cloneAdmissionHistoricalVerificationFacts(currentFacts),
+		quotaProfile: quotaFacts.lineageQuotaProfile,
 		rootFacts:    rootFacts, reservation: reservation, quotaAdmission: quotaAdmission,
 		targetGeneration: cloneVerifiedAdmissionRegisteredGeneration(targetGeneration),
 	}
@@ -779,9 +781,27 @@ func admissionGenerationDescriptor(owner *evidenceOwnerToken, lineage admissionR
 
 func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 	h := sha256.New()
-	h.Write([]byte("cloud-agents-platform-verified-admission-history/v2\x00"))
 	if history == nil {
 		return [32]byte{}
+	}
+	profile := history.quotaProfile
+	if profile == "" {
+		// A pre-profile in-memory v1 history had no field at all. Keep its
+		// historical subject, but still bind the normalized reservation profile
+		// so a later v2 swap cannot leave the canonical digest unchanged.
+		profile = EvidenceLimitsProfile
+	}
+	if !validEvidenceLimitsProfile(profile) || quotaReservationProfile(history.reservation) != profile {
+		return [32]byte{}
+	}
+	if profile == LineageQuotaProfileV2 {
+		h.Write([]byte("cloud-agents-platform-verified-admission-history/v3\x00"))
+		writeAdmissionString(h, profile)
+		writeAdmissionString(h, quotaReservationProfile(history.reservation))
+	} else {
+		// Historical v1 history retained the v2 subject before the explicit
+		// profile field was introduced; do not rewrite that in-memory digest.
+		h.Write([]byte("cloud-agents-platform-verified-admission-history/v2\x00"))
 	}
 	h.Write(history.target[:])
 	h.Write(history.fullSet[:])
@@ -830,7 +850,7 @@ func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 }
 
 func validVerifiedAdmissionHistory(history *VerifiedAdmissionHistory, candidate OwnedCurrentCandidate) bool {
-	if history == nil || history.binding == nil || history.owner == nil || history.inventory == nil || !validOwnedCurrentCandidate(candidate) || history.owner != candidate.verifiedRun.currentDecision.owner || history.candidateBinding != candidate.binding || history.binding.owner != history.owner || history.binding.candidateBinding != candidate.binding || history.binding.inventory != history.inventory || history.binding.history != history || admissionRecoveryFactsDigest(history.currentFacts) == ([32]byte{}) || history.binding.canonical == ([32]byte{}) || history.binding.canonical != admissionHistoryDigest(history) || !history.rootFacts.valid() {
+	if history == nil || history.binding == nil || history.owner == nil || history.inventory == nil || !validOwnedCurrentCandidate(candidate) || !validEvidenceLimitsProfile(history.quotaProfile) || quotaReservationProfile(history.reservation) != history.quotaProfile || history.currentFacts == nil || history.currentFacts.lineageQuotaProfile != history.quotaProfile || history.owner != candidate.verifiedRun.currentDecision.owner || history.candidateBinding != candidate.binding || history.binding.owner != history.owner || history.binding.candidateBinding != candidate.binding || history.binding.inventory != history.inventory || history.binding.history != history || admissionRecoveryFactsDigest(history.currentFacts) == ([32]byte{}) || history.binding.canonical == ([32]byte{}) || history.binding.canonical != admissionHistoryDigest(history) || !history.rootFacts.valid() {
 		return false
 	}
 	requiresTargetGeneration := history.targetState != "" && history.targetState != admissionLineageEmpty

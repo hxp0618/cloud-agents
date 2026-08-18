@@ -12,8 +12,8 @@ import (
 func quotaFactsForTest(counts []uint64, attempts uint64) verifiedQuotaBundleFacts {
 	runtimeInputs := sha256.Sum256([]byte("owned-runtime-inputs"))
 	outer := []byte("owned-runtime-artifact")
-	facts := verifiedQuotaBundleFacts{schemaBundleDigest: DigestBytes([]byte("quota-schema")), maxAttempts: attempts, statementCounts: append([]uint64(nil), counts...), runtimeInputs: runtimeInputs, outerArtifactDigest: DigestBytes(outer), outerArtifactSize: uint64(len(outer))}
-	facts.canonical = quotaBundleFactsDigest(facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
+	facts := verifiedQuotaBundleFacts{schemaBundleDigest: DigestBytes([]byte("quota-schema")), lineageQuotaProfile: EvidenceLimitsProfile, maxAttempts: attempts, statementCounts: append([]uint64(nil), counts...), runtimeInputs: runtimeInputs, outerArtifactDigest: DigestBytes(outer), outerArtifactSize: uint64(len(outer))}
+	facts.canonical = quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 	return facts
 }
 
@@ -167,6 +167,33 @@ func TestEvidenceQuotaReservationExactFormula(t *testing.T) {
 	}
 }
 
+func TestEvidenceQuotaProfilesPreserveV1AndBoundV2CheckpointArithmetic(t *testing.T) {
+	t.Parallel()
+	legacy := quotaFactsForTest([]uint64{20, 71, 46, 20, 1}, 3)
+	legacyReservation, err := calculateEvidenceQuotaReservationForFacts(legacy, rootFactsForTest(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyReservation.ReservedRecords != 1003 || legacyReservation.ReservedJournalBytes != 158597120 || legacyReservation.ReservedSegments != 10 || legacyReservation.ReservedCheckpointRecords != 1002 || legacyReservation.ReservedIndexRecords != 1006 || legacyReservation.ReservedIndexBytes != 16711680 || legacyReservation.ReservedBytes != 175308800 {
+		t.Fatalf("historical v1 arithmetic drifted: %+v", legacyReservation)
+	}
+
+	v2 := legacy
+	v2.lineageQuotaProfile = LineageQuotaProfileV2
+	v2.canonical = quotaBundleFactsDigest(v2.lineageQuotaProfile, v2.schemaBundleDigest, v2.maxAttempts, v2.statementCounts, v2.runtimeInputs, v2.outerArtifactDigest, v2.outerArtifactSize)
+	v2Reservation, err := calculateEvidenceQuotaReservationForFacts(v2, rootFactsForTest(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpointDelta := uint64(16<<10-v2GenerationCheckpointMaximum) * legacyReservation.ReservedCheckpointRecords
+	if v2Reservation.ReservedRecords != legacyReservation.ReservedRecords || v2Reservation.ReservedJournalBytes != legacyReservation.ReservedJournalBytes || v2Reservation.ReservedSegments != legacyReservation.ReservedSegments || v2Reservation.ReservedCheckpointRecords != legacyReservation.ReservedCheckpointRecords || v2Reservation.ReservedIndexRecords != legacyReservation.ReservedIndexRecords || v2Reservation.ReservedIndexBytes+checkpointDelta != legacyReservation.ReservedIndexBytes || v2Reservation.ReservedBytes+checkpointDelta != legacyReservation.ReservedBytes {
+		t.Fatalf("v1/v2 profile arithmetic diverged outside checkpoint bytes: v1=%+v v2=%+v delta=%d", legacyReservation, v2Reservation, checkpointDelta)
+	}
+	if _, err := calculateEvidenceQuotaReservationForFacts(verifiedQuotaBundleFacts{lineageQuotaProfile: "future", maxAttempts: 1, statementCounts: []uint64{1}}, rootFactsForTest(t, nil)); err == nil {
+		t.Fatal("unknown quota profile was accepted by arithmetic")
+	}
+}
+
 func TestEvidenceQuotaRotationAndSegmentLimit(t *testing.T) {
 	// One statement/attempt consumes five caller records. Find a bounded shape
 	// that rotates and assert first-fit state exactly.
@@ -204,14 +231,14 @@ func TestCheckedInBundleQuotaReservationExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bundle.quotaFacts.valid() || bundle.quotaFacts.maxAttempts != 3 || len(bundle.quotaFacts.statementCounts) != 5 || bundle.quotaFacts.statementCounts[0] != 20 || bundle.quotaFacts.statementCounts[1] != 71 || bundle.quotaFacts.statementCounts[2] != 46 || bundle.quotaFacts.statementCounts[3] != 20 || bundle.quotaFacts.statementCounts[4] != 1 {
+	if !bundle.quotaFacts.valid() || bundle.quotaFacts.maxAttempts != 3 || len(bundle.quotaFacts.statementCounts) != 6 || bundle.quotaFacts.statementCounts[0] != 20 || bundle.quotaFacts.statementCounts[1] != 71 || bundle.quotaFacts.statementCounts[2] != 46 || bundle.quotaFacts.statementCounts[3] != 20 || bundle.quotaFacts.statementCounts[4] != 1 || bundle.quotaFacts.statementCounts[5] != 1 {
 		t.Fatalf("unexpected current facts: %+v", bundle.quotaFacts)
 	}
 	reservation, err := calculateEvidenceQuotaReservationForFacts(bundle.quotaFacts, rootFactsForTest(t, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reservation.ReservedSegments != 10 || reservation.ReservedRecords != 1003 || reservation.ReservedCheckpointRecords != 1002 || reservation.ReservedJournalBytes != 158597120 || reservation.ReservedIndexRecords != 1006 || reservation.ReservedIndexBytes != 16711680 || reservation.ReservedBytes != 175308800 {
+	if reservation.lineageQuotaProfile != LineageQuotaProfileV2 || reservation.ReservedSegments != 10 || reservation.ReservedRecords != 1018 || reservation.ReservedCheckpointRecords != 1017 || reservation.ReservedJournalBytes != 160169984 || reservation.ReservedIndexRecords != 1021 || reservation.ReservedIndexBytes != 4460544 || reservation.ReservedBytes != 164630528 {
 		t.Fatalf("checked-in reservation drift: %+v", reservation)
 	}
 	ownedFacts, err := bundle.quotaFactsForAdmission()
@@ -378,14 +405,14 @@ func TestTypedRuntimeArtifactInclusiveMaximumAndPlusOne(t *testing.T) {
 	facts := quotaFactsForTest([]uint64{1}, 1)
 	facts.outerArtifactDigest = DigestBytes(runtimeBytes)
 	facts.outerArtifactSize = uint64(len(runtimeBytes))
-	facts.canonical = quotaBundleFactsDigest(facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
+	facts.canonical = quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 	if _, err := quotaRuntimeObject(facts, VerifiedRuntimeArtifact{owner: owner, bytes: runtimeBytes, digest: facts.outerArtifactDigest, sizeBytes: facts.outerArtifactSize}); err != nil {
 		t.Fatalf("exact 64 MiB runtime rejected: %v", err)
 	}
 	runtimeBytes = append(runtimeBytes, 0)
 	facts.outerArtifactDigest = DigestBytes(runtimeBytes)
 	facts.outerArtifactSize = uint64(len(runtimeBytes))
-	facts.canonical = quotaBundleFactsDigest(facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
+	facts.canonical = quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 	if _, err := quotaRuntimeObject(facts, VerifiedRuntimeArtifact{owner: owner, bytes: runtimeBytes, digest: facts.outerArtifactDigest, sizeBytes: facts.outerArtifactSize}); !IsCode(err, CodeUntrusted) {
 		t.Fatalf("64 MiB + 1 runtime admitted: %v", err)
 	}

@@ -486,13 +486,14 @@ func TestHistoricalSuccessorGenerationReservationUsesRegisteredLineageArithmetic
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{maxAttempts: facts.maxAttempts, statementCounts: append([]uint64(nil), facts.statementCounts...)}, false)
+	want, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: facts.lineageQuotaProfile, maxAttempts: facts.maxAttempts, statementCounts: append([]uint64(nil), facts.statementCounts...)}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	descriptor.header.ReservedRecords = want.ReservedRecords
 	descriptor.header.ReservedBytes = want.ReservedBytes
 	descriptor.header.ReservedSegments = want.ReservedSegments
+	descriptor.header.LimitsProfile = facts.lineageQuotaProfile
 	planned := &verifiedAdmissionRegisteredGeneration{descriptor: descriptor, bundle: bundle}
 	got, err := historicalSuccessorGenerationReservation(planned)
 	if err != nil || got != want {
@@ -502,6 +503,7 @@ func TestHistoricalSuccessorGenerationReservationUsesRegisteredLineageArithmetic
 		"records":  func(header *JournalHeader) { header.ReservedRecords++ },
 		"bytes":    func(header *JournalHeader) { header.ReservedBytes++ },
 		"segments": func(header *JournalHeader) { header.ReservedSegments++ },
+		"profile":  func(header *JournalHeader) { header.LimitsProfile = EvidenceLimitsProfile },
 	} {
 		t.Run(name, func(t *testing.T) {
 			copyPlanned := *planned

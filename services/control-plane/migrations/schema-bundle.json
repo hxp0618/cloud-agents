@@ -2,7 +2,7 @@
   "format_version": "cloud-agents-platform-schema-bundle/v1",
   "schema_bundle": {
     "lineage": "cloud-agents-platform",
-    "schema_head": "000005",
+    "schema_head": "000006",
     "advisory_lock": {
       "domain": "cloud-agents-platform:migrations:v1",
       "derivation": "sha256-first-8-bytes-signed-big-endian-int64",
@@ -247,8 +247,43 @@
           "size_bytes": 101801,
           "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
         }
+      },
+      {
+        "id": "000006",
+        "name": "close_subject_issuer_validation",
+        "predecessor_id": "000005",
+        "phase": "expand",
+        "schema_from": "000005",
+        "schema_to": "000006",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+          "mode": "100644",
+          "size_bytes": 3061,
+          "sha256": "sha256:5b24e8462c90b7d430717ac746e00f999b21f21eae0fb855444379807c0b47e5"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000005.json",
+          "mode": "100644",
+          "size_bytes": 101801,
+          "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000006.json",
+          "mode": "100644",
+          "size_bytes": 102509,
+          "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449"
+        }
       }
     ]
   },
-  "schema_bundle_digest": "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484"
+  "schema_bundle_digest": "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec"
 }

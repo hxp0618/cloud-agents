@@ -10,6 +10,7 @@ const (
 	EvidenceJournalFormat            = "cloud-agents-platform-evidence-journal/v1"
 	EvidenceFrameFormat              = "cloud-agents-platform-evidence-journal-frame/v1"
 	EvidenceLimitsProfile            = "cloud-agents-platform-evidence-journal-limits/v1"
+	LineageQuotaProfileV2            = "cloud-agents-platform-lineage-quota-profile/v2"
 	LineageIndexFormat               = "cloud-agents-platform-lineage-index/v1"
 	LineageFrameFormat               = "cloud-agents-platform-lineage-index-frame/v1"
 	LineageLimitsProfile             = "cloud-agents-platform-lineage-index-limits/v1"
@@ -17,6 +18,7 @@ const (
 	LineageRecordDigestDomain        = "cloud-agents-platform-lineage-index-record/v1"
 	JournalIdentityDigestDomain      = "cloud-agents-platform-evidence-journal-identity/v1"
 	QuotaReservationDigestDomain     = "cloud-agents-platform-evidence-quota-reservation/v1"
+	QuotaReservationDigestDomainV2   = "cloud-agents-platform-evidence-quota-reservation/v2"
 	AmbiguousResolutionDigestDomain  = "cloud-agents-platform-ambiguous-resolution/v1"
 	LedgerPrefixDigestDomain         = "cloud-agents-platform-ledger-prefix/v1"
 	ExecutionLineageDigestDomain     = "cloud-agents-platform-execution-lineage/v1"
@@ -26,6 +28,7 @@ const (
 	maxEvidenceReservedBytes         = uint64(16 * 16 << 20)
 	maxEvidenceReservedSegments      = uint32(16)
 	maxDecisionRecoveryArtifactBytes = uint64(4 << 20)
+	v2GenerationCheckpointMaximum    = uint64(4 << 10)
 )
 
 var evidenceRecordFrameLimits = map[EvidenceRecordKind]uint64{
@@ -837,7 +840,7 @@ func validateLineageRecord(r LineageIndexRecord) error {
 }
 
 func (h JournalHeader) Validate() error {
-	if h.FormatVersion != EvidenceJournalFormat || h.LimitsProfile != EvidenceLimitsProfile {
+	if h.FormatVersion != EvidenceJournalFormat || !validEvidenceLimitsProfile(h.LimitsProfile) {
 		return invalidEvidence("header", "format or limits")
 	}
 	if e := requireEvidenceDigests(h.JournalIdentityDigest, h.ReleaseTrustDecisionDigest, h.RunnerProjectionDecisionDigest, h.ExecutionLineageDigest, h.OuterArtifactDigest, h.DecisionRecoveryArtifactSHA256, h.ManifestDigest, h.RunnerReleaseDigest, h.SchemaBundleDigest, h.AuthorityProfileDigest, h.AuthorityBindingDigest, h.QuotaReservationDigest); e != nil {
@@ -866,6 +869,21 @@ func (h JournalHeader) Validate() error {
 		return invalidEvidence("header", "journal identity digest mismatch")
 	}
 	return nil
+}
+
+func validEvidenceLimitsProfile(profile string) bool {
+	return profile == EvidenceLimitsProfile || profile == LineageQuotaProfileV2
+}
+
+func checkpointMaximumForProfile(profile string) (uint64, error) {
+	switch profile {
+	case EvidenceLimitsProfile:
+		return lineageRecordFrameLimits[LineageRecordGenerationCheckpoint], nil
+	case LineageQuotaProfileV2:
+		return v2GenerationCheckpointMaximum, nil
+	default:
+		return 0, invalidEvidence("checkpoint", "unknown lineage quota profile")
+	}
 }
 func (v ProjectionResultEvidence) Validate() error {
 	if e := v.Digest.Validate(); e != nil {
@@ -1102,6 +1120,10 @@ func ExecutionLineageDigest(header LineageIndexHeader) (Digest, error) {
 	return digestFlatDomain(ExecutionLineageDigestDomain, subject, "")
 }
 func QuotaReservationDigest(reserved GenerationReserved) (Digest, error) {
+	profile := reserved.PlannedSegment0Header.LimitsProfile
+	if !validEvidenceLimitsProfile(profile) {
+		return "", invalidEvidence("reserved", "unknown lineage quota profile")
+	}
 	subject := struct {
 		LimitsProfile                  string                      `json:"limits_profile"`
 		ExecutionLineageDigest         Digest                      `json:"execution_lineage_digest"`
@@ -1113,7 +1135,7 @@ func QuotaReservationDigest(reserved GenerationReserved) (Digest, error) {
 		ReservedSegments               uint32                      `json:"reserved_segments"`
 		Continuation                   *LineageContinuationContext `json:"continuation"`
 	}{
-		LimitsProfile:                  EvidenceLimitsProfile,
+		LimitsProfile:                  profile,
 		ExecutionLineageDigest:         reserved.ExecutionLineageDigest,
 		JournalIdentityDigest:          reserved.JournalIdentityDigest,
 		RunnerProjectionDecisionDigest: reserved.RunnerProjectionDecisionDigest,
@@ -1123,7 +1145,11 @@ func QuotaReservationDigest(reserved GenerationReserved) (Digest, error) {
 		ReservedSegments:               reserved.ReservedSegments,
 		Continuation:                   reserved.Continuation,
 	}
-	return digestFlatDomain(QuotaReservationDigestDomain, subject, "")
+	domain := QuotaReservationDigestDomain
+	if profile == LineageQuotaProfileV2 {
+		domain = QuotaReservationDigestDomainV2
+	}
+	return digestFlatDomain(domain, subject, "")
 }
 func LedgerPrefixDigest(rows []CommitIntentLedgerRow) (Digest, error) {
 	subject := struct {

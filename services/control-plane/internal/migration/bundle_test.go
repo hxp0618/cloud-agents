@@ -94,12 +94,15 @@ func TestDescriptorClassifierRejectsUnknownTargetIdentity(t *testing.T) {
 	}
 }
 
-func TestManifestV1FixedBootstrapAndExecutionPolicy(t *testing.T) {
+func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	t.Parallel()
 	raw := mustRead(t, filepath.Join(migrationRoot(t), "manifest.json"))
 	manifest, value, err := DecodeManifest(raw)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if manifest.FormatVersion != ManifestFormatVersionV2 || manifest.ExecutionPolicy.LineageQuotaProfile != LineageQuotaProfileV2 {
+		t.Fatalf("checked-in manifest did not select the exact v2 quota profile: format=%q profile=%q", manifest.FormatVersion, manifest.ExecutionPolicy.LineageQuotaProfile)
 	}
 	badBootstrap := *manifest
 	badBootstrap.BootstrapBundle.Artifacts = append([]ArtifactRecord(nil), manifest.BootstrapBundle.Artifacts...)
@@ -110,7 +113,57 @@ func TestManifestV1FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	badPolicy := *manifest
 	badPolicy.ExecutionPolicy.StatementTimeoutMS++
 	if err := badPolicy.Validate(value); !IsCode(err, CodeInvalidManifest) {
-		t.Fatalf("mutable manifest-v1 timeout was accepted: %v", err)
+		t.Fatalf("mutable manifest-v2 timeout was accepted: %v", err)
+	}
+	legacyPolicy := manifest.ExecutionPolicy
+	legacyPolicy.LineageQuotaProfile = ""
+	if err := legacyPolicy.ValidateForManifest(ManifestFormatVersion); err != nil {
+		t.Fatalf("legacy v1 policy was rejected: %v", err)
+	}
+	if profile, err := legacyPolicy.SelectedLineageQuotaProfile(ManifestFormatVersion); err != nil || profile != EvidenceLimitsProfile {
+		t.Fatalf("legacy v1 profile selection drifted: profile=%q err=%v", profile, err)
+	}
+	if err := manifest.ExecutionPolicy.ValidateForManifest(ManifestFormatVersion); !IsCode(err, CodeInvalidManifest) {
+		t.Fatalf("v2 profile was accepted under a v1 manifest: %v", err)
+	}
+	missingV2 := manifest.ExecutionPolicy
+	missingV2.LineageQuotaProfile = ""
+	if err := missingV2.ValidateForManifest(ManifestFormatVersionV2); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v2 manifest accepted an empty quota profile: %v", err)
+	}
+	unknown := manifest.ExecutionPolicy
+	unknown.LineageQuotaProfile = "cloud-agents-platform-lineage-quota-profile/future"
+	if err := unknown.ValidateForManifest(ManifestFormatVersionV2); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("unknown v2 quota profile was accepted: %v", err)
+	}
+
+	// Exercise the wire-compatibility boundary, not just the typed policy
+	// helper: a historical v1 manifest omits the new optional JSON member.
+	legacyObject := cloneJSONObject(value.(map[string]JSONValue))
+	legacyObject["format_version"] = ManifestFormatVersion
+	legacyPolicyValue, ok := legacyObject["execution_policy"].(map[string]JSONValue)
+	if !ok {
+		t.Fatal("manifest execution_policy is not an object")
+	}
+	legacyPolicyValue = cloneJSONObject(legacyPolicyValue)
+	delete(legacyPolicyValue, "lineage_quota_profile")
+	legacyObject["execution_policy"] = legacyPolicyValue
+	delete(legacyObject, "manifest_digest")
+	legacyCanonical, err := CanonicalJSON(legacyObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyObject["manifest_digest"] = string(DigestBytes(legacyCanonical))
+	legacyRaw, err := CanonicalJSON(legacyObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, _, err := DecodeManifest(legacyRaw)
+	if err != nil {
+		t.Fatalf("v1 manifest without the optional profile was rejected: %v", err)
+	}
+	if legacy.FormatVersion != ManifestFormatVersion || legacy.ExecutionPolicy.LineageQuotaProfile != "" {
+		t.Fatalf("legacy manifest was not retained as v1: format=%q profile=%q", legacy.FormatVersion, legacy.ExecutionPolicy.LineageQuotaProfile)
 	}
 }
 
@@ -220,16 +273,16 @@ func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
 func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
 	t.Parallel()
 	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
-	if manifest.SchemaBundleDigest != "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484" {
+	if manifest.SchemaBundleDigest != "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec" {
 		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
 	}
 	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
 		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
 	}
-	if manifest.ManifestDigest != "sha256:286824767ff87fb91260849a40aff95f15ce874698bc44fc8480689465f71a25" {
+	if manifest.ManifestDigest != "sha256:f3ccdc9498f136f7f11fc25435d26dd6f0f48fe5cdd046e89175ee2d05838f8c" {
 		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
 	}
-	if DigestBytes(runtimeTar) != "sha256:d7f7030684b8c5dab963a8a803a3d0c0d5415c263d3436bc5d38f5a711545b98" {
+	if DigestBytes(runtimeTar) != "sha256:65db6f34d51366a877a8a4d9d8e0a252627f689f53d61aff9c56856d753d57d5" {
 		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
 	}
 	authority := manifest.SchemaBundle.ProjectionScopeAuthority
@@ -481,7 +534,7 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 	}
 	authoritySQL := mustRead(t, filepath.Join(migrationRoot(t), "000005_close_membership_binding_authority.sql"))
 	authorityStatements, err := SplitPostgreSQLStatements(authoritySQL)
-	if err != nil || len(authorityStatements) != 6 {
+	if err != nil || len(authorityStatements) != 1 {
 		t.Fatalf("split exact authority closure migration: statements=%d err=%v", len(authorityStatements), err)
 	}
 	for _, statement := range authorityStatements {
@@ -489,7 +542,7 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("exact authority closure statement %d was rejected: %v", statement.Index, err)
 		}
-		if statement.Index == 0 && (plan.Command != "CREATE" || plan.ObjectKind != "FUNCTION" || !strings.Contains(plan.TargetIdentity, "/unquoted:create_membership(")) {
+		if statement.Index == 0 && (plan.Command != "CREATE" || plan.ObjectKind != "FUNCTION" || !strings.Contains(plan.TargetIdentity, "/unquoted:bind_role(")) {
 			t.Fatalf("replacement function classification drifted: %+v", plan)
 		}
 	}
@@ -498,16 +551,28 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 	}
 	driftedAuthoritySQL := bytes.Replace(
 		authoritySQL,
-		[]byte("CREATE OR REPLACE FUNCTION cloud_agents.create_membership("),
-		[]byte("CREATE OR REPLACE FUNCTION cloud_agents.unknown_membership("),
+		[]byte("CREATE OR REPLACE FUNCTION cloud_agents.bind_role("),
+		[]byte("CREATE OR REPLACE FUNCTION cloud_agents.unknown_binding("),
 		1,
 	)
 	driftedStatements, err := SplitPostgreSQLStatements(driftedAuthoritySQL)
-	if err != nil || len(driftedStatements) != 6 {
+	if err != nil || len(driftedStatements) != 1 {
 		t.Fatalf("split replacement target drift: statements=%d err=%v", len(driftedStatements), err)
 	}
 	if _, err := classifier.Classify(MigrationEntry{ID: "000005"}, driftedStatements[0]); !IsCode(err, CodeInvalidSQL) {
 		t.Fatalf("replacement function target escaped exact allowlist: %v", err)
+	}
+	issuerSQL := mustRead(t, filepath.Join(migrationRoot(t), "000006_close_subject_issuer_validation.sql"))
+	issuerStatements, err := SplitPostgreSQLStatements(issuerSQL)
+	if err != nil || len(issuerStatements) != 1 {
+		t.Fatalf("split exact issuer closure migration: statements=%d err=%v", len(issuerStatements), err)
+	}
+	issuerPlan, err := classifier.Classify(MigrationEntry{ID: "000006"}, issuerStatements[0])
+	if err != nil || issuerPlan.Command != "CREATE" || issuerPlan.ObjectKind != "FUNCTION" || !strings.Contains(issuerPlan.TargetIdentity, "/unquoted:subject_ref_digest(") {
+		t.Fatalf("issuer replacement function classification drifted: plan=%+v err=%v", issuerPlan, err)
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000005"}, issuerStatements[0]); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("issuer replacement escaped migration identity: %v", err)
 	}
 }
 
@@ -519,7 +584,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000005" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000006" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

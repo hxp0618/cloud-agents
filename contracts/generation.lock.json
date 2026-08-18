@@ -74,7 +74,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:4d0774604bbe8290ac728ccc3d7508b9f84bf47acaf77ab2c0b8f16013cbbb84",
+      "sourceManifestSha256": "sha256:28a1e8f22033c69f6f39b37d573059b97b34ce705868c149cf629d62edcbe1eb",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -88,7 +88,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:b429633196a67faf93194191bb58a3786387794f17dcae5c01d0d86bf74055ef",
+      "sourceManifestSha256": "sha256:4c993805c437f7895db9347022f8c098203d0c19ae545a1e86c5490655a1f17d",
       "sources": [
         "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
@@ -112,6 +112,7 @@
         "services/control-plane/migrations/000003_expand_membership_rbac.sql",
         "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
         "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
+        "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
@@ -124,6 +125,7 @@
         "services/control-plane/migrations/catalog/schema-000003.json",
         "services/control-plane/migrations/catalog/schema-000004.json",
         "services/control-plane/migrations/catalog/schema-000005.json",
+        "services/control-plane/migrations/catalog/schema-000006.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -210,7 +212,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:b429633196a67faf93194191bb58a3786387794f17dcae5c01d0d86bf74055ef",
+      "inputManifestSha256": "sha256:4c993805c437f7895db9347022f8c098203d0c19ae545a1e86c5490655a1f17d",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
@@ -234,6 +236,7 @@
         "services/control-plane/migrations/000003_expand_membership_rbac.sql",
         "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
         "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
+        "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
@@ -246,6 +249,7 @@
         "services/control-plane/migrations/catalog/schema-000003.json",
         "services/control-plane/migrations/catalog/schema-000004.json",
         "services/control-plane/migrations/catalog/schema-000005.json",
+        "services/control-plane/migrations/catalog/schema-000006.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -338,6 +342,11 @@
           "path": "services/control-plane/migrations/catalog/schema-000005.json",
           "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4",
           "sizeBytes": 101801
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/schema-000006.json",
+          "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449",
+          "sizeBytes": 102509
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/attempt-terminal-state-v1.json",
@@ -476,22 +485,22 @@
         },
         {
           "path": "services/control-plane/migrations/manifest.json",
-          "sha256": "sha256:10e537aca7799838406574833fcd4f3fe7d51ad80aa37597b591695bea398147",
-          "sizeBytes": 15435
+          "sha256": "sha256:3e491232916863f77302a9a07f519042443e043a5d3b1c2a29c847b01c0895ec",
+          "sizeBytes": 17500
         },
         {
           "path": "services/control-plane/migrations/schema-bundle.json",
-          "sha256": "sha256:42f4d02a85e37111f722851a034bd886c7a8666d7590887933cb7b4e58ab2202",
-          "sizeBytes": 10354
+          "sha256": "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336",
+          "sizeBytes": 11860
         }
       ],
       "outputSummary": {
-        "schemaBundleDigest": "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484",
+        "schemaBundleDigest": "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec",
         "bootstrapBundleDigest": "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
-        "manifestDigest": "sha256:286824767ff87fb91260849a40aff95f15ce874698bc44fc8480689465f71a25",
+        "manifestDigest": "sha256:f3ccdc9498f136f7f11fc25435d26dd6f0f48fe5cdd046e89175ee2d05838f8c",
         "runtimeTar": {
-          "sizeBytes": 501248,
-          "sha256": "sha256:d7f7030684b8c5dab963a8a803a3d0c0d5415c263d3436bc5d38f5a711545b98"
+          "sizeBytes": 611840,
+          "sha256": "sha256:65db6f34d51366a877a8a4d9d8e0a252627f689f53d61aff9c56856d753d57d5"
         },
         "bootstrapTar": {
           "sizeBytes": 32256,

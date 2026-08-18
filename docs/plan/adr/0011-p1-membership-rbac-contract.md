@@ -88,8 +88,12 @@ layer may accept caller-supplied replacement catalog bytes at runtime.
 
 `SubjectRef` identity is the existing exact RFC 8785 profile over `kind`, `issuer`, `subject`; issuer and
 subject remain case-sensitive and are never trimmed, normalized as URLs or mapped from a host-private
-identifier. The database stores the canonical subject digest plus the exact bounded fields required to
-recompute it. A digest alone never substitutes for the fields.
+identifier. Go and the database share one closed, non-normalizing issuer profile: an ASCII letter begins
+the scheme, zero or more ASCII letters/digits/`+.-` follow, a colon terminates the scheme, ASCII control
+bytes and DEL are forbidden, and every percent sign is followed by exactly two ASCII hexadecimal bytes.
+The database stores the canonical subject digest plus the exact bounded fields required to recompute it.
+A digest alone never substitutes for the fields, and rejected issuer bytes must not allocate a tenant
+revision or append resource/audit facts.
 
 A request is eligible for an allow only when all of the following are true in one tenant-bound read
 transaction:
@@ -213,7 +217,8 @@ At minimum the implementation matrix must reject:
 - unknown/wildcard/unregistered permissions and implicit future permission expansion;
 - missing, duplicate, reordered or drifted role catalog rows/permissions;
 - wrong role version/scope/state or `platform.admin` at non-platform scope;
-- subject field/digest mismatch, issuer case change and cross-tenant subject reuse;
+- subject field/digest mismatch, issuer case change, malformed percent escape, issuer ASCII control and
+  cross-tenant subject reuse;
 - missing/suspended/revoked/expired Membership or RoleBinding;
 - binding scope wider than Membership, request scope outside binding, caller-reported false ancestry;
 - duplicate live same-subject/scope records, revision/change-row mismatch and RLS bypass attempts;

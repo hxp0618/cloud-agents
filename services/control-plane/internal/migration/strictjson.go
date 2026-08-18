@@ -354,12 +354,24 @@ func validateRequiredFields(value JSONValue, targetType reflect.Type) error {
 		}
 		for index := 0; index < targetType.NumField(); index++ {
 			field := targetType.Field(index)
-			tag := strings.Split(field.Tag.Get("json"), ",")[0]
+			parts := strings.Split(field.Tag.Get("json"), ",")
+			tag := parts[0]
 			if tag == "" || tag == "-" {
 				continue
 			}
 			child, present := object[tag]
 			if !present {
+				for _, option := range parts[1:] {
+					if option == "omitempty" {
+						// An omitted field explicitly marked optional is still
+						// checked by the owning Validate method after decoding.
+						present = true
+						break
+					}
+				}
+				if present {
+					continue
+				}
 				return fail(CodeInvalidJSON, "typed-decode", fmt.Sprintf("required field %q is missing", tag), nil)
 			}
 			if err := validateRequiredFields(child, field.Type); err != nil {

@@ -184,7 +184,7 @@ func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *test
 		t.Fatalf("runtime inspection did not bind generation: %+v", got)
 	}
 	t.Run("brand-new-lineage-header-debit", func(t *testing.T) {
-		withHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{inspection.maxAttempts, inspection.statementCounts}, true)
+		withHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: inspection.lineageQuotaProfile, maxAttempts: inspection.maxAttempts, statementCounts: inspection.statementCounts}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -206,7 +206,7 @@ func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *test
 		}
 	})
 	t.Run("later-generation-cannot-claim-lineage-header", func(t *testing.T) {
-		withHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{inspection.maxAttempts, inspection.statementCounts}, true)
+		withHeader, err := calculateEvidenceQuotaReservationFromArithmeticFacts(quotaBundleArithmeticFacts{lineageQuotaProfile: inspection.lineageQuotaProfile, maxAttempts: inspection.maxAttempts, statementCounts: inspection.statementCounts}, true)
 		if err != nil {
 			t.Fatal(err)
 		}

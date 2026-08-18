@@ -190,7 +190,7 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 	targetOffset := 2
 	orReplace := len(tokens) > 4 && tokens[1] == "OR" && tokens[2] == "REPLACE"
 	if orReplace {
-		if migrationID != "000005" || tokens[3] != "FUNCTION" {
+		if !oneOf(migrationID, "000005", "000006") || tokens[3] != "FUNCTION" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		kindOffset = 3
@@ -241,12 +241,14 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 	if err != nil {
 		return StatementPlan{}, err
 	}
-	if orReplace && !oneOf(
-		resolved.TargetIdentity,
-		"function:unquoted:cloud_agents/unquoted:create_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
-		"function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
-	) {
-		return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+	if orReplace {
+		expectedReplacement := map[string]string{
+			"000005": "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+			"000006": "function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)",
+		}[migrationID]
+		if resolved.TargetIdentity != expectedReplacement {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
+		}
 	}
 	return resolved, nil
 }

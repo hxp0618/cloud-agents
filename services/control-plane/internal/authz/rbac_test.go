@@ -60,6 +60,35 @@ func TestSubjectRefCanonicalStringEscaping(t *testing.T) {
 	}
 }
 
+func TestSubjectRefIssuerUsesClosedAbsoluteURIProfile(t *testing.T) {
+	tests := []struct {
+		name   string
+		issuer string
+		valid  bool
+	}{
+		{name: "https", issuer: "https://identity.example.test/%7etenant", valid: true},
+		{name: "urn", issuer: "urn:cloud-agents:tenant-alpha", valid: true},
+		{name: "missing scheme", issuer: "identity.example.test", valid: false},
+		{name: "leading digit scheme", issuer: "1https://identity.example.test/", valid: false},
+		{name: "invalid percent escape", issuer: "https://identity.example.test/%zz", valid: false},
+		{name: "short percent escape", issuer: "https://identity.example.test/%a", valid: false},
+		{name: "newline", issuer: "https://identity.example.test/\ncontrol", valid: false},
+		{name: "delete", issuer: "https://identity.example.test/\x7fcontrol", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			subject := SubjectRef{Kind: "user", Issuer: test.issuer, Subject: "user-alpha"}
+			err := subject.Validate()
+			if test.valid && err != nil {
+				t.Fatalf("valid issuer rejected: %v", err)
+			}
+			if !test.valid && err == nil {
+				t.Fatal("invalid issuer accepted")
+			}
+		})
+	}
+}
+
 func TestBuiltinCatalogFixtureAndDrift(t *testing.T) {
 	catalog := builtinCatalogFixture(t)
 	if err := catalog.Validate(); err != nil {

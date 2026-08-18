@@ -1,8 +1,8 @@
 {
-  "format_version": "cloud-agents-platform-migration-manifest/v1",
+  "format_version": "cloud-agents-platform-migration-manifest/v2",
   "schema_bundle": {
     "lineage": "cloud-agents-platform",
-    "schema_head": "000005",
+    "schema_head": "000006",
     "advisory_lock": {
       "domain": "cloud-agents-platform:migrations:v1",
       "derivation": "sha256-first-8-bytes-signed-big-endian-int64",
@@ -247,10 +247,45 @@
           "size_bytes": 101801,
           "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
         }
+      },
+      {
+        "id": "000006",
+        "name": "close_subject_issuer_validation",
+        "predecessor_id": "000005",
+        "phase": "expand",
+        "schema_from": "000005",
+        "schema_to": "000006",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+          "mode": "100644",
+          "size_bytes": 3061,
+          "sha256": "sha256:5b24e8462c90b7d430717ac746e00f999b21f21eae0fb855444379807c0b47e5"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000005.json",
+          "mode": "100644",
+          "size_bytes": 101801,
+          "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000006.json",
+          "mode": "100644",
+          "size_bytes": 102509,
+          "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449"
+        }
       }
     ]
   },
-  "schema_bundle_digest": "sha256:a289a298b4f3358e1aceb53e54baee2851b907e520c2f97ebf14c2f2c306e484",
+  "schema_bundle_digest": "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec",
   "bootstrap_bundle": {
     "artifacts": [
       {
@@ -284,7 +319,8 @@
     "statement_timeout_ms": 300000,
     "lock_timeout_ms": 30000,
     "idle_in_transaction_session_timeout_ms": 60000,
-    "max_attempts": 3
+    "max_attempts": 3,
+    "lineage_quota_profile": "cloud-agents-platform-lineage-quota-profile/v2"
   },
   "runtime_artifacts": [
     {
@@ -316,6 +352,12 @@
       "mode": "100644",
       "size_bytes": 6550,
       "sha256": "sha256:9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b"
+    },
+    {
+      "path": "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+      "mode": "100644",
+      "size_bytes": 3061,
+      "sha256": "sha256:5b24e8462c90b7d430717ac746e00f999b21f21eae0fb855444379807c0b47e5"
     },
     {
       "path": "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
@@ -372,11 +414,17 @@
       "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
     },
     {
+      "path": "services/control-plane/migrations/catalog/schema-000006.json",
+      "mode": "100644",
+      "size_bytes": 102509,
+      "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449"
+    },
+    {
       "path": "services/control-plane/migrations/schema-bundle.json",
       "mode": "100644",
-      "size_bytes": 10354,
-      "sha256": "sha256:42f4d02a85e37111f722851a034bd886c7a8666d7590887933cb7b4e58ab2202"
+      "size_bytes": 11860,
+      "sha256": "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336"
     }
   ],
-  "manifest_digest": "sha256:286824767ff87fb91260849a40aff95f15ce874698bc44fc8480689465f71a25"
+  "manifest_digest": "sha256:f3ccdc9498f136f7f11fc25435d26dd6f0f48fe5cdd046e89175ee2d05838f8c"
 }

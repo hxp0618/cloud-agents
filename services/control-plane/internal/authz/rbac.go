@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -49,14 +48,54 @@ func (subject SubjectRef) Validate() error {
 	if !validUTF8Length(subject.Issuer, 1, 512) {
 		return fmt.Errorf("%w: subject issuer", ErrInvalidRequest)
 	}
-	issuer, err := url.Parse(subject.Issuer)
-	if err != nil || !issuer.IsAbs() {
+	if !validSubjectIssuer(subject.Issuer) {
 		return fmt.Errorf("%w: subject issuer URI", ErrInvalidRequest)
 	}
 	if !validUTF8Length(subject.Subject, 1, 256) {
 		return fmt.Errorf("%w: subject", ErrInvalidRequest)
 	}
 	return nil
+}
+
+// validSubjectIssuer is the closed absolute-URI lexical profile shared with
+// cloud_agents.subject_ref_digest. It deliberately does not normalize the
+// issuer: exact source bytes remain part of SubjectRef identity.
+func validSubjectIssuer(issuer string) bool {
+	colon := strings.IndexByte(issuer, ':')
+	if colon < 1 || !asciiAlpha(issuer[0]) {
+		return false
+	}
+	for index := 1; index < colon; index++ {
+		character := issuer[index]
+		if !asciiAlphaNumeric(character) && character != '+' && character != '-' && character != '.' {
+			return false
+		}
+	}
+	for index := 0; index < len(issuer); index++ {
+		character := issuer[index]
+		if character < 0x20 || character == 0x7f {
+			return false
+		}
+		if character == '%' {
+			if index+2 >= len(issuer) || !asciiHex(issuer[index+1]) || !asciiHex(issuer[index+2]) {
+				return false
+			}
+			index += 2
+		}
+	}
+	return true
+}
+
+func asciiAlpha(character byte) bool {
+	return character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z'
+}
+
+func asciiAlphaNumeric(character byte) bool {
+	return asciiAlpha(character) || character >= '0' && character <= '9'
+}
+
+func asciiHex(character byte) bool {
+	return character >= '0' && character <= '9' || character >= 'a' && character <= 'f' || character >= 'A' && character <= 'F'
 }
 
 func (subject SubjectRef) CanonicalBytes() ([]byte, error) {

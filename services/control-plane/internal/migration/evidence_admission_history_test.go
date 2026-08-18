@@ -75,6 +75,8 @@ func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 		func(v *VerifiedAdmissionHistory) { v.transcriptCanonical[0]++ }, func(v *VerifiedAdmissionHistory) { v.rootFacts.indexReservedBytes++ },
 		func(v *VerifiedAdmissionHistory) { v.targetState = admissionLineageEmpty }, func(v *VerifiedAdmissionHistory) { v.targetHeader.deploymentID = "drift" },
 		func(v *VerifiedAdmissionHistory) { v.targetIndexRecords++ }, func(v *VerifiedAdmissionHistory) { v.targetIndexTail = testDigest("history-tail") },
+		func(v *VerifiedAdmissionHistory) { v.quotaProfile = LineageQuotaProfileV2 },
+		func(v *VerifiedAdmissionHistory) { v.reservation.lineageQuotaProfile = LineageQuotaProfileV2 },
 		func(v *VerifiedAdmissionHistory) {
 			v.currentFacts = cloneAdmissionHistoricalVerificationFacts(v.currentFacts)
 			v.currentFacts.statementSubjects[v.currentFacts.orderedMigrations[0]][0][0]++
