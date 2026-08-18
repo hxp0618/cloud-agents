@@ -26,6 +26,7 @@ const (
 	BootstrapAdminRole        = "cloud_agents_bootstrap_admin"
 	RuntimeManifestPath       = "services/control-plane/migrations/manifest.json"
 	RuntimeSchemaBundlePath   = "services/control-plane/migrations/schema-bundle.json"
+	historicalV1MaxMigrations = 5
 )
 
 var (
@@ -313,11 +314,32 @@ func (manifest *Manifest) Validate(value JSONValue) error {
 	if manifest.FormatVersion != ManifestFormatVersion && manifest.FormatVersion != ManifestFormatVersionV2 {
 		return fail(CodeInvalidManifest, "manifest", "unsupported format_version", nil)
 	}
+	object, ok := value.(map[string]JSONValue)
+	if !ok {
+		return fail(CodeInvalidManifest, "manifest", "manifest must be an object", nil)
+	}
+	policyValue, ok := object["execution_policy"].(map[string]JSONValue)
+	if !ok {
+		return fail(CodeInvalidManifest, "execution_policy", "execution policy must be an object", nil)
+	}
+	_, quotaProfilePresent := policyValue["lineage_quota_profile"]
+	if manifest.FormatVersion == ManifestFormatVersion && quotaProfilePresent {
+		return fail(CodeInvalidManifest, "execution_policy.lineage_quota_profile", "v1 manifests must omit the quota profile", nil)
+	}
+	if manifest.FormatVersion == ManifestFormatVersionV2 && !quotaProfilePresent {
+		return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "manifest v2 requires the exact lineage quota profile", nil)
+	}
 	if err := manifest.ExecutionPolicy.ValidateForManifest(manifest.FormatVersion); err != nil {
 		return err
 	}
 	if err := manifest.SchemaBundle.Validate(); err != nil {
 		return err
+	}
+	// Manifest v1 is the frozen historical profile used through 000005. New
+	// schema entries must select a versioned manifest/profile pair rather than
+	// silently reusing the historical 16 KiB checkpoint reservation formula.
+	if manifest.FormatVersion == ManifestFormatVersion && len(manifest.SchemaBundle.Migrations) > historicalV1MaxMigrations {
+		return fail(CodeInvalidManifest, "schema_bundle.migrations", "v1 manifests cannot extend the historical five-entry bundle", nil)
 	}
 	if len(manifest.BootstrapBundle.Artifacts) != 2 || manifest.BootstrapBundle.Artifacts[0].Path != "services/control-plane/migrations/bootstrap/database.sql" || manifest.BootstrapBundle.Artifacts[1].Path != "services/control-plane/migrations/bootstrap/roles.sql" {
 		return fail(CodeInvalidManifest, "bootstrap_bundle", "manifest v1 requires exactly database.sql then roles.sql", nil)
@@ -328,7 +350,6 @@ func (manifest *Manifest) Validate(value JSONValue) error {
 	if err := validateArtifacts(manifest.RuntimeArtifacts, true); err != nil {
 		return err
 	}
-	object := value.(map[string]JSONValue)
 	schemaDigest, err := digestDomainObject(SchemaBundleDomain, "schema_bundle", object["schema_bundle"])
 	if err != nil {
 		return err

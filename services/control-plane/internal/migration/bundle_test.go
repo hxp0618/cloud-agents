@@ -138,9 +138,27 @@ func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	}
 
 	// Exercise the wire-compatibility boundary, not just the typed policy
-	// helper: a historical v1 manifest omits the new optional JSON member.
+	// helper: a historical v1 manifest omits the new optional JSON member and
+	// cannot carry schema entries added after the frozen five-entry profile.
 	legacyObject := cloneJSONObject(value.(map[string]JSONValue))
 	legacyObject["format_version"] = ManifestFormatVersion
+	legacySchemaValue, ok := legacyObject["schema_bundle"].(map[string]JSONValue)
+	if !ok {
+		t.Fatal("manifest schema_bundle is not an object")
+	}
+	legacySchemaValue = cloneJSONObject(legacySchemaValue)
+	legacyMigrations, ok := legacySchemaValue["migrations"].([]JSONValue)
+	if !ok || len(legacyMigrations) != historicalV1MaxMigrations+1 {
+		t.Fatalf("unexpected current migration count: %T/%d", legacySchemaValue["migrations"], len(legacyMigrations))
+	}
+	legacySchemaValue["migrations"] = append([]JSONValue(nil), legacyMigrations[:historicalV1MaxMigrations]...)
+	legacySchemaValue["schema_head"] = "000005"
+	legacyObject["schema_bundle"] = legacySchemaValue
+	legacySchemaDigest, err := digestDomainObject(SchemaBundleDomain, "schema_bundle", legacySchemaValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyObject["schema_bundle_digest"] = string(legacySchemaDigest)
 	legacyPolicyValue, ok := legacyObject["execution_policy"].(map[string]JSONValue)
 	if !ok {
 		t.Fatal("manifest execution_policy is not an object")
@@ -148,13 +166,7 @@ func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	legacyPolicyValue = cloneJSONObject(legacyPolicyValue)
 	delete(legacyPolicyValue, "lineage_quota_profile")
 	legacyObject["execution_policy"] = legacyPolicyValue
-	delete(legacyObject, "manifest_digest")
-	legacyCanonical, err := CanonicalJSON(legacyObject)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyObject["manifest_digest"] = string(DigestBytes(legacyCanonical))
-	legacyRaw, err := CanonicalJSON(legacyObject)
+	legacyRaw, err := encodeManifestValueForTest(legacyObject)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,6 +177,42 @@ func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	if legacy.FormatVersion != ManifestFormatVersion || legacy.ExecutionPolicy.LineageQuotaProfile != "" {
 		t.Fatalf("legacy manifest was not retained as v1: format=%q profile=%q", legacy.FormatVersion, legacy.ExecutionPolicy.LineageQuotaProfile)
 	}
+
+	explicitEmpty := cloneJSONObject(legacyObject)
+	explicitEmptyPolicy := cloneJSONObject(explicitEmpty["execution_policy"].(map[string]JSONValue))
+	explicitEmptyPolicy["lineage_quota_profile"] = ""
+	explicitEmpty["execution_policy"] = explicitEmptyPolicy
+	explicitEmptyRaw, err := encodeManifestValueForTest(explicitEmpty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := DecodeManifest(explicitEmptyRaw); !IsCode(err, CodeInvalidManifest) {
+		t.Fatalf("v1 manifest accepted an explicitly empty quota profile: %v", err)
+	}
+
+	relabeledCurrent := cloneJSONObject(value.(map[string]JSONValue))
+	relabeledCurrent["format_version"] = ManifestFormatVersion
+	relabeledPolicy := cloneJSONObject(relabeledCurrent["execution_policy"].(map[string]JSONValue))
+	delete(relabeledPolicy, "lineage_quota_profile")
+	relabeledCurrent["execution_policy"] = relabeledPolicy
+	relabeledRaw, err := encodeManifestValueForTest(relabeledCurrent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := DecodeManifest(relabeledRaw); !IsCode(err, CodeInvalidManifest) {
+		t.Fatalf("current six-entry bundle was relabeled as manifest v1: %v", err)
+	}
+}
+
+func encodeManifestValueForTest(object map[string]JSONValue) ([]byte, error) {
+	object = cloneJSONObject(object)
+	delete(object, "manifest_digest")
+	canonical, err := CanonicalJSON(object)
+	if err != nil {
+		return nil, err
+	}
+	object["manifest_digest"] = string(DigestBytes(canonical))
+	return CanonicalJSON(object)
 }
 
 func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
