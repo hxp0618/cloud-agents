@@ -33,8 +33,10 @@ P1-A2.2-impl-3 mutation/service/review；independent review 发现 Go/direct Pos
 v1 whole-bundle reservation 会超过 16 MiB lineage-index maximum。用户已批准 ADR-0012 的显式 v2
 lineage/quota profile；`cd64dee` 已落盘实现，`77de97e` 又补齐 stored admission replay 的 profile-aware
 checkpoint ceiling，`94aef60` 固定 follow-up evidence，`f7baf95` 修复 signed-bundle test fixtures，
-`04a61af` 记录全量 migration fixture closure，`8d5afdb` 刷新 source-bound dependency/SBOM metadata，
-`261be84` 记录该刷新证据。当前只剩本切片的独立安全复核与 admissibility evidence；
+`04a61af` 记录全量 migration fixture closure，`8d5afdb` 刷新 pre-review source-bound dependency/SBOM
+metadata，`261be84` 记录该刷新证据。首次 `gpt-5.6-sol` 复核发现 v1 显式空 profile 降级边界，
+`f731c6b` 已修复，`610b1ab` 已刷新 remediation source-bound metadata。当前只剩第二轮独立安全复核与
+admissibility evidence；
 尚未授权进入 A2.3。精确容量与恢复边界见
 [`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。

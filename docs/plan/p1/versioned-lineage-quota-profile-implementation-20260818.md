@@ -3,6 +3,8 @@
 - Status: **IMPLEMENTATION COMMITTED - INDEPENDENT REVIEW PENDING**
 - Implementation commit: `cd64deec8846395f2d2424d945f6bd0674ba41dc`
 - Stored-replay follow-up commit: `77de97eb1d99857dbf20440984a0df08e81186e9`
+- Independent-review remediation commit: `f731c6b4d4d9ce53337759415cf046383a09ad02`
+- Remediation source-metadata refresh: `610b1ab41b8ee279071f9409056dad69ef6b5550`
 - Branch: `codex/cloud-agents-platform-p1`
 - Base: `857e502ea6a0995d8ae29ec2dc5377ebbf15b7bf`
 - Remote: implementation and stored-replay follow-up commits pushed
@@ -140,15 +142,15 @@ supersede the historical failed outputs, constitute an independent security revi
 
 ### 3.4 Source-bound dependency and SBOM refresh
 
-The source-bound derived metadata was refreshed after the fixture repair. The fixed source remains commit
-`04a61afec29961d7e09152168858edd2fde8ecde`; its repository tree is `8660d8bee6d2f6ea0742f367887779daa55993a6`,
-and its `services/control-plane` subtree is `8ccde5696832a6eb58394f06aa4390f41f3b33b9`. The subtree is
-byte-identical to the repaired test source at `f7baf95cf7d07ed4a5aa3c6632079bdb4e50c0c2`; the metadata-only
-refresh is commit `8d5afdbcf365c315288256bd901c12ea31302354` and is explicitly excluded from the fixed source
-identity.
+After the independent-review remediation below, the source-bound derived metadata was refreshed again. The
+current fixed source is `f731c6b4d4d9ce53337759415cf046383a09ad02`; its repository tree is
+`a2bb00c6a518565f4d6579150a94954f04f3633c`, and its `services/control-plane` subtree is
+`9035155e32a4d6d0a4df5e46635bb4122d25bd0b`. The metadata-only refresh is commit
+`610b1ab41b8ee279071f9409056dad69ef6b5550` and is explicitly excluded from the fixed source identity. The
+earlier `04a61af → 8d5afdb → 261be84` refresh remains historical evidence for the pre-review source.
 
-The current source-bound manifests are 339 tracked files (`9a12be09a339931dc6addb5cc0d9f509bf893843056f25bd465b0ca34d5c872a`)
-and 258 Go files (`360af6d9d8421af885e76dee9c119e9f463e149b0b4b995aea5f22180672137a`). `go.mod`, `go.sum`,
+The current source-bound manifests are 339 tracked files (`f2a194bfe7a2d1c64db36d79b0ba95596becf9e9d4a7e817742fad9e4b4a513e`)
+and 258 Go files (`8d95f0f60e028839e66c3f7691f6be49467c7eba55a5240eab830fd0843f87bf`). `go.mod`, `go.sum`,
 the 16-module selected graph, and Linux/Darwin non-test closures remain same-bits: Linux is 7 modules / 30
 packages (`48ca0dbaba0f918d99091decd0520a70327c36badb7d74c7cbbe1e180cd66e5f` /
 `12a56c91f56460e9757560f00234c06cec462f248df6a770d41172168e9a8d08`), and Darwin is 6 / 29
@@ -162,8 +164,8 @@ CycloneDX 1.6 SBOM passed Ajv validation against the official BOM/SPDX/JSF schem
 
 | Derived artifact                                            | SHA-256                                                            |
 | ----------------------------------------------------------- | ------------------------------------------------------------------ |
-| `services/control-plane/dependency-lock.json`               | `d90c4410016b0c200fb19a7c763e62fb7f0cd0aea81dc3e1a9fb54f79236512c` |
-| `services/control-plane/sbom.cdx.json`                      | `5260315ecd6da87ef9b8b3c19adca68a3582cff29f95288e66f567fa5e9a5bd8` |
+| `services/control-plane/dependency-lock.json`               | `3db792de6bc692bcdaf7e75140a4d193e7d99eb64f1bf36f48d25dbe23b6106f` |
+| `services/control-plane/sbom.cdx.json`                      | `d0a2e9afd9e6f9f74638799aaefafed69855c4a591d46a19a51a08493b7920fc` |
 | `contracts/generation.lock.json` (unchanged)                | `a868f8ac39d21a7c4b968e0864e2baa86977a44aa1d0a8dbe42ebf40131c80fe` |
 | `services/control-plane/THIRD_PARTY_NOTICES.md` (same-bits) | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
 
@@ -172,7 +174,31 @@ passed. The full platform contract-lock check is not claimed on this machine: th
 and Go 1.26.6 tuple was not available as the ambient runtime (Node 26.7.0 and Go 1.26.5 were detected),
 so its fail-closed runtime guard stopped before comparison. The historical vulnerability scans remain
 time-bound and `current_source_vulnerability_scan=NOT_CLAIMED`; no zero-finding result is inherited for
-`04a61af`. Historical supply records remain unchanged.
+`f731c6b`. Historical supply records remain unchanged.
+
+### 3.5 First independent-review finding and remediation
+
+The first read-only `gpt-5.6-sol` review of `857e502..04a61af` returned `P0=0 / P1=0 / P2=1`. It found that a
+manifest relabeled as v1 could explicitly retain an empty `execution_policy.lineage_quota_profile`; Go then
+treated that present field as the historical v1 omission. The same branch also needed a closed rule proving
+that the current six-entry v2 bundle cannot be relabeled as a historical v1 bundle after dropping the field.
+
+Commit `f731c6b4d4d9ce53337759415cf046383a09ad02` closes both downgrade forms. v1 now rejects the profile field
+whenever it is present, including an explicit empty string; v2 requires the field; and historical v1 is frozen
+to at most five migrations. Tests synthesize an accepted five-entry v1 manifest with the field absent, reject
+the same manifest with an explicit empty field, and reject the current six-entry bundle after removing the
+field and changing its version to v1.
+
+The remediation changed only:
+
+- `internal/migration/model.go`: `8dde5aa800934ad7ff81b0dbf3aaab3dd8658914c87aeb924d130208584857b8`
+- `internal/migration/bundle_test.go`: `f6db46d5b6e65931c2e813a4f12a6debe2914f624502d4c2059e646f157159e0`
+
+The exact Go 1.26.6 focused v1/v2 manifest and quota-profile scope passed under normal and race. Current-ref
+all-package compile-only, `go vet ./...`, `go build ./...`, Linux amd64/arm64 CGO-free builds, JSON/schema and
+source/lock/SBOM cross-binding, and `git diff --check` also passed. The historical full migration pass remains
+the `f7baf95` 1083.628-second result; no fresh full migration runtime rerun is claimed for `f731c6b`. The
+remediation requires a second independent review before this document may record reviewed closure.
 
 ## 4. Review and Gate boundary
 
