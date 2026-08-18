@@ -138,6 +138,42 @@ Verification on the repaired source:
 The passing migration rerun closes the local assertion/timeout boundary recorded above. It does not
 supersede the historical failed outputs, constitute an independent security review, or close a Gate.
 
+### 3.4 Source-bound dependency and SBOM refresh
+
+The source-bound derived metadata was refreshed after the fixture repair. The fixed source remains commit
+`04a61afec29961d7e09152168858edd2fde8ecde`; its repository tree is `8660d8bee6d2f6ea0742f367887779daa55993a6`,
+and its `services/control-plane` subtree is `8ccde5696832a6eb58394f06aa4390f41f3b33b9`. The subtree is
+byte-identical to the repaired test source at `f7baf95cf7d07ed4a5aa3c6632079bdb4e50c0c2`; the metadata-only
+refresh is commit `8d5afdbcf365c315288256bd901c12ea31302354` and is explicitly excluded from the fixed source
+identity.
+
+The current source-bound manifests are 339 tracked files (`9a12be09a339931dc6addb5cc0d9f509bf893843056f25bd465b0ca34d5c872a`)
+and 258 Go files (`360af6d9d8421af885e76dee9c119e9f463e149b0b4b995aea5f22180672137a`). `go.mod`, `go.sum`,
+the 16-module selected graph, and Linux/Darwin non-test closures remain same-bits: Linux is 7 modules / 30
+packages (`48ca0dbaba0f918d99091decd0520a70327c36badb7d74c7cbbe1e180cd66e5f` /
+`12a56c91f56460e9757560f00234c06cec462f248df6a770d41172168e9a8d08`), and Darwin is 6 / 29
+(`12203596417e4926a8292ad208df4d410ef0d6e89627320e2c4fe08858a5154b` /
+`07d05153aff50a4db408a9e4d34c4a298a21f5ccd5615b9940e4e8521e0de354`). Exact Go 1.26.6 `go mod tidy -diff`,
+`go mod verify`, `go vet ./...`, `go build ./...`, and Linux amd64/arm64 CGO-free builds passed. The
+CycloneDX 1.6 SBOM passed Ajv validation against the official BOM/SPDX/JSF schemas with SHA-256
+`3e92dddbc30cf7f6a02b80f0942b1a4cfd4fb1c26f1dfc4310afa9d613cafb93`,
+`baa9d3bd1ed57b6751b0887edead6b5063ff53ff7429cf85d476c6c94af0166e`, and
+`8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae`.
+
+| Derived artifact                                            | SHA-256                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| `services/control-plane/dependency-lock.json`               | `d90c4410016b0c200fb19a7c763e62fb7f0cd0aea81dc3e1a9fb54f79236512c` |
+| `services/control-plane/sbom.cdx.json`                      | `5260315ecd6da87ef9b8b3c19adca68a3582cff29f95288e66f567fa5e9a5bd8` |
+| `contracts/generation.lock.json` (unchanged)                | `a868f8ac39d21a7c4b968e0864e2baa86977a44aa1d0a8dbe42ebf40131c80fe` |
+| `services/control-plane/THIRD_PARTY_NOTICES.md` (same-bits) | `1cadb7fc75886f9085a53d3b9cc174b4c024981f609e4d5951e4e3f877dcbb48` |
+
+The semantic contract checker, JSON formatting, source/lock/SBOM cross-binding, and `git diff --check`
+passed. The full platform contract-lock check is not claimed on this machine: the declared Node 24.13.1
+and Go 1.26.6 tuple was not available as the ambient runtime (Node 26.7.0 and Go 1.26.5 were detected),
+so its fail-closed runtime guard stopped before comparison. The historical vulnerability scans remain
+time-bound and `current_source_vulnerability_scan=NOT_CLAIMED`; no zero-finding result is inherited for
+`04a61af`. Historical supply records remain unchanged.
+
 ## 4. Review and Gate boundary
 
 This is implementation evidence only. An independent security review of profile authority, direct PostgreSQL
