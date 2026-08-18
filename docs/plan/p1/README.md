@@ -57,7 +57,11 @@
   final artifact scan/immutable closure 保持 OPEN
 - Current slice：P1-A2.2-impl-3 review remediation，当前由
   [`subject issuer / lineage-index quota blocker`](membership-rbac-subject-issuer-quota-blocker-20260817.md)
-  阻断；`f988e45` 已冻结 exact built-in role catalog v1、34 个
+  触发；用户已批准 ADR-0012 的 versioned lineage/quota profile 方向，`cd64dee` 已提交并推送
+  v1 historical byte-exact compatibility、v2 explicit profile binding、4 KiB checkpoint ceiling、append-only
+  `000006` issuer closure 及本地验证证据（见
+  [`versioned lineage/quota profile implementation`](versioned-lineage-quota-profile-implementation-20260818.md)）。
+  Independent security review、admission evidence 与 Gate closure 仍未完成。`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
   `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
   focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地

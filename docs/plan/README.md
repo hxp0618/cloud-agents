@@ -65,7 +65,7 @@ admission authority、迁移闭包与当前 source-bound supply metadata。Indep
 Go 与 direct PostgreSQL 的 subject issuer language 不一致；append-only `000006` remediation candidate 已通过本地
 PG15/16/17 matrix，但按冻结 ADR-0010 v1 whole-bundle 公式会使 lineage index 超出 16 MiB。用户已批准
 [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md) 的显式 v2 profile 方向；当前正在实现 v1
-历史兼容、v2 生成/绑定与独立安全复核，详见
+历史兼容、v2 生成/绑定已由 `cd64dee` 提交并推送，独立安全复核仍进行中，详见
 [`subject issuer / quota blocker`](p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
