@@ -59,9 +59,11 @@
   [`subject issuer / lineage-index quota blocker`](membership-rbac-subject-issuer-quota-blocker-20260817.md)
   触发；用户已批准 ADR-0012 的 versioned lineage/quota profile 方向，`cd64dee` 已提交并推送
   v1 historical byte-exact compatibility、v2 explicit profile binding、4 KiB checkpoint ceiling、append-only
-  `000006` issuer closure 及本地验证证据（见
+  `000006` issuer closure，`77de97e` 又将 selected-profile checkpoint ceiling 前移到 stored lineage admission
+  decode，证明 4097..16384-byte checkpoint 在 v1 继续兼容而 v2 稳定归类为 stored corruption；`94aef60`
+  已固定该 follow-up 与全量 migration 10 分钟既有超时边界（见
   [`versioned lineage/quota profile implementation`](versioned-lineage-quota-profile-implementation-20260818.md)）。
-  Independent security review、admission evidence 与 Gate closure 仍未完成。`f988e45` 已冻结 exact built-in role catalog v1、34 个
+  Independent security review、admissibility evidence 与 Gate closure 仍未完成，A2.3 尚未授权。`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
   `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
   focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地
