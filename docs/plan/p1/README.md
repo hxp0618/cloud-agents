@@ -61,7 +61,9 @@
   v1 historical byte-exact compatibility、v2 explicit profile binding、4 KiB checkpoint ceiling、append-only
   `000006` issuer closure，`77de97e` 又将 selected-profile checkpoint ceiling 前移到 stored lineage admission
   decode，证明 4097..16384-byte checkpoint 在 v1 继续兼容而 v2 稳定归类为 stored corruption；`94aef60`
-  已固定该 follow-up 与全量 migration 10 分钟既有超时边界（见
+  已固定该 follow-up 与全量 migration 10 分钟既有超时边界；`f7baf95` 修复 signed-bundle fixture
+  assertions，`04a61af` 记录 30 分钟 migration rerun 通过，`8d5afdb`/`261be84` 刷新并记录
+  source-bound dependency/SBOM metadata（见
   [`versioned lineage/quota profile implementation`](versioned-lineage-quota-profile-implementation-20260818.md)）。
   Independent security review、admissibility evidence 与 Gate closure 仍未完成，A2.3 尚未授权。`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
@@ -118,6 +120,9 @@ Platform RC、Beta 或 GA。
   PG15/16/17 normal/race matrix 与 source-bound supply metadata；历史 implementation evidence 保持不变，
   后续 review remediation 由 [quota blocker](membership-rbac-subject-issuer-quota-blocker-20260817.md) 记录，
   不构成 production DB/HTTP/A2.3 或 immutable Gate evidence
+- [`versioned-lineage-quota-profile-implementation-20260818.md`](versioned-lineage-quota-profile-implementation-20260818.md)：固定
+  ADR-0012 v1/v2 profile implementation、stored-replay ceiling、signed-bundle fixture repair 与
+  source-bound dependency/SBOM refresh；independent review/admissibility 仍 pending，不构成 Gate closure
 
 ## Data kernel decisions
 
