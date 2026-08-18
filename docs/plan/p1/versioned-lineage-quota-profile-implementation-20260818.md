@@ -113,6 +113,31 @@ The focused `TestRunnerPreledgerProjectionFaultsRollbackWithoutAppendingEvidence
 passed in 2.27 seconds. This current-ref result supersedes neither prior timeout record nor any focused
 profile result; the broad migration test boundary remains open and is not counted as a pass.
 
+### 3.3 Signed-bundle characterization fixture repair
+
+An extended `go test ./... -count=1 -timeout=30m` rerun on commit
+`69695d2adff40bd85d2ee58df6514c7064bf0f68` completed rather than timing out. The non-migration packages
+passed, while `internal/migration` failed after 1028.579 seconds. The failing runner cases still expected
+the former four-entry checked-in bundle (`000004`, four ledger rows), even though the exact signed bundle
+now ends at `000006` with six entries. One synthetic admission test also omitted the now-mandatory
+lineage/quota profile from its constructed journal header, and the production validator correctly rejected
+that loose value.
+
+Commit `f7baf95cf7d07ed4a5aa3c6632079bdb4e50c0c2` changes only those two test files. Runner assertions now derive
+the expected head and row count from the decoded signed manifest, and the synthetic admission header binds
+the exact profile returned by runtime inspection. No production validator or quota rule was relaxed.
+
+Verification on the repaired source:
+
+- the six previously failing focused tests passed in 1.621 seconds;
+- `GOWORK=off GOFLAGS=-mod=readonly go test ./internal/migration -count=1 -timeout=30m` passed in
+  1083.628 seconds;
+- the same focused scope under `-race` passed in 5.323 seconds;
+- `go vet ./...`, `go build ./...`, current-ref all-package compile-only, and `git diff --check` passed.
+
+The passing migration rerun closes the local assertion/timeout boundary recorded above. It does not
+supersede the historical failed outputs, constitute an independent security review, or close a Gate.
+
 ## 4. Review and Gate boundary
 
 This is implementation evidence only. An independent security review of profile authority, direct PostgreSQL
