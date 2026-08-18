@@ -1816,10 +1816,21 @@ func appendAdmissionDrainedSegment(file admissionReplayFile, raw []byte, key str
 
 func decodeAdmissionLineageFrames(raw []byte) ([]LineageIndexFrame, error) {
 	var frames []LineageIndexFrame
+	profile := EvidenceLimitsProfile
 	err := decodeAdmissionFramedBytes(raw, lineageIndexMaximumBytes, lineageIndexMaximumRecords, maxLineageFrameBytes, func(framed []byte) error {
 		frame, err := DecodeCanonicalLineageFrame(framed)
 		if err != nil {
 			return err
+		}
+		maximum, err := lineageFrameMaximumForProfile(frame.RecordKind, profile)
+		if err != nil {
+			return err
+		}
+		if uint64(len(framed)) > maximum {
+			return invalidEvidence("admission-index-decode", "stored lineage frame exceeds its selected profile")
+		}
+		if frame.RecordKind == LineageRecordGenerationReserved && frame.Record.Reserved != nil {
+			profile = frame.Record.Reserved.PlannedSegment0Header.LimitsProfile
 		}
 		frames = append(frames, cloneProjectionValue(*frame))
 		return nil

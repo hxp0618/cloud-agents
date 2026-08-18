@@ -885,6 +885,24 @@ func checkpointMaximumForProfile(profile string) (uint64, error) {
 		return 0, invalidEvidence("checkpoint", "unknown lineage quota profile")
 	}
 }
+
+// lineageFrameMaximumForProfile returns the inclusive framed-byte ceiling for
+// one stored lineage record. The physical index container keeps its
+// historical v1 profile, while the selected generation profile narrows only
+// the checkpoint record maximum.
+func lineageFrameMaximumForProfile(kind LineageRecordKind, profile string) (uint64, error) {
+	if !validEvidenceLimitsProfile(profile) {
+		return 0, invalidEvidence("lineage-frame", "unknown quota profile")
+	}
+	maximum, ok := lineageRecordFrameLimits[kind]
+	if !ok || maximum == 0 {
+		return 0, invalidEvidence("lineage-frame", "unknown record kind")
+	}
+	if kind == LineageRecordGenerationCheckpoint {
+		return checkpointMaximumForProfile(profile)
+	}
+	return maximum, nil
+}
 func (v ProjectionResultEvidence) Validate() error {
 	if e := v.Digest.Validate(); e != nil {
 		return e

@@ -58,6 +58,98 @@ func TestAdmissionDecodeGoldenFramesSameBits(t *testing.T) {
 	}
 }
 
+func TestAdmissionLineageDecoderEnforcesSelectedCheckpointProfile(t *testing.T) {
+	t.Parallel()
+	fixture := fixtureObject(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"))
+	base := decodeLineageFrames(t, fixture["frames"])[:4]
+	build := func(profile string) ([]byte, uint64) {
+		frames := cloneProjectionValue(base)
+		reserved := frames[1].Record.Reserved
+		activated := frames[2].Record.Activated
+		checkpoint := frames[3].Record.Checkpoint
+		if reserved == nil || activated == nil || checkpoint == nil {
+			t.Fatal("golden lineage fixture is missing the admission prefix")
+		}
+
+		header := cloneProjectionValue(reserved.PlannedSegment0Header)
+		header.LimitsProfile = profile
+		reserved.PlannedSegment0Header = header
+		var err error
+		reserved.QuotaReservationDigest, err = QuotaReservationDigest(*reserved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		header.QuotaReservationDigest = reserved.QuotaReservationDigest
+		reserved.PlannedSegment0Header = header
+		headerFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &header}}
+		headerFrame.RecordDigest, err = headerFrame.ComputeDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		reserved.ExpectedSegment0HeaderDigest = headerFrame.RecordDigest
+		frames[1].RecordDigest, err = frames[1].ComputeDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if validateErr := frames[1].Validate(); validateErr != nil {
+			t.Fatalf("%s reservation is invalid: %v", profile, validateErr)
+		}
+
+		activated.QuotaReservationDigest = reserved.QuotaReservationDigest
+		activated.GenerationReservedRecordDigest = frames[1].RecordDigest
+		activated.Segment0HeaderDigest = headerFrame.RecordDigest
+		activated.InitialJournalTailDigest = headerFrame.RecordDigest
+		frames[2].PreviousRecordDigest = digestPointer(frames[1].RecordDigest)
+		frames[2].RecordDigest, err = frames[2].ComputeDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if validateErr := frames[2].Validate(); validateErr != nil {
+			t.Fatalf("%s activation is invalid: %v", profile, validateErr)
+		}
+
+		checkpoint.RecoveryState = strings.Repeat("x", 5000)
+		frames[3].PreviousRecordDigest = digestPointer(frames[2].RecordDigest)
+		frames[3].RecordDigest, err = frames[3].ComputeDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if validateErr := frames[3].Validate(); validateErr != nil {
+			t.Fatalf("%s checkpoint is not otherwise valid: %v", profile, validateErr)
+		}
+
+		var raw []byte
+		var checkpointBytes uint64
+		for _, frame := range frames {
+			framed, encodeErr := EncodeCanonicalLineageFrame(frame)
+			if encodeErr != nil {
+				t.Fatal(encodeErr)
+			}
+			if frame.RecordKind == LineageRecordGenerationCheckpoint {
+				checkpointBytes = uint64(len(framed))
+			}
+			raw = append(raw, framed...)
+		}
+		return raw, checkpointBytes
+	}
+
+	v1Raw, v1CheckpointBytes := build(EvidenceLimitsProfile)
+	if v1CheckpointBytes <= v2GenerationCheckpointMaximum || v1CheckpointBytes > lineageRecordFrameLimits[LineageRecordGenerationCheckpoint] {
+		t.Fatalf("checkpoint framed bytes=%d are outside the intended compatibility window", v1CheckpointBytes)
+	}
+	if frames, err := decodeAdmissionLineageFrames(v1Raw); err != nil || len(frames) != 4 {
+		t.Fatalf("historical v1 checkpoint inside its 16 KiB maximum was rejected: %v", err)
+	}
+
+	v2Raw, v2CheckpointBytes := build(LineageQuotaProfileV2)
+	if v2CheckpointBytes != v1CheckpointBytes {
+		t.Fatalf("profile-only mutation changed checkpoint bytes: v1=%d v2=%d", v1CheckpointBytes, v2CheckpointBytes)
+	}
+	if _, err := decodeAdmissionLineageFrames(v2Raw); !IsCode(err, CodeEvidenceJournalCorrupt) {
+		t.Fatalf("stored v2 checkpoint above its closed maximum was accepted: %v", err)
+	}
+}
+
 func TestAdmissionFramedDecoderRejectsEveryPrefixBoundaryAndLengthFault(t *testing.T) {
 	t.Parallel()
 	fixture := fixtureObject(t, migrationFixturePath(t, "golden/evidence-record-chain-v1.json"))
