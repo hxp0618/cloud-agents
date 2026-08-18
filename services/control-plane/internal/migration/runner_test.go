@@ -565,7 +565,7 @@ func TestRunnerRecoversAmbiguousCommitByExactLedgerReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FinalHead != "000004" || len(result.AmbiguousRecovered) != 1 || result.AmbiguousRecovered[0] != "000001" || len(backend.rows) != 4 || connector.connections < 2 {
+	if result.FinalHead != manifest.SchemaBundle.SchemaHead || len(result.AmbiguousRecovered) != 1 || result.AmbiguousRecovered[0] != "000001" || len(backend.rows) != len(manifest.SchemaBundle.Migrations) || connector.connections < 2 {
 		t.Fatalf("unexpected recovery: result=%+v rows=%d connections=%d", result, len(backend.rows), connector.connections)
 	}
 }
@@ -581,7 +581,7 @@ func TestRunnerRetriesOnlyExactPendingStateAfterAmbiguousCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FinalHead != "000004" || len(result.Applied) != 4 || len(result.AmbiguousRecovered) != 0 || len(backend.rows) != 4 {
+	if result.FinalHead != manifest.SchemaBundle.SchemaHead || len(result.Applied) != len(manifest.SchemaBundle.Migrations) || len(result.AmbiguousRecovered) != 0 || len(backend.rows) != len(manifest.SchemaBundle.Migrations) {
 		t.Fatalf("pending retry did not converge exactly: result=%+v rows=%d", result, len(backend.rows))
 	}
 }
@@ -625,7 +625,7 @@ func TestConnectRetryIsBoundedAndReverifiesWithoutRereadingArtifact(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FinalHead != "000004" || connector.attempts != 2 || verifier.calls != 2 || source.reads != 1 {
+	if result.FinalHead != manifest.SchemaBundle.SchemaHead || connector.attempts != 2 || verifier.calls != 2 || source.reads != 1 {
 		t.Fatalf("connect retry boundary mismatch: result=%+v attempts=%d trust=%d reads=%d", result, connector.attempts, verifier.calls, source.reads)
 	}
 }
@@ -696,7 +696,7 @@ func TestTransactionRetryClassification(t *testing.T) {
 			runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
 			result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			if test.wantSuccess {
-				if err != nil || result.FinalHead != "000004" || len(backend.rows) != 4 {
+				if err != nil || result.FinalHead != manifest.SchemaBundle.SchemaHead || len(backend.rows) != len(manifest.SchemaBundle.Migrations) {
 					t.Fatalf("classified retry failed: result=%+v rows=%d err=%v", result, len(backend.rows), err)
 				}
 			} else if err == nil || len(backend.rows) != 0 || connector.attempts != 1 {
@@ -733,7 +733,7 @@ func TestCommitErrorClassification(t *testing.T) {
 			runner := Runner{Trust: verifier, Connector: connector, Ledger: &fakeLedgerStore{}, Authority: acceptingAuthority{}, Catalog: acceptingCatalog{}, Intermediate: acceptingIntermediate{}}
 			result, err := runLegacyCharacterizationForTest(&runner, context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			if test.wantSuccess {
-				if err != nil || result.FinalHead != "000004" || len(backend.rows) != 4 || connector.attempts != 1 || verifier.calls != 1 {
+				if err != nil || result.FinalHead != manifest.SchemaBundle.SchemaHead || len(backend.rows) != len(manifest.SchemaBundle.Migrations) || connector.attempts != 1 || verifier.calls != 1 {
 					t.Fatalf("confirmed commit abort was not locally retried: result=%+v rows=%d connect=%d trust=%d err=%v", result, len(backend.rows), connector.attempts, verifier.calls, err)
 				}
 			} else if err == nil || len(backend.rows) != 0 || connector.attempts != 1 || verifier.calls != 1 {

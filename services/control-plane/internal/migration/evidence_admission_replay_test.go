@@ -259,7 +259,7 @@ func TestAdmissionRuntimeObjectInspectionBindsClosedBundleAndReservation(t *test
 		t.Fatalf("mutated registered runtime accepted: %v", err)
 	}
 
-	generation := admissionReplayGeneration{journalID: DigestBytes([]byte("journal")), schemaBundleDigest: manifest.SchemaBundleDigest, reservedRecords: inspection.reservation.ReservedRecords, reservedBytes: inspection.reservation.ReservedBytes, reservedSegments: inspection.reservation.ReservedSegments, header: &admissionReplayHeaderFacts{manifestDigest: manifest.ManifestDigest}, indexDebits: []admissionReplayIndexDebit{{framedBytes: 8}}}
+	generation := admissionReplayGeneration{journalID: DigestBytes([]byte("journal")), schemaBundleDigest: manifest.SchemaBundleDigest, reservedRecords: inspection.reservation.ReservedRecords, reservedBytes: inspection.reservation.ReservedBytes, reservedSegments: inspection.reservation.ReservedSegments, header: &admissionReplayHeaderFacts{manifestDigest: manifest.ManifestDigest, limitsProfile: inspection.lineageQuotaProfile}, indexDebits: []admissionReplayIndexDebit{{framedBytes: 8}}}
 	lineage := [32]byte{1}
 	journal := digestRaw(generation.journalID)
 	ref := admissionReplayReference{lineageID: lineage, journalID: journal, kind: durableRuntimeContentObject, present: true, runtime: &inspection}
