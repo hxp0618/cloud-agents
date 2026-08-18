@@ -2,10 +2,10 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 review remediation blocked by frozen lineage-index quota）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile amendment approved；implementation and independent review in progress）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
-- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)
+- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)
 
 ## 固定追踪根
 
@@ -21,7 +21,7 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 
 ## 当前执行边界
 
-用户已批准 ADR-0006～ADR-0011 与 D-001～D-038；P0 当前由 `G-INVENTORY` R3 和
+用户已批准 ADR-0006～ADR-0012 与 D-001～D-038；P0 当前由 `G-INVENTORY` R3 和
 `G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
 helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
 decision digest 的下游证据不得继承。P1-A2.1a-impl-1 strict projection contract/fixture 已由 `b36f45a`
@@ -30,8 +30,8 @@ P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 contract/catalog 与 impl-
 `f988e45`、`e36e1cf` 完成，production mutation/catalog publication 仍 fail closed。当前只进入
 P1-A2.2-impl-3 mutation/service/review；independent review 发现 Go/direct PostgreSQL subject issuer language
 不一致。Append-only `000006` remediation candidate 的本地 PG15/16/17 matrix 已通过，但 frozen ADR-0010
-whole-bundle reservation 会超过 16 MiB lineage-index maximum；尚无获批 rollover/versioned quota profile。
-因此 remediation、A2.2-impl-3 reviewed closure 与 A2.3 均暂停，精确容量与恢复边界见
+v1 whole-bundle reservation 会超过 16 MiB lineage-index maximum。用户已批准 ADR-0012 的显式 v2
+lineage/quota profile；当前进入 v1 历史兼容、v2 生成绑定、配额重算和独立安全复核，精确容量与恢复边界见
 [`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
 仍不授权：
@@ -71,7 +71,7 @@ Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 sou
 
 发生冲突时按以下顺序解释：
 
-1. 已批准的 ADR-0006～ADR-0011；
+1. 已批准的 ADR-0006～ADR-0012；
 2. 本目录的 `01`–`06`；
 3. 总设计中标记为 2026-08-10 Revision 的章节；
 4. 总设计附录中的历史实现证据；

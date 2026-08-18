@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 review remediation blocked by the frozen lineage-index quota；protocol amendment not authorized）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile amendment approved；implementation and independent review in progress）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -16,7 +16,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 解释顺序：
 
 1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
-   [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)；
+   [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md)；
 2. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 3. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 4. `legacy/` 历史计划；
@@ -44,6 +44,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0009`](adr/0009-p1-migration-bundle-runner.md)                                                     | P1 migration bundle/runner/trust 决定           |
 | [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)                                                | P1 PostgreSQL authority/catalog projection 决定 |
 | [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)                                                    | P1 Membership/RBAC authority 决定               |
+| [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md)                                             | P1 versioned lineage/quota profile 决定         |
 
 ## 历史与参考
 
@@ -62,8 +63,9 @@ P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 catalog contract 与 impl-
 failed/unknown commit 的非零结果缺口，`afe6cb2 → 1ff7713 → 2dc443d` 再关闭 Membership/RoleBinding
 admission authority、迁移闭包与当前 source-bound supply metadata。Independent implementation review 随后发现
 Go 与 direct PostgreSQL 的 subject issuer language 不一致；append-only `000006` remediation candidate 已通过本地
-PG15/16/17 matrix，但按冻结 ADR-0010 whole-bundle 公式会使 lineage index 超出 16 MiB。当前无已批准的
-rollover/versioned quota profile，因此 remediation、A2.2-impl-3 reviewed closure 与 A2.3 均暂停，详见
+PG15/16/17 matrix，但按冻结 ADR-0010 v1 whole-bundle 公式会使 lineage index 超出 16 MiB。用户已批准
+[`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md) 的显式 v2 profile 方向；当前正在实现 v1
+历史兼容、v2 生成/绑定与独立安全复核，详见
 [`subject issuer / quota blocker`](p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

@@ -5,7 +5,8 @@
   [`ADR-0008`](../adr/0008-p1-postgres-data-kernel.md)、
   [`ADR-0009`](../adr/0009-p1-migration-bundle-runner.md)、
   [`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)、
-  [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)
+  [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)、
+  [`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -64,9 +65,10 @@
   `afe6cb2 → 1ff7713 → 2dc443d` 再关闭 bind-time Membership authority、re-admission non-resurrection、迁移
   input closure 与 current source-bound supply metadata。Independent review 已确认 direct PostgreSQL issuer
   language gap；append-only `000006` candidate 的本地 PG15/16/17 matrix 虽通过，但 frozen ADR-0010
-  lineage-index quota 拒绝该六迁移 bundle。未获批 versioned quota/rollover profile 前，checked-in
-  production catalog publication/CLI trust root、production database write、A2.2-impl-3 reviewed closure 与
-  aggregate Gate 仍保持拒绝
+  lineage-index quota 拒绝该六迁移 bundle。用户已批准 ADR-0012 的 versioned lineage/quota profile 方向；在
+  v1 历史兼容、v2 profile authority、独立安全复核和完整 admission evidence 完成前，checked-in production
+  catalog publication/CLI trust root、production database write、A2.2-impl-3 reviewed closure 与 aggregate Gate
+  仍保持拒绝
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -122,6 +124,9 @@ Platform RC、Beta 或 GA。
   authority binding，但不改变 schema ledger 或 Gate 语义。
 - [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)：冻结 Membership admission、RoleBinding explicit allow、
   resolved request-scope containment、exact built-in role catalog、deny-only external PDP 与 A2.2 三切片顺序。
+- [`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)：冻结 v1 historical byte-exact compatibility、v2
+  explicit lineage/quota profile、4 KiB checkpoint ceiling、profile-bound generation authority 与 fail-closed
+  transition rules；不构成 admission/Gate closure。
 
 ## Current admission durability evidence
 

@@ -166,12 +166,14 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       matrix；`350b53c` 关闭 failed/unknown commit 的非零结果缺口，`afe6cb2 → 1ff7713 → 2dc443d` 再关闭
       Membership/RoleBinding admission authority、迁移闭包并刷新 current source-bound supply metadata；
       independent implementation review 随后发现 Go/direct PostgreSQL subject issuer language 不一致。
+- [x] ADR-0012 冻结 versioned lineage/quota profile 方向：v1 历史 byte-exact、v2 显式 manifest/header 绑定、4 KiB
+      checkpoint ceiling、profile swap fail-closed；用户已批准，implementation/review 仍进行中。
 - [ ] A2.2-impl-3 remediation 当前由
       [`subject issuer / lineage-index quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)
       阻断：append-only `000006` candidate 已通过本地 PG15/16/17 normal/race 与 direct-invalid-issuer
-      faults，但 frozen ADR-0010 whole-bundle reservation 超出 16 MiB lineage-index maximum；在单独批准
-      rollover/versioned quota profile 前不得提交该 candidate、称 reviewed closure、进入 A2.3 或关闭任何
-      immutable/aggregate Gate。
+      faults，但 frozen ADR-0010 v1 whole-bundle reservation 超出 16 MiB lineage-index maximum；在 v2 profile
+      implementation、independent security review 和 admission evidence 完成前不得提交该 candidate、称 reviewed
+      closure、进入 A2.3 或关闭任何 immutable/aggregate Gate。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
