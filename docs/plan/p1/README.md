@@ -74,12 +74,11 @@
   focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地
   PG15/16/17 normal/race mutation matrix，`350b53c` 让 failed/unknown commit 的公开结果严格归零，
   `afe6cb2 → 1ff7713 → 2dc443d` 再关闭 bind-time Membership authority、re-admission non-resurrection、迁移
-  input closure 与 current source-bound supply metadata。Independent review 已确认 direct PostgreSQL issuer
+  input closure 与 current source-bound supply metadata。Independent review 曾确认 direct PostgreSQL issuer
   language gap；append-only `000006` candidate 的本地 PG15/16/17 matrix 虽通过，但 frozen ADR-0010
-  lineage-index quota 拒绝该六迁移 bundle。用户已批准 ADR-0012 的 versioned lineage/quota profile 方向；在
-  v1 历史兼容、v2 profile authority、独立安全复核和完整 admission evidence 完成前，checked-in production
-  catalog publication/CLI trust root、production database write、A2.2-impl-3 reviewed closure 与 aggregate Gate
-  仍保持拒绝
+  lineage-index quota 拒绝该六迁移 bundle。ADR-0012 的 versioned lineage/quota profile implementation 与
+  independent review 现已关闭该 remediation 的固定源码边界；checked-in production catalog publication/CLI
+  trust root、production database write、A2.3 与 aggregate Gate 仍保持拒绝
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none

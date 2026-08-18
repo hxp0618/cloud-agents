@@ -1,6 +1,6 @@
 # ADR-0012：P1 versioned lineage/quota profile
 
-- Status：Accepted — implementation in progress
+- Status：Accepted — implementation and independent review complete
 - Date：2026-08-18
 - Scope：P1-A2.2-impl-3 admission and historical evidence compatibility
 - Depends on：ADR-0009、ADR-0010、ADR-0011
