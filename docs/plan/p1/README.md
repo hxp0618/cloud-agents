@@ -54,14 +54,19 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.2-impl-3 independent review；`f988e45` 已冻结 exact built-in role catalog v1、34 个
+- Current slice：P1-A2.2-impl-3 review remediation，当前由
+  [`subject issuer / lineage-index quota blocker`](membership-rbac-subject-issuer-quota-blocker-20260817.md)
+  阻断；`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
   `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
   focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地
   PG15/16/17 normal/race mutation matrix，`350b53c` 让 failed/unknown commit 的公开结果严格归零，
   `afe6cb2 → 1ff7713 → 2dc443d` 再关闭 bind-time Membership authority、re-admission non-resurrection、迁移
-  input closure 与 current source-bound supply metadata。独立 implementation review、checked-in
-  production catalog publication/CLI trust root、production database write 与 aggregate Gate 仍保持拒绝
+  input closure 与 current source-bound supply metadata。Independent review 已确认 direct PostgreSQL issuer
+  language gap；append-only `000006` candidate 的本地 PG15/16/17 matrix 虽通过，但 frozen ADR-0010
+  lineage-index quota 拒绝该六迁移 bundle。未获批 versioned quota/rollover profile 前，checked-in
+  production catalog publication/CLI trust root、production database write、A2.2-impl-3 reviewed closure 与
+  aggregate Gate 仍保持拒绝
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -102,8 +107,9 @@ Platform RC、Beta 或 GA。
 - [`membership-rbac-mutation-service-20260817.md`](membership-rbac-mutation-service-20260817.md)：固定
   `de36ca3 → 350b53c → afe6cb2 → 1ff7713 → 2dc443d` 的 A2.2-impl-3 五个 typed mutation、same-transaction
   authorization/CAS/audit、failed/unknown commit zero-result、Membership/RoleBinding admission authority、
-  PG15/16/17 normal/race matrix 与 source-bound supply metadata；独立 implementation review 仍待办，不构成
-  production DB/HTTP/A2.3 或 immutable Gate evidence
+  PG15/16/17 normal/race matrix 与 source-bound supply metadata；历史 implementation evidence 保持不变，
+  后续 review remediation 由 [quota blocker](membership-rbac-subject-issuer-quota-blocker-20260817.md) 记录，
+  不构成 production DB/HTTP/A2.3 或 immutable Gate evidence
 
 ## Data kernel decisions
 
