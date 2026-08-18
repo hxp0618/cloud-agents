@@ -55,7 +55,7 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.2-impl-3 review remediation，当前由
+- Current slice：P1-A2.2-impl-3 review remediation 已在固定源码 implementation/review 层关闭；该切片由
   [`subject issuer / lineage-index quota blocker`](membership-rbac-subject-issuer-quota-blocker-20260817.md)
   触发；用户已批准 ADR-0012 的 versioned lineage/quota profile 方向，`cd64dee` 已提交并推送
   v1 historical byte-exact compatibility、v2 explicit profile binding、4 KiB checkpoint ceiling、append-only
@@ -66,7 +66,9 @@
   pre-review source-bound dependency/SBOM metadata；首次 `gpt-5.6-sol` 复核发现 v1 显式空 profile
   降级边界，`f731c6b` 已修复，`610b1ab` 已刷新 remediation source-bound metadata（见
   [`versioned lineage/quota profile implementation`](versioned-lineage-quota-profile-implementation-20260818.md)）。
-  第二轮 independent security review、admissibility evidence 与 Gate closure 仍未完成，A2.3 尚未授权。`f988e45` 已冻结 exact built-in role catalog v1、34 个
+  第二轮 `gpt-5.6-sol` independent security review 已返回 `APPROVE, P0=0/P1=0/P2=0`（见
+  [`independent review`](versioned-lineage-quota-profile-independent-review-20260818.md)）；该结论不关闭任何
+  immutable/aggregate Gate，A2.3 尚未授权。`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
   `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
   focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地
@@ -123,7 +125,10 @@ Platform RC、Beta 或 GA。
   不构成 production DB/HTTP/A2.3 或 immutable Gate evidence
 - [`versioned-lineage-quota-profile-implementation-20260818.md`](versioned-lineage-quota-profile-implementation-20260818.md)：固定
   ADR-0012 v1/v2 profile implementation、stored-replay ceiling、signed-bundle fixture repair 与
-  source-bound dependency/SBOM refresh；independent review/admissibility 仍 pending，不构成 Gate closure
+  source-bound dependency/SBOM refresh；fixed-source independent review 已完成，不构成 Gate closure
+- [`versioned-lineage-quota-profile-independent-review-20260818.md`](versioned-lineage-quota-profile-independent-review-20260818.md)：固定
+  `f731c6b` remediation 的第二轮 `gpt-5.6-sol` verdict `P0=0/P1=0/P2=0`、source/supply binding、独立
+  verification limitations 与 remaining boundaries；只关闭 A2.2-impl-3 remediation implementation/review
 
 ## Data kernel decisions
 

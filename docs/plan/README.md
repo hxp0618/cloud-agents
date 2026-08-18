@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile amendment approved and implementation committed；independent review/admissibility in progress）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 not authorized）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -66,8 +66,9 @@ Go 与 direct PostgreSQL 的 subject issuer language 不一致；append-only `00
 PG15/16/17 matrix，但按冻结 ADR-0010 v1 whole-bundle 公式会使 lineage index 超出 16 MiB。用户已批准
 [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md) 的显式 v2 profile 方向；v1 历史兼容、v2
 生成/绑定已由 `cd64dee` 提交并推送。首次独立复核发现 v1 显式空 profile 的降级边界，`f731c6b`
-已 fail closed 修复并由 `610b1ab` 刷新 source-bound metadata；第二轮独立复核仍进行中，详见
-[`subject issuer / quota blocker`](p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。Inventory R2 因
+已 fail closed 修复并由 `610b1ab` 刷新 source-bound metadata；第二轮 `gpt-5.6-sol` 独立复核返回
+`APPROVE, P0=0/P1=0/P2=0`，只关闭 A2.2-impl-3 remediation 的固定源码 implementation/review 层，详见
+[`independent review`](p1/versioned-lineage-quota-profile-independent-review-20260818.md)。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
 SDK、数据模型、authority 与安全基础，以及 source modules/本地 ephemeral Postgres 验证；不得由 P0/P1

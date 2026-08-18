@@ -2,7 +2,7 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile amendment implemented；independent review pending）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 未授权）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
 - 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)
@@ -35,9 +35,11 @@ lineage/quota profile；`cd64dee` 已落盘实现，`77de97e` 又补齐 stored a
 checkpoint ceiling，`94aef60` 固定 follow-up evidence，`f7baf95` 修复 signed-bundle test fixtures，
 `04a61af` 记录全量 migration fixture closure，`8d5afdb` 刷新 pre-review source-bound dependency/SBOM
 metadata，`261be84` 记录该刷新证据。首次 `gpt-5.6-sol` 复核发现 v1 显式空 profile 降级边界，
-`f731c6b` 已修复，`610b1ab` 已刷新 remediation source-bound metadata。当前只剩第二轮独立安全复核与
-admissibility evidence；
-尚未授权进入 A2.3。精确容量与恢复边界见
+`f731c6b` 已修复，`610b1ab` 已刷新 remediation source-bound metadata。第二轮 `gpt-5.6-sol` 独立安全复核
+已返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭该 remediation 的固定源码 implementation/review 层；生产
+runner/CLI、database mutation、immutable Gates 与 A2.3 仍未授权。审查记录见
+[`versioned profile independent review`](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)，
+精确容量与恢复边界见
 [`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
 仍不授权：

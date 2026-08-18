@@ -1,10 +1,11 @@
 # P1-A2.2 versioned lineage/quota profile implementation evidence - 2026-08-18
 
-- Status: **IMPLEMENTATION COMMITTED - INDEPENDENT REVIEW PENDING**
+- Status: **IMPLEMENTATION / INDEPENDENT REVIEW APPROVED - A2.2 REMEDIATION ONLY**
 - Implementation commit: `cd64deec8846395f2d2424d945f6bd0674ba41dc`
 - Stored-replay follow-up commit: `77de97eb1d99857dbf20440984a0df08e81186e9`
 - Independent-review remediation commit: `f731c6b4d4d9ce53337759415cf046383a09ad02`
 - Remediation source-metadata refresh: `610b1ab41b8ee279071f9409056dad69ef6b5550`
+- Independent review: [approved fixed-source review](versioned-lineage-quota-profile-independent-review-20260818.md)
 - Branch: `codex/cloud-agents-platform-p1`
 - Base: `857e502ea6a0995d8ae29ec2dc5377ebbf15b7bf`
 - Remote: implementation and stored-replay follow-up commits pushed
@@ -198,14 +199,27 @@ The exact Go 1.26.6 focused v1/v2 manifest and quota-profile scope passed under 
 all-package compile-only, `go vet ./...`, `go build ./...`, Linux amd64/arm64 CGO-free builds, JSON/schema and
 source/lock/SBOM cross-binding, and `git diff --check` also passed. The historical full migration pass remains
 the `f7baf95` 1083.628-second result; no fresh full migration runtime rerun is claimed for `f731c6b`. The
-remediation requires a second independent review before this document may record reviewed closure.
+remediation required a second independent review before this document could record reviewed closure.
+
+### 3.6 Second independent review
+
+The second read-only `gpt-5.6-sol` review fixed the implementation range at
+`857e502ea6a0995d8ae29ec2dc5377ebbf15b7bf..f731c6b4d4d9ce53337759415cf046383a09ad02`
+and returned `APPROVE. P0=0, P1=0, P2=0`. It confirmed the v1 member-presence and five-migration fences, traced
+the selected profile through quota, journal, replay, recovery and checkpoint authorities, and checked the Go/SQL
+issuer closure and zero-side-effect matrix assertions.
+
+The exact verdict, independently rerun checks, verification limitations, fixed source/tree/SBOM identities, and
+remaining boundaries are recorded in
+[the independent review](versioned-lineage-quota-profile-independent-review-20260818.md). That record closes only
+the A2.2-impl-3 remediation implementation/review layer.
 
 ## 4. Review and Gate boundary
 
-This is implementation evidence only. An independent security review of profile authority, direct PostgreSQL
-fail-closed behavior, historical replay, and all admission transitions is still required before `000006` is
-considered admissible. Production catalog publication/CLI trust-root wiring remains unpublished or
-`NOT_IMPLEMENTED`; no production database mutation was performed.
+The fixed source has completed independent security review for profile authority, direct PostgreSQL fail-closed
+behavior, historical replay, and admission-transition binding. This establishes local implementation
+admissibility for the checked-in `000006` bundle only. Production catalog publication/CLI trust-root wiring
+remains unpublished or `NOT_IMPLEMENTED`; no production database mutation was performed.
 
 `G-CONTRACT`, `G-DATA`, `G-AUTHORITY-P1`, `G-SECURITY-P1`, `G-SUPPLY-CHAIN`, and aggregate Gate closure remain
 open. The historical blocker record
