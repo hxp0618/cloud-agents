@@ -2,9 +2,10 @@
 
 - Status: **IMPLEMENTATION COMMITTED - INDEPENDENT REVIEW PENDING**
 - Implementation commit: `cd64deec8846395f2d2424d945f6bd0674ba41dc`
+- Stored-replay follow-up commit: `77de97eb1d99857dbf20440984a0df08e81186e9`
 - Branch: `codex/cloud-agents-platform-p1`
 - Base: `857e502ea6a0995d8ae29ec2dc5377ebbf15b7bf`
-- Remote: implementation commit pushed; local and upstream both resolve to `cd64dee`
+- Remote: implementation and stored-replay follow-up commits pushed
 - Scope: ADR-0012 v1 historical compatibility, v2 lineage/quota profile, and append-only `000006`
 - Does not authorize: production migration admission, database publication, deployment, release, Gate closure,
   or entry into A2.3
@@ -77,6 +78,30 @@ completed the authz and PostgreSQL packages, but migration timed out at 600 seco
 recorded as an open test-environment boundary, not as a pass and not as a new profile failure. The repository-wide
 historical secret scanner was stopped after several minutes because it scans every path of every Git revision;
 it is not claimed as passed here.
+
+### 3.1 Stored-replay self-review follow-up
+
+Self-review found that the generic lineage decoder retained the historical v1 16 KiB physical checkpoint
+ceiling, while admission replay did not independently apply the selected generation profile before runtime
+object inspection. A stored v2 checkpoint above 4096 bytes could therefore reach a later recovery-required
+path when its referenced object was absent instead of being classified immediately as a stored contradiction.
+
+Commit `77de97eb1d99857dbf20440984a0df08e81186e9` centralizes the inclusive per-record/profile ceiling and applies
+it during lineage admission decode. The regression test constructs the same valid checkpoint in the
+4097..16384-byte compatibility window and proves that historical v1 admission replay accepts it while v2
+admission replay returns `MIGRATION_EVIDENCE_JOURNAL_CORRUPT`.
+
+Follow-up source hashes:
+
+- `evidence_contract.go`: `f6f8388bcb95d5529041624386e31ca031881dcf0cb146d7800e9502e07bcad4`
+- `evidence_frame_io.go`: `67785159c42388bf395bc5bb3c6c8c6ae52ceedd4cefb1fe1c6b96cad25076ff`
+- `evidence_admission_replay.go`: `33cc1703da82267420693b06fec21149fed87fca60f6e91a1e3a008f571e2641`
+- `evidence_admission_replay_test.go`: `8715e23e63f13ade02e19b3b15e7d2524147a76d048e5da428f890a4ecde37b7`
+
+The focused normal and race tests, `go vet ./...`, `go build ./...`, and `git diff --check` passed for this
+follow-up. A fresh migration-only full test again reached the 600-second timeout in the same pre-existing
+preledger projection fault suite, this time while executing the `status-drift` case. It remains an open broad
+test boundary and is not counted as a pass.
 
 ## 4. Review and Gate boundary
 
