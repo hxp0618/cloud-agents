@@ -103,6 +103,16 @@ follow-up. A fresh migration-only full test again reached the 600-second timeout
 preledger projection fault suite, this time while executing the `status-drift` case. It remains an open broad
 test boundary and is not counted as a pass.
 
+### 3.2 Current-ref full-module rerun
+
+On current branch commit `b51497b618ade15b6b2b31fbdafa713ea6030b9c`,
+`go test ./...` from `services/control-plane` again passed the control-plane, provision, authz, evidencefs,
+modpolicy, mountauthority, and PostgreSQL packages, but the migration package hit the Go 10-minute test
+timeout in `TestRunnerStatementAfterProjectionFaultsRollbackWithoutAppendingIntermediate/snapshot`.
+The focused `TestRunnerPreledgerProjectionFaultsRollbackWithoutAppendingEvidenceOrLedger/status-drift` rerun
+passed in 2.27 seconds. This current-ref result supersedes neither prior timeout record nor any focused
+profile result; the broad migration test boundary remains open and is not counted as a pass.
+
 ## 4. Review and Gate boundary
 
 This is implementation evidence only. An independent security review of profile authority, direct PostgreSQL
