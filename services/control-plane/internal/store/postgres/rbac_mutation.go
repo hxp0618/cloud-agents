@@ -589,6 +589,63 @@ func (runner *TenantTransactionRunner) withTenantMutation(
 	return nil
 }
 
+// withGlobalMutation is the same one-shot SERIALIZABLE settlement boundary as
+// withTenantMutation, but deliberately omits tenant GUC binding. It is used
+// only by the global leader-lease functions; callers never receive the handle.
+func (runner *TenantTransactionRunner) withGlobalMutation(
+	ctx context.Context,
+	callback tenantMutationCallback,
+) error {
+	if ctx == nil {
+		return ErrNilContext
+	}
+	if callback == nil {
+		return ErrNilCallback
+	}
+	connection, err := runner.pool.acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire global mutation connection: %w", err)
+	}
+	settled := false
+	defer func() {
+		if !settled {
+			cleanupContext, cancel := runner.cleanupContext()
+			defer cancel()
+			_ = connection.hijackAndClose(cleanupContext)
+		}
+	}()
+	transaction, err := connection.beginTx(ctx, pgx.TxOptions{
+		IsoLevel: pgx.Serializable, AccessMode: pgx.ReadWrite, DeferrableMode: pgx.NotDeferrable,
+	})
+	if err != nil {
+		runner.discard(connection, &settled)
+		return fmt.Errorf("begin global mutation transaction: %w", err)
+	}
+	handle := &tenantReadHandle{active: true, transaction: transaction, clock: runner.clock}
+	callbackErr, panicValue, panicked := invokeTenantMutationCallback(callback, handle)
+	handle.invalidate()
+	if panicked {
+		runner.rollbackAndSettle(connection, transaction, &settled)
+		panic(panicValue)
+	}
+	if callbackErr != nil {
+		runner.rollbackAndSettle(connection, transaction, &settled)
+		return callbackErr
+	}
+	if err := transaction.commit(ctx); err != nil {
+		runner.discard(connection, &settled)
+		var postgresError *pgconn.PgError
+		if errors.As(err, &postgresError) {
+			return mapMutationDatabaseError("commit global mutation transaction", err)
+		}
+		return errors.Join(ErrMutationCommitUnknown, fmt.Errorf("commit global mutation transaction: %w", err))
+	}
+	if err := runner.releaseIfReusable(connection, &settled); err != nil {
+		return nil
+	}
+	return nil
+}
+
 func invokeTenantMutationCallback(
 	callback tenantMutationCallback,
 	handle *tenantReadHandle,

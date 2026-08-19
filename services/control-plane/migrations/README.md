@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000007`, under the migration advisory lock. Each
+   `000001` through `000008`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -106,6 +106,18 @@ silently alter this schema.
     service function. The generated profile has `createsPlatformOperation=false`,
     and this slice exposes no claim, reconcile, finalizer, outbox-effect, HTTP/P2,
     or external-side-effect path.
+11. `000008` preserves the schema kernel and adds only typed, profile-specific
+    PostgreSQL service functions for idempotency claim/settlement, fenced leader
+    acquire/renew, and outbox claim/ack/retry/dead-letter/reap. The package-internal
+    Go service accepts the generated opaque profile, derives the actor digest, and
+    authorizes `projects.create` at organization scope in the same SERIALIZABLE
+    tenant transaction before the idempotency function executes. Commit ambiguity
+    is returned as `unknown`; serialization and stale-fence conflicts are closed
+    rejections. Runtime receives EXECUTE on exactly ten typed entry points, never
+    the private audit/transition helpers or raw coordination DML. The only delivery
+    port is unexported and test-injected: no HTTP route, production P2 adapter,
+    external side effect, PlatformOperation creation, attempt, receipt, or finalizer
+    path is enabled.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -151,13 +163,14 @@ credential/secret payloads. The bootstrap seam records a bounded reason code,
 not caller-supplied free-form detail.
 
 The runtime group receives tenant-scoped `SELECT`, plus EXECUTE on the five
-effective typed RBAC mutation entry points and the seven pure coordination
-registry/profile helpers, including access to the global built-in role catalog,
-tenant Membership/RoleBinding facts, and read-only coordination facts. Project,
-Membership, RoleBinding, and coordination mutation is never granted as raw table
-write authority. Each existing typed RBAC mutation allocates and publishes its
-tenant revision atomically through the reviewed store path. A2.3 slice 3 still
-owns every typed coordination service/claim/reconcile/finalizer/outbox write path.
+effective typed RBAC mutation entry points, seven pure coordination
+registry/profile helpers, and ten typed `000008` coordination service entry
+points. Project, Membership, RoleBinding, and coordination mutation is never
+granted as raw table write authority. Each existing typed RBAC mutation allocates
+and publishes its tenant revision atomically through the reviewed store path.
+The generated profile service covers only idempotency, leader and internal
+outbox state transitions. Reconcile/finalizer/operation/attempt/receipt execution,
+HTTP/P2 adapters, real delivery ports, and external side effects remain absent.
 
 The local conformance matrix always starts fresh exact PostgreSQL 15/16/17
 containers, applies all six migrations, seeds only deterministic tenant facts
@@ -188,6 +201,21 @@ coordination DML, profile/TTL rejection, and bounded leader-lease facts:
 It does not exercise or claim the slice-3 service, claim/reconcile race/fault,
 HTTP/P2, or independent-review boundary. It never pulls an image implicitly and
 does not constitute production database mutation or Gate closure.
+
+The A2.3 slice-3 service matrix starts fresh exact PostgreSQL 15/16/17
+containers, applies all eight migrations, and runs normal plus Go race legs for
+same-transaction authorization, claim/replay/conflict/success/failure,
+concurrent serialization, full outbox claim tuples and stale settlements,
+leader fencing, expired-claim reaping, ACL denial, and forbidden
+operation/finalizer/secret facts:
+
+```sh
+./services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh
+```
+
+It uses only the package-internal injected delivery port and direct database
+conformance calls. A passing matrix does not expose HTTP/P2, perform an external
+side effect, close independent review, or close any Gate.
 
 ## Immutable boundary
 

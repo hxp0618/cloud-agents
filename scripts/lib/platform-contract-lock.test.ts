@@ -80,6 +80,12 @@ describe("Platform contract generation lock", () => {
       "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
     );
     expect(inputs).toContain(
+      "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+    );
+    expect(inputs).toContain(
+      "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
+    );
+    expect(inputs).toContain(
       "services/control-plane/migrations/fixtures/bundle/negative/ancestor-descriptor-cases.json",
     );
   });
@@ -97,14 +103,39 @@ describe("Platform contract generation lock", () => {
       notGateClosure: true,
       outputSummary: {
         profileCount: 1,
-        runtimeConsumer: "NOT_IMPLEMENTED",
-        sqlConsumer: "GENERATED_PROFILE_DIGEST_CHECK_CONSTRAINTS_000007",
+        runtimeConsumer: "GENERATED_GO_PROFILE_TYPED_SERVICE_000008",
+        sqlConsumer: "GENERATED_PROFILE_TYPED_FUNCTIONS_000008",
         httpSurface: "NOT_IMPLEMENTED",
         externalSideEffects: "FORBIDDEN",
       },
       generatedOutputs: [
         {
           path: "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+        },
+      ],
+    });
+  });
+
+  it("records the generated Go profile without enabling HTTP or side effects", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const pipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "durable-coordination-go-profile-generation",
+    );
+    expect(pipeline).toMatchObject({
+      outputStatus: "GENERATED_GO_PROFILE",
+      notGateClosure: true,
+      outputSummary: {
+        profileId: "managedAgentCreateProject/v1alpha1",
+        handWrittenProfileFallback: "FORBIDDEN",
+        httpSurface: "NOT_IMPLEMENTED",
+        externalSideEffects: "FORBIDDEN",
+      },
+      generatedOutputs: [
+        {
+          path: "services/control-plane/internal/coordination/registry_generated.go",
         },
       ],
     });

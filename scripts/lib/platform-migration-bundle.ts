@@ -71,6 +71,7 @@ const SQL_PATHS = [
   `${ROOT}/000005_close_membership_binding_authority.sql`,
   `${ROOT}/000006_close_subject_issuer_validation.sql`,
   `${ROOT}/000007_expand_durable_coordination_kernel.sql`,
+  `${ROOT}/000008_add_durable_coordination_service.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -83,15 +84,21 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000005.json`,
   `${ROOT}/catalog/schema-000006.json`,
   `${ROOT}/catalog/schema-000007.json`,
+  `${ROOT}/catalog/schema-000008.json`,
 ] as const;
 const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec";
+  "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 11860;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 13374;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336";
+  "sha256:3a2e4ef3cab7227a527831e03f7a85a9bcdbf2963e076c6bb764fe15e1fb194d";
 const ANCESTOR_SCHEMA_BUNDLES = [
+  {
+    digest: "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec",
+    size: 11860,
+    sha256: "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336",
+  },
   {
     digest: "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23",
     size: 7334,
@@ -299,6 +306,21 @@ const DECLARED_IDENTITIES_000007 = [
   "policy:unquoted:cloud_agents/unquoted:coordination_audit_facts_runtime_tenant",
   "policy:unquoted:cloud_agents/unquoted:coordination_audit_facts_migration_owner",
 ] as const;
+const DECLARED_IDENTITIES_000008 = [
+  ...DECLARED_IDENTITIES_000007,
+  "function:unquoted:cloud_agents/unquoted:append_coordination_audit(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:timestamptz)",
+  "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_success(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_failure(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:acquire_coordination_leader(unquoted:text,unquoted:text,unquoted:text,unquoted:integer)",
+  "function:unquoted:cloud_agents/unquoted:renew_coordination_leader(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer)",
+  "function:unquoted:cloud_agents/unquoted:claim_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:transition_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:acknowledge_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:retry_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:dead_letter_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:reap_expired_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -339,6 +361,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const durableCoordinationRegistry = requiredObject(buildDurableCoordinationRegistry(root));
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
   validateDurableCoordinationKernel(sqlBytes.get(SQL_PATHS[6])!, durableCoordinationRegistry);
+  validateDurableCoordinationService(sqlBytes.get(SQL_PATHS[7])!, durableCoordinationRegistry);
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
     readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
@@ -360,7 +383,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000007",
+    schema_head: "000008",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -438,6 +461,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         sql: sqlArtifacts.get(SQL_PATHS[6])!,
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[7])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[8])!,
+      }),
+      migrationEntry({
+        id: "000008",
+        name: "add_durable_coordination_service",
+        predecessor: "000007",
+        schemaFrom: "000007",
+        sql: sqlArtifacts.get(SQL_PATHS[7])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[8])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[9])!,
       }),
     ],
   };
@@ -591,6 +623,7 @@ export function validateCatalogStatementBindings(
     ["000005", generatedCatalogs.get(CATALOG_PATHS[6])!.source_descriptors!],
     ["000006", generatedCatalogs.get(CATALOG_PATHS[7])!.source_descriptors!],
     ["000007", generatedCatalogs.get(CATALOG_PATHS[8])!.source_descriptors!],
+    ["000008", generatedCatalogs.get(CATALOG_PATHS[9])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -600,6 +633,7 @@ export function validateCatalogStatementBindings(
     ["000005", DECLARED_IDENTITIES_000005],
     ["000006", DECLARED_IDENTITIES_000006],
     ["000007", DECLARED_IDENTITIES_000007],
+    ["000008", DECLARED_IDENTITIES_000008],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -1273,6 +1307,131 @@ export function validateDurableCoordinationKernel(
   }
 }
 
+export function validateDurableCoordinationService(
+  sqlBytes: Uint8Array,
+  registry: JsonObject,
+): void {
+  const sql = new TextDecoder("utf-8", { fatal: true }).decode(sqlBytes);
+  const profiles = requiredArray(registry.profiles).map(requiredObject);
+  if (profiles.length !== 1) {
+    throw new MigrationValidationError("COORDINATION_SERVICE_PROFILE", String(profiles.length));
+  }
+  const profile = profiles[0]!;
+  const spec = requiredObject(profile.spec);
+  const authorization = requiredObject(spec.authorization);
+  const coordination = requiredObject(spec.coordination);
+  const profileId = requiredString(spec.profileId, "coordination service profile id");
+  const profileDigest = requiredString(
+    profile.profileDigest,
+    "coordination service profile digest",
+  );
+  if (
+    profileId !== "managedAgentCreateProject/v1alpha1" ||
+    requiredString(spec.operationId, "coordination service operation id") !==
+      "managedAgentCreateProject" ||
+    requiredString(authorization.tenantSource, "coordination service tenant source") !==
+      "path.tenantId" ||
+    requiredString(authorization.scopeSource, "coordination service scope source") !==
+      "body.organizationRef" ||
+    requiredString(authorization.requiredPermission, "coordination service required permission") !==
+      "projects.create" ||
+    coordination.createsPlatformOperation !== false ||
+    coordination.externalSideEffect !== "forbidden" ||
+    requiredString(coordination.outboxEventClass, "coordination service outbox class") !==
+      "resource_change" ||
+    requiredArray(coordination.requiredFinalizers).length !== 0
+  ) {
+    throw new MigrationValidationError("COORDINATION_SERVICE_PROFILE", profileId);
+  }
+
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 34) {
+    throw new MigrationValidationError(
+      "COORDINATION_SERVICE_STATEMENT_COUNT",
+      String(statements.length),
+    );
+  }
+  requireSqlFragment(sql, "coordination service profile id", profileId);
+  requireSqlFragment(sql, "coordination service profile digest", profileDigest);
+  requireSqlFragment(
+    sql,
+    "coordination service runtime principal",
+    "cloud_agents.require_runtime_mutation_principal()",
+  );
+  requireSqlFragment(
+    sql,
+    "coordination service database clock",
+    "pg_catalog.transaction_timestamp()",
+  );
+  requireSqlFragment(sql, "coordination service serial rejection", "ERRCODE = '40001'");
+  requireSqlFragment(sql, "coordination service full claim token", "stored.claim_token");
+  requireSqlFragment(
+    sql,
+    "coordination service full claim incarnation",
+    "stored.claim_incarnation",
+  );
+  requireSqlFragment(sql, "coordination service leader fence", "lease.fencing_token");
+
+  const expectedRuntimeFunctions = [
+    "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_success(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_failure(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:acquire_coordination_leader(unquoted:text,unquoted:text,unquoted:text,unquoted:integer)",
+    "function:unquoted:cloud_agents/unquoted:renew_coordination_leader(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer)",
+    "function:unquoted:cloud_agents/unquoted:claim_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:acknowledge_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:retry_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:dead_letter_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:reap_expired_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  ].toSorted();
+  const runtimeFunctions = statements
+    .map((statement) => classifyMigrationStatement(statement, "000008"))
+    .filter(
+      (classification) =>
+        classification.command === "GRANT" &&
+        classification.object_kind === "FUNCTION" &&
+        classification.grantee === "CLOUD_AGENTS_RUNTIME",
+    )
+    .map((classification) => classification.target_identity)
+    .toSorted();
+  if (canonicalText(runtimeFunctions) !== canonicalText(expectedRuntimeFunctions)) {
+    throw new MigrationValidationError(
+      "COORDINATION_SERVICE_RUNTIME_EXECUTE",
+      runtimeFunctions.join(","),
+    );
+  }
+  if (
+    /\bGRANT\s+(?:ALL|INSERT|UPDATE|DELETE|TRUNCATE)\b[^;]*\bTO\s+CLOUD_AGENTS_RUNTIME\b/isu.test(
+      sql,
+    )
+  ) {
+    throw new MigrationValidationError("COORDINATION_SERVICE_RUNTIME_WRITE", "raw table DML");
+  }
+  if (
+    /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+CLOUD_AGENTS\.(?:PLATFORM_OPERATIONS|OPERATION_ATTEMPTS|TERMINAL_RECEIPTS|OPERATION_FINALIZERS)\b/iu.test(
+      sql,
+    )
+  ) {
+    throw new MigrationValidationError(
+      "COORDINATION_SERVICE_PROFILE",
+      "current profile cannot create operations or finalizers",
+    );
+  }
+  for (const forbidden of [
+    "pg_notify",
+    "dblink",
+    "http_post",
+    "net.http",
+    "aws_lambda",
+    "COPY ",
+    "CALL ",
+  ]) {
+    if (sql.toLowerCase().includes(forbidden.toLowerCase())) {
+      throw new MigrationValidationError("COORDINATION_SERVICE_EXTERNAL_EFFECT", forbidden);
+    }
+  }
+}
+
 function assertSqlCheckLiteralSet(
   sql: string,
   constraint: string,
@@ -1377,6 +1536,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000005 = typedIdentities(DECLARED_IDENTITIES_000005);
   const declared000006 = typedIdentities(DECLARED_IDENTITIES_000006);
   const declared000007 = typedIdentities(DECLARED_IDENTITIES_000007);
+  const declared000008 = typedIdentities(DECLARED_IDENTITIES_000008);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1429,7 +1589,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000004 = contract("000004", rawSources.slice(0, 4), declared000004);
   const schema000005 = contract("000005", rawSources.slice(0, 5), declared000005);
   const schema000006 = contract("000006", rawSources.slice(0, 6), declared000006);
-  const schema000007 = contract("000007", rawSources, declared000007);
+  const schema000007 = contract("000007", rawSources.slice(0, 7), declared000007);
+  const schema000008 = contract("000008", rawSources, declared000008);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1483,6 +1644,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[6], schema000005],
     [CATALOG_PATHS[7], schema000006],
     [CATALOG_PATHS[8], schema000007],
+    [CATALOG_PATHS[9], schema000008],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }

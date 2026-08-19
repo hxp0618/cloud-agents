@@ -29,7 +29,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000007.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000008.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -40,16 +40,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c",
+      "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:6194048fa8a13d1664dd421ad548d6808fb8eb97b33bb80ceb0b717f89331202",
+      "sha256:d896285b8835751c7c1567d01c955bd6c44b84586c25a0a9bbba7b01fde8eacc",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:2c0f963424b2a71311556911c0f25a5aced16167fa1902f394ed74623cfd66e7",
+      "sha256:2bee1a8c98dcdce32d21406d05e15bb317495f574e572e48c612ccfe4f61754d",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -297,6 +297,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
         "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+        "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -326,6 +327,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
       "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
       "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+      "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [

@@ -51,12 +51,14 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
   "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
   "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+  "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
   "services/control-plane/migrations/manifest.json",
   "services/control-plane/migrations/schema-bundle.json",
   "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
+  "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
   "services/control-plane/migrations/archive",
@@ -70,6 +72,13 @@ const DURABLE_COORDINATION_GENERATOR_SOURCES = [
   "scripts/lib/platform-durable-coordination-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
+const DURABLE_COORDINATION_GO_GENERATOR_SOURCES = [
+  "scripts/generate-platform-durable-coordination-go.ts",
+  "scripts/lib/platform-durable-coordination-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
+const DURABLE_COORDINATION_GO_OUTPUT_PATH =
+  "services/control-plane/internal/coordination/registry_generated.go";
 
 const IN_REPO_TOOLS = [
   {
@@ -113,6 +122,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-durable-coordination-registry.ts",
     sources: DURABLE_COORDINATION_GENERATOR_SOURCES,
   },
+  {
+    id: "platform-durable-coordination-go-generator",
+    kind: "in-repo-typescript-deterministic-go-profile",
+    entrypoint: "scripts/generate-platform-durable-coordination-go.ts",
+    sources: DURABLE_COORDINATION_GO_GENERATOR_SOURCES,
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -122,7 +137,20 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const migrationInputs = platformMigrationInputs(root);
   assertDurableCoordinationRegistryCurrent(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
+  const durableCoordinationGoInputs = [
+    ...DURABLE_COORDINATION_GO_GENERATOR_SOURCES,
+    DURABLE_COORDINATION_OUTPUT_PATH,
+  ].toSorted();
   const durableCoordinationRegistry = buildDurableCoordinationRegistry(root);
+  const durableCoordinationProfile = (
+    durableCoordinationRegistry.profiles as ReadonlyArray<{
+      readonly profileDigest: string;
+      readonly spec: { readonly profileId: string };
+    }>
+  )[0];
+  if (durableCoordinationProfile === undefined) {
+    throw new Error("The durable coordination registry must contain its generated profile.");
+  }
   return {
     lockVersion: 1,
     status: "BOOTSTRAP_VALIDATED",
@@ -232,8 +260,33 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           stateMachineDigest: durableCoordinationRegistry.stateMachineDigest,
           policyDigest: durableCoordinationRegistry.policyDigest,
           profileCount: (durableCoordinationRegistry.profiles as ReadonlyArray<unknown>).length,
-          runtimeConsumer: "NOT_IMPLEMENTED",
-          sqlConsumer: "GENERATED_PROFILE_DIGEST_CHECK_CONSTRAINTS_000007",
+          runtimeConsumer: "GENERATED_GO_PROFILE_TYPED_SERVICE_000008",
+          sqlConsumer: "GENERATED_PROFILE_TYPED_FUNCTIONS_000008",
+          httpSurface: "NOT_IMPLEMENTED",
+          externalSideEffects: "FORBIDDEN",
+        },
+      },
+      {
+        id: "durable-coordination-go-profile-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, durableCoordinationGoInputs),
+        inputs: durableCoordinationGoInputs,
+        outputStatus: "GENERATED_GO_PROFILE",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: DURABLE_COORDINATION_GO_OUTPUT_PATH,
+            sha256: fileSha256(root, DURABLE_COORDINATION_GO_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, DURABLE_COORDINATION_GO_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          registryDigest: durableCoordinationRegistry.registryDigest,
+          stateMachineDigest: durableCoordinationRegistry.stateMachineDigest,
+          policyDigest: durableCoordinationRegistry.policyDigest,
+          profileId: durableCoordinationProfile.spec.profileId,
+          profileDigest: durableCoordinationProfile.profileDigest,
+          handWrittenProfileFallback: "FORBIDDEN",
           httpSurface: "NOT_IMPLEMENTED",
           externalSideEffects: "FORBIDDEN",
         },
