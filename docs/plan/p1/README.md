@@ -83,8 +83,11 @@
 - Current entry：P1-A2.3 Durable Coordination 方向已于 2026-08-19 获批；slice 1 generated
   contract/state-machine registry 已由 `ff9ea33` 固定，slice 2 append-only `000007` kernel 已由 `a9826e4`
   固定。Slice 3 implementation `59ec260` 已新增 generated Go profile、typed `000008` service/claim、closed
-  committed/rejected/unknown outcomes 与 PG15/16/17 normal/race/fault matrix；独立审查仍为 PENDING，因此 A2.3
-  tracker 仍不勾选。HTTP/P2 external side effect 和所有 Gate closure 继续禁止。历史入口审计见
+  committed/rejected/unknown outcomes 与 PG15/16/17 normal/race/fault matrix；后续完整 migration 门禁确认 fixed
+  `000008` 的 34-statement bundle 已超过 v2 quota 的 16-segment/256 MiB 上限，故独立审查与 admission 均保持
+  BLOCKED，等待新的显式 quota/rollover 协议决定（见
+  [`A2.3 evidence-quota blocker`](durable-coordination-evidence-quota-blocker-20260819.md)）。HTTP/P2 external side
+  effect 和所有 Gate closure 继续禁止。历史入口审计见
   [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
@@ -149,6 +152,9 @@ Platform RC、Beta 或 GA。
   A2.3 slice 3 implementation `59ec260` 的 generated Go profile、append-only `000008` typed service、claim/leader/
   outbox closed outcome 与 PG15/16/17 normal/race/fault matrix；independent review 仍为 PENDING，不开放 HTTP/P2
   external side effect，也不构成 Gate closure
+- [`durable-coordination-evidence-quota-blocker-20260819.md`](durable-coordination-evidence-quota-blocker-20260819.md)：记录
+  完整 migration 门禁发现 fixed `000008` 已使 v2 whole-bundle reservation 达到 17 segments 并超过 256 MiB，
+  `000009` 非根因；禁止改写 migration、隐式放宽 profile 或宣称 Gate，等待新的显式 quota/rollover 协议决定
 
 ## Data kernel decisions
 
