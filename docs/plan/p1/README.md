@@ -95,7 +95,9 @@
   [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
 - Current entry：P1-A2.4 Compatibility/Recovery contract registry 已由 `5a0ed7b` 固定；当前只推进
   append-only PostgreSQL `000010` schema kernel、generated catalog/manifest 与 PG15/16/17 schema-only matrix。
-  本切片不实现 writer/service、HTTP/P2/provider effect，不执行生产数据库写入，也不关闭任何 Gate。
+  现有 registry + schema-only kernel 已完成有界 independent review（见
+  [`A2.4 v1/kernel independent review`](compatibility-recovery-v1-kernel-independent-review-20260820.md)）。本切片不实现
+  writer/service、HTTP/P2/provider effect，不执行生产数据库写入，也不关闭任何 Gate。
 - A2.4 next-entry proposal：[`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)
   将 v1/`000010` 保持历史 same-bits，并把 versioned registry repair → append-only writer kernel → typed
   service/claim/matrix/independent review 固定为需 owner approval 的三切片；当前仍 PROPOSED ONLY。
@@ -178,8 +180,9 @@ Platform RC、Beta 或 GA。
   migration closure、HTTP/P2 external effect 与所有 Gate 仍保持 OPEN
 - [`compatibility-recovery-postgres-kernel-20260820.md`](compatibility-recovery-postgres-kernel-20260820.md)：记录
   A2.4 append-only `000010` schema-only kernel、generated registry/catalog/manifest binding 与本地 PG15/16/17
-  matrix；仅为 local implementation evidence，independent review、writer/service、HTTP/P2/provider effect、full
-  migration closure 与所有 Gate 均保持 OPEN
+  matrix；仅为 local implementation evidence；有界 independent review 见
+  [`compatibility-recovery-v1-kernel-independent-review-20260820.md`](compatibility-recovery-v1-kernel-independent-review-20260820.md)。
+  writer/service、HTTP/P2/provider effect、full migration closure 与所有 Gate 均保持 OPEN
 - [`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)：
   A2.4 后续 versioned-registry/writer/service 入口提案；v1 与 `000010` 不可变，三切片仍需 owner approval，
   不授权 HTTP/P2、生产写入或 Gate closure
