@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved，full migration closure remains pending）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved；current-bundle local full `internal/migration` closure 已在 `67b8acb` 完成；A2.4 writer/service 仍须 owner approval）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -82,8 +82,10 @@ versioned v2 service entry 使用 current pair。精确 remediation candidate �
 `APPROVE, P0=0/P1=0/P2=0`，只关闭 A2.3 generated registry/profile、append-only kernel 和
 service/claim/matrix 的 implementation/review slice，详见
 [`A2.3 remediation independent review`](p1/durable-coordination-v3-remediation-independent-review-20260820.md)。
-原 [`A2.3 v3 independent review`](p1/durable-coordination-v3-independent-review-20260819.md) 保留历史 verdict。Full
-migration closure 仍 PENDING，HTTP/P2 side effect 不开放，且不关闭任何 Gate。原 entry audit 见
+原 [`A2.3 v3 independent review`](p1/durable-coordination-v3-independent-review-20260819.md) 保留历史 verdict。随后
+current-bundle local full `internal/migration` closure 已在 `67b8acb` 以 `-timeout=30m` 通过（`1012.165s`；见
+[`closure record`](p1/durable-coordination-full-migration-closure-20260820.md)），仅为本地 full-suite evidence，HTTP/P2
+side effect 不开放，且不关闭任何 Gate。原 entry audit 见
 [`A2.3 blocker`](p1/durable-coordination-entry-blocker-20260818.md)。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
