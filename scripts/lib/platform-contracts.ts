@@ -6,6 +6,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
+import { validateCompatibilityRecoveryFixture } from "./platform-compatibility-recovery-registry";
 import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
 
 import {
@@ -189,6 +190,20 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       name: "durable-coordination-registry-v1",
       schema: "../schemas/durable-coordination-registry-v1.schema.json",
       instance: "../../../generated/platform/v1alpha1/durable-coordination-registry.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "compatibility-recovery-registry-source-v1",
+      schema: "../schemas/compatibility-recovery-registry-source-v1.schema.json",
+      instance: "golden/compatibility-recovery-registry-source-v1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "compatibility-recovery-registry-v1",
+      schema: "../schemas/compatibility-recovery-registry-v1.schema.json",
+      instance: "../../../generated/platform/v1alpha1/compatibility-recovery-registry.json",
       expectedSchemaValid: true,
       expectedSemanticValid: true,
     },
@@ -451,6 +466,7 @@ function validateJsonSchemaFixtures(
           validateCanonicalSubjectRefFixture(document),
           validateManagedAgentCreateProjectIdempotencyFixture(document),
           validateDurableCoordinationFixture(document, dirname(contractRoot)),
+          validateCompatibilityRecoveryFixture(document, dirname(contractRoot)),
         ];
         const semanticResult =
           canonicalResults.find((result) => !result.valid) ??

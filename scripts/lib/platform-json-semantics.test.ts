@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { validateCompatibilityRecoveryFixture } from "./platform-compatibility-recovery-registry";
 import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
 
 import {
@@ -203,6 +204,7 @@ describe("platform semantic constraints", () => {
           validateCanonicalSubjectRefFixture(document),
           validateManagedAgentCreateProjectIdempotencyFixture(document),
           validateDurableCoordinationFixture(document, resolve(import.meta.dirname, "../..")),
+          validateCompatibilityRecoveryFixture(document, resolve(import.meta.dirname, "../..")),
         ];
         const result =
           canonicalResults.find((candidate) => !candidate.valid) ??

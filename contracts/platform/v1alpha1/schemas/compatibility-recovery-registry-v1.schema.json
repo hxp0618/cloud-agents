@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/compatibility-recovery-registry-v1.schema.json",
+  "title": "CompatibilityRecoveryRegistryV1",
+  "description": "Generated A2.4 compatibility/recovery registry. It has no runtime, SQL, HTTP, or external side-effect consumer in this slice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "sourceDigest",
+    "stateMachineDigest",
+    "policyDigest",
+    "schemaRange",
+    "profiles",
+    "stateMachines",
+    "policies",
+    "implementationBoundary",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-compatibility-recovery-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/compatibility-recovery" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "stateMachineDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "schemaRange": {
+      "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/schemaRange"
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["profileDigest", "spec"],
+        "properties": {
+          "profileDigest": { "$ref": "#/$defs/digest" },
+          "spec": { "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/profile" }
+        }
+      }
+    },
+    "stateMachines": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/stateMachine"
+      }
+    },
+    "policies": { "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/policies" },
+    "implementationBoundary": {
+      "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/implementationBoundary"
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "consumerLookup": "exact registryId plus registryDigest",
+    "callerProvidedRegistry": "forbidden"
+  }
+}

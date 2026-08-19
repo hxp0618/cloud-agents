@@ -5,6 +5,12 @@ import { relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
 import {
+  assertCompatibilityRecoveryRegistryCurrent,
+  buildCompatibilityRecoveryRegistry,
+  compatibilityRecoveryRegistryInputs,
+  COMPATIBILITY_RECOVERY_OUTPUT_PATH,
+} from "./platform-compatibility-recovery-registry";
+import {
   assertDurableCoordinationRegistryCurrent,
   buildDurableCoordinationRegistry,
   durableCoordinationRegistryInputs,
@@ -81,6 +87,16 @@ const DURABLE_COORDINATION_GO_GENERATOR_SOURCES = [
 ] as const;
 const DURABLE_COORDINATION_GO_OUTPUT_PATH =
   "services/control-plane/internal/coordination/registry_generated.go";
+const COMPATIBILITY_RECOVERY_GENERATOR_SOURCES = [
+  "docs/plan/adr/0015-p1-compatibility-recovery-contract.md",
+  "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
+  "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
+  "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v1.schema.json",
+  "scripts/generate-platform-compatibility-recovery-registry.ts",
+  "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+  "scripts/lib/platform-compatibility-recovery-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
 
 const IN_REPO_TOOLS = [
   {
@@ -90,6 +106,7 @@ const IN_REPO_TOOLS = [
     sources: [
       "scripts/check-platform-contracts.ts",
       "scripts/lib/platform-contracts.ts",
+      "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
@@ -113,6 +130,7 @@ const IN_REPO_TOOLS = [
       "scripts/generate-platform-contract-lock.ts",
       "scripts/lib/platform-contract-lock.ts",
       "scripts/lib/platform-contracts.ts",
+      "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-go-modules.ts",
       "scripts/lib/platform-json-semantics.ts",
@@ -130,6 +148,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-durable-coordination-go.ts",
     sources: DURABLE_COORDINATION_GO_GENERATOR_SOURCES,
   },
+  {
+    id: "platform-compatibility-recovery-registry-generator",
+    kind: "in-repo-typescript-deterministic-contract-registry",
+    entrypoint: "scripts/generate-platform-compatibility-recovery-registry.ts",
+    sources: COMPATIBILITY_RECOVERY_GENERATOR_SOURCES,
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -138,12 +162,15 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const migration = validateCheckedInMigrationBundle(root);
   const migrationInputs = platformMigrationInputs(root);
   assertDurableCoordinationRegistryCurrent(root);
+  assertCompatibilityRecoveryRegistryCurrent(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
+  const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
   const durableCoordinationGoInputs = [
     ...DURABLE_COORDINATION_GO_GENERATOR_SOURCES,
     DURABLE_COORDINATION_OUTPUT_PATH,
   ].toSorted();
   const durableCoordinationRegistry = buildDurableCoordinationRegistry(root);
+  const compatibilityRecoveryRegistry = buildCompatibilityRecoveryRegistry(root);
   const durableCoordinationProfile = (
     durableCoordinationRegistry.profiles as ReadonlyArray<{
       readonly profileDigest: string;
@@ -291,6 +318,35 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           handWrittenProfileFallback: "FORBIDDEN",
           httpSurface: "NOT_IMPLEMENTED",
           externalSideEffects: "FORBIDDEN",
+        },
+      },
+      {
+        id: "compatibility-recovery-registry-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, compatibilityRecoveryInputs),
+        inputs: compatibilityRecoveryInputs,
+        outputStatus: "GENERATED_COMPATIBILITY_RECOVERY_REGISTRY",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: COMPATIBILITY_RECOVERY_OUTPUT_PATH,
+            sha256: fileSha256(root, COMPATIBILITY_RECOVERY_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, COMPATIBILITY_RECOVERY_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          registryId: compatibilityRecoveryRegistry.registryId,
+          registryDigest: compatibilityRecoveryRegistry.registryDigest,
+          sourceDigest: compatibilityRecoveryRegistry.sourceDigest,
+          stateMachineDigest: compatibilityRecoveryRegistry.stateMachineDigest,
+          policyDigest: compatibilityRecoveryRegistry.policyDigest,
+          profileCount: (compatibilityRecoveryRegistry.profiles as ReadonlyArray<unknown>).length,
+          runtimeConsumer: "NOT_IMPLEMENTED",
+          sqlConsumer: "NOT_IMPLEMENTED_NO_000010",
+          httpSurface: "NOT_IMPLEMENTED",
+          externalSideEffects: "FORBIDDEN",
+          localLogicalRestore: "CONTRACT_ONLY_NOT_IMPLEMENTED",
+          pitrHa: "P4_NOT_IMPLEMENTED",
         },
       },
       {

@@ -197,6 +197,20 @@
       "instance": "../../../generated/platform/v1alpha1/durable-coordination-registry.json",
       "expectedSchemaValid": true,
       "expectedSemanticValid": true
+    },
+    {
+      "name": "compatibility-recovery-registry-source-v1",
+      "schema": "../schemas/compatibility-recovery-registry-source-v1.schema.json",
+      "instance": "golden/compatibility-recovery-registry-source-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "compatibility-recovery-registry-v1",
+      "schema": "../schemas/compatibility-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/compatibility-recovery-registry.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
     }
   ]
 }

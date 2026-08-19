@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:e36824d998784e93b81380bbb9c1d7db1361ab687bbb04b06665d2c3944c38a1",
+    "manifestSha256": "sha256:3ebeb225e197826cb054648deff06df9edba1eeeab4ef13630df3588c2178c4b",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -33,7 +33,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:08391b5db106dd3a2b0cd265ac1b6cd0cc2464b3a01157619c910129a420c61e",
+    "manifestSha256": "sha256:9ace247d9ee637460347165185d989ec64e9137dfbcaaa7eacc6910f9c120b4d",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -49,10 +49,11 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:a34f35896e33d202f50385f49f09e72998540a8f6745cbf4f8a92e2c3a4b9de9",
+      "sourceManifestSha256": "sha256:855c6806d2953c1c475aef2bc64d2846b9c4e69afa1d62400d555e83b2802f7b",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
@@ -75,11 +76,12 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:1b70f897dcfafd66813779c45ace3d4d628e29a9737eb439916e9cec23607177",
+      "sourceManifestSha256": "sha256:311545fc7e1b56759ac2ebf1df6079511c6a5e35383d173cd00768da6baeccc5",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
         "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-go-modules.ts",
         "scripts/lib/platform-json-semantics.ts"
@@ -90,7 +92,7 @@
       "id": "platform-durable-coordination-registry-generator",
       "kind": "in-repo-typescript-deterministic-contract-registry",
       "entrypoint": "scripts/generate-platform-durable-coordination-registry.ts",
-      "sourceManifestSha256": "sha256:e6baecef08538cbf5703106eaf9344ea84f4922892c6b0e8dbc087f4535031f3",
+      "sourceManifestSha256": "sha256:5e0a92981f5f6baa50c5f99537afa63c83de9270d213accc184d7630007ba492",
       "sources": [
         "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.test.ts",
@@ -103,7 +105,7 @@
       "id": "platform-durable-coordination-go-generator",
       "kind": "in-repo-typescript-deterministic-go-profile",
       "entrypoint": "scripts/generate-platform-durable-coordination-go.ts",
-      "sourceManifestSha256": "sha256:81bcdf6580601d42e4189fdd2f31cb66833e0c8b653b0a57a82d27d97c107f30",
+      "sourceManifestSha256": "sha256:76d7406cf8009a71abfaa78549513f029b4dd3168db10961c8825a70066e6c82",
       "sources": [
         "scripts/generate-platform-durable-coordination-go.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
@@ -112,10 +114,27 @@
       "license": "MIT"
     },
     {
+      "id": "platform-compatibility-recovery-registry-generator",
+      "kind": "in-repo-typescript-deterministic-contract-registry",
+      "entrypoint": "scripts/generate-platform-compatibility-recovery-registry.ts",
+      "sourceManifestSha256": "sha256:f721ff17d428f487466736e0d5b404378a3eceff043f8da002f2fcea730820f8",
+      "sources": [
+        "docs/plan/adr/0015-p1-compatibility-recovery-contract.md",
+        "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v1.schema.json",
+        "scripts/generate-platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:b62d1cbee1c9fb17ce8cb27c89f6e8566e276c3742b4731df44a2a3cf7ccdb5f",
+      "sourceManifestSha256": "sha256:f22ce187c2e94cdbe5b795baad2e9ba11a39fecdede09ee6481897f41a034e79",
       "sources": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -264,14 +283,14 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:e36824d998784e93b81380bbb9c1d7db1361ab687bbb04b06665d2c3944c38a1",
+      "inputManifestSha256": "sha256:3ebeb225e197826cb054648deff06df9edba1eeeab4ef13630df3588c2178c4b",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
     {
       "id": "durable-coordination-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:57fec9cfe3313cd4481c24f25a6d050fff1818bf680d3d56324aaaed890ab172",
+      "inputManifestSha256": "sha256:cf3ae768c1995e408726be6f0deb3882bce6ccee098371ca86c5667b849a9b67",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -317,7 +336,7 @@
     {
       "id": "durable-coordination-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:6cbb7c598df7d9b3fc16cefdee2240609c0499458c5131037dc6b9bd549cb7f4",
+      "inputManifestSha256": "sha256:1e9ff5f787e9d02f6545db79aaed81127e0766b02b25da43b26ed47535ccc02b",
       "inputs": [
         "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
         "scripts/generate-platform-durable-coordination-go.ts",
@@ -345,9 +364,47 @@
       }
     },
     {
+      "id": "compatibility-recovery-registry-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:f721ff17d428f487466736e0d5b404378a3eceff043f8da002f2fcea730820f8",
+      "inputs": [
+        "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v1.schema.json",
+        "docs/plan/adr/0015-p1-compatibility-recovery-contract.md",
+        "scripts/generate-platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "outputStatus": "GENERATED_COMPATIBILITY_RECOVERY_REGISTRY",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
+          "sha256": "sha256:f8a0ff0ebc91bab93b1bacf5ec6241f44c8639ae8a11dc0712b485f88156e812",
+          "sizeBytes": 11306
+        }
+      ],
+      "outputSummary": {
+        "registryId": "cloud-agents/platform/compatibility-recovery",
+        "registryDigest": "sha256:9df9dcf4c9e62cd95b43be362bf5a332bf9637ca881f16fbd25486ad0792f72d",
+        "sourceDigest": "sha256:55c232153ff9ee6e2d1929eca7c015567b264a3d9a2f5082cacf5b8b15122234",
+        "stateMachineDigest": "sha256:5fb7f076c40aed31d5309a4de6aa2a66b93f3d560a535ecf992dc1f817d8f408",
+        "policyDigest": "sha256:804ee0280ab5c98a48989abf511659d2a6f801fa5201617c3e436f848dfdc11d",
+        "profileCount": 5,
+        "runtimeConsumer": "NOT_IMPLEMENTED",
+        "sqlConsumer": "NOT_IMPLEMENTED_NO_000010",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "externalSideEffects": "FORBIDDEN",
+        "localLogicalRestore": "CONTRACT_ONLY_NOT_IMPLEMENTED",
+        "pitrHa": "P4_NOT_IMPLEMENTED"
+      }
+    },
+    {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:b62d1cbee1c9fb17ce8cb27c89f6e8566e276c3742b4731df44a2a3cf7ccdb5f",
+      "inputManifestSha256": "sha256:f22ce187c2e94cdbe5b795baad2e9ba11a39fecdede09ee6481897f41a034e79",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",

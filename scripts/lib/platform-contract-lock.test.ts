@@ -141,6 +141,42 @@ describe("Platform contract generation lock", () => {
     });
   });
 
+  it("records the compatibility and recovery registry without enabling consumers or Gates", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const pipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "compatibility-recovery-registry-generation",
+    );
+    expect(pipeline).toMatchObject({
+      outputStatus: "GENERATED_COMPATIBILITY_RECOVERY_REGISTRY",
+      notGateClosure: true,
+      outputSummary: {
+        profileCount: 5,
+        runtimeConsumer: "NOT_IMPLEMENTED",
+        sqlConsumer: "NOT_IMPLEMENTED_NO_000010",
+        httpSurface: "NOT_IMPLEMENTED",
+        externalSideEffects: "FORBIDDEN",
+        localLogicalRestore: "CONTRACT_ONLY_NOT_IMPLEMENTED",
+        pitrHa: "P4_NOT_IMPLEMENTED",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
+        },
+      ],
+    });
+    const inputs = pipeline?.inputs as string[];
+    expect(inputs).toContain("docs/plan/adr/0015-p1-compatibility-recovery-contract.md");
+    expect(inputs).toContain(
+      "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
+    );
+    expect(inputs).not.toContain(
+      "services/control-plane/migrations/000010_add_compatibility_recovery_registry.sql",
+    );
+  });
+
   it("rejects symbolic links in recursive migration inputs", () => {
     const root = temporaryRoot();
     mkdirSync(join(root, "catalog"));

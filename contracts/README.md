@@ -29,20 +29,27 @@ projection mismatch fails closed before a side effect.
 
 ADR-0013 adds a separate generated durable-coordination authority for that operation. Editable JSON Schema,
 OpenAPI bindings, one source profile, the seven closed state machines, and coordination policies feed the checked-in
-deterministic generator. Future SQL and Go consumers may accept only the exact generated
-`profileId + profileDigest`; a caller-provided operation name, profile, transition, retry policy, or finalizer policy
-is never authority. The current profile forbids external side effects, creates no PlatformOperation, and emits only
-the `resource_change` class. No runtime, SQL, or HTTP consumer exists in this slice.
+deterministic generator. The bounded A2.3 implementation consumes only the exact generated `profileId + profileDigest`
+through its typed Go service and append-only PostgreSQL `000008`/`000009` functions; a caller-provided operation name,
+profile, transition, retry policy, or finalizer policy is never authority. The current profile forbids external side
+effects, creates no PlatformOperation, and emits only the `resource_change` class.
+
+ADR-0015 adds the A2.4 compatibility/recovery registry as a separate generated contract/state-machine authority. Its
+five profiles bind instance identity, writer epoch, heartbeat/TTL, drain and retirement evidence, migration preflight,
+local logical restore evidence, and bounded backfill state. This entry slice has no `000010`, Go consumer, HTTP/P2
+surface, or external side effect; its generation-lock pipeline is non-Gate evidence only.
 
 ## P1-A bootstrap status
 
-- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 47 fixture
+- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 49 fixture
   cases pass the independently reviewed `Ajv2020` plus in-repo semantic bootstrap path. Mutation inputs reject unknown
   fields; response/watch unknown-field preservation remains a generated-reader sidecar seam described in
   `common/v1alpha1/README.md`, not a relaxation of mutation schemas.
 - The three Go source modules and exact Go toolchain boundary are established.
-- `contracts/generation.lock.json` binds the bootstrap source/tool/dependency digests and a distinct
-  `durable-coordination-registry-generation` input/output pipeline. Both remain explicitly non-Gate evidence;
+- `contracts/generation.lock.json` binds the bootstrap source/tool/dependency digests and distinct
+  `durable-coordination-registry-generation`, `durable-coordination-go-profile-generation`, and
+  `compatibility-recovery-registry-generation` pipelines. All generated-contract pipelines remain explicitly
+  non-Gate evidence;
   generated SDKs, compiled Proto descriptors, ConnectRPC/gRPC code, full OpenAPI validation, official JSON Schema
   suite, and N/N-1 compatibility evidence remain incomplete until follow-up P1-A slices land.
 - No contract in this tree proves a running Control Plane, Worker, Adapter, database, Provider turn, deployment, or
