@@ -169,7 +169,7 @@ func newEvidenceStructuralAccumulator(requirements []evidenceCheckpointRequireme
 }
 
 func (a *evidenceStructuralAccumulator) beginSegment() error {
-	if a.inSegment || a.segments >= maxEvidenceReservedSegments {
+	if a.inSegment || a.segments >= maxSupportedEvidenceReservedSegments {
 		return invalidEvidence("chain", "physical segment count")
 	}
 	a.inSegment = true
@@ -596,7 +596,7 @@ func validateEvidenceChainStructureSegments(segments [][]EvidenceFrame) (*eviden
 }
 
 func validateEvidenceChainStructureSegmentsObserved(segments [][]EvidenceFrame, requirements []evidenceCheckpointRequirement, observer evidenceStructuralObserver) (*evidenceStructuralReplay, error) {
-	if len(segments) == 0 || len(segments) > int(maxEvidenceReservedSegments) {
+	if len(segments) == 0 || len(segments) > int(maxSupportedEvidenceReservedSegments) {
 		return nil, invalidEvidence("chain", "physical segment count")
 	}
 	accumulator := newEvidenceStructuralAccumulator(requirements, observer)
@@ -941,7 +941,7 @@ func validateLineageChainStructure(frames []LineageIndexFrame, actualSegment0 ma
 		if !ok {
 			return nil, invalidEvidence("lineage-chain", "orphan registered journal")
 		}
-		if len(segments) == 0 || len(segments) > int(maxEvidenceReservedSegments) {
+		if len(segments) == 0 || len(segments) > int(maxSupportedEvidenceReservedSegments) {
 			return nil, invalidEvidence("lineage-chain", "registered journal structure")
 		}
 		for _, segment := range segments {

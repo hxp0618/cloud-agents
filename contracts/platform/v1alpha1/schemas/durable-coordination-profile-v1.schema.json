@@ -90,7 +90,7 @@
     "authorization": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tenantSource", "scopeSource", "requiredPermission"],
+      "required": ["tenantSource", "scopeSource", "scopeIdentity", "requiredPermission"],
       "properties": {
         "tenantSource": {
           "type": "string",
@@ -103,6 +103,22 @@
           "minLength": 3,
           "maxLength": 128,
           "pattern": "^(?:path|body)(?:[.][A-Za-z][A-Za-z0-9]*)+$"
+        },
+        "scopeIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaId", "identifierProfile", "comparison"],
+          "properties": {
+            "schemaId": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://schemas[.]cloud-agents[.]dev/platform/v1alpha1/schemas/[a-z0-9-]+[.]schema[.]json$"
+            },
+            "identifierProfile": {
+              "const": "cloud-agents-authorization-scope-identifier/ascii-v1"
+            },
+            "comparison": { "const": "exact_string_no_rewrite" }
+          }
         },
         "requiredPermission": {
           "$ref": "permission.schema.json"

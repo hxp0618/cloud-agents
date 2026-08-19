@@ -236,7 +236,7 @@ describe("P1-A1 idempotency canonical authority", () => {
       organizationRef: {
         namespace: "cloud-agents",
         kind: "organization",
-        id: "organization-café",
+        id: "organization-cafe",
       },
       displayName: "项目 Café",
     },
@@ -289,7 +289,7 @@ describe("P1-A1 idempotency canonical authority", () => {
       body: request.body,
     });
     expect(managedAgentCreateProjectIdempotencyDigest(request)).toBe(
-      "sha256:0a0f700e4379aafcb7b64a0e2d11e46b1863e6789244f63999e52b81a1c225d4",
+      "sha256:9e6ff0d726c44d07fc37097e8b85893a64033efb094a5514de5b400ff4963e20",
     );
     expect(
       managedAgentCreateProjectIdempotencyDigest({

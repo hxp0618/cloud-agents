@@ -12,10 +12,13 @@ import (
 func TestGeneratedManagedAgentCreateProjectProfileIsExactAndOpaque(t *testing.T) {
 	profile := ManagedAgentCreateProject()
 	if !profile.Valid() || profile.ProfileID() != "managedAgentCreateProject/v1alpha1" ||
-		profile.ProfileDigest() != "sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a" ||
+		profile.ProfileDigest() != "sha256:cdd54c59c0c363687eeb0e0e48aff00221cc4d42780bdf935c4b47bcd297f308" ||
 		profile.OperationID() != "managedAgentCreateProject" || profile.OutboxEventClass() != "resource_change" ||
 		profile.RequiredPermission() != "projects.create" || profile.RequiredScopeLevel() != "organization" ||
 		profile.ResultResourceKind() != "project" || profile.ReplayTTLSeconds() != 86400 ||
+		profile.ScopeIdentitySchemaID() != "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json" ||
+		profile.ScopeIdentifierProfile() != "cloud-agents-authorization-scope-identifier/ascii-v1" ||
+		profile.ScopeIdentityComparison() != "exact_string_no_rewrite" ||
 		profile.CreatesPlatformOperation() || profile.ExternalSideEffectAllowed() {
 		t.Fatalf("generated profile drift = %#v", profile)
 	}
@@ -25,7 +28,7 @@ func TestGeneratedManagedAgentCreateProjectProfileIsExactAndOpaque(t *testing.T)
 	if _, err := profileForOperation("unknownOperation"); err != ErrUnknownOperation {
 		t.Fatalf("unknown operation error = %v", err)
 	}
-	if RegistryDigest != "sha256:11c0f599e8320668a6f601241206c795933b26e3b9c456a58353a0d13c7ecd30" ||
+	if RegistryDigest != "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a" ||
 		StateMachineDigest != "sha256:5c4fa5c0cfac253b45a41c2e49ee7e863b9efbe124e5d743e041f5e01f5c6f15" ||
 		PolicyDigest != "sha256:95023973eb007a958a3c5aea3ac61b6caa7cd8955b9a24fcef3ad269230c64e8" {
 		t.Fatal("generated registry identities drifted")

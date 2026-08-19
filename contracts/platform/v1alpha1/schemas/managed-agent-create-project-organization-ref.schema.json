@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+  "title": "ManagedAgentCreateProjectOrganizationRef",
+  "description": "The organization scope identity used by the generated managed-agent create-project profile. It deliberately reuses the authorization identifier grammar and does not rewrite Unicode organization references.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["namespace", "kind", "id"],
+  "properties": {
+    "namespace": { "const": "cloud-agents" },
+    "kind": { "const": "organization" },
+    "id": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    }
+  }
+}

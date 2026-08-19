@@ -11,6 +11,15 @@ type operationProfile struct {
 	profileID                 string
 	profileDigest             string
 	operationID               string
+	projectionSchemaID        string
+	canonicalizationProfile   string
+	canonicalizationAlgorithm string
+	digestAlgorithm           string
+	tenantSource              string
+	scopeSource               string
+	scopeIdentitySchemaID     string
+	scopeIdentifierProfile    string
+	scopeIdentityComparison   string
 	requiredPermission        string
 	requiredScopeLevel        string
 	outboxEventClass          string
@@ -48,6 +57,27 @@ func (profile Profile) Valid() bool {
 func (profile Profile) ProfileID() string     { return profile.profile.profileID }
 func (profile Profile) ProfileDigest() string { return profile.profile.profileDigest }
 func (profile Profile) OperationID() string   { return profile.profile.operationID }
+func (profile Profile) ProjectionSchemaID() string {
+	return profile.profile.projectionSchemaID
+}
+func (profile Profile) CanonicalizationProfile() string {
+	return profile.profile.canonicalizationProfile
+}
+func (profile Profile) CanonicalizationAlgorithm() string {
+	return profile.profile.canonicalizationAlgorithm
+}
+func (profile Profile) DigestAlgorithm() string { return profile.profile.digestAlgorithm }
+func (profile Profile) TenantSource() string    { return profile.profile.tenantSource }
+func (profile Profile) ScopeSource() string     { return profile.profile.scopeSource }
+func (profile Profile) ScopeIdentitySchemaID() string {
+	return profile.profile.scopeIdentitySchemaID
+}
+func (profile Profile) ScopeIdentifierProfile() string {
+	return profile.profile.scopeIdentifierProfile
+}
+func (profile Profile) ScopeIdentityComparison() string {
+	return profile.profile.scopeIdentityComparison
+}
 func (profile Profile) RequiredPermission() string {
 	return profile.profile.requiredPermission
 }

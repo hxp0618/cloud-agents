@@ -1,6 +1,6 @@
 # P1-A2.2 subject issuer closure / lineage-index quota blocker - 2026-08-17
 
-- Status: **BLOCKER RECORDED - protocol change not authorized**
+- Status: **DIRECTION APPROVED - superseded by ADR-0012 implementation/review closure**
 - Fixed clean base: `a976279d755e05982a1de10d339347d34e2ecf78`
 - Affected slice: P1-A2.2-impl-3 independent-review remediation
 - Does not authorize: a limits/profile change, an applied-migration rewrite, a Gate closure, deployment, or release
@@ -91,7 +91,7 @@ The following are not admissible remediations:
 A Go-only issuer check leaves the reviewed direct-database authority gap open and therefore cannot close
 A2.2-impl-3.
 
-## 4. Required decision before implementation
+## 4. Approved decision before implementation
 
 The safe forward route requires a separately approved protocol amendment, not an implementation shortcut. A
 candidate design would introduce an explicit new lineage/quota limits profile that:
@@ -105,8 +105,14 @@ candidate design would introduce an explicit new lineage/quota limits profile th
 - fails closed on zero/unknown/profile-swapped authority and receives independent security review before
   `000006` is considered admissible.
 
-No such profile or rollover contract exists in the currently approved ADR-0009/ADR-0010 text. Until one is
-approved, the candidate remains uncommitted work and A2.2-impl-3 independent review remains open.
+The owner approved this versioned lineage/quota profile direction. ADR-0012 subsequently froze the explicit v1
+historical/v2 current profile pair, and the implementation plus independent review closed only the fixed-source
+A2.2-impl-3 remediation layer. That later evidence is recorded in
+[the implementation record](versioned-lineage-quota-profile-implementation-20260818.md) and
+[the independent review](versioned-lineage-quota-profile-independent-review-20260818.md).
+
+This approval did not authorize a rollover, rewrite historical evidence, open HTTP/P2 external effects, mutate a
+production database, deploy, release, or close any immutable or aggregate Gate.
 
 An independent reviewer reproduced the exact quota calculation and classified this as a P0 capacity blocker:
 the issuer correction is required to close a direct-database authority gap, while every currently approved

@@ -25,6 +25,7 @@ const OUTPUT_SCHEMA_PATH =
   "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json";
 const PERMISSION_SCHEMA_PATH = "contracts/platform/v1alpha1/schemas/permission.schema.json";
 const SUBJECT_SCHEMA_PATH = "contracts/common/v1alpha1/schemas/subject-ref.schema.json";
+const IDENTIFIER_SCHEMA_PATH = "contracts/common/v1alpha1/schemas/identifier.schema.json";
 const MANAGED_AGENT_OPENAPI_PATH = "contracts/managed-agent/v1alpha1/openapi.json";
 const MANAGED_HOST_OPENAPI_PATH = "contracts/managed-host/v1alpha1/openapi.json";
 const ADR_PATH = "docs/plan/adr/0013-p1-durable-coordination-contract.md";
@@ -45,6 +46,8 @@ const OUTPUT_SCHEMA_ID =
   "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json";
 const SUBJECT_SCHEMA_ID =
   "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/subject-ref.schema.json";
+const IDENTIFIER_SCHEMA_ID =
+  "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/identifier.schema.json";
 const PLATFORM_SCHEMA_PREFIX = "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/";
 const GENERATED_PROFILE_DOMAIN = "cloud-agents/durable-coordination/profile/v1";
 const GENERATED_POLICY_DOMAIN = "cloud-agents/durable-coordination/policies/v1";
@@ -174,6 +177,15 @@ export function durableCoordinationRegistryInputs(root: string): string[] {
     const profile = readProfile(root, path);
     return schemaRepositoryPath(profile.result.schemaId);
   });
+  const scopeIdentityPaths = profilePaths.map((path) => {
+    const profile = readProfile(root, path);
+    const authorization = requireRecord(profile.authorization, "/authorization");
+    const scopeIdentity = requireRecord(
+      authorization.scopeIdentity,
+      "/authorization/scopeIdentity",
+    );
+    return schemaRepositoryPath(scopeIdentity.schemaId);
+  });
   const inputs = [
     ADR_PATH,
     DURABLE_COORDINATION_SOURCE_PATH,
@@ -184,6 +196,7 @@ export function durableCoordinationRegistryInputs(root: string): string[] {
     MANAGED_AGENT_OPENAPI_PATH,
     MANAGED_HOST_OPENAPI_PATH,
     OUTPUT_SCHEMA_PATH,
+    IDENTIFIER_SCHEMA_PATH,
     PERMISSION_SCHEMA_PATH,
     PROFILE_SCHEMA_PATH,
     SOURCE_SCHEMA_PATH,
@@ -191,6 +204,7 @@ export function durableCoordinationRegistryInputs(root: string): string[] {
     ...profilePaths,
     ...projectionPaths,
     ...resultPaths,
+    ...scopeIdentityPaths,
   ];
   const uniqueInputs = [...new Set(inputs)].toSorted();
   for (const path of uniqueInputs) requireRegularRepositoryFile(root, path);
@@ -366,6 +380,36 @@ function validateProfileAgainstContracts(
       `Profile ${profile.profileId} result schema identity drifted.`,
     );
   }
+  const scopeIdentity = requireRecord(
+    profile.authorization.scopeIdentity,
+    "/authorization/scopeIdentity",
+  );
+  const scopeIdentitySchemaPath = schemaRepositoryPath(scopeIdentity.schemaId);
+  requireRegularRepositoryFile(root, scopeIdentitySchemaPath);
+  const scopeIdentitySchema = parseJsonFile(resolve(root, scopeIdentitySchemaPath));
+  const scopeProperties = requireRecord(
+    scopeIdentitySchema.properties,
+    "/scopeIdentity/properties",
+  );
+  const scopeID = requireRecord(scopeProperties.id, "/scopeIdentity/properties/id");
+  if (
+    scopeIdentitySchema.$id !== scopeIdentity.schemaId ||
+    scopeID.$ref !== "../../../common/v1alpha1/schemas/identifier.schema.json"
+  ) {
+    throw coordinationError(
+      "COORDINATION_PROFILE_BINDING_MISMATCH",
+      "/authorization/scopeIdentity/schemaId",
+      `Profile ${profile.profileId} scope identity is not bound to the authorization identifier grammar.`,
+    );
+  }
+  const identifierSchema = parseJsonFile(resolve(root, IDENTIFIER_SCHEMA_PATH));
+  if (identifierSchema.$id !== IDENTIFIER_SCHEMA_ID) {
+    throw coordinationError(
+      "COORDINATION_PROFILE_BINDING_MISMATCH",
+      "/authorization/scopeIdentity/schemaId",
+      "Authorization identifier schema identity drifted.",
+    );
+  }
   validateCurrentManagedAgentProfile(profile);
 }
 
@@ -376,6 +420,12 @@ function validateCurrentManagedAgentProfile(profile: ProfileDocument): void {
     authorization: {
       tenantSource: "path.tenantId",
       scopeSource: "body.organizationRef",
+      scopeIdentity: {
+        schemaId:
+          "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+        identifierProfile: "cloud-agents-authorization-scope-identifier/ascii-v1",
+        comparison: "exact_string_no_rewrite",
+      },
       requiredPermission: "projects.create",
     },
     coordination: {

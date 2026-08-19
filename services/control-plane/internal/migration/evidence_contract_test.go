@@ -133,6 +133,7 @@ func TestLineageCheckpointFramedLimitIsProfileBound(t *testing.T) {
 	}{
 		{name: "v1", id: EvidenceLimitsProfile, max: 16 << 10},
 		{name: "v2", id: LineageQuotaProfileV2, max: v2GenerationCheckpointMaximum},
+		{name: "v3", id: LineageQuotaProfileV3, max: v2GenerationCheckpointMaximum},
 	}
 	for _, profile := range profiles {
 		t.Run(profile.name, func(t *testing.T) {
@@ -180,8 +181,10 @@ func TestLineageCheckpointFramedLimitIsProfileBound(t *testing.T) {
 	if uint64(len(v1Framed)) <= v2GenerationCheckpointMaximum || uint64(len(v1Framed)) > lineageRecordFrameLimits[LineageRecordGenerationCheckpoint] {
 		t.Fatalf("test checkpoint does not straddle profile ceilings: %d", len(v1Framed))
 	}
-	if _, err := encodeCanonicalLineageFrameForProfile(oversized, LineageQuotaProfileV2); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
-		t.Fatalf("v2 oversized checkpoint was accepted: %v", err)
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3} {
+		if _, err := encodeCanonicalLineageFrameForProfile(oversized, profile); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+			t.Fatalf("%s oversized checkpoint was accepted: %v", profile, err)
+		}
 	}
 }
 
@@ -246,7 +249,7 @@ func TestProfileAwareCheckpointEncoderUsesInclusiveWireBoundary(t *testing.T) {
 	}
 }
 
-func TestGeneratedV2CheckpointFullShapeFits4096(t *testing.T) {
+func TestGeneratedV2AndV3CheckpointFullShapeFits4096(t *testing.T) {
 	t.Parallel()
 	migration := "000006"
 	attempt := uint32(3)
@@ -285,15 +288,106 @@ func TestGeneratedV2CheckpointFullShapeFits4096(t *testing.T) {
 		latestCheckpointRecordDigest:     digestPointer(previousIndex),
 	}
 	frame := EvidenceFrame{Sequence: 2, PreviousRecordDigest: digestPointer(digests[4]), RecordDigest: digests[4]}
-	_, framed, err := buildGenerationJournalCheckpoint(gen, cursor, frame, checkpointSummary, LineageQuotaProfileV2)
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3} {
+		_, framed, err := buildGenerationJournalCheckpoint(gen, cursor, frame, checkpointSummary, profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if uint64(len(framed)) > v2GenerationCheckpointMaximum {
+			t.Fatalf("full generated %s checkpoint exceeds 4096 bytes: %d", profile, len(framed))
+		}
+		if len(framed) == 0 {
+			t.Fatalf("generated %s checkpoint was empty", profile)
+		}
+	}
+}
+
+func TestLineageQuotaProfileV3UsesClosedInclusiveReservationLimits(t *testing.T) {
+	t.Parallel()
+	frames := fixtureArrayMembers(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"), "frames")
+	var base GenerationReserved
+	for _, raw := range frames {
+		var frame LineageIndexFrame
+		if _, err := DecodeStrict(raw, &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.RecordKind == LineageRecordGenerationReserved && frame.Record.Reserved != nil {
+			base = cloneProjectionValue(*frame.Record.Reserved)
+			break
+		}
+	}
+	if base.JournalIdentityDigest == "" {
+		t.Fatal("golden lineage fixture has no reservation")
+	}
+	build := func(profile string, records, bytes uint64, segments uint32) GenerationReserved {
+		reserved := cloneProjectionValue(base)
+		reserved.ReservedRecords = records
+		reserved.ReservedBytes = bytes
+		reserved.ReservedSegments = segments
+		reserved.PlannedSegment0Header.LimitsProfile = profile
+		reserved.PlannedSegment0Header.ReservedRecords = records
+		reserved.PlannedSegment0Header.ReservedBytes = bytes
+		reserved.PlannedSegment0Header.ReservedSegments = segments
+		var err error
+		reserved.QuotaReservationDigest, err = QuotaReservationDigest(reserved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reserved.PlannedSegment0Header.QuotaReservationDigest = reserved.QuotaReservationDigest
+		header := reserved.PlannedSegment0Header
+		headerFrame := EvidenceFrame{FormatVersion: EvidenceFrameFormat, Sequence: 0, RecordKind: EvidenceRecordHeader, Record: EvidenceRecord{Header: &header}}
+		reserved.ExpectedSegment0HeaderDigest, err = headerFrame.ComputeDigest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reserved
+	}
+
+	v3 := build(LineageQuotaProfileV3, maxEvidenceReservedRecords, maxSupportedEvidenceReservedBytes, maxSupportedEvidenceReservedSegments)
+	if err := v3.Validate(); err != nil {
+		t.Fatalf("exact v3 reservation limits were rejected: %v", err)
+	}
+	for name, fault := range map[string]GenerationReserved{
+		"records":  build(LineageQuotaProfileV3, maxEvidenceReservedRecords+1, maxSupportedEvidenceReservedBytes, maxSupportedEvidenceReservedSegments),
+		"bytes":    build(LineageQuotaProfileV3, maxEvidenceReservedRecords, maxSupportedEvidenceReservedBytes+1, maxSupportedEvidenceReservedSegments),
+		"segments": build(LineageQuotaProfileV3, maxEvidenceReservedRecords, maxSupportedEvidenceReservedBytes, maxSupportedEvidenceReservedSegments+1),
+	} {
+		t.Run("v3_"+name+"_plus_one", func(t *testing.T) {
+			if err := fault.Validate(); err == nil {
+				t.Fatal("v3 inclusive maximum + 1 was accepted")
+			}
+		})
+	}
+
+	v2 := build(LineageQuotaProfileV2, maxEvidenceReservedRecords, maxEvidenceReservedBytes, maxEvidenceReservedSegments)
+	if err := v2.Validate(); err != nil {
+		t.Fatalf("exact v2 reservation limits were rejected: %v", err)
+	}
+	for name, fault := range map[string]GenerationReserved{
+		"segments": build(LineageQuotaProfileV2, maxEvidenceReservedRecords, maxEvidenceReservedBytes, maxEvidenceReservedSegments+1),
+		"bytes":    build(LineageQuotaProfileV2, maxEvidenceReservedRecords, maxEvidenceReservedBytes+1, maxEvidenceReservedSegments),
+	} {
+		if err := fault.Validate(); err == nil {
+			t.Fatalf("v2 accepted v3-only %s capacity", name)
+		}
+	}
+
+	v2Digest, err := QuotaReservationDigest(build(LineageQuotaProfileV2, 64, 1<<20, 1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if uint64(len(framed)) > v2GenerationCheckpointMaximum {
-		t.Fatalf("full generated v2 checkpoint exceeds 4096 bytes: %d", len(framed))
+	v3Digest, err := QuotaReservationDigest(build(LineageQuotaProfileV3, 64, 1<<20, 1))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(framed) == 0 {
-		t.Fatal("generated v2 checkpoint was empty")
+	if v2Digest != "sha256:0581ed618246771293584fca2153c7407d02d70a1f0dc4c2a129b6b8c72a20c5" {
+		t.Fatalf("historical v2 quota reservation digest drifted: %s", v2Digest)
+	}
+	if v3Digest != "sha256:861b72e16f8b5fa0946b5466a3930297530dd99d654631bb7e601dc9f503fc2f" {
+		t.Fatalf("v3 quota reservation digest drifted: %s", v3Digest)
+	}
+	if v2Digest == v3Digest {
+		t.Fatal("v2 and v3 quota reservation domains collided")
 	}
 }
 

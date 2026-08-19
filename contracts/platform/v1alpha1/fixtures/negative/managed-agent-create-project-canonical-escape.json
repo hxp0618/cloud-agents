@@ -13,7 +13,7 @@
       "organizationRef": {
         "namespace": "cloud-agents",
         "kind": "organization",
-        "id": "organization-café"
+        "id": "organization-cafe"
       },
       "displayName": "项目 Café"
     }
@@ -31,12 +31,12 @@
       "organizationRef": {
         "namespace": "cloud-agents",
         "kind": "organization",
-        "id": "organization-café"
+        "id": "organization-cafe"
       },
       "displayName": "项目 Café"
     }
   },
-  "canonicalUtf8": "{\"body\":{\"displayName\":\"\\u9879目 Café\",\"name\":\"project-alpha\",\"organizationRef\":{\"id\":\"organization-café\",\"kind\":\"organization\",\"namespace\":\"cloud-agents\"}},\"operationId\":\"managedAgentCreateProject\",\"path\":{\"tenantId\":\"Tenant-A\"}}",
-  "digest": "sha256:0a0f700e4379aafcb7b64a0e2d11e46b1863e6789244f63999e52b81a1c225d4",
+  "canonicalUtf8": "{\"body\":{\"displayName\":\"\\u9879目 Café\",\"name\":\"project-alpha\",\"organizationRef\":{\"id\":\"organization-cafe\",\"kind\":\"organization\",\"namespace\":\"cloud-agents\"}},\"operationId\":\"managedAgentCreateProject\",\"path\":{\"tenantId\":\"Tenant-A\"}}",
+  "digest": "sha256:9e6ff0d726c44d07fc37097e8b85893a64033efb094a5514de5b400ff4963e20",
   "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
 }

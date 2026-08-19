@@ -22,6 +22,11 @@
   "authorization": {
     "tenantSource": "path.tenantId",
     "scopeSource": "body.organizationRef",
+    "scopeIdentity": {
+      "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+      "identifierProfile": "cloud-agents-authorization-scope-identifier/ascii-v1",
+      "comparison": "exact_string_no_rewrite"
+    },
     "requiredPermission": "projects.create"
   },
   "coordination": {

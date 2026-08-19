@@ -11,7 +11,7 @@
       "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
     },
     "organizationRef": {
-      "$ref": "../../../common/v1alpha1/schemas/organization-ref.schema.json"
+      "$ref": "managed-agent-create-project-organization-ref.schema.json"
     },
     "displayName": {
       "type": "string",

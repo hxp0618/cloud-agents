@@ -263,6 +263,9 @@ func admissionRecoveryFactsDigest(facts *admissionHistoricalVerificationFacts) [
 	if facts.lineageQuotaProfile == LineageQuotaProfileV2 {
 		h.Write([]byte("cloud-agents-platform-generation-recovery-facts/v2\x00"))
 		writeAdmissionString(h, facts.lineageQuotaProfile)
+	} else if facts.lineageQuotaProfile == LineageQuotaProfileV3 {
+		h.Write([]byte("cloud-agents-platform-generation-recovery-facts/v3\x00"))
+		writeAdmissionString(h, facts.lineageQuotaProfile)
 	} else {
 		// Historical v1 facts retain their exact digest subject.
 		h.Write([]byte("cloud-agents-platform-generation-recovery-facts/v1\x00"))

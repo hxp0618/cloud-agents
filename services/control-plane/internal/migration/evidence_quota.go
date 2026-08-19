@@ -124,6 +124,10 @@ func quotaBundleFactsDigest(profile string, schema Digest, attempts uint64, coun
 		h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v2\x00"))
 		h.Write([]byte(profile))
 		h.Write([]byte{0})
+	} else if profile == LineageQuotaProfileV3 {
+		h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v3\x00"))
+		h.Write([]byte(profile))
+		h.Write([]byte{0})
 	} else {
 		// Keep the v1 subject byte-for-byte identical: profile selection was not
 		// serialized by the historical bundle-facts digest.
@@ -157,7 +161,7 @@ func (facts verifiedQuotaBundleFacts) valid() bool {
 			return false
 		}
 	}
-	return (facts.lineageQuotaProfile == EvidenceLimitsProfile || facts.lineageQuotaProfile == LineageQuotaProfileV2) && facts.canonical == quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
+	return validEvidenceLimitsProfile(facts.lineageQuotaProfile) && facts.canonical == quotaBundleFactsDigest(facts.lineageQuotaProfile, facts.schemaBundleDigest, facts.maxAttempts, facts.statementCounts, facts.runtimeInputs, facts.outerArtifactDigest, facts.outerArtifactSize)
 }
 
 type evidenceQuotaReservation struct {
@@ -215,10 +219,11 @@ func calculateEvidenceQuotaReservationFromArithmeticFacts(facts quotaBundleArith
 			return evidenceQuotaReservation{}, quotaLimit("bundle facts are unavailable")
 		}
 	}
-	checkpointMaximum, profileErr := checkpointMaximumForProfile(facts.lineageQuotaProfile)
+	limits, profileErr := evidenceQuotaLimitsForProfile(facts.lineageQuotaProfile)
 	if profileErr != nil {
 		return evidenceQuotaReservation{}, quotaLimit("bundle lineage quota profile is unavailable")
 	}
+	checkpointMaximum := limits.maxCheckpoint
 	reservation := evidenceQuotaReservation{lineageQuotaProfile: facts.lineageQuotaProfile, ReservedRecords: 1, ReservedJournalBytes: evidenceRecordFrameLimits[EvidenceRecordHeader], ReservedSegments: 1}
 	segmentRecords := uint64(1)
 	segmentBytes := evidenceRecordFrameLimits[EvidenceRecordHeader]
@@ -233,8 +238,8 @@ func calculateEvidenceQuotaReservationFromArithmeticFacts(facts quotaBundleArith
 		}
 		if records > evidenceSegmentMaximumRecords || bytes > evidenceSegmentMaximumBytes {
 			segments, addOverflow := quotaAdd(uint64(reservation.ReservedSegments), 1)
-			if addOverflow || segments > uint64(maxEvidenceReservedSegments) {
-				return quotaLimit("journal requires more than sixteen segments")
+			if addOverflow || segments > uint64(limits.maxSegments) {
+				return quotaLimit("journal requires more segments than the selected profile permits")
 			}
 			reservation.ReservedSegments = uint32(segments)
 			segmentRecords, segmentBytes = 1, evidenceRecordFrameLimits[EvidenceRecordHeader]
@@ -310,7 +315,7 @@ func calculateEvidenceQuotaReservationFromArithmeticFacts(facts quotaBundleArith
 	if err != nil {
 		return evidenceQuotaReservation{}, err
 	}
-	if reservation.ReservedRecords > maxEvidenceReservedRecords || reservation.ReservedJournalBytes > maxEvidenceReservedBytes || reservation.ReservedBytes > maxEvidenceReservedBytes || reservation.ReservedIndexRecords > lineageIndexMaximumRecords || reservation.ReservedIndexBytes > lineageIndexMaximumBytes {
+	if reservation.ReservedRecords > limits.maxRecords || reservation.ReservedJournalBytes > limits.maxBytes || reservation.ReservedBytes > limits.maxBytes || reservation.ReservedIndexRecords > lineageIndexMaximumRecords || reservation.ReservedIndexBytes > lineageIndexMaximumBytes {
 		return evidenceQuotaReservation{}, quotaLimit("whole-bundle reservation exceeds a fixed inclusive maximum")
 	}
 	return reservation, nil

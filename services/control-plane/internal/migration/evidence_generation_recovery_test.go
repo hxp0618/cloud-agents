@@ -51,6 +51,20 @@ func TestBrandNewRecoveryWitnessIsSameVerifierBound(t *testing.T) {
 	}
 }
 
+func TestAdmissionRecoveryFactsDigestSeparatesV2AndV3Profiles(t *testing.T) {
+	facts := admissionHistoricalFactsFixture(t)
+	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery-profile-domains"))
+	bindRecoveryFactsToCandidate(facts, candidate)
+	v2 := cloneAdmissionHistoricalVerificationFacts(facts)
+	v2.lineageQuotaProfile = LineageQuotaProfileV2
+	v3 := cloneAdmissionHistoricalVerificationFacts(facts)
+	v3.lineageQuotaProfile = LineageQuotaProfileV3
+	v2Digest, v3Digest := admissionRecoveryFactsDigest(v2), admissionRecoveryFactsDigest(v3)
+	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v2Digest == v3Digest {
+		t.Fatalf("recovery facts profile domains are not closed: profiles=%q/%q valid=%v/%v v2=%x v3=%x", v2.lineageQuotaProfile, v3.lineageQuotaProfile, validAdmissionRecoveryFacts(v2), validAdmissionRecoveryFacts(v3), v2Digest, v3Digest)
+	}
+}
+
 func TestGenerationRecoveryReadyDigestRejectsCopyAndMutation(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
 	facts := admissionHistoricalFactsFixture(t)

@@ -7,29 +7,62 @@ import (
 )
 
 const (
-	EvidenceJournalFormat            = "cloud-agents-platform-evidence-journal/v1"
-	EvidenceFrameFormat              = "cloud-agents-platform-evidence-journal-frame/v1"
-	EvidenceLimitsProfile            = "cloud-agents-platform-evidence-journal-limits/v1"
-	LineageQuotaProfileV2            = "cloud-agents-platform-lineage-quota-profile/v2"
-	LineageIndexFormat               = "cloud-agents-platform-lineage-index/v1"
-	LineageFrameFormat               = "cloud-agents-platform-lineage-index-frame/v1"
-	LineageLimitsProfile             = "cloud-agents-platform-lineage-index-limits/v1"
-	EvidenceRecordDigestDomain       = "cloud-agents-platform-evidence-journal-record/v1"
-	LineageRecordDigestDomain        = "cloud-agents-platform-lineage-index-record/v1"
-	JournalIdentityDigestDomain      = "cloud-agents-platform-evidence-journal-identity/v1"
-	QuotaReservationDigestDomain     = "cloud-agents-platform-evidence-quota-reservation/v1"
-	QuotaReservationDigestDomainV2   = "cloud-agents-platform-evidence-quota-reservation/v2"
-	AmbiguousResolutionDigestDomain  = "cloud-agents-platform-ambiguous-resolution/v1"
-	LedgerPrefixDigestDomain         = "cloud-agents-platform-ledger-prefix/v1"
-	ExecutionLineageDigestDomain     = "cloud-agents-platform-execution-lineage/v1"
-	maxEvidenceFrameBytes            = uint64(1 << 20)
-	maxLineageFrameBytes             = uint64(256 << 10)
-	maxEvidenceReservedRecords       = uint64(16 * 4096)
-	maxEvidenceReservedBytes         = uint64(16 * 16 << 20)
-	maxEvidenceReservedSegments      = uint32(16)
-	maxDecisionRecoveryArtifactBytes = uint64(4 << 20)
-	v2GenerationCheckpointMaximum    = uint64(4 << 10)
+	EvidenceJournalFormat                = "cloud-agents-platform-evidence-journal/v1"
+	EvidenceFrameFormat                  = "cloud-agents-platform-evidence-journal-frame/v1"
+	EvidenceLimitsProfile                = "cloud-agents-platform-evidence-journal-limits/v1"
+	LineageQuotaProfileV2                = "cloud-agents-platform-lineage-quota-profile/v2"
+	LineageQuotaProfileV3                = "cloud-agents-platform-lineage-quota-profile/v3"
+	LineageIndexFormat                   = "cloud-agents-platform-lineage-index/v1"
+	LineageFrameFormat                   = "cloud-agents-platform-lineage-index-frame/v1"
+	LineageLimitsProfile                 = "cloud-agents-platform-lineage-index-limits/v1"
+	EvidenceRecordDigestDomain           = "cloud-agents-platform-evidence-journal-record/v1"
+	LineageRecordDigestDomain            = "cloud-agents-platform-lineage-index-record/v1"
+	JournalIdentityDigestDomain          = "cloud-agents-platform-evidence-journal-identity/v1"
+	QuotaReservationDigestDomain         = "cloud-agents-platform-evidence-quota-reservation/v1"
+	QuotaReservationDigestDomainV2       = "cloud-agents-platform-evidence-quota-reservation/v2"
+	QuotaReservationDigestDomainV3       = "cloud-agents-platform-evidence-quota-reservation/v3"
+	AmbiguousResolutionDigestDomain      = "cloud-agents-platform-ambiguous-resolution/v1"
+	LedgerPrefixDigestDomain             = "cloud-agents-platform-ledger-prefix/v1"
+	ExecutionLineageDigestDomain         = "cloud-agents-platform-execution-lineage/v1"
+	maxEvidenceFrameBytes                = uint64(1 << 20)
+	maxLineageFrameBytes                 = uint64(256 << 10)
+	maxEvidenceReservedRecords           = uint64(16 * 4096)
+	maxEvidenceReservedBytes             = uint64(16 * 16 << 20)
+	maxEvidenceReservedSegments          = uint32(16)
+	maxSupportedEvidenceReservedBytes    = uint64(32 * 16 << 20)
+	maxSupportedEvidenceReservedSegments = uint32(32)
+	maxDecisionRecoveryArtifactBytes     = uint64(4 << 20)
+	v2GenerationCheckpointMaximum        = uint64(4 << 10)
 )
+
+type evidenceQuotaProfileLimits struct {
+	maxRecords    uint64
+	maxBytes      uint64
+	maxSegments   uint32
+	maxCheckpoint uint64
+}
+
+func evidenceQuotaLimitsForProfile(profile string) (evidenceQuotaProfileLimits, error) {
+	switch profile {
+	case EvidenceLimitsProfile:
+		return evidenceQuotaProfileLimits{
+			maxRecords: maxEvidenceReservedRecords, maxBytes: maxEvidenceReservedBytes,
+			maxSegments: maxEvidenceReservedSegments, maxCheckpoint: lineageRecordFrameLimits[LineageRecordGenerationCheckpoint],
+		}, nil
+	case LineageQuotaProfileV2:
+		return evidenceQuotaProfileLimits{
+			maxRecords: maxEvidenceReservedRecords, maxBytes: maxEvidenceReservedBytes,
+			maxSegments: maxEvidenceReservedSegments, maxCheckpoint: v2GenerationCheckpointMaximum,
+		}, nil
+	case LineageQuotaProfileV3:
+		return evidenceQuotaProfileLimits{
+			maxRecords: maxEvidenceReservedRecords, maxBytes: maxSupportedEvidenceReservedBytes,
+			maxSegments: maxSupportedEvidenceReservedSegments, maxCheckpoint: v2GenerationCheckpointMaximum,
+		}, nil
+	default:
+		return evidenceQuotaProfileLimits{}, invalidEvidence("quota-profile", "unknown profile")
+	}
+}
 
 var evidenceRecordFrameLimits = map[EvidenceRecordKind]uint64{
 	EvidenceRecordHeader:              32 << 10,
@@ -843,6 +876,10 @@ func (h JournalHeader) Validate() error {
 	if h.FormatVersion != EvidenceJournalFormat || !validEvidenceLimitsProfile(h.LimitsProfile) {
 		return invalidEvidence("header", "format or limits")
 	}
+	limits, limitsErr := evidenceQuotaLimitsForProfile(h.LimitsProfile)
+	if limitsErr != nil {
+		return limitsErr
+	}
 	if e := requireEvidenceDigests(h.JournalIdentityDigest, h.ReleaseTrustDecisionDigest, h.RunnerProjectionDecisionDigest, h.ExecutionLineageDigest, h.OuterArtifactDigest, h.DecisionRecoveryArtifactSHA256, h.ManifestDigest, h.RunnerReleaseDigest, h.SchemaBundleDigest, h.AuthorityProfileDigest, h.AuthorityBindingDigest, h.QuotaReservationDigest); e != nil {
 		return e
 	}
@@ -855,7 +892,7 @@ func (h JournalHeader) Validate() error {
 	if h.DecisionRecoveryArtifactSizeBytes > maxDecisionRecoveryArtifactBytes {
 		return invalidEvidence("header", "artifact size")
 	}
-	if (h.SegmentIndex == 0) != (h.PreviousSegmentRecordDigest == nil) || h.ReservedRecords == 0 || h.ReservedRecords > maxEvidenceReservedRecords || h.ReservedBytes == 0 || h.ReservedBytes > maxEvidenceReservedBytes || h.ReservedSegments == 0 || h.ReservedSegments > maxEvidenceReservedSegments || h.SegmentIndex >= h.ReservedSegments {
+	if (h.SegmentIndex == 0) != (h.PreviousSegmentRecordDigest == nil) || h.ReservedRecords == 0 || h.ReservedRecords > limits.maxRecords || h.ReservedBytes == 0 || h.ReservedBytes > limits.maxBytes || h.ReservedSegments == 0 || h.ReservedSegments > limits.maxSegments || h.SegmentIndex >= h.ReservedSegments {
 		return invalidEvidence("header", "segment or reservation")
 	}
 	if e := requireSafe64(h.ReservedRecords, "reserved-records"); e != nil {
@@ -872,7 +909,7 @@ func (h JournalHeader) Validate() error {
 }
 
 func validEvidenceLimitsProfile(profile string) bool {
-	return profile == EvidenceLimitsProfile || profile == LineageQuotaProfileV2
+	return profile == EvidenceLimitsProfile || profile == LineageQuotaProfileV2 || profile == LineageQuotaProfileV3
 }
 
 func checkpointMaximumForProfile(profile string) (uint64, error) {
@@ -880,6 +917,8 @@ func checkpointMaximumForProfile(profile string) (uint64, error) {
 	case EvidenceLimitsProfile:
 		return lineageRecordFrameLimits[LineageRecordGenerationCheckpoint], nil
 	case LineageQuotaProfileV2:
+		return v2GenerationCheckpointMaximum, nil
+	case LineageQuotaProfileV3:
 		return v2GenerationCheckpointMaximum, nil
 	default:
 		return 0, invalidEvidence("checkpoint", "unknown lineage quota profile")
@@ -1034,7 +1073,11 @@ func (v GenerationReserved) Validate() error {
 	if e := requireEvidenceDigests(v.ExecutionLineageDigest, v.JournalIdentityDigest, v.RunnerProjectionDecisionDigest, v.SchemaBundleDigest, v.QuotaReservationDigest, v.ExpectedSegment0HeaderDigest); e != nil {
 		return e
 	}
-	if v.ReservedRecords == 0 || v.ReservedRecords > maxEvidenceReservedRecords || v.ReservedBytes == 0 || v.ReservedBytes > maxEvidenceReservedBytes || v.ReservedSegments == 0 || v.ReservedSegments > maxEvidenceReservedSegments {
+	limits, limitsErr := evidenceQuotaLimitsForProfile(v.PlannedSegment0Header.LimitsProfile)
+	if limitsErr != nil {
+		return limitsErr
+	}
+	if v.ReservedRecords == 0 || v.ReservedRecords > limits.maxRecords || v.ReservedBytes == 0 || v.ReservedBytes > limits.maxBytes || v.ReservedSegments == 0 || v.ReservedSegments > limits.maxSegments {
 		return invalidEvidence("reserved", "limits")
 	}
 	if v.Continuation != nil {
@@ -1166,6 +1209,8 @@ func QuotaReservationDigest(reserved GenerationReserved) (Digest, error) {
 	domain := QuotaReservationDigestDomain
 	if profile == LineageQuotaProfileV2 {
 		domain = QuotaReservationDigestDomainV2
+	} else if profile == LineageQuotaProfileV3 {
+		domain = QuotaReservationDigestDomainV3
 	}
 	return digestFlatDomain(domain, subject, "")
 }

@@ -233,7 +233,7 @@ func (j *generationEvidenceJournal) reconcileUnknownRotationLocked(ctx context.C
 }
 
 func (j *generationEvidenceJournal) prepareRotatedAppendLocked(cursor JournalCursor, inspected []EvidenceFrame, chain verifiedEvidenceChainWitness, inspectedCandidate EvidenceFrame) (*preparedGenerationJournalAppend, error) {
-	if j == nil || j.state == nil || len(inspected) < 2 || inspectedCandidate.RecordKind == EvidenceRecordHeader || cursor.previousRecordDigest == nil || cursor.segmentIndex == ^uint32(0) || uint32(len(j.state.segmentFacts)) != cursor.segmentIndex+1 || len(j.state.segmentFacts) >= int(j.reservation.ReservedSegments) || uint32(len(j.state.segmentFacts)) >= maxEvidenceReservedSegments {
+	if j == nil || j.state == nil || len(inspected) < 2 || inspectedCandidate.RecordKind == EvidenceRecordHeader || cursor.previousRecordDigest == nil || cursor.segmentIndex == ^uint32(0) || uint32(len(j.state.segmentFacts)) != cursor.segmentIndex+1 || len(j.state.segmentFacts) >= int(j.reservation.ReservedSegments) || uint32(len(j.state.segmentFacts)) >= maxSupportedEvidenceReservedSegments {
 		return nil, fail(CodeEvidenceJournalLimitExceeded, "generation-journal-rotation", "candidate cannot enter another reserved segment", nil)
 	}
 	profile, ok := generationJournalLimitsProfile(j)

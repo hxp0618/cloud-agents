@@ -584,7 +584,7 @@
   },
   "profiles": [
     {
-      "profileDigest": "sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a",
+      "profileDigest": "sha256:cdd54c59c0c363687eeb0e0e48aff00221cc4d42780bdf935c4b47bcd297f308",
       "spec": {
         "formatVersion": "cloud-agents-durable-coordination-profile/v1",
         "profileId": "managedAgentCreateProject/v1alpha1",
@@ -609,6 +609,11 @@
         "authorization": {
           "tenantSource": "path.tenantId",
           "scopeSource": "body.organizationRef",
+          "scopeIdentity": {
+            "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+            "identifierProfile": "cloud-agents-authorization-scope-identifier/ascii-v1",
+            "comparison": "exact_string_no_rewrite"
+          },
           "requiredPermission": "projects.create"
         },
         "coordination": {
@@ -638,5 +643,5 @@
       }
     }
   ],
-  "registryDigest": "sha256:11c0f599e8320668a6f601241206c795933b26e3b9c456a58353a0d13c7ecd30"
+  "registryDigest": "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a"
 }

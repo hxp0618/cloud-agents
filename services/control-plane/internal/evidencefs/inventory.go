@@ -12,7 +12,7 @@ const (
 	maximumAdmissionLineages           = 64
 	maximumAdmissionJournalsPerLineage = 16
 	maximumAdmissionJournals           = 16
-	maximumAdmissionSegments           = 16
+	maximumAdmissionSegments           = 32
 	maximumAdmissionIndexBytes         = uint64(16 << 20)
 	maximumAdmissionIndexAggregate     = uint64(1 << 30)
 	maximumAdmissionSegmentBytes       = uint64(16 << 20)

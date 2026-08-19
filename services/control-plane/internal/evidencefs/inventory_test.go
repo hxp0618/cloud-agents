@@ -584,6 +584,24 @@ func TestAdmissionLimitsRejectBeforePayloadRead(t *testing.T) {
 	}
 }
 
+func TestAdmissionSegmentCountSupportsExactThirtyTwoAndRejectsPlusOne(t *testing.T) {
+	f := newFakeBackend()
+	addAdmissionLineage(f, digestForTest(1), 1, maximumAdmissionSegments)
+	store := testStore(t, f)
+	lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1))
+	if err != nil || lease == nil || inventory == nil {
+		t.Fatalf("exact segment count lease=%v inventory=%v err=%v", lease, inventory, err)
+	}
+	_ = lease.Close()
+
+	f = newFakeBackend()
+	addAdmissionLineage(f, digestForTest(1), 1, maximumAdmissionSegments+1)
+	store = testStore(t, f)
+	if lease, inventory, err := store.AcquireAdmission(context.Background(), digestForTest(1)); lease != nil || inventory != nil || !errors.Is(err, ErrLimit) {
+		t.Fatalf("segment count +1 lease=%v inventory=%v err=%v", lease, inventory, err)
+	}
+}
+
 func TestAdmissionTerminalPassRejectsMutationAndEntryChange(t *testing.T) {
 	t.Run("same-inode-same-size-content", func(t *testing.T) {
 		f := newFakeBackend()

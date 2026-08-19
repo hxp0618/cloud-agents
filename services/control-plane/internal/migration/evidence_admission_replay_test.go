@@ -141,12 +141,33 @@ func TestAdmissionLineageDecoderEnforcesSelectedCheckpointProfile(t *testing.T) 
 		t.Fatalf("historical v1 checkpoint inside its 16 KiB maximum was rejected: %v", err)
 	}
 
-	v2Raw, v2CheckpointBytes := build(LineageQuotaProfileV2)
-	if v2CheckpointBytes != v1CheckpointBytes {
-		t.Fatalf("profile-only mutation changed checkpoint bytes: v1=%d v2=%d", v1CheckpointBytes, v2CheckpointBytes)
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3} {
+		raw, checkpointBytes := build(profile)
+		if checkpointBytes != v1CheckpointBytes {
+			t.Fatalf("profile-only mutation changed checkpoint bytes: v1=%d profile=%s bytes=%d", v1CheckpointBytes, profile, checkpointBytes)
+		}
+		if _, err := decodeAdmissionLineageFrames(raw); !IsCode(err, CodeEvidenceJournalCorrupt) {
+			t.Fatalf("stored %s checkpoint above its closed maximum was accepted: %v", profile, err)
+		}
 	}
-	if _, err := decodeAdmissionLineageFrames(v2Raw); !IsCode(err, CodeEvidenceJournalCorrupt) {
-		t.Fatalf("stored v2 checkpoint above its closed maximum was accepted: %v", err)
+}
+
+func TestAdmissionRuntimeInspectionDigestSeparatesV2AndV3Profiles(t *testing.T) {
+	t.Parallel()
+	base := admissionReplayRuntimeInspection{
+		manifestDigest: testDigest("runtime-inspection-manifest"), schemaBundleDigest: testDigest("runtime-inspection-schema"),
+		maxAttempts: 3, statementCounts: []uint64{1},
+		reservation: evidenceQuotaReservation{ReservedRecords: 1, ReservedJournalBytes: 2, ReservedSegments: 1, ReservedIndexRecords: 3, ReservedIndexBytes: 4, ReservedBytes: 6},
+	}
+	v2 := base
+	v2.lineageQuotaProfile = LineageQuotaProfileV2
+	v2.reservation.lineageQuotaProfile = LineageQuotaProfileV2
+	v3 := base
+	v3.lineageQuotaProfile = LineageQuotaProfileV3
+	v3.reservation.lineageQuotaProfile = LineageQuotaProfileV3
+	v2Digest, v3Digest := v2.digest(), v3.digest()
+	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v2Digest == v3Digest {
+		t.Fatalf("runtime inspection profile domains are not closed: v2=%x v3=%x", v2Digest, v3Digest)
 	}
 }
 

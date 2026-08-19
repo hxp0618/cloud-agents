@@ -798,6 +798,10 @@ func admissionHistoryDigest(history *VerifiedAdmissionHistory) [32]byte {
 		h.Write([]byte("cloud-agents-platform-verified-admission-history/v3\x00"))
 		writeAdmissionString(h, profile)
 		writeAdmissionString(h, quotaReservationProfile(history.reservation))
+	} else if profile == LineageQuotaProfileV3 {
+		h.Write([]byte("cloud-agents-platform-verified-admission-history/v4\x00"))
+		writeAdmissionString(h, profile)
+		writeAdmissionString(h, quotaReservationProfile(history.reservation))
 	} else {
 		// Historical v1 history retained the v2 subject before the explicit
 		// profile field was introduced; do not rewrite that in-memory digest.

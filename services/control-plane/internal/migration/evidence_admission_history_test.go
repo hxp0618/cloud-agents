@@ -98,6 +98,21 @@ func TestAdmissionHistoryDigestBindsEveryOrdinaryInput(t *testing.T) {
 	}
 }
 
+func TestAdmissionHistoryDigestSeparatesV2AndV3Profiles(t *testing.T) {
+	t.Parallel()
+	base := &VerifiedAdmissionHistory{revision: 1, target: [32]byte{1}, fullSet: [32]byte{2}, transcriptCanonical: [32]byte{3}, rootFacts: rootFactsForTest(t, nil)}
+	v2 := *base
+	v2.quotaProfile = LineageQuotaProfileV2
+	v2.reservation = evidenceQuotaReservation{lineageQuotaProfile: LineageQuotaProfileV2, ReservedRecords: 1, ReservedJournalBytes: 2, ReservedSegments: 1, ReservedIndexRecords: 3, ReservedIndexBytes: 4, ReservedBytes: 6}
+	v3 := *base
+	v3.quotaProfile = LineageQuotaProfileV3
+	v3.reservation = evidenceQuotaReservation{lineageQuotaProfile: LineageQuotaProfileV3, ReservedRecords: 1, ReservedJournalBytes: 2, ReservedSegments: 1, ReservedIndexRecords: 3, ReservedIndexBytes: 4, ReservedBytes: 6}
+	v2Digest, v3Digest := admissionHistoryDigest(&v2), admissionHistoryDigest(&v3)
+	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v2Digest == v3Digest {
+		t.Fatalf("admission history profile domains are not closed: v2=%x v3=%x", v2Digest, v3Digest)
+	}
+}
+
 func TestRegisteredGenerationDigestBindsEveryOwnedFact(t *testing.T) {
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery"))
 	registered := registeredGenerationDigestFixture(t, candidate)

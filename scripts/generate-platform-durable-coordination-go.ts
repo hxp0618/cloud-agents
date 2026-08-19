@@ -14,10 +14,32 @@ type GeneratedProfile = {
   readonly spec: {
     readonly profileId: string;
     readonly operationId: string;
+    readonly http: {
+      readonly method: string;
+      readonly path: string;
+      readonly idempotencyHeader: string;
+    };
+    readonly subjectIdentity: {
+      readonly schemaId: string;
+      readonly digestProfile: string;
+      readonly comparison: string;
+    };
+    readonly projection: {
+      readonly schemaId: string;
+      readonly canonicalizationProfile: string;
+      readonly canonicalizationAlgorithm: string;
+      readonly digestAlgorithm: string;
+      readonly numberHandling: string;
+    };
     readonly authorization: {
       readonly tenantSource: string;
       readonly requiredPermission: string;
       readonly scopeSource: string;
+      readonly scopeIdentity: {
+        readonly schemaId: string;
+        readonly identifierProfile: string;
+        readonly comparison: string;
+      };
     };
     readonly coordination: {
       readonly createsPlatformOperation: boolean;
@@ -49,8 +71,27 @@ export function serializeDurableCoordinationGo(registry: GeneratedRegistry): str
   if (
     spec.profileId !== "managedAgentCreateProject/v1alpha1" ||
     spec.operationId !== "managedAgentCreateProject" ||
+    spec.http.method !== "POST" ||
+    spec.http.path !== "/v1/tenants/{tenantId}/projects" ||
+    spec.http.idempotencyHeader !== "Idempotency-Key" ||
+    spec.subjectIdentity.schemaId !==
+      "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/subject-ref.schema.json" ||
+    spec.subjectIdentity.digestProfile !== "cloud-agents-subject-ref/v1alpha1-rfc8785-sha256" ||
+    spec.subjectIdentity.comparison !== "exact_string_no_rewrite" ||
+    spec.projection.schemaId !==
+      "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json" ||
+    spec.projection.canonicalizationProfile !==
+      "cloud-agents-http-idempotency/managedAgentCreateProject/v1alpha1" ||
+    spec.projection.canonicalizationAlgorithm !== "RFC8785" ||
+    spec.projection.digestAlgorithm !== "SHA-256" ||
+    spec.projection.numberHandling !== "NOT_APPLICABLE_NO_NUMBER_FIELDS" ||
     spec.authorization.tenantSource !== "path.tenantId" ||
     spec.authorization.scopeSource !== "body.organizationRef" ||
+    spec.authorization.scopeIdentity.schemaId !==
+      "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json" ||
+    spec.authorization.scopeIdentity.identifierProfile !==
+      "cloud-agents-authorization-scope-identifier/ascii-v1" ||
+    spec.authorization.scopeIdentity.comparison !== "exact_string_no_rewrite" ||
     spec.authorization.requiredPermission !== "projects.create" ||
     spec.coordination.createsPlatformOperation ||
     spec.coordination.externalSideEffect !== "forbidden" ||
@@ -75,6 +116,15 @@ var managedAgentCreateProjectProfile = operationProfile{
 \tprofileID:                 ${goString(spec.profileId)},
 \tprofileDigest:             ${goString(profileDigest)},
 \toperationID:               ${goString(spec.operationId)},
+\tprojectionSchemaID:        ${goString(spec.projection.schemaId)},
+\tcanonicalizationProfile:   ${goString(spec.projection.canonicalizationProfile)},
+\tcanonicalizationAlgorithm: ${goString(spec.projection.canonicalizationAlgorithm)},
+\tdigestAlgorithm:           ${goString(spec.projection.digestAlgorithm)},
+\ttenantSource:              ${goString(spec.authorization.tenantSource)},
+\tscopeSource:               ${goString(spec.authorization.scopeSource)},
+\tscopeIdentitySchemaID:     ${goString(spec.authorization.scopeIdentity.schemaId)},
+\tscopeIdentifierProfile:    ${goString(spec.authorization.scopeIdentity.identifierProfile)},
+\tscopeIdentityComparison:   ${goString(spec.authorization.scopeIdentity.comparison)},
 \trequiredPermission:        ${goString(spec.authorization.requiredPermission)},
 \trequiredScopeLevel:        "organization",
 \toutboxEventClass:          ${goString(spec.coordination.outboxEventClass)},
