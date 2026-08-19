@@ -184,8 +184,8 @@ func decodeRuntimeBundleWithManifestCheck(raw []byte, checkManifest func(*Manife
 	if err != nil {
 		return nil, err
 	}
-	if manifest.SchemaBundle.GlobalTableAuthority.Path != "services/control-plane/migrations/catalog/global-table-authority-v1.json" {
-		return nil, fail(CodeInvalidManifest, "global-table-authority", "manifest v1 global authority path differs from the fixed path", nil)
+	if manifest.SchemaBundle.GlobalTableAuthority.Path != "services/control-plane/migrations/catalog/global-table-authority-v1.json" && manifest.SchemaBundle.GlobalTableAuthority.Path != "services/control-plane/migrations/catalog/global-table-authority-v2.json" {
+		return nil, fail(CodeInvalidManifest, "global-table-authority", "manifest global authority path differs from the fixed versioned paths", nil)
 	}
 	globalRaw, ok := files[manifest.SchemaBundle.GlobalTableAuthority.Path]
 	if !ok {

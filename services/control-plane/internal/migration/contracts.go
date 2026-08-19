@@ -309,17 +309,21 @@ func DecodeGlobalTableAuthorityContract(data []byte) (*GlobalTableAuthorityContr
 	if _, err := DecodeStrict(data, &contract); err != nil {
 		return nil, err
 	}
-	if contract.FormatVersion != "cloud-agents-platform-global-table-authority/v1" || contract.ContractKind != "global_table_writer_authority" {
+	if (contract.FormatVersion != "cloud-agents-platform-global-table-authority/v1" && contract.FormatVersion != "cloud-agents-platform-global-table-authority/v2") || contract.ContractKind != "global_table_writer_authority" {
 		return nil, fail(CodeInvalidManifest, "global-table-authority", "invalid global table authority contract identity", nil)
 	}
-	expected := []GlobalTableWriter{
+	expectedV1 := []GlobalTableWriter{
 		{Name: "schema_migrations", Writers: []string{MigrationOwnerRole}},
 		{Name: "workload_database_principals", Writers: []string{"audited_bootstrap_function"}},
 		{Name: "builtin_roles", Writers: []string{MigrationOwnerRole}},
 		{Name: "builtin_role_permissions", Writers: []string{MigrationOwnerRole}},
 	}
+	expected := expectedV1
+	if contract.FormatVersion == "cloud-agents-platform-global-table-authority/v2" {
+		expected = append(append([]GlobalTableWriter(nil), expectedV1...), GlobalTableWriter{Name: "leader_leases", Writers: []string{"typed_control_plane_coordination_function"}})
+	}
 	if !reflect.DeepEqual(contract.Tables, expected) {
-		return nil, fail(CodeInvalidManifest, "global-table-authority", "global table writer closure differs from manifest v1", nil)
+		return nil, fail(CodeInvalidManifest, "global-table-authority", "global table writer closure differs from its versioned contract", nil)
 	}
 	return &contract, nil
 }

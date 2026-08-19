@@ -50,11 +50,13 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
   "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
   "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+  "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
   "services/control-plane/migrations/manifest.json",
   "services/control-plane/migrations/schema-bundle.json",
+  "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
   "services/control-plane/migrations/archive",
@@ -231,7 +233,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           policyDigest: durableCoordinationRegistry.policyDigest,
           profileCount: (durableCoordinationRegistry.profiles as ReadonlyArray<unknown>).length,
           runtimeConsumer: "NOT_IMPLEMENTED",
-          sqlConsumer: "NOT_IMPLEMENTED",
+          sqlConsumer: "GENERATED_PROFILE_DIGEST_CHECK_CONSTRAINTS_000007",
           httpSurface: "NOT_IMPLEMENTED",
           externalSideEffects: "FORBIDDEN",
         },
@@ -300,7 +302,11 @@ export function platformMigrationInputs(root: string): string[] {
   const discovered = PLATFORM_MIGRATION_INPUT_DIRECTORIES.flatMap((directory) =>
     listRegularMigrationInputFiles(root, directory),
   );
-  const inputs = [...PLATFORM_MIGRATION_FIXED_INPUTS, ...discovered].toSorted();
+  const coordination = [
+    ...durableCoordinationRegistryInputs(root),
+    DURABLE_COORDINATION_OUTPUT_PATH,
+  ];
+  const inputs = [...PLATFORM_MIGRATION_FIXED_INPUTS, ...coordination, ...discovered].toSorted();
   if (new Set(inputs).size !== inputs.length) {
     throw new Error("Platform migration inputs must have unique repository-relative paths.");
   }

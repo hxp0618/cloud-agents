@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000006`, under the migration advisory lock. Each
+   `000001` through `000007`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -97,6 +97,15 @@ silently alter this schema.
    are ASCII letters/digits/`+.-`, a colon terminates it, ASCII controls and DEL
    are forbidden, and each percent sign has exactly two ASCII hexadecimal bytes.
    Rejection happens before tenant revision allocation or durable mutation.
+10. `000007` consumes only the generated `managedAgentCreateProject/v1alpha1`
+    coordination profile and adds the append-only durable-coordination schema
+    kernel. Seven tenant-owned tables use forced RLS; `leader_leases` is admitted
+    through versioned `global-table-authority-v2` while v1 remains byte-identical
+    for historical bundles. Runtime receives tenant-scoped SELECT plus EXECUTE on
+    exactly seven pure registry/profile helpers, but no coordination DML or typed
+    service function. The generated profile has `createsPlatformOperation=false`,
+    and this slice exposes no claim, reconcile, finalizer, outbox-effect, HTTP/P2,
+    or external-side-effect path.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -142,12 +151,13 @@ credential/secret payloads. The bootstrap seam records a bounded reason code,
 not caller-supplied free-form detail.
 
 The runtime group receives tenant-scoped `SELECT`, plus EXECUTE on the five
-effective typed mutation entry points, including access to the global built-in role
-catalog and tenant Membership/RoleBinding facts. Project, Membership and
-RoleBinding mutation is never granted as raw table write authority. Each typed
-mutation allocates and publishes its tenant revision atomically through the
-forward migration and reviewed store path; A2.3 still owns durable
-operation/outbox coordination.
+effective typed RBAC mutation entry points and the seven pure coordination
+registry/profile helpers, including access to the global built-in role catalog,
+tenant Membership/RoleBinding facts, and read-only coordination facts. Project,
+Membership, RoleBinding, and coordination mutation is never granted as raw table
+write authority. Each existing typed RBAC mutation allocates and publishes its
+tenant revision atomically through the reviewed store path. A2.3 slice 3 still
+owns every typed coordination service/claim/reconcile/finalizer/outbox write path.
 
 The local conformance matrix always starts fresh exact PostgreSQL 15/16/17
 containers, applies all six migrations, seeds only deterministic tenant facts
@@ -165,6 +175,19 @@ writing Membership, RoleBinding, resource-change, or audit facts:
 The script never pulls an image implicitly or reuses an existing container or
 database. A passing local matrix is implementation evidence only, not a
 production database write, publication, deployment or aggregate Gate closure.
+
+The separate A2.3 slice-2 schema-only matrix starts fresh exact PostgreSQL
+15/16/17 containers, applies all seven migrations, and checks registry/profile
+digests, ownership, RLS, tenant isolation, helper ACLs, the absence of runtime
+coordination DML, profile/TTL rejection, and bounded leader-lease facts:
+
+```sh
+./services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh
+```
+
+It does not exercise or claim the slice-3 service, claim/reconcile race/fault,
+HTTP/P2, or independent-review boundary. It never pulls an image implicitly and
+does not constitute production database mutation or Gate closure.
 
 ## Immutable boundary
 

@@ -75,7 +75,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:c457f04c77f7ea790614d76e0dc70e8218d25e8970168a83122112bf8821dd62",
+      "sourceManifestSha256": "sha256:04266e6bdec11c0ecbc6793270180375658db8387464d92f1f3528df05a82fe8",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -103,14 +103,31 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:4c993805c437f7895db9347022f8c098203d0c19ae545a1e86c5490655a1f17d",
+      "sourceManifestSha256": "sha256:4f6058b5b6b52412141454b7c4c1429fd11feecb5afa2eb14baee6f923afeddc",
       "sources": [
+        "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
+        "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-host/v1alpha1/openapi.json",
         "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-v1alpha1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-profile-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+        "contracts/platform/v1alpha1/schemas/permission.schema.json",
+        "contracts/platform/v1alpha1/schemas/project.schema.json",
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
         "docs/plan/adr/0011-p1-membership-rbac-contract.md",
+        "docs/plan/adr/0013-p1-durable-coordination-contract.md",
         "scripts/check-platform-migration-bundle.ts",
+        "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/generate-platform-migration-bundle.ts",
+        "scripts/lib/platform-durable-coordination-registry.test.ts",
+        "scripts/lib/platform-durable-coordination-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
         "scripts/lib/platform-migration-bundle.test.ts",
         "scripts/lib/platform-migration-bundle.ts",
         "scripts/lib/platform-migration-evidence.test.ts",
@@ -128,19 +145,23 @@
         "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
         "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+        "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
+        "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
         "services/control-plane/migrations/bootstrap/database.sql",
         "services/control-plane/migrations/bootstrap/roles.sql",
         "services/control-plane/migrations/catalog/authority-v1.json",
         "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+        "services/control-plane/migrations/catalog/global-table-authority-v2.json",
         "services/control-plane/migrations/catalog/schema-000001.json",
         "services/control-plane/migrations/catalog/schema-000002.json",
         "services/control-plane/migrations/catalog/schema-000003.json",
         "services/control-plane/migrations/catalog/schema-000004.json",
         "services/control-plane/migrations/catalog/schema-000005.json",
         "services/control-plane/migrations/catalog/schema-000006.json",
+        "services/control-plane/migrations/catalog/schema-000007.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -184,7 +205,8 @@
         "services/control-plane/migrations/fixtures/projection/negative/faults-v1.json",
         "services/control-plane/migrations/fixtures/projection/negative/lineage-frame-duplicate.raw",
         "services/control-plane/migrations/manifest.json",
-        "services/control-plane/migrations/schema-bundle.json"
+        "services/control-plane/migrations/schema-bundle.json",
+        "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh"
       ],
       "license": "MIT"
     },
@@ -263,7 +285,7 @@
         "policyDigest": "sha256:95023973eb007a958a3c5aea3ac61b6caa7cd8955b9a24fcef3ad269230c64e8",
         "profileCount": 1,
         "runtimeConsumer": "NOT_IMPLEMENTED",
-        "sqlConsumer": "NOT_IMPLEMENTED",
+        "sqlConsumer": "GENERATED_PROFILE_DIGEST_CHECK_CONSTRAINTS_000007",
         "httpSurface": "NOT_IMPLEMENTED",
         "externalSideEffects": "FORBIDDEN"
       }
@@ -271,14 +293,31 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:4c993805c437f7895db9347022f8c098203d0c19ae545a1e86c5490655a1f17d",
+      "inputManifestSha256": "sha256:4f6058b5b6b52412141454b7c4c1429fd11feecb5afa2eb14baee6f923afeddc",
       "inputs": [
+        "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
+        "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-host/v1alpha1/openapi.json",
         "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-v1alpha1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-profile-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+        "contracts/platform/v1alpha1/schemas/permission.schema.json",
+        "contracts/platform/v1alpha1/schemas/project.schema.json",
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
         "docs/plan/adr/0011-p1-membership-rbac-contract.md",
+        "docs/plan/adr/0013-p1-durable-coordination-contract.md",
         "scripts/check-platform-migration-bundle.ts",
+        "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/generate-platform-migration-bundle.ts",
+        "scripts/lib/platform-durable-coordination-registry.test.ts",
+        "scripts/lib/platform-durable-coordination-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
         "scripts/lib/platform-migration-bundle.test.ts",
         "scripts/lib/platform-migration-bundle.ts",
         "scripts/lib/platform-migration-evidence.test.ts",
@@ -296,19 +335,23 @@
         "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
         "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+        "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
+        "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
         "services/control-plane/migrations/bootstrap/database.sql",
         "services/control-plane/migrations/bootstrap/roles.sql",
         "services/control-plane/migrations/catalog/authority-v1.json",
         "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+        "services/control-plane/migrations/catalog/global-table-authority-v2.json",
         "services/control-plane/migrations/catalog/schema-000001.json",
         "services/control-plane/migrations/catalog/schema-000002.json",
         "services/control-plane/migrations/catalog/schema-000003.json",
         "services/control-plane/migrations/catalog/schema-000004.json",
         "services/control-plane/migrations/catalog/schema-000005.json",
         "services/control-plane/migrations/catalog/schema-000006.json",
+        "services/control-plane/migrations/catalog/schema-000007.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -352,7 +395,8 @@
         "services/control-plane/migrations/fixtures/projection/negative/faults-v1.json",
         "services/control-plane/migrations/fixtures/projection/negative/lineage-frame-duplicate.raw",
         "services/control-plane/migrations/manifest.json",
-        "services/control-plane/migrations/schema-bundle.json"
+        "services/control-plane/migrations/schema-bundle.json",
+        "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh"
       ],
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "notGateClosure": true,
@@ -368,6 +412,11 @@
           "sizeBytes": 7334
         },
         {
+          "path": "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
+          "sha256": "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336",
+          "sizeBytes": 11860
+        },
+        {
           "path": "services/control-plane/migrations/catalog/authority-v1.json",
           "sha256": "sha256:eb8c4ad607dc3443471fa376a9da9bf49e17788ffcc9cda6d2ccecd982327ccd",
           "sizeBytes": 1166
@@ -376,6 +425,11 @@
           "path": "services/control-plane/migrations/catalog/global-table-authority-v1.json",
           "sha256": "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d",
           "sizeBytes": 658
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/global-table-authority-v2.json",
+          "sha256": "sha256:774fca639d56b984432cca1d0a013f2dee063bb7acaa53a09c3c57251f8f0d3b",
+          "sizeBytes": 765
         },
         {
           "path": "services/control-plane/migrations/catalog/schema-000001.json",
@@ -406,6 +460,11 @@
           "path": "services/control-plane/migrations/catalog/schema-000006.json",
           "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449",
           "sizeBytes": 102509
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/schema-000007.json",
+          "sha256": "sha256:97bea5dcd8b8584da838d73d6e1f360bf8b3b2135060036140bdbab5c274088b",
+          "sizeBytes": 160268
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/attempt-terminal-state-v1.json",
@@ -544,22 +603,22 @@
         },
         {
           "path": "services/control-plane/migrations/manifest.json",
-          "sha256": "sha256:3e491232916863f77302a9a07f519042443e043a5d3b1c2a29c847b01c0895ec",
-          "sizeBytes": 17500
+          "sha256": "sha256:2862fd3aab9298813ccc9be4edcab6d1c2a9dcf7ceac433531ba3eb1d6cbb9f3",
+          "sizeBytes": 20037
         },
         {
           "path": "services/control-plane/migrations/schema-bundle.json",
-          "sha256": "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336",
-          "sizeBytes": 11860
+          "sha256": "sha256:3a2e4ef3cab7227a527831e03f7a85a9bcdbf2963e076c6bb764fe15e1fb194d",
+          "sizeBytes": 13374
         }
       ],
       "outputSummary": {
-        "schemaBundleDigest": "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec",
+        "schemaBundleDigest": "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c",
         "bootstrapBundleDigest": "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
-        "manifestDigest": "sha256:f3ccdc9498f136f7f11fc25435d26dd6f0f48fe5cdd046e89175ee2d05838f8c",
+        "manifestDigest": "sha256:6194048fa8a13d1664dd421ad548d6808fb8eb97b33bb80ceb0b717f89331202",
         "runtimeTar": {
-          "sizeBytes": 611840,
-          "sha256": "sha256:65db6f34d51366a877a8a4d9d8e0a252627f689f53d61aff9c56856d753d57d5"
+          "sizeBytes": 834048,
+          "sha256": "sha256:2c0f963424b2a71311556911c0f25a5aced16167fa1902f394ed74623cfd66e7"
         },
         "bootstrapTar": {
           "sizeBytes": 32256,

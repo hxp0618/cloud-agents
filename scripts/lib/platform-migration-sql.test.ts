@@ -16,6 +16,7 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
       "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
       "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+      "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
     ].entries()) {
       const bytes = readFileSync(resolve(root, file));
       const statements = splitPostgresStatements(bytes);
@@ -28,7 +29,45 @@ describe("postgresql-lex-v1 bootstrap", () => {
         ).toBe("postgresql-ddl-v1");
       }
     }
-    expect(counts).toEqual([20, 71, 46, 20, 1, 1]);
+    expect(counts).toEqual([20, 71, 46, 20, 1, 1, 89]);
+  });
+
+  it("admits only the exact generated-profile operation-effect partial index", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+        ),
+      ),
+    );
+    expect(classifyMigrationStatement(statements[26]!, "000007")).toEqual({
+      profile: "postgresql-ddl-v1",
+      command: "CREATE",
+      object_kind: "INDEX",
+      target_identity:
+        "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx",
+      grantee: null,
+      special_case: null,
+    });
+    for (const mutation of [
+      (sql: string) =>
+        sql.replace("event_class = 'operation_effect'", "event_class = 'resource_change'"),
+      (sql: string) =>
+        sql.replace(
+          "outbox_events_operation_effect_unique_idx",
+          "outbox_events_unreviewed_unique_idx",
+        ),
+    ]) {
+      const mutated = mutation(new TextDecoder().decode(statements[26]!.bytes));
+      const statement = splitPostgresStatements(new TextEncoder().encode(mutated))[0]!;
+      expect(() => classifyMigrationStatement(statement, "000007")).toThrow(
+        /SQL_STATEMENT_PROFILE_REJECTED/u,
+      );
+    }
+    expect(() => classifyMigrationStatement(statements[26]!, "000006")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
   });
 
   it("ignores semicolons in comments, strings, identifiers and dollar bodies", () => {

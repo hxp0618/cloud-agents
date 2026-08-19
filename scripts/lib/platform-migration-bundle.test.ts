@@ -10,11 +10,13 @@ import {
   validateBuiltinRoleSeedFixture,
   validateCatalogStatementBindings,
   validateCheckedInMigrationBundle,
+  validateDurableCoordinationKernel,
   validateLedgerPrefix,
   validateProjectionScopeAuthority,
   validateRuntimeArtifactSafety,
   validateSchemaAncestorChain,
 } from "./platform-migration-bundle";
+import { buildDurableCoordinationRegistry } from "./platform-durable-coordination-registry";
 import { migrationDigest } from "./platform-migration-json";
 import { createDeterministicUstar, readDeterministicUstar } from "./platform-migration-ustar";
 
@@ -27,7 +29,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000006.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000007.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -38,16 +40,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec",
+      "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:f3ccdc9498f136f7f11fc25435d26dd6f0f48fe5cdd046e89175ee2d05838f8c",
+      "sha256:6194048fa8a13d1664dd421ad548d6808fb8eb97b33bb80ceb0b717f89331202",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:65db6f34d51366a877a8a4d9d8e0a252627f689f53d61aff9c56856d753d57d5",
+      "sha256:2c0f963424b2a71311556911c0f25a5aced16167fa1902f394ed74623cfd66e7",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -84,6 +86,14 @@ describe("migration bundle bootstrap", () => {
       [
         "services/control-plane/migrations/catalog/schema-000002.json",
         "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9",
+      ],
+      [
+        "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
+        "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336",
+      ],
+      [
+        "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
+        "sha256:a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820",
       ],
       [
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
@@ -197,6 +207,67 @@ describe("migration bundle bootstrap", () => {
     ).toThrow(/BUILTIN_ROLE_SEED_MISMATCH/u);
   });
 
+  it("binds migration 000007 to the exact generated coordination registry", () => {
+    const sql = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+      ),
+    );
+    const registry = buildDurableCoordinationRegistry(root);
+    expect(() => validateDurableCoordinationKernel(sql, registry)).not.toThrow();
+
+    const profileDrift = structuredClone(registry);
+    (profileDrift.profiles as Array<{ profileDigest: string }>)[0]!.profileDigest =
+      `sha256:${"0".repeat(64)}`;
+    expect(() => validateDurableCoordinationKernel(sql, profileDrift)).toThrow(
+      /COORDINATION_KERNEL_PROFILE/u,
+    );
+
+    const stateDrift = structuredClone(registry);
+    (stateDrift.stateMachines as Array<{ id: string; states: string[] }>)
+      .find((machine) => machine.id === "outbox/v1")!
+      .states.push("unreviewed");
+    expect(() => validateDurableCoordinationKernel(sql, stateDrift)).toThrow(
+      /COORDINATION_KERNEL_STATE_SET/u,
+    );
+
+    const ttlDrift = structuredClone(registry);
+    (
+      ttlDrift.profiles as Array<{ spec: { idempotency: { replayTtlSeconds: number } } }>
+    )[0]!.spec.idempotency.replayTtlSeconds = 86401;
+    expect(() => validateDurableCoordinationKernel(sql, ttlDrift)).toThrow(
+      /COORDINATION_KERNEL_PROFILE/u,
+    );
+
+    const sqlText = new TextDecoder().decode(sql);
+    const profileSqlDrift = new TextEncoder().encode(
+      sqlText.replace("'managedAgentCreateProject/v1alpha1'", "'unreviewed/v1alpha1'"),
+    );
+    expect(() => validateDurableCoordinationKernel(profileSqlDrift, registry)).toThrow(
+      /COORDINATION_KERNEL_(PROFILE|STATEMENT_COUNT)/u,
+    );
+    const secretSqlDrift = new TextEncoder().encode(
+      sqlText.replace(
+        "subject_digest text NOT NULL,\n    operation_id text,",
+        "subject_digest text NOT NULL,\n    raw_request text,\n    operation_id text,",
+      ),
+    );
+    expect(() => validateDurableCoordinationKernel(secretSqlDrift, registry)).toThrow(
+      /COORDINATION_KERNEL_SECRET_FIELD/u,
+    );
+    const volatilityDrift = new TextEncoder().encode(sqlText.replace("IMMUTABLE", "VOLATILE"));
+    expect(() => validateDurableCoordinationKernel(volatilityDrift, registry)).toThrow(
+      /COORDINATION_KERNEL_HELPER_PURITY/u,
+    );
+    const operationCreationDrift = new TextEncoder().encode(
+      sqlText.replace("AND false", "AND true"),
+    );
+    expect(() => validateDurableCoordinationKernel(operationCreationDrift, registry)).toThrow(
+      /COORDINATION_KERNEL_BINDING/u,
+    );
+  });
+
   it("rejects detached deployment authority from the runtime artifact closure", () => {
     expect(() =>
       validateRuntimeArtifactSafety([
@@ -225,6 +296,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
         "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+        "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -253,6 +325,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
       "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
       "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+      "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [

@@ -51,6 +51,12 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
     },
   ],
 ]);
+const DURABLE_COORDINATION_OPERATION_EFFECT_INDEX = {
+  migrationId: "000007",
+  statementIndex: 26,
+  sha256: "sha256:a068696a4c581b604a9f08d6a99e6d0e4c3a2336cd2342de533fc1f3b9162fc4",
+  targetIdentity: "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx",
+} as const;
 
 export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlStatementSlice> {
   const statements: SqlStatementSlice[] = [];
@@ -183,6 +189,24 @@ export function classifyMigrationStatement(
     };
   }
   if (first === "CREATE") {
+    if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
+      if (
+        migrationId !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.migrationId ||
+        statement.index !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.statementIndex ||
+        statement.sha256 !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.sha256 ||
+        tokens[3] !== "OUTBOX_EVENTS_OPERATION_EFFECT_UNIQUE_IDX" ||
+        tokens[4] !== "ON"
+      ) {
+        reject(tokens);
+      }
+      requireCloudAgentsQualified(tokens, 5);
+      return classification(
+        "CREATE",
+        "INDEX",
+        qualifiedDerivedIdentity("index", tokens, 5, tokens[3]!),
+        null,
+      );
+    }
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&

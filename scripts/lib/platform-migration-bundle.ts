@@ -43,6 +43,10 @@ import {
   validateLineageIndexFrame,
   validateRecoveryPolicyChainFixture,
 } from "./platform-migration-evidence";
+import {
+  assertDurableCoordinationRegistryCurrent,
+  buildDurableCoordinationRegistry,
+} from "./platform-durable-coordination-registry";
 
 export type GeneratedMigrationBundle = {
   readonly files: ReadonlyMap<string, Uint8Array>;
@@ -66,6 +70,7 @@ const SQL_PATHS = [
   `${ROOT}/000004_expand_membership_rbac_mutations.sql`,
   `${ROOT}/000005_close_membership_binding_authority.sql`,
   `${ROOT}/000006_close_subject_issuer_validation.sql`,
+  `${ROOT}/000007_expand_durable_coordination_kernel.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -77,19 +82,30 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000004.json`,
   `${ROOT}/catalog/schema-000005.json`,
   `${ROOT}/catalog/schema-000006.json`,
+  `${ROOT}/catalog/schema-000007.json`,
 ] as const;
+const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23";
+  "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 7334;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 11860;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820";
-const ANCESTOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d";
-const ANCESTOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${ANCESTOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const ANCESTOR_SCHEMA_BUNDLE_SIZE = 5456;
-const ANCESTOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae";
+  "sha256:8088b2ff98a7077ec98ca4f925c076501f9478b5b3aa1d8f976582d956884336";
+const ANCESTOR_SCHEMA_BUNDLES = [
+  {
+    digest: "sha256:c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23",
+    size: 7334,
+    sha256: "sha256:a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820",
+  },
+  {
+    digest: "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d",
+    size: 5456,
+    sha256: "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae",
+  },
+].map((artifact) => ({
+  ...artifact,
+  path: `${ROOT}/archive/${artifact.digest.slice("sha256:".length)}.schema-bundle.json`,
+}));
 const BUILTIN_ROLE_CATALOG_PATH =
   "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json";
 const PROJECTION_FIXTURE_ROOT = `${ROOT}/fixtures/projection`;
@@ -227,6 +243,62 @@ const DECLARED_IDENTITIES_000004 = [
 ] as const;
 const DECLARED_IDENTITIES_000005 = DECLARED_IDENTITIES_000004;
 const DECLARED_IDENTITIES_000006 = DECLARED_IDENTITIES_000005;
+const DECLARED_IDENTITIES_000007 = [
+  ...DECLARED_IDENTITIES_000006,
+  "function:unquoted:cloud_agents/unquoted:coordination_registry_digest()",
+  "function:unquoted:cloud_agents/unquoted:coordination_state_machine_digest()",
+  "function:unquoted:cloud_agents/unquoted:coordination_policy_digest()",
+  "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:coordination_profile_replay_ttl_seconds(unquoted:text,unquoted:text)",
+  "table:unquoted:cloud_agents/unquoted:platform_operations",
+  "index:unquoted:cloud_agents/unquoted:platform_operations_profile_state_idx",
+  "index:unquoted:cloud_agents/unquoted:platform_operations_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:platform_operations_terminal_resource_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:operation_attempts",
+  "index:unquoted:cloud_agents/unquoted:operation_attempts_claim_idx",
+  "index:unquoted:cloud_agents/unquoted:operation_attempts_operation_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:terminal_receipts",
+  "index:unquoted:cloud_agents/unquoted:terminal_receipts_attempt_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:terminal_receipts_resource_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:operation_finalizers",
+  "index:unquoted:cloud_agents/unquoted:operation_finalizers_claim_idx",
+  "index:unquoted:cloud_agents/unquoted:operation_finalizers_operation_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:idempotency_records",
+  "index:unquoted:cloud_agents/unquoted:idempotency_records_expiry_idx",
+  "index:unquoted:cloud_agents/unquoted:idempotency_records_operation_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:idempotency_records_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:idempotency_records_resource_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:outbox_events",
+  "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx",
+  "index:unquoted:cloud_agents/unquoted:outbox_events_claim_idx",
+  "index:unquoted:cloud_agents/unquoted:outbox_events_operation_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:outbox_events_tenant_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:outbox_events_resource_change_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:coordination_audit_facts",
+  "index:unquoted:cloud_agents/unquoted:coordination_audit_facts_subject_idx",
+  "index:unquoted:cloud_agents/unquoted:coordination_audit_facts_operation_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:coordination_audit_facts_attempt_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:coordination_audit_facts_resource_fk_idx",
+  "index:unquoted:cloud_agents/unquoted:coordination_audit_facts_tenant_fk_idx",
+  "table:unquoted:cloud_agents/unquoted:leader_leases",
+  "index:unquoted:cloud_agents/unquoted:leader_leases_expiry_idx",
+  "policy:unquoted:cloud_agents/unquoted:platform_operations_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:platform_operations_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:operation_attempts_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:operation_attempts_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:terminal_receipts_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:terminal_receipts_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:operation_finalizers_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:operation_finalizers_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:idempotency_records_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:idempotency_records_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:outbox_events_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:outbox_events_migration_owner",
+  "policy:unquoted:cloud_agents/unquoted:coordination_audit_facts_runtime_tenant",
+  "policy:unquoted:cloud_agents/unquoted:coordination_audit_facts_migration_owner",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -248,23 +320,25 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     );
   }
   files.set(PREDECESSOR_SCHEMA_BUNDLE_PATH, predecessorSchemaBundleBytes);
-  const ancestorSchemaBundleBytes = readExactFile(root, ANCESTOR_SCHEMA_BUNDLE_PATH);
-  if (
-    ancestorSchemaBundleBytes.length !== ANCESTOR_SCHEMA_BUNDLE_SIZE ||
-    digestBytes(ancestorSchemaBundleBytes) !== ANCESTOR_SCHEMA_BUNDLE_SHA256
-  ) {
-    throw new MigrationValidationError("ANCESTOR_DESCRIPTOR", ANCESTOR_SCHEMA_BUNDLE_PATH);
+  for (const ancestor of ANCESTOR_SCHEMA_BUNDLES) {
+    const bytes = readExactFile(root, ancestor.path);
+    if (bytes.length !== ancestor.size || digestBytes(bytes) !== ancestor.sha256) {
+      throw new MigrationValidationError("ANCESTOR_DESCRIPTOR", ancestor.path);
+    }
+    const bundle = requiredObject(parseStrictMigrationJson(bytes));
+    validateSchemaBundleSelf(bundle);
+    if (bundle.schema_bundle_digest !== ancestor.digest) {
+      throw new MigrationValidationError(
+        "ANCESTOR_SELF_DIGEST",
+        String(bundle.schema_bundle_digest),
+      );
+    }
+    files.set(ancestor.path, bytes);
   }
-  const ancestorSchemaBundle = requiredObject(parseStrictMigrationJson(ancestorSchemaBundleBytes));
-  validateSchemaBundleSelf(ancestorSchemaBundle);
-  if (ancestorSchemaBundle.schema_bundle_digest !== ANCESTOR_SCHEMA_BUNDLE_DIGEST) {
-    throw new MigrationValidationError(
-      "ANCESTOR_SELF_DIGEST",
-      String(ancestorSchemaBundle.schema_bundle_digest),
-    );
-  }
-  files.set(ANCESTOR_SCHEMA_BUNDLE_PATH, ancestorSchemaBundleBytes);
+  assertDurableCoordinationRegistryCurrent(root);
+  const durableCoordinationRegistry = requiredObject(buildDurableCoordinationRegistry(root));
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
+  validateDurableCoordinationKernel(sqlBytes.get(SQL_PATHS[6])!, durableCoordinationRegistry);
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
     readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
@@ -286,13 +360,16 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000006",
+    schema_head: "000007",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
       key_int64_decimal: "-1047838957622507638",
     },
-    global_table_authority: catalogArtifacts.get(CATALOG_PATHS[1])!,
+    global_table_authority: artifactRecord(
+      GLOBAL_TABLE_AUTHORITY_V2_PATH,
+      files.get(GLOBAL_TABLE_AUTHORITY_V2_PATH)!,
+    ),
     projection_scope_authority: INITIAL_PROJECTION_SCOPE_AUTHORITY,
     predecessor_schema_bundle: {
       schema_bundle_digest: PREDECESSOR_SCHEMA_BUNDLE_DIGEST,
@@ -353,6 +430,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[6])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[7])!,
       }),
+      migrationEntry({
+        id: "000007",
+        name: "expand_durable_coordination_kernel",
+        predecessor: "000006",
+        schemaFrom: "000006",
+        sql: sqlArtifacts.get(SQL_PATHS[6])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[7])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[8])!,
+      }),
     ],
   };
   const schemaBundleDigest = migrationDigest({
@@ -377,9 +463,10 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const runtimePaths = [
     SCHEMA_BUNDLE_PATH,
     PREDECESSOR_SCHEMA_BUNDLE_PATH,
-    ANCESTOR_SCHEMA_BUNDLE_PATH,
+    ...ANCESTOR_SCHEMA_BUNDLES.map((artifact) => artifact.path),
     ...SQL_PATHS,
     ...CATALOG_PATHS,
+    GLOBAL_TABLE_AUTHORITY_V2_PATH,
   ].toSorted();
   const runtimeArtifacts = runtimePaths.map((path) =>
     artifactRecord(path, files.get(path) ?? sqlBytes.get(path)!),
@@ -443,13 +530,13 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
           bytes: readExactFile(root, PREDECESSOR_SCHEMA_BUNDLE_PATH),
         },
       ],
-      [
-        ANCESTOR_SCHEMA_BUNDLE_DIGEST,
-        {
-          path: ANCESTOR_SCHEMA_BUNDLE_PATH,
-          bytes: readExactFile(root, ANCESTOR_SCHEMA_BUNDLE_PATH),
-        },
-      ],
+      ...ANCESTOR_SCHEMA_BUNDLES.map(
+        (artifact) =>
+          [
+            artifact.digest,
+            { path: artifact.path, bytes: readExactFile(root, artifact.path) },
+          ] as const,
+      ),
     ]),
   );
   const schemaBundleDocument = requiredObject(
@@ -503,6 +590,7 @@ export function validateCatalogStatementBindings(
     ["000004", generatedCatalogs.get(CATALOG_PATHS[5])!.source_descriptors!],
     ["000005", generatedCatalogs.get(CATALOG_PATHS[6])!.source_descriptors!],
     ["000006", generatedCatalogs.get(CATALOG_PATHS[7])!.source_descriptors!],
+    ["000007", generatedCatalogs.get(CATALOG_PATHS[8])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -511,6 +599,7 @@ export function validateCatalogStatementBindings(
     ["000004", DECLARED_IDENTITIES_000004],
     ["000005", DECLARED_IDENTITIES_000005],
     ["000006", DECLARED_IDENTITIES_000006],
+    ["000007", DECLARED_IDENTITIES_000007],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -973,7 +1062,8 @@ export function migrationBundlePaths(): ReadonlyArray<string> {
     MANIFEST_PATH,
     SCHEMA_BUNDLE_PATH,
     PREDECESSOR_SCHEMA_BUNDLE_PATH,
-    ANCESTOR_SCHEMA_BUNDLE_PATH,
+    ...ANCESTOR_SCHEMA_BUNDLES.map((artifact) => artifact.path),
+    GLOBAL_TABLE_AUTHORITY_V2_PATH,
     ...CATALOG_PATHS,
   ];
 }
@@ -995,6 +1085,233 @@ export function migrationStatementSourceDescriptors(
       ),
     })),
   }));
+}
+
+export function validateDurableCoordinationKernel(
+  sqlBytes: Uint8Array,
+  registry: JsonObject,
+): void {
+  const sql = new TextDecoder("utf-8", { fatal: true }).decode(sqlBytes);
+  const profiles = requiredArray(registry.profiles).map(requiredObject);
+  if (profiles.length !== 1) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_PROFILE", String(profiles.length));
+  }
+  const profile = profiles[0]!;
+  const spec = requiredObject(profile.spec);
+  const coordination = requiredObject(spec.coordination);
+  const idempotency = requiredObject(spec.idempotency);
+  const registryDigest = requiredString(registry.registryDigest, "coordination registry digest");
+  const stateMachineDigest = requiredString(
+    registry.stateMachineDigest,
+    "coordination state-machine digest",
+  );
+  const policyDigest = requiredString(registry.policyDigest, "coordination policy digest");
+  const profileId = requiredString(spec.profileId, "coordination profile id");
+  const profileDigest = requiredString(profile.profileDigest, "coordination profile digest");
+  const outboxClass = requiredString(
+    coordination.outboxEventClass,
+    "coordination profile outbox class",
+  );
+  const replayTtl = idempotency.replayTtlSeconds;
+  if (
+    profileId !== "managedAgentCreateProject/v1alpha1" ||
+    coordination.createsPlatformOperation !== false ||
+    coordination.externalSideEffect !== "forbidden" ||
+    outboxClass !== "resource_change" ||
+    requiredArray(coordination.requiredFinalizers).length !== 0 ||
+    replayTtl !== 86400
+  ) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_PROFILE", profileId);
+  }
+
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 89) {
+    throw new MigrationValidationError(
+      "COORDINATION_KERNEL_STATEMENT_COUNT",
+      String(statements.length),
+    );
+  }
+  const helperLiterals = statements
+    .slice(0, 7)
+    .map((statement) => sqlStringLiterals(statement.bytes));
+  const expectedHelperLiterals = [
+    [registryDigest],
+    [stateMachineDigest],
+    [policyDigest],
+    [profileId, profileDigest],
+    [],
+    [outboxClass],
+    [],
+  ];
+  if (canonicalText(helperLiterals) !== canonicalText(expectedHelperLiterals)) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_PROFILE", "helper literals");
+  }
+  for (const helper of statements.slice(0, 7)) {
+    const helperSql = new TextDecoder("utf-8", { fatal: true }).decode(helper.bytes);
+    const createOffset = helperSql.indexOf("CREATE FUNCTION");
+    const helperDefinition = createOffset < 0 ? "" : helperSql.slice(createOffset);
+    if (
+      !helperDefinition.includes("LANGUAGE sql") ||
+      !helperDefinition.includes("IMMUTABLE") ||
+      !helperDefinition.includes("PARALLEL SAFE") ||
+      !helperDefinition.includes("SET search_path = pg_catalog, cloud_agents") ||
+      /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|MERGE|CALL|COPY|EXECUTE|PERFORM)\b/iu.test(
+        helperDefinition,
+      )
+    ) {
+      throw new MigrationValidationError("COORDINATION_KERNEL_HELPER_PURITY", String(helper.index));
+    }
+  }
+  requireSqlFragment(sql, "coordination operation creation", "AND false");
+  requireSqlFragment(sql, "coordination replay TTL", `THEN ${String(replayTtl)}::bigint`);
+  requireSqlFragment(sql, "coordination database clock", "pg_catalog.transaction_timestamp()");
+  for (const forbidden of ["clock_timestamp()", "SECURITY DEFINER", "pg_notify", "dblink"]) {
+    if (sql.toLowerCase().includes(forbidden.toLowerCase())) {
+      throw new MigrationValidationError("COORDINATION_KERNEL_FORBIDDEN", forbidden);
+    }
+  }
+  if (
+    /\bGRANT\s+(?:ALL|INSERT|UPDATE|DELETE|TRUNCATE)\b[^;]*\bTO\s+CLOUD_AGENTS_RUNTIME\b/isu.test(
+      sql,
+    )
+  ) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_RUNTIME_WRITE", "raw table DML");
+  }
+  for (const statement of statements) {
+    const classificationDocument = classifyMigrationStatement(statement, "000007");
+    if (new Set(["INSERT", "UPDATE", "DELETE"]).has(classificationDocument.command)) {
+      throw new MigrationValidationError(
+        "COORDINATION_KERNEL_RUNTIME_WRITE",
+        classificationDocument.command,
+      );
+    }
+  }
+
+  const stateMachines = new Map(
+    requiredArray(registry.stateMachines).map((value) => {
+      const machine = requiredObject(value);
+      return [requiredString(machine.id, "state-machine id"), machine] as const;
+    }),
+  );
+  const machineStates = (id: string): string[] =>
+    requiredArray(requiredObject(stateMachines.get(id)).states).map((value) =>
+      requiredString(value, `${id} state`),
+    );
+  assertSqlCheckLiteralSet(
+    sql,
+    "platform_operations_state",
+    "state",
+    machineStates("platform_operation/v1"),
+  );
+  assertSqlCheckLiteralSet(
+    sql,
+    "platform_operations_cleanup_phase",
+    "cleanup_phase",
+    machineStates("cleanup/v1"),
+  );
+  assertSqlCheckLiteralSet(
+    sql,
+    "operation_attempts_state",
+    "state",
+    machineStates("operation_attempt/v1"),
+  );
+  assertSqlCheckLiteralSet(
+    sql,
+    "operation_finalizers_state",
+    "state",
+    machineStates("finalizer/v1"),
+  );
+  assertSqlCheckLiteralSet(
+    sql,
+    "idempotency_records_state",
+    "state",
+    machineStates("idempotency/v1"),
+  );
+  assertSqlCheckLiteralSet(sql, "outbox_events_state", "state", machineStates("outbox/v1"));
+
+  const policies = requiredObject(registry.policies);
+  const receiptPolicy = requiredObject(policies.terminalReceipt);
+  assertSqlCheckLiteralSet(
+    sql,
+    "terminal_receipts_outcome",
+    "outcome",
+    requiredArray(receiptPolicy.outcomes).map((value) =>
+      requiredString(value, "terminal receipt outcome"),
+    ),
+  );
+  const outboxPolicy = requiredObject(policies.outbox);
+  const leaderPolicy = requiredObject(policies.leader);
+  requireSqlFragment(
+    sql,
+    "outbox delivery budget",
+    `delivery_attempts BETWEEN 0 AND ${String(outboxPolicy.maxDeliveryAttempts)}`,
+  );
+  requireSqlFragment(
+    sql,
+    "leader minimum lease",
+    `lease_started_at + interval '${String(leaderPolicy.minLeaseSeconds)} second'`,
+  );
+  requireSqlFragment(
+    sql,
+    "leader maximum lease",
+    `lease_started_at + interval '${String(leaderPolicy.maxLeaseSeconds)} seconds'`,
+  );
+  const storedDefinitions = [
+    "terminal_receipts",
+    "idempotency_records",
+    "outbox_events",
+    "coordination_audit_facts",
+  ]
+    .map((table) => sqlTableDefinition(sql, table))
+    .join("\n");
+  for (const forbidden of requiredArray(requiredObject(policies.audit).forbiddenFields).map(
+    (value) => requiredString(value, "forbidden audit field"),
+  )) {
+    if (new RegExp(`\\b${escapeRegExp(forbidden)}\\b`, "iu").test(storedDefinitions)) {
+      throw new MigrationValidationError("COORDINATION_KERNEL_SECRET_FIELD", forbidden);
+    }
+  }
+}
+
+function assertSqlCheckLiteralSet(
+  sql: string,
+  constraint: string,
+  column: string,
+  expected: ReadonlyArray<string>,
+): void {
+  const pattern = new RegExp(
+    `CONSTRAINT\\s+${escapeRegExp(constraint)}\\s+CHECK\\s*\\(\\s*${escapeRegExp(column)}\\s+IN\\s*\\(([^)]*)\\)\\s*\\)`,
+    "isu",
+  );
+  const match = pattern.exec(sql);
+  if (!match) throw new MigrationValidationError("COORDINATION_KERNEL_STATE_SET", constraint);
+  const body = match[1]!;
+  const actual = [...body.matchAll(/'([^']+)'/gu)].map((entry) => entry[1]!).toSorted();
+  if (body.replace(/'[^']+'/gu, "").replace(/[\s,]/gu, "") !== "") {
+    throw new MigrationValidationError("COORDINATION_KERNEL_STATE_SET", constraint);
+  }
+  const wanted = [...expected].toSorted();
+  if (actual.join("\0") !== wanted.join("\0")) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_STATE_SET", constraint);
+  }
+}
+
+function requireSqlFragment(sql: string, label: string, fragment: string): void {
+  if (!sql.includes(fragment)) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_BINDING", label);
+  }
+}
+
+function sqlTableDefinition(sql: string, table: string): string {
+  const start = sql.indexOf(`CREATE TABLE cloud_agents.${table} (`);
+  if (start < 0) throw new MigrationValidationError("COORDINATION_KERNEL_TABLE", table);
+  const end = sql.indexOf("\n);", start);
+  if (end < 0) throw new MigrationValidationError("COORDINATION_KERNEL_TABLE", table);
+  return sql.slice(start, end + 3);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 export function validateBuiltinRoleSeedFixture(
@@ -1059,6 +1376,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000004 = typedIdentities(DECLARED_IDENTITIES_000004);
   const declared000005 = typedIdentities(DECLARED_IDENTITIES_000005);
   const declared000006 = typedIdentities(DECLARED_IDENTITIES_000006);
+  const declared000007 = typedIdentities(DECLARED_IDENTITIES_000007);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1110,7 +1428,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000003 = contract("000003", rawSources.slice(0, 3), declared000003);
   const schema000004 = contract("000004", rawSources.slice(0, 4), declared000004);
   const schema000005 = contract("000005", rawSources.slice(0, 5), declared000005);
-  const schema000006 = contract("000006", rawSources, declared000006);
+  const schema000006 = contract("000006", rawSources.slice(0, 6), declared000006);
+  const schema000007 = contract("000007", rawSources, declared000007);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1155,13 +1474,15 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   fixtureDocuments.set(PROJECTION_FIXTURE_PATHS[0], manifest);
   const catalogDocuments = new Map<string, JsonObject>([
     [CATALOG_PATHS[0], authority],
-    [CATALOG_PATHS[1], globalAuthorityContract()],
+    [CATALOG_PATHS[1], globalAuthorityContractV1()],
+    [GLOBAL_TABLE_AUTHORITY_V2_PATH, globalAuthorityContractV2()],
     [CATALOG_PATHS[2], schema000001],
     [CATALOG_PATHS[3], schema000002],
     [CATALOG_PATHS[4], schema000003],
     [CATALOG_PATHS[5], schema000004],
     [CATALOG_PATHS[6], schema000005],
     [CATALOG_PATHS[7], schema000006],
+    [CATALOG_PATHS[8], schema000007],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
@@ -1564,7 +1885,7 @@ function catalogProjectionModel(): JsonObject {
   };
 }
 
-function globalAuthorityContract(): JsonObject {
+function globalAuthorityContractV1(): JsonObject {
   return {
     format_version: "cloud-agents-platform-global-table-authority/v1",
     contract_kind: "global_table_writer_authority",
@@ -1575,6 +1896,18 @@ function globalAuthorityContract(): JsonObject {
       { name: "workload_database_principals", writers: ["audited_bootstrap_function"] },
       { name: "builtin_roles", writers: ["cloud_agents_migration_owner"] },
       { name: "builtin_role_permissions", writers: ["cloud_agents_migration_owner"] },
+    ],
+  };
+}
+
+function globalAuthorityContractV2(): JsonObject {
+  const v1 = globalAuthorityContractV1();
+  return {
+    ...v1,
+    format_version: "cloud-agents-platform-global-table-authority/v2",
+    tables: [
+      ...requiredArray(v1.tables),
+      { name: "leader_leases", writers: ["typed_control_plane_coordination_function"] },
     ],
   };
 }
@@ -1653,6 +1986,14 @@ function indexOwningRelation(index: string): string {
     "builtin_role_permissions",
     "memberships",
     "role_bindings",
+    "platform_operations",
+    "operation_attempts",
+    "terminal_receipts",
+    "operation_finalizers",
+    "idempotency_records",
+    "outbox_events",
+    "coordination_audit_facts",
+    "leader_leases",
   ];
   const relation = prefixes.find((prefix) => index.startsWith(`${prefix}_`));
   if (!relation) throw new MigrationValidationError("INDEX_OWNING_RELATION", index);

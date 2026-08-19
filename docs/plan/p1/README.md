@@ -79,11 +79,13 @@
   language gap；append-only `000006` candidate 的本地 PG15/16/17 matrix 虽通过，但 frozen ADR-0010
   lineage-index quota 拒绝该六迁移 bundle。ADR-0012 的 versioned lineage/quota profile implementation 与
   independent review 现已关闭该 remediation 的固定源码边界；checked-in production catalog publication/CLI
-  trust root、production database write、A2.3 后续 SQL/service 与 aggregate Gate 仍保持拒绝
-- Current entry：P1-A2.3 Durable Coordination 方向已于 2026-08-19 获批；当前仅推进
-  contract/state-machine registry slice。ADR-0013 固定 generated profile-only authority、七个 closed state
-  machines 与三切片顺序；`000007`、Go/SQL consumer、HTTP/P2 side effect 和所有 Gate closure 仍禁止，直到本切片
-  fixed-source review 完成。历史入口审计见 [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
+  trust root、production database write、A2.3 service/claim 与 aggregate Gate 仍保持拒绝
+- Current entry：P1-A2.3 Durable Coordination 方向已于 2026-08-19 获批；slice 1 generated
+  contract/state-machine registry 已由 `ff9ea33` 固定。当前 slice 2 已本地实现 append-only `000007` PostgreSQL
+  schema kernel、generated-profile digest constraints、versioned global-table authority 与 PG15/16/17 schema-only
+  matrix；runtime 仍只有 SELECT 和七个纯 helper EXECUTE，没有 coordination DML。Service/claim/race/fault matrix/
+  independent review 仍属于 slice 3；HTTP/P2 external side effect 和所有 Gate closure 继续禁止。历史入口审计见
+  [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -139,6 +141,10 @@ Platform RC、Beta 或 GA。
 - [`durable-coordination-contract-registry-20260819.md`](durable-coordination-contract-registry-20260819.md)：记录
   A2.3 slice 1 的 generated profile、七个 closed state machines、deterministic generator、fixture faults 与独立
   generation-lock pipeline；只构成本地实现证据，不是 independent review 或 Gate closure
+- [`durable-coordination-postgres-kernel-20260819.md`](durable-coordination-postgres-kernel-20260819.md)：记录
+  A2.3 slice 2 的 append-only `000007` schema kernel、generated-profile SQL binding、versioned global-table
+  authority、lineage/quota closure 与 PG15/16/17 schema-only matrix；不构成 service/claim、independent review 或
+  Gate closure
 
 ## Data kernel decisions
 

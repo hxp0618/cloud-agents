@@ -404,14 +404,23 @@ func TestAuthorityContractsStrictDecodeBeforeDatabaseConnect(t *testing.T) {
 	t.Parallel()
 	root := migrationRoot(t)
 	authorityRaw := mustRead(t, filepath.Join(root, "catalog", "authority-v1.json"))
-	globalRaw := mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v1.json"))
 	if _, err := DecodeAuthorityContract(authorityRaw); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DecodeGlobalTableAuthorityContract(globalRaw); err != nil {
-		t.Fatal(err)
+	globalContracts := map[string][]byte{
+		"global-v1": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v1.json")),
+		"global-v2": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v2.json")),
 	}
-	for name, raw := range map[string][]byte{"authority": authorityRaw, "global": globalRaw} {
+	for name, raw := range globalContracts {
+		if _, err := DecodeGlobalTableAuthorityContract(raw); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	contracts := map[string][]byte{"authority": authorityRaw}
+	for name, raw := range globalContracts {
+		contracts[name] = raw
+	}
+	for name, raw := range contracts {
 		object := map[string]any{}
 		if err := json.Unmarshal(raw, &object); err != nil {
 			t.Fatal(err)
@@ -624,6 +633,36 @@ func TestStrictDDLGrammarRejectsAuthorityAndTailSmuggling(t *testing.T) {
 	}
 }
 
+func TestDurableCoordinationOperationEffectIndexIsExactSpecialCase(t *testing.T) {
+	t.Parallel()
+	classifier := NarrowDDLClassifier{}
+	coordinationSQL := mustRead(t, filepath.Join(migrationRoot(t), "000007_expand_durable_coordination_kernel.sql"))
+	statements, err := SplitPostgreSQLStatements(coordinationSQL)
+	if err != nil || len(statements) != 89 {
+		t.Fatalf("split exact coordination migration: statements=%d err=%v", len(statements), err)
+	}
+	operationEffectIndex := statements[durableCoordinationOperationEffectIndexStatement]
+	plan, err := classifier.Classify(MigrationEntry{ID: durableCoordinationOperationEffectIndexMigration}, operationEffectIndex)
+	if err != nil || plan.TargetIdentity != durableCoordinationOperationEffectIndexTarget {
+		t.Fatalf("exact operation-effect index was rejected: plan=%+v err=%v", plan, err)
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: "000008"}, operationEffectIndex); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("operation-effect index escaped migration identity: %v", err)
+	}
+	wrongDigest := operationEffectIndex
+	wrongDigest.SHA256 = Digest("sha256:" + strings.Repeat("0", 64))
+	if _, err := classifier.Classify(MigrationEntry{ID: durableCoordinationOperationEffectIndexMigration}, wrongDigest); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("operation-effect index escaped exact digest binding: %v", err)
+	}
+	generic, err := SplitPostgreSQLStatements([]byte("CREATE UNIQUE INDEX outbox_events_operation_effect_unique_idx ON cloud_agents.outbox_events (tenant_id);"))
+	if err != nil || len(generic) != 1 {
+		t.Fatalf("split generic unique-index fault: statements=%d err=%v", len(generic), err)
+	}
+	if _, err := classifier.Classify(MigrationEntry{ID: durableCoordinationOperationEffectIndexMigration}, generic[0]); !IsCode(err, CodeInvalidSQL) {
+		t.Fatalf("generic unique index escaped exact special case: %v", err)
+	}
+}
+
 func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	t.Parallel()
 	raw, manifest := buildCheckedInRuntimeTar(t)
@@ -632,7 +671,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000006" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000007" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

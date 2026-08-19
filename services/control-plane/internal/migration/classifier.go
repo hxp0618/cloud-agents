@@ -153,6 +153,13 @@ type SpecialStatementIdentity struct {
 	StatementIndex int
 }
 
+const (
+	durableCoordinationOperationEffectIndexMigration = "000007"
+	durableCoordinationOperationEffectIndexStatement = 26
+	durableCoordinationOperationEffectIndexDigest    = Digest("sha256:a068696a4c581b604a9f08d6a99e6d0e4c3a2336cd2342de533fc1f3b9162fc4")
+	durableCoordinationOperationEffectIndexTarget    = "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx"
+)
+
 // NarrowDDLClassifier is a structural grammar for the exact postgresql-ddl-v1
 // profile. It intentionally mirrors the shared TS classifier; it is not a
 // keyword bag and never treats a matching word somewhere in a tail as admission.
@@ -173,6 +180,20 @@ func (classifier NarrowDDLClassifier) Classify(entry MigrationEntry, statement S
 		}
 		return StatementPlan{Command: "DO", ObjectKind: "SCHEMA", TargetIdentity: "schema:unquoted:cloud_agents", MayChangeSchemaACL: true, MayChangeOwner: true}, nil
 	case "CREATE":
+		if len(tokens) > 5 && tokens[1] == "UNIQUE" && tokens[2] == "INDEX" {
+			if entry.ID != durableCoordinationOperationEffectIndexMigration ||
+				statement.Index != durableCoordinationOperationEffectIndexStatement ||
+				statement.SHA256 != durableCoordinationOperationEffectIndexDigest ||
+				tokens[3] != "OUTBOX_EVENTS_OPERATION_EFFECT_UNIQUE_IDX" || tokens[4] != "ON" ||
+				!cloudAgentsQualified(statement.Tokens, 5) {
+				return StatementPlan{}, rejectSQLProfile(entry.ID, tokens)
+			}
+			return StatementPlan{
+				Command:        "CREATE",
+				ObjectKind:     "INDEX",
+				TargetIdentity: durableCoordinationOperationEffectIndexTarget,
+			}, nil
+		}
 		return classifyCreate(entry.ID, statement.Tokens, tokens)
 	case "ALTER":
 		return classifyAlterStrict(entry.ID, statement.Tokens, tokens)
