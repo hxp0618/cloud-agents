@@ -55,7 +55,7 @@
   production `EvidenceSink` composition root、full-root all-generation lock set 与 exact inventory→handoff identity bridge，
   并在真实 fresh ext4/XFS 上完成 brand-new、registered reopen 和 revoke-negative cross-package session；Supply Gate 仍因
   final artifact scan/immutable closure 保持 OPEN
-- Current slice：P1-A2.2-impl-3 review remediation 已在固定源码 implementation/review 层关闭；该切片由
+- Completed slice：P1-A2.2-impl-3 review remediation 已在固定源码 implementation/review 层关闭；该切片由
   [`subject issuer / lineage-index quota blocker`](membership-rbac-subject-issuer-quota-blocker-20260817.md)
   触发；用户已批准 ADR-0012 的 versioned lineage/quota profile 方向，`cd64dee` 已提交并推送
   v1 historical byte-exact compatibility、v2 explicit profile binding、4 KiB checkpoint ceiling、append-only
@@ -79,6 +79,10 @@
   lineage-index quota 拒绝该六迁移 bundle。ADR-0012 的 versioned lineage/quota profile implementation 与
   independent review 现已关闭该 remediation 的固定源码边界；checked-in production catalog publication/CLI
   trust root、production database write、A2.3 与 aggregate Gate 仍保持拒绝
+- Next entry：P1-A2.3 Durable Coordination 仍为 `ENTRY BLOCKED`。SubjectRef 与当前唯一
+  `managedAgentCreateProject` idempotency projection 已进入 contract/generation lock，但 operation-profile
+  registry、Operation/Attempt/Receipt/Finalizer、outbox/leader closed state machines、三切片实现边界和 explicit
+  authorization 尚未冻结；见 [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -128,6 +132,9 @@ Platform RC、Beta 或 GA。
 - [`versioned-lineage-quota-profile-independent-review-20260818.md`](versioned-lineage-quota-profile-independent-review-20260818.md)：固定
   `f731c6b` remediation 的第二轮 `gpt-5.6-sol` verdict `P0=0/P1=0/P2=0`、source/supply binding、独立
   verification limitations 与 remaining boundaries；只关闭 A2.2-impl-3 remediation implementation/review
+- [`durable-coordination-entry-blocker-20260818.md`](durable-coordination-entry-blocker-20260818.md)：固定 A2.3
+  contract/state/SQL/service pre-entry audit、当前 SubjectRef/idempotency facts、pinned-toolchain guard 边界和待批准
+  三切片方向；不授权 ADR-0013、`000007`、Go/SQL implementation 或 Gate closure
 
 ## Data kernel decisions
 

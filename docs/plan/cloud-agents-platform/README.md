@@ -39,7 +39,8 @@ metadata，`261be84` 记录该刷新证据。首次 `gpt-5.6-sol` 复核发现 v
 已返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭该 remediation 的固定源码 implementation/review 层；生产
 runner/CLI、database mutation、immutable Gates 与 A2.3 仍未授权。审查记录见
 [`versioned profile independent review`](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)，
-精确容量与恢复边界见
+下一阶段的 contract/state/SQL/service 决策缺口见
+[`A2.3 pre-entry blocker`](../p1/durable-coordination-entry-blocker-20260818.md)，精确容量与恢复边界见
 [`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
 仍不授权：

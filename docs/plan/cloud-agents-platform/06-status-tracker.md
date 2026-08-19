@@ -180,6 +180,11 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       第二轮 `gpt-5.6-sol` review 已返回 `APPROVE, P0=0/P1=0/P2=0`
       （[independent review](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)），只关闭固定源码
       implementation/review admissibility；不得进入 A2.3 或关闭任何 immutable/aggregate Gate。
+- [ ] A2.3 Durable Coordination entry 仍为
+      [`ENTRY BLOCKED`](../p1/durable-coordination-entry-blocker-20260818.md)：当前 SubjectRef 与唯一
+      `managedAgentCreateProject` idempotency projection 已冻结，但 operation-profile registry、closed
+      Operation/Attempt/Receipt/Finalizer 与 outbox/leader state machines、三切片边界和 explicit authorization
+      尚未批准；不得创建 ADR-0013、`000007` 或 Go/SQL implementation。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
