@@ -63,8 +63,8 @@ func TestDurableCoordinationPostgresConformance(t *testing.T) {
 		Actor: authz.SubjectRef{
 			Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-denied",
 		},
-		Scope: scope, IdempotencyKey: "idempotency-" + runID + "-denied",
-		RequestDigest: coordinationIntegrationRequest, AuditFactID: "audit-" + runID + "-denied",
+		Request:        coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
+		IdempotencyKey: "idempotency-" + runID + "-denied", AuditFactID: "audit-" + runID + "-denied",
 	})
 	if !errors.Is(err, ErrMutationDenied) || denied != (IdempotencyClaimResult{}) {
 		t.Fatalf("unauthorized claim result/error = %#v / %v", denied, err)
@@ -83,7 +83,7 @@ func TestDurableCoordinationPostgresConformance(t *testing.T) {
 		t.Fatalf("pending replay = %#v", replay)
 	}
 	conflict := claimCoordinationIntegration(t, ctx, service, tenantID, profile, actor, scope, mainKey, coordinationIntegrationConflict, "audit-"+runID+"-main-conflict")
-	if conflict.DatabaseOutcome != DatabaseRejected || conflict.Disposition != "conflict" {
+	if conflict != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected, Disposition: "conflict"}) {
 		t.Fatalf("digest conflict = %#v", conflict)
 	}
 
@@ -106,8 +106,9 @@ func TestDurableCoordinationPostgresConformance(t *testing.T) {
 		t.Fatalf("failure claim = %#v", failureClaim)
 	}
 	failure, err := service.CompleteIdempotencyFailure(ctx, tenantID, IdempotencyFailureInput{
-		Profile: profile, Actor: actor, Scope: scope, IdempotencyKey: failureKey,
-		RequestDigest: coordinationIntegrationRequest, StableErrorCode: "stable.failure",
+		Profile: profile, Actor: actor,
+		Request:        coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
+		IdempotencyKey: failureKey, StableErrorCode: "stable.failure",
 		AuditFactID: "audit-" + runID + "-failure-complete",
 	})
 	if err != nil || failure.DatabaseOutcome != DatabaseCommitted || failure.ReplayState != "failed" {
@@ -245,8 +246,8 @@ func claimCoordinationIntegration(
 ) IdempotencyClaimResult {
 	t.Helper()
 	result, err := service.ClaimIdempotency(ctx, tenantID, IdempotencyClaimInput{
-		Profile: profile, Actor: actor, Scope: scope, IdempotencyKey: key,
-		RequestDigest: requestDigest, AuditFactID: auditFactID,
+		Profile: profile, Actor: actor, Request: coordinationIntegrationProjectRequest(scope.ID, requestDigest),
+		IdempotencyKey: key, AuditFactID: auditFactID,
 	})
 	if err != nil {
 		t.Fatalf("claim %s: %v", key, err)
@@ -270,8 +271,9 @@ func completeCoordinationIntegrationSuccess(
 ) IdempotencySuccessResult {
 	t.Helper()
 	result, err := service.CompleteIdempotencySuccess(ctx, tenantID, IdempotencySuccessInput{
-		Profile: profile, Actor: actor, Scope: scope, IdempotencyKey: key, RequestDigest: requestDigest,
-		ResourceID: projectID, ResourceVersion: 3, EventID: eventID,
+		Profile: profile, Actor: actor, Request: coordinationIntegrationProjectRequest(scope.ID, requestDigest),
+		IdempotencyKey: key,
+		ResourceID:     projectID, ResourceVersion: 3, EventID: eventID,
 		PayloadDigest: coordinationIntegrationPayload, AuditFactID: auditFactID,
 	})
 	if err != nil {
@@ -336,9 +338,10 @@ func assertCoordinationClaimRace(
 			defer wait.Done()
 			<-start
 			result, err := service.ClaimIdempotency(ctx, tenantID, IdempotencyClaimInput{
-				Profile: profile, Actor: actor, Scope: scope, IdempotencyKey: key,
-				RequestDigest: coordinationIntegrationRequest,
-				AuditFactID:   fmt.Sprintf("audit-%s-race-%d", runID, index),
+				Profile: profile, Actor: actor,
+				Request:        coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
+				IdempotencyKey: key,
+				AuditFactID:    fmt.Sprintf("audit-%s-race-%d", runID, index),
 			})
 			if err != nil {
 				errorsSeen <- err
@@ -374,6 +377,18 @@ func assertCoordinationClaimRace(
 	}
 }
 
+func coordinationIntegrationProjectRequest(organizationID, variant string) coordination.ManagedAgentCreateProjectRequest {
+	return coordination.ManagedAgentCreateProjectRequest{
+		Name: "project-alpha",
+		OrganizationRef: coordination.OrganizationRef{
+			Namespace: "cloud-agents",
+			Kind:      "organization",
+			ID:        organizationID,
+		},
+		DisplayName: "Project " + variant,
+	}
+}
+
 func assertDurableCoordinationPrivileges(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 	var callable, helpers, directDML, publicCallable int64
@@ -386,6 +401,9 @@ func assertDurableCoordinationPrivileges(t *testing.T, ctx context.Context, pool
          'claim_managed_agent_create_project_idempotency',
          'complete_managed_agent_create_project_success',
          'complete_managed_agent_create_project_failure',
+         'claim_managed_agent_create_project_idempotency_v2',
+         'complete_managed_agent_create_project_success_v2',
+         'complete_managed_agent_create_project_failure_v2',
          'acquire_coordination_leader', 'renew_coordination_leader',
          'claim_outbox_event', 'acknowledge_outbox_event', 'retry_outbox_event',
          'dead_letter_outbox_event', 'reap_expired_outbox_claim'
@@ -395,7 +413,12 @@ func assertDurableCoordinationPrivileges(t *testing.T, ctx context.Context, pool
      FROM pg_catalog.pg_proc AS routine
      JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = routine.pronamespace
      WHERE namespace.nspname = 'cloud_agents'
-       AND routine.proname IN ('append_coordination_audit', 'transition_outbox_claim')
+       AND routine.proname IN (
+         'append_coordination_audit', 'transition_outbox_claim',
+         'coordination_current_registry_digest',
+         'coordination_registry_profile_is_registered',
+         'coordination_registry_digest_for_profile'
+       )
        AND pg_catalog.has_function_privilege(current_user, routine.oid, 'EXECUTE')),
     (SELECT pg_catalog.count(*)
      FROM (VALUES
@@ -416,6 +439,12 @@ func assertDurableCoordinationPrivileges(t *testing.T, ctx context.Context, pool
          'claim_managed_agent_create_project_idempotency',
          'complete_managed_agent_create_project_success',
          'complete_managed_agent_create_project_failure',
+         'claim_managed_agent_create_project_idempotency_v2',
+         'complete_managed_agent_create_project_success_v2',
+         'complete_managed_agent_create_project_failure_v2',
+         'coordination_current_registry_digest',
+         'coordination_registry_profile_is_registered',
+         'coordination_registry_digest_for_profile',
          'acquire_coordination_leader', 'renew_coordination_leader',
          'claim_outbox_event', 'acknowledge_outbox_event', 'retry_outbox_event',
          'dead_letter_outbox_event', 'reap_expired_outbox_claim'
@@ -429,7 +458,7 @@ func assertDurableCoordinationPrivileges(t *testing.T, ctx context.Context, pool
 	if err != nil {
 		t.Fatalf("read durable coordination privileges: %v", err)
 	}
-	if callable != 10 || helpers != 0 || directDML != 0 || publicCallable != 0 {
+	if callable != 13 || helpers != 0 || directDML != 0 || publicCallable != 0 {
 		t.Fatalf("durable coordination privileges = %d/%d/%d/%d", callable, helpers, directDML, publicCallable)
 	}
 }

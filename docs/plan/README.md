@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 service/claim/matrix implementation fixed，independent review pending）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved，full migration closure remains pending）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -16,7 +16,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 解释顺序：
 
 1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
-   [`ADR-0013`](adr/0013-p1-durable-coordination-contract.md)；
+   [`ADR-0014`](adr/0014-p1-lineage-quota-profile-v3.md)；
 2. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 3. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 4. `legacy/` 历史计划；
@@ -46,6 +46,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)                                                    | P1 Membership/RBAC authority 决定               |
 | [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md)                                             | P1 versioned lineage/quota profile 决定         |
 | [`ADR-0013`](adr/0013-p1-durable-coordination-contract.md)                                               | P1 durable coordination registry/state 决定     |
+| [`ADR-0014`](adr/0014-p1-lineage-quota-profile-v3.md)                                                    | P1 lineage/quota profile v3 决定                |
 
 ## 历史与参考
 
@@ -72,7 +73,17 @@ PG15/16/17 matrix，但按冻结 ADR-0010 v1 whole-bundle 公式会使 lineage i
 [`independent review`](p1/versioned-lineage-quota-profile-independent-review-20260818.md)。用户已于 2026-08-19
 批准 A2.3 的 generated contract registry、closed state machines 与三切片顺序；`ff9ea33`/`a9826e4` 已固定前两
 切片，`59ec260` 已固定 generated Go profile、append-only `000008` service/claim 与 PG15/16/17 normal/race/fault
-matrix。独立审查仍为 PENDING；HTTP/P2 side effect 与所有 Gate 继续保持关闭。原 entry audit 见
+matrix。用户又明确批准 ADR-0014 的 generated-manifest v3 profile 方向。独立审查对当时快照返回
+`NOT APPROVE, P0=0/P1=1/P2=0`：quota/profile 与 append-only kernel 分项通过，但 generated Unicode
+`organizationRef` 与 ASCII-only authorization `ScopeRef` 不一致。该 finding 已在后续候选中按 generated
+operation-specific identity profile 收窄为 ASCII、最多 128 bytes、`exact_string_no_rewrite`，公共 Unicode
+organization reference contract 保持不变；append-only `000009` 同时保留冻结 historical registry/profile pair，并以
+versioned v2 service entry 使用 current pair。精确 remediation candidate 随后独立复核返回
+`APPROVE, P0=0/P1=0/P2=0`，只关闭 A2.3 generated registry/profile、append-only kernel 和
+service/claim/matrix 的 implementation/review slice，详见
+[`A2.3 remediation independent review`](p1/durable-coordination-v3-remediation-independent-review-20260820.md)。
+原 [`A2.3 v3 independent review`](p1/durable-coordination-v3-independent-review-20260819.md) 保留历史 verdict。Full
+migration closure 仍 PENDING，HTTP/P2 side effect 不开放，且不关闭任何 Gate。原 entry audit 见
 [`A2.3 blocker`](p1/durable-coordination-entry-blocker-20260818.md)。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

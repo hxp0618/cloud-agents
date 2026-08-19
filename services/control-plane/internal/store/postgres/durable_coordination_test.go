@@ -15,21 +15,20 @@ import (
 const (
 	coordinationTenant  = "tenant-alpha"
 	coordinationSubject = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	coordinationRequest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	coordinationPayload = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
 func TestDurableCoordinationClaimUsesOnlyGeneratedProfileFunction(t *testing.T) {
 	expires := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 	transaction := authorizedCoordinationTransaction(t, rowValues(
-		"created", "pending", (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-		(*int64)(nil), (*string)(nil), expires,
+		"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
+		(*int64)(nil), (*string)(nil), timePtr(expires),
 	))
 	service, connection := coordinationService(t, transaction)
 	result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Scope: coordinationScope(),
-		IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
-		AuditFactID: "audit-idempotency-claim",
+		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+		IdempotencyKey: "idempotency-key-0001",
+		AuditFactID:    "audit-idempotency-claim",
 	})
 	if err != nil || result.DatabaseOutcome != DatabaseCommitted || result.Disposition != "created" ||
 		result.ReplayState != "pending" || !result.ExpiresAt.Equal(expires) {
@@ -43,8 +42,14 @@ func TestDurableCoordinationClaimUsesOnlyGeneratedProfileFunction(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	intent, err := coordination.BindManagedAgentCreateProject(
+		coordination.ManagedAgentCreateProject(), coordinationTenant, coordinationProjectRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(arguments) != 5 || arguments[0] != coordinationTenant || arguments[1] != wantSubject ||
-		arguments[2] != "idempotency-key-0001" || arguments[3] != coordinationRequest ||
+		arguments[2] != "idempotency-key-0001" || arguments[3] != intent.RequestDigest() ||
 		arguments[4] != "audit-idempotency-claim" {
 		t.Fatalf("claim arguments = %#v", arguments)
 	}
@@ -66,19 +71,27 @@ func TestDurableCoordinationClaimReturnsClosedReplayAndConflict(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			transaction := authorizedCoordinationTransaction(t, rowValues(
-				test.disposition, "succeeded", (*string)(nil), (*int64)(nil), &resourceKind, &resourceID,
-				&resourceVersion, (*string)(nil), expires,
-			))
+			values := []any{test.disposition, stringPtr("succeeded"), (*string)(nil), (*int64)(nil), &resourceKind, &resourceID,
+				&resourceVersion, (*string)(nil), &expires}
+			if test.disposition == "conflict" {
+				values = []any{test.disposition, (*string)(nil), (*string)(nil), (*int64)(nil), (*string)(nil),
+					(*string)(nil), (*int64)(nil), (*string)(nil), (*time.Time)(nil)}
+			}
+			transaction := authorizedCoordinationTransaction(t, rowValues(values...))
 			service, _ := coordinationService(t, transaction)
 			result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-				Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Scope: coordinationScope(),
-				IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
-				AuditFactID: "audit-idempotency-replay",
+				Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+				IdempotencyKey: "idempotency-key-0001",
+				AuditFactID:    "audit-idempotency-replay",
 			})
-			if err != nil || result.DatabaseOutcome != test.wantOutcome || result.Disposition != test.disposition ||
-				result.ResourceID == nil || *result.ResourceID != resourceID {
+			if err != nil || result.DatabaseOutcome != test.wantOutcome || result.Disposition != test.disposition {
 				t.Fatalf("replay result/error = %#v / %v", result, err)
+			}
+			if test.disposition == "replay" && (result.ResourceID == nil || *result.ResourceID != resourceID) {
+				t.Fatalf("terminal replay result = %#v", result)
+			}
+			if test.disposition == "conflict" && result != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected, Disposition: "conflict"}) {
+				t.Fatalf("conflict leaked envelope = %#v", result)
 			}
 		})
 	}
@@ -88,9 +101,9 @@ func TestDurableCoordinationClaimConvertsSerializationFailureToClosedRejection(t
 	transaction := authorizedCoordinationTransaction(t, rowError(&pgconn.PgError{Code: "40001", Message: "serialization"}))
 	service, _ := coordinationService(t, transaction)
 	result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Scope: coordinationScope(),
-		IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
-		AuditFactID: "audit-idempotency-claim",
+		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+		IdempotencyKey: "idempotency-key-0001",
+		AuditFactID:    "audit-idempotency-claim",
 	})
 	if err != nil || result != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected}) ||
 		transaction.rollbackCalls != 1 || transaction.commitCalls != 0 {
@@ -100,9 +113,9 @@ func TestDurableCoordinationClaimConvertsSerializationFailureToClosedRejection(t
 
 func TestDurableCoordinationCompletionHasClosedCommitOutcomes(t *testing.T) {
 	success := IdempotencySuccessInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Scope: coordinationScope(),
-		IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
-		ResourceID: "project-alpha", ResourceVersion: 7, EventID: "event-project-alpha",
+		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+		IdempotencyKey: "idempotency-key-0001",
+		ResourceID:     "project-alpha", ResourceVersion: 7, EventID: "event-project-alpha",
 		PayloadDigest: coordinationPayload, AuditFactID: "audit-idempotency-success",
 	}
 	tests := []struct {
@@ -139,8 +152,8 @@ func TestDurableCoordinationFailureAndResultDriftFailClosed(t *testing.T) {
 	transaction := authorizedCoordinationTransaction(t, rowValues("failed", "stable.failure"))
 	service, _ := coordinationService(t, transaction)
 	result, err := service.CompleteIdempotencyFailure(context.Background(), coordinationTenant, IdempotencyFailureInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Scope: coordinationScope(),
-		IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
+		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+		IdempotencyKey:  "idempotency-key-0001",
 		StableErrorCode: "stable.failure", AuditFactID: "audit-idempotency-failure",
 	})
 	if err != nil || result.DatabaseOutcome != DatabaseCommitted || result.ReplayState != "failed" {
@@ -150,8 +163,8 @@ func TestDurableCoordinationFailureAndResultDriftFailClosed(t *testing.T) {
 	driftTransaction := authorizedCoordinationTransaction(t, rowValues("failed", "different.failure"))
 	driftService, _ := coordinationService(t, driftTransaction)
 	_, err = driftService.CompleteIdempotencyFailure(context.Background(), coordinationTenant, IdempotencyFailureInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Scope: coordinationScope(),
-		IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
+		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+		IdempotencyKey:  "idempotency-key-0001",
 		StableErrorCode: "stable.failure", AuditFactID: "audit-idempotency-failure",
 	})
 	if !errors.Is(err, ErrCoordinationResultDrift) {
@@ -224,7 +237,7 @@ func TestDurableCoordinationOutboxBindsFullClaimTuple(t *testing.T) {
 	expires := time.Date(2026, 8, 19, 0, 1, 0, 0, time.UTC)
 	claimTransaction := coordinationTransaction(rowValues(
 		"event-project-alpha", "managedAgentCreateProject/v1alpha1",
-		"sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a",
+		coordination.ManagedAgentCreateProject().ProfileDigest(),
 		"resource_change", "project", "project-alpha", int64(7), &resourceVersion, int64(0),
 		(*string)(nil), (*int64)(nil), coordinationPayload, int32(1), expires,
 	))
@@ -262,13 +275,13 @@ func TestDurableCoordinationOutboxBindsFullClaimTuple(t *testing.T) {
 
 func TestDurableCoordinationRejectsZeroProfileBeforeDatabase(t *testing.T) {
 	transaction := authorizedCoordinationTransaction(t, rowValues(
-		"created", "pending", (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-		(*int64)(nil), (*string)(nil), time.Now(),
+		"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
+		(*int64)(nil), (*string)(nil), timePtr(time.Now()),
 	))
 	service, connection := coordinationService(t, transaction)
 	_, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-		Actor: coordinationActor(), Scope: coordinationScope(), IdempotencyKey: "idempotency-key-0001",
-		RequestDigest: coordinationRequest, AuditFactID: "audit-idempotency-claim",
+		Actor: coordinationActor(), Request: coordinationProjectRequest(), IdempotencyKey: "idempotency-key-0001",
+		AuditFactID: "audit-idempotency-claim",
 	})
 	if !errors.Is(err, ErrCoordinationInvalidInput) || connection.beginOptions != nil {
 		t.Fatalf("zero profile error/database use = %v / %#v", err, connection.beginOptions)
@@ -285,14 +298,14 @@ func TestDurableCoordinationAuthorizesGeneratedProfileInSameTransaction(t *testi
 		rows := mutationAuthorizationRows(t, coordinationTenant, actor, digest, authz.ScopeOrganization, "organization-alpha")
 		rows[len(rows)-1] = rowValues([]byte("[]"))
 		transaction := &fakeTransaction{rows: append(rows, rowValues(
-			"created", "pending", (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-			(*int64)(nil), (*string)(nil), time.Now(),
+			"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
+			(*int64)(nil), (*string)(nil), timePtr(time.Now()),
 		))}
 		service, _ := coordinationService(t, transaction)
 		_, err = service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-			Profile: coordination.ManagedAgentCreateProject(), Actor: actor, Scope: coordinationScope(),
-			IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
-			AuditFactID: "audit-idempotency-denied",
+			Profile: coordination.ManagedAgentCreateProject(), Actor: actor, Request: coordinationProjectRequest(),
+			IdempotencyKey: "idempotency-key-0001",
+			AuditFactID:    "audit-idempotency-denied",
 		})
 		if !errors.Is(err, ErrMutationDenied) || len(transaction.queries) != 5 ||
 			transaction.rollbackCalls != 1 || transaction.commitCalls != 0 {
@@ -300,17 +313,21 @@ func TestDurableCoordinationAuthorizesGeneratedProfileInSameTransaction(t *testi
 		}
 	})
 
-	t.Run("wrong generated scope", func(t *testing.T) {
+	t.Run("profile-excluded unicode organization scope", func(t *testing.T) {
 		transaction := authorizedCoordinationTransaction(t, rowValues(
-			"created", "pending", (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-			(*int64)(nil), (*string)(nil), time.Now(),
+			"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
+			(*int64)(nil), (*string)(nil), timePtr(time.Now()),
 		))
 		service, connection := coordinationService(t, transaction)
 		_, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
 			Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(),
-			Scope:          authz.ScopeRef{Level: authz.ScopeProject, ID: "project-alpha"},
-			IdempotencyKey: "idempotency-key-0001", RequestDigest: coordinationRequest,
-			AuditFactID: "audit-idempotency-wrong-scope",
+			Request: func() coordination.ManagedAgentCreateProjectRequest {
+				request := coordinationProjectRequest()
+				request.OrganizationRef.ID = "organization-café"
+				return request
+			}(),
+			IdempotencyKey: "idempotency-key-0001",
+			AuditFactID:    "audit-idempotency-wrong-scope",
 		})
 		if !errors.Is(err, ErrCoordinationInvalidInput) || connection.beginOptions != nil {
 			t.Fatalf("wrong scope error/database use = %v / %#v", err, connection.beginOptions)
@@ -333,7 +350,7 @@ func TestOutboxDispatcherUsesOnlyInjectedPortAndSettlesAfterDelivery(t *testing.
 	expires := time.Date(2026, 8, 19, 0, 1, 0, 0, time.UTC)
 	claimTransaction := coordinationTransaction(rowValues(
 		"event-project-alpha", "managedAgentCreateProject/v1alpha1",
-		"sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a",
+		coordination.ManagedAgentCreateProject().ProfileDigest(),
 		"resource_change", "project", "project-alpha", int64(7), &resourceVersion, int64(0),
 		(*string)(nil), (*int64)(nil), coordinationPayload, int32(1), expires,
 	))
@@ -385,6 +402,18 @@ func coordinationActor() authz.SubjectRef {
 
 func coordinationScope() authz.ScopeRef {
 	return authz.ScopeRef{Level: authz.ScopeOrganization, ID: "organization-alpha"}
+}
+
+func coordinationProjectRequest() coordination.ManagedAgentCreateProjectRequest {
+	return coordination.ManagedAgentCreateProjectRequest{
+		Name: "project-alpha",
+		OrganizationRef: coordination.OrganizationRef{
+			Namespace: "cloud-agents",
+			Kind:      "organization",
+			ID:        coordinationScope().ID,
+		},
+		DisplayName: "Project Alpha",
+	}
 }
 
 func coordinationService(t *testing.T, transaction *fakeTransaction) (*DurableCoordinationService, *fakeConnection) {

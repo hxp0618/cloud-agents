@@ -1,14 +1,14 @@
 # P1-A2.3 durable coordination evidence-quota blocker - 2026-08-19
 
-- Status: **BLOCKER RECORDED - NEW PROTOCOL DECISION NOT AUTHORIZED**
+- Status: **QUOTA/PROFILE AND A2.3 REMEDIATED SLICE REVIEW PASS; FULL MIGRATION CLOSURE PENDING**
 - Fixed source: `79b603b7a4569a3f1f816c9d3bf3a417431e5926`
 - Fixed A2.3 slice-3 implementation: `59ec26037ddeba7157f358693426ca1fe2d6231e`
 - Branch: `codex/cloud-agents-platform-p1`
 - Affected boundary: P1-A2.3 slice-3 independent-review remediation and migration admission
-- Existing authorization: generated contract-registry profile only, ordered A2.3 slices, no HTTP/P2 external side
-  effect, and no Gate closure
-- Does not authorize: rewriting `000008`, selecting or inferring a new quota profile, changing an inclusive evidence
-  maximum, production database mutation, deployment, release, or any Gate closure
+- Existing authorization: generated contract-registry profile only, ordered A2.3 slices, explicit
+  `cloud-agents-platform-lineage-quota-profile/v3`, no HTTP/P2 external side effect, and no Gate closure
+- Does not authorize: rewriting `000008`, inferring a quota profile, widening v1/v2 in place, production database
+  mutation, deployment, release, or any Gate closure
 
 ## 1. Finding
 
@@ -28,23 +28,26 @@ smaller under the currently selected v2 arithmetic.
 
 The generated contract-registry profile, typed request-projection binder, conflict-redaction correction and
 PostgreSQL matrix changes in the current worktree therefore remain an uncommitted candidate. They are not migration
-admission evidence, an independently reviewed closure, or a Gate result.
+admission evidence, an independently reviewed closure, or a Gate result. The later local identity remediation is
+described below; the historical independent-review verdict remains controlling until it is rerun against this exact
+candidate.
 
 ## 2. Exact capacity contradiction
 
 The checked-in statement-count history through `000007` is `[20, 71, 46, 20, 1, 1, 89]`. `000008` adds 34
-statements. The current `000009` candidate has two statements; the table also shows a hypothetical one-statement
-forward repair to prove that reducing `000009` alone cannot remove the contradiction. `execution_policy.max_attempts`
-remains the frozen value `3`, and every row uses the approved
-`cloud-agents-platform-lineage-quota-profile/v2` formula.
+statements and the current versioned `000009` candidate contains 30 classified statements. The frozen historical
+registry/profile pair remains available for replay, while the current pair is used by the versioned service entry.
+`execution_policy.max_attempts` remains the frozen value `3`; the immutable rows use the approved
+`cloud-agents-platform-lineage-quota-profile/v2` formula and the current row uses the explicitly generated
+`cloud-agents-platform-lineage-quota-profile/v3` formula.
 
-| Bundle                                    | Migrations | Journal segments | Journal records |   Journal bytes | Index bytes |  Combined bytes |
-| ----------------------------------------- | ---------: | ---------------: | --------------: | --------------: | ----------: | --------------: |
-| through `000007`                          |          7 |               15 |           1,566 |     248,414,208 |   6,705,152 |     255,119,360 |
-| through fixed `000008`                    |          8 |           **17** |           1,781 | **282,492,928** |   7,585,792 | **290,078,720** |
-| through hypothetical one-statement repair |          9 |           **18** |           1,797 | **284,098,560** |   7,651,328 | **291,749,888** |
-| through current two-statement candidate   |          9 |           **18** |           1,803 | **285,081,600** |   7,675,904 | **292,757,504** |
-| inclusive maximum                         |            |               16 |          65,536 |     268,435,456 |  16,777,216 |     268,435,456 |
+| Bundle                                  | Migrations | Journal segments | Journal records |   Journal bytes | Index bytes |  Combined bytes |
+| --------------------------------------- | ---------: | ---------------: | --------------: | --------------: | ----------: | --------------: |
+| through `000007`                        |          7 |               15 |           1,566 |     248,414,208 |   6,705,152 |     255,119,360 |
+| through fixed `000008`                  |          8 |           **17** |           1,781 | **282,492,928** |   7,585,792 | **290,078,720** |
+| through current versioned `000009` pair |          9 |               19 |           1,972 |     312,639,488 |   8,368,128 |     321,007,616 |
+| v2 inclusive maximum                    |            |               16 |          65,536 |     268,435,456 |  16,777,216 |     268,435,456 |
+| v3 inclusive maximum                    |            |               32 |          65,536 |     536,870,912 |  16,777,216 |     536,870,912 |
 
 For the fixed `000008` bundle alone, the journal reservation is `14,057,472` bytes over its maximum and the
 combined reservation is `21,643,264` bytes over its maximum. The calculator encounters segment 17 first and returns
@@ -59,10 +62,9 @@ GOWORK=off GOFLAGS=-mod=readonly \
   -count=1 ./internal/migration
 ```
 
-It reports the exact current statement counts
-`[20 71 46 20 1 1 89 34 2]`, then rejects root quota admission with the 16-segment error. The first test also exposes
-that its previous seven-migration golden assertion was stale; updating that assertion cannot turn the rejected
-eight- or nine-migration reservation into an admissible one.
+It reports the exact current statement counts `[20 71 46 20 1 1 89 34 30]` and the v3 reservation facts above. The
+focused quota assertion now passes; the historical v1/v2 pair remains byte-exact and is still checked against its
+original limits.
 
 ## 3. Frozen constraints
 
@@ -84,25 +86,44 @@ ADR-0012 v2 changes only the closed checkpoint maximum to 4 KiB. It deliberately
 versioned lineage/quota profile direction authorized that explicit v2 decision; it does not implicitly mint a v3
 profile or a rollover authority.
 
-## 4. Required decision before implementation resumes
+## 4. Approved decision and remaining review boundary
 
-A new protocol decision is required before A2.3 slice-3 remediation can be committed. A safe decision must choose
-and fully specify one forward-compatible authority model, for example:
+The owner selected route 1 on 2026-08-19: an explicit generated-manifest v3 lineage/quota profile. The exact
+decision is frozen in [ADR-0014](../adr/0014-p1-lineage-quota-profile-v3.md):
 
-1. an explicit new lineage/quota profile whose signed manifest and generation facts bind any changed journal record
-   maxima or reservation arithmetic while preserving byte-exact v1/v2 historical replay; or
-2. an explicit schema-bundle/lineage epoch rollover protocol that retains and verifies all historical bundle facts
-   without requiring every future migration to fit one generation's whole-bundle reservation.
+- exact manifest/profile pair `migration-manifest/v3` + `lineage-quota-profile/v3`;
+- 32 journal segments and 512 MiB journal/whole-bundle reservation;
+- unchanged 65,536 journal records and 4 KiB checkpoint maximum;
+- unchanged lineage-index, root and object maxima;
+- byte-exact v1/v2 historical replay;
+- no rollover, inference, HTTP/P2 external effect, production mutation, release or Gate closure.
 
-Either route needs closed wire/state semantics, zero/unknown/profile-swap faults, exact quota arithmetic, historical
-reopen/successor compatibility, generated fixtures, full migration gates, PostgreSQL matrix reruns and an independent
-security review. It must remain separate from the A2.3 generated operation profile; an operation profile is not
-evidence quota authority.
+The decision is approved, and independent review accepted this quota/profile boundary. The reviewed candidate has
+closed format/profile semantics, zero/unknown/profile-swap faults, exact quota arithmetic,
+historical profile compatibility, generated fixtures and fresh PostgreSQL matrix evidence. Contract/bundle/
+generation-lock checks, focused v3 normal and race tests, control-plane compile/vet/build, Linux amd64/arm64
+compilation, the PG15/16/17 kernel matrix and the PG15/16/17 service/claim normal/race/fault matrix all pass locally.
+The operation-specific generated identity profile now binds an ASCII identifier of at most 128 bytes with
+`exact_string_no_rewrite`; the public Unicode organization-reference contract remains unchanged, so no lossy
+conversion or global authorization widening is used.
 
-Until that decision is explicitly approved, the correct state is:
+The full `internal/migration` suite still has only a bounded local attempt: it reached the known long-running runner
+surface and timed out after 10 minutes without an assertion failure. That is not a pass. The historical review
+returned `NOT APPROVE, P0=0/P1=1/P2=0` because generated `organizationRef` accepted NFC Unicode identifiers while
+service/claim used an ASCII-only, 128-byte `authz.ScopeRef`. The exact remediation candidate was independently
+rereviewed as `APPROVE, P0=0/P1=0/P2=0`: the operation-specific generated profile is ASCII, at most 128 bytes and
+`exact_string_no_rewrite`; the public Unicode organization-reference contract remains unchanged; no identity
+conversion or authorization widening is used. See the
+[remediation independent review](durable-coordination-v3-remediation-independent-review-20260820.md) and retain the
+[historical review](durable-coordination-v3-independent-review-20260819.md) as history.
+
+After the remediation independent review, fixed-source evidence and the remaining full migration closure have the
+following bounded state:
 
 - fixed `000008` implementation evidence remains historical and unchanged;
-- A2.3 slice-3 independent review remains open;
-- the current remediation code and migration candidate remain uncommitted and unpushed;
+- quota/profile, append-only kernel and remediated service/claim/matrix implementation-review slice is approved;
+- the remediation implementation/review slice is approved; this record does not itself claim a commit, push or
+  deployment;
+- the full migration suite remains pending and its bounded timeout is not a pass;
 - HTTP/P2/external effects remain absent;
 - every immutable and aggregate Gate remains open.

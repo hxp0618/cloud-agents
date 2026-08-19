@@ -85,9 +85,19 @@
   固定。Slice 3 implementation `59ec260` 已新增 generated Go profile、typed `000008` service/claim、closed
   committed/rejected/unknown outcomes 与 PG15/16/17 normal/race/fault matrix；后续完整 migration 门禁确认 fixed
   `000008` 的 34-statement bundle 已超过 v2 quota 的 16-segment/256 MiB 上限，故独立审查与 admission 均保持
-  BLOCKED，等待新的显式 quota/rollover 协议决定（见
+  BLOCKED。用户已批准 [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md) 的 generated-manifest v3 profile
+  方向；当前未提交候选已通过 v3 exact/fault normal+race、generated registry/bundle/lock、Linux cross-compile 与
+  PG15/16/17 kernel + service/claim normal/race/fault matrix。历史 independent review 返回
+  `NOT APPROVE, P0=0/P1=1/P2=0`：quota/profile 与 append-only kernel 分项通过，但当时 generated Unicode
+  `organizationRef` 无法进入 ASCII-only authorization `ScopeRef`。该 finding 已在后续未提交候选中按 generated
+  operation-specific ASCII、最多 128 bytes、`exact_string_no_rewrite` profile remediation；公共 Unicode
+  organization-reference contract 保持不变，`000009` 同时保留 historical pair 并新增 current versioned service
+  entry。精确候选随后 independent rereview 返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭这三个
+  implementation/review slices；Full migration closure 仍未完成（见
+  [`A2.3 remediation independent review`](durable-coordination-v3-remediation-independent-review-20260820.md)、
+  [`A2.3 v3 independent review`](durable-coordination-v3-independent-review-20260819.md) 与
   [`A2.3 evidence-quota blocker`](durable-coordination-evidence-quota-blocker-20260819.md)）。HTTP/P2 external side
-  effect 和所有 Gate closure 继续禁止。历史入口审计见
+  effect 不开放，且不关闭任何 Gate。历史入口审计见
   [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
@@ -150,11 +160,23 @@ Platform RC、Beta 或 GA。
   Gate closure
 - [`durable-coordination-service-claim-matrix-20260819.md`](durable-coordination-service-claim-matrix-20260819.md)：固定
   A2.3 slice 3 implementation `59ec260` 的 generated Go profile、append-only `000008` typed service、claim/leader/
-  outbox closed outcome 与 PG15/16/17 normal/race/fault matrix；independent review 仍为 PENDING，不开放 HTTP/P2
-  external side effect，也不构成 Gate closure
+  outbox closed outcome 与 PG15/16/17 normal/race/fault matrix；该 fixed slice 文档保留当时 independent review
+  `PENDING` 的边界，后续 v3 review 已返回 `NOT APPROVE (P0=0/P1=1/P2=0)`；不开放 HTTP/P2 external
+  side effect，也不构成 Gate closure
 - [`durable-coordination-evidence-quota-blocker-20260819.md`](durable-coordination-evidence-quota-blocker-20260819.md)：记录
-  完整 migration 门禁发现 fixed `000008` 已使 v2 whole-bundle reservation 达到 17 segments 并超过 256 MiB，
-  `000009` 非根因；禁止改写 migration、隐式放宽 profile 或宣称 Gate，等待新的显式 quota/rollover 协议决定
+  fixed `000008` 已使 v2 whole-bundle reservation 达到 17 segments 并超过 256 MiB；用户已批准 ADR-0014
+  v3 方向，本地候选已通过定向门禁与 PG matrices；原独立 review 的 organization identity P1 已按 generated
+  operation-specific ASCII identity profile 闭合并通过 remediation independent review，full migration closure
+  仍未完成，不构成 Gate closure
+- [`durable-coordination-v3-independent-review-20260819.md`](durable-coordination-v3-independent-review-20260819.md)：记录
+  fixed HEAD 加当时 dirty/untracked v3 candidate 的独立只读终审；`P0=0/P1=1/P2=0`、整体 `NOT APPROVE`，
+  唯一 P1 是 generated Unicode `organizationRef` 与 ASCII-only authorization `ScopeRef` 合约断裂。后续本地
+  remediation 另有 generated operation-specific identity profile 与 versioned `000009` pair，但不改变该历史 verdict；
+  不授权静默映射、HTTP/P2 external effect 或 Gate closure
+- [`durable-coordination-v3-remediation-independent-review-20260820.md`](durable-coordination-v3-remediation-independent-review-20260820.md)：
+  对 exact remediation candidate 的 independent rereview；`APPROVE, P0=0/P1=0/P2=0`，只关闭 generated
+  registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice。Full
+  migration closure、HTTP/P2 external effect 与所有 Gate 仍保持 OPEN
 
 ## Data kernel decisions
 
@@ -173,6 +195,9 @@ Platform RC、Beta 或 GA。
 - [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)：冻结 generated contract-registry profile、七个
   closed durable state machines、idempotency/outbox/leader/audit policy 与 A2.3 三切片顺序；不开放 HTTP/P2 external
   side effect，也不构成任何 Gate closure。
+- [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)：冻结 generated-manifest v3 selector、32-segment /
+  512 MiB generation reservation、v1/v2 same-bits 与 profile swap fail-closed；不开放 rollover、HTTP/P2 或 Gate
+  closure。
 
 ## Current admission durability evidence
 

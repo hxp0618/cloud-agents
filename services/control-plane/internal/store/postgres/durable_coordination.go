@@ -18,12 +18,12 @@ const (
 	claimManagedAgentCreateProjectIdempotencySQL = `SELECT
     claim_disposition, replay_state, operation_id, operation_generation,
     resource_kind, resource_id, resource_version, stable_error_code, expires_at
-FROM cloud_agents.claim_managed_agent_create_project_idempotency($1, $2, $3, $4, $5)`
+FROM cloud_agents.claim_managed_agent_create_project_idempotency_v2($1, $2, $3, $4, $5)`
 	completeManagedAgentCreateProjectSuccessSQL = `SELECT
     replay_state, resource_kind, resource_id, resource_version, outbox_event_id, outbox_state
-FROM cloud_agents.complete_managed_agent_create_project_success($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+FROM cloud_agents.complete_managed_agent_create_project_success_v2($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	completeManagedAgentCreateProjectFailureSQL = `SELECT replay_state, stable_error_code
-FROM cloud_agents.complete_managed_agent_create_project_failure($1, $2, $3, $4, $5, $6)`
+FROM cloud_agents.complete_managed_agent_create_project_failure_v2($1, $2, $3, $4, $5, $6)`
 	acquireCoordinationLeaderSQL = `SELECT lease_disposition, fencing_token, lease_expires_at
 FROM cloud_agents.acquire_coordination_leader($1, $2, $3, $4)`
 	renewCoordinationLeaderSQL = `SELECT lease_disposition, fencing_token, lease_expires_at
@@ -66,9 +66,8 @@ const (
 type IdempotencyClaimInput struct {
 	Profile        coordination.Profile
 	Actor          authz.SubjectRef
-	Scope          authz.ScopeRef
+	Request        coordination.ManagedAgentCreateProjectRequest
 	IdempotencyKey string
-	RequestDigest  string
 	AuditFactID    string
 }
 
@@ -88,9 +87,8 @@ type IdempotencyClaimResult struct {
 type IdempotencySuccessInput struct {
 	Profile         coordination.Profile
 	Actor           authz.SubjectRef
-	Scope           authz.ScopeRef
+	Request         coordination.ManagedAgentCreateProjectRequest
 	IdempotencyKey  string
-	RequestDigest   string
 	ResourceID      string
 	ResourceVersion int64
 	EventID         string
@@ -111,9 +109,8 @@ type IdempotencySuccessResult struct {
 type IdempotencyFailureInput struct {
 	Profile         coordination.Profile
 	Actor           authz.SubjectRef
-	Scope           authz.ScopeRef
+	Request         coordination.ManagedAgentCreateProjectRequest
 	IdempotencyKey  string
-	RequestDigest   string
 	StableErrorCode string
 	AuditFactID     string
 }
@@ -228,25 +225,28 @@ func (service *DurableCoordinationService) ClaimIdempotency(
 	tenantID string,
 	input IdempotencyClaimInput,
 ) (IdempotencyClaimResult, error) {
-	subjectDigest, err := service.validateAuthorizedProfile(ctx, tenantID, input.Profile, input.Actor, input.Scope, input.AuditFactID)
-	if err != nil ||
-		!validIdempotencyKey(input.IdempotencyKey) || !validCoordinationDigest(input.RequestDigest) {
+	subjectDigest, scope, requestDigest, err := service.bindAuthorizedProfile(
+		ctx, tenantID, input.Profile, input.Actor, input.Request, input.AuditFactID,
+	)
+	if err != nil || !validIdempotencyKey(input.IdempotencyKey) {
 		if err != nil {
 			return IdempotencyClaimResult{}, err
 		}
 		return IdempotencyClaimResult{}, ErrCoordinationInvalidInput
 	}
 	var result IdempotencyClaimResult
+	var replayState *string
+	var expiresAt *time.Time
 	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), input.Scope); err != nil {
+		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), scope); err != nil {
 			return err
 		}
 		return handle.transaction.queryRow(ctx, claimManagedAgentCreateProjectIdempotencySQL,
-			tenantID, subjectDigest, input.IdempotencyKey, input.RequestDigest, input.AuditFactID,
+			tenantID, subjectDigest, input.IdempotencyKey, requestDigest, input.AuditFactID,
 		).Scan(
-			&result.Disposition, &result.ReplayState, &result.OperationID, &result.OperationGeneration,
+			&result.Disposition, &replayState, &result.OperationID, &result.OperationGeneration,
 			&result.ResourceKind, &result.ResourceID, &result.ResourceVersion, &result.StableErrorCode,
-			&result.ExpiresAt,
+			&expiresAt,
 		)
 	})
 	if errors.Is(err, ErrMutationCommitUnknown) {
@@ -257,6 +257,12 @@ func (service *DurableCoordinationService) ClaimIdempotency(
 	}
 	if err != nil {
 		return IdempotencyClaimResult{}, mapCoordinationDatabaseError("claim idempotency", err)
+	}
+	if replayState != nil {
+		result.ReplayState = *replayState
+	}
+	if expiresAt != nil {
+		result.ExpiresAt = *expiresAt
 	}
 	if !validIdempotencyClaimResult(result) {
 		return IdempotencyClaimResult{}, ErrCoordinationResultDrift
@@ -274,22 +280,24 @@ func (service *DurableCoordinationService) CompleteIdempotencySuccess(
 	tenantID string,
 	input IdempotencySuccessInput,
 ) (IdempotencySuccessResult, error) {
-	subjectDigest, err := service.validateAuthorizedProfile(ctx, tenantID, input.Profile, input.Actor, input.Scope, input.AuditFactID)
+	subjectDigest, scope, requestDigest, err := service.bindAuthorizedProfile(
+		ctx, tenantID, input.Profile, input.Actor, input.Request, input.AuditFactID,
+	)
 	if err != nil {
 		return IdempotencySuccessResult{}, err
 	}
-	if !validIdempotencyKey(input.IdempotencyKey) || !validCoordinationDigest(input.RequestDigest) ||
+	if !validIdempotencyKey(input.IdempotencyKey) ||
 		!validMutationIdentifier(input.ResourceID) || input.ResourceVersion < 1 ||
 		!validMutationIdentifier(input.EventID) || !validCoordinationDigest(input.PayloadDigest) {
 		return IdempotencySuccessResult{}, ErrCoordinationInvalidInput
 	}
 	var result IdempotencySuccessResult
 	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), input.Scope); err != nil {
+		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), scope); err != nil {
 			return err
 		}
 		return handle.transaction.queryRow(ctx, completeManagedAgentCreateProjectSuccessSQL,
-			tenantID, subjectDigest, input.IdempotencyKey, input.RequestDigest, input.ResourceID,
+			tenantID, subjectDigest, input.IdempotencyKey, requestDigest, input.ResourceID,
 			input.ResourceVersion, input.EventID, input.PayloadDigest, input.AuditFactID,
 		).Scan(&result.ReplayState, &result.ResourceKind, &result.ResourceID, &result.ResourceVersion,
 			&result.OutboxEventID, &result.OutboxState)
@@ -302,21 +310,23 @@ func (service *DurableCoordinationService) CompleteIdempotencyFailure(
 	tenantID string,
 	input IdempotencyFailureInput,
 ) (IdempotencyFailureResult, error) {
-	subjectDigest, err := service.validateAuthorizedProfile(ctx, tenantID, input.Profile, input.Actor, input.Scope, input.AuditFactID)
+	subjectDigest, scope, requestDigest, err := service.bindAuthorizedProfile(
+		ctx, tenantID, input.Profile, input.Actor, input.Request, input.AuditFactID,
+	)
 	if err != nil {
 		return IdempotencyFailureResult{}, err
 	}
-	if !validIdempotencyKey(input.IdempotencyKey) || !validCoordinationDigest(input.RequestDigest) ||
+	if !validIdempotencyKey(input.IdempotencyKey) ||
 		!validMutationIdentifier(input.StableErrorCode) {
 		return IdempotencyFailureResult{}, ErrCoordinationInvalidInput
 	}
 	var result IdempotencyFailureResult
 	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), input.Scope); err != nil {
+		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), scope); err != nil {
 			return err
 		}
 		return handle.transaction.queryRow(ctx, completeManagedAgentCreateProjectFailureSQL,
-			tenantID, subjectDigest, input.IdempotencyKey, input.RequestDigest,
+			tenantID, subjectDigest, input.IdempotencyKey, requestDigest,
 			input.StableErrorCode, input.AuditFactID,
 		).Scan(&result.ReplayState, &result.StableErrorCode)
 	})
@@ -569,9 +579,17 @@ func (service *DurableCoordinationService) validateProfile(
 	if err := service.validateGlobal(ctx); err != nil {
 		return err
 	}
+	currentProfile := coordination.ManagedAgentCreateProject()
 	if !validMutationIdentifier(tenantID) || !profile.Valid() ||
 		profile.OperationID() != "managedAgentCreateProject" || profile.ProfileID() != "managedAgentCreateProject/v1alpha1" ||
-		profile.ProfileDigest() != "sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a" ||
+		profile.ProfileDigest() != currentProfile.ProfileDigest() ||
+		profile.ProjectionSchemaID() != "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json" ||
+		profile.CanonicalizationProfile() != "cloud-agents-http-idempotency/managedAgentCreateProject/v1alpha1" ||
+		profile.CanonicalizationAlgorithm() != "RFC8785" || profile.DigestAlgorithm() != "SHA-256" ||
+		profile.TenantSource() != "path.tenantId" || profile.ScopeSource() != "body.organizationRef" ||
+		profile.ScopeIdentitySchemaID() != "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json" ||
+		profile.ScopeIdentifierProfile() != "cloud-agents-authorization-scope-identifier/ascii-v1" ||
+		profile.ScopeIdentityComparison() != "exact_string_no_rewrite" ||
 		profile.RequiredPermission() != "projects.create" || profile.RequiredScopeLevel() != "organization" ||
 		profile.CreatesPlatformOperation() || profile.ExternalSideEffectAllowed() ||
 		profile.OutboxEventClass() != "resource_change" || profile.ResultResourceKind() != "project" ||
@@ -581,25 +599,30 @@ func (service *DurableCoordinationService) validateProfile(
 	return nil
 }
 
-func (service *DurableCoordinationService) validateAuthorizedProfile(
+func (service *DurableCoordinationService) bindAuthorizedProfile(
 	ctx context.Context,
 	tenantID string,
 	profile coordination.Profile,
 	actor authz.SubjectRef,
-	scope authz.ScopeRef,
+	request coordination.ManagedAgentCreateProjectRequest,
 	auditFactID string,
-) (string, error) {
+) (string, authz.ScopeRef, string, error) {
 	if err := service.validateProfile(ctx, tenantID, profile, auditFactID); err != nil {
-		return "", err
+		return "", authz.ScopeRef{}, "", err
 	}
+	intent, err := coordination.BindManagedAgentCreateProject(profile, tenantID, request)
+	if err != nil {
+		return "", authz.ScopeRef{}, "", ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeOrganization, ID: intent.OrganizationID()}
 	if actor.Validate() != nil || scope.Level != authz.ScopeOrganization || scope.Validate(tenantID) != nil {
-		return "", ErrCoordinationInvalidInput
+		return "", authz.ScopeRef{}, "", ErrCoordinationInvalidInput
 	}
 	digest, err := actor.Digest()
-	if err != nil || !validCoordinationDigest(digest) {
-		return "", ErrCoordinationInvalidInput
+	if err != nil || !validCoordinationDigest(digest) || !validCoordinationDigest(intent.RequestDigest()) {
+		return "", authz.ScopeRef{}, "", ErrCoordinationInvalidInput
 	}
-	return digest, nil
+	return digest, scope, intent.RequestDigest(), nil
 }
 
 func (service *DurableCoordinationService) validateGlobal(ctx context.Context) error {
@@ -702,6 +725,11 @@ func validIdempotencyClaimResult(result IdempotencyClaimResult) bool {
 	if result.Disposition != "created" && result.Disposition != "replay" && result.Disposition != "conflict" {
 		return false
 	}
+	if result.Disposition == "conflict" {
+		return result.ReplayState == "" && result.ExpiresAt.IsZero() && result.OperationID == nil &&
+			result.OperationGeneration == nil && result.ResourceKind == nil && result.ResourceID == nil &&
+			result.ResourceVersion == nil && result.StableErrorCode == nil
+	}
 	if result.ReplayState != "pending" && result.ReplayState != "succeeded" && result.ReplayState != "failed" {
 		return false
 	}
@@ -728,9 +756,9 @@ func validLeaderInput(input LeaderLeaseInput, requireToken bool) bool {
 }
 
 func validOutboxClaim(claim OutboxClaim) bool {
+	profile := coordination.ManagedAgentCreateProject()
 	if !validMutationIdentifier(claim.TenantID) || !validMutationIdentifier(claim.EventID) ||
-		claim.ProfileID != "managedAgentCreateProject/v1alpha1" ||
-		claim.ProfileDigest != "sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a" ||
+		claim.ProfileID != profile.ProfileID() || claim.ProfileDigest != profile.ProfileDigest() ||
 		claim.EventClass != "resource_change" || claim.AggregateKind != "project" ||
 		!validMutationIdentifier(claim.AggregateID) || claim.AggregateSequence < 1 ||
 		claim.ResourceVersion == nil || *claim.ResourceVersion != claim.AggregateSequence || claim.Generation != 0 ||

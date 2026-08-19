@@ -1,8 +1,8 @@
 # 06. 状态与决策追踪
 
-- 最后更新：2026-08-19
+- 最后更新：2026-08-20
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（`ed37295` 已关闭 A2.1b-impl-1 ordinary catalog structure，`3b3f8f6` 已关闭 package-private A2.1b-impl-2 expression normalizer 与本地 PG15/16/17 same-bits，`bbb0bf2` 已关闭 opaque verified `ProjectCatalog` 与 PG15/16/17 × A/B × idle/borrowed × normal/race matrix，`401206a` 与 independent review 再关闭 A2.1b-impl-3 supply/review；`f988e45` 已关闭 A2.2-impl-1 exact built-in role catalog contract，`e36e1cf` 已关闭 A2.2-impl-2 migration-owned RBAC data/read evaluator 与本地 PG15/16/17 normal/race focused matrix，`de36ca3` 已固定 A2.2-impl-3 mutation/service 与本地 PG15/16/17 normal/race matrix，`350b53c` 关闭 failed/unknown commit 的非零结果缺口，`afe6cb2 → 1ff7713 → 2dc443d` 再关闭 Membership/RoleBinding admission authority、迁移闭包与 current source-bound supply metadata；independent review 发现 direct PostgreSQL subject issuer gap，用户随后批准 ADR-0012 versioned lineage/quota profile 方向，`cd64dee` 已提交并推送 v1 historical compatibility、v2 profile binding 与 append-only `000006`，`77de97e` 又补齐 stored lineage admission decode 的 profile-aware checkpoint ceiling，`94aef60` 固定 follow-up evidence；首次 `gpt-5.6-sol` 复核发现 v1 显式空 profile 降级边界，`f731c6b` 已 fail closed 修复，`610b1ab` 已刷新 remediation source-bound metadata；第二轮 `gpt-5.6-sol` 复核返回 `APPROVE, P0=0/P1=0/P2=0`，审查记录见 [versioned lineage/quota profile independent review](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)，只关闭 A2.2-impl-3 remediation 的固定源码 implementation/review 层；runner/CLI configuration、runner/DB、physical controller power-loss 与 immutable Gates remain open；用户于 2026-08-19 批准 A2.3 generated contract registry → append-only PostgreSQL kernel → service/claim/matrix/independent review 三切片，`ff9ea33` 已固定 slice 1，`a9826e4` 已固定 slice 2；`59ec260` 已固定 slice 3 generated Go profile、append-only `000008` typed service/claim 与 PG15/16/17 normal/race/fault matrix，independent review 仍 PENDING；HTTP/P2 external side effect 与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 均到达 current `EvidenceSession`；test-only authority 的 real ext4/xfs process-kill/clean-remount、isolated QEMU whole-guest power-cycle、object-publish 11-barrier、existing-generation-append 10-barrier、retained-generation-rotation 26-barrier、generation-activation 5-barrier、target-registration create 25-barrier/torn-prefix recovery 21-barrier、generation-header create 21-barrier/torn-prefix recovery 23-barrier 与 generation repair 21-barrier matrix 已通过；migration-owned generation-prefix pass-1/binder 在 `70269e1`/`7b52509` 闭合到 `RecoveredHeaderDurablePermit`，`cdedda7` 再闭合 exact adjacent activation 与 existing retained-lock handoff bridge；`a3c7651` 实现 required-syscall probe，`381b04a` 关闭 root-only trusted-mount provision/revoke 与 Linux production `Open`，`3fe05ec` 再关闭 public production `EvidenceSink`、full-root all-generation lock set 与真实 fresh ext4/XFS brand-new/registered/revocation cross-package matrix；M1/P2–P6 PAUSED
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，full migration closure 仍 PENDING；HTTP/P2 external side effect 与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -48,6 +48,7 @@
 | D-038 | Membership admission + RoleBinding explicit allow；role version exact、future permission 不扩张、PDP deny-only              | APPROVED | ADR-0011；A2.2 分 contract/catalog、data/evaluator、mutation/matrix 三切片       |
 | D-039 | generation 显式选择 versioned lineage/quota profile；v1 historical same-bits、v2 4 KiB checkpoint ceiling                   | APPROVED | 用户于 2026-08-18 批准 ADR-0012；不授权 A2.3 或 Gate closure                     |
 | D-040 | A2.3 仅接受 generated profile，并按 registry → append-only PG kernel → service/claim/matrix/review 三切片推进               | APPROVED | 用户于 2026-08-19 批准 ADR-0013；不开放 HTTP/P2 side effect，不关闭 Gate         |
+| D-041 | generated manifest 显式选择 lineage/quota v3；32 segments、512 MiB，records/checkpoint/index/root/object 不变               | APPROVED | 用户于 2026-08-19 批准 ADR-0014；v1/v2 same-bits，不开放 rollover/HTTP/P2/Gate   |
 
 ## 2. 阶段追踪
 
@@ -182,14 +183,30 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       （[independent review](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)），只关闭固定源码
       implementation/review admissibility；该 review 本身不授权 A2.3，也不关闭任何 immutable/aggregate Gate。
       后续 A2.3 方向仅由 D-040/ADR-0013 的独立批准授权。
-- [ ] A2.3 Durable Coordination 按三切片推进。用户已于 2026-08-19 批准
+- [x] A2.3 Durable Coordination 的 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix
+      implementation/review slice 已按用户批准的三切片完成；用户于 2026-08-19 批准
       [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)；slice 1 generated registry 已由 `ff9ea33`
       固定，slice 2 append-only `000007` kernel 已由 `a9826e4` 固定。Slice 3 implementation `59ec260` 已新增
       generated Go profile、append-only `000008` typed service/claim、closed committed/rejected/unknown outcome 和
-      PG15/16/17 normal/race/fault matrix；independent review 仍 PENDING，所以本项保持未勾选。HTTP/P2 external
-      side effect 与所有 Gate closure 继续禁止。见 [`service evidence`](../p1/durable-coordination-service-claim-matrix-20260819.md)、
+      PG15/16/17 normal/race/fault matrix。当前 v3 candidate independent review 已返回
+      历史独立 review 为 `NOT APPROVE, P0=0/P1=1/P2=0`：registry/profile 与 append-only kernel 通过，但 generated
+      Unicode `organizationRef` 与 ASCII-only authorization `ScopeRef` 不一致。后续 remediation 按 generated
+      operation-specific identity profile 收窄为 ASCII、最多 128 bytes、`exact_string_no_rewrite`，公共
+      Unicode organization reference contract 保持不变；`000009` 保留 historical registry/profile pair，并以
+      versioned v2 service entry 使用 current pair。精确 candidate 随后 independent rereview 返回
+      `APPROVE, P0=0/P1=0/P2=0`，只关闭本三切片 implementation/review slice；Full migration closure
+      仍 PENDING。HTTP/P2 external side effect 不开放，且不关闭任何 Gate。见
+      [`remediation independent review`](../p1/durable-coordination-v3-remediation-independent-review-20260820.md)、
+      并保留 [`historical independent review`](../p1/durable-coordination-v3-independent-review-20260819.md)、
+      [`service evidence`](../p1/durable-coordination-service-claim-matrix-20260819.md)、
       [`kernel evidence`](../p1/durable-coordination-postgres-kernel-20260819.md) 与
       [`resolved blocker`](../p1/durable-coordination-entry-blocker-20260818.md)。
+- [ ] A2.3 evidence quota 采用 [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md) 的显式 v3：generated
+      manifest 是唯一 selector，32 segments / 512 MiB，records/checkpoint/index/root/object 上限不变，v1/v2
+      historical same-bits。未提交候选已通过 registry/bundle/lock、v3 normal/race、Linux cross-compile、
+      PG15/16/17 kernel schema-only 与 service/claim normal/race/fault matrix。Independent review 已确认 quota/profile
+      分项 PASS；精确 remediation independent rereview 已返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭三切片
+      implementation/review slice。Full migration suite 在本地 10 分钟边界超时，未记为 PASS；所有 Gate 保持 OPEN。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。

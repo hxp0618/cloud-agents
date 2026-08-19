@@ -158,7 +158,8 @@ SQL
     000005_close_membership_binding_authority.sql \
     000006_close_subject_issuer_validation.sql \
     000007_expand_durable_coordination_kernel.sql \
-    000008_add_durable_coordination_service.sql; do
+    000008_add_durable_coordination_service.sql \
+    000009_redact_coordination_conflicts.sql; do
     docker exec -e PGPASSWORD="$test_password" "$active_container" \
       psql -X -v ON_ERROR_STOP=1 --single-transaction \
       -h 127.0.0.1 -U cag_migration -d cagtest \

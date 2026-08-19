@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:78241e47d86f789af9d152b1e0f74497cd736365e26be4d7673d87da8f55491f",
+    "manifestSha256": "sha256:e36824d998784e93b81380bbb9c1d7db1361ab687bbb04b06665d2c3944c38a1",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -49,7 +49,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:3a2e76f2b544df428db31e3ea2dd3ed4d926ab9e13883d04727b5f33298feff8",
+      "sourceManifestSha256": "sha256:a34f35896e33d202f50385f49f09e72998540a8f6745cbf4f8a92e2c3a4b9de9",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -75,7 +75,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:79b3a988761d2f973b5bee1b2ed4cb4fdff1ddfcda66b23792633db66440fe8f",
+      "sourceManifestSha256": "sha256:1b70f897dcfafd66813779c45ace3d4d628e29a9737eb439916e9cec23607177",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -90,7 +90,7 @@
       "id": "platform-durable-coordination-registry-generator",
       "kind": "in-repo-typescript-deterministic-contract-registry",
       "entrypoint": "scripts/generate-platform-durable-coordination-registry.ts",
-      "sourceManifestSha256": "sha256:0d46f176a7aec037159ab900552166597816e11d9ee91aae3a9cc06749c34a2d",
+      "sourceManifestSha256": "sha256:e6baecef08538cbf5703106eaf9344ea84f4922892c6b0e8dbc087f4535031f3",
       "sources": [
         "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.test.ts",
@@ -103,7 +103,7 @@
       "id": "platform-durable-coordination-go-generator",
       "kind": "in-repo-typescript-deterministic-go-profile",
       "entrypoint": "scripts/generate-platform-durable-coordination-go.ts",
-      "sourceManifestSha256": "sha256:eaf347c9c037366b36bcecc51801f7d638cb3fe97ac181f9c933b26fa8f3cafb",
+      "sourceManifestSha256": "sha256:81bcdf6580601d42e4189fdd2f31cb66833e0c8b653b0a57a82d27d97c107f30",
       "sources": [
         "scripts/generate-platform-durable-coordination-go.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
@@ -115,8 +115,9 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:d4d436b075102ecc3c908567e938a9adecf5d860d2344c7ac00905e4d7d54f93",
+      "sourceManifestSha256": "sha256:b62d1cbee1c9fb17ce8cb27c89f6e8566e276c3742b4731df44a2a3cf7ccdb5f",
       "sources": [
+        "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
         "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
         "contracts/managed-agent/v1alpha1/openapi.json",
@@ -128,12 +129,14 @@
         "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
         "contracts/platform/v1alpha1/schemas/permission.schema.json",
         "contracts/platform/v1alpha1/schemas/project.schema.json",
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
         "docs/plan/adr/0011-p1-membership-rbac-contract.md",
         "docs/plan/adr/0013-p1-durable-coordination-contract.md",
+        "docs/plan/adr/0014-p1-lineage-quota-profile-v3.md",
         "scripts/check-platform-migration-bundle.ts",
         "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/generate-platform-migration-bundle.ts",
@@ -159,9 +162,11 @@
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
         "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+        "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
+        "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
         "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
         "services/control-plane/migrations/bootstrap/database.sql",
@@ -177,6 +182,7 @@
         "services/control-plane/migrations/catalog/schema-000006.json",
         "services/control-plane/migrations/catalog/schema-000007.json",
         "services/control-plane/migrations/catalog/schema-000008.json",
+        "services/control-plane/migrations/catalog/schema-000009.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -258,15 +264,16 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:78241e47d86f789af9d152b1e0f74497cd736365e26be4d7673d87da8f55491f",
+      "inputManifestSha256": "sha256:e36824d998784e93b81380bbb9c1d7db1361ab687bbb04b06665d2c3944c38a1",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
     {
       "id": "durable-coordination-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:1e86b1f03f9100854c7c510da7691bcde7bd7807cb68890934d192c1779f8dc6",
+      "inputManifestSha256": "sha256:57fec9cfe3313cd4481c24f25a6d050fff1818bf680d3d56324aaaed890ab172",
       "inputs": [
+        "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
         "contracts/managed-agent/v1alpha1/openapi.json",
         "contracts/managed-host/v1alpha1/openapi.json",
@@ -276,6 +283,7 @@
         "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
         "contracts/platform/v1alpha1/schemas/permission.schema.json",
         "contracts/platform/v1alpha1/schemas/project.schema.json",
         "docs/plan/adr/0013-p1-durable-coordination-contract.md",
@@ -289,13 +297,13 @@
       "generatedOutputs": [
         {
           "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
-          "sha256": "sha256:15140fb8d9233bf161c283f32ace7cab639a9ed1df9ffb35bae193385ef62a63",
-          "sizeBytes": 16276
+          "sha256": "sha256:2dbce40aac86d2d1709c4aa07d683d916fbba3a992e7f8699843e470c0876dc6",
+          "sizeBytes": 16603
         }
       ],
       "outputSummary": {
         "registryId": "cloud-agents/platform/durable-coordination",
-        "registryDigest": "sha256:11c0f599e8320668a6f601241206c795933b26e3b9c456a58353a0d13c7ecd30",
+        "registryDigest": "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a",
         "sourceDigest": "sha256:041eeb4cdac568c48ff5e8f9f41a986259fcb89e16ee6b339802e25eca139d5e",
         "stateMachineDigest": "sha256:5c4fa5c0cfac253b45a41c2e49ee7e863b9efbe124e5d743e041f5e01f5c6f15",
         "policyDigest": "sha256:95023973eb007a958a3c5aea3ac61b6caa7cd8955b9a24fcef3ad269230c64e8",
@@ -309,7 +317,7 @@
     {
       "id": "durable-coordination-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d841e9328f724d23e1e53aac4ed494889924fa7b8c7dc0bef8ee59ff676fc6fb",
+      "inputManifestSha256": "sha256:6cbb7c598df7d9b3fc16cefdee2240609c0499458c5131037dc6b9bd549cb7f4",
       "inputs": [
         "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
         "scripts/generate-platform-durable-coordination-go.ts",
@@ -321,16 +329,16 @@
       "generatedOutputs": [
         {
           "path": "services/control-plane/internal/coordination/registry_generated.go",
-          "sha256": "sha256:c3687534cbf3d7218aeeb1a32591ab0f70561d985de2860e0c502efb51c3f454",
-          "sizeBytes": 977
+          "sha256": "sha256:a5f186ff9625451a9a15b7b600f9d6e2bcd3f78adb3ae92ac1785ea84ca36b92",
+          "sizeBytes": 1689
         }
       ],
       "outputSummary": {
-        "registryDigest": "sha256:11c0f599e8320668a6f601241206c795933b26e3b9c456a58353a0d13c7ecd30",
+        "registryDigest": "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a",
         "stateMachineDigest": "sha256:5c4fa5c0cfac253b45a41c2e49ee7e863b9efbe124e5d743e041f5e01f5c6f15",
         "policyDigest": "sha256:95023973eb007a958a3c5aea3ac61b6caa7cd8955b9a24fcef3ad269230c64e8",
         "profileId": "managedAgentCreateProject/v1alpha1",
-        "profileDigest": "sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a",
+        "profileDigest": "sha256:cdd54c59c0c363687eeb0e0e48aff00221cc4d42780bdf935c4b47bcd297f308",
         "handWrittenProfileFallback": "FORBIDDEN",
         "httpSurface": "NOT_IMPLEMENTED",
         "externalSideEffects": "FORBIDDEN"
@@ -339,8 +347,9 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d4d436b075102ecc3c908567e938a9adecf5d860d2344c7ac00905e4d7d54f93",
+      "inputManifestSha256": "sha256:b62d1cbee1c9fb17ce8cb27c89f6e8566e276c3742b4731df44a2a3cf7ccdb5f",
       "inputs": [
+        "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
         "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
         "contracts/managed-agent/v1alpha1/openapi.json",
@@ -352,12 +361,14 @@
         "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
         "contracts/platform/v1alpha1/schemas/permission.schema.json",
         "contracts/platform/v1alpha1/schemas/project.schema.json",
         "docs/plan/adr/0009-p1-migration-bundle-runner.md",
         "docs/plan/adr/0010-p1-postgres-projection-contract.md",
         "docs/plan/adr/0011-p1-membership-rbac-contract.md",
         "docs/plan/adr/0013-p1-durable-coordination-contract.md",
+        "docs/plan/adr/0014-p1-lineage-quota-profile-v3.md",
         "scripts/check-platform-migration-bundle.ts",
         "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/generate-platform-migration-bundle.ts",
@@ -383,9 +394,11 @@
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
         "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+        "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
+        "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
         "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
         "services/control-plane/migrations/bootstrap/database.sql",
@@ -401,6 +414,7 @@
         "services/control-plane/migrations/catalog/schema-000006.json",
         "services/control-plane/migrations/catalog/schema-000007.json",
         "services/control-plane/migrations/catalog/schema-000008.json",
+        "services/control-plane/migrations/catalog/schema-000009.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -460,6 +474,11 @@
           "path": "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
           "sha256": "sha256:3a2e4ef3cab7227a527831e03f7a85a9bcdbf2963e076c6bb764fe15e1fb194d",
           "sizeBytes": 13374
+        },
+        {
+          "path": "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
+          "sha256": "sha256:68efef5dc192323c4ec31cb46e7dda3aecbeb5dba4032876f6f85138d6a80dcd",
+          "sizeBytes": 14883
         },
         {
           "path": "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
@@ -525,6 +544,11 @@
           "path": "services/control-plane/migrations/catalog/schema-000008.json",
           "sha256": "sha256:ab0d5b034b20392a609d55fafe693881cfcea4085f76519a95bed1e6837ebaca",
           "sizeBytes": 192231
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/schema-000009.json",
+          "sha256": "sha256:2e1109f14450c9bf6641e655b36e9623e7a846011420541c7615b0c049fffa0b",
+          "sizeBytes": 212906
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/attempt-terminal-state-v1.json",
@@ -663,22 +687,22 @@
         },
         {
           "path": "services/control-plane/migrations/manifest.json",
-          "sha256": "sha256:f9e9f7d5561428b022464a37cf99510a827d9c6808f1e50f5b1df89d4f8c81e4",
-          "sizeBytes": 22325
+          "sha256": "sha256:4437984bca7f456dff754a39c6dbce2ea6d1919402821d31cc0c5eef5de0df2f",
+          "sizeBytes": 24604
         },
         {
           "path": "services/control-plane/migrations/schema-bundle.json",
-          "sha256": "sha256:68efef5dc192323c4ec31cb46e7dda3aecbeb5dba4032876f6f85138d6a80dcd",
-          "sizeBytes": 14883
+          "sha256": "sha256:902b1002b9423628ee06fadbc255106d500dc9cb58f8b929f5dbdc53a03e3ae1",
+          "sizeBytes": 16386
         }
       ],
       "outputSummary": {
-        "schemaBundleDigest": "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab",
+        "schemaBundleDigest": "sha256:6a9e6c7d7986c64e99817f58e333da1e1bd0ba4447488b3207f7befb7cc96f29",
         "bootstrapBundleDigest": "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
-        "manifestDigest": "sha256:d896285b8835751c7c1567d01c955bd6c44b84586c25a0a9bbba7b01fde8eacc",
+        "manifestDigest": "sha256:1b3f13f4dfbfe3a41bf27a29bf091cebcbeb159e3c29d18e3e84760d51e082e6",
         "runtimeTar": {
-          "sizeBytes": 1083392,
-          "sha256": "sha256:2bee1a8c98dcdce32d21406d05e15bb317495f574e572e48c612ccfe4f61754d"
+          "sizeBytes": 1349120,
+          "sha256": "sha256:a1aea846ac8e617ddfe7a7e1c5d6c2c8280f187b53397654c06cbc7dd105b386"
         },
         "bootstrapTar": {
           "sizeBytes": 32256,

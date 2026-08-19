@@ -2,10 +2,10 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 registry fixed，append-only PostgreSQL kernel locally validated，service/claim/review pending）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved，full migration closure remains pending）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
-- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)
+- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)
 
 ## 固定追踪根
 
@@ -21,7 +21,7 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 
 ## 当前执行边界
 
-用户已批准 ADR-0006～ADR-0013 与 D-001～D-040；P0 当前由 `G-INVENTORY` R3 和
+用户已批准 ADR-0006～ADR-0014 与 D-001～D-041；P0 当前由 `G-INVENTORY` R3 和
 `G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
 helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
 decision digest 的下游证据不得继承。P1-A2.1a-impl-1 strict projection contract/fixture 已由 `b36f45a`
@@ -39,11 +39,24 @@ metadata，`261be84` 记录该刷新证据。首次 `gpt-5.6-sol` 复核发现 v
 已返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭该 remediation 的固定源码 implementation/review 层；生产
 runner/CLI、production database mutation 与 immutable Gates 仍未授权。用户已于 2026-08-19 批准 A2.3 的
 generated contract registry、closed state machines 与三切片顺序；slice 1 registry 已由 `ff9ea33` 固定，slice 2
-append-only `000007` PostgreSQL kernel 与 PG15/16/17 schema-only matrix 已本地验证。Runtime 仍无 coordination
-DML；service/claim/race/fault matrix/independent review 尚未实施，HTTP/P2 side effect 与所有 Gate 继续禁止。审查记录见
+append-only `000007` PostgreSQL kernel 与 PG15/16/17 schema-only matrix 已本地验证。Slice 3 `59ec260`
+已固定 service/claim；当前 v3 未提交候选又通过 generated registry/bundle/lock、focused normal/race、Linux
+cross-compile 及 PG15/16/17 kernel + service/claim normal/race/fault matrix。独立审查对当时固定快照返回
+`NOT APPROVE, P0=0/P1=1/P2=0`：quota/profile 和 append-only kernel 通过，generated Unicode
+`organizationRef` 与 ASCII-only authorization `ScopeRef` 不一致。该 finding 已在后续未提交候选中按 generated
+operation-specific identity profile 收窄为 ASCII、最多 128 bytes、`exact_string_no_rewrite`，公共 Unicode
+organization reference contract 保持不变；append-only `000009` 保留 historical registry/profile pair，并以
+versioned v2 service entry 使用 current pair。精确 remediation candidate 随后独立复核返回
+`APPROVE, P0=0/P1=0/P2=0`，只关闭 generated registry/profile、append-only kernel 和 service/claim/matrix
+implementation/review slice，见
+[`A2.3 remediation independent review`](../p1/durable-coordination-v3-remediation-independent-review-20260820.md)；原
+[`A2.3 v3 independent review`](../p1/durable-coordination-v3-independent-review-20260819.md) 保留历史 verdict。Full migration closure
+仍未完成，HTTP/P2 side effect 不开放，且不关闭任何 Gate。既有审查记录见
 [`versioned profile independent review`](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)，
 历史 contract/state/SQL/service 决策缺口见
-[`A2.3 pre-entry blocker`](../p1/durable-coordination-entry-blocker-20260818.md)，精确容量与恢复边界见
+[`A2.3 pre-entry blocker`](../p1/durable-coordination-entry-blocker-20260818.md)。用户又批准 ADR-0014 的
+generated-manifest v3 lineage/quota profile；quota/profile 与 remediated A2.3 implementation/review slice 已获批准，
+full migration closure 仍未完成，精确容量与恢复边界见
 [`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)，slice 2 证据见
 [`append-only PostgreSQL kernel`](../p1/durable-coordination-postgres-kernel-20260819.md)。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
