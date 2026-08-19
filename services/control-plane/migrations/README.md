@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000008`, under the migration advisory lock. Each
+   `000001` through `000010`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -118,6 +118,16 @@ silently alter this schema.
     port is unexported and test-injected: no HTTP route, production P2 adapter,
     external side effect, PlatformOperation creation, attempt, receipt, or finalizer
     path is enabled.
+12. `000009` preserves all table shapes and replaces only the two existing
+    project-claim functions. It redacts conflict details, retains the historical
+    v1 entry point, and adds the generated current identity-profile entry point
+    without granting a new raw capability or external side effect.
+13. `000010` consumes only the generated compatibility/recovery registry and
+    adds the append-only schema-only kernel for workload principals, bounded
+    backfills, local logical restore evidence, live instances, and retirement
+    receipts. Five pure immutable helpers expose exact registry/profile digests;
+    runtime, bootstrap, and PUBLIC receive no table access, and no writer service,
+    HTTP/P2 adapter, PITR/HA path, or external side effect exists in this slice.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -165,7 +175,9 @@ not caller-supplied free-form detail.
 The runtime group receives tenant-scoped `SELECT`, plus EXECUTE on the five
 effective typed RBAC mutation entry points, seven pure coordination
 registry/profile helpers, and ten typed `000008` coordination service entry
-points. Project, Membership, RoleBinding, and coordination mutation is never
+points. `000009` preserves the versioned service surface while redacting
+conflicts; `000010` grants only five pure compatibility/recovery digest helpers
+and no table access. Project, Membership, RoleBinding, and coordination mutation is never
 granted as raw table write authority. Each existing typed RBAC mutation allocates
 and publishes its tenant revision atomically through the reviewed store path.
 The generated profile service covers only idempotency, leader and internal
@@ -203,7 +215,7 @@ HTTP/P2, or independent-review boundary. It never pulls an image implicitly and
 does not constitute production database mutation or Gate closure.
 
 The A2.3 slice-3 service matrix starts fresh exact PostgreSQL 15/16/17
-containers, applies all eight migrations, and runs normal plus Go race legs for
+containers, applies all nine migrations, and runs normal plus Go race legs for
 same-transaction authorization, claim/replay/conflict/success/failure,
 concurrent serialization, full outbox claim tuples and stale settlements,
 leader fencing, expired-claim reaping, ACL denial, and forbidden
@@ -216,6 +228,22 @@ operation/finalizer/secret facts:
 It uses only the package-internal injected delivery port and direct database
 conformance calls. A passing matrix does not expose HTTP/P2, perform an external
 side effect, close independent review, or close any Gate.
+
+The A2.4 schema-only compatibility/recovery matrix starts fresh exact PostgreSQL
+15/16/17 containers and applies `000001` through `000010`. It checks all five
+generated registry/profile helpers, the five new table owners and ACLs, helper
+volatility/parallel-safety/non-definer shape, deterministic migration-owner
+facts, and negative profile, state, version, timestamp, foreign-key, completion,
+and uniqueness cases:
+
+```sh
+./services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh
+```
+
+The matrix never pulls implicitly, reuses a database, exposes a writer service,
+or performs an HTTP/P2/provider effect. Its PASS is local schema-kernel evidence,
+not production mutation, independent review, release publication, or Gate
+closure.
 
 ## Immutable boundary
 

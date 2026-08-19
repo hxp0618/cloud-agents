@@ -421,6 +421,7 @@ func TestAuthorityContractsStrictDecodeBeforeDatabaseConnect(t *testing.T) {
 	globalContracts := map[string][]byte{
 		"global-v1": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v1.json")),
 		"global-v2": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v2.json")),
+		"global-v3": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v3.json")),
 	}
 	for name, raw := range globalContracts {
 		if _, err := DecodeGlobalTableAuthorityContract(raw); err != nil {
@@ -682,7 +683,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000009" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000010" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

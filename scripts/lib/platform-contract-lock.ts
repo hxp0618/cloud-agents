@@ -37,6 +37,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0010-p1-postgres-projection-contract.md",
   "docs/plan/adr/0011-p1-membership-rbac-contract.md",
   "docs/plan/adr/0014-p1-lineage-quota-profile-v3.md",
+  "docs/plan/adr/0016-p1-compatibility-recovery-postgres-kernel.md",
   "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
   "scripts/check-platform-migration-bundle.ts",
   "scripts/generate-platform-migration-bundle.ts",
@@ -60,6 +61,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
   "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
   "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
+  "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
@@ -67,6 +69,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/schema-bundle.json",
   "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
   "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
+  "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
   "services/control-plane/migrations/archive",

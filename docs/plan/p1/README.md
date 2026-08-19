@@ -7,7 +7,10 @@
   [`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)、
   [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)、
   [`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)、
-  [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)
+  [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)、
+  [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)、
+  [`ADR-0015`](../adr/0015-p1-compatibility-recovery-contract.md)、
+  [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -80,27 +83,20 @@
   lineage-index quota 拒绝该六迁移 bundle。ADR-0012 的 versioned lineage/quota profile implementation 与
   independent review 现已关闭该 remediation 的固定源码边界；checked-in production catalog publication/CLI
   trust root、production database write 与 aggregate Gate 仍保持拒绝
-- Current entry：P1-A2.3 Durable Coordination 方向已于 2026-08-19 获批；slice 1 generated
-  contract/state-machine registry 已由 `ff9ea33` 固定，slice 2 append-only `000007` kernel 已由 `a9826e4`
-  固定。Slice 3 implementation `59ec260` 已新增 generated Go profile、typed `000008` service/claim、closed
-  committed/rejected/unknown outcomes 与 PG15/16/17 normal/race/fault matrix；后续完整 migration 门禁确认 fixed
-  `000008` 的 34-statement bundle 已超过 v2 quota 的 16-segment/256 MiB 上限，故独立审查与 admission 均保持
-  BLOCKED。用户已批准 [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md) 的 generated-manifest v3 profile
-  方向；当前未提交候选已通过 v3 exact/fault normal+race、generated registry/bundle/lock、Linux cross-compile 与
-  PG15/16/17 kernel + service/claim normal/race/fault matrix。历史 independent review 返回
-  `NOT APPROVE, P0=0/P1=1/P2=0`：quota/profile 与 append-only kernel 分项通过，但当时 generated Unicode
-  `organizationRef` 无法进入 ASCII-only authorization `ScopeRef`。该 finding 已在后续未提交候选中按 generated
-  operation-specific ASCII、最多 128 bytes、`exact_string_no_rewrite` profile remediation；公共 Unicode
-  organization-reference contract 保持不变，`000009` 同时保留 historical pair 并新增 current versioned service
-  entry。精确候选随后 independent rereview 返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭这三个
-  implementation/review slices；Full migration closure 仍未完成（见
+- Completed slice：P1-A2.3 Durable Coordination 已按获批的 generated registry → append-only PostgreSQL kernel →
+  service/claim/matrix/review 三切片完成。Versioned lineage/quota v3、`000007`～`000009`、generated operation-specific
+  ASCII organization identity 与 typed service/claim/fault matrices 已由 `63699bb → 062cdcf → e55affa` 固定；历史
+  Unicode `organizationRef` reviewer P1 已在 exact remediation candidate 中关闭，independent rereview 为
+  `APPROVE, P0=0/P1=0/P2=0`。该结论只关闭 A2.3 implementation/review slices；full migration closure 未完成（见
   [`A2.3 remediation independent review`](durable-coordination-v3-remediation-independent-review-20260820.md)、
   [`A2.3 v3 independent review`](durable-coordination-v3-independent-review-20260819.md) 与
   [`A2.3 evidence-quota blocker`](durable-coordination-evidence-quota-blocker-20260819.md)）。HTTP/P2 external side
   effect 不开放，且不关闭任何 Gate。历史入口审计见
   [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
-- Remaining P1 slices：P1-A2.2～P1-A2.4、
-  P1-A3 SDK/Identity/Closure
+- Current entry：P1-A2.4 Compatibility/Recovery contract registry 已由 `5a0ed7b` 固定；当前只推进
+  append-only PostgreSQL `000010` schema kernel、generated catalog/manifest 与 PG15/16/17 schema-only matrix。
+  本切片不实现 writer/service、HTTP/P2/provider effect，不执行生产数据库写入，也不关闭任何 Gate。
+- Remaining P1 slices：P1-A2.4 service/versioned-registry repair 与 P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
@@ -177,6 +173,10 @@ Platform RC、Beta 或 GA。
   对 exact remediation candidate 的 independent rereview；`APPROVE, P0=0/P1=0/P2=0`，只关闭 generated
   registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice。Full
   migration closure、HTTP/P2 external effect 与所有 Gate 仍保持 OPEN
+- [`compatibility-recovery-postgres-kernel-20260820.md`](compatibility-recovery-postgres-kernel-20260820.md)：记录
+  A2.4 append-only `000010` schema-only kernel、generated registry/catalog/manifest binding 与本地 PG15/16/17
+  matrix；仅为 local implementation evidence，independent review、writer/service、HTTP/P2/provider effect、full
+  migration closure 与所有 Gate 均保持 OPEN
 
 ## Data kernel decisions
 
@@ -198,6 +198,11 @@ Platform RC、Beta 或 GA。
 - [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)：冻结 generated-manifest v3 selector、32-segment /
   512 MiB generation reservation、v1/v2 same-bits 与 profile swap fail-closed；不开放 rollover、HTTP/P2 或 Gate
   closure。
+- [`ADR-0015`](../adr/0015-p1-compatibility-recovery-contract.md)：冻结 generated compatibility/recovery registry、
+  closed state machines 与本地 logical recovery/preflight 边界；不构成 SQL/service 或 Gate authority。
+- [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)：冻结 append-only `000010` schema-only
+  PostgreSQL kernel、exact generated registry binding、migration-owner tables 与 pure runtime digest helpers；不开放
+  writer/service、HTTP/P2/provider effect 或任何 Gate closure。
 
 ## Current admission durability evidence
 

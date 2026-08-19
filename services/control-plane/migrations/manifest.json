@@ -2,17 +2,17 @@
   "format_version": "cloud-agents-platform-migration-manifest/v3",
   "schema_bundle": {
     "lineage": "cloud-agents-platform",
-    "schema_head": "000009",
+    "schema_head": "000010",
     "advisory_lock": {
       "domain": "cloud-agents-platform:migrations:v1",
       "derivation": "sha256-first-8-bytes-signed-big-endian-int64",
       "key_int64_decimal": "-1047838957622507638"
     },
     "global_table_authority": {
-      "path": "services/control-plane/migrations/catalog/global-table-authority-v2.json",
+      "path": "services/control-plane/migrations/catalog/global-table-authority-v3.json",
       "mode": "100644",
-      "size_bytes": 765,
-      "sha256": "sha256:774fca639d56b984432cca1d0a013f2dee063bb7acaa53a09c3c57251f8f0d3b"
+      "size_bytes": 1185,
+      "sha256": "sha256:20e84b349a70d3fe64a3b6b30b0e3458707018e9e4c2d356a52c4cb20b9b9a32"
     },
     "projection_scope_authority": {
       "default_acl_owners": ["cloud_agents_migration_owner"],
@@ -387,10 +387,45 @@
           "size_bytes": 212906,
           "sha256": "sha256:2e1109f14450c9bf6641e655b36e9623e7a846011420541c7615b0c049fffa0b"
         }
+      },
+      {
+        "id": "000010",
+        "name": "expand_compatibility_recovery_kernel",
+        "predecessor_id": "000009",
+        "phase": "expand",
+        "schema_from": "000009",
+        "schema_to": "000010",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+          "mode": "100644",
+          "size_bytes": 17959,
+          "sha256": "sha256:ab758a08c07ffb95b9e9a612c90079fcaf54d06407d0cfe4a0368db570f621e6"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000009.json",
+          "mode": "100644",
+          "size_bytes": 212906,
+          "sha256": "sha256:2e1109f14450c9bf6641e655b36e9623e7a846011420541c7615b0c049fffa0b"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000010.json",
+          "mode": "100644",
+          "size_bytes": 243846,
+          "sha256": "sha256:a84a02c20244b60d2ffe4d27beb6fa5f5e0db8fb95ef91eef8865bce63412236"
+        }
       }
     ]
   },
-  "schema_bundle_digest": "sha256:6a9e6c7d7986c64e99817f58e333da1e1bd0ba4447488b3207f7befb7cc96f29",
+  "schema_bundle_digest": "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09",
   "bootstrap_bundle": {
     "artifacts": [
       {
@@ -483,6 +518,12 @@
       "sha256": "sha256:b4c544a1a1a0236fa485f55bcfce8e03d759b977290f7c22b5f598e4e657cc90"
     },
     {
+      "path": "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+      "mode": "100644",
+      "size_bytes": 17959,
+      "sha256": "sha256:ab758a08c07ffb95b9e9a612c90079fcaf54d06407d0cfe4a0368db570f621e6"
+    },
+    {
       "path": "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
       "mode": "100644",
       "size_bytes": 5456,
@@ -529,6 +570,12 @@
       "mode": "100644",
       "size_bytes": 765,
       "sha256": "sha256:774fca639d56b984432cca1d0a013f2dee063bb7acaa53a09c3c57251f8f0d3b"
+    },
+    {
+      "path": "services/control-plane/migrations/catalog/global-table-authority-v3.json",
+      "mode": "100644",
+      "size_bytes": 1185,
+      "sha256": "sha256:20e84b349a70d3fe64a3b6b30b0e3458707018e9e4c2d356a52c4cb20b9b9a32"
     },
     {
       "path": "services/control-plane/migrations/catalog/schema-000001.json",
@@ -585,11 +632,17 @@
       "sha256": "sha256:2e1109f14450c9bf6641e655b36e9623e7a846011420541c7615b0c049fffa0b"
     },
     {
+      "path": "services/control-plane/migrations/catalog/schema-000010.json",
+      "mode": "100644",
+      "size_bytes": 243846,
+      "sha256": "sha256:a84a02c20244b60d2ffe4d27beb6fa5f5e0db8fb95ef91eef8865bce63412236"
+    },
+    {
       "path": "services/control-plane/migrations/schema-bundle.json",
       "mode": "100644",
-      "size_bytes": 16386,
-      "sha256": "sha256:902b1002b9423628ee06fadbc255106d500dc9cb58f8b929f5dbdc53a03e3ae1"
+      "size_bytes": 17904,
+      "sha256": "sha256:ca5fea1b9f0056439fd2b58af4a796616d9be3e7ec483869f1cb5bb4f5bfdbb8"
     }
   ],
-  "manifest_digest": "sha256:1b3f13f4dfbfe3a41bf27a29bf091cebcbeb159e3c29d18e3e84760d51e082e6"
+  "manifest_digest": "sha256:7fa7ef8e9aa9eba67c56b8ed1e5b8183c9add4065e3e8c3bb196c4d1fe9d6eeb"
 }

@@ -47,6 +47,10 @@ import {
   assertDurableCoordinationRegistryCurrent,
   buildDurableCoordinationRegistry,
 } from "./platform-durable-coordination-registry";
+import {
+  assertCompatibilityRecoveryRegistryCurrent,
+  buildCompatibilityRecoveryRegistry,
+} from "./platform-compatibility-recovery-registry";
 
 export type GeneratedMigrationBundle = {
   readonly files: ReadonlyMap<string, Uint8Array>;
@@ -73,6 +77,7 @@ const SQL_PATHS = [
   `${ROOT}/000007_expand_durable_coordination_kernel.sql`,
   `${ROOT}/000008_add_durable_coordination_service.sql`,
   `${ROOT}/000009_redact_coordination_conflicts.sql`,
+  `${ROOT}/000010_expand_compatibility_recovery_kernel.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -87,8 +92,10 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000007.json`,
   `${ROOT}/catalog/schema-000008.json`,
   `${ROOT}/catalog/schema-000009.json`,
+  `${ROOT}/catalog/schema-000010.json`,
 ] as const;
 const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
+const GLOBAL_TABLE_AUTHORITY_V3_PATH = `${ROOT}/catalog/global-table-authority-v3.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
   "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
@@ -341,6 +348,26 @@ const DECLARED_IDENTITIES_000009 = [
   "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_success_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
   "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_failure_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
 ] as const;
+const DECLARED_IDENTITIES_000010 = [
+  ...DECLARED_IDENTITIES_000009,
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_registry_digest()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_state_machine_digest()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_policy_digest()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_profile_digest(unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_profile_is_registered(unquoted:text,unquoted:text)",
+  "table:unquoted:cloud_agents/unquoted:workload_database_principals",
+  "table:unquoted:cloud_agents/unquoted:migration_backfills",
+  "table:unquoted:cloud_agents/unquoted:schema_restore_evidence",
+  "table:unquoted:cloud_agents/unquoted:live_instances",
+  "table:unquoted:cloud_agents/unquoted:instance_retirement_receipts",
+  "index:unquoted:cloud_agents/unquoted:workload_database_principals_instance_idx",
+  "index:unquoted:cloud_agents/unquoted:workload_database_principals_expiry_idx",
+  "index:unquoted:cloud_agents/unquoted:migration_backfills_state_idx",
+  "index:unquoted:cloud_agents/unquoted:schema_restore_evidence_target_idx",
+  "index:unquoted:cloud_agents/unquoted:live_instances_schema_range_idx",
+  "index:unquoted:cloud_agents/unquoted:live_instances_heartbeat_idx",
+  "index:unquoted:cloud_agents/unquoted:instance_retirement_receipts_state_idx",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -382,6 +409,8 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const historicalDurableCoordinationRegistry = durableCoordinationHistoricalRegistrySnapshot(
     durableCoordinationRegistry,
   );
+  assertCompatibilityRecoveryRegistryCurrent(root);
+  const compatibilityRecoveryRegistry = requiredObject(buildCompatibilityRecoveryRegistry(root));
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
   validateDurableCoordinationKernel(
     sqlBytes.get(SQL_PATHS[6])!,
@@ -392,6 +421,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     historicalDurableCoordinationRegistry,
   );
   validateDurableCoordinationRepair(sqlBytes.get(SQL_PATHS[8])!, durableCoordinationRegistry);
+  validateCompatibilityRecoveryKernel(sqlBytes.get(SQL_PATHS[9])!, compatibilityRecoveryRegistry);
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
     readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
@@ -413,15 +443,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000009",
+    schema_head: "000010",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
       key_int64_decimal: "-1047838957622507638",
     },
     global_table_authority: artifactRecord(
-      GLOBAL_TABLE_AUTHORITY_V2_PATH,
-      files.get(GLOBAL_TABLE_AUTHORITY_V2_PATH)!,
+      GLOBAL_TABLE_AUTHORITY_V3_PATH,
+      files.get(GLOBAL_TABLE_AUTHORITY_V3_PATH)!,
     ),
     projection_scope_authority: INITIAL_PROJECTION_SCOPE_AUTHORITY,
     predecessor_schema_bundle: {
@@ -510,6 +540,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[9])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[10])!,
       }),
+      migrationEntry({
+        id: "000010",
+        name: "expand_compatibility_recovery_kernel",
+        predecessor: "000009",
+        schemaFrom: "000009",
+        sql: sqlArtifacts.get(SQL_PATHS[9])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[10])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[11])!,
+      }),
     ],
   };
   const schemaBundleDigest = migrationDigest({
@@ -538,6 +577,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     ...SQL_PATHS,
     ...CATALOG_PATHS,
     GLOBAL_TABLE_AUTHORITY_V2_PATH,
+    GLOBAL_TABLE_AUTHORITY_V3_PATH,
   ].toSorted();
   const runtimeArtifacts = runtimePaths.map((path) =>
     artifactRecord(path, files.get(path) ?? sqlBytes.get(path)!),
@@ -664,6 +704,7 @@ export function validateCatalogStatementBindings(
     ["000007", generatedCatalogs.get(CATALOG_PATHS[8])!.source_descriptors!],
     ["000008", generatedCatalogs.get(CATALOG_PATHS[9])!.source_descriptors!],
     ["000009", generatedCatalogs.get(CATALOG_PATHS[10])!.source_descriptors!],
+    ["000010", generatedCatalogs.get(CATALOG_PATHS[11])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -675,6 +716,7 @@ export function validateCatalogStatementBindings(
     ["000007", DECLARED_IDENTITIES_000007],
     ["000008", DECLARED_IDENTITIES_000008],
     ["000009", DECLARED_IDENTITIES_000009],
+    ["000010", DECLARED_IDENTITIES_000010],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -1139,6 +1181,7 @@ export function migrationBundlePaths(): ReadonlyArray<string> {
     PREDECESSOR_SCHEMA_BUNDLE_PATH,
     ...ANCESTOR_SCHEMA_BUNDLES.map((artifact) => artifact.path),
     GLOBAL_TABLE_AUTHORITY_V2_PATH,
+    GLOBAL_TABLE_AUTHORITY_V3_PATH,
     ...CATALOG_PATHS,
   ];
 }
@@ -1724,6 +1767,240 @@ export function validateDurableCoordinationRepair(
   }
 }
 
+export function validateCompatibilityRecoveryKernel(
+  sqlBytes: Uint8Array,
+  registry: JsonObject,
+): void {
+  const sql = new TextDecoder("utf-8", { fatal: true }).decode(sqlBytes);
+  const registryDigest = requiredString(registry.registryDigest, "compatibility registry digest");
+  const stateMachineDigest = requiredString(
+    registry.stateMachineDigest,
+    "compatibility state machine digest",
+  );
+  const policyDigest = requiredString(registry.policyDigest, "compatibility policy digest");
+  const boundary = requiredObject(registry.implementationBoundary);
+  if (
+    requiredString(boundary.sqlMigration, "compatibility sql boundary") !==
+      "not_implemented_no_000010" ||
+    requiredString(boundary.goConsumer, "compatibility go boundary") !== "not_implemented" ||
+    requiredString(boundary.httpSurface, "compatibility http boundary") !== "not_implemented" ||
+    requiredString(boundary.externalSideEffects, "compatibility external boundary") !==
+      "forbidden" ||
+    requiredString(boundary.gateStatus, "compatibility gate boundary") !== "non_gate_evidence_only"
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_KERNEL_BOUNDARY", "registry");
+  }
+  const profiles = requiredArray(registry.profiles).map(requiredObject);
+  const expectedProfiles = [
+    ["backfill/v1", "sha256:779791352f9ba77f1f75c3cd6e5b4a846ee00687217eb3489ec8877513809047"],
+    ["live-instance/v1", "sha256:aeb12441bc83a110047a1a69a413d2672cf5ba8c82747d52a842ab91c4840790"],
+    [
+      "migration-preflight/v1",
+      "sha256:0ef86c85d7878202ac16f06c6b32a7bd84d642433a7098a25fc09b5f7f8599ba",
+    ],
+    [
+      "restore-evidence/v1",
+      "sha256:d095186e6f70205f9c842acc8e7232ff658c4aecbed06436ad91532e6cf4042e",
+    ],
+    [
+      "retirement-receipt/v1",
+      "sha256:cf2e57dcf51bfea35e7ca82875acb04225e5a050fcf3d394cb6f1bc457d2a3ac",
+    ],
+  ] as const;
+  if (profiles.length !== expectedProfiles.length) {
+    throw new MigrationValidationError("COMPATIBILITY_KERNEL_PROFILE", String(profiles.length));
+  }
+  for (const [index, [profileId, profileDigest]] of expectedProfiles.entries()) {
+    const profile = profiles[index]!;
+    const spec = requiredObject(profile.spec);
+    if (
+      requiredString(profile.profileDigest, "compatibility profile digest") !== profileDigest ||
+      requiredString(spec.profileId, "compatibility profile id") !== profileId ||
+      requiredString(spec.stateMachineId, "compatibility state machine id") !== profileId
+    ) {
+      throw new MigrationValidationError("COMPATIBILITY_KERNEL_PROFILE", profileId);
+    }
+  }
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 52) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_KERNEL_STATEMENT_COUNT",
+      String(statements.length),
+    );
+  }
+  const classificationKey = (value: {
+    command: string;
+    object_kind: string;
+    target_identity: string;
+    grantee: string | null;
+    special_case: string | null;
+  }): string =>
+    [
+      value.command,
+      value.object_kind,
+      value.target_identity,
+      value.grantee ?? "",
+      value.special_case ?? "",
+    ].join("\0");
+  const helperIdentities = DECLARED_IDENTITIES_000010.slice(
+    DECLARED_IDENTITIES_000009.length,
+    DECLARED_IDENTITIES_000009.length + 5,
+  );
+  const tableIdentities = [
+    "table:unquoted:cloud_agents/unquoted:workload_database_principals",
+    "table:unquoted:cloud_agents/unquoted:migration_backfills",
+    "table:unquoted:cloud_agents/unquoted:schema_restore_evidence",
+    "table:unquoted:cloud_agents/unquoted:live_instances",
+    "table:unquoted:cloud_agents/unquoted:instance_retirement_receipts",
+  ] as const;
+  const indexIdentities = DECLARED_IDENTITIES_000010.slice(
+    DECLARED_IDENTITIES_000009.length + 5 + tableIdentities.length,
+  );
+  const expectedClassification = [
+    ...helperIdentities.map((target_identity) => ({
+      command: "CREATE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...tableIdentities.map((target_identity) => ({
+      command: "CREATE",
+      object_kind: "TABLE",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...indexIdentities.map((target_identity) => ({
+      command: "CREATE",
+      object_kind: "INDEX",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...helperIdentities.map((target_identity) => ({
+      command: "ALTER",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...tableIdentities.map((target_identity) => ({
+      command: "ALTER",
+      object_kind: "TABLE",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...helperIdentities.map((target_identity) => ({
+      command: "REVOKE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: "PUBLIC",
+      special_case: null,
+    })),
+    ...tableIdentities.flatMap((target_identity) =>
+      ["PUBLIC", "CLOUD_AGENTS_RUNTIME", "CLOUD_AGENTS_BOOTSTRAP_ADMIN"].map((grantee) => ({
+        command: "REVOKE",
+        object_kind: "TABLE",
+        target_identity,
+        grantee,
+        special_case: null,
+      })),
+    ),
+    ...helperIdentities.map((target_identity) => ({
+      command: "GRANT",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: "CLOUD_AGENTS_RUNTIME",
+      special_case: null,
+    })),
+  ]
+    .map(classificationKey)
+    .toSorted();
+  const actualClassification = statements
+    .map((statement) => classifyMigrationStatement(statement, "000010"))
+    .map(classificationKey)
+    .toSorted();
+  if (canonicalText(actualClassification) !== canonicalText(expectedClassification)) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_KERNEL_SURFACE",
+      actualClassification.join(","),
+    );
+  }
+  const helperLiterals = [
+    registryDigest,
+    stateMachineDigest,
+    policyDigest,
+    ...expectedProfiles.flatMap(([profileId, profileDigest]) => [profileId, profileDigest]),
+  ];
+  for (const literal of helperLiterals)
+    requireSqlFragment(sql, "compatibility digest literal", literal);
+  for (const helper of statements.slice(0, helperIdentities.length)) {
+    const helperSql = new TextDecoder("utf-8", { fatal: true }).decode(helper.bytes);
+    const createOffset = helperSql.indexOf("CREATE FUNCTION");
+    const helperDefinition = helperSql.slice(createOffset < 0 ? 0 : createOffset);
+    if (
+      createOffset < 0 ||
+      !/\bLANGUAGE\s+sql\b/iu.test(helperDefinition) ||
+      !/\bIMMUTABLE\b/iu.test(helperDefinition) ||
+      !/\bPARALLEL\s+SAFE\b/iu.test(helperDefinition) ||
+      !/SET\s+search_path\s*=\s*pg_catalog\s*,\s*cloud_agents/iu.test(helperDefinition) ||
+      /\b(?:SECURITY\s+DEFINER|INSERT|UPDATE|DELETE|TRUNCATE|MERGE|CALL|COPY|EXECUTE|PERFORM)\b/iu.test(
+        helperDefinition,
+      )
+    ) {
+      throw new MigrationValidationError(
+        "COMPATIBILITY_KERNEL_HELPER_PURITY",
+        String(helper.index),
+      );
+    }
+  }
+  for (const [constraint, column, values] of [
+    ["workload_database_principals_state", "state", ["active", "expired", "revoked"]],
+    ["migration_backfills_state", "state", ["failed", "paused", "pending", "running", "succeeded"]],
+    [
+      "live_instances_drain_state",
+      "drain_state",
+      ["active", "drained", "draining", "expired_unproven", "registered", "retired"],
+    ],
+    [
+      "schema_restore_evidence_state",
+      "state",
+      ["drill_verified", "eligible", "invalidated", "recorded"],
+    ],
+    ["instance_retirement_receipts_state", "state", ["collecting", "complete", "rejected"]],
+  ] as const) {
+    assertSqlCheckLiteralSet(sql, constraint, column, values);
+  }
+  for (const fragment of [
+    "profile_id = 'backfill/v1'",
+    "profile_id = 'live-instance/v1'",
+    "profile_id = 'restore-evidence/v1'",
+    "FOREIGN KEY (service_kind, instance_id, incarnation)",
+    "REFERENCES cloud_agents.live_instances",
+    "GRANT EXECUTE ON FUNCTION",
+  ])
+    requireSqlFragment(sql, "compatibility kernel fragment", fragment);
+  const executableSql = sql.slice(sql.indexOf("CREATE FUNCTION"));
+  if (
+    /\b(?:SECURITY\s+DEFINER|CREATE\s+OR\s+REPLACE|INSERT|UPDATE|DELETE|TRUNCATE|MERGE|CALL|COPY|pg_notify|dblink|http_post|net\.http|aws_lambda)\b/iu.test(
+      executableSql,
+    ) ||
+    /\bGRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER)\b/iu.test(
+      executableSql,
+    )
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_KERNEL_SIDE_EFFECT", "forbidden SQL");
+  }
+  for (const table of tableIdentities) {
+    const name = table.slice(table.lastIndexOf("/") + "/unquoted:".length);
+    if (!new RegExp(`CREATE\\s+TABLE\\s+cloud_agents\\.${escapeRegExp(name)}\\b`, "iu").test(sql)) {
+      throw new MigrationValidationError("COMPATIBILITY_KERNEL_TABLE", name);
+    }
+  }
+}
+
 function assertSqlCheckLiteralSet(
   sql: string,
   constraint: string,
@@ -1830,6 +2107,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000007 = typedIdentities(DECLARED_IDENTITIES_000007);
   const declared000008 = typedIdentities(DECLARED_IDENTITIES_000008);
   const declared000009 = typedIdentities(DECLARED_IDENTITIES_000009);
+  const declared000010 = typedIdentities(DECLARED_IDENTITIES_000010);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1884,7 +2162,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000006 = contract("000006", rawSources.slice(0, 6), declared000006);
   const schema000007 = contract("000007", rawSources.slice(0, 7), declared000007);
   const schema000008 = contract("000008", rawSources.slice(0, 8), declared000008);
-  const schema000009 = contract("000009", rawSources, declared000009);
+  const schema000009 = contract("000009", rawSources.slice(0, 9), declared000009);
+  const schema000010 = contract("000010", rawSources, declared000010);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1931,6 +2210,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[0], authority],
     [CATALOG_PATHS[1], globalAuthorityContractV1()],
     [GLOBAL_TABLE_AUTHORITY_V2_PATH, globalAuthorityContractV2()],
+    [GLOBAL_TABLE_AUTHORITY_V3_PATH, globalAuthorityContractV3()],
     [CATALOG_PATHS[2], schema000001],
     [CATALOG_PATHS[3], schema000002],
     [CATALOG_PATHS[4], schema000003],
@@ -1940,6 +2220,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[8], schema000007],
     [CATALOG_PATHS[9], schema000008],
     [CATALOG_PATHS[10], schema000009],
+    [CATALOG_PATHS[11], schema000010],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
@@ -2369,6 +2650,24 @@ function globalAuthorityContractV2(): JsonObject {
   };
 }
 
+function globalAuthorityContractV3(): JsonObject {
+  const v2 = globalAuthorityContractV2();
+  return {
+    ...v2,
+    format_version: "cloud-agents-platform-global-table-authority/v3",
+    tables: [
+      ...requiredArray(v2.tables),
+      { name: "migration_backfills", writers: ["migration_backfill_job"] },
+      { name: "schema_restore_evidence", writers: ["audited_migration_admin_job"] },
+      { name: "live_instances", writers: ["typed_live_instance_registration_function"] },
+      {
+        name: "instance_retirement_receipts",
+        writers: ["typed_instance_reconciler_function"],
+      },
+    ],
+  };
+}
+
 function typedIdentities(identities: ReadonlyArray<string>): JsonObject[] {
   return identities
     .map(legacyIdentityToTyped)
@@ -2451,6 +2750,11 @@ function indexOwningRelation(index: string): string {
     "outbox_events",
     "coordination_audit_facts",
     "leader_leases",
+    "workload_database_principals",
+    "migration_backfills",
+    "schema_restore_evidence",
+    "live_instances",
+    "instance_retirement_receipts",
   ];
   const relation = prefixes.find((prefix) => index.startsWith(`${prefix}_`));
   if (!relation) throw new MigrationValidationError("INDEX_OWNING_RELATION", index);
