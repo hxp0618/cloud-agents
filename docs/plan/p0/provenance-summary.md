@@ -5,6 +5,15 @@
 - Synara extraction audit：PASS WITH RESTRICTIONS
 - Publication/attestation mutation：NOT AUTHORIZED
 
+## Live remote-ref refresh (non-superseding)
+
+2026-08-19 的只读 `git ls-remote` 复核记录在
+[`provenance/remote-ref-refresh-20260819.json`](provenance/remote-ref-refresh-20260819.json)。它确认
+P0 分支 `04fa503...` 与 upstream 一致，且固定 provenance evidence commit `2b2c5ed...` 仍是当前分支祖先；Synara、T3
+和 cloud-agents main/tag 的 live refs 也已记录。该记录是 monitoring-only：不覆盖
+[`provenance/remote-ref-verification.json`](provenance/remote-ref-verification.json) 这一 `G-INVENTORY R2` 固定输入，
+不改变任何 Gate、release authorization、deployment 或 publication 结论。
+
 ## Runtime fixed-input audit
 
 机器记录：[`provenance/runtime-supply-chain-audit.json`](provenance/runtime-supply-chain-audit.json)；中文摘要：
