@@ -27,16 +27,24 @@ before canonicalization. The projection admits no JSON numbers; number serializa
 this version. RFC 8785 UTF-8 bytes and the SHA-256 digest are fixed by checked-in fixtures; a supplied digest or
 projection mismatch fails closed before a side effect.
 
+ADR-0013 adds a separate generated durable-coordination authority for that operation. Editable JSON Schema,
+OpenAPI bindings, one source profile, the seven closed state machines, and coordination policies feed the checked-in
+deterministic generator. Future SQL and Go consumers may accept only the exact generated
+`profileId + profileDigest`; a caller-provided operation name, profile, transition, retry policy, or finalizer policy
+is never authority. The current profile forbids external side effects, creates no PlatformOperation, and emits only
+the `resource_change` class. No runtime, SQL, or HTTP consumer exists in this slice.
+
 ## P1-A bootstrap status
 
-- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 41 fixture
+- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 47 fixture
   cases pass the independently reviewed `Ajv2020` plus in-repo semantic bootstrap path. Mutation inputs reject unknown
   fields; response/watch unknown-field preservation remains a generated-reader sidecar seam described in
   `common/v1alpha1/README.md`, not a relaxation of mutation schemas.
 - The three Go source modules and exact Go toolchain boundary are established.
-- `contracts/generation.lock.json` binds the bootstrap source/tool/dependency digests and explicitly reports
-  `BOOTSTRAP_VALIDATED`; generated SDKs, compiled Proto descriptors, ConnectRPC/gRPC code, full OpenAPI validation,
-  official JSON Schema suite, and N/N-1 compatibility evidence remain incomplete until follow-up P1-A slices land.
+- `contracts/generation.lock.json` binds the bootstrap source/tool/dependency digests and a distinct
+  `durable-coordination-registry-generation` input/output pipeline. Both remain explicitly non-Gate evidence;
+  generated SDKs, compiled Proto descriptors, ConnectRPC/gRPC code, full OpenAPI validation, official JSON Schema
+  suite, and N/N-1 compatibility evidence remain incomplete until follow-up P1-A slices land.
 - No contract in this tree proves a running Control Plane, Worker, Adapter, database, Provider turn, deployment, or
   release candidate. `G-CONTRACT`, `G-DATA`, `G-AUTHORITY-P1`, and `G-SECURITY-P1` remain open.
 

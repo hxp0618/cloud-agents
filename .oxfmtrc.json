@@ -2,5 +2,10 @@
   "printWidth": 100,
   "singleQuote": false,
   "trailingComma": "all",
-  "ignorePatterns": ["candidate/**", "contracts/generation.lock.json", "packages/*/dist/**"]
+  "ignorePatterns": [
+    "candidate/**",
+    "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+    "contracts/generation.lock.json",
+    "packages/*/dist/**"
+  ]
 }

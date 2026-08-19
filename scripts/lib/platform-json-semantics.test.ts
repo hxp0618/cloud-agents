@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
+
 import {
   assertExpectedSemanticResult,
   canonicalizeJson,
@@ -200,6 +202,7 @@ describe("platform semantic constraints", () => {
           validateCanonicalNamespaceRefFixture(document),
           validateCanonicalSubjectRefFixture(document),
           validateManagedAgentCreateProjectIdempotencyFixture(document),
+          validateDurableCoordinationFixture(document, resolve(import.meta.dirname, "../..")),
         ];
         const result =
           canonicalResults.find((candidate) => !candidate.valid) ??

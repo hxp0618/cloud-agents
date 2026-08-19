@@ -1,4 +1,12 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -67,6 +75,32 @@ describe("Platform contract generation lock", () => {
     expect(inputs).toContain(
       "services/control-plane/migrations/fixtures/bundle/negative/ancestor-descriptor-cases.json",
     );
+  });
+
+  it("records the generated durable coordination registry as a non-Gate pipeline", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const pipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "durable-coordination-registry-generation",
+    );
+    expect(pipeline).toMatchObject({
+      outputStatus: "GENERATED_CONTRACT_REGISTRY",
+      notGateClosure: true,
+      outputSummary: {
+        profileCount: 1,
+        runtimeConsumer: "NOT_IMPLEMENTED",
+        sqlConsumer: "NOT_IMPLEMENTED",
+        httpSurface: "NOT_IMPLEMENTED",
+        externalSideEffects: "FORBIDDEN",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+        },
+      ],
+    });
   });
 
   it("rejects symbolic links in recursive migration inputs", () => {

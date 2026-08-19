@@ -1,0 +1,46 @@
+{
+  "formatVersion": "cloud-agents-durable-coordination-profile/v1",
+  "profileId": "managedAgentCreateProject/v1alpha1",
+  "operationId": "managedAgentCreateProject",
+  "http": {
+    "method": "POST",
+    "path": "/v1/tenants/{tenantId}/projects",
+    "idempotencyHeader": "Idempotency-Key"
+  },
+  "subjectIdentity": {
+    "schemaId": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/subject-ref.schema.json",
+    "digestProfile": "cloud-agents-subject-ref/v1alpha1-rfc8785-sha256",
+    "comparison": "exact_string_no_rewrite"
+  },
+  "projection": {
+    "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+    "canonicalizationProfile": "cloud-agents-http-idempotency/managedAgentCreateProject/v1alpha1",
+    "canonicalizationAlgorithm": "RFC8785",
+    "digestAlgorithm": "SHA-256",
+    "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
+  },
+  "authorization": {
+    "tenantSource": "path.tenantId",
+    "scopeSource": "body.organizationRef",
+    "requiredPermission": "projects.create"
+  },
+  "coordination": {
+    "class": "resource_change",
+    "createsPlatformOperation": false,
+    "externalSideEffect": "forbidden",
+    "outboxEventClass": "resource_change",
+    "requiredFinalizers": []
+  },
+  "idempotency": {
+    "replayTtlSeconds": 86400,
+    "pendingReplay": "in_progress_reference",
+    "terminalReplay": "redacted_terminal_envelope",
+    "conflict": "same_key_different_request_digest"
+  },
+  "result": {
+    "kind": "resource_reference",
+    "resourceKind": "project",
+    "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project.schema.json",
+    "allowedFields": ["resourceId", "resourceKind", "resourceVersion", "stableErrorCode"]
+  }
+}

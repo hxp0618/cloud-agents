@@ -79,7 +79,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 512,
-      "pattern": "^(?:\\.\\./schemas/[a-z0-9]+(?:-[a-z0-9]+)*\\.schema|(?:golden|negative)/[a-z0-9]+(?:-[a-z0-9]+)*)\\.json$"
+      "pattern": "^(?:\\.\\./schemas/[a-z0-9]+(?:-[a-z0-9]+)*\\.schema|(?:golden|negative)/[a-z0-9]+(?:-[a-z0-9]+)*|\\.\\./\\.\\./\\.\\./generated/platform/v1alpha1/[a-z0-9]+(?:-[a-z0-9]+)*)\\.json$"
     }
   }
 }

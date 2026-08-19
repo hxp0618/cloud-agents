@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
+  "title": "DurableCoordinationRegistrySourceV1",
+  "description": "Editable source registry for A2.3 policies, closed state machines, and generated operation profile inputs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "registryId", "profileDocuments", "policies", "stateMachines"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-coordination-source/v1" },
+    "registryId": { "const": "cloud-agents/platform/durable-coordination" },
+    "profileDocuments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 12,
+        "maxLength": 256,
+        "pattern": "^golden/durable-coordination-profile-[a-z0-9-]+-v1alpha1[.]json$"
+      }
+    },
+    "policies": { "$ref": "#/$defs/policies" },
+    "stateMachines": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/stateMachine" }
+    }
+  },
+  "$defs": {
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initialState", "states", "terminalStates", "transitions"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9_]*(?:/v[1-9][0-9]*)$"
+        },
+        "initialState": { "$ref": "#/$defs/stateName" },
+        "states": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stateName" }
+        },
+        "terminalStates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stateName" }
+        },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/transition" }
+        }
+      }
+    },
+    "stateName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "event", "to"],
+      "properties": {
+        "from": { "$ref": "#/$defs/stateName" },
+        "event": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "to": { "$ref": "#/$defs/stateName" }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "audit",
+        "cleanup",
+        "finalizer",
+        "idempotency",
+        "leader",
+        "operation",
+        "operationAttempt",
+        "outbox",
+        "terminalReceipt"
+      ],
+      "properties": {
+        "audit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowedFields", "forbiddenFields"],
+          "properties": {
+            "allowedFields": {
+              "const": [
+                "attempt_id",
+                "database_timestamp",
+                "fencing_token",
+                "generation",
+                "operation_id",
+                "outcome",
+                "profile_digest",
+                "profile_id",
+                "resource_id",
+                "resource_kind",
+                "resource_version",
+                "stable_error_code",
+                "subject_digest",
+                "tenant_id",
+                "transition"
+              ]
+            },
+            "forbiddenFields": {
+              "const": [
+                "authorization",
+                "cookie",
+                "credential",
+                "pairing_token",
+                "pairing_url",
+                "private_key",
+                "provider_payload",
+                "raw_request",
+                "raw_response",
+                "refresh_token",
+                "secret",
+                "token_hash"
+              ]
+            }
+          }
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["completeRule", "manualRecoveryRule", "stateMachineId"],
+          "properties": {
+            "completeRule": { "const": "all_required_finalizers_succeeded" },
+            "manualRecoveryRule": {
+              "const": "audited_manual_recovery_increment_recovery_generation"
+            },
+            "stateMachineId": { "const": "cleanup/v1" }
+          }
+        },
+        "finalizer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "claimTuple",
+            "identityFields",
+            "requiredDeadLetterRule",
+            "stateMachineId",
+            "unknownRule"
+          ],
+          "properties": {
+            "claimTuple": {
+              "const": ["claim_holder_id", "claim_incarnation", "claim_token", "claim_expires_at"]
+            },
+            "identityFields": {
+              "const": ["tenant_id", "operation_id", "operation_generation", "finalizer_name"]
+            },
+            "requiredDeadLetterRule": { "const": "block_cleanup" },
+            "stateMachineId": { "const": "finalizer/v1" },
+            "unknownRule": { "const": "reconciliation_required_no_direct_retry" }
+          }
+        },
+        "idempotency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authorityFields",
+            "clock",
+            "deleteRule",
+            "sameKeyDifferentDigest",
+            "sameKeySameDigestPending",
+            "sameKeySameDigestTerminal",
+            "stateMachineId",
+            "storedPayload"
+          ],
+          "properties": {
+            "authorityFields": {
+              "const": [
+                "tenant_id",
+                "subject_digest",
+                "profile_id",
+                "profile_digest",
+                "idempotency_key"
+              ]
+            },
+            "clock": { "const": "database_transaction_timestamp" },
+            "deleteRule": { "const": "terminal_and_expired_and_unreferenced" },
+            "sameKeyDifferentDigest": { "const": "conflict_before_side_effect" },
+            "sameKeySameDigestPending": { "const": "return_in_progress_reference" },
+            "sameKeySameDigestTerminal": { "const": "return_redacted_terminal_envelope" },
+            "stateMachineId": { "const": "idempotency/v1" },
+            "storedPayload": { "const": "digest_and_redacted_typed_envelope_only" }
+          }
+        },
+        "leader": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "clock",
+            "identityFields",
+            "leaseFields",
+            "maxLeaseSeconds",
+            "minLeaseSeconds",
+            "protectedWriteRule",
+            "takeoverRule"
+          ],
+          "properties": {
+            "clock": { "const": "database_transaction_timestamp" },
+            "identityFields": {
+              "const": ["leader_name", "holder_id", "holder_incarnation"]
+            },
+            "leaseFields": { "const": ["fencing_token", "lease_expires_at"] },
+            "maxLeaseSeconds": { "const": 60 },
+            "minLeaseSeconds": { "const": 1 },
+            "protectedWriteRule": {
+              "const": "lock_leader_and_match_identity_incarnation_token_and_expiry_in_same_transaction"
+            },
+            "takeoverRule": { "const": "expired_only_increment_monotonic_fencing_token" }
+          }
+        },
+        "operation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cancelRule",
+            "generationRule",
+            "identityFields",
+            "retryRule",
+            "stateMachineId",
+            "unknownRule"
+          ],
+          "properties": {
+            "cancelRule": { "const": "pending_before_attempt_only" },
+            "generationRule": { "const": "positive_monotonic_per_operation_identity" },
+            "identityFields": {
+              "const": ["tenant_id", "operation_id", "operation_generation"]
+            },
+            "retryRule": {
+              "const": "create_new_attempt_identity_only_after_proved_retry"
+            },
+            "stateMachineId": { "const": "platform_operation/v1" },
+            "unknownRule": { "const": "reconciliation_required_no_direct_retry" }
+          }
+        },
+        "operationAttempt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "claimTuple",
+            "identityFields",
+            "stateMachineId",
+            "terminalTransitionRule",
+            "unknownRule"
+          ],
+          "properties": {
+            "claimTuple": {
+              "const": ["claim_holder_id", "claim_incarnation", "claim_token", "claim_expires_at"]
+            },
+            "identityFields": {
+              "const": ["tenant_id", "operation_id", "operation_generation", "attempt_number"]
+            },
+            "stateMachineId": { "const": "operation_attempt/v1" },
+            "terminalTransitionRule": {
+              "const": "persist_immutable_terminal_receipt_in_same_transaction"
+            },
+            "unknownRule": { "const": "reconciliation_required_no_direct_retry" }
+          }
+        },
+        "outbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "claimTuple",
+            "classRules",
+            "clock",
+            "deliverySemantics",
+            "maxDeliveryAttempts",
+            "retryBackoffSeconds",
+            "stateMachineId"
+          ],
+          "properties": {
+            "claimTuple": {
+              "const": ["claim_holder_id", "claim_incarnation", "claim_token", "claim_expires_at"]
+            },
+            "classRules": {
+              "const": [
+                {
+                  "class": "operation_effect",
+                  "requiredFields": [
+                    "aggregate_id",
+                    "aggregate_kind",
+                    "aggregate_sequence",
+                    "event_id",
+                    "generation",
+                    "operation_id",
+                    "tenant_id"
+                  ],
+                  "positiveFields": ["aggregate_sequence", "generation"],
+                  "zeroFields": [],
+                  "nullFields": [],
+                  "equalFields": [],
+                  "uniqueKeys": [
+                    ["tenant_id", "event_id"],
+                    [
+                      "tenant_id",
+                      "aggregate_kind",
+                      "aggregate_id",
+                      "generation",
+                      "aggregate_sequence"
+                    ]
+                  ]
+                },
+                {
+                  "class": "resource_change",
+                  "requiredFields": [
+                    "aggregate_id",
+                    "aggregate_kind",
+                    "aggregate_sequence",
+                    "event_id",
+                    "generation",
+                    "resource_version",
+                    "tenant_id"
+                  ],
+                  "positiveFields": ["resource_version"],
+                  "zeroFields": ["generation"],
+                  "nullFields": ["operation_id"],
+                  "equalFields": [["aggregate_sequence", "resource_version"]],
+                  "uniqueKeys": [["tenant_id", "event_id"]]
+                }
+              ]
+            },
+            "clock": { "const": "database_transaction_timestamp" },
+            "deliverySemantics": { "const": "at_least_once_event_id_dedup_required" },
+            "maxDeliveryAttempts": { "const": 8 },
+            "retryBackoffSeconds": { "const": [1, 2, 4, 8, 16, 32, 64, 128] },
+            "stateMachineId": { "const": "outbox/v1" }
+          }
+        },
+        "terminalReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "appendOnly",
+            "identityFields",
+            "outcomes",
+            "stateMachineId",
+            "unknownAttemptRule"
+          ],
+          "properties": {
+            "appendOnly": { "const": true },
+            "identityFields": {
+              "const": [
+                "tenant_id",
+                "operation_id",
+                "operation_generation",
+                "attempt_number",
+                "receipt_id"
+              ]
+            },
+            "outcomes": { "const": ["canceled", "failed", "succeeded"] },
+            "stateMachineId": { "const": "terminal_receipt/v1" },
+            "unknownAttemptRule": { "const": "forbidden" }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "profile documents are sorted, unique, repository-local, and exactly cover idempotent OpenAPI operations",
+    "state machine IDs and states are sorted and unique",
+    "each from plus event pair has one destination",
+    "all states are reachable and every non-terminal state can reach a terminal state",
+    "terminal states have no outgoing transition"
+  ]
+}

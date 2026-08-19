@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:f6240231ac0acce6d7d390a54eb0773d6047e5e6e2ecc98f851cc7caa10426e5",
+    "manifestSha256": "sha256:78241e47d86f789af9d152b1e0f74497cd736365e26be4d7673d87da8f55491f",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -33,7 +33,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:fafc6c16e1abc34f3ec5b40a9849521271e922e71ab4161bea12b4fd999eef5b",
+    "manifestSha256": "sha256:e5bc2da592b9789eaa4a7e143a0637cd6b221ee20ee7492b6060f138100e0b67",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -49,10 +49,11 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:2b9dd20be736f2b9ce705dccf47780f22f29e2909f14fcd936463c7ccae8771f",
+      "sourceManifestSha256": "sha256:3a2e76f2b544df428db31e3ea2dd3ed4d926ab9e13883d04727b5f33298feff8",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
       "license": "MIT"
@@ -74,12 +75,26 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:28a1e8f22033c69f6f39b37d573059b97b34ce705868c149cf629d62edcbe1eb",
+      "sourceManifestSha256": "sha256:c457f04c77f7ea790614d76e0dc70e8218d25e8970168a83122112bf8821dd62",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
         "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-go-modules.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-durable-coordination-registry-generator",
+      "kind": "in-repo-typescript-deterministic-contract-registry",
+      "entrypoint": "scripts/generate-platform-durable-coordination-registry.ts",
+      "sourceManifestSha256": "sha256:0d46f176a7aec037159ab900552166597816e11d9ee91aae3a9cc06749c34a2d",
+      "sources": [
+        "scripts/generate-platform-durable-coordination-registry.ts",
+        "scripts/lib/platform-durable-coordination-registry.test.ts",
+        "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
       "license": "MIT"
@@ -205,9 +220,53 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:f6240231ac0acce6d7d390a54eb0773d6047e5e6e2ecc98f851cc7caa10426e5",
+      "inputManifestSha256": "sha256:78241e47d86f789af9d152b1e0f74497cd736365e26be4d7673d87da8f55491f",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
+    },
+    {
+      "id": "durable-coordination-registry-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:1e86b1f03f9100854c7c510da7691bcde7bd7807cb68890934d192c1779f8dc6",
+      "inputs": [
+        "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-host/v1alpha1/openapi.json",
+        "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-v1alpha1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-profile-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+        "contracts/platform/v1alpha1/schemas/permission.schema.json",
+        "contracts/platform/v1alpha1/schemas/project.schema.json",
+        "docs/plan/adr/0013-p1-durable-coordination-contract.md",
+        "scripts/generate-platform-durable-coordination-registry.ts",
+        "scripts/lib/platform-durable-coordination-registry.test.ts",
+        "scripts/lib/platform-durable-coordination-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "outputStatus": "GENERATED_CONTRACT_REGISTRY",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+          "sha256": "sha256:15140fb8d9233bf161c283f32ace7cab639a9ed1df9ffb35bae193385ef62a63",
+          "sizeBytes": 16276
+        }
+      ],
+      "outputSummary": {
+        "registryId": "cloud-agents/platform/durable-coordination",
+        "registryDigest": "sha256:11c0f599e8320668a6f601241206c795933b26e3b9c456a58353a0d13c7ecd30",
+        "sourceDigest": "sha256:041eeb4cdac568c48ff5e8f9f41a986259fcb89e16ee6b339802e25eca139d5e",
+        "stateMachineDigest": "sha256:5c4fa5c0cfac253b45a41c2e49ee7e863b9efbe124e5d743e041f5e01f5c6f15",
+        "policyDigest": "sha256:95023973eb007a958a3c5aea3ac61b6caa7cd8955b9a24fcef3ad269230c64e8",
+        "profileCount": 1,
+        "runtimeConsumer": "NOT_IMPLEMENTED",
+        "sqlConsumer": "NOT_IMPLEMENTED",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "externalSideEffects": "FORBIDDEN"
+      }
     },
     {
       "id": "platform-migration-bundle-validation",

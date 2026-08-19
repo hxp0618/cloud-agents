@@ -6,6 +6,8 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
+import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
+
 import {
   assertExpectedSemanticResult,
   canonicalizeJson,
@@ -33,7 +35,7 @@ const OPERATION_METHODS = new Set([
   "trace",
 ]);
 
-const P1_A1_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonRecord>>> = {
+const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonRecord>>> = {
   "common/v1alpha1/fixtures/manifest.json": [
     {
       name: "subject-ref",
@@ -153,6 +155,42 @@ const P1_A1_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonRecord>
       expectedSchemaValid: true,
       expectedSemanticValid: false,
       expectedError: "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH",
+    },
+    {
+      name: "durable-coordination-profile-managed-agent-create-project-v1alpha1",
+      schema: "../schemas/durable-coordination-profile-v1.schema.json",
+      instance: "golden/durable-coordination-profile-managed-agent-create-project-v1alpha1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "durable-coordination-profile-raw-operation",
+      schema: "../schemas/durable-coordination-profile-v1.schema.json",
+      instance: "negative/durable-coordination-profile-raw-operation.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: false,
+      expectedError: "COORDINATION_PROFILE_BINDING_MISMATCH",
+    },
+    {
+      name: "durable-coordination-profile-secret-field",
+      schema: "../schemas/durable-coordination-profile-v1.schema.json",
+      instance: "negative/durable-coordination-profile-secret-field.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "durable-coordination-registry-source-v1",
+      schema: "../schemas/durable-coordination-registry-source-v1.schema.json",
+      instance: "golden/durable-coordination-registry-source-v1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "durable-coordination-registry-v1",
+      schema: "../schemas/durable-coordination-registry-v1.schema.json",
+      instance: "../../../generated/platform/v1alpha1/durable-coordination-registry.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
     },
   ],
 };
@@ -412,6 +450,7 @@ function validateJsonSchemaFixtures(
           validateCanonicalNamespaceRefFixture(document),
           validateCanonicalSubjectRefFixture(document),
           validateManagedAgentCreateProjectIdempotencyFixture(document),
+          validateDurableCoordinationFixture(document, dirname(contractRoot)),
         ];
         const semanticResult =
           canonicalResults.find((result) => !result.valid) ??
@@ -2168,16 +2207,16 @@ function validateFixtureManifest(document: JsonRecord, file: string, contractRoo
       throw new Error(`${file} fixture ${name} must not declare expectedError for a passing case.`);
     }
   }
-  validateP1A1FixtureInventory(cases, file, contractRoot);
+  validateP1RequiredFixtureInventory(cases, file, contractRoot);
 }
 
-function validateP1A1FixtureInventory(
+function validateP1RequiredFixtureInventory(
   cases: ReadonlyArray<unknown>,
   file: string,
   contractRoot: string,
 ): void {
   const manifestPath = relativePath(contractRoot, file);
-  const requiredFixtures = P1_A1_FIXTURE_INVENTORY[manifestPath];
+  const requiredFixtures = P1_REQUIRED_FIXTURE_INVENTORY[manifestPath];
   if (!requiredFixtures) return;
   const fixturesByName = new Map(
     cases.map((value, index) => {
@@ -2189,13 +2228,13 @@ function validateP1A1FixtureInventory(
     const name = requiredString(expected.name, `${manifestPath} required fixture name`);
     const actual = fixturesByName.get(name);
     if (!actual) {
-      throw new Error(`${manifestPath} P1-A1 fixture inventory is missing ${name}.`);
+      throw new Error(`${manifestPath} P1 fixture inventory is missing ${name}.`);
     }
     if (
       new TextDecoder().decode(canonicalizeJson(actual)) !==
       new TextDecoder().decode(canonicalizeJson(expected))
     ) {
-      throw new Error(`${manifestPath} P1-A1 fixture inventory metadata drifted for ${name}.`);
+      throw new Error(`${manifestPath} P1 fixture inventory metadata drifted for ${name}.`);
     }
   }
 }

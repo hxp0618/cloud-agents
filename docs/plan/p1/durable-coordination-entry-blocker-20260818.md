@@ -1,12 +1,13 @@
 # P1-A2.3 durable coordination pre-entry blocker - 2026-08-18
 
-- Status: **ENTRY BLOCKED - A2.3 NOT AUTHORIZED**
+- Status: **RESOLVED FOR ORDERED ENTRY - DIRECTION APPROVED 2026-08-19**
 - Fixed clean ref: `d05229578a2d9758619d0798b4375cbae3993b4e`
 - Branch: `codex/cloud-agents-platform-p1`
 - Remote: local HEAD and `origin/codex/cloud-agents-platform-p1` exact
 - Affected slice: P1-A2.3 Durable Coordination
-- Does not authorize: ADR-0013, new contract schemas, migration `000007`, Go domain/store/service code, public
-  routes, database mutation, Gate closure, deployment, release, or entry into P2
+- Original audit boundary: before the 2026-08-19 approval this record did not authorize ADR-0013, contract schemas,
+  migration `000007`, Go domain/store/service code, public routes, database mutation, Gate closure, deployment,
+  release, or entry into P2. Section 6 records the later, narrower authorization.
 
 ## 1. Current entry facts
 
@@ -120,3 +121,15 @@ git ls-remote --heads origin codex/cloud-agents-platform-p1
 
 After explicit approval, the first writable artifact must be the decision ADR and contract/state-machine slice.
 Do not create `000007`, A2.3 tables, or service code before that freeze.
+
+## 6. Approval resolution - 2026-08-19
+
+The owner approved section 4 exactly in this order:
+
+1. contract/state-machine registry;
+2. append-only PostgreSQL kernel;
+3. service/claim/matrix/independent review.
+
+The approval accepts only generated contract-registry profiles. It does not authorize a public HTTP surface, P2
+Session/Turn/Execution or any external side effect, and it closes no Gate. ADR-0013 is the accepted decision record;
+slice 1 must be committed and reviewed before migration `000007` or any Go/SQL consumer begins.

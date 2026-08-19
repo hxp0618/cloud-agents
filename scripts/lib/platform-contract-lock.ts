@@ -4,6 +4,12 @@ import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
+import {
+  assertDurableCoordinationRegistryCurrent,
+  buildDurableCoordinationRegistry,
+  durableCoordinationRegistryInputs,
+  DURABLE_COORDINATION_OUTPUT_PATH,
+} from "./platform-durable-coordination-registry";
 import { PLATFORM_GO_TOOLCHAIN } from "./platform-go-modules";
 import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
 
@@ -56,6 +62,12 @@ const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
   "services/control-plane/migrations/fixtures",
 ] as const;
 const NORMALIZED_MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
+const DURABLE_COORDINATION_GENERATOR_SOURCES = [
+  "scripts/generate-platform-durable-coordination-registry.ts",
+  "scripts/lib/platform-durable-coordination-registry.test.ts",
+  "scripts/lib/platform-durable-coordination-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
 
 const IN_REPO_TOOLS = [
   {
@@ -65,6 +77,7 @@ const IN_REPO_TOOLS = [
     sources: [
       "scripts/check-platform-contracts.ts",
       "scripts/lib/platform-contracts.ts",
+      "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
   },
@@ -87,9 +100,16 @@ const IN_REPO_TOOLS = [
       "scripts/generate-platform-contract-lock.ts",
       "scripts/lib/platform-contract-lock.ts",
       "scripts/lib/platform-contracts.ts",
+      "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-go-modules.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
+  },
+  {
+    id: "platform-durable-coordination-registry-generator",
+    kind: "in-repo-typescript-deterministic-contract-registry",
+    entrypoint: "scripts/generate-platform-durable-coordination-registry.ts",
+    sources: DURABLE_COORDINATION_GENERATOR_SOURCES,
   },
 ] as const;
 
@@ -98,6 +118,9 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runtimes = validatePlatformToolchains(root);
   const migration = validateCheckedInMigrationBundle(root);
   const migrationInputs = platformMigrationInputs(root);
+  assertDurableCoordinationRegistryCurrent(root);
+  const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
+  const durableCoordinationRegistry = buildDurableCoordinationRegistry(root);
   return {
     lockVersion: 1,
     status: "BOOTSTRAP_VALIDATED",
@@ -185,6 +208,33 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         inputManifestSha256: summary.contractManifestSha256,
         outputStatus: "BOOTSTRAP_VALIDATED",
         generatedOutputs: [],
+      },
+      {
+        id: "durable-coordination-registry-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, durableCoordinationInputs),
+        inputs: durableCoordinationInputs,
+        outputStatus: "GENERATED_CONTRACT_REGISTRY",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: DURABLE_COORDINATION_OUTPUT_PATH,
+            sha256: fileSha256(root, DURABLE_COORDINATION_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, DURABLE_COORDINATION_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          registryId: durableCoordinationRegistry.registryId,
+          registryDigest: durableCoordinationRegistry.registryDigest,
+          sourceDigest: durableCoordinationRegistry.sourceDigest,
+          stateMachineDigest: durableCoordinationRegistry.stateMachineDigest,
+          policyDigest: durableCoordinationRegistry.policyDigest,
+          profileCount: (durableCoordinationRegistry.profiles as ReadonlyArray<unknown>).length,
+          runtimeConsumer: "NOT_IMPLEMENTED",
+          sqlConsumer: "NOT_IMPLEMENTED",
+          httpSurface: "NOT_IMPLEMENTED",
+          externalSideEffects: "FORBIDDEN",
+        },
       },
       {
         id: "platform-migration-bundle-validation",

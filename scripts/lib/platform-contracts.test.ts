@@ -477,7 +477,7 @@ describe("Platform contract bootstrap checks", () => {
       );
       writeFileSync(commonManifestPath, `${JSON.stringify(commonManifest, null, 2)}\n`);
       expect(() => validatePlatformContractTree(temporary)).toThrow(
-        /P1-A1 fixture inventory is missing subject-ref-canonical/,
+        /P1 fixture inventory is missing subject-ref-canonical/,
       );
 
       rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });
@@ -499,7 +499,7 @@ describe("Platform contract bootstrap checks", () => {
       delete canonicalFixture.expectedSemanticValid;
       writeFileSync(platformManifestPath, `${JSON.stringify(platformManifest, null, 2)}\n`);
       expect(() => validatePlatformContractTree(temporary)).toThrow(
-        /P1-A1 fixture inventory metadata drifted for managed-agent-create-project-idempotency/,
+        /P1 fixture inventory metadata drifted for managed-agent-create-project-idempotency/,
       );
 
       rmSync(resolve(temporary, "contracts"), { force: true, recursive: true });

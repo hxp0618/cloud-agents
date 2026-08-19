@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-coordination-registry-v1.schema.json",
+  "title": "DurableCoordinationRegistryV1",
+  "description": "Generated, digest-bound registry consumed by future A2.3 PostgreSQL and Go implementations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "sourceDigest",
+    "stateMachineDigest",
+    "policyDigest",
+    "stateMachines",
+    "policies",
+    "profiles",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-coordination-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/durable-coordination" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "stateMachineDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "stateMachines": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "$ref": "durable-coordination-registry-source-v1.schema.json#/$defs/stateMachine"
+      }
+    },
+    "policies": {
+      "$ref": "durable-coordination-registry-source-v1.schema.json#/$defs/policies"
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/profileEntry" }
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "profileEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": {
+          "$ref": "durable-coordination-profile-v1.schema.json"
+        }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "consumerLookup": "exact profileId plus profileDigest",
+    "callerProvidedProfile": "forbidden"
+  }
+}

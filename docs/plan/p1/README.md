@@ -6,7 +6,8 @@
   [`ADR-0009`](../adr/0009-p1-migration-bundle-runner.md)、
   [`ADR-0010`](../adr/0010-p1-postgres-projection-contract.md)、
   [`ADR-0011`](../adr/0011-p1-membership-rbac-contract.md)、
-  [`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)
+  [`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)、
+  [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -68,7 +69,7 @@
   [`versioned lineage/quota profile implementation`](versioned-lineage-quota-profile-implementation-20260818.md)）。
   第二轮 `gpt-5.6-sol` independent security review 已返回 `APPROVE, P0=0/P1=0/P2=0`（见
   [`independent review`](versioned-lineage-quota-profile-independent-review-20260818.md)）；该结论不关闭任何
-  immutable/aggregate Gate，A2.3 尚未授权。`f988e45` 已冻结 exact built-in role catalog v1、34 个
+  immutable/aggregate Gate。`f988e45` 已冻结 exact built-in role catalog v1、34 个
   显式 permission、Membership→RoleBinding→resolved scope default-deny authority 与 future-permission version fence；
   `e36e1cf` 已新增 migration-owned RBAC tables、tenant-bound read-only evaluator 与本地 PG15/16/17 normal/race
   focused matrix；`de36ca3` 已新增五个 typed mutation、same-transaction authorization/CAS/audit closure与本地
@@ -78,11 +79,11 @@
   language gap；append-only `000006` candidate 的本地 PG15/16/17 matrix 虽通过，但 frozen ADR-0010
   lineage-index quota 拒绝该六迁移 bundle。ADR-0012 的 versioned lineage/quota profile implementation 与
   independent review 现已关闭该 remediation 的固定源码边界；checked-in production catalog publication/CLI
-  trust root、production database write、A2.3 与 aggregate Gate 仍保持拒绝
-- Next entry：P1-A2.3 Durable Coordination 仍为 `ENTRY BLOCKED`。SubjectRef 与当前唯一
-  `managedAgentCreateProject` idempotency projection 已进入 contract/generation lock，但 operation-profile
-  registry、Operation/Attempt/Receipt/Finalizer、outbox/leader closed state machines、三切片实现边界和 explicit
-  authorization 尚未冻结；见 [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
+  trust root、production database write、A2.3 后续 SQL/service 与 aggregate Gate 仍保持拒绝
+- Current entry：P1-A2.3 Durable Coordination 方向已于 2026-08-19 获批；当前仅推进
+  contract/state-machine registry slice。ADR-0013 固定 generated profile-only authority、七个 closed state
+  machines 与三切片顺序；`000007`、Go/SQL consumer、HTTP/P2 side effect 和所有 Gate closure 仍禁止，直到本切片
+  fixed-source review 完成。历史入口审计见 [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
 - Remaining P1 slices：P1-A2.2～P1-A2.4、
   P1-A3 SDK/Identity/Closure
 - Gate closure：none
@@ -133,8 +134,11 @@ Platform RC、Beta 或 GA。
   `f731c6b` remediation 的第二轮 `gpt-5.6-sol` verdict `P0=0/P1=0/P2=0`、source/supply binding、独立
   verification limitations 与 remaining boundaries；只关闭 A2.2-impl-3 remediation implementation/review
 - [`durable-coordination-entry-blocker-20260818.md`](durable-coordination-entry-blocker-20260818.md)：固定 A2.3
-  contract/state/SQL/service pre-entry audit、当前 SubjectRef/idempotency facts、pinned-toolchain guard 边界和待批准
-  三切片方向；不授权 ADR-0013、`000007`、Go/SQL implementation 或 Gate closure
+  contract/state/SQL/service pre-entry audit、当前 SubjectRef/idempotency facts、pinned-toolchain guard 边界；其
+  section 4 已于 2026-08-19 获批并由 ADR-0013 承接，但仍不授权提前创建 `000007`、HTTP/P2 side effect 或 Gate closure
+- [`durable-coordination-contract-registry-20260819.md`](durable-coordination-contract-registry-20260819.md)：记录
+  A2.3 slice 1 的 generated profile、七个 closed state machines、deterministic generator、fixture faults 与独立
+  generation-lock pipeline；只构成本地实现证据，不是 independent review 或 Gate closure
 
 ## Data kernel decisions
 
@@ -150,6 +154,9 @@ Platform RC、Beta 或 GA。
 - [`ADR-0012`](../adr/0012-p1-versioned-lineage-quota-profile.md)：冻结 v1 historical byte-exact compatibility、v2
   explicit lineage/quota profile、4 KiB checkpoint ceiling、profile-bound generation authority 与 fail-closed
   transition rules；不构成 admission/Gate closure。
+- [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)：冻结 generated contract-registry profile、七个
+  closed durable state machines、idempotency/outbox/leader/audit policy 与 A2.3 三切片顺序；不开放 HTTP/P2 external
+  side effect，也不构成任何 Gate closure。
 
 ## Current admission durability evidence
 

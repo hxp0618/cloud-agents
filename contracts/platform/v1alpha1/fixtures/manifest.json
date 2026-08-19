@@ -161,6 +161,42 @@
       "expectedSchemaValid": false,
       "expectedSemanticValid": false,
       "expectedError": "WILDCARD_PERMISSION_FORBIDDEN"
+    },
+    {
+      "name": "durable-coordination-profile-managed-agent-create-project-v1alpha1",
+      "schema": "../schemas/durable-coordination-profile-v1.schema.json",
+      "instance": "golden/durable-coordination-profile-managed-agent-create-project-v1alpha1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-coordination-profile-raw-operation",
+      "schema": "../schemas/durable-coordination-profile-v1.schema.json",
+      "instance": "negative/durable-coordination-profile-raw-operation.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "COORDINATION_PROFILE_BINDING_MISMATCH"
+    },
+    {
+      "name": "durable-coordination-profile-secret-field",
+      "schema": "../schemas/durable-coordination-profile-v1.schema.json",
+      "instance": "negative/durable-coordination-profile-secret-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "durable-coordination-registry-source-v1",
+      "schema": "../schemas/durable-coordination-registry-source-v1.schema.json",
+      "instance": "golden/durable-coordination-registry-source-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-coordination-registry-v1",
+      "schema": "../schemas/durable-coordination-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/durable-coordination-registry.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
     }
   ]
 }
