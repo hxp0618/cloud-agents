@@ -1,7 +1,8 @@
 # P1-A2.3 durable coordination evidence-quota blocker - 2026-08-19
 
-- Status: **QUOTA/PROFILE AND A2.3 REMEDIATED SLICE REVIEW PASS; FULL MIGRATION CLOSURE PENDING**
+- Status: **QUOTA/PROFILE AND A2.3 REMEDIATED SLICE REVIEW PASS; LOCAL FULL MIGRATION CLOSURE PASS; ALL GATES OPEN**
 - Fixed source: `79b603b7a4569a3f1f816c9d3bf3a417431e5926`
+- Subsequent full-closure source: `67b8acb0f8d405d893bd4f89d71cf3587dd92977`
 - Fixed A2.3 slice-3 implementation: `59ec26037ddeba7157f358693426ca1fe2d6231e`
 - Branch: `codex/cloud-agents-platform-p1`
 - Affected boundary: P1-A2.3 slice-3 independent-review remediation and migration admission
@@ -107,13 +108,18 @@ The operation-specific generated identity profile now binds an ASCII identifier 
 `exact_string_no_rewrite`; the public Unicode organization-reference contract remains unchanged, so no lossy
 conversion or global authorization widening is used.
 
-The full `internal/migration` suite still has only a bounded local attempt: it reached the known long-running runner
-surface and timed out after 10 minutes without an assertion failure. That is not a pass. The historical review
-returned `NOT APPROVE, P0=0/P1=1/P2=0` because generated `organizationRef` accepted NFC Unicode identifiers while
-service/claim used an ASCII-only, 128-byte `authz.ScopeRef`. The exact remediation candidate was independently
-rereviewed as `APPROVE, P0=0/P1=0/P2=0`: the operation-specific generated profile is ASCII, at most 128 bytes and
-`exact_string_no_rewrite`; the public Unicode organization-reference contract remains unchanged; no identity
-conversion or authorization widening is used. See the
+The historical full `internal/migration` attempt reached the known long-running runner surface and timed out after
+10 minutes without an assertion failure. That observation remains **not a pass**. Subsequently, stale test-only quota
+and checked-in bundle identity assertions were bound to the current `000010`-inclusive bundle by `b39b070 → 67b8acb`.
+At exact `67b8acb`, the authoritative local rerun with `-timeout=30m` passed in `1012.165s`; the precise command,
+fixture-only scope, and retained A2.4/Gate boundary are recorded in the
+[full migration closure](durable-coordination-full-migration-closure-20260820.md).
+
+The historical review returned `NOT APPROVE, P0=0/P1=1/P2=0` because generated `organizationRef` accepted NFC
+Unicode identifiers while service/claim used an ASCII-only, 128-byte `authz.ScopeRef`. The exact remediation candidate
+was independently rereviewed as `APPROVE, P0=0/P1=0/P2=0`: the operation-specific generated profile is ASCII, at
+most 128 bytes and `exact_string_no_rewrite`; the public Unicode organization-reference contract remains unchanged;
+no identity conversion or authorization widening is used. See the
 [remediation independent review](durable-coordination-v3-remediation-independent-review-20260820.md) and retain the
 [historical review](durable-coordination-v3-independent-review-20260819.md) as history.
 
@@ -124,6 +130,7 @@ following bounded state:
 - quota/profile, append-only kernel and remediated service/claim/matrix implementation-review slice is approved;
 - the remediation implementation/review slice is approved; this record does not itself claim a commit, push or
   deployment;
-- the full migration suite remains pending and its bounded timeout is not a pass;
+- the later current-bundle full migration suite passed locally at `67b8acb`; the historical ten-minute timeout remains
+  a non-pass observation, not retroactive evidence;
 - HTTP/P2/external effects remain absent;
 - every immutable and aggregate Gate remains open.

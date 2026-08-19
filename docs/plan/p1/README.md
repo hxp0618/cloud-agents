@@ -87,7 +87,10 @@
   service/claim/matrix/review 三切片完成。Versioned lineage/quota v3、`000007`～`000009`、generated operation-specific
   ASCII organization identity 与 typed service/claim/fault matrices 已由 `63699bb → 062cdcf → e55affa` 固定；历史
   Unicode `organizationRef` reviewer P1 已在 exact remediation candidate 中关闭，independent rereview 为
-  `APPROVE, P0=0/P1=0/P2=0`。该结论只关闭 A2.3 implementation/review slices；full migration closure 未完成（见
+  `APPROVE, P0=0/P1=0/P2=0`。后续对包含既有 `000010` schema-only kernel 的 current bundle，在 `67b8acb` 以
+  `-timeout=30m` 完整通过本地 `internal/migration`（`1012.165s`；见
+  [`A2.3 full migration closure`](durable-coordination-full-migration-closure-20260820.md)）。该结论只关闭 A2.3
+  implementation/review 与 local full-suite evidence；不批准 A2.4 writer/service（见
   [`A2.3 remediation independent review`](durable-coordination-v3-remediation-independent-review-20260820.md)、
   [`A2.3 v3 independent review`](durable-coordination-v3-independent-review-20260819.md) 与
   [`A2.3 evidence-quota blocker`](durable-coordination-evidence-quota-blocker-20260819.md)）。HTTP/P2 external side
@@ -168,7 +171,8 @@ Platform RC、Beta 或 GA。
   fixed `000008` 已使 v2 whole-bundle reservation 达到 17 segments 并超过 256 MiB；用户已批准 ADR-0014
   v3 方向，本地候选已通过定向门禁与 PG matrices；原独立 review 的 organization identity P1 已按 generated
   operation-specific ASCII identity profile 闭合并通过 remediation independent review，full migration closure
-  仍未完成，不构成 Gate closure
+  已在 `67b8acb` 的 30 分钟本地 rerun 完成；精确命令、耗时与不扩大 A2.4/Gate 边界见
+  [`full migration closure`](durable-coordination-full-migration-closure-20260820.md)，不构成 Gate closure
 - [`durable-coordination-v3-independent-review-20260819.md`](durable-coordination-v3-independent-review-20260819.md)：记录
   fixed HEAD 加当时 dirty/untracked v3 candidate 的独立只读终审；`P0=0/P1=1/P2=0`、整体 `NOT APPROVE`，
   唯一 P1 是 generated Unicode `organizationRef` 与 ASCII-only authorization `ScopeRef` 合约断裂。后续本地
@@ -176,13 +180,16 @@ Platform RC、Beta 或 GA。
   不授权静默映射、HTTP/P2 external effect 或 Gate closure
 - [`durable-coordination-v3-remediation-independent-review-20260820.md`](durable-coordination-v3-remediation-independent-review-20260820.md)：
   对 exact remediation candidate 的 independent rereview；`APPROVE, P0=0/P1=0/P2=0`，只关闭 generated
-  registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice。Full
-  migration closure、HTTP/P2 external effect 与所有 Gate 仍保持 OPEN
+  registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice。后续 local
+  full migration closure 见 [`closure record`](durable-coordination-full-migration-closure-20260820.md)；HTTP/P2
+  external effect 与所有 Gate 仍保持 OPEN
 - [`compatibility-recovery-postgres-kernel-20260820.md`](compatibility-recovery-postgres-kernel-20260820.md)：记录
   A2.4 append-only `000010` schema-only kernel、generated registry/catalog/manifest binding 与本地 PG15/16/17
   matrix；仅为 local implementation evidence；有界 independent review 见
   [`compatibility-recovery-v1-kernel-independent-review-20260820.md`](compatibility-recovery-v1-kernel-independent-review-20260820.md)。
-  writer/service、HTTP/P2/provider effect、full migration closure 与所有 Gate 均保持 OPEN
+  该历史 record 当时未声称 full migration closure；后续包含 `000010` 的 current-bundle local closure 见
+  [`A2.3 full migration closure`](durable-coordination-full-migration-closure-20260820.md)，但不改变其有界 review，
+  也不批准 writer/service、HTTP/P2/provider effect 或任何 Gate closure
 - [`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)：
   A2.4 后续 versioned-registry/writer/service 入口提案；v1 与 `000010` 不可变，三切片仍需 owner approval，
   不授权 HTTP/P2、生产写入或 Gate closure

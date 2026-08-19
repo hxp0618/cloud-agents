@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-20
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，full migration closure 仍 PENDING；HTTP/P2 external side effect 与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，后续 current bundle 的本地 full `internal/migration` closure 已在 `67b8acb` 以 `-timeout=30m` 通过，耗时 `1012.165s`；HTTP/P2 external side effect 与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -194,19 +194,23 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       operation-specific identity profile 收窄为 ASCII、最多 128 bytes、`exact_string_no_rewrite`，公共
       Unicode organization reference contract 保持不变；`000009` 保留 historical registry/profile pair，并以
       versioned v2 service entry 使用 current pair。精确 candidate 随后 independent rereview 返回
-      `APPROVE, P0=0/P1=0/P2=0`，只关闭本三切片 implementation/review slice；Full migration closure
-      仍 PENDING。HTTP/P2 external side effect 不开放，且不关闭任何 Gate。见
+      `APPROVE, P0=0/P1=0/P2=0`，只关闭本三切片 implementation/review slice；后续 current bundle 的本地 full
+      migration closure 已在 `67b8acb` 以 `-timeout=30m` 通过（`1012.165s`），但不批准 A2.4 writer/service，
+      HTTP/P2 external side effect 不开放，且不关闭任何 Gate。见
       [`remediation independent review`](../p1/durable-coordination-v3-remediation-independent-review-20260820.md)、
       并保留 [`historical independent review`](../p1/durable-coordination-v3-independent-review-20260819.md)、
       [`service evidence`](../p1/durable-coordination-service-claim-matrix-20260819.md)、
       [`kernel evidence`](../p1/durable-coordination-postgres-kernel-20260819.md) 与
-      [`resolved blocker`](../p1/durable-coordination-entry-blocker-20260818.md)。
-- [ ] A2.3 evidence quota 采用 [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md) 的显式 v3：generated
+      [`resolved blocker`](../p1/durable-coordination-entry-blocker-20260818.md) 与
+      [`full migration closure`](../p1/durable-coordination-full-migration-closure-20260820.md)。
+- [x] A2.3 evidence quota 采用 [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md) 的显式 v3：generated
       manifest 是唯一 selector，32 segments / 512 MiB，records/checkpoint/index/root/object 上限不变，v1/v2
-      historical same-bits。未提交候选已通过 registry/bundle/lock、v3 normal/race、Linux cross-compile、
-      PG15/16/17 kernel schema-only 与 service/claim normal/race/fault matrix。Independent review 已确认 quota/profile
-      分项 PASS；精确 remediation independent rereview 已返回 `APPROVE, P0=0/P1=0/P2=0`，只关闭三切片
-      implementation/review slice。Full migration suite 在本地 10 分钟边界超时，未记为 PASS；所有 Gate 保持 OPEN。
+      historical same-bits。`b39b070 → 67b8acb` 只把 stale quota 与 generated identity test fixture 绑定更新至
+      current checked-in `000010` bundle；registry/bundle/lock、v3 normal/race、Linux cross-compile、PG15/16/17
+      kernel schema-only 与 service/claim normal/race/fault matrix，以及 `internal/migration` 的 `-timeout=30m`
+      full suite（`1012.165s`）均已本地通过。该 suite 包含既有 A2.4 schema-only kernel，却不授权其 writer/service；
+      所有 Gate 保持 OPEN。精确边界见
+      [`full migration closure`](../p1/durable-coordination-full-migration-closure-20260820.md)。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
