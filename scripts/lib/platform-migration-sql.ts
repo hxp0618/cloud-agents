@@ -210,7 +210,7 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set(["000005", "000006"]).has(migrationId) || tokens[3] !== "FUNCTION")
+      (!new Set(["000005", "000006", "000009"]).has(migrationId) || tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
     }
@@ -271,17 +271,33 @@ export function classifyMigrationStatement(
       reject(tokens);
     }
     if (orReplace) {
-      const expectedReplacement = new Map([
+      const expectedReplacements = new Map<string, ReadonlyArray<string>>([
         [
           "000005",
-          "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+          [
+            "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+          ],
         ],
         [
           "000006",
-          "function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)",
+          [
+            "function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000009",
+          [
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_replay_ttl_seconds(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:append_coordination_audit(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:timestamptz)",
+            "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:transition_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
         ],
       ]).get(migrationId);
-      if (targetIdentity !== expectedReplacement) reject(tokens);
+      if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
     return classification("CREATE", kind!, targetIdentity!, null);
   }
@@ -312,7 +328,32 @@ export function classifyMigrationStatement(
           ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0"),
           ["DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"].join("\0"),
         ]).has(subcommand.join("\0"));
-      if (!exact && !addConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint)
+      const dropCoordinationRegistryConstraint =
+        migrationId === "000009" &&
+        new Map([
+          [
+            "table:unquoted:cloud_agents/unquoted:platform_operations",
+            "PLATFORM_OPERATIONS_REGISTRY_DIGEST",
+          ],
+          [
+            "table:unquoted:cloud_agents/unquoted:idempotency_records",
+            "IDEMPOTENCY_RECORDS_REGISTRY_DIGEST",
+          ],
+          ["table:unquoted:cloud_agents/unquoted:outbox_events", "OUTBOX_EVENTS_REGISTRY_DIGEST"],
+          [
+            "table:unquoted:cloud_agents/unquoted:coordination_audit_facts",
+            "COORDINATION_AUDIT_FACTS_REGISTRY_DIGEST",
+          ],
+        ]).get(targetIdentity) === subcommand[2] &&
+        subcommand[0] === "DROP" &&
+        subcommand[1] === "CONSTRAINT";
+      if (
+        !exact &&
+        !addConstraint &&
+        !dropResourceKindConstraint &&
+        !dropAuditFactConstraint &&
+        !dropCoordinationRegistryConstraint
+      )
         reject(tokens);
       return classification("ALTER", "TABLE", targetIdentity, null);
     }

@@ -211,7 +211,7 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 	targetOffset := 2
 	orReplace := len(tokens) > 4 && tokens[1] == "OR" && tokens[2] == "REPLACE"
 	if orReplace {
-		if !oneOf(migrationID, "000005", "000006") || tokens[3] != "FUNCTION" {
+		if !oneOf(migrationID, "000005", "000006", "000009") || tokens[3] != "FUNCTION" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		kindOffset = 3
@@ -263,11 +263,20 @@ func classifyCreate(migrationID string, typed []SQLToken, tokens []string) (Stat
 		return StatementPlan{}, err
 	}
 	if orReplace {
-		expectedReplacement := map[string]string{
-			"000005": "function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
-			"000006": "function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)",
+		expectedReplacements := map[string][]string{
+			"000005": {"function:unquoted:cloud_agents/unquoted:bind_role(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)"},
+			"000006": {"function:unquoted:cloud_agents/unquoted:subject_ref_digest(unquoted:text,unquoted:text,unquoted:text)"},
+			"000009": {
+				"function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:coordination_profile_replay_ttl_seconds(unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:append_coordination_audit(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:timestamptz)",
+				"function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+				"function:unquoted:cloud_agents/unquoted:transition_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+			},
 		}[migrationID]
-		if resolved.TargetIdentity != expectedReplacement {
+		if !oneOf(resolved.TargetIdentity, expectedReplacements...) {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 	}
@@ -295,13 +304,23 @@ func classifyAlterStrict(migrationID string, typed []SQLToken, tokens []string) 
 			stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"}) ||
 			migrationID == "000004" &&
 				stringSliceEqual(subcommand, []string{"DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"})
-		if !exact && !addConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint {
-			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
-		}
 		plan := StatementPlan{Command: "ALTER", ObjectKind: "TABLE", MayChangeOwner: len(subcommand) > 0 && subcommand[0] == "OWNER"}
 		resolved, err := planWithTarget(plan, typed)
 		if err != nil {
 			return StatementPlan{}, err
+		}
+		dropCoordinationRegistryConstraint := false
+		if migrationID == "000009" && len(subcommand) == 3 && subcommand[0] == "DROP" && subcommand[1] == "CONSTRAINT" {
+			allowed := map[string]string{
+				"table:unquoted:cloud_agents/unquoted:platform_operations":      "PLATFORM_OPERATIONS_REGISTRY_DIGEST",
+				"table:unquoted:cloud_agents/unquoted:idempotency_records":      "IDEMPOTENCY_RECORDS_REGISTRY_DIGEST",
+				"table:unquoted:cloud_agents/unquoted:outbox_events":            "OUTBOX_EVENTS_REGISTRY_DIGEST",
+				"table:unquoted:cloud_agents/unquoted:coordination_audit_facts": "COORDINATION_AUDIT_FACTS_REGISTRY_DIGEST",
+			}
+			dropCoordinationRegistryConstraint = allowed[resolved.TargetIdentity] == subcommand[2]
+		}
+		if !exact && !addConstraint && !dropResourceKindConstraint && !dropAuditFactConstraint && !dropCoordinationRegistryConstraint {
+			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)
 		}
 		if dropResourceKindConstraint && resolved.TargetIdentity != "table:unquoted:cloud_agents/unquoted:resource_changes" {
 			return StatementPlan{}, rejectSQLProfile(migrationID, tokens)

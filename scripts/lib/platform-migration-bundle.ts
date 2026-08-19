@@ -72,6 +72,7 @@ const SQL_PATHS = [
   `${ROOT}/000006_close_subject_issuer_validation.sql`,
   `${ROOT}/000007_expand_durable_coordination_kernel.sql`,
   `${ROOT}/000008_add_durable_coordination_service.sql`,
+  `${ROOT}/000009_redact_coordination_conflicts.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -85,15 +86,21 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000006.json`,
   `${ROOT}/catalog/schema-000007.json`,
   `${ROOT}/catalog/schema-000008.json`,
+  `${ROOT}/catalog/schema-000009.json`,
 ] as const;
 const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c";
+  "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 13374;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 14883;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:3a2e4ef3cab7227a527831e03f7a85a9bcdbf2963e076c6bb764fe15e1fb194d";
+  "sha256:68efef5dc192323c4ec31cb46e7dda3aecbeb5dba4032876f6f85138d6a80dcd";
 const ANCESTOR_SCHEMA_BUNDLES = [
+  {
+    digest: "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c",
+    size: 13374,
+    sha256: "sha256:3a2e4ef3cab7227a527831e03f7a85a9bcdbf2963e076c6bb764fe15e1fb194d",
+  },
   {
     digest: "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec",
     size: 11860,
@@ -134,6 +141,10 @@ const EVIDENCE_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/evidenc
 const EVIDENCE_NESTED_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/evidence-nested-record-duplicate.raw`;
 const LINEAGE_DUPLICATE_RAW_PATH = `${PROJECTION_FIXTURE_ROOT}/negative/lineage-frame-duplicate.raw`;
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
+const HISTORICAL_DURABLE_COORDINATION_REGISTRY_DIGEST =
+  "sha256:11c0f599e8320668a6f601241206c795933b26e3b9c456a58353a0d13c7ecd30";
+const HISTORICAL_DURABLE_COORDINATION_PROFILE_DIGEST =
+  "sha256:059b4cca58f9621e9b70b723fb3b681f62948d6d4965af60105165afce680d5a";
 const MAX_PROJECTION_SCOPE_PRINCIPALS = 256;
 const INITIAL_PROJECTION_SCOPE_AUTHORITY = {
   default_acl_owners: ["cloud_agents_migration_owner"],
@@ -321,6 +332,15 @@ const DECLARED_IDENTITIES_000008 = [
   "function:unquoted:cloud_agents/unquoted:dead_letter_outbox_event(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
   "function:unquoted:cloud_agents/unquoted:reap_expired_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
 ] as const;
+const DECLARED_IDENTITIES_000009 = [
+  ...DECLARED_IDENTITIES_000008,
+  "function:unquoted:cloud_agents/unquoted:coordination_current_registry_digest()",
+  "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_success_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_failure_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -359,9 +379,19 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   }
   assertDurableCoordinationRegistryCurrent(root);
   const durableCoordinationRegistry = requiredObject(buildDurableCoordinationRegistry(root));
+  const historicalDurableCoordinationRegistry = durableCoordinationHistoricalRegistrySnapshot(
+    durableCoordinationRegistry,
+  );
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
-  validateDurableCoordinationKernel(sqlBytes.get(SQL_PATHS[6])!, durableCoordinationRegistry);
-  validateDurableCoordinationService(sqlBytes.get(SQL_PATHS[7])!, durableCoordinationRegistry);
+  validateDurableCoordinationKernel(
+    sqlBytes.get(SQL_PATHS[6])!,
+    historicalDurableCoordinationRegistry,
+  );
+  validateDurableCoordinationService(
+    sqlBytes.get(SQL_PATHS[7])!,
+    historicalDurableCoordinationRegistry,
+  );
+  validateDurableCoordinationRepair(sqlBytes.get(SQL_PATHS[8])!, durableCoordinationRegistry);
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
     readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
@@ -383,7 +413,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000008",
+    schema_head: "000009",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -471,6 +501,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[8])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[9])!,
       }),
+      migrationEntry({
+        id: "000009",
+        name: "redact_coordination_conflicts",
+        predecessor: "000008",
+        schemaFrom: "000008",
+        sql: sqlArtifacts.get(SQL_PATHS[8])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[9])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[10])!,
+      }),
     ],
   };
   const schemaBundleDigest = migrationDigest({
@@ -504,7 +543,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     artifactRecord(path, files.get(path) ?? sqlBytes.get(path)!),
   );
   const manifestWithoutDigest: JsonObject = {
-    format_version: "cloud-agents-platform-migration-manifest/v2",
+    format_version: "cloud-agents-platform-migration-manifest/v3",
     schema_bundle: schemaBundle,
     schema_bundle_digest: schemaBundleDigest,
     bootstrap_bundle: bootstrapBundle,
@@ -521,7 +560,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
       lock_timeout_ms: 30000,
       idle_in_transaction_session_timeout_ms: 60000,
       max_attempts: 3,
-      lineage_quota_profile: "cloud-agents-platform-lineage-quota-profile/v2",
+      lineage_quota_profile: "cloud-agents-platform-lineage-quota-profile/v3",
     },
     runtime_artifacts: runtimeArtifacts,
   };
@@ -624,6 +663,7 @@ export function validateCatalogStatementBindings(
     ["000006", generatedCatalogs.get(CATALOG_PATHS[7])!.source_descriptors!],
     ["000007", generatedCatalogs.get(CATALOG_PATHS[8])!.source_descriptors!],
     ["000008", generatedCatalogs.get(CATALOG_PATHS[9])!.source_descriptors!],
+    ["000009", generatedCatalogs.get(CATALOG_PATHS[10])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -634,6 +674,7 @@ export function validateCatalogStatementBindings(
     ["000006", DECLARED_IDENTITIES_000006],
     ["000007", DECLARED_IDENTITIES_000007],
     ["000008", DECLARED_IDENTITIES_000008],
+    ["000009", DECLARED_IDENTITIES_000009],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -1121,6 +1162,25 @@ export function migrationStatementSourceDescriptors(
   }));
 }
 
+export function durableCoordinationHistoricalRegistrySnapshot(registry: JsonObject): JsonObject {
+  const historical = structuredClone(registry);
+  const profiles = requiredArray(historical.profiles).map(requiredObject);
+  if (profiles.length !== 1) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_PROFILE", String(profiles.length));
+  }
+  const profile = profiles[0]!;
+  const spec = requiredObject(profile.spec);
+  if (
+    requiredString(spec.profileId, "coordination profile id") !==
+    "managedAgentCreateProject/v1alpha1"
+  ) {
+    throw new MigrationValidationError("COORDINATION_KERNEL_PROFILE", String(spec.profileId));
+  }
+  historical.registryDigest = HISTORICAL_DURABLE_COORDINATION_REGISTRY_DIGEST;
+  profile.profileDigest = HISTORICAL_DURABLE_COORDINATION_PROFILE_DIGEST;
+  return historical;
+}
+
 export function validateDurableCoordinationKernel(
   sqlBytes: Uint8Array,
   registry: JsonObject,
@@ -1432,6 +1492,238 @@ export function validateDurableCoordinationService(
   }
 }
 
+export function validateDurableCoordinationRepair(
+  sqlBytes: Uint8Array,
+  registry: JsonObject,
+): void {
+  const sql = new TextDecoder("utf-8", { fatal: true }).decode(sqlBytes);
+  const profiles = requiredArray(registry.profiles).map(requiredObject);
+  if (profiles.length !== 1) {
+    throw new MigrationValidationError("COORDINATION_REPAIR_PROFILE", String(profiles.length));
+  }
+  const profile = profiles[0]!;
+  const spec = requiredObject(profile.spec);
+  const profileId = requiredString(spec.profileId, "coordination repair profile id");
+  const profileDigest = requiredString(profile.profileDigest, "coordination repair profile digest");
+  const registryDigest = requiredString(
+    registry.registryDigest,
+    "coordination repair registry digest",
+  );
+  if (
+    profileId !== "managedAgentCreateProject/v1alpha1" ||
+    registryDigest === HISTORICAL_DURABLE_COORDINATION_REGISTRY_DIGEST ||
+    profileDigest === HISTORICAL_DURABLE_COORDINATION_PROFILE_DIGEST
+  ) {
+    throw new MigrationValidationError("COORDINATION_REPAIR_PROFILE", profileId);
+  }
+
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 30) {
+    throw new MigrationValidationError(
+      "COORDINATION_REPAIR_STATEMENT_COUNT",
+      String(statements.length),
+    );
+  }
+  const registryHelpers = [
+    "function:unquoted:cloud_agents/unquoted:coordination_current_registry_digest()",
+    "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
+  ] as const;
+  const replacedFunctions = [
+    "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:coordination_profile_replay_ttl_seconds(unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:append_coordination_audit(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:timestamptz)",
+    "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:transition_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  ] as const;
+  const runtimeV2Functions = [
+    "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_success_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+    "function:unquoted:cloud_agents/unquoted:complete_managed_agent_create_project_failure_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  ] as const;
+  const registryTables = [
+    "table:unquoted:cloud_agents/unquoted:platform_operations",
+    "table:unquoted:cloud_agents/unquoted:idempotency_records",
+    "table:unquoted:cloud_agents/unquoted:outbox_events",
+    "table:unquoted:cloud_agents/unquoted:coordination_audit_facts",
+  ] as const;
+  const classificationKey = (value: {
+    command: string;
+    object_kind: string;
+    target_identity: string;
+    grantee: string | null;
+    special_case: string | null;
+  }): string =>
+    [
+      value.command,
+      value.object_kind,
+      value.target_identity,
+      value.grantee ?? "",
+      value.special_case ?? "",
+    ].join("\0");
+  const expectedClassifications = [
+    ...registryHelpers.map((target_identity) => ({
+      command: "CREATE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...replacedFunctions.map((target_identity) => ({
+      command: "CREATE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...runtimeV2Functions.map((target_identity) => ({
+      command: "CREATE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: null,
+      special_case: null,
+    })),
+    ...registryTables.flatMap((target_identity) =>
+      Array.from({ length: 2 }, () => ({
+        command: "ALTER",
+        object_kind: "TABLE",
+        target_identity,
+        grantee: null,
+        special_case: null,
+      })),
+    ),
+    ...registryHelpers.map((target_identity) => ({
+      command: "REVOKE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: "PUBLIC",
+      special_case: null,
+    })),
+    ...runtimeV2Functions.map((target_identity) => ({
+      command: "REVOKE",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: "PUBLIC",
+      special_case: null,
+    })),
+    ...runtimeV2Functions.map((target_identity) => ({
+      command: "GRANT",
+      object_kind: "FUNCTION",
+      target_identity,
+      grantee: "CLOUD_AGENTS_RUNTIME",
+      special_case: null,
+    })),
+  ]
+    .map(classificationKey)
+    .toSorted();
+  const actualClassifications = statements
+    .map((statement) => classifyMigrationStatement(statement, "000009"))
+    .map(classificationKey)
+    .toSorted();
+  if (canonicalText(actualClassifications) !== canonicalText(expectedClassifications)) {
+    throw new MigrationValidationError(
+      "COORDINATION_REPAIR_SURFACE",
+      actualClassifications.join(","),
+    );
+  }
+
+  for (const helper of statements.slice(0, 7)) {
+    const helperSql = new TextDecoder("utf-8", { fatal: true }).decode(helper.bytes);
+    const createOffset = helperSql.indexOf("CREATE FUNCTION");
+    const replaceOffset = helperSql.indexOf("CREATE OR REPLACE FUNCTION");
+    const helperDefinition = helperSql.slice(
+      createOffset >= 0 ? createOffset : replaceOffset >= 0 ? replaceOffset : helperSql.length,
+    );
+    if (
+      !helperDefinition.includes("LANGUAGE sql") ||
+      !helperDefinition.includes("IMMUTABLE") ||
+      !helperDefinition.includes("PARALLEL SAFE") ||
+      !helperDefinition.includes("SET search_path = pg_catalog, cloud_agents") ||
+      /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|MERGE|CALL|COPY|EXECUTE|PERFORM)\b/iu.test(
+        helperDefinition,
+      )
+    ) {
+      throw new MigrationValidationError("COORDINATION_REPAIR_HELPER_PURITY", String(helper.index));
+    }
+  }
+
+  for (const replaced of [
+    "coordination_profile_is_registered",
+    "coordination_profile_creates_operation",
+    "coordination_profile_outbox_class",
+    "coordination_profile_replay_ttl_seconds",
+    "append_coordination_audit",
+    "claim_managed_agent_create_project_idempotency",
+    "transition_outbox_claim",
+  ]) {
+    requireSqlFragment(
+      sql,
+      `coordination replacement ${replaced}`,
+      `CREATE OR REPLACE FUNCTION cloud_agents.${replaced}`,
+    );
+  }
+  for (const [table, constraint] of [
+    ["platform_operations", "platform_operations_registry_digest"],
+    ["idempotency_records", "idempotency_records_registry_digest"],
+    ["outbox_events", "outbox_events_registry_digest"],
+    ["coordination_audit_facts", "coordination_audit_facts_registry_digest"],
+  ] as const) {
+    requireSqlFragment(
+      sql,
+      `coordination registry constraint drop ${table}`,
+      `ALTER TABLE cloud_agents.${table}\n    DROP CONSTRAINT ${constraint};`,
+    );
+    requireSqlFragment(
+      sql,
+      `coordination registry constraint add ${table}`,
+      `ALTER TABLE cloud_agents.${table}\n    ADD CONSTRAINT ${constraint}\n        CHECK (cloud_agents.coordination_registry_profile_is_registered(`,
+    );
+  }
+  for (const fragment of [
+    HISTORICAL_DURABLE_COORDINATION_REGISTRY_DIGEST,
+    HISTORICAL_DURABLE_COORDINATION_PROFILE_DIGEST,
+    registryDigest,
+    profileId,
+    profileDigest,
+    "cloud_agents.coordination_current_registry_digest()",
+    "cloud_agents.coordination_registry_profile_is_registered(",
+    "cloud_agents.coordination_registry_digest_for_profile(",
+    "claim_disposition := 'conflict'",
+    "replay_state := NULL",
+    "resource_id := NULL",
+    "stable_error_code := NULL",
+    "expires_at := NULL",
+    "WHEN 'retry_wait' THEN 'pending'",
+  ]) {
+    requireSqlFragment(sql, "coordination repair closed result", fragment);
+  }
+  if (/\b(?:CREATE\s+TABLE|DROP\s+(?:TABLE|FUNCTION)|TRUNCATE)\b/iu.test(sql)) {
+    throw new MigrationValidationError("COORDINATION_REPAIR_SURFACE", "destructive drift");
+  }
+  if (
+    /\bGRANT\s+(?:ALL|INSERT|UPDATE|DELETE|TRUNCATE)\b[^;]*\bTO\s+CLOUD_AGENTS_RUNTIME\b/isu.test(
+      sql,
+    )
+  ) {
+    throw new MigrationValidationError("COORDINATION_REPAIR_SURFACE", "raw table DML");
+  }
+  for (const forbidden of [
+    "pg_notify",
+    "dblink",
+    "http_post",
+    "net.http",
+    "aws_lambda",
+    "COPY ",
+    "CALL ",
+  ]) {
+    if (sql.toLowerCase().includes(forbidden.toLowerCase())) {
+      throw new MigrationValidationError("COORDINATION_SERVICE_EXTERNAL_EFFECT", forbidden);
+    }
+  }
+}
+
 function assertSqlCheckLiteralSet(
   sql: string,
   constraint: string,
@@ -1537,6 +1829,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000006 = typedIdentities(DECLARED_IDENTITIES_000006);
   const declared000007 = typedIdentities(DECLARED_IDENTITIES_000007);
   const declared000008 = typedIdentities(DECLARED_IDENTITIES_000008);
+  const declared000009 = typedIdentities(DECLARED_IDENTITIES_000009);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -1590,7 +1883,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000005 = contract("000005", rawSources.slice(0, 5), declared000005);
   const schema000006 = contract("000006", rawSources.slice(0, 6), declared000006);
   const schema000007 = contract("000007", rawSources.slice(0, 7), declared000007);
-  const schema000008 = contract("000008", rawSources, declared000008);
+  const schema000008 = contract("000008", rawSources.slice(0, 8), declared000008);
+  const schema000009 = contract("000009", rawSources, declared000009);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -1645,6 +1939,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[7], schema000006],
     [CATALOG_PATHS[8], schema000007],
     [CATALOG_PATHS[9], schema000008],
+    [CATALOG_PATHS[10], schema000009],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
@@ -2652,7 +2947,7 @@ function validateManifestShape(manifest: JsonObject): void {
     "runtime_artifacts",
     "manifest_digest",
   ]);
-  if (manifest.format_version !== "cloud-agents-platform-migration-manifest/v2")
+  if (manifest.format_version !== "cloud-agents-platform-migration-manifest/v3")
     throw new MigrationValidationError("MANIFEST_VERSION", String(manifest.format_version));
   const policy = requiredObject(manifest.execution_policy);
   assertKeys(policy, [
@@ -2669,7 +2964,7 @@ function validateManifestShape(manifest: JsonObject): void {
     "max_attempts",
     "lineage_quota_profile",
   ]);
-  if (policy.lineage_quota_profile !== "cloud-agents-platform-lineage-quota-profile/v2") {
+  if (policy.lineage_quota_profile !== "cloud-agents-platform-lineage-quota-profile/v3") {
     throw new MigrationValidationError(
       "LINEAGE_QUOTA_PROFILE",
       String(policy.lineage_quota_profile),

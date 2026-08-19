@@ -5,12 +5,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildMigrationBundle,
+  durableCoordinationHistoricalRegistrySnapshot,
   migrationLedgerProjection,
   migrationStatementSourceDescriptors,
   validateBuiltinRoleSeedFixture,
   validateCatalogStatementBindings,
   validateCheckedInMigrationBundle,
   validateDurableCoordinationKernel,
+  validateDurableCoordinationRepair,
+  validateDurableCoordinationService,
   validateLedgerPrefix,
   validateProjectionScopeAuthority,
   validateRuntimeArtifactSafety,
@@ -29,7 +32,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000008.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000009.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -40,16 +43,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab",
+      "sha256:6a9e6c7d7986c64e99817f58e333da1e1bd0ba4447488b3207f7befb7cc96f29",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:d896285b8835751c7c1567d01c955bd6c44b84586c25a0a9bbba7b01fde8eacc",
+      "sha256:1b3f13f4dfbfe3a41bf27a29bf091cebcbeb159e3c29d18e3e84760d51e082e6",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:2bee1a8c98dcdce32d21406d05e15bb317495f574e572e48c612ccfe4f61754d",
+      "sha256:a1aea846ac8e617ddfe7a7e1c5d6c2c8280f187b53397654c06cbc7dd105b386",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -207,20 +210,29 @@ describe("migration bundle bootstrap", () => {
     ).toThrow(/BUILTIN_ROLE_SEED_MISMATCH/u);
   });
 
-  it("binds migration 000007 to the exact generated coordination registry", () => {
-    const sql = readFileSync(
+  it("binds migrations 000007 and 000008 to the frozen historical coordination registry", () => {
+    const kernelSql = readFileSync(
       resolve(
         root,
         "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
       ),
     );
-    const registry = buildDurableCoordinationRegistry(root);
-    expect(() => validateDurableCoordinationKernel(sql, registry)).not.toThrow();
+    const serviceSql = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+      ),
+    );
+    const currentRegistry = buildDurableCoordinationRegistry(root);
+    const registry = durableCoordinationHistoricalRegistrySnapshot(currentRegistry);
+    expect(currentRegistry.registryDigest).not.toBe(registry.registryDigest);
+    expect(() => validateDurableCoordinationKernel(kernelSql, registry)).not.toThrow();
+    expect(() => validateDurableCoordinationService(serviceSql, registry)).not.toThrow();
 
     const profileDrift = structuredClone(registry);
     (profileDrift.profiles as Array<{ profileDigest: string }>)[0]!.profileDigest =
       `sha256:${"0".repeat(64)}`;
-    expect(() => validateDurableCoordinationKernel(sql, profileDrift)).toThrow(
+    expect(() => validateDurableCoordinationKernel(kernelSql, profileDrift)).toThrow(
       /COORDINATION_KERNEL_PROFILE/u,
     );
 
@@ -228,7 +240,7 @@ describe("migration bundle bootstrap", () => {
     (stateDrift.stateMachines as Array<{ id: string; states: string[] }>)
       .find((machine) => machine.id === "outbox/v1")!
       .states.push("unreviewed");
-    expect(() => validateDurableCoordinationKernel(sql, stateDrift)).toThrow(
+    expect(() => validateDurableCoordinationKernel(kernelSql, stateDrift)).toThrow(
       /COORDINATION_KERNEL_STATE_SET/u,
     );
 
@@ -236,11 +248,11 @@ describe("migration bundle bootstrap", () => {
     (
       ttlDrift.profiles as Array<{ spec: { idempotency: { replayTtlSeconds: number } } }>
     )[0]!.spec.idempotency.replayTtlSeconds = 86401;
-    expect(() => validateDurableCoordinationKernel(sql, ttlDrift)).toThrow(
+    expect(() => validateDurableCoordinationKernel(kernelSql, ttlDrift)).toThrow(
       /COORDINATION_KERNEL_PROFILE/u,
     );
 
-    const sqlText = new TextDecoder().decode(sql);
+    const sqlText = new TextDecoder().decode(kernelSql);
     const profileSqlDrift = new TextEncoder().encode(
       sqlText.replace("'managedAgentCreateProject/v1alpha1'", "'unreviewed/v1alpha1'"),
     );
@@ -265,6 +277,35 @@ describe("migration bundle bootstrap", () => {
     );
     expect(() => validateDurableCoordinationKernel(operationCreationDrift, registry)).toThrow(
       /COORDINATION_KERNEL_BINDING/u,
+    );
+  });
+
+  it("binds migration 000009 to the frozen and current coordination registry pair", () => {
+    const sql = readFileSync(
+      resolve(root, "services/control-plane/migrations/000009_redact_coordination_conflicts.sql"),
+    );
+    const registry = buildDurableCoordinationRegistry(root);
+    expect(() => validateDurableCoordinationRepair(sql, registry)).not.toThrow();
+
+    const profileDrift = structuredClone(registry);
+    (profileDrift.profiles as Array<{ profileDigest: string }>)[0]!.profileDigest =
+      `sha256:${"0".repeat(64)}`;
+    expect(() => validateDurableCoordinationRepair(sql, profileDrift)).toThrow(
+      /COORDINATION_(KERNEL_BINDING|REPAIR_PROFILE)/u,
+    );
+
+    const registryDrift = structuredClone(registry);
+    registryDrift.registryDigest = `sha256:${"1".repeat(64)}`;
+    expect(() => validateDurableCoordinationRepair(sql, registryDrift)).toThrow(
+      /COORDINATION_(KERNEL_BINDING|REPAIR_PROFILE)/u,
+    );
+
+    const sqlText = new TextDecoder().decode(sql);
+    const detachedPair = new TextEncoder().encode(
+      sqlText.replace(String(registry.registryDigest), `sha256:${"2".repeat(64)}`),
+    );
+    expect(() => validateDurableCoordinationRepair(detachedPair, registry)).toThrow(
+      /COORDINATION_(KERNEL_BINDING|REPAIR_PROFILE)/u,
     );
   });
 
@@ -298,6 +339,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
         "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+        "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -328,6 +370,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
       "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
       "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+      "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [

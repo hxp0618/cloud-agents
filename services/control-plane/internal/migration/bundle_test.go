@@ -94,15 +94,15 @@ func TestDescriptorClassifierRejectsUnknownTargetIdentity(t *testing.T) {
 	}
 }
 
-func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
+func TestManifestV3FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	t.Parallel()
 	raw := mustRead(t, filepath.Join(migrationRoot(t), "manifest.json"))
 	manifest, value, err := DecodeManifest(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != ManifestFormatVersionV2 || manifest.ExecutionPolicy.LineageQuotaProfile != LineageQuotaProfileV2 {
-		t.Fatalf("checked-in manifest did not select the exact v2 quota profile: format=%q profile=%q", manifest.FormatVersion, manifest.ExecutionPolicy.LineageQuotaProfile)
+	if manifest.FormatVersion != ManifestFormatVersionV3 || manifest.ExecutionPolicy.LineageQuotaProfile != LineageQuotaProfileV3 {
+		t.Fatalf("checked-in manifest did not select the exact v3 quota profile: format=%q profile=%q", manifest.FormatVersion, manifest.ExecutionPolicy.LineageQuotaProfile)
 	}
 	badBootstrap := *manifest
 	badBootstrap.BootstrapBundle.Artifacts = append([]ArtifactRecord(nil), manifest.BootstrapBundle.Artifacts...)
@@ -113,7 +113,7 @@ func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	badPolicy := *manifest
 	badPolicy.ExecutionPolicy.StatementTimeoutMS++
 	if err := badPolicy.Validate(value); !IsCode(err, CodeInvalidManifest) {
-		t.Fatalf("mutable manifest-v2 timeout was accepted: %v", err)
+		t.Fatalf("mutable manifest-v3 timeout was accepted: %v", err)
 	}
 	legacyPolicy := manifest.ExecutionPolicy
 	legacyPolicy.LineageQuotaProfile = ""
@@ -124,17 +124,28 @@ func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 		t.Fatalf("legacy v1 profile selection drifted: profile=%q err=%v", profile, err)
 	}
 	if err := manifest.ExecutionPolicy.ValidateForManifest(ManifestFormatVersion); !IsCode(err, CodeInvalidManifest) {
-		t.Fatalf("v2 profile was accepted under a v1 manifest: %v", err)
+		t.Fatalf("v3 profile was accepted under a v1 manifest: %v", err)
 	}
-	missingV2 := manifest.ExecutionPolicy
-	missingV2.LineageQuotaProfile = ""
-	if err := missingV2.ValidateForManifest(ManifestFormatVersionV2); !IsCode(err, CodeUnsupported) {
-		t.Fatalf("v2 manifest accepted an empty quota profile: %v", err)
+	missingV3 := manifest.ExecutionPolicy
+	missingV3.LineageQuotaProfile = ""
+	if err := missingV3.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v3 manifest accepted an empty quota profile: %v", err)
 	}
 	unknown := manifest.ExecutionPolicy
 	unknown.LineageQuotaProfile = "cloud-agents-platform-lineage-quota-profile/future"
-	if err := unknown.ValidateForManifest(ManifestFormatVersionV2); !IsCode(err, CodeUnsupported) {
-		t.Fatalf("unknown v2 quota profile was accepted: %v", err)
+	if err := unknown.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("unknown v3 quota profile was accepted: %v", err)
+	}
+	v2Policy := manifest.ExecutionPolicy
+	v2Policy.LineageQuotaProfile = LineageQuotaProfileV2
+	if err := v2Policy.ValidateForManifest(ManifestFormatVersionV2); err != nil {
+		t.Fatalf("historical v2 manifest/profile pair was rejected: %v", err)
+	}
+	if err := v2Policy.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v2 profile was accepted under a v3 manifest: %v", err)
+	}
+	if err := manifest.ExecutionPolicy.ValidateForManifest(ManifestFormatVersionV2); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v3 profile was accepted under a v2 manifest: %v", err)
 	}
 
 	// Exercise the wire-compatibility boundary, not just the typed policy
@@ -148,7 +159,7 @@ func TestManifestV2FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	}
 	legacySchemaValue = cloneJSONObject(legacySchemaValue)
 	legacyMigrations, ok := legacySchemaValue["migrations"].([]JSONValue)
-	if !ok || len(legacyMigrations) != historicalV1MaxMigrations+1 {
+	if !ok || len(legacyMigrations) < historicalV1MaxMigrations {
 		t.Fatalf("unexpected current migration count: %T/%d", legacySchemaValue["migrations"], len(legacyMigrations))
 	}
 	legacySchemaValue["migrations"] = append([]JSONValue(nil), legacyMigrations[:historicalV1MaxMigrations]...)
@@ -321,16 +332,16 @@ func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
 func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
 	t.Parallel()
 	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
-	if manifest.SchemaBundleDigest != "sha256:efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec" {
+	if manifest.SchemaBundleDigest != "sha256:9267ce5248c9e2052a0dd5037c6bcf713bc34243bce9d66407c1c06ee346dc7a" {
 		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
 	}
 	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
 		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
 	}
-	if manifest.ManifestDigest != "sha256:f3ccdc9498f136f7f11fc25435d26dd6f0f48fe5cdd046e89175ee2d05838f8c" {
+	if manifest.ManifestDigest != "sha256:e01ea1b93cf00f5c714e6496e92beaefeebae8dafa69f3d0a40e276a1dbdf755" {
 		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
 	}
-	if DigestBytes(runtimeTar) != "sha256:65db6f34d51366a877a8a4d9d8e0a252627f689f53d61aff9c56856d753d57d5" {
+	if DigestBytes(runtimeTar) != "sha256:0ab14a794b948890651824173f5218e54bbe4a196c5be79af4b5aef593b0743b" {
 		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
 	}
 	authority := manifest.SchemaBundle.ProjectionScopeAuthority
@@ -671,7 +682,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000007" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000009" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {
