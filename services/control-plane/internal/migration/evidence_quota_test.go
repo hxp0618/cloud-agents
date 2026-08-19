@@ -275,7 +275,7 @@ func TestCheckedInBundleQuotaReservationExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bundle.quotaFacts.valid() || bundle.quotaFacts.lineageQuotaProfile != LineageQuotaProfileV3 || bundle.quotaFacts.maxAttempts != 3 || !canonicalEqual(bundle.quotaFacts.statementCounts, []uint64{20, 71, 46, 20, 1, 1, 89, 34, 30}) {
+	if !bundle.quotaFacts.valid() || bundle.quotaFacts.lineageQuotaProfile != LineageQuotaProfileV3 || bundle.quotaFacts.maxAttempts != 3 || !canonicalEqual(bundle.quotaFacts.statementCounts, []uint64{20, 71, 46, 20, 1, 1, 89, 34, 30, 52}) {
 		t.Fatalf("unexpected current facts: %+v", bundle.quotaFacts)
 	}
 	through000008 := quotaFactsForTest(bundle.quotaFacts.statementCounts[:8], bundle.quotaFacts.maxAttempts)
@@ -297,7 +297,7 @@ func TestCheckedInBundleQuotaReservationExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reservation.lineageQuotaProfile != LineageQuotaProfileV3 || reservation.ReservedSegments != 19 || reservation.ReservedRecords != 1972 || reservation.ReservedCheckpointRecords != 1971 || reservation.ReservedJournalBytes != 312639488 || reservation.ReservedIndexRecords != 1975 || reservation.ReservedIndexBytes != 8368128 || reservation.ReservedBytes != 321007616 {
+	if reservation.lineageQuotaProfile != LineageQuotaProfileV3 || reservation.ReservedSegments != 22 || reservation.ReservedRecords != 2296 || reservation.ReservedCheckpointRecords != 2295 || reservation.ReservedJournalBytes != 364445696 || reservation.ReservedIndexRecords != 2299 || reservation.ReservedIndexBytes != 9695232 || reservation.ReservedBytes != 374140928 {
 		t.Fatalf("checked-in reservation drift: %+v", reservation)
 	}
 	ownedFacts, err := bundle.quotaFactsForAdmission()
