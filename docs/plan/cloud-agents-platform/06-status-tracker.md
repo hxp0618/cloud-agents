@@ -184,7 +184,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       [`ENTRY BLOCKED`](../p1/durable-coordination-entry-blocker-20260818.md)：当前 SubjectRef 与唯一
       `managedAgentCreateProject` idempotency projection 已冻结，但 operation-profile registry、closed
       Operation/Attempt/Receipt/Finalizer 与 outbox/leader state machines、三切片边界和 explicit authorization
-      尚未批准；不得创建 ADR-0013、`000007` 或 Go/SQL implementation。
+      尚未批准。2026-08-19 已在临时 pinned Node `24.13.1` / Bun `1.3.14` / Go `1.26.6` tuple 下复验
+      semantic checker 与 `platform-contract-lock: current`，该结果只关闭本地 toolchain validation limitation；
+      不得创建 ADR-0013、`000007` 或 Go/SQL implementation。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。

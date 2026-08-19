@@ -45,11 +45,20 @@ The in-repository semantic checker passed on the fixed ref with:
 - nine unique operation IDs;
 - `AJV_2020_AND_IN_REPO_SEMANTICS_PASS`.
 
-The combined `platform:contracts:check` command then stopped at the generation-lock runtime guard. The current
-shell exposed Node `26.7.0`, Bun `1.3.14`, and the local Go `1.26.5` binary to the checker, while the repository
-requires Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6`. This is a fail-closed toolchain mismatch, not a passing
-lock check and not a contract finding. The exact lock was previously generated and reviewed under the pinned
-tuple; this pre-entry record does not replace that evidence.
+The first ambient `platform:contracts:check` invocation stopped at the generation-lock runtime guard. That shell
+exposed Node `26.7.0`, Bun `1.3.14`, and the local Go `1.26.5` binary to the checker, while the repository requires
+Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6`. This was a fail-closed toolchain mismatch, not a passing lock check
+and not a contract finding.
+
+On 2026-08-19, a read-only follow-up on clean ref `b6edb5f88b05f6c41bb0bc3437d116c4a5550e65`
+provided the pinned runtimes only through a temporary `PATH`. The official Node
+`node-v24.13.1-darwin-arm64.tar.gz` archive had SHA-256
+`8c039d59f2fec6195e4281ad5b0d02b9a940897b4df7b849c6fb48be6787bba6` and passed its downloaded official
+`SHASUMS256.txt`; the existing Go toolchain module exposed `go1.26.6` under `GOTOOLCHAIN=local`, and Bun exposed
+`1.3.14`. Under that exact tuple, `bun run platform:contracts:check` passed both the semantic checker with the
+same counts and manifest above and the byte-exact generation-lock check with `platform-contract-lock: current`.
+No repository file changed during the check. This closes only the local pinned-toolchain validation limitation;
+it does not close any missing contract suite, Gate, or A2.3 authorization requirement.
 
 The semantic checker still reports the existing P1 contract/Gate gaps for official JSON Schema/OpenAPI suites,
 proto descriptor/breaking checks, generated SDK replay, N/N-1 readers, response/watch unknown-field
