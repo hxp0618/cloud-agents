@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 direction approved，contract/state-machine registry slice in progress）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 service/claim/matrix implementation fixed，independent review pending）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -70,8 +70,9 @@ PG15/16/17 matrix，但按冻结 ADR-0010 v1 whole-bundle 公式会使 lineage i
 已 fail closed 修复并由 `610b1ab` 刷新 source-bound metadata；第二轮 `gpt-5.6-sol` 独立复核返回
 `APPROVE, P0=0/P1=0/P2=0`，只关闭 A2.2-impl-3 remediation 的固定源码 implementation/review 层，详见
 [`independent review`](p1/versioned-lineage-quota-profile-independent-review-20260818.md)。用户已于 2026-08-19
-批准 A2.3 的 generated contract registry、closed state machines 与三切片顺序；ADR-0013 已冻结该方向，当前只推进
-contract/state-machine registry slice，不创建 `000007`、HTTP/P2 side effect 或关闭 Gate。原 entry audit 见
+批准 A2.3 的 generated contract registry、closed state machines 与三切片顺序；`ff9ea33`/`a9826e4` 已固定前两
+切片，`59ec260` 已固定 generated Go profile、append-only `000008` service/claim 与 PG15/16/17 normal/race/fault
+matrix。独立审查仍为 PENDING；HTTP/P2 side effect 与所有 Gate 继续保持关闭。原 entry audit 见
 [`A2.3 blocker`](p1/durable-coordination-entry-blocker-20260818.md)。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
