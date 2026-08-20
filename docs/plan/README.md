@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved；A2.3 current-bundle local full `internal/migration` closure 已在 `67b8acb` 完成；A2.4 versioned registry/profile repair → append-only writer kernel → typed service/claim/matrix implementation/review approved；A3 generated identity → JSON SDK/server seam → Proto SDK/consumer implementation/review approved）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved；A2.3 current-bundle local full `internal/migration` closure 已在 `67b8acb` 完成；A2.4 versioned registry/profile repair → append-only writer kernel → typed service/claim/matrix implementation/review approved；A3 generated identity → JSON SDK/server seam → Proto SDK/consumer implementation/review approved；runner/CLI pre-DB configuration bounded review approved；runner ledger/catalog preflight 仅为待 owner 批准 proposal）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -98,7 +98,13 @@ JSON SDK/server validation seam → Proto SDK/fresh consumer 三切片亦已按 
 independent review 返回 `APPROVE, P0=0/P1=0/P2=0`，详见
 [`A3 independent review`](p1/sdk-identity-closure-independent-review-20260821.md)。两项记录都只关闭各自的
 implementation/review slice；SDK 保持未发布，HTTP/P2/provider/worker、生产数据库写入、部署、发布与所有
-immutable/aggregate Gate 继续保持关闭或 OPEN。Inventory R2 因
+immutable/aggregate Gate 继续保持关闭或 OPEN。随后固定 `a5df1cb` 的 runner/CLI pre-DB configuration 已由
+[`bounded independent review`](p1/migration-runner-cli-pre-db-configuration-independent-review-20260821.md)
+返回 `APPROVE, P0=0/P1=0/P2=0`；生产组合仍使用 `RejectingTrustVerifier`，该记录不打开 artifact、evidencefs 或
+数据库正向路径。下一项 runner ledger/catalog preflight 仅存在
+[`PROPOSED - OWNER APPROVAL REQUIRED` entry](p1/migration-ledger-preflight-entry-blocker-20260821.md)：其三切片
+尚未获批，partial/complete ledger 继续 `NOT_IMPLEMENTED`，未授权 transaction consumer、数据库读写或任何
+外部副作用。Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
 SDK、数据模型、authority 与安全基础，以及 source modules/本地 ephemeral Postgres 验证；不得由 P0/P1

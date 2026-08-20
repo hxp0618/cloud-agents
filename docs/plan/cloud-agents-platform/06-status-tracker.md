@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-21
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，后续 A2.3 current bundle 的本地 full `internal/migration` closure 已在 `67b8acb` 以 `-timeout=30m` 通过，耗时 `1012.165s`；A2.4 versioned registry/profile repair → append-only writer kernel → typed service/claim/matrix 三切片已在 `b639b07` 固定并由 bounded independent review 批准；A3 generated identity → JSON SDK/server seam → Proto SDK/consumer 三切片已在 `c5d8cbf` 固定并由 bounded independent review 批准；HTTP/P2 external side effect、生产数据库写入、部署、发布与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，后续 A2.3 current bundle 的本地 full `internal/migration` closure 已在 `67b8acb` 以 `-timeout=30m` 通过，耗时 `1012.165s`；A2.4 versioned registry/profile repair → append-only writer kernel → typed service/claim/matrix 三切片已在 `b639b07` 固定并由 bounded independent review 批准；A3 generated identity → JSON SDK/server seam → Proto SDK/consumer 三切片已在 `c5d8cbf` 固定并由 bounded independent review 批准；runner/CLI pre-DB configuration fixed at `a5df1cb` 已由 bounded independent review 批准，runner ledger/catalog preflight 仍只是 owner-approval-required proposal；HTTP/P2 external side effect、生产数据库写入、部署、发布与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -359,5 +359,12 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       均由 new QEMU process 通过 sealed inventory views 分类并完成 `Revalidate`；见
       [generation-repair barrier implementation evidence](../p1/evidencefs-qemu-generation-repair-barrier-matrix-20260816.md)，
       不外推到 physical controller、production trusted mount、filesystem slice Done 或 Gate closure。
-- [ ] 完成 runner/CLI configuration 与 pre-DB phase wiring、runner/DB `Connect`、真实 physical controller/host
-      power-loss evidence 和独立 reviewer closure；完成前 P1 Gates 继续 `IN PROGRESS`。
+- [x] runner/CLI pre-DB configuration 与 trust-before-I/O ordering 已在 `a5df1cb` 固定，并由
+      [`bounded independent review`](../p1/migration-runner-cli-pre-db-configuration-independent-review-20260821.md)
+      返回 `APPROVE, P0=0/P1=0/P2=0`；production composition 仍使用 `RejectingTrustVerifier`，本项不打开正向
+      artifact/evidencefs/database path，也不关闭任何 Gate。
+- [ ] runner ledger/catalog preflight 的
+      [`three-slice proposal`](../p1/migration-ledger-preflight-entry-blocker-20260821.md) 仍等待 owner decision；在明确
+      批准前 partial/complete ledger 保持 `NOT_IMPLEMENTED`，不得实现 transaction consumer 或生产数据库读写。
+- [ ] 完成 positive trust wiring、runner/DB `Connect`、真实 physical controller/host power-loss evidence 和对应
+      independent reviewer closure；完成前 P1 Gates 继续 `IN PROGRESS`。

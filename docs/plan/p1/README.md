@@ -342,7 +342,12 @@ checked-in 000001/000002 same-bits。该证据不外推到 x86_64、云环境或
 Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。当前新增的
 [`runner/CLI pre-DB configuration`](migration-runner-cli-pre-db-configuration-20260821.md) 只固定显式
 `--evidence-root`、数据库 locator 与 trust-before-artifact/evidence/DB 的配置顺序；CLI 仍使用
-`RejectingTrustVerifier`，不打开正向执行或生产数据库路径。
+`RejectingTrustVerifier`，不打开正向执行或生产数据库路径。固定 `a5df1cb` 的该切片已由
+[`independent review`](migration-runner-cli-pre-db-configuration-independent-review-20260821.md) 返回
+`APPROVE, P0=0/P1=0/P2=0`，只关闭 bounded configuration/review 边界。其后的
+[`runner ledger/catalog preflight proposal`](migration-ledger-preflight-entry-blocker-20260821.md) 仍为
+`PROPOSED - OWNER APPROVAL REQUIRED`；partial/complete ledger 路径继续 `NOT_IMPLEMENTED`，三切片均未获批，
+也未授权 production database read/write、transaction consumer、HTTP/P2/provider、部署、发布或 Gate transition。
 `bbb0bf2` 已关闭 complete synthetic signed subject 的 exported expression/catalog projector 与本地双快照矩阵；
 Signed expected subject 的 production verifier、deployment trust-root wiring、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
