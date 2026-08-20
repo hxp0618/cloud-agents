@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-21
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，后续 current bundle 的本地 full `internal/migration` closure 已在 `67b8acb` 以 `-timeout=30m` 通过，耗时 `1012.165s`；A3 generated identity → JSON SDK/server seam → Proto SDK/consumer 三切片已在 `c5d8cbf` 固定并由 bounded independent review 批准；HTTP/P2 external side effect 与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b 与 A2.2 的固定 implementation/review 记录保持有效；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review slice 已由 exact remediation independent rereview 批准，后续 A2.3 current bundle 的本地 full `internal/migration` closure 已在 `67b8acb` 以 `-timeout=30m` 通过，耗时 `1012.165s`；A2.4 versioned registry/profile repair → append-only writer kernel → typed service/claim/matrix 三切片已在 `b639b07` 固定并由 bounded independent review 批准；A3 generated identity → JSON SDK/server seam → Proto SDK/consumer 三切片已在 `c5d8cbf` 固定并由 bounded independent review 批准；HTTP/P2 external side effect、生产数据库写入、部署、发布与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -211,6 +211,14 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       full suite（`1012.165s`）均已本地通过。该 suite 包含既有 A2.4 schema-only kernel，却不授权其 writer/service；
       所有 Gate 保持 OPEN。精确边界见
       [`full migration closure`](../p1/durable-coordination-full-migration-closure-20260820.md)。
+- [x] A2.4 Compatibility/Recovery 已按 owner 批准的 versioned generated registry/profile repair → append-only
+      PostgreSQL writer kernel → typed service/claim/matrix/independent review 三切片完成；固定提交链
+      `820b734588255af22ae3b021272556dd831c0d92 → 031c36be62b3b9655629abd19b50f5d6d5a855a0 → b639b07fe873bf42570902fc65694f0f3f296398`
+      的 bounded independent review 返回 `APPROVE, P0=0/P1=0/P2=0`。历史 v1 registry 与 `000010` 保持
+      same-bits，v2 generated registry/profile、append-only `000011`、26 个 typed service operation 和本地
+      PostgreSQL 15/16/17 normal/race matrix 已固定；该记录只关闭 A2.4 implementation/review slice，不授权
+      HTTP/P2/provider、生产数据库写入、部署、发布或任何 immutable/aggregate Gate closure。见
+      [`A2.4 independent review`](../p1/compatibility-recovery-v2-independent-review-20260820.md)。
 - [x] A3 SDK / Identity / Closure 已按 generated common identity → generated JSON SDK/server validation seam →
       generated Proto SDK/fresh consumer 三切片完成；固定提交链
       `51e3ea47f1050e5ed0df1b0d5ce6bc93c1988459 → 24a47b2f95afde7de0aeffbb0deb4574339399d0 → c5d8cbfac9e277fc86739492db4a973a1a8ba412`
