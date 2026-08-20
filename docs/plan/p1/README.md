@@ -112,8 +112,11 @@
   service/claim and local PG15/16/17 normal/race matrix are implemented and bounded-review approved；no Gate is closed
   (见 [`A2.4 typed service/claim/matrix`](compatibility-recovery-v2-service-claim-matrix-20260820.md) 与
   [`A2.4 independent review`](compatibility-recovery-v2-independent-review-20260820.md))
-- Remaining P1 slices：P1-A3 SDK/Identity/Closure；implementation entry fixed in
-  [`sdk-identity-closure-entry-20260820.md`](sdk-identity-closure-entry-20260820.md)
+- P1-A3 SDK/Identity/Closure：Slice A generated common identity (`51e3ea4`), Slice B generated JSON SDK/server
+  seam (`24a47b2`) and Slice C generated Proto SDK/fresh consumers (`c5d8cbf`) are fixed. The bounded
+  [`independent review`](sdk-identity-closure-independent-review-20260821.md) returned
+  `APPROVE, P0=0/P1=0/P2=0`; this completes the ordered A3 implementation/review package but is not an immutable Gate
+  signature.
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
@@ -209,6 +212,13 @@ Platform RC、Beta 或 GA。
 - [`compatibility-recovery-v2-independent-review-20260820.md`](compatibility-recovery-v2-independent-review-20260820.md)：
   固定 `b639b07` 的 A2.4 generated v2 registry/profile、append-only `000011`、typed service/claim 与 PostgreSQL
   15/16/17 normal/race matrix review；verdict `P0=0/P1=0/P2=0`，不构成生产写入、部署、发布或 Gate closure
+- [`sdk-identity-closure-entry-20260820.md`](sdk-identity-closure-entry-20260820.md)：固定 A3 generated identity、
+  JSON SDK/server seam、Proto SDK/fresh consumer 三切片顺序及明确非授权边界
+- [`sdk-proto-consumer-closure-20260821.md`](sdk-proto-consumer-closure-20260821.md)：保留 `c5d8cbf` 提交前
+  fixed candidate 的 Proto/consumer 实现与本地验证记录；其当时的 review-pending 状态由后续记录承接
+- [`sdk-identity-closure-independent-review-20260821.md`](sdk-identity-closure-independent-review-20260821.md)：
+  固定 `51e3ea4 -> 24a47b2 -> c5d8cbf` 的 A3 bounded independent review；verdict
+  `P0=0/P1=0/P2=0`，SDK 仍未发布，不开放 HTTP/P2/provider/生产 DB 副作用，不关闭任何 Gate
 
 ## Data kernel decisions
 
