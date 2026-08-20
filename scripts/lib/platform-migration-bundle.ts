@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import {
@@ -49,7 +49,9 @@ import {
 } from "./platform-durable-coordination-registry";
 import {
   assertCompatibilityRecoveryRegistryCurrent,
+  assertCompatibilityRecoveryRegistryV2Current,
   buildCompatibilityRecoveryRegistry,
+  buildCompatibilityRecoveryRegistryV2,
 } from "./platform-compatibility-recovery-registry";
 
 export type GeneratedMigrationBundle = {
@@ -78,6 +80,7 @@ const SQL_PATHS = [
   `${ROOT}/000008_add_durable_coordination_service.sql`,
   `${ROOT}/000009_redact_coordination_conflicts.sql`,
   `${ROOT}/000010_expand_compatibility_recovery_kernel.sql`,
+  `${ROOT}/000011_add_compatibility_recovery_writer.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -93,16 +96,23 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000008.json`,
   `${ROOT}/catalog/schema-000009.json`,
   `${ROOT}/catalog/schema-000010.json`,
+  `${ROOT}/catalog/schema-000011.json`,
 ] as const;
 const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
 const GLOBAL_TABLE_AUTHORITY_V3_PATH = `${ROOT}/catalog/global-table-authority-v3.json`;
+const GLOBAL_TABLE_AUTHORITY_V4_PATH = `${ROOT}/catalog/global-table-authority-v4.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab";
+  "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 14883;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 17904;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:68efef5dc192323c4ec31cb46e7dda3aecbeb5dba4032876f6f85138d6a80dcd";
+  "sha256:ca5fea1b9f0056439fd2b58af4a796616d9be3e7ec483869f1cb5bb4f5bfdbb8";
 const ANCESTOR_SCHEMA_BUNDLES = [
+  {
+    digest: "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab",
+    size: 14883,
+    sha256: "sha256:68efef5dc192323c4ec31cb46e7dda3aecbeb5dba4032876f6f85138d6a80dcd",
+  },
   {
     digest: "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c",
     size: 13374,
@@ -368,10 +378,79 @@ const DECLARED_IDENTITIES_000010 = [
   "index:unquoted:cloud_agents/unquoted:live_instances_heartbeat_idx",
   "index:unquoted:cloud_agents/unquoted:instance_retirement_receipts_state_idx",
 ] as const;
+const DECLARED_IDENTITIES_000011 = [
+  ...DECLARED_IDENTITIES_000010,
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_registry_digest_v2()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipt_collect_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipt_complete_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipt_reject_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipt_reconcile_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_state_machine_digest_v2()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_policy_digest_v2()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_schema_head_v2()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_schema_catalog_digest_v2()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_schema_migration_digest_v2()",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_profile_digest_v2(unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_profile_is_registered_v2(unquoted:text,unquoted:text)",
+  "table:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principals_v2",
+  "table:unquoted:cloud_agents/unquoted:compatibility_recovery_backfills_v2",
+  "table:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_v2",
+  "table:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instances_v2",
+  "table:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipts_v2",
+  "table:unquoted:cloud_agents/unquoted:compatibility_recovery_transition_facts_v2",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_identity_digest_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_lock_v2(unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_transition_lock_v2(unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_require_principal_v2(unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_transition_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_record_v2(unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_complete_v2(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_reject_v2(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_reconcile_v2(unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipt_transition_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:boolean,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_transition_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_start_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_acquire_lease_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_advance_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_heartbeat_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_complete_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_reconcile_v2(unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_record_transition_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:timestamptz)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principal_transition_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principal_register_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principal_rotate_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principal_revoke_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principal_reconcile_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_backfill_transition_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_register_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_activate_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_heartbeat_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_begin_drain_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_finish_drain_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_fence_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instance_reconcile_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text)",
+  "function:unquoted:cloud_agents/unquoted:compatibility_recovery_migration_preflight_evaluate_v2(unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:boolean,unquoted:text)",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principals_v2_state_idx",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_backfills_v2_state_idx",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_v2_target_idx",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instances_v2_preflight_idx",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instances_v2_writer_idx",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipts_v2_state_idx",
+  "index:unquoted:cloud_agents/unquoted:compatibility_recovery_transition_facts_v2_identity_idx",
+  "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_workload_principals_v2_tenant",
+  "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_backfills_v2_tenant",
+  "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_restore_evidence_v2_tenant",
+  "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_live_instances_v2_tenant",
+  "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipts_v2_tenant",
+  "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_transition_facts_v2_tenant",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
-  const predecessorSchemaBundleBytes = readExactFile(root, PREDECESSOR_SCHEMA_BUNDLE_PATH);
+  const predecessorSourcePath = existsSync(resolve(root, PREDECESSOR_SCHEMA_BUNDLE_PATH))
+    ? PREDECESSOR_SCHEMA_BUNDLE_PATH
+    : SCHEMA_BUNDLE_PATH;
+  const predecessorSchemaBundleBytes = readExactFile(root, predecessorSourcePath);
   if (
     predecessorSchemaBundleBytes.length !== PREDECESSOR_SCHEMA_BUNDLE_SIZE ||
     digestBytes(predecessorSchemaBundleBytes) !== PREDECESSOR_SCHEMA_BUNDLE_SHA256
@@ -411,6 +490,10 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   assertCompatibilityRecoveryRegistryCurrent(root);
   const compatibilityRecoveryRegistry = requiredObject(buildCompatibilityRecoveryRegistry(root));
+  assertCompatibilityRecoveryRegistryV2Current(root);
+  const compatibilityRecoveryRegistryV2 = requiredObject(
+    buildCompatibilityRecoveryRegistryV2(root),
+  );
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
   validateDurableCoordinationKernel(
     sqlBytes.get(SQL_PATHS[6])!,
@@ -422,6 +505,10 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   validateDurableCoordinationRepair(sqlBytes.get(SQL_PATHS[8])!, durableCoordinationRegistry);
   validateCompatibilityRecoveryKernel(sqlBytes.get(SQL_PATHS[9])!, compatibilityRecoveryRegistry);
+  validateCompatibilityRecoveryWriterKernel(
+    sqlBytes.get(SQL_PATHS[10])!,
+    compatibilityRecoveryRegistryV2,
+  );
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
     readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
@@ -443,15 +530,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000010",
+    schema_head: "000011",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
       key_int64_decimal: "-1047838957622507638",
     },
     global_table_authority: artifactRecord(
-      GLOBAL_TABLE_AUTHORITY_V3_PATH,
-      files.get(GLOBAL_TABLE_AUTHORITY_V3_PATH)!,
+      GLOBAL_TABLE_AUTHORITY_V4_PATH,
+      files.get(GLOBAL_TABLE_AUTHORITY_V4_PATH)!,
     ),
     projection_scope_authority: INITIAL_PROJECTION_SCOPE_AUTHORITY,
     predecessor_schema_bundle: {
@@ -549,6 +636,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[10])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[11])!,
       }),
+      migrationEntry({
+        id: "000011",
+        name: "add_compatibility_recovery_writer",
+        predecessor: "000010",
+        schemaFrom: "000010",
+        sql: sqlArtifacts.get(SQL_PATHS[10])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[11])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[12])!,
+      }),
     ],
   };
   const schemaBundleDigest = migrationDigest({
@@ -578,12 +674,13 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     ...CATALOG_PATHS,
     GLOBAL_TABLE_AUTHORITY_V2_PATH,
     GLOBAL_TABLE_AUTHORITY_V3_PATH,
+    GLOBAL_TABLE_AUTHORITY_V4_PATH,
   ].toSorted();
   const runtimeArtifacts = runtimePaths.map((path) =>
     artifactRecord(path, files.get(path) ?? sqlBytes.get(path)!),
   );
   const manifestWithoutDigest: JsonObject = {
-    format_version: "cloud-agents-platform-migration-manifest/v3",
+    format_version: "cloud-agents-platform-migration-manifest/v4",
     schema_bundle: schemaBundle,
     schema_bundle_digest: schemaBundleDigest,
     bootstrap_bundle: bootstrapBundle,
@@ -600,7 +697,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
       lock_timeout_ms: 30000,
       idle_in_transaction_session_timeout_ms: 60000,
       max_attempts: 3,
-      lineage_quota_profile: "cloud-agents-platform-lineage-quota-profile/v3",
+      lineage_quota_profile: "cloud-agents-platform-lineage-quota-profile/v4",
     },
     runtime_artifacts: runtimeArtifacts,
   };
@@ -669,7 +766,8 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
   for (const [index, path] of SQL_PATHS.entries()) {
     const statements = splitPostgresStatements(readExactFile(root, path));
     if (statements.length === 0) throw new MigrationValidationError("SQL_EMPTY", path);
-    statements.forEach((statement) => classifyMigrationStatement(statement, `00000${index + 1}`));
+    const migrationId = String(index + 1).padStart(6, "0");
+    statements.forEach((statement) => classifyMigrationStatement(statement, migrationId));
   }
   const parsedTar = readDeterministicUstar(expected.runtimeTar);
   validateRuntimeTarClosure(expected.manifest, parsedTar);
@@ -705,6 +803,7 @@ export function validateCatalogStatementBindings(
     ["000008", generatedCatalogs.get(CATALOG_PATHS[9])!.source_descriptors!],
     ["000009", generatedCatalogs.get(CATALOG_PATHS[10])!.source_descriptors!],
     ["000010", generatedCatalogs.get(CATALOG_PATHS[11])!.source_descriptors!],
+    ["000011", generatedCatalogs.get(CATALOG_PATHS[12])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -717,6 +816,7 @@ export function validateCatalogStatementBindings(
     ["000008", DECLARED_IDENTITIES_000008],
     ["000009", DECLARED_IDENTITIES_000009],
     ["000010", DECLARED_IDENTITIES_000010],
+    ["000011", DECLARED_IDENTITIES_000011],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -2001,6 +2101,274 @@ export function validateCompatibilityRecoveryKernel(
   }
 }
 
+export function validateCompatibilityRecoveryWriterKernel(
+  sqlBytes: Uint8Array,
+  registry: JsonObject,
+): void {
+  const sql = new TextDecoder("utf-8", { fatal: true }).decode(sqlBytes);
+  const registryDigest = requiredString(registry.registryDigest, "writer registry digest");
+  const stateMachineDigest = requiredString(
+    registry.stateMachineDigest,
+    "writer state machine digest",
+  );
+  const policyDigest = requiredString(registry.policyDigest, "writer policy digest");
+  if (
+    registryDigest !== "sha256:d5ca128f28d637349dd6f8515f9ca6bb182fb0778a3160e24d731712589f2973" ||
+    stateMachineDigest !==
+      "sha256:41ed340b8a1106341f8b797210492af0f9c022d8d43803977ff8079d52251863" ||
+    policyDigest !== "sha256:20f5b6e30e7d7254baabc97894aba2af2d2bcf40f4175f504d195b4e3a832708"
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_REGISTRY", registryDigest);
+  }
+  const schemaBinding = requiredObject(registry.schemaBinding);
+  const exactSchemaBinding = [
+    requiredString(schemaBinding.schemaHead, "writer schema head"),
+    requiredString(schemaBinding.schemaCatalogSha256, "writer schema catalog"),
+    requiredString(schemaBinding.schemaMigrationSha256, "writer schema migration"),
+  ];
+  if (
+    exactSchemaBinding.join("\0") !==
+    [
+      "000010",
+      "sha256:a84a02c20244b60d2ffe4d27beb6fa5f5e0db8fb95ef91eef8865bce63412236",
+      "sha256:ab758a08c07ffb95b9e9a612c90079fcaf54d06407d0cfe4a0368db570f621e6",
+    ].join("\0")
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_SCHEMA_BINDING", "000010");
+  }
+  const boundary = requiredObject(registry.implementationBoundary);
+  if (
+    requiredString(boundary.sqlWriterMigration, "writer SQL boundary") !==
+      "not_implemented_after_000010" ||
+    requiredString(boundary.goConsumer, "writer Go boundary") !== "not_implemented" ||
+    requiredString(boundary.httpSurface, "writer HTTP boundary") !== "not_implemented" ||
+    requiredString(boundary.externalSideEffects, "writer external boundary") !== "forbidden" ||
+    requiredString(boundary.providerSideEffects, "writer provider boundary") !== "forbidden" ||
+    requiredString(boundary.productionDatabaseWrites, "writer production boundary") !==
+      "not_authorized" ||
+    requiredString(boundary.gateStatus, "writer gate boundary") !== "all_gates_open"
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_BOUNDARY", "registry");
+  }
+
+  const expectedProfiles = new Map([
+    ["backfill/v2", "sha256:c5d96407e0c0003689faa9e5526098b57e8b40d9ef67c76f9318e2b0326e6145"],
+    ["live-instance/v2", "sha256:0b2362b300f48a58160d5f9b754c865194f2a4ca14d6012fe361b340dd1b8ff8"],
+    [
+      "migration-preflight/v2",
+      "sha256:e02302ea60eca9855d362d8bcab7efc0466adab6d3a486d828adccdbc5411d7a",
+    ],
+    [
+      "restore-evidence/v2",
+      "sha256:c9a3376afb9e90717dc4191f88723488cf79bd5ee5df9ef24db1be8eb9a01106",
+    ],
+    [
+      "retirement-receipt/v2",
+      "sha256:b789a28be60a340f49662cd5c1570f29b30abd3b4b27ef76d7e6a2666833876f",
+    ],
+    [
+      "workload-principal/v2",
+      "sha256:7208b25e051ce6cb298d8f88190365a950bc0ac48a669fbf7ab93de35cee6878",
+    ],
+  ] as const);
+  const operationProfiles = new Map<string, string>();
+  const operationFunctions = new Set<string>();
+  const profiles = requiredArray(registry.profiles).map(requiredObject);
+  if (profiles.length !== expectedProfiles.size) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_PROFILE", String(profiles.length));
+  }
+  for (const profile of profiles) {
+    const spec = requiredObject(profile.spec);
+    const profileId = requiredString(spec.profileId, "writer profile id");
+    if (
+      requiredString(profile.profileDigest, "writer profile digest") !==
+      expectedProfiles.get(profileId)
+    ) {
+      throw new MigrationValidationError("COMPATIBILITY_WRITER_PROFILE", profileId);
+    }
+    for (const operation of requiredArray(spec.operations).map(requiredObject)) {
+      const sqlFunction = requiredString(operation.sqlFunction, "writer SQL function");
+      const functionName = sqlFunction.replace(/^cloud_agents\./u, "");
+      if (
+        functionName === sqlFunction ||
+        operationFunctions.has(functionName) ||
+        !/^[a-z][a-z0-9_]*_v2$/u.test(functionName)
+      ) {
+        throw new MigrationValidationError("COMPATIBILITY_WRITER_OPERATION", sqlFunction);
+      }
+      operationFunctions.add(functionName);
+      operationProfiles.set(functionName, profileId);
+    }
+  }
+  if (operationFunctions.size !== 26) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_WRITER_OPERATION",
+      String(operationFunctions.size),
+    );
+  }
+
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 161) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_WRITER_STATEMENT_COUNT",
+      String(statements.length),
+    );
+  }
+  const classifications = statements.map((statement) =>
+    classifyMigrationStatement(statement, "000011"),
+  );
+  const newDeclared = new Set(DECLARED_IDENTITIES_000011.slice(DECLARED_IDENTITIES_000010.length));
+  const created = classifications
+    .filter((classification) => classification.command === "CREATE")
+    .map((classification) => classification.target_identity);
+  if (
+    created.length !== newDeclared.size ||
+    created.some((identity) => !newDeclared.has(identity)) ||
+    [...newDeclared].some((identity) => !created.includes(identity))
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_OBJECT_SET", created.join(","));
+  }
+  const summary = new Map<string, number>();
+  for (const classification of classifications) {
+    const key = [
+      classification.command,
+      classification.object_kind,
+      classification.grantee ?? "",
+    ].join("|");
+    summary.set(key, (summary.get(key) ?? 0) + 1);
+  }
+  const expectedSummary = new Map([
+    ["ALTER|TABLE|", 12],
+    ["CREATE|FUNCTION|", 44],
+    ["CREATE|INDEX|", 7],
+    ["CREATE|POLICY|", 6],
+    ["CREATE|TABLE|", 6],
+    ["GRANT|FUNCTION|CLOUD_AGENTS_BOOTSTRAP_ADMIN", 4],
+    ["GRANT|FUNCTION|CLOUD_AGENTS_RUNTIME", 20],
+    ["REVOKE|FUNCTION|PUBLIC", 44],
+    ["REVOKE|TABLE|CLOUD_AGENTS_BOOTSTRAP_ADMIN", 6],
+    ["REVOKE|TABLE|CLOUD_AGENTS_RUNTIME", 6],
+    ["REVOKE|TABLE|PUBLIC", 6],
+  ]);
+  if (
+    summary.size !== expectedSummary.size ||
+    [...expectedSummary].some(([key, count]) => summary.get(key) !== count)
+  ) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_WRITER_SURFACE",
+      JSON.stringify(Object.fromEntries(summary)),
+    );
+  }
+
+  const createdFunctionIdentityByName = new Map<string, string>();
+  for (const identity of created.filter((value) => value.startsWith("function:"))) {
+    const match = /\/unquoted:(?<name>[a-z0-9_]+)\(/u.exec(identity);
+    if (!match?.groups)
+      throw new MigrationValidationError("COMPATIBILITY_WRITER_FUNCTION", identity);
+    createdFunctionIdentityByName.set(match.groups.name!, identity);
+  }
+  const publicRevokes = new Set(
+    classifications
+      .filter(
+        (classification) =>
+          classification.command === "REVOKE" &&
+          classification.object_kind === "FUNCTION" &&
+          classification.grantee === "PUBLIC",
+      )
+      .map((classification) => classification.target_identity),
+  );
+  if (
+    publicRevokes.size !== createdFunctionIdentityByName.size ||
+    [...createdFunctionIdentityByName.values()].some((identity) => !publicRevokes.has(identity))
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_PUBLIC_ACL", "functions");
+  }
+
+  const runtimeHelpers = new Set([
+    "compatibility_recovery_registry_digest_v2",
+    "compatibility_recovery_state_machine_digest_v2",
+    "compatibility_recovery_policy_digest_v2",
+    "compatibility_recovery_schema_head_v2",
+    "compatibility_recovery_schema_catalog_digest_v2",
+    "compatibility_recovery_schema_migration_digest_v2",
+    "compatibility_recovery_profile_digest_v2",
+    "compatibility_recovery_profile_is_registered_v2",
+  ]);
+  const expectedRuntimeNames = new Set(runtimeHelpers);
+  const expectedBootstrapNames = new Set<string>();
+  for (const [functionName, profileId] of operationProfiles) {
+    if (
+      profileId === "live-instance/v2" ||
+      profileId === "retirement-receipt/v2" ||
+      profileId === "migration-preflight/v2"
+    ) {
+      expectedRuntimeNames.add(functionName);
+    } else if (profileId === "workload-principal/v2") {
+      expectedBootstrapNames.add(functionName);
+    }
+  }
+  const grantNames = (grantee: string): Set<string> =>
+    new Set(
+      classifications
+        .filter(
+          (classification) =>
+            classification.command === "GRANT" && classification.grantee === grantee,
+        )
+        .map((classification) => {
+          const match = /\/unquoted:(?<name>[a-z0-9_]+)\(/u.exec(classification.target_identity);
+          return match?.groups?.name ?? "";
+        }),
+    );
+  const runtimeNames = grantNames("CLOUD_AGENTS_RUNTIME");
+  const bootstrapNames = grantNames("CLOUD_AGENTS_BOOTSTRAP_ADMIN");
+  if (
+    runtimeNames.size !== expectedRuntimeNames.size ||
+    [...expectedRuntimeNames].some((name) => !runtimeNames.has(name)) ||
+    bootstrapNames.size !== expectedBootstrapNames.size ||
+    [...expectedBootstrapNames].some((name) => !bootstrapNames.has(name))
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_GRANT_SET", "functions");
+  }
+
+  for (const literal of [
+    registryDigest,
+    stateMachineDigest,
+    policyDigest,
+    ...exactSchemaBinding,
+    ...expectedProfiles.keys(),
+    ...expectedProfiles.values(),
+  ]) {
+    requireSqlFragment(sql, "compatibility writer binding", literal);
+  }
+  for (const functionName of operationFunctions) {
+    requireSqlFragment(sql, "compatibility writer operation", `cloud_agents.${functionName}(`);
+  }
+  for (const fragment of [
+    "PRIMARY KEY (tenant_id, transition_digest)",
+    "cloud_agents.compatibility_recovery_transition_lock_v2(",
+    "cloud_agents.compatibility_recovery_lock_v2(",
+    "ENABLE ROW LEVEL SECURITY",
+    "FORCE ROW LEVEL SECURITY",
+    "CONSTRAINT compatibility_recovery_transition_facts_v2_result",
+    "CHECK (result_code = 'applied'",
+    "result_code := 'observed'",
+    "result_code := 'not_observed'",
+  ]) {
+    requireSqlFragment(sql, "compatibility writer invariant", fragment);
+  }
+  const executableSql = sql.slice(sql.indexOf("CREATE FUNCTION"));
+  if (
+    /\b(?:CREATE\s+OR\s+REPLACE|DROP|TRUNCATE|MERGE|CALL|COPY|pg_notify|dblink|http_post|net\.http|aws_lambda)\b/iu.test(
+      executableSql,
+    ) ||
+    /\bGRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER)\b/iu.test(
+      executableSql,
+    )
+  ) {
+    throw new MigrationValidationError("COMPATIBILITY_WRITER_EXTERNAL_EFFECT", "forbidden SQL");
+  }
+}
+
 function assertSqlCheckLiteralSet(
   sql: string,
   constraint: string,
@@ -2108,6 +2476,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000008 = typedIdentities(DECLARED_IDENTITIES_000008);
   const declared000009 = typedIdentities(DECLARED_IDENTITIES_000009);
   const declared000010 = typedIdentities(DECLARED_IDENTITIES_000010);
+  const declared000011 = typedIdentities(DECLARED_IDENTITIES_000011);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -2163,7 +2532,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000007 = contract("000007", rawSources.slice(0, 7), declared000007);
   const schema000008 = contract("000008", rawSources.slice(0, 8), declared000008);
   const schema000009 = contract("000009", rawSources.slice(0, 9), declared000009);
-  const schema000010 = contract("000010", rawSources, declared000010);
+  const schema000010 = contract("000010", rawSources.slice(0, 10), declared000010);
+  const schema000011 = contract("000011", rawSources, declared000011);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -2211,6 +2581,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[1], globalAuthorityContractV1()],
     [GLOBAL_TABLE_AUTHORITY_V2_PATH, globalAuthorityContractV2()],
     [GLOBAL_TABLE_AUTHORITY_V3_PATH, globalAuthorityContractV3()],
+    [GLOBAL_TABLE_AUTHORITY_V4_PATH, globalAuthorityContractV4()],
     [CATALOG_PATHS[2], schema000001],
     [CATALOG_PATHS[3], schema000002],
     [CATALOG_PATHS[4], schema000003],
@@ -2221,6 +2592,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[9], schema000008],
     [CATALOG_PATHS[10], schema000009],
     [CATALOG_PATHS[11], schema000010],
+    [CATALOG_PATHS[12], schema000011],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }
@@ -2668,6 +3040,53 @@ function globalAuthorityContractV3(): JsonObject {
   };
 }
 
+function globalAuthorityContractV4(): JsonObject {
+  const v3 = globalAuthorityContractV3();
+  const historicalV1 = new Set([
+    "workload_database_principals",
+    "migration_backfills",
+    "schema_restore_evidence",
+    "live_instances",
+    "instance_retirement_receipts",
+  ]);
+  return {
+    ...v3,
+    format_version: "cloud-agents-platform-global-table-authority/v4",
+    tables: [
+      ...requiredArray(v3.tables).map((value) => {
+        const row = requiredObject(value);
+        return historicalV1.has(requiredString(row.name, "global authority table"))
+          ? { ...row, writers: ["historical_v1_no_writer"] }
+          : row;
+      }),
+      {
+        name: "compatibility_recovery_workload_principals_v2",
+        writers: ["typed_bootstrap_workload_principal_function"],
+      },
+      {
+        name: "compatibility_recovery_backfills_v2",
+        writers: ["typed_migration_backfill_function"],
+      },
+      {
+        name: "compatibility_recovery_restore_evidence_v2",
+        writers: ["typed_migration_restore_evidence_function"],
+      },
+      {
+        name: "compatibility_recovery_live_instances_v2",
+        writers: ["typed_runtime_live_instance_function"],
+      },
+      {
+        name: "compatibility_recovery_retirement_receipts_v2",
+        writers: ["typed_runtime_retirement_receipt_function"],
+      },
+      {
+        name: "compatibility_recovery_transition_facts_v2",
+        writers: ["typed_compatibility_recovery_function"],
+      },
+    ],
+  };
+}
+
 function typedIdentities(identities: ReadonlyArray<string>): JsonObject[] {
   return identities
     .map(legacyIdentityToTyped)
@@ -2721,7 +3140,7 @@ function legacyIdentityToTyped(value: string): JsonObject {
     };
   }
   if (kind === "policy") {
-    const relation = nameWithSignature.replace(/_(?:runtime_tenant|migration_owner)$/u, "");
+    const relation = nameWithSignature.replace(/_(?:runtime_tenant|migration_owner|tenant)$/u, "");
     return { kind: "policy", relation: { schema, name: relation }, name: nameWithSignature };
   }
   throw new MigrationValidationError("OBJECT_IDENTITY", value);
@@ -2755,6 +3174,12 @@ function indexOwningRelation(index: string): string {
     "schema_restore_evidence",
     "live_instances",
     "instance_retirement_receipts",
+    "compatibility_recovery_workload_principals_v2",
+    "compatibility_recovery_backfills_v2",
+    "compatibility_recovery_restore_evidence_v2",
+    "compatibility_recovery_live_instances_v2",
+    "compatibility_recovery_retirement_receipts_v2",
+    "compatibility_recovery_transition_facts_v2",
   ];
   const relation = prefixes.find((prefix) => index.startsWith(`${prefix}_`));
   if (!relation) throw new MigrationValidationError("INDEX_OWNING_RELATION", index);
@@ -3251,7 +3676,7 @@ function validateManifestShape(manifest: JsonObject): void {
     "runtime_artifacts",
     "manifest_digest",
   ]);
-  if (manifest.format_version !== "cloud-agents-platform-migration-manifest/v3")
+  if (manifest.format_version !== "cloud-agents-platform-migration-manifest/v4")
     throw new MigrationValidationError("MANIFEST_VERSION", String(manifest.format_version));
   const policy = requiredObject(manifest.execution_policy);
   assertKeys(policy, [
@@ -3268,7 +3693,7 @@ function validateManifestShape(manifest: JsonObject): void {
     "max_attempts",
     "lineage_quota_profile",
   ]);
-  if (policy.lineage_quota_profile !== "cloud-agents-platform-lineage-quota-profile/v3") {
+  if (policy.lineage_quota_profile !== "cloud-agents-platform-lineage-quota-profile/v4") {
     throw new MigrationValidationError(
       "LINEAGE_QUOTA_PROFILE",
       String(policy.lineage_quota_profile),

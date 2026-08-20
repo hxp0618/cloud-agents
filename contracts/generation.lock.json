@@ -154,7 +154,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:43d05b9b59e71ed0cc318012aad4f017f05ad6f90f36ae96f472dd3dc7618615",
+      "sourceManifestSha256": "sha256:e92a850005efd1970419f0f860ed9769cfd2c6b78cae76a7cbd2c798b1182efc",
       "sources": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -208,6 +208,7 @@
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
         "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
+        "services/control-plane/migrations/archive/a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
         "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
         "services/control-plane/migrations/bootstrap/database.sql",
@@ -216,6 +217,7 @@
         "services/control-plane/migrations/catalog/global-table-authority-v1.json",
         "services/control-plane/migrations/catalog/global-table-authority-v2.json",
         "services/control-plane/migrations/catalog/global-table-authority-v3.json",
+        "services/control-plane/migrations/catalog/global-table-authority-v4.json",
         "services/control-plane/migrations/catalog/schema-000001.json",
         "services/control-plane/migrations/catalog/schema-000002.json",
         "services/control-plane/migrations/catalog/schema-000003.json",
@@ -226,6 +228,7 @@
         "services/control-plane/migrations/catalog/schema-000008.json",
         "services/control-plane/migrations/catalog/schema-000009.json",
         "services/control-plane/migrations/catalog/schema-000010.json",
+        "services/control-plane/migrations/catalog/schema-000011.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -474,7 +477,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:43d05b9b59e71ed0cc318012aad4f017f05ad6f90f36ae96f472dd3dc7618615",
+      "inputManifestSha256": "sha256:e92a850005efd1970419f0f860ed9769cfd2c6b78cae76a7cbd2c798b1182efc",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -528,6 +531,7 @@
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
         "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
+        "services/control-plane/migrations/archive/a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09.schema-bundle.json",
         "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
         "services/control-plane/migrations/archive/efa8240997f191f6e1540897bf391d6ed3c0a921e5958ea97338aec9e3befeec.schema-bundle.json",
         "services/control-plane/migrations/bootstrap/database.sql",
@@ -536,6 +540,7 @@
         "services/control-plane/migrations/catalog/global-table-authority-v1.json",
         "services/control-plane/migrations/catalog/global-table-authority-v2.json",
         "services/control-plane/migrations/catalog/global-table-authority-v3.json",
+        "services/control-plane/migrations/catalog/global-table-authority-v4.json",
         "services/control-plane/migrations/catalog/schema-000001.json",
         "services/control-plane/migrations/catalog/schema-000002.json",
         "services/control-plane/migrations/catalog/schema-000003.json",
@@ -546,6 +551,7 @@
         "services/control-plane/migrations/catalog/schema-000008.json",
         "services/control-plane/migrations/catalog/schema-000009.json",
         "services/control-plane/migrations/catalog/schema-000010.json",
+        "services/control-plane/migrations/catalog/schema-000011.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -613,6 +619,11 @@
           "sizeBytes": 14883
         },
         {
+          "path": "services/control-plane/migrations/archive/a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09.schema-bundle.json",
+          "sha256": "sha256:ca5fea1b9f0056439fd2b58af4a796616d9be3e7ec483869f1cb5bb4f5bfdbb8",
+          "sizeBytes": 17904
+        },
+        {
           "path": "services/control-plane/migrations/archive/c6652bef99a83b9a8a76739ef7d84e19321feaa80730c548bb7c50191aec3c23.schema-bundle.json",
           "sha256": "sha256:a4bd9503c1c11c7bcfc48249f501fd258ff09ad2354d4c042f298bb20c705820",
           "sizeBytes": 7334
@@ -641,6 +652,11 @@
           "path": "services/control-plane/migrations/catalog/global-table-authority-v3.json",
           "sha256": "sha256:20e84b349a70d3fe64a3b6b30b0e3458707018e9e4c2d356a52c4cb20b9b9a32",
           "sizeBytes": 1185
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/global-table-authority-v4.json",
+          "sha256": "sha256:cceee87df70fc145d24a7d66220dd012adc68f77af1c7aa964312583afc5b42d",
+          "sizeBytes": 1948
         },
         {
           "path": "services/control-plane/migrations/catalog/schema-000001.json",
@@ -691,6 +707,11 @@
           "path": "services/control-plane/migrations/catalog/schema-000010.json",
           "sha256": "sha256:a84a02c20244b60d2ffe4d27beb6fa5f5e0db8fb95ef91eef8865bce63412236",
           "sizeBytes": 243846
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/schema-000011.json",
+          "sha256": "sha256:e3e08d50421849813238d0ba7f0c9b704f5500706448380c5cf2ac4300fd267d",
+          "sizeBytes": 382454
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/attempt-terminal-state-v1.json",
@@ -829,22 +850,22 @@
         },
         {
           "path": "services/control-plane/migrations/manifest.json",
-          "sha256": "sha256:2d13d8175f3a3c6eaefc73b1172e1644833e4a7753bd42fa79086e9aa0dd7317",
-          "sizeBytes": 26851
+          "sha256": "sha256:d716baa0e2e3dc8dfdb8acdf9d7732c564f4105826d28e76d417ec5432c63980",
+          "sizeBytes": 29387
         },
         {
           "path": "services/control-plane/migrations/schema-bundle.json",
-          "sha256": "sha256:ca5fea1b9f0056439fd2b58af4a796616d9be3e7ec483869f1cb5bb4f5bfdbb8",
-          "sizeBytes": 17904
+          "sha256": "sha256:a01a22e09c7301aeafc87eb1f09b67cb844e5ac5bc5b3c6dd1e66827e348b90f",
+          "sizeBytes": 19416
         }
       ],
       "outputSummary": {
-        "schemaBundleDigest": "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09",
+        "schemaBundleDigest": "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110",
         "bootstrapBundleDigest": "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
-        "manifestDigest": "sha256:7fa7ef8e9aa9eba67c56b8ed1e5b8183c9add4065e3e8c3bb196c4d1fe9d6eeb",
+        "manifestDigest": "sha256:118cbb51f47a94fb7129b95c10f19685c79fd1dc4c05a47cf78d504695e4d98c",
         "runtimeTar": {
-          "sizeBytes": 1617920,
-          "sha256": "sha256:8ac00f6e57db8160ee3f48cc249fab2d4032f63eaf44ed1859642cdb0a1f56da"
+          "sizeBytes": 2181120,
+          "sha256": "sha256:b15cafdb28440fa537a1740d1eb9ef7db0d8fc54c636e52cd3c484907d7d77c2"
         },
         "bootstrapTar": {
           "sizeBytes": 32256,

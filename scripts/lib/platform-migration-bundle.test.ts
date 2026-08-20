@@ -15,13 +15,17 @@ import {
   validateDurableCoordinationRepair,
   validateDurableCoordinationService,
   validateCompatibilityRecoveryKernel,
+  validateCompatibilityRecoveryWriterKernel,
   validateLedgerPrefix,
   validateProjectionScopeAuthority,
   validateRuntimeArtifactSafety,
   validateSchemaAncestorChain,
 } from "./platform-migration-bundle";
 import { buildDurableCoordinationRegistry } from "./platform-durable-coordination-registry";
-import { buildCompatibilityRecoveryRegistry } from "./platform-compatibility-recovery-registry";
+import {
+  buildCompatibilityRecoveryRegistry,
+  buildCompatibilityRecoveryRegistryV2,
+} from "./platform-compatibility-recovery-registry";
 import { migrationDigest } from "./platform-migration-json";
 import { createDeterministicUstar, readDeterministicUstar } from "./platform-migration-ustar";
 
@@ -34,7 +38,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000010.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000011.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -45,16 +49,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09",
+      "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:7fa7ef8e9aa9eba67c56b8ed1e5b8183c9add4065e3e8c3bb196c4d1fe9d6eeb",
+      "sha256:118cbb51f47a94fb7129b95c10f19685c79fd1dc4c05a47cf78d504695e4d98c",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:8ac00f6e57db8160ee3f48cc249fab2d4032f63eaf44ed1859642cdb0a1f56da",
+      "sha256:b15cafdb28440fa537a1740d1eb9ef7db0d8fc54c636e52cd3c484907d7d77c2",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -352,6 +356,42 @@ describe("migration bundle bootstrap", () => {
     );
   });
 
+  it("binds migration 000011 to the generated compatibility recovery v2 registry", () => {
+    const sql = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+      ),
+    );
+    const registry = buildCompatibilityRecoveryRegistryV2(root);
+    expect(() => validateCompatibilityRecoveryWriterKernel(sql, registry)).not.toThrow();
+
+    const profileDrift = structuredClone(registry);
+    (profileDrift.profiles as Array<{ profileDigest: string }>)[0]!.profileDigest =
+      `sha256:${"0".repeat(64)}`;
+    expect(() => validateCompatibilityRecoveryWriterKernel(sql, profileDrift)).toThrow(
+      /COMPATIBILITY_WRITER_PROFILE/u,
+    );
+
+    const sqlText = new TextDecoder().decode(sql);
+    const transitionKeyDrift = new TextEncoder().encode(
+      sqlText.replace(
+        "PRIMARY KEY (tenant_id, transition_digest)",
+        "PRIMARY KEY (tenant_id, operation_id, transition_digest)",
+      ),
+    );
+    expect(() => validateCompatibilityRecoveryWriterKernel(transitionKeyDrift, registry)).toThrow(
+      /COMPATIBILITY_WRITER_INVARIANT|COORDINATION_KERNEL_BINDING/u,
+    );
+
+    const grantDrift = new TextEncoder().encode(
+      sqlText.replace("TO cloud_agents_bootstrap_admin;", "TO cloud_agents_runtime;"),
+    );
+    expect(() => validateCompatibilityRecoveryWriterKernel(grantDrift, registry)).toThrow(
+      /COMPATIBILITY_WRITER_(?:STATEMENT_COUNT|SURFACE|GRANT_SET)/u,
+    );
+  });
+
   it("rejects detached deployment authority from the runtime artifact closure", () => {
     expect(() =>
       validateRuntimeArtifactSafety([
@@ -384,6 +424,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
         "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+        "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -416,6 +457,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
       "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
       "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+      "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [

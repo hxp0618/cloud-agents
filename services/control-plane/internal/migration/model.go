@@ -17,6 +17,7 @@ const (
 	ManifestFormatVersion     = "cloud-agents-platform-migration-manifest/v1"
 	ManifestFormatVersionV2   = "cloud-agents-platform-migration-manifest/v2"
 	ManifestFormatVersionV3   = "cloud-agents-platform-migration-manifest/v3"
+	ManifestFormatVersionV4   = "cloud-agents-platform-migration-manifest/v4"
 	SchemaBundleFormatVersion = "cloud-agents-platform-schema-bundle/v1"
 	SchemaBundleDomain        = "cloud-agents-platform-schema-bundle/v1"
 	BootstrapBundleDomain     = "cloud-agents-platform-bootstrap-bundle/v1"
@@ -312,7 +313,7 @@ func DecodeSchemaBundleDocument(data []byte) (*SchemaBundleDocument, error) {
 }
 
 func (manifest *Manifest) Validate(value JSONValue) error {
-	if manifest.FormatVersion != ManifestFormatVersion && manifest.FormatVersion != ManifestFormatVersionV2 && manifest.FormatVersion != ManifestFormatVersionV3 {
+	if manifest.FormatVersion != ManifestFormatVersion && manifest.FormatVersion != ManifestFormatVersionV2 && manifest.FormatVersion != ManifestFormatVersionV3 && manifest.FormatVersion != ManifestFormatVersionV4 {
 		return fail(CodeInvalidManifest, "manifest", "unsupported format_version", nil)
 	}
 	object, ok := value.(map[string]JSONValue)
@@ -327,7 +328,7 @@ func (manifest *Manifest) Validate(value JSONValue) error {
 	if manifest.FormatVersion == ManifestFormatVersion && quotaProfilePresent {
 		return fail(CodeInvalidManifest, "execution_policy.lineage_quota_profile", "v1 manifests must omit the quota profile", nil)
 	}
-	if (manifest.FormatVersion == ManifestFormatVersionV2 || manifest.FormatVersion == ManifestFormatVersionV3) && !quotaProfilePresent {
+	if (manifest.FormatVersion == ManifestFormatVersionV2 || manifest.FormatVersion == ManifestFormatVersionV3 || manifest.FormatVersion == ManifestFormatVersionV4) && !quotaProfilePresent {
 		return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "versioned manifests require the exact lineage quota profile", nil)
 	}
 	if err := manifest.ExecutionPolicy.ValidateForManifest(manifest.FormatVersion); err != nil {
@@ -486,7 +487,7 @@ func (policy ExecutionPolicy) Validate() error {
 	if policy.StatementProfile != "postgresql-ddl-v1" || policy.CatalogProfile != "cloud-agents-platform-catalog/v1" || policy.IsolationLevel != "serializable" || policy.AccessMode != "read_write" {
 		return fail(CodeUnsupported, "execution_policy", "unsupported execution profile", nil)
 	}
-	if policy.LineageQuotaProfile != "" && policy.LineageQuotaProfile != LineageQuotaProfileV2 && policy.LineageQuotaProfile != LineageQuotaProfileV3 {
+	if policy.LineageQuotaProfile != "" && policy.LineageQuotaProfile != LineageQuotaProfileV2 && policy.LineageQuotaProfile != LineageQuotaProfileV3 && policy.LineageQuotaProfile != LineageQuotaProfileV4 {
 		return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "unsupported lineage quota profile", nil)
 	}
 	if policy.AuthorityContract.Path != "services/control-plane/migrations/catalog/authority-v1.json" || policy.PostgresMajorMin != 15 || policy.PostgresMajorMax != 17 || policy.StatementTimeoutMS != 300000 || policy.LockTimeoutMS != 30000 || policy.IdleInTransactionSessionTimeoutMS != 60000 || policy.MaxAttempts != 3 {
@@ -511,6 +512,10 @@ func (policy ExecutionPolicy) ValidateForManifest(format string) error {
 	case ManifestFormatVersionV3:
 		if policy.LineageQuotaProfile != LineageQuotaProfileV3 {
 			return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "manifest v3 requires the exact lineage quota profile", nil)
+		}
+	case ManifestFormatVersionV4:
+		if policy.LineageQuotaProfile != LineageQuotaProfileV4 {
+			return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "manifest v4 requires the exact lineage quota profile", nil)
 		}
 	default:
 		return fail(CodeInvalidManifest, "manifest", "unsupported format_version", nil)

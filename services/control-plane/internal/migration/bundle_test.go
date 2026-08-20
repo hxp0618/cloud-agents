@@ -94,15 +94,15 @@ func TestDescriptorClassifierRejectsUnknownTargetIdentity(t *testing.T) {
 	}
 }
 
-func TestManifestV3FixedBootstrapAndExecutionPolicy(t *testing.T) {
+func TestManifestV4FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	t.Parallel()
 	raw := mustRead(t, filepath.Join(migrationRoot(t), "manifest.json"))
 	manifest, value, err := DecodeManifest(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != ManifestFormatVersionV3 || manifest.ExecutionPolicy.LineageQuotaProfile != LineageQuotaProfileV3 {
-		t.Fatalf("checked-in manifest did not select the exact v3 quota profile: format=%q profile=%q", manifest.FormatVersion, manifest.ExecutionPolicy.LineageQuotaProfile)
+	if manifest.FormatVersion != ManifestFormatVersionV4 || manifest.ExecutionPolicy.LineageQuotaProfile != LineageQuotaProfileV4 {
+		t.Fatalf("checked-in manifest did not select the exact v4 quota profile: format=%q profile=%q", manifest.FormatVersion, manifest.ExecutionPolicy.LineageQuotaProfile)
 	}
 	badBootstrap := *manifest
 	badBootstrap.BootstrapBundle.Artifacts = append([]ArtifactRecord(nil), manifest.BootstrapBundle.Artifacts...)
@@ -113,7 +113,7 @@ func TestManifestV3FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	badPolicy := *manifest
 	badPolicy.ExecutionPolicy.StatementTimeoutMS++
 	if err := badPolicy.Validate(value); !IsCode(err, CodeInvalidManifest) {
-		t.Fatalf("mutable manifest-v3 timeout was accepted: %v", err)
+		t.Fatalf("mutable manifest-v4 timeout was accepted: %v", err)
 	}
 	legacyPolicy := manifest.ExecutionPolicy
 	legacyPolicy.LineageQuotaProfile = ""
@@ -124,17 +124,17 @@ func TestManifestV3FixedBootstrapAndExecutionPolicy(t *testing.T) {
 		t.Fatalf("legacy v1 profile selection drifted: profile=%q err=%v", profile, err)
 	}
 	if err := manifest.ExecutionPolicy.ValidateForManifest(ManifestFormatVersion); !IsCode(err, CodeInvalidManifest) {
-		t.Fatalf("v3 profile was accepted under a v1 manifest: %v", err)
+		t.Fatalf("v4 profile was accepted under a v1 manifest: %v", err)
 	}
-	missingV3 := manifest.ExecutionPolicy
-	missingV3.LineageQuotaProfile = ""
-	if err := missingV3.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
-		t.Fatalf("v3 manifest accepted an empty quota profile: %v", err)
+	missingV4 := manifest.ExecutionPolicy
+	missingV4.LineageQuotaProfile = ""
+	if err := missingV4.ValidateForManifest(ManifestFormatVersionV4); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v4 manifest accepted an empty quota profile: %v", err)
 	}
 	unknown := manifest.ExecutionPolicy
 	unknown.LineageQuotaProfile = "cloud-agents-platform-lineage-quota-profile/future"
-	if err := unknown.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
-		t.Fatalf("unknown v3 quota profile was accepted: %v", err)
+	if err := unknown.ValidateForManifest(ManifestFormatVersionV4); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("unknown v4 quota profile was accepted: %v", err)
 	}
 	v2Policy := manifest.ExecutionPolicy
 	v2Policy.LineageQuotaProfile = LineageQuotaProfileV2
@@ -144,8 +144,19 @@ func TestManifestV3FixedBootstrapAndExecutionPolicy(t *testing.T) {
 	if err := v2Policy.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
 		t.Fatalf("v2 profile was accepted under a v3 manifest: %v", err)
 	}
+	v3Policy := manifest.ExecutionPolicy
+	v3Policy.LineageQuotaProfile = LineageQuotaProfileV3
+	if err := v3Policy.ValidateForManifest(ManifestFormatVersionV3); err != nil {
+		t.Fatalf("historical v3 manifest/profile pair was rejected: %v", err)
+	}
+	if err := v3Policy.ValidateForManifest(ManifestFormatVersionV4); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v3 profile was accepted under a v4 manifest: %v", err)
+	}
 	if err := manifest.ExecutionPolicy.ValidateForManifest(ManifestFormatVersionV2); !IsCode(err, CodeUnsupported) {
-		t.Fatalf("v3 profile was accepted under a v2 manifest: %v", err)
+		t.Fatalf("v4 profile was accepted under a v2 manifest: %v", err)
+	}
+	if err := manifest.ExecutionPolicy.ValidateForManifest(ManifestFormatVersionV3); !IsCode(err, CodeUnsupported) {
+		t.Fatalf("v4 profile was accepted under a v3 manifest: %v", err)
 	}
 
 	// Exercise the wire-compatibility boundary, not just the typed policy
@@ -332,16 +343,16 @@ func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
 func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
 	t.Parallel()
 	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
-	if manifest.SchemaBundleDigest != "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09" {
+	if manifest.SchemaBundleDigest != "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110" {
 		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
 	}
 	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
 		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
 	}
-	if manifest.ManifestDigest != "sha256:7fa7ef8e9aa9eba67c56b8ed1e5b8183c9add4065e3e8c3bb196c4d1fe9d6eeb" {
+	if manifest.ManifestDigest != "sha256:118cbb51f47a94fb7129b95c10f19685c79fd1dc4c05a47cf78d504695e4d98c" {
 		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
 	}
-	if DigestBytes(runtimeTar) != "sha256:8ac00f6e57db8160ee3f48cc249fab2d4032f63eaf44ed1859642cdb0a1f56da" {
+	if DigestBytes(runtimeTar) != "sha256:b15cafdb28440fa537a1740d1eb9ef7db0d8fc54c636e52cd3c484907d7d77c2" {
 		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
 	}
 	authority := manifest.SchemaBundle.ProjectionScopeAuthority
@@ -422,6 +433,7 @@ func TestAuthorityContractsStrictDecodeBeforeDatabaseConnect(t *testing.T) {
 		"global-v1": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v1.json")),
 		"global-v2": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v2.json")),
 		"global-v3": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v3.json")),
+		"global-v4": mustRead(t, filepath.Join(root, "catalog", "global-table-authority-v4.json")),
 	}
 	for name, raw := range globalContracts {
 		if _, err := DecodeGlobalTableAuthorityContract(raw); err != nil {
@@ -683,7 +695,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000010" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000011" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {

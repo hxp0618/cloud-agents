@@ -51,7 +51,7 @@ func TestBrandNewRecoveryWitnessIsSameVerifierBound(t *testing.T) {
 	}
 }
 
-func TestAdmissionRecoveryFactsDigestSeparatesV2AndV3Profiles(t *testing.T) {
+func TestAdmissionRecoveryFactsDigestSeparatesV2V3AndV4Profiles(t *testing.T) {
 	facts := admissionHistoricalFactsFixture(t)
 	candidate := quotaCandidateForBundle(t, quotaAdmissionBundleForTest(t), []byte("recovery-profile-domains"))
 	bindRecoveryFactsToCandidate(facts, candidate)
@@ -59,9 +59,11 @@ func TestAdmissionRecoveryFactsDigestSeparatesV2AndV3Profiles(t *testing.T) {
 	v2.lineageQuotaProfile = LineageQuotaProfileV2
 	v3 := cloneAdmissionHistoricalVerificationFacts(facts)
 	v3.lineageQuotaProfile = LineageQuotaProfileV3
-	v2Digest, v3Digest := admissionRecoveryFactsDigest(v2), admissionRecoveryFactsDigest(v3)
-	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v2Digest == v3Digest {
-		t.Fatalf("recovery facts profile domains are not closed: profiles=%q/%q valid=%v/%v v2=%x v3=%x", v2.lineageQuotaProfile, v3.lineageQuotaProfile, validAdmissionRecoveryFacts(v2), validAdmissionRecoveryFacts(v3), v2Digest, v3Digest)
+	v4 := cloneAdmissionHistoricalVerificationFacts(facts)
+	v4.lineageQuotaProfile = LineageQuotaProfileV4
+	v2Digest, v3Digest, v4Digest := admissionRecoveryFactsDigest(v2), admissionRecoveryFactsDigest(v3), admissionRecoveryFactsDigest(v4)
+	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v4Digest == ([32]byte{}) || v2Digest == v3Digest || v2Digest == v4Digest || v3Digest == v4Digest {
+		t.Fatalf("recovery facts profile domains are not closed: profiles=%q/%q/%q valid=%v/%v/%v v2=%x v3=%x v4=%x", v2.lineageQuotaProfile, v3.lineageQuotaProfile, v4.lineageQuotaProfile, validAdmissionRecoveryFacts(v2), validAdmissionRecoveryFacts(v3), validAdmissionRecoveryFacts(v4), v2Digest, v3Digest, v4Digest)
 	}
 }
 

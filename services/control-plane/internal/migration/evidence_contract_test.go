@@ -134,6 +134,7 @@ func TestLineageCheckpointFramedLimitIsProfileBound(t *testing.T) {
 		{name: "v1", id: EvidenceLimitsProfile, max: 16 << 10},
 		{name: "v2", id: LineageQuotaProfileV2, max: v2GenerationCheckpointMaximum},
 		{name: "v3", id: LineageQuotaProfileV3, max: v2GenerationCheckpointMaximum},
+		{name: "v4", id: LineageQuotaProfileV4, max: v2GenerationCheckpointMaximum},
 	}
 	for _, profile := range profiles {
 		t.Run(profile.name, func(t *testing.T) {
@@ -181,7 +182,7 @@ func TestLineageCheckpointFramedLimitIsProfileBound(t *testing.T) {
 	if uint64(len(v1Framed)) <= v2GenerationCheckpointMaximum || uint64(len(v1Framed)) > lineageRecordFrameLimits[LineageRecordGenerationCheckpoint] {
 		t.Fatalf("test checkpoint does not straddle profile ceilings: %d", len(v1Framed))
 	}
-	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3} {
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3, LineageQuotaProfileV4} {
 		if _, err := encodeCanonicalLineageFrameForProfile(oversized, profile); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
 			t.Fatalf("%s oversized checkpoint was accepted: %v", profile, err)
 		}
@@ -230,26 +231,31 @@ func TestProfileAwareCheckpointEncoderUsesInclusiveWireBoundary(t *testing.T) {
 	if len(exactFramed) != int(v2GenerationCheckpointMaximum) {
 		t.Fatalf("could not construct an exact v2 checkpoint boundary: %d", len(exactFramed))
 	}
-	encoded, err := encodeCanonicalLineageFrameForProfile(exact, LineageQuotaProfileV2)
-	if err != nil || len(encoded) != int(v2GenerationCheckpointMaximum) {
-		t.Fatalf("exact v2 checkpoint was not accepted: len=%d err=%v", len(encoded), err)
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3, LineageQuotaProfileV4} {
+		encoded, err := encodeCanonicalLineageFrameForProfile(exact, profile)
+		if err != nil || len(encoded) != int(v2GenerationCheckpointMaximum) {
+			t.Fatalf("exact %s checkpoint was not accepted: len=%d err=%v", profile, len(encoded), err)
+		}
 	}
 
 	plusOne := cloneProjectionValue(exact)
 	plusOne.Record.Checkpoint.RecoveryState += "x"
-	plusOne.RecordDigest, err = plusOne.ComputeDigest()
+	plusOneDigest, err := plusOne.ComputeDigest()
 	if err != nil {
 		t.Fatal(err)
 	}
+	plusOne.RecordDigest = plusOneDigest
 	if framed, err := EncodeCanonicalLineageFrame(plusOne); err != nil || len(framed) != int(v2GenerationCheckpointMaximum)+1 {
 		t.Fatalf("test +1 frame did not cross the boundary: len=%d err=%v", len(framed), err)
 	}
-	if _, err := encodeCanonicalLineageFrameForProfile(plusOne, LineageQuotaProfileV2); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
-		t.Fatalf("v2 checkpoint boundary +1 was accepted: %v", err)
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3, LineageQuotaProfileV4} {
+		if _, err := encodeCanonicalLineageFrameForProfile(plusOne, profile); !IsCode(err, CodeEvidenceJournalLimitExceeded) {
+			t.Fatalf("%s checkpoint boundary +1 was accepted: %v", profile, err)
+		}
 	}
 }
 
-func TestGeneratedV2AndV3CheckpointFullShapeFits4096(t *testing.T) {
+func TestGeneratedV2V3AndV4CheckpointFullShapeFits4096(t *testing.T) {
 	t.Parallel()
 	migration := "000006"
 	attempt := uint32(3)
@@ -288,7 +294,7 @@ func TestGeneratedV2AndV3CheckpointFullShapeFits4096(t *testing.T) {
 		latestCheckpointRecordDigest:     digestPointer(previousIndex),
 	}
 	frame := EvidenceFrame{Sequence: 2, PreviousRecordDigest: digestPointer(digests[4]), RecordDigest: digests[4]}
-	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3} {
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3, LineageQuotaProfileV4} {
 		_, framed, err := buildGenerationJournalCheckpoint(gen, cursor, frame, checkpointSummary, profile)
 		if err != nil {
 			t.Fatal(err)
@@ -302,7 +308,7 @@ func TestGeneratedV2AndV3CheckpointFullShapeFits4096(t *testing.T) {
 	}
 }
 
-func TestLineageQuotaProfileV3UsesClosedInclusiveReservationLimits(t *testing.T) {
+func TestLineageQuotaProfilesV3AndV4UseClosedInclusiveReservationLimits(t *testing.T) {
 	t.Parallel()
 	frames := fixtureArrayMembers(t, migrationFixturePath(t, "golden/lineage-index-chain-v1.json"), "frames")
 	var base GenerationReserved
@@ -347,6 +353,27 @@ func TestLineageQuotaProfileV3UsesClosedInclusiveReservationLimits(t *testing.T)
 	if err := v3.Validate(); err != nil {
 		t.Fatalf("exact v3 reservation limits were rejected: %v", err)
 	}
+	if maxV4EvidenceReservedBytes != uint64(528<<20) {
+		t.Fatalf("v4 combined reservation maximum drifted: %d", maxV4EvidenceReservedBytes)
+	}
+	v4 := build(LineageQuotaProfileV4, maxEvidenceReservedRecords, maxV4EvidenceReservedBytes, maxSupportedEvidenceReservedSegments)
+	if err := v4.Validate(); err != nil {
+		t.Fatalf("exact v4 reservation limits were rejected: %v", err)
+	}
+	for name, fault := range map[string]GenerationReserved{
+		"records":  build(LineageQuotaProfileV4, maxEvidenceReservedRecords+1, maxV4EvidenceReservedBytes, maxSupportedEvidenceReservedSegments),
+		"bytes":    build(LineageQuotaProfileV4, maxEvidenceReservedRecords, maxV4EvidenceReservedBytes+1, maxSupportedEvidenceReservedSegments),
+		"segments": build(LineageQuotaProfileV4, maxEvidenceReservedRecords, maxV4EvidenceReservedBytes, maxSupportedEvidenceReservedSegments+1),
+	} {
+		t.Run("v4_"+name+"_plus_one", func(t *testing.T) {
+			if err := fault.Validate(); err == nil {
+				t.Fatal("v4 inclusive maximum + 1 was accepted")
+			}
+		})
+	}
+	if err := build(LineageQuotaProfileV3, maxEvidenceReservedRecords, maxV4EvidenceReservedBytes, maxSupportedEvidenceReservedSegments).Validate(); err == nil {
+		t.Fatal("v3 accepted v4-only combined reservation capacity")
+	}
 	for name, fault := range map[string]GenerationReserved{
 		"records":  build(LineageQuotaProfileV3, maxEvidenceReservedRecords+1, maxSupportedEvidenceReservedBytes, maxSupportedEvidenceReservedSegments),
 		"bytes":    build(LineageQuotaProfileV3, maxEvidenceReservedRecords, maxSupportedEvidenceReservedBytes+1, maxSupportedEvidenceReservedSegments),
@@ -380,14 +407,21 @@ func TestLineageQuotaProfileV3UsesClosedInclusiveReservationLimits(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	v4Digest, err := QuotaReservationDigest(build(LineageQuotaProfileV4, 64, 1<<20, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if v2Digest != "sha256:0581ed618246771293584fca2153c7407d02d70a1f0dc4c2a129b6b8c72a20c5" {
 		t.Fatalf("historical v2 quota reservation digest drifted: %s", v2Digest)
 	}
 	if v3Digest != "sha256:861b72e16f8b5fa0946b5466a3930297530dd99d654631bb7e601dc9f503fc2f" {
 		t.Fatalf("v3 quota reservation digest drifted: %s", v3Digest)
 	}
-	if v2Digest == v3Digest {
-		t.Fatal("v2 and v3 quota reservation domains collided")
+	if v4Digest != "sha256:4f37c455b7814cd0c65d80ecb71d1d27de3b8a7ff289d640f896cc4616e9fab9" {
+		t.Fatalf("v4 quota reservation digest drifted: %s", v4Digest)
+	}
+	if v2Digest == v3Digest || v2Digest == v4Digest || v3Digest == v4Digest {
+		t.Fatal("versioned quota reservation domains collided")
 	}
 }
 

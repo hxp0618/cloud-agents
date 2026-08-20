@@ -490,7 +490,7 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 	policy := checkedManifest.ExecutionPolicy
 	policy.AuthorityContract = authorityRecord
 	manifest := &Manifest{
-		FormatVersion: ManifestFormatVersionV3, SchemaBundle: schemaBundle, SchemaBundleDigest: schemaDigest,
+		FormatVersion: ManifestFormatVersionV4, SchemaBundle: schemaBundle, SchemaBundleDigest: schemaDigest,
 		BootstrapBundle: checkedManifest.BootstrapBundle, BootstrapBundleDigest: checkedManifest.BootstrapBundleDigest,
 		ExecutionPolicy: policy, RuntimeArtifacts: runtimeRecords,
 	}

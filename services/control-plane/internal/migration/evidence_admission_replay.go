@@ -2129,6 +2129,9 @@ func (i admissionReplayRuntimeInspection) digest() [32]byte {
 	} else if i.lineageQuotaProfile == LineageQuotaProfileV3 {
 		h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v3\x00"))
 		writeAdmissionString(h, i.lineageQuotaProfile)
+	} else if i.lineageQuotaProfile == LineageQuotaProfileV4 {
+		h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v4\x00"))
+		writeAdmissionString(h, i.lineageQuotaProfile)
 	} else {
 		// Keep historical v1 inspection subjects byte-for-byte identical.
 		h.Write([]byte("cloud-agents-platform-admission-runtime-object-inspection/v1\x00"))

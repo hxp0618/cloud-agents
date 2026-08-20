@@ -128,6 +128,10 @@ func quotaBundleFactsDigest(profile string, schema Digest, attempts uint64, coun
 		h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v3\x00"))
 		h.Write([]byte(profile))
 		h.Write([]byte{0})
+	} else if profile == LineageQuotaProfileV4 {
+		h.Write([]byte("cloud-agents-platform-evidence-quota-bundle-facts/v4\x00"))
+		h.Write([]byte(profile))
+		h.Write([]byte{0})
 	} else {
 		// Keep the v1 subject byte-for-byte identical: profile selection was not
 		// serialized by the historical bundle-facts digest.

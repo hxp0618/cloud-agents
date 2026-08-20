@@ -309,7 +309,7 @@ func DecodeGlobalTableAuthorityContract(data []byte) (*GlobalTableAuthorityContr
 	if _, err := DecodeStrict(data, &contract); err != nil {
 		return nil, err
 	}
-	if (contract.FormatVersion != "cloud-agents-platform-global-table-authority/v1" && contract.FormatVersion != "cloud-agents-platform-global-table-authority/v2" && contract.FormatVersion != "cloud-agents-platform-global-table-authority/v3") || contract.ContractKind != "global_table_writer_authority" {
+	if (contract.FormatVersion != "cloud-agents-platform-global-table-authority/v1" && contract.FormatVersion != "cloud-agents-platform-global-table-authority/v2" && contract.FormatVersion != "cloud-agents-platform-global-table-authority/v3" && contract.FormatVersion != "cloud-agents-platform-global-table-authority/v4") || contract.ContractKind != "global_table_writer_authority" {
 		return nil, fail(CodeInvalidManifest, "global-table-authority", "invalid global table authority contract identity", nil)
 	}
 	expectedV1 := []GlobalTableWriter{
@@ -329,6 +329,25 @@ func DecodeGlobalTableAuthorityContract(data []byte) (*GlobalTableAuthorityContr
 			GlobalTableWriter{Name: "live_instances", Writers: []string{"typed_live_instance_registration_function"}},
 			GlobalTableWriter{Name: "instance_retirement_receipts", Writers: []string{"typed_instance_reconciler_function"}},
 		)
+	}
+	if contract.FormatVersion == "cloud-agents-platform-global-table-authority/v4" {
+		expected = []GlobalTableWriter{
+			{Name: "schema_migrations", Writers: []string{MigrationOwnerRole}},
+			{Name: "workload_database_principals", Writers: []string{"historical_v1_no_writer"}},
+			{Name: "builtin_roles", Writers: []string{MigrationOwnerRole}},
+			{Name: "builtin_role_permissions", Writers: []string{MigrationOwnerRole}},
+			{Name: "leader_leases", Writers: []string{"typed_control_plane_coordination_function"}},
+			{Name: "migration_backfills", Writers: []string{"historical_v1_no_writer"}},
+			{Name: "schema_restore_evidence", Writers: []string{"historical_v1_no_writer"}},
+			{Name: "live_instances", Writers: []string{"historical_v1_no_writer"}},
+			{Name: "instance_retirement_receipts", Writers: []string{"historical_v1_no_writer"}},
+			{Name: "compatibility_recovery_workload_principals_v2", Writers: []string{"typed_bootstrap_workload_principal_function"}},
+			{Name: "compatibility_recovery_backfills_v2", Writers: []string{"typed_migration_backfill_function"}},
+			{Name: "compatibility_recovery_restore_evidence_v2", Writers: []string{"typed_migration_restore_evidence_function"}},
+			{Name: "compatibility_recovery_live_instances_v2", Writers: []string{"typed_runtime_live_instance_function"}},
+			{Name: "compatibility_recovery_retirement_receipts_v2", Writers: []string{"typed_runtime_retirement_receipt_function"}},
+			{Name: "compatibility_recovery_transition_facts_v2", Writers: []string{"typed_compatibility_recovery_function"}},
+		}
 	}
 	if !reflect.DeepEqual(contract.Tables, expected) {
 		return nil, fail(CodeInvalidManifest, "global-table-authority", "global table writer closure differs from its versioned contract", nil)

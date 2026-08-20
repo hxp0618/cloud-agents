@@ -141,7 +141,7 @@ func TestAdmissionLineageDecoderEnforcesSelectedCheckpointProfile(t *testing.T) 
 		t.Fatalf("historical v1 checkpoint inside its 16 KiB maximum was rejected: %v", err)
 	}
 
-	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3} {
+	for _, profile := range []string{LineageQuotaProfileV2, LineageQuotaProfileV3, LineageQuotaProfileV4} {
 		raw, checkpointBytes := build(profile)
 		if checkpointBytes != v1CheckpointBytes {
 			t.Fatalf("profile-only mutation changed checkpoint bytes: v1=%d profile=%s bytes=%d", v1CheckpointBytes, profile, checkpointBytes)
@@ -152,7 +152,7 @@ func TestAdmissionLineageDecoderEnforcesSelectedCheckpointProfile(t *testing.T) 
 	}
 }
 
-func TestAdmissionRuntimeInspectionDigestSeparatesV2AndV3Profiles(t *testing.T) {
+func TestAdmissionRuntimeInspectionDigestSeparatesV2V3AndV4Profiles(t *testing.T) {
 	t.Parallel()
 	base := admissionReplayRuntimeInspection{
 		manifestDigest: testDigest("runtime-inspection-manifest"), schemaBundleDigest: testDigest("runtime-inspection-schema"),
@@ -165,9 +165,12 @@ func TestAdmissionRuntimeInspectionDigestSeparatesV2AndV3Profiles(t *testing.T) 
 	v3 := base
 	v3.lineageQuotaProfile = LineageQuotaProfileV3
 	v3.reservation.lineageQuotaProfile = LineageQuotaProfileV3
-	v2Digest, v3Digest := v2.digest(), v3.digest()
-	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v2Digest == v3Digest {
-		t.Fatalf("runtime inspection profile domains are not closed: v2=%x v3=%x", v2Digest, v3Digest)
+	v4 := base
+	v4.lineageQuotaProfile = LineageQuotaProfileV4
+	v4.reservation.lineageQuotaProfile = LineageQuotaProfileV4
+	v2Digest, v3Digest, v4Digest := v2.digest(), v3.digest(), v4.digest()
+	if v2Digest == ([32]byte{}) || v3Digest == ([32]byte{}) || v4Digest == ([32]byte{}) || v2Digest == v3Digest || v2Digest == v4Digest || v3Digest == v4Digest {
+		t.Fatalf("runtime inspection profile domains are not closed: v2=%x v3=%x v4=%x", v2Digest, v3Digest, v4Digest)
 	}
 }
 
