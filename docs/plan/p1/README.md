@@ -339,7 +339,10 @@ structure、internal dependency closure 和 expression slot rejecting boundary�
 expression normalizer 与 semantic dependency rebinding，并在本地 PG15/16/17 arm64 镜像保持代表性结构、表达式与
 checked-in 000001/000002 same-bits。该证据不外推到 x86_64、云环境或 Gate closure。
 
-Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。
+Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStates`/intermediate chain。当前新增的
+[`runner/CLI pre-DB configuration`](migration-runner-cli-pre-db-configuration-20260821.md) 只固定显式
+`--evidence-root`、数据库 locator 与 trust-before-artifact/evidence/DB 的配置顺序；CLI 仍使用
+`RejectingTrustVerifier`，不打开正向执行或生产数据库路径。
 `bbb0bf2` 已关闭 complete synthetic signed subject 的 exported expression/catalog projector 与本地双快照矩阵；
 Signed expected subject 的 production verifier、deployment trust-root wiring、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
@@ -352,7 +355,7 @@ exact target lineage + generation lock pair，并已完成 compact snapshot/stri
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
 但这没有改变 Gate 结论：`381b04a` 关闭 production trusted-mount constructor/wiring 和 scoped positive
 production `Open`，`3fe05ec` 再关闭 public sink 与 scoped production-opened cross-package
-brand-new/registered activation-handoff；runner/CLI configuration、runner/DB `Connect` 与真实 physical controller
+brand-new/registered activation-handoff；runner/DB `Connect` 与真实 physical controller
 power-loss 证据仍然开放。
 `b6cfa88`、`daa6b9f`、`0e242ee`、`be7cae8`、`139d53a`、`f650fae` 只在 package-private test authority 下完成
 isolated QEMU guest 的 object publish、existing-segment append、retained rotation、activation、target registration/recovery
