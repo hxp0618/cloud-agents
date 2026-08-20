@@ -66,6 +66,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
   "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
   "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+  "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
@@ -74,6 +75,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
   "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
   "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
+  "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
   "services/control-plane/migrations/archive",
@@ -117,6 +119,13 @@ const COMPATIBILITY_RECOVERY_V2_GENERATOR_SOURCES = [
   "scripts/lib/platform-compatibility-recovery-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
+const COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES = [
+  "scripts/generate-platform-compatibility-recovery-go.ts",
+  "scripts/lib/platform-compatibility-recovery-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
+const COMPATIBILITY_RECOVERY_GO_OUTPUT_PATH =
+  "services/control-plane/internal/compatibility/registry_generated.go";
 
 const IN_REPO_TOOLS = [
   {
@@ -180,6 +189,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-compatibility-recovery-registry.ts",
     sources: COMPATIBILITY_RECOVERY_V2_GENERATOR_SOURCES,
   },
+  {
+    id: "platform-compatibility-recovery-go-generator",
+    kind: "in-repo-typescript-deterministic-versioned-go-profile",
+    entrypoint: "scripts/generate-platform-compatibility-recovery-go.ts",
+    sources: COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -193,6 +208,10 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
   const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
   const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
+  const compatibilityRecoveryGoInputs = [
+    ...COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
+    COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH,
+  ].toSorted();
   const durableCoordinationGoInputs = [
     ...DURABLE_COORDINATION_GO_GENERATOR_SOURCES,
     DURABLE_COORDINATION_OUTPUT_PATH,
@@ -402,8 +421,39 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           profileCount: (compatibilityRecoveryRegistryV2.profiles as ReadonlyArray<unknown>).length,
           schemaHead: "000010",
           historicalCompatibility: "V1_SAME_BITS_NON_AUTHORITY",
-          runtimeConsumer: "NOT_IMPLEMENTED",
-          sqlWriterConsumer: "NOT_IMPLEMENTED_AFTER_000010",
+          runtimeConsumer: "GENERATED_GO_PROFILE_TYPED_SERVICE_000011",
+          sqlWriterConsumer: "GENERATED_PROFILE_TYPED_FUNCTIONS_000011",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          externalSideEffects: "FORBIDDEN",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "compatibility-recovery-go-profile-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, compatibilityRecoveryGoInputs),
+        inputs: compatibilityRecoveryGoInputs,
+        outputStatus: "GENERATED_VERSIONED_GO_PROFILE",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: COMPATIBILITY_RECOVERY_GO_OUTPUT_PATH,
+            sha256: fileSha256(root, COMPATIBILITY_RECOVERY_GO_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, COMPATIBILITY_RECOVERY_GO_OUTPUT_PATH))
+              .byteLength,
+          },
+        ],
+        outputSummary: {
+          registryDigest: compatibilityRecoveryRegistryV2.registryDigest,
+          stateMachineDigest: compatibilityRecoveryRegistryV2.stateMachineDigest,
+          policyDigest: compatibilityRecoveryRegistryV2.policyDigest,
+          profileCount: (compatibilityRecoveryRegistryV2.profiles as ReadonlyArray<unknown>).length,
+          operationCount: 26,
+          handWrittenProfileFallback: "FORBIDDEN",
+          callerProvidedProfile: "FORBIDDEN",
           httpSurface: "NOT_IMPLEMENTED",
           p2Surface: "NOT_IMPLEMENTED",
           providerSideEffects: "FORBIDDEN",

@@ -523,10 +523,19 @@ func (runner *TenantTransactionRunner) withTenantMutation(
 	tenantID string,
 	callback tenantMutationCallback,
 ) error {
+	return runner.withTenantMutationBinder(ctx, tenantID, callback, bindTenant)
+}
+
+func (runner *TenantTransactionRunner) withTenantMutationBinder(
+	ctx context.Context,
+	tenantID string,
+	callback tenantMutationCallback,
+	binder tenantBinder,
+) error {
 	if ctx == nil {
 		return ErrNilContext
 	}
-	if callback == nil {
+	if callback == nil || binder == nil {
 		return ErrNilCallback
 	}
 
@@ -553,7 +562,7 @@ func (runner *TenantTransactionRunner) withTenantMutation(
 		runner.discard(connection, &settled)
 		return fmt.Errorf("begin tenant mutation transaction: %w", err)
 	}
-	if err := bindTenant(ctx, transaction, tenantID); err != nil {
+	if err := binder(ctx, transaction, tenantID); err != nil {
 		runner.rollbackAndSettle(connection, transaction, &settled)
 		return err
 	}

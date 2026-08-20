@@ -33,7 +33,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:9ace247d9ee637460347165185d989ec64e9137dfbcaaa7eacc6910f9c120b4d",
+    "manifestSha256": "sha256:8008ed2b18203dc2d0851a826758c647183189afbcc77bb7901efc708899c929",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -76,7 +76,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:0b725042a96ba242f73c3a5d24b7fa3c7e0a5cd1f03c5679027e97d7c9c55918",
+      "sourceManifestSha256": "sha256:99e387737b910a60e1dc5e66a4dd1c86a7fb4aa81d385eec49f7d18dc629ff32",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -151,10 +151,22 @@
       "license": "MIT"
     },
     {
+      "id": "platform-compatibility-recovery-go-generator",
+      "kind": "in-repo-typescript-deterministic-versioned-go-profile",
+      "entrypoint": "scripts/generate-platform-compatibility-recovery-go.ts",
+      "sourceManifestSha256": "sha256:9aca3504d0343a6658f996d3511bb891c7f30b8d5d6a8017a8884e07f60be104",
+      "sources": [
+        "scripts/generate-platform-compatibility-recovery-go.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:e92a850005efd1970419f0f860ed9769cfd2c6b78cae76a7cbd2c798b1182efc",
+      "sourceManifestSha256": "sha256:b2d482ddbd5303c1a8adf3657edc4bd5eae66e824d42b44573c96c4532c7a554",
       "sources": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -204,6 +216,7 @@
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
         "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+        "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
@@ -274,6 +287,7 @@
         "services/control-plane/migrations/manifest.json",
         "services/control-plane/migrations/schema-bundle.json",
         "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
+        "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh"
       ],
@@ -464,8 +478,43 @@
         "profileCount": 6,
         "schemaHead": "000010",
         "historicalCompatibility": "V1_SAME_BITS_NON_AUTHORITY",
-        "runtimeConsumer": "NOT_IMPLEMENTED",
-        "sqlWriterConsumer": "NOT_IMPLEMENTED_AFTER_000010",
+        "runtimeConsumer": "GENERATED_GO_PROFILE_TYPED_SERVICE_000011",
+        "sqlWriterConsumer": "GENERATED_PROFILE_TYPED_FUNCTIONS_000011",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "externalSideEffects": "FORBIDDEN",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "compatibility-recovery-go-profile-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:90a7d77ac186ae31d632dec8ceee05c4aac063fc9ff1a957c47509962cfce64f",
+      "inputs": [
+        "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+        "scripts/generate-platform-compatibility-recovery-go.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "outputStatus": "GENERATED_VERSIONED_GO_PROFILE",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "services/control-plane/internal/compatibility/registry_generated.go",
+          "sha256": "sha256:976ad31264546818a00c369fda7ee6552fe9cae1614d106d52f8e9b2e006f6b0",
+          "sizeBytes": 18368
+        }
+      ],
+      "outputSummary": {
+        "registryDigest": "sha256:d5ca128f28d637349dd6f8515f9ca6bb182fb0778a3160e24d731712589f2973",
+        "stateMachineDigest": "sha256:41ed340b8a1106341f8b797210492af0f9c022d8d43803977ff8079d52251863",
+        "policyDigest": "sha256:20f5b6e30e7d7254baabc97894aba2af2d2bcf40f4175f504d195b4e3a832708",
+        "profileCount": 6,
+        "operationCount": 26,
+        "handWrittenProfileFallback": "FORBIDDEN",
+        "callerProvidedProfile": "FORBIDDEN",
         "httpSurface": "NOT_IMPLEMENTED",
         "p2Surface": "NOT_IMPLEMENTED",
         "providerSideEffects": "FORBIDDEN",
@@ -477,7 +526,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:e92a850005efd1970419f0f860ed9769cfd2c6b78cae76a7cbd2c798b1182efc",
+      "inputManifestSha256": "sha256:b2d482ddbd5303c1a8adf3657edc4bd5eae66e824d42b44573c96c4532c7a554",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -527,6 +576,7 @@
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
         "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+        "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
@@ -597,6 +647,7 @@
         "services/control-plane/migrations/manifest.json",
         "services/control-plane/migrations/schema-bundle.json",
         "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
+        "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh"
       ],

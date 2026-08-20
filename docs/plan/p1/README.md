@@ -11,7 +11,8 @@
   [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)、
   [`ADR-0015`](../adr/0015-p1-compatibility-recovery-contract.md)、
   [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)、
-  [`ADR-0017`](../adr/0017-p1-compatibility-recovery-v2-registry.md)
+  [`ADR-0017`](../adr/0017-p1-compatibility-recovery-v2-registry.md)、
+  [`ADR-0018`](../adr/0018-p1-compatibility-recovery-v2-writer-kernel.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -97,16 +98,19 @@
   [`A2.3 evidence-quota blocker`](durable-coordination-evidence-quota-blocker-20260819.md)）。HTTP/P2 external side
   effect 不开放，且不关闭任何 Gate。历史入口审计见
   [`A2.3 pre-entry blocker`](durable-coordination-entry-blocker-20260818.md)
-- Current entry：P1-A2.4 Compatibility/Recovery contract registry 已由 `5a0ed7b` 固定；当前只推进
+- Historical A2.4 v1 entry：Compatibility/Recovery contract registry 已由 `5a0ed7b` 固定；其后只推进了
   append-only PostgreSQL `000010` schema kernel、generated catalog/manifest 与 PG15/16/17 schema-only matrix。
   现有 registry + schema-only kernel 已完成有界 independent review（见
   [`A2.4 v1/kernel independent review`](compatibility-recovery-v1-kernel-independent-review-20260820.md)）。本切片不实现
   writer/service、HTTP/P2/provider effect，不执行生产数据库写入，也不关闭任何 Gate。
 - A2.4 approved entry：[`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)
   已获 owner 批准，保持 v1/`000010` 历史 same-bits，并按 versioned registry repair → append-only writer kernel →
-  typed service/claim/matrix/independent review 三切片推进；明确不开放 HTTP/P2/provider 外部副作用，不授权生产
-  数据库写入、部署、发布或关闭任何 Gate。当前先固定 ADR-0017 与 v2 generated contract Slice A。
-- Remaining P1 slices：P1-A2.4 approved-entry implementation 与 P1-A3 SDK/Identity/Closure
+  typed service/claim/matrix/independent review 三切片推进；Slice A/B 已分别固定，Slice C implementation/matrix 已完成并
+  等待 independent review。HTTP/P2/provider 外部副作用、生产数据库写入、部署、发布与所有 Gate 均未获授权。
+- A2.4 implementation entry：versioned v2 generated registry/profile repair、append-only `000011` writer kernel、typed
+  service/claim and local PG15/16/17 normal/race matrix are implemented in the current worktree; independent review is
+  pending and no Gate is closed (见 [`A2.4 typed service/claim/matrix`](compatibility-recovery-v2-service-claim-matrix-20260820.md))
+- Remaining P1 slices：A2.4 independent review and P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
@@ -193,8 +197,12 @@ Platform RC、Beta 或 GA。
   [`A2.3 full migration closure`](durable-coordination-full-migration-closure-20260820.md)，但不改变其有界 review，
   也不批准 writer/service、HTTP/P2/provider effect 或任何 Gate closure
 - [`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)：
-  A2.4 后续 versioned-registry/writer/service 入口提案；v1 与 `000010` 不可变，三切片仍需 owner approval，
+  A2.4 versioned-registry/writer/service 入口记录；v1 与 `000010` 不可变，三切片已获 owner approval，且仍
   不授权 HTTP/P2、生产写入或 Gate closure
+- [`compatibility-recovery-v2-service-claim-matrix-20260820.md`](compatibility-recovery-v2-service-claim-matrix-20260820.md)：
+  记录 A2.4 typed generated-operation service/claim consumer、single-attempt unknown/reconcile handling 与本地
+  PostgreSQL 15/16/17 normal/race matrix；independent review pending，HTTP/P2/provider、生产数据库写入、部署、发布与
+  所有 Gate 仍保持拒绝/open
 
 ## Data kernel decisions
 

@@ -18,6 +18,7 @@ const (
 
 	bindTenantSQL        = "SELECT pg_catalog.set_config('cloud_agents.tenant_id', $1, true)"
 	readTenantSQL        = "SELECT cloud_agents.require_tenant_id()"
+	readBoundTenantSQL   = "SELECT pg_catalog.current_setting('cloud_agents.tenant_id', true)"
 	readClearedTenantSQL = "SELECT pg_catalog.current_setting('cloud_agents.tenant_id', true)"
 	getPlatformTenantSQL = `SELECT
     tenant.tenant_id,
@@ -103,10 +104,21 @@ func (runner *TenantTransactionRunner) WithTenantRead(
 	tenantID string,
 	callback TenantReadCallback,
 ) error {
+	return runner.withTenantReadBinder(ctx, tenantID, callback, bindTenant)
+}
+
+type tenantBinder func(context.Context, tenantTransaction, string) error
+
+func (runner *TenantTransactionRunner) withTenantReadBinder(
+	ctx context.Context,
+	tenantID string,
+	callback TenantReadCallback,
+	binder tenantBinder,
+) error {
 	if ctx == nil {
 		return ErrNilContext
 	}
-	if callback == nil {
+	if callback == nil || binder == nil {
 		return ErrNilCallback
 	}
 
@@ -136,7 +148,7 @@ func (runner *TenantTransactionRunner) WithTenantRead(
 		return fmt.Errorf("begin tenant read transaction: %w", err)
 	}
 
-	if err := bindTenant(ctx, transaction, tenantID); err != nil {
+	if err := binder(ctx, transaction, tenantID); err != nil {
 		runner.rollbackAndSettle(connection, transaction, &settled)
 		return err
 	}
@@ -170,6 +182,29 @@ func (runner *TenantTransactionRunner) WithTenantRead(
 		return err
 	}
 
+	return nil
+}
+
+// bindTenantSetting is restricted to typed SECURITY DEFINER consumers whose
+// authority group deliberately cannot execute require_tenant_id directly. It
+// proves the transaction-local GUC twice; the typed database function remains
+// responsible for its own require_tenant_id check before reading or writing.
+func bindTenantSetting(ctx context.Context, transaction tenantTransaction, tenantID string) error {
+	var configuredTenant string
+	if err := transaction.queryRow(ctx, bindTenantSQL, tenantID).Scan(&configuredTenant); err != nil {
+		return fmt.Errorf("bind restricted tenant transaction context: %w", err)
+	}
+	if configuredTenant != tenantID {
+		return fmt.Errorf("%w: set_config returned a different restricted value", ErrTenantBindingMismatch)
+	}
+
+	var readbackTenant string
+	if err := transaction.queryRow(ctx, readBoundTenantSQL).Scan(&readbackTenant); err != nil {
+		return fmt.Errorf("read restricted tenant transaction context: %w", err)
+	}
+	if readbackTenant != tenantID {
+		return fmt.Errorf("%w: current_setting returned a different restricted value", ErrTenantBindingMismatch)
+	}
 	return nil
 }
 
