@@ -29,6 +29,17 @@ import {
   TYPESCRIPT_IDENTITY_MANIFEST_PATH,
   TYPESCRIPT_IDENTITY_OUTPUT_PATH,
 } from "./platform-identity-sdk";
+import {
+  assertPlatformJSONSDKCurrent,
+  GO_COMMON_JSON_OUTPUT_PATH,
+  GO_JSON_MANIFEST_PATH,
+  GO_OPENAPI_OUTPUT_PATH,
+  GO_PLATFORM_JSON_OUTPUT_PATH,
+  platformJSONSDKContractInputs,
+  platformJSONSDKGeneratorSources,
+  TYPESCRIPT_JSON_MANIFEST_PATH,
+  TYPESCRIPT_PLATFORM_OUTPUT_PATH,
+} from "./platform-json-sdk";
 import { PLATFORM_GO_TOOLCHAIN } from "./platform-go-modules";
 import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
 
@@ -232,6 +243,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-identity-sdks.ts",
     sources: identitySDKGeneratorSources(),
   },
+  {
+    id: "platform-json-contract-sdk-generator",
+    kind: "in-repo-typescript-deterministic-go-typescript-fixture-sdk",
+    entrypoint: "scripts/generate-platform-json-sdks.ts",
+    sources: platformJSONSDKGeneratorSources(),
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -243,6 +260,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertCompatibilityRecoveryRegistryCurrent(root);
   assertCompatibilityRecoveryRegistryV2Current(root);
   assertIdentitySDKCurrent(root);
+  assertPlatformJSONSDKCurrent(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
   const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
   const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
@@ -257,6 +275,20 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     ...identityContractInputs,
     ...identityGeneratorInputs,
     ...IDENTITY_TYPESCRIPT_ENVELOPE_INPUTS,
+  ].toSorted();
+  const jsonSDKContractInputs = platformJSONSDKContractInputs(root);
+  const jsonSDKGeneratorInputs = platformJSONSDKGeneratorSources();
+  const jsonSDKGoInputs = [
+    ...jsonSDKContractInputs,
+    ...jsonSDKGeneratorInputs,
+    "sdk/go/go.mod",
+    "sdk/go/go.sum",
+  ].toSorted();
+  const jsonSDKTypeScriptInputs = [
+    ...jsonSDKContractInputs,
+    ...jsonSDKGeneratorInputs,
+    "sdk/typescript/package.json",
+    "sdk/typescript/tsconfig.json",
   ].toSorted();
   const compatibilityRecoveryGoInputs = [
     ...COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
@@ -560,6 +592,65 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           providerSideEffects: "FORBIDDEN",
           productionDatabaseWrites: "NOT_AUTHORIZED",
           publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "platform-json-contract-go-sdk-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, jsonSDKGoInputs),
+        inputs: jsonSDKGoInputs,
+        outputStatus: "GENERATED_PLATFORM_JSON_GO_SDK",
+        notGateClosure: true,
+        generatedOutputs: [
+          GO_COMMON_JSON_OUTPUT_PATH,
+          GO_PLATFORM_JSON_OUTPUT_PATH,
+          GO_OPENAPI_OUTPUT_PATH,
+          GO_JSON_MANIFEST_PATH,
+        ].map((path) => ({
+          path,
+          sha256: fileSha256(root, path),
+          sizeBytes: readFileSync(resolve(root, path)).byteLength,
+        })),
+        outputSummary: {
+          profile: "cloud-agents-json-contract-sdk/v1alpha1",
+          packageIdentity: "github.com/hxp0618/cloud-agents/sdk/go",
+          responseUnknownFields: "EXPLICIT_SIDECAR_ONLY",
+          nMinusOneReader: true,
+          transport: "INJECTED_FIXTURE_TRANSPORT_ONLY",
+          serverRouteRegistration: "NOT_IMPLEMENTED",
+          httpSurface: "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "platform-json-contract-typescript-sdk-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, jsonSDKTypeScriptInputs),
+        inputs: jsonSDKTypeScriptInputs,
+        outputStatus: "GENERATED_PLATFORM_JSON_TYPESCRIPT_SDK",
+        notGateClosure: true,
+        generatedOutputs: [TYPESCRIPT_PLATFORM_OUTPUT_PATH, TYPESCRIPT_JSON_MANIFEST_PATH].map(
+          (path) => ({
+            path,
+            sha256: fileSha256(root, path),
+            sizeBytes: readFileSync(resolve(root, path)).byteLength,
+          }),
+        ),
+        outputSummary: {
+          profile: "cloud-agents-json-contract-sdk/v1alpha1",
+          packageIdentity: "@synara/cloud-agent-platform-sdk/platform",
+          responseUnknownFields: "EXPLICIT_SIDECAR_ONLY",
+          nMinusOneReader: true,
+          transport: "INJECTED_FIXTURE_TRANSPORT_ONLY",
+          packagePrivate: true,
+          httpSurface: "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
           gateStatus: "ALL_GATES_OPEN",
         },
       },

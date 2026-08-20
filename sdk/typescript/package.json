@@ -12,6 +12,7 @@
   "files": [
     "dist",
     "generated-manifest.json",
+    "json-generated-manifest.json",
     "LICENSE",
     "README.md"
   ],
@@ -29,10 +30,20 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./platform": {
+      "import": {
+        "types": "./dist/platform.d.mts",
+        "default": "./dist/platform.mjs"
+      },
+      "require": {
+        "types": "./dist/platform.d.cts",
+        "default": "./dist/platform.cjs"
+      }
     }
   },
   "scripts": {
-    "build": "tsdown src/index.ts --format esm,cjs --dts --clean --no-fail-on-warn",
+    "build": "tsdown src/index.ts src/platform.ts --format esm,cjs --dts --clean --no-fail-on-warn",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

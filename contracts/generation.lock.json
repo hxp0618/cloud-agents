@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:cd99c11bedf0159596c4dc9c94b2d2d9c757d6466371cefab26c0d283aadf2dd",
+    "manifestSha256": "sha256:1598a48668f1833d03b1e7d8b83cc0db35ec84ac5ef311ab50c99d3f88cfffa6",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -33,7 +33,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:d7bb72f658aea586470f96afda02421fd92c141e397646ece03320b7b3d9e969",
+    "manifestSha256": "sha256:9d3f14023e68bc8d595eb43782bef6aee2fe6cd13b816c9c37d12efdc73e67c9",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -49,7 +49,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:2b1396f49912805460eeaf7c696a4c28a48b72ada7f876bc4cff603690c751b1",
+      "sourceManifestSha256": "sha256:38cc30b0f37573924185da3b8c399689501365369ffc2b82f2a56a45d2a789d7",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -76,7 +76,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:4662b5c66aa9352ae07dd117b45af768cf550143d1d553b12f9531b32ea75b0e",
+      "sourceManifestSha256": "sha256:3c7f1899b43fa84e35f21832e3a8be2c8794c49ccafac39ade8a15c5eff94fb0",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -174,6 +174,26 @@
         "scripts/lib/platform-identity-sdk.ts",
         "scripts/templates/platform-identity-sdk-go.tmpl",
         "scripts/templates/platform-identity-sdk-typescript.tmpl"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-json-contract-sdk-generator",
+      "kind": "in-repo-typescript-deterministic-go-typescript-fixture-sdk",
+      "entrypoint": "scripts/generate-platform-json-sdks.ts",
+      "sourceManifestSha256": "sha256:010b22c210c5379b9915b85785cb2a75a782b2326e2e16c7355b504fa6263112",
+      "sources": [
+        "scripts/generate-platform-json-sdks.ts",
+        "scripts/lib/platform-json-sdk.test.ts",
+        "scripts/lib/platform-json-sdk.ts",
+        "scripts/templates/platform-json-sdk-go-common.tmpl",
+        "scripts/templates/platform-json-sdk-go-openapi.tmpl",
+        "scripts/templates/platform-json-sdk-go-platform.tmpl",
+        "scripts/templates/platform-json-sdk-typescript.tmpl",
+        "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+        "sdk/go/gen/openapi/v1alpha1/client_generated_test.go",
+        "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+        "sdk/typescript/src/platform.test.ts"
       ],
       "license": "MIT"
     },
@@ -340,7 +360,7 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:cd99c11bedf0159596c4dc9c94b2d2d9c757d6466371cefab26c0d283aadf2dd",
+      "inputManifestSha256": "sha256:1598a48668f1833d03b1e7d8b83cc0db35ec84ac5ef311ab50c99d3f88cfffa6",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
@@ -577,12 +597,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-          "sha256": "sha256:2083a351c797f8763ab13fd13a49287739ca827cdc815ea4e414b2c36326ef37",
+          "sha256": "sha256:5bb26c00d93d3889c272248c1b34fb116678f3dc25d6ec39c8f06cec6ba72f8e",
           "sizeBytes": 13530
         },
         {
           "path": "sdk/go/generated-manifest.json",
-          "sha256": "sha256:28dcf2355e874e050f646e576cfc077cdb3943cf7ebd92a7a4205e13b4c97674",
+          "sha256": "sha256:5f3435ec8805fbd1c327e86a6a44590c2c046bb3752e86fb54603dab84d66d42",
           "sizeBytes": 3740
         }
       ],
@@ -601,7 +621,7 @@
     {
       "id": "common-identity-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:c9e43737cf3975db1b8b7163f7270c7f23797f330a2ed38f10e5f7670523b1b5",
+      "inputManifestSha256": "sha256:826f2175def62f1be79df2bf99e16619047427bab0ed1d99bb192fa45c5de903",
       "inputs": [
         "bun.lock",
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -638,12 +658,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/index.ts",
-          "sha256": "sha256:2014d4124c0505a74f03e1886b976712e13cbf94b41e3b0335704cda5840aa64",
+          "sha256": "sha256:262ecf29c4ea79ad252a20c538159bcb8886888a178ef5c546d04768f6c20685",
           "sizeBytes": 12982
         },
         {
           "path": "sdk/typescript/generated-manifest.json",
-          "sha256": "sha256:afb824da4a3bd728eb6a222c4a95f101505dd977eb05331c7f5f8e264f1e722c",
+          "sha256": "sha256:4d1c9aa976f3aa4ad0a2849218e709fc9d76172934c2024564e1d025d4957ccd",
           "sizeBytes": 3278
         }
       ],
@@ -657,6 +677,232 @@
         "providerSideEffects": "FORBIDDEN",
         "productionDatabaseWrites": "NOT_AUTHORIZED",
         "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "platform-json-contract-go-sdk-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:e5ae13c6f9bbc226f3bd6e933397c72166ed1c546b977a0cff5d1083643a0640",
+      "inputs": [
+        "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
+        "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
+        "contracts/common/v1alpha1/fixtures/golden/problem.json",
+        "contracts/common/v1alpha1/fixtures/golden/subject-ref-canonical.json",
+        "contracts/common/v1alpha1/fixtures/golden/subject-ref.json",
+        "contracts/common/v1alpha1/fixtures/golden/watch-cursor.json",
+        "contracts/common/v1alpha1/fixtures/manifest.json",
+        "contracts/common/v1alpha1/fixtures/negative/authorization-scope-kind-mismatch.json",
+        "contracts/common/v1alpha1/fixtures/negative/idempotency-short-key.json",
+        "contracts/common/v1alpha1/fixtures/negative/problem-secret-field.json",
+        "contracts/common/v1alpha1/fixtures/negative/subject-ref-canonical-escape.json",
+        "contracts/common/v1alpha1/fixtures/negative/subject-ref-digest-mismatch.json",
+        "contracts/common/v1alpha1/fixtures/negative/subject-ref-extra-field.json",
+        "contracts/common/v1alpha1/fixtures/negative/watch-cursor-extra-field.json",
+        "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
+        "contracts/common/v1alpha1/schemas/idempotency.schema.json",
+        "contracts/common/v1alpha1/schemas/identifier.schema.json",
+        "contracts/common/v1alpha1/schemas/organization-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/organization-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/page-token.schema.json",
+        "contracts/common/v1alpha1/schemas/pagination.schema.json",
+        "contracts/common/v1alpha1/schemas/platform-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/problem.schema.json",
+        "contracts/common/v1alpha1/schemas/project-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/project-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/resource-metadata.schema.json",
+        "contracts/common/v1alpha1/schemas/resource-version.schema.json",
+        "contracts/common/v1alpha1/schemas/stable-error.schema.json",
+        "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/tenant-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/tenant-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/watch-cursor-token.schema.json",
+        "contracts/common/v1alpha1/schemas/watch-cursor.schema.json",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-host/v1alpha1/openapi.json",
+        "contracts/platform/v1alpha1/fixtures/golden/membership.json",
+        "contracts/platform/v1alpha1/fixtures/golden/organization.json",
+        "contracts/platform/v1alpha1/fixtures/golden/platform-tenant.json",
+        "contracts/platform/v1alpha1/fixtures/golden/project-create-request.json",
+        "contracts/platform/v1alpha1/fixtures/golden/project.json",
+        "contracts/platform/v1alpha1/fixtures/golden/role-binding.json",
+        "contracts/platform/v1alpha1/fixtures/golden/role.json",
+        "contracts/platform/v1alpha1/fixtures/manifest.json",
+        "contracts/platform/v1alpha1/fixtures/negative/cross-tenant-project.json",
+        "contracts/platform/v1alpha1/fixtures/negative/organization-tenant-ref-mismatch.json",
+        "contracts/platform/v1alpha1/fixtures/negative/project-create-server-owned-field.json",
+        "contracts/platform/v1alpha1/fixtures/negative/project-response-n-minus-one.json",
+        "contracts/platform/v1alpha1/fixtures/negative/role-binding-scope-mismatch.json",
+        "contracts/platform/v1alpha1/fixtures/negative/role-binding-unknown-role.json",
+        "contracts/platform/v1alpha1/fixtures/negative/role-wildcard-permission.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+        "contracts/platform/v1alpha1/schemas/membership.schema.json",
+        "contracts/platform/v1alpha1/schemas/organization.schema.json",
+        "contracts/platform/v1alpha1/schemas/permission.schema.json",
+        "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
+        "contracts/platform/v1alpha1/schemas/project-create-request.schema.json",
+        "contracts/platform/v1alpha1/schemas/project.schema.json",
+        "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+        "contracts/platform/v1alpha1/schemas/role.schema.json",
+        "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
+        "scripts/generate-platform-json-sdks.ts",
+        "scripts/lib/platform-json-sdk.test.ts",
+        "scripts/lib/platform-json-sdk.ts",
+        "scripts/templates/platform-json-sdk-go-common.tmpl",
+        "scripts/templates/platform-json-sdk-go-openapi.tmpl",
+        "scripts/templates/platform-json-sdk-go-platform.tmpl",
+        "scripts/templates/platform-json-sdk-typescript.tmpl",
+        "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+        "sdk/go/gen/openapi/v1alpha1/client_generated_test.go",
+        "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+        "sdk/go/go.mod",
+        "sdk/go/go.sum",
+        "sdk/typescript/src/platform.test.ts"
+      ],
+      "outputStatus": "GENERATED_PLATFORM_JSON_GO_SDK",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
+          "sha256": "sha256:13f8721500267adf12f4375b0b8463ebaafe7169b616e3335023ed2fce0e32e6",
+          "sizeBytes": 28791
+        },
+        {
+          "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
+          "sha256": "sha256:6a93c2a6d5a270ef0f1b85277921e4c7c0804b8a5d21545995cf7a14d8dcee14",
+          "sizeBytes": 24032
+        },
+        {
+          "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
+          "sha256": "sha256:1f5d36246f853094c5c276929d142fbab8c841727fd40d1a83f72a1f58495b94",
+          "sizeBytes": 11624
+        },
+        {
+          "path": "sdk/go/json-generated-manifest.json",
+          "sha256": "sha256:b4e0cae96ad03701946a52dd62cf4c777347128358242ee0d6f76a8703a78a80",
+          "sizeBytes": 9802
+        }
+      ],
+      "outputSummary": {
+        "profile": "cloud-agents-json-contract-sdk/v1alpha1",
+        "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
+        "responseUnknownFields": "EXPLICIT_SIDECAR_ONLY",
+        "nMinusOneReader": true,
+        "transport": "INJECTED_FIXTURE_TRANSPORT_ONLY",
+        "serverRouteRegistration": "NOT_IMPLEMENTED",
+        "httpSurface": "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "platform-json-contract-typescript-sdk-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:82d997f59510595f3f8d396b1a875b9689a851e3ea2663671ea3c66c909b351f",
+      "inputs": [
+        "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
+        "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
+        "contracts/common/v1alpha1/fixtures/golden/problem.json",
+        "contracts/common/v1alpha1/fixtures/golden/subject-ref-canonical.json",
+        "contracts/common/v1alpha1/fixtures/golden/subject-ref.json",
+        "contracts/common/v1alpha1/fixtures/golden/watch-cursor.json",
+        "contracts/common/v1alpha1/fixtures/manifest.json",
+        "contracts/common/v1alpha1/fixtures/negative/authorization-scope-kind-mismatch.json",
+        "contracts/common/v1alpha1/fixtures/negative/idempotency-short-key.json",
+        "contracts/common/v1alpha1/fixtures/negative/problem-secret-field.json",
+        "contracts/common/v1alpha1/fixtures/negative/subject-ref-canonical-escape.json",
+        "contracts/common/v1alpha1/fixtures/negative/subject-ref-digest-mismatch.json",
+        "contracts/common/v1alpha1/fixtures/negative/subject-ref-extra-field.json",
+        "contracts/common/v1alpha1/fixtures/negative/watch-cursor-extra-field.json",
+        "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
+        "contracts/common/v1alpha1/schemas/idempotency.schema.json",
+        "contracts/common/v1alpha1/schemas/identifier.schema.json",
+        "contracts/common/v1alpha1/schemas/organization-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/organization-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/page-token.schema.json",
+        "contracts/common/v1alpha1/schemas/pagination.schema.json",
+        "contracts/common/v1alpha1/schemas/platform-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/problem.schema.json",
+        "contracts/common/v1alpha1/schemas/project-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/project-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/resource-metadata.schema.json",
+        "contracts/common/v1alpha1/schemas/resource-version.schema.json",
+        "contracts/common/v1alpha1/schemas/stable-error.schema.json",
+        "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/tenant-authorization-scope.schema.json",
+        "contracts/common/v1alpha1/schemas/tenant-ref.schema.json",
+        "contracts/common/v1alpha1/schemas/watch-cursor-token.schema.json",
+        "contracts/common/v1alpha1/schemas/watch-cursor.schema.json",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-host/v1alpha1/openapi.json",
+        "contracts/platform/v1alpha1/fixtures/golden/membership.json",
+        "contracts/platform/v1alpha1/fixtures/golden/organization.json",
+        "contracts/platform/v1alpha1/fixtures/golden/platform-tenant.json",
+        "contracts/platform/v1alpha1/fixtures/golden/project-create-request.json",
+        "contracts/platform/v1alpha1/fixtures/golden/project.json",
+        "contracts/platform/v1alpha1/fixtures/golden/role-binding.json",
+        "contracts/platform/v1alpha1/fixtures/golden/role.json",
+        "contracts/platform/v1alpha1/fixtures/manifest.json",
+        "contracts/platform/v1alpha1/fixtures/negative/cross-tenant-project.json",
+        "contracts/platform/v1alpha1/fixtures/negative/organization-tenant-ref-mismatch.json",
+        "contracts/platform/v1alpha1/fixtures/negative/project-create-server-owned-field.json",
+        "contracts/platform/v1alpha1/fixtures/negative/project-response-n-minus-one.json",
+        "contracts/platform/v1alpha1/fixtures/negative/role-binding-scope-mismatch.json",
+        "contracts/platform/v1alpha1/fixtures/negative/role-binding-unknown-role.json",
+        "contracts/platform/v1alpha1/fixtures/negative/role-wildcard-permission.json",
+        "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+        "contracts/platform/v1alpha1/schemas/membership.schema.json",
+        "contracts/platform/v1alpha1/schemas/organization.schema.json",
+        "contracts/platform/v1alpha1/schemas/permission.schema.json",
+        "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
+        "contracts/platform/v1alpha1/schemas/project-create-request.schema.json",
+        "contracts/platform/v1alpha1/schemas/project.schema.json",
+        "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+        "contracts/platform/v1alpha1/schemas/role.schema.json",
+        "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
+        "scripts/generate-platform-json-sdks.ts",
+        "scripts/lib/platform-json-sdk.test.ts",
+        "scripts/lib/platform-json-sdk.ts",
+        "scripts/templates/platform-json-sdk-go-common.tmpl",
+        "scripts/templates/platform-json-sdk-go-openapi.tmpl",
+        "scripts/templates/platform-json-sdk-go-platform.tmpl",
+        "scripts/templates/platform-json-sdk-typescript.tmpl",
+        "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+        "sdk/go/gen/openapi/v1alpha1/client_generated_test.go",
+        "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+        "sdk/typescript/package.json",
+        "sdk/typescript/src/platform.test.ts",
+        "sdk/typescript/tsconfig.json"
+      ],
+      "outputStatus": "GENERATED_PLATFORM_JSON_TYPESCRIPT_SDK",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "sdk/typescript/src/platform.ts",
+          "sha256": "sha256:1c86177a60e82609538bc67789aac68f7dd137445db298d72c515db02bfbd7e0",
+          "sizeBytes": 44209
+        },
+        {
+          "path": "sdk/typescript/json-generated-manifest.json",
+          "sha256": "sha256:322509976bfbac239ed98f5070db33438cc4b0e0732b0c7e197083e0c5184548",
+          "sizeBytes": 9412
+        }
+      ],
+      "outputSummary": {
+        "profile": "cloud-agents-json-contract-sdk/v1alpha1",
+        "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
+        "responseUnknownFields": "EXPLICIT_SIDECAR_ONLY",
+        "nMinusOneReader": true,
+        "transport": "INJECTED_FIXTURE_TRANSPORT_ONLY",
+        "packagePrivate": true,
+        "httpSurface": "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
         "gateStatus": "ALL_GATES_OPEN"
       }
     },
@@ -1072,7 +1318,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:b9762641503de268c2ce858b82fdbcbed3ecf2a7fefb428d6dd9db83e8021b62",
+      "inputManifestSha256": "sha256:8e0c3827c575adcedbc71efe94cb4a5158080c9a4ffb9399899b9ae79d7119f3",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",

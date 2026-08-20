@@ -23,6 +23,13 @@
       "expectedSemanticValid": true
     },
     {
+      "name": "project-response-n-minus-one",
+      "schema": "../schemas/project.schema.json",
+      "instance": "negative/project-response-n-minus-one.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
       "name": "project-create-request",
       "schema": "../schemas/project-create-request.schema.json",
       "instance": "golden/project-create-request.json",

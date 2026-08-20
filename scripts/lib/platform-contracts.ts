@@ -94,6 +94,13 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       expectedSemanticValid: true,
     },
     {
+      name: "project-response-n-minus-one",
+      schema: "../schemas/project.schema.json",
+      instance: "negative/project-response-n-minus-one.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
       name: "project-create-server-owned-field",
       schema: "../schemas/project-create-request.schema.json",
       instance: "negative/project-create-server-owned-field.json",

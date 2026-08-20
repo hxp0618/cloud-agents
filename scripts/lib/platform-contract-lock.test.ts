@@ -263,6 +263,73 @@ describe("Platform contract generation lock", () => {
     expect(lock.pipelines.some((candidate) => candidate.id === "generated-sdk-replay")).toBe(false);
   });
 
+  it("records the JSON SDK and fixture server seam without enabling routes or side effects", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<{
+        id?: string;
+        inputs?: string[];
+        generatedOutputs?: unknown[];
+        outputSummary?: Record<string, unknown>;
+      }>;
+    };
+    const go = lock.pipelines.find(
+      (candidate) => candidate.id === "platform-json-contract-go-sdk-generation",
+    );
+    const typescript = lock.pipelines.find(
+      (candidate) => candidate.id === "platform-json-contract-typescript-sdk-generation",
+    );
+    expect(go).toMatchObject({
+      outputStatus: "GENERATED_PLATFORM_JSON_GO_SDK",
+      notGateClosure: true,
+      outputSummary: {
+        profile: "cloud-agents-json-contract-sdk/v1alpha1",
+        responseUnknownFields: "EXPLICIT_SIDECAR_ONLY",
+        nMinusOneReader: true,
+        transport: "INJECTED_FIXTURE_TRANSPORT_ONLY",
+        serverRouteRegistration: "NOT_IMPLEMENTED",
+        httpSurface: "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+    });
+    expect(go?.generatedOutputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "sdk/go/gen/common/v1alpha1/json_generated.go" }),
+        expect.objectContaining({ path: "sdk/go/gen/openapi/v1alpha1/client_generated.go" }),
+      ]),
+    );
+    expect(typescript).toMatchObject({
+      outputStatus: "GENERATED_PLATFORM_JSON_TYPESCRIPT_SDK",
+      notGateClosure: true,
+      outputSummary: {
+        profile: "cloud-agents-json-contract-sdk/v1alpha1",
+        responseUnknownFields: "EXPLICIT_SIDECAR_ONLY",
+        nMinusOneReader: true,
+        transport: "INJECTED_FIXTURE_TRANSPORT_ONLY",
+        packagePrivate: true,
+        httpSurface: "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+    });
+    expect(typescript?.generatedOutputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "sdk/typescript/src/platform.ts" }),
+        expect.objectContaining({ path: "sdk/typescript/json-generated-manifest.json" }),
+      ]),
+    );
+    for (const pipeline of [go, typescript]) {
+      expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
+      expect(pipeline?.inputs).toContain("scripts/generate-platform-json-sdks.ts");
+      expect(pipeline?.inputs).toContain("sdk/typescript/src/platform.test.ts");
+    }
+  });
+
   it("rejects symbolic links in recursive migration inputs", () => {
     const root = temporaryRoot();
     mkdirSync(join(root, "catalog"));
