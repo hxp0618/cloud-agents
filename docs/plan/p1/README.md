@@ -343,6 +343,10 @@ Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStat
 [`runner/CLI pre-DB configuration`](migration-runner-cli-pre-db-configuration-20260821.md) 只固定显式
 `--evidence-root`、数据库 locator 与 trust-before-artifact/evidence/DB 的配置顺序；CLI 仍使用
 `RejectingTrustVerifier`，不打开正向执行或生产数据库路径。
+其固定候选的有界 independent review 已批准（见
+[`runner/CLI pre-DB independent review`](migration-runner-cli-pre-db-configuration-independent-review-20260821.md)，
+`P0=0/P1=0/P2=0`），仅确认该配置与 fail-closed 顺序，不构成正向 trust、生产数据库、部署、发布或任何 Gate
+closure。
 `bbb0bf2` 已关闭 complete synthetic signed subject 的 exported expression/catalog projector 与本地双快照矩阵；
 Signed expected subject 的 production verifier、deployment trust-root wiring、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
