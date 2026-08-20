@@ -20,6 +20,15 @@ import {
   durableCoordinationRegistryInputs,
   DURABLE_COORDINATION_OUTPUT_PATH,
 } from "./platform-durable-coordination-registry";
+import {
+  assertIdentitySDKCurrent,
+  GO_IDENTITY_MANIFEST_PATH,
+  GO_IDENTITY_OUTPUT_PATH,
+  identitySDKContractInputs,
+  identitySDKGeneratorSources,
+  TYPESCRIPT_IDENTITY_MANIFEST_PATH,
+  TYPESCRIPT_IDENTITY_OUTPUT_PATH,
+} from "./platform-identity-sdk";
 import { PLATFORM_GO_TOOLCHAIN } from "./platform-go-modules";
 import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
 
@@ -30,11 +39,32 @@ const TOOLCHAIN_AUTHORITY_FILES = [".mise.toml", "package.json"] as const;
 const PLATFORM_GO_INPUTS = [
   "go.work",
   "sdk/go/go.mod",
+  "sdk/go/go.sum",
   "sdk/go/doc.go",
+  "sdk/go/THIRD_PARTY_NOTICES.md",
+  GO_IDENTITY_MANIFEST_PATH,
+  GO_IDENTITY_OUTPUT_PATH,
   "services/control-plane/go.mod",
   "services/control-plane/doc.go",
   "services/worker/go.mod",
   "services/worker/doc.go",
+] as const;
+const IDENTITY_GO_ENVELOPE_INPUTS = [
+  "docs/plan/p1/dependency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md",
+  "sdk/go/go.mod",
+  "sdk/go/go.sum",
+  "sdk/go/doc.go",
+  "sdk/go/THIRD_PARTY_NOTICES.md",
+  "sdk/go/gen/common/v1alpha1/identity_generated_test.go",
+] as const;
+const IDENTITY_TYPESCRIPT_ENVELOPE_INPUTS = [
+  "package.json",
+  "bun.lock",
+  "sdk/typescript/package.json",
+  "sdk/typescript/tsconfig.json",
+  "sdk/typescript/LICENSE",
+  "sdk/typescript/README.md",
+  "sdk/typescript/src/identity.test.ts",
 ] as const;
 const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0009-p1-migration-bundle-runner.md",
@@ -161,6 +191,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-contracts.ts",
       "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
+      "scripts/lib/platform-identity-sdk.ts",
       "scripts/lib/platform-go-modules.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
@@ -195,6 +226,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-compatibility-recovery-go.ts",
     sources: COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
   },
+  {
+    id: "platform-common-identity-sdk-generator",
+    kind: "in-repo-typescript-deterministic-go-typescript-sdk",
+    entrypoint: "scripts/generate-platform-identity-sdks.ts",
+    sources: identitySDKGeneratorSources(),
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -205,9 +242,22 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertDurableCoordinationRegistryCurrent(root);
   assertCompatibilityRecoveryRegistryCurrent(root);
   assertCompatibilityRecoveryRegistryV2Current(root);
+  assertIdentitySDKCurrent(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
   const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
   const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
+  const identityContractInputs = identitySDKContractInputs(root);
+  const identityGeneratorInputs = identitySDKGeneratorSources();
+  const identityGoInputs = [
+    ...identityContractInputs,
+    ...identityGeneratorInputs,
+    ...IDENTITY_GO_ENVELOPE_INPUTS,
+  ].toSorted();
+  const identityTypeScriptInputs = [
+    ...identityContractInputs,
+    ...identityGeneratorInputs,
+    ...IDENTITY_TYPESCRIPT_ENVELOPE_INPUTS,
+  ].toSorted();
   const compatibilityRecoveryGoInputs = [
     ...COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
     COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH,
@@ -459,6 +509,57 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           providerSideEffects: "FORBIDDEN",
           productionDatabaseWrites: "NOT_AUTHORIZED",
           externalSideEffects: "FORBIDDEN",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "common-identity-go-sdk-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, identityGoInputs),
+        inputs: identityGoInputs,
+        outputStatus: "GENERATED_COMMON_IDENTITY_GO_SDK",
+        notGateClosure: true,
+        generatedOutputs: [GO_IDENTITY_OUTPUT_PATH, GO_IDENTITY_MANIFEST_PATH].map((path) => ({
+          path,
+          sha256: fileSha256(root, path),
+          sizeBytes: readFileSync(resolve(root, path)).byteLength,
+        })),
+        outputSummary: {
+          profile: "cloud-agents-common-identity/v1alpha1",
+          packageIdentity: "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1",
+          runtimeDependency: "golang.org/x/text v0.39.0",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "common-identity-typescript-sdk-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, identityTypeScriptInputs),
+        inputs: identityTypeScriptInputs,
+        outputStatus: "GENERATED_COMMON_IDENTITY_TYPESCRIPT_SDK",
+        notGateClosure: true,
+        generatedOutputs: [TYPESCRIPT_IDENTITY_OUTPUT_PATH, TYPESCRIPT_IDENTITY_MANIFEST_PATH].map(
+          (path) => ({
+            path,
+            sha256: fileSha256(root, path),
+            sizeBytes: readFileSync(resolve(root, path)).byteLength,
+          }),
+        ),
+        outputSummary: {
+          profile: "cloud-agents-common-identity/v1alpha1",
+          packageIdentity: "@synara/cloud-agent-platform-sdk",
+          packagePrivate: true,
+          runtimeDependencies: 0,
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
           gateStatus: "ALL_GATES_OPEN",
         },
       },

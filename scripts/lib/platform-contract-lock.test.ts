@@ -192,8 +192,8 @@ describe("Platform contract generation lock", () => {
         profileCount: 6,
         schemaHead: "000010",
         historicalCompatibility: "V1_SAME_BITS_NON_AUTHORITY",
-        runtimeConsumer: "NOT_IMPLEMENTED",
-        sqlWriterConsumer: "NOT_IMPLEMENTED_AFTER_000010",
+        runtimeConsumer: "GENERATED_GO_PROFILE_TYPED_SERVICE_000011",
+        sqlWriterConsumer: "GENERATED_PROFILE_TYPED_FUNCTIONS_000011",
         httpSurface: "NOT_IMPLEMENTED",
         p2Surface: "NOT_IMPLEMENTED",
         providerSideEffects: "FORBIDDEN",
@@ -216,6 +216,51 @@ describe("Platform contract generation lock", () => {
       "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
     );
     expect(inputs).not.toContain("services/control-plane/migrations/000011_add_writer.sql");
+  });
+
+  it("records both generated common identity SDK profiles as non-Gate evidence", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const go = lock.pipelines.find(
+      (candidate) => candidate.id === "common-identity-go-sdk-generation",
+    );
+    const typescript = lock.pipelines.find(
+      (candidate) => candidate.id === "common-identity-typescript-sdk-generation",
+    );
+    for (const pipeline of [go, typescript]) {
+      expect(pipeline).toMatchObject({
+        notGateClosure: true,
+        outputStatus: expect.stringMatching(/^GENERATED_COMMON_IDENTITY_/u),
+        outputSummary: {
+          profile: "cloud-agents-common-identity/v1alpha1",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      });
+      expect(pipeline?.inputs).toEqual([...((pipeline?.inputs ?? []) as string[])].toSorted());
+      expect(pipeline?.generatedOutputs).toHaveLength(2);
+    }
+    expect(go?.outputSummary).toMatchObject({
+      packageIdentity: "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1",
+      runtimeDependency: "golang.org/x/text v0.39.0",
+    });
+    expect(typescript?.outputSummary).toMatchObject({
+      packageIdentity: "@synara/cloud-agent-platform-sdk",
+      packagePrivate: true,
+      runtimeDependencies: 0,
+    });
+    expect(go?.inputs).toContain(
+      "docs/plan/p1/dependency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md",
+    );
+    expect(go?.inputs).toContain("sdk/go/gen/common/v1alpha1/identity_generated_test.go");
+    expect(typescript?.inputs).toContain("sdk/typescript/src/identity.test.ts");
+    expect(lock.pipelines.some((candidate) => candidate.id === "generated-sdk-replay")).toBe(false);
   });
 
   it("rejects symbolic links in recursive migration inputs", () => {
