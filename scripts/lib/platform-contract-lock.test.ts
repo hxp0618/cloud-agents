@@ -177,6 +177,47 @@ describe("Platform contract generation lock", () => {
     );
   });
 
+  it("records the versioned compatibility and recovery registry without enabling writers or Gates", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const pipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "compatibility-recovery-registry-v2-generation",
+    );
+    expect(pipeline).toMatchObject({
+      outputStatus: "GENERATED_COMPATIBILITY_RECOVERY_REGISTRY_V2",
+      notGateClosure: true,
+      outputSummary: {
+        profileCount: 6,
+        schemaHead: "000010",
+        historicalCompatibility: "V1_SAME_BITS_NON_AUTHORITY",
+        runtimeConsumer: "NOT_IMPLEMENTED",
+        sqlWriterConsumer: "NOT_IMPLEMENTED_AFTER_000010",
+        httpSurface: "NOT_IMPLEMENTED",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        externalSideEffects: "FORBIDDEN",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+        },
+      ],
+    });
+    const inputs = pipeline?.inputs as string[];
+    expect(inputs).toContain("docs/plan/adr/0017-p1-compatibility-recovery-v2-registry.md");
+    expect(inputs).toContain(
+      "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v2.json",
+    );
+    expect(inputs).toContain(
+      "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+    );
+    expect(inputs).not.toContain("services/control-plane/migrations/000011_add_writer.sql");
+  });
+
   it("rejects symbolic links in recursive migration inputs", () => {
     const root = temporaryRoot();
     mkdirSync(join(root, "catalog"));

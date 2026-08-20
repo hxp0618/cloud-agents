@@ -207,6 +207,20 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       expectedSchemaValid: true,
       expectedSemanticValid: true,
     },
+    {
+      name: "compatibility-recovery-registry-source-v2",
+      schema: "../schemas/compatibility-recovery-registry-source-v2.schema.json",
+      instance: "golden/compatibility-recovery-registry-source-v2.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "compatibility-recovery-registry-v2",
+      schema: "../schemas/compatibility-recovery-registry-v2.schema.json",
+      instance: "../../../generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
   ],
 };
 

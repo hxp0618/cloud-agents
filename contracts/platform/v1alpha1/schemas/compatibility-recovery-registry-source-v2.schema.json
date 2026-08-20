@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v2.schema.json",
+  "title": "CompatibilityRecoveryRegistrySourceV2",
+  "description": "Approved A2.4 versioned generated-registry source. This slice defines typed operation identities and remains non-executable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "schemaRange",
+    "schemaBinding",
+    "historicalCompatibility",
+    "selector",
+    "profiles",
+    "stateMachines",
+    "policies",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-compatibility-recovery-source/v2" },
+    "registryId": { "const": "cloud-agents/platform/compatibility-recovery" },
+    "schemaRange": {
+      "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/schemaRange"
+    },
+    "schemaBinding": { "$ref": "#/$defs/schemaBinding" },
+    "historicalCompatibility": { "$ref": "#/$defs/historicalCompatibility" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "profiles": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "stateMachines": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/stateMachine"
+      }
+    },
+    "policies": { "$ref": "#/$defs/policies" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "schemaBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaHead", "schemaCatalogSha256", "schemaMigrationSha256"],
+      "properties": {
+        "schemaHead": { "const": "000010" },
+        "schemaCatalogSha256": { "$ref": "#/$defs/digest" },
+        "schemaMigrationSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "historicalCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["priorFormatVersion", "priorRegistryDigest", "mode"],
+      "properties": {
+        "priorFormatVersion": { "const": "cloud-agents-compatibility-recovery-source/v1" },
+        "priorRegistryDigest": { "$ref": "#/$defs/digest" },
+        "mode": { "const": "historical_schema_only_non_authority" }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "profileSelection",
+        "callerProvidedProfile",
+        "storedRowSelection",
+        "schemaBinding"
+      ],
+      "properties": {
+        "mode": { "const": "generated_registry_only" },
+        "profileSelection": { "const": "exact_profile_id_and_digest" },
+        "callerProvidedProfile": { "const": "forbidden" },
+        "storedRowSelection": { "const": "forbidden" },
+        "schemaBinding": { "const": "exact_schema_head_catalog_and_migration_digest" }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "sqlFunction",
+        "serviceMethod",
+        "mode",
+        "capability",
+        "unknownOutcome"
+      ],
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*/v2$",
+          "maxLength": 96
+        },
+        "sqlFunction": {
+          "type": "string",
+          "pattern": "^cloud_agents\\.[a-z][a-z0-9_]{2,62}$",
+          "maxLength": 76
+        },
+        "serviceMethod": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]{2,63}$" },
+        "mode": { "enum": ["mutation", "read_only"] },
+        "capability": {
+          "type": "string",
+          "pattern": "^compatibility_recovery\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+          "maxLength": 96
+        },
+        "unknownOutcome": {
+          "enum": ["not_applicable", "reconcile_required_no_write_retry"]
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "kind",
+        "stateMachineId",
+        "accessMode",
+        "operations",
+        "persistedFields",
+        "requiredEvidence",
+        "rules"
+      ],
+      "properties": {
+        "profileId": {
+          "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/profileId"
+        },
+        "kind": {
+          "enum": [
+            "backfill",
+            "live_instance",
+            "migration_preflight",
+            "restore_evidence",
+            "retirement_receipt",
+            "workload_principal"
+          ]
+        },
+        "stateMachineId": {
+          "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/profileId"
+        },
+        "accessMode": { "enum": ["mutation", "read_only"] },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "persistedFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        },
+        "requiredEvidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 3, "maxLength": 192 }
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bootstrap",
+        "preflight",
+        "expiredRegistration",
+        "restore",
+        "mutation",
+        "failureMode"
+      ],
+      "properties": {
+        "bootstrap": {
+          "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/policies/properties/bootstrap"
+        },
+        "preflight": {
+          "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/policies/properties/preflight"
+        },
+        "expiredRegistration": {
+          "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/policies/properties/expiredRegistration"
+        },
+        "restore": {
+          "$ref": "compatibility-recovery-registry-source-v1.schema.json#/$defs/policies/properties/restore"
+        },
+        "mutation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["timeSource", "unknownOutcome", "lockOrder", "externalCallWhileLocked"],
+          "properties": {
+            "timeSource": { "const": "database_clock" },
+            "unknownOutcome": { "const": "reconcile_required_no_write_retry" },
+            "lockOrder": { "const": "tenant_profile_identity" },
+            "externalCallWhileLocked": { "const": "forbidden" }
+          }
+        },
+        "failureMode": { "const": "fail_closed" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sqlWriterMigration",
+        "goConsumer",
+        "httpSurface",
+        "externalSideEffects",
+        "providerSideEffects",
+        "productionDatabaseWrites",
+        "gateStatus"
+      ],
+      "properties": {
+        "sqlWriterMigration": { "const": "not_implemented_after_000010" },
+        "goConsumer": { "const": "not_implemented" },
+        "httpSurface": { "const": "not_implemented" },
+        "externalSideEffects": { "const": "forbidden" },
+        "providerSideEffects": { "const": "forbidden" },
+        "productionDatabaseWrites": { "const": "not_authorized" },
+        "gateStatus": { "const": "all_gates_open" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "consumerRule": "only the generated exact profile and operation tuple may be consumed",
+    "callerProvidedRegistry": "forbidden"
+  }
+}

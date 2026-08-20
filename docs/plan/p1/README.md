@@ -10,7 +10,8 @@
   [`ADR-0013`](../adr/0013-p1-durable-coordination-contract.md)、
   [`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)、
   [`ADR-0015`](../adr/0015-p1-compatibility-recovery-contract.md)、
-  [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)
+  [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)、
+  [`ADR-0017`](../adr/0017-p1-compatibility-recovery-v2-registry.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -101,9 +102,10 @@
   现有 registry + schema-only kernel 已完成有界 independent review（见
   [`A2.4 v1/kernel independent review`](compatibility-recovery-v1-kernel-independent-review-20260820.md)）。本切片不实现
   writer/service、HTTP/P2/provider effect，不执行生产数据库写入，也不关闭任何 Gate。
-- A2.4 next-entry proposal：[`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)
-  将 v1/`000010` 保持历史 same-bits，并把 versioned registry repair → append-only writer kernel → typed
-  service/claim/matrix/independent review 固定为需 owner approval 的三切片；当前仍 PROPOSED ONLY。
+- A2.4 approved entry：[`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)
+  已获 owner 批准，保持 v1/`000010` 历史 same-bits，并按 versioned registry repair → append-only writer kernel →
+  typed service/claim/matrix/independent review 三切片推进；明确不开放 HTTP/P2/provider 外部副作用，不授权生产
+  数据库写入、部署、发布或关闭任何 Gate。当前先固定 ADR-0017 与 v2 generated contract Slice A。
 - Remaining P1 slices：P1-A2.4 approved-entry implementation 与 P1-A3 SDK/Identity/Closure
 - Gate closure：none
 

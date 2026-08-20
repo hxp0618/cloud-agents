@@ -39,16 +39,23 @@ five profiles bind instance identity, writer epoch, heartbeat/TTL, drain and ret
 local logical restore evidence, and bounded backfill state. This entry slice has no `000010`, Go consumer, HTTP/P2
 surface, or external side effect; its generation-lock pipeline is non-Gate evidence only.
 
+ADR-0017 preserves that v1 artifact byte-for-byte and adds a distinct v2 generated registry/profile repair bound to
+the exact `000010` schema catalog and migration digests. Its six profiles add explicit workload-principal authority
+and exact operation → SQL-function → typed-service identities. The v2 Slice A pipeline is still contract-only: the
+post-`000010` writer and Go consumer are not implemented, HTTP/P2 is absent, provider/external side effects are
+forbidden, production database writes are not authorized, and every Gate remains open.
+
 ## P1-A bootstrap status
 
-- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 49 fixture
+- JSON Schema, foundation OpenAPI, Proto source, and semantic fixtures are authored; checked-in schemas and 51 fixture
   cases pass the independently reviewed `Ajv2020` plus in-repo semantic bootstrap path. Mutation inputs reject unknown
   fields; response/watch unknown-field preservation remains a generated-reader sidecar seam described in
   `common/v1alpha1/README.md`, not a relaxation of mutation schemas.
 - The three Go source modules and exact Go toolchain boundary are established.
 - `contracts/generation.lock.json` binds the bootstrap source/tool/dependency digests and distinct
   `durable-coordination-registry-generation`, `durable-coordination-go-profile-generation`, and
-  `compatibility-recovery-registry-generation` pipelines. All generated-contract pipelines remain explicitly
+  versioned `compatibility-recovery-registry-generation` and
+  `compatibility-recovery-registry-v2-generation` pipelines. All generated-contract pipelines remain explicitly
   non-Gate evidence;
   generated SDKs, compiled Proto descriptors, ConnectRPC/gRPC code, full OpenAPI validation, official JSON Schema
   suite, and N/N-1 compatibility evidence remain incomplete until follow-up P1-A slices land.

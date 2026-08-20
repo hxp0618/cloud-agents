@@ -6,9 +6,13 @@ import { relative, resolve, sep } from "node:path";
 import { validatePlatformContractTree } from "./platform-contracts";
 import {
   assertCompatibilityRecoveryRegistryCurrent,
+  assertCompatibilityRecoveryRegistryV2Current,
   buildCompatibilityRecoveryRegistry,
+  buildCompatibilityRecoveryRegistryV2,
   compatibilityRecoveryRegistryInputs,
+  compatibilityRecoveryRegistryV2Inputs,
   COMPATIBILITY_RECOVERY_OUTPUT_PATH,
+  COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH,
 } from "./platform-compatibility-recovery-registry";
 import {
   assertDurableCoordinationRegistryCurrent,
@@ -100,6 +104,19 @@ const COMPATIBILITY_RECOVERY_GENERATOR_SOURCES = [
   "scripts/lib/platform-compatibility-recovery-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
+const COMPATIBILITY_RECOVERY_V2_GENERATOR_SOURCES = [
+  "docs/plan/adr/0017-p1-compatibility-recovery-v2-registry.md",
+  "docs/plan/p1/compatibility-recovery-service-entry-blocker-20260820.md",
+  "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v2.json",
+  "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v2.schema.json",
+  "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v2.schema.json",
+  "services/control-plane/migrations/catalog/schema-000010.json",
+  "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+  "scripts/generate-platform-compatibility-recovery-registry.ts",
+  "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+  "scripts/lib/platform-compatibility-recovery-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
 
 const IN_REPO_TOOLS = [
   {
@@ -157,6 +174,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-compatibility-recovery-registry.ts",
     sources: COMPATIBILITY_RECOVERY_GENERATOR_SOURCES,
   },
+  {
+    id: "platform-compatibility-recovery-registry-v2-generator",
+    kind: "in-repo-typescript-deterministic-versioned-contract-registry",
+    entrypoint: "scripts/generate-platform-compatibility-recovery-registry.ts",
+    sources: COMPATIBILITY_RECOVERY_V2_GENERATOR_SOURCES,
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -166,14 +189,17 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const migrationInputs = platformMigrationInputs(root);
   assertDurableCoordinationRegistryCurrent(root);
   assertCompatibilityRecoveryRegistryCurrent(root);
+  assertCompatibilityRecoveryRegistryV2Current(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
   const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
+  const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
   const durableCoordinationGoInputs = [
     ...DURABLE_COORDINATION_GO_GENERATOR_SOURCES,
     DURABLE_COORDINATION_OUTPUT_PATH,
   ].toSorted();
   const durableCoordinationRegistry = buildDurableCoordinationRegistry(root);
   const compatibilityRecoveryRegistry = buildCompatibilityRecoveryRegistry(root);
+  const compatibilityRecoveryRegistryV2 = buildCompatibilityRecoveryRegistryV2(root);
   const durableCoordinationProfile = (
     durableCoordinationRegistry.profiles as ReadonlyArray<{
       readonly profileDigest: string;
@@ -350,6 +376,40 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           externalSideEffects: "FORBIDDEN",
           localLogicalRestore: "CONTRACT_ONLY_NOT_IMPLEMENTED",
           pitrHa: "P4_NOT_IMPLEMENTED",
+        },
+      },
+      {
+        id: "compatibility-recovery-registry-v2-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, compatibilityRecoveryV2Inputs),
+        inputs: compatibilityRecoveryV2Inputs,
+        outputStatus: "GENERATED_COMPATIBILITY_RECOVERY_REGISTRY_V2",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH,
+            sha256: fileSha256(root, COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH))
+              .byteLength,
+          },
+        ],
+        outputSummary: {
+          registryId: compatibilityRecoveryRegistryV2.registryId,
+          registryDigest: compatibilityRecoveryRegistryV2.registryDigest,
+          sourceDigest: compatibilityRecoveryRegistryV2.sourceDigest,
+          stateMachineDigest: compatibilityRecoveryRegistryV2.stateMachineDigest,
+          policyDigest: compatibilityRecoveryRegistryV2.policyDigest,
+          profileCount: (compatibilityRecoveryRegistryV2.profiles as ReadonlyArray<unknown>).length,
+          schemaHead: "000010",
+          historicalCompatibility: "V1_SAME_BITS_NON_AUTHORITY",
+          runtimeConsumer: "NOT_IMPLEMENTED",
+          sqlWriterConsumer: "NOT_IMPLEMENTED_AFTER_000010",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          externalSideEffects: "FORBIDDEN",
+          gateStatus: "ALL_GATES_OPEN",
         },
       },
       {

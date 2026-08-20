@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:3ebeb225e197826cb054648deff06df9edba1eeeab4ef13630df3588c2178c4b",
+    "manifestSha256": "sha256:cd99c11bedf0159596c4dc9c94b2d2d9c757d6466371cefab26c0d283aadf2dd",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -49,7 +49,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:855c6806d2953c1c475aef2bc64d2846b9c4e69afa1d62400d555e83b2802f7b",
+      "sourceManifestSha256": "sha256:2b1396f49912805460eeaf7c696a4c28a48b72ada7f876bc4cff603690c751b1",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -76,7 +76,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:63adda832383a3c010e3f8a32052b9580b691051130f45e2c45e05413d45a34b",
+      "sourceManifestSha256": "sha256:0b725042a96ba242f73c3a5d24b7fa3c7e0a5cd1f03c5679027e97d7c9c55918",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -117,12 +117,32 @@
       "id": "platform-compatibility-recovery-registry-generator",
       "kind": "in-repo-typescript-deterministic-contract-registry",
       "entrypoint": "scripts/generate-platform-compatibility-recovery-registry.ts",
-      "sourceManifestSha256": "sha256:f721ff17d428f487466736e0d5b404378a3eceff043f8da002f2fcea730820f8",
+      "sourceManifestSha256": "sha256:3fa1216ef07460780c843cca0f6558e19433604e1be7740b02b0c3810134e830",
       "sources": [
         "docs/plan/adr/0015-p1-compatibility-recovery-contract.md",
         "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
         "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v1.schema.json",
+        "scripts/generate-platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-compatibility-recovery-registry-v2-generator",
+      "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
+      "entrypoint": "scripts/generate-platform-compatibility-recovery-registry.ts",
+      "sourceManifestSha256": "sha256:9d5336585d57ec690f9e3dbb871a29034789726f2a566593003ffdba36234830",
+      "sources": [
+        "docs/plan/adr/0017-p1-compatibility-recovery-v2-registry.md",
+        "docs/plan/p1/compatibility-recovery-service-entry-blocker-20260820.md",
+        "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v2.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v2.schema.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v2.schema.json",
+        "services/control-plane/migrations/catalog/schema-000010.json",
+        "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
         "scripts/generate-platform-compatibility-recovery-registry.ts",
         "scripts/lib/platform-compatibility-recovery-registry.test.ts",
         "scripts/lib/platform-compatibility-recovery-registry.ts",
@@ -288,7 +308,7 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:3ebeb225e197826cb054648deff06df9edba1eeeab4ef13630df3588c2178c4b",
+      "inputManifestSha256": "sha256:cd99c11bedf0159596c4dc9c94b2d2d9c757d6466371cefab26c0d283aadf2dd",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
@@ -371,7 +391,7 @@
     {
       "id": "compatibility-recovery-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f721ff17d428f487466736e0d5b404378a3eceff043f8da002f2fcea730820f8",
+      "inputManifestSha256": "sha256:3fa1216ef07460780c843cca0f6558e19433604e1be7740b02b0c3810134e830",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
         "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
@@ -404,6 +424,51 @@
         "externalSideEffects": "FORBIDDEN",
         "localLogicalRestore": "CONTRACT_ONLY_NOT_IMPLEMENTED",
         "pitrHa": "P4_NOT_IMPLEMENTED"
+      }
+    },
+    {
+      "id": "compatibility-recovery-registry-v2-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:9d5336585d57ec690f9e3dbb871a29034789726f2a566593003ffdba36234830",
+      "inputs": [
+        "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v2.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v2.schema.json",
+        "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v2.schema.json",
+        "docs/plan/adr/0017-p1-compatibility-recovery-v2-registry.md",
+        "docs/plan/p1/compatibility-recovery-service-entry-blocker-20260820.md",
+        "scripts/generate-platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+        "scripts/lib/platform-compatibility-recovery-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+        "services/control-plane/migrations/catalog/schema-000010.json"
+      ],
+      "outputStatus": "GENERATED_COMPATIBILITY_RECOVERY_REGISTRY_V2",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+          "sha256": "sha256:837e9a7f3b9e00dc5971cafb2bb37695b4fd5553db7e3003214f327be05e850e",
+          "sizeBytes": 25198
+        }
+      ],
+      "outputSummary": {
+        "registryId": "cloud-agents/platform/compatibility-recovery",
+        "registryDigest": "sha256:d5ca128f28d637349dd6f8515f9ca6bb182fb0778a3160e24d731712589f2973",
+        "sourceDigest": "sha256:21a8bd04e5dd4964a568d3ebf2a40bd92c7f7526ff32a7f539e67a45387eb47c",
+        "stateMachineDigest": "sha256:41ed340b8a1106341f8b797210492af0f9c022d8d43803977ff8079d52251863",
+        "policyDigest": "sha256:20f5b6e30e7d7254baabc97894aba2af2d2bcf40f4175f504d195b4e3a832708",
+        "profileCount": 6,
+        "schemaHead": "000010",
+        "historicalCompatibility": "V1_SAME_BITS_NON_AUTHORITY",
+        "runtimeConsumer": "NOT_IMPLEMENTED",
+        "sqlWriterConsumer": "NOT_IMPLEMENTED_AFTER_000010",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "externalSideEffects": "FORBIDDEN",
+        "gateStatus": "ALL_GATES_OPEN"
       }
     },
     {

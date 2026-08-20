@@ -1,0 +1,577 @@
+{
+  "formatVersion": "cloud-agents-compatibility-recovery-source/v2",
+  "registryId": "cloud-agents/platform/compatibility-recovery",
+  "schemaRange": {
+    "minInclusive": "000001",
+    "maxInclusive": "000010",
+    "comparison": "zero-padded-migration-id-inclusive"
+  },
+  "schemaBinding": {
+    "schemaHead": "000010",
+    "schemaCatalogSha256": "sha256:a84a02c20244b60d2ffe4d27beb6fa5f5e0db8fb95ef91eef8865bce63412236",
+    "schemaMigrationSha256": "sha256:ab758a08c07ffb95b9e9a612c90079fcaf54d06407d0cfe4a0368db570f621e6"
+  },
+  "historicalCompatibility": {
+    "priorFormatVersion": "cloud-agents-compatibility-recovery-source/v1",
+    "priorRegistryDigest": "sha256:9df9dcf4c9e62cd95b43be362bf5a332bf9637ca881f16fbd25486ad0792f72d",
+    "mode": "historical_schema_only_non_authority"
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "callerProvidedProfile": "forbidden",
+    "storedRowSelection": "forbidden",
+    "schemaBinding": "exact_schema_head_catalog_and_migration_digest"
+  },
+  "profiles": [
+    {
+      "profileId": "backfill/v2",
+      "kind": "backfill",
+      "stateMachineId": "backfill/v2",
+      "accessMode": "mutation",
+      "operations": [
+        {
+          "operationId": "backfill-acquire-lease/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_backfill_acquire_lease_v2",
+          "serviceMethod": "AcquireBackfillLease",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.backfill.acquire_lease",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "backfill-advance/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_backfill_advance_v2",
+          "serviceMethod": "AdvanceBackfill",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.backfill.advance",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "backfill-complete/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_backfill_complete_v2",
+          "serviceMethod": "CompleteBackfill",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.backfill.complete",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "backfill-heartbeat/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_backfill_heartbeat_v2",
+          "serviceMethod": "HeartbeatBackfill",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.backfill.heartbeat",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "backfill-reconcile/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_backfill_reconcile_v2",
+          "serviceMethod": "ReconcileBackfill",
+          "mode": "read_only",
+          "capability": "compatibility_recovery.backfill.reconcile",
+          "unknownOutcome": "not_applicable"
+        },
+        {
+          "operationId": "backfill-start/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_backfill_start_v2",
+          "serviceMethod": "StartBackfill",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.backfill.start",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        }
+      ],
+      "persistedFields": [
+        "committed_at",
+        "count",
+        "cursor",
+        "digest",
+        "lease_expires_at",
+        "lease_owner",
+        "migration_id",
+        "phase",
+        "state",
+        "updated_at"
+      ],
+      "requiredEvidence": [
+        "count",
+        "cursor",
+        "digest",
+        "lease_identity",
+        "phase",
+        "registry_binding",
+        "transition_digest"
+      ],
+      "rules": [
+        "database_clock_is_authoritative",
+        "each_batch_short_transaction",
+        "empty_registry_bootstrap_is_explicit",
+        "existing_ledger_cannot_rebootstrap",
+        "unknown_outcome_requires_reconciliation",
+        "writer_epoch_and_cursor_are_monotonic"
+      ]
+    },
+    {
+      "profileId": "live-instance/v2",
+      "kind": "live_instance",
+      "stateMachineId": "live-instance/v2",
+      "accessMode": "mutation",
+      "operations": [
+        {
+          "operationId": "live-instance-activate/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_activate_v2",
+          "serviceMethod": "ActivateLiveInstance",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.live_instance.activate",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "live-instance-begin-drain/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_begin_drain_v2",
+          "serviceMethod": "BeginLiveInstanceDrain",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.live_instance.begin_drain",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "live-instance-fence/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_fence_v2",
+          "serviceMethod": "FenceLiveInstance",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.live_instance.fence",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "live-instance-finish-drain/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_finish_drain_v2",
+          "serviceMethod": "FinishLiveInstanceDrain",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.live_instance.finish_drain",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "live-instance-heartbeat/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_heartbeat_v2",
+          "serviceMethod": "HeartbeatLiveInstance",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.live_instance.heartbeat",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "live-instance-reconcile/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_reconcile_v2",
+          "serviceMethod": "ReconcileLiveInstance",
+          "mode": "read_only",
+          "capability": "compatibility_recovery.live_instance.reconcile",
+          "unknownOutcome": "not_applicable"
+        },
+        {
+          "operationId": "live-instance-register/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_live_instance_register_v2",
+          "serviceMethod": "RegisterLiveInstance",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.live_instance.register",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        }
+      ],
+      "persistedFields": [
+        "binary_version",
+        "drain_state",
+        "heartbeat_at",
+        "heartbeat_ttl_seconds",
+        "incarnation",
+        "instance_id",
+        "rollout_generation",
+        "service_kind",
+        "supported_schema_max",
+        "supported_schema_min",
+        "updated_at",
+        "writer_epoch"
+      ],
+      "requiredEvidence": [
+        "binary_version",
+        "drain_state",
+        "heartbeat_at",
+        "heartbeat_ttl_seconds",
+        "incarnation",
+        "instance_id",
+        "lease_identity",
+        "registry_binding",
+        "rollout_generation",
+        "supported_schema_max",
+        "supported_schema_min",
+        "writer_epoch"
+      ],
+      "rules": [
+        "database_clock_is_authoritative",
+        "drain_state_is_not_inferred_from_process_exit",
+        "incarnation_is_monotonic",
+        "stale_but_not_expired_reject",
+        "supported_schema_range_is_inclusive",
+        "unknown_outcome_requires_reconciliation",
+        "writer_epoch_is_monotonic"
+      ]
+    },
+    {
+      "profileId": "migration-preflight/v2",
+      "kind": "migration_preflight",
+      "stateMachineId": "migration-preflight/v2",
+      "accessMode": "read_only",
+      "operations": [
+        {
+          "operationId": "migration-preflight-evaluate/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_migration_preflight_evaluate_v2",
+          "serviceMethod": "EvaluateMigrationPreflight",
+          "mode": "read_only",
+          "capability": "compatibility_recovery.migration_preflight.evaluate",
+          "unknownOutcome": "not_applicable"
+        }
+      ],
+      "persistedFields": [
+        "decision",
+        "evaluated_at",
+        "ledger_checksum",
+        "postgres_major",
+        "restore_evidence_digest",
+        "rollout_generation",
+        "target_phase",
+        "target_schema_bundle_digest",
+        "writer_epoch"
+      ],
+      "requiredEvidence": [
+        "decision",
+        "ledger_checksum",
+        "postgres_major",
+        "restore_evidence_digest",
+        "target_phase",
+        "target_schema_bundle_digest",
+        "writer_epoch"
+      ],
+      "rules": [
+        "all_unexpired_instances_must_read_target",
+        "irreversible_contract_requires_separate_approval",
+        "registry_unavailable_reject",
+        "rollback_target_must_read_target"
+      ]
+    },
+    {
+      "profileId": "restore-evidence/v2",
+      "kind": "restore_evidence",
+      "stateMachineId": "restore-evidence/v2",
+      "accessMode": "mutation",
+      "operations": [
+        {
+          "operationId": "restore-evidence-complete/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_restore_evidence_complete_v2",
+          "serviceMethod": "CompleteRestoreEvidence",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.restore_evidence.complete",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "restore-evidence-reconcile/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_restore_evidence_reconcile_v2",
+          "serviceMethod": "ReconcileRestoreEvidence",
+          "mode": "read_only",
+          "capability": "compatibility_recovery.restore_evidence.reconcile",
+          "unknownOutcome": "not_applicable"
+        },
+        {
+          "operationId": "restore-evidence-record/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_restore_evidence_record_v2",
+          "serviceMethod": "RecordRestoreEvidence",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.restore_evidence.record",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "restore-evidence-reject/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_restore_evidence_reject_v2",
+          "serviceMethod": "RejectRestoreEvidence",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.restore_evidence.reject",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        }
+      ],
+      "persistedFields": [
+        "drill_at",
+        "drill_id",
+        "ledger_checksum",
+        "postgres_major",
+        "restore_point_digest",
+        "scope",
+        "state",
+        "target_phase",
+        "target_schema_bundle_digest",
+        "updated_at"
+      ],
+      "requiredEvidence": [
+        "drill_id",
+        "ledger_checksum",
+        "postgres_major",
+        "restore_point_digest",
+        "target_phase",
+        "target_schema_bundle_digest"
+      ],
+      "rules": [
+        "local_logical_backup_restore_only",
+        "pitr_ha_reserved_for_p4",
+        "target_bundle_phase_and_restore_point_exact_match",
+        "unknown_outcome_requires_reconciliation"
+      ]
+    },
+    {
+      "profileId": "retirement-receipt/v2",
+      "kind": "retirement_receipt",
+      "stateMachineId": "retirement-receipt/v2",
+      "accessMode": "mutation",
+      "operations": [
+        {
+          "operationId": "retirement-receipt-collect/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_retirement_receipt_collect_v2",
+          "serviceMethod": "CollectRetirementReceipt",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.retirement_receipt.collect",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "retirement-receipt-complete/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_retirement_receipt_complete_v2",
+          "serviceMethod": "CompleteRetirementReceipt",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.retirement_receipt.complete",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "retirement-receipt-reconcile/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_retirement_receipt_reconcile_v2",
+          "serviceMethod": "ReconcileRetirementReceipt",
+          "mode": "read_only",
+          "capability": "compatibility_recovery.retirement_receipt.reconcile",
+          "unknownOutcome": "not_applicable"
+        },
+        {
+          "operationId": "retirement-receipt-reject/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_retirement_receipt_reject_v2",
+          "serviceMethod": "RejectRetirementReceipt",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.retirement_receipt.reject",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        }
+      ],
+      "persistedFields": [
+        "claim_released",
+        "credential_revoked",
+        "endpoint_revoked",
+        "generation_fenced",
+        "incarnation",
+        "instance_id",
+        "leader_released",
+        "process_terminated",
+        "rollout_generation",
+        "state",
+        "updated_at"
+      ],
+      "requiredEvidence": [
+        "claim_released",
+        "credential_revoked",
+        "endpoint_revoked",
+        "generation_fenced",
+        "leader_released",
+        "process_terminated",
+        "registry_binding"
+      ],
+      "rules": [
+        "all_required_facts_are_durable",
+        "contradiction_rejects_receipt",
+        "expired_registration_excluded_only_with_same_identity_receipt",
+        "unknown_outcome_requires_reconciliation"
+      ]
+    },
+    {
+      "profileId": "workload-principal/v2",
+      "kind": "workload_principal",
+      "stateMachineId": "workload-principal/v2",
+      "accessMode": "mutation",
+      "operations": [
+        {
+          "operationId": "workload-principal-reconcile/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_workload_principal_reconcile_v2",
+          "serviceMethod": "ReconcileWorkloadPrincipal",
+          "mode": "read_only",
+          "capability": "compatibility_recovery.workload_principal.reconcile",
+          "unknownOutcome": "not_applicable"
+        },
+        {
+          "operationId": "workload-principal-register/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_workload_principal_register_v2",
+          "serviceMethod": "RegisterWorkloadPrincipal",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.workload_principal.register",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "workload-principal-revoke/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_workload_principal_revoke_v2",
+          "serviceMethod": "RevokeWorkloadPrincipal",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.workload_principal.revoke",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        },
+        {
+          "operationId": "workload-principal-rotate/v2",
+          "sqlFunction": "cloud_agents.compatibility_recovery_workload_principal_rotate_v2",
+          "serviceMethod": "RotateWorkloadPrincipal",
+          "mode": "mutation",
+          "capability": "compatibility_recovery.workload_principal.rotate",
+          "unknownOutcome": "reconcile_required_no_write_retry"
+        }
+      ],
+      "persistedFields": [
+        "created_at",
+        "epoch",
+        "principal_id",
+        "provider",
+        "revoked_at",
+        "state",
+        "updated_at",
+        "workload_id"
+      ],
+      "requiredEvidence": ["epoch", "principal_id", "registry_binding", "workload_id"],
+      "rules": [
+        "database_clock_is_authoritative",
+        "principal_epoch_is_monotonic",
+        "revoke_is_terminal",
+        "unknown_outcome_requires_reconciliation"
+      ]
+    }
+  ],
+  "stateMachines": [
+    {
+      "id": "backfill/v2",
+      "initialState": "pending",
+      "states": ["failed", "leased", "paused", "pending", "running", "succeeded"],
+      "terminalStates": ["failed", "succeeded"],
+      "transitions": [
+        { "from": "leased", "event": "begin", "to": "running" },
+        { "from": "leased", "event": "fail", "to": "failed" },
+        { "from": "leased", "event": "heartbeat", "to": "leased" },
+        { "from": "paused", "event": "resume", "to": "running" },
+        { "from": "pending", "event": "acquire_lease", "to": "leased" },
+        { "from": "running", "event": "advance", "to": "running" },
+        { "from": "running", "event": "complete", "to": "succeeded" },
+        { "from": "running", "event": "fail", "to": "failed" },
+        { "from": "running", "event": "heartbeat", "to": "running" },
+        { "from": "running", "event": "pause", "to": "paused" }
+      ]
+    },
+    {
+      "id": "live-instance/v2",
+      "initialState": "registered",
+      "states": ["active", "drained", "draining", "fenced", "registered"],
+      "terminalStates": ["fenced"],
+      "transitions": [
+        { "from": "active", "event": "begin_drain", "to": "draining" },
+        { "from": "active", "event": "fence", "to": "fenced" },
+        { "from": "active", "event": "heartbeat", "to": "active" },
+        { "from": "drained", "event": "fence", "to": "fenced" },
+        { "from": "draining", "event": "fence", "to": "fenced" },
+        { "from": "draining", "event": "finish_drain", "to": "drained" },
+        { "from": "draining", "event": "heartbeat", "to": "draining" },
+        { "from": "registered", "event": "activate", "to": "active" },
+        { "from": "registered", "event": "fence", "to": "fenced" }
+      ]
+    },
+    {
+      "id": "migration-preflight/v2",
+      "initialState": "unverified",
+      "states": ["approved", "rejected", "unverified"],
+      "terminalStates": ["approved", "rejected"],
+      "transitions": [
+        { "from": "unverified", "event": "approve_exact_preflight", "to": "approved" },
+        { "from": "unverified", "event": "reject_unproven_or_contradictory", "to": "rejected" }
+      ]
+    },
+    {
+      "id": "restore-evidence/v2",
+      "initialState": "recorded",
+      "states": ["complete", "recorded", "rejected"],
+      "terminalStates": ["complete", "rejected"],
+      "transitions": [
+        { "from": "recorded", "event": "complete", "to": "complete" },
+        { "from": "recorded", "event": "reject", "to": "rejected" }
+      ]
+    },
+    {
+      "id": "retirement-receipt/v2",
+      "initialState": "collecting",
+      "states": ["collecting", "complete", "rejected"],
+      "terminalStates": ["complete", "rejected"],
+      "transitions": [
+        { "from": "collecting", "event": "all_required_facts", "to": "complete" },
+        { "from": "collecting", "event": "contradiction", "to": "rejected" }
+      ]
+    },
+    {
+      "id": "workload-principal/v2",
+      "initialState": "active",
+      "states": ["active", "revoked"],
+      "terminalStates": ["revoked"],
+      "transitions": [
+        { "from": "active", "event": "revoke", "to": "revoked" },
+        { "from": "active", "event": "rotate", "to": "active" }
+      ]
+    }
+  ],
+  "policies": {
+    "bootstrap": {
+      "emptyRegistry": "new_database_explicit_bootstrap_only",
+      "existingLedger": "bootstrap_exception_forbidden",
+      "unavailableRegistry": "reject"
+    },
+    "preflight": {
+      "requiredEvidence": [
+        "ledger_checksum",
+        "live_instances",
+        "postgres_major",
+        "restore_evidence",
+        "rollback_target",
+        "target_bundle_and_phase"
+      ],
+      "writerRule": "current_writer_must_read_and_write_target_schema",
+      "oldWriterRule": "unknown_or_disjoint_or_stale_or_undrained_reject",
+      "approvalRule": "irreversible_contract_requires_separate_approval_and_matching_restore_drill"
+    },
+    "expiredRegistration": {
+      "identityFields": ["incarnation", "instance_id", "rollout_generation"],
+      "requiredReceiptFacts": [
+        "claim_released",
+        "credential_revoked",
+        "endpoint_revoked",
+        "generation_fenced",
+        "leader_released",
+        "process_terminated"
+      ],
+      "exclusionRule": "same_instance_incarnation_generation_receipt_only"
+    },
+    "restore": {
+      "scope": "local_logical_backup_restore_and_preflight",
+      "pitrHa": "p4_not_implemented",
+      "evidenceRule": "target_bundle_phase_restore_point_and_drill_must_match"
+    },
+    "mutation": {
+      "timeSource": "database_clock",
+      "unknownOutcome": "reconcile_required_no_write_retry",
+      "lockOrder": "tenant_profile_identity",
+      "externalCallWhileLocked": "forbidden"
+    },
+    "failureMode": "fail_closed"
+  },
+  "implementationBoundary": {
+    "sqlWriterMigration": "not_implemented_after_000010",
+    "goConsumer": "not_implemented",
+    "httpSurface": "not_implemented",
+    "externalSideEffects": "forbidden",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "gateStatus": "all_gates_open"
+  }
+}

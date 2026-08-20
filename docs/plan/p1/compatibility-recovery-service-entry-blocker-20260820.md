@@ -1,10 +1,11 @@
 # P1-A2.4 compatibility/recovery service entry blocker - 2026-08-20
 
-- Status: **OWNER APPROVAL REQUIRED - PROPOSED ONLY**
+- Status: **OWNER APPROVED - ORDERED THREE-SLICE ENTRY**
 - Fixed evidence ref: `48c93f9148986e031a98d6677830c8a084f0343b`
 - Branch: `codex/cloud-agents-platform-p1`
 - Scope: the next A2.4 versioned-registry repair, typed PostgreSQL writer kernel, and service/claim review entry
-- This record does not authorize implementation, a new migration, a Go consumer, production database writes, HTTP/P2/provider effects, deployment, release, or Gate closure
+- Owner approval: A2.4 may proceed as versioned generated registry/profile repair → append-only writer kernel → typed service/claim/matrix/independent review
+- This approval does not authorize HTTP/P2/provider effects, production database writes, deployment, release, publication, or Gate closure
 
 ## 1. Current boundary
 
@@ -47,10 +48,10 @@ registry/profile version and a later forward migration are required before typed
    normal/race/fault matrix review only. HTTP mutation, P2, provider effects, production writes, deployment,
    release, and every immutable or aggregate Gate remain forbidden/open.
 
-## 3. Proposed approval package
+## 3. Approved ordered implementation package
 
-Approval of this section would authorize only the following ordered work. It would not authorize implementation
-before each preceding slice is reviewed.
+The owner approved the following ordered work on 2026-08-20. Each slice remains bounded by the preceding generated
+or append-only evidence and does not expand the explicit non-claims.
 
 ### Slice A - versioned generated registry/profile repair
 
@@ -98,7 +99,7 @@ complete.
 
 ## 4. Acceptance and explicit non-claims
 
-The proposal is ready to leave “proposed” only after owner approval and a fixed implementation plan records:
+The approved entry is complete only after its fixed implementation evidence records:
 
 - v1 same-bits replay plus deterministic v2 source/output/manifest/lock digests;
 - append-only migration/catalog evidence with no edits to `000010` or earlier history;
@@ -107,12 +108,13 @@ The proposal is ready to leave “proposed” only after owner approval and a fi
 - no HTTP/P2/provider/worker/session/turn/execution paths and no production database mutation;
 - an independent review record. All immutable and aggregate Gates remain OPEN.
 
-Until then, this file is a decision-entry proposal only. It does not claim that v2, a writer migration, a Go
-consumer, a service, a production authority, or any Gate exists.
+Owner approval authorizes implementation of the three slices only. It does not claim that a writer migration, Go
+consumer, service, production authority, deployment, release, publication, or Gate already exists. Slice A's v2
+generated contract evidence remains non-authoritative until its own checks and review are fixed.
 
-## 5. Approval request
+## 5. Approval record
 
-Please approve or reject **Section 3 exactly as an A2.4 ordered three-slice entry**. Approval would authorize the
-ADR and the generated-registry slice first, followed only after its review by the append-only writer kernel and then
-the typed service/claim/matrix/independent-review slice. It would not authorize a public surface, external side
-effect, production write, deployment, release, P2, or Gate closure.
+The owner approved **Section 3 exactly as an A2.4 ordered three-slice entry** on 2026-08-20: versioned generated
+registry/profile repair, then an append-only writer kernel, then typed service/claim/matrix/independent review. The
+approval explicitly withholds HTTP/P2/provider external effects, production database writes, deployment, release,
+publication, and every Gate closure.
