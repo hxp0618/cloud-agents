@@ -105,12 +105,14 @@
   writer/service、HTTP/P2/provider effect，不执行生产数据库写入，也不关闭任何 Gate。
 - A2.4 approved entry：[`compatibility-recovery-service-entry-blocker-20260820.md`](compatibility-recovery-service-entry-blocker-20260820.md)
   已获 owner 批准，保持 v1/`000010` 历史 same-bits，并按 versioned registry repair → append-only writer kernel →
-  typed service/claim/matrix/independent review 三切片推进；Slice A/B 已分别固定，Slice C implementation/matrix 已完成并
-  等待 independent review。HTTP/P2/provider 外部副作用、生产数据库写入、部署、发布与所有 Gate 均未获授权。
+  typed service/claim/matrix/independent review 三切片推进；Slice A/B/C 已分别固定，fixed `b639b07` 的 bounded
+  independent review 返回 `APPROVE, P0=0/P1=0/P2=0`。HTTP/P2/provider 外部副作用、生产数据库写入、部署、
+  发布与所有 Gate 均未获授权。
 - A2.4 implementation entry：versioned v2 generated registry/profile repair、append-only `000011` writer kernel、typed
-  service/claim and local PG15/16/17 normal/race matrix are implemented in the current worktree; independent review is
-  pending and no Gate is closed (见 [`A2.4 typed service/claim/matrix`](compatibility-recovery-v2-service-claim-matrix-20260820.md))
-- Remaining P1 slices：A2.4 independent review and P1-A3 SDK/Identity/Closure
+  service/claim and local PG15/16/17 normal/race matrix are implemented and bounded-review approved；no Gate is closed
+  (见 [`A2.4 typed service/claim/matrix`](compatibility-recovery-v2-service-claim-matrix-20260820.md) 与
+  [`A2.4 independent review`](compatibility-recovery-v2-independent-review-20260820.md))
+- Remaining P1 slices：P1-A3 SDK/Identity/Closure
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
@@ -201,8 +203,11 @@ Platform RC、Beta 或 GA。
   不授权 HTTP/P2、生产写入或 Gate closure
 - [`compatibility-recovery-v2-service-claim-matrix-20260820.md`](compatibility-recovery-v2-service-claim-matrix-20260820.md)：
   记录 A2.4 typed generated-operation service/claim consumer、single-attempt unknown/reconcile handling 与本地
-  PostgreSQL 15/16/17 normal/race matrix；independent review pending，HTTP/P2/provider、生产数据库写入、部署、发布与
+  PostgreSQL 15/16/17 normal/race matrix；后续 bounded independent review 已批准，HTTP/P2/provider、生产数据库写入、部署、发布与
   所有 Gate 仍保持拒绝/open
+- [`compatibility-recovery-v2-independent-review-20260820.md`](compatibility-recovery-v2-independent-review-20260820.md)：
+  固定 `b639b07` 的 A2.4 generated v2 registry/profile、append-only `000011`、typed service/claim 与 PostgreSQL
+  15/16/17 normal/race matrix review；verdict `P0=0/P1=0/P2=0`，不构成生产写入、部署、发布或 Gate closure
 
 ## Data kernel decisions
 

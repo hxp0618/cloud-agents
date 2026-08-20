@@ -1,6 +1,6 @@
 # A2.4 compatibility/recovery v2 service and claim slice - 2026-08-20
 
-- Status: **IMPLEMENTED - INDEPENDENT REVIEW PENDING**
+- Status: **IMPLEMENTED — INDEPENDENT REVIEW APPROVED, P0=0 / P1=0 / P2=0**
 - Branch: `codex/cloud-agents-platform-p1`
 - Scope: generated v2 operation bindings, typed PostgreSQL service/claim consumer, and local PostgreSQL 15/16/17 normal/race matrix
 - Boundary: no HTTP/P2/provider/worker/session/turn/execution surface; no production database write, deployment, release, publication, or Gate closure
@@ -42,3 +42,6 @@ to remove containers it does not own.
 Focused compatibility and PostgreSQL service tests pass in normal and race mode. The local PostgreSQL 15/16/17
 normal/race matrix passes. Full migration/runner remains subject to the existing ten-minute timeout record and is
 not claimed as passing. This record is not an independent review and does not close any immutable or aggregate Gate.
+The fixed implementation was subsequently approved by the bounded read-only review in
+`compatibility-recovery-v2-independent-review-20260820.md`; that approval does not change these Gate or deployment
+boundaries.
