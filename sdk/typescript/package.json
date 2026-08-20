@@ -1,6 +1,6 @@
 {
   "name": "@synara/cloud-agent-platform-sdk",
-  "version": "0.0.0-a3.1",
+  "version": "0.0.0-a3.2",
   "private": true,
   "description": "Generated Cloud Agents Platform TypeScript SDK (unpublished P1-A3 evidence)",
   "license": "MIT",
@@ -13,7 +13,9 @@
     "dist",
     "generated-manifest.json",
     "json-generated-manifest.json",
+    "proto-generated-manifest.json",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "README.md"
   ],
   "type": "module",
@@ -40,12 +42,26 @@
         "types": "./dist/platform.d.cts",
         "default": "./dist/platform.cjs"
       }
+    },
+    "./proto": {
+      "import": {
+        "types": "./dist/proto.d.mts",
+        "default": "./dist/proto.mjs"
+      },
+      "require": {
+        "types": "./dist/proto.d.cts",
+        "default": "./dist/proto.cjs"
+      }
     }
   },
   "scripts": {
-    "build": "tsdown src/index.ts src/platform.ts --format esm,cjs --dts --clean --no-fail-on-warn",
+    "build": "tsdown src/index.ts src/platform.ts src/proto.ts --format esm,cjs --dts --clean --no-fail-on-warn",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@connectrpc/connect": "2.1.2"
   },
   "devDependencies": {
     "tsdown": "0.20.3",

@@ -40,6 +40,19 @@ import {
   TYPESCRIPT_JSON_MANIFEST_PATH,
   TYPESCRIPT_PLATFORM_OUTPUT_PATH,
 } from "./platform-json-sdk";
+import {
+  assertPlatformProtoSDKCurrent,
+  PLATFORM_PROTO_BREAKING_BASELINE_PATH,
+  PLATFORM_PROTO_DESCRIPTOR_MANIFEST_PATH,
+  PLATFORM_PROTO_DESCRIPTOR_PATH,
+  PLATFORM_PROTO_GO_MANIFEST_PATH,
+  PLATFORM_PROTO_GO_OUTPUTS,
+  PLATFORM_PROTO_TYPESCRIPT_INDEX_PATH,
+  PLATFORM_PROTO_TYPESCRIPT_MANIFEST_PATH,
+  PLATFORM_PROTO_TYPESCRIPT_OUTPUTS,
+  platformProtoContractInputs,
+  platformProtoGeneratorSources,
+} from "./platform-proto-sdk";
 import { PLATFORM_GO_TOOLCHAIN } from "./platform-go-modules";
 import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
 
@@ -55,6 +68,8 @@ const PLATFORM_GO_INPUTS = [
   "sdk/go/THIRD_PARTY_NOTICES.md",
   GO_IDENTITY_MANIFEST_PATH,
   GO_IDENTITY_OUTPUT_PATH,
+  PLATFORM_PROTO_GO_MANIFEST_PATH,
+  ...PLATFORM_PROTO_GO_OUTPUTS,
   "services/control-plane/go.mod",
   "services/control-plane/doc.go",
   "services/worker/go.mod",
@@ -76,6 +91,27 @@ const IDENTITY_TYPESCRIPT_ENVELOPE_INPUTS = [
   "sdk/typescript/LICENSE",
   "sdk/typescript/README.md",
   "sdk/typescript/src/identity.test.ts",
+] as const;
+const PROTO_GO_ENVELOPE_INPUTS = [
+  "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+  "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
+  "scripts/test-platform-sdk-consumers.ts",
+  "sdk/go/go.mod",
+  "sdk/go/go.sum",
+  "sdk/go/THIRD_PARTY_NOTICES.md",
+  "sdk/go/proto_conformance_test.go",
+] as const;
+const PROTO_TYPESCRIPT_ENVELOPE_INPUTS = [
+  "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+  "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
+  "package.json",
+  "bun.lock",
+  "scripts/test-platform-sdk-consumers.ts",
+  "sdk/typescript/package.json",
+  "sdk/typescript/tsconfig.json",
+  "sdk/typescript/THIRD_PARTY_NOTICES.md",
+  "sdk/typescript/README.md",
+  "sdk/typescript/src/proto.test.ts",
 ] as const;
 const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0009-p1-migration-bundle-runner.md",
@@ -203,6 +239,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-identity-sdk.ts",
+      "scripts/lib/platform-proto-sdk.ts",
       "scripts/lib/platform-go-modules.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
@@ -249,6 +286,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-json-sdks.ts",
     sources: platformJSONSDKGeneratorSources(),
   },
+  {
+    id: "platform-proto-sdk-generator",
+    kind: "in-repo-typescript-deterministic-proto-go-typescript-sdk",
+    entrypoint: "scripts/generate-platform-proto-sdks.ts",
+    sources: platformProtoGeneratorSources(),
+  },
 ] as const;
 
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
@@ -261,6 +304,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertCompatibilityRecoveryRegistryV2Current(root);
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
+  assertPlatformProtoSDKCurrent(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
   const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
   const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
@@ -289,6 +333,26 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     ...jsonSDKGeneratorInputs,
     "sdk/typescript/package.json",
     "sdk/typescript/tsconfig.json",
+  ].toSorted();
+  const protoContractInputs = platformProtoContractInputs(root);
+  const protoGeneratorInputs = platformProtoGeneratorSources();
+  const protoDescriptorInputs = [
+    ...protoContractInputs,
+    ...protoGeneratorInputs,
+    "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+    "package.json",
+    "bun.lock",
+    "sdk/typescript/THIRD_PARTY_NOTICES.md",
+  ].toSorted();
+  const protoGoInputs = [
+    ...protoContractInputs,
+    ...protoGeneratorInputs,
+    ...PROTO_GO_ENVELOPE_INPUTS,
+  ].toSorted();
+  const protoTypeScriptInputs = [
+    ...protoContractInputs,
+    ...protoGeneratorInputs,
+    ...PROTO_TYPESCRIPT_ENVELOPE_INPUTS,
   ].toSorted();
   const compatibilityRecoveryGoInputs = [
     ...COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
@@ -331,8 +395,17 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
       },
       proto: {
         syntax: "proto3",
-        descriptorStatus: "NOT_GENERATED",
-        sourceValidation: "BOOTSTRAP_FAIL_CLOSED_SUBSET",
+        descriptorStatus: "GENERATED_EXACT_V1ALPHA1_BASELINE",
+        sourceValidation: "PINNED_PROTOC_DESCRIPTOR_AND_IN_REPO_SEMANTIC_FIXTURES",
+        descriptorSet: {
+          path: PLATFORM_PROTO_DESCRIPTOR_PATH,
+          sha256: fileSha256(root, PLATFORM_PROTO_DESCRIPTOR_PATH),
+        },
+        breakingBaseline: {
+          path: PLATFORM_PROTO_BREAKING_BASELINE_PATH,
+          sha256: fileSha256(root, PLATFORM_PROTO_BREAKING_BASELINE_PATH),
+          policy: "EXACT_BYTES_NO_UNREVIEWED_DELTA",
+        },
       },
     },
     runtimes,
@@ -655,6 +728,100 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         },
       },
       {
+        id: "platform-proto-descriptor-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, protoDescriptorInputs),
+        inputs: protoDescriptorInputs,
+        outputStatus: "GENERATED_EXACT_V1ALPHA1_DESCRIPTOR_BASELINE",
+        notGateClosure: true,
+        generatedOutputs: [
+          PLATFORM_PROTO_DESCRIPTOR_PATH,
+          PLATFORM_PROTO_BREAKING_BASELINE_PATH,
+          PLATFORM_PROTO_DESCRIPTOR_MANIFEST_PATH,
+        ].map((path) => ({
+          path,
+          sha256: fileSha256(root, path),
+          sizeBytes: readFileSync(resolve(root, path)).byteLength,
+        })),
+        outputSummary: {
+          profile: "cloud-agents-proto-generation/v1alpha1",
+          compiler: "protocolbuffers/protoc 35.1",
+          includeImports: true,
+          includeSourceInfo: false,
+          serviceCount: 3,
+          unaryMethodCount: 12,
+          breakingPolicy: "EXACT_V1ALPHA1_BASELINE_NO_UNREVIEWED_DELTA",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "platform-proto-go-sdk-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, protoGoInputs),
+        inputs: protoGoInputs,
+        outputStatus: "GENERATED_PROTO_GO_SDK",
+        notGateClosure: true,
+        generatedOutputs: [PLATFORM_PROTO_GO_MANIFEST_PATH, ...PLATFORM_PROTO_GO_OUTPUTS].map(
+          (path) => ({
+            path,
+            sha256: fileSha256(root, path),
+            sizeBytes: readFileSync(resolve(root, path)).byteLength,
+          }),
+        ),
+        outputSummary: {
+          profile: "cloud-agents-proto-sdk/v1alpha1",
+          packageIdentity: "github.com/hxp0618/cloud-agents/sdk/go",
+          transport: "INJECTED_CONNECT_FIXTURE_TRANSPORT_ONLY",
+          protocols: ["connect", "grpc"],
+          productionCrossRepository: "HTTP2_MTLS_REQUIRED_NOT_REGISTERED",
+          serverRouteRegistration: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "platform-proto-typescript-sdk-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, protoTypeScriptInputs),
+        inputs: protoTypeScriptInputs,
+        outputStatus: "GENERATED_PROTO_TYPESCRIPT_SDK",
+        notGateClosure: true,
+        generatedOutputs: [
+          PLATFORM_PROTO_TYPESCRIPT_MANIFEST_PATH,
+          PLATFORM_PROTO_TYPESCRIPT_INDEX_PATH,
+          ...PLATFORM_PROTO_TYPESCRIPT_OUTPUTS,
+        ].map((path) => ({
+          path,
+          sha256: fileSha256(root, path),
+          sizeBytes: readFileSync(resolve(root, path)).byteLength,
+        })),
+        outputSummary: {
+          profile: "cloud-agents-proto-sdk/v1alpha1",
+          packageIdentity: "@synara/cloud-agent-platform-sdk/proto",
+          packagePrivate: true,
+          transport: "INJECTED_CONNECT_FIXTURE_TRANSPORT_ONLY",
+          protocols: ["connect", "grpc"],
+          productionCrossRepository: "HTTP2_MTLS_REQUIRED_NOT_REGISTERED",
+          serverRouteRegistration: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
         id: "platform-migration-bundle-validation",
         inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
         inputManifestSha256: normalizedSourceManifestDigest(root, migrationInputs),
@@ -696,7 +863,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         generatedOutputs: [],
       },
     ],
-    missing: [...summary.missing],
+    missing: summary.missing.filter((item) => item !== "proto-descriptor-and-breaking"),
   };
 }
 

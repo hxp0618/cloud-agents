@@ -28,13 +28,16 @@
     "release:smoke": "node scripts/cloud-agent-release-smoke.ts",
     "release:sbom": "node scripts/generate-sbom.ts",
     "secret:scan": "bun scripts/secret-scan.ts",
-    "platform:contracts:check": "bun scripts/check-platform-contracts.ts && bun scripts/generate-platform-durable-coordination-registry.ts --check && bun scripts/generate-platform-durable-coordination-go.ts --check && bun scripts/generate-platform-compatibility-recovery-registry.ts --check && bun scripts/generate-platform-compatibility-recovery-go.ts --check && bun scripts/generate-platform-identity-sdks.ts --check && bun scripts/generate-platform-json-sdks.ts --check && bun scripts/generate-platform-contract-lock.ts --check",
-    "platform:contracts:generate": "bun scripts/generate-platform-durable-coordination-registry.ts --write && bun scripts/generate-platform-durable-coordination-go.ts --write && bun scripts/generate-platform-compatibility-recovery-registry.ts --write && bun scripts/generate-platform-compatibility-recovery-go.ts --write && bun scripts/generate-platform-identity-sdks.ts --write && bun scripts/generate-platform-json-sdks.ts --write && bun scripts/generate-platform-contract-lock.ts --write",
+    "platform:contracts:check": "bun scripts/check-platform-contracts.ts && bun scripts/generate-platform-durable-coordination-registry.ts --check && bun scripts/generate-platform-durable-coordination-go.ts --check && bun scripts/generate-platform-compatibility-recovery-registry.ts --check && bun scripts/generate-platform-compatibility-recovery-go.ts --check && bun scripts/generate-platform-identity-sdks.ts --check && bun scripts/generate-platform-json-sdks.ts --check && bun scripts/generate-platform-proto-sdks.ts --check && bun scripts/generate-platform-contract-lock.ts --check",
+    "platform:contracts:generate": "bun scripts/generate-platform-durable-coordination-registry.ts --write && bun scripts/generate-platform-durable-coordination-go.ts --write && bun scripts/generate-platform-compatibility-recovery-registry.ts --write && bun scripts/generate-platform-compatibility-recovery-go.ts --write && bun scripts/generate-platform-identity-sdks.ts --write && bun scripts/generate-platform-json-sdks.ts --write && bun scripts/generate-platform-proto-sdks.ts --write && bun scripts/generate-platform-contract-lock.ts --write",
+    "platform:sdk:consumers": "bun scripts/test-platform-sdk-consumers.ts",
     "platform:migrations:check": "bun scripts/check-platform-migration-bundle.ts && bun scripts/generate-platform-migration-bundle.ts --check",
     "platform:go:check": "bun scripts/check-platform-go-modules.ts",
     "platform:go:test": "GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test -race ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane vet ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod tidy -diff && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod verify"
   },
   "devDependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@bufbuild/protoc-gen-es": "2.14.0",
     "@types/node": "24.10.13",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",

@@ -1,0 +1,78 @@
+{
+  "formatVersion": "cloud-agents-proto-generation-profile/v1",
+  "status": "GENERATED_NON_GATE_EVIDENCE",
+  "authority": "proto3",
+  "sources": [
+    "contracts/platform-adapter/v1alpha1/platform_adapter.proto",
+    "contracts/worker/v1alpha1/kernel.proto",
+    "contracts/worker/v1alpha1/worker_supervisor.proto"
+  ],
+  "compiler": {
+    "id": "protocolbuffers/protoc",
+    "version": "35.1",
+    "license": "BSD-3-Clause",
+    "artifacts": {
+      "darwin-arm64": {
+        "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-osx-aarch_64.zip",
+        "sha256": "193289af0470c6a1aada357d4fba0bbf8d78bfaac8b5e42ca30af2ef75583de2"
+      },
+      "linux-amd64": {
+        "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-x86_64.zip",
+        "sha256": "6930ebf62bd4ea607b98fff052596c6ee564b9835b4ce172c75a3f53ae9d91b7"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-aarch_64.zip",
+        "sha256": "01bf9d08808c7f96678b63f4bd8efa559bb4f83d5a7a270d5edaf507f9d5d9cf"
+      }
+    }
+  },
+  "plugins": [
+    {
+      "id": "google.golang.org/protobuf/cmd/protoc-gen-go",
+      "version": "v1.36.12",
+      "moduleSum": "h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
+      "license": "BSD-3-Clause",
+      "options": ["module=github.com/hxp0618/cloud-agents/sdk/go"]
+    },
+    {
+      "id": "connectrpc.com/connect/cmd/protoc-gen-connect-go",
+      "version": "v1.20.0",
+      "moduleSum": "h1:6TNDAB+WeNd2uolWNlYczB5E0KNNaVMNUEx8JEUsPmQ=",
+      "license": "Apache-2.0",
+      "options": ["module=github.com/hxp0618/cloud-agents/sdk/go"]
+    },
+    {
+      "id": "@bufbuild/protoc-gen-es",
+      "version": "2.14.0",
+      "integrity": "sha512-/Rrui0BJWSRONiKGYzqWq9ivGN3+cYkmc47QWITufr7K6yDb8HfssuJUSQZeptyg/rHbHrfDzCUjzoJ2pwuafg==",
+      "license": "Apache-2.0",
+      "options": ["target=ts", "import_extension=js"]
+    }
+  ],
+  "descriptor": {
+    "includeImports": true,
+    "includeSourceInfo": false,
+    "output": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+    "breakingBaseline": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb"
+  },
+  "outputs": {
+    "goRoot": "sdk/go",
+    "typescriptRoot": "sdk/typescript/src/gen"
+  },
+  "transportProfile": {
+    "framework": "ConnectRPC",
+    "protocols": ["connect", "grpc"],
+    "productionCrossRepository": "HTTP2_MTLS_REQUIRED",
+    "localConformance": "IN_MEMORY_OR_LOOPBACK_FIXTURE_ONLY"
+  },
+  "implementationBoundary": {
+    "gateClosure": false,
+    "productionRouteRegistration": "NOT_IMPLEMENTED",
+    "workerSideEffects": "FORBIDDEN",
+    "adapterSideEffects": "FORBIDDEN",
+    "p2Surface": "NOT_IMPLEMENTED",
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "deployment": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED"
+  }
+}

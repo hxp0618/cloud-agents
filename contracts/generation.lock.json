@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:1598a48668f1833d03b1e7d8b83cc0db35ec84ac5ef311ab50c99d3f88cfffa6",
+    "manifestSha256": "sha256:1bd687b09cec79f0789e102aadf629734e934ee818f9d2dfccec827baec98934",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -22,8 +22,17 @@
     },
     "proto": {
       "syntax": "proto3",
-      "descriptorStatus": "NOT_GENERATED",
-      "sourceValidation": "BOOTSTRAP_FAIL_CLOSED_SUBSET"
+      "descriptorStatus": "GENERATED_EXACT_V1ALPHA1_BASELINE",
+      "sourceValidation": "PINNED_PROTOC_DESCRIPTOR_AND_IN_REPO_SEMANTIC_FIXTURES",
+      "descriptorSet": {
+        "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+        "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218"
+      },
+      "breakingBaseline": {
+        "path": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+        "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+        "policy": "EXACT_BYTES_NO_UNREVIEWED_DELTA"
+      }
     }
   },
   "runtimes": {
@@ -33,7 +42,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:9d3f14023e68bc8d595eb43782bef6aee2fe6cd13b816c9c37d12efdc73e67c9",
+    "manifestSha256": "sha256:a42e965e3491e7862602ec3f627baedc0aab5129966b11411458ab964ec424a8",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -42,14 +51,14 @@
   },
   "dependencyLock": {
     "path": "bun.lock",
-    "sha256": "sha256:2a26ed2892928fd3d3d0fa94eaa83c86f13900a0d03cd1626b3232a3a0bcaddd"
+    "sha256": "sha256:cbd9d3dc8976c2dcbc340fb69f4dad250e788687bb252428dcd611b256fc884a"
   },
   "tools": [
     {
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:38cc30b0f37573924185da3b8c399689501365369ffc2b82f2a56a45d2a789d7",
+      "sourceManifestSha256": "sha256:a59e61894a7a5a0ab8ed1bf4c06f3fc499eec0a9ea48ca110bd0279ea50aedfe",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -76,7 +85,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:3c7f1899b43fa84e35f21832e3a8be2c8794c49ccafac39ade8a15c5eff94fb0",
+      "sourceManifestSha256": "sha256:5d47afa9294db33986f9e13997d4ec56e8f11d9874aa1a2347a4b48e13d9a9d2",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -84,6 +93,7 @@
         "scripts/lib/platform-compatibility-recovery-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-identity-sdk.ts",
+        "scripts/lib/platform-proto-sdk.ts",
         "scripts/lib/platform-go-modules.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
@@ -194,6 +204,18 @@
         "sdk/go/gen/openapi/v1alpha1/client_generated_test.go",
         "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
         "sdk/typescript/src/platform.test.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-proto-sdk-generator",
+      "kind": "in-repo-typescript-deterministic-proto-go-typescript-sdk",
+      "entrypoint": "scripts/generate-platform-proto-sdks.ts",
+      "sourceManifestSha256": "sha256:5293b463fff92650ab3d09a18da367e9aa769ec1f9cf9cec53799c05578aae5f",
+      "sources": [
+        "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-proto-sdk.test.ts",
+        "scripts/lib/platform-proto-sdk.ts"
       ],
       "license": "MIT"
     },
@@ -360,7 +382,7 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:1598a48668f1833d03b1e7d8b83cc0db35ec84ac5ef311ab50c99d3f88cfffa6",
+      "inputManifestSha256": "sha256:1bd687b09cec79f0789e102aadf629734e934ee818f9d2dfccec827baec98934",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
@@ -561,7 +583,7 @@
     {
       "id": "common-identity-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:dd867110eeb05e7f14716be765435d973b8104f826dbeab34fb4ab709476998b",
+      "inputManifestSha256": "sha256:0a58ace63995fbaaf7c8954b0ca7a517685a4977a3ec7235560de3132d8a1e41",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-nfc.json",
@@ -597,12 +619,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-          "sha256": "sha256:5bb26c00d93d3889c272248c1b34fb116678f3dc25d6ec39c8f06cec6ba72f8e",
+          "sha256": "sha256:a0f15e7439e35f920f9b02a7a7d2152315be0feee648ee0841f31bbe46d524b8",
           "sizeBytes": 13530
         },
         {
           "path": "sdk/go/generated-manifest.json",
-          "sha256": "sha256:5f3435ec8805fbd1c327e86a6a44590c2c046bb3752e86fb54603dab84d66d42",
+          "sha256": "sha256:d96c7d04a8427596e5fbbb5c2485473fb5fb702aea6821e45574482ed331ccd6",
           "sizeBytes": 3740
         }
       ],
@@ -621,7 +643,7 @@
     {
       "id": "common-identity-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:826f2175def62f1be79df2bf99e16619047427bab0ed1d99bb192fa45c5de903",
+      "inputManifestSha256": "sha256:6424e5dac809631d7260a0d3c400a13d1b0a6029173d67187be793303ec76db9",
       "inputs": [
         "bun.lock",
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -658,12 +680,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/index.ts",
-          "sha256": "sha256:262ecf29c4ea79ad252a20c538159bcb8886888a178ef5c546d04768f6c20685",
+          "sha256": "sha256:9b8195fadbe4f62f35d33024d4d4caabbc33e85c6fb90f343b0c6cffb6ff587d",
           "sizeBytes": 12982
         },
         {
           "path": "sdk/typescript/generated-manifest.json",
-          "sha256": "sha256:4d1c9aa976f3aa4ad0a2849218e709fc9d76172934c2024564e1d025d4957ccd",
+          "sha256": "sha256:68b555659e1acd09fd56a57146ac68f95c01c69e659e49d7fe57717d309f0942",
           "sizeBytes": 3278
         }
       ],
@@ -683,7 +705,7 @@
     {
       "id": "platform-json-contract-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:e5ae13c6f9bbc226f3bd6e933397c72166ed1c546b977a0cff5d1083643a0640",
+      "inputManifestSha256": "sha256:a6d22f81fb3ef0b98ba8b23631aadfdc70d8a6ced7f81bebcbbbb20da9364abf",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -765,22 +787,22 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:13f8721500267adf12f4375b0b8463ebaafe7169b616e3335023ed2fce0e32e6",
+          "sha256": "sha256:48ca2b687822bd3c52eb4b9217bf8cf80a3f43700932cffb5146ab1850c34ea8",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:6a93c2a6d5a270ef0f1b85277921e4c7c0804b8a5d21545995cf7a14d8dcee14",
+          "sha256": "sha256:e257af19bf02eecc2427b9a1d6c4a6e9e441f6604081d35ba1a023242ea01947",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:1f5d36246f853094c5c276929d142fbab8c841727fd40d1a83f72a1f58495b94",
+          "sha256": "sha256:a0864101c14b6afcfba9107dadd66ba06bf395b2617940099b97d388f47b2442",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:b4e0cae96ad03701946a52dd62cf4c777347128358242ee0d6f76a8703a78a80",
+          "sha256": "sha256:5f098b2158a303664159b89be1e563c33e8159f37376b5a41263dc5a655ca8c9",
           "sizeBytes": 9802
         }
       ],
@@ -801,7 +823,7 @@
     {
       "id": "platform-json-contract-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:82d997f59510595f3f8d396b1a875b9689a851e3ea2663671ea3c66c909b351f",
+      "inputManifestSha256": "sha256:07826a7844c11a47690c6747f63f9e2f2b4589121263dd9f1d0ab86a9e1e9446",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -883,12 +905,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:1c86177a60e82609538bc67789aac68f7dd137445db298d72c515db02bfbd7e0",
+          "sha256": "sha256:e6a5e7f88cdfcb614601f1f437557a211d74cf5c8e0ae78f081699f3daec3bfd",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:322509976bfbac239ed98f5070db33438cc4b0e0732b0c7e197083e0c5184548",
+          "sha256": "sha256:1e0c175a7c9420ed2c6a004361bfce95e7b90a807d3b5b2de86bfd5590fedd58",
           "sizeBytes": 9412
         }
       ],
@@ -903,6 +925,217 @@
         "p2Surface": "NOT_IMPLEMENTED",
         "providerSideEffects": "FORBIDDEN",
         "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "platform-proto-descriptor-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:c7a7336d3549bc28ebd52fb8c4c34acc69341f28930b95d5b59e43dd0f34908c",
+      "inputs": [
+        "bun.lock",
+        "contracts/platform-adapter/v1alpha1/README.md",
+        "contracts/platform-adapter/v1alpha1/fixtures/descriptor.golden.json",
+        "contracts/platform-adapter/v1alpha1/platform_adapter.proto",
+        "contracts/proto-generation.profile.json",
+        "contracts/worker/v1alpha1/README.md",
+        "contracts/worker/v1alpha1/fixtures/descriptor.golden.json",
+        "contracts/worker/v1alpha1/kernel.proto",
+        "contracts/worker/v1alpha1/worker_supervisor.proto",
+        "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+        "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
+        "package.json",
+        "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-proto-sdk.test.ts",
+        "scripts/lib/platform-proto-sdk.ts",
+        "sdk/typescript/THIRD_PARTY_NOTICES.md"
+      ],
+      "outputStatus": "GENERATED_EXACT_V1ALPHA1_DESCRIPTOR_BASELINE",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+          "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+          "sizeBytes": 12730
+        },
+        {
+          "path": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+          "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+          "sizeBytes": 12730
+        },
+        {
+          "path": "contracts/generated/proto/manifest.json",
+          "sha256": "sha256:606042f01def57aeb54da8d69b9ee3b7fbb449bf182f7a7d6b7192ad6def333a",
+          "sizeBytes": 5139
+        }
+      ],
+      "outputSummary": {
+        "profile": "cloud-agents-proto-generation/v1alpha1",
+        "compiler": "protocolbuffers/protoc 35.1",
+        "includeImports": true,
+        "includeSourceInfo": false,
+        "serviceCount": 3,
+        "unaryMethodCount": 12,
+        "breakingPolicy": "EXACT_V1ALPHA1_BASELINE_NO_UNREVIEWED_DELTA",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "platform-proto-go-sdk-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:26f15507975e0ea285c3f74653b5424393d7ce0e8fb170759a15b1d3617be08b",
+      "inputs": [
+        "contracts/platform-adapter/v1alpha1/README.md",
+        "contracts/platform-adapter/v1alpha1/fixtures/descriptor.golden.json",
+        "contracts/platform-adapter/v1alpha1/platform_adapter.proto",
+        "contracts/proto-generation.profile.json",
+        "contracts/worker/v1alpha1/README.md",
+        "contracts/worker/v1alpha1/fixtures/descriptor.golden.json",
+        "contracts/worker/v1alpha1/kernel.proto",
+        "contracts/worker/v1alpha1/worker_supervisor.proto",
+        "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+        "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
+        "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
+        "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-proto-sdk.test.ts",
+        "scripts/lib/platform-proto-sdk.ts",
+        "scripts/test-platform-sdk-consumers.ts",
+        "sdk/go/THIRD_PARTY_NOTICES.md",
+        "sdk/go/go.mod",
+        "sdk/go/go.sum",
+        "sdk/go/proto_conformance_test.go"
+      ],
+      "outputStatus": "GENERATED_PROTO_GO_SDK",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "sdk/go/proto-generated-manifest.json",
+          "sha256": "sha256:e421fe240993f89f1e833f40bc71689e6df68a237db26a56858b2979ab035e33",
+          "sizeBytes": 7912
+        },
+        {
+          "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
+          "sha256": "sha256:a31f2aeb625eeda25ae8e86f907dde305bed773d8d45e07aac57901c8f1880d6",
+          "sizeBytes": 46944
+        },
+        {
+          "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
+          "sha256": "sha256:48ddafd7845c4f976f772d7b2e67aca862d4eaa8210a6d170554f5872e942dd1",
+          "sizeBytes": 24709
+        },
+        {
+          "path": "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+          "sha256": "sha256:0c10b0525f1c672a2a61935b5c1a834d07c0e6337ea4fe8ae4fc77e2a42d4a95",
+          "sizeBytes": 77653
+        },
+        {
+          "path": "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+          "sha256": "sha256:5d7096fe82fd8c92491551d20fc3d859d4993f605e714794650ede5afb6c6269",
+          "sizeBytes": 4800
+        },
+        {
+          "path": "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+          "sha256": "sha256:3f47692be04424314d710e4eba626dfd5addfae348f6d162f54c9f8aa3379e9f",
+          "sizeBytes": 11575
+        }
+      ],
+      "outputSummary": {
+        "profile": "cloud-agents-proto-sdk/v1alpha1",
+        "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
+        "transport": "INJECTED_CONNECT_FIXTURE_TRANSPORT_ONLY",
+        "protocols": [
+          "connect",
+          "grpc"
+        ],
+        "productionCrossRepository": "HTTP2_MTLS_REQUIRED_NOT_REGISTERED",
+        "serverRouteRegistration": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "platform-proto-typescript-sdk-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:b2d31b65998d26dfb15c8154019029000916457e3fcc6f5893424e9cc8ca1f31",
+      "inputs": [
+        "bun.lock",
+        "contracts/platform-adapter/v1alpha1/README.md",
+        "contracts/platform-adapter/v1alpha1/fixtures/descriptor.golden.json",
+        "contracts/platform-adapter/v1alpha1/platform_adapter.proto",
+        "contracts/proto-generation.profile.json",
+        "contracts/worker/v1alpha1/README.md",
+        "contracts/worker/v1alpha1/fixtures/descriptor.golden.json",
+        "contracts/worker/v1alpha1/kernel.proto",
+        "contracts/worker/v1alpha1/worker_supervisor.proto",
+        "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+        "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
+        "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
+        "package.json",
+        "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-proto-sdk.test.ts",
+        "scripts/lib/platform-proto-sdk.ts",
+        "scripts/test-platform-sdk-consumers.ts",
+        "sdk/typescript/README.md",
+        "sdk/typescript/THIRD_PARTY_NOTICES.md",
+        "sdk/typescript/package.json",
+        "sdk/typescript/src/proto.test.ts",
+        "sdk/typescript/tsconfig.json"
+      ],
+      "outputStatus": "GENERATED_PROTO_TYPESCRIPT_SDK",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "sdk/typescript/proto-generated-manifest.json",
+          "sha256": "sha256:36de6a2ddbb3094760707809d2b9121e476bbd17a75afafa2f04fd6a6bd3851c",
+          "sizeBytes": 6913
+        },
+        {
+          "path": "sdk/typescript/src/proto.ts",
+          "sha256": "sha256:db9f403f4ea942518dd37f1f01cf52262182c1c390b65e96444b61a8d6210d45",
+          "sizeBytes": 293
+        },
+        {
+          "path": "sdk/typescript/src/gen/contracts/platform-adapter/v1alpha1/platform_adapter_pb.ts",
+          "sha256": "sha256:81ede237cbe70be1935f551e3008f1e87a15af0b107b4486ee87592bb512946e",
+          "sizeBytes": 24144
+        },
+        {
+          "path": "sdk/typescript/src/gen/contracts/worker/v1alpha1/kernel_pb.ts",
+          "sha256": "sha256:f939f0f23274668063a721fba2888a9857cd9f21ad76fcfe162fd279aac2e17c",
+          "sizeBytes": 36515
+        },
+        {
+          "path": "sdk/typescript/src/gen/contracts/worker/v1alpha1/worker_supervisor_pb.ts",
+          "sha256": "sha256:4d5ff4bfae60b3f712c8d87457e822acba5bba085164d237923a5f11ef8aa500",
+          "sizeBytes": 3288
+        }
+      ],
+      "outputSummary": {
+        "profile": "cloud-agents-proto-sdk/v1alpha1",
+        "packageIdentity": "@synara/cloud-agent-platform-sdk/proto",
+        "packagePrivate": true,
+        "transport": "INJECTED_CONNECT_FIXTURE_TRANSPORT_ONLY",
+        "protocols": [
+          "connect",
+          "grpc"
+        ],
+        "productionCrossRepository": "HTTP2_MTLS_REQUIRED_NOT_REGISTERED",
+        "serverRouteRegistration": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
         "gateStatus": "ALL_GATES_OPEN"
       }
     },
@@ -1318,7 +1551,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:8e0c3827c575adcedbc71efe94cb4a5158080c9a4ffb9399899b9ae79d7119f3",
+      "inputManifestSha256": "sha256:90cf8b1089d78734955d415d6834493755832cd97a21b4d6197f2e462fb29d72",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",
@@ -1327,6 +1560,12 @@
         "sdk/go/THIRD_PARTY_NOTICES.md",
         "sdk/go/generated-manifest.json",
         "sdk/go/gen/common/v1alpha1/identity_generated.go",
+        "sdk/go/proto-generated-manifest.json",
+        "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
+        "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
         "services/control-plane/go.mod",
         "services/control-plane/doc.go",
         "services/worker/go.mod",
@@ -1338,7 +1577,6 @@
   "missing": [
     "json-schema-2020-12-official-test-suite",
     "openapi-3.1-semantic-validation",
-    "proto-descriptor-and-breaking",
     "generated-sdk-replay",
     "n-minus-one-compatibility",
     "response-watch-unknown-field-preservation",

@@ -1,7 +1,11 @@
 {
   "fixtureVersion": 1,
   "authority": "proto3",
-  "generationStatus": "NOT_GENERATED",
+  "generationStatus": "GENERATED_NON_GATE_EVIDENCE",
+  "descriptorSet": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+  "descriptorSha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+  "breakingBaseline": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+  "protocolCompatibility": ["connect", "grpc"],
   "package": "cloudagents.worker.v1alpha1",
   "sources": [
     "contracts/worker/v1alpha1/kernel.proto",

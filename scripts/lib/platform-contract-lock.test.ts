@@ -330,6 +330,87 @@ describe("Platform contract generation lock", () => {
     }
   });
 
+  it("records the generated Proto descriptor and SDKs as non-Gate evidence", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<{
+        id?: string;
+        inputs?: string[];
+        generatedOutputs?: unknown[];
+        outputStatus?: string;
+        notGateClosure?: boolean;
+        outputSummary?: Record<string, unknown>;
+      }>;
+    };
+    const descriptor = lock.pipelines.find(
+      (candidate) => candidate.id === "platform-proto-descriptor-generation",
+    );
+    const go = lock.pipelines.find(
+      (candidate) => candidate.id === "platform-proto-go-sdk-generation",
+    );
+    const typescript = lock.pipelines.find(
+      (candidate) => candidate.id === "platform-proto-typescript-sdk-generation",
+    );
+    expect(descriptor).toMatchObject({
+      outputStatus: "GENERATED_EXACT_V1ALPHA1_DESCRIPTOR_BASELINE",
+      notGateClosure: true,
+      outputSummary: {
+        profile: "cloud-agents-proto-generation/v1alpha1",
+        serviceCount: 3,
+        unaryMethodCount: 12,
+        breakingPolicy: "EXACT_V1ALPHA1_BASELINE_NO_UNREVIEWED_DELTA",
+        httpSurface: "NOT_IMPLEMENTED",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: expect.arrayContaining([
+        expect.objectContaining({
+          path: "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+        }),
+        expect.objectContaining({
+          path: "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+        }),
+      ]),
+    });
+    for (const pipeline of [go, typescript]) {
+      expect(pipeline).toMatchObject({
+        outputStatus: expect.stringMatching(/^GENERATED_PROTO_/u),
+        notGateClosure: true,
+        outputSummary: {
+          profile: "cloud-agents-proto-sdk/v1alpha1",
+          transport: "INJECTED_CONNECT_FIXTURE_TRANSPORT_ONLY",
+          protocols: ["connect", "grpc"],
+          serverRouteRegistration: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      });
+      expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
+      expect(pipeline?.inputs).toContain(
+        "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
+      );
+      expect(pipeline?.inputs).toContain("scripts/test-platform-sdk-consumers.ts");
+    }
+    expect(go?.generatedOutputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "sdk/go/proto-generated-manifest.json" }),
+        expect.objectContaining({ path: "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go" }),
+      ]),
+    );
+    expect(typescript?.generatedOutputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "sdk/typescript/proto-generated-manifest.json" }),
+        expect.objectContaining({ path: "sdk/typescript/src/proto.ts" }),
+      ]),
+    );
+    expect(go?.inputs).toContain("sdk/go/proto_conformance_test.go");
+    expect(typescript?.inputs).toContain("sdk/typescript/src/proto.test.ts");
+  });
+
   it("rejects symbolic links in recursive migration inputs", () => {
     const root = temporaryRoot();
     mkdirSync(join(root, "catalog"));
