@@ -112,7 +112,8 @@
   service/claim and local PG15/16/17 normal/race matrix are implemented and bounded-review approved；no Gate is closed
   (见 [`A2.4 typed service/claim/matrix`](compatibility-recovery-v2-service-claim-matrix-20260820.md) 与
   [`A2.4 independent review`](compatibility-recovery-v2-independent-review-20260820.md))
-- Remaining P1 slices：P1-A3 SDK/Identity/Closure
+- Remaining P1 slices：P1-A3 SDK/Identity/Closure；implementation entry fixed in
+  [`sdk-identity-closure-entry-20260820.md`](sdk-identity-closure-entry-20260820.md)
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
