@@ -124,8 +124,10 @@
   `APPROVE, P0=0/P1=0/P2=1`，唯一 P2 是 executor handoff 的 63-character SHA typo，不影响候选 bytes；Slice C
   `e64e0a2` 的 [`independent review`](migration-ledger-preflight-service-claim-independent-review-20260821.md) 为
   `APPROVE, P0=0/P1=0/P2=0`。固定三元组 focused normal/race、vet/build、两窄 generator、contract-lock 均通过；
-  当前源码 broad `internal/migration` 五分钟 bounded run 仍为 **NOT PASS**。该实现没有 `Runner.Run`/writer
-  consumer、生产数据库写入、HTTP/P2/provider effect 或 Gate closure。
+  先前当前源码的五分钟 bounded run 正确记录为 **NOT PASS**，随后同一 control-plane subtree 已在 `b57acf2`
+  用 Go 1.26.6 完成 uncached full normal `internal/migration` suite（`1108.208s`）。该实现仍没有
+  `Runner.Run`/writer consumer、生产数据库写入、HTTP/P2/provider effect 或 Gate closure；full race 与 live
+  PostgreSQL 也未由该结果覆盖。
 - 下一生产 consumer 仍由
   [`runner ledger consumer/writer entry blocker`](runner-ledger-consumer-entry-blocker-20260821.md) 阻断：v1
   generated profile 明确禁止 consumer/transaction/write，ordinary dispatch 不是 writer authority，现有 writer
@@ -238,10 +240,13 @@ Platform RC、Beta 或 GA。
   executor handoff SHA typo；不进入 writer、生产数据库 mutation 或 Gate closure
 - [`migration-ledger-preflight-service-claim-matrix-20260821.md`](migration-ledger-preflight-service-claim-matrix-20260821.md)：
   固定 `e64e0a2` 的 one-shot same-verifier claim、17-pair dispatch matrix、PG15/16/17 metadata matrix 与明确
-  non-claim；broad migration run 保持 NOT PASS
+  non-claim；其中的五分钟 broad migration NOT PASS 是当时的历史边界，由后续 current-source closure 承接
 - [`migration-ledger-preflight-service-claim-independent-review-20260821.md`](migration-ledger-preflight-service-claim-independent-review-20260821.md)：
   固定 `e64e0a2` 的 Slice C independent review；verdict `APPROVE, P0=0/P1=0/P2=0`，无 `Runner.Run`、writer、
   HTTP/P2/provider consumer，且不构成 immutable Gate signature
+- [`runner-ledger-current-source-full-migration-closure-20260821.md`](runner-ledger-current-source-full-migration-closure-20260821.md)：
+  固定 control-plane subtree `091a42f5` 在 Go 1.26.6 的 uncached full normal `internal/migration` PASS
+  （`1108.208s`）；不构成 full race、live PostgreSQL、独立 Gate signature 或生产副作用证据
 
 ## Data kernel decisions
 

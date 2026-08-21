@@ -96,8 +96,11 @@ writer kernel 与 typed service/claim/matrix 已由 `b639b07` 的 independent re
 SDK/server seam 与 Proto SDK/fresh consumers 已由 `c5d8cbf` 固定并完成 bounded independent review。随后 runner
 ledger/catalog preflight 按 [`ADR-0019`](adr/0019-p1-runner-ledger-preflight-contract.md) 完成 generated profile、locked
 read-only kernel 与 same-verifier one-shot claim/no-op dispatch；Slice C fixed `e64e0a2` 的 independent review
-`9ed71b8` 返回 `APPROVE, P0=0/P1=0/P2=0`。该路径仍未进入 `Runner.Run` 或 writer；当前 source 的 broad
-`internal/migration` 五分钟 bounded run 保持 **NOT PASS**，不得继承 `67b8acb` 的旧源码 full-suite 结论。
+`9ed71b8` 返回 `APPROVE, P0=0/P1=0/P2=0`。该路径仍未进入 `Runner.Run` 或 writer。先前当前源码的五分钟
+bounded run 正确记录为 **NOT PASS**；其后同一 control-plane subtree 已在 `b57acf2` 用 Go 1.26.6 完成 uncached
+full normal `internal/migration` suite（`1108.208s`），见
+[`current-source closure`](p1/runner-ledger-current-source-full-migration-closure-20260821.md)。该结果不继承
+`67b8acb` 的旧源码结论，也不构成 full race、live PostgreSQL 或 Gate closure。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

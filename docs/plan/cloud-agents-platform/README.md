@@ -2,7 +2,7 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4、A3 与 runner ledger/catalog preflight 固定 implementation/review package 已批准；当前源码 broad migration closure、所有 immutable/aggregate Gate 与 `Runner.Run`/writer integration 仍 OPEN）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4、A3 与 runner ledger/catalog preflight 固定 implementation/review package 已批准；当前源码 full normal `internal/migration` suite 已通过，full race、所有 immutable/aggregate Gate 与 `Runner.Run`/writer integration 仍 OPEN）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
 - 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)
@@ -63,8 +63,9 @@ generated-manifest v3 lineage/quota profile；quota/profile 与 remediated A2.3 
 三切片已由 `b639b07` 的 bounded independent review 批准；A3 generated identity/JSON/Proto SDK package 已由
 `c5d8cbf` 固定并完成 bounded independent review。Runner ledger/catalog preflight 又在 `e64e0a2` 完成
 generated profile、locked read-only kernel 与 same-verifier one-shot claim/no-op dispatch，`9ed71b8` independent review
-返回 `APPROVE, P0=0/P1=0/P2=0`。当前 source 的 broad `internal/migration` 五分钟 bounded run 是 **NOT PASS**，
-且该 service 仍没有 `Runner.Run`/writer consumer。P1 仍只允许在公共仓实施 contracts、
+返回 `APPROVE, P0=0/P1=0/P2=0`。先前五分钟 bounded run 的 **NOT PASS** 已由同一 control-plane subtree 在
+`b57acf2` 的 Go 1.26.6 uncached full normal suite PASS（`1108.208s`）取代；该证据不包括 full race 或 live
+PostgreSQL，且该 service 仍没有 `Runner.Run`/writer consumer。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
 仍不授权：
 

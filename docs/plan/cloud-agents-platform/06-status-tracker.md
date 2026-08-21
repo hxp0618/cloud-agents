@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-21
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight generated profile → locked read-only kernel → typed same-verifier claim/matrix 已在 `e64e0a2` 固定并由 `9ed71b8` 独立复核批准；当前源码 broad `internal/migration` 五分钟 bounded run 为 NOT PASS，不能继承 `67b8acb` 的旧源码 full-suite 结论；HTTP/P2 external side effect 与所有 Gate 均未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight generated profile → locked read-only kernel → typed same-verifier claim/matrix 已在 `e64e0a2` 固定并由 `9ed71b8` 独立复核批准；同一 control-plane subtree 已在 `b57acf2` 以 Go 1.26.6 完成 uncached full normal `internal/migration` PASS `1108.208s`，但 full race、live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2 external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -228,9 +228,11 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 - [x] Runner ledger/catalog preflight 已按 generated profile → locked read-only kernel → typed same-verifier
       claim/no-op dispatch 三切片完成；Slice A/B `01b1a5f` 与 Slice C `e64e0a2` 均完成 independent review，后者
       `9ed71b8` verdict 为 `APPROVE, P0=0/P1=0/P2=0`。固定工具链 focused normal/race、vet/build、两窄 generator
-      与 contract-lock 均通过；当前源码 broad `internal/migration` 五分钟 bounded run 保持 **NOT PASS**。该 service
-      仍无 `Runner.Run`/writer consumer，不授权 production database mutation、HTTP/P2/provider effect 或 Gate closure。
-      见 [`Slice C review`](../p1/migration-ledger-preflight-service-claim-independent-review-20260821.md)。
+      与 contract-lock 均通过；同一 control-plane subtree 又在 `b57acf2` 以 Go 1.26.6 完成 uncached full normal
+      `internal/migration` PASS（`1108.208s`）。该结果不覆盖 full race 或 live PostgreSQL；service 仍无
+      `Runner.Run`/writer consumer，不授权 production database mutation、HTTP/P2/provider effect 或 Gate closure。
+      见 [`Slice C review`](../p1/migration-ledger-preflight-service-claim-independent-review-20260821.md) 与
+      [`current-source closure`](../p1/runner-ledger-current-source-full-migration-closure-20260821.md)。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
