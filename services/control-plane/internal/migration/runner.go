@@ -77,8 +77,10 @@ type databaseState struct {
 // the preceding sealed authority: StatementIntent durability precedes SQL,
 // final Intermediate durability precedes the ledger row, CommitIntent
 // durability precedes Commit, and a committed terminal plus checkpoint precede
-// success. Unsupported multi-entry or multi-statement bundles stop before any
-// evidence session or database side effect.
+// success. A wider verified bundle may enter only the read-only generated
+// ledger consumer: an already-complete ledger returns a no-op result, while
+// every entry or recovery action remains not implemented and performs no
+// writer or evidence mutation.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err
@@ -113,8 +115,9 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 			return RunResult{}, err
 		}
 	}
-	if err := validateRunnerCurrentExecutionScope(bundle, plans); err != nil {
-		return RunResult{}, err
+	scopeErr := validateRunnerCurrentExecutionScope(bundle, plans)
+	if scopeErr != nil && !runnerLedgerConsumerEligible(scopeErr, "runner-current-execution-scope") {
+		return RunResult{}, scopeErr
 	}
 	current, recoveryArtifact, err := bindVerifierOwnedDecision(runner.Trust, decision, bindings.runnerProjectionDecisionDigest, recoveryArtifactBytes)
 	if err != nil {
@@ -135,23 +138,32 @@ func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, e
 		return RunResult{}, err
 	}
 	result := RunResult{}
-	prepared, preflightErr := runner.prepareCurrentDatabaseSession(ctx, request.TargetDSN, bundle, plans, session, snapshot, candidate)
-	if preflightErr == nil {
-		transaction, transactionErr := runner.prepareCurrentTransaction(ctx, prepared, bundle, plans)
-		preflightErr = transactionErr
+	preflightErr := scopeErr
+	if scopeErr != nil {
+		result, preflightErr = runner.consumeRunnerLedgerPreflight(ctx, request.TargetDSN, bundle, plans, session, candidate)
+	} else {
+		prepared, writerPreflightErr := runner.prepareCurrentDatabaseSession(ctx, request.TargetDSN, bundle, plans, session, snapshot, candidate)
+		preflightErr = writerPreflightErr
 		if preflightErr == nil {
-			statement, statementErr := runner.prepareCurrentStatement(ctx, transaction, bundle, plans)
-			preflightErr = statementErr
+			transaction, transactionErr := runner.prepareCurrentTransaction(ctx, prepared, bundle, plans)
+			preflightErr = transactionErr
 			if preflightErr == nil {
-				durable, appendErr := runner.appendCurrentStatementIntent(ctx, statement)
-				preflightErr = appendErr
+				statement, statementErr := runner.prepareCurrentStatement(ctx, transaction, bundle, plans)
+				preflightErr = statementErr
 				if preflightErr == nil {
-					result, preflightErr = runner.runCurrentSingleEntry(ctx, durable, bundle, plans)
+					durable, appendErr := runner.appendCurrentStatementIntent(ctx, statement)
+					preflightErr = appendErr
+					if preflightErr == nil {
+						result, preflightErr = runner.runCurrentSingleEntry(ctx, durable, bundle, plans)
+					}
 				}
 			}
+		} else {
+			preflightErr = closeRunnerPreparedCurrentSession(prepared, preflightErr)
+			if runnerLedgerConsumerEligible(preflightErr, "runner-complete-ledger-preflight", "runner-existing-ledger-preflight") {
+				result, preflightErr = runner.consumeRunnerLedgerPreflight(ctx, request.TargetDSN, bundle, plans, session, candidate)
+			}
 		}
-	} else {
-		preflightErr = closeRunnerPreparedCurrentSession(prepared, preflightErr)
 	}
 	if cleanupErr := closeRunnerEvidenceOwnership(session, candidate); cleanupErr != nil {
 		return RunResult{}, cleanupErr

@@ -179,7 +179,7 @@ func TestRunnerLedgerConsumerFactRejectsZeroCrossProfileAndEveryBoundMutation(t 
 	}
 }
 
-func TestRunnerLedgerConsumerSliceAHasNoProductionConsumerOrAuthoritySurface(t *testing.T) {
+func TestRunnerLedgerConsumerSliceBHasOneClosedProductionConsumerAndNoAuthoritySurface(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -213,13 +213,16 @@ func TestRunnerLedgerConsumerSliceAHasNoProductionConsumerOrAuthoritySurface(t *
 			}
 			identifier, ok := call.Fun.(*ast.Ident)
 			if ok && identifier.Name == "bindRunnerLedgerConsumerFact" {
+				if name != "runner_ledger_consumer_service.go" {
+					t.Fatalf("generated consumer fact has an unreviewed caller in %s", name)
+				}
 				consumerCalls++
 			}
 			return true
 		})
 	}
-	if consumerCalls != 0 {
-		t.Fatalf("generated consumer fact has %d production consumers before Slice B; want zero", consumerCalls)
+	if consumerCalls != 1 {
+		t.Fatalf("generated consumer fact has %d production consumers in Slice B; want one", consumerCalls)
 	}
 }
 

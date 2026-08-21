@@ -255,7 +255,7 @@ describe("Platform contract generation lock", () => {
       outputStatus: "GENERATED_RUNNER_LEDGER_CONSUMER_GO_PROFILE",
       notGateClosure: true,
       outputSummary: {
-        productionConsumer: "NONE_IN_SLICE_A",
+        productionConsumer: "ONE_CLOSED_NOOP_IN_SLICE_B",
         preflightV1Mutation: "FORBIDDEN",
         databaseHandle: "FORBIDDEN",
         writerAuthority: "NONE",

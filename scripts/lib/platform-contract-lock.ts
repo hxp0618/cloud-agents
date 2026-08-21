@@ -835,7 +835,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           stateMachineDigest: runnerLedgerConsumerRegistry.stateMachineDigest,
           policyDigest: runnerLedgerConsumerRegistry.policyDigest,
           handWrittenProfileFallback: "FORBIDDEN",
-          productionConsumer: "NONE_IN_SLICE_A",
+          productionConsumer: "ONE_CLOSED_NOOP_IN_SLICE_B",
           preflightV1Mutation: "FORBIDDEN",
           databaseHandle: "FORBIDDEN",
           writerAuthority: "NONE",

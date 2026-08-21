@@ -87,7 +87,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:85f6ea09ef44b8d505c686417cbe630315510900fcab0c79b133313cdb06e176",
+      "sourceManifestSha256": "sha256:3dcee52a97bd0cb38ff2a3b40079cd52b8042305144f90630968bbe21af0bcc5",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -774,7 +774,7 @@
     {
       "id": "runner-ledger-consumer-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:2e116be79a397c13192ec710fd73f7b130499ffaf3cede2ba3d8c57aad68beb2",
+      "inputManifestSha256": "sha256:477ba310fb3f820a3b886faa072d3d222720401095eef69c459b1dbb1c220fd4",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
         "scripts/generate-platform-runner-ledger-consumer-go.ts",
@@ -799,7 +799,7 @@
         "stateMachineDigest": "sha256:eb94b6399fb2d509aea69cbc7bfb6ed2942460af61d5cf2c57271024f37a0547",
         "policyDigest": "sha256:b011e6869de84c17fa351802630327a36ab92595ada9089cc6068cebda0c4481",
         "handWrittenProfileFallback": "FORBIDDEN",
-        "productionConsumer": "NONE_IN_SLICE_A",
+        "productionConsumer": "ONE_CLOSED_NOOP_IN_SLICE_B",
         "preflightV1Mutation": "FORBIDDEN",
         "databaseHandle": "FORBIDDEN",
         "writerAuthority": "NONE",

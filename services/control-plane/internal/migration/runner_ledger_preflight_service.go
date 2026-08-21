@@ -116,8 +116,8 @@ var (
 )
 
 // prepareRunnerLedgerPreflightClaim is the sole reviewed production caller of
-// the Slice B read-only kernel. It still has no caller from Runner.Run and does
-// not enter the migration writer or mutate evidence.
+// the read-only kernel. Runner.Run reaches it only through the closed generated
+// consumer service; it does not enter the migration writer or mutate evidence.
 func (runner *Runner) prepareRunnerLedgerPreflightClaim(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLedgerPreflightClaim, error) {
 	projection, err := runner.projectRunnerLedgerCatalogPreflight(ctx, dsn, bundle, plans, evidence, candidate)
 	if err != nil {

@@ -137,9 +137,6 @@ func TestRunnerLedgerAndInitialPreconditionFaultsRemainReadOnly(t *testing.T) {
 		{"ledger-first-read", func(s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
 			s.ledgerReadErr[1] = errors.New("secret-ledger-first")
 		}, CodeTransactionBoundary, "runner-ledger-preflight", 1, 0},
-		{"complete-ledger", func(s *runnerPreflightSession, _ *runnerPreflightProjectorFactory, bundle *RuntimeBundle) {
-			s.ledgerRowsByRead = [][]LedgerRow{{ledgerRowFor(bundle.Manifest.SchemaBundle.Migrations[0], bundle.Manifest.SchemaBundleDigest)}}
-		}, CodeProjectionNotImplemented, "runner-complete-ledger-preflight", 1, 0},
 		{"precondition-projection", func(_ *runnerPreflightSession, f *runnerPreflightProjectorFactory, _ *RuntimeBundle) {
 			f.preconditionErr = fail(CodeCatalogDrift, "fake", "secret", errors.New("secret-precondition"))
 		}, CodeCatalogDrift, "runner-initial-precondition", 1, 1},

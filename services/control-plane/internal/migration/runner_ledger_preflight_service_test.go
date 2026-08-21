@@ -26,6 +26,8 @@ type runnerLedgerPreflightEvidenceFake struct {
 	bindCalls           int
 	consumeCalls        int
 	mutateBeforeConsume func(*runnerLedgerPreflightEvidenceFake)
+	afterBind           func()
+	afterConsume        func()
 }
 
 var _ runnerLedgerPreflightClaimBinder = (*generationEvidenceSession)(nil)
@@ -77,7 +79,13 @@ func (evidence *runnerLedgerPreflightEvidenceFake) bindRunnerLedgerPreflightClai
 	if evidence.runnerEvidenceSessionFake == nil || evidence.closed || request.candidate.binding != evidence.candidate.binding {
 		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-test-bind", "test evidence is unavailable", nil)
 	}
-	return bindRunnerLedgerPreflightClaimFromEvidence(ctx, request, evidence.factsLocked())
+	claim, err := bindRunnerLedgerPreflightClaimFromEvidence(ctx, request, evidence.factsLocked())
+	if err == nil && evidence.afterBind != nil {
+		afterBind := evidence.afterBind
+		evidence.afterBind = nil
+		afterBind()
+	}
+	return claim, err
 }
 
 func (evidence *runnerLedgerPreflightEvidenceFake) consumeRunnerLedgerPreflightClaim(ctx context.Context, claim *runnerLedgerPreflightClaim, candidate OwnedCurrentCandidate) (runnerLedgerPreflightDispatch, error) {
@@ -95,7 +103,13 @@ func (evidence *runnerLedgerPreflightEvidenceFake) consumeRunnerLedgerPreflightC
 	if evidence.runnerEvidenceSessionFake == nil || evidence.closed || candidate.binding != evidence.candidate.binding {
 		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-test-claim", "test evidence is unavailable", nil)
 	}
-	return consumeRunnerLedgerPreflightClaimFromEvidence(ctx, claim, candidate, evidence.factsLocked())
+	dispatch, err := consumeRunnerLedgerPreflightClaimFromEvidence(ctx, claim, candidate, evidence.factsLocked())
+	if err == nil && evidence.afterConsume != nil {
+		afterConsume := evidence.afterConsume
+		evidence.afterConsume = nil
+		afterConsume()
+	}
+	return dispatch, err
 }
 
 func (evidence *runnerLedgerPreflightEvidenceFake) factsLocked() runnerLedgerPreflightEvidenceFacts {
@@ -705,6 +719,9 @@ func TestRunnerLedgerPreflightDispatchHasNoAuthorityOrForbiddenConsumer(t *testi
 					}
 				case *ast.SelectorExpr:
 					if function.Sel.Name == "prepareRunnerLedgerPreflightClaim" {
+						if name != "runner_ledger_consumer_service.go" {
+							t.Fatalf("unreviewed preflight service caller in %s", name)
+						}
 						serviceCalls++
 					}
 					if function.Sel.Name == "projectRunnerLedgerCatalogPreflight" {
@@ -725,7 +742,7 @@ func TestRunnerLedgerPreflightDispatchHasNoAuthorityOrForbiddenConsumer(t *testi
 			return true
 		})
 	}
-	if serviceCalls != 0 || kernelCalls != 1 || concreteBinders != 2 || bindHelperCalls != 1 || consumeHelperCalls != 1 {
+	if serviceCalls != 1 || kernelCalls != 1 || concreteBinders != 2 || bindHelperCalls != 1 || consumeHelperCalls != 1 {
 		t.Fatalf("consumer graph service=%d kernel=%d binders=%d bind_helpers=%d consume_helpers=%d", serviceCalls, kernelCalls, concreteBinders, bindHelperCalls, consumeHelperCalls)
 	}
 }
