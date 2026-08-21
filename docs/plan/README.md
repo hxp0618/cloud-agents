@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight 的 generated profile → read-only kernel → typed service/claim/matrix 已在 `e64e0a2` 固定并由 `9ed71b8` 独立复核批准；所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核，最新 entry-admission 候选 `88a5392` 由 `dd5ea657` 返回 `APPROVE, P0=0/P1=0/P2=0`；entry/recovery writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -16,7 +16,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 解释顺序：
 
 1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
-   [`ADR-0019`](adr/0019-p1-runner-ledger-preflight-contract.md)；
+   [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)；
 2. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 3. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 4. `legacy/` 历史计划；
@@ -25,33 +25,35 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 ## 当前计划
 
-| 文档                                                                                                     | 作用                                            |
-| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| [`cloud-agents-platform/README.md`](cloud-agents-platform/README.md)                                     | 公共平台固定追踪入口                            |
-| [`01-product-scope-and-authority.md`](cloud-agents-platform/01-product-scope-and-authority.md)           | 产品范围与单一 authority                        |
-| [`02-target-architecture.md`](cloud-agents-platform/02-target-architecture.md)                           | Control Plane/Worker/Runtime 目标架构           |
-| [`03-public-repository-and-release.md`](cloud-agents-platform/03-public-repository-and-release.md)       | 公共仓、module、制品与 release train            |
-| [`04-extraction-and-migration.md`](cloud-agents-platform/04-extraction-and-migration.md)                 | Go CP inventory、迁移与 cutover                 |
-| [`05-gates-and-acceptance.md`](cloud-agents-platform/05-gates-and-acceptance.md)                         | Gate、same-bits、安全与验收                     |
-| [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md)                                     | 决策、阶段、record 与暂停现场                   |
-| [`p0/README.md`](p0/README.md)                                                                           | P0 freeze、inventory、baseline 与 provenance    |
-| [`p1/README.md`](p1/README.md)                                                                           | P1 foundation 与 dependency review 证据         |
-| [`synara-t3-cloud-agent-integration-architecture.md`](synara-t3-cloud-agent-integration-architecture.md) | Runtime + Platform + 双宿主总设计               |
-| [`ADR-0005`](adr/0005-cloud-agent-external-runtime-candidate.md)                                         | immutable external Runtime candidate 历史决定   |
-| [`ADR-0006`](adr/0006-public-cloud-agents-platform.md)                                                   | 完整公共 Go Control Plane 平台决定              |
-| [`ADR-0007`](adr/0007-p1-contract-data-toolchain-foundation.md)                                          | P1 contract/data/toolchain foundation 决定      |
-| [`ADR-0008`](adr/0008-p1-postgres-data-kernel.md)                                                        | P1 PostgreSQL data kernel 决定                  |
-| [`ADR-0009`](adr/0009-p1-migration-bundle-runner.md)                                                     | P1 migration bundle/runner/trust 决定           |
-| [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)                                                | P1 PostgreSQL authority/catalog projection 决定 |
-| [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)                                                    | P1 Membership/RBAC authority 决定               |
-| [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md)                                             | P1 versioned lineage/quota profile 决定         |
-| [`ADR-0013`](adr/0013-p1-durable-coordination-contract.md)                                               | P1 durable coordination registry/state 决定     |
-| [`ADR-0014`](adr/0014-p1-lineage-quota-profile-v3.md)                                                    | P1 lineage/quota profile v3 决定                |
-| [`ADR-0015`](adr/0015-p1-compatibility-recovery-contract.md)                                             | P1 compatibility/recovery contract 决定         |
-| [`ADR-0016`](adr/0016-p1-compatibility-recovery-postgres-kernel.md)                                      | P1 compatibility/recovery PostgreSQL 决定       |
-| [`ADR-0017`](adr/0017-p1-compatibility-recovery-v2-registry.md)                                          | P1 compatibility/recovery v2 registry 决定      |
-| [`ADR-0018`](adr/0018-p1-compatibility-recovery-v2-writer-kernel.md)                                     | P1 compatibility/recovery v2 writer 决定        |
-| [`ADR-0019`](adr/0019-p1-runner-ledger-preflight-contract.md)                                            | P1 runner ledger preflight 决定                 |
+| 文档                                                                                                     | 作用                                             |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [`cloud-agents-platform/README.md`](cloud-agents-platform/README.md)                                     | 公共平台固定追踪入口                             |
+| [`01-product-scope-and-authority.md`](cloud-agents-platform/01-product-scope-and-authority.md)           | 产品范围与单一 authority                         |
+| [`02-target-architecture.md`](cloud-agents-platform/02-target-architecture.md)                           | Control Plane/Worker/Runtime 目标架构            |
+| [`03-public-repository-and-release.md`](cloud-agents-platform/03-public-repository-and-release.md)       | 公共仓、module、制品与 release train             |
+| [`04-extraction-and-migration.md`](cloud-agents-platform/04-extraction-and-migration.md)                 | Go CP inventory、迁移与 cutover                  |
+| [`05-gates-and-acceptance.md`](cloud-agents-platform/05-gates-and-acceptance.md)                         | Gate、same-bits、安全与验收                      |
+| [`06-status-tracker.md`](cloud-agents-platform/06-status-tracker.md)                                     | 决策、阶段、record 与暂停现场                    |
+| [`p0/README.md`](p0/README.md)                                                                           | P0 freeze、inventory、baseline 与 provenance     |
+| [`p1/README.md`](p1/README.md)                                                                           | P1 foundation 与 dependency review 证据          |
+| [`synara-t3-cloud-agent-integration-architecture.md`](synara-t3-cloud-agent-integration-architecture.md) | Runtime + Platform + 双宿主总设计                |
+| [`ADR-0005`](adr/0005-cloud-agent-external-runtime-candidate.md)                                         | immutable external Runtime candidate 历史决定    |
+| [`ADR-0006`](adr/0006-public-cloud-agents-platform.md)                                                   | 完整公共 Go Control Plane 平台决定               |
+| [`ADR-0007`](adr/0007-p1-contract-data-toolchain-foundation.md)                                          | P1 contract/data/toolchain foundation 决定       |
+| [`ADR-0008`](adr/0008-p1-postgres-data-kernel.md)                                                        | P1 PostgreSQL data kernel 决定                   |
+| [`ADR-0009`](adr/0009-p1-migration-bundle-runner.md)                                                     | P1 migration bundle/runner/trust 决定            |
+| [`ADR-0010`](adr/0010-p1-postgres-projection-contract.md)                                                | P1 PostgreSQL authority/catalog projection 决定  |
+| [`ADR-0011`](adr/0011-p1-membership-rbac-contract.md)                                                    | P1 Membership/RBAC authority 决定                |
+| [`ADR-0012`](adr/0012-p1-versioned-lineage-quota-profile.md)                                             | P1 versioned lineage/quota profile 决定          |
+| [`ADR-0013`](adr/0013-p1-durable-coordination-contract.md)                                               | P1 durable coordination registry/state 决定      |
+| [`ADR-0014`](adr/0014-p1-lineage-quota-profile-v3.md)                                                    | P1 lineage/quota profile v3 决定                 |
+| [`ADR-0015`](adr/0015-p1-compatibility-recovery-contract.md)                                             | P1 compatibility/recovery contract 决定          |
+| [`ADR-0016`](adr/0016-p1-compatibility-recovery-postgres-kernel.md)                                      | P1 compatibility/recovery PostgreSQL 决定        |
+| [`ADR-0017`](adr/0017-p1-compatibility-recovery-v2-registry.md)                                          | P1 compatibility/recovery v2 registry 决定       |
+| [`ADR-0018`](adr/0018-p1-compatibility-recovery-v2-writer-kernel.md)                                     | P1 compatibility/recovery v2 writer 决定         |
+| [`ADR-0019`](adr/0019-p1-runner-ledger-preflight-contract.md)                                            | P1 runner ledger preflight 决定                  |
+| [`ADR-0020`](adr/0020-p1-runner-ledger-consumer-contract.md)                                             | P1 runner ledger read-only consumer 决定         |
+| [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)                                      | P1 runner ledger close-only entry admission 决定 |
 
 ## 历史与参考
 
@@ -101,6 +103,12 @@ bounded run 正确记录为 **NOT PASS**；其后同一 control-plane subtree �
 full normal `internal/migration` suite（`1108.208s`），见
 [`current-source closure`](p1/runner-ledger-current-source-full-migration-closure-20260821.md)。该结果不继承
 `67b8acb` 的旧源码结论，也不构成 full race、live PostgreSQL 或 Gate closure。
+其后 runner ledger consumer 已在 `dcb4b3a` 固定 complete-ledger `return_success` read-only no-op，并由
+`4209e12` 独立复核批准；ADR-0021 的 generated five-pair entry-admission profile、same-verifier fresh-session
+read-only revalidation 与 registry-backed `close_without_mutation` permit 又在修复 generation-lock 漂移后的
+`88a5392` 固定，由 `dd5ea657` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`。该切片只在成功 cleanup 后返回稳定
+`MIGRATION_PROJECTION_NOT_IMPLEMENTED`，不实现 entry/recovery writer、`BeginMigration`、SQL、ledger/evidence
+append、生产数据库写入、HTTP/P2/provider 副作用或 Gate closure。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

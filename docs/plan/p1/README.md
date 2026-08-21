@@ -13,7 +13,9 @@
   [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)、
   [`ADR-0017`](../adr/0017-p1-compatibility-recovery-v2-registry.md)、
   [`ADR-0018`](../adr/0018-p1-compatibility-recovery-v2-writer-kernel.md)、
-  [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)
+  [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)、
+  [`ADR-0020`](../adr/0020-p1-runner-ledger-consumer-contract.md)、
+  [`ADR-0021`](../adr/0021-p1-runner-ledger-entry-admission-contract.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -134,6 +136,16 @@
   [`independent review`](runner-ledger-consumer-service-independent-review-20260822.md) 在 `4209e12` 返回
   `APPROVE, P0=0/P1=0/P2=0`。其余 5 个 entry 与 11 个 recovery/reconcile/failure dispatch 继续稳定返回
   `NOT_IMPLEMENTED`；没有生产数据库写入、HTTP/P2/provider effect、部署、发布或 Gate closure。
+- Runner ledger entry admission 已按 ADR-0021 的 generated five-pair profile → fresh locked read-only
+  revalidation/close-only permit → matrix/independent review 三切片完成。初次 fixed candidate 因
+  `generation.lock` 未绑定修改后的 Go profile test 被独立审查判定 `P1=1` 并撤回；修复候选 `88a5392` 的 lock
+  actual/expected byte-exact，`dd5ea657` review verdict 为 `APPROVE, P0=0/P1=0/P2=0`。focused normal、显式
+  30-minute focused race、显式 30-minute full normal、vet/build、Linux dual-arch compile、platform contract/lock、lint/
+  typecheck/format 与 candidate secret scan 均通过；默认十分钟 full run 明确为 **NOT PASS**。permit 只允许
+  `close_without_mutation`，所有 entry/recovery writer、生产数据库写入、HTTP/P2/provider、部署、发布与 Gate
+  closure 仍未实现/未授权（见
+  [`matrix`](runner-ledger-entry-admission-service-matrix-20260822.md) 与
+  [`independent review`](runner-ledger-entry-admission-service-independent-review-20260822.md)）。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
