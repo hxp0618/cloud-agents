@@ -33,6 +33,12 @@ import {
   RUNNER_LEDGER_CONSUMER_OUTPUT_PATH,
 } from "./platform-runner-ledger-consumer-registry";
 import {
+  assertRunnerLedgerEntryAdmissionRegistryCurrent,
+  buildRunnerLedgerEntryAdmissionRegistry,
+  runnerLedgerEntryAdmissionRegistryInputs,
+  RUNNER_LEDGER_ENTRY_ADMISSION_OUTPUT_PATH,
+} from "./platform-runner-ledger-entry-admission-registry";
+import {
   assertIdentitySDKCurrent,
   GO_IDENTITY_MANIFEST_PATH,
   GO_IDENTITY_OUTPUT_PATH,
@@ -254,6 +260,27 @@ const RUNNER_LEDGER_CONSUMER_GO_GENERATOR_SOURCES = [
 ] as const;
 const RUNNER_LEDGER_CONSUMER_GO_OUTPUT_PATH =
   "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go";
+const RUNNER_LEDGER_ENTRY_ADMISSION_GENERATOR_SOURCES = [
+  "docs/plan/adr/0021-p1-runner-ledger-entry-admission-contract.md",
+  "docs/plan/p1/runner-ledger-consumer-entry-blocker-20260821.md",
+  "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-entry-admission-registry-source-v1.json",
+  "contracts/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-source-v1.schema.json",
+  "contracts/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-v1.schema.json",
+  RUNNER_LEDGER_CONSUMER_OUTPUT_PATH,
+  "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+  "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+  "scripts/lib/platform-runner-ledger-entry-admission-registry.test.ts",
+  "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
+] as const;
+const RUNNER_LEDGER_ENTRY_ADMISSION_GO_GENERATOR_SOURCES = [
+  "scripts/generate-platform-runner-ledger-entry-admission-go.ts",
+  "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+  "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
+const RUNNER_LEDGER_ENTRY_ADMISSION_GO_OUTPUT_PATH =
+  "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go";
 
 const IN_REPO_TOOLS = [
   {
@@ -267,6 +294,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-runner-ledger-preflight-registry.ts",
       "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+      "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
   },
@@ -293,6 +321,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-runner-ledger-preflight-registry.ts",
       "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+      "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
       "scripts/lib/platform-identity-sdk.ts",
       "scripts/lib/platform-proto-sdk.ts",
       "scripts/lib/platform-go-modules.ts",
@@ -354,6 +383,18 @@ const IN_REPO_TOOLS = [
     sources: RUNNER_LEDGER_CONSUMER_GO_GENERATOR_SOURCES,
   },
   {
+    id: "platform-runner-ledger-entry-admission-registry-generator",
+    kind: "in-repo-typescript-deterministic-versioned-contract-registry",
+    entrypoint: "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
+    sources: RUNNER_LEDGER_ENTRY_ADMISSION_GENERATOR_SOURCES,
+  },
+  {
+    id: "platform-runner-ledger-entry-admission-go-generator",
+    kind: "in-repo-typescript-deterministic-go-ordinary-profile",
+    entrypoint: "scripts/generate-platform-runner-ledger-entry-admission-go.ts",
+    sources: RUNNER_LEDGER_ENTRY_ADMISSION_GO_GENERATOR_SOURCES,
+  },
+  {
     id: "platform-common-identity-sdk-generator",
     kind: "in-repo-typescript-deterministic-go-typescript-sdk",
     entrypoint: "scripts/generate-platform-identity-sdks.ts",
@@ -383,6 +424,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertCompatibilityRecoveryRegistryV2Current(root);
   assertRunnerLedgerPreflightRegistryCurrent(root);
   assertRunnerLedgerConsumerRegistryCurrent(root);
+  assertRunnerLedgerEntryAdmissionRegistryCurrent(root);
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
   assertPlatformProtoSDKCurrent(root);
@@ -391,6 +433,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
   const runnerLedgerPreflightInputs = runnerLedgerPreflightRegistryInputs(root);
   const runnerLedgerConsumerInputs = runnerLedgerConsumerRegistryInputs(root);
+  const runnerLedgerEntryAdmissionInputs = runnerLedgerEntryAdmissionRegistryInputs(root);
   const identityContractInputs = identitySDKContractInputs(root);
   const identityGeneratorInputs = identitySDKGeneratorSources();
   const identityGoInputs = [
@@ -458,11 +501,19 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     "services/control-plane/internal/migration/runner_ledger_consumer_profile.go",
     "services/control-plane/internal/migration/runner_ledger_consumer_profile_test.go",
   ].toSorted();
+  const runnerLedgerEntryAdmissionGoInputs = [
+    ...RUNNER_LEDGER_ENTRY_ADMISSION_GO_GENERATOR_SOURCES,
+    RUNNER_LEDGER_ENTRY_ADMISSION_OUTPUT_PATH,
+    RUNNER_LEDGER_CONSUMER_GO_OUTPUT_PATH,
+    "services/control-plane/internal/migration/runner_ledger_entry_admission_profile.go",
+    "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_test.go",
+  ].toSorted();
   const durableCoordinationRegistry = buildDurableCoordinationRegistry(root);
   const compatibilityRecoveryRegistry = buildCompatibilityRecoveryRegistry(root);
   const compatibilityRecoveryRegistryV2 = buildCompatibilityRecoveryRegistryV2(root);
   const runnerLedgerPreflightRegistry = buildRunnerLedgerPreflightRegistry(root);
   const runnerLedgerConsumerRegistry = buildRunnerLedgerConsumerRegistry(root);
+  const runnerLedgerEntryAdmissionRegistry = buildRunnerLedgerEntryAdmissionRegistry(root);
   const durableCoordinationProfile = (
     durableCoordinationRegistry.profiles as ReadonlyArray<{
       readonly profileDigest: string;
@@ -844,6 +895,75 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           httpSurface: "NOT_IMPLEMENTED",
           p2Surface: "NOT_IMPLEMENTED",
           providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "runner-ledger-entry-admission-registry-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, runnerLedgerEntryAdmissionInputs),
+        inputs: runnerLedgerEntryAdmissionInputs,
+        outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_ADMISSION_REGISTRY",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: RUNNER_LEDGER_ENTRY_ADMISSION_OUTPUT_PATH,
+            sha256: fileSha256(root, RUNNER_LEDGER_ENTRY_ADMISSION_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, RUNNER_LEDGER_ENTRY_ADMISSION_OUTPUT_PATH))
+              .byteLength,
+          },
+        ],
+        outputSummary: {
+          registryId: runnerLedgerEntryAdmissionRegistry.registryId,
+          registryDigest: runnerLedgerEntryAdmissionRegistry.registryDigest,
+          sourceDigest: runnerLedgerEntryAdmissionRegistry.sourceDigest,
+          stateMachineDigest: runnerLedgerEntryAdmissionRegistry.stateMachineDigest,
+          policyDigest: runnerLedgerEntryAdmissionRegistry.policyDigest,
+          profileId: (runnerLedgerEntryAdmissionRegistry.profile as { spec: { profileId: string } })
+            .spec.profileId,
+          boundConsumerRegistryDigest: (
+            runnerLedgerEntryAdmissionRegistry.consumerBinding as { registryDigest: string }
+          ).registryDigest,
+          entryAdmissionPairs: 5,
+          databaseSession: "FRESH_DEDICATED_LOCKED_READ_ONLY_UNTIL_EXACT_CLOSE",
+          beginMigration: "FORBIDDEN",
+          entryWriter: "NOT_IMPLEMENTED",
+          recoveryWriter: "NOT_IMPLEMENTED",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "runner-ledger-entry-admission-go-profile-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(
+          root,
+          runnerLedgerEntryAdmissionGoInputs,
+        ),
+        inputs: runnerLedgerEntryAdmissionGoInputs,
+        outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_ADMISSION_GO_PROFILE",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: RUNNER_LEDGER_ENTRY_ADMISSION_GO_OUTPUT_PATH,
+            sha256: fileSha256(root, RUNNER_LEDGER_ENTRY_ADMISSION_GO_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, RUNNER_LEDGER_ENTRY_ADMISSION_GO_OUTPUT_PATH))
+              .byteLength,
+          },
+        ],
+        outputSummary: {
+          registryDigest: runnerLedgerEntryAdmissionRegistry.registryDigest,
+          stateMachineDigest: runnerLedgerEntryAdmissionRegistry.stateMachineDigest,
+          policyDigest: runnerLedgerEntryAdmissionRegistry.policyDigest,
+          handWrittenProfileFallback: "FORBIDDEN",
+          productionConsumer: "NONE_IN_SLICE_A",
+          consumerV1Mutation: "FORBIDDEN",
+          databaseHandle: "FORBIDDEN",
+          permitConsumer: "NONE",
+          beginMigration: "FORBIDDEN",
+          entryWriter: "NOT_IMPLEMENTED",
+          recoveryWriter: "NOT_IMPLEMENTED",
           productionDatabaseWrites: "NOT_AUTHORIZED",
           gateStatus: "ALL_GATES_OPEN",
         },

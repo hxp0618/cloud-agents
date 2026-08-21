@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-source-v1.schema.json",
+  "title": "RunnerLedgerEntryAdmissionRegistrySourceV1",
+  "description": "Editable source for a fresh-session, close-only runner entry-admission profile. It authorizes no writer or external side effect.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-entry-admission-source/v1" },
+    "registryId": { "const": "cloud-agents/platform/runner-ledger-entry-admission" },
+    "profile": { "$ref": "#/$defs/profile" },
+    "stateMachine": { "$ref": "#/$defs/stateMachine" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "stateMachineId",
+        "canonicalization",
+        "identityBindings",
+        "errorPrecedence",
+        "transitionMatrix"
+      ],
+      "properties": {
+        "profileId": { "const": "runner-ledger-entry-admission/v1" },
+        "stateMachineId": { "const": "runner-ledger-entry-admission/v1" },
+        "canonicalization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "algorithm", "digest", "comparison"],
+          "properties": {
+            "profile": { "const": "cloud-agents-runner-ledger-entry-admission/v1-rfc8785-sha256" },
+            "algorithm": { "const": "RFC8785" },
+            "digest": { "const": "SHA-256" },
+            "comparison": { "const": "exact_string_no_rewrite" }
+          }
+        },
+        "identityBindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "consumerProfile",
+            "consumedConsumerFact",
+            "currentEvidenceBoundary",
+            "selectedEntry",
+            "planClosure",
+            "databaseSession",
+            "ledgerPrefix",
+            "catalogProjection",
+            "advisoryLock"
+          ],
+          "properties": {
+            "consumerProfile": { "const": "exact_runner_ledger_consumer_v1_generated_identity" },
+            "consumedConsumerFact": {
+              "const": "exact_entry_action_same_verifier_consumed_subject"
+            },
+            "currentEvidenceBoundary": {
+              "const": "exact_candidate_generation_journal_recovery_and_projection_before_and_after_database_read"
+            },
+            "selectedEntry": { "const": "exact_ordered_next_entry_index_id_and_digest" },
+            "planClosure": { "const": "exact_entry_plan_count_and_domain_separated_digest" },
+            "databaseSession": {
+              "const": "exact_connected_and_migration_role_same_session_identity"
+            },
+            "ledgerPrefix": {
+              "const": "exact_length_head_rows_and_digest_before_and_after_catalog_projection"
+            },
+            "catalogProjection": {
+              "const": "exact_initial_or_cumulative_verified_projection_subject_and_result"
+            },
+            "advisoryLock": { "const": "exact_signed_key_held_until_permit_close" }
+          }
+        },
+        "errorPrecedence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "storedContradiction",
+            "contextOrOperationalFailure",
+            "recoveryRequired",
+            "unsupportedTransition",
+            "closeOrUnlockUnknown",
+            "oneShotConsumption",
+            "unknownOutcome"
+          ],
+          "properties": {
+            "storedContradiction": {
+              "const": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED"
+            },
+            "contextOrOperationalFailure": {
+              "const": "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED"
+            },
+            "recoveryRequired": {
+              "const": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED"
+            },
+            "unsupportedTransition": { "const": "MIGRATION_PROJECTION_NOT_IMPLEMENTED" },
+            "closeOrUnlockUnknown": {
+              "const": "CLEANUP_FAILURE_INVALIDATES_PERMIT_AND_DOMINATES_NOT_IMPLEMENTED"
+            },
+            "oneShotConsumption": { "const": "SECOND_TRANSITION_FAILS_CLOSED" },
+            "unknownOutcome": { "const": "FAIL_CLOSED_NO_RETRY_FROM_ORDINARY_FACT" }
+          }
+        },
+        "transitionMatrix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["empty_brand_new", "partial_next_entry"],
+          "properties": {
+            "empty_brand_new": { "$ref": "#/$defs/admissionPairs" },
+            "partial_next_entry": { "$ref": "#/$defs/admissionPairs" }
+          }
+        }
+      }
+    },
+    "admissionPairs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "action", "admissionAction"],
+        "properties": {
+          "state": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 1 },
+          "admissionAction": { "const": "prepare_entry_admission" }
+        }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initialState", "states", "terminalStates", "transitions"],
+      "properties": {
+        "id": { "const": "runner-ledger-entry-admission/v1" },
+        "initialState": { "const": "unclassified" },
+        "states": {
+          "const": [
+            "admission_closed",
+            "admission_ready",
+            "session_revalidating",
+            "unclassified",
+            "unknown_rejected"
+          ]
+        },
+        "terminalStates": { "const": ["admission_closed", "unknown_rejected"] },
+        "transitions": {
+          "const": [
+            { "from": "unclassified", "event": "select_entry", "to": "session_revalidating" },
+            { "from": "unclassified", "event": "select_unknown", "to": "unknown_rejected" },
+            {
+              "from": "session_revalidating",
+              "event": "revalidate_exact_boundary",
+              "to": "admission_ready"
+            },
+            {
+              "from": "session_revalidating",
+              "event": "revalidate_failed",
+              "to": "admission_closed"
+            },
+            {
+              "from": "admission_ready",
+              "event": "close_without_mutation",
+              "to": "admission_closed"
+            }
+          ]
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "profileSelection",
+        "consumerProfileSelection",
+        "callerProvidedProfile",
+        "callerProvidedDispatch",
+        "ordinaryFactAsPermit",
+        "admissionSource"
+      ],
+      "properties": {
+        "mode": { "const": "generated_registry_only" },
+        "profileSelection": { "const": "exact_profile_id_and_digest" },
+        "consumerProfileSelection": {
+          "const": "exact_runner_ledger_consumer_v1_generated_identity"
+        },
+        "callerProvidedProfile": { "const": "forbidden" },
+        "callerProvidedDispatch": { "const": "forbidden" },
+        "ordinaryFactAsPermit": { "const": "forbidden" },
+        "admissionSource": { "const": "consumed_same_verifier_entry_consumer_fact_only" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runnerConsumer",
+        "existingBrandNewWriter",
+        "entryWriter",
+        "recoveryWriter",
+        "databaseSession",
+        "databaseTransaction",
+        "beginMigration",
+        "ledgerMutation",
+        "evidenceMutation",
+        "permitConsumer",
+        "httpSurface",
+        "p2Surface",
+        "providerSideEffects",
+        "productionDatabaseWrites",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "runnerConsumer": { "const": "entry_read_only_admission_only" },
+        "existingBrandNewWriter": { "const": "separate_existing_authority_chain" },
+        "entryWriter": { "const": "not_implemented" },
+        "recoveryWriter": { "const": "not_implemented" },
+        "databaseSession": { "const": "fresh_dedicated_locked_read_only_until_exact_close" },
+        "databaseTransaction": { "const": "migration_and_read_write_forbidden" },
+        "beginMigration": { "const": "forbidden" },
+        "ledgerMutation": { "const": "forbidden" },
+        "evidenceMutation": { "const": "forbidden" },
+        "permitConsumer": { "const": "none" },
+        "httpSurface": { "const": "not_implemented" },
+        "p2Surface": { "const": "not_implemented" },
+        "providerSideEffects": { "const": "forbidden" },
+        "productionDatabaseWrites": { "const": "not_authorized" },
+        "deployment": { "const": "not_authorized" },
+        "publication": { "const": "not_authorized" },
+        "gateStatus": { "const": "all_gates_open" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "authority": "contract_only_ordinary_profile",
+    "callerProvidedProfile": "forbidden",
+    "ordinaryFactAsPermit": "forbidden"
+  }
+}

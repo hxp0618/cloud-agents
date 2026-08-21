@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:ac3121434504f4ee6243fa39c62e49059f109bba9213ece52b747bd68dfd4fbf",
+    "manifestSha256": "sha256:021ddad3977a47597a77df5ec031dcc5ed6f9fee652391aa41cf2278ebc5edf5",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -42,7 +42,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:d0a2bb28675967808b0d79eeee206d67f638c0222371f461fc261666f7fd0e4a",
+    "manifestSha256": "sha256:2f8dcc426c9353f0e1ea82f7ffc2b8bb115b9c9ee06a57ecc40f1096884a4bfa",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -58,7 +58,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:f5e21e048c9ac8c589c354480cebaace1bdcce948661757ac1d2d80e84db4bc9",
+      "sourceManifestSha256": "sha256:ee5acc10d13421f1ddb327478b9b212e67bba1050b6310e94a5e0723d30f67e1",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -66,6 +66,7 @@
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
         "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
       "license": "MIT"
@@ -87,7 +88,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:3dcee52a97bd0cb38ff2a3b40079cd52b8042305144f90630968bbe21af0bcc5",
+      "sourceManifestSha256": "sha256:81d30271a4b2bdfea610be9f52d08002b468d73bc920aee72806a4f4b01f5ce5",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -96,6 +97,7 @@
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
         "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
         "scripts/lib/platform-identity-sdk.ts",
         "scripts/lib/platform-proto-sdk.ts",
         "scripts/lib/platform-go-modules.ts",
@@ -107,7 +109,7 @@
       "id": "platform-durable-coordination-registry-generator",
       "kind": "in-repo-typescript-deterministic-contract-registry",
       "entrypoint": "scripts/generate-platform-durable-coordination-registry.ts",
-      "sourceManifestSha256": "sha256:cc495bb6696987669cadd74c037d23642409c027cc7f4885efe8d968fb67ef40",
+      "sourceManifestSha256": "sha256:9eab30d414030dfd80cb72ee202f4e4e7034ea526c0bc92c4d47f9b4240b5a44",
       "sources": [
         "scripts/generate-platform-durable-coordination-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.test.ts",
@@ -120,7 +122,7 @@
       "id": "platform-durable-coordination-go-generator",
       "kind": "in-repo-typescript-deterministic-go-profile",
       "entrypoint": "scripts/generate-platform-durable-coordination-go.ts",
-      "sourceManifestSha256": "sha256:09608f56a832333dc731cc75c426e906287152429a6cc731fd940f0adab687c6",
+      "sourceManifestSha256": "sha256:c08e2750f0eddb73645f29573f1e957ade2e0fd170453fdcc79c439a6f44d574",
       "sources": [
         "scripts/generate-platform-durable-coordination-go.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
@@ -132,7 +134,7 @@
       "id": "platform-compatibility-recovery-registry-generator",
       "kind": "in-repo-typescript-deterministic-contract-registry",
       "entrypoint": "scripts/generate-platform-compatibility-recovery-registry.ts",
-      "sourceManifestSha256": "sha256:c6981bbe94d2297ae35d295af6f1370b7fdee5460cd6a5de692b6ccbd1bc5d6b",
+      "sourceManifestSha256": "sha256:a6f65189f317abbd8a2408597dfb97b87649ceaadb5e3bf16871a624019386f1",
       "sources": [
         "docs/plan/adr/0015-p1-compatibility-recovery-contract.md",
         "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
@@ -149,7 +151,7 @@
       "id": "platform-compatibility-recovery-registry-v2-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
       "entrypoint": "scripts/generate-platform-compatibility-recovery-registry.ts",
-      "sourceManifestSha256": "sha256:edd0a388f493a7c68f9d40f894c456ebd7eb8f307583459cbd85f15a0b82dd34",
+      "sourceManifestSha256": "sha256:0290c30aacb2f42d5a99a4cf0898190a85a3d05b16b7612328a45fbd2f2a90a9",
       "sources": [
         "docs/plan/adr/0017-p1-compatibility-recovery-v2-registry.md",
         "docs/plan/p1/compatibility-recovery-service-entry-blocker-20260820.md",
@@ -169,7 +171,7 @@
       "id": "platform-compatibility-recovery-go-generator",
       "kind": "in-repo-typescript-deterministic-versioned-go-profile",
       "entrypoint": "scripts/generate-platform-compatibility-recovery-go.ts",
-      "sourceManifestSha256": "sha256:31498c1a583cb80b292e9976652a9b5190bb23f69fbb40c629fad93379a073e4",
+      "sourceManifestSha256": "sha256:f80d762d13152e57b06ca9894b02113e3d606bff8d39865271c32bcf4e26d162",
       "sources": [
         "scripts/generate-platform-compatibility-recovery-go.ts",
         "scripts/lib/platform-compatibility-recovery-registry.ts",
@@ -181,7 +183,7 @@
       "id": "platform-runner-ledger-preflight-registry-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
       "entrypoint": "scripts/generate-platform-runner-ledger-preflight-registry.ts",
-      "sourceManifestSha256": "sha256:5bc2ae2f1a16e9b5554b8015e02ccb8946cd456fd3b6d2be1e6849ebe5e10ce2",
+      "sourceManifestSha256": "sha256:27160e64b583d5549f560ac6399a968f2c3f2497d0946cc8177cf6ad9878a436",
       "sources": [
         "docs/plan/adr/0019-p1-runner-ledger-preflight-contract.md",
         "docs/plan/p1/migration-ledger-preflight-entry-blocker-20260821.md",
@@ -199,7 +201,7 @@
       "id": "platform-runner-ledger-preflight-go-generator",
       "kind": "in-repo-typescript-deterministic-go-ordinary-fact-profile",
       "entrypoint": "scripts/generate-platform-runner-ledger-preflight-go.ts",
-      "sourceManifestSha256": "sha256:5745b4f3ceed6888d51c56d7baf15cf966cf78de29fbe4bfcab8c2c7af5a8bbd",
+      "sourceManifestSha256": "sha256:d260b43f41811a319c4be575bf941ce402aa506459d5068d008728b4b757b0c7",
       "sources": [
         "scripts/generate-platform-runner-ledger-preflight-go.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -211,7 +213,7 @@
       "id": "platform-runner-ledger-consumer-registry-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
       "entrypoint": "scripts/generate-platform-runner-ledger-consumer-registry.ts",
-      "sourceManifestSha256": "sha256:94a0fbfdeaae8d187b1c3622bde92654ddfafcb4602586857a617428f16de0e1",
+      "sourceManifestSha256": "sha256:2317dd14731900df7b1d0051fa0823f7066864fb7102d10f0f9986b8dfaf3569",
       "sources": [
         "docs/plan/adr/0020-p1-runner-ledger-consumer-contract.md",
         "docs/plan/p1/runner-ledger-consumer-entry-blocker-20260821.md",
@@ -231,11 +233,44 @@
       "id": "platform-runner-ledger-consumer-go-generator",
       "kind": "in-repo-typescript-deterministic-go-ordinary-fact-profile",
       "entrypoint": "scripts/generate-platform-runner-ledger-consumer-go.ts",
-      "sourceManifestSha256": "sha256:5c4b7dd5e18773ac80dff9515db0f8c4bc697313a483dfbdfd69e0dcdb6c4297",
+      "sourceManifestSha256": "sha256:30244308180ec929191dbdd8c7856c0ebe4d1db487a8dffb22f39a57bc67af92",
       "sources": [
         "scripts/generate-platform-runner-ledger-consumer-go.ts",
         "scripts/lib/platform-runner-ledger-consumer-registry.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-runner-ledger-entry-admission-registry-generator",
+      "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
+      "entrypoint": "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
+      "sourceManifestSha256": "sha256:374db1756a1f092043d7f6f6a323fae3b061d77ee9a62328791e2e3b54b8ff3d",
+      "sources": [
+        "docs/plan/adr/0021-p1-runner-ledger-entry-admission-contract.md",
+        "docs/plan/p1/runner-ledger-consumer-entry-blocker-20260821.md",
+        "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-entry-admission-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-v1.schema.json",
+        "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
+        "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.test.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-runner-ledger-entry-admission-go-generator",
+      "kind": "in-repo-typescript-deterministic-go-ordinary-profile",
+      "entrypoint": "scripts/generate-platform-runner-ledger-entry-admission-go.ts",
+      "sourceManifestSha256": "sha256:7d710c393b4fbcf5e1603f28bf6a2fb4f3896e4919e43eb0955901d375a352c4",
+      "sources": [
+        "scripts/generate-platform-runner-ledger-entry-admission-go.ts",
+        "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
       "license": "MIT"
@@ -290,7 +325,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:59d8e7d6a1a8e753afed222872be3a918581a0ea1664cc4b46ac529dc2cda99b",
+      "sourceManifestSha256": "sha256:a67066d1707cf58f8208bc6d50c617e0cfb8f1db207e96f8c447e91db2964728",
       "sources": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -449,14 +484,14 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:ac3121434504f4ee6243fa39c62e49059f109bba9213ece52b747bd68dfd4fbf",
+      "inputManifestSha256": "sha256:021ddad3977a47597a77df5ec031dcc5ed6f9fee652391aa41cf2278ebc5edf5",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
     {
       "id": "durable-coordination-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:e6b2f911d1f07262fecf823b5fb282343084fa7260158422369bcca3a4846835",
+      "inputManifestSha256": "sha256:3f0d755a4c49d6d884c7d56a36aa5528f748ef211446eb736ea6f7819c6bff1e",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -502,7 +537,7 @@
     {
       "id": "durable-coordination-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:db87365ff331c88fe0657a17ca307e2a4b2f13ee8a82ce1e4f73b5c3310bde80",
+      "inputManifestSha256": "sha256:724f34165b835d8b0e10d1a531dce32fe1d952ef0686c51e634af20365bb0ae5",
       "inputs": [
         "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
         "scripts/generate-platform-durable-coordination-go.ts",
@@ -532,7 +567,7 @@
     {
       "id": "compatibility-recovery-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:c6981bbe94d2297ae35d295af6f1370b7fdee5460cd6a5de692b6ccbd1bc5d6b",
+      "inputManifestSha256": "sha256:a6f65189f317abbd8a2408597dfb97b87649ceaadb5e3bf16871a624019386f1",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v1.json",
         "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
@@ -570,7 +605,7 @@
     {
       "id": "compatibility-recovery-registry-v2-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:edd0a388f493a7c68f9d40f894c456ebd7eb8f307583459cbd85f15a0b82dd34",
+      "inputManifestSha256": "sha256:0290c30aacb2f42d5a99a4cf0898190a85a3d05b16b7612328a45fbd2f2a90a9",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/compatibility-recovery-registry-source-v2.json",
         "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v2.schema.json",
@@ -615,7 +650,7 @@
     {
       "id": "compatibility-recovery-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:e62c54cf5dd6b6992044c4712236e5fbe765ec46c940b57e2805b1b3b831d289",
+      "inputManifestSha256": "sha256:bdba84b64f2db9be537e61fddf2b1cc443b51fe3e3a1c19ad8f1ba7b5381bd72",
       "inputs": [
         "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
         "scripts/generate-platform-compatibility-recovery-go.ts",
@@ -650,7 +685,7 @@
     {
       "id": "runner-ledger-preflight-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:5bc2ae2f1a16e9b5554b8015e02ccb8946cd456fd3b6d2be1e6849ebe5e10ce2",
+      "inputManifestSha256": "sha256:27160e64b583d5549f560ac6399a968f2c3f2497d0946cc8177cf6ad9878a436",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-preflight-registry-source-v1.json",
         "contracts/platform/v1alpha1/schemas/runner-ledger-preflight-registry-source-v1.schema.json",
@@ -691,7 +726,7 @@
     {
       "id": "runner-ledger-preflight-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:ba260f53e0644a6a4b2fac971858a9daa2b2b93223a95fcfd89141568a306558",
+      "inputManifestSha256": "sha256:50c955e9220cd52a6569ac5fa22a44d46a3a83d9d0000062ea1a35f7f11e875c",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
         "scripts/generate-platform-runner-ledger-preflight-go.ts",
@@ -727,7 +762,7 @@
     {
       "id": "runner-ledger-consumer-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:94a0fbfdeaae8d187b1c3622bde92654ddfafcb4602586857a617428f16de0e1",
+      "inputManifestSha256": "sha256:2317dd14731900df7b1d0051fa0823f7066864fb7102d10f0f9986b8dfaf3569",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
         "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-consumer-registry-source-v1.json",
@@ -774,7 +809,7 @@
     {
       "id": "runner-ledger-consumer-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:477ba310fb3f820a3b886faa072d3d222720401095eef69c459b1dbb1c220fd4",
+      "inputManifestSha256": "sha256:96ab55780d12e7b2bf5360c550f50fd85adb30e984cfd3137ade63ddf4ddf57d",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
         "scripts/generate-platform-runner-ledger-consumer-go.ts",
@@ -808,6 +843,88 @@
         "httpSurface": "NOT_IMPLEMENTED",
         "p2Surface": "NOT_IMPLEMENTED",
         "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "runner-ledger-entry-admission-registry-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:374db1756a1f092043d7f6f6a323fae3b061d77ee9a62328791e2e3b54b8ff3d",
+      "inputs": [
+        "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-entry-admission-registry-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-v1.schema.json",
+        "docs/plan/adr/0021-p1-runner-ledger-entry-admission-contract.md",
+        "docs/plan/p1/runner-ledger-consumer-entry-blocker-20260821.md",
+        "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.test.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.ts"
+      ],
+      "outputStatus": "GENERATED_RUNNER_LEDGER_ENTRY_ADMISSION_REGISTRY",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+          "sha256": "sha256:2dc0210f1aad1dd6cff1183324837ab7e88cc5491e9046ae07302b25a1f9e372",
+          "sizeBytes": 6144
+        }
+      ],
+      "outputSummary": {
+        "registryId": "cloud-agents/platform/runner-ledger-entry-admission",
+        "registryDigest": "sha256:fb7621405bbe62e47ce99ff00239c0e0d3fc12465e475f468b3fb07887bb886a",
+        "sourceDigest": "sha256:d92075da78fbefa54e628433573c2bedcc0dd83757c3a20f87d63bae01ba108c",
+        "stateMachineDigest": "sha256:94baeab96aaa0da096b6de2c48fc646723d9ad003b68fd1135edf4adcc141189",
+        "policyDigest": "sha256:9869fae48b30e4077f346b1d7c4309056a2129fb5974e73762d897e2925dc26a",
+        "profileId": "runner-ledger-entry-admission/v1",
+        "boundConsumerRegistryDigest": "sha256:f1248220aa18f6f7c85792e4b168fcc18a172ddeca65778686d033535617ed43",
+        "entryAdmissionPairs": 5,
+        "databaseSession": "FRESH_DEDICATED_LOCKED_READ_ONLY_UNTIL_EXACT_CLOSE",
+        "beginMigration": "FORBIDDEN",
+        "entryWriter": "NOT_IMPLEMENTED",
+        "recoveryWriter": "NOT_IMPLEMENTED",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "runner-ledger-entry-admission-go-profile-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:31c0e16f6d9f164f3eba1337b53c499e579ff4dd5128abea8106375b790861cb",
+      "inputs": [
+        "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+        "scripts/generate-platform-runner-ledger-entry-admission-go.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/lib/platform-runner-ledger-consumer-registry.ts",
+        "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
+        "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go",
+        "services/control-plane/internal/migration/runner_ledger_entry_admission_profile.go",
+        "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_test.go"
+      ],
+      "outputStatus": "GENERATED_RUNNER_LEDGER_ENTRY_ADMISSION_GO_PROFILE",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
+          "sha256": "sha256:c95850d99a5cbc9d82480d2c63befd6a39ffaeeb2f2c2f1374ce21091ff806c6",
+          "sizeBytes": 6007
+        }
+      ],
+      "outputSummary": {
+        "registryDigest": "sha256:fb7621405bbe62e47ce99ff00239c0e0d3fc12465e475f468b3fb07887bb886a",
+        "stateMachineDigest": "sha256:94baeab96aaa0da096b6de2c48fc646723d9ad003b68fd1135edf4adcc141189",
+        "policyDigest": "sha256:9869fae48b30e4077f346b1d7c4309056a2129fb5974e73762d897e2925dc26a",
+        "handWrittenProfileFallback": "FORBIDDEN",
+        "productionConsumer": "NONE_IN_SLICE_A",
+        "consumerV1Mutation": "FORBIDDEN",
+        "databaseHandle": "FORBIDDEN",
+        "permitConsumer": "NONE",
+        "beginMigration": "FORBIDDEN",
+        "entryWriter": "NOT_IMPLEMENTED",
+        "recoveryWriter": "NOT_IMPLEMENTED",
         "productionDatabaseWrites": "NOT_AUTHORIZED",
         "gateStatus": "ALL_GATES_OPEN"
       }
@@ -851,12 +968,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-          "sha256": "sha256:d6f7a2da7809b098946d1f51fcde338c111125321239f216657b1405a92526e8",
+          "sha256": "sha256:67e3dd5768ff3ca820384797c65beaa65859926b6b5cc1bf367959b2180dd719",
           "sizeBytes": 13530
         },
         {
           "path": "sdk/go/generated-manifest.json",
-          "sha256": "sha256:e73a4dab3b4cde6ce698340ff5d42b75757dca4e97bd90fb716c448ac581ab04",
+          "sha256": "sha256:0b42d62e7e278a1e6420c845f73d44579440ff7b8c5db14b81a7600bee1b1fb5",
           "sizeBytes": 3740
         }
       ],
@@ -875,7 +992,7 @@
     {
       "id": "common-identity-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:0a612af9f95094898ca5680046c95d76002c639b8d66544589b7eeea567ca334",
+      "inputManifestSha256": "sha256:837b8ce8ae8d966e472bb7ce24c1b754066867e90fc00e8c28b7ae5d4b68d24b",
       "inputs": [
         "bun.lock",
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -912,12 +1029,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/index.ts",
-          "sha256": "sha256:4487661cd985c261c951b2530823606cff56a5ac0c10b84908cf37dfe7683215",
+          "sha256": "sha256:542c4cef00c4c8876482899318d4c1b5948f012d1d51f697c945e74401178b93",
           "sizeBytes": 12982
         },
         {
           "path": "sdk/typescript/generated-manifest.json",
-          "sha256": "sha256:552111120d68166919a1ca8c7f86346e215724d4532b6387147783060d31447a",
+          "sha256": "sha256:c04e6b5d903c71903da18e093e4b0282d6f3e321e13bb93001d143a836aea3df",
           "sizeBytes": 3278
         }
       ],
@@ -937,7 +1054,7 @@
     {
       "id": "platform-json-contract-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f859df5f3f89a45eaed564828b081fc2738572f0ea699074c977e18f29e02877",
+      "inputManifestSha256": "sha256:7bc34fff0322781eb064321510b998ec389d5a343a67ea963b5fe833e5ed78c3",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -1019,22 +1136,22 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:fad96ee3cebb1855803d48454c1d7bfcf0eb7f25992a62670fe2bcaf5719c49a",
+          "sha256": "sha256:f21608a2a5ecdf39a5cf530c1ac4ca6bf13cfc0a59ef54f726544f6b6eca667d",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:0539a4e6abc71aa09b1d843892d578517823b299ab134506f7edd7b44f1d8d72",
+          "sha256": "sha256:ecf7ffc35b09433e8c44d24dfbef188e8d323ffac4db10dd8a6b4c15197f9c4d",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:7dd33045f3c27b9580082cfa34fe083a70fc8891520540006ba64c94b9945ac7",
+          "sha256": "sha256:cc5fd7181cb04d81217dc2102ffd5ee976f6c6dddbb4ff3686532872f92fe064",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:9ec9cbcc2c033a3e53eee516ba6bbedc9522a2275253aa519adad021aff36de6",
+          "sha256": "sha256:835f6c0fd10e22567af52d020fab5137c87c9e8fe7add00f9e5ea775b9c5c5c8",
           "sizeBytes": 9802
         }
       ],
@@ -1055,7 +1172,7 @@
     {
       "id": "platform-json-contract-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f5627645c86965511359326f52c6d72b42a1840f87706200a714e27e2a7776c2",
+      "inputManifestSha256": "sha256:04947f92bab8b598ce482ffd4ae973d1c5743378d5d9ba6e39a8a40d59ae95bb",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -1137,12 +1254,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:51f06aac1691a8c12751c5ebf1d49b9e65a054184628f7dbd84789ed868c3907",
+          "sha256": "sha256:55cc400c02ea503d9452bec59c0f8c58ce64517869e604104db0ecd3dac2eaf5",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:0c0fee9a56429cef9db2e824c985fa0ace5d647d3131116e1edc3e9c0ece1c16",
+          "sha256": "sha256:c2ae34aa7f977c1257dd6cad3533903aaa65f9bc8303a21aff06fce54f919633",
           "sizeBytes": 9412
         }
       ],
@@ -1163,7 +1280,7 @@
     {
       "id": "platform-proto-descriptor-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:533b8b5c56a279a187815298bf89abf72e2c80a36e57c866a3a4b4f750c942da",
+      "inputManifestSha256": "sha256:4d75cecc39ecbe47bdcd3215d7ee8454350018f185a383ea3f9686d9c422cdf1",
       "inputs": [
         "bun.lock",
         "contracts/platform-adapter/v1alpha1/README.md",
@@ -1197,7 +1314,7 @@
         },
         {
           "path": "contracts/generated/proto/manifest.json",
-          "sha256": "sha256:157d26a4de92eeb58f135edf5f13d6473060cb49cb68b3e37d55022ffdc6a4a6",
+          "sha256": "sha256:e53ccf3bb1c6c1aec053c58106be203a4f70181efe38056c52bbfee6b54abdbf",
           "sizeBytes": 5139
         }
       ],
@@ -1248,7 +1365,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/proto-generated-manifest.json",
-          "sha256": "sha256:a5b3a9735b7a4c065ff57a923db97e887272caaa8087c5c4dc9e8fb2970fd872",
+          "sha256": "sha256:7690f7abbcbb42a4223e01dc3a55fe2f0a4ae053b6930008f4737f6773c53749",
           "sizeBytes": 7912
         },
         {
@@ -1298,7 +1415,7 @@
     {
       "id": "platform-proto-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f91194e8e56a830998f5304589ef8b9a40bf1098b104badca642a21a3e16c7c9",
+      "inputManifestSha256": "sha256:a03ad4b74e4be9922900d4d03ea620279e131ab477173c8cb93d76dcfc75f9d3",
       "inputs": [
         "bun.lock",
         "contracts/platform-adapter/v1alpha1/README.md",
@@ -1328,7 +1445,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/proto-generated-manifest.json",
-          "sha256": "sha256:34728f145887d62a99c37b549e3d249584de5e9b25c65a9e53c1d7bf1ba7ca43",
+          "sha256": "sha256:c8fee460674b7a9be3ee43442ce4830c60816cfed4875e283fbf1b01d9c1dfaa",
           "sizeBytes": 6913
         },
         {
@@ -1374,7 +1491,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:59d8e7d6a1a8e753afed222872be3a918581a0ea1664cc4b46ac529dc2cda99b",
+      "inputManifestSha256": "sha256:a67066d1707cf58f8208bc6d50c617e0cfb8f1db207e96f8c447e91db2964728",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -1783,7 +1900,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:c495e8b23a4a1a02af42dba6c21e755efda9a7cef747b641dd40487f0f8a6785",
+      "inputManifestSha256": "sha256:26f68ff4f91fd47f55c077521db6bb78af2087261009d61ef096c4f1d84944bc",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",

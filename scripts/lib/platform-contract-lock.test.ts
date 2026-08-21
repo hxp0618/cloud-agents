@@ -284,6 +284,66 @@ describe("Platform contract generation lock", () => {
     );
   });
 
+  it("records the runner ledger entry-admission registry without enabling a permit consumer or writer", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const registry = lock.pipelines.find(
+      (candidate) => candidate.id === "runner-ledger-entry-admission-registry-generation",
+    );
+    const go = lock.pipelines.find(
+      (candidate) => candidate.id === "runner-ledger-entry-admission-go-profile-generation",
+    );
+    expect(registry).toMatchObject({
+      outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_ADMISSION_REGISTRY",
+      notGateClosure: true,
+      outputSummary: {
+        entryAdmissionPairs: 5,
+        databaseSession: "FRESH_DEDICATED_LOCKED_READ_ONLY_UNTIL_EXACT_CLOSE",
+        beginMigration: "FORBIDDEN",
+        entryWriter: "NOT_IMPLEMENTED",
+        recoveryWriter: "NOT_IMPLEMENTED",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+        },
+      ],
+    });
+    expect(go).toMatchObject({
+      outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_ADMISSION_GO_PROFILE",
+      notGateClosure: true,
+      outputSummary: {
+        productionConsumer: "NONE_IN_SLICE_A",
+        consumerV1Mutation: "FORBIDDEN",
+        databaseHandle: "FORBIDDEN",
+        permitConsumer: "NONE",
+        beginMigration: "FORBIDDEN",
+        entryWriter: "NOT_IMPLEMENTED",
+        recoveryWriter: "NOT_IMPLEMENTED",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
+        },
+      ],
+    });
+    for (const pipeline of [registry, go]) {
+      expect(pipeline?.inputs).toEqual([...((pipeline?.inputs ?? []) as string[])].toSorted());
+    }
+    expect(registry?.inputs).toContain(
+      "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
+    );
+    expect(go?.inputs).toContain(
+      "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go",
+    );
+  });
+
   it("records both generated common identity SDK profiles as non-Gate evidence", () => {
     const root = join(import.meta.dirname, "../..");
     const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {

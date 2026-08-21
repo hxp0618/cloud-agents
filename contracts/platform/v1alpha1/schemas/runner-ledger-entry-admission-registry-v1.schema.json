@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-entry-admission-registry-v1.schema.json",
+  "title": "RunnerLedgerEntryAdmissionRegistryV1",
+  "description": "Generated, consumer-v1-bound fresh-session read-only entry-admission registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "sourceDigest",
+    "stateMachineDigest",
+    "policyDigest",
+    "consumerBinding",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-entry-admission-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/runner-ledger-entry-admission" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "stateMachineDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "consumerBinding": { "$ref": "#/$defs/consumerBinding" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": {
+          "$ref": "runner-ledger-entry-admission-registry-source-v1.schema.json#/$defs/profile"
+        }
+      }
+    },
+    "stateMachine": {
+      "$ref": "runner-ledger-entry-admission-registry-source-v1.schema.json#/$defs/stateMachine"
+    },
+    "selector": {
+      "$ref": "runner-ledger-entry-admission-registry-source-v1.schema.json#/$defs/selector"
+    },
+    "implementationBoundary": {
+      "$ref": "runner-ledger-entry-admission-registry-source-v1.schema.json#/$defs/implementationBoundary"
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "consumerBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryId",
+        "registryDigest",
+        "stateMachineDigest",
+        "policyDigest",
+        "profileId",
+        "profileDigest"
+      ],
+      "properties": {
+        "registryId": { "const": "cloud-agents/platform/runner-ledger-consumer" },
+        "registryDigest": { "$ref": "#/$defs/digest" },
+        "stateMachineDigest": { "$ref": "#/$defs/digest" },
+        "policyDigest": { "$ref": "#/$defs/digest" },
+        "profileId": { "const": "runner-ledger-consumer/v1" },
+        "profileDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "admissionLookup": "exact profileId plus profileDigest",
+    "consumerLookup": "exact immutable generated v1 identity",
+    "writerAuthority": "none"
+  }
+}
