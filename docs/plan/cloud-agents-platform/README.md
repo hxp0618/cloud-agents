@@ -2,10 +2,10 @@
 
 - 状态：APPROVED
 - 日期：2026-08-10
-- 实施状态：P0 VERIFIED；P1 IN PROGRESS（P1-A2.2-impl-3 versioned lineage/quota profile remediation implementation/review approved；A2.3 generated registry/profile → append-only PostgreSQL kernel → service/claim/matrix implementation/review approved，full migration closure remains pending）；M1/P2–P6 PAUSED
+- 实施状态：P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4、A3 与 runner ledger/catalog preflight 固定 implementation/review package 已批准；当前源码 broad migration closure、所有 immutable/aggregate Gate 与 `Runner.Run`/writer integration 仍 OPEN）；M1/P2–P6 PAUSED
 - 目标公共仓：`hxp0618/cloud-agents`
 - 关联总设计：[`../synara-t3-cloud-agent-integration-architecture.md`](../synara-t3-cloud-agent-integration-architecture.md)
-- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0014`](../adr/0014-p1-lineage-quota-profile-v3.md)
+- 关联 ADR：[`ADR-0006`](../adr/0006-public-cloud-agents-platform.md)～[`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)
 
 ## 固定追踪根
 
@@ -21,14 +21,14 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 
 ## 当前执行边界
 
-用户已批准 ADR-0006～ADR-0014 与 D-001～D-041；P0 当前由 `G-INVENTORY` R3 和
+用户已批准 ADR-0006～ADR-0019 与 D-001～D-043；P0 当前由 `G-INVENTORY` R3 和
 `G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
 helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
 decision digest 的下游证据不得继承。P1-A2.1a-impl-1 strict projection contract/fixture 已由 `b36f45a`
 完成；P1-A2.1a-impl-2 PG15/16/17 adapters 与本地矩阵已由 `e2541c5` / `a0eac37` 完成；
 P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 contract/catalog 与 impl-2 data/read evaluator 已由
 `f988e45`、`e36e1cf` 完成，production mutation/catalog publication 仍 fail closed。当前只进入
-P1-A2.2-impl-3 mutation/service/review；independent review 发现 Go/direct PostgreSQL subject issuer language
+后续 P1-A2.2-impl-3 mutation/service/review 的 independent review 发现 Go/direct PostgreSQL subject issuer language
 不一致。Append-only `000006` remediation candidate 的本地 PG15/16/17 matrix 已通过，但 frozen ADR-0010
 v1 whole-bundle reservation 会超过 16 MiB lineage-index maximum。用户已批准 ADR-0012 的显式 v2
 lineage/quota profile；`cd64dee` 已落盘实现，`77de97e` 又补齐 stored admission replay 的 profile-aware
@@ -50,15 +50,21 @@ versioned v2 service entry 使用 current pair。精确 remediation candidate �
 `APPROVE, P0=0/P1=0/P2=0`，只关闭 generated registry/profile、append-only kernel 和 service/claim/matrix
 implementation/review slice，见
 [`A2.3 remediation independent review`](../p1/durable-coordination-v3-remediation-independent-review-20260820.md)；原
-[`A2.3 v3 independent review`](../p1/durable-coordination-v3-independent-review-20260819.md) 保留历史 verdict。Full migration closure
-仍未完成，HTTP/P2 side effect 不开放，且不关闭任何 Gate。既有审查记录见
+[`A2.3 v3 independent review`](../p1/durable-coordination-v3-independent-review-20260819.md) 保留历史 verdict。该旧源码的
+full migration closure 后续已在 `67b8acb` 以 `-timeout=30m` 通过；它不绑定当前 source，HTTP/P2 side effect
+仍未开放，且不关闭任何 Gate。既有审查记录见
 [`versioned profile independent review`](../p1/versioned-lineage-quota-profile-independent-review-20260818.md)，
 历史 contract/state/SQL/service 决策缺口见
 [`A2.3 pre-entry blocker`](../p1/durable-coordination-entry-blocker-20260818.md)。用户又批准 ADR-0014 的
 generated-manifest v3 lineage/quota profile；quota/profile 与 remediated A2.3 implementation/review slice 已获批准，
-full migration closure 仍未完成，精确容量与恢复边界见
+精确容量与恢复边界见
 [`subject issuer / quota blocker`](../p1/membership-rbac-subject-issuer-quota-blocker-20260817.md)，slice 2 证据见
-[`append-only PostgreSQL kernel`](../p1/durable-coordination-postgres-kernel-20260819.md)。P1 仍只允许在公共仓实施 contracts、
+[`append-only PostgreSQL kernel`](../p1/durable-coordination-postgres-kernel-20260819.md)。A2.4 Compatibility/Recovery
+三切片已由 `b639b07` 的 bounded independent review 批准；A3 generated identity/JSON/Proto SDK package 已由
+`c5d8cbf` 固定并完成 bounded independent review。Runner ledger/catalog preflight 又在 `e64e0a2` 完成
+generated profile、locked read-only kernel 与 same-verifier one-shot claim/no-op dispatch，`9ed71b8` independent review
+返回 `APPROVE, P0=0/P1=0/P2=0`。当前 source 的 broad `internal/migration` 五分钟 bounded run 是 **NOT PASS**，
+且该 service 仍没有 `Runner.Run`/writer consumer。P1 仍只允许在公共仓实施 contracts、
 Go/TS SDK、数据模型、authority 与安全基础，并允许创建三个 source module 与本地 ephemeral Postgres 测试。
 仍不授权：
 

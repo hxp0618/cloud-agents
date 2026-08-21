@@ -12,7 +12,8 @@
   [`ADR-0015`](../adr/0015-p1-compatibility-recovery-contract.md)、
   [`ADR-0016`](../adr/0016-p1-compatibility-recovery-postgres-kernel.md)、
   [`ADR-0017`](../adr/0017-p1-compatibility-recovery-v2-registry.md)、
-  [`ADR-0018`](../adr/0018-p1-compatibility-recovery-v2-writer-kernel.md)
+  [`ADR-0018`](../adr/0018-p1-compatibility-recovery-v2-writer-kernel.md)、
+  [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -117,6 +118,14 @@
   [`independent review`](sdk-identity-closure-independent-review-20260821.md) returned
   `APPROVE, P0=0/P1=0/P2=0`; this completes the ordered A3 implementation/review package but is not an immutable Gate
   signature.
+- Runner ledger/catalog preflight：generated profile、locked read-only projection kernel 与 typed same-verifier
+  claim/no-op dispatch 已依序固定；Slice A/B fixed candidate `01b1a5f` 的
+  [`independent review`](migration-ledger-catalog-preflight-independent-review-20260821.md) 为
+  `APPROVE, P0=0/P1=0/P2=1`，唯一 P2 是 executor handoff 的 63-character SHA typo，不影响候选 bytes；Slice C
+  `e64e0a2` 的 [`independent review`](migration-ledger-preflight-service-claim-independent-review-20260821.md) 为
+  `APPROVE, P0=0/P1=0/P2=0`。固定三元组 focused normal/race、vet/build、两窄 generator、contract-lock 均通过；
+  当前源码 broad `internal/migration` 五分钟 bounded run 仍为 **NOT PASS**。该实现没有 `Runner.Run`/writer
+  consumer、生产数据库写入、HTTP/P2/provider effect 或 Gate closure。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
@@ -219,6 +228,15 @@ Platform RC、Beta 或 GA。
 - [`sdk-identity-closure-independent-review-20260821.md`](sdk-identity-closure-independent-review-20260821.md)：
   固定 `51e3ea4 -> 24a47b2 -> c5d8cbf` 的 A3 bounded independent review；verdict
   `P0=0/P1=0/P2=0`，SDK 仍未发布，不开放 HTTP/P2/provider/生产 DB 副作用，不关闭任何 Gate
+- [`migration-ledger-catalog-preflight-independent-review-20260821.md`](migration-ledger-catalog-preflight-independent-review-20260821.md)：
+  固定 `01b1a5f` 的 generated profile/read-only kernel review；verdict `APPROVE, P0=0/P1=0/P2=1`，P2 仅为
+  executor handoff SHA typo；不进入 writer、生产数据库 mutation 或 Gate closure
+- [`migration-ledger-preflight-service-claim-matrix-20260821.md`](migration-ledger-preflight-service-claim-matrix-20260821.md)：
+  固定 `e64e0a2` 的 one-shot same-verifier claim、17-pair dispatch matrix、PG15/16/17 metadata matrix 与明确
+  non-claim；broad migration run 保持 NOT PASS
+- [`migration-ledger-preflight-service-claim-independent-review-20260821.md`](migration-ledger-preflight-service-claim-independent-review-20260821.md)：
+  固定 `e64e0a2` 的 Slice C independent review；verdict `APPROVE, P0=0/P1=0/P2=0`，无 `Runner.Run`、writer、
+  HTTP/P2/provider consumer，且不构成 immutable Gate signature
 
 ## Data kernel decisions
 
@@ -347,10 +365,12 @@ Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStat
 [`runner/CLI pre-DB independent review`](migration-runner-cli-pre-db-configuration-independent-review-20260821.md)，
 `P0=0/P1=0/P2=0`），仅确认该配置与 fail-closed 顺序，不构成正向 trust、生产数据库、部署、发布或任何 Gate
 closure。
-独立的 [`runner ledger/catalog preflight entry`](migration-ledger-preflight-entry-blocker-20260821.md) 已固定
-versioned profile 与无生产 caller 的 locked read-only Slice B candidate：它只在 dedicated session 上读取、投影、
-复读，并在完整 cleanup 后构造可复制、canonical-digest-sealed 的 ordinary fact，仍待 independent review；不会进入 writer/evidence recovery、HTTP/P2、
-production database write 或任何 Gate closure（见 [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)）。
+独立的 [`runner ledger/catalog preflight entry`](migration-ledger-preflight-entry-blocker-20260821.md) 已完成三切片：
+generated/versioned profile、dedicated-session locked read-only kernel，以及 same-verifier one-shot claim/no-op dispatch。
+Slice A/B 与 Slice C 的 independent reviews 已分别固定 `01b1a5f` 与 `e64e0a2`；后者 verdict 为
+`APPROVE, P0=0/P1=0/P2=0`。该 service 是 read-only kernel 的唯一 package-private production caller，但仍没有
+`Runner.Run`/writer consumer，不创建 migration/RW transaction，不执行 production database write，也不开放
+HTTP/P2/provider 或任何 Gate closure（见 [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)）。
 `bbb0bf2` 已关闭 complete synthetic signed subject 的 exported expression/catalog projector 与本地双快照矩阵；
 Signed expected subject 的 production verifier、deployment trust-root wiring、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持
