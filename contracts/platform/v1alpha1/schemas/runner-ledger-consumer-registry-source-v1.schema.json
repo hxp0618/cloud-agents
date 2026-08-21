@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-consumer-registry-source-v1.schema.json",
+  "title": "RunnerLedgerConsumerRegistrySourceV1",
+  "description": "Editable source for the complete-ledger no-op runner consumer profile. It authorizes no writer or external side effect.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-consumer-source/v1" },
+    "registryId": { "const": "cloud-agents/platform/runner-ledger-consumer" },
+    "profile": { "$ref": "#/$defs/profile" },
+    "stateMachine": { "$ref": "#/$defs/stateMachine" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "stateMachineId",
+        "canonicalization",
+        "identityBindings",
+        "errorPrecedence",
+        "transitionMatrix"
+      ],
+      "properties": {
+        "profileId": { "const": "runner-ledger-consumer/v1" },
+        "stateMachineId": { "const": "runner-ledger-consumer/v1" },
+        "canonicalization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "algorithm", "digest", "comparison"],
+          "properties": {
+            "profile": { "const": "cloud-agents-runner-ledger-consumer/v1-rfc8785-sha256" },
+            "algorithm": { "const": "RFC8785" },
+            "digest": { "const": "SHA-256" },
+            "comparison": { "const": "exact_string_no_rewrite" }
+          }
+        },
+        "identityBindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "preflightProfile",
+            "preflightDispatchSubject",
+            "currentEvidenceBoundary",
+            "orderedMigrationPrefix",
+            "runtimeResult"
+          ],
+          "properties": {
+            "preflightProfile": {
+              "const": "exact_runner_ledger_preflight_v1_generated_identity"
+            },
+            "preflightDispatchSubject": {
+              "const": "exact_consumed_same_verifier_claim_dispatch_subject_digest"
+            },
+            "currentEvidenceBoundary": {
+              "const": "exact_candidate_generation_journal_recovery_and_projection_identity"
+            },
+            "orderedMigrationPrefix": {
+              "const": "exact_complete_length_head_and_domain_separated_digest"
+            },
+            "runtimeResult": {
+              "const": "exact_schema_bundle_manifest_final_head_and_empty_applied"
+            }
+          }
+        },
+        "errorPrecedence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "storedContradiction",
+            "contextOrOperationalFailure",
+            "recoveryRequired",
+            "unsupportedTransition",
+            "oneShotConsumption",
+            "unknownOutcome"
+          ],
+          "properties": {
+            "storedContradiction": {
+              "const": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED"
+            },
+            "contextOrOperationalFailure": {
+              "const": "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED"
+            },
+            "recoveryRequired": {
+              "const": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED"
+            },
+            "unsupportedTransition": { "const": "MIGRATION_PROJECTION_NOT_IMPLEMENTED" },
+            "oneShotConsumption": { "const": "SECOND_CONSUME_FAILS_CLOSED" },
+            "unknownOutcome": { "const": "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION" }
+          }
+        },
+        "transitionMatrix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "complete_return_success",
+            "empty_brand_new",
+            "partial_next_entry",
+            "partial_retry_or_recovery"
+          ],
+          "properties": {
+            "complete_return_success": { "$ref": "#/$defs/consumerPairs" },
+            "empty_brand_new": { "$ref": "#/$defs/consumerPairs" },
+            "partial_next_entry": { "$ref": "#/$defs/consumerPairs" },
+            "partial_retry_or_recovery": { "$ref": "#/$defs/consumerPairs" }
+          }
+        }
+      }
+    },
+    "consumerPairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "action", "consumerAction"],
+        "properties": {
+          "state": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 1 },
+          "consumerAction": {
+            "enum": ["entry_not_implemented", "recovery_not_implemented", "return_success_noop"]
+          }
+        }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initialState", "states", "terminalStates", "transitions"],
+      "properties": {
+        "id": { "const": "runner-ledger-consumer/v1" },
+        "initialState": { "const": "unclassified" },
+        "states": {
+          "const": [
+            "complete_return_success_noop",
+            "entry_not_implemented",
+            "recovery_not_implemented",
+            "unclassified",
+            "unknown_not_implemented"
+          ]
+        },
+        "terminalStates": {
+          "const": [
+            "complete_return_success_noop",
+            "entry_not_implemented",
+            "recovery_not_implemented",
+            "unknown_not_implemented"
+          ]
+        },
+        "transitions": {
+          "const": [
+            {
+              "from": "unclassified",
+              "event": "consume_complete_return_success",
+              "to": "complete_return_success_noop"
+            },
+            {
+              "from": "unclassified",
+              "event": "consume_entry",
+              "to": "entry_not_implemented"
+            },
+            {
+              "from": "unclassified",
+              "event": "consume_recovery",
+              "to": "recovery_not_implemented"
+            },
+            {
+              "from": "unclassified",
+              "event": "consume_unknown",
+              "to": "unknown_not_implemented"
+            }
+          ]
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "profileSelection",
+        "preflightProfileSelection",
+        "callerProvidedProfile",
+        "callerProvidedDispatch",
+        "ordinaryDispatchAsWriterAuthority",
+        "noOpSource"
+      ],
+      "properties": {
+        "mode": { "const": "generated_registry_only" },
+        "profileSelection": { "const": "exact_profile_id_and_digest" },
+        "preflightProfileSelection": {
+          "const": "exact_runner_ledger_preflight_v1_generated_identity"
+        },
+        "callerProvidedProfile": { "const": "forbidden" },
+        "callerProvidedDispatch": { "const": "forbidden" },
+        "ordinaryDispatchAsWriterAuthority": { "const": "forbidden" },
+        "noOpSource": { "const": "consumed_same_verifier_claim_only" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runnerConsumer",
+        "existingBrandNewWriter",
+        "entryWriter",
+        "recoveryWriter",
+        "databaseSession",
+        "databaseTransaction",
+        "ledgerMutation",
+        "evidenceMutation",
+        "httpSurface",
+        "p2Surface",
+        "providerSideEffects",
+        "productionDatabaseWrites",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "runnerConsumer": { "const": "complete_return_success_noop_only" },
+        "existingBrandNewWriter": { "const": "separate_existing_authority_chain" },
+        "entryWriter": { "const": "not_implemented" },
+        "recoveryWriter": { "const": "not_implemented" },
+        "databaseSession": { "const": "read_only_preflight_closed_before_result" },
+        "databaseTransaction": { "const": "forbidden" },
+        "ledgerMutation": { "const": "forbidden" },
+        "evidenceMutation": { "const": "forbidden" },
+        "httpSurface": { "const": "not_implemented" },
+        "p2Surface": { "const": "not_implemented" },
+        "providerSideEffects": { "const": "forbidden" },
+        "productionDatabaseWrites": { "const": "not_authorized" },
+        "deployment": { "const": "not_authorized" },
+        "publication": { "const": "not_authorized" },
+        "gateStatus": { "const": "all_gates_open" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "authority": "contract_only_ordinary_fact",
+    "callerProvidedProfile": "forbidden",
+    "callerProvidedDispatch": "forbidden"
+  }
+}

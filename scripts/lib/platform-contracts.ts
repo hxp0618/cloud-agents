@@ -9,6 +9,7 @@ import type { ErrorObject } from "ajv";
 import { validateCompatibilityRecoveryFixture } from "./platform-compatibility-recovery-registry";
 import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
 import { validateRunnerLedgerPreflightFixture } from "./platform-runner-ledger-preflight-registry";
+import { validateRunnerLedgerConsumerFixture } from "./platform-runner-ledger-consumer-registry";
 
 import {
   assertExpectedSemanticResult,
@@ -240,6 +241,20 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       name: "runner-ledger-preflight-registry-v1",
       schema: "../schemas/runner-ledger-preflight-registry-v1.schema.json",
       instance: "../../../generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "runner-ledger-consumer-registry-source-v1",
+      schema: "../schemas/runner-ledger-consumer-registry-source-v1.schema.json",
+      instance: "golden/runner-ledger-consumer-registry-source-v1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
+      name: "runner-ledger-consumer-registry-v1",
+      schema: "../schemas/runner-ledger-consumer-registry-v1.schema.json",
+      instance: "../../../generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
       expectedSchemaValid: true,
       expectedSemanticValid: true,
     },
@@ -503,6 +518,7 @@ function validateJsonSchemaFixtures(
           validateDurableCoordinationFixture(document, dirname(contractRoot)),
           validateCompatibilityRecoveryFixture(document, dirname(contractRoot)),
           validateRunnerLedgerPreflightFixture(document, dirname(contractRoot)),
+          validateRunnerLedgerConsumerFixture(document, dirname(contractRoot)),
         ];
         const semanticResult =
           canonicalResults.find((result) => !result.valid) ??

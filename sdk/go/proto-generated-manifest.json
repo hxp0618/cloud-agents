@@ -5,7 +5,7 @@
   "authority": "proto3",
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:5ca27690cd32af1413763f701adcc5ea1c67074b39591fbd661ed3d936e8a394",
+    "manifestSha256": "sha256:ac3121434504f4ee6243fa39c62e49059f109bba9213ece52b747bd68dfd4fbf",
     "inputManifestSha256": "sha256:f9b1b72b6b0b961e6877d9d4ffda3898665e62fd82d735d9ed6d0bde3c25dbb1",
     "inputs": [
       "contracts/platform-adapter/v1alpha1/README.md",
