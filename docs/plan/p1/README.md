@@ -126,6 +126,11 @@
   `APPROVE, P0=0/P1=0/P2=0`。固定三元组 focused normal/race、vet/build、两窄 generator、contract-lock 均通过；
   当前源码 broad `internal/migration` 五分钟 bounded run 仍为 **NOT PASS**。该实现没有 `Runner.Run`/writer
   consumer、生产数据库写入、HTTP/P2/provider effect 或 Gate closure。
+- 下一生产 consumer 仍由
+  [`runner ledger consumer/writer entry blocker`](runner-ledger-consumer-entry-blocker-20260821.md) 阻断：v1
+  generated profile 明确禁止 consumer/transaction/write，ordinary dispatch 不是 writer authority，现有 writer
+  chain 又只接受 empty-ledger brand-new 单 entry/单 statement。推荐先单独批准 versioned consumer profile 与
+  complete-ledger `return_success` no-op slice；entry/recovery writer 继续 `NOT_IMPLEMENTED`。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
