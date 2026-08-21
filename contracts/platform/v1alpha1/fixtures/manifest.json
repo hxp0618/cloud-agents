@@ -232,6 +232,20 @@
       "instance": "../../../generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
       "expectedSchemaValid": true,
       "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-preflight-registry-source-v1",
+      "schema": "../schemas/runner-ledger-preflight-registry-source-v1.schema.json",
+      "instance": "golden/runner-ledger-preflight-registry-source-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-preflight-registry-v1",
+      "schema": "../schemas/runner-ledger-preflight-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
     }
   ]
 }

@@ -1,0 +1,103 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-preflight-registry/v1",
+  "registryId": "cloud-agents/platform/runner-ledger-preflight",
+  "sourceDigest": "sha256:fcacc44fe9311435a3cfddb5452ad9b565c6e1aee3c60291953da930ae6810bf",
+  "stateMachineDigest": "sha256:fe00c5de375865350798e6a79de22b4272fb70949bbd5d3c0a11745bb3dd11ae",
+  "policyDigest": "sha256:fc693052970176594730421b74842a5d497747620b86fd9be7f59e77d65e4bc8",
+  "profile": {
+    "profileDigest": "sha256:a6ef13814c34d62d9d9c5f19054c8336ad84ae6836a13d36561a8adc802b98c8",
+    "spec": {
+      "profileId": "runner-ledger-preflight/v1",
+      "stateMachineId": "runner-ledger-preflight/v1",
+      "canonicalization": {
+        "profile": "cloud-agents-runner-ledger-preflight/v1-rfc8785-sha256",
+        "algorithm": "RFC8785",
+        "digest": "SHA-256",
+        "comparison": "exact_string_no_rewrite"
+      },
+      "identityBindings": {
+        "schemaBundleDigest": "exact_current_verified_schema_bundle_digest",
+        "executionLineageDigest": "exact_signed_execution_lineage_digest",
+        "orderedMigrationPrefix": "exact_length_head_and_domain_separated_digest",
+        "lastAppliedCatalogContractDigest": "exact_signed_cumulative_catalog_contract_digest_or_initial_predecessor",
+        "nextEntryIdentity": "exact_signed_migration_id_and_entry_digest_when_required",
+        "evidenceRecoveryDisposition": "exact_state_and_next_action_or_explicit_unavailable"
+      },
+      "errorPrecedence": {
+        "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED",
+        "contextOrOperationalFailure": "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED",
+        "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
+        "classifiedWithoutTypedBinder": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+        "unknownOutcome": "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION"
+      }
+    }
+  },
+  "stateMachine": {
+    "id": "runner-ledger-preflight/v1",
+    "initialState": "unclassified",
+    "states": [
+      "complete_return_success",
+      "empty_brand_new",
+      "partial_next_entry",
+      "partial_retry_or_recovery",
+      "unclassified",
+      "unknown_or_failed"
+    ],
+    "terminalStates": [
+      "complete_return_success",
+      "empty_brand_new",
+      "partial_next_entry",
+      "partial_retry_or_recovery",
+      "unknown_or_failed"
+    ],
+    "transitions": [
+      {
+        "from": "unclassified",
+        "event": "observe_complete",
+        "to": "complete_return_success"
+      },
+      {
+        "from": "unclassified",
+        "event": "observe_empty",
+        "to": "empty_brand_new"
+      },
+      {
+        "from": "unclassified",
+        "event": "observe_partial_next_entry",
+        "to": "partial_next_entry"
+      },
+      {
+        "from": "unclassified",
+        "event": "observe_partial_retry_or_recovery",
+        "to": "partial_retry_or_recovery"
+      },
+      {
+        "from": "unclassified",
+        "event": "observe_unknown_or_failed",
+        "to": "unknown_or_failed"
+      }
+    ]
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "callerProvidedProfile": "forbidden",
+    "guessedMigrationIdentity": "forbidden",
+    "lossyIdentityMapping": "forbidden"
+  },
+  "implementationBoundary": {
+    "runnerConsumer": "not_implemented",
+    "databaseSession": "none",
+    "databaseTransaction": "forbidden",
+    "ledgerMutation": "forbidden",
+    "evidenceMutation": "forbidden",
+    "httpSurface": "not_implemented",
+    "p2Surface": "not_implemented",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized",
+    "gateStatus": "all_gates_open"
+  },
+  "registryDigest": "sha256:7e04dbddbcdd7d08e4831fc77bc034d08f09ffe54e4bfaebe5f39933260edb1a"
+}

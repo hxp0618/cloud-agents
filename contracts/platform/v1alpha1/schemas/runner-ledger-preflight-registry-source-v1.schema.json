@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-preflight-registry-source-v1.schema.json",
+  "title": "RunnerLedgerPreflightRegistrySourceV1",
+  "description": "Editable source for the contract-only runner ledger preflight profile. It does not authorize a runner consumer or database mutation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-preflight-source/v1" },
+    "registryId": { "const": "cloud-agents/platform/runner-ledger-preflight" },
+    "profile": { "$ref": "#/$defs/profile" },
+    "stateMachine": { "$ref": "#/$defs/stateMachine" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "stateMachineId",
+        "canonicalization",
+        "identityBindings",
+        "errorPrecedence"
+      ],
+      "properties": {
+        "profileId": { "const": "runner-ledger-preflight/v1" },
+        "stateMachineId": { "const": "runner-ledger-preflight/v1" },
+        "canonicalization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "algorithm", "digest", "comparison"],
+          "properties": {
+            "profile": { "const": "cloud-agents-runner-ledger-preflight/v1-rfc8785-sha256" },
+            "algorithm": { "const": "RFC8785" },
+            "digest": { "const": "SHA-256" },
+            "comparison": { "const": "exact_string_no_rewrite" }
+          }
+        },
+        "identityBindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaBundleDigest",
+            "executionLineageDigest",
+            "orderedMigrationPrefix",
+            "lastAppliedCatalogContractDigest",
+            "nextEntryIdentity",
+            "evidenceRecoveryDisposition"
+          ],
+          "properties": {
+            "schemaBundleDigest": { "const": "exact_current_verified_schema_bundle_digest" },
+            "executionLineageDigest": { "const": "exact_signed_execution_lineage_digest" },
+            "orderedMigrationPrefix": { "const": "exact_length_head_and_domain_separated_digest" },
+            "lastAppliedCatalogContractDigest": {
+              "const": "exact_signed_cumulative_catalog_contract_digest_or_initial_predecessor"
+            },
+            "nextEntryIdentity": {
+              "const": "exact_signed_migration_id_and_entry_digest_when_required"
+            },
+            "evidenceRecoveryDisposition": {
+              "const": "exact_state_and_next_action_or_explicit_unavailable"
+            }
+          }
+        },
+        "errorPrecedence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "storedContradiction",
+            "contextOrOperationalFailure",
+            "recoveryRequired",
+            "classifiedWithoutTypedBinder",
+            "unknownOutcome"
+          ],
+          "properties": {
+            "storedContradiction": {
+              "const": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED"
+            },
+            "contextOrOperationalFailure": {
+              "const": "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED"
+            },
+            "recoveryRequired": {
+              "const": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED"
+            },
+            "classifiedWithoutTypedBinder": { "const": "MIGRATION_PROJECTION_NOT_IMPLEMENTED" },
+            "unknownOutcome": { "const": "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION" }
+          }
+        }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initialState", "states", "terminalStates", "transitions"],
+      "properties": {
+        "id": { "const": "runner-ledger-preflight/v1" },
+        "initialState": { "const": "unclassified" },
+        "states": {
+          "const": [
+            "complete_return_success",
+            "empty_brand_new",
+            "partial_next_entry",
+            "partial_retry_or_recovery",
+            "unclassified",
+            "unknown_or_failed"
+          ]
+        },
+        "terminalStates": {
+          "const": [
+            "complete_return_success",
+            "empty_brand_new",
+            "partial_next_entry",
+            "partial_retry_or_recovery",
+            "unknown_or_failed"
+          ]
+        },
+        "transitions": {
+          "const": [
+            {
+              "from": "unclassified",
+              "event": "observe_complete",
+              "to": "complete_return_success"
+            },
+            { "from": "unclassified", "event": "observe_empty", "to": "empty_brand_new" },
+            {
+              "from": "unclassified",
+              "event": "observe_partial_next_entry",
+              "to": "partial_next_entry"
+            },
+            {
+              "from": "unclassified",
+              "event": "observe_partial_retry_or_recovery",
+              "to": "partial_retry_or_recovery"
+            },
+            {
+              "from": "unclassified",
+              "event": "observe_unknown_or_failed",
+              "to": "unknown_or_failed"
+            }
+          ]
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "profileSelection",
+        "callerProvidedProfile",
+        "guessedMigrationIdentity",
+        "lossyIdentityMapping"
+      ],
+      "properties": {
+        "mode": { "const": "generated_registry_only" },
+        "profileSelection": { "const": "exact_profile_id_and_digest" },
+        "callerProvidedProfile": { "const": "forbidden" },
+        "guessedMigrationIdentity": { "const": "forbidden" },
+        "lossyIdentityMapping": { "const": "forbidden" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runnerConsumer",
+        "databaseSession",
+        "databaseTransaction",
+        "ledgerMutation",
+        "evidenceMutation",
+        "httpSurface",
+        "p2Surface",
+        "providerSideEffects",
+        "productionDatabaseWrites",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "runnerConsumer": { "const": "not_implemented" },
+        "databaseSession": { "const": "none" },
+        "databaseTransaction": { "const": "forbidden" },
+        "ledgerMutation": { "const": "forbidden" },
+        "evidenceMutation": { "const": "forbidden" },
+        "httpSurface": { "const": "not_implemented" },
+        "p2Surface": { "const": "not_implemented" },
+        "providerSideEffects": { "const": "forbidden" },
+        "productionDatabaseWrites": { "const": "not_authorized" },
+        "deployment": { "const": "not_authorized" },
+        "publication": { "const": "not_authorized" },
+        "gateStatus": { "const": "all_gates_open" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "authority": "contract_only_ordinary_fact",
+    "callerProvidedProfile": "forbidden"
+  }
+}

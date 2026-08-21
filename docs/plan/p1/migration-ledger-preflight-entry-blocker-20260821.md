@@ -1,9 +1,10 @@
 # P1 runner ledger/catalog preflight entry blocker - 2026-08-21
 
-- Status: **PROPOSED - OWNER APPROVAL REQUIRED**
-- Branch: `codex/cloud-agents-p1-ledger-preflight-contract-20260821`
+- Status: **OWNER APPROVED - SLICE A IMPLEMENTED; SLICES B/C NOT STARTED**
+- Branch: `codex/cloud-agents-p1-ledger-preflight-profile-20260821`
 - Scope: a future, read-only runner ledger disposition/catalog preflight contract
-- This proposal is not an implementation approval and does not alter the current runner behavior
+- Owner approval on 2026-08-21 authorizes the ordered slices, beginning with contract/profile Slice A only
+- Slice A does not alter the current runner behavior
 
 ## 1. Why this is a separate entry
 
@@ -37,11 +38,11 @@ consumer. These are intentional fail-closed limits, not permission to infer a re
    it must not contain a database session, transaction, evidence lease, receipt, verifier-owned artifact, or writer
    token. A later binder must cross-bind all of those inputs in one explicitly reviewed transition.
 
-## 3. Proposed ordered slices (not approved)
+## 3. Approved ordered slices
 
 ### Slice A - generated, versioned pure contract/profile
 
-Add a new versioned internal registry/profile for `runner-ledger-preflight` only after owner approval. The generated
+Add a new versioned internal registry/profile for `runner-ledger-preflight`. The generated
 profile should define the closed disposition/state machine and exact identity domains, without exposing HTTP or a
 public API. At minimum it must distinguish:
 
@@ -92,9 +93,9 @@ identity, ledger/catalog drift, response-lost or close ambiguity, lease/lock exp
 corrupt precedence, and forbidden-surface scans. An independent reviewer must inspect the generated profile, locked
 projection, evidence cross-bind, and no-op/write-chain separation before any consumer is called complete.
 
-## 4. Explicit non-claims and requested decision
+## 4. Explicit non-claims and decision record
 
-Until this proposal is separately approved:
+Slice A approval and implementation do not change these boundaries:
 
 - current partial and complete ledger paths remain `NOT_IMPLEMENTED`;
 - no runner transaction, append, commit, ledger mutation, evidence mutation, or production database write is
@@ -103,6 +104,6 @@ Until this proposal is separately approved:
   is authorized;
 - A2.4 registry/writer/service evidence is not reused as runner ledger authority.
 
-**Requested owner decision:** approve or reject the three proposed runner-ledger preflight slices as a separate
-versioned entry. Approval would authorize contract/profile work only in Slice A first; it would not authorize a
-transaction consumer or production database write.
+**Owner decision (2026-08-21):** approved the three ordered runner-ledger preflight slices as a separate versioned
+entry, beginning with generated/versioned contract/profile repair. Slice B and Slice C remain separately reviewed
+future implementation work. The approval does not authorize a transaction consumer or production database write.
