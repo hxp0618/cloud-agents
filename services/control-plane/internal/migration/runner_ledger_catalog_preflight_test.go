@@ -22,7 +22,13 @@ type runnerLedgerCatalogPreflightFixture struct {
 
 func newRunnerLedgerCatalogPreflightFixture(t *testing.T) runnerLedgerCatalogPreflightFixture {
 	t.Helper()
-	base := newRunnerPreparedCurrentSessionFixture(t)
+	raw, decision := buildExactAdmissionRuntime(t)
+	return newRunnerLedgerCatalogPreflightFixtureFromRuntime(t, raw, decision)
+}
+
+func newRunnerLedgerCatalogPreflightFixtureFromRuntime(t *testing.T, raw []byte, decision VerifiedTrustDecision) runnerLedgerCatalogPreflightFixture {
+	t.Helper()
+	base := newRunnerPreparedCurrentSessionFixtureFromRuntime(t, raw, decision)
 	database := newRunnerPreflightSession()
 	factory := &runnerPreflightProjectorFactory{allowMigrationRoleCatalog: true}
 	factory.initialize()
@@ -42,6 +48,41 @@ func (fixture runnerLedgerCatalogPreflightFixture) close(t *testing.T, prepared 
 	}
 	if err := closeRunnerEvidenceOwnership(fixture.base.evidence, fixture.base.candidate); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRunnerLedgerCatalogPreflightProjectsPartialPrefixReadOnly(t *testing.T) {
+	raw, decision := buildExactTwoMigrationAdmissionRuntime(t)
+	fixture := newRunnerLedgerCatalogPreflightFixtureFromRuntime(t, raw, decision)
+	first := fixture.base.bundle.Manifest.SchemaBundle.Migrations[0]
+	row := ledgerRowFor(first, fixture.base.bundle.Manifest.SchemaBundleDigest)
+	fixture.database.ledgerRowsByRead = [][]LedgerRow{{row}, {cloneProjectionValue(row)}}
+	prepared, err := fixture.runner.projectRunnerLedgerCatalogPreflight(
+		context.Background(), "test-only", fixture.base.bundle, fixture.base.plans,
+		fixture.base.evidence, fixture.base.candidate,
+	)
+	defer fixture.close(t, prepared)
+	if err != nil || !validRunnerLedgerCatalogPreflight(prepared) || prepared.state != runnerLedgerCatalogPartial {
+		t.Fatalf("partial read-only projection: prepared=%+v err=%v", prepared, err)
+	}
+	if prepared.migrationCount != 2 || prepared.initialPredecessor != nil || prepared.cumulativeCatalog == nil || prepared.catalogContractDigest == nil || *prepared.catalogContractDigest != first.CatalogContract.SHA256 ||
+		prepared.cumulativeCatalog.Projection.SchemaHead != first.ID || prepared.ledger.head != first.ID || len(prepared.ledger.rows) != 1 {
+		t.Fatalf("partial projection shape=%+v", prepared)
+	}
+	wantSnapshots := []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole, AuthorityPhaseMigrationRole}
+	if fixture.connector.attempts != 1 || fixture.database.setRoleCalls != 1 || fixture.database.lockCalls != 1 ||
+		fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 || fixture.database.ledgerReadCalls != 2 ||
+		fixture.database.beginCalls != 0 || fixture.database.boundaryCalls != 0 || fixture.database.queryCalls != 0 ||
+		fixture.database.serverMajorCalls != 0 || fixture.database.backend.ledgerInsertCalls != 0 ||
+		fixture.database.backend.executeCalls != 0 || fixture.database.backend.commitCalls != 0 ||
+		!fixture.database.closed || fixture.database.locked || fixture.database.roleConfigured || fixture.database.projectionActive ||
+		!reflect.DeepEqual(fixture.database.snapshotPhases, wantSnapshots) ||
+		!reflect.DeepEqual(fixture.database.snapshotClosePhases, wantSnapshots) ||
+		!reflect.DeepEqual(fixture.factory.projectionPhases, []AuthorityPhase{AuthorityPhaseConnectedSession, AuthorityPhaseMigrationRole}) ||
+		len(fixture.factory.preconditionPhases) != 0 || len(fixture.factory.catalogPhases) != 1 ||
+		fixture.factory.catalogPhases[0] != AuthorityPhaseMigrationRole || len(fixture.factory.catalogScopes) != 1 ||
+		fixture.factory.catalogScopes[0].SchemaHead == nil || *fixture.factory.catalogScopes[0].SchemaHead != first.ID {
+		t.Fatalf("partial lifecycle escaped: connector=%+v database=%+v factory=%+v", fixture.connector, fixture.database, fixture.factory)
 	}
 }
 

@@ -435,8 +435,23 @@ func buildExactAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
 }
 
 func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityExpectedProjections) ([]byte, VerifiedTrustDecision) {
+	return buildExactAdmissionRuntimeForMigrationCount(t, 1, expected)
+}
+
+func buildExactTwoMigrationAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
+	return buildExactAdmissionRuntimeForMigrationCount(t, 2, nil)
+}
+
+func buildExactAdmissionRuntimeForMigrationCount(t *testing.T, migrationCount int, expected *AuthorityExpectedProjections) ([]byte, VerifiedTrustDecision) {
 	t.Helper()
-	fixture := newRunnerBindingFixture(t, []string{"000001"})
+	if migrationCount != 1 && migrationCount != 2 {
+		t.Fatalf("exact admission fixture migration count=%d", migrationCount)
+	}
+	heads := []string{"000001"}
+	if migrationCount == 2 {
+		heads = append(heads, "000002")
+	}
+	fixture := newRunnerBindingFixture(t, heads)
 	if expected != nil {
 		fixture.authorityBinding.ExpectedProjections = cloneProjectionValue(*expected)
 		var err error
@@ -445,7 +460,7 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 			t.Fatal(err)
 		}
 	}
-	direct, catalog := exactPlanBundle(t, fixture.decision.expectedSchemaBundleDigest, fixture.initialScope.BoundPrecondition(), fixture.authorityProfile)
+	direct, firstCatalog := exactPlanBundle(t, fixture.decision.expectedSchemaBundleDigest, fixture.initialScope.BoundPrecondition(), fixture.authorityProfile)
 	entry := direct.Manifest.SchemaBundle.Migrations[0]
 	entry.Name = "test exact admission"
 	entry.Phase = "expand"
@@ -458,6 +473,17 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 	entry.TransactionMode = "transactional"
 	entry.Reentrancy = "ledger_guarded"
 	entry.RollbackBoundary = "point_in_time_restore"
+	entries := []MigrationEntry{entry}
+	catalogs := []CatalogContract{firstCatalog}
+	artifactBytes := map[string][]byte{
+		entry.SQLArtifact.Path: append([]byte(nil), direct.Files[entry.SQLArtifact.Path]...),
+	}
+	if migrationCount == 2 {
+		secondEntry, secondCatalog, secondSQL := buildExactAdmissionSuccessor(t, entry)
+		entries = append(entries, secondEntry)
+		catalogs = append(catalogs, secondCatalog)
+		artifactBytes[secondEntry.SQLArtifact.Path] = secondSQL
+	}
 
 	checkedRaw := mustRead(t, filepath.Join(migrationRoot(t), "manifest.json"))
 	checkedManifest, _, err := DecodeManifest(checkedRaw)
@@ -467,11 +493,11 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 	globalRecord := checkedManifest.SchemaBundle.GlobalTableAuthority
 	globalRaw := mustRead(t, modulePathForRuntimeArtifact(t, globalRecord.Path))
 	schemaBundle := SchemaBundle{
-		Lineage: "cloud-agents-platform", SchemaHead: "000001", AdvisoryLock: checkedManifest.SchemaBundle.AdvisoryLock,
+		Lineage: "cloud-agents-platform", SchemaHead: entries[len(entries)-1].ID, AdvisoryLock: checkedManifest.SchemaBundle.AdvisoryLock,
 		GlobalTableAuthority: globalRecord, ProjectionScopeAuthority: ProjectionScopeAuthority{
 			DefaultACLOwners: []string{MigrationOwnerRole}, ObjectCreatorClosure: []string{MigrationOwnerRole},
 		},
-		Migrations: []MigrationEntry{entry},
+		Migrations: entries,
 	}
 	schemaDigest := schemaBundleDigestForTest(t, schemaBundle)
 	schemaDocumentRaw := mustJSON(t, SchemaBundleDocument{FormatVersion: SchemaBundleFormatVersion, SchemaBundle: schemaBundle, SchemaBundleDigest: schemaDigest})
@@ -479,13 +505,16 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 
 	authorityRecord := direct.Manifest.ExecutionPolicy.AuthorityContract
 	authorityRaw := append([]byte(nil), direct.Files[authorityRecord.Path]...)
-	catalogRaw := mustJSON(t, catalog)
-	catalogRecord := entry.CatalogContract
-	if catalogRecord.SizeBytes != uint64(len(catalogRaw)) || catalogRecord.SHA256 != DigestBytes(catalogRaw) {
-		t.Fatal("exact catalog helper descriptor drifted")
+	runtimeRecords := []ArtifactRecord{authorityRecord, globalRecord, schemaRecord}
+	for index := range entries {
+		catalogRaw := mustJSON(t, catalogs[index])
+		catalogRecord := entries[index].CatalogContract
+		if catalogRecord.SizeBytes != uint64(len(catalogRaw)) || catalogRecord.SHA256 != DigestBytes(catalogRaw) {
+			t.Fatalf("exact catalog helper descriptor drifted for %s", entries[index].ID)
+		}
+		artifactBytes[catalogRecord.Path] = catalogRaw
+		runtimeRecords = append(runtimeRecords, entries[index].SQLArtifact, catalogRecord)
 	}
-	sqlRaw := append([]byte(nil), direct.Files[entry.SQLArtifact.Path]...)
-	runtimeRecords := []ArtifactRecord{entry.SQLArtifact, authorityRecord, globalRecord, catalogRecord, schemaRecord}
 	sort.Slice(runtimeRecords, func(i, j int) bool { return runtimeRecords[i].Path < runtimeRecords[j].Path })
 	policy := checkedManifest.ExecutionPolicy
 	policy.AuthorityContract = authorityRecord
@@ -495,9 +524,9 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 		ExecutionPolicy: policy, RuntimeArtifacts: runtimeRecords,
 	}
 	manifestRaw := encodeTestManifest(t, manifest)
-	files := map[string][]byte{
-		entry.SQLArtifact.Path: sqlRaw, authorityRecord.Path: authorityRaw, globalRecord.Path: globalRaw,
-		catalogRecord.Path: catalogRaw, RuntimeSchemaBundlePath: schemaDocumentRaw, RuntimeManifestPath: manifestRaw,
+	files := map[string][]byte{authorityRecord.Path: authorityRaw, globalRecord.Path: globalRaw, RuntimeSchemaBundlePath: schemaDocumentRaw, RuntimeManifestPath: manifestRaw}
+	for path, data := range artifactBytes {
+		files[path] = append([]byte(nil), data...)
 	}
 	members := make([]tarMember, 0, len(files))
 	for path, data := range files {
@@ -517,18 +546,67 @@ func buildExactAdmissionRuntimeWithAuthority(t *testing.T, expected *AuthorityEx
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalogSubject, err := bindVerifiedExecutableCatalogSubject(catalogRaw, catalogRecord.SHA256, fixture.expiresAt.Add(time.Hour), 1, fixture.now)
-	if err != nil {
-		t.Fatal(err)
+	catalogSubjects := make([]verifiedExecutableCatalogSubject, len(entries))
+	for index := range entries {
+		catalogRaw := files[entries[index].CatalogContract.Path]
+		catalogSubjects[index], err = bindVerifiedExecutableCatalogSubject(catalogRaw, entries[index].CatalogContract.SHA256, fixture.expiresAt.Add(time.Hour), 1, fixture.now)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	decision, err := bindVerifiedRunnerProjectionDecision(
 		fixture.decision, fixture.authorityProfile, fixture.authorityBinding, fixture.authority,
-		fixture.recoveryPolicy, fixture.initialScope, []verifiedExecutableCatalogSubject{catalogSubject}, fixture.now,
+		fixture.recoveryPolicy, fixture.initialScope, catalogSubjects, fixture.now,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw, decision
+}
+
+func buildExactAdmissionSuccessor(t *testing.T, predecessor MigrationEntry) (MigrationEntry, CatalogContract, []byte) {
+	t.Helper()
+	predecessorID := predecessor.ID
+	predecessorCatalog := cloneProjectionValue(predecessor.CatalogContract)
+	entry := MigrationEntry{
+		ID: "000002", Name: "test exact admission successor", PredecessorID: &predecessorID,
+		Phase: "expand", SchemaFrom: predecessor.SchemaTo, SchemaTo: "000002",
+		CompatibleControlPlaneMin: "0.1.0-alpha.1", CompatibleControlPlaneMax: "0.2.0-0",
+		CompatibleWorkerMin: "0.1.0-alpha.1", CompatibleWorkerMax: "0.2.0-0",
+		TransactionMode: "transactional", Reentrancy: "ledger_guarded", RollbackBoundary: "point_in_time_restore",
+		PredecessorCatalogContract: CatalogPrecondition{Artifact: &predecessorCatalog},
+	}
+	sqlRaw := []byte("CREATE TABLE cloud_agents.t2 (id text);")
+	statements, err := SplitPostgreSQLStatements(sqlRaw)
+	if err != nil || len(statements) != 1 {
+		t.Fatalf("split successor SQL: statements=%d err=%v", len(statements), err)
+	}
+	entry.SQLArtifact = ArtifactRecord{Path: "services/control-plane/migrations/000002_test.sql", Mode: "100644", SizeBytes: uint64(len(sqlRaw)), SHA256: DigestBytes(sqlRaw)}
+	structural, err := (NarrowDDLClassifier{SpecialDO: map[SpecialStatementIdentity]Digest{}}).Classify(entry, statements[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := executableCatalogForHead(t, entry.ID)
+	descriptor := &contract.SourceDescriptors[0].Statements[0]
+	descriptor.Index = 0
+	descriptor.Start = uint64(statements[0].Start)
+	descriptor.End = uint64(statements[0].End)
+	descriptor.SHA256 = statements[0].SHA256
+	descriptor.Classification = SQLClassificationDescriptor{
+		Profile: "postgresql-ddl-v1", Command: structural.Command, ObjectKind: normalizeObjectKind(structural.ObjectKind),
+		TargetIdentity: structural.TargetIdentity, Grantee: cloneStringPointer(structural.Grantee),
+	}
+	beforeScope := ProjectionScope{ScopeKind: "predecessor", MigrationID: stringPointer(entry.ID), DeclaredObjects: []ObjectIdentityProjection{}}
+	beforeState := CatalogStateProjection{Present: &SchemaPresentProjection{State: "schema_present", Scope: beforeScope, Body: minimalCatalogBody()}}
+	beforeDigest, err := beforeState.ComputeDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor.ExpectedTransition.CatalogBefore = CatalogStateDigestRef{Scope: beforeScope, StateKind: "schema_present", Digest: beforeDigest}
+	contract.SourceDescriptors[0].SQLSHA256 = entry.SQLArtifact.SHA256
+	catalogRaw := mustJSON(t, contract)
+	entry.CatalogContract = ArtifactRecord{Path: "services/control-plane/migrations/catalog/schema-000002.json", Mode: "100644", SizeBytes: uint64(len(catalogRaw)), SHA256: DigestBytes(catalogRaw)}
+	return entry, contract, sqlRaw
 }
 
 func schemaBundleDigestForTest(t *testing.T, bundle SchemaBundle) Digest {
