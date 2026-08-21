@@ -1,11 +1,11 @@
 {
   "formatVersion": "cloud-agents-runner-ledger-preflight-registry/v1",
   "registryId": "cloud-agents/platform/runner-ledger-preflight",
-  "sourceDigest": "sha256:fcacc44fe9311435a3cfddb5452ad9b565c6e1aee3c60291953da930ae6810bf",
+  "sourceDigest": "sha256:d49c080bd4e68fddbc486531d127fabc68d67cf33726e274f9892354107d605e",
   "stateMachineDigest": "sha256:fe00c5de375865350798e6a79de22b4272fb70949bbd5d3c0a11745bb3dd11ae",
-  "policyDigest": "sha256:fc693052970176594730421b74842a5d497747620b86fd9be7f59e77d65e4bc8",
+  "policyDigest": "sha256:1fb99617210b7d92e7c51d2241f98674c67818c85c82cf13edd2ebe33b34388b",
   "profile": {
-    "profileDigest": "sha256:a6ef13814c34d62d9d9c5f19054c8336ad84ae6836a13d36561a8adc802b98c8",
+    "profileDigest": "sha256:beefc1e996e56e88fbcde2afe35a2f823a3846f03e5f6b8f47d4e819a1e1bfe9",
     "spec": {
       "profileId": "runner-ledger-preflight/v1",
       "stateMachineId": "runner-ledger-preflight/v1",
@@ -29,6 +29,84 @@
         "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
         "classifiedWithoutTypedBinder": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
         "unknownOutcome": "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION"
+      },
+      "recoveryDispositionMatrix": {
+        "complete_return_success": [
+          {
+            "state": "completed",
+            "action": "return_success"
+          }
+        ],
+        "empty_brand_new": [
+          {
+            "state": "brand_new",
+            "action": "begin_first_attempt"
+          },
+          {
+            "state": "brand_new_inherited",
+            "action": "begin_first_attempt"
+          },
+          {
+            "state": "brand_new_inherited",
+            "action": "begin_next_attempt"
+          }
+        ],
+        "partial_next_entry": [
+          {
+            "state": "brand_new_inherited",
+            "action": "begin_first_attempt_next_entry"
+          },
+          {
+            "state": "terminal",
+            "action": "begin_first_attempt_next_entry"
+          }
+        ],
+        "partial_retry_or_recovery": [
+          {
+            "state": "brand_new_inherited",
+            "action": "begin_first_attempt"
+          },
+          {
+            "state": "brand_new_inherited",
+            "action": "begin_next_attempt"
+          },
+          {
+            "state": "dangling_statement_intent",
+            "action": "append_aborted_retryable"
+          },
+          {
+            "state": "dangling_statement_intent",
+            "action": "append_aborted_terminal"
+          },
+          {
+            "state": "dangling_intermediate",
+            "action": "append_aborted_retryable"
+          },
+          {
+            "state": "dangling_intermediate",
+            "action": "append_aborted_terminal"
+          },
+          {
+            "state": "dangling_commit_intent",
+            "action": "reconcile_commit"
+          },
+          {
+            "state": "ambiguous_unresolved",
+            "action": "reconcile_commit"
+          },
+          {
+            "state": "terminal",
+            "action": "begin_next_attempt"
+          },
+          {
+            "state": "terminal",
+            "action": "return_failure"
+          },
+          {
+            "state": "divergent",
+            "action": "return_failure"
+          }
+        ]
       }
     }
   },
@@ -99,5 +177,5 @@
     "publication": "not_authorized",
     "gateStatus": "all_gates_open"
   },
-  "registryDigest": "sha256:7e04dbddbcdd7d08e4831fc77bc034d08f09ffe54e4bfaebe5f39933260edb1a"
+  "registryDigest": "sha256:a17a7333d1455d3ed5a0e2d70c2a3b2ea9ee1e323a5ac935d4d9a12a2db30661"
 }

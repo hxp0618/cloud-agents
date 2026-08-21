@@ -148,7 +148,8 @@ func (profile runnerLedgerPreflightProfile) valid() bool {
 		Digest(runnerLedgerPreflightRegistryDigest).Validate() == nil &&
 		Digest(runnerLedgerPreflightStateMachineDigest).Validate() == nil &&
 		Digest(runnerLedgerPreflightPolicyDigest).Validate() == nil &&
-		validRunnerLedgerPreflightTransitions()
+		validRunnerLedgerPreflightTransitions() &&
+		validRunnerLedgerPreflightRecoveryPairs()
 }
 
 func (fact runnerLedgerPreflightFact) valid() bool {
@@ -208,23 +209,16 @@ func validRunnerLedgerPreflightDisposition(fact runnerLedgerPreflightFact) bool 
 	case runnerLedgerPreflightEmptyBrandNew:
 		return fact.orderedMigrationPrefixLength == 0 && fact.nextEntry != nil &&
 			validRunnerLedgerPreflightNextEntry(fact.nextEntry) &&
-			validRunnerLedgerPreflightRecovery(fact.recovery) &&
-			(fact.recovery.State == RecoveryBrandNew || fact.recovery.State == RecoveryBrandNewInherited) &&
-			(fact.recovery.Action == RecoveryBeginFirstAttempt || fact.recovery.Action == RecoveryBeginNextAttempt)
+			validRunnerLedgerPreflightRecoveryPair(fact.disposition, fact.recovery)
 	case runnerLedgerPreflightPartialNextEntry:
 		return fact.orderedMigrationPrefixLength > 0 && validRunnerLedgerPreflightNextEntry(fact.nextEntry) &&
-			validRunnerLedgerPreflightRecovery(fact.recovery) && fact.recovery.State == RecoveryCompleted &&
-			fact.recovery.Action == RecoveryBeginFirstAttemptNextEntry
+			validRunnerLedgerPreflightRecoveryPair(fact.disposition, fact.recovery)
 	case runnerLedgerPreflightPartialRetryOrRecovery:
 		return fact.orderedMigrationPrefixLength > 0 && fact.nextEntry == nil &&
-			validRunnerLedgerPreflightRecovery(fact.recovery) &&
-			fact.recovery.Action != RecoveryReturnSuccess &&
-			fact.recovery.Action != RecoveryBeginFirstAttemptNextEntry &&
-			fact.recovery.State != RecoveryCompleted
+			validRunnerLedgerPreflightRecoveryPair(fact.disposition, fact.recovery)
 	case runnerLedgerPreflightCompleteReturnSuccess:
 		return fact.orderedMigrationPrefixLength > 0 && fact.nextEntry == nil &&
-			validRunnerLedgerPreflightRecovery(fact.recovery) && fact.recovery.State == RecoveryCompleted &&
-			fact.recovery.Action == RecoveryReturnSuccess
+			validRunnerLedgerPreflightRecoveryPair(fact.disposition, fact.recovery)
 	case runnerLedgerPreflightUnknownOrFailed:
 		return fact.nextEntry == nil && fact.recovery == nil
 	default:
@@ -243,20 +237,12 @@ func validRunnerLedgerPreflightNextEntry(entry *runnerLedgerPreflightNextEntry) 
 	return entry != nil && migrationIDPattern.MatchString(entry.MigrationID) && entry.EntryDigest.Validate() == nil
 }
 
-func validRunnerLedgerPreflightRecovery(value *runnerLedgerPreflightRecoveryDisposition) bool {
-	if value == nil {
-		return false
-	}
-	validState := value.State == RecoveryBrandNew || value.State == RecoveryBrandNewInherited ||
-		value.State == RecoveryCompleted || value.State == RecoveryDanglingStatementIntent ||
-		value.State == RecoveryDanglingIntermediate || value.State == RecoveryDanglingCommitIntent ||
-		value.State == RecoveryAmbiguousUnresolved || value.State == RecoveryTerminal ||
-		value.State == RecoveryDivergent
-	validAction := value.Action == RecoveryBeginFirstAttempt || value.Action == RecoveryAppendAbortedRetryable ||
-		value.Action == RecoveryAppendAbortedTerminal || value.Action == RecoveryReconcileCommit ||
-		value.Action == RecoveryBeginNextAttempt || value.Action == RecoveryBeginFirstAttemptNextEntry ||
-		value.Action == RecoveryReturnSuccess || value.Action == RecoveryReturnFailure
-	return validState && validAction
+func validRunnerLedgerPreflightRecoveryPair(disposition runnerLedgerPreflightDisposition, value *runnerLedgerPreflightRecoveryDisposition) bool {
+	return value != nil && generatedRunnerLedgerPreflightRecoveryPairAllowed(disposition, value.State, value.Action)
+}
+
+func validRunnerLedgerPreflightRecoveryPairs() bool {
+	return generatedRunnerLedgerPreflightRecoveryPairCount == 17
 }
 
 func validRunnerLedgerPreflightTransitions() bool {

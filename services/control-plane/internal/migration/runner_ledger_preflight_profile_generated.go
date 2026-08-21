@@ -3,42 +3,42 @@
 package migration
 
 const (
-	runnerLedgerPreflightRegistryDigest     = "sha256:7e04dbddbcdd7d08e4831fc77bc034d08f09ffe54e4bfaebe5f39933260edb1a"
+	runnerLedgerPreflightRegistryDigest     = "sha256:a17a7333d1455d3ed5a0e2d70c2a3b2ea9ee1e323a5ac935d4d9a12a2db30661"
 	runnerLedgerPreflightStateMachineDigest = "sha256:fe00c5de375865350798e6a79de22b4272fb70949bbd5d3c0a11745bb3dd11ae"
-	runnerLedgerPreflightPolicyDigest       = "sha256:fc693052970176594730421b74842a5d497747620b86fd9be7f59e77d65e4bc8"
+	runnerLedgerPreflightPolicyDigest       = "sha256:1fb99617210b7d92e7c51d2241f98674c67818c85c82cf13edd2ebe33b34388b"
 )
 
 var generatedRunnerLedgerPreflightProfile = runnerLedgerPreflightProfile{
-	profileID:                           "runner-ledger-preflight/v1",
-	profileDigest:                       "sha256:a6ef13814c34d62d9d9c5f19054c8336ad84ae6836a13d36561a8adc802b98c8",
-	stateMachineID:                      "runner-ledger-preflight/v1",
-	canonicalizationProfile:             "cloud-agents-runner-ledger-preflight/v1-rfc8785-sha256",
-	canonicalizationAlgorithm:           "RFC8785",
-	digestAlgorithm:                     "SHA-256",
-	comparison:                          "exact_string_no_rewrite",
-	schemaBundleBinding:                 "exact_current_verified_schema_bundle_digest",
-	executionLineageBinding:             "exact_signed_execution_lineage_digest",
-	orderedMigrationPrefixBinding:       "exact_length_head_and_domain_separated_digest",
-	lastAppliedCatalogBinding:           "exact_signed_cumulative_catalog_contract_digest_or_initial_predecessor",
-	nextEntryBinding:                    "exact_signed_migration_id_and_entry_digest_when_required",
-	evidenceRecoveryBinding:             "exact_state_and_next_action_or_explicit_unavailable",
-	storedContradictionPrecedence:        "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED",
-	contextOrOperationalPrecedence:       "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED",
-	recoveryRequiredPrecedence:           "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
-	classifiedWithoutBinderPrecedence:    "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
-	unknownOutcomePrecedence:             "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION",
-	runnerConsumerBoundary:               "not_implemented",
-	databaseSessionBoundary:              "none",
-	databaseTransactionBoundary:          "forbidden",
-	ledgerMutationBoundary:               "forbidden",
-	evidenceMutationBoundary:             "forbidden",
-	httpSurfaceBoundary:                  "not_implemented",
-	p2SurfaceBoundary:                    "not_implemented",
-	providerSideEffectsBoundary:          "forbidden",
-	productionDatabaseWritesBoundary:     "not_authorized",
-	deploymentBoundary:                   "not_authorized",
-	publicationBoundary:                  "not_authorized",
-	gateStatusBoundary:                   "all_gates_open",
+	profileID:                         "runner-ledger-preflight/v1",
+	profileDigest:                     "sha256:beefc1e996e56e88fbcde2afe35a2f823a3846f03e5f6b8f47d4e819a1e1bfe9",
+	stateMachineID:                    "runner-ledger-preflight/v1",
+	canonicalizationProfile:           "cloud-agents-runner-ledger-preflight/v1-rfc8785-sha256",
+	canonicalizationAlgorithm:         "RFC8785",
+	digestAlgorithm:                   "SHA-256",
+	comparison:                        "exact_string_no_rewrite",
+	schemaBundleBinding:               "exact_current_verified_schema_bundle_digest",
+	executionLineageBinding:           "exact_signed_execution_lineage_digest",
+	orderedMigrationPrefixBinding:     "exact_length_head_and_domain_separated_digest",
+	lastAppliedCatalogBinding:         "exact_signed_cumulative_catalog_contract_digest_or_initial_predecessor",
+	nextEntryBinding:                  "exact_signed_migration_id_and_entry_digest_when_required",
+	evidenceRecoveryBinding:           "exact_state_and_next_action_or_explicit_unavailable",
+	storedContradictionPrecedence:     "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED",
+	contextOrOperationalPrecedence:    "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED",
+	recoveryRequiredPrecedence:        "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
+	classifiedWithoutBinderPrecedence: "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+	unknownOutcomePrecedence:          "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION",
+	runnerConsumerBoundary:            "not_implemented",
+	databaseSessionBoundary:           "none",
+	databaseTransactionBoundary:       "forbidden",
+	ledgerMutationBoundary:            "forbidden",
+	evidenceMutationBoundary:          "forbidden",
+	httpSurfaceBoundary:               "not_implemented",
+	p2SurfaceBoundary:                 "not_implemented",
+	providerSideEffectsBoundary:       "forbidden",
+	productionDatabaseWritesBoundary:  "not_authorized",
+	deploymentBoundary:                "not_authorized",
+	publicationBoundary:               "not_authorized",
+	gateStatusBoundary:                "all_gates_open",
 }
 
 var generatedRunnerLedgerPreflightTransitions = [...]runnerLedgerPreflightTransition{
@@ -47,4 +47,31 @@ var generatedRunnerLedgerPreflightTransitions = [...]runnerLedgerPreflightTransi
 	{from: "unclassified", event: "observe_partial_next_entry", to: runnerLedgerPreflightDisposition("partial_next_entry")},
 	{from: "unclassified", event: "observe_partial_retry_or_recovery", to: runnerLedgerPreflightDisposition("partial_retry_or_recovery")},
 	{from: "unclassified", event: "observe_unknown_or_failed", to: runnerLedgerPreflightDisposition("unknown_or_failed")},
+}
+
+const generatedRunnerLedgerPreflightRecoveryPairCount = 17
+
+func generatedRunnerLedgerPreflightRecoveryPairAllowed(disposition runnerLedgerPreflightDisposition, state RecoveryState, action RecoveryAction) bool {
+	switch string(disposition) + "\x00" + string(state) + "\x00" + string(action) {
+	case "complete_return_success\u0000completed\u0000return_success",
+		"empty_brand_new\u0000brand_new\u0000begin_first_attempt",
+		"empty_brand_new\u0000brand_new_inherited\u0000begin_first_attempt",
+		"empty_brand_new\u0000brand_new_inherited\u0000begin_next_attempt",
+		"partial_next_entry\u0000brand_new_inherited\u0000begin_first_attempt_next_entry",
+		"partial_next_entry\u0000terminal\u0000begin_first_attempt_next_entry",
+		"partial_retry_or_recovery\u0000brand_new_inherited\u0000begin_first_attempt",
+		"partial_retry_or_recovery\u0000brand_new_inherited\u0000begin_next_attempt",
+		"partial_retry_or_recovery\u0000dangling_statement_intent\u0000append_aborted_retryable",
+		"partial_retry_or_recovery\u0000dangling_statement_intent\u0000append_aborted_terminal",
+		"partial_retry_or_recovery\u0000dangling_intermediate\u0000append_aborted_retryable",
+		"partial_retry_or_recovery\u0000dangling_intermediate\u0000append_aborted_terminal",
+		"partial_retry_or_recovery\u0000dangling_commit_intent\u0000reconcile_commit",
+		"partial_retry_or_recovery\u0000ambiguous_unresolved\u0000reconcile_commit",
+		"partial_retry_or_recovery\u0000terminal\u0000begin_next_attempt",
+		"partial_retry_or_recovery\u0000terminal\u0000return_failure",
+		"partial_retry_or_recovery\u0000divergent\u0000return_failure":
+		return true
+	default:
+		return false
+	}
 }

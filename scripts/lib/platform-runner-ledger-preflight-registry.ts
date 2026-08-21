@@ -65,6 +65,32 @@ const TRANSITIONS = [
   },
 ] as const;
 
+const RECOVERY_DISPOSITION_MATRIX = {
+  complete_return_success: [{ state: "completed", action: "return_success" }],
+  empty_brand_new: [
+    { state: "brand_new", action: "begin_first_attempt" },
+    { state: "brand_new_inherited", action: "begin_first_attempt" },
+    { state: "brand_new_inherited", action: "begin_next_attempt" },
+  ],
+  partial_next_entry: [
+    { state: "brand_new_inherited", action: "begin_first_attempt_next_entry" },
+    { state: "terminal", action: "begin_first_attempt_next_entry" },
+  ],
+  partial_retry_or_recovery: [
+    { state: "brand_new_inherited", action: "begin_first_attempt" },
+    { state: "brand_new_inherited", action: "begin_next_attempt" },
+    { state: "dangling_statement_intent", action: "append_aborted_retryable" },
+    { state: "dangling_statement_intent", action: "append_aborted_terminal" },
+    { state: "dangling_intermediate", action: "append_aborted_retryable" },
+    { state: "dangling_intermediate", action: "append_aborted_terminal" },
+    { state: "dangling_commit_intent", action: "reconcile_commit" },
+    { state: "ambiguous_unresolved", action: "reconcile_commit" },
+    { state: "terminal", action: "begin_next_attempt" },
+    { state: "terminal", action: "return_failure" },
+    { state: "divergent", action: "return_failure" },
+  ],
+} as const;
+
 type StateMachine = {
   readonly id: string;
   readonly initialState: string;
@@ -80,7 +106,11 @@ type StateMachine = {
 type RegistrySource = JsonRecord & {
   readonly formatVersion: string;
   readonly registryId: string;
-  readonly profile: JsonRecord & { readonly profileId: string; readonly stateMachineId: string };
+  readonly profile: JsonRecord & {
+    readonly profileId: string;
+    readonly stateMachineId: string;
+    readonly recoveryDispositionMatrix: typeof RECOVERY_DISPOSITION_MATRIX;
+  };
   readonly stateMachine: StateMachine;
   readonly selector: JsonRecord;
   readonly implementationBoundary: JsonRecord;
@@ -106,6 +136,7 @@ export function buildRunnerLedgerPreflightRegistry(root: string): JsonRecord {
     selector: source.selector,
     implementationBoundary: source.implementationBoundary,
     errorPrecedence: source.profile.errorPrecedence,
+    recoveryDispositionMatrix: source.profile.recoveryDispositionMatrix,
   });
   const profileDigest = domainDigest(PROFILE_DOMAIN, {
     registryId: source.registryId,
@@ -209,6 +240,13 @@ export function validateRunnerLedgerPreflightSource(root: string, source: Regist
     );
   }
   validateStateMachine(source.stateMachine);
+  if (!canonicalEqual(source.profile.recoveryDispositionMatrix, RECOVERY_DISPOSITION_MATRIX)) {
+    throw contractError(
+      "RUNNER_LEDGER_PREFLIGHT_BINDING_MISMATCH",
+      "/profile/recoveryDispositionMatrix",
+      "Runner ledger preflight recovery state/action matrix drifted.",
+    );
+  }
   const expectedSelector = {
     mode: "generated_registry_only",
     profileSelection: "exact_profile_id_and_digest",

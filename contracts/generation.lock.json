@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:2906cca67fa5921eaf5cd1ba84ce739e8bb43807dc9e5b935d6f1202528d9c77",
+    "manifestSha256": "sha256:5ca27690cd32af1413763f701adcc5ea1c67074b39591fbd661ed3d936e8a394",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -58,7 +58,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:0878227504d7b4a6943a48fbcc9caf63b76e72a97e7a652747ca0dd5ad4bfb0f",
+      "sourceManifestSha256": "sha256:65b88b6d4ece1be938cca2f60eb712bb5b49a7e88dd2d9acadd0178fd540a2b0",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -86,7 +86,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:3006c0ab52e45a07221fb518e20586f5b5b3bd281a788115a9983afc088a8bfc",
+      "sourceManifestSha256": "sha256:4b61bbbacf954047059a2037aaef95ca668aeb62dbc2beaecb58138752941c5e",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -179,7 +179,7 @@
       "id": "platform-runner-ledger-preflight-registry-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
       "entrypoint": "scripts/generate-platform-runner-ledger-preflight-registry.ts",
-      "sourceManifestSha256": "sha256:915f2dd4e6bbe011086a4851f76e00dd87b739cecec20b3bc4f49ae899c6e5dd",
+      "sourceManifestSha256": "sha256:d471b3cf0d0bf9b52ad1e1fafcb3a0cddd420dd9f66752eb740b51a07ea15ff9",
       "sources": [
         "docs/plan/adr/0019-p1-runner-ledger-preflight-contract.md",
         "docs/plan/p1/migration-ledger-preflight-entry-blocker-20260821.md",
@@ -197,7 +197,7 @@
       "id": "platform-runner-ledger-preflight-go-generator",
       "kind": "in-repo-typescript-deterministic-go-ordinary-fact-profile",
       "entrypoint": "scripts/generate-platform-runner-ledger-preflight-go.ts",
-      "sourceManifestSha256": "sha256:6486965d7d74d15586e121956c2ee76126e94abb9d3a848b82a4d2c3e0585758",
+      "sourceManifestSha256": "sha256:11914fc39daa0ad4edf642eebffec7ab2f6718ce3bf35632eca1d925683dc8ec",
       "sources": [
         "scripts/generate-platform-runner-ledger-preflight-go.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -414,7 +414,7 @@
   "pipelines": [
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:2906cca67fa5921eaf5cd1ba84ce739e8bb43807dc9e5b935d6f1202528d9c77",
+      "inputManifestSha256": "sha256:5ca27690cd32af1413763f701adcc5ea1c67074b39591fbd661ed3d936e8a394",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
@@ -615,7 +615,7 @@
     {
       "id": "runner-ledger-preflight-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:915f2dd4e6bbe011086a4851f76e00dd87b739cecec20b3bc4f49ae899c6e5dd",
+      "inputManifestSha256": "sha256:d471b3cf0d0bf9b52ad1e1fafcb3a0cddd420dd9f66752eb740b51a07ea15ff9",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-preflight-registry-source-v1.json",
         "contracts/platform/v1alpha1/schemas/runner-ledger-preflight-registry-source-v1.schema.json",
@@ -632,16 +632,16 @@
       "generatedOutputs": [
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
-          "sha256": "sha256:514c8dd81c89d44c3f47c8ade0c86179dfdf25e302e71739ec47514214034e68",
-          "sizeBytes": 3895
+          "sha256": "sha256:2a04f67f9b06f25bc13211934d8cb914dcbe3f92d42053f636ec66b4f28ac11c",
+          "sizeBytes": 6011
         }
       ],
       "outputSummary": {
         "registryId": "cloud-agents/platform/runner-ledger-preflight",
-        "registryDigest": "sha256:7e04dbddbcdd7d08e4831fc77bc034d08f09ffe54e4bfaebe5f39933260edb1a",
-        "sourceDigest": "sha256:fcacc44fe9311435a3cfddb5452ad9b565c6e1aee3c60291953da930ae6810bf",
+        "registryDigest": "sha256:a17a7333d1455d3ed5a0e2d70c2a3b2ea9ee1e323a5ac935d4d9a12a2db30661",
+        "sourceDigest": "sha256:d49c080bd4e68fddbc486531d127fabc68d67cf33726e274f9892354107d605e",
         "stateMachineDigest": "sha256:fe00c5de375865350798e6a79de22b4272fb70949bbd5d3c0a11745bb3dd11ae",
-        "policyDigest": "sha256:fc693052970176594730421b74842a5d497747620b86fd9be7f59e77d65e4bc8",
+        "policyDigest": "sha256:1fb99617210b7d92e7c51d2241f98674c67818c85c82cf13edd2ebe33b34388b",
         "profileId": "runner-ledger-preflight/v1",
         "runtimeConsumer": "NOT_IMPLEMENTED",
         "databaseSession": "NONE",
@@ -656,7 +656,7 @@
     {
       "id": "runner-ledger-preflight-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d37407eac931b3d826b3ec9f7d80cfedaa47285c631c1d544dad56d6c6e11f51",
+      "inputManifestSha256": "sha256:1832b98dc345f280d0b0de87258292886e593b994d6550bcdd457f964a4c8457",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
         "scripts/generate-platform-runner-ledger-preflight-go.ts",
@@ -670,14 +670,14 @@
       "generatedOutputs": [
         {
           "path": "services/control-plane/internal/migration/runner_ledger_preflight_profile_generated.go",
-          "sha256": "sha256:2c9d0425a1a22d4ee6c55b1e23d887fc89502f5d18dabdf5cd7faa75c42a757a",
-          "sizeBytes": 3421
+          "sha256": "sha256:599b78537a3f1dd5d70c1b50aa5e7bc54e1b65ee463876ee3f111709a5ab2112",
+          "sizeBytes": 4990
         }
       ],
       "outputSummary": {
-        "registryDigest": "sha256:7e04dbddbcdd7d08e4831fc77bc034d08f09ffe54e4bfaebe5f39933260edb1a",
+        "registryDigest": "sha256:a17a7333d1455d3ed5a0e2d70c2a3b2ea9ee1e323a5ac935d4d9a12a2db30661",
         "stateMachineDigest": "sha256:fe00c5de375865350798e6a79de22b4272fb70949bbd5d3c0a11745bb3dd11ae",
-        "policyDigest": "sha256:fc693052970176594730421b74842a5d497747620b86fd9be7f59e77d65e4bc8",
+        "policyDigest": "sha256:1fb99617210b7d92e7c51d2241f98674c67818c85c82cf13edd2ebe33b34388b",
         "handWrittenProfileFallback": "FORBIDDEN",
         "productionConsumer": "NONE_IN_SLICE_A",
         "databaseHandle": "FORBIDDEN",
@@ -728,12 +728,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-          "sha256": "sha256:770b0d21bc3e18d00254367a5ee314859ddd8b73f783c7f69f2970a06edc05d2",
+          "sha256": "sha256:22765cbe01db33ee224aa6ab231836a8094ad2fdd801ec72278ded9a2c4101b8",
           "sizeBytes": 13530
         },
         {
           "path": "sdk/go/generated-manifest.json",
-          "sha256": "sha256:a1fa6e863da5c9a99452f51d1de7e2b97db08a2a6fdb3a4c7c78eee0bc16b13c",
+          "sha256": "sha256:bb966f2afeefc11401a52c3d155b0b2df695bebb3b2e57b3b73571a207a4be60",
           "sizeBytes": 3740
         }
       ],
@@ -789,12 +789,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/index.ts",
-          "sha256": "sha256:848b6b1c8c0cb732c236b85cce956f716fd35b224871199e40c8235e223a34c1",
+          "sha256": "sha256:53fb5fe727f7b6f58ab7208176d0b4951c9c124074eb96465b6f3783e1be8c77",
           "sizeBytes": 12982
         },
         {
           "path": "sdk/typescript/generated-manifest.json",
-          "sha256": "sha256:ba6fae06297d56cff634c72a8a6071071ce1f21a78226ae95f4b362801341c05",
+          "sha256": "sha256:cc6abae64dd67bf4f17d3b1e34a0298489a54b7b23262af5ed3f531bd16d0bda",
           "sizeBytes": 3278
         }
       ],
@@ -896,22 +896,22 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:ef253cafd273fb90d538f21416e80fbf253c75da495fc7ac128796d0b1a521bc",
+          "sha256": "sha256:6c0e531b54650ac2b5c5770f7f274a0c0f40ad5dca5581bd8567be2f627b963e",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:6a47b334b5efda4a7f7b3ddc50a5937085f08e9d0d2acd82d24aab050b821dc3",
+          "sha256": "sha256:153116ed814ab34c8254a233b36f6b4e8995f24b97b457e56491cb5b55919e8a",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:e03462456d2c4023fc532db50977b0fa6cc161cfcd12328e259e826b622b8395",
+          "sha256": "sha256:ae65fbe2c595456f407900ef178b2b203a4b3cb3b6b8792d57383679dd9951c5",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:96dfa1f6efa414da3f49453bee983216e37561ddd7f5083e33abefe0d4b29270",
+          "sha256": "sha256:8395fb2cf1db63de837a8081a1f0494615faf83c84da5b9493b65b2089874a05",
           "sizeBytes": 9802
         }
       ],
@@ -1014,12 +1014,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:c5e6d70a3e5df6f0605b8c09c290411a33736cff2ad634f27868102089b40513",
+          "sha256": "sha256:d56cfd89b01f7ef56891d0f2646acce03e15a7ce86d8d6ad907913933000cc56",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:3da9c74f4bf8ea5f169829f9494f7f4a36c7d442e15f5d69c91a2f36e8a46869",
+          "sha256": "sha256:59e71b1871ec8f7f43e2fce6eec1e250b892d96618cd6d1a00d19fe063382aaf",
           "sizeBytes": 9412
         }
       ],
@@ -1074,7 +1074,7 @@
         },
         {
           "path": "contracts/generated/proto/manifest.json",
-          "sha256": "sha256:6616c5018ec41b8270d79934f4f5169c3e940f73c39992fbd2105f556d5e4364",
+          "sha256": "sha256:f5016e38d63553acc6c52ad6e645d2bcd4e34e698b11d7893fcaac92e122444c",
           "sizeBytes": 5139
         }
       ],
@@ -1125,7 +1125,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/proto-generated-manifest.json",
-          "sha256": "sha256:4620b8a5887c38b43ea675aff0b0d047e1276842fb07db2c7db83fde0ec0d4d2",
+          "sha256": "sha256:f1a60bb57d776228c1bf2f5efe4d7dba8c6b24dba4a5dc16e76948e4590c0b2b",
           "sizeBytes": 7912
         },
         {
@@ -1205,7 +1205,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/proto-generated-manifest.json",
-          "sha256": "sha256:0195303743cdbadb5732c2fb1512271caa654789342a775414470383fe3e450e",
+          "sha256": "sha256:46e40fdad86d3e8e7aab53c729ed631ac3b7b834a67150033630c08ea41ae2ac",
           "sizeBytes": 6913
         },
         {
@@ -1660,7 +1660,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:7a1b31584cb4b78acdcaf83622dc4b192c227bc9aa7c31d237d6a2c7be337889",
+      "inputManifestSha256": "sha256:832230050b87f65ed0b05c972a59d496cc1be1610e372a61a2d1265170f75fc6",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",

@@ -30,7 +30,8 @@
         "stateMachineId",
         "canonicalization",
         "identityBindings",
-        "errorPrecedence"
+        "errorPrecedence",
+        "recoveryDispositionMatrix"
       ],
       "properties": {
         "profileId": { "const": "runner-ledger-preflight/v1" },
@@ -95,6 +96,34 @@
             "classifiedWithoutTypedBinder": { "const": "MIGRATION_PROJECTION_NOT_IMPLEMENTED" },
             "unknownOutcome": { "const": "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION" }
           }
+        },
+        "recoveryDispositionMatrix": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "complete_return_success",
+            "empty_brand_new",
+            "partial_next_entry",
+            "partial_retry_or_recovery"
+          ],
+          "properties": {
+            "complete_return_success": { "$ref": "#/$defs/recoveryPairs" },
+            "empty_brand_new": { "$ref": "#/$defs/recoveryPairs" },
+            "partial_next_entry": { "$ref": "#/$defs/recoveryPairs" },
+            "partial_retry_or_recovery": { "$ref": "#/$defs/recoveryPairs" }
+          }
+        }
+      }
+    },
+    "recoveryPairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "action"],
+        "properties": {
+          "state": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 1 }
         }
       }
     },

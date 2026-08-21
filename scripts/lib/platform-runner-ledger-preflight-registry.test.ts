@@ -84,6 +84,31 @@ describe("runner ledger preflight generated contract registry", () => {
       "unknown_or_failed",
     ]);
     expect(registry.profile.spec.profileId).toBe("runner-ledger-preflight/v1");
+    expect(registry.profile.spec.recoveryDispositionMatrix).toEqual({
+      complete_return_success: [{ state: "completed", action: "return_success" }],
+      empty_brand_new: [
+        { state: "brand_new", action: "begin_first_attempt" },
+        { state: "brand_new_inherited", action: "begin_first_attempt" },
+        { state: "brand_new_inherited", action: "begin_next_attempt" },
+      ],
+      partial_next_entry: [
+        { state: "brand_new_inherited", action: "begin_first_attempt_next_entry" },
+        { state: "terminal", action: "begin_first_attempt_next_entry" },
+      ],
+      partial_retry_or_recovery: [
+        { state: "brand_new_inherited", action: "begin_first_attempt" },
+        { state: "brand_new_inherited", action: "begin_next_attempt" },
+        { state: "dangling_statement_intent", action: "append_aborted_retryable" },
+        { state: "dangling_statement_intent", action: "append_aborted_terminal" },
+        { state: "dangling_intermediate", action: "append_aborted_retryable" },
+        { state: "dangling_intermediate", action: "append_aborted_terminal" },
+        { state: "dangling_commit_intent", action: "reconcile_commit" },
+        { state: "ambiguous_unresolved", action: "reconcile_commit" },
+        { state: "terminal", action: "begin_next_attempt" },
+        { state: "terminal", action: "return_failure" },
+        { state: "divergent", action: "return_failure" },
+      ],
+    });
     expect(registry.implementationBoundary).toEqual({
       runnerConsumer: "not_implemented",
       databaseSession: "none",
@@ -143,6 +168,16 @@ describe("runner ledger preflight generated contract registry", () => {
     expectContractError(
       () => validateRunnerLedgerPreflightSource(boundaryRoot, readSource(boundaryRoot) as never),
       "RUNNER_LEDGER_PREFLIGHT_BOUNDARY_MISMATCH",
+    );
+
+    const recoveryRoot = temporaryContractRoot();
+    const recovery = readSource(recoveryRoot);
+    const matrix = (recovery.profile as JsonRecord).recoveryDispositionMatrix as JsonRecord;
+    ((matrix.partial_next_entry as JsonRecord[])[0] as JsonRecord).state = "completed";
+    writeSource(recoveryRoot, recovery);
+    expectContractError(
+      () => validateRunnerLedgerPreflightSource(recoveryRoot, readSource(recoveryRoot) as never),
+      "RUNNER_LEDGER_PREFLIGHT_BINDING_MISMATCH",
     );
   });
 

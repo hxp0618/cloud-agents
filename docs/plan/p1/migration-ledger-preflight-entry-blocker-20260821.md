@@ -1,6 +1,6 @@
 # P1 runner ledger/catalog preflight entry blocker - 2026-08-21
 
-- Status: **OWNER APPROVED - SLICE A IMPLEMENTED; SLICES B/C NOT STARTED**
+- Status: **OWNER APPROVED - SLICE A PROFILE REPAIR PENDING INDEPENDENT REVIEW; SLICES B/C NOT STARTED**
 - Branch: `codex/cloud-agents-p1-ledger-preflight-profile-20260821`
 - Scope: a future, read-only runner ledger disposition/catalog preflight contract
 - Owner approval on 2026-08-21 authorizes the ordered slices, beginning with contract/profile Slice A only
@@ -56,6 +56,13 @@ The profile must bind the schema-bundle/lineage digest, ordered migration prefix
 catalog contract digest, next-entry identity where applicable, evidence recovery disposition, and the exact
 `NOT_IMPLEMENTED`/unknown precedence. It must not accept a caller-selected profile, a guessed migration name, or a
 lossy identity mapping.
+
+The recovery portion is a generated closed matrix of exact
+`ledger_disposition + recovery_state + recovery_action` triples, not two
+independent enum allowlists. A profile repair must reject every unlisted pairing
+(including a completed state paired with next-entry), while preserving the
+explicit inherited first-entry, inherited retry, inherited next-entry,
+dangling, ambiguous, terminal, divergent, and completed combinations.
 
 The Go contract should remain an ordinary, package-private fact until a later binder exists. It must be independent
 of database handles and must have deterministic canonical bytes, clone/zero/cross-profile rejection, and state-table

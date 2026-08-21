@@ -63,7 +63,7 @@ func TestRunnerLedgerPreflightFactClosedStateTable(t *testing.T) {
 		},
 		{
 			name: "partial-next-entry", disposition: runnerLedgerPreflightPartialNextEntry,
-			input: withRunnerLedgerPreflight(base, 1, &head, &next, &runnerLedgerPreflightRecoveryDisposition{RecoveryCompleted, RecoveryBeginFirstAttemptNextEntry}),
+			input: withRunnerLedgerPreflight(base, 1, &head, &next, &runnerLedgerPreflightRecoveryDisposition{RecoveryTerminal, RecoveryBeginFirstAttemptNextEntry}),
 		},
 		{
 			name: "partial-retry", disposition: runnerLedgerPreflightPartialRetryOrRecovery,
@@ -167,6 +167,98 @@ func TestRunnerLedgerPreflightFactRejectsDispositionCrossBinding(t *testing.T) {
 	} {
 		if fact, err := bindRunnerLedgerPreflightFact(generatedRunnerLedgerPreflightProfile, disposition, base); fact.valid() || err == nil {
 			t.Fatalf("cross-bound disposition %q accepted: %+v,%v", disposition, fact, err)
+		}
+	}
+}
+
+func TestRunnerLedgerPreflightRecoveryDispositionMatrixIsClosed(t *testing.T) {
+	allowed := map[string]bool{
+		"complete_return_success\x00completed\x00return_success":                             true,
+		"empty_brand_new\x00brand_new\x00begin_first_attempt":                                true,
+		"empty_brand_new\x00brand_new_inherited\x00begin_first_attempt":                      true,
+		"empty_brand_new\x00brand_new_inherited\x00begin_next_attempt":                       true,
+		"partial_next_entry\x00brand_new_inherited\x00begin_first_attempt_next_entry":        true,
+		"partial_next_entry\x00terminal\x00begin_first_attempt_next_entry":                   true,
+		"partial_retry_or_recovery\x00brand_new_inherited\x00begin_first_attempt":            true,
+		"partial_retry_or_recovery\x00brand_new_inherited\x00begin_next_attempt":             true,
+		"partial_retry_or_recovery\x00dangling_statement_intent\x00append_aborted_retryable": true,
+		"partial_retry_or_recovery\x00dangling_statement_intent\x00append_aborted_terminal":  true,
+		"partial_retry_or_recovery\x00dangling_intermediate\x00append_aborted_retryable":     true,
+		"partial_retry_or_recovery\x00dangling_intermediate\x00append_aborted_terminal":      true,
+		"partial_retry_or_recovery\x00dangling_commit_intent\x00reconcile_commit":            true,
+		"partial_retry_or_recovery\x00ambiguous_unresolved\x00reconcile_commit":              true,
+		"partial_retry_or_recovery\x00terminal\x00begin_next_attempt":                        true,
+		"partial_retry_or_recovery\x00terminal\x00return_failure":                            true,
+		"partial_retry_or_recovery\x00divergent\x00return_failure":                           true,
+	}
+	dispositions := []runnerLedgerPreflightDisposition{
+		runnerLedgerPreflightCompleteReturnSuccess,
+		runnerLedgerPreflightEmptyBrandNew,
+		runnerLedgerPreflightPartialNextEntry,
+		runnerLedgerPreflightPartialRetryOrRecovery,
+	}
+	states := []RecoveryState{
+		RecoveryBrandNew, RecoveryBrandNewInherited, RecoveryCompleted,
+		RecoveryDanglingStatementIntent, RecoveryDanglingIntermediate,
+		RecoveryDanglingCommitIntent, RecoveryAmbiguousUnresolved,
+		RecoveryTerminal, RecoveryDivergent,
+	}
+	actions := []RecoveryAction{
+		RecoveryBeginFirstAttempt, RecoveryAppendAbortedRetryable,
+		RecoveryAppendAbortedTerminal, RecoveryReconcileCommit,
+		RecoveryBeginNextAttempt, RecoveryBeginFirstAttemptNextEntry,
+		RecoveryReturnSuccess, RecoveryReturnFailure,
+	}
+	base := runnerLedgerPreflightFactInput{
+		SchemaBundleDigest: testDigest("schema"), ExecutionLineageDigest: testDigest("lineage"),
+		OrderedMigrationPrefixDigest: testDigest("prefix"), LastAppliedCatalogContractDigest: testDigest("catalog"),
+	}
+	for _, disposition := range dispositions {
+		for _, state := range states {
+			for _, action := range actions {
+				input := base
+				head := "000001"
+				input.OrderedMigrationPrefixLength = 1
+				input.OrderedMigrationPrefixHead = &head
+				switch disposition {
+				case runnerLedgerPreflightEmptyBrandNew:
+					input.OrderedMigrationPrefixLength = 0
+					input.OrderedMigrationPrefixHead = nil
+					next := runnerLedgerPreflightNextEntry{MigrationID: "000002", EntryDigest: testDigest("entry-2")}
+					input.NextEntry = &next
+				case runnerLedgerPreflightPartialNextEntry:
+					next := runnerLedgerPreflightNextEntry{MigrationID: "000002", EntryDigest: testDigest("entry-2")}
+					input.NextEntry = &next
+				}
+				input.Recovery = &runnerLedgerPreflightRecoveryDisposition{State: state, Action: action}
+				key := string(disposition) + "\x00" + string(state) + "\x00" + string(action)
+				fact, err := bindRunnerLedgerPreflightFact(generatedRunnerLedgerPreflightProfile, disposition, input)
+				if allowed[key] {
+					if err != nil || !fact.valid() {
+						t.Fatalf("allowed recovery pair %q rejected: fact=%+v err=%v", key, fact, err)
+					}
+				} else if err == nil || fact.valid() {
+					t.Fatalf("unlisted recovery pair %q accepted: fact=%+v err=%v", key, fact, err)
+				}
+			}
+		}
+	}
+
+	unknown := base
+	head := "000001"
+	unknown.OrderedMigrationPrefixLength = 1
+	unknown.OrderedMigrationPrefixHead = &head
+	unknown.Recovery = nil
+	if fact, err := bindRunnerLedgerPreflightFact(generatedRunnerLedgerPreflightProfile, runnerLedgerPreflightUnknownOrFailed, unknown); err != nil || !fact.valid() {
+		t.Fatalf("unknown/failed nil recovery rejected: fact=%+v err=%v", fact, err)
+	}
+	for _, state := range states {
+		for _, action := range actions {
+			candidate := unknown
+			candidate.Recovery = &runnerLedgerPreflightRecoveryDisposition{State: state, Action: action}
+			if fact, err := bindRunnerLedgerPreflightFact(generatedRunnerLedgerPreflightProfile, runnerLedgerPreflightUnknownOrFailed, candidate); err == nil || fact.valid() {
+				t.Fatalf("unknown/failed recovery pair accepted: state=%q action=%q fact=%+v err=%v", state, action, fact, err)
+			}
 		}
 	}
 }

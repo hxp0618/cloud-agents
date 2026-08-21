@@ -29,6 +29,15 @@ the stored-corrupt/context/recovery-required/`NOT_IMPLEMENTED`/unknown error
 precedence. Selection is by the generated profile ID and digest only. A caller,
 stored row, guessed migration identity, or lossy mapping cannot select a profile.
 
+Recovery state and action are not independently admitted enums. The generated
+profile binds one closed disposition-to-recovery matrix (17 exact triples): a
+fact is valid only when its ledger disposition, recovery state, and permitted
+next action appear together in that matrix. In particular, a completed recovery
+may only return success; it cannot be repackaged as a next-entry action. This
+keeps inherited first-entry/retry/next-entry cases distinct from terminal,
+dangling, ambiguous, divergent, and completed states without turning the pure
+fact into recovery authority.
+
 ## Ordinary fact boundary
 
 The package-private Go fact is an ordinary, copyable value. It has deterministic

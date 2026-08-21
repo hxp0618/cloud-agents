@@ -24,6 +24,31 @@
       "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
       "classifiedWithoutTypedBinder": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
       "unknownOutcome": "FAIL_CLOSED_NO_RETRY_AS_SECOND_TRANSITION"
+    },
+    "recoveryDispositionMatrix": {
+      "complete_return_success": [{ "state": "completed", "action": "return_success" }],
+      "empty_brand_new": [
+        { "state": "brand_new", "action": "begin_first_attempt" },
+        { "state": "brand_new_inherited", "action": "begin_first_attempt" },
+        { "state": "brand_new_inherited", "action": "begin_next_attempt" }
+      ],
+      "partial_next_entry": [
+        { "state": "brand_new_inherited", "action": "begin_first_attempt_next_entry" },
+        { "state": "terminal", "action": "begin_first_attempt_next_entry" }
+      ],
+      "partial_retry_or_recovery": [
+        { "state": "brand_new_inherited", "action": "begin_first_attempt" },
+        { "state": "brand_new_inherited", "action": "begin_next_attempt" },
+        { "state": "dangling_statement_intent", "action": "append_aborted_retryable" },
+        { "state": "dangling_statement_intent", "action": "append_aborted_terminal" },
+        { "state": "dangling_intermediate", "action": "append_aborted_retryable" },
+        { "state": "dangling_intermediate", "action": "append_aborted_terminal" },
+        { "state": "dangling_commit_intent", "action": "reconcile_commit" },
+        { "state": "ambiguous_unresolved", "action": "reconcile_commit" },
+        { "state": "terminal", "action": "begin_next_attempt" },
+        { "state": "terminal", "action": "return_failure" },
+        { "state": "divergent", "action": "return_failure" }
+      ]
     }
   },
   "stateMachine": {
