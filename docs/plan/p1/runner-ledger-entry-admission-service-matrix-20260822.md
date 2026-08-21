@@ -49,7 +49,7 @@ The generated registries and profiles remain byte-identical to Slice A and their
 | preflight generated Go profile v1       | `599b78537a3f1dd5d70c1b50aa5e7bc54e1b65ee463876ee3f111709a5ab2112` |
 | consumer registry v1                    | `fa7082803ea97d06eefa83eec3de784f7199fc0b47f0ca2d0f8203b8b7e96852` |
 | consumer generated Go profile v1        | `afc77e723b7a4439c47043376cb79f5cb6416ce22d54ab1dcffbfe49686ce928` |
-| generation lock                         | `e3787ed74d83e42f88961b8e2b59d9e5c7fa53041c9ab6e7a489ecabfa088238` |
+| generation lock                         | `12d78d105cc9e97fc2cad51080e3f448571b6d6cc1c1804f695f942187031bc8` |
 | evidence-bound entry claim              | `9e933d5d1016f3d92b1f8640f6f4ca133598765bb2b74793b2e52bd18f174e83` |
 | close-only entry permit                 | `255088e37e40d897d76ba589dbf2afd9dbb7dcf3e9d17e6b9d752735f4306714` |
 | locked ledger/catalog observation       | `095298748a5b1dd7af224c4048f84571bda091e03c3a9b972de1b7b52ad48b22` |
@@ -57,8 +57,10 @@ The generated registries and profiles remain byte-identical to Slice A and their
 | entry-admission fault/security matrix   | `b4414d100518c304d5fdce93b7ea14e6924384ec2078b1cda60dcbc38f4b04a2` |
 
 The generation lock still records `entryWriter: NOT_IMPLEMENTED`, `recoveryWriter: NOT_IMPLEMENTED`,
-`productionDatabaseWrites: NOT_AUTHORIZED`, and `gateStatus: ALL_GATES_OPEN`. Slice B changes no generated
-contract, registry, schema, fixture, SDK, lock, SQL migration, database function, or public protocol artifact.
+`productionDatabaseWrites: NOT_AUTHORIZED`, and `gateStatus: ALL_GATES_OPEN`. Its sole Slice B change is the
+mechanically regenerated input-manifest hash that binds the modified entry-admission profile test. Slice B changes
+no generated contract, registry, schema, fixture, SDK, SQL migration, database function, or public protocol
+artifact.
 
 ## Fault and conformance matrix
 
@@ -97,12 +99,12 @@ The following checks passed with Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6` u
 - focused authority/forbidden-surface AST checks, Go formatting, and `git diff --check`: PASS; and
 - candidate code commit Gitleaks `8.30.1`: PASS, one commit and approximately `89.77 KB` scanned, no leaks.
 
-The contract, lint, and typecheck checks ran in the clean Slice A dependency worktree at the same exact
-`8d4d2caf2df192770cc48a9b5959c285b6c3d3a7` base because this candidate changes only Go migration files and does
-not install or alter JavaScript dependencies. The generated artifacts checked there are byte-identical to this
-candidate. A direct targeted invocation of the registry test was not separately reported because it imports
-`bun:test`, while repository instructions prohibit using `bun test`; the full repository generator/check path is
-the claimed evidence.
+The contract check ran in this fixed candidate worktree. Dependency resolution reused the exact Slice A
+`node_modules` tree through a temporary local symlink, which was removed immediately after the command; the
+generator read and checked the candidate's own source files and refreshed generation lock. Lint and typecheck were
+also run against the same source/tree contents before the lock-only repair. A direct targeted invocation of the
+registry test was not separately reported because it imports `bun:test`, while repository instructions prohibit
+using `bun test`; the full repository generator/check path is the claimed evidence.
 
 An initial full migration invocation reached Go's default ten-minute timeout in a pre-existing long-running
 authority fault test. That run is explicitly **NOT PASS** and is not treated as a candidate failure. The subsequent
