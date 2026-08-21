@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-22
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核，最新修复候选 `88a5392` 的 `dd5ea657` review 为 `APPROVE, P0=0/P1=0/P2=0`；entry/recovery writer 仍为 `NOT_IMPLEMENTED`；显式 30-minute full normal 与 focused race local evidence 已通过，但默认十分钟 run、live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核，最新修复候选 `88a5392` 的 `dd5ea657` review 为 `APPROVE, P0=0/P1=0/P2=0`；下一 entry execution/success-writer contract-only audit 与 proposed ADR-0022 已形成，但 D-046 仍 PENDING，entry/recovery writer 仍为 `NOT_IMPLEMENTED`；显式 30-minute full normal 与 focused race local evidence 已通过，但默认十分钟 run、live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -53,6 +53,7 @@
 | D-043 | Runner ledger preflight 按 generated profile → locked read-only kernel → typed claim/matrix/review 三切片推进               | APPROVED | 用户于 2026-08-21 批准固定候选审查并在 APPROVE 后继续 Slice C；不授权 writer/Gate      |
 | D-044 | Runner ledger consumer 按 versioned generated profile → complete-ledger no-op → matrix/review 三切片推进                    | APPROVED | 用户于 2026-08-22 批准；v1 immutable，entry/recovery writer 继续 NI；无外部副作用/Gate |
 | D-045 | Runner entry admission 按 generated five-pair profile → fresh-session read-only permit → matrix/review 三切片推进           | APPROVED | ADR-0021；permit 仅 close_without_mutation，entry/recovery writer 继续 NI；无 Gate     |
+| D-046 | Runner entry execution/success writer 拆为新 generated admission + one-entry multi-statement success profile                | PENDING  | proposed ADR-0022；需 owner 明确批准；retry/reconcile/production DB/外部副作用均不含   |
 
 ## 2. 阶段追踪
 
@@ -252,6 +253,14 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       mutation、HTTP/P2/provider、部署、发布与 Gate closure 仍未实现/未授权。见
       [`matrix`](../p1/runner-ledger-entry-admission-service-matrix-20260822.md) 与
       [`independent review`](../p1/runner-ledger-entry-admission-service-independent-review-20260822.md)。
+- [x] Runner ledger entry writer contract-only audit 已在固定 `d4cad5d` 完成；审计证明 ADR-0021 v1 close-only
+      permit 不可扩权复用、当前 signed bundle 需要最高 161-statement entry、旧 brand-new single-statement writer
+      不可作为一般 kernel。proposed ADR-0022 已冻结两个新 generated profile、四个 first-attempt pair、one-entry
+      known-success state machine 与分层 review 顺序；D-046 仍为 PENDING，未生成 profile、未接 mutation 或
+      `Runner.Run`。见
+      [`contract audit`](../p1/runner-ledger-entry-writer-contract-audit-20260822.md)。
+- [ ] D-046 owner approval；批准前 entry/recovery writer、SQL、ledger/evidence mutation、production DB、HTTP/P2/
+      provider、部署、发布与 Gate closure 继续 `NOT_IMPLEMENTED`/未授权。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
