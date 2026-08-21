@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核，最新 entry-admission 候选 `88a5392` 由 `dd5ea657` 返回 `APPROVE, P0=0/P1=0/P2=0`；下一 entry execution/success-writer 的只读审计与 proposed ADR-0022 已形成，但 D-046 尚待 owner 批准，entry/recovery writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核，最新 entry-admission 候选 `88a5392` 由 `dd5ea657` 返回 `APPROVE, P0=0/P1=0/P2=0`；entry execution/success-writer 的 ADR-0022/D-046 已接受，generated-contract Slice A 候选已实现且 local checks 通过、独立复核仍 pending，runtime entry/recovery writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -17,7 +17,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 1. 已接受的 [`ADR-0006`](adr/0006-public-cloud-agents-platform.md) 至
    [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)；
-2. proposed、尚未形成实施 authority 的
+2. 已接受、仅授权 ordered local slices 的
    [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)；
 3. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 4. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
@@ -56,7 +56,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0019`](adr/0019-p1-runner-ledger-preflight-contract.md)                                            | P1 runner ledger preflight 决定                  |
 | [`ADR-0020`](adr/0020-p1-runner-ledger-consumer-contract.md)                                             | P1 runner ledger read-only consumer 决定         |
 | [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)                                      | P1 runner ledger close-only entry admission 决定 |
-| [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)                                 | P1 runner entry success-writer proposed 决定     |
+| [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)                                 | P1 runner entry execution/success-writer 决定    |
 
 ## 历史与参考
 
@@ -114,9 +114,12 @@ read-only revalidation 与 registry-backed `close_without_mutation` permit 又�
 append、生产数据库写入、HTTP/P2/provider 副作用或 Gate closure。
 其后的只读 [`entry writer contract audit`](p1/runner-ledger-entry-writer-contract-audit-20260822.md) 已证明当前
 signed bundle 的单 entry statement 数最高为 `161`，现有 brand-new 单语句 writer 与 ADR-0021 close-only permit
-均不得扩权复用；因此 proposed ADR-0022 将 fresh execution admission 与 one-entry multi-statement success writer
-拆成两个新 generated profile，并将 retry/abort/reconcile/failure 保持为后续独立合同。该 proposed decision 尚未获
-owner 批准，不构成 generated/production 实施 authority。
+均不得扩权复用；因此 ADR-0022 将 fresh execution admission 与 one-entry multi-statement success writer
+拆成两个新 generated profile，并将 retry/abort/reconcile/failure 保持为后续独立合同。D-046 已按 standing
+automatic-execution approval 接受，只授权 ordered local implementation/review，不构成 production 实施 authority。
+generated-contract Slice A 的
+[`implementation record`](p1/runner-ledger-entry-writer-profile-implementation-20260822.md) 已生成两份 versioned
+registry 与 ordinary Go profile；当前仍无 runtime consumer/writer，固定候选与独立复核尚待完成。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

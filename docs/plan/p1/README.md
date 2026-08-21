@@ -16,7 +16,7 @@
   [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)、
   [`ADR-0020`](../adr/0020-p1-runner-ledger-consumer-contract.md)、
   [`ADR-0021`](../adr/0021-p1-runner-ledger-entry-admission-contract.md)
-- Proposed decision（尚未批准、不得作为实施 authority）：
+- Accepted decision（仅授权 ordered local implementation/review）：
   [`ADR-0022`](../adr/0022-p1-runner-ledger-entry-success-writer-contract.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
@@ -151,11 +151,13 @@
 - Runner entry writer 的下一 contract-only audit 已在固定 `d4cad5d` 完成。审计确认 ADR-0021 v1
   `permitConsumer=none`、transaction/ledger/evidence mutation forbidden，不能被后续 writer 静默扩权；当前 signed
   bundle 的每 entry statement 数为 `20/71/46/20/1/1/89/34/30/52/161`，也不能复用历史 brand-new
-  single-entry/single-statement authority chain。proposed ADR-0022 因此拆分
+  single-entry/single-statement authority chain。ADR-0022 因此拆分
   `runner-ledger-entry-execution-admission/v1` 与 `runner-ledger-entry-success-writer/v1`，仅提议四个
   first-attempt pair 的 one-entry multi-statement known-success path；retry/abort/reconcile/failure、production DB、
-  HTTP/P2/provider、部署、发布与 Gate 继续未授权。D-046 在 owner 明确批准前保持 PENDING（见
-  [`contract audit`](runner-ledger-entry-writer-contract-audit-20260822.md)）。
+  HTTP/P2/provider、部署、发布与 Gate 继续未授权。D-046 已按 standing automatic-execution approval 接受（见
+  [`contract audit`](runner-ledger-entry-writer-contract-audit-20260822.md)）；generated-contract Slice A 的
+  [implementation record](runner-ledger-entry-writer-profile-implementation-20260822.md) 已固定 registry/Go ordinary
+  profile，但尚无 runtime consumer/writer。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

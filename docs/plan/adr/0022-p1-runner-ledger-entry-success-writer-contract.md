@@ -1,11 +1,12 @@
 # ADR-0022: P1 runner ledger entry execution and success-writer versioned contract
 
-- Status: Proposed on 2026-08-22; owner approval required before implementation
+- Status: Accepted under the standing Platform P1 automatic-execution approval on 2026-08-22
 - Scope: generated execution-admission and one-entry success-writer profiles only
 - Depends on: ADR-0009, ADR-0010, ADR-0019, ADR-0020, ADR-0021, and the runner entry writer contract audit
 
-This proposal is not execution authority. Until it is explicitly accepted, `runner-ledger-entry-admission/v1`
-remains close-only and every entry/recovery writer remains `NOT_IMPLEMENTED`.
+This decision authorizes only the ordered local implementation/review slices below. The historical
+`runner-ledger-entry-admission/v1` remains close-only; entry execution remains unavailable until its new generated
+profile and each required implementation slice are fixed and reviewed.
 
 ## Context
 
@@ -27,7 +28,7 @@ statement. The current signed schema bundle contains eleven migrations whose exa
 `20, 71, 46, 20, 1, 1, 89, 34, 30, 52, 161`. A production entry contract therefore has to model an exact ordered
 multi-statement attempt and cannot be obtained by deleting the existing single-statement checks.
 
-## Decision proposed
+## Decision
 
 Add two new generated registries with independent identities:
 
@@ -182,7 +183,7 @@ Stored evidence/ledger/catalog contradictions and exact commit facts take preced
 action. Operational/context failures take precedence over `NOT_IMPLEMENTED` when the boundary could not be fully
 classified. An unknown outcome never falls back to an earlier ordinary claim, ADR-0021 permit, or execution permit.
 
-## Ordered implementation slices after approval
+## Ordered implementation slices
 
 ### Slice A - generated registries only
 
@@ -229,7 +230,7 @@ profiles and writer kernels. They are not implied by acceptance of this ADR.
 
 ## Explicit non-claims
 
-This proposal does not implement or authorize a writer. Even after acceptance, it would authorize only the ordered
-local implementation/review slices above. It does not authorize production database writes, production
+This decision does not itself implement a writer. It authorizes only the ordered local implementation/review slices
+above. It does not authorize production database writes, production
 credentials, deployment, HTTP/P2/provider surfaces, package or image publication, release, merge to main, or any
 immutable/aggregate Gate closure.

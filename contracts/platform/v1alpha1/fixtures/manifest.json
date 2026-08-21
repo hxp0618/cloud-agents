@@ -274,6 +274,34 @@
       "instance": "../../../generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
       "expectedSchemaValid": true,
       "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-entry-execution-admission-registry-source-v1",
+      "schema": "../schemas/runner-ledger-entry-execution-admission-registry-source-v1.schema.json",
+      "instance": "golden/runner-ledger-entry-execution-admission-registry-source-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-entry-execution-admission-registry-v1",
+      "schema": "../schemas/runner-ledger-entry-execution-admission-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-entry-success-writer-registry-source-v1",
+      "schema": "../schemas/runner-ledger-entry-success-writer-registry-source-v1.schema.json",
+      "instance": "golden/runner-ledger-entry-success-writer-registry-source-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-entry-success-writer-registry-v1",
+      "schema": "../schemas/runner-ledger-entry-success-writer-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
     }
   ]
 }

@@ -1,10 +1,10 @@
 # P1 runner ledger entry writer contract audit - 2026-08-22
 
-- Status: **CONTRACT DIRECTION FROZEN FOR OWNER REVIEW; WRITER NOT AUTHORIZED**
+- Status: **CONTRACT DIRECTION APPROVED; ORDERED LOCAL SLICES AUTHORIZED**
 - Audited source: `d4cad5d7dab43e1bbc261d4902d8e526364d4db3`
 - Repository tree: `977a612b533a8ce83539c630ce7b93366e9eea7c`
 - Control-plane subtree: `6d9dd4b294474628a1387c8cd14bd9d0540b2d9f`
-- Proposed decision: [`ADR-0022`](../adr/0022-p1-runner-ledger-entry-success-writer-contract.md)
+- Accepted decision: [`ADR-0022`](../adr/0022-p1-runner-ledger-entry-success-writer-contract.md)
 - Scope: read-only audit and versioned contract proposal only
 
 This record does not add a generated profile, database session, permit consumer, transaction, SQL execution,
@@ -126,7 +126,7 @@ closed one-entry outcome only. A later typed orchestrator may loop through fresh
 produce the public bundle result only after exact completion. This avoids using an ordinary entry result as a writer
 permit.
 
-## 4. Proposed contract boundary
+## 4. Accepted contract boundary
 
 [`ADR-0022`](../adr/0022-p1-runner-ledger-entry-success-writer-contract.md) freezes two distinct generated profiles:
 
@@ -138,7 +138,7 @@ permit.
 The first profile initially has only a close-without-mutation implementation slice. The second profile is not wired
 to `Runner.Run` until its multi-statement kernel, durability/fault matrix, and independent review are fixed.
 
-## 5. Required implementation order after approval
+## 5. Required implementation order
 
 1. **Generated registries:** source schemas, fixtures, generated JSON/Go profiles, manifests, generation lock, and
    historical v1 same-bits.
@@ -155,9 +155,11 @@ to `Runner.Run` until its multi-statement kernel, durability/fault matrix, and i
 Each slice is an independent commit/review boundary. None authorizes a production database, deployment, release,
 publication, main merge, or Gate closure.
 
-## 6. Owner decision required
+## 6. Recorded owner authority
 
-The next approval should be exact and narrow:
+The standing goal explicitly authorizes automatic continuation through the approved Platform plan without another
+owner prompt, while retaining the no-production/no-release boundaries. D-046 therefore records the following exact
+scope:
 
 > Approve ADR-0022's two new versioned generated profiles and the ordered generated-registry → close-only
 > execution-admission → one-entry multi-statement success-kernel → independent review → typed caller slices. Keep
@@ -165,8 +167,8 @@ The next approval should be exact and narrow:
 > do not authorize production database writes, HTTP/P2/provider effects, deployment, publication, release, main
 > merge, or any Gate closure.
 
-Until that approval is recorded, D-046 remains pending and no generated or production implementation may cite this
-audit as mutation authority.
+This authority permits the ordered local slices only. It does not permit a later slice to skip generated identity,
+fixed-candidate review, or the separately required recovery profiles.
 
 ## 7. Local validation
 

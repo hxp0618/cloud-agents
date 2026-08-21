@@ -344,6 +344,96 @@ describe("Platform contract generation lock", () => {
     );
   });
 
+  it("records generated execution-admission and success-writer profiles without enabling runtime writers", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      pipelines: Array<Record<string, unknown>>;
+    };
+    const execution = lock.pipelines.find(
+      (candidate) => candidate.id === "runner-ledger-entry-execution-admission-registry-generation",
+    );
+    const writer = lock.pipelines.find(
+      (candidate) => candidate.id === "runner-ledger-entry-success-writer-registry-generation",
+    );
+    const go = lock.pipelines.find(
+      (candidate) => candidate.id === "runner-ledger-entry-writer-go-profile-generation",
+    );
+    expect(execution).toMatchObject({
+      outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_EXECUTION_ADMISSION_REGISTRY",
+      notGateClosure: true,
+      outputSummary: {
+        executionAdmissionPairs: 4,
+        retryPair: "EXCLUDED",
+        databaseTransaction: "NOT_OPENED_BY_ADMISSION",
+        beginMigration: "FORBIDDEN_IN_ADMISSION",
+        sqlExecution: "FORBIDDEN_IN_ADMISSION",
+        productionConsumer: "NONE_IN_SLICE_A",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
+        },
+      ],
+    });
+    expect(writer).toMatchObject({
+      outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_SUCCESS_WRITER_REGISTRY",
+      notGateClosure: true,
+      outputSummary: {
+        writerAction: "EXECUTE_ONE_ENTRY_KNOWN_SUCCESS",
+        multiStatement: "REQUIRED",
+        retryWriter: "NOT_IMPLEMENTED",
+        recoveryWriters: "NOT_IMPLEMENTED",
+        productionConsumer: "NONE_IN_SLICE_A",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
+        },
+      ],
+    });
+    expect(go).toMatchObject({
+      outputStatus: "GENERATED_RUNNER_LEDGER_ENTRY_WRITER_GO_PROFILES",
+      notGateClosure: true,
+      outputSummary: {
+        generatedSelectorOnly: true,
+        historicalEntryAdmissionV1Mutation: "FORBIDDEN",
+        executionAdmissionPairs: 4,
+        retryPair: "EXCLUDED",
+        productionConsumer: "NONE_IN_SLICE_A",
+        runtimeWriter: "NOT_IMPLEMENTED_IN_SLICE_A",
+        recoveryWriters: "NOT_IMPLEMENTED",
+        httpSurface: "NOT_IMPLEMENTED",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        deployment: "NOT_AUTHORIZED",
+        publication: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_generated.go",
+        },
+      ],
+    });
+    for (const pipeline of [execution, writer, go]) {
+      expect(pipeline?.inputs).toEqual([...((pipeline?.inputs ?? []) as string[])].toSorted());
+    }
+    expect(execution?.inputs).toContain(
+      "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+    );
+    expect(writer?.inputs).toContain(
+      "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
+    );
+    expect(go?.inputs).toContain(
+      "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
+    );
+  });
+
   it("records both generated common identity SDK profiles as non-Gate evidence", () => {
     const root = join(import.meta.dirname, "../..");
     const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
