@@ -65,10 +65,54 @@ type runnerLedgerCatalogPreflightWire struct {
 	CumulativeCatalog              *ProjectionResult[CatalogProjection]      `json:"cumulative_catalog"`
 }
 
+// runnerLockedLedgerCatalogObservation is an ephemeral owner used only inside
+// the two closed read-only kernels in this package. It is never registered as a
+// writer authority and exposes no transaction-opening operation. The ordinary
+// preflight closes it before returning; entry admission may transfer its exact
+// session and signed lock to a close-only permit.
+type runnerLockedLedgerCatalogObservation struct {
+	self                  *runnerLockedLedgerCatalogObservation
+	session               DatabaseSession
+	key                   int64
+	bindings              RunnerProjectionBindings
+	bundle                *RuntimeBundle
+	plans                 []StatementPlan
+	ledger                runnerLedgerPrefix
+	connected             ProjectionResult[AuthorityProjection]
+	migrationRole         ProjectionResult[AuthorityProjection]
+	initial               *ProjectionResult[CatalogStateProjection]
+	cumulative            *ProjectionResult[CatalogProjection]
+	catalogContractDigest *Digest
+	projectionSubject     Digest
+	closed                bool
+	transferred           bool
+}
+
+type runnerLedgerCatalogProjectionFacts struct {
+	initial               *ProjectionResult[CatalogStateProjection]
+	cumulative            *ProjectionResult[CatalogProjection]
+	catalogContractDigest *Digest
+	projectionSubject     Digest
+}
+
 // projectRunnerLedgerCatalogPreflight is the locked read-only kernel. Its sole
 // production caller is the package-private preflight claim service reached by
 // the closed generated consumer, and it never opens a migration transaction.
 func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLedgerCatalogPreflight, error) {
+	observation, err := runner.openRunnerLockedLedgerCatalogObservation(ctx, dsn, bundle, plans, evidence, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if err := observation.close(nil); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, mapRunnerDatabasePreflightError(err, "runner-ledger-catalog-preflight", "ledger catalog preflight was interrupted before sealing")
+	}
+	return observation.bind()
+}
+
+func (runner *Runner) openRunnerLockedLedgerCatalogObservation(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLockedLedgerCatalogObservation, error) {
 	if runner == nil || ctx == nil {
 		return nil, fail(CodeTransactionBoundary, "runner-ledger-catalog-preflight", "runner or projection context is unavailable", nil)
 	}
@@ -118,7 +162,7 @@ func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, d
 		return nil, closeRunnerDatabasePreflight(session, 0, false, primary)
 	}
 	locked := false
-	failClosed := func(primary error) (*runnerLedgerCatalogPreflight, error) {
+	failClosed := func(primary error) (*runnerLockedLedgerCatalogObservation, error) {
 		return nil, closeRunnerDatabasePreflight(session, key, locked, primary)
 	}
 
@@ -150,40 +194,9 @@ func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, d
 	if err != nil {
 		return failClosed(err)
 	}
-	var initial *ProjectionResult[CatalogStateProjection]
-	var cumulative *ProjectionResult[CatalogProjection]
-	var catalogContractDigest *Digest
-	var projectionSubjectDigest Digest
-	if len(before.rows) == 0 {
-		firstPlan, planErr := firstRunnerStatementPlan(bundle, plans)
-		if planErr != nil {
-			return failClosed(planErr)
-		}
-		projected, projectionErr := runner.projectRunnerInitialPrecondition(ctx, session, bindings.initialSchemaScope, firstPlan)
-		if projectionErr != nil {
-			return failClosed(projectionErr)
-		}
-		initial = &projected
-		projectionSubjectDigest = bindings.initialSchemaScope.SubjectDigest()
-		if !sameRunnerDatabaseIdentity(migrationRole.Metadata.Snapshot, projected.Metadata.Snapshot) {
-			return failClosed(fail(CodeProjectionMetadataMismatch, "runner-ledger-catalog-predecessor", "initial predecessor projection does not describe the locked database session", nil))
-		}
-	} else {
-		catalogBinding, ok := exactCatalogBindingForHead(bindings.executableCatalogs, before.head)
-		if !ok || catalogBinding.catalogContractDigest.Validate() != nil || catalogBinding.verifiedCatalog.validate() != nil {
-			return failClosed(fail(CodeUntrusted, "runner-ledger-catalog-selection", "ledger head has no exact signed cumulative catalog", nil))
-		}
-		projected, projectionErr := runner.projectRunnerCumulativeCatalog(ctx, session, catalogBinding.verifiedCatalog)
-		if projectionErr != nil {
-			return failClosed(projectionErr)
-		}
-		cumulative = &projected
-		ownedDigest := catalogBinding.catalogContractDigest
-		catalogContractDigest = &ownedDigest
-		projectionSubjectDigest = catalogBinding.verifiedCatalog.SubjectDigest()
-		if !sameRunnerDatabaseIdentity(migrationRole.Metadata.Snapshot, projected.Metadata.Snapshot) {
-			return failClosed(fail(CodeProjectionMetadataMismatch, "runner-ledger-catalog-cumulative", "cumulative catalog projection does not describe the locked database session", nil))
-		}
+	projection, err := runner.projectRunnerLedgerCatalogForPrefix(ctx, session, bindings, bundle, plans, before, migrationRole)
+	if err != nil {
+		return failClosed(err)
 	}
 
 	after, err := readRunnerLedgerPrefix(ctx, session, bundle)
@@ -193,16 +206,138 @@ func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, d
 	if !sameRunnerLedgerPrefix(before, after) {
 		return failClosed(fail(CodeInvalidLedger, "runner-ledger-catalog-preflight", "ledger prefix changed across the catalog projection", nil))
 	}
-	if err := closeRunnerDatabasePreflight(session, key, true, nil); err != nil {
-		return nil, err
-	}
 	if err := ctx.Err(); err != nil {
-		return nil, mapRunnerDatabasePreflightError(err, "runner-ledger-catalog-preflight", "ledger catalog preflight was interrupted before sealing")
+		return failClosed(mapRunnerDatabasePreflightError(err, "runner-ledger-catalog-preflight", "ledger catalog preflight was interrupted before retaining the locked observation"))
+	}
+	observation := &runnerLockedLedgerCatalogObservation{
+		session: session, key: key, bindings: bindings, bundle: bundle,
+		plans: append([]StatementPlan(nil), plans...), ledger: cloneRunnerLedgerPrefix(before),
+		connected: cloneProjectionValue(connected), migrationRole: cloneProjectionValue(migrationRole),
+		initial:               cloneCatalogStateProjectionResultPointer(projection.initial),
+		cumulative:            cloneCatalogProjectionResultPointer(projection.cumulative),
+		catalogContractDigest: cloneDigestPointer(projection.catalogContractDigest), projectionSubject: projection.projectionSubject,
+	}
+	observation.self = observation
+	return observation, nil
+}
+
+func (runner *Runner) projectRunnerLedgerCatalogForPrefix(ctx context.Context, session DatabaseSession, bindings RunnerProjectionBindings, bundle *RuntimeBundle, plans []StatementPlan, prefix runnerLedgerPrefix, migrationRole ProjectionResult[AuthorityProjection]) (runnerLedgerCatalogProjectionFacts, error) {
+	var facts runnerLedgerCatalogProjectionFacts
+	if len(prefix.rows) == 0 {
+		firstPlan, err := firstRunnerStatementPlan(bundle, plans)
+		if err != nil {
+			return facts, err
+		}
+		projected, err := runner.projectRunnerInitialPrecondition(ctx, session, bindings.initialSchemaScope, firstPlan)
+		if err != nil {
+			return facts, err
+		}
+		if !sameRunnerDatabaseIdentity(migrationRole.Metadata.Snapshot, projected.Metadata.Snapshot) {
+			return facts, fail(CodeProjectionMetadataMismatch, "runner-ledger-catalog-predecessor", "initial predecessor projection does not describe the locked database session", nil)
+		}
+		facts.initial = &projected
+		facts.projectionSubject = bindings.initialSchemaScope.SubjectDigest()
+		return facts, nil
+	}
+	catalogBinding, ok := exactCatalogBindingForHead(bindings.executableCatalogs, prefix.head)
+	if !ok || catalogBinding.catalogContractDigest.Validate() != nil || catalogBinding.verifiedCatalog.validate() != nil {
+		return facts, fail(CodeUntrusted, "runner-ledger-catalog-selection", "ledger head has no exact signed cumulative catalog", nil)
+	}
+	projected, err := runner.projectRunnerCumulativeCatalog(ctx, session, catalogBinding.verifiedCatalog)
+	if err != nil {
+		return facts, err
+	}
+	if !sameRunnerDatabaseIdentity(migrationRole.Metadata.Snapshot, projected.Metadata.Snapshot) {
+		return facts, fail(CodeProjectionMetadataMismatch, "runner-ledger-catalog-cumulative", "cumulative catalog projection does not describe the locked database session", nil)
+	}
+	ownedDigest := catalogBinding.catalogContractDigest
+	facts.cumulative = &projected
+	facts.catalogContractDigest = &ownedDigest
+	facts.projectionSubject = catalogBinding.verifiedCatalog.SubjectDigest()
+	return facts, nil
+}
+
+func (observation *runnerLockedLedgerCatalogObservation) active() bool {
+	return observation != nil && observation.self == observation && observation.session != nil && !observation.closed && !observation.transferred
+}
+
+func (observation *runnerLockedLedgerCatalogObservation) bind() (*runnerLedgerCatalogPreflight, error) {
+	if observation == nil || observation.self != observation || observation.bundle == nil {
+		return nil, fail(CodeTransactionBoundary, "runner-ledger-catalog-bind", "locked catalog observation is unavailable", nil)
 	}
 	return bindRunnerLedgerCatalogPreflight(
-		bindings, bundle, plans, before, connected, migrationRole,
-		initial, cumulative, catalogContractDigest, projectionSubjectDigest,
+		observation.bindings, observation.bundle, observation.plans, observation.ledger,
+		observation.connected, observation.migrationRole, observation.initial, observation.cumulative,
+		observation.catalogContractDigest, observation.projectionSubject,
 	)
+}
+
+func (observation *runnerLockedLedgerCatalogObservation) revalidate(ctx context.Context, runner *Runner) error {
+	if !observation.active() || runner == nil {
+		return fail(CodeTransactionBoundary, "runner-ledger-entry-admission-revalidate", "locked catalog observation is unavailable", nil)
+	}
+	before, err := readRunnerLedgerPrefix(ctx, observation.session, observation.bundle)
+	if err != nil {
+		return err
+	}
+	if !sameRunnerLedgerPrefix(before, observation.ledger) {
+		return fail(CodeInvalidLedger, "runner-ledger-entry-admission-revalidate", "ledger prefix changed before final catalog projection", nil)
+	}
+	projected, err := runner.projectRunnerLedgerCatalogForPrefix(
+		ctx, observation.session, observation.bindings, observation.bundle, observation.plans, before, observation.migrationRole,
+	)
+	if err != nil {
+		return err
+	}
+	original := runnerLedgerCatalogProjectionFacts{
+		initial: observation.initial, cumulative: observation.cumulative,
+		catalogContractDigest: observation.catalogContractDigest, projectionSubject: observation.projectionSubject,
+	}
+	if !sameRunnerLedgerCatalogProjectionFacts(projected, original) {
+		return fail(CodeCatalogDrift, "runner-ledger-entry-admission-revalidate", "catalog projection changed before entry admission", nil)
+	}
+	after, err := readRunnerLedgerPrefix(ctx, observation.session, observation.bundle)
+	if err != nil {
+		return err
+	}
+	if !sameRunnerLedgerPrefix(before, after) || !sameRunnerLedgerPrefix(after, observation.ledger) {
+		return fail(CodeInvalidLedger, "runner-ledger-entry-admission-revalidate", "ledger prefix changed across final catalog projection", nil)
+	}
+	return contextAdmissionError(ctx)
+}
+
+func sameRunnerLedgerCatalogProjectionFacts(left, right runnerLedgerCatalogProjectionFacts) bool {
+	if left.projectionSubject.Validate() != nil || right.projectionSubject.Validate() != nil || left.projectionSubject != right.projectionSubject ||
+		(left.catalogContractDigest == nil) != (right.catalogContractDigest == nil) ||
+		(left.initial == nil) != (right.initial == nil) || (left.cumulative == nil) != (right.cumulative == nil) {
+		return false
+	}
+	if left.catalogContractDigest != nil && *left.catalogContractDigest != *right.catalogContractDigest {
+		return false
+	}
+	if left.initial != nil && !runnerCanonicalEqual(*left.initial, *right.initial) {
+		return false
+	}
+	return left.cumulative == nil || runnerCanonicalEqual(*left.cumulative, *right.cumulative)
+}
+
+func (observation *runnerLockedLedgerCatalogObservation) close(primary error) error {
+	if observation == nil {
+		return primary
+	}
+	if observation.self != observation {
+		return fail(CodeTransactionBoundary, "runner-ledger-entry-admission-close", "locked catalog observation copy cannot close database authority", nil)
+	}
+	if observation.transferred {
+		return primary
+	}
+	if observation.closed {
+		return fail(CodeTransactionBoundary, "runner-ledger-entry-admission-close", "locked catalog observation is already closed", nil)
+	}
+	observation.closed = true
+	session := observation.session
+	observation.session = nil
+	return closeRunnerDatabasePreflight(session, observation.key, true, primary)
 }
 
 func (runner *Runner) projectRunnerCumulativeCatalog(ctx context.Context, session DatabaseSession, contract VerifiedCatalogContract) (ProjectionResult[CatalogProjection], error) {

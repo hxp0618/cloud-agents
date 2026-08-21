@@ -16,22 +16,31 @@ import (
 
 type runnerLedgerPreflightEvidenceFake struct {
 	*runnerEvidenceSessionFake
-	mu                  sync.Mutex
-	schema              verifiedRecoverySchemaWitness
-	recovery            *RecoverySnapshot
-	sessionDigest       [32]byte
-	journalDigest       [32]byte
-	bindErr             error
-	consumeErr          error
-	bindCalls           int
-	consumeCalls        int
-	mutateBeforeConsume func(*runnerLedgerPreflightEvidenceFake)
-	afterBind           func()
-	afterConsume        func()
+	mu                       sync.Mutex
+	schema                   verifiedRecoverySchemaWitness
+	recovery                 *RecoverySnapshot
+	sessionDigest            [32]byte
+	journalDigest            [32]byte
+	bindErr                  error
+	consumeErr               error
+	bindCalls                int
+	consumeCalls             int
+	mutateBeforeConsume      func(*runnerLedgerPreflightEvidenceFake)
+	afterBind                func()
+	afterConsume             func()
+	entryBindErr             error
+	entryConsumeErr          error
+	entryBindCalls           int
+	entryConsumeCalls        int
+	mutateBeforeEntryConsume func(*runnerLedgerPreflightEvidenceFake)
+	afterEntryBind           func()
+	afterEntryConsume        func()
 }
 
 var _ runnerLedgerPreflightClaimBinder = (*generationEvidenceSession)(nil)
 var _ runnerLedgerPreflightClaimBinder = (*runnerLedgerPreflightEvidenceFake)(nil)
+var _ runnerLedgerEntryAdmissionClaimBinder = (*generationEvidenceSession)(nil)
+var _ runnerLedgerEntryAdmissionClaimBinder = (*runnerLedgerPreflightEvidenceFake)(nil)
 
 func TestRunnerLedgerPreflightConcreteEvidenceBinderRejectsLiteral(t *testing.T) {
 	session := &generationEvidenceSession{}
@@ -68,6 +77,8 @@ func newRunnerLedgerPreflightEvidenceFake(t *testing.T, base runnerPreparedCurre
 }
 
 func (evidence *runnerLedgerPreflightEvidenceFake) runnerLedgerPreflightClaimBinderSealed() {}
+
+func (evidence *runnerLedgerPreflightEvidenceFake) runnerLedgerEntryAdmissionClaimBinderSealed() {}
 
 func (evidence *runnerLedgerPreflightEvidenceFake) bindRunnerLedgerPreflightClaim(ctx context.Context, request runnerLedgerPreflightClaimRequest) (*runnerLedgerPreflightClaim, error) {
 	evidence.mu.Lock()
@@ -123,12 +134,67 @@ func (evidence *runnerLedgerPreflightEvidenceFake) factsLocked() runnerLedgerPre
 	}
 }
 
+func (evidence *runnerLedgerPreflightEvidenceFake) bindRunnerLedgerEntryAdmissionClaim(ctx context.Context, request runnerLedgerEntryAdmissionClaimRequest) (*runnerLedgerEntryAdmissionClaim, error) {
+	evidence.mu.Lock()
+	defer evidence.mu.Unlock()
+	evidence.entryBindCalls++
+	if evidence.entryBindErr != nil {
+		return nil, evidence.entryBindErr
+	}
+	if evidence.runnerEvidenceSessionFake == nil || evidence.closed || request.candidate.binding != evidence.candidate.binding {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-test-bind", "test evidence is unavailable", nil)
+	}
+	claim, err := bindRunnerLedgerEntryAdmissionClaimFromEvidence(ctx, request, evidence.entryFactsLocked())
+	if err == nil && evidence.afterEntryBind != nil {
+		after := evidence.afterEntryBind
+		evidence.afterEntryBind = nil
+		after()
+	}
+	return claim, err
+}
+
+func (evidence *runnerLedgerPreflightEvidenceFake) consumeRunnerLedgerEntryAdmissionClaim(ctx context.Context, claim *runnerLedgerEntryAdmissionClaim, candidate OwnedCurrentCandidate) (runnerLedgerEntryAdmissionEvidenceBoundary, error) {
+	evidence.mu.Lock()
+	defer evidence.mu.Unlock()
+	evidence.entryConsumeCalls++
+	if evidence.entryConsumeErr != nil {
+		return runnerLedgerEntryAdmissionEvidenceBoundary{}, evidence.entryConsumeErr
+	}
+	if evidence.mutateBeforeEntryConsume != nil {
+		mutate := evidence.mutateBeforeEntryConsume
+		evidence.mutateBeforeEntryConsume = nil
+		mutate(evidence)
+	}
+	if evidence.runnerEvidenceSessionFake == nil || evidence.closed || candidate.binding != evidence.candidate.binding {
+		return runnerLedgerEntryAdmissionEvidenceBoundary{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-test-claim", "test evidence is unavailable", nil)
+	}
+	boundary, err := consumeRunnerLedgerEntryAdmissionClaimFromEvidence(ctx, claim, candidate, evidence.entryFactsLocked())
+	if err == nil && evidence.afterEntryConsume != nil {
+		after := evidence.afterEntryConsume
+		evidence.afterEntryConsume = nil
+		after()
+	}
+	return boundary, err
+}
+
+func (evidence *runnerLedgerPreflightEvidenceFake) entryFactsLocked() runnerLedgerEntryAdmissionEvidenceFacts {
+	generation := evidence.active.identity
+	return runnerLedgerEntryAdmissionEvidenceFacts{
+		binder: evidence, candidateBinding: evidence.candidate.binding, generation: generation,
+		schema: cloneGenerationJournalSchema(evidence.schema), recovery: cloneRecoverySnapshot(evidence.recovery),
+		schemaDigest:   generationJournalSchemaDigest(evidence.schema, generation),
+		recoveryDigest: generationJournalRecoveryDigest(evidence.recovery),
+		sessionDigest:  evidence.sessionDigest, journalDigest: evidence.journalDigest,
+	}
+}
+
 func (evidence *runnerLedgerPreflightEvidenceFake) Close(ctx context.Context) error {
 	if evidence == nil {
 		return fail(CodeEvidenceJournalFailed, "runner-ledger-preflight-test-close", "test evidence is unavailable", nil)
 	}
 	evidence.mu.Lock()
 	revokeRunnerLedgerPreflightClaims(evidence)
+	revokeRunnerLedgerEntryAdmissionClaims(evidence)
 	err := evidence.runnerEvidenceSessionFake.Close(ctx)
 	evidence.mu.Unlock()
 	return err
@@ -223,6 +289,7 @@ func (fixture *runnerLedgerPreflightServiceFixture) close(t *testing.T) {
 	}
 	fixture.closed = true
 	revokeRunnerLedgerPreflightClaims(fixture.evidence)
+	revokeRunnerLedgerEntryAdmissionClaims(fixture.evidence)
 	if fixture.kernel.base.database != nil && !fixture.kernel.base.database.closed {
 		if err := closeRunnerDatabasePreflight(fixture.kernel.base.database, fixture.kernel.base.key, true, nil); err != nil {
 			t.Fatal(err)

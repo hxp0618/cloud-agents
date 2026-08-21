@@ -1103,12 +1103,71 @@ func (s *generationEvidenceSession) Close(ctx context.Context) error {
 	generationEvidenceSessionRegistry.Delete(s)
 	activeGenerationRegistry.Delete(record.activeBinding)
 	revokeRunnerLedgerPreflightClaims(s)
+	revokeRunnerLedgerEntryAdmissionClaims(s)
 	return record.journal.Close(ctx)
 }
 
 func (s *generationEvidenceSession) evidenceSessionSealed() {}
 
 func (s *generationEvidenceSession) runnerLedgerPreflightClaimBinderSealed() {}
+
+func (s *generationEvidenceSession) runnerLedgerEntryAdmissionClaimBinderSealed() {}
+
+func (s *generationEvidenceSession) bindRunnerLedgerEntryAdmissionClaim(ctx context.Context, request runnerLedgerEntryAdmissionClaimRequest) (*runnerLedgerEntryAdmissionClaim, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.self != s || !validOwnedCurrentCandidate(request.candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-evidence", "evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != request.candidate.binding || s.active.kind != activeGenerationCurrent {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-evidence", "current same-verifier evidence session is unavailable", nil)
+	}
+	j := s.journal
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if !j.validLocked() || j.state == nil || j.state.unknown != nil || j.state.recovery == nil {
+		return nil, fail(CodeEvidenceJournalFailed, "runner-ledger-entry-admission-evidence", "current evidence journal has no stable recovery boundary", nil)
+	}
+	facts := runnerLedgerEntryAdmissionEvidenceFacts{
+		binder: s, candidateBinding: s.candidate.binding, generation: j.generation,
+		schema: cloneGenerationJournalSchema(j.schema), recovery: cloneRecoverySnapshot(j.state.recovery),
+		schemaDigest: generationJournalSchemaDigest(j.schema, j.generation), recoveryDigest: generationJournalRecoveryDigest(j.state.recovery),
+		sessionDigest: s.binding.canonical, journalDigest: j.binding.canonical,
+	}
+	return bindRunnerLedgerEntryAdmissionClaimFromEvidence(ctx, request, facts)
+}
+
+func (s *generationEvidenceSession) consumeRunnerLedgerEntryAdmissionClaim(ctx context.Context, claim *runnerLedgerEntryAdmissionClaim, candidate OwnedCurrentCandidate) (runnerLedgerEntryAdmissionEvidenceBoundary, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return runnerLedgerEntryAdmissionEvidenceBoundary{}, err
+	}
+	if s == nil || s.self != s || candidate.binding == nil {
+		return runnerLedgerEntryAdmissionEvidenceBoundary{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-evidence", "evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != candidate.binding || s.active.kind != activeGenerationCurrent {
+		revokeRunnerLedgerEntryAdmissionClaim(claim)
+		return runnerLedgerEntryAdmissionEvidenceBoundary{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-evidence", "current same-verifier evidence session is unavailable", nil)
+	}
+	j := s.journal
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if !j.validLocked() || j.state == nil || j.state.unknown != nil || j.state.recovery == nil {
+		revokeRunnerLedgerEntryAdmissionClaim(claim)
+		return runnerLedgerEntryAdmissionEvidenceBoundary{}, fail(CodeEvidenceJournalFailed, "runner-ledger-entry-admission-evidence", "current evidence journal has no stable recovery boundary", nil)
+	}
+	facts := runnerLedgerEntryAdmissionEvidenceFacts{
+		binder: s, candidateBinding: s.candidate.binding, generation: j.generation,
+		schema: cloneGenerationJournalSchema(j.schema), recovery: cloneRecoverySnapshot(j.state.recovery),
+		schemaDigest: generationJournalSchemaDigest(j.schema, j.generation), recoveryDigest: generationJournalRecoveryDigest(j.state.recovery),
+		sessionDigest: s.binding.canonical, journalDigest: j.binding.canonical,
+	}
+	return consumeRunnerLedgerEntryAdmissionClaimFromEvidence(ctx, claim, candidate, facts)
+}
 
 func (s *generationEvidenceSession) bindRunnerLedgerPreflightClaim(ctx context.Context, request runnerLedgerPreflightClaimRequest) (*runnerLedgerPreflightClaim, error) {
 	if err := contextAdmissionError(ctx); err != nil {

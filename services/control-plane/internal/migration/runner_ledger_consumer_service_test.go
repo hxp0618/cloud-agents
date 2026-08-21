@@ -55,6 +55,21 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrixReadOnly(t *testing.T) 
 			fixture := newRunnerLedgerPreflightServiceFixture(t)
 			defer fixture.close(t)
 			fixture.configure(t, test.disposition, test.state, test.action, 16)
+			var admission *runnerPreflightSession
+			var sequence *runnerLedgerConsumerSequenceConnector
+			if test.wantAction == runnerLedgerConsumerEntryNotImplemented {
+				prefixLength := len(fixture.evidence.schema.durableObservedLedgerPrefix)
+				rows := make([]LedgerRow, 0, prefixLength)
+				for index := 0; index < prefixLength; index++ {
+					rows = append(rows, ledgerRowFor(fixture.kernel.base.bundle.Manifest.SchemaBundle.Migrations[index], fixture.kernel.base.bundle.Manifest.SchemaBundleDigest))
+				}
+				admission = newRunnerPreflightSession()
+				admission.ledgerRowsByRead = [][]LedgerRow{
+					cloneProjectionValue(rows), cloneProjectionValue(rows), cloneProjectionValue(rows), cloneProjectionValue(rows),
+				}
+				sequence = &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{fixture.kernel.database, admission}}
+				fixture.kernel.runner.Connector = sequence
+			}
 			result, err := fixture.kernel.runner.consumeRunnerLedgerPreflight(
 				context.Background(), "test-only", fixture.kernel.base.bundle, fixture.kernel.base.plans,
 				fixture.evidence, fixture.kernel.base.candidate,
@@ -76,13 +91,27 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrixReadOnly(t *testing.T) 
 			default:
 				t.Fatalf("unexpected action %s", test.wantAction)
 			}
-			if fixture.evidence.bindCalls != 1 || fixture.evidence.consumeCalls != 1 {
-				t.Fatalf("claim lifecycle bind=%d consume=%d", fixture.evidence.bindCalls, fixture.evidence.consumeCalls)
+			wantEntryCalls := 0
+			if test.wantAction == runnerLedgerConsumerEntryNotImplemented {
+				wantEntryCalls = 1
+			}
+			if fixture.evidence.bindCalls != 1 || fixture.evidence.consumeCalls != 1 ||
+				fixture.evidence.entryBindCalls != wantEntryCalls || fixture.evidence.entryConsumeCalls != wantEntryCalls {
+				t.Fatalf("claim lifecycle bind=%d consume=%d entry-bind=%d entry-consume=%d", fixture.evidence.bindCalls, fixture.evidence.consumeCalls, fixture.evidence.entryBindCalls, fixture.evidence.entryConsumeCalls)
 			}
 			if _, live := runnerLedgerPreflightClaimByEvidenceBinder.Load(fixture.evidence); live {
 				t.Fatal("consumer left a live one-shot claim")
 			}
-			assertRunnerLedgerPreflightReadOnlyLifecycle(t, fixture)
+			if admission == nil {
+				assertRunnerLedgerPreflightReadOnlyLifecycle(t, fixture)
+			} else {
+				if sequence.attempts != 2 || fixture.kernel.database.ledgerReadCalls != 2 || fixture.kernel.database.unlockCalls != 1 ||
+					fixture.kernel.database.closeCalls != 1 || admission.ledgerReadCalls != 4 || admission.unlockCalls != 1 ||
+					admission.closeCalls != 1 || admission.beginCalls != 0 || admission.backend.executeCalls != 0 ||
+					admission.backend.ledgerInsertCalls != 0 || !admission.closed {
+					t.Fatalf("entry matrix escaped fresh-session boundary: sequence=%+v preflight=%+v admission=%+v", sequence, fixture.kernel.database, admission)
+				}
+			}
 		})
 	}
 	if counts[runnerLedgerConsumerReturnSuccessNoop] != 1 || counts[runnerLedgerConsumerEntryNotImplemented] != 5 || counts[runnerLedgerConsumerRecoveryNotImplemented] != 11 {
@@ -374,7 +403,17 @@ func TestPublicRunnerEntryAndRecoveryRemainNotImplementedWithoutWriterEffects(t 
 				rows = append(rows, ledgerRowFor(bundle.Manifest.SchemaBundle.Migrations[index], bundle.Manifest.SchemaBundleDigest))
 			}
 			database.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(rows), cloneProjectionValue(rows)}
-			connector := &runnerPreflightConnector{session: database}
+			databases := []*runnerPreflightSession{database}
+			var connector DatabaseConnector = &runnerPreflightConnector{session: database}
+			if test.wantOp == "runner-ledger-consumer-entry" {
+				admission := newRunnerPreflightSession()
+				admission.ledgerRowsByRead = [][]LedgerRow{
+					cloneProjectionValue(rows), cloneProjectionValue(rows),
+					cloneProjectionValue(rows), cloneProjectionValue(rows),
+				}
+				databases = append(databases, admission)
+				connector = &runnerLedgerConsumerSequenceConnector{sessions: databases}
+			}
 			factory := &runnerPreflightProjectorFactory{allowMigrationRoleCatalog: true}
 			factory.initialize()
 			sink := &runnerLedgerConsumerEvidenceSink{prefixLength: test.prefixLength, state: test.state, action: test.action}
@@ -386,16 +425,28 @@ func TestPublicRunnerEntryAndRecoveryRemainNotImplementedWithoutWriterEffects(t 
 			before := liveVerifiedEvidenceRunBindings()
 			result, runErr := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			assertRunnerLedgerConsumerNotImplemented(t, result, runErr, test.wantOp)
+			wantEntryCalls := 0
+			if test.wantOp == "runner-ledger-consumer-entry" {
+				wantEntryCalls = 1
+			}
 			if sink.session == nil || sink.session.bindCalls != 1 || sink.session.consumeCalls != 1 ||
+				sink.session.entryBindCalls != wantEntryCalls || sink.session.entryConsumeCalls != wantEntryCalls ||
 				sink.session.runnerEvidenceSessionFake.bindCalls != 0 || sink.session.intermediateBindCalls != 0 ||
 				sink.session.commitBindCalls != 0 || sink.session.terminalBindCalls != 0 ||
 				sink.session.journal.appendCalls != 0 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 ||
-				connector.attempts != 1 || database.ledgerReadCalls != 2 || database.beginCalls != 0 ||
-				database.transaction.executeCalls != 0 || database.backend.executeCalls != 0 ||
-				database.backend.ledgerInsertCalls != 0 || database.backend.commitCalls != 0 ||
-				database.unlockCalls != 1 || database.closeCalls != 1 || !database.closed ||
 				liveVerifiedEvidenceRunBindings() != before || reflect.DeepEqual(observer.transitions, []RunnerState{StateVerifyTrust, StateLoadBundle, StateComplete}) {
-				t.Fatalf("public %s escaped boundary: sink=%+v database=%+v transitions=%v live=%d/%d", test.name, sink.session, database, observer.transitions, liveVerifiedEvidenceRunBindings(), before)
+				t.Fatalf("public %s escaped boundary: sink=%+v databases=%+v transitions=%v live=%d/%d", test.name, sink.session, databases, observer.transitions, liveVerifiedEvidenceRunBindings(), before)
+			}
+			for index, observed := range databases {
+				wantReads := 2
+				if index == 1 {
+					wantReads = 4
+				}
+				if observed.ledgerReadCalls != wantReads || observed.beginCalls != 0 || observed.transaction.executeCalls != 0 ||
+					observed.backend.executeCalls != 0 || observed.backend.ledgerInsertCalls != 0 || observed.backend.commitCalls != 0 ||
+					observed.unlockCalls != 1 || observed.closeCalls != 1 || !observed.closed {
+					t.Fatalf("public %s database %d escaped boundary: %+v", test.name, index, observed)
+				}
 			}
 			for _, state := range observer.transitions {
 				if state == StateComplete {
@@ -404,6 +455,9 @@ func TestPublicRunnerEntryAndRecoveryRemainNotImplementedWithoutWriterEffects(t 
 			}
 			if _, live := runnerLedgerPreflightClaimByEvidenceBinder.Load(sink.session); live {
 				t.Fatalf("public %s retained a one-shot claim", test.name)
+			}
+			if _, live := runnerLedgerEntryAdmissionUseByEvidenceBinder.Load(sink.session); live {
+				t.Fatalf("public %s retained an entry-admission use record", test.name)
 			}
 		})
 	}

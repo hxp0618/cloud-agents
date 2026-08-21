@@ -163,21 +163,41 @@ func runnerEntryPlanClosureDigest(plans []StatementPlan, migrationID string) ([3
 	h.Write([]byte("cloud-agents-platform-runner-entry-plan-closure/v1\x00"))
 	writeAdmissionString(h, migrationID)
 	var count uint32
+	var groupCount uint32
+	var previousMigrationID string
+	selectedStarted := false
 	selectedComplete := false
 	for _, plan := range plans {
 		if err := plan.validateExact(); err != nil {
 			return [32]byte{}, 0, err
 		}
-		if plan.MigrationID != migrationID {
-			if count == 0 {
-				return [32]byte{}, 0, fail(CodeUntrusted, "runner-prepared-session", "selected entry plans are not the first exact closure", nil)
+		if plan.MigrationID != previousMigrationID {
+			if previousMigrationID != "" && plan.MigrationID <= previousMigrationID {
+				return [32]byte{}, 0, fail(CodeUntrusted, "runner-prepared-session", "entry statement plan groups are reordered or duplicated", nil)
 			}
-			selectedComplete = true
+			if plan.StatementIndex != 0 {
+				return [32]byte{}, 0, fail(CodeUntrusted, "runner-prepared-session", "entry statement plan group does not begin at index zero", nil)
+			}
+			previousMigrationID = plan.MigrationID
+			groupCount = 0
+		}
+		if plan.StatementIndex != groupCount {
+			return [32]byte{}, 0, fail(CodeUntrusted, "runner-prepared-session", "entry statement plans are missing, reordered, or duplicated", nil)
+		}
+		if groupCount == ^uint32(0) {
+			return [32]byte{}, 0, fail(CodeInvalidManifest, "runner-prepared-session", "entry statement plan group exceeds uint32", nil)
+		}
+		groupCount++
+		if plan.MigrationID != migrationID {
+			if selectedStarted {
+				selectedComplete = true
+			}
 			continue
 		}
 		if selectedComplete || plan.StatementIndex != count {
 			return [32]byte{}, 0, fail(CodeUntrusted, "runner-prepared-session", "entry statement plans are missing, reordered, or duplicated", nil)
 		}
+		selectedStarted = true
 		writeAdmissionString(h, plan.exactCanonical)
 		if count == ^uint32(0) {
 			return [32]byte{}, 0, fail(CodeInvalidManifest, "runner-prepared-session", "entry statement plan count exceeds uint32", nil)

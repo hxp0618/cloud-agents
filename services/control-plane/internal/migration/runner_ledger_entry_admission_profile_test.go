@@ -110,12 +110,17 @@ func TestRunnerLedgerEntryAdmissionProfileRejectsIdentityAndBoundaryMutation(t *
 	}
 }
 
-func TestRunnerLedgerEntryAdmissionSliceAHasNoRuntimeConsumerOrForbiddenAuthorityImport(t *testing.T) {
+func TestRunnerLedgerEntryAdmissionHasOnlyReviewedRuntimeConsumersAndNoForbiddenAuthorityImport(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	productionCalls := 0
+	allowedCallers := map[string]bool{
+		"runner_ledger_entry_admission_profile.go": true,
+		"runner_ledger_entry_admission_claim.go":   true,
+		"runner_ledger_entry_admission_permit.go":  true,
+	}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -127,7 +132,7 @@ func TestRunnerLedgerEntryAdmissionSliceAHasNoRuntimeConsumerOrForbiddenAuthorit
 		}
 		for _, imported := range file.Imports {
 			path := strings.Trim(imported.Path.Value, `"`)
-			if name == "runner_ledger_entry_admission_profile.go" || name == "runner_ledger_entry_admission_profile_generated.go" {
+			if allowedCallers[name] || name == "runner_ledger_entry_admission_profile_generated.go" {
 				if path == "database/sql" || path == "net/http" || strings.Contains(path, "pgx") {
 					t.Fatalf("Slice A profile imports forbidden authority package %q", path)
 				}
@@ -140,7 +145,7 @@ func TestRunnerLedgerEntryAdmissionSliceAHasNoRuntimeConsumerOrForbiddenAuthorit
 			}
 			identifier, ok := call.Fun.(*ast.Ident)
 			if ok && identifier.Name == "generatedRunnerLedgerEntryAdmissionAction" {
-				if name != "runner_ledger_entry_admission_profile.go" {
+				if !allowedCallers[name] {
 					t.Fatalf("entry-admission generated selector has an unreviewed production caller in %s", name)
 				}
 				productionCalls++
@@ -148,7 +153,7 @@ func TestRunnerLedgerEntryAdmissionSliceAHasNoRuntimeConsumerOrForbiddenAuthorit
 			return true
 		})
 	}
-	if productionCalls != 2 {
-		t.Fatalf("generated entry-admission selector has %d Slice A production calls; want two profile self-check sites only", productionCalls)
+	if productionCalls != 4 {
+		t.Fatalf("generated entry-admission selector has %d production calls; want two profile checks plus claim and permit checks", productionCalls)
 	}
 }

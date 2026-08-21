@@ -294,7 +294,7 @@ func TestRunnerPreparedBinderRevalidatesEveryClosedInput(t *testing.T) {
 }
 
 func TestRunnerEntryPlanClosureRejectsDuplicateAndMutation(t *testing.T) {
-	raw, decision := buildExactAdmissionRuntime(t)
+	raw, decision := buildExactTwoMigrationAdmissionRuntime(t)
 	bundle, err := LoadRuntimeBundle(raw, decision)
 	if err != nil {
 		t.Fatal(err)
@@ -316,11 +316,26 @@ func TestRunnerEntryPlanClosureRejectsDuplicateAndMutation(t *testing.T) {
 	if _, _, err := runnerEntryPlanClosureDigest(duplicate, migrationID); err == nil {
 		t.Fatal("duplicate plan entered the prepared closure")
 	}
+	if _, _, err := runnerEntryPlanClosureDigest(plans[1:], migrationID); err == nil {
+		t.Fatal("missing plan entered the prepared closure")
+	}
+	reordered := append([]StatementPlan(nil), plans...)
+	for left, right := 0, len(reordered)-1; left < right; left, right = left+1, right-1 {
+		reordered[left], reordered[right] = reordered[right], reordered[left]
+	}
+	if _, _, err := runnerEntryPlanClosureDigest(reordered, migrationID); err == nil {
+		t.Fatal("reordered plan groups entered the prepared closure")
+	}
 	mutated := append([]StatementPlan(nil), plans...)
 	mutated[0].sqlBytes = append([]byte(nil), plans[0].sqlBytes...)
 	mutated[0].sqlBytes[0] ^= 0xff
 	if _, _, err := runnerEntryPlanClosureDigest(mutated, migrationID); err == nil {
 		t.Fatal("mutated statement bytes entered the prepared closure")
+	}
+	secondID := bundle.Manifest.SchemaBundle.Migrations[1].ID
+	secondDigest, secondCount, err := runnerEntryPlanClosureDigest(plans, secondID)
+	if err != nil || secondDigest == ([32]byte{}) || secondCount == 0 || secondDigest == digest {
+		t.Fatalf("second entry plan closure: digest=%x count=%d err=%v", secondDigest, secondCount, err)
 	}
 }
 

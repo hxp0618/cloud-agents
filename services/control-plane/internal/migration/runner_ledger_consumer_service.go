@@ -74,7 +74,14 @@ func (runner *Runner) consumeRunnerLedgerPreflight(ctx context.Context, dsn stri
 			AmbiguousRecovered: []string{},
 		}, nil
 	case runnerLedgerConsumerEntryNotImplemented:
-		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-entry", "entry consumer and writer are not implemented", nil)
+		permit, err := runner.prepareRunnerLedgerEntryAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
+		if err != nil {
+			return RunResult{}, err
+		}
+		if err := closeRunnerLedgerEntryAdmissionPermit(permit, nil); err != nil {
+			return RunResult{}, err
+		}
+		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-entry", "entry writer is not implemented", nil)
 	case runnerLedgerConsumerRecoveryNotImplemented:
 		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-recovery", "recovery consumer and writer are not implemented", nil)
 	default:
