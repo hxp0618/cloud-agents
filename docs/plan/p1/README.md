@@ -347,6 +347,10 @@ Projection runner 仍只进入 statement 前/后与 pre-ledger `ControlPlaneStat
 [`runner/CLI pre-DB independent review`](migration-runner-cli-pre-db-configuration-independent-review-20260821.md)，
 `P0=0/P1=0/P2=0`），仅确认该配置与 fail-closed 顺序，不构成正向 trust、生产数据库、部署、发布或任何 Gate
 closure。
+独立的 [`runner ledger/catalog preflight entry`](migration-ledger-preflight-entry-blocker-20260821.md) 已固定
+versioned profile 与无生产 caller 的 locked read-only Slice B candidate：它只在 dedicated session 上读取、投影、
+复读，并在完整 cleanup 后构造可复制、canonical-digest-sealed 的 ordinary fact，仍待 independent review；不会进入 writer/evidence recovery、HTTP/P2、
+production database write 或任何 Gate closure（见 [`ADR-0019`](../adr/0019-p1-runner-ledger-preflight-contract.md)）。
 `bbb0bf2` 已关闭 complete synthetic signed subject 的 exported expression/catalog projector 与本地双快照矩阵；
 Signed expected subject 的 production verifier、deployment trust-root wiring、
 crash/recovery、N-1/PITR 和 immutable Gate closure 均未实现。现有 catalog 继续保持

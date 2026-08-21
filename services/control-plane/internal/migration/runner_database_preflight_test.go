@@ -801,24 +801,25 @@ func runnerPreflightSnapshotMetadata(phase AuthorityPhase) SnapshotMetadata {
 }
 
 type runnerPreflightProjectorFactory struct {
-	factoryErr         map[AuthorityPhase]error
-	projectionErr      map[AuthorityPhase]error
-	preconditionErr    error
-	transitionErr      error
-	catalogErr         error
-	mutateResult       map[AuthorityPhase]func(*ProjectionResult[AuthorityProjection])
-	mutatePrecondition func(*ProjectionResult[CatalogStateProjection])
-	mutateTransition   func(*ProjectionResult[CatalogStateProjection])
-	mutateCatalog      func(*ProjectionResult[CatalogProjection])
-	transitionState    *CatalogStateProjection
-	factoryPhases      []AuthorityPhase
-	projectionPhases   []AuthorityPhase
-	preconditionPhases []AuthorityPhase
-	transitionPhases   []AuthorityPhase
-	transitionScopes   []ProjectionScope
-	catalogPhases      []AuthorityPhase
-	catalogScopes      []ProjectionScope
-	snapshotMetadata   []SnapshotMetadata
+	allowMigrationRoleCatalog bool
+	factoryErr                map[AuthorityPhase]error
+	projectionErr             map[AuthorityPhase]error
+	preconditionErr           error
+	transitionErr             error
+	catalogErr                error
+	mutateResult              map[AuthorityPhase]func(*ProjectionResult[AuthorityProjection])
+	mutatePrecondition        func(*ProjectionResult[CatalogStateProjection])
+	mutateTransition          func(*ProjectionResult[CatalogStateProjection])
+	mutateCatalog             func(*ProjectionResult[CatalogProjection])
+	transitionState           *CatalogStateProjection
+	factoryPhases             []AuthorityPhase
+	projectionPhases          []AuthorityPhase
+	preconditionPhases        []AuthorityPhase
+	transitionPhases          []AuthorityPhase
+	transitionScopes          []ProjectionScope
+	catalogPhases             []AuthorityPhase
+	catalogScopes             []ProjectionScope
+	snapshotMetadata          []SnapshotMetadata
 }
 
 func (factory *runnerPreflightProjectorFactory) initialize() {
@@ -941,7 +942,8 @@ func (projector *runnerPreflightProjector) ProjectCatalog(_ context.Context, sna
 	phase := snapshot.Metadata().AuthorityPhase
 	projector.factory.catalogPhases = append(projector.factory.catalogPhases, phase)
 	projector.factory.catalogScopes = append(projector.factory.catalogScopes, cloneProjectionValue(scope))
-	if snapshot != projector.snapshot || phase != AuthorityPhaseMigrationTransaction || contract.validate() != nil || scope.Validate() != nil || !equalProjectionScopes(scope, contract.Scope()) {
+	allowedPhase := phase == AuthorityPhaseMigrationTransaction || projector.factory.allowMigrationRoleCatalog && phase == AuthorityPhaseMigrationRole
+	if snapshot != projector.snapshot || !allowedPhase || contract.validate() != nil || scope.Validate() != nil || !equalProjectionScopes(scope, contract.Scope()) {
 		return ProjectionResult[CatalogProjection]{}, errors.New("catalog snapshot or binding mismatch")
 	}
 	if projector.factory.catalogErr != nil {

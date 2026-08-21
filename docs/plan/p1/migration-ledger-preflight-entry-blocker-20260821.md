@@ -1,10 +1,10 @@
 # P1 runner ledger/catalog preflight entry blocker - 2026-08-21
 
-- Status: **OWNER APPROVED - SLICE A PROFILE REPAIR PENDING INDEPENDENT REVIEW; SLICES B/C NOT STARTED**
-- Branch: `codex/cloud-agents-p1-ledger-preflight-profile-20260821`
-- Scope: a future, read-only runner ledger disposition/catalog preflight contract
-- Owner approval on 2026-08-21 authorizes the ordered slices, beginning with contract/profile Slice A only
-- Slice A does not alter the current runner behavior
+- Status: **SLICE A PROFILE REPAIR + SLICE B READ-ONLY KERNEL IMPLEMENTED; INDEPENDENT REVIEW PENDING; SLICE C NOT STARTED**
+- Branch: `codex/cloud-agents-p1-ledger-preflight-kernel-20260821`
+- Scope: versioned runner ledger disposition/catalog contract plus its isolated, locked read-only Slice B kernel
+- Owner approval on 2026-08-21 authorizes the ordered slices; Slice B remains separately reviewed before any Slice C work
+- Neither Slice A nor Slice B alters the current runner behavior
 
 ## 1. Why this is a separate entry
 
@@ -77,10 +77,20 @@ disposition. For every state, the kernel must:
 - select the signed cumulative catalog for the applied head (or the signed initial predecessor for an empty prefix);
 - project the required authority, schema, role/settings, database identity, and catalog facts;
 - reread the ledger and reject any prefix/catalog/session drift;
-- return a sealed read-only result with no `BEGIN`, append, commit, evidence mutation, or writer token.
+- return a sealed read-only result with no migration-writer `BEGIN`/`BeginMigration`, append, commit, evidence
+  mutation, or writer token. The already-approved runner-owned RR/RO projection snapshots from ADR-0010 still use
+  their internal `BEGIN ... READ ONLY` plus mandatory rollback; they never expose or enter the migration writer.
 
 The kernel must preserve the current close/lock/error precedence. It may not call `runCurrentSingleEntry`, open a
 migration transaction, or reinterpret a complete ledger as the existing one-entry execution scope.
+
+**Implementation status (2026-08-21):** the isolated Slice B candidate now rebuilds its runtime view and statement
+plans from private verified runtime inputs, then follows the exact connected-authority → role/settings → advisory-lock
+→ migration-role-authority → ledger → signed catalog/predecessor → ledger-reread order. It constructs only a
+copyable, canonical-digest-sealed ordinary projection fact after snapshot/session/unlock cleanup succeeds; there is
+no identity registry or authority handle. There is no production caller, no writer/evidence consumer, and no
+independent-review conclusion yet. Its only database transactions are the existing RR/RO projection snapshots; it
+does not call `BeginMigration` or open a SERIALIZABLE/RW writer transaction.
 
 ### Slice C - typed recovery/no-op dispatch, matrix, and independent review
 
@@ -102,15 +112,16 @@ projection, evidence cross-bind, and no-op/write-chain separation before any con
 
 ## 4. Explicit non-claims and decision record
 
-Slice A approval and implementation do not change these boundaries:
+Slice A/B approval and implementation do not change these boundaries:
 
 - current partial and complete ledger paths remain `NOT_IMPLEMENTED`;
-- no runner transaction, append, commit, ledger mutation, evidence mutation, or production database write is
-  authorized;
+- no migration/writer transaction, append, commit, ledger mutation, evidence mutation, or production database write
+  is authorized; the existing RR/RO observation snapshots remain rollback-only;
 - no HTTP route, P2, provider, worker, session, turn, execution, deployment, release, publication, or Gate closure
   is authorized;
 - A2.4 registry/writer/service evidence is not reused as runner ledger authority.
 
 **Owner decision (2026-08-21):** approved the three ordered runner-ledger preflight slices as a separate versioned
-entry, beginning with generated/versioned contract/profile repair. Slice B and Slice C remain separately reviewed
-future implementation work. The approval does not authorize a transaction consumer or production database write.
+entry, beginning with generated/versioned contract/profile repair. Slice B is an isolated read-only candidate pending
+independent review; Slice C remains separately reviewed future implementation work. The approval does not authorize a
+transaction consumer or production database write.
