@@ -342,6 +342,8 @@ type runnerPreflightSession struct {
 	ledgerRowsByRead       [][]LedgerRow
 	ledgerReadErr          map[int]error
 	afterLedgerRead        map[int]func()
+	boundaryErr            map[int]error
+	boundaryMutate         map[int]func(*BoundaryState)
 	setRoleCalls           int
 	lockCalls              int
 	unlockCalls            int
@@ -360,6 +362,7 @@ func newRunnerPreflightSession() *runnerPreflightSession {
 		backend: &fakeBackend{}, snapshotOpenErr: map[AuthorityPhase]error{}, snapshotCloseErr: map[AuthorityPhase]error{},
 		snapshotMetadataMutate: map[AuthorityPhase]func(*SnapshotMetadata){}, snapshotMetadataNth: map[int]func(*SnapshotMetadata){},
 		ledgerReadErr: map[int]error{}, afterLedgerRead: map[int]func(){},
+		boundaryErr: map[int]error{}, boundaryMutate: map[int]func(*BoundaryState){},
 	}
 	session.transaction = newRunnerPreflightTransaction(session)
 	return session
@@ -402,7 +405,14 @@ func (session *runnerPreflightSession) AcquireAdvisoryLock(context.Context, int6
 
 func (session *runnerPreflightSession) Boundary(context.Context, int64) (BoundaryState, error) {
 	session.boundaryCalls++
-	return BoundaryState{TxStatus: 'I', CurrentUser: MigrationOwnerRole, LockHeld: session.locked}, nil
+	if err := session.boundaryErr[session.boundaryCalls]; err != nil {
+		return BoundaryState{}, err
+	}
+	state := BoundaryState{TxStatus: 'I', CurrentUser: MigrationOwnerRole, LockHeld: session.locked}
+	if mutate := session.boundaryMutate[session.boundaryCalls]; mutate != nil {
+		mutate(&state)
+	}
+	return state, nil
 }
 
 func (session *runnerPreflightSession) readRunnerLedgerPrefix(context.Context) ([]LedgerRow, error) {

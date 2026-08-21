@@ -74,11 +74,14 @@ func (runner *Runner) consumeRunnerLedgerPreflight(ctx context.Context, dsn stri
 			AmbiguousRecovered: []string{},
 		}, nil
 	case runnerLedgerConsumerEntryNotImplemented:
-		permit, err := runner.prepareRunnerLedgerEntryAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
+		permit, err := runner.prepareRunnerLedgerEntryExecutionAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
 		if err != nil {
+			if runnerLedgerEntryExecutionAdmissionUnsupported(err) {
+				return RunResult{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-entry", "entry writer is not implemented", nil)
+			}
 			return RunResult{}, err
 		}
-		if err := closeRunnerLedgerEntryAdmissionPermit(permit, nil); err != nil {
+		if err := closeRunnerLedgerEntryExecutionPermit(permit, nil); err != nil {
 			return RunResult{}, err
 		}
 		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-entry", "entry writer is not implemented", nil)
@@ -87,6 +90,14 @@ func (runner *Runner) consumeRunnerLedgerPreflight(ctx context.Context, dsn stri
 	default:
 		return RunResult{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer", "runner ledger consumer action is not implemented", nil)
 	}
+}
+
+func runnerLedgerEntryExecutionAdmissionUnsupported(err error) bool {
+	if !IsCode(err, CodeProjectionNotImplemented) {
+		return false
+	}
+	var stable *Error
+	return errors.As(err, &stable) && stable.Op == "runner-ledger-entry-execution-admission-selection"
 }
 
 func runnerLedgerConsumerEligible(err error, allowedOps ...string) bool {

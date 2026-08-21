@@ -143,6 +143,10 @@ func TestRunnerLedgerEntryWriterProfilesHaveNoUnreviewedProductionConsumer(t *te
 	}
 	executionCalls := 0
 	writerCalls := 0
+	allowedExecutionCallers := map[string]bool{
+		"runner_ledger_entry_writer_profile.go":             true,
+		"runner_ledger_entry_execution_admission_permit.go": true,
+	}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -171,7 +175,7 @@ func TestRunnerLedgerEntryWriterProfilesHaveNoUnreviewedProductionConsumer(t *te
 			}
 			switch identifier.Name {
 			case "generatedRunnerLedgerEntryExecutionAdmissionAction":
-				if name != "runner_ledger_entry_writer_profile.go" {
+				if !allowedExecutionCallers[name] {
 					t.Fatalf("execution-admission selector has unreviewed production caller in %s", name)
 				}
 				executionCalls++
@@ -184,7 +188,7 @@ func TestRunnerLedgerEntryWriterProfilesHaveNoUnreviewedProductionConsumer(t *te
 			return true
 		})
 	}
-	if executionCalls != 2 || writerCalls != 2 {
-		t.Fatalf("generated selectors have execution=%d writer=%d profile-only calls; want 2/2", executionCalls, writerCalls)
+	if executionCalls != 4 || writerCalls != 2 {
+		t.Fatalf("generated selectors have execution=%d writer=%d reviewed calls; want 4/2", executionCalls, writerCalls)
 	}
 }

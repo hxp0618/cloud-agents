@@ -117,9 +117,10 @@ func TestRunnerLedgerEntryAdmissionHasOnlyReviewedRuntimeConsumersAndNoForbidden
 	}
 	productionCalls := 0
 	allowedCallers := map[string]bool{
-		"runner_ledger_entry_admission_profile.go": true,
-		"runner_ledger_entry_admission_claim.go":   true,
-		"runner_ledger_entry_admission_permit.go":  true,
+		"runner_ledger_entry_admission_profile.go":         true,
+		"runner_ledger_entry_admission_claim.go":           true,
+		"runner_ledger_entry_admission_permit.go":          true,
+		"runner_ledger_entry_execution_admission_claim.go": true,
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -153,7 +154,7 @@ func TestRunnerLedgerEntryAdmissionHasOnlyReviewedRuntimeConsumersAndNoForbidden
 			return true
 		})
 	}
-	if productionCalls != 4 {
-		t.Fatalf("generated entry-admission selector has %d production calls; want two profile checks plus claim and permit checks", productionCalls)
+	if productionCalls != 5 {
+		t.Fatalf("generated entry-admission selector has %d production calls; want two profile checks plus immutable admission claim/permit and the separately versioned execution claim", productionCalls)
 	}
 }

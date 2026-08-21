@@ -931,7 +931,7 @@
     {
       "id": "runner-ledger-entry-admission-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:c7db2c934b8eff033de797fc404be5932618652455b0bd19ff0d6e7b8d6de4f7",
+      "inputManifestSha256": "sha256:52ccaa8d7fbfc7f3f4d679846acd57ec607a880f42fd2b8d59d3fc25e3f08671",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
         "scripts/generate-platform-runner-ledger-entry-admission-go.ts",
@@ -1056,7 +1056,7 @@
     {
       "id": "runner-ledger-entry-writer-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:9a57619a731e7b5ec107a4388d14454a953dc9d4994e33f69946f8be667bb81d",
+      "inputManifestSha256": "sha256:4934b5bde1dda84d19cafdb3e3753e26820a2498d943767cfe91c856cc7bdb49",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
         "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",

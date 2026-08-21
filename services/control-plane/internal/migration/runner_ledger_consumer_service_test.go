@@ -91,13 +91,14 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrixReadOnly(t *testing.T) 
 			default:
 				t.Fatalf("unexpected action %s", test.wantAction)
 			}
-			wantEntryCalls := 0
+			wantExecutionCalls := 0
 			if test.wantAction == runnerLedgerConsumerEntryNotImplemented {
-				wantEntryCalls = 1
+				wantExecutionCalls = 1
 			}
 			if fixture.evidence.bindCalls != 1 || fixture.evidence.consumeCalls != 1 ||
-				fixture.evidence.entryBindCalls != wantEntryCalls || fixture.evidence.entryConsumeCalls != wantEntryCalls {
-				t.Fatalf("claim lifecycle bind=%d consume=%d entry-bind=%d entry-consume=%d", fixture.evidence.bindCalls, fixture.evidence.consumeCalls, fixture.evidence.entryBindCalls, fixture.evidence.entryConsumeCalls)
+				fixture.evidence.entryBindCalls != 0 || fixture.evidence.entryConsumeCalls != 0 ||
+				fixture.evidence.executionBindCalls != wantExecutionCalls || fixture.evidence.executionConsumeCalls != wantExecutionCalls {
+				t.Fatalf("claim lifecycle bind=%d consume=%d entry-bind=%d entry-consume=%d execution-bind=%d execution-consume=%d", fixture.evidence.bindCalls, fixture.evidence.consumeCalls, fixture.evidence.entryBindCalls, fixture.evidence.entryConsumeCalls, fixture.evidence.executionBindCalls, fixture.evidence.executionConsumeCalls)
 			}
 			if _, live := runnerLedgerPreflightClaimByEvidenceBinder.Load(fixture.evidence); live {
 				t.Fatal("consumer left a live one-shot claim")
@@ -425,12 +426,13 @@ func TestPublicRunnerEntryAndRecoveryRemainNotImplementedWithoutWriterEffects(t 
 			before := liveVerifiedEvidenceRunBindings()
 			result, runErr := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			assertRunnerLedgerConsumerNotImplemented(t, result, runErr, test.wantOp)
-			wantEntryCalls := 0
+			wantExecutionCalls := 0
 			if test.wantOp == "runner-ledger-consumer-entry" {
-				wantEntryCalls = 1
+				wantExecutionCalls = 1
 			}
 			if sink.session == nil || sink.session.bindCalls != 1 || sink.session.consumeCalls != 1 ||
-				sink.session.entryBindCalls != wantEntryCalls || sink.session.entryConsumeCalls != wantEntryCalls ||
+				sink.session.entryBindCalls != 0 || sink.session.entryConsumeCalls != 0 ||
+				sink.session.executionBindCalls != wantExecutionCalls || sink.session.executionConsumeCalls != wantExecutionCalls ||
 				sink.session.runnerEvidenceSessionFake.bindCalls != 0 || sink.session.intermediateBindCalls != 0 ||
 				sink.session.commitBindCalls != 0 || sink.session.terminalBindCalls != 0 ||
 				sink.session.journal.appendCalls != 0 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 ||
@@ -458,6 +460,9 @@ func TestPublicRunnerEntryAndRecoveryRemainNotImplementedWithoutWriterEffects(t 
 			}
 			if _, live := runnerLedgerEntryAdmissionUseByEvidenceBinder.Load(sink.session); live {
 				t.Fatalf("public %s retained an entry-admission use record", test.name)
+			}
+			if _, live := runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder.Load(sink.session); live {
+				t.Fatalf("public %s retained an execution-admission use record", test.name)
 			}
 		})
 	}
