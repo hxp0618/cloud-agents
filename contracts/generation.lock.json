@@ -179,7 +179,7 @@
       "id": "platform-runner-ledger-preflight-registry-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
       "entrypoint": "scripts/generate-platform-runner-ledger-preflight-registry.ts",
-      "sourceManifestSha256": "sha256:d471b3cf0d0bf9b52ad1e1fafcb3a0cddd420dd9f66752eb740b51a07ea15ff9",
+      "sourceManifestSha256": "sha256:723f77f13f7d4e3b126619478415ea813002d9a48d84661ae2cfe278cca2d23e",
       "sources": [
         "docs/plan/adr/0019-p1-runner-ledger-preflight-contract.md",
         "docs/plan/p1/migration-ledger-preflight-entry-blocker-20260821.md",
@@ -615,7 +615,7 @@
     {
       "id": "runner-ledger-preflight-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d471b3cf0d0bf9b52ad1e1fafcb3a0cddd420dd9f66752eb740b51a07ea15ff9",
+      "inputManifestSha256": "sha256:723f77f13f7d4e3b126619478415ea813002d9a48d84661ae2cfe278cca2d23e",
       "inputs": [
         "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-preflight-registry-source-v1.json",
         "contracts/platform/v1alpha1/schemas/runner-ledger-preflight-registry-source-v1.schema.json",
@@ -656,7 +656,7 @@
     {
       "id": "runner-ledger-preflight-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:1832b98dc345f280d0b0de87258292886e593b994d6550bcdd457f964a4c8457",
+      "inputManifestSha256": "sha256:c8b1440388592ddc884011592f54777a9f2372b6bfe65f9a6e2f67bee54833c5",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
         "scripts/generate-platform-runner-ledger-preflight-go.ts",

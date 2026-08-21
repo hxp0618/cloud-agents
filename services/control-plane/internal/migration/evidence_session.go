@@ -1102,10 +1102,70 @@ func (s *generationEvidenceSession) Close(ctx context.Context) error {
 	s.closed = true
 	generationEvidenceSessionRegistry.Delete(s)
 	activeGenerationRegistry.Delete(record.activeBinding)
+	revokeRunnerLedgerPreflightClaims(s)
 	return record.journal.Close(ctx)
 }
 
 func (s *generationEvidenceSession) evidenceSessionSealed() {}
+
+func (s *generationEvidenceSession) runnerLedgerPreflightClaimBinderSealed() {}
+
+func (s *generationEvidenceSession) bindRunnerLedgerPreflightClaim(ctx context.Context, request runnerLedgerPreflightClaimRequest) (*runnerLedgerPreflightClaim, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.self != s || !validOwnedCurrentCandidate(request.candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != request.candidate.binding || s.active.kind != activeGenerationCurrent {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "current same-verifier evidence session is unavailable", nil)
+	}
+	j := s.journal
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if !j.validLocked() || j.state == nil || j.state.unknown != nil || j.state.recovery == nil {
+		return nil, fail(CodeEvidenceJournalFailed, "runner-ledger-preflight-evidence", "current evidence journal has no stable recovery boundary", nil)
+	}
+	facts := runnerLedgerPreflightEvidenceFacts{
+		binder: s, candidateBinding: s.candidate.binding, generation: j.generation,
+		schema: cloneGenerationJournalSchema(j.schema), recovery: cloneRecoverySnapshot(j.state.recovery),
+		schemaDigest:   generationJournalSchemaDigest(j.schema, j.generation),
+		recoveryDigest: generationJournalRecoveryDigest(j.state.recovery),
+		sessionDigest:  s.binding.canonical, journalDigest: j.binding.canonical,
+	}
+	return bindRunnerLedgerPreflightClaimFromEvidence(ctx, request, facts)
+}
+
+func (s *generationEvidenceSession) consumeRunnerLedgerPreflightClaim(ctx context.Context, claim *runnerLedgerPreflightClaim, candidate OwnedCurrentCandidate) (runnerLedgerPreflightDispatch, error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return runnerLedgerPreflightDispatch{}, err
+	}
+	if s == nil || s.self != s || candidate.binding == nil {
+		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != candidate.binding || s.active.kind != activeGenerationCurrent {
+		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "current same-verifier evidence session is unavailable", nil)
+	}
+	j := s.journal
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if !j.validLocked() || j.state == nil || j.state.unknown != nil || j.state.recovery == nil {
+		revokeRunnerLedgerPreflightClaim(claim)
+		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceJournalFailed, "runner-ledger-preflight-evidence", "current evidence journal has no stable recovery boundary", nil)
+	}
+	facts := runnerLedgerPreflightEvidenceFacts{
+		binder: s, candidateBinding: s.candidate.binding, generation: j.generation,
+		schema: cloneGenerationJournalSchema(j.schema), recovery: cloneRecoverySnapshot(j.state.recovery),
+		schemaDigest:   generationJournalSchemaDigest(j.schema, j.generation),
+		recoveryDigest: generationJournalRecoveryDigest(j.state.recovery),
+		sessionDigest:  s.binding.canonical, journalDigest: j.binding.canonical,
+	}
+	return consumeRunnerLedgerPreflightClaimFromEvidence(ctx, claim, candidate, facts)
+}
 
 func (s *generationEvidenceSession) validLocked() bool {
 	if s == nil || s.self != s || s.closed || s.binding == nil || s.binding.session != s || s.journal == nil || s.binding.journal != s.journal || s.candidate.binding == nil || s.binding.candidateBinding != s.candidate.binding || s.active.binding == nil || s.binding.activeBinding != s.active.binding || !validOwnedCurrentCandidate(s.candidate) || s.binding.canonical == ([32]byte{}) || s.binding.canonical != generationEvidenceSessionDigest(s) {

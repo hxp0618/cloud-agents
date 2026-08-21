@@ -74,7 +74,8 @@ type runnerLedgerPreflightFactInput struct {
 
 // runnerLedgerPreflightFact is an ordinary immutable-by-convention value. It
 // intentionally carries no session, transaction, lease, receipt, writer token,
-// or runtime authority. Slice A has no production consumer.
+// or runtime authority. Its sole production consumer is the package-private
+// Slice C same-verifier binder; it is not accepted by Runner.Run or a writer.
 type runnerLedgerPreflightFact struct {
 	profileID                        string
 	profileDigest                    string

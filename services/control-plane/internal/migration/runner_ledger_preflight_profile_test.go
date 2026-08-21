@@ -302,8 +302,8 @@ func TestRunnerLedgerPreflightSliceAHasNoProductionConsumerOrAuthoritySurface(t 
 			return true
 		})
 	}
-	if consumerCalls != 0 {
-		t.Fatalf("Slice A has %d production fact consumers; want zero", consumerCalls)
+	if consumerCalls != 1 {
+		t.Fatalf("generated fact has %d production consumers; want the one reviewed Slice C binder", consumerCalls)
 	}
 }
 

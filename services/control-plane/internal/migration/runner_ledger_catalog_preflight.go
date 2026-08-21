@@ -17,8 +17,8 @@ const (
 
 // runnerLedgerCatalogPreflight is a sealed, read-only observation. It owns no
 // database session, transaction, evidence handle, receipt, or writer token.
-// Slice B has no production consumer; Slice C must consume it through a
-// separately reviewed same-verifier binder.
+// Slice C consumes it only through the package-private same-verifier claim
+// binder; Runner.Run and every writer path remain disconnected.
 type runnerLedgerCatalogPreflight struct {
 	profileID                      string
 	profileDigest                  string
@@ -64,8 +64,9 @@ type runnerLedgerCatalogPreflightWire struct {
 	CumulativeCatalog              *ProjectionResult[CatalogProjection]      `json:"cumulative_catalog"`
 }
 
-// projectRunnerLedgerCatalogPreflight is the Slice B kernel. It deliberately
-// has no production caller and never opens a migration transaction.
+// projectRunnerLedgerCatalogPreflight is the Slice B kernel. Its sole
+// production caller is the package-private Slice C claim service, and it never
+// opens a migration transaction.
 func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLedgerCatalogPreflight, error) {
 	if runner == nil || ctx == nil {
 		return nil, fail(CodeTransactionBoundary, "runner-ledger-catalog-preflight", "runner or projection context is unavailable", nil)

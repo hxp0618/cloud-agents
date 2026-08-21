@@ -389,6 +389,7 @@ func TestRunnerLedgerCatalogPreflightHasNoWriterConsumerOrAuthorityHandle(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	kernelConsumers := 0
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
@@ -400,10 +401,16 @@ func TestRunnerLedgerCatalogPreflightHasNoWriterConsumerOrAuthorityHandle(t *tes
 		ast.Inspect(production, func(node ast.Node) bool {
 			selector, ok := node.(*ast.SelectorExpr)
 			if ok && selector.Sel.Name == "projectRunnerLedgerCatalogPreflight" {
-				t.Fatalf("%s added an unreviewed production kernel consumer", path)
+				kernelConsumers++
+				if path != "runner_ledger_preflight_service.go" {
+					t.Fatalf("%s added an unreviewed production kernel consumer", path)
+				}
 			}
 			return true
 		})
+	}
+	if kernelConsumers != 1 {
+		t.Fatalf("read-only kernel consumers=%d want the one reviewed Slice C service", kernelConsumers)
 	}
 }
 
