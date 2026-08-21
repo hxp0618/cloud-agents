@@ -1,56 +1,57 @@
 # 06. 状态与决策追踪
 
-- 最后更新：2026-08-21
+- 最后更新：2026-08-22
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight generated profile → locked read-only kernel → typed same-verifier claim/matrix 已在 `e64e0a2` 固定并由 `9ed71b8` 独立复核批准；同一 control-plane subtree 已在 `b57acf2` 以 Go 1.26.6 完成 uncached full normal `internal/migration` PASS `1108.208s`，但 full race、live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2 external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight generated profile → locked read-only kernel → typed same-verifier claim/matrix 已在 `e64e0a2` 固定并由 `9ed71b8` 独立复核批准；versioned runner-ledger consumer profile → complete-ledger `return_success` no-op consumer → matrix/review 已在 `dcb4b3a` 固定并由 `4209e12` 独立复核批准，entry/recovery writer 仍为 `NOT_IMPLEMENTED`；同一 control-plane subtree 已在 `b57acf2` 以 Go 1.26.6 完成 uncached full normal `internal/migration` PASS `1108.208s`，但 full race、live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
-| ID    | 决策                                                                                                                        | 状态     | 依据/待确认                                                                       |
-| ----- | --------------------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------- |
-| D-001 | Cloud Agents 是 Runtime + 完整公共 Go Control Plane 平台                                                                    | APPROVED | 用户于 2026-08-10 批准 ADR-0006                                                   |
-| D-002 | Public CP 同时提供 managed-agent 与 managed-host 两平面                                                                     | APPROVED | 解决 Synara/T3 不同 authority                                                     |
-| D-003 | T3 embedded 不强依赖 Go CP                                                                                                  | APPROVED | 保留轻量本地路径                                                                  |
-| D-004 | Public CP 必须无 Synara 私有依赖直接 Compose/Helm 部署                                                                      | APPROVED | 用户要求直接部署                                                                  |
-| D-005 | Synara/T3 通过公共 API/SDK 接入，不编译私有 CP fork                                                                         | APPROVED | 单一公共 source/bits                                                              |
-| D-006 | 旧 Go CP 按 move/rewrite/adapter/synara-only/retire 分类                                                                    | APPROVED | 禁止 994-file 机械复制                                                            |
-| D-007 | Public CP owns production Postgres/outbox/reconciler                                                                        | APPROVED | 独立部署与原子 authority                                                          |
-| D-008 | 新 T3 `ManagedConnectionTarget`，direct/relay proof-bound                                                                   | APPROVED | 当前 direct 仍是 Bearer                                                           |
-| D-009 | Runtime 与 Platform 同仓但独立 module/release train                                                                         | APPROVED | contract/conformance 原子，release 解耦                                           |
-| D-010 | Public tenancy 固定 Tenant → Organization → Project                                                                         | APPROVED | 中立隔离根；Synara 一对一映射                                                     |
-| D-011 | Go SDK/CP/Worker 三个 module；go.work 仅开发                                                                                | APPROVED | 标准子模块 tag 与无 workspace 依赖                                                |
-| D-012 | P3 用 reference host；P6 消费 T3 signed workload descriptor                                                                 | APPROVED | 避免 P3/P6 Gate 循环                                                              |
-| D-013 | pairing token/link/session 由 lease 内 T3 auth 写入                                                                         | APPROVED | CP 只写 lease admission 与 opaque ref                                             |
-| D-014 | Platform RC 必须 API+CLI；公共管理 Web UI deferred                                                                          | APPROVED | 直接部署不依赖 Synara/T3 UI                                                       |
-| D-015 | Contracts、TS SDK、Go SDK 各自使用 immutable release train                                                                  | APPROVED | consumer exact pin；发布 channel 独立批准                                         |
-| D-016 | Public CP 是 management PEP；T3 auth 是 lease data PEP                                                                      | APPROVED | membership/generation/scope 为上游约束                                            |
-| D-017 | Pairing secret response 与 durable receipt/outbox 完全分离                                                                  | APPROVED | 丢失后 revoke + remint，禁止 secret replay                                        |
-| D-018 | Host descriptor/artifact/provenance 使用固定签名 trust domain                                                               | APPROVED | descriptor 不替代 image/bundle 验签                                               |
-| D-019 | 供应链实施 CVE/VEX/waiver/base-image revocation policy                                                                      | APPROVED | Platform RC 不继承历史 RC 的安全结论                                              |
-| D-020 | 跨阶段 Gate 使用 phase record，最终再关闭 aggregate Gate                                                                    | APPROVED | 消除 P1 提前证明 P2–P6 的循环                                                     |
-| D-021 | 跨 PEP 使用短 TTL signed auth snapshot + revocation epoch/fence                                                             | APPROVED | 分区时最多 60 秒后 fail closed                                                    |
-| D-022 | Baseline 使用 P0/M1 phase records，最终再关闭 aggregate Gate                                                                | APPROVED | 应用 D-020，避免暂停中的 M1 反向阻塞 P0                                           |
-| D-023 | Go 提取只创建新公共历史，禁止 graft Synara Git history                                                                      | APPROVED | 历史日志隔离；静态测试私钥必须先重写                                              |
-| D-024 | 开发与 focused Gate 本地优先；固定 SHA 接近收口后再做云端终验                                                               | APPROVED | 避免开发循环反复占用云主机并混淆证据层级                                          |
-| D-025 | Management/Agent/Host 用 OpenAPI HTTP/JSON；Worker/Adapter 用 Proto + ConnectRPC/mTLS                                       | APPROVED | ADR-0007；每个平面只有一个 wire authority                                         |
-| D-026 | JSON Schema、OpenAPI、Proto 分别拥有 model、route、worker/adapter service authority                                         | APPROVED | ADR-0007；legacy contract 仅作 oracle                                             |
-| D-027 | CP/Worker import SDK；SDK 不 import service；Go 1.26.6；发布禁 replace                                                      | APPROVED | ADR-0007；1.26.5 security superseded；go.work 仅本地开发                          |
-| D-028 | P1 支持 PostgreSQL 15–17；pgx/v5 + 手写 SQL；禁 GORM/AutoMigrate                                                            | APPROVED | ADR-0007；新 migration lineage                                                    |
-| D-029 | tenant 表使用 composite FK + FORCE RLS；runtime/migration role 分离                                                         | APPROVED | ADR-0007；RLS 是 defense in depth                                                 |
-| D-030 | NamespaceRef 结构化并以 RFC 8785 canonical JSON + SHA-256 标识                                                              | APPROVED | ADR-0007；拒绝调用方自报 canonical string                                         |
-| D-031 | 中立 basic RBAC 固定 platform root + 三层 tenancy scope、role/permission/default deny                                       | APPROVED | ADR-0007；workload/service 不继承 admin                                           |
-| D-032 | contract migration 前必须 live-instance/N-1/PITR preflight，未知实例 fail closed                                            | APPROVED | ADR-0007；普通 force 不得绕过                                                     |
-| D-033 | contract/SDK 生成器版本、binary digest、输入/输出 digest 固定 generation lock                                               | APPROVED | ADR-0007；生成物可重放                                                            |
-| D-034 | P1 DRI=hxp0618、executor=Codex；依赖由独立 Codex supply-chain reviewer 复核                                                 | APPROVED | ADR-0007；疑难 license 请求 owner/legal 决定                                      |
-| D-035 | P1 固定 global-table allowlist、三数据库角色、transaction-local tenant GUC 与 migration manifest                            | APPROVED | ADR-0008；首条公共 migration 前冻结                                               |
-| D-036 | Schema/bootstrap/manifest/runner digest 分离；runner 只消费外部验签的 expected artifact                                     | APPROVED | ADR-0009；避免同 head 安全修复伪造 migration                                      |
-| D-037 | PostgreSQL authority/catalog 使用 signed expected contract 与 version-neutral typed projection，并按 P1-A2.1a/P1-A2.1b 拆分 | APPROVED | ADR-0010；细化 verified authority binding，不改变 schema ledger、Gate 或发布语义  |
-| D-038 | Membership admission + RoleBinding explicit allow；role version exact、future permission 不扩张、PDP deny-only              | APPROVED | ADR-0011；A2.2 分 contract/catalog、data/evaluator、mutation/matrix 三切片        |
-| D-039 | generation 显式选择 versioned lineage/quota profile；v1 historical same-bits、v2 4 KiB checkpoint ceiling                   | APPROVED | 用户于 2026-08-18 批准 ADR-0012；不授权 A2.3 或 Gate closure                      |
-| D-040 | A2.3 仅接受 generated profile，并按 registry → append-only PG kernel → service/claim/matrix/review 三切片推进               | APPROVED | 用户于 2026-08-19 批准 ADR-0013；不开放 HTTP/P2 side effect，不关闭 Gate          |
-| D-041 | generated manifest 显式选择 lineage/quota v3；32 segments、512 MiB，records/checkpoint/index/root/object 不变               | APPROVED | 用户于 2026-08-19 批准 ADR-0014；v1/v2 same-bits，不开放 rollover/HTTP/P2/Gate    |
-| D-042 | A2.4 按 versioned registry repair → append-only writer kernel → typed service/claim/matrix/review 三切片推进                | APPROVED | 用户于 2026-08-20 批准；不开放 HTTP/P2/provider、生产写入、部署、发布或 Gate      |
-| D-043 | Runner ledger preflight 按 generated profile → locked read-only kernel → typed claim/matrix/review 三切片推进               | APPROVED | 用户于 2026-08-21 批准固定候选审查并在 APPROVE 后继续 Slice C；不授权 writer/Gate |
+| ID    | 决策                                                                                                                        | 状态     | 依据/待确认                                                                            |
+| ----- | --------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| D-001 | Cloud Agents 是 Runtime + 完整公共 Go Control Plane 平台                                                                    | APPROVED | 用户于 2026-08-10 批准 ADR-0006                                                        |
+| D-002 | Public CP 同时提供 managed-agent 与 managed-host 两平面                                                                     | APPROVED | 解决 Synara/T3 不同 authority                                                          |
+| D-003 | T3 embedded 不强依赖 Go CP                                                                                                  | APPROVED | 保留轻量本地路径                                                                       |
+| D-004 | Public CP 必须无 Synara 私有依赖直接 Compose/Helm 部署                                                                      | APPROVED | 用户要求直接部署                                                                       |
+| D-005 | Synara/T3 通过公共 API/SDK 接入，不编译私有 CP fork                                                                         | APPROVED | 单一公共 source/bits                                                                   |
+| D-006 | 旧 Go CP 按 move/rewrite/adapter/synara-only/retire 分类                                                                    | APPROVED | 禁止 994-file 机械复制                                                                 |
+| D-007 | Public CP owns production Postgres/outbox/reconciler                                                                        | APPROVED | 独立部署与原子 authority                                                               |
+| D-008 | 新 T3 `ManagedConnectionTarget`，direct/relay proof-bound                                                                   | APPROVED | 当前 direct 仍是 Bearer                                                                |
+| D-009 | Runtime 与 Platform 同仓但独立 module/release train                                                                         | APPROVED | contract/conformance 原子，release 解耦                                                |
+| D-010 | Public tenancy 固定 Tenant → Organization → Project                                                                         | APPROVED | 中立隔离根；Synara 一对一映射                                                          |
+| D-011 | Go SDK/CP/Worker 三个 module；go.work 仅开发                                                                                | APPROVED | 标准子模块 tag 与无 workspace 依赖                                                     |
+| D-012 | P3 用 reference host；P6 消费 T3 signed workload descriptor                                                                 | APPROVED | 避免 P3/P6 Gate 循环                                                                   |
+| D-013 | pairing token/link/session 由 lease 内 T3 auth 写入                                                                         | APPROVED | CP 只写 lease admission 与 opaque ref                                                  |
+| D-014 | Platform RC 必须 API+CLI；公共管理 Web UI deferred                                                                          | APPROVED | 直接部署不依赖 Synara/T3 UI                                                            |
+| D-015 | Contracts、TS SDK、Go SDK 各自使用 immutable release train                                                                  | APPROVED | consumer exact pin；发布 channel 独立批准                                              |
+| D-016 | Public CP 是 management PEP；T3 auth 是 lease data PEP                                                                      | APPROVED | membership/generation/scope 为上游约束                                                 |
+| D-017 | Pairing secret response 与 durable receipt/outbox 完全分离                                                                  | APPROVED | 丢失后 revoke + remint，禁止 secret replay                                             |
+| D-018 | Host descriptor/artifact/provenance 使用固定签名 trust domain                                                               | APPROVED | descriptor 不替代 image/bundle 验签                                                    |
+| D-019 | 供应链实施 CVE/VEX/waiver/base-image revocation policy                                                                      | APPROVED | Platform RC 不继承历史 RC 的安全结论                                                   |
+| D-020 | 跨阶段 Gate 使用 phase record，最终再关闭 aggregate Gate                                                                    | APPROVED | 消除 P1 提前证明 P2–P6 的循环                                                          |
+| D-021 | 跨 PEP 使用短 TTL signed auth snapshot + revocation epoch/fence                                                             | APPROVED | 分区时最多 60 秒后 fail closed                                                         |
+| D-022 | Baseline 使用 P0/M1 phase records，最终再关闭 aggregate Gate                                                                | APPROVED | 应用 D-020，避免暂停中的 M1 反向阻塞 P0                                                |
+| D-023 | Go 提取只创建新公共历史，禁止 graft Synara Git history                                                                      | APPROVED | 历史日志隔离；静态测试私钥必须先重写                                                   |
+| D-024 | 开发与 focused Gate 本地优先；固定 SHA 接近收口后再做云端终验                                                               | APPROVED | 避免开发循环反复占用云主机并混淆证据层级                                               |
+| D-025 | Management/Agent/Host 用 OpenAPI HTTP/JSON；Worker/Adapter 用 Proto + ConnectRPC/mTLS                                       | APPROVED | ADR-0007；每个平面只有一个 wire authority                                              |
+| D-026 | JSON Schema、OpenAPI、Proto 分别拥有 model、route、worker/adapter service authority                                         | APPROVED | ADR-0007；legacy contract 仅作 oracle                                                  |
+| D-027 | CP/Worker import SDK；SDK 不 import service；Go 1.26.6；发布禁 replace                                                      | APPROVED | ADR-0007；1.26.5 security superseded；go.work 仅本地开发                               |
+| D-028 | P1 支持 PostgreSQL 15–17；pgx/v5 + 手写 SQL；禁 GORM/AutoMigrate                                                            | APPROVED | ADR-0007；新 migration lineage                                                         |
+| D-029 | tenant 表使用 composite FK + FORCE RLS；runtime/migration role 分离                                                         | APPROVED | ADR-0007；RLS 是 defense in depth                                                      |
+| D-030 | NamespaceRef 结构化并以 RFC 8785 canonical JSON + SHA-256 标识                                                              | APPROVED | ADR-0007；拒绝调用方自报 canonical string                                              |
+| D-031 | 中立 basic RBAC 固定 platform root + 三层 tenancy scope、role/permission/default deny                                       | APPROVED | ADR-0007；workload/service 不继承 admin                                                |
+| D-032 | contract migration 前必须 live-instance/N-1/PITR preflight，未知实例 fail closed                                            | APPROVED | ADR-0007；普通 force 不得绕过                                                          |
+| D-033 | contract/SDK 生成器版本、binary digest、输入/输出 digest 固定 generation lock                                               | APPROVED | ADR-0007；生成物可重放                                                                 |
+| D-034 | P1 DRI=hxp0618、executor=Codex；依赖由独立 Codex supply-chain reviewer 复核                                                 | APPROVED | ADR-0007；疑难 license 请求 owner/legal 决定                                           |
+| D-035 | P1 固定 global-table allowlist、三数据库角色、transaction-local tenant GUC 与 migration manifest                            | APPROVED | ADR-0008；首条公共 migration 前冻结                                                    |
+| D-036 | Schema/bootstrap/manifest/runner digest 分离；runner 只消费外部验签的 expected artifact                                     | APPROVED | ADR-0009；避免同 head 安全修复伪造 migration                                           |
+| D-037 | PostgreSQL authority/catalog 使用 signed expected contract 与 version-neutral typed projection，并按 P1-A2.1a/P1-A2.1b 拆分 | APPROVED | ADR-0010；细化 verified authority binding，不改变 schema ledger、Gate 或发布语义       |
+| D-038 | Membership admission + RoleBinding explicit allow；role version exact、future permission 不扩张、PDP deny-only              | APPROVED | ADR-0011；A2.2 分 contract/catalog、data/evaluator、mutation/matrix 三切片             |
+| D-039 | generation 显式选择 versioned lineage/quota profile；v1 historical same-bits、v2 4 KiB checkpoint ceiling                   | APPROVED | 用户于 2026-08-18 批准 ADR-0012；不授权 A2.3 或 Gate closure                           |
+| D-040 | A2.3 仅接受 generated profile，并按 registry → append-only PG kernel → service/claim/matrix/review 三切片推进               | APPROVED | 用户于 2026-08-19 批准 ADR-0013；不开放 HTTP/P2 side effect，不关闭 Gate               |
+| D-041 | generated manifest 显式选择 lineage/quota v3；32 segments、512 MiB，records/checkpoint/index/root/object 不变               | APPROVED | 用户于 2026-08-19 批准 ADR-0014；v1/v2 same-bits，不开放 rollover/HTTP/P2/Gate         |
+| D-042 | A2.4 按 versioned registry repair → append-only writer kernel → typed service/claim/matrix/review 三切片推进                | APPROVED | 用户于 2026-08-20 批准；不开放 HTTP/P2/provider、生产写入、部署、发布或 Gate           |
+| D-043 | Runner ledger preflight 按 generated profile → locked read-only kernel → typed claim/matrix/review 三切片推进               | APPROVED | 用户于 2026-08-21 批准固定候选审查并在 APPROVE 后继续 Slice C；不授权 writer/Gate      |
+| D-044 | Runner ledger consumer 按 versioned generated profile → complete-ledger no-op → matrix/review 三切片推进                    | APPROVED | 用户于 2026-08-22 批准；v1 immutable，entry/recovery writer 继续 NI；无外部副作用/Gate |
 
 ## 2. 阶段追踪
 
@@ -233,6 +234,15 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       `Runner.Run`/writer consumer，不授权 production database mutation、HTTP/P2/provider effect 或 Gate closure。
       见 [`Slice C review`](../p1/migration-ledger-preflight-service-claim-independent-review-20260821.md) 与
       [`current-source closure`](../p1/runner-ledger-current-source-full-migration-closure-20260821.md)。
+- [x] Runner ledger consumer 已按 versioned generated registry/profile → complete-ledger `return_success` read-only
+      no-op consumer → matrix/independent review 三切片完成；v1 preflight bytes 保持不变，固定候选 `dcb4b3a` 的
+      `4209e12` review verdict 为 `APPROVE, P0=0/P1=0/P2=0`。唯一成功动作是 complete-ledger no-op；5 个 entry
+      与 11 个 recovery/reconcile/failure pair 均继续 `NOT_IMPLEMENTED`。focused normal/race、vet/build、Linux
+      amd64/arm64 compile、contract/profile generators、20/20 contract-lock assertions、lint/typecheck 与 secret
+      scans 均通过；完整 normal `internal/migration` 日志以 `1413.075s` PASS 交叉核验。该切片不授权生产数据库
+      mutation、HTTP/P2/provider、部署、发布或 Gate closure。见
+      [`matrix`](../p1/runner-ledger-consumer-service-matrix-20260822.md) 与
+      [`independent review`](../p1/runner-ledger-consumer-service-independent-review-20260822.md)。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。

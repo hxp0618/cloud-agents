@@ -128,11 +128,12 @@
   用 Go 1.26.6 完成 uncached full normal `internal/migration` suite（`1108.208s`）。该实现仍没有
   `Runner.Run`/writer consumer、生产数据库写入、HTTP/P2/provider effect 或 Gate closure；full race 与 live
   PostgreSQL 也未由该结果覆盖。
-- 下一生产 consumer 仍由
-  [`runner ledger consumer/writer entry blocker`](runner-ledger-consumer-entry-blocker-20260821.md) 阻断：v1
-  generated profile 明确禁止 consumer/transaction/write，ordinary dispatch 不是 writer authority，现有 writer
-  chain 又只接受 empty-ledger brand-new 单 entry/单 statement。推荐先单独批准 versioned consumer profile 与
-  complete-ledger `return_success` no-op slice；entry/recovery writer 继续 `NOT_IMPLEMENTED`。
+- Runner ledger consumer 已按批准的 generated profile → read-only no-op consumer → matrix/independent review
+  三切片完成：v1 preflight registry/profile 保持 byte-identical；固定候选 `dcb4b3a` 仅为
+  `complete_return_success / completed / return_success` 开放 `return_success_noop`，其
+  [`independent review`](runner-ledger-consumer-service-independent-review-20260822.md) 在 `4209e12` 返回
+  `APPROVE, P0=0/P1=0/P2=0`。其余 5 个 entry 与 11 个 recovery/reconcile/failure dispatch 继续稳定返回
+  `NOT_IMPLEMENTED`；没有生产数据库写入、HTTP/P2/provider effect、部署、发布或 Gate closure。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
