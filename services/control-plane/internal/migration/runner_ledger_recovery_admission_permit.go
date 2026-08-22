@@ -428,8 +428,15 @@ func bindRunnerLedgerRecoveryAdmissionPermit(observation *runnerLockedLedgerCata
 		core: core, binding: core.binding, owner: owner, session: observation.session, evidenceBinder: binder,
 		use: use, key: observation.key, candidateBinding: candidate.binding, canonical: core.canonical,
 	})
+	if (core.action == generatedRunnerLedgerRecoveryProfiles[2].action || core.action == generatedRunnerLedgerRecoveryProfiles[3].action) &&
+		!registerRunnerLedgerReconciliationAdmissionCleanup(owner, core) {
+		runnerLedgerRecoveryAdmissionPermitRegistry.Delete(owner)
+		deleteRunnerLedgerReconciliationAdmissionCleanup(owner)
+		return nil, fail(CodeTransactionBoundary, "runner-ledger-recovery-admission-permit", "reconciliation cleanup authority could not be sealed", nil)
+	}
 	if !validRunnerLedgerRecoveryAdmissionPermit(owner) {
 		runnerLedgerRecoveryAdmissionPermitRegistry.Delete(owner)
+		deleteRunnerLedgerReconciliationAdmissionCleanup(owner)
 		return nil, fail(CodeTransactionBoundary, "runner-ledger-recovery-admission-permit", "recovery admission permit could not be sealed", nil)
 	}
 	observation.transferred = true
@@ -488,6 +495,7 @@ func validRunnerLedgerRecoveryAdmissionPermit(owner runnerLedgerRecoveryCloseOnl
 		record.key == core.key && record.candidateBinding == core.candidateBinding && record.use == core.use &&
 		record.canonical == core.canonical && sameRunnerOwnedPointer(record.session, core.session) &&
 		sameRunnerOwnedPointer(record.evidenceBinder, core.evidenceBinder) &&
+		validRunnerLedgerReconciliationAdmissionCleanupRegistry(owner, core) &&
 		validRunnerLedgerRecoveryAdmissionUse(core.evidenceBinder, core.use, core.consumerFactSubject, core.action, core.evidenceBoundary, true)
 }
 
@@ -655,6 +663,9 @@ func runnerLedgerRecoveryAdmissionDatabaseMatches(database runnerPreparedDatabas
 func closeRunnerLedgerRecoveryAdmissionPermit(owner runnerLedgerRecoveryCloseOnlyPermit, expected runnerLedgerRecoveryAction, primary error) error {
 	if owner == nil {
 		return primary
+	}
+	if expected == generatedRunnerLedgerRecoveryProfiles[2].action || expected == generatedRunnerLedgerRecoveryProfiles[3].action {
+		return closeRunnerLedgerReconciliationAdmissionPermit(owner, expected, primary)
 	}
 	registered, ok := runnerLedgerRecoveryAdmissionPermitRegistry.LoadAndDelete(owner)
 	record, recordOK := registered.(runnerLedgerRecoveryAdmissionPermitRegistryRecord)

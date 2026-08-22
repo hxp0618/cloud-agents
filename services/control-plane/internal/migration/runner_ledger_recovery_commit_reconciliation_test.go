@@ -689,7 +689,7 @@ func TestRunnerLedgerRecoveryReconciliationAdmissionTamperClosesRegisteredSessio
 
 func TestRunnerLedgerRecoveryReconciliationAdmissionRegistryTamperClosesOnlyOriginalSession(t *testing.T) {
 	states := []RecoveryState{RecoveryDanglingCommitIntent, RecoveryAmbiguousUnresolved}
-	tampers := []string{"missing", "foreign-session", "key-drift"}
+	tampers := []string{"missing", "foreign-session", "key-drift", "cleanup-missing", "cleanup-foreign-session", "cleanup-key-drift"}
 	for _, state := range states {
 		for _, tamper := range tampers {
 			t.Run(string(state)+"/"+tamper, func(t *testing.T) {
@@ -708,6 +708,11 @@ func TestRunnerLedgerRecoveryReconciliationAdmissionRegistryTamperClosesOnlyOrig
 				if !ok || !recordOK || record.session == nil {
 					t.Fatalf("registered=%T ok=%t", registered, ok)
 				}
+				cleanupValue, cleanupLoaded := runnerLedgerReconciliationAdmissionCleanupRegistry.Load(owner)
+				cleanupRecord, cleanupOK := cleanupValue.(*runnerLedgerReconciliationAdmissionCleanupRecord)
+				if !cleanupLoaded || !cleanupOK || cleanupRecord.session == nil {
+					t.Fatalf("cleanup registered=%T loaded=%t", cleanupValue, cleanupLoaded)
+				}
 				originalKey := record.key
 				var foreign *runnerPreflightSession
 				switch tamper {
@@ -722,6 +727,15 @@ func TestRunnerLedgerRecoveryReconciliationAdmissionRegistryTamperClosesOnlyOrig
 				case "key-drift":
 					record.key++
 					runnerLedgerRecoveryAdmissionPermitRegistry.Store(owner, record)
+				case "cleanup-missing":
+					runnerLedgerReconciliationAdmissionCleanupRegistry.Delete(owner)
+				case "cleanup-foreign-session":
+					foreign = newRunnerPreflightSession()
+					foreign.roleConfigured = true
+					foreign.locked = true
+					cleanupRecord.session = foreign
+				case "cleanup-key-drift":
+					cleanupRecord.key++
 				default:
 					t.Fatalf("unknown tamper %q", tamper)
 				}
@@ -750,6 +764,9 @@ func TestRunnerLedgerRecoveryReconciliationAdmissionRegistryTamperClosesOnlyOrig
 				if _, live := runnerLedgerRecoveryAdmissionPermitRegistry.Load(owner); live {
 					t.Fatal("tampered admission registry survived claim")
 				}
+				if _, live := runnerLedgerReconciliationAdmissionCleanupRegistry.Load(owner); live {
+					t.Fatal("tampered cleanup registry survived claim")
+				}
 				if err := claim(); !IsCode(err, CodeEvidenceRecoveryRequired) {
 					t.Fatalf("consumed admission permit revived: %v", err)
 				}
@@ -758,6 +775,102 @@ func TestRunnerLedgerRecoveryReconciliationAdmissionRegistryTamperClosesOnlyOrig
 				}
 			})
 		}
+	}
+}
+
+func TestRunnerLedgerRecoveryReconciliationAdmissionLiteralAndCopyHaveNoCleanupAuthority(t *testing.T) {
+	for _, state := range []RecoveryState{RecoveryDanglingCommitIntent, RecoveryAmbiguousUnresolved} {
+		t.Run(string(state)+"/literal", func(t *testing.T) {
+			foreign := newRunnerPreflightSession()
+			foreign.roleConfigured = true
+			foreign.locked = true
+			var owner runnerLedgerRecoveryCloseOnlyPermit
+			var core *runnerLedgerRecoveryAdmissionPermitCore
+			switch state {
+			case RecoveryDanglingCommitIntent:
+				permit := &runnerLedgerCommitObservationAdmissionPermit{}
+				permit.self = permit
+				owner = permit
+				core = &runnerLedgerRecoveryAdmissionPermitCore{owner: owner, session: foreign, key: 42, action: generatedRunnerLedgerRecoveryProfiles[2].action}
+				permit.core = core
+			case RecoveryAmbiguousUnresolved:
+				permit := &runnerLedgerAmbiguousResolutionAdmissionPermit{}
+				permit.self = permit
+				owner = permit
+				core = &runnerLedgerRecoveryAdmissionPermitCore{owner: owner, session: foreign, key: 42, action: generatedRunnerLedgerRecoveryProfiles[3].action}
+				permit.core = core
+			default:
+				t.Fatalf("unexpected state %s", state)
+			}
+			core.self = core
+			core.binding = &runnerLedgerRecoveryAdmissionPermitBinding{
+				core: core, owner: owner, session: foreign, key: core.key,
+			}
+			claimErr := claimRunnerLedgerReconciliationTestAdmission(owner)
+			if !IsCode(claimErr, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("literal claim err=%v", claimErr)
+			}
+			if closeErr := owner.closeWithoutMutation(nil); !IsCode(closeErr, CodeTransactionBoundary) {
+				t.Fatalf("literal close err=%v", closeErr)
+			}
+			if foreign.unlockCalls != 0 || foreign.closeCalls != 0 || foreign.closed || !foreign.locked {
+				t.Fatalf("literal gained cleanup authority: %+v", foreign)
+			}
+		})
+
+		t.Run(string(state)+"/copy", func(t *testing.T) {
+			fixture := newRunnerLedgerRecoveryReconciliationFixture(t, state, runnerLedgerReconciliationExactPending, 16)
+			defer fixture.close(t)
+			base := fixture.success.execution.base.service.kernel.base
+			owner, err := fixture.success.execution.base.service.kernel.runner.prepareRunnerLedgerRecoveryAdmission(
+				context.Background(), "test-only", base.bundle, base.plans,
+				fixture.success.execution.base.service.evidence, base.candidate, fixture.fact,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var copied runnerLedgerRecoveryCloseOnlyPermit
+			switch permit := owner.(type) {
+			case *runnerLedgerCommitObservationAdmissionPermit:
+				value := *permit
+				value.self = &value
+				copied = &value
+			case *runnerLedgerAmbiguousResolutionAdmissionPermit:
+				value := *permit
+				value.self = &value
+				copied = &value
+			default:
+				t.Fatalf("unexpected admission permit %T", owner)
+			}
+			if err := claimRunnerLedgerReconciliationTestAdmission(copied); !IsCode(err, CodeEvidenceRecoveryRequired) {
+				t.Fatalf("copied claim err=%v", err)
+			}
+			if err := copied.closeWithoutMutation(nil); !IsCode(err, CodeTransactionBoundary) {
+				t.Fatalf("copied close err=%v", err)
+			}
+			if fixture.database.closed || !fixture.database.locked || fixture.database.unlockCalls != 0 || fixture.database.closeCalls != 0 {
+				t.Fatalf("copy touched original session: %+v", fixture.database)
+			}
+			if err := claimRunnerLedgerReconciliationTestAdmission(owner); err != nil {
+				t.Fatalf("original claim after copy err=%v", err)
+			}
+			if err := closeRunnerDatabasePreflight(fixture.database, base.key, true, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func claimRunnerLedgerReconciliationTestAdmission(owner runnerLedgerRecoveryCloseOnlyPermit) error {
+	switch permit := owner.(type) {
+	case *runnerLedgerCommitObservationAdmissionPermit:
+		_, err := claimRunnerLedgerCommitObservationAdmissionPermit(permit)
+		return err
+	case *runnerLedgerAmbiguousResolutionAdmissionPermit:
+		_, err := claimRunnerLedgerAmbiguousResolutionAdmissionPermit(permit)
+		return err
+	default:
+		return fmt.Errorf("unexpected admission permit %T", owner)
 	}
 }
 
