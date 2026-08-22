@@ -295,7 +295,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 - [x] [P1 aggregate Gate gap audit](../p1/p1-aggregate-gate-gap-audit-20260822.md) 已在固定
       `1416fb3` 按 `G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1` 的逐项退出标准区分已存在 evidence、
       缺失 immutable phase record、D-047 owner decision 与 physical-controller 环境 blocker。该项是只读
-      entry audit，未重跑 full migration、未批准 ADR-0023、未改变任何 Gate 状态。
+      entry audit；固定候选 `6274ad0` 的
+      [`d03d62b` independent review](../p1/p1-aggregate-gate-gap-audit-independent-review-20260822.md)
+      返回 `APPROVE, P0=0/P1=0/P2=0`。未重跑 full migration、未批准 ADR-0023、未改变任何 Gate 状态。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。

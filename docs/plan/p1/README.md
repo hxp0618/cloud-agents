@@ -313,7 +313,9 @@ Platform RC、Beta 或 GA。
 - [`p1-aggregate-gate-gap-audit-20260822.md`](p1-aggregate-gate-gap-audit-20260822.md)：
   固定 `1416fb3` 逐项核对四个 P1 Exit Gate；明确 D-047/ADR-0023 仍须 owner 显式决定、physical
   controller/host power-loss 仍须 dedicated DUT/storage/out-of-band controller，并列出最终 current-source
-  immutable phase records 的顺序。该记录不重跑 full migration、不扩权且不关闭 Gate
+  immutable phase records 的顺序。固定候选 `6274ad0` 的
+  [`d03d62b` independent review](p1-aggregate-gate-gap-audit-independent-review-20260822.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`。该记录不重跑 full migration、不扩权且不关闭 Gate
 
 ## Data kernel decisions
 

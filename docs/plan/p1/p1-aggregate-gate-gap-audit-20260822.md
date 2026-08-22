@@ -1,12 +1,14 @@
 # P1 aggregate Gate gap audit — 2026-08-22
 
-- Status: **READ-ONLY ENTRY AUDIT COMPLETE; P1 REMAINS IN PROGRESS; NO GATE CLOSED**
+- Status: **READ-ONLY ENTRY AUDIT AND INDEPENDENT REVIEW APPROVED; P1 REMAINS IN PROGRESS; NO GATE CLOSED**
 - Audited source: `1416fb34c03a3ada25dd58728046aa753b6e03ed`
 - Source tree: `47d2c467c1b1057eab60ea2109f70cf77bdc7554`
 - Control-plane subtree: `44174a871ddf2da859f901050634f9f1995f0aa6`
 - Branch: `codex/cloud-agents-p1-gate-gap-audit-20260822`
 - Scope: P1 Exit Gate evidence inventory and exact next-entry blockers only
-- Independent reviewer: **pending fixed-candidate read-only review**
+- Independent reviewer: fixed candidate `6274ad0` received
+  [`APPROVE, P0=0/P1=0/P2=0`](p1-aggregate-gate-gap-audit-independent-review-20260822.md)
+  at review commit `d03d62b`
 - Gate effect: **none**
 
 This audit answers one narrow question: after the reusable migration shard runner received an

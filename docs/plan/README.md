@@ -117,7 +117,9 @@ rejection；只复用固定历史 artifact 并运行短 fake fixture，未重跑
 `APPROVE, P0=0/P1=0/P2=0`；该 verdict 只关闭 reusable-runner implementation/review slice，不构成 Gate closure。
 当前 [`P1 aggregate Gate gap audit`](p1/p1-aggregate-gate-gap-audit-20260822.md) 把四个 P1 Exit Gate 的现有
 evidence 与缺口分开：D-047/ADR-0023 仍须 owner 显式决定，physical controller/host power-loss 仍受 dedicated
-DUT/storage/out-of-band controller 阻塞，最终 current-source immutable phase records 仍未形成。审计未改变 Gate。
+DUT/storage/out-of-band controller 阻塞，最终 current-source immutable phase records 仍未形成。固定候选
+`6274ad0` 的 [`d03d62b` independent review](p1/p1-aggregate-gate-gap-audit-independent-review-20260822.md)
+返回 `APPROVE, P0=0/P1=0/P2=0`；审计与复核均未改变 Gate。
 其后 runner ledger consumer 已在 `dcb4b3a` 固定 complete-ledger `return_success` read-only no-op，并由
 `4209e12` 独立复核批准；ADR-0021 的 generated five-pair entry-admission profile、same-verifier fresh-session
 read-only revalidation 与 registry-backed `close_without_mutation` permit 又在修复 generation-lock 漂移后的
