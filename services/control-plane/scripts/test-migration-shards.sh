@@ -227,6 +227,15 @@ wrapper_owns_process_group() {
   [[ $pid == "$pgid" && $observed_pgid == "$pgid" ]]
 }
 
+wrapper_is_stopped_in_process_group() {
+  local pid=$1
+  local pgid=$2
+  local observed_state
+  wrapper_owns_process_group "$pid" "$pgid" || return 1
+  observed_state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
+  [[ $observed_state == T* ]]
+}
+
 process_group_contains_only_wrapper() {
   local pid=$1
   local pgid=$2
@@ -612,7 +621,7 @@ run_shard() {
     printf 'status\t%s\n' "$status"
   } >"$dir/wrapper-complete.tsv"
   while [[ ! -f $retire_gate ]]; do
-    sleep 0.05
+    kill -STOP 0
   done
   trap - INT TERM
   return "$status"
@@ -678,7 +687,16 @@ while ((batch_start < shard_count)); do
       sleep 0.05
     done
 
-    if ((wrapper_completed == 1)) && wrapper_owns_process_group "$shard_pid" "$shard_pgid"; then
+    if ((wrapper_completed == 1)); then
+      while wrapper_owns_process_group "$shard_pid" "$shard_pgid" && ! wrapper_is_stopped_in_process_group "$shard_pid" "$shard_pgid"; do
+        sleep 0.01
+      done
+      if ! wrapper_is_stopped_in_process_group "$shard_pid" "$shard_pgid"; then
+        wrapper_completed=0
+      fi
+    fi
+
+    if ((wrapper_completed == 1)); then
       if ! process_group_contains_only_wrapper "$shard_pid" "$shard_pgid"; then
         echo "process group contains an unexpected member before $shard_name wrapper retirement" >&2
         run_failed=1
@@ -688,8 +706,12 @@ while ((batch_start < shard_count)); do
     fi
 
     retirement_in_progress=1
-    if ((wrapper_completed == 1)) && wrapper_owns_process_group "$shard_pid" "$shard_pgid"; then
+    if ((wrapper_completed == 1)) && wrapper_is_stopped_in_process_group "$shard_pid" "$shard_pgid"; then
       : >"$shard_dir/retire-authorized.txt"
+      if ! kill -CONT -- "-$shard_pgid" 2>/dev/null; then
+        kill -KILL "$shard_pid" 2>/dev/null || true
+        wrapper_completed=0
+      fi
     else
       wrapper_completed=0
     fi
