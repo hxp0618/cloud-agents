@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -208,6 +209,47 @@ func configureRunnerLedgerEntrySuccessExecution(t *testing.T, fixture *runnerLed
 	}
 	fixture.execution.base.service.evidence.runnerEvidenceSessionFake.journal.bundleComplete =
 		permit.selection.entryIndex+1 == uint32(len(base.bundle.Manifest.SchemaBundle.Migrations))
+}
+
+func advanceRunnerLedgerEntrySuccessToKnownCommit(t *testing.T, fixture *runnerLedgerEntrySuccessFixture, permit *runnerLedgerEntryExecutionPermit) *runnerLedgerEntrySuccessState {
+	t.Helper()
+	runner := fixture.execution.base.service.kernel.runner
+	base := fixture.execution.base.service.kernel.base
+	state, err := runner.prepareRunnerLedgerEntrySuccess(context.Background(), permit, base.bundle, base.plans)
+	if err == nil {
+		state, err = runner.beginRunnerLedgerEntrySuccessTransaction(context.Background(), state)
+	}
+	if err == nil {
+		state, err = runner.prepareRunnerLedgerEntrySuccessStatement(context.Background(), state)
+	}
+	for err == nil {
+		state, err = runner.appendRunnerLedgerEntrySuccessIntent(context.Background(), state)
+		if err != nil {
+			break
+		}
+		state, err = runner.executeRunnerLedgerEntrySuccessStatement(context.Background(), state)
+		if err != nil {
+			break
+		}
+		state, err = runner.appendRunnerLedgerEntrySuccessIntermediate(context.Background(), state)
+		if err != nil || state.data.phase == runnerLedgerEntrySuccessFinalIntermediateDurable {
+			break
+		}
+		state, err = runner.advanceRunnerLedgerEntrySuccessStatement(context.Background(), state)
+	}
+	if err == nil {
+		state, err = runner.insertRunnerLedgerEntrySuccessLedger(context.Background(), state)
+	}
+	if err == nil {
+		state, err = runner.appendRunnerLedgerEntrySuccessCommitIntent(context.Background(), state)
+	}
+	if err == nil {
+		state, err = runner.commitRunnerLedgerEntrySuccess(context.Background(), state)
+	}
+	if err != nil || !validRunnerLedgerEntrySuccessState(state) || state.data.phase != runnerLedgerEntrySuccessCommitKnownCommitted {
+		t.Fatalf("known-commit state=%+v err=%v", state, err)
+	}
+	return state
 }
 
 func buildExactMultiStatementAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
@@ -771,6 +813,219 @@ func TestRunnerLedgerEntrySuccessFailureAndUnknownBoundaries(t *testing.T) {
 				t.Fatalf("post-commit failure retained a reusable cursor: %+v", journal.cursor)
 			}
 		})
+	}
+}
+
+func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t *testing.T) {
+	type mutation struct {
+		name   string
+		mutate func(*testing.T, *runnerLedgerEntrySuccessState) func()
+	}
+	mutations := []mutation{
+		{
+			name: "state-self",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.self
+				state.self = nil
+				return func() { state.self = original }
+			},
+		},
+		{
+			name: "state-canonical",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.canonical
+				state.canonical[0] ^= 0xff
+				return func() { state.canonical = original }
+			},
+		},
+		{
+			name: "state-binding",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				if state.binding == nil {
+					t.Fatal("success-state binding is unavailable")
+				}
+				binding := state.binding
+				original := binding.canonical
+				binding.canonical[0] ^= 0xff
+				return func() { binding.canonical = original }
+			},
+		},
+		{
+			name: "primary-registry-missing",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				runnerLedgerEntrySuccessStateRegistry.Delete(state)
+				return func() {}
+			},
+		},
+		{
+			name: "primary-registry-replaced",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				runnerLedgerEntrySuccessStateRegistry.Store(state, "tampered")
+				return func() { runnerLedgerEntrySuccessStateRegistry.Delete(state) }
+			},
+		},
+		{
+			name: "primary-registry-binding",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				value, ok := runnerLedgerEntrySuccessStateRegistry.Load(state)
+				record, recordOK := value.(*runnerLedgerEntrySuccessStateRegistryRecord)
+				if !ok || !recordOK || record == nil {
+					t.Fatal("primary success-state registry record is unavailable")
+				}
+				original := record.binding
+				record.binding = nil
+				return func() { record.binding = original }
+			},
+		},
+		{
+			name: "cleanup-registry-missing",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				runnerLedgerEntrySuccessStateCleanupRegistry.Delete(state)
+				return func() {}
+			},
+		},
+		{
+			name: "cleanup-registry-replaced",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				runnerLedgerEntrySuccessStateCleanupRegistry.Store(state, "tampered")
+				return func() { runnerLedgerEntrySuccessStateCleanupRegistry.Delete(state) }
+			},
+		},
+		{
+			name: "cleanup-registry-binding",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				value, ok := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state)
+				record, recordOK := value.(*runnerLedgerEntrySuccessStateRegistryRecord)
+				if !ok || !recordOK || record == nil {
+					t.Fatal("cleanup success-state registry record is unavailable")
+				}
+				original := record.binding
+				record.binding = nil
+				return func() { record.binding = original }
+			},
+		},
+	}
+	phases := []struct {
+		name   string
+		invoke func(*testing.T, *Runner, *runnerLedgerEntrySuccessState) error
+	}{
+		{
+			name: "commit-known",
+			invoke: func(t *testing.T, runner *Runner, state *runnerLedgerEntrySuccessState) error {
+				t.Helper()
+				next, err := runner.appendRunnerLedgerEntrySuccessTerminal(context.Background(), state)
+				if next != nil {
+					t.Fatalf("tampered commit-known state returned next=%+v", next)
+				}
+				return err
+			},
+		},
+		{
+			name: "terminal-durable",
+			invoke: func(t *testing.T, _ *Runner, state *runnerLedgerEntrySuccessState) error {
+				t.Helper()
+				outcome, err := finishRunnerLedgerEntrySuccess(state)
+				if outcome.valid() {
+					t.Fatalf("tampered terminal state returned outcome=%+v", outcome)
+				}
+				return err
+			},
+		},
+	}
+	for _, phase := range phases {
+		for _, mutation := range mutations {
+			t.Run(phase.name+"/"+mutation.name, func(t *testing.T) {
+				raw, decision := buildExactAdmissionRuntime(t)
+				fixture := newRunnerLedgerEntrySuccessFixture(t, raw, decision, runnerLedgerPreflightEmptyBrandNew, RecoveryBrandNew, RecoveryBeginFirstAttempt)
+				defer fixture.close(t)
+				permit := fixture.prepare(t)
+				configureRunnerLedgerEntrySuccessExecution(t, fixture, permit)
+				runner := fixture.execution.base.service.kernel.runner
+				state := advanceRunnerLedgerEntrySuccessToKnownCommit(t, fixture, permit)
+				if phase.name == "terminal-durable" {
+					var err error
+					state, err = runner.appendRunnerLedgerEntrySuccessTerminal(context.Background(), state)
+					if err != nil || !validRunnerLedgerEntrySuccessState(state) {
+						t.Fatalf("terminal state=%+v err=%v", state, err)
+					}
+				}
+				journal := fixture.execution.base.service.evidence.runnerEvidenceSessionFake.journal
+				if !journal.cursor.Valid() {
+					t.Fatal("post-commit cursor was invalid before tamper")
+				}
+				restore := mutation.mutate(t, state)
+				err := phase.invoke(t, runner, state)
+				restore()
+				if !IsCode(err, CodeEvidenceRecoveryRequired) || journal.cursor.Valid() || validRunnerLedgerEntrySuccessState(state) {
+					t.Fatalf("state=%+v err=%v cursorValid=%t", state, err, journal.cursor.Valid())
+				}
+				assertRunnerLedgerEntrySuccessStateRegistriesCleared(t, state)
+			})
+		}
+	}
+}
+
+func TestRunnerLedgerEntrySuccessPostCommitStateIsOneShotUnderConcurrency(t *testing.T) {
+	raw, decision := buildExactAdmissionRuntime(t)
+	fixture := newRunnerLedgerEntrySuccessFixture(t, raw, decision, runnerLedgerPreflightEmptyBrandNew, RecoveryBrandNew, RecoveryBeginFirstAttempt)
+	defer fixture.close(t)
+	permit := fixture.prepare(t)
+	configureRunnerLedgerEntrySuccessExecution(t, fixture, permit)
+	runner := fixture.execution.base.service.kernel.runner
+	committed := advanceRunnerLedgerEntrySuccessToKnownCommit(t, fixture, permit)
+	type result struct {
+		state *runnerLedgerEntrySuccessState
+		err   error
+	}
+	results := make(chan result, 2)
+	var wait sync.WaitGroup
+	wait.Add(2)
+	for range 2 {
+		go func() {
+			defer wait.Done()
+			state, err := runner.appendRunnerLedgerEntrySuccessTerminal(context.Background(), committed)
+			results <- result{state: state, err: err}
+		}()
+	}
+	wait.Wait()
+	close(results)
+	var terminal *runnerLedgerEntrySuccessState
+	failures := 0
+	for result := range results {
+		if result.err == nil && validRunnerLedgerEntrySuccessState(result.state) {
+			if terminal != nil {
+				t.Fatal("commit-known state produced more than one terminal authority")
+			}
+			terminal = result.state
+			continue
+		}
+		if result.state != nil || !IsCode(result.err, CodeEvidenceRecoveryRequired) {
+			t.Fatalf("unexpected concurrent result state=%+v err=%v", result.state, result.err)
+		}
+		failures++
+	}
+	journal := fixture.execution.base.service.evidence.runnerEvidenceSessionFake.journal
+	if terminal == nil || failures != 1 || !journal.cursor.Valid() || validRunnerLedgerEntrySuccessState(committed) {
+		t.Fatalf("terminal=%+v failures=%d cursorValid=%t", terminal, failures, journal.cursor.Valid())
+	}
+	assertRunnerLedgerEntrySuccessStateRegistriesCleared(t, committed)
+	outcome, err := finishRunnerLedgerEntrySuccess(terminal)
+	if err != nil || !outcome.valid() || !journal.cursor.Valid() {
+		t.Fatalf("outcome=%+v err=%v cursorValid=%t", outcome, err, journal.cursor.Valid())
+	}
+	assertRunnerLedgerEntrySuccessStateRegistriesCleared(t, terminal)
+}
+
+func assertRunnerLedgerEntrySuccessStateRegistriesCleared(t *testing.T, state *runnerLedgerEntrySuccessState) {
+	t.Helper()
+	if _, ok := runnerLedgerEntrySuccessStateRegistry.Load(state); ok {
+		t.Fatal("primary success-state registry retained a consumed authority")
+	}
+	if _, ok := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state); ok {
+		t.Fatal("cleanup success-state registry retained a consumed authority")
 	}
 }
 
