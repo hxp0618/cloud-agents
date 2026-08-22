@@ -1466,6 +1466,8 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 			kind = EvidenceRecordCommitIntent
 		case record.AttemptTerminal != nil:
 			kind = EvidenceRecordAttemptTerminal
+		case record.AmbiguousResolution != nil:
+			kind = EvidenceRecordAmbiguousResolution
 		default:
 			err = errors.New("unsupported runner evidence record")
 		}
@@ -1613,9 +1615,22 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 				}
 				intermediate := previousSnapshot.lastIntermediateEvidence.value
 				commit := previousSnapshot.commitIntent.value
-				state, action := RecoveryTerminal, RecoveryBeginFirstAttemptNextEntry
-				if journal.bundleComplete {
-					state, action = RecoveryCompleted, RecoveryReturnSuccess
+				state, action := RecoveryTerminal, RecoveryReturnFailure
+				switch record.AttemptTerminal.Outcome {
+				case "committed", "ambiguous_reconciled_committed":
+					if journal.bundleComplete {
+						state, action = RecoveryCompleted, RecoveryReturnSuccess
+					} else {
+						action = RecoveryBeginFirstAttemptNextEntry
+					}
+				case "ambiguous_reconciled_pending":
+					if record.AttemptTerminal.AttemptIndex < journal.maxAttempts {
+						action = RecoveryBeginNextAttempt
+					}
+				case "ambiguous_divergent":
+					state = RecoveryDivergent
+				case "ambiguous_unresolved":
+					state, action = RecoveryAmbiguousUnresolved, RecoveryReconcileCommit
 				}
 				snapshot = &RecoverySnapshot{
 					owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
@@ -1631,6 +1646,49 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 					lastTerminal:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.AttemptTerminal),
 					lastTerminalDigest:                   digestPointer(record.AttemptTerminal.TerminalDigest), nextPermittedAction: action,
 				}
+			}
+		case EvidenceRecordAmbiguousResolution:
+			if previousSnapshot == nil || previousSnapshot.lastStatementIntent == nil || previousSnapshot.lastStatementIntentRecordDigest == nil ||
+				previousSnapshot.lastIntermediateEvidence == nil || previousSnapshot.lastIntermediateEvidenceRecordDigest == nil ||
+				previousSnapshot.lastIntermediateStateDigest == nil || previousSnapshot.commitIntent == nil ||
+				previousSnapshot.lastCommitIntentRecordDigest == nil || previousSnapshot.lastTerminal == nil ||
+				previousSnapshot.lastTerminalDigest == nil {
+				return AppendResult{}, errors.New("resolution predecessors are unavailable")
+			}
+			intent := previousSnapshot.lastStatementIntent.value
+			intermediate := previousSnapshot.lastIntermediateEvidence.value
+			commit := previousSnapshot.commitIntent.value
+			terminal := previousSnapshot.lastTerminal.value
+			state, action := RecoveryTerminal, RecoveryReturnFailure
+			switch record.AmbiguousResolution.Outcome {
+			case "resolved_committed":
+				if journal.bundleComplete {
+					state, action = RecoveryCompleted, RecoveryReturnSuccess
+				} else {
+					action = RecoveryBeginFirstAttemptNextEntry
+				}
+			case "resolved_pending":
+				if record.AmbiguousResolution.AttemptIndex < journal.maxAttempts {
+					action = RecoveryBeginNextAttempt
+				}
+			case "resolved_divergent":
+				state = RecoveryDivergent
+			}
+			snapshot = &RecoverySnapshot{
+				owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+				state: state, migrationID: cloneStringPointer(&record.AmbiguousResolution.MigrationID),
+				attemptIndex: cloneUint32Pointer(&record.AmbiguousResolution.AttemptIndex), previousAttemptTerminalDigest: cloneDigestPointer(intent.PreviousAttemptTerminalDigest),
+				lastStatementIntent:                  recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastStatementIntentRecordDigest, intent),
+				lastStatementIntentRecordDigest:      cloneDigestPointer(previousSnapshot.lastStatementIntentRecordDigest),
+				lastIntermediateEvidence:             recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastIntermediateEvidenceRecordDigest, intermediate),
+				lastIntermediateEvidenceRecordDigest: cloneDigestPointer(previousSnapshot.lastIntermediateEvidenceRecordDigest),
+				lastIntermediateStateDigest:          cloneDigestPointer(previousSnapshot.lastIntermediateStateDigest),
+				commitIntent:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastCommitIntentRecordDigest, commit),
+				lastCommitIntentRecordDigest:         cloneDigestPointer(previousSnapshot.lastCommitIntentRecordDigest),
+				lastTerminal:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, previousSnapshot.lastTerminal.recordDigest, terminal),
+				lastTerminalDigest:                   cloneDigestPointer(previousSnapshot.lastTerminalDigest),
+				lastResolution:                       recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.AmbiguousResolution),
+				lastResolutionDigest:                 digestPointer(record.AmbiguousResolution.ResolutionDigest), nextPermittedAction: action,
 			}
 		}
 		if journal.mutateAppendSnapshot != nil {

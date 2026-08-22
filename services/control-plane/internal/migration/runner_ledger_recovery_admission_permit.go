@@ -147,7 +147,19 @@ func (runner *Runner) prepareRunnerLedgerRecoveryAdmission(ctx context.Context, 
 	}
 	defer revokeRunnerLedgerRecoveryAdmissionClaim(claim)
 
-	observation, err := runner.openRunnerLockedLedgerCatalogObservation(ctx, dsn, bundle, plans, evidence, candidate)
+	var observation *runnerLockedLedgerCatalogObservation
+	if action == generatedRunnerLedgerRecoveryProfiles[2].action || action == generatedRunnerLedgerRecoveryProfiles[3].action {
+		hint, hintErr := runnerLedgerReconciliationHintFromSnapshot(evidence.RecoverySnapshot())
+		if hintErr != nil {
+			return nil, hintErr
+		}
+		if hint == nil {
+			return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-admission", "reconciliation recovery boundary is unavailable", nil)
+		}
+		observation, err = runner.openRunnerLockedLedgerCatalogObservationWithReconciliation(ctx, dsn, bundle, plans, evidence, candidate, hint)
+	} else {
+		observation, err = runner.openRunnerLockedLedgerCatalogObservation(ctx, dsn, bundle, plans, evidence, candidate)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +199,12 @@ func (runner *Runner) admitRunnerLedgerRecoveryAction(ctx context.Context, dsn s
 	if abort, ok := permit.(*runnerLedgerAbortTerminalAdmissionPermit); ok {
 		return runner.appendRunnerLedgerRecoveryAbortTerminal(ctx, abort, bundle, plans)
 	}
+	if observation, ok := permit.(*runnerLedgerCommitObservationAdmissionPermit); ok {
+		return runner.appendRunnerLedgerRecoveryCommitObservation(ctx, observation, bundle, plans)
+	}
+	if resolution, ok := permit.(*runnerLedgerAmbiguousResolutionAdmissionPermit); ok {
+		return runner.appendRunnerLedgerRecoveryAmbiguousResolution(ctx, resolution, bundle, plans)
+	}
 	return permit.closeWithoutMutation(nil)
 }
 
@@ -202,12 +220,24 @@ func validateRunnerLedgerRecoveryAdmissionObservation(fact runnerLedgerConsumerF
 	) || fact.manifestDigest != observation.bundle.Manifest.ManifestDigest ||
 		fact.dispatch.fact.schemaBundleDigest != projection.schemaBundleDigest ||
 		fact.dispatch.fact.executionLineageDigest != projection.executionLineageDigest ||
-		fact.dispatch.runnerProjectionDecisionDigest != projection.runnerProjectionDecisionDigest ||
-		fact.dispatch.fact.orderedMigrationPrefixLength != uint32(len(projection.ledger.rows)) ||
-		fact.dispatch.fact.orderedMigrationPrefixDigest != projection.ledger.digest ||
-		!sameOptionalString(fact.dispatch.fact.orderedMigrationPrefixHead, cloneStringPointerIfNonEmpty(projection.ledger.head)) ||
-		fact.dispatch.fact.lastAppliedCatalogContractDigest != projection.projectionSubjectDigest {
+		fact.dispatch.runnerProjectionDecisionDigest != projection.runnerProjectionDecisionDigest {
 		return selection, fail(CodeEvidenceJournalCorrupt, "runner-ledger-recovery-admission-bind", "fresh database observation differs from the consumed recovery fact", nil)
+	}
+	if projection.reconciliation == nil {
+		if fact.dispatch.fact.orderedMigrationPrefixLength != uint32(len(projection.ledger.rows)) ||
+			fact.dispatch.fact.orderedMigrationPrefixDigest != projection.ledger.digest ||
+			!sameOptionalString(fact.dispatch.fact.orderedMigrationPrefixHead, cloneStringPointerIfNonEmpty(projection.ledger.head)) ||
+			fact.dispatch.fact.lastAppliedCatalogContractDigest != projection.projectionSubjectDigest {
+			return selection, fail(CodeEvidenceJournalCorrupt, "runner-ledger-recovery-admission-bind", "fresh database observation differs from the consumed recovery fact", nil)
+		}
+	} else if !validRunnerLedgerReconciliationFacts(projection.reconciliation) ||
+		fact.dispatch.fact.orderedMigrationPrefixLength != projection.reconciliation.targetIndex ||
+		fact.dispatch.fact.lastAppliedCatalogContractDigest != projection.reconciliation.predecessorProjectionSubject ||
+		fact.dispatch.fact.recovery.State != projection.reconciliation.state ||
+		fact.dispatch.fact.recovery.Action != projection.reconciliation.action ||
+		fact.dispatch.recoveryMigrationID == nil || *fact.dispatch.recoveryMigrationID != projection.reconciliation.migrationID ||
+		fact.dispatch.recoveryAttemptIndex == nil || *fact.dispatch.recoveryAttemptIndex != projection.reconciliation.attemptIndex {
+		return selection, fail(CodeEvidenceJournalCorrupt, "runner-ledger-recovery-admission-bind", "fresh reconciliation observation differs from the consumed recovery fact", nil)
 	}
 	switch fact.dispatch.fact.disposition {
 	case runnerLedgerPreflightEmptyBrandNew:
@@ -215,7 +245,8 @@ func validateRunnerLedgerRecoveryAdmissionObservation(fact runnerLedgerConsumerF
 			return selection, fail(CodeEvidenceJournalCorrupt, "runner-ledger-recovery-admission-bind", "empty recovery fact observed a non-empty database prefix", nil)
 		}
 	case runnerLedgerPreflightPartialRetryOrRecovery:
-		if projection.state != runnerLedgerCatalogPartial || len(projection.ledger.rows) == 0 || fact.dispatch.kind != runnerLedgerPreflightDispatchRecovery {
+		if fact.dispatch.kind != runnerLedgerPreflightDispatchRecovery || projection.reconciliation == nil &&
+			(projection.state != runnerLedgerCatalogPartial || len(projection.ledger.rows) == 0) {
 			return selection, fail(CodeEvidenceJournalCorrupt, "runner-ledger-recovery-admission-bind", "partial recovery fact observed a non-partial database prefix", nil)
 		}
 	default:
@@ -355,6 +386,8 @@ func bindRunnerLedgerRecoveryAdmissionPermit(observation *runnerLockedLedgerCata
 		catalogDigest = observation.initial.Digest
 	} else if observation.cumulative != nil {
 		catalogDigest = observation.cumulative.Digest
+	} else if observation.reconciliation != nil {
+		catalogDigest = observation.reconciliation.subjectDigest
 	}
 	if catalogDigest.Validate() != nil || !sameRunnerDedicatedSessionIdentity(observation.connected.Metadata.Snapshot, metadata) {
 		return nil, fail(CodeProjectionMetadataMismatch, "runner-ledger-recovery-admission-permit", "retained database identity or catalog is unavailable", nil)
@@ -576,6 +609,7 @@ func cloneRunnerLedgerCatalogPreflight(prepared *runnerLedgerCatalogPreflight) *
 	owned.migrationRoleAuthority = cloneProjectionValue(prepared.migrationRoleAuthority)
 	owned.initialPredecessor = cloneCatalogStateProjectionResultPointer(prepared.initialPredecessor)
 	owned.cumulativeCatalog = cloneCatalogProjectionResultPointer(prepared.cumulativeCatalog)
+	owned.reconciliation = cloneRunnerLedgerReconciliationFacts(prepared.reconciliation)
 	return &owned
 }
 
@@ -603,6 +637,8 @@ func runnerLedgerRecoveryAdmissionProjectionMatchesCore(core *runnerLedgerRecove
 		catalogDigest = core.projection.initialPredecessor.Digest
 	} else if core.projection.cumulativeCatalog != nil {
 		catalogDigest = core.projection.cumulativeCatalog.Digest
+	} else if core.projection.reconciliation != nil {
+		catalogDigest = core.projection.reconciliation.subjectDigest
 	}
 	return catalogDigest == core.catalogDigest && core.bindings.schemaBundleDigest == core.generation.schemaBundleDigest &&
 		core.bindings.executionLineageDigest == core.generation.executionLineageDigest &&

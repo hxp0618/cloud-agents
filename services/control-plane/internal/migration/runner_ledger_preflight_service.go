@@ -119,7 +119,20 @@ var (
 // the read-only kernel. Runner.Run reaches it only through the closed generated
 // consumer service; it does not enter the migration writer or mutate evidence.
 func (runner *Runner) prepareRunnerLedgerPreflightClaim(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLedgerPreflightClaim, error) {
-	projection, err := runner.projectRunnerLedgerCatalogPreflight(ctx, dsn, bundle, plans, evidence, candidate)
+	var projection *runnerLedgerCatalogPreflight
+	var snapshot *RecoverySnapshot
+	if evidence != nil {
+		snapshot = evidence.RecoverySnapshot()
+	}
+	hint, err := runnerLedgerReconciliationHintFromSnapshot(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if hint == nil {
+		projection, err = runner.projectRunnerLedgerCatalogPreflight(ctx, dsn, bundle, plans, evidence, candidate)
+	} else {
+		projection, err = runner.projectRunnerLedgerReconciliationPreflight(ctx, dsn, bundle, plans, evidence, candidate, hint)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -246,14 +259,18 @@ func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight
 		len(facts.schema.orderedMigrations) != len(facts.schema.signedExpectedLedgerRows) {
 		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-bind", "projection and evidence describe different verified runtime identities", nil)
 	}
-	if len(projection.ledger.rows) != len(facts.schema.durableObservedLedgerPrefix) ||
-		projection.ledger.digest != facts.schema.durableObservedLedgerDigest {
-		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceJournalCorrupt, "runner-ledger-preflight-bind", "database and evidence ledger prefixes differ", nil)
-	}
-	for index := range projection.ledger.rows {
-		if !canonicalEqual(projection.ledger.rows[index], facts.schema.durableObservedLedgerPrefix[index]) {
-			return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceJournalCorrupt, "runner-ledger-preflight-bind", "database and evidence ledger rows differ", nil)
+	if projection.reconciliation == nil {
+		if len(projection.ledger.rows) != len(facts.schema.durableObservedLedgerPrefix) ||
+			projection.ledger.digest != facts.schema.durableObservedLedgerDigest {
+			return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceJournalCorrupt, "runner-ledger-preflight-bind", "database and evidence ledger prefixes differ", nil)
 		}
+		for index := range projection.ledger.rows {
+			if !canonicalEqual(projection.ledger.rows[index], facts.schema.durableObservedLedgerPrefix[index]) {
+				return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceJournalCorrupt, "runner-ledger-preflight-bind", "database and evidence ledger rows differ", nil)
+			}
+		}
+	} else if err := validateRunnerLedgerReconciliationAgainstEvidence(projection, facts); err != nil {
+		return runnerLedgerPreflightDispatch{}, err
 	}
 	for index, migration := range facts.schema.orderedMigrations {
 		if facts.schema.signedExpectedLedgerRows[index].MigrationID != migration {
@@ -268,29 +285,33 @@ func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight
 	var disposition runnerLedgerPreflightDisposition
 	var nextEntry *runnerLedgerPreflightNextEntry
 	var kind runnerLedgerPreflightDispatchKind
-	switch projection.state {
-	case runnerLedgerCatalogEmpty:
-		disposition, kind = runnerLedgerPreflightEmptyBrandNew, runnerLedgerPreflightDispatchEntry
-		entry, err := runnerLedgerPreflightNextEntryFromSchema(facts.schema, 0)
-		if err != nil {
-			return runnerLedgerPreflightDispatch{}, err
-		}
-		nextEntry = &entry
-	case runnerLedgerCatalogPartial:
-		if generatedRunnerLedgerPreflightRecoveryPairAllowed(runnerLedgerPreflightPartialNextEntry, recovery.state, recovery.nextPermittedAction) {
-			disposition, kind = runnerLedgerPreflightPartialNextEntry, runnerLedgerPreflightDispatchEntry
-			entry, err := runnerLedgerPreflightNextEntryFromSchema(facts.schema, len(projection.ledger.rows))
+	if projection.reconciliation != nil {
+		disposition, kind = runnerLedgerPreflightPartialRetryOrRecovery, runnerLedgerPreflightDispatchRecovery
+	} else {
+		switch projection.state {
+		case runnerLedgerCatalogEmpty:
+			disposition, kind = runnerLedgerPreflightEmptyBrandNew, runnerLedgerPreflightDispatchEntry
+			entry, err := runnerLedgerPreflightNextEntryFromSchema(facts.schema, 0)
 			if err != nil {
 				return runnerLedgerPreflightDispatch{}, err
 			}
 			nextEntry = &entry
-		} else {
-			disposition, kind = runnerLedgerPreflightPartialRetryOrRecovery, runnerLedgerPreflightDispatchRecovery
+		case runnerLedgerCatalogPartial:
+			if generatedRunnerLedgerPreflightRecoveryPairAllowed(runnerLedgerPreflightPartialNextEntry, recovery.state, recovery.nextPermittedAction) {
+				disposition, kind = runnerLedgerPreflightPartialNextEntry, runnerLedgerPreflightDispatchEntry
+				entry, err := runnerLedgerPreflightNextEntryFromSchema(facts.schema, len(projection.ledger.rows))
+				if err != nil {
+					return runnerLedgerPreflightDispatch{}, err
+				}
+				nextEntry = &entry
+			} else {
+				disposition, kind = runnerLedgerPreflightPartialRetryOrRecovery, runnerLedgerPreflightDispatchRecovery
+			}
+		case runnerLedgerCatalogComplete:
+			disposition, kind = runnerLedgerPreflightCompleteReturnSuccess, runnerLedgerPreflightDispatchReturnSuccess
+		default:
+			return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-bind", "ledger disposition is unclassified", nil)
 		}
-	case runnerLedgerCatalogComplete:
-		disposition, kind = runnerLedgerPreflightCompleteReturnSuccess, runnerLedgerPreflightDispatchReturnSuccess
-	default:
-		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-bind", "ledger disposition is unclassified", nil)
 	}
 	if !generatedRunnerLedgerPreflightRecoveryPairAllowed(disposition, recovery.state, recovery.nextPermittedAction) ||
 		!runnerLedgerPreflightRecoveryIdentityMatches(disposition, projection, facts.schema, recovery) {
@@ -301,11 +322,23 @@ func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight
 			return runnerLedgerPreflightDispatch{}, err
 		}
 	}
+	factLedger := projection.ledger
+	factCatalogSubject := projection.projectionSubjectDigest
+	if projection.reconciliation != nil {
+		factLedger = runnerLedgerPrefix{
+			rows:   cloneProjectionValue(facts.schema.durableObservedLedgerPrefix),
+			digest: facts.schema.durableObservedLedgerDigest,
+		}
+		if len(factLedger.rows) > 0 {
+			factLedger.head = factLedger.rows[len(factLedger.rows)-1].MigrationID
+		}
+		factCatalogSubject = projection.reconciliation.predecessorProjectionSubject
+	}
 	fact, err := bindRunnerLedgerPreflightFact(generatedRunnerLedgerPreflightProfile, disposition, runnerLedgerPreflightFactInput{
 		SchemaBundleDigest: projection.schemaBundleDigest, ExecutionLineageDigest: projection.executionLineageDigest,
-		OrderedMigrationPrefixDigest: projection.ledger.digest, OrderedMigrationPrefixLength: uint32(len(projection.ledger.rows)),
-		OrderedMigrationPrefixHead:       cloneStringPointerIfNonEmpty(projection.ledger.head),
-		LastAppliedCatalogContractDigest: projection.projectionSubjectDigest,
+		OrderedMigrationPrefixDigest: factLedger.digest, OrderedMigrationPrefixLength: uint32(len(factLedger.rows)),
+		OrderedMigrationPrefixHead:       cloneStringPointerIfNonEmpty(factLedger.head),
+		LastAppliedCatalogContractDigest: factCatalogSubject,
 		NextEntry:                        nextEntry, Recovery: recoveryPair,
 	})
 	if err != nil {
@@ -359,6 +392,9 @@ func runnerLedgerPreflightRecoveryIdentityMatches(disposition runnerLedgerPrefli
 		return recovery.state == RecoveryTerminal && runnerLedgerPreflightRecoveryIdentityIs(recovery, projection.ledger.head, 1)
 	case runnerLedgerPreflightPartialRetryOrRecovery:
 		nextIndex := len(projection.ledger.rows)
+		if projection.reconciliation != nil {
+			nextIndex = len(schema.durableObservedLedgerPrefix)
+		}
 		if nextIndex >= len(schema.signedExpectedLedgerRows) {
 			return false
 		}
@@ -414,15 +450,13 @@ func runnerLedgerPreflightNextEntryFromSchema(schema verifiedRecoverySchemaWitne
 
 func validateRunnerLedgerPreflightFinalCatalog(projection *runnerLedgerCatalogPreflight, expected Digest) error {
 	if projection == nil || projection.state != runnerLedgerCatalogComplete || projection.cumulativeCatalog == nil ||
-		projection.cumulativeCatalog.Metadata.Scope == nil || expected.Validate() != nil {
+		projection.cumulativeCatalog.Digest.Validate() != nil || expected.Validate() != nil {
 		return fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-catalog", "complete catalog evidence is unavailable", nil)
 	}
-	state := CatalogStateProjection{Present: &SchemaPresentProjection{
-		State: "schema_present", Scope: cloneProjectionValue(*projection.cumulativeCatalog.Metadata.Scope),
-		Body: cloneProjectionValue(projection.cumulativeCatalog.Projection.Body),
-	}}
-	digest, err := state.ComputeDigest()
-	if err != nil || digest != expected {
+	// Final intermediate evidence carries the CatalogProjection domain digest
+	// emitted by the verified catalog projector. CatalogStateProjection is the
+	// statement-transition predecessor domain and is not interchangeable here.
+	if projection.cumulativeCatalog.Digest != expected {
 		return fail(CodeEvidenceJournalCorrupt, "runner-ledger-preflight-catalog", "database catalog and evidence final catalog differ", nil)
 	}
 	return nil

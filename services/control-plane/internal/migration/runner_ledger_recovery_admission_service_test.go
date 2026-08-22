@@ -95,6 +95,35 @@ func TestRunnerLedgerRecoveryAdmissionAcceptsExactlyTwelveGeneratedPairs(t *test
 		pair := common.pairs[index]
 		name := string(pair.profileAction) + "/" + string(pair.state) + "/" + string(pair.action)
 		t.Run(name, func(t *testing.T) {
+			if pair.profileAction == generatedRunnerLedgerRecoveryProfiles[2].action ||
+				pair.profileAction == generatedRunnerLedgerRecoveryProfiles[3].action {
+				fixture := newRunnerLedgerRecoveryReconciliationFixture(t, pair.state, runnerLedgerReconciliationExactPending, 16)
+				defer fixture.close(t)
+				base := fixture.success.execution.base.service.kernel.base
+				runner := fixture.success.execution.base.service.kernel.runner
+				permit, err := runner.prepareRunnerLedgerRecoveryAdmission(
+					context.Background(), "test-only", base.bundle, base.plans,
+					fixture.success.execution.base.service.evidence, base.candidate, fixture.fact,
+				)
+				core := runnerLedgerRecoveryPermitCore(permit)
+				if err != nil || !validRunnerLedgerRecoveryAdmissionPermit(permit) || core == nil ||
+					core.action != pair.profileAction || core.selection.action != pair.profileAction ||
+					core.selection.planCount == 0 || core.selection.planDigest == ([32]byte{}) ||
+					core.selection.maxAttempts == 0 || core.selection.attemptIndex == 0 {
+					t.Fatalf("reconciliation permit=%T core=%+v err=%v", permit, core, err)
+				}
+				assertRunnerLedgerRecoveryPermitType(t, permit, pair.profileAction)
+				counts[pair.profileAction]++
+				if err := permit.closeWithoutMutation(nil); err != nil {
+					t.Fatal(err)
+				}
+				if !fixture.database.closed || fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 ||
+					fixture.database.beginCalls != 0 || fixture.database.backend.executeCalls != 0 ||
+					fixture.database.backend.ledgerInsertCalls != 0 || fixture.database.backend.commitCalls != 0 {
+					t.Fatalf("reconciliation close_without_mutation escaped boundary: %+v", fixture.database)
+				}
+				return
+			}
 			fixture := newRunnerLedgerRecoveryAdmissionFixture(t, pair.disposition, pair.state, pair.action)
 			defer fixture.close(t)
 			permit, err := fixture.prepare(context.Background())

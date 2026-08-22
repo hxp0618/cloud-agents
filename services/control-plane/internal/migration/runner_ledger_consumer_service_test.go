@@ -78,6 +78,37 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 				}
 				return
 			}
+			if action, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok &&
+				(action == generatedRunnerLedgerRecoveryProfiles[2].action || action == generatedRunnerLedgerRecoveryProfiles[3].action) {
+				fixture := newRunnerLedgerRecoveryReconciliationFixture(t, test.state, runnerLedgerReconciliationExactPending, 16)
+				defer fixture.close(t)
+				base := fixture.success.execution.base.service.kernel.base
+				rows := runnerLedgerReconciliationFixtureRows(base.bundle, runnerLedgerReconciliationExactPending)
+				preflight := newRunnerPreflightSession()
+				preflight.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(rows), cloneProjectionValue(rows)}
+				sequence := &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{preflight, fixture.database}}
+				runner := fixture.success.execution.base.service.kernel.runner
+				runner.Connector = sequence
+				journal := fixture.success.execution.base.service.evidence.runnerEvidenceSessionFake.journal
+				beforeAppends := journal.appendCalls
+				step, err := runner.consumeRunnerLedgerPreflightStep(
+					context.Background(), "test-only", base.bundle, base.plans,
+					fixture.success.execution.base.service.evidence, base.candidate,
+				)
+				counts[test.wantAction]++
+				assertRunnerLedgerConsumerNotImplemented(t, RunResult{}, err, "runner-ledger-consumer-recovery")
+				if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) || sequence.attempts != 2 || preflight.ledgerReadCalls != 2 ||
+					preflight.unlockCalls != 1 || preflight.closeCalls != 1 || fixture.database.ledgerReadCalls != 6 ||
+					fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 || fixture.database.beginCalls != 0 ||
+					journal.appendCalls != beforeAppends+1 || fixture.beforeCursor.Valid() {
+					t.Fatalf("reconciliation consumer matrix did not append exactly once: step=%+v sequence=%+v preflight=%+v admission=%+v journal=%+v", step, sequence, preflight, fixture.database, journal)
+				}
+				if (test.state == RecoveryDanglingCommitIntent && journal.appendedRecord.AttemptTerminal == nil) ||
+					(test.state == RecoveryAmbiguousUnresolved && journal.appendedRecord.AmbiguousResolution == nil) {
+					t.Fatalf("reconciliation consumer appended wrong record: %+v", journal.appendedRecord)
+				}
+				return
+			}
 			fixture := newRunnerLedgerPreflightServiceFixture(t)
 			defer fixture.close(t)
 			fixture.configure(t, test.disposition, test.state, test.action, 16)
@@ -805,7 +836,7 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 		wantOp       string
 	}{
 		{"unsupported-entry-retry", 0, RecoveryBrandNewInherited, RecoveryBeginNextAttempt, "runner-ledger-consumer-entry"},
-		{"partial-recovery", 1, RecoveryDanglingCommitIntent, RecoveryReconcileCommit, "runner-ledger-consumer-recovery"},
+		{"partial-recovery", 1, RecoveryTerminal, RecoveryBeginNextAttempt, "runner-ledger-consumer-recovery"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			database := newRunnerPreflightSession()

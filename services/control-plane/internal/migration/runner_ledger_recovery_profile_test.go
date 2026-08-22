@@ -188,9 +188,10 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 	}
 	allowedProductionSymbols := map[string]map[string]bool{
 		"generatedRunnerLedgerRecoveryProfiles": {
-			"runner_ledger_recovery_abort_terminal.go":   true,
-			"runner_ledger_recovery_admission_claim.go":  true,
-			"runner_ledger_recovery_admission_permit.go": true,
+			"runner_ledger_recovery_abort_terminal.go":        true,
+			"runner_ledger_recovery_admission_claim.go":       true,
+			"runner_ledger_recovery_admission_permit.go":      true,
+			"runner_ledger_recovery_commit_reconciliation.go": true,
 		},
 		"generatedRunnerLedgerRecoveryAdmissionAction": {
 			"runner_ledger_consumer_service.go":          true,
@@ -213,7 +214,7 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 		}
 		if name == "runner_ledger_recovery_profile.go" || name == "runner_ledger_recovery_profile_generated.go" ||
 			name == "runner_ledger_recovery_abort_terminal.go" || name == "runner_ledger_recovery_admission_claim.go" ||
-			name == "runner_ledger_recovery_admission_permit.go" {
+			name == "runner_ledger_recovery_admission_permit.go" || name == "runner_ledger_recovery_commit_reconciliation.go" {
 			for _, imported := range file.Imports {
 				path := strings.Trim(imported.Path.Value, `"`)
 				if path == "database/sql" || path == "net/http" || strings.Contains(path, "pgx") {
@@ -260,13 +261,15 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 	}
 }
 
-func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyAbortWriterEdge(t *testing.T) {
+func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	admissionCalls := 0
 	abortWriterCalls := 0
+	commitObservationWriterCalls := 0
+	ambiguousResolutionWriterCalls := 0
 	forbidden := map[string]bool{
 		"Append": true, "AppendDurable": true, "AppendGenerationSuperseded": true,
 		"AppendGenerationReserved": true, "AppendGenerationActivated": true,
@@ -298,6 +301,18 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyAbortWriterEdge(t *t
 				abortWriterCalls++
 				if name != "runner_ledger_recovery_admission_permit.go" {
 					t.Errorf("abort-terminal writer has production caller in %s", name)
+				}
+			}
+			if ok && selector.Sel.Name == "appendRunnerLedgerRecoveryCommitObservation" {
+				commitObservationWriterCalls++
+				if name != "runner_ledger_recovery_admission_permit.go" {
+					t.Errorf("commit-observation writer has production caller in %s", name)
+				}
+			}
+			if ok && selector.Sel.Name == "appendRunnerLedgerRecoveryAmbiguousResolution" {
+				ambiguousResolutionWriterCalls++
+				if name != "runner_ledger_recovery_admission_permit.go" {
+					t.Errorf("ambiguous-resolution writer has production caller in %s", name)
 				}
 			}
 			return true
@@ -339,5 +354,8 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyAbortWriterEdge(t *t
 	}
 	if abortWriterCalls != 1 {
 		t.Fatalf("abort-terminal writer production calls=%d want=1", abortWriterCalls)
+	}
+	if commitObservationWriterCalls != 1 || ambiguousResolutionWriterCalls != 1 {
+		t.Fatalf("reconciliation writer production calls=%d/%d want=1/1", commitObservationWriterCalls, ambiguousResolutionWriterCalls)
 	}
 }

@@ -47,6 +47,14 @@ func TestHistoricalVerificationFactsRebuildExactOrdinarySubjects(t *testing.T) {
 	if !canonicalEqual(facts.ledgerRows[0], commitIntentLedgerRow(entry, bundle.ownedInputs.manifest.SchemaBundleDigest)) {
 		t.Fatal("historical ledger row differs from immutable manifest")
 	}
+	binding, ok := exactCatalogBindingForHead(bindings.executableCatalogs, entry.ID)
+	if !ok {
+		t.Fatal("historical final catalog binding is unavailable")
+	}
+	wantFinalCatalog, err := digestProjectionWrapper(CatalogProjectionDigestDomain, binding.verifiedCatalog.ExpectedProjection())
+	if err != nil || facts.finalCatalogDigest[entry.ID] != digestRaw(wantFinalCatalog) {
+		t.Fatalf("historical final catalog digest=%x want=%s err=%v", facts.finalCatalogDigest[entry.ID], wantFinalCatalog, err)
+	}
 
 	// The historical path validates at the shared pre-expiry point, while the
 	// live execution path rejects the same binding after expiry.

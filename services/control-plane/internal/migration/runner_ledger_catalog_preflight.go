@@ -39,6 +39,7 @@ type runnerLedgerCatalogPreflight struct {
 	migrationRoleAuthority         ProjectionResult[AuthorityProjection]
 	initialPredecessor             *ProjectionResult[CatalogStateProjection]
 	cumulativeCatalog              *ProjectionResult[CatalogProjection]
+	reconciliation                 *runnerLedgerReconciliationFacts
 	subjectDigest                  Digest
 }
 
@@ -63,6 +64,7 @@ type runnerLedgerCatalogPreflightWire struct {
 	MigrationRoleAuthority         ProjectionResult[AuthorityProjection]     `json:"migration_role_authority"`
 	InitialPredecessor             *ProjectionResult[CatalogStateProjection] `json:"initial_predecessor"`
 	CumulativeCatalog              *ProjectionResult[CatalogProjection]      `json:"cumulative_catalog"`
+	Reconciliation                 *runnerLedgerReconciliationFactsWire      `json:"reconciliation,omitempty"`
 }
 
 // runnerLockedLedgerCatalogObservation is an ephemeral owner used only inside
@@ -84,6 +86,8 @@ type runnerLockedLedgerCatalogObservation struct {
 	cumulative            *ProjectionResult[CatalogProjection]
 	catalogContractDigest *Digest
 	projectionSubject     Digest
+	reconciliationHint    *runnerLedgerReconciliationHint
+	reconciliation        *runnerLedgerReconciliationFacts
 	closed                bool
 	transferred           bool
 }
@@ -113,6 +117,10 @@ func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, d
 }
 
 func (runner *Runner) openRunnerLockedLedgerCatalogObservation(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLockedLedgerCatalogObservation, error) {
+	return runner.openRunnerLockedLedgerCatalogObservationWithReconciliation(ctx, dsn, bundle, plans, evidence, candidate, nil)
+}
+
+func (runner *Runner) openRunnerLockedLedgerCatalogObservationWithReconciliation(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate, hint *runnerLedgerReconciliationHint) (*runnerLockedLedgerCatalogObservation, error) {
 	if runner == nil || ctx == nil {
 		return nil, fail(CodeTransactionBoundary, "runner-ledger-catalog-preflight", "runner or projection context is unavailable", nil)
 	}
@@ -194,7 +202,15 @@ func (runner *Runner) openRunnerLockedLedgerCatalogObservation(ctx context.Conte
 	if err != nil {
 		return failClosed(err)
 	}
-	projection, err := runner.projectRunnerLedgerCatalogForPrefix(ctx, session, bindings, bundle, plans, before, migrationRole)
+	var projection runnerLedgerCatalogProjectionFacts
+	var reconciliation *runnerLedgerReconciliationFacts
+	if hint == nil {
+		projection, err = runner.projectRunnerLedgerCatalogForPrefix(ctx, session, bindings, bundle, plans, before, migrationRole)
+	} else {
+		projection, reconciliation, err = runner.projectRunnerLedgerReconciliationForPrefix(
+			ctx, session, bindings, bundle, plans, before, migrationRole, *hint,
+		)
+	}
 	if err != nil {
 		return failClosed(err)
 	}
@@ -216,6 +232,8 @@ func (runner *Runner) openRunnerLockedLedgerCatalogObservation(ctx context.Conte
 		initial:               cloneCatalogStateProjectionResultPointer(projection.initial),
 		cumulative:            cloneCatalogProjectionResultPointer(projection.cumulative),
 		catalogContractDigest: cloneDigestPointer(projection.catalogContractDigest), projectionSubject: projection.projectionSubject,
+		reconciliationHint: cloneRunnerLedgerReconciliationHint(hint),
+		reconciliation:     cloneRunnerLedgerReconciliationFacts(reconciliation),
 	}
 	observation.self = observation
 	return observation, nil
@@ -228,6 +246,7 @@ func (runner *Runner) projectRunnerLedgerCatalogForPrefix(ctx context.Context, s
 		if err != nil {
 			return facts, err
 		}
+		facts.projectionSubject = bindings.initialSchemaScope.SubjectDigest()
 		projected, err := runner.projectRunnerInitialPrecondition(ctx, session, bindings.initialSchemaScope, firstPlan)
 		if err != nil {
 			return facts, err
@@ -236,13 +255,15 @@ func (runner *Runner) projectRunnerLedgerCatalogForPrefix(ctx context.Context, s
 			return facts, fail(CodeProjectionMetadataMismatch, "runner-ledger-catalog-predecessor", "initial predecessor projection does not describe the locked database session", nil)
 		}
 		facts.initial = &projected
-		facts.projectionSubject = bindings.initialSchemaScope.SubjectDigest()
 		return facts, nil
 	}
 	catalogBinding, ok := exactCatalogBindingForHead(bindings.executableCatalogs, prefix.head)
 	if !ok || catalogBinding.catalogContractDigest.Validate() != nil || catalogBinding.verifiedCatalog.validate() != nil {
 		return facts, fail(CodeUntrusted, "runner-ledger-catalog-selection", "ledger head has no exact signed cumulative catalog", nil)
 	}
+	ownedDigest := catalogBinding.catalogContractDigest
+	facts.catalogContractDigest = &ownedDigest
+	facts.projectionSubject = catalogBinding.verifiedCatalog.SubjectDigest()
 	projected, err := runner.projectRunnerCumulativeCatalog(ctx, session, catalogBinding.verifiedCatalog)
 	if err != nil {
 		return facts, err
@@ -250,10 +271,7 @@ func (runner *Runner) projectRunnerLedgerCatalogForPrefix(ctx context.Context, s
 	if !sameRunnerDatabaseIdentity(migrationRole.Metadata.Snapshot, projected.Metadata.Snapshot) {
 		return facts, fail(CodeProjectionMetadataMismatch, "runner-ledger-catalog-cumulative", "cumulative catalog projection does not describe the locked database session", nil)
 	}
-	ownedDigest := catalogBinding.catalogContractDigest
 	facts.cumulative = &projected
-	facts.catalogContractDigest = &ownedDigest
-	facts.projectionSubject = catalogBinding.verifiedCatalog.SubjectDigest()
 	return facts, nil
 }
 
@@ -264,6 +282,13 @@ func (observation *runnerLockedLedgerCatalogObservation) active() bool {
 func (observation *runnerLockedLedgerCatalogObservation) bind() (*runnerLedgerCatalogPreflight, error) {
 	if observation == nil || observation.self != observation || observation.bundle == nil {
 		return nil, fail(CodeTransactionBoundary, "runner-ledger-catalog-bind", "locked catalog observation is unavailable", nil)
+	}
+	if observation.reconciliation != nil {
+		return bindRunnerLedgerReconciliationPreflight(
+			observation.bindings, observation.bundle, observation.plans, observation.ledger,
+			observation.connected, observation.migrationRole, observation.initial, observation.cumulative,
+			observation.catalogContractDigest, observation.projectionSubject, observation.reconciliation,
+		)
 	}
 	return bindRunnerLedgerCatalogPreflight(
 		observation.bindings, observation.bundle, observation.plans, observation.ledger,
@@ -283,9 +308,20 @@ func (observation *runnerLockedLedgerCatalogObservation) revalidate(ctx context.
 	if !sameRunnerLedgerPrefix(before, observation.ledger) {
 		return fail(CodeInvalidLedger, "runner-ledger-entry-admission-revalidate", "ledger prefix changed before final catalog projection", nil)
 	}
-	projected, err := runner.projectRunnerLedgerCatalogForPrefix(
-		ctx, observation.session, observation.bindings, observation.bundle, observation.plans, before, observation.migrationRole,
-	)
+	var projected runnerLedgerCatalogProjectionFacts
+	var reconciliation *runnerLedgerReconciliationFacts
+	if observation.reconciliation == nil {
+		projected, err = runner.projectRunnerLedgerCatalogForPrefix(
+			ctx, observation.session, observation.bindings, observation.bundle, observation.plans, before, observation.migrationRole,
+		)
+	} else if observation.reconciliationHint == nil {
+		return fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-admission-revalidate", "reconciliation hint is unavailable", nil)
+	} else {
+		projected, reconciliation, err = runner.projectRunnerLedgerReconciliationForPrefix(
+			ctx, observation.session, observation.bindings, observation.bundle, observation.plans, before, observation.migrationRole,
+			*observation.reconciliationHint,
+		)
+	}
 	if err != nil {
 		return err
 	}
@@ -295,6 +331,9 @@ func (observation *runnerLockedLedgerCatalogObservation) revalidate(ctx context.
 	}
 	if !sameRunnerLedgerCatalogProjectionFacts(projected, original) {
 		return fail(CodeCatalogDrift, "runner-ledger-entry-admission-revalidate", "catalog projection changed before entry admission", nil)
+	}
+	if !sameRunnerLedgerReconciliationFacts(reconciliation, observation.reconciliation) {
+		return fail(CodeCatalogDrift, "runner-ledger-entry-admission-revalidate", "reconciliation classification changed before entry admission", nil)
 	}
 	after, err := readRunnerLedgerPrefix(ctx, observation.session, observation.bundle)
 	if err != nil {
@@ -502,6 +541,24 @@ func validRunnerLedgerCatalogPreflightShape(prepared *runnerLedgerCatalogPreflig
 		!sameRunnerDedicatedSessionIdentity(prepared.connectedAuthority.Metadata.Snapshot, prepared.migrationRoleAuthority.Metadata.Snapshot) {
 		return false
 	}
+	if prepared.reconciliation != nil {
+		if !validRunnerLedgerReconciliationFacts(prepared.reconciliation) {
+			return false
+		}
+		if prepared.reconciliation.catalogProjectionObserved {
+			ordinary := *prepared
+			ordinary.reconciliation = nil
+			return validRunnerLedgerCatalogPreflightShape(&ordinary)
+		}
+		if !prepared.reconciliation.catalogProjectionReportedDrift || prepared.initialPredecessor != nil || prepared.cumulativeCatalog != nil ||
+			prepared.projectionSubjectDigest != prepared.reconciliation.observedProjectionSubject {
+			return false
+		}
+		if prepared.state == runnerLedgerCatalogEmpty {
+			return len(prepared.ledger.rows) == 0 && prepared.ledger.head == "" && prepared.catalogContractDigest == nil
+		}
+		return len(prepared.ledger.rows) > 0 && prepared.catalogContractDigest != nil && prepared.catalogContractDigest.Validate() == nil
+	}
 	switch prepared.state {
 	case runnerLedgerCatalogEmpty:
 		return len(prepared.ledger.rows) == 0 && prepared.ledger.head == "" && prepared.catalogContractDigest == nil &&
@@ -595,6 +652,7 @@ func (prepared *runnerLedgerCatalogPreflight) wire() runnerLedgerCatalogPrefligh
 		MigrationRoleAuthority: cloneProjectionValue(prepared.migrationRoleAuthority),
 		InitialPredecessor:     cloneCatalogStateProjectionResultPointer(prepared.initialPredecessor),
 		CumulativeCatalog:      cloneCatalogProjectionResultPointer(prepared.cumulativeCatalog),
+		Reconciliation:         runnerLedgerReconciliationFactsWirePointer(prepared.reconciliation),
 	}
 }
 

@@ -58,8 +58,12 @@ func buildHistoricalVerificationFacts(bundle *RuntimeBundle, bindings RunnerProj
 		if !ok {
 			return nil, fail(CodeUntrusted, "admission-historical-verification", "historical catalog binding is incomplete", nil)
 		}
-		final := CatalogStateProjection{Present: &SchemaPresentProjection{State: "schema_present", Scope: cloneProjectionValue(binding.verifiedCatalog.scope), Body: cloneProjectionValue(binding.verifiedCatalog.expected.Body)}}
-		digest, err := final.ComputeDigest()
+		// Durable final intermediates carry the verified CatalogProjection
+		// digest, not the statement-transition CatalogStateProjection digest.
+		// Recovery and terminal witnesses must therefore rebuild the same
+		// projection-domain subject from the historical catalog authority.
+		final := binding.verifiedCatalog.ExpectedProjection()
+		digest, err := digestProjectionWrapper(CatalogProjectionDigestDomain, final)
 		if err != nil {
 			return nil, err
 		}

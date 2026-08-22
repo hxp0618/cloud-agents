@@ -1298,6 +1298,8 @@ func admissionEvidenceRecordKind(record EvidenceRecord) EvidenceRecordKind {
 		return EvidenceRecordCommitIntent
 	case record.AttemptTerminal != nil:
 		return EvidenceRecordAttemptTerminal
+	case record.AmbiguousResolution != nil:
+		return EvidenceRecordAmbiguousResolution
 	default:
 		return ""
 	}

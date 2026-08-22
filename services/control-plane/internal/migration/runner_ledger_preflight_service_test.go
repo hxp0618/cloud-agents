@@ -16,43 +16,48 @@ import (
 
 type runnerLedgerPreflightEvidenceFake struct {
 	*runnerEvidenceSessionFake
-	mu                           sync.Mutex
-	schema                       verifiedRecoverySchemaWitness
-	recovery                     *RecoverySnapshot
-	sessionDigest                [32]byte
-	journalDigest                [32]byte
-	bindErr                      error
-	consumeErr                   error
-	bindCalls                    int
-	consumeCalls                 int
-	mutateBeforeConsume          func(*runnerLedgerPreflightEvidenceFake)
-	afterBind                    func()
-	afterConsume                 func()
-	entryBindErr                 error
-	entryConsumeErr              error
-	entryBindCalls               int
-	entryConsumeCalls            int
-	mutateBeforeEntryConsume     func(*runnerLedgerPreflightEvidenceFake)
-	afterEntryBind               func()
-	afterEntryConsume            func()
-	executionBindErr             error
-	executionConsumeErr          error
-	executionBindCalls           int
-	executionConsumeCalls        int
-	mutateBeforeExecutionConsume func(*runnerLedgerPreflightEvidenceFake)
-	afterExecutionBind           func()
-	afterExecutionConsume        func()
-	recoveryBindErr              error
-	recoveryConsumeErr           error
-	recoveryBindCalls            int
-	recoveryConsumeCalls         int
-	mutateBeforeRecoveryConsume  func(*runnerLedgerPreflightEvidenceFake)
-	afterRecoveryBind            func()
-	afterRecoveryConsume         func()
-	successBindErr               error
-	successBindErrAt             map[int]error
-	successBindCalls             int
-	mutateSuccessAuthority       func(*JournalCursor, *OwnedEvidenceRecord)
+	mu                            sync.Mutex
+	schema                        verifiedRecoverySchemaWitness
+	recovery                      *RecoverySnapshot
+	sessionDigest                 [32]byte
+	journalDigest                 [32]byte
+	bindErr                       error
+	consumeErr                    error
+	bindCalls                     int
+	consumeCalls                  int
+	mutateBeforeConsume           func(*runnerLedgerPreflightEvidenceFake)
+	afterBind                     func()
+	afterConsume                  func()
+	entryBindErr                  error
+	entryConsumeErr               error
+	entryBindCalls                int
+	entryConsumeCalls             int
+	mutateBeforeEntryConsume      func(*runnerLedgerPreflightEvidenceFake)
+	afterEntryBind                func()
+	afterEntryConsume             func()
+	executionBindErr              error
+	executionConsumeErr           error
+	executionBindCalls            int
+	executionConsumeCalls         int
+	mutateBeforeExecutionConsume  func(*runnerLedgerPreflightEvidenceFake)
+	afterExecutionBind            func()
+	afterExecutionConsume         func()
+	recoveryBindErr               error
+	recoveryConsumeErr            error
+	recoveryBindCalls             int
+	recoveryConsumeCalls          int
+	mutateBeforeRecoveryConsume   func(*runnerLedgerPreflightEvidenceFake)
+	afterRecoveryBind             func()
+	afterRecoveryConsume          func()
+	successBindErr                error
+	successBindErrAt              map[int]error
+	successBindCalls              int
+	mutateSuccessAuthority        func(*JournalCursor, *OwnedEvidenceRecord)
+	reconciliationBindErr         error
+	reconciliationBindCalls       int
+	reconciliationNoRecord        bool
+	mutateReconciliationRecord    func(*EvidenceRecord)
+	mutateReconciliationAuthority func(*JournalCursor, *OwnedEvidenceRecord)
 }
 
 var _ runnerLedgerPreflightClaimBinder = (*generationEvidenceSession)(nil)
@@ -501,6 +506,16 @@ func TestRunnerLedgerPreflightServiceDispatchesEveryGeneratedRecoveryPair(t *tes
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			if test.action == RecoveryReconcileCommit {
+				fixture := newRunnerLedgerRecoveryReconciliationFixture(t, test.state, runnerLedgerReconciliationExactPending, 16)
+				defer fixture.close(t)
+				if !fixture.fact.valid() || fixture.fact.dispatch.kind != test.kind ||
+					fixture.fact.dispatch.fact.disposition != test.disposition || fixture.fact.dispatch.fact.recovery == nil ||
+					fixture.fact.dispatch.fact.recovery.State != test.state || fixture.fact.dispatch.fact.recovery.Action != test.action {
+					t.Fatalf("reconciliation dispatch=%+v", fixture.fact.dispatch)
+				}
+				return
+			}
 			fixture := newRunnerLedgerPreflightServiceFixture(t)
 			defer fixture.close(t)
 			fixture.configure(t, test.disposition, test.state, test.action, 16)
@@ -550,7 +565,7 @@ func TestRunnerLedgerPreflightServicePostgresMajorAndStateMatrixIsReadOnly(t *te
 				case runnerLedgerPreflightPartialNextEntry:
 					state, action = RecoveryTerminal, RecoveryBeginFirstAttemptNextEntry
 				case runnerLedgerPreflightPartialRetryOrRecovery:
-					state, action = RecoveryDanglingCommitIntent, RecoveryReconcileCommit
+					state, action = RecoveryTerminal, RecoveryBeginNextAttempt
 				case runnerLedgerPreflightCompleteReturnSuccess:
 					state, action = RecoveryCompleted, RecoveryReturnSuccess
 				}
@@ -572,7 +587,7 @@ func TestRunnerLedgerPreflightClaimRejectsCopyLiteralReuseAndEvidenceDrift(t *te
 	t.Run("copy-literal-and-pre-cancel", func(t *testing.T) {
 		fixture := newRunnerLedgerPreflightServiceFixture(t)
 		defer fixture.close(t)
-		fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryDanglingCommitIntent, RecoveryReconcileCommit, 16)
+		fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryTerminal, RecoveryBeginNextAttempt, 16)
 		claim, err := fixture.kernel.runner.prepareRunnerLedgerPreflightClaim(context.Background(), "test-only", fixture.kernel.base.bundle, fixture.kernel.base.plans, fixture.evidence, fixture.kernel.base.candidate)
 		if err != nil {
 			t.Fatal(err)
@@ -597,7 +612,7 @@ func TestRunnerLedgerPreflightClaimRejectsCopyLiteralReuseAndEvidenceDrift(t *te
 	t.Run("recovery-drift", func(t *testing.T) {
 		fixture := newRunnerLedgerPreflightServiceFixture(t)
 		defer fixture.close(t)
-		fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryDanglingCommitIntent, RecoveryReconcileCommit, 16)
+		fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryTerminal, RecoveryBeginNextAttempt, 16)
 		claim, err := fixture.kernel.runner.prepareRunnerLedgerPreflightClaim(context.Background(), "test-only", fixture.kernel.base.bundle, fixture.kernel.base.plans, fixture.evidence, fixture.kernel.base.candidate)
 		if err != nil {
 			t.Fatal(err)
@@ -616,7 +631,7 @@ func TestRunnerLedgerPreflightClaimRejectsCopyLiteralReuseAndEvidenceDrift(t *te
 	t.Run("owned-claim-drift-revokes", func(t *testing.T) {
 		fixture := newRunnerLedgerPreflightServiceFixture(t)
 		defer fixture.close(t)
-		fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryDanglingCommitIntent, RecoveryReconcileCommit, 16)
+		fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryTerminal, RecoveryBeginNextAttempt, 16)
 		claim, err := fixture.kernel.runner.prepareRunnerLedgerPreflightClaim(context.Background(), "test-only", fixture.kernel.base.bundle, fixture.kernel.base.plans, fixture.evidence, fixture.kernel.base.candidate)
 		if err != nil {
 			t.Fatal(err)
@@ -766,7 +781,7 @@ func TestRunnerLedgerPreflightClaimCloseRevokesWithoutDispatch(t *testing.T) {
 func TestRunnerLedgerPreflightClaimIsConsumedExactlyOnceUnderRace(t *testing.T) {
 	fixture := newRunnerLedgerPreflightServiceFixture(t)
 	defer fixture.close(t)
-	fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryDanglingCommitIntent, RecoveryReconcileCommit, 16)
+	fixture.configure(t, runnerLedgerPreflightPartialRetryOrRecovery, RecoveryTerminal, RecoveryBeginNextAttempt, 16)
 	claim, err := fixture.kernel.runner.prepareRunnerLedgerPreflightClaim(context.Background(), "test-only", fixture.kernel.base.bundle, fixture.kernel.base.plans, fixture.evidence, fixture.kernel.base.candidate)
 	if err != nil {
 		t.Fatal(err)

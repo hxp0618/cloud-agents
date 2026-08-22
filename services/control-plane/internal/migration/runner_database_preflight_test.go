@@ -350,6 +350,7 @@ type runnerPreflightSession struct {
 	unlockKeys             []int64
 	closeCalls             int
 	serverMajorCalls       int
+	serverMajor            int
 	boundaryCalls          int
 	beginCalls             int
 	queryCalls             int
@@ -375,7 +376,10 @@ func (session *runnerPreflightSession) Queryer() Queryer {
 
 func (session *runnerPreflightSession) ServerMajor(context.Context) (int, error) {
 	session.serverMajorCalls++
-	return 16, nil
+	if session.serverMajor == 0 {
+		return 16, nil
+	}
+	return session.serverMajor, nil
 }
 
 func (session *runnerPreflightSession) SetRoleAndSettings(_ context.Context, policy ExecutionPolicy) error {
@@ -765,6 +769,12 @@ func (session *runnerPreflightSession) beginRunnerSessionProjectionSnapshot(_ co
 	session.projectionActive = true
 	session.snapshotPhases = append(session.snapshotPhases, phase)
 	metadata := runnerPreflightSnapshotMetadata(phase)
+	major := session.serverMajor
+	if major == 0 {
+		major = 16
+	}
+	metadata.PostgresMajor = uint16(major)
+	metadata.ServerVersionNum = uint32(major * 10000)
 	if mutate := session.snapshotMetadataMutate[phase]; mutate != nil {
 		mutate(&metadata)
 	}
