@@ -25,27 +25,31 @@ Keep every preflight, consumer, entry-admission, execution-admission, and first-
 byte-identical. Add a new recovery admission registry bound to those exact identities, then mint only an
 action-specific one-shot permit for the selected generated pair.
 
-The proposal uses separate generated identities for:
+Beyond the common recovery-admission identity, the proposal uses separate generated identities for:
 
 1. abort-terminal append;
 2. dangling-commit observation terminal;
 3. unresolved ambiguous resolution;
 4. retry lineage handoff;
-5. inherited/retry execution; and
-6. typed return-failure result.
+5. inherited/retry execution admission;
+6. inherited/retry success writer; and
+7. typed return-failure result.
 
-No permit is a union writer. A consumer for one family cannot call another family's binder or mutation port.
+No permit is a union writer. The execution-admission and success-writer profile IDs, registries, digests, and one-shot
+records are distinct; a consumer for one family cannot call another family's binder or mutation port, and an ordinary
+outcome cannot be converted into either permit.
 
 ## Proposed closed pair mapping
 
-| Family                      | Exact generated pairs                                                                                                       |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Recovery execution          | entry `brand_new_inherited/begin_next_attempt`; recovery `brand_new_inherited/begin_first_attempt` and `begin_next_attempt` |
-| Abort terminal              | dangling intent/intermediate times retryable/terminal abort                                                                 |
-| Commit observation terminal | dangling commit intent / reconcile commit                                                                                   |
-| Ambiguous resolution        | ambiguous unresolved / reconcile commit                                                                                     |
-| Retry lineage handoff       | terminal / begin next attempt                                                                                               |
-| Typed return failure        | terminal / return failure; divergent / return failure                                                                       |
+| Family                       | Exact generated pair or binding                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Recovery execution admission | entry `brand_new_inherited/begin_next_attempt`; recovery `brand_new_inherited/begin_first_attempt` and `begin_next_attempt`         |
+| Recovery success writer      | only the exact consumed one-shot permit from the recovery execution-admission row; never a direct consumer pair or ordinary outcome |
+| Abort terminal               | dangling intent/intermediate times retryable/terminal abort                                                                         |
+| Commit observation terminal  | dangling commit intent / reconcile commit                                                                                           |
+| Ambiguous resolution         | ambiguous unresolved / reconcile commit                                                                                             |
+| Retry lineage handoff        | terminal / begin next attempt                                                                                                       |
+| Typed return failure         | terminal / return failure; divergent / return failure                                                                               |
 
 Unknown, complete, first-attempt success, next-entry success, caller-selected, copied, literal, stale, foreign-verifier,
 cross-profile, cross-generation, replaced-registry, and second-consume inputs do not match any family.
@@ -93,10 +97,13 @@ handoff.
 
 ### Recovery execution
 
-The inherited successor uses a new execution-admission and success-writer identity. It opens a fresh session and runs
-one exact first or later attempt. A later attempt must bind the exact previous terminal and retry proof. The kernel may
-reuse reviewed implementation helpers only behind the new authority and only if all first-attempt assumptions are
-removed by addition, never by weakening ADR-0022 v1 checks.
+The inherited successor first uses `runner-ledger-recovery-execution-admission/v1`, a distinct generated
+profile/registry whose initial implementation permits only `close_without_mutation`. A separately generated
+`runner-ledger-recovery-success-writer/v1` may later consume exactly one bound admission permit, open a fresh session,
+and run one exact first or later attempt. A later attempt must bind the exact previous terminal and retry proof. The
+writer may reuse reviewed implementation helpers only behind its own authority and only if all first-attempt
+assumptions are removed by addition, never by weakening ADR-0022 v1 checks. Neither profile accepts the other profile's
+literal, copy, registry record, permit, or ordinary outcome.
 
 ### Typed return failure
 
@@ -119,12 +126,13 @@ handoff, append, SQL, or a second transition.
 ### Slice A - generated contracts only
 
 Add versioned source schemas, fixtures, registries, package-private Go profiles, manifests, and generation-lock
-bindings. Prove all existing runner artifacts byte-identical. No claim, database handle, append, or caller is added.
+bindings, including distinct recovery execution-admission and recovery success-writer identities. Prove all existing
+runner artifacts byte-identical. No claim, database handle, append, or caller is added.
 
 ### Slice B - read-only recovery admission
 
-Implement same-verifier full replay and action-specific close-only permits. Keep every writer and public recovery
-result `NOT_IMPLEMENTED`.
+Implement same-verifier full replay and action-specific close-only permits, including the recovery execution-admission
+profile with `close_without_mutation` only. Keep every writer and public recovery result `NOT_IMPLEMENTED`.
 
 ### Slice C - abort terminal writer
 
@@ -143,8 +151,10 @@ quota, stale epoch, and old-cursor revocation matrices; review independently.
 
 ### Slice F - recovery execution
 
-Implement one inherited first/later attempt per fresh session under a new generated identity. Preserve dynamic cursor,
-multi-statement, commit-once, and post-commit recovery boundaries; review independently.
+Connect the distinct recovery execution-admission profile to the separately versioned recovery success-writer profile.
+Implement one inherited first/later attempt per fresh session and one consumed permit. Preserve dynamic cursor,
+multi-statement, commit-once, post-commit recovery, cross-profile rejection, and no ordinary-outcome conversion;
+review independently.
 
 ### Slice G - failure result and caller matrix
 
@@ -153,17 +163,18 @@ fresh re-entry, bounded attempts, and no ordinary-result reuse; obtain a final i
 
 ## Minimum conformance matrix
 
-| Boundary             | Required cases                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Historical same-bits | preflight, consumer, entry-admission, execution-admission, success-writer sources/generated/profile/lock                    |
-| Selection            | exact twelve pairs, wrong disposition/state/action/profile, literal/copy/stale/foreign/replaced/second-use                  |
-| Abort receipts       | rollback, terminated connection, commit rejection, predecessor mismatch, retry budget exact/+1, unknown old lifecycle       |
-| Commit observation   | committed, pending, divergent, unknown; wrong row/prefix/catalog; stale role/lock/session; repeated observation             |
-| Evidence append      | terminal versus resolution kind, adjacency, cursor/checkpoint/rotation, zero/durable/unknown, close and cleanup             |
-| Retry handoff        | exact old terminal/resolution, supersession adjacency, successor continuation, quota, crash/reopen, stale epoch             |
-| Recovery execution   | attempt 1 and 2..max, previous terminal, all statement counts, fresh session, rejected/ambiguous commit, no second mutation |
-| Failure result       | terminal/divergent exact stable error, redaction, no mutation, no permit conversion                                         |
-| Forbidden surfaces   | no production DB invocation, HTTP/P2/provider, deployment/publication/release, main merge, or Gate closure                  |
+| Boundary             | Required cases                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Historical same-bits | preflight, consumer, entry-admission, execution-admission, success-writer sources/generated/profile/lock                                                      |
+| Selection            | exact twelve pairs, wrong disposition/state/action/profile, literal/copy/stale/foreign/replaced/second-use                                                    |
+| Abort receipts       | rollback, terminated connection, commit rejection, predecessor mismatch, retry budget exact/+1, unknown old lifecycle                                         |
+| Commit observation   | committed, pending, divergent, unknown; wrong row/prefix/catalog; stale role/lock/session; repeated observation                                               |
+| Evidence append      | terminal versus resolution kind, adjacency, cursor/checkpoint/rotation, zero/durable/unknown, close and cleanup                                               |
+| Retry handoff        | exact old terminal/resolution, supersession adjacency, successor continuation, quota, crash/reopen, stale epoch                                               |
+| Recovery execution   | attempt 1 and 2..max, previous terminal, all statement counts, fresh session, rejected/ambiguous commit, no second mutation                                   |
+| Execution split      | distinct admission/writer profile IDs, digests, registries and records; close-only admission; one-shot writer; cross-profile and outcome-conversion rejection |
+| Failure result       | terminal/divergent exact stable error, redaction, no mutation, no permit conversion                                                                           |
+| Forbidden surfaces   | no production DB invocation, HTTP/P2/provider, deployment/publication/release, main merge, or Gate closure                                                    |
 
 ## Explicit non-claims
 

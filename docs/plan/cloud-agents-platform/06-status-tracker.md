@@ -54,7 +54,7 @@
 | D-044 | Runner ledger consumer 按 versioned generated profile → complete-ledger no-op → matrix/review 三切片推进                    | APPROVED | 用户于 2026-08-22 批准；v1 immutable，entry/recovery writer 继续 NI；无外部副作用/Gate  |
 | D-045 | Runner entry admission 按 generated five-pair profile → fresh-session read-only permit → matrix/review 三切片推进           | APPROVED | ADR-0021；permit 仅 close_without_mutation，entry/recovery writer 继续 NI；无 Gate      |
 | D-046 | Runner entry execution/success writer 拆为新 generated admission + one-entry multi-statement success profile                | APPROVED | ADR-0022；standing automatic-execution approval；不含 recovery/production DB/外部副作用 |
-| D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution/failure action-specific profiles               | PROPOSED | ADR-0023；需 owner 明确批准；当前不生成、不实现、不扩权                                 |
+| D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution-admission/success-writer/failure profiles      | PROPOSED | ADR-0023；需 owner 明确批准；当前不生成、不实现、不扩权                                 |
 
 ## 2. 阶段追踪
 

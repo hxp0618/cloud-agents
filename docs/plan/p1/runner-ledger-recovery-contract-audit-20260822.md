@@ -120,12 +120,13 @@ A terminal or resolved-pending old generation first authorizes exact
 `begin_next_attempt` continuation. The inherited successor then needs a separate fresh-session execution admission.
 Neither the old terminal nor the new header-only snapshot directly authorizes SQL.
 
-### T5 - retry execution needs a new success identity
+### T5 - retry execution needs distinct admission and writer identities
 
 Attempt greater than one binds an exact previous terminal, retry proof, predecessor catalog/ledger, generation
 continuation, and max-attempt budget. Removing attempt-one checks from ADR-0022 v1 would change its generated identity.
-A future retry success kernel must use a distinct profile and one-attempt permit while preserving the same
-multi-statement/dynamic-cursor/commit-once barriers.
+A future retry execution path must use one distinct close-only execution-admission profile and a second distinct
+one-shot success-writer profile while preserving the same multi-statement/dynamic-cursor/commit-once barriers. Neither
+profile, its permit, nor an ordinary writer outcome can stand in for the other authority.
 
 ### T6 - return failure is read-only but still typed
 
@@ -143,9 +144,12 @@ The minimum safe direction is a common generated read-only recovery admission pl
 3. `runner-ledger-commit-observation-writer/v1` — dangling commit intent to one observed terminal;
 4. `runner-ledger-ambiguous-resolution-writer/v1` — unresolved terminal to one adjacent resolution;
 5. `runner-ledger-retry-handoff/v1` — terminal/resolved-pending to exact successor generation continuation;
-6. `runner-ledger-recovery-execution/v1` — inherited first/retry attempt, fresh session, one exact attempt, and a
-   distinct success-writer identity; and
-7. `runner-ledger-return-failure/v1` — the two immutable typed failure results, with no mutation capability.
+6. `runner-ledger-recovery-execution-admission/v1` — selects one inherited first/retry attempt and initially supports
+   only `close_without_mutation`; it cannot open a transaction, execute SQL, or append evidence;
+7. `runner-ledger-recovery-success-writer/v1` — consumes only the exact one-shot permit from identity 6, opens one
+   fresh session, executes one exact inherited/retry attempt, and cannot be selected directly from a consumer fact or
+   ordinary outcome; and
+8. `runner-ledger-return-failure/v1` — the two immutable typed failure results, with no mutation capability.
 
 The names and split are proposed by [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md). They are
 not accepted by this audit and must not be generated or implemented until that decision receives explicit owner
@@ -153,13 +157,15 @@ approval.
 
 ## 6. Required implementation order after approval
 
-1. generated source schemas, fixtures, registries, Go profiles, manifests, lock, and historical same-bits only;
+1. generated source schemas, fixtures, registries, Go profiles, manifests, lock, and historical same-bits only,
+   including distinct recovery execution-admission and recovery success-writer identities;
 2. common read-only recovery admission/claim and action-specific close-only permits;
 3. abort-terminal writer and independent review;
 4. commit-observation and ambiguous-resolution writers with fresh ephemeral PG15/16/17 reconciliation matrix and
    independent review;
 5. retry lineage handoff and crash/reopen matrix;
-6. inherited/retry execution kernel, one attempt per fresh session, and independent review;
+6. recovery execution-admission plus its separately versioned success-writer kernel, one attempt per fresh session,
+   explicit cross-profile/outcome-conversion rejection, and independent review;
 7. typed return-failure result, bounded caller loop, complete 12-pair matrix, and final independent review.
 
 Every slice is fixed and reviewed separately. Unknown append/commit/cleanup outcomes revoke the old cursor and return
