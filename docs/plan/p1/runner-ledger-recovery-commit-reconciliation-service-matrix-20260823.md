@@ -3,11 +3,14 @@
 - Status: `SLICE_D_SUPERSEDING_FIXED_IMPLEMENTATION_PENDING_INDEPENDENT_REVIEW`
 - Approved Slice C candidate: `6fd2873497765336d872dfaa53cd4e12541c5c26`
 - Slice C independent review: `be597debb7b3edfb68616dff5ae648284c796ab7` — `APPROVE, P0=0/P1=0/P2=0`
-- Superseded Slice D candidate: `d57f511215eb34e2061e1d02326824723ce999d7` — independent review
-  `BLOCK, P0=0/P1=1/P2=0` because registry tamper could lose the original retained database session
-- Slice D code commit: `93bb9c93746de9fac063892f6eb6fc2430a4167b`
-- Slice D code tree: `a1baca20603e86b78ede3765f43962b18ef8c8b5`
-- Slice D control-plane subtree: `0677a40dd7fd90412653f6cf10adfdfca1bab666`
+- Superseded Slice D candidates:
+  - `d57f511215eb34e2061e1d02326824723ce999d7` — independent review `BLOCK, P0=0/P1=1/P2=0`
+    because primary-registry tamper could lose the original retained database session;
+  - `d3bc61ae0e3382c78b0f068b74936d9c2cb4e0a3` — independent review `BLOCK, P0=0/P1=1/P2=0`
+    because a fully caller-constructed owner/core/binding graph could acquire foreign cleanup authority.
+- Slice D code commit: `ca59e54f64302d865890bc8ac7cfd2bc163f8968`
+- Slice D code tree: `ed0e9c3fa88faa1541a59cbcdf3c7109db6207fc`
+- Slice D control-plane subtree: `faa06742f02da2311eac1f6457d449c20f63a3d6`
 - Slice D branch: `codex/cloud-agents-p1-runner-recovery-commit-reconciliation-20260823`
 - Decision: [`D-047 / ADR-0023`](runner-ledger-recovery-contract-decision-20260822.md)
 - Gate effect: none; every immutable and aggregate Gate remains open
@@ -76,9 +79,10 @@ reservation/activation, HTTP, P2, or provider edge exists in the Slice D kernels
 - Valid shorter or longer signed prefixes are classified divergent; a malformed signed ledger is not downgraded to a
   reconciliation result.
 - Context, read, projection, role, session-idle, advisory-lock, reset, unlock, or close uncertainty dominates and mints
-  no writer. A cleanup-only quorum over the live core, its independently bound handle, and the registry record closes
-  only the original database session when the wrapper/binder drifts or the registry is missing, has a foreign session,
-  or carries a changed advisory-lock key; foreign handles remain untouched.
+  no writer. Primary and cleanup registries are independently sealed and claimed together under a package-private
+  mutex. Cleanup requires at least one registered provenance source and three matching handle copies; a literal/copy
+  owner graph has zero cleanup authority. Missing, foreign-session, or key-drift mutations on either registry still
+  close only the original session exactly once, while foreign handles remain untouched.
 - A zero-valued append error with the old cursor still valid retains its stable pre-mutation error class. Any non-empty
   append result metadata, invalidated old cursor, unknown outcome, durable-result contradiction, or post-append
   snapshot drift returns `MIGRATION_EVIDENCE_RECOVERY_REQUIRED` and revokes the relevant cursor authority.
@@ -99,6 +103,10 @@ The fixed code commit was checked with Node `24.13.1`, Bun `1.3.14`, and Go/gofm
 - after the independent-review registry-cleanup finding, the exact profile-2/profile-3 wrapper/binder and
   registry-missing/foreign-session/key-drift cleanup regressions passed in `23.236s`; each original session was
   unlocked and closed exactly once, every foreign session remained untouched, and consumed permits could not revive;
+- after the second independent-review literal-authority finding, the exact profile-2/profile-3 primary/cleanup
+  registry missing/foreign-session/key-drift, wrapper/binder, fully forged literal, and copied-owner regressions passed
+  in `46.039s`; literals and copies caused zero unlock/close side effects. The six-row known-outcome success matrix then
+  passed unchanged in `17.865s`;
 - a narrower race command covering the six rows, short-prefix divergence, final barriers, one-shot permits, and
   registered-session cleanup reached its explicit `10m` timeout in `601.207s` while executing the barrier matrix:
   **NOT PASS**; it emitted no failed assertion before the bounded stop and is not claimed as race evidence;
@@ -106,7 +114,7 @@ The fixed code commit was checked with Node `24.13.1`, Bun `1.3.14`, and Go/gofm
 - recovery registry generator and recovery Go generator: current;
 - generation-lock writer/checker: current;
 - changed Go files: `gofmt` clean; `git diff --check`: PASS;
-- fixed-candidate Gitleaks scan: PASS, four implementation/record commits and approximately `195.06 KB` scanned.
+- fixed-candidate Gitleaks scan: PASS, six implementation/record commits and approximately `211.95 KB` scanned.
 
 The generation lock SHA-256 is
 `ba6eb1409a882c670e49fa08090c7bd8d149db6df0bf277e3c6d505c0f1a9340`. Its only lock change from Slice C is the
@@ -118,10 +126,10 @@ remain unchanged.
 Key implementation SHA-256 values:
 
 - observation: `34469339b210b53ed80407e8f6ef2d6e73ca7c40dae572dd9bdaae1806640765`;
-- writer kernel: `74509d446fc3811da31f5d9cade952bc44993f21c9f9a39f8b095d4dbbe244ff`;
-- writer matrix: `96769ded56db965ecc1c28ae13593973ee060cccfc72d1d603dc03707a132831`;
+- writer kernel: `2170015c271c0b23fc74099aa8e5130fcbc1809bc1797bdbb545386ff02cf225`;
+- writer matrix: `90598b8e1e65349add2e8c9c801b51953c9936c1718b33d0c6515cfaf76c5785`;
 - catalog preflight: `075802ce629b2726a6e4e7950b05551eef39a9ee470d7f01994d56110ac69b62`;
-- recovery admission routing: `93182b3d192455ac561cbc86100755c901672124d38cf3ca81b1deafd93fcaad`.
+- recovery admission routing: `8278cbfa064afeb5217ec9b1cca8a57e036e0e0575c809d8a87f72dd60120c47`.
 
 No full `internal/migration`, full shard run, broad race, live PostgreSQL, production database, HTTP/P2/provider,
 deployment, publication, release, or Gate check is claimed. PostgreSQL 15/16/17 and evidence behavior are in-process
