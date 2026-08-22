@@ -267,7 +267,42 @@ func cloneRunnerLedgerEntrySuccessRegistryRecordWithClaim(
 	}
 	return &runnerLedgerEntrySuccessStateRegistryRecord{
 		state: record.state, binding: cloneRunnerLedgerEntrySuccessStateBinding(record.binding),
-		data: data, canonical: record.canonical, claimed: claim,
+		data: data, cleanup: bindRunnerLedgerEntrySuccessCleanupFacts(data, record.canonical), canonical: record.canonical, claimed: claim,
+	}
+}
+
+func replaceRunnerLedgerEntrySuccessRegistryRecordForTest(
+	t *testing.T,
+	state *runnerLedgerEntrySuccessState,
+	cleanupRegistry bool,
+	mutate func(*runnerLedgerEntrySuccessStateRegistryRecord),
+) func() {
+	t.Helper()
+	registry := &runnerLedgerEntrySuccessStateRegistry
+	name := "primary"
+	if cleanupRegistry {
+		registry = &runnerLedgerEntrySuccessStateCleanupRegistry
+		name = "cleanup"
+	}
+	value, ok := registry.Load(state)
+	record, recordOK := value.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	if !ok || !recordOK || record == nil {
+		t.Fatalf("%s success-state registry record is unavailable", name)
+	}
+	replacement := cloneRunnerLedgerEntrySuccessRegistryRecordWithClaim(t, record, record.claimed)
+	mutate(replacement)
+	if !validRunnerLedgerEntrySuccessCleanupRecord(replacement, state) ||
+		replacement.cleanup.canonical != record.cleanup.canonical ||
+		sameRunnerLedgerEntrySuccessCleanupFacts(replacement.cleanup, record.cleanup) {
+		t.Fatalf("%s typed replacement did not isolate pointer-only cleanup drift", name)
+	}
+	registry.Store(state, replacement)
+	return func() {
+		registry.Store(state, record)
+		if validRunnerLedgerEntrySuccessState(state) {
+			t.Fatalf("restoring the %s registry revived a consumed authority", name)
+		}
+		registry.Delete(state)
 	}
 }
 
@@ -669,6 +704,114 @@ func TestRunnerLedgerEntrySuccessContextStateAndSecondStatementFailuresCloseAuth
 	})
 }
 
+func TestRunnerLedgerEntrySuccessPrecommitLiveStateResourceDriftUsesRecordPairCleanup(t *testing.T) {
+	phases := []struct {
+		name        string
+		transaction bool
+	}{
+		{name: "execution-ready"},
+		{name: "transaction-ready", transaction: true},
+	}
+	for _, phase := range phases {
+		drifts := []string{"session", "evidence", "journal", "cursor-validity-cell", "cursor-owner"}
+		if phase.transaction {
+			drifts = append(drifts, "transaction")
+		}
+		for _, drift := range drifts {
+			phase := phase
+			drift := drift
+			t.Run(phase.name+"/"+drift, func(t *testing.T) {
+				raw, decision := buildExactAdmissionRuntime(t)
+				fixture := newRunnerLedgerEntrySuccessFixture(t, raw, decision, runnerLedgerPreflightEmptyBrandNew, RecoveryBrandNew, RecoveryBeginFirstAttempt)
+				defer fixture.close(t)
+				permit := fixture.prepare(t)
+				configureRunnerLedgerEntrySuccessExecution(t, fixture, permit)
+				runner := fixture.execution.base.service.kernel.runner
+				base := fixture.execution.base.service.kernel.base
+				state, err := runner.prepareRunnerLedgerEntrySuccess(context.Background(), permit, base.bundle, base.plans)
+				if err == nil && phase.transaction {
+					state, err = runner.beginRunnerLedgerEntrySuccessTransaction(context.Background(), state)
+				}
+				if err != nil || !validRunnerLedgerEntrySuccessState(state) {
+					t.Fatalf("phase=%s state=%+v err=%v", phase.name, state, err)
+				}
+
+				database := fixture.execution.base.database
+				journal := fixture.execution.base.service.evidence.runnerEvidenceSessionFake.journal
+				var restore func()
+				var foreignUntouched func() bool
+				switch drift {
+				case "session":
+					original := state.data.session
+					foreign := newRunnerPreflightSession()
+					state.data.session = foreign
+					restore = func() { state.data.session = original }
+					foreignUntouched = func() bool {
+						return foreign.closeCalls == 0 && foreign.unlockCalls == 0 && foreign.beginCalls == 0 && !foreign.closed
+					}
+				case "transaction":
+					original := state.data.transaction
+					foreignSession := newRunnerPreflightSession()
+					foreign := foreignSession.transaction
+					foreign.active = true
+					foreign.status = 'T'
+					state.data.transaction = foreign
+					restore = func() { state.data.transaction = original }
+					foreignUntouched = func() bool { return foreign.rollbackCalls == 0 && foreign.active && foreign.status == 'T' }
+				case "evidence":
+					original := state.data.evidence
+					foreignJournal := &runnerEvidenceJournalFake{}
+					foreignSession := &runnerEvidenceSessionFake{journal: foreignJournal}
+					foreign := &runnerLedgerPreflightEvidenceFake{runnerEvidenceSessionFake: foreignSession}
+					state.data.evidence = foreign
+					restore = func() { state.data.evidence = original }
+					foreignUntouched = func() bool { return foreignSession.closeCalls == 0 && foreignJournal.closeCalls == 0 }
+				case "journal":
+					original := state.data.journal
+					foreign := &runnerEvidenceJournalFake{}
+					state.data.journal = foreign
+					restore = func() { state.data.journal = original }
+					foreignUntouched = func() bool { return foreign.closeCalls == 0 }
+				case "cursor-validity-cell":
+					original := state.data.cursor.valid
+					foreign := &atomic.Bool{}
+					foreign.Store(true)
+					state.data.cursor.valid = foreign
+					restore = func() { state.data.cursor.valid = original }
+					foreignUntouched = foreign.Load
+				case "cursor-owner":
+					original := state.data.cursor.owner
+					foreign := &evidenceOwnerToken{nonce: [16]byte{0x6f}}
+					state.data.cursor.owner = foreign
+					restore = func() { state.data.cursor.owner = original }
+					foreignUntouched = func() bool { return true }
+				default:
+					t.Fatalf("unknown drift %q", drift)
+				}
+
+				if phase.transaction {
+					_, err = runner.prepareRunnerLedgerEntrySuccessStatement(context.Background(), state)
+				} else {
+					_, err = runner.beginRunnerLedgerEntrySuccessTransaction(context.Background(), state)
+				}
+				restore()
+				wantRollbacks := 0
+				if phase.transaction {
+					wantRollbacks = 1
+				}
+				if !IsCode(err, CodeTransactionBoundary) || validRunnerLedgerEntrySuccessState(state) ||
+					database.closeCalls != 1 || database.unlockCalls != 1 || !database.closed || database.locked ||
+					database.transaction.rollbackCalls != wantRollbacks || database.transaction.active ||
+					journal.cursor.Valid() || !foreignUntouched() {
+					t.Fatalf("phase=%s drift=%s state=%+v err=%v database=%+v transaction=%+v cursorValid=%t",
+						phase.name, drift, state, err, database, database.transaction, journal.cursor.Valid())
+				}
+				assertRunnerLedgerEntrySuccessStateRegistriesCleared(t, state)
+			})
+		}
+	}
+}
+
 func TestRunnerLedgerEntrySuccessFailureAndUnknownBoundaries(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -879,6 +1022,90 @@ func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t
 			},
 		},
 		{
+			name: "runtime-bundle-public-projection",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				primary, cleanup := runnerLedgerEntrySuccessStateRecordsForTest(t, state)
+				if state.data.bundle == nil || primary.data.bundle == nil || cleanup.data.bundle == nil ||
+					state.data.bundle == primary.data.bundle || state.data.bundle == cleanup.data.bundle || primary.data.bundle == cleanup.data.bundle ||
+					state.data.bundle.Manifest != nil || primary.data.bundle.Manifest != nil || cleanup.data.bundle.Manifest != nil {
+					t.Fatal("runtime handles do not own independent zero-projection wrappers")
+				}
+				state.data.bundle.Manifest = &Manifest{ManifestDigest: testDigest("post-commit-public-projection-drift")}
+				if validRunnerLedgerEntrySuccessState(state) || !validRunnerLedgerEntrySuccessRegistryRecord(primary, state) ||
+					!validRunnerLedgerEntrySuccessRegistryRecord(cleanup, state) {
+					t.Fatal("public runtime projection drift escaped its owning state")
+				}
+				return func() { state.data.bundle.Manifest = nil }
+			},
+		},
+		{
+			name: "frozen-runtime-policy",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.data.runtimePolicy.StatementTimeoutMS
+				state.data.runtimePolicy.StatementTimeoutMS++
+				return func() { state.data.runtimePolicy.StatementTimeoutMS = original }
+			},
+		},
+		{
+			name: "frozen-runtime-entry-count",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.data.runtimeEntryCount
+				state.data.runtimeEntryCount++
+				return func() { state.data.runtimeEntryCount = original }
+			},
+		},
+		{
+			name: "frozen-runtime-inputs",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.data.runtimeInputs
+				state.data.runtimeInputs[0] ^= 0xff
+				return func() { state.data.runtimeInputs = original }
+			},
+		},
+		{
+			name: "shared-bundle-manifest-alias",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				primary, cleanup := runnerLedgerEntrySuccessStateRecordsForTest(t, state)
+				shared := &Manifest{ManifestDigest: testDigest("post-commit-shared-bundle-drift")}
+				state.data.bundle.Manifest = shared
+				primary.data.bundle.Manifest = shared
+				cleanup.data.bundle.Manifest = shared
+				if validRunnerLedgerEntrySuccessRegistryRecord(primary, state) || validRunnerLedgerEntrySuccessRegistryRecord(cleanup, state) ||
+					!validRunnerLedgerEntrySuccessCleanupRecord(primary, state) || !validRunnerLedgerEntrySuccessCleanupRecord(cleanup, state) {
+					t.Fatal("shared runtime-bundle drift did not isolate recovery-only cleanup provenance")
+				}
+				return func() {
+					state.data.bundle.Manifest = nil
+					primary.data.bundle.Manifest = nil
+					cleanup.data.bundle.Manifest = nil
+				}
+			},
+		},
+		{
+			name: "nil-claim-and-shared-bundle-manifest-alias",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				primary, cleanup := runnerLedgerEntrySuccessStateRecordsForTest(t, state)
+				originalClaim := state.claimed
+				shared := &Manifest{ManifestDigest: testDigest("post-commit-combined-bundle-drift")}
+				state.claimed = nil
+				state.data.bundle.Manifest = shared
+				primary.data.bundle.Manifest = shared
+				cleanup.data.bundle.Manifest = shared
+				if !validRunnerLedgerEntrySuccessCleanupRecord(primary, state) || !validRunnerLedgerEntrySuccessCleanupRecord(cleanup, state) {
+					t.Fatal("combined state and runtime drift invalidated recovery-only cleanup provenance")
+				}
+				return func() {
+					state.claimed = originalClaim
+					state.data.bundle.Manifest = nil
+					primary.data.bundle.Manifest = nil
+					cleanup.data.bundle.Manifest = nil
+				}
+			},
+		},
+		{
 			name: "state-claim",
 			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
 				original := state.claimed
@@ -996,6 +1223,89 @@ func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t
 				}
 			},
 		},
+	}
+	pointerDrifts := []struct {
+		name   string
+		mutate func(*runnerLedgerEntrySuccessStateRegistryRecord)
+	}{
+		{
+			name: "foreign-cursor-validity-cell",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := &atomic.Bool{}
+				foreign.Store(true)
+				record.data.cursor.valid = foreign
+				record.binding.cursorValid = foreign
+				record.cleanup.cursor.valid = foreign
+			},
+		},
+		{
+			name: "foreign-cursor-owner",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := &evidenceOwnerToken{nonce: [16]byte{0x7f}}
+				record.data.cursor.owner = foreign
+				record.cleanup.cursor.owner = foreign
+			},
+		},
+		{
+			name: "foreign-candidate-binding",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := *record.data.candidateBinding
+				record.data.candidateBinding = &foreign
+				record.binding.candidateBinding = &foreign
+				record.cleanup.candidateBinding = &foreign
+			},
+		},
+		{
+			name: "foreign-session",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := newRunnerPreflightSession()
+				record.data.session = foreign
+				record.binding.session = foreign
+				record.cleanup.session = foreign
+			},
+		},
+		{
+			name: "foreign-transaction",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := newRunnerPreflightSession().transaction
+				record.data.transaction = foreign
+				record.binding.transaction = foreign
+				record.cleanup.transaction = foreign
+			},
+		},
+		{
+			name: "foreign-evidence",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := &runnerLedgerPreflightEvidenceFake{}
+				record.data.evidence = foreign
+				record.binding.evidence = foreign
+				record.cleanup.evidence = foreign
+			},
+		},
+		{
+			name: "foreign-journal",
+			mutate: func(record *runnerLedgerEntrySuccessStateRegistryRecord) {
+				foreign := &runnerEvidenceJournalFake{}
+				record.data.journal = foreign
+				record.binding.journal = foreign
+				record.cleanup.journal = foreign
+			},
+		},
+	}
+	for _, registry := range []struct {
+		name    string
+		cleanup bool
+	}{{name: "primary"}, {name: "cleanup", cleanup: true}} {
+		for _, drift := range pointerDrifts {
+			registry := registry
+			drift := drift
+			mutations = append(mutations, mutation{
+				name: registry.name + "-registry-" + drift.name,
+				mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+					return replaceRunnerLedgerEntrySuccessRegistryRecordForTest(t, state, registry.cleanup, drift.mutate)
+				},
+			})
+		}
 	}
 	phases := []struct {
 		name   string
@@ -1116,6 +1426,21 @@ func assertRunnerLedgerEntrySuccessStateRegistriesCleared(t *testing.T, state *r
 	if _, ok := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state); ok {
 		t.Fatal("cleanup success-state registry retained a consumed authority")
 	}
+}
+
+func runnerLedgerEntrySuccessStateRecordsForTest(
+	t *testing.T,
+	state *runnerLedgerEntrySuccessState,
+) (*runnerLedgerEntrySuccessStateRegistryRecord, *runnerLedgerEntrySuccessStateRegistryRecord) {
+	t.Helper()
+	primaryValue, primaryOK := runnerLedgerEntrySuccessStateRegistry.Load(state)
+	primary, primaryRecordOK := primaryValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	cleanupValue, cleanupOK := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state)
+	cleanup, cleanupRecordOK := cleanupValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	if !primaryOK || !primaryRecordOK || primary == nil || !cleanupOK || !cleanupRecordOK || cleanup == nil {
+		t.Fatal("success-state registry records are unavailable")
+	}
+	return primary, cleanup
 }
 
 func TestRunnerLedgerEntrySuccessProductionGraphIsDisconnectedAndSuccessOnly(t *testing.T) {

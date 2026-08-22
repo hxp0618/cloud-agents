@@ -8,7 +8,10 @@ import (
 	"sync/atomic"
 )
 
-const runnerLedgerEntrySuccessStateDigestDomain = "cloud-agents/runner-ledger-entry-success-writer/state/v1"
+const (
+	runnerLedgerEntrySuccessStateDigestDomain   = "cloud-agents/runner-ledger-entry-success-writer/state/v1"
+	runnerLedgerEntrySuccessCleanupDigestDomain = "cloud-agents/runner-ledger-entry-success-writer/cleanup/v1"
+)
 
 const (
 	runnerLedgerEntrySuccessExecutionReady           = "execution_ready"
@@ -63,6 +66,9 @@ type runnerLedgerEntrySuccessData struct {
 	observedCatalogContract  *Digest
 	observedCatalogDigest    Digest
 	bundle                   *RuntimeBundle
+	runtimePolicy            ExecutionPolicy
+	runtimeEntryCount        uint32
+	runtimeInputs            [32]byte
 	bindings                 RunnerProjectionBindings
 	entry                    MigrationEntry
 	plans                    []StatementPlan
@@ -119,8 +125,27 @@ type runnerLedgerEntrySuccessStateRegistryRecord struct {
 	state     *runnerLedgerEntrySuccessState
 	binding   *runnerLedgerEntrySuccessStateBinding
 	data      runnerLedgerEntrySuccessData
+	cleanup   runnerLedgerEntrySuccessCleanupFacts
 	canonical [32]byte
 	claimed   *atomic.Bool
+}
+
+// runnerLedgerEntrySuccessCleanupFacts is recovery-only provenance. It binds
+// exactly the handles needed to close resources or revoke the journal cursor,
+// without depending on caller-visible RuntimeBundle projections. It can never
+// authorize a successor state: the full primary+cleanup data pair remains
+// mandatory for registriesValid.
+type runnerLedgerEntrySuccessCleanupFacts struct {
+	phase             string
+	session           DatabaseSession
+	transaction       MigrationTransaction
+	evidence          runnerLedgerEntrySuccessEvidenceBinder
+	journal           EvidenceJournal
+	key               int64
+	candidateBinding  *verifiedEvidenceRunBinding
+	cursor            JournalCursor
+	mutationAttempted bool
+	canonical         [32]byte
 }
 
 var runnerLedgerEntrySuccessStateRegistry sync.Map
@@ -281,6 +306,9 @@ func runnerLedgerEntrySuccessInitialData(permit *runnerLedgerEntryExecutionPermi
 	if bundle.Manifest.ExecutionPolicy.Validate() != nil || bundle.Manifest.ExecutionPolicy.MaxAttempts == 0 || bundle.Manifest.ExecutionPolicy.MaxAttempts > uint64(^uint32(0)) {
 		return data, fail(CodeUntrusted, "runner-ledger-entry-success-input", "execution policy is unavailable", nil)
 	}
+	if len(bundle.Manifest.SchemaBundle.Migrations) > int(^uint32(0)) || bundle.ownedInputs.canonical == ([32]byte{}) {
+		return data, fail(CodeUntrusted, "runner-ledger-entry-success-input", "runtime closure is unavailable", nil)
+	}
 	if permit.ledgerLength == 0 {
 		if permit.catalogContractDigest != nil || entry.PredecessorID != nil {
 			return data, fail(CodeUntrusted, "runner-ledger-entry-success-input", "first entry predecessor binding is contradictory", nil)
@@ -298,7 +326,9 @@ func runnerLedgerEntrySuccessInitialData(permit *runnerLedgerEntryExecutionPermi
 		ledgerBeforeLength: permit.ledgerLength, connectedAuthority: permit.connectedAuthorityDigest,
 		migrationAuthority: permit.migrationAuthorityDigest, projectionSubject: permit.projectionSubject,
 		observedCatalogContract: cloneDigestPointer(permit.catalogContractDigest), observedCatalogDigest: permit.catalogDigest,
-		bundle: bundle, bindings: bindings.ownedCopy(), entry: cloneProjectionValue(entry), plans: selected,
+		bundle: runnerLedgerEntrySuccessRuntimeHandle(bundle), runtimePolicy: cloneProjectionValue(bundle.Manifest.ExecutionPolicy),
+		runtimeEntryCount: uint32(len(bundle.Manifest.SchemaBundle.Migrations)), runtimeInputs: bundle.ownedInputs.canonical,
+		bindings: bindings.ownedCopy(), entry: cloneProjectionValue(entry), plans: selected,
 		maxAttempts: uint32(bundle.Manifest.ExecutionPolicy.MaxAttempts), cursor: snapshot.cursor.clone(),
 		currentCatalogDigest: permit.catalogDigest,
 	}
@@ -347,9 +377,11 @@ func sealRunnerLedgerEntrySuccessState(data runnerLedgerEntrySuccessData, from, 
 	record := &runnerLedgerEntrySuccessStateRegistryRecord{
 		state: state, binding: cloneRunnerLedgerEntrySuccessStateBinding(state.binding), data: recordData, canonical: state.canonical, claimed: state.claimed,
 	}
+	record.cleanup = bindRunnerLedgerEntrySuccessCleanupFacts(record.data, record.canonical)
 	cleanupRecord := &runnerLedgerEntrySuccessStateRegistryRecord{
 		state: state, binding: cloneRunnerLedgerEntrySuccessStateBinding(state.binding), data: cleanupData, canonical: state.canonical, claimed: state.claimed,
 	}
+	cleanupRecord.cleanup = bindRunnerLedgerEntrySuccessCleanupFacts(cleanupRecord.data, cleanupRecord.canonical)
 	runnerLedgerEntrySuccessStateRegistry.Store(state, record)
 	runnerLedgerEntrySuccessStateCleanupRegistry.Store(state, cleanupRecord)
 	if !validRunnerLedgerEntrySuccessState(state) {
@@ -411,16 +443,84 @@ func validRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState) bo
 }
 
 func sameRunnerLedgerEntrySuccessRegistryRecords(left, right *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
-	return validRunnerLedgerEntrySuccessRegistryRecord(left, state) && validRunnerLedgerEntrySuccessRegistryRecord(right, state) &&
+	return sameRunnerLedgerEntrySuccessCleanupRecords(left, right, state) &&
+		runnerLedgerEntrySuccessCleanupFactsMatchData(left.cleanup, state.data) &&
+		runnerLedgerEntrySuccessCleanupFactsMatchData(right.cleanup, state.data) &&
+		validRunnerLedgerEntrySuccessRegistryRecord(left, state) && validRunnerLedgerEntrySuccessRegistryRecord(right, state) &&
 		left != right && left.claimed == right.claimed && left.binding != right.binding &&
 		sameRunnerLedgerEntrySuccessStateBindings(left.binding, right.binding) && left.canonical == right.canonical &&
 		runnerLedgerEntrySuccessDataDigest(left.data) == runnerLedgerEntrySuccessDataDigest(right.data)
 }
 
 func validRunnerLedgerEntrySuccessRegistryRecord(record *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
-	return record != nil && state != nil && record.state == state && record.binding != nil && record.binding != state.binding && record.claimed != nil &&
+	return validRunnerLedgerEntrySuccessCleanupRecord(record, state) &&
 		record.canonical != ([32]byte{}) && runnerLedgerEntrySuccessDataDigest(record.data) == record.canonical &&
-		record.binding.state == state && record.binding.canonical == record.canonical && sameRunnerLedgerEntrySuccessAuthority(record.data, record.binding)
+		sameRunnerLedgerEntrySuccessAuthority(record.data, record.binding)
+}
+
+func validRunnerLedgerEntrySuccessCleanupRecord(record *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
+	if record == nil || state == nil || record.state != state || record.binding == nil || record.binding == state.binding || record.claimed == nil ||
+		record.canonical == ([32]byte{}) || record.binding.state != state || record.binding.canonical != record.canonical ||
+		record.cleanup.canonical == ([32]byte{}) || record.cleanup.canonical != runnerLedgerEntrySuccessCleanupFactsDigest(record.cleanup, record.canonical) {
+		return false
+	}
+	facts := record.cleanup
+	return runnerLedgerEntrySuccessCleanupFactsMatchData(facts, record.data) &&
+		facts.candidateBinding == record.binding.candidateBinding && facts.cursor.valid == record.binding.cursorValid &&
+		sameOptionalRunnerOwnedPointer(facts.session, record.binding.session) &&
+		sameOptionalRunnerOwnedPointer(facts.transaction, record.binding.transaction) &&
+		sameRunnerOwnedPointer(facts.evidence, record.binding.evidence) && sameRunnerOwnedPointer(facts.journal, record.binding.journal)
+}
+
+func runnerLedgerEntrySuccessCleanupFactsMatchData(facts runnerLedgerEntrySuccessCleanupFacts, data runnerLedgerEntrySuccessData) bool {
+	return facts.phase == data.phase && facts.key == data.key && facts.mutationAttempted == data.mutationAttempted &&
+		facts.candidateBinding == data.candidateBinding && sameCursorIdentity(facts.cursor, data.cursor) &&
+		sameOptionalRunnerOwnedPointer(facts.session, data.session) &&
+		sameOptionalRunnerOwnedPointer(facts.transaction, data.transaction) &&
+		sameRunnerOwnedPointer(facts.evidence, data.evidence) && sameRunnerOwnedPointer(facts.journal, data.journal)
+}
+
+func sameRunnerLedgerEntrySuccessCleanupFacts(left, right runnerLedgerEntrySuccessCleanupFacts) bool {
+	return left.canonical != ([32]byte{}) && left.canonical == right.canonical && left.phase == right.phase &&
+		left.key == right.key && left.mutationAttempted == right.mutationAttempted &&
+		left.candidateBinding != nil && left.candidateBinding == right.candidateBinding &&
+		sameCursorIdentity(left.cursor, right.cursor) &&
+		sameOptionalRunnerOwnedPointer(left.session, right.session) &&
+		sameOptionalRunnerOwnedPointer(left.transaction, right.transaction) &&
+		sameRunnerOwnedPointer(left.evidence, right.evidence) && sameRunnerOwnedPointer(left.journal, right.journal)
+}
+
+func bindRunnerLedgerEntrySuccessCleanupFacts(data runnerLedgerEntrySuccessData, stateCanonical [32]byte) runnerLedgerEntrySuccessCleanupFacts {
+	facts := runnerLedgerEntrySuccessCleanupFacts{
+		phase: data.phase, session: data.session, transaction: data.transaction, evidence: data.evidence, journal: data.journal,
+		key: data.key, candidateBinding: data.candidateBinding, cursor: data.cursor.clone(), mutationAttempted: data.mutationAttempted,
+	}
+	facts.canonical = runnerLedgerEntrySuccessCleanupFactsDigest(facts, stateCanonical)
+	return facts
+}
+
+func runnerLedgerEntrySuccessCleanupFactsDigest(facts runnerLedgerEntrySuccessCleanupFacts, stateCanonical [32]byte) [32]byte {
+	if stateCanonical == ([32]byte{}) || facts.candidateBinding == nil || facts.candidateBinding.canonical == ([32]byte{}) ||
+		facts.cursor.valid == nil || facts.cursor.owner == nil || !sameGenerationIdentity(facts.cursor.generation, facts.cursor.generation) {
+		return [32]byte{}
+	}
+	h := sha256.New()
+	h.Write([]byte(runnerLedgerEntrySuccessCleanupDigestDomain + "\x00"))
+	h.Write(stateCanonical[:])
+	h.Write(facts.candidateBinding.canonical[:])
+	writeAdmissionString(h, facts.phase)
+	writeAdmissionUint(h, uint64(facts.key))
+	writeAdmissionUint(h, boolUint64(facts.mutationAttempted))
+	for _, value := range []Digest{
+		facts.cursor.generation.executionLineageDigest, facts.cursor.generation.journalIdentityDigest,
+		facts.cursor.generation.runnerProjectionDecisionDigest, facts.cursor.generation.schemaBundleDigest,
+	} {
+		writeAdmissionString(h, value.String())
+	}
+	writeGenerationJournalCursor(h, facts.cursor)
+	var digest [32]byte
+	copy(digest[:], h.Sum(nil))
+	return digest
 }
 
 func cloneRunnerLedgerEntrySuccessStateBinding(binding *runnerLedgerEntrySuccessStateBinding) *runnerLedgerEntrySuccessStateBinding {
@@ -459,7 +559,8 @@ func validRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) bool {
 		data.connectedAuthority.Validate() != nil || data.migrationAuthority.Validate() != nil || data.projectionSubject.Validate() != nil ||
 		data.observedCatalogDigest.Validate() != nil || data.selection.entryDigest.Validate() != nil || data.selection.planDigest == ([32]byte{}) ||
 		data.selection.planCount == 0 || uint32(len(data.plans)) != data.selection.planCount || data.maxAttempts == 0 ||
-		data.bundle == nil || data.bundle.Manifest == nil || data.bundle.Manifest.SchemaBundleDigest != data.generation.schemaBundleDigest ||
+		!validRunnerLedgerEntrySuccessRuntimeHandle(data.bundle, data.runtimeInputs) || data.runtimePolicy.Validate() != nil ||
+		data.runtimePolicy.MaxAttempts != uint64(data.maxAttempts) || data.runtimeEntryCount == 0 || data.selection.entryIndex >= data.runtimeEntryCount ||
 		data.entry.ID != data.selection.migrationID || data.statementIndex >= uint32(len(data.plans)) ||
 		!data.cursor.Valid() || !sameGenerationIdentity(data.cursor.generation, data.generation) ||
 		data.consumerFactSubject.Validate() != nil || data.evidenceBoundary == ([32]byte{}) ||
@@ -517,7 +618,13 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 	if record == nil || record.binding == nil {
 		return runnerLedgerEntrySuccessData{}, fail(CodeTransactionBoundary, "runner-ledger-entry-success-transition", "success writer authority is unavailable or already consumed", nil)
 	}
-	owned, cloneErr := cloneRunnerLedgerEntrySuccessData(record.data)
+	var owned runnerLedgerEntrySuccessData
+	var cloneErr error
+	if registriesValid {
+		owned, cloneErr = cloneRunnerLedgerEntrySuccessData(record.data)
+	} else {
+		owned = runnerLedgerEntrySuccessCleanupData(record.cleanup)
+	}
 	valid := cloneErr == nil && registriesValid && state.data.phase == expectedPhase && validRunnerLedgerEntrySuccessStateWithoutRegistry(state, record)
 	state.closed = true
 	state.data.session = nil
@@ -527,6 +634,7 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 	state.data.use = nil
 	state.binding = nil
 	if !valid {
+		revokeRunnerLedgerEntrySuccessCursor(owned)
 		if cloneErr != nil {
 			return owned, cloneErr
 		}
@@ -535,16 +643,24 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 	return owned, nil
 }
 
+func runnerLedgerEntrySuccessCleanupData(facts runnerLedgerEntrySuccessCleanupFacts) runnerLedgerEntrySuccessData {
+	return runnerLedgerEntrySuccessData{
+		phase: facts.phase, session: facts.session, transaction: facts.transaction, evidence: facts.evidence,
+		journal: facts.journal, key: facts.key, candidateBinding: facts.candidateBinding,
+		cursor: facts.cursor.clone(), mutationAttempted: facts.mutationAttempted,
+	}
+}
+
 func claimRunnerLedgerEntrySuccessStateRecord(state *runnerLedgerEntrySuccessState) (*runnerLedgerEntrySuccessStateRegistryRecord, bool) {
 	if state == nil {
 		return nil, false
 	}
 	primaryValue, primaryLoaded := runnerLedgerEntrySuccessStateRegistry.Load(state)
 	primary, primaryOK := primaryValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
-	primaryValid := primaryLoaded && primaryOK && validRunnerLedgerEntrySuccessRegistryRecord(primary, state)
+	primaryValid := primaryLoaded && primaryOK && validRunnerLedgerEntrySuccessCleanupRecord(primary, state)
 	cleanupValue, cleanupLoaded := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state)
 	cleanup, cleanupOK := cleanupValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
-	cleanupValid := cleanupLoaded && cleanupOK && validRunnerLedgerEntrySuccessRegistryRecord(cleanup, state)
+	cleanupValid := cleanupLoaded && cleanupOK && validRunnerLedgerEntrySuccessCleanupRecord(cleanup, state)
 	claim := runnerLedgerEntrySuccessTrustedClaim(state.claimed, primary, primaryValid, cleanup, cleanupValid)
 	if claim == nil || !claim.CompareAndSwap(false, true) {
 		return nil, false
@@ -600,6 +716,9 @@ func runnerLedgerEntrySuccessTrustedRecord(
 	if primaryValid && cleanupValid && sameRunnerLedgerEntrySuccessRegistryRecords(primary, cleanup, state) {
 		return cleanup, true
 	}
+	if primaryValid && cleanupValid && sameRunnerLedgerEntrySuccessCleanupRecords(primary, cleanup, state) {
+		return cleanup, false
+	}
 	primaryMatchesState := primaryValid && runnerLedgerEntrySuccessRegistryRecordMatchesState(primary, state)
 	cleanupMatchesState := cleanupValid && runnerLedgerEntrySuccessRegistryRecordMatchesState(cleanup, state)
 	switch {
@@ -618,6 +737,12 @@ func runnerLedgerEntrySuccessTrustedRecord(
 	default:
 		return nil, false
 	}
+}
+
+func sameRunnerLedgerEntrySuccessCleanupRecords(left, right *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
+	return validRunnerLedgerEntrySuccessCleanupRecord(left, state) && validRunnerLedgerEntrySuccessCleanupRecord(right, state) &&
+		left != right && left.claimed == right.claimed && left.binding != right.binding && left.canonical == right.canonical &&
+		sameRunnerLedgerEntrySuccessCleanupFacts(left.cleanup, right.cleanup)
 }
 
 func runnerLedgerEntrySuccessRegistryRecordMatchesState(record *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
@@ -669,7 +794,11 @@ func statePhaseOrEmpty(state *runnerLedgerEntrySuccessState) string {
 func cloneRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) (runnerLedgerEntrySuccessData, error) {
 	owned := data
 	owned.observedCatalogContract = cloneDigestPointer(data.observedCatalogContract)
-	owned.bundle = data.bundle
+	if !validRunnerLedgerEntrySuccessRuntimeHandle(data.bundle, data.runtimeInputs) {
+		return runnerLedgerEntrySuccessData{}, fail(CodeUntrusted, "runner-ledger-entry-success-state", "verified runtime handle changed", nil)
+	}
+	owned.bundle = runnerLedgerEntrySuccessRuntimeHandle(data.bundle)
+	owned.runtimePolicy = cloneProjectionValue(data.runtimePolicy)
 	owned.bindings = data.bindings.ownedCopy()
 	owned.entry = cloneProjectionValue(data.entry)
 	owned.plans = make([]StatementPlan, len(data.plans))
@@ -696,6 +825,20 @@ func cloneRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) (runne
 	return owned, nil
 }
 
+func runnerLedgerEntrySuccessRuntimeHandle(bundle *RuntimeBundle) *RuntimeBundle {
+	if bundle == nil {
+		return nil
+	}
+	return &RuntimeBundle{ownedInputs: bundle.ownedInputs}
+}
+
+func validRunnerLedgerEntrySuccessRuntimeHandle(bundle *RuntimeBundle, runtimeInputs [32]byte) bool {
+	return bundle != nil && bundle.Manifest == nil && bundle.Lineage == nil && bundle.AuthorityContract == nil &&
+		bundle.GlobalTableAuthority == nil && bundle.Files == nil && runtimeInputs != ([32]byte{}) &&
+		bundle.ownedInputs.canonical == runtimeInputs && bundle.ownedInputs.outerArtifactDigest.Validate() == nil &&
+		bundle.ownedInputs.outerArtifactSize > 0 && bundle.ownedInputs.outerArtifactSize <= maxRuntimeTarSize
+}
+
 func runnerLedgerEntrySuccessStateDigest(state *runnerLedgerEntrySuccessState) [32]byte {
 	if state == nil || state.self != state || state.closed {
 		return [32]byte{}
@@ -705,7 +848,12 @@ func runnerLedgerEntrySuccessStateDigest(state *runnerLedgerEntrySuccessState) [
 
 func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]byte {
 	if data.candidateBinding == nil || data.candidateBinding.canonical == ([32]byte{}) || data.recoveryDigest == ([32]byte{}) ||
-		data.selection.planDigest == ([32]byte{}) || data.bundle == nil || data.bundle.Manifest == nil || data.cursor.valid == nil {
+		data.selection.planDigest == ([32]byte{}) || !validRunnerLedgerEntrySuccessRuntimeHandle(data.bundle, data.runtimeInputs) ||
+		data.runtimePolicy.Validate() != nil || data.cursor.valid == nil {
+		return [32]byte{}
+	}
+	policyCanonical, err := canonicalContractKey(data.runtimePolicy)
+	if err != nil || policyCanonical == "" {
 		return [32]byte{}
 	}
 	h := sha256.New()
@@ -714,6 +862,8 @@ func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]b
 	h.Write(data.evidenceBoundary[:])
 	h.Write(data.recoveryDigest[:])
 	h.Write(data.selection.planDigest[:])
+	h.Write(data.runtimeInputs[:])
+	writeAdmissionString(h, policyCanonical)
 	for _, identity := range runnerLedgerEntrySuccessWriterIdentityStrings() {
 		writeAdmissionString(h, identity)
 	}
@@ -725,7 +875,6 @@ func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]b
 		data.migrationAuthority.String(), data.projectionSubject.String(), data.observedCatalogDigest.String(),
 		data.currentCatalogDigest.String(), data.firstCatalogBeforeDigest.String(), data.transactionAuthority.String(),
 		data.database.databaseName, data.database.sessionUser, data.database.currentUser,
-		data.bundle.Manifest.ManifestDigest.String(), data.bundle.Manifest.SchemaBundleDigest.String(),
 		data.intentRecordDigest.String(), data.intermediateRecordDigest.String(), data.ledgerPrefixDigest.String(),
 		data.ledgerHead, data.commitRecordDigest.String(), data.terminalRecordDigest.String(),
 		string(data.commitFacts.outcome), data.commitFacts.rejectionReason,
@@ -734,6 +883,7 @@ func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]b
 	}
 	writeAdmissionUint(h, uint64(data.selection.entryIndex))
 	writeAdmissionUint(h, uint64(data.selection.planCount))
+	writeAdmissionUint(h, uint64(data.runtimeEntryCount))
 	writeAdmissionUint(h, uint64(data.ledgerBeforeLength))
 	writeAdmissionUint(h, uint64(data.maxAttempts))
 	writeAdmissionUint(h, uint64(data.statementIndex))
@@ -982,7 +1132,7 @@ func (runner *Runner) projectRunnerLedgerEntrySuccessBefore(ctx context.Context,
 	if !runnerCanonicalEqual(authority.Metadata.Snapshot, catalog.Metadata.Snapshot) {
 		return runnerTransactionProjectionFacts{}, fail(CodeProjectionMetadataMismatch, "runner-ledger-entry-success-before", "statement-before authority and catalog snapshots differ", nil)
 	}
-	if err := profile.restoreRunnerExecutionProfile(ctx, data.bundle.Manifest.ExecutionPolicy); err != nil {
+	if err := profile.restoreRunnerExecutionProfile(ctx, data.runtimePolicy); err != nil {
 		return runnerTransactionProjectionFacts{}, mapRunnerDatabasePreflightError(err, "runner-ledger-entry-success-before-profile", "verified execution profile could not be restored")
 	}
 	facts := runnerTransactionProjectionFacts{
@@ -1222,7 +1372,7 @@ func (runner *Runner) appendRunnerLedgerEntrySuccessIntermediate(ctx context.Con
 	}
 	afterSeed := runnerProjectedCurrentStatementAfterSeed{
 		transaction: data.transaction, key: data.key, generation: data.generation, database: data.database,
-		policy: cloneProjectionValue(data.bundle.Manifest.ExecutionPolicy), plan: plan, intent: cloneProjectionValue(data.intent),
+		policy: cloneProjectionValue(data.runtimePolicy), plan: plan, intent: cloneProjectionValue(data.intent),
 		verifiedAuthority:        cloneVerifiedAuthorityContract(data.bindings.verifiedAuthority),
 		verifiedCatalog:          cloneVerifiedCatalogContract(catalog.verifiedCatalog),
 		runnerProjectionDecision: data.generation.runnerProjectionDecisionDigest,
@@ -1250,7 +1400,7 @@ func (runner *Runner) appendRunnerLedgerEntrySuccessIntermediate(ctx context.Con
 	if final {
 		preledgerSeed := runnerProjectedCurrentPreledgerSeed{
 			transaction: data.transaction, key: data.key, generation: data.generation, database: data.database,
-			policy: cloneProjectionValue(data.bundle.Manifest.ExecutionPolicy), plan: plan, intent: cloneProjectionValue(data.intent),
+			policy: cloneProjectionValue(data.runtimePolicy), plan: plan, intent: cloneProjectionValue(data.intent),
 			state:                  cloneProjectionValue(state),
 			authorityAfter:         ProjectionResultEvidence{Digest: after.authority.Digest, Metadata: cloneProjectionValue(after.authority.Metadata)},
 			catalogAfter:           ProjectionResultEvidence{Digest: after.catalog.Digest, Metadata: cloneProjectionValue(after.catalog.Metadata)},
@@ -1628,7 +1778,7 @@ func runnerLedgerEntrySuccessTerminalRecoveryMatches(data runnerLedgerEntrySucce
 		!runnerCanonicalEqual(snapshot.commitIntent.value, data.commit) {
 		return false
 	}
-	complete := data.selection.entryIndex+1 == uint32(len(data.bundle.Manifest.SchemaBundle.Migrations))
+	complete := data.selection.entryIndex+1 == data.runtimeEntryCount
 	if complete {
 		if snapshot.state != RecoveryCompleted || snapshot.nextPermittedAction != RecoveryReturnSuccess {
 			return false
@@ -1649,7 +1799,7 @@ func finishRunnerLedgerEntrySuccess(terminal *runnerLedgerEntrySuccessState) (ru
 	}
 	state := runnerLedgerEntrySuccessEntryCommittedNextEntry
 	event := "classify_next_entry"
-	if data.selection.entryIndex+1 == uint32(len(data.bundle.Manifest.SchemaBundle.Migrations)) {
+	if data.selection.entryIndex+1 == data.runtimeEntryCount {
 		state = runnerLedgerEntrySuccessEntryCommittedComplete
 		event = "classify_bundle_complete"
 	}

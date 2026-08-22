@@ -33,12 +33,18 @@ signed entry through this closed sequence:
 
 Every successful state transition consumes the old pointer/registry authority and seals a fresh state that binds the
 same database/evidence owner, candidate, generation, journal cursor, selected entry, plan closure, transaction where
-applicable, projection facts, and durable recovery boundary. The live state is cross-bound to independent primary and
-cleanup record/data/binding snapshots that share one atomic claim cell. A transition first reads all three claim-cell
-bindings, accepts only the state-plus-record or record-pair provenance, and then lets exactly one consumer claim that
-cell. A missing, replaced, or field-drifted copy can only use the other copy to revoke the old cursor and return
-recovery-required, never mint a successor. Literal, copied, stale, swapped, registry-missing, or second-use state and
-evidence-request values fail closed.
+applicable, projection facts, and durable recovery boundary. The state retains only an independent zero-public-field
+runtime handle plus the frozen execution policy, entry count, and verified-runtime-input digest; no caller-visible
+manifest, lineage, file map, or authority projection can drive a transition. The live state is cross-bound to primary
+and cleanup record/data/binding snapshots that share one atomic claim cell. Each record also seals recovery-only
+cleanup facts for the exact phase, resource handles, candidate, and cursor without reading any runtime-bundle projection.
+A transition first reads all three claim-cell bindings, requires the primary and cleanup facts to agree on the exact
+candidate pointer, cursor owner and validity cell, and session/transaction/evidence/journal handles, and then lets
+exactly one consumer claim that cell. Minting a successor additionally requires that pair to match the live state;
+an exact record pair may be used cleanup-only when the live state drifts. A missing,
+replaced, field-drifted, or shared-projection-invalidated copy can at most consume the independent cleanup pair, revoke
+the old cursor, remove both records, and return recovery-required. Literal, copied, stale, swapped, registry-missing,
+or second-use state and evidence-request values fail closed.
 
 ## Evidence and mutation boundary
 
@@ -64,13 +70,16 @@ The focused in-process matrix covers:
   readback, one commit, one terminal append, and complete/next-entry result classification;
 - permit/state/request zero, literal, copy, field tamper, foreign binder/cursor, old successor, second transition, and
   sequential plus competing-goroutine one-shot consumption;
-- after a known commit and after a durable terminal, state self/canonical/live-binding/data/foreign-or-nil-claim drift plus primary
+- after a known commit and after a durable terminal, state self/canonical/live-binding/data/frozen-runtime/shared-bundle-alias/foreign-or-nil-claim drift plus primary
   and cleanup registry missing, replacement, binding drift, or otherwise-valid typed replacement carrying a foreign
-  already-claimed cell, each requiring recovery-required, cursor revocation, both registry entries removed, and no
+  already-claimed cell, cursor validity cell/owner, candidate binding, or resource handle, each requiring
+  recovery-required, cursor revocation, both registry entries removed, and no
   authority recovery after restoring the external state or registry field;
 - competing-goroutine consumption of one known-commit state, requiring exactly one terminal authority, one rejected
   second consumer, an unretracted winning cursor, and a valid ordinary result from that sole terminal authority;
 - pre-cancel and state drift before transaction acquisition;
+- execution-ready and transaction-ready live-state session/transaction/evidence/journal/cursor drift, requiring the
+  exact record pair to clean up the real session/transaction and revoke the real cursor without touching foreign handles;
 - transaction open, statement-before projection, intent binder/zero-write/foreign cursor/durable-result tamper,
   statement execution after durable intent, intermediate unknown, ledger insert/readback contradiction, commit-intent
   zero-write, commit rejected/ambiguous, post-commit close, terminal binder, and terminal unknown boundaries;
@@ -87,20 +96,35 @@ were used.
 
 ## Fresh local checks
 
-The final-source local matrix used Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6 darwin/arm64`. It produced:
+The fifth-repair source used Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6 darwin/arm64`. It produced:
 
 - focused success-kernel, execution-admission/writer, authority-spread, production-consumer, and forbidden-graph
-  normal: PASS in `151.371s` package time;
-- the same focused scope with `-race -timeout=30m`: PASS in `1376.839s` package time;
-- full `internal/migration` normal with `-timeout=30m`: PASS in `1591.051s` package time;
+  normal: PASS in `189.503s` package time;
+- the same focused scope with `-race -timeout=30m`: PASS in `1688.519s` package time;
+- full `internal/migration` normal: NOT PASS; a pre-review run was intentionally interrupted at
+  `474.144s`, and the full suite is deferred until the frozen authority review has no P0/P1 finding;
 - full platform contract/generator/lock check: PASS/current for `115` JSON files, `50` schemas, and `62` fixture cases;
 - control-plane `go vet ./...`, `go build ./...`, `go mod tidy -diff`, and `go mod verify`: PASS;
 - repository lint and TypeScript typecheck: PASS;
 - Linux `amd64` and `arm64` migration test-binary compile with `CGO_ENABLED=0`: PASS; and
 - all changed Go files `gofmt`, all changed documentation `oxfmt --check`, and `git diff --check`: PASS.
 
-The focused race and full normal commands ran serially; their package-reported durations are conformance evidence, not
-a performance baseline. Neither a still-running process nor the default ten-minute bounded stop is counted as PASS.
+Those fifth-repair focused results were superseded by the pointer-provenance repair and are not final-source evidence.
+On the current source, the execution-ready/transaction-ready resource-drift test is PASS in `11.243s`; the exact
+post-commit tamper plus normal-success and competing-consumer scope is PASS in `195.247s`; and the seven remaining
+non-overlapping `TestRunnerLedgerEntrySuccess*` tests are PASS in `41.263s`. Together those three commands cover all
+eleven success-kernel tests once. The new precommit cleanup and competing-consumer tests also pass under `-race` in
+`124.881s`; no broad race PASS is claimed. After the static authority pre-review reported `P0=0/P1=0/P2=0`, the single
+final-source full normal run reached the explicit 30-minute package timeout (`1800.980s` package time, `1801.29s` wall
+time) while tests were still running; it is `NOT PASS`, no test assertion failure is inferred from that bounded stop,
+and it will not be rerun for this candidate. The earlier interrupted full run and this final bounded stop are both
+explicitly excluded from PASS.
+
+On that same current source and exact Node `24.13.1` / Bun `1.3.14` / Go `1.26.6` tuple, the aggregate platform
+contract check is current (`115` JSON files, `50` schemas, `62` fixtures), including every generated registry/Go
+profile/SDK and the generation lock. `go vet ./...`, `go build ./...`, `go mod tidy -diff`, `go mod verify`, repository
+lint, TypeScript typecheck, Linux `amd64`/`arm64` migration test-binary compilation, target Go/Markdown formatting, and
+`git diff --check` are PASS.
 
 The repository-wide formatter still reports eight pre-existing HEAD files outside this Slice; none is dirty or was
 rewritten here, so the full formatter invocation is explicitly not recorded as PASS. The matrix does not claim a
@@ -152,6 +176,40 @@ non-nil state with a missing live claim as drift rather than absence: it loads a
 records, selects their exact shared claim cell, consumes that cell, removes both records, and uses the trusted record
 facts only to revoke the old cursor and return recovery-required. Both commit-known and terminal-durable phases now
 exercise nil-claim tamper followed by restoration and require that neither state nor cursor can revive.
+
+The fourth repair candidate `28c86ec` received `BLOCK, P0=0/P1=1/P2=0`: its primary and cleanup records still
+shared the same mutable runtime-bundle projection. Temporarily changing that projection's manifest digest invalidated
+both full data digests at once; neither record could provide a claim or cursor for cleanup, and restoring the digest
+revived the old authority. The fifth repair replaces that projection with independent zero-public-field runtime
+handles, freezes the compact policy/entry-count/input-digest facts that the kernel actually consumes, and adds a
+separately sealed cleanup projection to each record. Cleanup identity is derived only from the frozen state canonical,
+exact phase/key, resource-handle bindings, candidate binding, complete journal cursor identity, and mutation status.
+Runtime-handle drift can therefore invalidate every full data copy while the matching cleanup pair still consumes the
+original claim, clears both registries, and revokes the original cursor; because registries-valid remains false, those
+cleanup facts cannot mint a successor. The fifth-repair two-phase matrix had `40` tamper subcases, including independent frozen
+runtime-fact drift, a synthetically shared public projection, and combined nil-claim plus shared-projection drift, with
+restoration after failure proving non-revival.
+
+The fifth repair then received `BLOCK, P0=0/P1=1`: cleanup canonical bytes omitted process-local pointer identity, and
+the cleanup-pair selector compared only those canonical bytes. A typed replacement could therefore preserve every
+semantic cursor field while substituting a foreign true validity cell, cursor owner, candidate binding, or resource
+handle; that replacement could be selected for cleanup and leave the real cursor reusable. The sixth repair keeps the
+portable canonical digest but additionally cross-binds primary, cleanup, and live state by exact candidate pointer,
+complete cursor identity (including owner and validity cell), and session/transaction/evidence/journal pointer. A
+one-sided typed replacement is now rejected as a pair, the unaffected record supplies cleanup provenance, and a
+two-sided mismatch falls back to revoking both records plus the live state's cursor. The two-phase matrix now has `68`
+tamper subcases, including symmetric primary/cleanup replacement with each foreign pointer class; every case restores
+the external value after failure and proves that neither state nor the original cursor revives.
+
+The sixth repair then received `BLOCK, P0=0/P1=1/P2=0`: it required the exact primary/cleanup pair to match live
+`state.data` even for cleanup. A precommit live-state session or transaction drift therefore caused the selector to
+discard two mutually consistent records that still owned the real session, transaction, lock, and cursor; only cursor
+revocation was attempted, while rollback/unlock/close lost their handles. The seventh repair separates the quorum:
+primary and cleanup must agree by exact pointer identity to provide cleanup provenance, while matching the live state
+remains an additional requirement for `registriesValid` and successor minting. Any consumed but invalid state revokes
+the selected record cursor before returning its cleanup handles. Eleven execution-ready/transaction-ready drift cases
+now cover session, transaction, evidence, journal, cursor validity cell, and cursor owner; they require real resource
+cleanup, foreign-handle non-use, both registries removed, cursor revocation, and non-revival after restoration.
 
 This local record is not an approval. Before Slice D may begin, the complete fixed candidate must be clean, pushed,
 hash-identified, and independently reviewed read-only for authority provenance, one-shot state transitions, full
