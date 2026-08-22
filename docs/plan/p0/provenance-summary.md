@@ -1,11 +1,18 @@
 # Platform P0 provenance, license, and secret baseline
 
-- Status：BLOCKED
+- Supply-chain / publication status：BLOCKED
+- P0 inventory provenance closure：VERIFIED WITH RESTRICTIONS
 - Runtime audit：complete、fail closed
 - Synara extraction audit：PASS WITH RESTRICTIONS
 - Publication/attestation mutation：NOT AUTHORIZED
 
 ## Live remote-ref refreshes (non-superseding)
+
+2026-08-23 的后续只读复核记录在
+[`provenance/remote-ref-refresh-20260823.json`](provenance/remote-ref-refresh-20260823.json)。它通过
+`ssh.github.com:443` 直接读取 live refs，确认 P0、P0 monitoring、P1、Runtime tag、Synara 与 T3 固定来源均与
+本地记录一致，且未执行 fetch、push 或任何远端变更。该记录只补充 observation time 与 remote identity；不会覆盖
+`G-INVENTORY R2` 的 historical fixed input，也不会改变任何 Gate、P1 实施状态、供应链 blocker、发布授权或部署结论。
 
 2026-08-21 的后续只读复核记录在
 [`provenance/remote-ref-refresh-20260821.json`](provenance/remote-ref-refresh-20260821.json)。它确认 P0 分支

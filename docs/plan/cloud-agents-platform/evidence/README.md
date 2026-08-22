@@ -32,4 +32,6 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 每条 evidence 使用 [`../templates/gate-closure-record.md`](../templates/gate-closure-record.md)，并在
 [`../06-status-tracker.md`](../06-status-tracker.md) 登记状态与链接。
 
-当前没有已关闭的 Platform Gate；不要用 M1 Runtime 历史证据创建虚假的 Platform closure record。
+当前已关闭的仅是 Platform P0 的两个 phase record：`G-INVENTORY` 与 `G-BASELINE-P0`。aggregate
+`G-BASELINE` 仍等待独立的 `G-BASELINE-M1`，其余 aggregate/phase Gate 仍保持 open 或 not started；不要用
+M1 Runtime 历史证据创建虚假的 Platform closure record，也不要把 P0 phase closure 提升为 Platform RC、发布或部署证据。

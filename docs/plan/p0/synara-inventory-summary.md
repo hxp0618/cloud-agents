@@ -1,6 +1,6 @@
 # Synara Control Plane P0 inventory summary
 
-- Status：IN PROGRESS
+- Status：VERIFIED（current record：`CAG-G-INVENTORY-P0-20260810-R2`）
 - Frozen source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Root tree：`ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc`
 - Control Plane tree：`4d32d26bf32b8ebd62188961d0dffff92da4cf0c`
@@ -89,7 +89,7 @@ Provider catalog chain。finalizer 已为全部 8,625 项写入 owner/target/aut
 56 条 Gitleaks finding 已完成 exact-finding triage：48 条上下文误报、6 条静态测试私钥来源要求公开前重写、
 2 条历史日志要求禁止导入 Synara Git history；没有整目录或整规则豁免。
 
-## P0 blockers and P1 risks
+## P1 constraints and publication blockers
 
 1. `internal/providercatalog/generate.go` 仍引用已不存在的
    `packages/contracts/src/providerCapabilityCatalog.json`；checked-in `catalog_gen.go` 掩盖了不可重生状态。
@@ -106,8 +106,12 @@ artifacts` 是跨语言、跨镜像边。
 7. migration 与 worker image cache 耦合，不能用“文件进入镜像层”推断 Runtime authority。
 
 当前 final decision 的 adapter/core 不变量、full-tree completeness 与 source/secret provenance 已由独立终审
-复核，并以 `CAG-G-INVENTORY-P0-20260810-R2` 将 `G-INVENTORY` 标为 `VERIFIED`。Platform P0 仍缺
-`G-BASELINE-P0`，因此 P1 仍不得开始。
+复核，并以 [`CAG-G-INVENTORY-P0-20260810-R2`](../cloud-agents-platform/evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R2.md)
+将 `G-INVENTORY` 标为 `VERIFIED`。独立的
+[`CAG-G-BASELINE-P0-20260810-R2`](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R2.md)
+也已将 `G-BASELINE-P0` 标为 `VERIFIED`，因此 Platform P0 Exit 与 P1 Entry 已满足。上述条目继续作为 P1
+重写、依赖和发布约束；它们不授权直接复制 Synara history/source、发布、部署、Beta 或 GA。aggregate
+`G-BASELINE` 仍等待 `G-BASELINE-M1`，但依 D-022 不反向阻塞已关闭的 P0 phase。
 
 ## Reproduce
 
