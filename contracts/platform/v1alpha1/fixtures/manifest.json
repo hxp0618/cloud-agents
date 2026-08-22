@@ -302,6 +302,69 @@
       "instance": "../../../generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
       "expectedSchemaValid": true,
       "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-recovery-registry-suite-source-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-suite-source-v1.schema.json",
+      "instance": "golden/runner-ledger-recovery-registry-suite-source-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-recovery-admission-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-abort-terminal-writer-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-commit-observation-writer-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-ambiguous-resolution-writer-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-retry-handoff-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-recovery-execution-admission-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-recovery-execution-admission-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-recovery-success-writer-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-recovery-success-writer-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "runner-ledger-return-failure-registry-v1",
+      "schema": "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
     }
   ]
 }

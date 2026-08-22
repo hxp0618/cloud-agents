@@ -12,6 +12,7 @@ import { validateRunnerLedgerPreflightFixture } from "./platform-runner-ledger-p
 import { validateRunnerLedgerConsumerFixture } from "./platform-runner-ledger-consumer-registry";
 import { validateRunnerLedgerEntryAdmissionFixture } from "./platform-runner-ledger-entry-admission-registry";
 import { validateRunnerLedgerEntryWriterFixture } from "./platform-runner-ledger-entry-writer-registry";
+import { validateRunnerLedgerRecoveryFixture } from "./platform-runner-ledger-recovery-registry";
 
 import {
   assertExpectedSemanticResult,
@@ -305,6 +306,29 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       expectedSchemaValid: true,
       expectedSemanticValid: true,
     },
+    {
+      name: "runner-ledger-recovery-registry-suite-source-v1",
+      schema: "../schemas/runner-ledger-recovery-registry-suite-source-v1.schema.json",
+      instance: "golden/runner-ledger-recovery-registry-suite-source-v1.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    ...[
+      "runner-ledger-recovery-admission",
+      "runner-ledger-abort-terminal-writer",
+      "runner-ledger-commit-observation-writer",
+      "runner-ledger-ambiguous-resolution-writer",
+      "runner-ledger-retry-handoff",
+      "runner-ledger-recovery-execution-admission",
+      "runner-ledger-recovery-success-writer",
+      "runner-ledger-return-failure",
+    ].map((name) => ({
+      name: `${name}-registry-v1`,
+      schema: "../schemas/runner-ledger-recovery-registry-v1.schema.json",
+      instance: `../../../generated/platform/v1alpha1/${name}-registry-v1.json`,
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    })),
   ],
 };
 
@@ -568,6 +592,7 @@ function validateJsonSchemaFixtures(
           validateRunnerLedgerConsumerFixture(document, dirname(contractRoot)),
           validateRunnerLedgerEntryAdmissionFixture(document, dirname(contractRoot)),
           validateRunnerLedgerEntryWriterFixture(document, dirname(contractRoot)),
+          validateRunnerLedgerRecoveryFixture(document, dirname(contractRoot)),
         ];
         const semanticResult =
           canonicalResults.find((result) => !result.valid) ??

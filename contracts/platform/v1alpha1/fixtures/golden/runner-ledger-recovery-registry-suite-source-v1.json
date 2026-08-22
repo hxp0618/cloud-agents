@@ -1,0 +1,253 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-recovery-registry-suite-source/v1",
+  "suiteId": "cloud-agents/platform/runner-ledger-recovery",
+  "profiles": [
+    {
+      "family": "recovery_admission",
+      "registryId": "cloud-agents/platform/runner-ledger-recovery-admission",
+      "profileId": "runner-ledger-recovery-admission/v1",
+      "action": "prepare_recovery_admission",
+      "predecessorProfileId": "runner-ledger-consumer/v1",
+      "permitFromProfileId": null,
+      "pairBindings": [
+        {
+          "disposition": "empty_brand_new",
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "consumerAction": "entry_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "brand_new_inherited",
+          "action": "begin_first_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_statement_intent",
+          "action": "append_aborted_retryable",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_statement_intent",
+          "action": "append_aborted_terminal",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_intermediate",
+          "action": "append_aborted_retryable",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_intermediate",
+          "action": "append_aborted_terminal",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_commit_intent",
+          "action": "reconcile_commit",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_commit_observation_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "ambiguous_unresolved",
+          "action": "reconcile_commit",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_ambiguous_resolution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "begin_next_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_retry_handoff"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "divergent",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        }
+      ]
+    },
+    {
+      "family": "abort_terminal_writer",
+      "registryId": "cloud-agents/platform/runner-ledger-abort-terminal-writer",
+      "profileId": "runner-ledger-abort-terminal-writer/v1",
+      "action": "append_abort_terminal",
+      "predecessorProfileId": "runner-ledger-recovery-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1",
+      "pairBindings": [
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_statement_intent",
+          "action": "append_aborted_retryable",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_statement_intent",
+          "action": "append_aborted_terminal",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_intermediate",
+          "action": "append_aborted_retryable",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_intermediate",
+          "action": "append_aborted_terminal",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        }
+      ]
+    },
+    {
+      "family": "commit_observation_writer",
+      "registryId": "cloud-agents/platform/runner-ledger-commit-observation-writer",
+      "profileId": "runner-ledger-commit-observation-writer/v1",
+      "action": "append_commit_observation_terminal",
+      "predecessorProfileId": "runner-ledger-recovery-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1",
+      "pairBindings": [
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_commit_intent",
+          "action": "reconcile_commit",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_commit_observation_terminal"
+        }
+      ]
+    },
+    {
+      "family": "ambiguous_resolution_writer",
+      "registryId": "cloud-agents/platform/runner-ledger-ambiguous-resolution-writer",
+      "profileId": "runner-ledger-ambiguous-resolution-writer/v1",
+      "action": "append_ambiguous_resolution",
+      "predecessorProfileId": "runner-ledger-recovery-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1",
+      "pairBindings": [
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "ambiguous_unresolved",
+          "action": "reconcile_commit",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_ambiguous_resolution"
+        }
+      ]
+    },
+    {
+      "family": "retry_handoff",
+      "registryId": "cloud-agents/platform/runner-ledger-retry-handoff",
+      "profileId": "runner-ledger-retry-handoff/v1",
+      "action": "prepare_retry_handoff",
+      "predecessorProfileId": "runner-ledger-recovery-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1",
+      "pairBindings": [
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "begin_next_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_retry_handoff"
+        }
+      ]
+    },
+    {
+      "family": "recovery_execution_admission",
+      "registryId": "cloud-agents/platform/runner-ledger-recovery-execution-admission",
+      "profileId": "runner-ledger-recovery-execution-admission/v1",
+      "action": "prepare_recovery_execution",
+      "predecessorProfileId": "runner-ledger-recovery-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1",
+      "pairBindings": [
+        {
+          "disposition": "empty_brand_new",
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "consumerAction": "entry_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "brand_new_inherited",
+          "action": "begin_first_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        }
+      ]
+    },
+    {
+      "family": "recovery_success_writer",
+      "registryId": "cloud-agents/platform/runner-ledger-recovery-success-writer",
+      "profileId": "runner-ledger-recovery-success-writer/v1",
+      "action": "execute_one_recovery_attempt",
+      "predecessorProfileId": "runner-ledger-recovery-execution-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-execution-admission/v1",
+      "pairBindings": []
+    },
+    {
+      "family": "return_failure",
+      "registryId": "cloud-agents/platform/runner-ledger-return-failure",
+      "profileId": "runner-ledger-return-failure/v1",
+      "action": "return_typed_failure",
+      "predecessorProfileId": "runner-ledger-recovery-admission/v1",
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1",
+      "pairBindings": [
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "divergent",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        }
+      ]
+    }
+  ]
+}

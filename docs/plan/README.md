@@ -155,7 +155,10 @@ retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须�
 `APPROVE, P0=0/P1=0/P2=0`。该 verdict 仅批准 audit/proposal 的准确性；owner 随后在
 [`D-047 decision record`](p1/runner-ledger-recovery-contract-decision-20260822.md) 接受 ADR-0023 的 Decision、Closed
 pair mapping 与 ordered Slices A-G。当前仅授权依序本地实现/独立复核，尚未完成的 recovery rows 继续
-`NOT_IMPLEMENTED`。
+`NOT_IMPLEMENTED`。Slice A 的
+[`generated registry/profile implementation`](p1/runner-ledger-recovery-profile-implementation-20260822.md) 已在独立
+工作树完成 8 个 versioned registry、ordinary Go profile 与 generation-lock closure，当前仍待固定候选只读独立
+审查；它没有 runtime consumer、claim/permit、writer 或数据库路径。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

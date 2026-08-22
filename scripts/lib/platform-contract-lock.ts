@@ -49,6 +49,14 @@ import {
   RUNNER_LEDGER_ENTRY_SUCCESS_WRITER_OUTPUT_PATH,
 } from "./platform-runner-ledger-entry-writer-registry";
 import {
+  assertRunnerLedgerRecoveryRegistriesCurrent,
+  buildRunnerLedgerRecoveryRegistries,
+  runnerLedgerRecoveryRegistryInputs,
+  RUNNER_LEDGER_RECOVERY_FAMILIES,
+  RUNNER_LEDGER_RECOVERY_GENERATOR_SOURCES,
+  RUNNER_LEDGER_RECOVERY_OUTPUT_PATHS,
+} from "./platform-runner-ledger-recovery-registry";
+import {
   assertIdentitySDKCurrent,
   GO_IDENTITY_MANIFEST_PATH,
   GO_IDENTITY_OUTPUT_PATH,
@@ -315,6 +323,12 @@ const RUNNER_LEDGER_ENTRY_WRITER_GO_GENERATOR_SOURCES = [
 ] as const;
 const RUNNER_LEDGER_ENTRY_WRITER_GO_OUTPUT_PATH =
   "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_generated.go";
+const RUNNER_LEDGER_RECOVERY_GO_GENERATOR_SOURCES = [
+  ...RUNNER_LEDGER_RECOVERY_GENERATOR_SOURCES,
+  "scripts/generate-platform-runner-ledger-recovery-go.ts",
+] as const;
+const RUNNER_LEDGER_RECOVERY_GO_OUTPUT_PATH =
+  "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go";
 
 const IN_REPO_TOOLS = [
   {
@@ -330,6 +344,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-runner-ledger-consumer-registry.ts",
       "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
       "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
+      "scripts/lib/platform-runner-ledger-recovery-registry.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
   },
@@ -358,6 +373,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-runner-ledger-consumer-registry.ts",
       "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
       "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
+      "scripts/lib/platform-runner-ledger-recovery-registry.ts",
       "scripts/lib/platform-identity-sdk.ts",
       "scripts/lib/platform-proto-sdk.ts",
       "scripts/lib/platform-go-modules.ts",
@@ -443,6 +459,18 @@ const IN_REPO_TOOLS = [
     sources: RUNNER_LEDGER_ENTRY_WRITER_GO_GENERATOR_SOURCES,
   },
   {
+    id: "platform-runner-ledger-recovery-registry-generator",
+    kind: "in-repo-typescript-deterministic-versioned-contract-registry-suite",
+    entrypoint: "scripts/generate-platform-runner-ledger-recovery-registries.ts",
+    sources: RUNNER_LEDGER_RECOVERY_GENERATOR_SOURCES,
+  },
+  {
+    id: "platform-runner-ledger-recovery-go-generator",
+    kind: "in-repo-typescript-deterministic-gofmt-go-ordinary-profile-suite",
+    entrypoint: "scripts/generate-platform-runner-ledger-recovery-go.ts",
+    sources: RUNNER_LEDGER_RECOVERY_GO_GENERATOR_SOURCES,
+  },
+  {
     id: "platform-common-identity-sdk-generator",
     kind: "in-repo-typescript-deterministic-go-typescript-sdk",
     entrypoint: "scripts/generate-platform-identity-sdks.ts",
@@ -475,6 +503,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertRunnerLedgerEntryAdmissionRegistryCurrent(root);
   assertRunnerLedgerEntryExecutionAdmissionRegistryCurrent(root);
   assertRunnerLedgerEntrySuccessWriterRegistryCurrent(root);
+  assertRunnerLedgerRecoveryRegistriesCurrent(root);
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
   assertPlatformProtoSDKCurrent(root);
@@ -487,6 +516,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerEntryExecutionAdmissionInputs =
     runnerLedgerEntryExecutionAdmissionRegistryInputs(root);
   const runnerLedgerEntrySuccessWriterInputs = runnerLedgerEntrySuccessWriterRegistryInputs(root);
+  const runnerLedgerRecoveryInputs = runnerLedgerRecoveryRegistryInputs(root);
   const identityContractInputs = identitySDKContractInputs(root);
   const identityGeneratorInputs = identitySDKGeneratorSources();
   const identityGoInputs = [
@@ -569,6 +599,16 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     "services/control-plane/internal/migration/runner_ledger_entry_writer_profile.go",
     "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_test.go",
   ].toSorted();
+  const runnerLedgerRecoveryGoInputs = [
+    ...RUNNER_LEDGER_RECOVERY_GO_GENERATOR_SOURCES,
+    ...Object.values(RUNNER_LEDGER_RECOVERY_OUTPUT_PATHS),
+    RUNNER_LEDGER_PREFLIGHT_GO_OUTPUT_PATH,
+    RUNNER_LEDGER_CONSUMER_GO_OUTPUT_PATH,
+    RUNNER_LEDGER_ENTRY_ADMISSION_GO_OUTPUT_PATH,
+    RUNNER_LEDGER_ENTRY_WRITER_GO_OUTPUT_PATH,
+    "services/control-plane/internal/migration/runner_ledger_recovery_profile.go",
+    "services/control-plane/internal/migration/runner_ledger_recovery_profile_test.go",
+  ].toSorted();
   const durableCoordinationRegistry = buildDurableCoordinationRegistry(root);
   const compatibilityRecoveryRegistry = buildCompatibilityRecoveryRegistry(root);
   const compatibilityRecoveryRegistryV2 = buildCompatibilityRecoveryRegistryV2(root);
@@ -578,6 +618,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerEntryExecutionAdmissionRegistry =
     buildRunnerLedgerEntryExecutionAdmissionRegistry(root);
   const runnerLedgerEntrySuccessWriterRegistry = buildRunnerLedgerEntrySuccessWriterRegistry(root);
+  const runnerLedgerRecoveryRegistries = buildRunnerLedgerRecoveryRegistries(root);
   const durableCoordinationProfile = (
     durableCoordinationRegistry.profiles as ReadonlyArray<{
       readonly profileDigest: string;
@@ -1143,6 +1184,93 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           retryPair: "EXCLUDED",
           productionConsumer: "NONE_IN_SLICE_A",
           runtimeWriter: "NOT_IMPLEMENTED_IN_SLICE_A",
+          recoveryWriters: "NOT_IMPLEMENTED",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "runner-ledger-recovery-registry-suite-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, runnerLedgerRecoveryInputs),
+        inputs: runnerLedgerRecoveryInputs,
+        outputStatus: "GENERATED_RUNNER_LEDGER_RECOVERY_REGISTRY_SUITE",
+        notGateClosure: true,
+        generatedOutputs: RUNNER_LEDGER_RECOVERY_FAMILIES.map((family) => {
+          const path = RUNNER_LEDGER_RECOVERY_OUTPUT_PATHS[family];
+          return {
+            path,
+            sha256: fileSha256(root, path),
+            sizeBytes: readFileSync(resolve(root, path)).byteLength,
+          };
+        }),
+        outputSummary: {
+          registryCount: runnerLedgerRecoveryRegistries.length,
+          profileIds: runnerLedgerRecoveryRegistries.map(
+            (registry) => (registry.profile as { spec: { profileId: string } }).spec.profileId,
+          ),
+          registryDigests: runnerLedgerRecoveryRegistries.map(
+            (registry) => registry.registryDigest,
+          ),
+          pairCounts: runnerLedgerRecoveryRegistries.map(
+            (registry) =>
+              (
+                registry.profile as {
+                  spec: { pairBindings: ReadonlyArray<unknown> };
+                }
+              ).spec.pairBindings.length,
+          ),
+          closedPairCount: 12,
+          entryNotImplementedPairs: 1,
+          recoveryNotImplementedPairs: 11,
+          recoveryExecutionAdmissionProfile: "runner-ledger-recovery-execution-admission/v1",
+          recoverySuccessWriterProfile: "runner-ledger-recovery-success-writer/v1",
+          recoverySuccessWriterDirectPairs: 0,
+          unionWriter: "FORBIDDEN",
+          productionConsumer: "NONE_IN_SLICE_A",
+          runtimeClaims: "NOT_IMPLEMENTED_IN_SLICE_A",
+          entryWriter: "NOT_IMPLEMENTED",
+          recoveryWriters: "NOT_IMPLEMENTED",
+          httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "runner-ledger-recovery-go-profile-suite-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, runnerLedgerRecoveryGoInputs),
+        inputs: runnerLedgerRecoveryGoInputs,
+        outputStatus: "GENERATED_RUNNER_LEDGER_RECOVERY_GO_PROFILE_SUITE",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: RUNNER_LEDGER_RECOVERY_GO_OUTPUT_PATH,
+            sha256: fileSha256(root, RUNNER_LEDGER_RECOVERY_GO_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, RUNNER_LEDGER_RECOVERY_GO_OUTPUT_PATH))
+              .byteLength,
+          },
+        ],
+        outputSummary: {
+          profileCount: 8,
+          closedPairCount: 12,
+          generatedSelectorOnly: true,
+          goFormatter: "GOFMT_FROM_EXACT_GO_1_26_6_TOOLCHAIN",
+          handWrittenProfileFallback: "FORBIDDEN",
+          historicalRunnerV1Mutation: "FORBIDDEN",
+          recoverySuccessWriterDirectPairs: 0,
+          productionConsumer: "NONE_IN_SLICE_A",
+          runtimeClaims: "NOT_IMPLEMENTED_IN_SLICE_A",
+          entryWriter: "NOT_IMPLEMENTED",
           recoveryWriters: "NOT_IMPLEMENTED",
           httpSurface: "NOT_IMPLEMENTED",
           p2Surface: "NOT_IMPLEMENTED",

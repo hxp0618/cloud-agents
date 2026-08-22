@@ -180,7 +180,10 @@
   [`6d4da5b` independent review](runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md) 返回
   `APPROVE, P0=0/P1=0/P2=0`；该 verdict 不接受 ADR-0023，也不授予任何实现 authority。Owner 随后通过
   [`D-047 decision record`](runner-ledger-recovery-contract-decision-20260822.md) 接受 Decision、Closed pair mapping
-  与 ordered Slices A-G；当前从 Slice A 开始依序本地实现/独立复核，尚未归属已批准 slice 的行为继续
+  与 ordered Slices A-G。Slice A 的
+  [`generated registry/profile implementation`](runner-ledger-recovery-profile-implementation-20260822.md) 已完成 8 个
+  versioned registry、ordinary Go profile、fixtures/manifests 与 generation-lock closure，当前仍待固定候选只读独立
+  审查；没有 runtime consumer、claim/permit、writer 或数据库路径。尚未归属已批准并通过独立 review 的行为继续
   `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
 - Gate closure：none
 
