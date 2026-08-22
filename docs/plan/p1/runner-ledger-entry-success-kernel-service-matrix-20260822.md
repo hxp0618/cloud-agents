@@ -80,9 +80,9 @@ were used.
 The final-source local matrix used Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6 darwin/arm64`. It produced:
 
 - focused success-kernel, execution-admission/writer, authority-spread, production-consumer, and forbidden-graph
-  normal: PASS in `72.366s` package time;
-- the same focused scope with `-race -timeout=30m`: PASS in `721.738s` package time (`728.51s` wall);
-- full `internal/migration` normal with `-timeout=30m`: PASS in `1483.626s` package time (`1483.99s` wall);
+  normal: PASS in `74.619s` package time (`75.04s` wall);
+- the same focused scope with `-race -timeout=30m`: PASS in `735.629s` package time (`742.49s` wall);
+- full `internal/migration` normal with `-timeout=30m`: PASS in `1454.697s` package time (`1455.10s` wall);
 - full platform contract/generator/lock check: PASS/current for `115` JSON files, `50` schemas, and `62` fixture cases;
 - control-plane `go vet ./...`, `go build ./...`, `go mod tidy -diff`, and `go mod verify`: PASS;
 - repository lint and TypeScript typecheck: PASS;
@@ -105,6 +105,13 @@ All entry/recovery branches exposed by the current public runner continue to ret
 `NOT_IMPLEMENTED` boundary.
 
 ## Review handoff
+
+The first fixed Slice C candidate `d5cb59a` received `BLOCK, P0=0/P1=1/P2=0`: after `Commit` had actually
+been called, ambiguous, rejected, or close-unproven exits returned recovery-required without revoking the shared
+journal-cursor validity cell. The repair makes every non-success exit after an invoked commit revoke that shared cell,
+including commit-observation registry tamper and every later terminal/result failure. The focused boundary matrix now
+asserts cursor revocation for rejected and ambiguous commits, unproven old-session close, observation-registry tamper,
+terminal-binder failure, and terminal unknown durability.
 
 This local record is not an approval. Before Slice D may begin, the complete fixed candidate must be clean, pushed,
 hash-identified, and independently reviewed read-only for authority provenance, one-shot state transitions, full

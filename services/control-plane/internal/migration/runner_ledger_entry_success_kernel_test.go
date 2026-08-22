@@ -610,15 +610,16 @@ func TestRunnerLedgerEntrySuccessContextStateAndSecondStatementFailuresCloseAuth
 
 func TestRunnerLedgerEntrySuccessFailureAndUnknownBoundaries(t *testing.T) {
 	tests := []struct {
-		name          string
-		configure     func(*runnerLedgerEntrySuccessFixture)
-		wantCode      ErrorCode
-		wantAppends   int
-		wantExecutes  int
-		wantLedger    int
-		wantCommits   int
-		wantRollbacks int
-		wantRecovery  RecoveryState
+		name              string
+		configure         func(*runnerLedgerEntrySuccessFixture)
+		wantCode          ErrorCode
+		wantAppends       int
+		wantExecutes      int
+		wantLedger        int
+		wantCommits       int
+		wantRollbacks     int
+		wantRecovery      RecoveryState
+		wantCursorRevoked bool
 	}{
 		{
 			name: "transaction-open", wantCode: CodeTransactionBoundary,
@@ -691,31 +692,47 @@ func TestRunnerLedgerEntrySuccessFailureAndUnknownBoundaries(t *testing.T) {
 			},
 		},
 		{
-			name: "commit-rejected", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent,
+			name: "commit-rejected", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent, wantCursorRevoked: true,
 			configure: func(f *runnerLedgerEntrySuccessFixture) {
 				f.execution.base.database.transaction.commitErr = &pgconn.PgError{Code: "40001"}
 			},
 		},
 		{
-			name: "commit-ambiguous", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent,
+			name: "commit-ambiguous", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent, wantCursorRevoked: true,
 			configure: func(f *runnerLedgerEntrySuccessFixture) {
 				f.execution.base.database.transaction.commitErr = context.DeadlineExceeded
 			},
 		},
 		{
-			name: "post-commit-close", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent,
+			name: "post-commit-close", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent, wantCursorRevoked: true,
 			configure: func(f *runnerLedgerEntrySuccessFixture) {
 				f.execution.base.database.closeErr = errors.New("close failed")
 			},
 		},
 		{
-			name: "terminal-binder", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent,
+			name: "commit-observation-registry-tamper", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent, wantCursorRevoked: true,
+			configure: func(f *runnerLedgerEntrySuccessFixture) {
+				transaction := f.execution.base.database.transaction
+				transaction.commitObserveMutate = func() {
+					runnerCommitProtocolRegistry.Range(func(key, value any) bool {
+						record, ok := value.(runnerCommitProtocolRegistryRecord)
+						if ok && sameRunnerOwnedPointer(record.source, transaction) {
+							runnerCommitProtocolRegistry.Delete(key)
+							return false
+						}
+						return true
+					})
+				}
+			},
+		},
+		{
+			name: "terminal-binder", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 3, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent, wantCursorRevoked: true,
 			configure: func(f *runnerLedgerEntrySuccessFixture) {
 				f.execution.base.service.evidence.successBindErrAt[4] = fail(CodeEvidenceJournalFailed, "test-terminal-bind", "terminal bind failed", nil)
 			},
 		},
 		{
-			name: "terminal-unknown", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 4, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent,
+			name: "terminal-unknown", wantCode: CodeEvidenceRecoveryRequired, wantAppends: 4, wantExecutes: 1, wantLedger: 1, wantCommits: 1, wantRecovery: RecoveryDanglingCommitIntent, wantCursorRevoked: true,
 			configure: func(f *runnerLedgerEntrySuccessFixture) {
 				f.execution.base.service.evidence.runnerEvidenceSessionFake.journal.appendOutcomeAt = map[int]appendOutcome{4: appendOutcomeUnknown}
 			},
@@ -749,6 +766,9 @@ func TestRunnerLedgerEntrySuccessFailureAndUnknownBoundaries(t *testing.T) {
 				if snapshot == nil || snapshot.state != test.wantRecovery {
 					t.Fatalf("recovery=%+v want=%s", snapshot, test.wantRecovery)
 				}
+			}
+			if test.wantCursorRevoked && journal.cursor.Valid() {
+				t.Fatalf("post-commit failure retained a reusable cursor: %+v", journal.cursor)
 			}
 		})
 	}

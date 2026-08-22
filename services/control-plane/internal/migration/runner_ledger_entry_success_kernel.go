@@ -351,11 +351,20 @@ func runnerLedgerEntrySuccessSealFailure(data runnerLedgerEntrySuccessData, mess
 	code := CodeTransactionBoundary
 	if data.mutationAttempted {
 		code = CodeEvidenceRecoveryRequired
-		if data.cursor.valid != nil {
-			data.cursor.valid.Store(false)
-		}
+		revokeRunnerLedgerEntrySuccessCursor(data)
 	}
 	return fail(code, "runner-ledger-entry-success-seal", message, nil)
+}
+
+func revokeRunnerLedgerEntrySuccessCursor(data runnerLedgerEntrySuccessData) {
+	if data.cursor.valid != nil {
+		data.cursor.valid.Store(false)
+	}
+}
+
+func runnerLedgerEntrySuccessPostCommitFailure(data runnerLedgerEntrySuccessData, op, message string, cause error) error {
+	revokeRunnerLedgerEntrySuccessCursor(data)
+	return fail(CodeEvidenceRecoveryRequired, op, message, cause)
 }
 
 func runnerLedgerEntrySuccessTransitionAllowed(from, event, to string) bool {
@@ -1407,14 +1416,14 @@ func (runner *Runner) commitRunnerLedgerEntrySuccess(ctx context.Context, durabl
 	data.session = nil
 	data.transaction = nil
 	if invokeErr != nil || observation == nil {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-commit", "commit outcome or session close is not safely reusable", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-commit", "commit outcome or session close is not safely reusable", nil)
 	}
 	facts, consumeErr := consumeRunnerCommitProtocolObservation(observation, protocol)
 	if consumeErr != nil || !validRunnerCommitProtocolFacts(facts) || facts.outcome != runnerCommitProtocolCommitted || !closeProven {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-commit", "only a known committed outcome with closed old session may advance", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-commit", "only a known committed outcome with closed old session may advance", nil)
 	}
 	if !runnerLedgerEntrySuccessEvidenceMatches(data) {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-commit", "durable commit intent changed across database commit", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-commit", "durable commit intent changed across database commit", nil)
 	}
 	data.commitFacts = facts
 	data.phase = runnerLedgerEntrySuccessCommitKnownCommitted
@@ -1428,10 +1437,10 @@ func (runner *Runner) commitRunnerLedgerEntrySuccess(ctx context.Context, durabl
 func (runner *Runner) appendRunnerLedgerEntrySuccessTerminal(ctx context.Context, committed *runnerLedgerEntrySuccessState) (*runnerLedgerEntrySuccessState, error) {
 	data, err := consumeRunnerLedgerEntrySuccessState(committed, runnerLedgerEntrySuccessCommitKnownCommitted)
 	if err != nil {
-		return nil, err
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-terminal", "known commit state changed before terminal append", err)
 	}
 	if runner == nil || ctx == nil || data.commit.Validate() != nil || data.intermediate.Validate() != nil {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-terminal", "known commit terminal inputs are unavailable", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-terminal", "known commit terminal inputs are unavailable", nil)
 	}
 	lastIntermediate := data.intermediate.State.IntermediateStateDigest
 	terminal := AttemptTerminalState{
@@ -1442,22 +1451,22 @@ func (runner *Runner) appendRunnerLedgerEntrySuccessTerminal(ctx context.Context
 	}
 	terminal.TerminalDigest, err = terminal.ComputeDigest()
 	if err != nil || terminal.Validate(data.maxAttempts) != nil {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-terminal", "committed terminal cannot be reproduced", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-terminal", "committed terminal cannot be reproduced", nil)
 	}
 	data.terminal = cloneProjectionValue(terminal)
 	record := EvidenceRecord{AttemptTerminal: cloneAttemptTerminalPointer(&terminal)}
 	data, recordDigest, err := appendRunnerLedgerEntrySuccessRecord(ctx, data, record, data.plans[len(data.plans)-1])
 	if err != nil {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-terminal", "known commit terminal append requires strict reopen", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-terminal", "known commit terminal append requires strict reopen", nil)
 	}
 	data.terminalRecordDigest = recordDigest
 	if !runnerLedgerEntrySuccessTerminalRecoveryMatches(data) {
-		return nil, fail(CodeEvidenceJournalFailed, "runner-ledger-entry-success-terminal", "durable terminal recovery boundary is contradictory", nil)
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-terminal", "durable terminal recovery boundary is contradictory", nil)
 	}
 	data.phase = runnerLedgerEntrySuccessTerminalDurable
 	next, err := sealRunnerLedgerEntrySuccessState(data, runnerLedgerEntrySuccessCommitKnownCommitted, "append_terminal_durable")
 	if err != nil {
-		return nil, err
+		return nil, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-terminal", "durable terminal state could not be sealed", err)
 	}
 	return next, nil
 }
@@ -1494,10 +1503,10 @@ func runnerLedgerEntrySuccessTerminalRecoveryMatches(data runnerLedgerEntrySucce
 func finishRunnerLedgerEntrySuccess(terminal *runnerLedgerEntrySuccessState) (runnerLedgerEntrySuccessOutcome, error) {
 	data, err := consumeRunnerLedgerEntrySuccessState(terminal, runnerLedgerEntrySuccessTerminalDurable)
 	if err != nil {
-		return runnerLedgerEntrySuccessOutcome{}, err
+		return runnerLedgerEntrySuccessOutcome{}, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-result", "durable terminal state changed before classification", err)
 	}
 	if !runnerLedgerEntrySuccessTerminalRecoveryMatches(data) {
-		return runnerLedgerEntrySuccessOutcome{}, fail(CodeEvidenceJournalFailed, "runner-ledger-entry-success-result", "durable terminal changed before result classification", nil)
+		return runnerLedgerEntrySuccessOutcome{}, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-result", "durable terminal changed before result classification", nil)
 	}
 	state := runnerLedgerEntrySuccessEntryCommittedNextEntry
 	event := "classify_next_entry"
@@ -1506,11 +1515,11 @@ func finishRunnerLedgerEntrySuccess(terminal *runnerLedgerEntrySuccessState) (ru
 		event = "classify_bundle_complete"
 	}
 	if !runnerLedgerEntrySuccessTransitionAllowed(runnerLedgerEntrySuccessTerminalDurable, event, state) {
-		return runnerLedgerEntrySuccessOutcome{}, fail(CodeTransactionBoundary, "runner-ledger-entry-success-result", "terminal classification is outside the generated registry", nil)
+		return runnerLedgerEntrySuccessOutcome{}, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-result", "terminal classification is outside the generated registry", nil)
 	}
 	outcome := runnerLedgerEntrySuccessOutcome{state: state, migrationID: data.entry.ID, ledgerHead: data.ledgerHead, ledgerLength: data.ledgerLength}
 	if !outcome.valid() {
-		return runnerLedgerEntrySuccessOutcome{}, fail(CodeEvidenceJournalFailed, "runner-ledger-entry-success-result", "committed entry result is contradictory", nil)
+		return runnerLedgerEntrySuccessOutcome{}, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-result", "committed entry result is contradictory", nil)
 	}
 	return outcome, nil
 }

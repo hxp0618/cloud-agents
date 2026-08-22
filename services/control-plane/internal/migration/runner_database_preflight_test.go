@@ -524,6 +524,8 @@ type runnerPreflightTransaction struct {
 	commitStatusAfter      byte
 	commitConnectionClosed bool
 	commitClosedAfter      bool
+	commitClosedCalls      int
+	commitObserveMutate    func()
 	rollbackCalls          int
 	steps                  []string
 }
@@ -681,6 +683,10 @@ func (transaction *runnerPreflightTransaction) runnerCommitProtocolStatus() byte
 }
 
 func (transaction *runnerPreflightTransaction) runnerCommitProtocolConnectionClosed() bool {
+	transaction.commitClosedCalls++
+	if transaction.commitClosedCalls == 3 && transaction.commitObserveMutate != nil {
+		transaction.commitObserveMutate()
+	}
 	return transaction.commitConnectionClosed
 }
 
