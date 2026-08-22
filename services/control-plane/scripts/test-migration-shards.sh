@@ -6,6 +6,8 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd -- "$script_dir/../../.." && pwd -P)
 module_dir="$repo_root/services/control-plane"
 script_path="$script_dir/$(basename -- "${BASH_SOURCE[0]}")"
+validator_dir="$script_dir/migration-shard-validator"
+validator_source="$validator_dir/main.go"
 
 usage() {
   cat <<'EOF'
@@ -148,6 +150,10 @@ go_version=$("$go_command" version | awk '{print $3}')
 if [[ $go_version != go1.26.6 ]]; then
   fail "Go 1.26.6 is required; observed $go_version"
 fi
+[[ -f $validator_source ]] || fail "migration shard JSON validator source is missing"
+module_path=$(env GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  "$go_command" -C "$module_dir" list -m -f '{{.Path}}')
+migration_package="$module_path/internal/migration"
 
 external_gate_variables=(
   CLOUD_AGENTS_REQUIRE_CATALOG_PARSE_TEST
@@ -173,6 +179,11 @@ done
 
 temporary_dir=""
 active_pids=()
+active_pgids=()
+active_shards=()
+work_dir=""
+validator_binary=""
+run_in_progress=0
 
 cleanup_plan() {
   if [[ -n $temporary_dir && -d $temporary_dir ]]; then
@@ -180,23 +191,134 @@ cleanup_plan() {
   fi
 }
 
+cleanup_runtime_tools() {
+  if [[ -n $validator_binary && -f $validator_binary ]]; then
+    rm -f -- "$validator_binary"
+  fi
+}
+
+cleanup_all() {
+  cleanup_runtime_tools
+  cleanup_plan
+}
+
+process_group_alive() {
+  local pgid=$1
+  kill -0 -- "-$pgid" 2>/dev/null
+}
+
+terminate_active_process_groups() {
+  local index
+  local attempt
+  local remaining
+  local cleanup_failed=0
+
+  index=0
+  while ((index < ${#active_pgids[@]})); do
+    if process_group_alive "${active_pgids[$index]}"; then
+      kill -TERM -- "-${active_pgids[$index]}" 2>/dev/null || true
+    fi
+    index=$((index + 1))
+  done
+
+  attempt=0
+  while ((attempt < 50)); do
+    remaining=0
+    index=0
+    while ((index < ${#active_pgids[@]})); do
+      if process_group_alive "${active_pgids[$index]}"; then
+        remaining=1
+      fi
+      index=$((index + 1))
+    done
+    ((remaining == 0)) && break
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+
+  index=0
+  while ((index < ${#active_pgids[@]})); do
+    if process_group_alive "${active_pgids[$index]}"; then
+      kill -KILL -- "-${active_pgids[$index]}" 2>/dev/null || true
+    fi
+    index=$((index + 1))
+  done
+
+  index=0
+  while ((index < ${#active_pids[@]})); do
+    wait "${active_pids[$index]}" 2>/dev/null || true
+    index=$((index + 1))
+  done
+
+  attempt=0
+  while ((attempt < 20)); do
+    remaining=0
+    index=0
+    while ((index < ${#active_pgids[@]})); do
+      if process_group_alive "${active_pgids[$index]}"; then
+        remaining=1
+      fi
+      index=$((index + 1))
+    done
+    ((remaining == 0)) && break
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+
+  index=0
+  while ((index < ${#active_pgids[@]})); do
+    if process_group_alive "${active_pgids[$index]}"; then
+      cleanup_failed=1
+    fi
+    index=$((index + 1))
+  done
+  active_pids=()
+  active_pgids=()
+  active_shards=()
+  return "$cleanup_failed"
+}
+
+write_run_status() {
+  local status=$1
+  local temporary_status="$work_dir/.run-status.$$"
+  printf '%s\n' "$status" >"$temporary_status"
+  mv -- "$temporary_status" "$work_dir/run-status.txt"
+}
+
+fail_run() {
+  write_run_status FAIL
+  run_in_progress=0
+  fail "$*"
+}
+
 on_signal() {
   local exit_code=$1
-  local pid
+  local signal_name=$2
+  local cleanup_status=complete
   trap - EXIT INT TERM
-  for pid in "${active_pids[@]}"; do
-    kill -TERM "$pid" 2>/dev/null || true
-  done
-  for pid in "${active_pids[@]}"; do
-    wait "$pid" 2>/dev/null || true
-  done
+  set +e
+  if ! terminate_active_process_groups; then
+    cleanup_status=failed
+  fi
+  cleanup_runtime_tools
+  if ((run_in_progress == 1)) && [[ -n $work_dir && -d $work_dir ]]; then
+    {
+      printf 'key\tvalue\n'
+      printf 'status\tABORTED\n'
+      printf 'signal\t%s\n' "$signal_name"
+      printf 'exit_code\t%s\n' "$exit_code"
+      printf 'process_group_cleanup\t%s\n' "$cleanup_status"
+      printf 'recorded_at_utc\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    } >"$work_dir/run-aborted.tsv"
+    write_run_status ABORTED
+  fi
   cleanup_plan
   exit "$exit_code"
 }
 
-trap cleanup_plan EXIT
-trap 'on_signal 130' INT
-trap 'on_signal 143' TERM
+trap cleanup_all EXIT
+trap 'on_signal 130 INT' INT
+trap 'on_signal 143 TERM' TERM
 
 if [[ $mode == plan ]]; then
   temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/cag-migration-shards.XXXXXX")
@@ -237,6 +359,7 @@ control_plane_tree=$(git -C "$repo_root" rev-parse HEAD:services/control-plane)
 go_mod_sha256=$(sha256_file "$module_dir/go.mod")
 go_sum_sha256=$(sha256_file "$module_dir/go.sum")
 script_sha256=$(sha256_file "$script_path")
+validator_source_sha256=$(sha256_file "$validator_source")
 
 if ! env GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
   "$go_command" -C "$module_dir" test -list '^Test' ./internal/migration >"$raw_list"; then
@@ -319,6 +442,8 @@ metadata_tsv="$work_dir/metadata.tsv"
   printf 'source_tree\t%s\n' "$source_tree"
   printf 'control_plane_tree\t%s\n' "$control_plane_tree"
   printf 'script_sha256\t%s\n' "$script_sha256"
+  printf 'validator_source_sha256\t%s\n' "$validator_source_sha256"
+  printf 'migration_package\t%s\n' "$migration_package"
   printf 'go_mod_sha256\t%s\n' "$go_mod_sha256"
   printf 'go_sum_sha256\t%s\n' "$go_sum_sha256"
   printf 'go_version\t%s\n' "$go_version"
@@ -342,8 +467,16 @@ if [[ $mode == plan ]]; then
   exit 0
 fi
 
+validator_binary="$work_dir/.migration-shard-validator"
+if ! env GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  "$go_command" -C "$module_dir" build -trimpath -buildvcs=false \
+  -o "$validator_binary" ./scripts/migration-shard-validator; then
+  fail "migration shard JSON validator build failed"
+fi
+
 run_shard() {
   local index=$1
+  local start_gate=$2
   local name
   local dir
   local regex_value
@@ -354,6 +487,9 @@ run_shard() {
 
   printf -v name 'shard-%02d' "$index"
   dir="$work_dir/$name"
+  while [[ ! -f $start_gate ]]; do
+    sleep 0.05
+  done
   regex_value=$(sed -n '1p' "$dir/regex.txt")
   started_epoch=$(date +%s)
   date -u '+%Y-%m-%dT%H:%M:%SZ' >"$dir/started-at.txt"
@@ -380,25 +516,61 @@ run_shard() {
 }
 
 run_failed=0
+run_in_progress=1
 date -u '+%Y-%m-%dT%H:%M:%SZ' >"$work_dir/run-started-at.txt"
 batch_start=0
 while ((batch_start < shard_count)); do
   active_pids=()
+  active_pgids=()
+  active_shards=()
   batch_offset=0
   while ((batch_offset < job_count && batch_start + batch_offset < shard_count)); do
     shard_index=$((batch_start + batch_offset))
-    run_shard "$shard_index" &
-    active_pids+=("$!")
+    printf -v shard_name 'shard-%02d' "$shard_index"
+    shard_dir="$work_dir/$shard_name"
+    start_gate="$shard_dir/start-authorized.txt"
+    set -m
+    run_shard "$shard_index" "$start_gate" &
+    shard_pid=$!
+    set +m
+    active_pids+=("$shard_pid")
+    active_pgids+=("$shard_pid")
+    active_shards+=("$shard_name")
+    observed_pgid=$(ps -o pgid= -p "$shard_pid" | tr -d '[:space:]')
+    if [[ ! $observed_pgid =~ ^[1-9][0-9]*$ || $observed_pgid != "$shard_pid" ]]; then
+      kill -TERM "$shard_pid" 2>/dev/null || true
+      wait "$shard_pid" 2>/dev/null || true
+      terminate_active_process_groups || true
+      fail_run "failed to establish an independent process group for $shard_name"
+    fi
+    {
+      printf 'key\tvalue\n'
+      printf 'wrapper_pid\t%s\n' "$shard_pid"
+      printf 'process_group_id\t%s\n' "$observed_pgid"
+    } >"$shard_dir/process-group.tsv"
+    : >"$start_gate"
     batch_offset=$((batch_offset + 1))
   done
   batch_offset=0
+  batch_has_residue=0
   while ((batch_offset < ${#active_pids[@]})); do
     if ! wait "${active_pids[$batch_offset]}"; then
       run_failed=1
     fi
+    if process_group_alive "${active_pgids[$batch_offset]}"; then
+      echo "process group remained alive after ${active_shards[$batch_offset]} wrapper exit" >&2
+      run_failed=1
+      batch_has_residue=1
+      break
+    fi
     batch_offset=$((batch_offset + 1))
   done
+  if ((batch_has_residue == 1)); then
+    terminate_active_process_groups || true
+  fi
   active_pids=()
+  active_pgids=()
+  active_shards=()
   batch_start=$((batch_start + job_count))
 done
 date -u '+%Y-%m-%dT%H:%M:%SZ' >"$work_dir/run-finished-at.txt"
@@ -407,31 +579,90 @@ final_source_commit=$(git -C "$repo_root" rev-parse 'HEAD^{commit}')
 final_source_tree=$(git -C "$repo_root" rev-parse 'HEAD^{tree}')
 final_control_plane_tree=$(git -C "$repo_root" rev-parse HEAD:services/control-plane)
 if [[ $final_source_commit != "$source_commit" || $final_source_tree != "$source_tree" || $final_control_plane_tree != "$control_plane_tree" ]]; then
-  fail "source identity changed during the shard run"
+  fail_run "source identity changed during the shard run"
 fi
 if [[ -n $(git -C "$repo_root" status --porcelain=v1 --untracked-files=all) ]]; then
-  fail "repository worktree changed during the shard run"
+  fail_run "repository worktree changed during the shard run"
 fi
 
-results_tsv="$work_dir/results.tsv"
-printf 'shard\texit_code\telapsed_seconds\tjsonl_sha256\tstderr_sha256\n' >"$results_tsv"
+validation_failed=0
+validation_tsv="$work_dir/validation.tsv"
+printf 'shard\tvalidator_exit_code\tvalidation_sha256\tplanned_count\trun_count\tpass_count\tskip_count\tfail_count\tpackage_pass_count\n' >"$validation_tsv"
 shard_index=0
 while ((shard_index < shard_count)); do
   printf -v shard_name 'shard-%02d' "$shard_index"
   shard_dir="$work_dir/$shard_name"
-  [[ -s $shard_dir/exit-code.txt ]] || fail "missing result for $shard_name"
-  printf '%s\t%s\t%s\t%s\t%s\n' \
+  validator_exit_code=0
+  if "$validator_binary" \
+    --tests "$shard_dir/tests.txt" \
+    --json "$shard_dir/go-test.jsonl" \
+    --package "$migration_package" \
+    --output "$shard_dir/validation.tsv" \
+    >"$shard_dir/validation.stdout" 2>"$shard_dir/validation.stderr"; then
+    validator_exit_code=0
+  else
+    validator_exit_code=$?
+    validation_failed=1
+  fi
+  printf '%s\n' "$validator_exit_code" >"$shard_dir/validation-exit-code.txt"
+  sha256_file "$shard_dir/validation.stdout" >"$shard_dir/validation-stdout.sha256"
+  sha256_file "$shard_dir/validation.stderr" >"$shard_dir/validation-stderr.sha256"
+  validation_sha256=-
+  planned_count=-
+  run_count=-
+  pass_count=-
+  skip_count=-
+  fail_count=-
+  package_pass_count=-
+  if ((validator_exit_code == 0)); then
+    [[ -s $shard_dir/validation.tsv ]] || fail_run "validator did not publish a result for $shard_name"
+    [[ ! -s $shard_dir/validation.stdout ]] || validation_failed=1
+    [[ ! -s $shard_dir/validation.stderr ]] || validation_failed=1
+    validation_sha256=$(sha256_file "$shard_dir/validation.tsv")
+    printf '%s\n' "$validation_sha256" >"$shard_dir/validation.sha256"
+    planned_count=$(awk -F '\t' '$1 == "planned_count" { print $2 }' "$shard_dir/validation.tsv")
+    run_count=$(awk -F '\t' '$1 == "run_count" { print $2 }' "$shard_dir/validation.tsv")
+    pass_count=$(awk -F '\t' '$1 == "pass_count" { print $2 }' "$shard_dir/validation.tsv")
+    skip_count=$(awk -F '\t' '$1 == "skip_count" { print $2 }' "$shard_dir/validation.tsv")
+    fail_count=$(awk -F '\t' '$1 == "fail_count" { print $2 }' "$shard_dir/validation.tsv")
+    package_pass_count=$(awk -F '\t' '$1 == "package_pass_count" { print $2 }' "$shard_dir/validation.tsv")
+  fi
+  [[ ! -s $shard_dir/go-test.stderr ]] || validation_failed=1
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$shard_name" "$validator_exit_code" "$validation_sha256" "$planned_count" \
+    "$run_count" "$pass_count" "$skip_count" "$fail_count" "$package_pass_count" >>"$validation_tsv"
+  shard_index=$((shard_index + 1))
+done
+cleanup_runtime_tools
+validation_tsv_sha256=$(sha256_file "$validation_tsv")
+printf '%s\n' "$validation_tsv_sha256" >"$work_dir/validation.sha256"
+
+results_tsv="$work_dir/results.tsv"
+printf 'shard\texit_code\telapsed_seconds\tjsonl_sha256\tstderr_sha256\tvalidator_exit_code\tvalidation_sha256\n' >"$results_tsv"
+shard_index=0
+while ((shard_index < shard_count)); do
+  printf -v shard_name 'shard-%02d' "$shard_index"
+  shard_dir="$work_dir/$shard_name"
+  [[ -s $shard_dir/exit-code.txt ]] || fail_run "missing result for $shard_name"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$shard_name" \
     "$(sed -n '1p' "$shard_dir/exit-code.txt")" \
     "$(sed -n '1p' "$shard_dir/elapsed-seconds.txt")" \
     "$(sed -n '1p' "$shard_dir/go-test-jsonl.sha256")" \
-    "$(sed -n '1p' "$shard_dir/go-test-stderr.sha256")" >>"$results_tsv"
+    "$(sed -n '1p' "$shard_dir/go-test-stderr.sha256")" \
+    "$(sed -n '1p' "$shard_dir/validation-exit-code.txt")" \
+    "$(if [[ -s $shard_dir/validation.sha256 ]]; then sed -n '1p' "$shard_dir/validation.sha256"; else printf '%s' -; fi)" >>"$results_tsv"
   shard_index=$((shard_index + 1))
 done
 
-if ((run_failed != 0)); then
+if ((run_failed != 0 || validation_failed != 0)); then
+  write_run_status FAIL
+  run_in_progress=0
   echo "Migration shards: FAIL tests=$test_count shards=$shard_count list_sha256=$test_list_sha256 output=$work_dir" >&2
   exit 1
 fi
 
+write_run_status PASS
+run_in_progress=0
+trap - INT TERM
 echo "Migration shards: PASS tests=$test_count shards=$shard_count list_sha256=$test_list_sha256 output=$work_dir"
