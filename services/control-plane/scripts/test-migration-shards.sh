@@ -184,6 +184,10 @@ active_shards=()
 work_dir=""
 validator_binary=""
 run_in_progress=0
+launch_in_progress=0
+pending_signal_exit_code=""
+pending_signal_name=""
+signal_deferred_during_launch=0
 
 cleanup_plan() {
   if [[ -n $temporary_dir && -d $temporary_dir ]]; then
@@ -291,7 +295,7 @@ fail_run() {
   fail "$*"
 }
 
-on_signal() {
+abort_run_for_signal() {
   local exit_code=$1
   local signal_name=$2
   local cleanup_status=complete
@@ -307,6 +311,7 @@ on_signal() {
       printf 'status\tABORTED\n'
       printf 'signal\t%s\n' "$signal_name"
       printf 'exit_code\t%s\n' "$exit_code"
+      printf 'deferred_during_launch\t%s\n' "$signal_deferred_during_launch"
       printf 'process_group_cleanup\t%s\n' "$cleanup_status"
       printf 'recorded_at_utc\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } >"$work_dir/run-aborted.tsv"
@@ -314,6 +319,30 @@ on_signal() {
   fi
   cleanup_plan
   exit "$exit_code"
+}
+
+on_signal() {
+  local exit_code=$1
+  local signal_name=$2
+
+  if ((launch_in_progress == 1)); then
+    if [[ -z $pending_signal_name ]]; then
+      pending_signal_exit_code=$exit_code
+      pending_signal_name=$signal_name
+      signal_deferred_during_launch=1
+    fi
+    return 0
+  fi
+  if [[ -n $pending_signal_name ]]; then
+    abort_run_for_signal "$pending_signal_exit_code" "$pending_signal_name"
+  fi
+  abort_run_for_signal "$exit_code" "$signal_name"
+}
+
+consume_pending_signal() {
+  if [[ -n $pending_signal_name ]]; then
+    abort_run_for_signal "$pending_signal_exit_code" "$pending_signal_name"
+  fi
 }
 
 trap cleanup_all EXIT
@@ -529,6 +558,7 @@ while ((batch_start < shard_count)); do
     printf -v shard_name 'shard-%02d' "$shard_index"
     shard_dir="$work_dir/$shard_name"
     start_gate="$shard_dir/start-authorized.txt"
+    launch_in_progress=1
     set -m
     run_shard "$shard_index" "$start_gate" &
     shard_pid=$!
@@ -536,11 +566,13 @@ while ((batch_start < shard_count)); do
     active_pids+=("$shard_pid")
     active_pgids+=("$shard_pid")
     active_shards+=("$shard_name")
-    observed_pgid=$(ps -o pgid= -p "$shard_pid" | tr -d '[:space:]')
+    observed_pgid=$(ps -o pgid= -p "$shard_pid" 2>/dev/null | tr -d '[:space:]' || true)
     if [[ ! $observed_pgid =~ ^[1-9][0-9]*$ || $observed_pgid != "$shard_pid" ]]; then
       kill -TERM "$shard_pid" 2>/dev/null || true
       wait "$shard_pid" 2>/dev/null || true
       terminate_active_process_groups || true
+      launch_in_progress=0
+      consume_pending_signal
       fail_run "failed to establish an independent process group for $shard_name"
     fi
     {
@@ -548,6 +580,8 @@ while ((batch_start < shard_count)); do
       printf 'wrapper_pid\t%s\n' "$shard_pid"
       printf 'process_group_id\t%s\n' "$observed_pgid"
     } >"$shard_dir/process-group.tsv"
+    launch_in_progress=0
+    consume_pending_signal
     : >"$start_gate"
     batch_offset=$((batch_offset + 1))
   done

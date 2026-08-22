@@ -8,6 +8,7 @@ runner="$script_dir/test-migration-shards.sh"
 exact_go=${CLOUD_AGENTS_GO:-/Users/huang/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/bin/go}
 fixture_root=""
 runner_pid=""
+fixture_wrapper_pid=""
 
 fail() {
   echo "$*" >&2
@@ -18,6 +19,12 @@ cleanup() {
   if [[ -n $runner_pid ]] && kill -0 "$runner_pid" 2>/dev/null; then
     kill -TERM "$runner_pid" 2>/dev/null || true
     wait "$runner_pid" 2>/dev/null || true
+  fi
+  if [[ $fixture_wrapper_pid =~ ^[1-9][0-9]*$ ]]; then
+    kill -TERM -- "-$fixture_wrapper_pid" 2>/dev/null || true
+    kill -KILL -- "-$fixture_wrapper_pid" 2>/dev/null || true
+    kill -TERM "$fixture_wrapper_pid" 2>/dev/null || true
+    kill -KILL "$fixture_wrapper_pid" 2>/dev/null || true
   fi
   if [[ -n $fixture_root && -d $fixture_root ]]; then
     find "$fixture_root" -depth -delete
@@ -148,6 +155,19 @@ assert_processes_gone() {
   return 1
 }
 
+assert_pid_and_group_gone() {
+  local pid=$1
+  local attempt=0
+  while ((attempt < 50)); do
+    if ! kill -0 "$pid" 2>/dev/null && ! kill -0 -- "-$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
 run_signal_case() {
   local signal_name=$1
   local expected_exit=$2
@@ -177,12 +197,76 @@ run_signal_case() {
   assert_processes_gone "$pid_file" "$output_dir" || fail "$signal_name left a worker or process group alive"
   [[ $(awk -F '\t' '$1 == "status" { print $2 }' "$output_dir/run-aborted.tsv") == ABORTED ]] || fail "$signal_name missing aborted record"
   [[ $(awk -F '\t' '$1 == "signal" { print $2 }' "$output_dir/run-aborted.tsv") == "$signal_name" ]] || fail "$signal_name record mismatch"
+  [[ $(awk -F '\t' '$1 == "deferred_during_launch" { print $2 }' "$output_dir/run-aborted.tsv") == 0 ]] || fail "$signal_name was unexpectedly deferred during launch"
   [[ $(awk -F '\t' '$1 == "process_group_cleanup" { print $2 }' "$output_dir/run-aborted.tsv") == complete ]] || fail "$signal_name cleanup was not complete"
   [[ $(sed -n '1p' "$output_dir/run-status.txt") == ABORTED ]] || fail "$signal_name run status is not ABORTED"
   before_digest=$(artifact_digest "$output_dir")
   sleep 0.5
   after_digest=$(artifact_digest "$output_dir")
   [[ $before_digest == "$after_digest" ]] || fail "$signal_name artifacts changed after runner exit"
+}
+
+run_pre_registration_signal_case() {
+  local signal_name=$1
+  local expected_exit=$2
+  local case_root="$fixture_root/pre-registration-$signal_name"
+  local output_dir="$case_root/output"
+  local pid_file="$case_root/fake-pids.tsv"
+  local bash_env="$case_root/bash-env.sh"
+  local marker="$case_root/pre-registration-ready.txt"
+  local release="$case_root/pre-registration-release.txt"
+  local before_digest
+  local after_digest
+  local status
+  mkdir -- "$case_root"
+  : >"$pid_file"
+
+  cat >"$bash_env" <<'EOF'
+__cag_pause_before_shard_registration() {
+  case ${BASH_COMMAND:-} in
+    'active_pids+='*)
+      trap - DEBUG
+      printf '%s\n' "${shard_pid:?}" >"${CAG_PRE_REGISTRATION_MARKER:?}"
+      while [[ ! -f ${CAG_PRE_REGISTRATION_RELEASE:?} ]]; do
+        sleep 0.01
+      done
+      ;;
+  esac
+}
+trap '__cag_pause_before_shard_registration' DEBUG
+EOF
+
+  set -m
+  env BASH_ENV="$bash_env" CAG_PRE_REGISTRATION_MARKER="$marker" CAG_PRE_REGISTRATION_RELEASE="$release" \
+    REAL_GO="$exact_go" FAKE_MODE=signal FAKE_PID_FILE="$pid_file" CLOUD_AGENTS_GO="$fake_go" \
+    /bin/bash "$runner" run --output-dir "$output_dir" --shards 2 --jobs 2 --test-parallel 1 --timeout 5m \
+    >"$case_root/runner.stdout" 2>"$case_root/runner.stderr" &
+  runner_pid=$!
+  set +m
+  wait_for_lines "$marker" 1 || fail "$signal_name pre-registration fixture did not reach the launch window"
+  fixture_wrapper_pid=$(sed -n '1p' "$marker")
+  [[ $fixture_wrapper_pid =~ ^[1-9][0-9]*$ ]] || fail "$signal_name pre-registration fixture recorded an invalid wrapper PID"
+  kill -"$signal_name" "$runner_pid"
+  sleep 0.1
+  : >"$release"
+  set +e
+  wait "$runner_pid"
+  status=$?
+  set -e
+  runner_pid=""
+  [[ $status == "$expected_exit" ]] || fail "$signal_name pre-registration runner exit=$status expected=$expected_exit"
+  assert_pid_and_group_gone "$fixture_wrapper_pid" || fail "$signal_name pre-registration signal left a wrapper or process group alive"
+  fixture_wrapper_pid=""
+  [[ ! -s $pid_file ]] || fail "$signal_name pre-registration fixture unexpectedly started a fake worker"
+  [[ $(awk -F '\t' '$1 == "status" { print $2 }' "$output_dir/run-aborted.tsv") == ABORTED ]] || fail "$signal_name pre-registration fixture missing aborted record"
+  [[ $(awk -F '\t' '$1 == "signal" { print $2 }' "$output_dir/run-aborted.tsv") == "$signal_name" ]] || fail "$signal_name pre-registration signal record mismatch"
+  [[ $(awk -F '\t' '$1 == "deferred_during_launch" { print $2 }' "$output_dir/run-aborted.tsv") == 1 ]] || fail "$signal_name was not deferred during launch"
+  [[ $(awk -F '\t' '$1 == "process_group_cleanup" { print $2 }' "$output_dir/run-aborted.tsv") == complete ]] || fail "$signal_name pre-registration cleanup was not complete"
+  [[ $(sed -n '1p' "$output_dir/run-status.txt") == ABORTED ]] || fail "$signal_name pre-registration run status is not ABORTED"
+  before_digest=$(artifact_digest "$output_dir")
+  sleep 0.5
+  after_digest=$(artifact_digest "$output_dir")
+  [[ $before_digest == "$after_digest" ]] || fail "$signal_name pre-registration artifacts changed after runner exit"
 }
 
 run_result_case() {
@@ -215,5 +299,7 @@ run_result_case valid 0 PASS
 run_result_case missing 1 FAIL
 run_signal_case TERM 143
 run_signal_case INT 130
+run_pre_registration_signal_case TERM 143
+run_pre_registration_signal_case INT 130
 
 echo "Migration shard runner fixture: PASS"
