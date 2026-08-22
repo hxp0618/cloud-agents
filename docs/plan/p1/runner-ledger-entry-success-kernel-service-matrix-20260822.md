@@ -34,8 +34,9 @@ signed entry through this closed sequence:
 Every successful state transition consumes the old pointer/registry authority and seals a fresh state that binds the
 same database/evidence owner, candidate, generation, journal cursor, selected entry, plan closure, transaction where
 applicable, projection facts, and durable recovery boundary. The live state is cross-bound to independent primary and
-cleanup record/data/binding snapshots that share one atomic claim cell. Exactly one consumer can claim the pair; a
-missing, replaced, or field-drifted copy can only use the other copy to revoke the old cursor and return
+cleanup record/data/binding snapshots that share one atomic claim cell. A transition first reads all three claim-cell
+bindings, accepts only the state-plus-record or record-pair provenance, and then lets exactly one consumer claim that
+cell. A missing, replaced, or field-drifted copy can only use the other copy to revoke the old cursor and return
 recovery-required, never mint a successor. Literal, copied, stale, swapped, registry-missing, or second-use state and
 evidence-request values fail closed.
 
@@ -63,9 +64,10 @@ The focused in-process matrix covers:
   readback, one commit, one terminal append, and complete/next-entry result classification;
 - permit/state/request zero, literal, copy, field tamper, foreign binder/cursor, old successor, second transition, and
   sequential plus competing-goroutine one-shot consumption;
-- after a known commit and after a durable terminal, state self/canonical/live-binding drift plus primary and cleanup
-  registry missing, replacement, or binding drift, each requiring recovery-required, cursor revocation, both registry
-  entries removed, and no authority recovery after restoring the external state field;
+- after a known commit and after a durable terminal, state self/canonical/live-binding/data/claim drift plus primary
+  and cleanup registry missing, replacement, binding drift, or otherwise-valid typed replacement carrying a foreign
+  already-claimed cell, each requiring recovery-required, cursor revocation, both registry entries removed, and no
+  authority recovery after restoring the external state or registry field;
 - competing-goroutine consumption of one known-commit state, requiring exactly one terminal authority, one rejected
   second consumer, an unretracted winning cursor, and a valid ordinary result from that sole terminal authority;
 - pre-cancel and state drift before transaction acquisition;
@@ -88,17 +90,17 @@ were used.
 The final-source local matrix used Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6 darwin/arm64`. It produced:
 
 - focused success-kernel, execution-admission/writer, authority-spread, production-consumer, and forbidden-graph
-  normal: PASS in `124.522s` package time;
-- the same focused scope with `-race -timeout=30m`: PASS in `1235.898s` package time;
-- full `internal/migration` normal with `-timeout=30m`: PASS in `1715.240s` package time;
+  normal: PASS in `144.307s` package time;
+- the same focused scope with `-race -timeout=30m`: PASS in `1352.432s` package time;
+- full `internal/migration` normal with `-timeout=30m`: PASS in `1608.881s` package time;
 - full platform contract/generator/lock check: PASS/current for `115` JSON files, `50` schemas, and `62` fixture cases;
 - control-plane `go vet ./...`, `go build ./...`, `go mod tidy -diff`, and `go mod verify`: PASS;
 - repository lint and TypeScript typecheck: PASS;
 - Linux `amd64` and `arm64` migration test-binary compile with `CGO_ENABLED=0`: PASS; and
 - all changed Go files `gofmt`, all changed documentation `oxfmt --check`, and `git diff --check`: PASS.
 
-The focused race and full normal commands ran concurrently; their package-reported durations are conformance evidence,
-not a performance baseline. Neither a still-running process nor the default ten-minute bounded stop is counted as PASS.
+The focused race and full normal commands ran serially; their package-reported durations are conformance evidence, not
+a performance baseline. Neither a still-running process nor the default ten-minute bounded stop is counted as PASS.
 
 The repository-wide formatter still reports eight pre-existing HEAD files outside this Slice; none is dirty or was
 rewritten here, so the full formatter invocation is explicitly not recorded as PASS. The matrix does not claim a
@@ -132,6 +134,16 @@ once; any single state, binding, primary-registry, or cleanup-registry contradic
 only the unaffected cleanup facts needed to revoke the old cursor, removes both registry entries, and returns
 recovery-required. Normal and race tests cover both post-commit phases, every named tamper class, restore-after-failure,
 and competing consumption.
+
+The second repair candidate `cda403d` received `BLOCK, P0=0/P1=1/P2=0`: it attempted the cleanup record's CAS
+before cross-binding that claim cell with the primary record. A typed cleanup replacement whose record facts remained
+valid but whose foreign claim cell was already true therefore looked like a legitimate concurrent loser; it left both
+registries, the cursor, and the restored original state reusable. The third repair binds the original claim cell in the
+live state as a third provenance point, loads both registry records before any CAS, selects only a state-plus-record or
+record-pair claim identity, and then lets the sole CAS winner classify and remove both records. A real concurrent loser
+still returns without revoking the winner's cursor, while a one-sided typed primary or cleanup replacement is consumed
+through the other two matching claim bindings and can only revoke the old cursor. The two-phase tamper matrix now has
+`26` concrete subcases plus the competing-consumer race case.
 
 This local record is not an approval. Before Slice D may begin, the complete fixed candidate must be clean, pushed,
 hash-identified, and independently reviewed read-only for authority provenance, one-shot state transitions, full

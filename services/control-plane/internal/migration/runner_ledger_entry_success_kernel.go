@@ -100,6 +100,7 @@ type runnerLedgerEntrySuccessState struct {
 	binding   *runnerLedgerEntrySuccessStateBinding
 	data      runnerLedgerEntrySuccessData
 	canonical [32]byte
+	claimed   *atomic.Bool
 	closed    bool
 }
 
@@ -324,7 +325,7 @@ func sealRunnerLedgerEntrySuccessState(data runnerLedgerEntrySuccessData, from, 
 	if err != nil {
 		return nil, runnerLedgerEntrySuccessSealFailure(data, "success writer state could not be owned")
 	}
-	state := &runnerLedgerEntrySuccessState{data: owned}
+	state := &runnerLedgerEntrySuccessState{data: owned, claimed: &atomic.Bool{}}
 	state.self = state
 	state.binding = &runnerLedgerEntrySuccessStateBinding{
 		state: state, session: owned.session, transaction: owned.transaction, evidence: owned.evidence,
@@ -343,12 +344,11 @@ func sealRunnerLedgerEntrySuccessState(data runnerLedgerEntrySuccessData, from, 
 	if err != nil {
 		return nil, runnerLedgerEntrySuccessSealFailure(data, "success writer cleanup state could not be owned")
 	}
-	claimed := &atomic.Bool{}
 	record := &runnerLedgerEntrySuccessStateRegistryRecord{
-		state: state, binding: cloneRunnerLedgerEntrySuccessStateBinding(state.binding), data: recordData, canonical: state.canonical, claimed: claimed,
+		state: state, binding: cloneRunnerLedgerEntrySuccessStateBinding(state.binding), data: recordData, canonical: state.canonical, claimed: state.claimed,
 	}
 	cleanupRecord := &runnerLedgerEntrySuccessStateRegistryRecord{
-		state: state, binding: cloneRunnerLedgerEntrySuccessStateBinding(state.binding), data: cleanupData, canonical: state.canonical, claimed: claimed,
+		state: state, binding: cloneRunnerLedgerEntrySuccessStateBinding(state.binding), data: cleanupData, canonical: state.canonical, claimed: state.claimed,
 	}
 	runnerLedgerEntrySuccessStateRegistry.Store(state, record)
 	runnerLedgerEntrySuccessStateCleanupRegistry.Store(state, cleanupRecord)
@@ -393,7 +393,8 @@ func runnerLedgerEntrySuccessTransitionAllowed(from, event, to string) bool {
 }
 
 func validRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState) bool {
-	if state == nil || state.self != state || state.closed || state.binding == nil || state.binding.state != state ||
+	if state == nil || state.claimed == nil || state.claimed.Load() || state.self != state || state.closed ||
+		state.binding == nil || state.binding.state != state ||
 		state.canonical == ([32]byte{}) || state.binding.canonical != state.canonical ||
 		state.canonical != runnerLedgerEntrySuccessStateDigest(state) || !validRunnerLedgerEntrySuccessData(state.data) ||
 		!sameRunnerLedgerEntrySuccessAuthority(state.data, state.binding) {
@@ -405,7 +406,8 @@ func validRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState) bo
 	cleanupRecord, cleanupRecordOK := cleanup.(*runnerLedgerEntrySuccessStateRegistryRecord)
 	return ok && recordOK && cleanupOK && cleanupRecordOK &&
 		sameRunnerLedgerEntrySuccessRegistryRecords(record, cleanupRecord, state) && !record.claimed.Load() &&
-		sameRunnerLedgerEntrySuccessStateBindings(record.binding, state.binding) && record.canonical == state.canonical
+		record.claimed == state.claimed && sameRunnerLedgerEntrySuccessStateBindings(record.binding, state.binding) &&
+		record.canonical == state.canonical
 }
 
 func sameRunnerLedgerEntrySuccessRegistryRecords(left, right *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
@@ -534,28 +536,103 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 }
 
 func claimRunnerLedgerEntrySuccessStateRecord(state *runnerLedgerEntrySuccessState) (*runnerLedgerEntrySuccessStateRegistryRecord, bool) {
-	cleanup, cleanupLoaded := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state)
-	cleanupRecord, cleanupOK := cleanup.(*runnerLedgerEntrySuccessStateRegistryRecord)
-	if cleanupLoaded && cleanupOK && validRunnerLedgerEntrySuccessRegistryRecord(cleanupRecord, state) {
-		if !cleanupRecord.claimed.CompareAndSwap(false, true) {
-			return nil, false
-		}
-		registered, loaded := runnerLedgerEntrySuccessStateRegistry.LoadAndDelete(state)
-		record, recordOK := registered.(*runnerLedgerEntrySuccessStateRegistryRecord)
-		runnerLedgerEntrySuccessStateCleanupRegistry.Delete(state)
-		return cleanupRecord, loaded && recordOK && sameRunnerLedgerEntrySuccessRegistryRecords(record, cleanupRecord, state)
-	}
-	registered, loaded := runnerLedgerEntrySuccessStateRegistry.LoadAndDelete(state)
-	record, recordOK := registered.(*runnerLedgerEntrySuccessStateRegistryRecord)
-	runnerLedgerEntrySuccessStateCleanupRegistry.Delete(state)
-	if !loaded || !recordOK || !validRunnerLedgerEntrySuccessRegistryRecord(record, state) || !record.claimed.CompareAndSwap(false, true) {
+	if state == nil || state.claimed == nil {
 		return nil, false
 	}
-	return record, false
+	primaryValue, primaryLoaded := runnerLedgerEntrySuccessStateRegistry.Load(state)
+	primary, primaryOK := primaryValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	primaryValid := primaryLoaded && primaryOK && validRunnerLedgerEntrySuccessRegistryRecord(primary, state)
+	cleanupValue, cleanupLoaded := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state)
+	cleanup, cleanupOK := cleanupValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	cleanupValid := cleanupLoaded && cleanupOK && validRunnerLedgerEntrySuccessRegistryRecord(cleanup, state)
+	claim := runnerLedgerEntrySuccessTrustedClaim(state.claimed, primary, primaryValid, cleanup, cleanupValid)
+	if claim == nil || !claim.CompareAndSwap(false, true) {
+		return nil, false
+	}
+	selected, pairValid := runnerLedgerEntrySuccessTrustedRecord(state, claim, primary, primaryValid, cleanup, cleanupValid)
+	removedPrimaryValue, removedPrimary := runnerLedgerEntrySuccessStateRegistry.LoadAndDelete(state)
+	removedPrimaryRecord, removedPrimaryOK := removedPrimaryValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	removedCleanupValue, removedCleanup := runnerLedgerEntrySuccessStateCleanupRegistry.LoadAndDelete(state)
+	removedCleanupRecord, removedCleanupOK := removedCleanupValue.(*runnerLedgerEntrySuccessStateRegistryRecord)
+	registriesValid := pairValid && removedPrimary && removedPrimaryOK && removedPrimaryRecord == primary &&
+		removedCleanup && removedCleanupOK && removedCleanupRecord == cleanup
+	if selected == nil {
+		if primaryValid {
+			revokeRunnerLedgerEntrySuccessCursor(primary.data)
+		}
+		if cleanupValid {
+			revokeRunnerLedgerEntrySuccessCursor(cleanup.data)
+		}
+		revokeRunnerLedgerEntrySuccessCursor(state.data)
+	}
+	return selected, registriesValid
+}
+
+func runnerLedgerEntrySuccessTrustedClaim(
+	stateClaim *atomic.Bool,
+	primary *runnerLedgerEntrySuccessStateRegistryRecord,
+	primaryValid bool,
+	cleanup *runnerLedgerEntrySuccessStateRegistryRecord,
+	cleanupValid bool,
+) *atomic.Bool {
+	if stateClaim == nil {
+		return nil
+	}
+	if primaryValid && primary.claimed == stateClaim {
+		return stateClaim
+	}
+	if cleanupValid && cleanup.claimed == stateClaim {
+		return stateClaim
+	}
+	if primaryValid && cleanupValid && primary.claimed == cleanup.claimed {
+		return primary.claimed
+	}
+	return nil
+}
+
+func runnerLedgerEntrySuccessTrustedRecord(
+	state *runnerLedgerEntrySuccessState,
+	claim *atomic.Bool,
+	primary *runnerLedgerEntrySuccessStateRegistryRecord,
+	primaryValid bool,
+	cleanup *runnerLedgerEntrySuccessStateRegistryRecord,
+	cleanupValid bool,
+) (*runnerLedgerEntrySuccessStateRegistryRecord, bool) {
+	if primaryValid && cleanupValid && sameRunnerLedgerEntrySuccessRegistryRecords(primary, cleanup, state) {
+		return cleanup, true
+	}
+	primaryMatchesState := primaryValid && runnerLedgerEntrySuccessRegistryRecordMatchesState(primary, state)
+	cleanupMatchesState := cleanupValid && runnerLedgerEntrySuccessRegistryRecordMatchesState(cleanup, state)
+	switch {
+	case primaryMatchesState && !cleanupMatchesState:
+		return primary, false
+	case cleanupMatchesState && !primaryMatchesState:
+		return cleanup, false
+	case primaryValid && primary.claimed == claim && (!cleanupValid || cleanup.claimed != claim):
+		return primary, false
+	case cleanupValid && cleanup.claimed == claim && (!primaryValid || primary.claimed != claim):
+		return cleanup, false
+	case primaryValid && !cleanupValid:
+		return primary, false
+	case cleanupValid && !primaryValid:
+		return cleanup, false
+	default:
+		return nil, false
+	}
+}
+
+func runnerLedgerEntrySuccessRegistryRecordMatchesState(record *runnerLedgerEntrySuccessStateRegistryRecord, state *runnerLedgerEntrySuccessState) bool {
+	return record != nil && state != nil && state.self == state && !state.closed && state.binding != nil &&
+		record.claimed == state.claimed && sameRunnerLedgerEntrySuccessStateBindings(record.binding, state.binding) &&
+		record.canonical == state.canonical && state.binding.canonical == state.canonical &&
+		state.canonical == runnerLedgerEntrySuccessStateDigest(state) && validRunnerLedgerEntrySuccessData(state.data) &&
+		runnerLedgerEntrySuccessDataDigest(record.data) == record.canonical &&
+		sameRunnerLedgerEntrySuccessAuthority(record.data, record.binding) && sameRunnerLedgerEntrySuccessAuthority(state.data, record.binding)
 }
 
 func validRunnerLedgerEntrySuccessStateWithoutRegistry(state *runnerLedgerEntrySuccessState, record *runnerLedgerEntrySuccessStateRegistryRecord) bool {
-	return state != nil && state.self == state && !state.closed && state.binding != nil && sameRunnerLedgerEntrySuccessStateBindings(record.binding, state.binding) &&
+	return state != nil && state.self == state && !state.closed && state.binding != nil && state.claimed != nil && state.claimed.Load() &&
+		record.claimed == state.claimed && sameRunnerLedgerEntrySuccessStateBindings(record.binding, state.binding) &&
 		record.canonical == state.canonical && state.binding.canonical == state.canonical &&
 		state.canonical == runnerLedgerEntrySuccessStateDigest(state) && validRunnerLedgerEntrySuccessData(state.data) &&
 		runnerLedgerEntrySuccessDataDigest(record.data) == record.canonical && sameRunnerLedgerEntrySuccessAuthority(record.data, record.binding) &&

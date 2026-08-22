@@ -252,6 +252,25 @@ func advanceRunnerLedgerEntrySuccessToKnownCommit(t *testing.T, fixture *runnerL
 	return state
 }
 
+func cloneRunnerLedgerEntrySuccessRegistryRecordWithClaim(
+	t *testing.T,
+	record *runnerLedgerEntrySuccessStateRegistryRecord,
+	claim *atomic.Bool,
+) *runnerLedgerEntrySuccessStateRegistryRecord {
+	t.Helper()
+	if record == nil || claim == nil {
+		t.Fatal("success-state registry record or claim is unavailable")
+	}
+	data, err := cloneRunnerLedgerEntrySuccessData(record.data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &runnerLedgerEntrySuccessStateRegistryRecord{
+		state: record.state, binding: cloneRunnerLedgerEntrySuccessStateBinding(record.binding),
+		data: data, canonical: record.canonical, claimed: claim,
+	}
+}
+
 func buildExactMultiStatementAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrustDecision) {
 	t.Helper()
 	return buildExactStatementCountAdmissionRuntime(t, 2)
@@ -852,6 +871,24 @@ func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t
 			},
 		},
 		{
+			name: "state-data",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.data.selection.migrationID
+				state.data.selection.migrationID = "000999"
+				return func() { state.data.selection.migrationID = original }
+			},
+		},
+		{
+			name: "state-claim",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.claimed
+				foreign := &atomic.Bool{}
+				foreign.Store(true)
+				state.claimed = foreign
+				return func() { state.claimed = original }
+			},
+		},
+		{
 			name: "primary-registry-missing",
 			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
 				runnerLedgerEntrySuccessStateRegistry.Delete(state)
@@ -880,6 +917,28 @@ func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t
 			},
 		},
 		{
+			name: "primary-registry-foreign-claimed",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				value, ok := runnerLedgerEntrySuccessStateRegistry.Load(state)
+				record, recordOK := value.(*runnerLedgerEntrySuccessStateRegistryRecord)
+				if !ok || !recordOK || record == nil {
+					t.Fatal("primary success-state registry record is unavailable")
+				}
+				foreign := &atomic.Bool{}
+				foreign.Store(true)
+				replacement := cloneRunnerLedgerEntrySuccessRegistryRecordWithClaim(t, record, foreign)
+				runnerLedgerEntrySuccessStateRegistry.Store(state, replacement)
+				return func() {
+					runnerLedgerEntrySuccessStateRegistry.Store(state, record)
+					if validRunnerLedgerEntrySuccessState(state) {
+						t.Fatal("restoring the primary registry revived a consumed authority")
+					}
+					runnerLedgerEntrySuccessStateRegistry.Delete(state)
+				}
+			},
+		},
+		{
 			name: "cleanup-registry-missing",
 			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
 				runnerLedgerEntrySuccessStateCleanupRegistry.Delete(state)
@@ -905,6 +964,28 @@ func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t
 				original := record.binding
 				record.binding = nil
 				return func() { record.binding = original }
+			},
+		},
+		{
+			name: "cleanup-registry-foreign-claimed",
+			mutate: func(t *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				t.Helper()
+				value, ok := runnerLedgerEntrySuccessStateCleanupRegistry.Load(state)
+				record, recordOK := value.(*runnerLedgerEntrySuccessStateRegistryRecord)
+				if !ok || !recordOK || record == nil {
+					t.Fatal("cleanup success-state registry record is unavailable")
+				}
+				foreign := &atomic.Bool{}
+				foreign.Store(true)
+				replacement := cloneRunnerLedgerEntrySuccessRegistryRecordWithClaim(t, record, foreign)
+				runnerLedgerEntrySuccessStateCleanupRegistry.Store(state, replacement)
+				return func() {
+					runnerLedgerEntrySuccessStateCleanupRegistry.Store(state, record)
+					if validRunnerLedgerEntrySuccessState(state) {
+						t.Fatal("restoring the cleanup registry revived a consumed authority")
+					}
+					runnerLedgerEntrySuccessStateCleanupRegistry.Delete(state)
+				}
 			},
 		},
 	}
