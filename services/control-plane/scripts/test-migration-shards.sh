@@ -202,8 +202,13 @@ cleanup_runtime_tools() {
 }
 
 cleanup_all() {
+  local exit_status=$?
+  if ((run_in_progress == 1)); then
+    terminate_active_process_groups || true
+  fi
   cleanup_runtime_tools
   cleanup_plan
+  return "$exit_status"
 }
 
 process_group_alive() {

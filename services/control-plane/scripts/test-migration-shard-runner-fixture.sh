@@ -269,6 +269,59 @@ EOF
   [[ $before_digest == "$after_digest" ]] || fail "$signal_name pre-registration artifacts changed after runner exit"
 }
 
+run_registered_unexpected_exit_case() {
+  local case_root="$fixture_root/registered-unexpected-exit"
+  local output_dir="$case_root/output"
+  local pid_file="$case_root/fake-pids.tsv"
+  local bash_env="$case_root/bash-env.sh"
+  local marker="$case_root/registered-wrapper-pid.txt"
+  local before_digest
+  local after_digest
+  local status
+  mkdir -- "$case_root"
+  : >"$pid_file"
+
+  cat >"$bash_env" <<'EOF'
+__cag_exit_after_shard_registration() {
+  case ${BASH_COMMAND:-} in
+    'launch_in_progress=0')
+      if [[ ${run_in_progress:-0} == 1 ]] && ((${#active_pids[@]} > 0)); then
+        trap - DEBUG
+        printf '%s\n' "${shard_pid:?}" >"${CAG_REGISTERED_EXIT_MARKER:?}"
+        exit 97
+      fi
+      ;;
+  esac
+}
+trap '__cag_exit_after_shard_registration' DEBUG
+EOF
+
+  set -m
+  env BASH_ENV="$bash_env" CAG_REGISTERED_EXIT_MARKER="$marker" \
+    REAL_GO="$exact_go" FAKE_MODE=signal FAKE_PID_FILE="$pid_file" CLOUD_AGENTS_GO="$fake_go" \
+    /bin/bash "$runner" run --output-dir "$output_dir" --shards 2 --jobs 2 --test-parallel 1 --timeout 5m \
+    >"$case_root/runner.stdout" 2>"$case_root/runner.stderr" &
+  runner_pid=$!
+  set +m
+  set +e
+  wait "$runner_pid"
+  status=$?
+  set -e
+  runner_pid=""
+  [[ $status == 97 ]] || fail "registered unexpected-exit runner exit=$status expected=97"
+  wait_for_lines "$marker" 1 || fail "registered unexpected-exit fixture did not reach the launch window"
+  fixture_wrapper_pid=$(sed -n '1p' "$marker")
+  [[ $fixture_wrapper_pid =~ ^[1-9][0-9]*$ ]] || fail "registered unexpected-exit fixture recorded an invalid wrapper PID"
+  assert_pid_and_group_gone "$fixture_wrapper_pid" || fail "registered unexpected exit left a wrapper or process group alive"
+  fixture_wrapper_pid=""
+  [[ ! -s $pid_file ]] || fail "registered unexpected-exit fixture unexpectedly started a fake worker"
+  [[ ! -f $output_dir/run-status.txt || $(sed -n '1p' "$output_dir/run-status.txt") != PASS ]] || fail "registered unexpected exit published PASS"
+  before_digest=$(artifact_digest "$output_dir")
+  sleep 0.5
+  after_digest=$(artifact_digest "$output_dir")
+  [[ $before_digest == "$after_digest" ]] || fail "registered unexpected-exit artifacts changed after runner exit"
+}
+
 run_result_case() {
   local fake_mode=$1
   local expected_exit=$2
@@ -301,5 +354,6 @@ run_signal_case TERM 143
 run_signal_case INT 130
 run_pre_registration_signal_case TERM 143
 run_pre_registration_signal_case INT 130
+run_registered_unexpected_exit_case
 
 echo "Migration shard runner fixture: PASS"
