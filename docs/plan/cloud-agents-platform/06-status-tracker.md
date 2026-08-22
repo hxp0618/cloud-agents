@@ -425,11 +425,15 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       均由 new QEMU process 通过 sealed inventory views 分类并完成 `Revalidate`；见
       [generation-repair barrier implementation evidence](../p1/evidencefs-qemu-generation-repair-barrier-matrix-20260816.md)，
       不外推到 physical controller、production trusted mount、filesystem slice Done 或 Gate closure。
+- [x] [physical controller/host power-loss entry audit](../p1/evidencefs-physical-powerloss-entry-audit-20260822.md)
+      已在 `d6ec6c8` 完成只读环境与安全边界核验：可达裸机仍承载活动工作负载、没有独立一次性测试盘，也没有由第二
+      控制机证明的 external hard-off/hard-on recovery path；因此拒绝把该主机作为破坏性 DUT，未执行断电、重启、
+      安装、文件系统或数据库操作。该项是 environmental blocker record，不是 physical durability result 或 Gate evidence。
 - [x] Runner/CLI configuration、pre-DB dedicated-session ledger/catalog projection 与 same-verifier one-shot
       claim/no-op dispatch 已完成 bounded independent review；其后 ADR-0022/D-046 又为四个 first-attempt pair 的
       `Runner.Run` typed caller 建立独立 generated authority、fresh session boundary 与固定 independent review，普通
       committed outcome 不作为下一 entry permit。
 - [ ] retry/abort/reconcile/terminal-failure/return-failure writer、production database invocation 或其他扩大 mutation
-      surface 的后续切片仍须新的 owner authority 与独立 entry audit；真实 physical controller/host power-loss evidence、
-      current-source broad migration closure 和 reviewer-signed immutable Gate record 仍缺失，完成前 P1 Gates 继续
-      `IN PROGRESS`。
+      surface 的后续切片仍须新的 owner authority 与独立 entry audit；上述 entry audit 已明确真实 physical
+      controller/host power-loss evidence 仍 blocked on dedicated hardware/external control，current-source broad migration
+      closure 和 reviewer-signed immutable Gate record 也仍缺失，完成前 P1 Gates 继续 `IN PROGRESS`。
