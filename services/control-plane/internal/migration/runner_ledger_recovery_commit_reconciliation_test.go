@@ -687,6 +687,80 @@ func TestRunnerLedgerRecoveryReconciliationAdmissionTamperClosesRegisteredSessio
 	}
 }
 
+func TestRunnerLedgerRecoveryReconciliationAdmissionRegistryTamperClosesOnlyOriginalSession(t *testing.T) {
+	states := []RecoveryState{RecoveryDanglingCommitIntent, RecoveryAmbiguousUnresolved}
+	tampers := []string{"missing", "foreign-session", "key-drift"}
+	for _, state := range states {
+		for _, tamper := range tampers {
+			t.Run(string(state)+"/"+tamper, func(t *testing.T) {
+				fixture := newRunnerLedgerRecoveryReconciliationFixture(t, state, runnerLedgerReconciliationExactPending, 16)
+				defer fixture.close(t)
+				base := fixture.success.execution.base.service.kernel.base
+				owner, err := fixture.success.execution.base.service.kernel.runner.prepareRunnerLedgerRecoveryAdmission(
+					context.Background(), "test-only", base.bundle, base.plans,
+					fixture.success.execution.base.service.evidence, base.candidate, fixture.fact,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				registered, ok := runnerLedgerRecoveryAdmissionPermitRegistry.Load(owner)
+				record, recordOK := registered.(runnerLedgerRecoveryAdmissionPermitRegistryRecord)
+				if !ok || !recordOK || record.session == nil {
+					t.Fatalf("registered=%T ok=%t", registered, ok)
+				}
+				originalKey := record.key
+				var foreign *runnerPreflightSession
+				switch tamper {
+				case "missing":
+					runnerLedgerRecoveryAdmissionPermitRegistry.Delete(owner)
+				case "foreign-session":
+					foreign = newRunnerPreflightSession()
+					foreign.roleConfigured = true
+					foreign.locked = true
+					record.session = foreign
+					runnerLedgerRecoveryAdmissionPermitRegistry.Store(owner, record)
+				case "key-drift":
+					record.key++
+					runnerLedgerRecoveryAdmissionPermitRegistry.Store(owner, record)
+				default:
+					t.Fatalf("unknown tamper %q", tamper)
+				}
+
+				claim := func() error {
+					switch permit := owner.(type) {
+					case *runnerLedgerCommitObservationAdmissionPermit:
+						_, claimErr := claimRunnerLedgerCommitObservationAdmissionPermit(permit)
+						return claimErr
+					case *runnerLedgerAmbiguousResolutionAdmissionPermit:
+						_, claimErr := claimRunnerLedgerAmbiguousResolutionAdmissionPermit(permit)
+						return claimErr
+					default:
+						return fmt.Errorf("unexpected admission permit %T", owner)
+					}
+				}
+				err = claim()
+				if !IsCode(err, CodeEvidenceRecoveryRequired) || !fixture.database.closed || fixture.database.locked ||
+					fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 ||
+					len(fixture.database.unlockKeys) != 1 || fixture.database.unlockKeys[0] != originalKey {
+					t.Fatalf("claim err=%v database=%+v", err, fixture.database)
+				}
+				if foreign != nil && (foreign.unlockCalls != 0 || foreign.closeCalls != 0 || foreign.closed || !foreign.locked) {
+					t.Fatalf("foreign session was touched: %+v", foreign)
+				}
+				if _, live := runnerLedgerRecoveryAdmissionPermitRegistry.Load(owner); live {
+					t.Fatal("tampered admission registry survived claim")
+				}
+				if err := claim(); !IsCode(err, CodeEvidenceRecoveryRequired) {
+					t.Fatalf("consumed admission permit revived: %v", err)
+				}
+				if fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 {
+					t.Fatalf("second claim repeated cleanup: %+v", fixture.database)
+				}
+			})
+		}
+	}
+}
+
 func TestRunnerLedgerRecoveryReconciliationHasExactlyTwoAppendEdgesAndNoExternalWriter(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "runner_ledger_recovery_commit_reconciliation.go", nil, 0)
 	if err != nil {

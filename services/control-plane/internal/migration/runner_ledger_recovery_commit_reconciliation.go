@@ -184,11 +184,84 @@ func claimRunnerLedgerAmbiguousResolutionAdmissionPermit(permit *runnerLedgerAmb
 	return claimRunnerLedgerReconciliationAdmissionPermit(permit, generatedRunnerLedgerRecoveryProfiles[3].action)
 }
 
+type runnerLedgerReconciliationAdmissionCleanup struct {
+	session DatabaseSession
+	key     int64
+}
+
+func runnerLedgerRecoveryPermitRawCore(owner runnerLedgerRecoveryCloseOnlyPermit) *runnerLedgerRecoveryAdmissionPermitCore {
+	switch permit := owner.(type) {
+	case *runnerLedgerCommitObservationAdmissionPermit:
+		if permit != nil {
+			return permit.core
+		}
+	case *runnerLedgerAmbiguousResolutionAdmissionPermit:
+		if permit != nil {
+			return permit.core
+		}
+	}
+	return nil
+}
+
+func sameRunnerLedgerReconciliationAdmissionCleanup(left, right runnerLedgerReconciliationAdmissionCleanup) bool {
+	return left.session != nil && right.session != nil && left.key == right.key &&
+		sameRunnerOwnedPointer(left.session, right.session)
+}
+
+// runnerLedgerReconciliationAdmissionCleanupAuthority chooses cleanup facts
+// independently from successor validity. The live core, its separately sealed
+// binding, and the registry record form a two-source quorum, so a missing or
+// singly drifted registry value cannot leak the retained advisory-lock session
+// or redirect cleanup to a foreign handle.
+func runnerLedgerReconciliationAdmissionCleanupAuthority(
+	owner runnerLedgerRecoveryCloseOnlyPermit,
+	rawCore *runnerLedgerRecoveryAdmissionPermitCore,
+	record runnerLedgerRecoveryAdmissionPermitRegistryRecord,
+	recordOK bool,
+) (runnerLedgerReconciliationAdmissionCleanup, bool) {
+	if rawCore == nil {
+		return runnerLedgerReconciliationAdmissionCleanup{}, false
+	}
+	coreCleanup := runnerLedgerReconciliationAdmissionCleanup{session: rawCore.session, key: rawCore.key}
+	binding := rawCore.binding
+	bindingLinked := binding != nil && binding.core == rawCore && binding.owner == owner
+	bindingCleanup := runnerLedgerReconciliationAdmissionCleanup{}
+	if bindingLinked {
+		bindingCleanup = runnerLedgerReconciliationAdmissionCleanup{session: binding.session, key: binding.key}
+	}
+
+	// A normally sealed live owner and its independent binding remain enough to
+	// clean up when the registry entry was deleted or replaced.
+	if runnerLedgerRecoveryPermitCore(owner) == rawCore && bindingLinked &&
+		sameRunnerLedgerReconciliationAdmissionCleanup(coreCleanup, bindingCleanup) {
+		return coreCleanup, true
+	}
+
+	// If the caller-visible wrapper itself drifted, the registry may still
+	// provide the third vote, but only when it points back to the same core and
+	// binding. This prevents a typed foreign registry replacement from becoming
+	// cleanup authority merely by being stored under the owner's map key.
+	recordLinked := recordOK && record.owner == owner && record.core == rawCore && record.binding == binding
+	if !recordLinked {
+		return runnerLedgerReconciliationAdmissionCleanup{}, false
+	}
+	recordCleanup := runnerLedgerReconciliationAdmissionCleanup{session: record.session, key: record.key}
+	if sameRunnerLedgerReconciliationAdmissionCleanup(coreCleanup, bindingCleanup) ||
+		sameRunnerLedgerReconciliationAdmissionCleanup(coreCleanup, recordCleanup) {
+		return coreCleanup, true
+	}
+	if sameRunnerLedgerReconciliationAdmissionCleanup(bindingCleanup, recordCleanup) {
+		return bindingCleanup, true
+	}
+	return runnerLedgerReconciliationAdmissionCleanup{}, false
+}
+
 func claimRunnerLedgerReconciliationAdmissionPermit(owner runnerLedgerRecoveryCloseOnlyPermit, action runnerLedgerRecoveryAction) (runnerLedgerReconciliationAdmissionSeed, error) {
 	var seed runnerLedgerReconciliationAdmissionSeed
+	core := runnerLedgerRecoveryPermitRawCore(owner)
 	registered, loaded := runnerLedgerRecoveryAdmissionPermitRegistry.LoadAndDelete(owner)
 	record, recordOK := registered.(runnerLedgerRecoveryAdmissionPermitRegistryRecord)
-	core := record.core
+	cleanup, cleanupOK := runnerLedgerReconciliationAdmissionCleanupAuthority(owner, core, record, recordOK)
 	var binder runnerLedgerReconciliationRecordBinder
 	binderOK := false
 	if recordOK {
@@ -237,8 +310,8 @@ func claimRunnerLedgerReconciliationAdmissionPermit(owner runnerLedgerRecoveryCl
 		return seed, nil
 	}
 	primary := fail(CodeEvidenceRecoveryRequired, "runner-ledger-reconciliation-claim", "reconciliation admission authority changed before transfer", nil)
-	if recordOK {
-		return runnerLedgerReconciliationAdmissionSeed{}, closeRunnerDatabasePreflight(record.session, record.key, true, primary)
+	if cleanupOK {
+		return runnerLedgerReconciliationAdmissionSeed{}, closeRunnerDatabasePreflight(cleanup.session, cleanup.key, true, primary)
 	}
 	return runnerLedgerReconciliationAdmissionSeed{}, primary
 }
