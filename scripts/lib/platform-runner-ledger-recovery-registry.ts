@@ -505,7 +505,20 @@ export function assertRunnerLedgerRecoveryRegistriesCurrent(root: string): void 
 }
 
 export function serializeRunnerLedgerRecoveryRegistry(registry: JsonRecord): string {
-  return `${JSON.stringify(registry, null, 2)}\n`;
+  const serialized = JSON.stringify(registry, null, 2);
+  const formatted = serialized.replace(
+    /^([ ]*)"terminalStates": \[\n((?:[ ]+"[^"]+",?\n)+)\1\](,?)$/gmu,
+    (block, indent: string, body: string, suffix: string) => {
+      const values = body
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line.trim().replace(/,$/u, "")) as string);
+      const terminalStates = `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
+      const inline = `${indent}"terminalStates": ${terminalStates}${suffix}`;
+      return inline.length <= 100 ? inline : block;
+    },
+  );
+  return `${formatted}\n`;
 }
 
 export function runnerLedgerRecoveryRegistryInputs(_root: string): string[] {

@@ -190,11 +190,7 @@
       "unclassified",
       "unknown_rejected"
     ],
-    "terminalStates": [
-      "admission_closed",
-      "recovery_required_closed",
-      "unknown_rejected"
-    ],
+    "terminalStates": ["admission_closed", "recovery_required_closed", "unknown_rejected"],
     "transitions": [
       {
         "from": "unclassified",

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import { format } from "oxfmt";
 
 import { buildRunnerLedgerConsumerRegistry } from "./platform-runner-ledger-consumer-registry";
 import {
@@ -13,6 +14,7 @@ import {
   RUNNER_LEDGER_RECOVERY_OUTPUT_PATHS,
   RUNNER_LEDGER_RECOVERY_PAIR_BINDINGS,
   RUNNER_LEDGER_RECOVERY_SOURCE_PATH,
+  serializeRunnerLedgerRecoveryRegistry,
   validateRunnerLedgerRecoveryFixture,
 } from "./platform-runner-ledger-recovery-registry";
 
@@ -53,6 +55,17 @@ describe("runner ledger recovery generated registry suite", () => {
     ]);
     for (const [index, family] of RUNNER_LEDGER_RECOVERY_FAMILIES.entries()) {
       expect(readJson(RUNNER_LEDGER_RECOVERY_OUTPUT_PATHS[family])).toEqual(registries[index]);
+    }
+  });
+
+  test("emits repository-formatter-clean deterministic registry bytes", async () => {
+    const registries = buildRunnerLedgerRecoveryRegistries(root) as Array<Record<string, any>>;
+    for (const [index, registry] of registries.entries()) {
+      const family = RUNNER_LEDGER_RECOVERY_FAMILIES[index]!;
+      const serialized = serializeRunnerLedgerRecoveryRegistry(registry);
+      const result = await format(`${family}.json`, serialized, { printWidth: 100 });
+      expect(result.errors, family).toEqual([]);
+      expect(result.code, family).toBe(serialized);
     }
   });
 

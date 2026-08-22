@@ -79,11 +79,7 @@
       "unclassified",
       "unknown_rejected"
     ],
-    "terminalStates": [
-      "failure_returned",
-      "recovery_required_closed",
-      "unknown_rejected"
-    ],
+    "terminalStates": ["failure_returned", "recovery_required_closed", "unknown_rejected"],
     "transitions": [
       {
         "from": "unclassified",

@@ -58,7 +58,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:98f4d1a57a915e1a1442aa31f468c41e1d5174ac13da0d43510a847ac9c32254",
+      "sourceManifestSha256": "sha256:e38493a8bcbb90515cbdfaf57c77cf219864622bf62acee8cea5e782653184ce",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -90,7 +90,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:c40ba5bb1610489bd0a0adca2a078d4cf4be059b4c31d22a5725bfe5c9b95735",
+      "sourceManifestSha256": "sha256:38a3aefa0f0e152b692f73c456ca8ff3da450f2d2fd1675bcf36295800699842",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -319,7 +319,7 @@
       "id": "platform-runner-ledger-recovery-registry-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-registry-suite",
       "entrypoint": "scripts/generate-platform-runner-ledger-recovery-registries.ts",
-      "sourceManifestSha256": "sha256:fb46fce6d84efed07fabf51af7c9e7a2bff7f1a7c08f160e4dd97646f3541523",
+      "sourceManifestSha256": "sha256:aa1ae1c6b0509cb390018a9fe90216db984b67635a768e3029b389fc768ca7ff",
       "sources": [
         "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-recovery-registry-suite-source-v1.json",
         "contracts/platform/v1alpha1/schemas/runner-ledger-recovery-registry-suite-source-v1.schema.json",
@@ -345,7 +345,7 @@
       "id": "platform-runner-ledger-recovery-go-generator",
       "kind": "in-repo-typescript-deterministic-gofmt-go-ordinary-profile-suite",
       "entrypoint": "scripts/generate-platform-runner-ledger-recovery-go.ts",
-      "sourceManifestSha256": "sha256:ca062a7ba612cd5e4ed530597a0d61942c5872deaea14068526be5edae358f51",
+      "sourceManifestSha256": "sha256:5d0f028f8cb97bc2363282ce3528a82a378438d75bac622eeb010d7c8ba8ad29",
       "sources": [
         "contracts/platform/v1alpha1/fixtures/golden/runner-ledger-recovery-registry-suite-source-v1.json",
         "contracts/platform/v1alpha1/schemas/runner-ledger-recovery-registry-suite-source-v1.schema.json",
@@ -1155,7 +1155,7 @@
     {
       "id": "runner-ledger-recovery-registry-suite-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:fb46fce6d84efed07fabf51af7c9e7a2bff7f1a7c08f160e4dd97646f3541523",
+      "inputManifestSha256": "sha256:aa1ae1c6b0509cb390018a9fe90216db984b67635a768e3029b389fc768ca7ff",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
         "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
@@ -1180,23 +1180,23 @@
       "generatedOutputs": [
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
-          "sha256": "sha256:3b9f4e4e285b79d7611351f0f94378660a6d5283e6a541607e68e29b3a6d6dc3",
-          "sizeBytes": 11745
+          "sha256": "sha256:c9ba44911eca4e5130e8ab45ea942602c93515e6f504d6daa9b730b045f59f68",
+          "sizeBytes": 11721
         },
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
-          "sha256": "sha256:e8e0629b2ca8536abe88bcb31095831484bc18dc58d7f31633a46ac0630aafe2",
-          "sizeBytes": 7159
+          "sha256": "sha256:48d580679c4dcf8ec2dac3fefa5d9f2c56f58d53fdbcb2f6fa3155eb1db1918c",
+          "sizeBytes": 7135
         },
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
-          "sha256": "sha256:92e179eb16441fd98a3ac581c748c49556810d97fb82bda435896a5ef911fb99",
-          "sizeBytes": 6416
+          "sha256": "sha256:eda98b19d442f1025d3fc5c560f113417b105f11f82fb3fc68a4e70847919fb5",
+          "sizeBytes": 6392
         },
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
-          "sha256": "sha256:a497b1e1c8ef3da8a7eef447158f9a06191c09be77e40679a4a3f2edd8da9506",
-          "sizeBytes": 6406
+          "sha256": "sha256:15d1fece1b98ffa6d224c1ae03a1f6d6cc856e99ad0878d3bc5628f12e643537",
+          "sizeBytes": 6382
         },
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
@@ -1215,8 +1215,8 @@
         },
         {
           "path": "contracts/generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
-          "sha256": "sha256:cadcbf9e8b31e18ad56d6b4d5d00f839da0c035fd01a1fbbd02f23805097f97d",
-          "sizeBytes": 6389
+          "sha256": "sha256:33c6dc3b19080801335d2eb0fd135a5e67ab680c810e7173df6d2a41bea471b6",
+          "sizeBytes": 6365
         }
       ],
       "outputSummary": {
@@ -1274,7 +1274,7 @@
     {
       "id": "runner-ledger-recovery-go-profile-suite-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:bd31d9eaf3addab12dc3ffa97f7408c415da7628fd7ab2ba38c6fe88f3f85bc4",
+      "inputManifestSha256": "sha256:0e96a9277029bcf6e45f4baf9554d6965711b7a8118eb2156046dc13b3f4fd5e",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
         "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
