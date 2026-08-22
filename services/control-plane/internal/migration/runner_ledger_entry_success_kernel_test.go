@@ -889,6 +889,14 @@ func TestRunnerLedgerEntrySuccessPostCommitStateAndRegistryTamperRevokesCursor(t
 			},
 		},
 		{
+			name: "state-claim-nil",
+			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
+				original := state.claimed
+				state.claimed = nil
+				return func() { state.claimed = original }
+			},
+		},
+		{
 			name: "primary-registry-missing",
 			mutate: func(_ *testing.T, state *runnerLedgerEntrySuccessState) func() {
 				runnerLedgerEntrySuccessStateRegistry.Delete(state)

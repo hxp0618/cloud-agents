@@ -536,7 +536,7 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 }
 
 func claimRunnerLedgerEntrySuccessStateRecord(state *runnerLedgerEntrySuccessState) (*runnerLedgerEntrySuccessStateRegistryRecord, bool) {
-	if state == nil || state.claimed == nil {
+	if state == nil {
 		return nil, false
 	}
 	primaryValue, primaryLoaded := runnerLedgerEntrySuccessStateRegistry.Load(state)
@@ -575,14 +575,13 @@ func runnerLedgerEntrySuccessTrustedClaim(
 	cleanup *runnerLedgerEntrySuccessStateRegistryRecord,
 	cleanupValid bool,
 ) *atomic.Bool {
-	if stateClaim == nil {
-		return nil
-	}
-	if primaryValid && primary.claimed == stateClaim {
-		return stateClaim
-	}
-	if cleanupValid && cleanup.claimed == stateClaim {
-		return stateClaim
+	if stateClaim != nil {
+		if primaryValid && primary.claimed == stateClaim {
+			return stateClaim
+		}
+		if cleanupValid && cleanup.claimed == stateClaim {
+			return stateClaim
+		}
 	}
 	if primaryValid && cleanupValid && primary.claimed == cleanup.claimed {
 		return primary.claimed

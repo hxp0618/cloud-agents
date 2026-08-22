@@ -64,7 +64,7 @@ The focused in-process matrix covers:
   readback, one commit, one terminal append, and complete/next-entry result classification;
 - permit/state/request zero, literal, copy, field tamper, foreign binder/cursor, old successor, second transition, and
   sequential plus competing-goroutine one-shot consumption;
-- after a known commit and after a durable terminal, state self/canonical/live-binding/data/claim drift plus primary
+- after a known commit and after a durable terminal, state self/canonical/live-binding/data/foreign-or-nil-claim drift plus primary
   and cleanup registry missing, replacement, binding drift, or otherwise-valid typed replacement carrying a foreign
   already-claimed cell, each requiring recovery-required, cursor revocation, both registry entries removed, and no
   authority recovery after restoring the external state or registry field;
@@ -90,9 +90,9 @@ were used.
 The final-source local matrix used Node `24.13.1`, Bun `1.3.14`, and Go `1.26.6 darwin/arm64`. It produced:
 
 - focused success-kernel, execution-admission/writer, authority-spread, production-consumer, and forbidden-graph
-  normal: PASS in `144.307s` package time;
-- the same focused scope with `-race -timeout=30m`: PASS in `1352.432s` package time;
-- full `internal/migration` normal with `-timeout=30m`: PASS in `1608.881s` package time;
+  normal: PASS in `151.371s` package time;
+- the same focused scope with `-race -timeout=30m`: PASS in `1376.839s` package time;
+- full `internal/migration` normal with `-timeout=30m`: PASS in `1591.051s` package time;
 - full platform contract/generator/lock check: PASS/current for `115` JSON files, `50` schemas, and `62` fixture cases;
 - control-plane `go vet ./...`, `go build ./...`, `go mod tidy -diff`, and `go mod verify`: PASS;
 - repository lint and TypeScript typecheck: PASS;
@@ -143,7 +143,15 @@ live state as a third provenance point, loads both registry records before any C
 record-pair claim identity, and then lets the sole CAS winner classify and remove both records. A real concurrent loser
 still returns without revoking the winner's cursor, while a one-sided typed primary or cleanup replacement is consumed
 through the other two matching claim bindings and can only revoke the old cursor. The two-phase tamper matrix now has
-`26` concrete subcases plus the competing-consumer race case.
+`28` concrete subcases plus the competing-consumer race case.
+
+The third repair candidate `922468e` received `BLOCK, P0=0/P1=1/P2=0`: the transition still returned before
+loading either registry when the live state's claim pointer was nil. Restoring that pointer after the failed
+transition could therefore revive the unconsumed state and its still-valid cursor. The fourth repair treats a
+non-nil state with a missing live claim as drift rather than absence: it loads and cross-binds the primary and cleanup
+records, selects their exact shared claim cell, consumes that cell, removes both records, and uses the trusted record
+facts only to revoke the old cursor and return recovery-required. Both commit-known and terminal-durable phases now
+exercise nil-claim tamper followed by restoration and require that neither state nor cursor can revive.
 
 This local record is not an approval. Before Slice D may begin, the complete fixed candidate must be clean, pushed,
 hash-identified, and independently reviewed read-only for authority provenance, one-shot state transitions, full
