@@ -42,6 +42,13 @@ type runnerLedgerPreflightEvidenceFake struct {
 	mutateBeforeExecutionConsume func(*runnerLedgerPreflightEvidenceFake)
 	afterExecutionBind           func()
 	afterExecutionConsume        func()
+	recoveryBindErr              error
+	recoveryConsumeErr           error
+	recoveryBindCalls            int
+	recoveryConsumeCalls         int
+	mutateBeforeRecoveryConsume  func(*runnerLedgerPreflightEvidenceFake)
+	afterRecoveryBind            func()
+	afterRecoveryConsume         func()
 	successBindErr               error
 	successBindErrAt             map[int]error
 	successBindCalls             int
@@ -54,6 +61,8 @@ var _ runnerLedgerEntryAdmissionClaimBinder = (*generationEvidenceSession)(nil)
 var _ runnerLedgerEntryAdmissionClaimBinder = (*runnerLedgerPreflightEvidenceFake)(nil)
 var _ runnerLedgerEntryExecutionAdmissionClaimBinder = (*generationEvidenceSession)(nil)
 var _ runnerLedgerEntryExecutionAdmissionClaimBinder = (*runnerLedgerPreflightEvidenceFake)(nil)
+var _ runnerLedgerRecoveryAdmissionClaimBinder = (*generationEvidenceSession)(nil)
+var _ runnerLedgerRecoveryAdmissionClaimBinder = (*runnerLedgerPreflightEvidenceFake)(nil)
 
 func TestRunnerLedgerPreflightConcreteEvidenceBinderRejectsLiteral(t *testing.T) {
 	session := &generationEvidenceSession{}
@@ -96,6 +105,8 @@ func (evidence *runnerLedgerPreflightEvidenceFake) runnerLedgerEntryAdmissionCla
 
 func (evidence *runnerLedgerPreflightEvidenceFake) runnerLedgerEntryExecutionAdmissionClaimBinderSealed() {
 }
+
+func (evidence *runnerLedgerPreflightEvidenceFake) runnerLedgerRecoveryAdmissionClaimBinderSealed() {}
 
 func (evidence *runnerLedgerPreflightEvidenceFake) bindRunnerLedgerPreflightClaim(ctx context.Context, request runnerLedgerPreflightClaimRequest) (*runnerLedgerPreflightClaim, error) {
 	evidence.mu.Lock()
@@ -259,6 +270,65 @@ func (evidence *runnerLedgerPreflightEvidenceFake) executionFactsLocked() runner
 	}
 }
 
+func (evidence *runnerLedgerPreflightEvidenceFake) bindRunnerLedgerRecoveryAdmissionClaim(ctx context.Context, request runnerLedgerRecoveryAdmissionClaimRequest) (*runnerLedgerRecoveryAdmissionClaim, error) {
+	evidence.mu.Lock()
+	defer evidence.mu.Unlock()
+	evidence.recoveryBindCalls++
+	if evidence.recoveryBindErr != nil {
+		return nil, evidence.recoveryBindErr
+	}
+	if evidence.runnerEvidenceSessionFake == nil || evidence.closed || request.candidate.binding != evidence.candidate.binding {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-admission-test-bind", "test evidence is unavailable", nil)
+	}
+	claim, err := bindRunnerLedgerRecoveryAdmissionClaimFromEvidence(ctx, request, evidence.recoveryFactsLocked())
+	if err == nil && evidence.afterRecoveryBind != nil {
+		after := evidence.afterRecoveryBind
+		evidence.afterRecoveryBind = nil
+		after()
+	}
+	return claim, err
+}
+
+func (evidence *runnerLedgerPreflightEvidenceFake) consumeRunnerLedgerRecoveryAdmissionClaim(ctx context.Context, claim *runnerLedgerRecoveryAdmissionClaim, candidate OwnedCurrentCandidate) (runnerLedgerRecoveryAdmissionEvidenceBoundary, error) {
+	evidence.mu.Lock()
+	defer evidence.mu.Unlock()
+	evidence.recoveryConsumeCalls++
+	if evidence.recoveryConsumeErr != nil {
+		return runnerLedgerRecoveryAdmissionEvidenceBoundary{}, evidence.recoveryConsumeErr
+	}
+	if evidence.mutateBeforeRecoveryConsume != nil {
+		mutate := evidence.mutateBeforeRecoveryConsume
+		evidence.mutateBeforeRecoveryConsume = nil
+		mutate(evidence)
+	}
+	if evidence.runnerEvidenceSessionFake == nil || evidence.closed || candidate.binding != evidence.candidate.binding {
+		return runnerLedgerRecoveryAdmissionEvidenceBoundary{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-admission-test-claim", "test evidence is unavailable", nil)
+	}
+	boundary, err := consumeRunnerLedgerRecoveryAdmissionClaimFromEvidence(ctx, claim, candidate, evidence.recoveryFactsLocked())
+	if err == nil && evidence.afterRecoveryConsume != nil {
+		after := evidence.afterRecoveryConsume
+		evidence.afterRecoveryConsume = nil
+		after()
+	}
+	return boundary, err
+}
+
+func (evidence *runnerLedgerPreflightEvidenceFake) recoveryFactsLocked() runnerLedgerRecoveryEvidenceFacts {
+	generation := evidence.active.identity
+	return runnerLedgerRecoveryEvidenceFacts{
+		binder: evidence, candidateBinding: evidence.candidate.binding, generation: generation,
+		schema: cloneGenerationJournalSchema(evidence.schema), recovery: cloneRecoverySnapshot(evidence.recovery),
+		schemaDigest:   generationJournalSchemaDigest(evidence.schema, generation),
+		recoveryDigest: generationJournalRecoveryDigest(evidence.recovery),
+		stateCanonical: digestRaw(testDigest("runner-ledger-recovery-test-state")),
+		sessionDigest:  evidence.sessionDigest, journalDigest: evidence.journalDigest,
+		fullSet:             digestRaw(testDigest("runner-ledger-recovery-test-full-set")),
+		transcriptCanonical: digestRaw(testDigest("runner-ledger-recovery-test-transcript")),
+		target:              digestRaw(generation.executionLineageDigest), indexRecords: 2,
+		indexTail: testDigest("runner-ledger-recovery-test-index-tail"),
+	}
+}
+
 func (evidence *runnerLedgerPreflightEvidenceFake) Close(ctx context.Context) error {
 	if evidence == nil {
 		return fail(CodeEvidenceJournalFailed, "runner-ledger-preflight-test-close", "test evidence is unavailable", nil)
@@ -267,6 +337,7 @@ func (evidence *runnerLedgerPreflightEvidenceFake) Close(ctx context.Context) er
 	revokeRunnerLedgerPreflightClaims(evidence)
 	revokeRunnerLedgerEntryAdmissionClaims(evidence)
 	revokeRunnerLedgerEntryExecutionAdmissionClaims(evidence)
+	revokeRunnerLedgerRecoveryAdmissionClaims(evidence)
 	err := evidence.runnerEvidenceSessionFake.Close(ctx)
 	evidence.mu.Unlock()
 	return err
@@ -378,6 +449,7 @@ func (fixture *runnerLedgerPreflightServiceFixture) close(t *testing.T) {
 	revokeRunnerLedgerPreflightClaims(fixture.evidence)
 	revokeRunnerLedgerEntryAdmissionClaims(fixture.evidence)
 	revokeRunnerLedgerEntryExecutionAdmissionClaims(fixture.evidence)
+	revokeRunnerLedgerRecoveryAdmissionClaims(fixture.evidence)
 	if fixture.kernel.base.database != nil && !fixture.kernel.base.database.closed {
 		if err := closeRunnerDatabasePreflight(fixture.kernel.base.database, fixture.kernel.base.key, true, nil); err != nil {
 			t.Fatal(err)

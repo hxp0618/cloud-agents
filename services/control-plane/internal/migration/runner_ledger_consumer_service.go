@@ -159,6 +159,14 @@ func (runner *Runner) consumeRunnerLedgerPreflightStep(ctx context.Context, dsn 
 			},
 		}, nil
 	case runnerLedgerConsumerEntryNotImplemented:
+		if _, ok := generatedRunnerLedgerRecoveryAdmissionAction(
+			fact.dispatch.fact.disposition, fact.dispatch.fact.recovery.State, fact.dispatch.fact.recovery.Action,
+		); ok {
+			if err := runner.admitRunnerLedgerRecoveryCloseOnly(ctx, dsn, bundle, plans, evidence, candidate, fact); err != nil {
+				return runnerLedgerPreflightStep{}, err
+			}
+			return runnerLedgerPreflightStep{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-entry", "entry writer is not implemented", nil)
+		}
 		permit, err := runner.prepareRunnerLedgerEntryExecutionAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
 		if err != nil {
 			if runnerLedgerEntryExecutionAdmissionUnsupported(err) {
@@ -194,6 +202,13 @@ func (runner *Runner) consumeRunnerLedgerPreflightStep(ctx context.Context, dsn 
 			outcome:      outcome,
 		}, nil
 	case runnerLedgerConsumerRecoveryNotImplemented:
+		if _, ok := generatedRunnerLedgerRecoveryAdmissionAction(
+			fact.dispatch.fact.disposition, fact.dispatch.fact.recovery.State, fact.dispatch.fact.recovery.Action,
+		); ok {
+			if err := runner.admitRunnerLedgerRecoveryCloseOnly(ctx, dsn, bundle, plans, evidence, candidate, fact); err != nil {
+				return runnerLedgerPreflightStep{}, err
+			}
+		}
 		return runnerLedgerPreflightStep{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-recovery", "recovery consumer and writer are not implemented", nil)
 	default:
 		return runnerLedgerPreflightStep{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer", "runner ledger consumer action is not implemented", nil)

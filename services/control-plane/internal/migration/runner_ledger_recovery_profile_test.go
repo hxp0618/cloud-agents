@@ -172,7 +172,7 @@ func TestRunnerLedgerRecoveryProfilesKeepHistoricalArtifactsSameBits(t *testing.
 	}
 }
 
-func TestRunnerLedgerRecoveryProfilesHaveNoProductionConsumerOrSideEffectSurface(t *testing.T) {
+func TestRunnerLedgerRecoveryProfilesHaveOnlySliceBReadOnlyConsumersAndNoSideEffectSurface(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -186,6 +186,21 @@ func TestRunnerLedgerRecoveryProfilesHaveNoProductionConsumerOrSideEffectSurface
 		"generatedRunnerLedgerRecoveryProfileAllows":       true,
 		"generatedRunnerLedgerRecoverySuccessWriterAction": true,
 	}
+	allowedProductionSymbols := map[string]map[string]bool{
+		"generatedRunnerLedgerRecoveryProfiles": {
+			"runner_ledger_recovery_admission_claim.go":  true,
+			"runner_ledger_recovery_admission_permit.go": true,
+		},
+		"generatedRunnerLedgerRecoveryAdmissionAction": {
+			"runner_ledger_consumer_service.go":          true,
+			"runner_ledger_recovery_admission_claim.go":  true,
+			"runner_ledger_recovery_admission_permit.go": true,
+		},
+		"generatedRunnerLedgerRecoveryProfileAllows": {
+			"runner_ledger_recovery_admission_permit.go": true,
+		},
+		"generatedRunnerLedgerRecoverySuccessWriterAction": {},
+	}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -195,17 +210,19 @@ func TestRunnerLedgerRecoveryProfilesHaveNoProductionConsumerOrSideEffectSurface
 		if err != nil {
 			t.Fatal(err)
 		}
-		if name == "runner_ledger_recovery_profile.go" || name == "runner_ledger_recovery_profile_generated.go" {
+		if name == "runner_ledger_recovery_profile.go" || name == "runner_ledger_recovery_profile_generated.go" ||
+			name == "runner_ledger_recovery_admission_claim.go" || name == "runner_ledger_recovery_admission_permit.go" {
 			for _, imported := range file.Imports {
 				path := strings.Trim(imported.Path.Value, `"`)
 				if path == "database/sql" || path == "net/http" || strings.Contains(path, "pgx") {
-					t.Fatalf("Slice A recovery profile imports forbidden authority package %q", path)
+					t.Fatalf("recovery profile or admission imports forbidden authority package %q", path)
 				}
 			}
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			if identifier, ok := node.(*ast.Ident); ok && generatedSymbols[identifier.Name] &&
-				name != "runner_ledger_recovery_profile.go" && name != "runner_ledger_recovery_profile_generated.go" {
+				name != "runner_ledger_recovery_profile.go" && name != "runner_ledger_recovery_profile_generated.go" &&
+				!allowedProductionSymbols[identifier.Name][name] {
 				t.Fatalf("generated recovery profile symbol %s has production consumer in %s", identifier.Name, name)
 			}
 			call, ok := node.(*ast.CallExpr)
@@ -218,7 +235,7 @@ func TestRunnerLedgerRecoveryProfilesHaveNoProductionConsumerOrSideEffectSurface
 			}
 			switch identifier.Name {
 			case "generatedRunnerLedgerRecoveryAdmissionAction":
-				if name != "runner_ledger_recovery_profile.go" {
+				if name != "runner_ledger_recovery_profile.go" && !allowedProductionSymbols[identifier.Name][name] {
 					t.Fatalf("recovery-admission selector has production caller in %s", name)
 				}
 				admissionCalls++
@@ -228,12 +245,87 @@ func TestRunnerLedgerRecoveryProfilesHaveNoProductionConsumerOrSideEffectSurface
 				}
 				writerCalls++
 			case "generatedRunnerLedgerRecoveryProfileAllows":
+				if !allowedProductionSymbols[identifier.Name][name] {
+					t.Fatalf("recovery action-profile selector has production caller in %s", name)
+				}
 				profileAllowsCalls++
 			}
 			return true
 		})
 	}
-	if admissionCalls != 1 || writerCalls != 1 || profileAllowsCalls != 0 {
-		t.Fatalf("generated recovery selectors have admission=%d writer=%d profile=%d production calls; want 1/1/0", admissionCalls, writerCalls, profileAllowsCalls)
+	if admissionCalls != 5 || writerCalls != 1 || profileAllowsCalls != 2 {
+		t.Fatalf("generated recovery selectors have admission=%d writer=%d profile=%d production calls; want 5/1/2", admissionCalls, writerCalls, profileAllowsCalls)
+	}
+}
+
+func TestRunnerLedgerRecoveryAdmissionProductionGraphHasNoWriterEdge(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admissionCalls := 0
+	forbidden := map[string]bool{
+		"Append": true, "AppendDurable": true, "AppendGenerationSuperseded": true,
+		"AppendGenerationReserved": true, "AppendGenerationActivated": true,
+		"BeginMigration": true, "ExecuteStatement": true, "Commit": true,
+		"ReserveAndActivateSuccessor": true, "executeRunnerLedgerEntrySuccess": true,
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "admitRunnerLedgerRecoveryCloseOnly" {
+				admissionCalls++
+				if name != "runner_ledger_consumer_service.go" {
+					t.Errorf("recovery admission has production caller in %s", name)
+				}
+			}
+			return true
+		})
+		if name != "runner_ledger_recovery_admission_claim.go" && name != "runner_ledger_recovery_admission_permit.go" && name != "evidence_session.go" {
+			continue
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			if name == "evidence_session.go" && function.Name.Name != "refreshRunnerLedgerRecoveryEvidence" &&
+				function.Name.Name != "detachForRunnerLedgerRecoveryLocked" && function.Name.Name != "installRunnerLedgerRecoveryLocked" &&
+				function.Name.Name != "bindRunnerLedgerRecoveryAdmissionClaim" && function.Name.Name != "consumeRunnerLedgerRecoveryAdmissionClaim" {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				called := ""
+				switch value := call.Fun.(type) {
+				case *ast.Ident:
+					called = value.Name
+				case *ast.SelectorExpr:
+					called = value.Sel.Name
+				}
+				if forbidden[called] {
+					t.Errorf("%s.%s acquired forbidden writer edge %s", name, function.Name.Name, called)
+				}
+				return true
+			})
+		}
+	}
+	if admissionCalls != 2 {
+		t.Fatalf("recovery close-only production calls=%d want=2", admissionCalls)
 	}
 }

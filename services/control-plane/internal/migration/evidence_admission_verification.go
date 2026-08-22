@@ -96,8 +96,18 @@ func buildHistoricalVerificationFacts(bundle *RuntimeBundle, bindings RunnerProj
 // from disk and therefore remain recovery-required after every stored fact has
 // been checked.
 func verifyAdmissionGeneration(generation *admissionReplayGeneration, facts *admissionHistoricalVerificationFacts) error {
+	return verifyAdmissionGenerationWithLifecycle(generation, facts, nil)
+}
+
+func verifyAdmissionGenerationWithLifecycle(generation *admissionReplayGeneration, facts *admissionHistoricalVerificationFacts, lifecycle *admissionLifecycleEvidence) error {
 	if generation == nil || facts == nil || generation.header == nil || generation.runtimeInspection == nil || facts.maxAttempts == 0 || len(facts.orderedMigrations) == 0 {
 		return admissionCorrupt("admission-pass2", "historical generation facts are incomplete", nil)
+	}
+	if lifecycle != nil && (!validAdmissionLifecycleEvidence(lifecycle, evidenceCandidateBinding(lifecycle)) ||
+		generation.journalID != lifecycle.generation.journalIdentityDigest ||
+		generation.runnerProjectionDecisionDigest != lifecycle.generation.runnerProjectionDecisionDigest ||
+		generation.schemaBundleDigest != lifecycle.generation.schemaBundleDigest) {
+		return fail(CodeEvidenceRecoveryRequired, "admission-pass2", "live lifecycle evidence does not bind this generation", nil)
 	}
 	header := generation.header
 	inspection := generation.runtimeInspection
@@ -164,12 +174,20 @@ func verifyAdmissionGeneration(generation *admissionReplayGeneration, facts *adm
 			if retry == nil {
 				return admissionCorrupt("admission-pass2", "retry terminal lacks compact proof", nil)
 			}
-			recoveryRequired = true
+			if lifecycle == nil {
+				recoveryRequired = true
+			} else if !admissionLifecycleRetryMatches(lifecycle, generation, event, *retry, commit) {
+				return admissionCorrupt("admission-pass2", "retry terminal differs from live lifecycle receipt", nil)
+			}
 		} else if retry != nil {
 			return admissionCorrupt("admission-pass2", "terminal has an unexpected retry proof", nil)
 		}
-		if event.outcome >= 4 || event.flags&admissionTerminalHasResolution != 0 {
-			recoveryRequired = true
+		if event.outcome >= 4 {
+			if lifecycle == nil {
+				recoveryRequired = true
+			} else if !admissionLifecycleAmbiguousMatches(lifecycle, generation, event, final, commit) {
+				return admissionCorrupt("admission-pass2", "ambiguous terminal differs from live lifecycle boundary", nil)
+			}
 		}
 		previousMigration, previousAttempt = migration, event.attemptIndex
 	}

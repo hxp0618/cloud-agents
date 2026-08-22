@@ -933,6 +933,293 @@ type detachedGenerationSession struct {
 	source    generationEvidenceJournalRegistryRecord
 }
 
+type runnerLedgerRecoveryRefreshSource struct {
+	detached         detachedGenerationSession
+	witness          *verifiedAdmissionLifecycleWitness
+	chain            verifiedEvidenceChainWitness
+	generation       generationIdentity
+	activeKind       activeGenerationKind
+	decisionDigest   Digest
+	executionDigest  Digest
+	stateCanonical   [32]byte
+	schemaDigest     [32]byte
+	recoveryDigest   [32]byte
+	oldSessionDigest [32]byte
+	oldJournalDigest [32]byte
+}
+
+type runnerLedgerRecoveryRefreshCleanup struct {
+	admission *evidencefs.AdmissionLease
+	history   *VerifiedAdmissionHistory
+	permit    *RegisteredGenerationHandoffPermit
+	ready     *RegisteredGenerationRecoveryReady
+	journal   *generationEvidenceJournal
+	committed bool
+}
+
+func (c *runnerLedgerRecoveryRefreshCleanup) close() error {
+	if c == nil || c.committed {
+		return nil
+	}
+	var cleanupErr error
+	switch {
+	case c.journal != nil:
+		cleanupErr = c.journal.Close(context.Background())
+	case c.ready != nil && c.ready.consumed != nil && !c.ready.consumed.Load():
+		cleanupErr = c.ready.Close()
+	case c.admission != nil:
+		cleanupErr = c.admission.Close()
+		if errors.Is(cleanupErr, evidencefs.ErrLeaseInvalid) && !c.admission.Active() {
+			cleanupErr = nil
+		} else if cleanupErr != nil {
+			cleanupErr = mapEvidenceAdmissionError(cleanupErr, "runner-ledger-recovery-refresh-cleanup")
+		}
+	}
+	if c.permit != nil {
+		revokeRegisteredGenerationHandoffPermit(c.permit)
+	} else if c.history != nil {
+		revokeEvidenceSinkHistory(c.history)
+	}
+	return cleanupErr
+}
+
+// refreshRunnerLedgerRecoveryEvidence irreversibly replaces the retained
+// generation lease with a fresh ALL-history replay and then reinstalls the
+// exact same logical generation on this concrete session. It performs no
+// database access, evidence append, reservation, or writer transition.
+func (s *generationEvidenceSession) refreshRunnerLedgerRecoveryEvidence(ctx context.Context, candidate OwnedCurrentCandidate) (facts runnerLedgerRecoveryEvidenceFacts, resultErr error) {
+	if err := contextAdmissionError(ctx); err != nil {
+		return facts, err
+	}
+	if s == nil || s.self != s || !validOwnedCurrentCandidate(candidate) {
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh", "same-verifier evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != candidate.binding {
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh", "same-verifier evidence session changed", nil)
+	}
+	source, err := s.detachForRunnerLedgerRecoveryLocked()
+	if err != nil {
+		return facts, err
+	}
+	defer revokeVerifiedAdmissionLifecycleWitness(source.witness)
+	cleanup := runnerLedgerRecoveryRefreshCleanup{}
+	defer func() {
+		if cleanup.committed {
+			return
+		}
+		if cleanupErr := cleanup.close(); cleanupErr != nil {
+			resultErr = cleanupErr
+		}
+	}()
+
+	reacquired, err := source.detached.lease.ReacquireAdmission(ctx)
+	source.detached.revokeSource()
+	if err != nil {
+		return facts, mapEvidenceAdmissionError(err, "runner-ledger-recovery-refresh-reacquire")
+	}
+	if !reacquired.Valid() || reacquired.PreviousTarget() != source.detached.target || reacquired.PreviousJournal() != source.detached.journal || reacquired.PreviousLeaseDigest() == ([32]byte{}) {
+		if lease, _, admissionErr := reacquired.Admission(); admissionErr == nil {
+			cleanup.admission = lease
+		}
+		return facts, admissionFailed("runner-ledger-recovery-refresh-reacquire", "reacquired admission authority differs from the closed generation lease", nil)
+	}
+	lease, inventory, err := reacquired.Admission()
+	if err != nil || lease == nil || inventory == nil {
+		return facts, mapEvidenceAdmissionError(err, "runner-ledger-recovery-refresh-reacquire")
+	}
+	cleanup.admission = lease
+	history, err := bindVerifiedAdmissionHistoryForRunnerRecovery(ctx, inventory, source.detached.candidate, source.witness)
+	if err != nil {
+		return facts, err
+	}
+	cleanup.history = history
+	if history == nil || history.target != source.detached.target || history.targetGeneration == nil ||
+		!sameGenerationIdentity(history.targetGeneration.descriptor.identity, source.generation) {
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-history", "full-root replay did not retain the exact active generation", nil)
+	}
+	permit, err := bindRegisteredGenerationHandoff(ctx, history, source.detached.candidate)
+	if err != nil {
+		return facts, err
+	}
+	cleanup.permit = permit
+	handoff, err := permit.Handoff(ctx, source.detached.candidate)
+	if err != nil {
+		return facts, err
+	}
+	ready := handoff.Next()
+	if handoff.Outcome() != evidencefs.AdmissionTransitionDurable || ready == nil {
+		return facts, admissionFailed("runner-ledger-recovery-refresh-handoff", "registered generation handoff authority is unavailable", nil)
+	}
+	cleanup.admission = nil
+	cleanup.ready = ready
+	authority, err := ready.BindJournal(ctx, source.detached.candidate)
+	if err != nil {
+		return facts, err
+	}
+	journal, ok := authority.(*generationEvidenceJournal)
+	if !ok || journal == nil {
+		if authority != nil {
+			_ = authority.Close(context.Background())
+		}
+		return facts, admissionFailed("runner-ledger-recovery-refresh-journal", "concrete registered journal authority is unavailable", nil)
+	}
+	cleanup.journal = journal
+	journal.schema.chainWitness = cloneAdmissionLifecycleChainWitness(source.chain)
+	if verifiedAdmissionLifecycleChainDigest(journal.schema.chainWitness) != verifiedAdmissionLifecycleChainDigest(source.chain) {
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-journal", "live lifecycle witness was not preserved", nil)
+	}
+	facts, err = s.installRunnerLedgerRecoveryLocked(ctx, journal, source, history)
+	if err != nil {
+		return runnerLedgerRecoveryEvidenceFacts{}, err
+	}
+	cleanup.committed = true
+	return facts, nil
+}
+
+func (s *generationEvidenceSession) detachForRunnerLedgerRecoveryLocked() (runnerLedgerRecoveryRefreshSource, error) {
+	var source runnerLedgerRecoveryRefreshSource
+	if s == nil || s.self != s || !s.validLocked() {
+		return source, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-detach", "same-verifier evidence session is unavailable", nil)
+	}
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil || journal.state.recovery == nil {
+		return source, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-detach", "current journal has no stable recovery boundary", nil)
+	}
+	registered, ok := generationEvidenceJournalRegistry.Load(journal)
+	record, recordOK := registered.(generationEvidenceJournalRegistryRecord)
+	if !ok || !recordOK || record.journal != journal || record.binding != journal.binding || record.lease != journal.lease || record.state != journal.state || record.canonical != journal.binding.canonical || record.stateCanonical != journal.state.canonical || generationJournalRecordSourceCount(record) != 1 {
+		return source, admissionFailed("runner-ledger-recovery-refresh-detach", "immutable journal source is unavailable", nil)
+	}
+	target, targetErr := journal.lease.Target()
+	journalIdentity, journalErr := journal.lease.Journal()
+	if targetErr != nil || journalErr != nil || target != digestRaw(journal.generation.executionLineageDigest) || journalIdentity != digestRaw(journal.generation.journalIdentityDigest) {
+		return source, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-detach", "generation filesystem identity differs", nil)
+	}
+	candidate, err := cloneSessionCandidate(s.candidate)
+	if err != nil {
+		return source, err
+	}
+	witness, err := bindVerifiedAdmissionLifecycleWitness(s.candidate.binding, journal.generation, journal.state.canonical, journal.schema.chainWitness)
+	if err != nil {
+		return source, err
+	}
+	executionDigest := Digest("")
+	if s.active.recoveryExecutionBindings != nil {
+		executionDigest = s.active.recoveryExecutionBindings.digest
+	}
+	source = runnerLedgerRecoveryRefreshSource{
+		detached: detachedGenerationSession{candidate: candidate, lease: journal.lease, target: target, journal: journalIdentity, source: record},
+		witness:  witness, chain: cloneAdmissionLifecycleChainWitness(journal.schema.chainWitness),
+		generation: journal.generation, activeKind: s.active.kind, decisionDigest: s.active.ownedDecision.digest,
+		executionDigest: executionDigest, stateCanonical: journal.state.canonical,
+		schemaDigest:     generationJournalSchemaDigest(journal.schema, journal.generation),
+		recoveryDigest:   generationJournalRecoveryDigest(journal.state.recovery),
+		oldSessionDigest: s.binding.canonical, oldJournalDigest: journal.binding.canonical,
+	}
+	if source.schemaDigest == ([32]byte{}) || source.recoveryDigest == ([32]byte{}) || source.decisionDigest.Validate() != nil {
+		revokeVerifiedAdmissionLifecycleWitness(witness)
+		return runnerLedgerRecoveryRefreshSource{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-detach", "current journal verifier facts are incomplete", nil)
+	}
+
+	// Failure is irreversible after this point. Revoke the public graph before
+	// the old generation lease releases either lock.
+	s.closed = true
+	journal.closed = true
+	generationEvidenceSessionRegistry.Delete(s)
+	activeGenerationRegistry.Delete(s.active.binding)
+	generationEvidenceJournalRegistry.Delete(journal)
+	journal.state.cursor.valid.Store(false)
+	return source, nil
+}
+
+func (s *generationEvidenceSession) installRunnerLedgerRecoveryLocked(ctx context.Context, journal *generationEvidenceJournal, source runnerLedgerRecoveryRefreshSource, history *VerifiedAdmissionHistory) (runnerLedgerRecoveryEvidenceFacts, error) {
+	var facts runnerLedgerRecoveryEvidenceFacts
+	if s == nil || s.self != s || !s.closed || journal == nil || journal.self != journal || journal.registeredPrior == nil || history == nil {
+		return facts, admissionFailed("runner-ledger-recovery-refresh-install", "registered recovery session inputs are unavailable", nil)
+	}
+	if _, _, err := journal.Replay(ctx); err != nil {
+		return facts, err
+	}
+	ownedCandidate, err := cloneSessionCandidate(source.detached.candidate)
+	if err != nil {
+		return facts, err
+	}
+	journal.mu.Lock()
+	if !journal.validLocked() || !sameGenerationIdentity(journal.generation, source.generation) || journal.state == nil ||
+		journal.state.canonical != source.stateCanonical || generationJournalSchemaDigest(journal.schema, journal.generation) != source.schemaDigest ||
+		generationJournalRecoveryDigest(journal.state.recovery) != source.recoveryDigest {
+		journal.mu.Unlock()
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-install", "fresh full-root replay differs from the detached generation", nil)
+	}
+	recovery := cloneRecoverySnapshot(journal.state.recovery)
+	stateCanonical := journal.state.canonical
+	journal.mu.Unlock()
+
+	registered := journal.registeredPrior.registered
+	if registered == nil || !sameGenerationIdentity(registered.descriptor.identity, source.generation) {
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-install", "registered generation authority differs from the detached generation", nil)
+	}
+	decision := ownedVerifiedDecisionCopy(registered.decision, registered.bindings)
+	execution := cloneRecoveryExecutionBindings(journal.registeredPrior.executionBindings)
+	switch source.activeKind {
+	case activeGenerationCurrent:
+		if execution != nil || registered.policy != nil || decision.digest != ownedCandidate.verifiedRun.currentDecision.digest || source.decisionDigest != decision.digest {
+			return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-install", "current generation verifier binding changed", nil)
+		}
+		decision = ownedCandidate.verifiedRun.currentDecision
+	case activeGenerationAncestorRecovery:
+		if execution == nil || registered.policy == nil || decision.digest != source.decisionDigest || execution.digest != source.executionDigest {
+			return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-install", "historical generation verifier binding changed", nil)
+		}
+	default:
+		return facts, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-refresh-install", "active generation kind is unavailable", nil)
+	}
+
+	active := ActiveGeneration{
+		identity: journal.generation, kind: source.activeKind, journal: journal, ownedDecision: decision,
+		contentReceipt: journal.runtimeReceipt, decisionRecoveryReceipt: journal.recoveryReceipt,
+		recoveryExecutionBindings: execution,
+	}
+	activeBinding := &activeGenerationBinding{
+		session: s, journal: journal, candidateBinding: ownedCandidate.binding,
+		runtimeBinding: journal.runtimeReceipt.binding, recoveryBinding: journal.recoveryReceipt.binding,
+		executionBinding: execution,
+	}
+	active.binding = activeBinding
+	activeBinding.canonical = activeGenerationDigest(active)
+	s.candidate, s.journal, s.active, s.closed = ownedCandidate, journal, active, false
+	s.binding = &generationEvidenceSessionBinding{session: s, journal: journal, candidateBinding: ownedCandidate.binding, activeBinding: activeBinding}
+	s.binding.canonical = generationEvidenceSessionDigest(s)
+	activeGenerationRegistry.Store(activeBinding, activeGenerationRegistryRecord{
+		binding: activeBinding, session: s, journal: journal, candidateBinding: ownedCandidate.binding,
+		runtimeBinding: journal.runtimeReceipt.binding, recoveryBinding: journal.recoveryReceipt.binding,
+		executionBinding: execution, canonical: activeBinding.canonical,
+	})
+	generationEvidenceSessionRegistry.Store(s, generationEvidenceSessionRegistryRecord{
+		session: s, binding: s.binding, journal: journal, candidateBinding: ownedCandidate.binding,
+		activeBinding: activeBinding, canonical: s.binding.canonical,
+	})
+	if !s.validLocked() {
+		activeGenerationRegistry.Delete(activeBinding)
+		generationEvidenceSessionRegistry.Delete(s)
+		s.closed = true
+		return facts, admissionFailed("runner-ledger-recovery-refresh-install", "refreshed session authority could not be sealed", nil)
+	}
+	facts = runnerLedgerRecoveryEvidenceFacts{
+		binder: s, candidateBinding: ownedCandidate.binding, generation: journal.generation,
+		schema: cloneGenerationJournalSchema(journal.schema), recovery: recovery,
+		schemaDigest: source.schemaDigest, recoveryDigest: source.recoveryDigest, stateCanonical: stateCanonical,
+		sessionDigest: s.binding.canonical, journalDigest: journal.binding.canonical,
+		fullSet: history.fullSet, transcriptCanonical: history.transcriptCanonical, revision: history.revision,
+		target: history.target, indexRecords: history.targetIndexRecords, indexTail: history.targetIndexTail,
+	}
+	return facts, nil
+}
+
 func (s *generationEvidenceSession) detachForSuccessorLocked(authority *VerifiedLineageSupersessionAuthority) (detachedGenerationSession, error) {
 	var detached detachedGenerationSession
 	if s == nil || s.self != s || !s.validLocked() || authority == nil {
@@ -1190,6 +1477,7 @@ func (s *generationEvidenceSession) Close(ctx context.Context) error {
 	revokeRunnerLedgerPreflightClaims(s)
 	revokeRunnerLedgerEntryAdmissionClaims(s)
 	revokeRunnerLedgerEntryExecutionAdmissionClaims(s)
+	revokeRunnerLedgerRecoveryAdmissionClaims(s)
 	return record.journal.Close(ctx)
 }
 
@@ -1200,6 +1488,32 @@ func (s *generationEvidenceSession) runnerLedgerPreflightClaimBinderSealed() {}
 func (s *generationEvidenceSession) runnerLedgerEntryAdmissionClaimBinderSealed() {}
 
 func (s *generationEvidenceSession) runnerLedgerEntryExecutionAdmissionClaimBinderSealed() {}
+
+func (s *generationEvidenceSession) runnerLedgerRecoveryAdmissionClaimBinderSealed() {}
+
+func (s *generationEvidenceSession) bindRunnerLedgerRecoveryAdmissionClaim(ctx context.Context, request runnerLedgerRecoveryAdmissionClaimRequest) (*runnerLedgerRecoveryAdmissionClaim, error) {
+	if s == nil || s.self != s || !validOwnedCurrentCandidate(request.candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-admission-evidence", "same-verifier evidence session is unavailable", nil)
+	}
+	facts, err := s.refreshRunnerLedgerRecoveryEvidence(ctx, request.candidate)
+	if err != nil {
+		return nil, err
+	}
+	return bindRunnerLedgerRecoveryAdmissionClaimFromEvidence(ctx, request, facts)
+}
+
+func (s *generationEvidenceSession) consumeRunnerLedgerRecoveryAdmissionClaim(ctx context.Context, claim *runnerLedgerRecoveryAdmissionClaim, candidate OwnedCurrentCandidate) (runnerLedgerRecoveryAdmissionEvidenceBoundary, error) {
+	if s == nil || s.self != s || !validOwnedCurrentCandidate(candidate) {
+		revokeRunnerLedgerRecoveryAdmissionClaim(claim)
+		return runnerLedgerRecoveryAdmissionEvidenceBoundary{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-admission-evidence", "same-verifier evidence session is unavailable", nil)
+	}
+	facts, err := s.refreshRunnerLedgerRecoveryEvidence(ctx, candidate)
+	if err != nil {
+		revokeRunnerLedgerRecoveryAdmissionClaim(claim)
+		return runnerLedgerRecoveryAdmissionEvidenceBoundary{}, err
+	}
+	return consumeRunnerLedgerRecoveryAdmissionClaimFromEvidence(ctx, claim, candidate, facts)
+}
 
 func (s *generationEvidenceSession) bindRunnerLedgerEntryExecutionAdmissionClaim(ctx context.Context, request runnerLedgerEntryExecutionAdmissionClaimRequest) (*runnerLedgerEntryExecutionAdmissionClaim, error) {
 	if err := contextAdmissionError(ctx); err != nil {

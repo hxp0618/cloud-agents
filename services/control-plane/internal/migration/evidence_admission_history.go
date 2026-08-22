@@ -84,6 +84,22 @@ type verifiedAdmissionHistoryBinding struct {
 var verifiedAdmissionHistoryRegistry sync.Map
 
 func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate) (*VerifiedAdmissionHistory, error) {
+	return bindVerifiedAdmissionHistoryMode(ctx, inventory, candidate, nil)
+}
+
+func bindVerifiedAdmissionHistoryForRunnerRecovery(ctx context.Context, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate, witness *verifiedAdmissionLifecycleWitness) (*VerifiedAdmissionHistory, error) {
+	if inventory == nil || !validOwnedCurrentCandidate(candidate) {
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-history-recovery", "current inventory or verifier authority is unavailable", nil)
+	}
+	lifecycle, err := consumeVerifiedAdmissionLifecycleWitness(witness, candidate)
+	if err != nil {
+		return nil, err
+	}
+	defer revokeAdmissionLifecycleEvidence(lifecycle)
+	return bindVerifiedAdmissionHistoryMode(ctx, inventory, candidate, lifecycle)
+}
+
+func bindVerifiedAdmissionHistoryMode(ctx context.Context, inventory *evidencefs.AdmissionInventory, candidate OwnedCurrentCandidate, lifecycle *admissionLifecycleEvidence) (*VerifiedAdmissionHistory, error) {
 	if inventory == nil || !validOwnedCurrentCandidate(candidate) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "admission-history", "current inventory or verifier authority is unavailable", nil)
 	}
@@ -116,6 +132,7 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	var firstCorrupt, fatal error
 	var targetGeneration *verifiedAdmissionRegisteredGeneration
 	retainTargetGeneration := false
+	lifecycleMatches := 0
 	recordHistoryError := func(value error) {
 		if value == nil {
 			return
@@ -141,7 +158,8 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 		lineage := &transcript.lineages[lineageIndex]
 		for generationIndex := range lineage.generations {
 			generation := &lineage.generations[generationIndex]
-			needsRecovery, generationEvidence, verifyErr := verifyAdmissionHistoryGenerationEvidence(ctx, *lineage, generation, objects, current, currentFacts, candidate)
+			generationLifecycle := admissionLifecycleForGeneration(lifecycle, *lineage, generation, &lifecycleMatches)
+			needsRecovery, generationEvidence, verifyErr := verifyAdmissionHistoryGenerationEvidenceMode(ctx, *lineage, generation, objects, current, currentFacts, candidate, generationLifecycle)
 			recoveryRequired = recoveryRequired || needsRecovery
 			recordHistoryError(verifyErr)
 			if fatal != nil {
@@ -150,7 +168,8 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 
 			var plannedEvidence *admissionVerifiedGenerationEvidence
 			if generation.plannedSuccessor != nil {
-				plannedNeedsRecovery, evidence, plannedErr := verifyAdmissionHistoryGenerationEvidence(ctx, *lineage, generation.plannedSuccessor, objects, current, currentFacts, candidate)
+				plannedLifecycle := admissionLifecycleForGeneration(lifecycle, *lineage, generation.plannedSuccessor, &lifecycleMatches)
+				plannedNeedsRecovery, evidence, plannedErr := verifyAdmissionHistoryGenerationEvidenceMode(ctx, *lineage, generation.plannedSuccessor, objects, current, currentFacts, candidate, plannedLifecycle)
 				recoveryRequired = recoveryRequired || plannedNeedsRecovery
 				plannedEvidence = evidence
 				recordHistoryError(plannedErr)
@@ -224,6 +243,9 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	if firstCorrupt != nil {
 		return nil, firstCorrupt
 	}
+	if lifecycle != nil && lifecycleMatches != 1 {
+		return nil, fail(CodeEvidenceRecoveryRequired, "admission-history-recovery", "live lifecycle witness did not bind one exact registered generation", nil)
+	}
 	if recoveryRequired {
 		return nil, fail(CodeEvidenceRecoveryRequired, "admission-history", "historical admission authority is incomplete", nil)
 	}
@@ -282,6 +304,14 @@ func bindVerifiedAdmissionHistory(ctx context.Context, inventory *evidencefs.Adm
 	}
 	retainTargetGeneration = true
 	return history, nil
+}
+
+func admissionLifecycleForGeneration(lifecycle *admissionLifecycleEvidence, lineage admissionReplayLineage, generation *admissionReplayGeneration, matches *int) *admissionLifecycleEvidence {
+	if lifecycle == nil || matches == nil || !lifecycle.matches(lineage, generation) {
+		return nil
+	}
+	(*matches)++
+	return lifecycle
 }
 
 // verifyMaterializedHistoricalSupersession reconstructs stored A -> B
@@ -548,6 +578,10 @@ func admissionHistoryTargetFacts(transcript *admissionReplayTranscript) (admissi
 }
 
 func verifyAdmissionHistoryGenerationEvidence(ctx context.Context, lineage admissionReplayLineage, generation *admissionReplayGeneration, objects map[Digest]*evidencefs.AdmissionObjectView, current OwnedVerifiedDecision, currentFacts *admissionHistoricalVerificationFacts, candidate OwnedCurrentCandidate) (bool, *admissionVerifiedGenerationEvidence, error) {
+	return verifyAdmissionHistoryGenerationEvidenceMode(ctx, lineage, generation, objects, current, currentFacts, candidate, nil)
+}
+
+func verifyAdmissionHistoryGenerationEvidenceMode(ctx context.Context, lineage admissionReplayLineage, generation *admissionReplayGeneration, objects map[Digest]*evidencefs.AdmissionObjectView, current OwnedVerifiedDecision, currentFacts *admissionHistoricalVerificationFacts, candidate OwnedCurrentCandidate, lifecycle *admissionLifecycleEvidence) (bool, *admissionVerifiedGenerationEvidence, error) {
 	if generation == nil || generation.header == nil {
 		return false, nil, admissionCorrupt("admission-history", "generation header is unavailable", nil)
 	}
@@ -615,7 +649,7 @@ func verifyAdmissionHistoryGenerationEvidence(ctx context.Context, lineage admis
 		policyValue := recoveredPolicy
 		policy = &policyValue
 	}
-	if err := verifyAdmissionGeneration(generation, facts); err != nil {
+	if err := verifyAdmissionGenerationWithLifecycle(generation, facts, lifecycle); err != nil {
 		if IsCode(err, CodeEvidenceJournalCorrupt) {
 			return false, nil, err
 		}

@@ -58,11 +58,18 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 			var admission *runnerPreflightSession
 			var sequence *runnerLedgerConsumerSequenceConnector
 			entrySupported := false
+			recoverySupported := false
 			planCount := 0
-			if test.wantAction == runnerLedgerConsumerEntryNotImplemented {
+			if _, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok {
+				recoverySupported = true
+			}
+			if test.wantAction == runnerLedgerConsumerEntryNotImplemented || recoverySupported {
 				prefixLength := len(fixture.evidence.schema.durableObservedLedgerPrefix)
 				admission = newRunnerPreflightSession()
-				if _, ok := generatedRunnerLedgerEntryExecutionAdmissionAction(test.disposition, test.state, test.action); ok {
+				if test.wantAction == runnerLedgerConsumerEntryNotImplemented && !recoverySupported {
+					_, entrySupported = generatedRunnerLedgerEntryExecutionAdmissionAction(test.disposition, test.state, test.action)
+				}
+				if entrySupported {
 					entrySupported = true
 					planCount = configureRunnerLedgerConsumerStepExecution(t, fixture, admission, prefixLength)
 				} else {
@@ -114,13 +121,18 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 				t.Fatalf("unexpected action %s", test.wantAction)
 			}
 			wantExecutionCalls := 0
-			if test.wantAction == runnerLedgerConsumerEntryNotImplemented {
+			if entrySupported {
 				wantExecutionCalls = 1
+			}
+			wantRecoveryCalls := 0
+			if recoverySupported {
+				wantRecoveryCalls = 1
 			}
 			if fixture.evidence.bindCalls != 1 || fixture.evidence.consumeCalls != 1 ||
 				fixture.evidence.entryBindCalls != 0 || fixture.evidence.entryConsumeCalls != 0 ||
-				fixture.evidence.executionBindCalls != wantExecutionCalls || fixture.evidence.executionConsumeCalls != wantExecutionCalls {
-				t.Fatalf("claim lifecycle bind=%d consume=%d entry-bind=%d entry-consume=%d execution-bind=%d execution-consume=%d", fixture.evidence.bindCalls, fixture.evidence.consumeCalls, fixture.evidence.entryBindCalls, fixture.evidence.entryConsumeCalls, fixture.evidence.executionBindCalls, fixture.evidence.executionConsumeCalls)
+				fixture.evidence.executionBindCalls != wantExecutionCalls || fixture.evidence.executionConsumeCalls != wantExecutionCalls ||
+				fixture.evidence.recoveryBindCalls != wantRecoveryCalls || fixture.evidence.recoveryConsumeCalls != wantRecoveryCalls {
+				t.Fatalf("claim lifecycle bind=%d consume=%d entry-bind=%d entry-consume=%d execution-bind=%d execution-consume=%d recovery-bind=%d recovery-consume=%d", fixture.evidence.bindCalls, fixture.evidence.consumeCalls, fixture.evidence.entryBindCalls, fixture.evidence.entryConsumeCalls, fixture.evidence.executionBindCalls, fixture.evidence.executionConsumeCalls, fixture.evidence.recoveryBindCalls, fixture.evidence.recoveryConsumeCalls)
 			}
 			if _, live := runnerLedgerPreflightClaimByEvidenceBinder.Load(fixture.evidence); live {
 				t.Fatal("consumer left a live one-shot claim")
@@ -136,12 +148,12 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 					admission.backend.commitCalls != 1 || !admission.closed {
 					t.Fatalf("entry matrix did not consume one fresh session: sequence=%+v preflight=%+v admission=%+v", sequence, fixture.kernel.database, admission)
 				}
-			} else if sequence.attempts != 2 || fixture.kernel.database.ledgerReadCalls != 2 ||
+			} else if recoverySupported && (sequence.attempts != 2 || fixture.kernel.database.ledgerReadCalls != 2 ||
 				fixture.kernel.database.unlockCalls != 1 || fixture.kernel.database.closeCalls != 1 ||
 				admission.ledgerReadCalls != 4 || admission.unlockCalls != 1 || admission.closeCalls != 1 ||
 				admission.beginCalls != 0 || admission.backend.executeCalls != 0 ||
-				admission.backend.ledgerInsertCalls != 0 || !admission.closed {
-				t.Fatalf("unsupported entry escaped close-only boundary: sequence=%+v preflight=%+v admission=%+v", sequence, fixture.kernel.database, admission)
+				admission.backend.ledgerInsertCalls != 0 || !admission.closed) {
+				t.Fatalf("recovery admission escaped close-only boundary: sequence=%+v preflight=%+v admission=%+v", sequence, fixture.kernel.database, admission)
 			}
 		})
 	}
@@ -776,17 +788,13 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 				rows = append(rows, ledgerRowFor(bundle.Manifest.SchemaBundle.Migrations[index], bundle.Manifest.SchemaBundleDigest))
 			}
 			database.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(rows), cloneProjectionValue(rows)}
-			databases := []*runnerPreflightSession{database}
-			var connector DatabaseConnector = &runnerPreflightConnector{session: database}
-			if test.wantOp == "runner-ledger-consumer-entry" {
-				admission := newRunnerPreflightSession()
-				admission.ledgerRowsByRead = [][]LedgerRow{
-					cloneProjectionValue(rows), cloneProjectionValue(rows),
-					cloneProjectionValue(rows), cloneProjectionValue(rows),
-				}
-				databases = append(databases, admission)
-				connector = &runnerLedgerConsumerSequenceConnector{sessions: databases}
+			admission := newRunnerPreflightSession()
+			admission.ledgerRowsByRead = [][]LedgerRow{
+				cloneProjectionValue(rows), cloneProjectionValue(rows),
+				cloneProjectionValue(rows), cloneProjectionValue(rows),
 			}
+			databases := []*runnerPreflightSession{database, admission}
+			var connector DatabaseConnector = &runnerLedgerConsumerSequenceConnector{sessions: databases}
 			factory := &runnerPreflightProjectorFactory{allowMigrationRoleCatalog: true}
 			factory.initialize()
 			sink := &runnerLedgerConsumerEvidenceSink{prefixLength: test.prefixLength, state: test.state, action: test.action}
@@ -798,13 +806,10 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 			before := liveVerifiedEvidenceRunBindings()
 			result, runErr := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
 			assertRunnerLedgerConsumerNotImplemented(t, result, runErr, test.wantOp)
-			wantExecutionCalls := 0
-			if test.wantOp == "runner-ledger-consumer-entry" {
-				wantExecutionCalls = 1
-			}
 			if sink.session == nil || sink.session.bindCalls != 1 || sink.session.consumeCalls != 1 ||
 				sink.session.entryBindCalls != 0 || sink.session.entryConsumeCalls != 0 ||
-				sink.session.executionBindCalls != wantExecutionCalls || sink.session.executionConsumeCalls != wantExecutionCalls ||
+				sink.session.executionBindCalls != 0 || sink.session.executionConsumeCalls != 0 ||
+				sink.session.recoveryBindCalls != 1 || sink.session.recoveryConsumeCalls != 1 ||
 				sink.session.runnerEvidenceSessionFake.bindCalls != 0 || sink.session.intermediateBindCalls != 0 ||
 				sink.session.commitBindCalls != 0 || sink.session.terminalBindCalls != 0 ||
 				sink.session.journal.appendCalls != 0 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 ||
@@ -835,6 +840,9 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 			}
 			if _, live := runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder.Load(sink.session); live {
 				t.Fatalf("public %s retained an execution-admission use record", test.name)
+			}
+			if _, live := runnerLedgerRecoveryAdmissionUseByEvidenceBind.Load(sink.session); live {
+				t.Fatalf("public %s retained a recovery-admission use record", test.name)
 			}
 		})
 	}
