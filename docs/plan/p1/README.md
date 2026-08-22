@@ -301,12 +301,15 @@ Platform RC、Beta 或 GA。
   wrapper，且 PASS 前未自行闭合 JSON run-set；该记录保留为历史 local-run evidence，不构成 approved runner、full
   race、live PostgreSQL、外部副作用或任何 Gate closure
 - [`migration-shard-runner-closure-repair-20260822.md`](migration-shard-runner-closure-repair-20260822.md)：
-  固定 implementation `a9e59f4` 以独立 process group/TERM→KILL/no-descendant closure、launch/retirement signal
-  deferral、immediate active-entry retirement、current PID→PGID cleanup proof、unexpected-exit group cleanup、ABORTED
-  status 和 strict Go JSON validator 修复上述两个 P1 及后续复审发现的 launch/stale-PGID P1；Bash 3.2 fake
-  two-test result/post-registration/pre-registration/retirement signal/unexpected-exit fixture、focused
-  normal/race/vet、exact ShellCheck、plan same-bits 与旧 700-test artifacts 的 read-only parse 均通过。按
-  no-repeat policy 未重跑 full migration；当前仍待新 fixed-candidate independent rereview，所有 Gate 保持 OPEN
+  固定 implementation `8552c0c` 以独立 process group/TERM→KILL/no-descendant closure、launch/retirement signal
+  deferral、immediate active-entry retirement、current PID→PGID cleanup proof、unexpected-exit group cleanup、live
+  stopped-wrapper exact membership/residue rejection、ABORTED status 和 strict Go JSON validator 修复上述两个 P1
+  及后续复审发现的 launch/stale-PGID/residue-authority P1；Bash 3.2 fake two-test
+  result/post-registration/pre-registration/retirement signal/unexpected-exit/residue fixture、focused
+  normal/race/vet、exact ShellCheck、plan same-bits 与旧 700-test artifacts 的 read-only parse 均通过。按 no-repeat
+  policy 未重跑 full migration；固定候选 `8e49501` 已由
+  [`1a98f72` independent review](migration-shard-runner-closure-repair-independent-review-20260822.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`，所有 Gate 保持 OPEN
 
 ## Data kernel decisions
 

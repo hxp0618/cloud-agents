@@ -1,6 +1,6 @@
 # P1 migration shard runner closure repair — 2026-08-22
 
-- Status: **IMPLEMENTATION FIXED; HISTORICAL RUN REVALIDATED; INDEPENDENT REREVIEW PENDING; GATES OPEN**
+- Status: **IMPLEMENTATION FIXED; HISTORICAL RUN REVALIDATED; INDEPENDENT REREVIEW APPROVED; GATES OPEN**
 - Implementation source: `8552c0c2c5e4abea128f29e8f41c7628d1e355d1`
 - Source tree: `9cdd16afe19e235376c853fdc04b6dd95e44a341`
 - Control-plane subtree: `44174a871ddf2da859f901050634f9f1995f0aa6`
@@ -10,7 +10,8 @@
   `7844d4af8e52ce5a958dff7d1a82721961dc94e1`,
   `a9e59f4ba859850d79f8d0e238649f5f55354823`, and
   `d34ac3f92591abac5bf59b0bba34085a461f68ba`
-- Independent reviewer: **pending fixed-candidate rereview**
+- Independent review: [`1a98f729bdfd9cecacdddb1b23142648b20d6217`](migration-shard-runner-closure-repair-independent-review-20260822.md) — `APPROVE, P0=0/P1=0/P2=0`
+- Independent review record SHA-256: `9284c72f6e3fe3637bcddbf8f4a0d27e53045697363fc80fe9af9c740a6bb9cd`
 - Gate effect: **none**
 
 This record repairs the reusable runner contract after independent review returned
@@ -191,11 +192,14 @@ The implementation source passed:
 This repair record does **not** claim or authorize:
 
 - a fresh exhaustive migration run at `8552c0c`, a full race run, or live PostgreSQL 15/16/17;
-- independent approval before a fixed-hash read-only rereview is recorded;
+- approval beyond this exact reusable-runner implementation/review slice;
 - production database reads/writes, HTTP/P2/provider effects, deployment, publication, or release;
 - physical controller power-loss evidence; or
 - `G-DATA`, `G-AUTHORITY-P1`, `G-SECURITY-P1`, another Gate, or Platform RC closure.
 
-Independent review must verify the fixed source/hashes, process-group authority, signal fixture,
-strict JSON state machine, same-bits boundary, and these non-claims. Until then this is implementation
-evidence only and every aggregate Gate remains open.
+The independent reviewer re-resolved the fixed source, tree, control-plane subtree, five file hashes,
+remote ref, clean worktree, and upstream `0/0`; inspected the process-group and JSON state machines;
+reran only the short Bash 3.2 fixture plus validator normal/race/vet; and returned
+`APPROVE, P0=0/P1=0/P2=0`. No full migration, full shards, broad race, or live PostgreSQL run was
+performed. The verdict closes only this implementation/review slice; every aggregate Gate remains
+open.

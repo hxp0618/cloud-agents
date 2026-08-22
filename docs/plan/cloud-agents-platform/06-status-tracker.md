@@ -442,7 +442,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       Go JSON validator；Bash 3.2 two-test
       result/post-registration/pre-registration/retirement signal/unexpected-exit/residue fixture、focused
       normal/race/vet、exact ShellCheck、plan same-bits 与旧 700 项 artifact 的 read-only parse 已通过。按 no-repeat policy 未重跑
-      full migration，新 fixed-candidate independent rereview 仍 pending，所有 Gate 保持 OPEN。
+      full migration；固定候选 `8e49501` 已由 independent review commit `1a98f72` 返回
+      `APPROVE, P0=0/P1=0/P2=0`。见
+      [`independent review`](../p1/migration-shard-runner-closure-repair-independent-review-20260822.md)；所有 Gate 保持 OPEN。
 - [x] Runner/CLI configuration、pre-DB dedicated-session ledger/catalog projection 与 same-verifier one-shot
       claim/no-op dispatch 已完成 bounded independent review；其后 ADR-0022/D-046 又为四个 first-attempt pair 的
       `Runner.Run` typed caller 建立独立 generated authority、fresh session boundary 与固定 independent review，普通
@@ -450,5 +452,5 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 - [ ] retry/abort/reconcile/terminal-failure/return-failure writer、production database invocation 或其他扩大 mutation
       surface 的后续切片仍须新的 owner authority 与独立 entry audit；上述 entry audit 已明确真实 physical
       controller/host power-loss evidence 仍 blocked on dedicated hardware/external control；current-source normal
-      migration artifact 事实已闭合，但 repaired reusable runner 尚待独立复核，full race/live PostgreSQL 与
-      reviewer-signed immutable Gate record 仍缺失，完成前 P1 Gates 继续 `IN PROGRESS`。
+      migration artifact 事实与 repaired reusable runner implementation/review slice 已闭合，但 full race/live
+      PostgreSQL 与 reviewer-signed immutable Gate record 仍缺失，完成前 P1 Gates 继续 `IN PROGRESS`。
