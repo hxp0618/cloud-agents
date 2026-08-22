@@ -52,6 +52,32 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 	counts := map[runnerLedgerConsumerAction]int{}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			if action, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok &&
+				action == generatedRunnerLedgerRecoveryProfiles[1].action {
+				fixture := newRunnerLedgerRecoveryAbortTerminalFixture(t, test.state, test.action)
+				defer fixture.close(t)
+				base := fixture.success.execution.base.service.kernel.base
+				rows := runnerLedgerConsumerPrefixRows(base.bundle, 1)
+				preflight := newRunnerPreflightSession()
+				preflight.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(rows), cloneProjectionValue(rows)}
+				sequence := &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{preflight, fixture.database}}
+				baseRunner := fixture.success.execution.base.service.kernel.runner
+				baseRunner.Connector = sequence
+				step, err := baseRunner.consumeRunnerLedgerPreflightStep(
+					context.Background(), "test-only", base.bundle, base.plans,
+					fixture.success.execution.base.service.evidence, base.candidate,
+				)
+				counts[test.wantAction]++
+				assertRunnerLedgerConsumerNotImplemented(t, RunResult{}, err, "runner-ledger-consumer-recovery")
+				journal := fixture.success.execution.base.service.evidence.runnerEvidenceSessionFake.journal
+				if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) || sequence.attempts != 2 || preflight.ledgerReadCalls != 2 ||
+					preflight.unlockCalls != 1 || preflight.closeCalls != 1 || fixture.database.ledgerReadCalls != 6 ||
+					fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 || fixture.database.beginCalls != 0 ||
+					journal.appendedRecord.AttemptTerminal == nil || fixture.beforeCursor.Valid() {
+					t.Fatalf("abort consumer matrix did not close and append exactly once: step=%+v sequence=%+v preflight=%+v admission=%+v journal=%+v", step, sequence, preflight, fixture.database, journal.appendedRecord)
+				}
+				return
+			}
 			fixture := newRunnerLedgerPreflightServiceFixture(t)
 			defer fixture.close(t)
 			fixture.configure(t, test.disposition, test.state, test.action, 16)

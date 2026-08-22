@@ -1583,29 +1583,54 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 				lastCommitIntentRecordDigest:         digestPointer(frame.RecordDigest), nextPermittedAction: RecoveryReconcileCommit,
 			}
 		case EvidenceRecordAttemptTerminal:
-			if previousSnapshot == nil || previousSnapshot.lastStatementIntent == nil || previousSnapshot.lastStatementIntentRecordDigest == nil || previousSnapshot.lastIntermediateEvidence == nil || previousSnapshot.lastIntermediateEvidenceRecordDigest == nil || previousSnapshot.lastIntermediateStateDigest == nil || previousSnapshot.commitIntent == nil || previousSnapshot.lastCommitIntentRecordDigest == nil {
-				return AppendResult{}, errors.New("terminal predecessors are unavailable")
+			if previousSnapshot == nil || previousSnapshot.lastStatementIntent == nil || previousSnapshot.lastStatementIntentRecordDigest == nil {
+				return AppendResult{}, errors.New("terminal statement predecessor is unavailable")
 			}
 			intent := previousSnapshot.lastStatementIntent.value
-			intermediate := previousSnapshot.lastIntermediateEvidence.value
-			commit := previousSnapshot.commitIntent.value
-			state, action := RecoveryTerminal, RecoveryBeginFirstAttemptNextEntry
-			if journal.bundleComplete {
-				state, action = RecoveryCompleted, RecoveryReturnSuccess
-			}
-			snapshot = &RecoverySnapshot{
-				owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
-				state: state, migrationID: cloneStringPointer(&record.AttemptTerminal.MigrationID),
-				attemptIndex: cloneUint32Pointer(&record.AttemptTerminal.AttemptIndex), previousAttemptTerminalDigest: cloneDigestPointer(intent.PreviousAttemptTerminalDigest),
-				lastStatementIntent:                  recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastStatementIntentRecordDigest, intent),
-				lastStatementIntentRecordDigest:      cloneDigestPointer(previousSnapshot.lastStatementIntentRecordDigest),
-				lastIntermediateEvidence:             recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastIntermediateEvidenceRecordDigest, intermediate),
-				lastIntermediateEvidenceRecordDigest: cloneDigestPointer(previousSnapshot.lastIntermediateEvidenceRecordDigest),
-				lastIntermediateStateDigest:          cloneDigestPointer(previousSnapshot.lastIntermediateStateDigest),
-				commitIntent:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastCommitIntentRecordDigest, commit),
-				lastCommitIntentRecordDigest:         cloneDigestPointer(previousSnapshot.lastCommitIntentRecordDigest),
-				lastTerminal:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.AttemptTerminal),
-				lastTerminalDigest:                   digestPointer(record.AttemptTerminal.TerminalDigest), nextPermittedAction: action,
+			if stringIn(record.AttemptTerminal.Outcome, "aborted_retryable", "aborted_terminal") {
+				action := RecoveryReturnFailure
+				if record.AttemptTerminal.Outcome == "aborted_retryable" {
+					action = RecoveryBeginNextAttempt
+				}
+				snapshot = &RecoverySnapshot{
+					owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+					state: RecoveryTerminal, migrationID: cloneStringPointer(&record.AttemptTerminal.MigrationID),
+					attemptIndex: cloneUint32Pointer(&record.AttemptTerminal.AttemptIndex), previousAttemptTerminalDigest: cloneDigestPointer(intent.PreviousAttemptTerminalDigest),
+					lastStatementIntent:             recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastStatementIntentRecordDigest, intent),
+					lastStatementIntentRecordDigest: cloneDigestPointer(previousSnapshot.lastStatementIntentRecordDigest),
+					lastTerminal:                    recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.AttemptTerminal),
+					lastTerminalDigest:              digestPointer(record.AttemptTerminal.TerminalDigest), nextPermittedAction: action,
+				}
+				if previousSnapshot.lastIntermediateEvidence != nil && previousSnapshot.lastIntermediateEvidenceRecordDigest != nil && previousSnapshot.lastIntermediateStateDigest != nil {
+					intermediate := previousSnapshot.lastIntermediateEvidence.value
+					snapshot.lastIntermediateEvidence = recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastIntermediateEvidenceRecordDigest, intermediate)
+					snapshot.lastIntermediateEvidenceRecordDigest = cloneDigestPointer(previousSnapshot.lastIntermediateEvidenceRecordDigest)
+					snapshot.lastIntermediateStateDigest = cloneDigestPointer(previousSnapshot.lastIntermediateStateDigest)
+				}
+			} else {
+				if previousSnapshot.lastIntermediateEvidence == nil || previousSnapshot.lastIntermediateEvidenceRecordDigest == nil || previousSnapshot.lastIntermediateStateDigest == nil || previousSnapshot.commitIntent == nil || previousSnapshot.lastCommitIntentRecordDigest == nil {
+					return AppendResult{}, errors.New("committed terminal predecessors are unavailable")
+				}
+				intermediate := previousSnapshot.lastIntermediateEvidence.value
+				commit := previousSnapshot.commitIntent.value
+				state, action := RecoveryTerminal, RecoveryBeginFirstAttemptNextEntry
+				if journal.bundleComplete {
+					state, action = RecoveryCompleted, RecoveryReturnSuccess
+				}
+				snapshot = &RecoverySnapshot{
+					owner: cursor.generation.owner, generation: cursor.generation, cursor: next.clone(), tailDigest: frame.RecordDigest,
+					state: state, migrationID: cloneStringPointer(&record.AttemptTerminal.MigrationID),
+					attemptIndex: cloneUint32Pointer(&record.AttemptTerminal.AttemptIndex), previousAttemptTerminalDigest: cloneDigestPointer(intent.PreviousAttemptTerminalDigest),
+					lastStatementIntent:                  recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastStatementIntentRecordDigest, intent),
+					lastStatementIntentRecordDigest:      cloneDigestPointer(previousSnapshot.lastStatementIntentRecordDigest),
+					lastIntermediateEvidence:             recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastIntermediateEvidenceRecordDigest, intermediate),
+					lastIntermediateEvidenceRecordDigest: cloneDigestPointer(previousSnapshot.lastIntermediateEvidenceRecordDigest),
+					lastIntermediateStateDigest:          cloneDigestPointer(previousSnapshot.lastIntermediateStateDigest),
+					commitIntent:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, *previousSnapshot.lastCommitIntentRecordDigest, commit),
+					lastCommitIntentRecordDigest:         cloneDigestPointer(previousSnapshot.lastCommitIntentRecordDigest),
+					lastTerminal:                         recoveredValue(cursor.generation, *next, frame.RecordDigest, frame.RecordDigest, *record.AttemptTerminal),
+					lastTerminalDigest:                   digestPointer(record.AttemptTerminal.TerminalDigest), nextPermittedAction: action,
+				}
 			}
 		}
 		if journal.mutateAppendSnapshot != nil {

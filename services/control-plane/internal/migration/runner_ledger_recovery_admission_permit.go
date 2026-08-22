@@ -5,20 +5,23 @@ import (
 	"crypto/sha256"
 	"strconv"
 	"sync"
+	"time"
 )
 
 const runnerLedgerRecoveryAdmissionPermitDigestDomain = "cloud-agents/runner-ledger-recovery-admission/permit/v1"
 
 type runnerLedgerRecoveryAdmissionSelection struct {
-	action       runnerLedgerRecoveryAction
-	profileIndex uint8
-	entryIndex   uint32
-	migrationID  string
-	entryDigest  Digest
-	attemptIndex uint32
-	maxAttempts  uint32
-	planCount    uint32
-	planDigest   [32]byte
+	action         runnerLedgerRecoveryAction
+	recoveryState  RecoveryState
+	recoveryAction RecoveryAction
+	profileIndex   uint8
+	entryIndex     uint32
+	migrationID    string
+	entryDigest    Digest
+	attemptIndex   uint32
+	maxAttempts    uint32
+	planCount      uint32
+	planDigest     [32]byte
 }
 
 // runnerLedgerRecoveryCloseOnlyPermit is deliberately narrower than every
@@ -84,6 +87,9 @@ type runnerLedgerRecoveryAdmissionPermitCore struct {
 	projectionSubject        Digest
 	catalogContractDigest    *Digest
 	catalogDigest            Digest
+	runtimeInputs            [32]byte
+	bindings                 RunnerProjectionBindings
+	projection               *runnerLedgerCatalogPreflight
 	database                 runnerPreparedDatabaseIdentity
 	selection                runnerLedgerRecoveryAdmissionSelection
 	canonical                [32]byte
@@ -166,17 +172,20 @@ func (runner *Runner) prepareRunnerLedgerRecoveryAdmission(ctx context.Context, 
 	if err := contextAdmissionError(ctx); err != nil {
 		return failClosed(err)
 	}
-	permit, err := bindRunnerLedgerRecoveryAdmissionPermit(observation, binder, candidate, fact, boundary, selection)
+	permit, err := bindRunnerLedgerRecoveryAdmissionPermit(observation, projection, binder, candidate, fact, boundary, selection)
 	if err != nil {
 		return failClosed(err)
 	}
 	return permit, nil
 }
 
-func (runner *Runner) admitRunnerLedgerRecoveryCloseOnly(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate, fact runnerLedgerConsumerFact) error {
+func (runner *Runner) admitRunnerLedgerRecoveryAction(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate, fact runnerLedgerConsumerFact) error {
 	permit, err := runner.prepareRunnerLedgerRecoveryAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
 	if err != nil {
 		return err
+	}
+	if abort, ok := permit.(*runnerLedgerAbortTerminalAdmissionPermit); ok {
+		return runner.appendRunnerLedgerRecoveryAbortTerminal(ctx, abort, bundle, plans)
 	}
 	return permit.closeWithoutMutation(nil)
 }
@@ -251,7 +260,8 @@ func validateRunnerLedgerRecoveryAdmissionObservation(fact runnerLedgerConsumerF
 		return selection, err
 	}
 	selection = runnerLedgerRecoveryAdmissionSelection{
-		action: action, profileIndex: profileIndex, entryIndex: uint32(index), migrationID: entry.ID,
+		action: action, recoveryState: fact.dispatch.fact.recovery.State, recoveryAction: fact.dispatch.fact.recovery.Action,
+		profileIndex: profileIndex, entryIndex: uint32(index), migrationID: entry.ID,
 		entryDigest: entryDigest, attemptIndex: attemptIndex, maxAttempts: uint32(policy.MaxAttempts),
 		planCount: planCount, planDigest: planDigest,
 	}
@@ -310,10 +320,12 @@ func runnerLedgerRecoveryActionProfile(action runnerLedgerRecoveryAction) (runne
 	return runnerLedgerRecoveryProfile{}, 0, false
 }
 
-func bindRunnerLedgerRecoveryAdmissionPermit(observation *runnerLockedLedgerCatalogObservation, binder runnerLedgerRecoveryAdmissionClaimBinder, candidate OwnedCurrentCandidate, fact runnerLedgerConsumerFact, boundary runnerLedgerRecoveryAdmissionEvidenceBoundary, selection runnerLedgerRecoveryAdmissionSelection) (runnerLedgerRecoveryCloseOnlyPermit, error) {
+func bindRunnerLedgerRecoveryAdmissionPermit(observation *runnerLockedLedgerCatalogObservation, projection *runnerLedgerCatalogPreflight, binder runnerLedgerRecoveryAdmissionClaimBinder, candidate OwnedCurrentCandidate, fact runnerLedgerConsumerFact, boundary runnerLedgerRecoveryAdmissionEvidenceBoundary, selection runnerLedgerRecoveryAdmissionSelection) (runnerLedgerRecoveryCloseOnlyPermit, error) {
 	profile, profileIndex, ok := runnerLedgerRecoveryActionProfile(selection.action)
 	if observation == nil || !observation.active() || binder == nil || !runnerOwnedPointer(binder) ||
-		!validOwnedCurrentCandidate(candidate) || !fact.valid() || !ok || profileIndex != selection.profileIndex ||
+		!validOwnedCurrentCandidate(candidate) || !fact.valid() || !validRunnerLedgerCatalogPreflight(projection) ||
+		observation.bundle == nil || observation.bundle.ownedInputs.canonical == ([32]byte{}) ||
+		observation.bindings.validateAt(time.Now()) != nil || !ok || profileIndex != selection.profileIndex ||
 		!generatedRunnerLedgerRecoveryProfileAllows(profile.profileID, fact.dispatch.fact.disposition, fact.dispatch.fact.recovery.State, fact.dispatch.fact.recovery.Action) ||
 		boundary.candidateBinding != candidate.binding || boundary.canonical == ([32]byte{}) ||
 		boundary.canonical != runnerLedgerRecoveryAdmissionEvidenceBoundaryDigest(boundary) ||
@@ -356,6 +368,8 @@ func bindRunnerLedgerRecoveryAdmissionPermit(observation *runnerLockedLedgerCata
 		ledgerLength: uint32(len(observation.ledger.rows)), connectedAuthorityDigest: observation.connected.Digest,
 		migrationAuthorityDigest: observation.migrationRole.Digest, projectionSubject: observation.projectionSubject,
 		catalogContractDigest: cloneDigestPointer(observation.catalogContractDigest), catalogDigest: catalogDigest,
+		runtimeInputs: observation.bundle.ownedInputs.canonical, bindings: observation.bindings.ownedCopy(),
+		projection: cloneRunnerLedgerCatalogPreflight(projection),
 		database: runnerPreparedDatabaseIdentity{
 			postgresMajor: metadata.PostgresMajor, serverVersionNum: metadata.ServerVersionNum,
 			databaseName: metadata.DatabaseName, sessionUser: metadata.SessionUser, currentUser: metadata.CurrentUser,
@@ -483,8 +497,11 @@ func runnerLedgerRecoveryAdmissionPermitDigest(core *runnerLedgerRecoveryAdmissi
 		core.connectedAuthorityDigest.Validate() != nil || core.migrationAuthorityDigest.Validate() != nil ||
 		core.projectionSubject.Validate() != nil || core.catalogDigest.Validate() != nil ||
 		core.database.postgresMajor == 0 || core.database.serverVersionNum == 0 || core.database.databaseName == "" ||
-		core.database.sessionUser == "" || core.database.currentUser != MigrationOwnerRole ||
-		core.selection.action != core.action || core.selection.entryDigest.Validate() != nil ||
+		core.database.sessionUser == "" || core.database.currentUser != MigrationOwnerRole || core.runtimeInputs == ([32]byte{}) ||
+		core.bindings.validateAt(time.Now()) != nil || core.bindings.expectedCanonical == "" ||
+		!runnerLedgerRecoveryAdmissionProjectionMatchesCore(core) || !runnerLedgerRecoverySelectionAllowed(core.selection) ||
+		core.selection.action != core.action || core.selection.recoveryState == "" || core.selection.recoveryAction == "" ||
+		core.selection.entryDigest.Validate() != nil ||
 		!migrationIDPattern.MatchString(core.selection.migrationID) || core.selection.planCount == 0 ||
 		core.selection.planDigest == ([32]byte{}) || core.selection.attemptIndex == 0 ||
 		core.selection.maxAttempts == 0 || core.selection.attemptIndex > core.selection.maxAttempts ||
@@ -512,6 +529,7 @@ func runnerLedgerRecoveryAdmissionPermitDigest(core *runnerLedgerRecoveryAdmissi
 	h.Write(core.evidenceBoundary[:])
 	h.Write(core.recoveryDigest[:])
 	h.Write(core.selection.planDigest[:])
+	h.Write(core.runtimeInputs[:])
 	writeRunnerLedgerRecoveryIdentity(h, core.action)
 	for _, value := range []string{
 		profile.registryID, profile.registryDigest, profile.profileID, profile.profileDigest,
@@ -522,6 +540,7 @@ func runnerLedgerRecoveryAdmissionPermitDigest(core *runnerLedgerRecoveryAdmissi
 		core.connectedAuthorityDigest.String(), core.migrationAuthorityDigest.String(), core.projectionSubject.String(),
 		core.catalogDigest.String(), strconv.FormatInt(core.key, 10), core.database.databaseName,
 		core.database.sessionUser, core.database.currentUser, core.selection.migrationID, core.selection.entryDigest.String(),
+		core.bindings.expectedCanonical, core.projection.subjectDigest.String(),
 	} {
 		writeAdmissionString(h, value)
 	}
@@ -539,9 +558,62 @@ func runnerLedgerRecoveryAdmissionPermitDigest(core *runnerLedgerRecoveryAdmissi
 	writeAdmissionUint(h, uint64(core.selection.attemptIndex))
 	writeAdmissionUint(h, uint64(core.selection.maxAttempts))
 	writeAdmissionUint(h, uint64(core.selection.planCount))
+	writeAdmissionString(h, string(core.selection.recoveryState))
+	writeAdmissionString(h, string(core.selection.recoveryAction))
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result
+}
+
+func cloneRunnerLedgerCatalogPreflight(prepared *runnerLedgerCatalogPreflight) *runnerLedgerCatalogPreflight {
+	if prepared == nil {
+		return nil
+	}
+	owned := *prepared
+	owned.catalogContractDigest = cloneDigestPointer(prepared.catalogContractDigest)
+	owned.ledger = cloneRunnerLedgerPrefix(prepared.ledger)
+	owned.connectedAuthority = cloneProjectionValue(prepared.connectedAuthority)
+	owned.migrationRoleAuthority = cloneProjectionValue(prepared.migrationRoleAuthority)
+	owned.initialPredecessor = cloneCatalogStateProjectionResultPointer(prepared.initialPredecessor)
+	owned.cumulativeCatalog = cloneCatalogProjectionResultPointer(prepared.cumulativeCatalog)
+	return &owned
+}
+
+func runnerLedgerRecoveryAdmissionProjectionMatchesCore(core *runnerLedgerRecoveryAdmissionPermitCore) bool {
+	if core == nil || core.projection == nil || !validRunnerLedgerCatalogPreflight(core.projection) ||
+		core.projection.schemaBundleDigest != core.generation.schemaBundleDigest ||
+		core.projection.executionLineageDigest != core.generation.executionLineageDigest ||
+		core.projection.runnerProjectionDecisionDigest != core.generation.runnerProjectionDecisionDigest ||
+		core.projection.authoritySubjectDigest != core.bindings.verifiedAuthority.SubjectDigest() ||
+		core.projection.projectionSubjectDigest != core.projectionSubject ||
+		core.projection.ledger.digest != core.ledgerDigest || core.projection.ledger.head != core.ledgerHead ||
+		uint32(len(core.projection.ledger.rows)) != core.ledgerLength ||
+		core.projection.connectedAuthority.Digest != core.connectedAuthorityDigest ||
+		core.projection.migrationRoleAuthority.Digest != core.migrationAuthorityDigest ||
+		!runnerLedgerRecoveryAdmissionDatabaseMatches(core.database, core.projection.migrationRoleAuthority.Metadata.Snapshot) ||
+		!sameRunnerDedicatedSessionIdentity(core.projection.connectedAuthority.Metadata.Snapshot, core.projection.migrationRoleAuthority.Metadata.Snapshot) ||
+		(core.projection.catalogContractDigest == nil) != (core.catalogContractDigest == nil) {
+		return false
+	}
+	if core.catalogContractDigest != nil && *core.projection.catalogContractDigest != *core.catalogContractDigest {
+		return false
+	}
+	catalogDigest := Digest("")
+	if core.projection.initialPredecessor != nil {
+		catalogDigest = core.projection.initialPredecessor.Digest
+	} else if core.projection.cumulativeCatalog != nil {
+		catalogDigest = core.projection.cumulativeCatalog.Digest
+	}
+	return catalogDigest == core.catalogDigest && core.bindings.schemaBundleDigest == core.generation.schemaBundleDigest &&
+		core.bindings.executionLineageDigest == core.generation.executionLineageDigest &&
+		core.bindings.runnerProjectionDecisionDigest == core.generation.runnerProjectionDecisionDigest
+}
+
+func runnerLedgerRecoveryAdmissionDatabaseMatches(database runnerPreparedDatabaseIdentity, metadata SnapshotMetadata) bool {
+	return metadata.validate() == nil && metadata.AuthorityPhase == AuthorityPhaseMigrationRole &&
+		metadata.PostgresMajor == database.postgresMajor && metadata.ServerVersionNum == database.serverVersionNum &&
+		metadata.DatabaseName == database.databaseName && metadata.SessionUser == database.sessionUser &&
+		metadata.CurrentUser == database.currentUser && database.currentUser == MigrationOwnerRole
 }
 
 func closeRunnerLedgerRecoveryAdmissionPermit(owner runnerLedgerRecoveryCloseOnlyPermit, expected runnerLedgerRecoveryAction, primary error) error {
