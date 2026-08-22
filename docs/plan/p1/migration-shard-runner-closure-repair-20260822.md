@@ -38,12 +38,12 @@ superseded by this repair and must not be cited as an independently approved run
 
 The implementation source fixes only runner tooling:
 
-| File                                                                    | SHA-256                                                              |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `services/control-plane/scripts/test-migration-shards.sh`               | `752f49eaaf85528ee0187767b243e178955bcdeac4d5f5c5c47afb55929d8f99`   |
-| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `5e590689e07767ea8ae3b78119dce2d199f9f1a572b18e3b50a049c63eee0c88`   |
-| `services/control-plane/scripts/migration-shard-validator/main.go`      | `62f54ce0fac102519f0cb3278bdf464e5811430e5115ab805277d7fdec083210`   |
-| `services/control-plane/scripts/migration-shard-validator/main_test.go` | `32b487cb8801698873f1874e9dbe2ae33d1ecbddf4fa7543f6e74dbbddf4fa7543` |
+| File                                                                    | SHA-256                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `services/control-plane/scripts/test-migration-shards.sh`               | `752f49eaaf85528ee0187767b243e178955bcdeac4d5f5c5c47afb55929d8f99` |
+| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `5e590689e07767ea8ae3b78119dce2d199f9f1a572b18e3b50a049c63eee0c88` |
+| `services/control-plane/scripts/migration-shard-validator/main.go`      | `62f54ce0fac102519f0cb3278bdf464e5811430e5115ab805277d7fdec083210` |
+| `services/control-plane/scripts/migration-shard-validator/main_test.go` | `32b487cb8801698873f1874e9dbe2ae33d1ecbdd59fd53f6e74dbbddf4fa7543` |
 
 ### 2.1 Signal and descendant closure
 
