@@ -19,11 +19,13 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
    [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)；
 2. 已接受、仅授权 ordered local slices 的
    [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)；
-3. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
-4. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
-5. `legacy/` 历史计划；
-6. `references/` 冻结参考合同；
-7. 代码现状。
+3. 尚未接受且不授予实现 authority 的
+   [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md) proposal；
+4. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
+5. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
+6. `legacy/` 历史计划；
+7. `references/` 冻结参考合同；
+8. 代码现状。
 
 ## 当前计划
 
@@ -57,6 +59,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0020`](adr/0020-p1-runner-ledger-consumer-contract.md)                                             | P1 runner ledger read-only consumer 决定         |
 | [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)                                      | P1 runner ledger close-only entry admission 决定 |
 | [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)                                 | P1 runner entry execution/success-writer 决定    |
+| [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)                                      | P1 runner recovery writer 提案（未批准）         |
 
 ## 历史与参考
 
@@ -133,7 +136,10 @@ execution-admission revalidation 与 registry-backed one-shot permit；其临时
 [`351e5ea` independent review](p1/runner-ledger-entry-loop-service-independent-review-20260822.md)
 返回 `APPROVE, P0=0/P1=0/P2=0`。四个 generated first-attempt pair 之外的
 retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须独立 generated recovery contract
-与批准，当前结果不构成该 authority。
+与批准，当前结果不构成该 authority。后续
+[`contract-only audit`](p1/runner-ledger-recovery-contract-audit-20260822.md) 已把 1 个 excluded retry pair 与
+11 个 recovery/reconcile/failure pair 分型，并形成 [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)
+proposal；该 proposal 状态为未批准，不允许生成 profile、接入 claim/permit 或调用任何 recovery writer。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

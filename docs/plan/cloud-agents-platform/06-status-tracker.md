@@ -54,6 +54,7 @@
 | D-044 | Runner ledger consumer 按 versioned generated profile → complete-ledger no-op → matrix/review 三切片推进                    | APPROVED | 用户于 2026-08-22 批准；v1 immutable，entry/recovery writer 继续 NI；无外部副作用/Gate  |
 | D-045 | Runner entry admission 按 generated five-pair profile → fresh-session read-only permit → matrix/review 三切片推进           | APPROVED | ADR-0021；permit 仅 close_without_mutation，entry/recovery writer 继续 NI；无 Gate      |
 | D-046 | Runner entry execution/success writer 拆为新 generated admission + one-entry multi-statement success profile                | APPROVED | ADR-0022；standing automatic-execution approval；不含 recovery/production DB/外部副作用 |
+| D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution/failure action-specific profiles               | PROPOSED | ADR-0023；需 owner 明确批准；当前不生成、不实现、不扩权                                 |
 
 ## 2. 阶段追踪
 
@@ -282,6 +283,12 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       `351e5ea` 返回 `APPROVE, P0=0/P1=0/P2=0`。retry/abort/reconcile/failure writer 继续
       `NOT_IMPLEMENTED`。见 [`local matrix`](../p1/runner-ledger-entry-loop-service-matrix-20260822.md) 与
       [`independent review`](../p1/runner-ledger-entry-loop-service-independent-review-20260822.md)。
+- [ ] D-047 runner recovery decision 仍为 `PROPOSED`；supporting contract-only audit 已分型 1 个 excluded retry
+      pair 与 11 个 recovery/reconcile/failure pair，并形成
+      [`ADR-0023 proposal`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)。
+      未获 owner 批准前不得生成 registry/profile、mint recovery permit、调用 writer 或改变现有
+      `MIGRATION_PROJECTION_NOT_IMPLEMENTED` 行为。见
+      [`audit`](../p1/runner-ledger-recovery-contract-audit-20260822.md)。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。
