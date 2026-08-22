@@ -182,8 +182,11 @@
   [`D-047 decision record`](runner-ledger-recovery-contract-decision-20260822.md) 接受 Decision、Closed pair mapping
   与 ordered Slices A-G。Slice A 的
   [`generated registry/profile implementation`](runner-ledger-recovery-profile-implementation-20260822.md) 已完成 8 个
-  versioned registry、ordinary Go profile、fixtures/manifests 与 generation-lock closure，当前仍待固定候选只读独立
-  审查；没有 runtime consumer、claim/permit、writer 或数据库路径。尚未归属已批准并通过独立 review 的行为继续
+  versioned registry、ordinary Go profile、fixtures/manifests 与 generation-lock closure；superseding candidate
+  `67210b7` 的 independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice B
+  [`read-only recovery admission`](runner-ledger-recovery-admission-service-matrix-20260823.md) 已在 code commit
+  `b7a9962` 固定：同 verifier full replay、fresh locked reread 与六类 action-specific close-only permit 覆盖 exact
+  12 pairs，当前 independent review pending。所有 writer 与 public recovery result 继续
   `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
 - Gate closure：none
 

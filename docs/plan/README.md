@@ -157,8 +157,12 @@ retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须�
 pair mapping 与 ordered Slices A-G。当前仅授权依序本地实现/独立复核，尚未完成的 recovery rows 继续
 `NOT_IMPLEMENTED`。Slice A 的
 [`generated registry/profile implementation`](p1/runner-ledger-recovery-profile-implementation-20260822.md) 已在独立
-工作树完成 8 个 versioned registry、ordinary Go profile 与 generation-lock closure，当前仍待固定候选只读独立
-审查；它没有 runtime consumer、claim/permit、writer 或数据库路径。
+工作树完成 8 个 versioned registry、ordinary Go profile 与 generation-lock closure；superseding candidate
+`67210b7` 已由 independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice B 的
+[`read-only recovery admission`](p1/runner-ledger-recovery-admission-service-matrix-20260823.md) 已在 code commit
+`b7a9962` 完成 fixed implementation：exact 12 pairs 仅进入同 verifier full replay、fresh locked reread 与六类
+action-specific `close_without_mutation` permit，当前仍待独立审查。所有 recovery writer 与 public recovery result
+继续 `NOT_IMPLEMENTED`。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

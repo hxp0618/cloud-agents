@@ -293,11 +293,16 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       依序本地实现/独立复核，未归属已批准并通过 review 的行为继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
       不授权生产数据库、HTTP/P2/provider、部署、发布或 Gate closure。见
       [`audit`](../p1/runner-ledger-recovery-contract-audit-20260822.md)。
-- [ ] D-047 Slice A generated contract/profile 已完成本地 implementation candidate：8 个 versioned registry、
-      ordinary package-private Go profile、fixtures/manifests 与 2 条 non-Gate generation-lock pipeline 均已生成并通过
-      exact-toolchain focused checks。当前状态是 fixed candidate/independent review pending；无 runtime consumer、
-      claim/permit、writer、数据库 handle 或外部副作用。只有 independent `APPROVE` 后才可开始 Slice B。见
+- [x] D-047 Slice A generated contract/profile 已在 superseding fixed candidate `67210b7` 完成：8 个 versioned
+      registry、ordinary package-private Go profile、fixtures/manifests 与 2 条 non-Gate generation-lock pipeline。
+      Independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`；该 Slice 无 runtime consumer、claim/permit、
+      writer、数据库 handle 或外部副作用。见
       [`implementation record`](../p1/runner-ledger-recovery-profile-implementation-20260822.md)。
+- [ ] D-047 Slice B read-only recovery admission 已在 code commit `b7a9962` 完成固定实现：同 verifier full-root
+      replay、live lifecycle witness、二次 evidence boundary、fresh locked database reread 与 6 个 action-specific
+      close-only permit 覆盖 exact 12 pairs；public entry/recovery 结果与所有 writer 继续
+      `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。当前为 independent review pending；只有 `APPROVE` 后才可开始 Slice C。
+      见 [`local matrix`](../p1/runner-ledger-recovery-admission-service-matrix-20260823.md)。
 - [x] [P1 aggregate Gate gap audit](../p1/p1-aggregate-gate-gap-audit-20260822.md) 已在固定
       `1416fb3` 按 `G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1` 的逐项退出标准区分已存在 evidence、
       缺失 immutable phase record、D-047 owner decision 与 physical-controller 环境 blocker。该项是只读
