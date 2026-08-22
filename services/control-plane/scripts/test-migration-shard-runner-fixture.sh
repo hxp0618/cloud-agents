@@ -96,6 +96,18 @@ if ((is_test == 1 && is_json == 1)); then
       printf '%s\t%s\n' "$$" "$worker" >>"${FAKE_PID_FILE:?}"
       wait "$worker"
       ;;
+    mixed)
+      if [[ $test_name == TestAlpha ]]; then
+        printf '{"Time":"2026-08-22T00:00:01Z","Action":"run","Package":"%s","Test":"%s"}\n' "$package" "$test_name"
+        printf '{"Time":"2026-08-22T00:00:02Z","Action":"pass","Package":"%s","Test":"%s","Elapsed":0.001}\n' "$package" "$test_name"
+        printf '{"Time":"2026-08-22T00:00:03Z","Action":"pass","Package":"%s","Elapsed":0.001}\n' "$package"
+      else
+        sleep 300 &
+        worker=$!
+        printf '%s\t%s\n' "$$" "$worker" >>"${FAKE_PID_FILE:?}"
+        wait "$worker"
+      fi
+      ;;
     *) exit 18 ;;
   esac
   exit 0
@@ -198,6 +210,7 @@ run_signal_case() {
   [[ $(awk -F '\t' '$1 == "status" { print $2 }' "$output_dir/run-aborted.tsv") == ABORTED ]] || fail "$signal_name missing aborted record"
   [[ $(awk -F '\t' '$1 == "signal" { print $2 }' "$output_dir/run-aborted.tsv") == "$signal_name" ]] || fail "$signal_name record mismatch"
   [[ $(awk -F '\t' '$1 == "deferred_during_launch" { print $2 }' "$output_dir/run-aborted.tsv") == 0 ]] || fail "$signal_name was unexpectedly deferred during launch"
+  [[ $(awk -F '\t' '$1 == "deferred_during_retirement" { print $2 }' "$output_dir/run-aborted.tsv") == 0 ]] || fail "$signal_name was unexpectedly deferred during retirement"
   [[ $(awk -F '\t' '$1 == "process_group_cleanup" { print $2 }' "$output_dir/run-aborted.tsv") == complete ]] || fail "$signal_name cleanup was not complete"
   [[ $(sed -n '1p' "$output_dir/run-status.txt") == ABORTED ]] || fail "$signal_name run status is not ABORTED"
   before_digest=$(artifact_digest "$output_dir")
@@ -261,6 +274,7 @@ EOF
   [[ $(awk -F '\t' '$1 == "status" { print $2 }' "$output_dir/run-aborted.tsv") == ABORTED ]] || fail "$signal_name pre-registration fixture missing aborted record"
   [[ $(awk -F '\t' '$1 == "signal" { print $2 }' "$output_dir/run-aborted.tsv") == "$signal_name" ]] || fail "$signal_name pre-registration signal record mismatch"
   [[ $(awk -F '\t' '$1 == "deferred_during_launch" { print $2 }' "$output_dir/run-aborted.tsv") == 1 ]] || fail "$signal_name was not deferred during launch"
+  [[ $(awk -F '\t' '$1 == "deferred_during_retirement" { print $2 }' "$output_dir/run-aborted.tsv") == 0 ]] || fail "$signal_name pre-registration signal was unexpectedly deferred during retirement"
   [[ $(awk -F '\t' '$1 == "process_group_cleanup" { print $2 }' "$output_dir/run-aborted.tsv") == complete ]] || fail "$signal_name pre-registration cleanup was not complete"
   [[ $(sed -n '1p' "$output_dir/run-status.txt") == ABORTED ]] || fail "$signal_name pre-registration run status is not ABORTED"
   before_digest=$(artifact_digest "$output_dir")
@@ -322,6 +336,82 @@ EOF
   [[ $before_digest == "$after_digest" ]] || fail "registered unexpected-exit artifacts changed after runner exit"
 }
 
+run_retirement_signal_case() {
+  local case_root="$fixture_root/retirement-signal"
+  local output_dir="$case_root/output"
+  local pid_file="$case_root/fake-pids.tsv"
+  local bash_env="$case_root/bash-env.sh"
+  local marker="$case_root/retirement-ready.txt"
+  local release="$case_root/retirement-release.txt"
+  local kill_log="$case_root/runner-kill.tsv"
+  local retired_pgid
+  local before_digest
+  local after_digest
+  local status
+  mkdir -- "$case_root"
+  : >"$pid_file"
+  : >"$kill_log"
+
+  cat >"$bash_env" <<'EOF'
+kill() {
+  local argument
+  printf 'kill' >>"${CAG_KILL_LOG:?}"
+  for argument in "$@"; do
+    printf '\t%s' "$argument" >>"${CAG_KILL_LOG:?}"
+  done
+  printf '\n' >>"${CAG_KILL_LOG:?}"
+  builtin kill "$@"
+}
+
+__cag_pause_before_shard_retirement() {
+  case ${BASH_COMMAND:-} in
+    'active_states[batch_offset]=retired')
+      trap - DEBUG
+      printf '%s\n' "${shard_pgid:?}" >"${CAG_RETIREMENT_MARKER:?}"
+      while [[ ! -f ${CAG_RETIREMENT_RELEASE:?} ]]; do
+        sleep 0.01
+      done
+      ;;
+  esac
+}
+trap '__cag_pause_before_shard_retirement' DEBUG
+EOF
+
+  set -m
+  env BASH_ENV="$bash_env" CAG_KILL_LOG="$kill_log" CAG_RETIREMENT_MARKER="$marker" CAG_RETIREMENT_RELEASE="$release" \
+    REAL_GO="$exact_go" FAKE_MODE=mixed FAKE_PID_FILE="$pid_file" CLOUD_AGENTS_GO="$fake_go" \
+    /bin/bash "$runner" run --output-dir "$output_dir" --shards 2 --jobs 2 --test-parallel 1 --timeout 5m \
+    >"$case_root/runner.stdout" 2>"$case_root/runner.stderr" &
+  runner_pid=$!
+  set +m
+  wait_for_lines "$marker" 1 || fail "retirement fixture did not reach the retirement window"
+  wait_for_lines "$pid_file" 1 || fail "retirement fixture slow worker did not start"
+  retired_pgid=$(sed -n '1p' "$marker")
+  [[ $retired_pgid =~ ^[1-9][0-9]*$ ]] || fail "retirement fixture recorded an invalid retired PGID"
+  : >"$kill_log"
+  kill -TERM "$runner_pid"
+  sleep 0.1
+  : >"$release"
+  set +e
+  wait "$runner_pid"
+  status=$?
+  set -e
+  runner_pid=""
+  [[ $status == 143 ]] || fail "retirement signal runner exit=$status expected=143"
+  if awk -F '\t' -v target="-$retired_pgid" '{ for (field = 2; field <= NF; field++) if ($field == target) found = 1 } END { exit found ? 0 : 1 }' "$kill_log"; then
+    fail "retirement signal cleanup touched the retired PGID"
+  fi
+  assert_processes_gone "$pid_file" "$output_dir" || fail "retirement signal left a worker or active process group alive"
+  [[ $(awk -F '\t' '$1 == "status" { print $2 }' "$output_dir/run-aborted.tsv") == ABORTED ]] || fail "retirement signal missing aborted record"
+  [[ $(awk -F '\t' '$1 == "deferred_during_launch" { print $2 }' "$output_dir/run-aborted.tsv") == 0 ]] || fail "retirement signal was unexpectedly deferred during launch"
+  [[ $(awk -F '\t' '$1 == "deferred_during_retirement" { print $2 }' "$output_dir/run-aborted.tsv") == 1 ]] || fail "retirement signal was not deferred during retirement"
+  [[ $(awk -F '\t' '$1 == "process_group_cleanup" { print $2 }' "$output_dir/run-aborted.tsv") == complete ]] || fail "retirement signal cleanup was not complete"
+  before_digest=$(artifact_digest "$output_dir")
+  sleep 0.5
+  after_digest=$(artifact_digest "$output_dir")
+  [[ $before_digest == "$after_digest" ]] || fail "retirement signal artifacts changed after runner exit"
+}
+
 run_result_case() {
   local fake_mode=$1
   local expected_exit=$2
@@ -355,5 +445,6 @@ run_signal_case INT 130
 run_pre_registration_signal_case TERM 143
 run_pre_registration_signal_case INT 130
 run_registered_unexpected_exit_case
+run_retirement_signal_case
 
 echo "Migration shard runner fixture: PASS"

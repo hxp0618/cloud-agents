@@ -181,13 +181,16 @@ temporary_dir=""
 active_pids=()
 active_pgids=()
 active_shards=()
+active_states=()
 work_dir=""
 validator_binary=""
 run_in_progress=0
 launch_in_progress=0
+retirement_in_progress=0
 pending_signal_exit_code=""
 pending_signal_name=""
 signal_deferred_during_launch=0
+signal_deferred_during_retirement=0
 
 cleanup_plan() {
   if [[ -n $temporary_dir && -d $temporary_dir ]]; then
@@ -216,16 +219,32 @@ process_group_alive() {
   kill -0 -- "-$pgid" 2>/dev/null
 }
 
+wrapper_owns_process_group() {
+  local pid=$1
+  local pgid=$2
+  local observed_pgid
+  observed_pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
+  [[ $pid == "$pgid" && $observed_pgid == "$pgid" ]]
+}
+
 terminate_active_process_groups() {
   local index
   local attempt
   local remaining
   local cleanup_failed=0
+  local -a escalated
+
+  escalated=()
 
   index=0
   while ((index < ${#active_pgids[@]})); do
-    if process_group_alive "${active_pgids[$index]}"; then
-      kill -TERM -- "-${active_pgids[$index]}" 2>/dev/null || true
+    escalated[index]=0
+    if [[ ${active_states[$index]:-retired} == active ]] && process_group_alive "${active_pgids[$index]}"; then
+      if wrapper_owns_process_group "${active_pids[$index]}" "${active_pgids[$index]}"; then
+        kill -TERM -- "-${active_pgids[$index]}" 2>/dev/null || true
+      else
+        cleanup_failed=1
+      fi
     fi
     index=$((index + 1))
   done
@@ -235,7 +254,15 @@ terminate_active_process_groups() {
     remaining=0
     index=0
     while ((index < ${#active_pgids[@]})); do
-      if process_group_alive "${active_pgids[$index]}"; then
+      if [[ ${active_states[$index]:-retired} == active ]] && process_group_alive "${active_pgids[$index]}"; then
+        if [[ ${escalated[$index]:-0} == 0 && -f $work_dir/${active_shards[$index]}/wrapper-complete.tsv ]]; then
+          if wrapper_owns_process_group "${active_pids[$index]}" "${active_pgids[$index]}"; then
+            kill -KILL -- "-${active_pgids[$index]}" 2>/dev/null || true
+            escalated[index]=1
+          else
+            cleanup_failed=1
+          fi
+        fi
         remaining=1
       fi
       index=$((index + 1))
@@ -247,15 +274,22 @@ terminate_active_process_groups() {
 
   index=0
   while ((index < ${#active_pgids[@]})); do
-    if process_group_alive "${active_pgids[$index]}"; then
-      kill -KILL -- "-${active_pgids[$index]}" 2>/dev/null || true
+    if [[ ${active_states[$index]:-retired} == active ]] && process_group_alive "${active_pgids[$index]}"; then
+      if wrapper_owns_process_group "${active_pids[$index]}" "${active_pgids[$index]}"; then
+        kill -KILL -- "-${active_pgids[$index]}" 2>/dev/null || true
+        escalated[index]=1
+      else
+        cleanup_failed=1
+      fi
     fi
     index=$((index + 1))
   done
 
   index=0
   while ((index < ${#active_pids[@]})); do
-    wait "${active_pids[$index]}" 2>/dev/null || true
+    if [[ ${active_states[$index]:-retired} == active ]]; then
+      wait "${active_pids[$index]}" 2>/dev/null || true
+    fi
     index=$((index + 1))
   done
 
@@ -264,7 +298,7 @@ terminate_active_process_groups() {
     remaining=0
     index=0
     while ((index < ${#active_pgids[@]})); do
-      if process_group_alive "${active_pgids[$index]}"; then
+      if [[ ${active_states[$index]:-retired} == active ]] && process_group_alive "${active_pgids[$index]}"; then
         remaining=1
       fi
       index=$((index + 1))
@@ -276,14 +310,16 @@ terminate_active_process_groups() {
 
   index=0
   while ((index < ${#active_pgids[@]})); do
-    if process_group_alive "${active_pgids[$index]}"; then
+    if [[ ${active_states[$index]:-retired} == active ]] && process_group_alive "${active_pgids[$index]}"; then
       cleanup_failed=1
     fi
+    active_states[index]=retired
     index=$((index + 1))
   done
   active_pids=()
   active_pgids=()
   active_shards=()
+  active_states=()
   return "$cleanup_failed"
 }
 
@@ -317,6 +353,7 @@ abort_run_for_signal() {
       printf 'signal\t%s\n' "$signal_name"
       printf 'exit_code\t%s\n' "$exit_code"
       printf 'deferred_during_launch\t%s\n' "$signal_deferred_during_launch"
+      printf 'deferred_during_retirement\t%s\n' "$signal_deferred_during_retirement"
       printf 'process_group_cleanup\t%s\n' "$cleanup_status"
       printf 'recorded_at_utc\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } >"$work_dir/run-aborted.tsv"
@@ -330,11 +367,16 @@ on_signal() {
   local exit_code=$1
   local signal_name=$2
 
-  if ((launch_in_progress == 1)); then
+  if ((launch_in_progress == 1 || retirement_in_progress == 1)); then
     if [[ -z $pending_signal_name ]]; then
       pending_signal_exit_code=$exit_code
       pending_signal_name=$signal_name
-      signal_deferred_during_launch=1
+      if ((launch_in_progress == 1)); then
+        signal_deferred_during_launch=1
+      fi
+      if ((retirement_in_progress == 1)); then
+        signal_deferred_during_retirement=1
+      fi
     fi
     return 0
   fi
@@ -511,6 +553,7 @@ fi
 run_shard() {
   local index=$1
   local start_gate=$2
+  local retire_gate=$3
   local name
   local dir
   local regex_value
@@ -524,6 +567,7 @@ run_shard() {
   while [[ ! -f $start_gate ]]; do
     sleep 0.05
   done
+  trap ':' INT TERM
   regex_value=$(sed -n '1p' "$dir/regex.txt")
   started_epoch=$(date +%s)
   date -u '+%Y-%m-%dT%H:%M:%SZ' >"$dir/started-at.txt"
@@ -546,6 +590,14 @@ run_shard() {
   sha256_file "$dir/go-test.jsonl" >"$dir/go-test-jsonl.sha256"
   sha256_file "$dir/go-test.stderr" >"$dir/go-test-stderr.sha256"
   echo "MIGRATION_SHARD shard=$name status=$status elapsed_seconds=$((finished_epoch - started_epoch))"
+  {
+    printf 'key\tvalue\n'
+    printf 'status\t%s\n' "$status"
+  } >"$dir/wrapper-complete.tsv"
+  while [[ ! -f $retire_gate ]]; do
+    sleep 0.05
+  done
+  trap - INT TERM
   return "$status"
 }
 
@@ -557,20 +609,23 @@ while ((batch_start < shard_count)); do
   active_pids=()
   active_pgids=()
   active_shards=()
+  active_states=()
   batch_offset=0
   while ((batch_offset < job_count && batch_start + batch_offset < shard_count)); do
     shard_index=$((batch_start + batch_offset))
     printf -v shard_name 'shard-%02d' "$shard_index"
     shard_dir="$work_dir/$shard_name"
     start_gate="$shard_dir/start-authorized.txt"
+    retire_gate="$shard_dir/retire-authorized.txt"
     launch_in_progress=1
     set -m
-    run_shard "$shard_index" "$start_gate" &
+    run_shard "$shard_index" "$start_gate" "$retire_gate" &
     shard_pid=$!
     set +m
     active_pids+=("$shard_pid")
     active_pgids+=("$shard_pid")
     active_shards+=("$shard_name")
+    active_states+=(active)
     observed_pgid=$(ps -o pgid= -p "$shard_pid" 2>/dev/null | tr -d '[:space:]' || true)
     if [[ ! $observed_pgid =~ ^[1-9][0-9]*$ || $observed_pgid != "$shard_pid" ]]; then
       kill -TERM "$shard_pid" 2>/dev/null || true
@@ -593,13 +648,55 @@ while ((batch_start < shard_count)); do
   batch_offset=0
   batch_has_residue=0
   while ((batch_offset < ${#active_pids[@]})); do
-    if ! wait "${active_pids[$batch_offset]}"; then
+    shard_pid=${active_pids[$batch_offset]}
+    shard_pgid=${active_pgids[$batch_offset]}
+    shard_name=${active_shards[$batch_offset]}
+    shard_dir="$work_dir/$shard_name"
+    wrapper_completed=1
+    while [[ ! -f $shard_dir/wrapper-complete.tsv ]]; do
+      if ! wrapper_owns_process_group "$shard_pid" "$shard_pgid"; then
+        wrapper_completed=0
+        break
+      fi
+      sleep 0.05
+    done
+
+    retirement_in_progress=1
+    if ((wrapper_completed == 1)) && wrapper_owns_process_group "$shard_pid" "$shard_pgid"; then
+      : >"$shard_dir/retire-authorized.txt"
+    else
+      wrapper_completed=0
+    fi
+    if wait "$shard_pid"; then
+      wrapper_status=0
+    else
+      wrapper_status=$?
+    fi
+    while wrapper_owns_process_group "$shard_pid" "$shard_pgid"; do
+      if wait "$shard_pid"; then
+        wrapper_status=0
+      else
+        wrapper_status=$?
+      fi
+      if ((wrapper_status == 127)); then
+        break
+      fi
+    done
+    if ((wrapper_completed == 0 || wrapper_status != 0)); then
       run_failed=1
     fi
-    if process_group_alive "${active_pgids[$batch_offset]}"; then
-      echo "process group remained alive after ${active_shards[$batch_offset]} wrapper exit" >&2
+    if process_group_alive "$shard_pgid"; then
+      echo "process group remained alive after $shard_name wrapper retirement" >&2
       run_failed=1
       batch_has_residue=1
+    fi
+    active_states[batch_offset]=retired
+    active_pids[batch_offset]=""
+    active_pgids[batch_offset]=""
+    active_shards[batch_offset]=""
+    retirement_in_progress=0
+    consume_pending_signal
+    if ((batch_has_residue == 1)); then
       break
     fi
     batch_offset=$((batch_offset + 1))
@@ -610,6 +707,7 @@ while ((batch_start < shard_count)); do
   active_pids=()
   active_pgids=()
   active_shards=()
+  active_states=()
   batch_start=$((batch_start + job_count))
 done
 date -u '+%Y-%m-%dT%H:%M:%SZ' >"$work_dir/run-finished-at.txt"
