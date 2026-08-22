@@ -97,6 +97,83 @@ func TestRunnerLedgerEntryExecutionAdmissionAcceptsExactlyFourGeneratedPairs(t *
 	}
 }
 
+func TestRunnerLedgerEntryExecutionAdmissionUseRetirementIsExactAndOneShot(t *testing.T) {
+	fixture := newRunnerLedgerEntryExecutionAdmissionFixture(
+		t, runnerLedgerPreflightEmptyBrandNew, RecoveryBrandNew, RecoveryBeginFirstAttempt,
+	)
+	defer fixture.close(t)
+	permit, err := fixture.prepare(context.Background())
+	if err != nil || !validRunnerLedgerEntryExecutionPermit(permit) {
+		t.Fatalf("permit=%+v err=%v", permit, err)
+	}
+	use, binder := permit.use, permit.evidenceBinder
+	subject, boundary := permit.consumerFactSubject, permit.evidenceBoundary
+	if err := closeRunnerLedgerEntryExecutionPermit(permit, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !validRunnerLedgerEntryExecutionAdmissionUse(binder, use, subject, boundary, true) {
+		t.Fatal("closed permit did not retain its exact consumed use")
+	}
+
+	wrongSubject := testDigest("runner-ledger-entry-use-wrong-subject")
+	wrongBoundary := boundary
+	wrongBoundary[0] ^= 1
+	if retireRunnerLedgerEntryExecutionAdmissionUse(binder, use, wrongSubject, boundary) ||
+		retireRunnerLedgerEntryExecutionAdmissionUse(binder, use, subject, wrongBoundary) ||
+		retireRunnerLedgerEntryExecutionAdmissionUse(nil, use, subject, boundary) ||
+		!validRunnerLedgerEntryExecutionAdmissionUse(binder, use, subject, boundary, true) {
+		t.Fatal("inexact retirement changed the live use record")
+	}
+	if !retireRunnerLedgerEntryExecutionAdmissionUse(binder, use, subject, boundary) {
+		t.Fatal("exact consumed use did not retire")
+	}
+	if _, live := runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder.Load(binder); live ||
+		retireRunnerLedgerEntryExecutionAdmissionUse(binder, use, subject, boundary) {
+		t.Fatal("retired use remained live or retired twice")
+	}
+	use.mu.Lock()
+	retired, consumed := use.retired, use.consumed
+	use.mu.Unlock()
+	if !retired || !consumed {
+		t.Fatalf("retired=%v consumed=%v", retired, consumed)
+	}
+}
+
+func TestRunnerLedgerEntryExecutionAdmissionUseRetirementFailsClosedOnRegistryReplacement(t *testing.T) {
+	fixture := newRunnerLedgerEntryExecutionAdmissionFixture(
+		t, runnerLedgerPreflightEmptyBrandNew, RecoveryBrandNew, RecoveryBeginFirstAttempt,
+	)
+	defer fixture.close(t)
+	permit, err := fixture.prepare(context.Background())
+	if err != nil || !validRunnerLedgerEntryExecutionPermit(permit) {
+		t.Fatalf("permit=%+v err=%v", permit, err)
+	}
+	use, binder := permit.use, permit.evidenceBinder
+	subject, boundary := permit.consumerFactSubject, permit.evidenceBoundary
+	if err := closeRunnerLedgerEntryExecutionPermit(permit, nil); err != nil {
+		t.Fatal(err)
+	}
+	foreign := &runnerLedgerEntryExecutionAdmissionUseRecord{
+		factSubject: subject,
+		consumed:    true,
+		boundary:    boundary,
+	}
+	runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder.Store(binder, foreign)
+	if retireRunnerLedgerEntryExecutionAdmissionUse(binder, use, subject, boundary) {
+		t.Fatal("registry replacement was retired as the expected use")
+	}
+	registered, live := runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder.Load(binder)
+	if !live || registered != foreign {
+		t.Fatalf("replacement registry changed: live=%v record=%T", live, registered)
+	}
+	use.mu.Lock()
+	retired := use.retired
+	use.mu.Unlock()
+	if !retired {
+		t.Fatal("displaced expected use was not revoked fail closed")
+	}
+}
+
 func TestRunnerLedgerEntryExecutionAdmissionRejectsRetryAfterCompleteReadOnlyClassification(t *testing.T) {
 	fixture := newRunnerLedgerEntryExecutionAdmissionFixture(
 		t, runnerLedgerPreflightEmptyBrandNew, RecoveryBrandNewInherited, RecoveryBeginNextAttempt,
@@ -534,8 +611,9 @@ func TestRunnerLedgerEntryExecutionAdmissionAuthorityHasOnlyReviewedProductionCo
 			"revokeRunnerLedgerEntryExecutionAdmissionClaims":             true,
 		},
 		"runner_ledger_consumer_service.go": {
-			"prepareRunnerLedgerEntryExecutionAdmission": true,
-			"closeRunnerLedgerEntryExecutionPermit":      true,
+			"prepareRunnerLedgerEntryExecutionAdmission":   true,
+			"closeRunnerLedgerEntryExecutionPermit":        true,
+			"retireRunnerLedgerEntryExecutionAdmissionUse": true,
 		},
 		"runner_ledger_entry_success_kernel.go": {
 			"runnerLedgerEntryExecutionAdmissionUseRecord":   true,
@@ -562,6 +640,7 @@ func TestRunnerLedgerEntryExecutionAdmissionAuthorityHasOnlyReviewedProductionCo
 		"bindRunnerLedgerEntryExecutionAdmissionClaimFromEvidence":    true,
 		"consumeRunnerLedgerEntryExecutionAdmissionClaimFromEvidence": true,
 		"validRunnerLedgerEntryExecutionAdmissionUse":                 true,
+		"retireRunnerLedgerEntryExecutionAdmissionUse":                true,
 		"revokeRunnerLedgerEntryExecutionAdmissionClaims":             true,
 		"prepareRunnerLedgerEntryExecutionAdmission":                  true,
 		"bindRunnerLedgerEntryExecutionPermit":                        true,

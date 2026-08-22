@@ -70,17 +70,17 @@ type databaseState struct {
 	catalog CatalogProjection
 }
 
-// Run is the public production gate. It admits one evidence session, proves the
-// connected-session, migration-role, and migration-transaction authority
-// projections on the same dedicated database connection, and executes the
-// closed single-entry/single-statement path. Every state transition consumes
-// the preceding sealed authority: StatementIntent durability precedes SQL,
-// final Intermediate durability precedes the ledger row, CommitIntent
-// durability precedes Commit, and a committed terminal plus checkpoint precede
-// success. A wider verified bundle may enter only the read-only generated
-// ledger consumer: an already-complete ledger returns a no-op result, while
-// every entry or recovery action remains not implemented and performs no
-// writer or evidence mutation.
+// Run is the public production gate. It admits one evidence session and proves
+// every connected-session, migration-role, and migration-transaction authority
+// projection on its dedicated database connection. The historical exact
+// single-entry path remains closed over its original authority chain. A wider
+// verified bundle enters the generated ledger consumer: an already-complete
+// ledger returns the reviewed no-op result, while each of the four generated
+// first-attempt pairs may consume one fresh execution admission and the
+// reviewed success kernel before the loop re-enters fresh preflight. Every
+// intent, intermediate, commit intent, committed terminal, and checkpoint
+// remains ordered; retry, abort, reconciliation, failure, and unsupported entry
+// pairs remain NOT_IMPLEMENTED.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err

@@ -91,13 +91,16 @@ type runnerLedgerEntryExecutionAdmissionUseRecord struct {
 	factSubject Digest
 	consumed    bool
 	boundary    [32]byte
+	retired     bool
 }
 
 var (
 	runnerLedgerEntryExecutionAdmissionClaimRegistry sync.Map
 	// The terminal use record survives claim failure, permit close, and a
-	// rejected retry selection. Only evidence-session close removes it, so an
-	// earlier ordinary consumer fact can never drive a second admission attempt.
+	// rejected retry selection. Evidence-session close always removes it. Slice
+	// D may also retire the exact consumed record, but only after the reviewed
+	// success kernel returns a durable committed outcome; that retirement is the
+	// sole path that permits a fresh next-entry admission on the same binder.
 	runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder sync.Map
 )
 
@@ -201,7 +204,7 @@ func (record *runnerLedgerEntryExecutionAdmissionUseRecord) claimMatches(subject
 	}
 	record.mu.Lock()
 	defer record.mu.Unlock()
-	return !record.consumed && record.boundary == ([32]byte{}) && record.factSubject == subject
+	return !record.consumed && !record.retired && record.boundary == ([32]byte{}) && record.factSubject == subject
 }
 
 func (record *runnerLedgerEntryExecutionAdmissionUseRecord) consumeBoundary(subject Digest, boundary [32]byte) bool {
@@ -210,7 +213,7 @@ func (record *runnerLedgerEntryExecutionAdmissionUseRecord) consumeBoundary(subj
 	}
 	record.mu.Lock()
 	defer record.mu.Unlock()
-	if record.consumed || record.boundary != ([32]byte{}) || record.factSubject != subject {
+	if record.consumed || record.retired || record.boundary != ([32]byte{}) || record.factSubject != subject {
 		return false
 	}
 	record.consumed = true
@@ -229,7 +232,26 @@ func validRunnerLedgerEntryExecutionAdmissionUse(binder runnerLedgerEntryExecuti
 	}
 	record.mu.Lock()
 	defer record.mu.Unlock()
-	return record.factSubject == subject && record.consumed == consumed && record.boundary == boundary
+	return record.factSubject == subject && record.consumed == consumed && !record.retired && record.boundary == boundary
+}
+
+func retireRunnerLedgerEntryExecutionAdmissionUse(
+	binder runnerLedgerEntryExecutionAdmissionClaimBinder,
+	expected *runnerLedgerEntryExecutionAdmissionUseRecord,
+	subject Digest,
+	boundary [32]byte,
+) bool {
+	if binder == nil || expected == nil || subject.Validate() != nil || boundary == ([32]byte{}) {
+		return false
+	}
+	expected.mu.Lock()
+	if expected.factSubject != subject || !expected.consumed || expected.retired || expected.boundary != boundary {
+		expected.mu.Unlock()
+		return false
+	}
+	expected.retired = true
+	expected.mu.Unlock()
+	return runnerLedgerEntryExecutionAdmissionUseByEvidenceBinder.CompareAndDelete(binder, expected)
 }
 
 func validRunnerLedgerEntryExecutionAdmissionEvidenceFacts(facts runnerLedgerEntryExecutionAdmissionEvidenceFacts, candidateBinding *verifiedEvidenceRunBinding) bool {

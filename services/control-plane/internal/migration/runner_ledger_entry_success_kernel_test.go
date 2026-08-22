@@ -1443,7 +1443,7 @@ func runnerLedgerEntrySuccessStateRecordsForTest(
 	return primary, cleanup
 }
 
-func TestRunnerLedgerEntrySuccessProductionGraphIsDisconnectedAndSuccessOnly(t *testing.T) {
+func TestRunnerLedgerEntrySuccessProductionGraphHasOnlyReviewedTypedCallerAndSuccessPath(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -1469,6 +1469,7 @@ func TestRunnerLedgerEntrySuccessProductionGraphIsDisconnectedAndSuccessOnly(t *
 		"writeAbortedTerminal":          true,
 		"writeAmbiguousResolution":      true,
 	}
+	successCallers := make([]string, 0, 1)
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
@@ -1499,13 +1500,19 @@ func TestRunnerLedgerEntrySuccessProductionGraphIsDisconnectedAndSuccessOnly(t *
 				called = function.Sel.Name
 			}
 			if called == "executeRunnerLedgerEntrySuccess" {
-				t.Fatalf("%s connected the Slice C kernel to a production caller", name)
+				if name != "runner_ledger_consumer_service.go" {
+					t.Fatalf("%s connected an unreviewed success-kernel caller", name)
+				}
+				successCallers = append(successCallers, name)
 			}
 			if newFiles[name] && forbiddenCalls[called] {
 				t.Fatalf("%s acquired non-success writer call edge %s", name, called)
 			}
 			return true
 		})
+	}
+	if len(successCallers) != 1 {
+		t.Fatalf("success-kernel callers=%v want=[runner_ledger_consumer_service.go]", successCallers)
 	}
 	permitType := reflect.TypeOf(runnerLedgerEntryExecutionPermit{})
 	for index := 0; index < permitType.NumMethod(); index++ {
