@@ -297,7 +297,14 @@ Platform RC、Beta 或 GA。
 - [`current-source-migration-shard-closure-20260822.md`](current-source-migration-shard-closure-20260822.md)：
   固定 source `7f14c7f` 新增确定性 mutually-exclusive/exhaustive shard runner，并把当前 700 个顶层 migration
   tests 在一次 run 中按 8 片完整执行；normal 结果为 `695 pass + 5 explicit external-PG skip`、零 fail、wall
-  `550s`。该记录仍待独立复核，不构成 full race、live PostgreSQL、外部副作用或任何 Gate closure
+  `550s`。后续独立复核确认这些 artifact 事实，但对可复用 runner 返回 `BLOCK, P0=0/P1=2/P2=0`：信号只终止
+  wrapper，且 PASS 前未自行闭合 JSON run-set；该记录保留为历史 local-run evidence，不构成 approved runner、full
+  race、live PostgreSQL、外部副作用或任何 Gate closure
+- [`migration-shard-runner-closure-repair-20260822.md`](migration-shard-runner-closure-repair-20260822.md)：
+  固定 implementation `60f13f7` 以独立 process group/TERM→KILL/no-descendant closure、ABORTED status 和 strict
+  Go JSON validator 修复上述两个 P1；Bash 3.2 fake two-test signal/result fixture、focused normal/race/vet、exact
+  ShellCheck、plan same-bits 与旧 700-test artifacts 的 read-only parse 均通过。按 no-repeat policy 未重跑 full
+  migration；当前仍待 fixed-candidate independent rereview，所有 Gate 保持 OPEN
 
 ## Data kernel decisions
 
