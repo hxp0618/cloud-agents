@@ -1,11 +1,13 @@
 # Runner ledger recovery commit-reconciliation service matrix — 2026-08-23
 
-- Status: `SLICE_D_FIXED_IMPLEMENTATION_PENDING_INDEPENDENT_REVIEW`
+- Status: `SLICE_D_SUPERSEDING_FIXED_IMPLEMENTATION_PENDING_INDEPENDENT_REVIEW`
 - Approved Slice C candidate: `6fd2873497765336d872dfaa53cd4e12541c5c26`
 - Slice C independent review: `be597debb7b3edfb68616dff5ae648284c796ab7` — `APPROVE, P0=0/P1=0/P2=0`
-- Slice D code commit: `7214a5c6c42d68f577abf1ea3f0f4839b0d2e112`
-- Slice D code tree: `70c8db60064ca5a39ec2c63137ed1a28340eb908`
-- Slice D control-plane subtree: `5c2000cdc6a6838b8cfa2dfeeef4475e482c9790`
+- Superseded Slice D candidate: `d57f511215eb34e2061e1d02326824723ce999d7` — independent review
+  `BLOCK, P0=0/P1=1/P2=0` because registry tamper could lose the original retained database session
+- Slice D code commit: `93bb9c93746de9fac063892f6eb6fc2430a4167b`
+- Slice D code tree: `a1baca20603e86b78ede3765f43962b18ef8c8b5`
+- Slice D control-plane subtree: `0677a40dd7fd90412653f6cf10adfdfca1bab666`
 - Slice D branch: `codex/cloud-agents-p1-runner-recovery-commit-reconciliation-20260823`
 - Decision: [`D-047 / ADR-0023`](runner-ledger-recovery-contract-decision-20260822.md)
 - Gate effect: none; every immutable and aggregate Gate remains open
@@ -74,7 +76,9 @@ reservation/activation, HTTP, P2, or provider edge exists in the Slice D kernels
 - Valid shorter or longer signed prefixes are classified divergent; a malformed signed ledger is not downgraded to a
   reconciliation result.
 - Context, read, projection, role, session-idle, advisory-lock, reset, unlock, or close uncertainty dominates and mints
-  no writer. The exact registered database session is still closed when the live admission wrapper or binder drifts.
+  no writer. A cleanup-only quorum over the live core, its independently bound handle, and the registry record closes
+  only the original database session when the wrapper/binder drifts or the registry is missing, has a foreign session,
+  or carries a changed advisory-lock key; foreign handles remain untouched.
 - A zero-valued append error with the old cursor still valid retains its stable pre-mutation error class. Any non-empty
   append result metadata, invalidated old cursor, unknown outcome, durable-result contradiction, or post-append
   snapshot drift returns `MIGRATION_EVIDENCE_RECOVERY_REQUIRED` and revokes the relevant cursor authority.
@@ -92,6 +96,9 @@ The fixed code commit was checked with Node `24.13.1`, Bun `1.3.14`, and Go/gofm
   and AST writer boundaries: PASS in `156.977s`;
 - after the final admission-claim cleanup hardening, the exact six-row writer matrix passed in `18.329s` and the exact
   registered-session wrapper/binder drift cleanup test passed in `6.525s`;
+- after the independent-review registry-cleanup finding, the exact profile-2/profile-3 wrapper/binder and
+  registry-missing/foreign-session/key-drift cleanup regressions passed in `23.236s`; each original session was
+  unlocked and closed exactly once, every foreign session remained untouched, and consumed permits could not revive;
 - a narrower race command covering the six rows, short-prefix divergence, final barriers, one-shot permits, and
   registered-session cleanup reached its explicit `10m` timeout in `601.207s` while executing the barrier matrix:
   **NOT PASS**; it emitted no failed assertion before the bounded stop and is not claimed as race evidence;
@@ -99,7 +106,7 @@ The fixed code commit was checked with Node `24.13.1`, Bun `1.3.14`, and Go/gofm
 - recovery registry generator and recovery Go generator: current;
 - generation-lock writer/checker: current;
 - changed Go files: `gofmt` clean; `git diff --check`: PASS;
-- code-commit Gitleaks scan: PASS, one commit and approximately `177.05 KB` scanned.
+- fixed-candidate Gitleaks scan: PASS, four implementation/record commits and approximately `195.06 KB` scanned.
 
 The generation lock SHA-256 is
 `ba6eb1409a882c670e49fa08090c7bd8d149db6df0bf277e3c6d505c0f1a9340`. Its only lock change from Slice C is the
@@ -111,8 +118,8 @@ remain unchanged.
 Key implementation SHA-256 values:
 
 - observation: `34469339b210b53ed80407e8f6ef2d6e73ca7c40dae572dd9bdaae1806640765`;
-- writer kernel: `3df1bd51cffd966ae9d2b721bc3a5f9da2fdbc0f197ff340c281041211ff475b`;
-- writer matrix: `6d5d7e2e64141a95cff26f8c6d95501a9f1a6a2e9cc61cf72456cb277190a6ef`;
+- writer kernel: `74509d446fc3811da31f5d9cade952bc44993f21c9f9a39f8b095d4dbbe244ff`;
+- writer matrix: `96769ded56db965ecc1c28ae13593973ee060cccfc72d1d603dc03707a132831`;
 - catalog preflight: `075802ce629b2726a6e4e7950b05551eef39a9ee470d7f01994d56110ac69b62`;
 - recovery admission routing: `93182b3d192455ac561cbc86100755c901672124d38cf3ca81b1deafd93fcaad`.
 
