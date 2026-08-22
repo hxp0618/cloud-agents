@@ -108,6 +108,14 @@ if ((is_test == 1 && is_json == 1)); then
         wait "$worker"
       fi
       ;;
+    residue)
+      sleep 300 &
+      worker=$!
+      printf '%s\t%s\n' "$$" "$worker" >>"${FAKE_PID_FILE:?}"
+      printf '{"Time":"2026-08-22T00:00:01Z","Action":"run","Package":"%s","Test":"%s"}\n' "$package" "$test_name"
+      printf '{"Time":"2026-08-22T00:00:02Z","Action":"pass","Package":"%s","Test":"%s","Elapsed":0.001}\n' "$package" "$test_name"
+      printf '{"Time":"2026-08-22T00:00:03Z","Action":"pass","Package":"%s","Elapsed":0.001}\n' "$package"
+      ;;
     *) exit 18 ;;
   esac
   exit 0
@@ -438,6 +446,37 @@ run_result_case() {
   fi
 }
 
+run_process_group_residue_case() {
+  local case_root="$fixture_root/process-group-residue"
+  local output_dir="$case_root/output"
+  local pid_file="$case_root/fake-pids.tsv"
+  local before_digest
+  local after_digest
+  local status
+  mkdir -- "$case_root"
+  : >"$pid_file"
+
+  env REAL_GO="$exact_go" FAKE_MODE=residue FAKE_PID_FILE="$pid_file" CLOUD_AGENTS_GO="$fake_go" \
+    /bin/bash "$runner" run --output-dir "$output_dir" --shards 2 --jobs 2 --test-parallel 1 --timeout 1m \
+    >"$case_root/runner.stdout" 2>"$case_root/runner.stderr" &
+  runner_pid=$!
+  set +e
+  wait "$runner_pid"
+  status=$?
+  set -e
+  runner_pid=""
+
+  [[ $status == 1 ]] || fail "process-group residue runner exit=$status expected=1"
+  [[ $(sed -n '1p' "$output_dir/run-status.txt") == FAIL ]] || fail "process-group residue run status mismatch"
+  grep -Fq 'process group contains an unexpected member before shard-' "$case_root/runner.stderr" || fail "process-group residue was not diagnosed"
+  assert_processes_gone "$pid_file" "$output_dir" || fail "process-group residue left a worker or process group alive"
+  [[ ! -f $output_dir/run-status.txt || $(sed -n '1p' "$output_dir/run-status.txt") != PASS ]] || fail "process-group residue published PASS"
+  before_digest=$(artifact_digest "$output_dir")
+  sleep 0.5
+  after_digest=$(artifact_digest "$output_dir")
+  [[ $before_digest == "$after_digest" ]] || fail "process-group residue artifacts changed after runner exit"
+}
+
 run_result_case valid 0 PASS
 run_result_case missing 1 FAIL
 run_signal_case TERM 143
@@ -446,5 +485,6 @@ run_pre_registration_signal_case TERM 143
 run_pre_registration_signal_case INT 130
 run_registered_unexpected_exit_case
 run_retirement_signal_case
+run_process_group_residue_case
 
 echo "Migration shard runner fixture: PASS"

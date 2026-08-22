@@ -227,6 +227,23 @@ wrapper_owns_process_group() {
   [[ $pid == "$pgid" && $observed_pgid == "$pgid" ]]
 }
 
+process_group_contains_only_wrapper() {
+  local pid=$1
+  local pgid=$2
+  LC_ALL=C ps -axo pid=,pgid= 2>/dev/null |
+    LC_ALL=C awk -v expected_pid="$pid" -v expected_pgid="$pgid" '
+      $2 == expected_pgid {
+        count++
+        if ($1 != expected_pid) {
+          unexpected = 1
+        }
+      }
+      END {
+        exit (count == 1 && unexpected == 0) ? 0 : 1
+      }
+    '
+}
+
 terminate_active_process_groups() {
   local index
   local attempt
@@ -660,6 +677,15 @@ while ((batch_start < shard_count)); do
       fi
       sleep 0.05
     done
+
+    if ((wrapper_completed == 1)) && wrapper_owns_process_group "$shard_pid" "$shard_pgid"; then
+      if ! process_group_contains_only_wrapper "$shard_pid" "$shard_pgid"; then
+        echo "process group contains an unexpected member before $shard_name wrapper retirement" >&2
+        run_failed=1
+        batch_has_residue=1
+        break
+      fi
+    fi
 
     retirement_in_progress=1
     if ((wrapper_completed == 1)) && wrapper_owns_process_group "$shard_pid" "$shard_pgid"; then
