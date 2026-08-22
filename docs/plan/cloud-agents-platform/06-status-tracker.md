@@ -436,10 +436,11 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       被判 `BLOCK, P0=0/P1=2/P2=0`；历史 record 保留，不外推到 approved runner、full race、live PostgreSQL、外部
       副作用或 Gate closure。
 - [x] [migration shard runner closure repair](../p1/migration-shard-runner-closure-repair-20260822.md) 已在
-      implementation `60f13f7` 增加独立 process group、TERM→KILL/no-descendant signal closure、ABORTED status 和严格
-      Go JSON validator；Bash 3.2 two-test fixture、focused normal/race/vet、exact ShellCheck、plan same-bits 与旧 700
-      项 artifact 的 read-only parse 已通过。按 no-repeat policy 未重跑 full migration，fixed-candidate independent
-      rereview 仍 pending，所有 Gate 保持 OPEN。
+      implementation `0e2c889` 增加独立 process group、TERM→KILL/no-descendant signal closure、
+      launch-before-registration signal deferral、ABORTED status 和严格 Go JSON validator；Bash 3.2 two-test
+      result/post-registration/pre-registration signal fixture、focused normal/race/vet、exact ShellCheck、plan
+      same-bits 与旧 700 项 artifact 的 read-only parse 已通过。按 no-repeat policy 未重跑 full migration，新
+      fixed-candidate independent rereview 仍 pending，所有 Gate 保持 OPEN。
 - [x] Runner/CLI configuration、pre-DB dedicated-session ledger/catalog projection 与 same-verifier one-shot
       claim/no-op dispatch 已完成 bounded independent review；其后 ADR-0022/D-046 又为四个 first-attempt pair 的
       `Runner.Run` typed caller 建立独立 generated authority、fresh session boundary 与固定 independent review，普通

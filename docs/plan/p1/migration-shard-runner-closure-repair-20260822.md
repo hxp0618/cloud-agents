@@ -1,11 +1,12 @@
 # P1 migration shard runner closure repair — 2026-08-22
 
 - Status: **IMPLEMENTATION FIXED; HISTORICAL RUN REVALIDATED; INDEPENDENT REREVIEW PENDING; GATES OPEN**
-- Implementation source: `60f13f7d0dbc8b67b56af3f2398ca4f4a8c48c5d`
-- Source tree: `80d57e5a01bfd38b904b3c5212b8ffa4be0a8fec`
-- Control-plane subtree: `ca7f4acb06f93d6505ccef8ec22adbdda95d7115`
+- Implementation source: `0e2c889da576d57ed41e08050fab823a7d78de4c`
+- Source tree: `725923b5f7eac9b672d5b6a890c3a2afdc77e857`
+- Control-plane subtree: `d983e0ae80b2e69df86368fb6ce7e799b67a6ad8`
 - Branch: `codex/cloud-agents-p1-migration-shard-runner-repair-20260822`
 - Superseded runner candidate: `e18a1ee228e2465a805654dbbc01a3af618ca8b5`
+- Superseded repair candidate: `668ee1d1efaff2d81994cd1a4230a89aca2490db`
 - Independent reviewer: **pending fixed-candidate rereview**
 - Gate effect: **none**
 
@@ -29,7 +30,10 @@ file hashes. Independent review reconfirmed those artifact facts but rejected th
 2. the runner trusted process exit codes and never strictly parsed `go-test.jsonl` before printing
    PASS; it therefore did not itself prove that every planned top-level test had exactly one `run`
    and one `pass`/`skip`, that no unexpected/failing test existed, or that every shard had exactly
-   one package pass.
+   one package pass; and
+3. the first repair launched a wrapper process group before registering its PID/PGID in the cleanup
+   arrays. An `INT` or `TERM` in that interval could make the parent publish ABORTED and exit while
+   the unregistered wrapper remained blocked on its unpublished start gate.
 
 The old record is retained as historical local-run evidence. Its reusable-runner admissibility is
 superseded by this repair and must not be cited as an independently approved runner.
@@ -40,8 +44,8 @@ The implementation source fixes only runner tooling:
 
 | File                                                                    | SHA-256                                                            |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `services/control-plane/scripts/test-migration-shards.sh`               | `752f49eaaf85528ee0187767b243e178955bcdeac4d5f5c5c47afb55929d8f99` |
-| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `5e590689e07767ea8ae3b78119dce2d199f9f1a572b18e3b50a049c63eee0c88` |
+| `services/control-plane/scripts/test-migration-shards.sh`               | `c33a5c0dd13092b57e8409dd18c6744b9fbd448c84aaa4e652d5b46abb54520a` |
+| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `d0c5402c6d7a508945bd7cc07dd1b005716e79e384b0fb608fed9666257fda62` |
 | `services/control-plane/scripts/migration-shard-validator/main.go`      | `62f54ce0fac102519f0cb3278bdf464e5811430e5115ab805277d7fdec083210` |
 | `services/control-plane/scripts/migration-shard-validator/main_test.go` | `32b487cb8801698873f1874e9dbe2ae33d1ecbdd59fd53f6e74dbbddf4fa7543` |
 
@@ -50,6 +54,13 @@ The implementation source fixes only runner tooling:
 Before authorizing a shard to start, the runner enables Bash job control, launches the wrapper in a
 new process group, records the expected PID/PGID, confirms through `ps` that `PGID == wrapper PID`,
 and only then publishes that shard's start gate. The parent process is never in a shard group.
+
+The launch interval is an explicit state. `INT`/`TERM` received after launch begins but before
+registration completes records the first pending signal without exiting. After PID/PGID
+registration and validation, and still before publishing the start gate, the runner consumes that
+signal through the same bounded group cleanup path. A failed PGID validation first terminates and
+reaps the unstarted wrapper, then consumes any pending signal. Thus no signal boundary can precede
+both registration and cleanup.
 
 For `INT` or `TERM`, the runner:
 
@@ -86,7 +97,7 @@ process with missing tests is therefore FAIL.
 
 The repair does not change the package that produced the historical evidence:
 
-| Bound input                                      | `7f14c7f`                                  | `60f13f7`                                  |
+| Bound input                                      | `7f14c7f`                                  | `0e2c889`                                  |
 | ------------------------------------------------ | ------------------------------------------ | ------------------------------------------ |
 | `services/control-plane/internal/migration` tree | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` |
 | `services/control-plane/go.mod` blob             | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` |
@@ -134,17 +145,19 @@ The implementation source passed:
 - validator `go test`, `go test -race`, and `go vet` with exact Go 1.26.6,
   `GOWORK=off`, `GOTOOLCHAIN=local`, `GOFLAGS=-mod=readonly`;
 - a clean-worktree Bash 3.2 fixture using only two fake tests: valid closure PASS, exit-zero missing
-  tests FAIL, `TERM` exit 143, `INT` exit 130, no surviving wrapper/child/process group, ABORTED
-  status, and stable output-directory digest after exit;
+  tests FAIL, post-registration `TERM`/`INT` exit 143/130 with `deferred_during_launch=0`, exact
+  pre-registration `TERM`/`INT` exit 143/130 with `deferred_during_launch=1`, no fake worker start
+  in the latter cases, no surviving wrapper/child/process group, ABORTED status, and stable
+  output-directory digest after exit;
 - fresh plan/list/partition same-bits comparison against the historical artifacts;
 - `git diff --check`; and
-- staged Gitleaks 8.30.1 over approximately 38.28 KB with no findings.
+- staged Gitleaks 8.30.1 with no findings.
 
 ## 6. Non-claims
 
 This repair record does **not** claim or authorize:
 
-- a fresh exhaustive migration run at `60f13f7`, a full race run, or live PostgreSQL 15/16/17;
+- a fresh exhaustive migration run at `0e2c889`, a full race run, or live PostgreSQL 15/16/17;
 - independent approval before a fixed-hash read-only rereview is recorded;
 - production database reads/writes, HTTP/P2/provider effects, deployment, publication, or release;
 - physical controller power-loss evidence; or
