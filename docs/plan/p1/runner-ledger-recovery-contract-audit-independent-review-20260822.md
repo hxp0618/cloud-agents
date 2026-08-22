@@ -1,11 +1,34 @@
 # Runner ledger recovery contract audit independent review — 2026-08-22
 
-- Status: `APPROVE`
-- Verdict: `P0=0`, `P1=0`, `P2=0`
+- Status: `INVALIDATED — superseded by fixed-candidate P1 finding`
+- Verdict: `BLOCK`, `P0=0`, `P1=1`, `P2=0`
 - Fixed candidate: `15b9b232cc2005b5011dfa3c24e361b7b020d9e4`
 - Candidate branch: `codex/cloud-agents-p1-runner-recovery-contract-audit-20260822`
 - Review branch: `codex/cloud-agents-p1-runner-recovery-contract-audit-independent-review-20260822`
+- Invalidated review commit: `f1d1fa7cf49340572aec8fbcfa8b2b99760c8381`
 - Gate effect: none; this review does not accept ADR-0023 or close or advance any Gate
+
+## Invalidation and P1 finding
+
+Review commit `f1d1fa7cf49340572aec8fbcfa8b2b99760c8381` originally recorded `APPROVE, P0=0/P1=0/P2=0`. A subsequent required
+identity-separation check found the following fixed-candidate P1. That earlier verdict is invalid and must not be used
+as Gate, implementation, generation, approval, or release evidence.
+
+ADR-0023 says the inherited successor uses a new execution-admission **and** success-writer identity, and requires a
+distinct success-writer identity behind new authority. However, its generated-identity list and Slice F describe only
+one inherited/retry-execution identity. The audit's proposed contract split likewise names only
+`runner-ledger-recovery-execution/v1`, while the same item claims it has a distinct success-writer identity without
+providing that writer's separate versioned id, profile, registry, or binding. Slice A therefore cannot generate and
+prove an admission-versus-mutation separation, and an implementation could combine close-only admission authority
+with the mutation-capable success writer as a union identity. That contradicts the proposal's own no-union-writer
+boundary.
+
+The fixed candidate is `BLOCK, P0=0/P1=1/P2=0`. The minimum repair is to define separate versioned recovery
+execution-admission and recovery success-writer identities and bind both independently in the ADR identity list,
+contract split, Slice A/F ordering, and conformance matrix. Admission must begin as `close_without_mutation`; the
+success writer must receive a separate registry-backed one-shot mutation permit. Neither permit nor an ordinary
+outcome may be converted into the other authority. The repaired fixed candidate requires a new independent read-only
+review.
 
 ## Fixed identities
 
@@ -113,7 +136,8 @@ This review does not accept ADR-0023, authorize generation or implementation, ch
 fixed candidate, merge or open a pull request, connect to a live or production database, write production data,
 deploy, publish, release, or close a Gate. It does not authorize HTTP/P2/provider behavior or any production writer.
 
-The verdict approves only fixed candidate `15b9b232cc2005b5011dfa3c24e361b7b020d9e4` as an accurate docs-only source
-audit and unapproved recovery-contract proposal. Owner approval plus separately fixed generated, read-only admission,
-writer, handoff, execution, result, and independent-review slices remain mandatory before any current
-`NOT_IMPLEMENTED` path may change.
+The earlier approval is invalidated. Fixed candidate `15b9b232cc2005b5011dfa3c24e361b7b020d9e4` is blocked by the
+execution-admission/success-writer identity split above. This record must not authorize ADR acceptance, implementation,
+generation, production behavior, or Gate movement. Owner approval plus a repaired fixed candidate and separately
+fixed generated, read-only admission, writer, handoff, execution, result, and independent-review slices remain
+mandatory before any current `NOT_IMPLEMENTED` path may change.
