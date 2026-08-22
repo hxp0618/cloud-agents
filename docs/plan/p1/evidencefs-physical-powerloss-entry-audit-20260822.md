@@ -47,7 +47,11 @@ hostname, hardware model, disk serial, management address, and all other device 
 | No second control host with tested off/on, console, and recovery path exists | Recovery from a hard-off event is not proven                                                       |
 
 Bounded read-only connection attempts to two other authorized physical candidates did not establish
-a session. An unreachable host is not negative power-loss evidence and was not modified.
+a session. Of two separately authorized remote VPS candidates, one did not establish a session and
+the other reported a KVM guest with a virtual disk, no local hardware-management device, and an
+active K3s workload. The reachable VPS is not a physical-controller test target and did not prove an
+external BMC path to another DUT. An unreachable host is not negative power-loss evidence. None of
+these hosts was modified.
 
 No package was installed; no management command, chassis action, SysRq, reboot, unmount, filesystem
 creation, cache-policy change, service stop, database operation, or test-fixture write was attempted.
