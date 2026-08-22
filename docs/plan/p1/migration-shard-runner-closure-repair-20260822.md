@@ -1,12 +1,13 @@
 # P1 migration shard runner closure repair — 2026-08-22
 
 - Status: **IMPLEMENTATION FIXED; HISTORICAL RUN REVALIDATED; INDEPENDENT REREVIEW PENDING; GATES OPEN**
-- Implementation source: `17f74f082f64e49278508f1e67e5a96cec57213c`
-- Source tree: `6e2c8df5d4b41605bfd58377015e7ae5fe5a2944`
-- Control-plane subtree: `91c4301d8989c3f0f9a014356d90bb3e81eb0cba`
+- Implementation source: `a9e59f4ba859850d79f8d0e238649f5f55354823`
+- Source tree: `6d0cd8f2860bb78acc5c75b5c217685f5ef40764`
+- Control-plane subtree: `64eae900a8b034f70e315cdce060af94798436d9`
 - Branch: `codex/cloud-agents-p1-migration-shard-runner-repair-20260822`
 - Superseded runner candidate: `e18a1ee228e2465a805654dbbc01a3af618ca8b5`
-- Superseded repair candidate: `668ee1d1efaff2d81994cd1a4230a89aca2490db`
+- Superseded repair candidates: `668ee1d1efaff2d81994cd1a4230a89aca2490db`,
+  `7844d4af8e52ce5a958dff7d1a82721961dc94e1`
 - Independent reviewer: **pending fixed-candidate rereview**
 - Gate effect: **none**
 
@@ -33,7 +34,10 @@ file hashes. Independent review reconfirmed those artifact facts but rejected th
    one package pass; and
 3. the first repair launched a wrapper process group before registering its PID/PGID in the cleanup
    arrays. An `INT` or `TERM` in that interval could make the parent publish ABORTED and exit while
-   the unregistered wrapper remained blocked on its unpublished start gate.
+   the unregistered wrapper remained blocked on its unpublished start gate; and
+4. the next repair retained already-reaped successful wrapper PID/PGID values in the active arrays
+   until the whole batch completed. OS reuse of an old numeric PGID could therefore let a later
+   signal cleanup target an unrelated process group.
 
 The old record is retained as historical local-run evidence. Its reusable-runner admissibility is
 superseded by this repair and must not be cited as an independently approved runner.
@@ -44,8 +48,8 @@ The implementation source fixes only runner tooling:
 
 | File                                                                    | SHA-256                                                            |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `services/control-plane/scripts/test-migration-shards.sh`               | `872d92a1388f000cf9f153f3f653eb92a6cda86de23c8d4285a02bc940a5f32b` |
-| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `3bb65cd04766b2a821dc5220130333f0ceb8edbdafba9c72792861ac0e8ccfec` |
+| `services/control-plane/scripts/test-migration-shards.sh`               | `61805e19156d4b610cfdd2951b40dfa40c23c413a9bc6aba2d5634e2dda751f2` |
+| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `53cc7470a02aadc04918e9c947412119f853b1810884fb41b347295b752468a1` |
 | `services/control-plane/scripts/migration-shard-validator/main.go`      | `62f54ce0fac102519f0cb3278bdf464e5811430e5115ab805277d7fdec083210` |
 | `services/control-plane/scripts/migration-shard-validator/main_test.go` | `32b487cb8801698873f1874e9dbe2ae33d1ecbdd59fd53f6e74dbbddf4fa7543` |
 
@@ -65,6 +69,14 @@ both registration and cleanup.
 The EXIT trap also preserves the original nonzero status while terminating every registered group
 whenever an unexpected `set -e` failure occurs during a run. This covers launch artifact/start-gate
 write failures without converting them into PASS or leaving a blocked wrapper behind.
+
+Every running wrapper now remains its process-group leader after publishing `wrapper-complete.tsv`
+and waits for a parent-owned retire gate. The parent enters a signal-deferred retirement transition,
+releases and waits that exact wrapper, immediately marks the active entry retired, clears its
+PID/PGID values, and only then consumes a pending signal. Cleanup sends a negative-PGID signal only
+for an active entry whose current `ps` projection still proves `PID == expected PGID`; an unproved or
+retired numeric identity is never signaled. A fast shard can therefore finish while a slow sibling
+runs without leaving stale cleanup authority.
 
 For `INT` or `TERM`, the runner:
 
@@ -101,7 +113,7 @@ process with missing tests is therefore FAIL.
 
 The repair does not change the package that produced the historical evidence:
 
-| Bound input                                      | `7f14c7f`                                  | `17f74f0`                                  |
+| Bound input                                      | `7f14c7f`                                  | `a9e59f4`                                  |
 | ------------------------------------------------ | ------------------------------------------ | ------------------------------------------ |
 | `services/control-plane/internal/migration` tree | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` |
 | `services/control-plane/go.mod` blob             | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` |
@@ -154,6 +166,8 @@ The implementation source passed:
   in the latter cases, no surviving wrapper/child/process group, ABORTED status, and stable
   output-directory digest after exit; an injected post-registration unexpected exit 97 likewise
   leaves no wrapper/group, starts no fake worker, publishes no PASS, and leaves stable artifacts;
+  a mixed fast/slow two-job case injects `TERM` at the fast wrapper's retirement boundary, proves
+  `deferred_during_retirement=1`, cleans the slow group, and records no signal to the retired PGID;
 - fresh plan/list/partition same-bits comparison against the historical artifacts;
 - `git diff --check`; and
 - staged Gitleaks 8.30.1 with no findings.
@@ -162,7 +176,7 @@ The implementation source passed:
 
 This repair record does **not** claim or authorize:
 
-- a fresh exhaustive migration run at `17f74f0`, a full race run, or live PostgreSQL 15/16/17;
+- a fresh exhaustive migration run at `a9e59f4`, a full race run, or live PostgreSQL 15/16/17;
 - independent approval before a fixed-hash read-only rereview is recorded;
 - production database reads/writes, HTTP/P2/provider effects, deployment, publication, or release;
 - physical controller power-loss evidence; or
