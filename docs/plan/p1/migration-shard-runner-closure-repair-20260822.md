@@ -1,9 +1,9 @@
 # P1 migration shard runner closure repair — 2026-08-22
 
 - Status: **IMPLEMENTATION FIXED; HISTORICAL RUN REVALIDATED; INDEPENDENT REREVIEW PENDING; GATES OPEN**
-- Implementation source: `0e2c889da576d57ed41e08050fab823a7d78de4c`
-- Source tree: `725923b5f7eac9b672d5b6a890c3a2afdc77e857`
-- Control-plane subtree: `d983e0ae80b2e69df86368fb6ce7e799b67a6ad8`
+- Implementation source: `17f74f082f64e49278508f1e67e5a96cec57213c`
+- Source tree: `6e2c8df5d4b41605bfd58377015e7ae5fe5a2944`
+- Control-plane subtree: `91c4301d8989c3f0f9a014356d90bb3e81eb0cba`
 - Branch: `codex/cloud-agents-p1-migration-shard-runner-repair-20260822`
 - Superseded runner candidate: `e18a1ee228e2465a805654dbbc01a3af618ca8b5`
 - Superseded repair candidate: `668ee1d1efaff2d81994cd1a4230a89aca2490db`
@@ -44,8 +44,8 @@ The implementation source fixes only runner tooling:
 
 | File                                                                    | SHA-256                                                            |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `services/control-plane/scripts/test-migration-shards.sh`               | `c33a5c0dd13092b57e8409dd18c6744b9fbd448c84aaa4e652d5b46abb54520a` |
-| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `d0c5402c6d7a508945bd7cc07dd1b005716e79e384b0fb608fed9666257fda62` |
+| `services/control-plane/scripts/test-migration-shards.sh`               | `872d92a1388f000cf9f153f3f653eb92a6cda86de23c8d4285a02bc940a5f32b` |
+| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `3bb65cd04766b2a821dc5220130333f0ceb8edbdafba9c72792861ac0e8ccfec` |
 | `services/control-plane/scripts/migration-shard-validator/main.go`      | `62f54ce0fac102519f0cb3278bdf464e5811430e5115ab805277d7fdec083210` |
 | `services/control-plane/scripts/migration-shard-validator/main_test.go` | `32b487cb8801698873f1874e9dbe2ae33d1ecbdd59fd53f6e74dbbddf4fa7543` |
 
@@ -61,6 +61,10 @@ registration and validation, and still before publishing the start gate, the run
 signal through the same bounded group cleanup path. A failed PGID validation first terminates and
 reaps the unstarted wrapper, then consumes any pending signal. Thus no signal boundary can precede
 both registration and cleanup.
+
+The EXIT trap also preserves the original nonzero status while terminating every registered group
+whenever an unexpected `set -e` failure occurs during a run. This covers launch artifact/start-gate
+write failures without converting them into PASS or leaving a blocked wrapper behind.
 
 For `INT` or `TERM`, the runner:
 
@@ -97,7 +101,7 @@ process with missing tests is therefore FAIL.
 
 The repair does not change the package that produced the historical evidence:
 
-| Bound input                                      | `7f14c7f`                                  | `0e2c889`                                  |
+| Bound input                                      | `7f14c7f`                                  | `17f74f0`                                  |
 | ------------------------------------------------ | ------------------------------------------ | ------------------------------------------ |
 | `services/control-plane/internal/migration` tree | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` |
 | `services/control-plane/go.mod` blob             | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` |
@@ -148,7 +152,8 @@ The implementation source passed:
   tests FAIL, post-registration `TERM`/`INT` exit 143/130 with `deferred_during_launch=0`, exact
   pre-registration `TERM`/`INT` exit 143/130 with `deferred_during_launch=1`, no fake worker start
   in the latter cases, no surviving wrapper/child/process group, ABORTED status, and stable
-  output-directory digest after exit;
+  output-directory digest after exit; an injected post-registration unexpected exit 97 likewise
+  leaves no wrapper/group, starts no fake worker, publishes no PASS, and leaves stable artifacts;
 - fresh plan/list/partition same-bits comparison against the historical artifacts;
 - `git diff --check`; and
 - staged Gitleaks 8.30.1 with no findings.
@@ -157,7 +162,7 @@ The implementation source passed:
 
 This repair record does **not** claim or authorize:
 
-- a fresh exhaustive migration run at `0e2c889`, a full race run, or live PostgreSQL 15/16/17;
+- a fresh exhaustive migration run at `17f74f0`, a full race run, or live PostgreSQL 15/16/17;
 - independent approval before a fixed-hash read-only rereview is recorded;
 - production database reads/writes, HTTP/P2/provider effects, deployment, publication, or release;
 - physical controller power-loss evidence; or
