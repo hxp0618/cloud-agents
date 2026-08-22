@@ -1,13 +1,15 @@
 # P1 migration shard runner closure repair — 2026-08-22
 
 - Status: **IMPLEMENTATION FIXED; HISTORICAL RUN REVALIDATED; INDEPENDENT REREVIEW PENDING; GATES OPEN**
-- Implementation source: `a9e59f4ba859850d79f8d0e238649f5f55354823`
-- Source tree: `6d0cd8f2860bb78acc5c75b5c217685f5ef40764`
-- Control-plane subtree: `64eae900a8b034f70e315cdce060af94798436d9`
+- Implementation source: `8552c0c2c5e4abea128f29e8f41c7628d1e355d1`
+- Source tree: `9cdd16afe19e235376c853fdc04b6dd95e44a341`
+- Control-plane subtree: `44174a871ddf2da859f901050634f9f1995f0aa6`
 - Branch: `codex/cloud-agents-p1-migration-shard-runner-repair-20260822`
 - Superseded runner candidate: `e18a1ee228e2465a805654dbbc01a3af618ca8b5`
 - Superseded repair candidates: `668ee1d1efaff2d81994cd1a4230a89aca2490db`,
-  `7844d4af8e52ce5a958dff7d1a82721961dc94e1`
+  `7844d4af8e52ce5a958dff7d1a82721961dc94e1`,
+  `a9e59f4ba859850d79f8d0e238649f5f55354823`, and
+  `d34ac3f92591abac5bf59b0bba34085a461f68ba`
 - Independent reviewer: **pending fixed-candidate rereview**
 - Gate effect: **none**
 
@@ -37,7 +39,11 @@ file hashes. Independent review reconfirmed those artifact facts but rejected th
    the unregistered wrapper remained blocked on its unpublished start gate; and
 4. the next repair retained already-reaped successful wrapper PID/PGID values in the active arrays
    until the whole batch completed. OS reuse of an old numeric PGID could therefore let a later
-   signal cleanup target an unrelated process group.
+   signal cleanup target an unrelated process group; and
+5. the following repair released the wrapper leader before checking whether the group still held a
+   descendant. If a test returned while leaving a same-group background process, the later residue
+   check no longer had a live leader proving that the numeric PGID was still task-owned, so it could
+   neither safely terminate the residue nor safely signal a possibly reused group.
 
 The old record is retained as historical local-run evidence. Its reusable-runner admissibility is
 superseded by this repair and must not be cited as an independently approved runner.
@@ -48,8 +54,8 @@ The implementation source fixes only runner tooling:
 
 | File                                                                    | SHA-256                                                            |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `services/control-plane/scripts/test-migration-shards.sh`               | `61805e19156d4b610cfdd2951b40dfa40c23c413a9bc6aba2d5634e2dda751f2` |
-| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `53cc7470a02aadc04918e9c947412119f853b1810884fb41b347295b752468a1` |
+| `services/control-plane/scripts/test-migration-shards.sh`               | `f5ea45d914d16be964528842b5d161eddefeffaa410bc20b6191956f4f2e981e` |
+| `services/control-plane/scripts/test-migration-shard-runner-fixture.sh` | `b17fdd2527eac868d07c25d58c7bdc14fc9aec0aef50f26caac58962dbfce898` |
 | `services/control-plane/scripts/migration-shard-validator/main.go`      | `62f54ce0fac102519f0cb3278bdf464e5811430e5115ab805277d7fdec083210` |
 | `services/control-plane/scripts/migration-shard-validator/main_test.go` | `32b487cb8801698873f1874e9dbe2ae33d1ecbdd59fd53f6e74dbbddf4fa7543` |
 
@@ -71,12 +77,15 @@ whenever an unexpected `set -e` failure occurs during a run. This covers launch 
 write failures without converting them into PASS or leaving a blocked wrapper behind.
 
 Every running wrapper now remains its process-group leader after publishing `wrapper-complete.tsv`
-and waits for a parent-owned retire gate. The parent enters a signal-deferred retirement transition,
-releases and waits that exact wrapper, immediately marks the active entry retired, clears its
-PID/PGID values, and only then consumes a pending signal. Cleanup sends a negative-PGID signal only
-for an active entry whose current `ps` projection still proves `PID == expected PGID`; an unproved or
-retired numeric identity is never signaled. A fast shard can therefore finish while a slow sibling
-runs without leaving stale cleanup authority.
+and stops its isolated process group before the parent-owned retire gate. The parent proves through
+`ps` that the expected leader is stopped and that the group contains exactly that wrapper. Only then
+does it enter a signal-deferred retirement transition, publish the gate, continue and wait that
+exact group, mark the active entry retired, clear its PID/PGID values, and consume a pending signal.
+If another group member exists, the gate remains closed, the run becomes FAIL, and cleanup terminates
+the group while the stopped live leader still proves the negative-PGID authority. Cleanup otherwise
+sends a negative-PGID signal only for an active entry whose current projection proves
+`PID == expected PGID`; an unproved or retired numeric identity is never signaled. A fast shard can
+therefore finish while a slow sibling runs without leaving stale cleanup authority.
 
 For `INT` or `TERM`, the runner:
 
@@ -87,9 +96,10 @@ For `INT` or `TERM`, the runner:
 4. removes its task-owned temporary validator binary; and
 5. publishes `run-aborted.tsv` plus `run-status.txt=ABORTED`, with exit `130` or `143`.
 
-A normal wrapper exit also requires its process group to be absent. Any residue terminates the
-remaining batch and makes the run fail. PASS is written atomically only after all groups have gone,
-source identity and cleanliness are unchanged, and strict JSON validation succeeds.
+A normal wrapper retirement also requires the pre-release exact-membership proof and the
+post-release absence of its process group. Any residue terminates the remaining batch and makes the
+run fail. PASS is written atomically only after all groups have gone, source identity and cleanliness
+are unchanged, and strict JSON validation succeeds.
 
 ### 2.2 Strict result closure
 
@@ -113,16 +123,17 @@ process with missing tests is therefore FAIL.
 
 The repair does not change the package that produced the historical evidence:
 
-| Bound input                                      | `7f14c7f`                                  | `a9e59f4`                                  |
+| Bound input                                      | `7f14c7f`                                  | `8552c0c`                                  |
 | ------------------------------------------------ | ------------------------------------------ | ------------------------------------------ |
 | `services/control-plane/internal/migration` tree | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` | `f773674985a9b1c2f7f5e7af47c12258e7e28ff1` |
 | `services/control-plane/go.mod` blob             | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` | `c908536ef26a55b3dae7ddf31d7e7545a19c3a48` |
 | `services/control-plane/go.sum` blob             | `70a855a6aba30804c85e9f6434cfd83115620852` | `70a855a6aba30804c85e9f6434cfd83115620852` |
 
-Fresh `plan --shards 8` still reports 700 tests and list SHA-256
+The prior repair's fresh `plan --shards 8` reports 700 tests and list SHA-256
 `d7cdd59e7ec3bd75d5832c0dd581d2afe2271fd775ba97007d72f639176b5fbd`. Its eight
 `shards.tsv` rows byte-compare with the historical run: `88,88,88,88,87,87,87,87`, with unchanged
-test-list and regex hashes.
+test-list and regex hashes. The later process-lifecycle-only delta does not touch plan mode or the
+bound migration/go.mod/go.sum inputs.
 
 Per the approved no-repeat policy, no full normal, full race, or 30-minute migration command was
 rerun. The implementation work used only the validator package, a two-test fake-Go fixture, plan
@@ -168,6 +179,9 @@ The implementation source passed:
   leaves no wrapper/group, starts no fake worker, publishes no PASS, and leaves stable artifacts;
   a mixed fast/slow two-job case injects `TERM` at the fast wrapper's retirement boundary, proves
   `deferred_during_retirement=1`, cleans the slow group, and records no signal to the retired PGID;
+  and a two-job same-group background-process case proves the parent rejects retirement before
+  releasing the live leader, kills every wrapper/child/group, publishes FAIL rather than PASS, and
+  leaves a stable artifact digest;
 - fresh plan/list/partition same-bits comparison against the historical artifacts;
 - `git diff --check`; and
 - staged Gitleaks 8.30.1 with no findings.
@@ -176,7 +190,7 @@ The implementation source passed:
 
 This repair record does **not** claim or authorize:
 
-- a fresh exhaustive migration run at `a9e59f4`, a full race run, or live PostgreSQL 15/16/17;
+- a fresh exhaustive migration run at `8552c0c`, a full race run, or live PostgreSQL 15/16/17;
 - independent approval before a fixed-hash read-only rereview is recorded;
 - production database reads/writes, HTTP/P2/provider effects, deployment, publication, or release;
 - physical controller power-loss evidence; or

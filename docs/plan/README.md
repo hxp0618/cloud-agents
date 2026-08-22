@@ -109,6 +109,11 @@ bounded run 正确记录为 **NOT PASS**；其后同一 control-plane subtree �
 full normal `internal/migration` suite（`1108.208s`），见
 [`current-source closure`](p1/runner-ledger-current-source-full-migration-closure-20260821.md)。该结果不继承
 `67b8acb` 的旧源码结论，也不构成 full race、live PostgreSQL 或 Gate closure。
+同一 700 项历史 run 的 reusable shard runner 随后在
+[`8552c0c` closure repair](p1/migration-shard-runner-closure-repair-20260822.md) 中闭合严格 JSON run-set、
+signal/异常退出 group cleanup、launch/retirement 窗口、stale PGID retirement 与 live-leader-bound residue
+rejection；只复用固定历史 artifact 并运行短 fake fixture，未重跑 full migration。该固定候选仍待独立只读复核，
+不构成 Gate closure。
 其后 runner ledger consumer 已在 `dcb4b3a` 固定 complete-ledger `return_success` read-only no-op，并由
 `4209e12` 独立复核批准；ADR-0021 的 generated five-pair entry-admission profile、same-verifier fresh-session
 read-only revalidation 与 registry-backed `close_without_mutation` permit 又在修复 generation-lock 漂移后的

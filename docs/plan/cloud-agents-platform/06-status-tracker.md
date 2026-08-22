@@ -436,11 +436,12 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       被判 `BLOCK, P0=0/P1=2/P2=0`；历史 record 保留，不外推到 approved runner、full race、live PostgreSQL、外部
       副作用或 Gate closure。
 - [x] [migration shard runner closure repair](../p1/migration-shard-runner-closure-repair-20260822.md) 已在
-      implementation `a9e59f4` 增加独立 process group、TERM→KILL/no-descendant signal closure、launch/retirement
+      implementation `8552c0c` 增加独立 process group、TERM→KILL/no-descendant signal closure、launch/retirement
       signal deferral、immediate active-entry retirement、current PID→PGID cleanup proof、unexpected-exit group
-      cleanup、ABORTED status 和严格 Go JSON validator；Bash 3.2 two-test
-      result/post-registration/pre-registration/retirement signal/unexpected-exit fixture、focused normal/race/vet、
-      exact ShellCheck、plan same-bits 与旧 700 项 artifact 的 read-only parse 已通过。按 no-repeat policy 未重跑
+      cleanup、live stopped-wrapper exact group-membership proof、same-group residue rejection、ABORTED status 和严格
+      Go JSON validator；Bash 3.2 two-test
+      result/post-registration/pre-registration/retirement signal/unexpected-exit/residue fixture、focused
+      normal/race/vet、exact ShellCheck、plan same-bits 与旧 700 项 artifact 的 read-only parse 已通过。按 no-repeat policy 未重跑
       full migration，新 fixed-candidate independent rereview 仍 pending，所有 Gate 保持 OPEN。
 - [x] Runner/CLI configuration、pre-DB dedicated-session ledger/catalog projection 与 same-verifier one-shot
       claim/no-op dispatch 已完成 bounded independent review；其后 ADR-0022/D-046 又为四个 first-attempt pair 的
