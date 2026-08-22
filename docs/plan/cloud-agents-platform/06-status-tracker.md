@@ -429,11 +429,16 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       已在 `d6ec6c8` 完成只读环境与安全边界核验：可达裸机仍承载活动工作负载、没有独立一次性测试盘，也没有由第二
       控制机证明的 external hard-off/hard-on recovery path；因此拒绝把该主机作为破坏性 DUT，未执行断电、重启、
       安装、文件系统或数据库操作。该项是 environmental blocker record，不是 physical durability result 或 Gate evidence。
+- [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
+      已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
+      `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
+      仍待 independent review，不外推到 full race、live PostgreSQL、外部副作用或 Gate closure。
 - [x] Runner/CLI configuration、pre-DB dedicated-session ledger/catalog projection 与 same-verifier one-shot
       claim/no-op dispatch 已完成 bounded independent review；其后 ADR-0022/D-046 又为四个 first-attempt pair 的
       `Runner.Run` typed caller 建立独立 generated authority、fresh session boundary 与固定 independent review，普通
       committed outcome 不作为下一 entry permit。
 - [ ] retry/abort/reconcile/terminal-failure/return-failure writer、production database invocation 或其他扩大 mutation
       surface 的后续切片仍须新的 owner authority 与独立 entry audit；上述 entry audit 已明确真实 physical
-      controller/host power-loss evidence 仍 blocked on dedicated hardware/external control，current-source broad migration
-      closure 和 reviewer-signed immutable Gate record 也仍缺失，完成前 P1 Gates 继续 `IN PROGRESS`。
+      controller/host power-loss evidence 仍 blocked on dedicated hardware/external control；current-source normal
+      migration shards 已有 local PASS 但尚待独立复核，full race/live PostgreSQL 与 reviewer-signed immutable Gate record
+      仍缺失，完成前 P1 Gates 继续 `IN PROGRESS`。

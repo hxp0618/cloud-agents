@@ -294,6 +294,10 @@ Platform RC、Beta 或 GA。
 - [`runner-ledger-current-source-full-migration-closure-20260821.md`](runner-ledger-current-source-full-migration-closure-20260821.md)：
   固定 control-plane subtree `091a42f5` 在 Go 1.26.6 的 uncached full normal `internal/migration` PASS
   （`1108.208s`）；不构成 full race、live PostgreSQL、独立 Gate signature 或生产副作用证据
+- [`current-source-migration-shard-closure-20260822.md`](current-source-migration-shard-closure-20260822.md)：
+  固定 source `7f14c7f` 新增确定性 mutually-exclusive/exhaustive shard runner，并把当前 700 个顶层 migration
+  tests 在一次 run 中按 8 片完整执行；normal 结果为 `695 pass + 5 explicit external-PG skip`、零 fail、wall
+  `550s`。该记录仍待独立复核，不构成 full race、live PostgreSQL、外部副作用或任何 Gate closure
 
 ## Data kernel decisions
 
