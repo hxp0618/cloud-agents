@@ -1,6 +1,6 @@
 # Runner ledger recovery admission service matrix — 2026-08-23
 
-- Status: `SLICE_B_FIXED_IMPLEMENTATION_RECORDED_INDEPENDENT_REVIEW_PENDING`
+- Status: `SLICE_B_FIXED_IMPLEMENTATION_AND_INDEPENDENT_REVIEW_APPROVED`
 - Approved Slice A candidate: `67210b7f194ec1591c06957ddfc86920a58af167`
 - Slice A independent review: `88f1ecc165866fa2e7da6af9141a4638c1aecdf4` — `APPROVE, P0=0/P1=0/P2=0`
 - Slice A review record SHA-256: `127e1bf451f4e21186f611325a0f1d7a57df195c5954501dc3b6eb7ca344afa6`
@@ -8,6 +8,12 @@
 - Slice B code tree: `f4eb3aa69055ead8e00942221f8deea2de0cadc2`
 - Slice B control-plane subtree: `556750fa193ebf788f7e8065b15f7357506a6d36`
 - Slice B branch: `codex/cloud-agents-p1-runner-recovery-admission-20260823`
+- Fixed Slice B candidate: `23c3083b7d7b58089f2cb208b1381b2d510500ff`
+- Fixed Slice B candidate tree: `75e50c3068682c16b60f1e287c8f96d97bab1af7`
+- Independent review: `4808d20e1d36f5f0bb6efe557ccc6347e955bab0` — `APPROVE, P0=0/P1=0/P2=0`
+- Independent review record:
+  [`runner-ledger-recovery-admission-service-independent-review-20260823.md`](runner-ledger-recovery-admission-service-independent-review-20260823.md)
+- Independent review record SHA-256: `0244a6ec4b14a3cb5de27629ee725a64b2bb28f85756a4f2d4dc73ccc6501334`
 - Decision: [`D-047 / ADR-0023`](runner-ledger-recovery-contract-decision-20260822.md)
 - Gate effect: none; every immutable and aggregate Gate remains open
 
@@ -111,8 +117,13 @@ refresh cannot be constructed by an ordinary migration-package fixture without t
 authority; this record therefore claims the production call graph and the independently tested opaque components,
 not a fabricated end-to-end authority constructor.
 
-## Independent review boundary
+## Independent review closure
 
-Freeze and push this Slice B candidate, then obtain an independent read-only P0/P1/P2 verdict. Only an `APPROVE`
-fixed candidate may begin ADR-0023 Slice C. That review still cannot authorize production database writes,
+The independent read-only reviewer re-resolved the fixed commit/tree/control-plane subtree, remote branch, clean state,
+exact scope and bound hashes; inspected the same-verifier replay, full-root refresh, fresh locked session, claim/permit
+one-shot and cleanup boundaries; reran the bounded normal/race, contract/current, static, same-bits and secret scopes;
+and returned `APPROVE, P0=0/P1=0/P2=0`.
+
+This verdict closes only ADR-0023 Slice B implementation/review and satisfies Slice C Entry. It does not implement or
+authorize an abort/reconciliation/resolution/handoff/execution/failure writer, production database writes,
 HTTP/P2/provider behavior, deployment, publication, release, main merge, or any Gate closure.

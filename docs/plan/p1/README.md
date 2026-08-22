@@ -186,8 +186,10 @@
   `67210b7` 的 independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice B
   [`read-only recovery admission`](runner-ledger-recovery-admission-service-matrix-20260823.md) 已在 code commit
   `b7a9962` 固定：同 verifier full replay、fresh locked reread 与六类 action-specific close-only permit 覆盖 exact
-  12 pairs，当前 independent review pending。所有 writer 与 public recovery result 继续
-  `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
+  12 pairs；fixed candidate `23c3083` 已由
+  [`4808d20` independent review](runner-ledger-recovery-admission-service-independent-review-20260823.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`。该 verdict 满足 ordered Slice C Entry，但不实现或授权 writer；所有 writer
+  与 public recovery result 继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

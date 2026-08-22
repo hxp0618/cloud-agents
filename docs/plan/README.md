@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`；ADR-0023/D-047 已获 owner 批准并按 Slices A-G 进入 ordered local implementation/review，当前 retry/abort/reconcile/failure writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`；ADR-0023/D-047 Slice A `67210b7` 与 Slice B `23c3083` 已分别由 `88f1ecc`、`4808d20` 独立复核批准，Slice C abort-terminal writer 是下一 ordered local slice，当前 recovery writer/result 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -161,8 +161,10 @@ pair mapping 与 ordered Slices A-G。当前仅授权依序本地实现/独立�
 `67210b7` 已由 independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice B 的
 [`read-only recovery admission`](p1/runner-ledger-recovery-admission-service-matrix-20260823.md) 已在 code commit
 `b7a9962` 完成 fixed implementation：exact 12 pairs 仅进入同 verifier full replay、fresh locked reread 与六类
-action-specific `close_without_mutation` permit，当前仍待独立审查。所有 recovery writer 与 public recovery result
-继续 `NOT_IMPLEMENTED`。
+action-specific `close_without_mutation` permit；fixed candidate `23c3083` 已由
+[`4808d20` independent review](p1/runner-ledger-recovery-admission-service-independent-review-20260823.md)
+返回 `APPROVE, P0=0/P1=0/P2=0`。该 verdict 只关闭 Slice B implementation/review，满足 Slice C Entry；所有
+recovery writer 与 public recovery result 在各自后续 slice 实现并独立批准前继续 `NOT_IMPLEMENTED`。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

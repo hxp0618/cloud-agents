@@ -1,8 +1,8 @@
 # 06. 状态与决策追踪
 
-- 最后更新：2026-08-22
+- 最后更新：2026-08-23
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` review 返回 `APPROVE, P0=0/P1=0/P2=0`，retry/abort/reconcile/failure writer 仍为 `NOT_IMPLEMENTED`；live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` review 返回 `APPROVE, P0=0/P1=0/P2=0`；ADR-0023/D-047 Slice A `67210b7` 与 read-only Slice B `23c3083` 又分别由 `88f1ecc`、`4808d20` 独立复核批准，Slice C abort-terminal writer 是下一 ordered local slice；recovery writer/result 仍为 `NOT_IMPLEMENTED`；live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -298,11 +298,17 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       Independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`；该 Slice 无 runtime consumer、claim/permit、
       writer、数据库 handle 或外部副作用。见
       [`implementation record`](../p1/runner-ledger-recovery-profile-implementation-20260822.md)。
-- [ ] D-047 Slice B read-only recovery admission 已在 code commit `b7a9962` 完成固定实现：同 verifier full-root
+- [x] D-047 Slice B read-only recovery admission 已在 code commit `b7a9962` 完成固定实现：同 verifier full-root
       replay、live lifecycle witness、二次 evidence boundary、fresh locked database reread 与 6 个 action-specific
       close-only permit 覆盖 exact 12 pairs；public entry/recovery 结果与所有 writer 继续
-      `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。当前为 independent review pending；只有 `APPROVE` 后才可开始 Slice C。
-      见 [`local matrix`](../p1/runner-ledger-recovery-admission-service-matrix-20260823.md)。
+      `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。Fixed candidate `23c3083` 的 independent review commit `4808d20`
+      返回 `APPROVE, P0=0/P1=0/P2=0`；只关闭 Slice B implementation/review，并满足 Slice C Entry。见
+      [`local matrix`](../p1/runner-ledger-recovery-admission-service-matrix-20260823.md) 与
+      [`independent review`](../p1/runner-ledger-recovery-admission-service-independent-review-20260823.md)。
+- [ ] D-047 Slice C abort-terminal writer 是下一 ordered local slice；只允许实现四个 exact abort pairs、owned
+      lifecycle receipts、terminal append/checkpoint 与 fault/crash matrix，并在继续 Slice D 前取得独立 verdict。
+      Commit reconciliation、ambiguous resolution、retry handoff、recovery execution、typed failure result、生产
+      database/HTTP/P2/provider、部署、发布与 Gate closure 仍未授权。
 - [x] [P1 aggregate Gate gap audit](../p1/p1-aggregate-gate-gap-audit-20260822.md) 已在固定
       `1416fb3` 按 `G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1` 的逐项退出标准区分已存在 evidence、
       缺失 immutable phase record、D-047 owner decision 与 physical-controller 环境 blocker。该项是只读
