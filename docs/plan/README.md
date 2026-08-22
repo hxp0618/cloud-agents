@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac` 与 Slice C `9db5891` 已分别由 `7615fe5`、`d49f89c`、`818c4d5` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`，Slice D typed caller/first-attempt entry loop 正在本地实现/矩阵/独立复核，retry/abort/reconcile/failure writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`，retry/abort/reconcile/failure writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -128,9 +128,12 @@ execution-admission revalidation 与 registry-backed one-shot permit；其临时
 已在 `9db5891` 固定，并由
 [`818c4d5` independent review](p1/runner-ledger-entry-success-kernel-service-independent-review-20260822.md)
 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice D 的
-[typed caller/first-attempt entry loop](p1/runner-ledger-entry-loop-service-matrix-20260822.md) 正在本地实现、矩阵与
-独立复核；四个 generated first-attempt pair 之外的 retry/abort/reconcile/failure writer 继续
-`NOT_IMPLEMENTED`。
+[typed caller/first-attempt entry loop](p1/runner-ledger-entry-loop-service-matrix-20260822.md) 已在固定候选
+`9fcdb73` 完成，并由
+[`351e5ea` independent review](p1/runner-ledger-entry-loop-service-independent-review-20260822.md)
+返回 `APPROVE, P0=0/P1=0/P2=0`。四个 generated first-attempt pair 之外的
+retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须独立 generated recovery contract
+与批准，当前结果不构成该 authority。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

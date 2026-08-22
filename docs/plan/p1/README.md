@@ -165,8 +165,11 @@
   已在 `9db5891` 固定，并由
   [`818c4d5` independent review](runner-ledger-entry-success-kernel-service-independent-review-20260822.md)
   返回 `APPROVE, P0=0/P1=0/P2=0`。Slice D 的
-  [typed caller/first-attempt entry loop](runner-ledger-entry-loop-service-matrix-20260822.md) 正在本地实现、矩阵与
-  独立复核；retry/abort/reconcile/failure writer 仍未实现。
+  [typed caller/first-attempt entry loop](runner-ledger-entry-loop-service-matrix-20260822.md) 已在固定候选
+  `9fcdb73` 完成，并由
+  [`351e5ea` independent review](runner-ledger-entry-loop-service-independent-review-20260822.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`。retry/abort/reconcile/failure writer 仍未实现；ADR-0022 不把 Slice D
+  approval 扩展为 Slice E recovery authority。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

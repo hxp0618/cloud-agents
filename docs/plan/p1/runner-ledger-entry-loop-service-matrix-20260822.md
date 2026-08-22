@@ -1,10 +1,16 @@
 # Runner ledger entry-loop service matrix — 2026-08-22
 
-- Status: `SLICE_D_LOCAL_IMPLEMENTATION_RECORDED_INDEPENDENT_REVIEW_PENDING`
+- Status: `SLICE_D_FIXED_IMPLEMENTATION_AND_INDEPENDENT_REVIEW_APPROVED`
 - Approved Slice C candidate: `9db5891a7a624b1fae427ba25800ccb270b7e85e`
 - Slice C independent review: `818c4d5f05e6ea9c86c33c742c7f16292a8c208d` — `APPROVE, P0=0/P1=0/P2=0`
 - Slice D base: `818c4d5f05e6ea9c86c33c742c7f16292a8c208d`
 - Slice D branch: `codex/cloud-agents-p1-runner-entry-loop-20260822`
+- Fixed Slice D candidate: `9fcdb731cc54118b0f86bbfcac593e9129077d1a`
+- Fixed Slice D tree: `b5aa8dfd7565e4ef5c1099872bf077043bdab201`
+- Fixed control-plane subtree: `c78ffc27c88b0f50871795a281669b7b2ef9bd27`
+- Independent review: `351e5eaeca6af4e1f179fb963b36e67df17846bd` — `APPROVE, P0=0/P1=0/P2=0`
+- Independent review record: [`runner-ledger-entry-loop-service-independent-review-20260822.md`](runner-ledger-entry-loop-service-independent-review-20260822.md)
+- Independent review record SHA-256: `0bf0408849df5310d4c63b652577bf912d62bc882cd42640ae13fbd08a061a02`
 - Decision: [`ADR-0022`](../adr/0022-p1-runner-ledger-entry-success-writer-contract.md)
 - Gate effect: none; every immutable and aggregate Gate remains open or at its prior phase status
 
@@ -103,13 +109,13 @@ preflight/consumer/ADR-0021 admission and both ADR-0022 profiles remain current 
 contract checker. Test-only fake sessions exercise the caller; no live or production PostgreSQL credential or write is
 used by this record.
 
-## Review handoff
+## Independent review closure
 
-After the focused and static gates are stable, the branch must be formatted, secret-scanned, committed, pushed, and
-identified by exact commit/tree/subtree and changed-file hashes. An independent read-only reviewer must re-resolve
-those identities, inspect the fresh-session and success-only-retirement authority boundary, rerun the bounded focused
-normal/race and contract/same-bits scopes, verify the record's non-claims, and issue an explicit P0/P1/P2 verdict.
+The independent read-only reviewer re-resolved the fixed candidate, tree, control-plane subtree, remote ref, clean
+worktree, and changed-file hashes; reran the bounded focused normal/race, contracts/current, static, same-bits,
+dual-architecture compile, and secret-scan scopes; and returned `APPROVE, P0=0/P1=0/P2=0`. The review branch differs
+from the candidate by only the linked review record and is pushed, clean, and upstream `0/0`.
 
-Only an `APPROVE` verdict closes this implementation/review slice. It still cannot authorize production database
+This verdict closes only the ADR-0022 Slice D implementation/review slice. It does not authorize production database
 mutation, HTTP/P2/provider behavior, deployment, publication, release, merge to main, or any Gate closure. Recovery
-contracts remain a separately generated future Slice E.
+contracts remain a separately generated and separately approved future Slice E.
