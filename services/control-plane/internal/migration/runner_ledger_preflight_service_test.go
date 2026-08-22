@@ -42,6 +42,10 @@ type runnerLedgerPreflightEvidenceFake struct {
 	mutateBeforeExecutionConsume func(*runnerLedgerPreflightEvidenceFake)
 	afterExecutionBind           func()
 	afterExecutionConsume        func()
+	successBindErr               error
+	successBindErrAt             map[int]error
+	successBindCalls             int
+	mutateSuccessAuthority       func(*JournalCursor, *OwnedEvidenceRecord)
 }
 
 var _ runnerLedgerPreflightClaimBinder = (*generationEvidenceSession)(nil)
@@ -82,6 +86,7 @@ func newRunnerLedgerPreflightEvidenceFake(t *testing.T, base runnerPreparedCurre
 		recovery:                  cloneRecoverySnapshot(base.evidence.snapshot),
 		sessionDigest:             digestRaw(testDigest("runner-ledger-preflight-test-session")),
 		journalDigest:             digestRaw(testDigest("runner-ledger-preflight-test-journal")),
+		successBindErrAt:          map[int]error{},
 	}
 }
 
@@ -317,19 +322,29 @@ func (fixture *runnerLedgerPreflightServiceFixture) configure(t *testing.T, disp
 	recovery := cloneRecoverySnapshot(fixture.evidence.runnerEvidenceSessionFake.snapshot)
 	recovery.state, recovery.nextPermittedAction = state, action
 	recovery.migrationID, recovery.attemptIndex = nil, nil
-	first, second := entries[0].ID, entries[1].ID
+	first := entries[0].ID
 	switch disposition {
 	case runnerLedgerPreflightEmptyBrandNew:
 		if state == RecoveryBrandNewInherited && action == RecoveryBeginNextAttempt {
 			recovery.migrationID, recovery.attemptIndex = &first, uint32Pointer(2)
 		}
 	case runnerLedgerPreflightPartialNextEntry:
+		if len(entries) < 2 {
+			fixture.evidence.mu.Unlock()
+			t.Fatal("partial next-entry fixture has no successor")
+		}
+		second := entries[1].ID
 		if state == RecoveryBrandNewInherited {
 			recovery.migrationID, recovery.attemptIndex = &second, uint32Pointer(1)
 		} else {
 			recovery.migrationID, recovery.attemptIndex = &first, uint32Pointer(1)
 		}
 	case runnerLedgerPreflightPartialRetryOrRecovery:
+		if len(entries) < 2 {
+			fixture.evidence.mu.Unlock()
+			t.Fatal("partial retry fixture has no successor")
+		}
+		second := entries[1].ID
 		if state == RecoveryBrandNewInherited && action == RecoveryBeginFirstAttempt {
 			recovery.migrationID, recovery.attemptIndex = nil, nil
 		} else {
@@ -340,6 +355,11 @@ func (fixture *runnerLedgerPreflightServiceFixture) configure(t *testing.T, disp
 			recovery.migrationID, recovery.attemptIndex = &second, uint32Pointer(attempt)
 		}
 	case runnerLedgerPreflightCompleteReturnSuccess:
+		if len(entries) < 2 {
+			recovery.migrationID, recovery.attemptIndex = &first, uint32Pointer(1)
+			break
+		}
+		second := entries[1].ID
 		recovery.migrationID, recovery.attemptIndex = &second, uint32Pointer(1)
 	}
 	if action == RecoveryBeginNextAttempt {

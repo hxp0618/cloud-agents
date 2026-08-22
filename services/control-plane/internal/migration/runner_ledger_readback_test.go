@@ -284,6 +284,9 @@ func TestRunnerTransactionLedgerHasNoUnreviewedProductionConsumer(t *testing.T) 
 		"runnerTransactionLedger": true, "insertAndReadRunnerLedgerRow": true,
 		"runnerTransactionLedgerSealed": true,
 	}
+	successKernelAllowed := map[string]bool{
+		"runnerTransactionLedger": true, "insertAndReadRunnerLedgerRow": true,
+	}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || name == "pgx.go" || name == "runner_ledger_readback.go" {
@@ -295,7 +298,7 @@ func TestRunnerTransactionLedgerHasNoUnreviewedProductionConsumer(t *testing.T) 
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !(name == "runner_ledger_entry_success_kernel.go" && successKernelAllowed[identifier.Name]) {
 				t.Fatalf("runner ledger adapter %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

@@ -10,9 +10,9 @@ import (
 const runnerLedgerEntryExecutionPermitDigestDomain = "cloud-agents/runner-ledger-entry-execution-admission/permit/v1"
 
 // runnerLedgerEntryExecutionPermit retains one fresh dedicated database
-// session and its signed advisory lock. In Slice B its only consumer is
-// closeRunnerLedgerEntryExecutionPermit. No transaction, SQL, ledger, or
-// evidence mutation operation is defined on this type.
+// session and its signed advisory lock. It can be consumed exactly once by
+// the separately generated success-writer kernel or closed without mutation;
+// it exposes no transaction, SQL, ledger, or evidence mutation method itself.
 type runnerLedgerEntryExecutionPermit struct {
 	self                     *runnerLedgerEntryExecutionPermit
 	binding                  *runnerLedgerEntryExecutionPermitBinding
@@ -23,6 +23,8 @@ type runnerLedgerEntryExecutionPermit struct {
 	candidateBinding         *verifiedEvidenceRunBinding
 	generation               generationIdentity
 	evidenceBoundary         [32]byte
+	recoveryDigest           [32]byte
+	recoveryTail             Digest
 	consumerFactSubject      Digest
 	action                   runnerLedgerEntryExecutionAdmissionAction
 	ledgerDigest             Digest
@@ -236,6 +238,8 @@ func bindRunnerLedgerEntryExecutionPermit(observation *runnerLockedLedgerCatalog
 		candidateBinding:         candidate.binding,
 		generation:               boundary.generation,
 		evidenceBoundary:         boundary.canonical,
+		recoveryDigest:           boundary.recoveryDigest,
+		recoveryTail:             boundary.recoveryTail,
 		consumerFactSubject:      fact.subjectDigest,
 		action:                   action,
 		ledgerDigest:             observation.ledger.digest,
@@ -297,7 +301,8 @@ func validRunnerLedgerEntryExecutionPermit(permit *runnerLedgerEntryExecutionPer
 func runnerLedgerEntryExecutionPermitDigest(permit *runnerLedgerEntryExecutionPermit) [32]byte {
 	if permit == nil || permit.self != permit || permit.closed || permit.session == nil || permit.evidenceBinder == nil || permit.use == nil ||
 		permit.candidateBinding == nil || permit.generation.owner == nil || permit.generation.owner != permit.candidateBinding.owner ||
-		permit.evidenceBoundary == ([32]byte{}) || permit.consumerFactSubject.Validate() != nil ||
+		permit.evidenceBoundary == ([32]byte{}) || permit.recoveryDigest == ([32]byte{}) ||
+		permit.recoveryTail.Validate() != nil || permit.consumerFactSubject.Validate() != nil ||
 		permit.action != runnerLedgerEntryExecutionAdmissionPrepare || permit.ledgerDigest.Validate() != nil ||
 		permit.connectedAuthorityDigest.Validate() != nil || permit.migrationAuthorityDigest.Validate() != nil ||
 		permit.projectionSubject.Validate() != nil || permit.catalogDigest.Validate() != nil ||
@@ -323,6 +328,7 @@ func runnerLedgerEntryExecutionPermitDigest(permit *runnerLedgerEntryExecutionPe
 	h.Write([]byte(runnerLedgerEntryExecutionPermitDigestDomain + "\x00"))
 	h.Write(permit.candidateBinding.canonical[:])
 	h.Write(permit.evidenceBoundary[:])
+	h.Write(permit.recoveryDigest[:])
 	h.Write(permit.selection.planDigest[:])
 	for _, value := range runnerLedgerEntryExecutionAdmissionProfileIdentityStrings() {
 		writeAdmissionString(h, value)
@@ -331,7 +337,7 @@ func runnerLedgerEntryExecutionPermitDigest(permit *runnerLedgerEntryExecutionPe
 		string(permit.action),
 		permit.generation.executionLineageDigest.String(), permit.generation.journalIdentityDigest.String(),
 		permit.generation.runnerProjectionDecisionDigest.String(), permit.generation.schemaBundleDigest.String(),
-		permit.consumerFactSubject.String(), permit.ledgerDigest.String(), permit.ledgerHead,
+		permit.consumerFactSubject.String(), permit.recoveryTail.String(), permit.ledgerDigest.String(), permit.ledgerHead,
 		permit.connectedAuthorityDigest.String(), permit.migrationAuthorityDigest.String(), permit.projectionSubject.String(),
 		permit.catalogDigest.String(), strconv.FormatInt(permit.key, 10), permit.database.databaseName,
 		permit.database.sessionUser, permit.database.currentUser, permit.selection.migrationID, permit.selection.entryDigest.String(),

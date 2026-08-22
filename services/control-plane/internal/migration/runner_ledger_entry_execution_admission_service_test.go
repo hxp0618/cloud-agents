@@ -520,6 +520,9 @@ func TestRunnerLedgerEntryExecutionAdmissionProductionGraphHasOnlyCloseWithoutMu
 
 func TestRunnerLedgerEntryExecutionAdmissionAuthorityHasOnlyReviewedProductionConsumers(t *testing.T) {
 	allowed := map[string]map[string]bool{
+		"evidence_runner_ledger_entry_success.go": {
+			"runnerLedgerEntryExecutionAdmissionClaimBinder": true,
+		},
 		"evidence_session.go": {
 			"runnerLedgerEntryExecutionAdmissionClaimBinder":              true,
 			"runnerLedgerEntryExecutionAdmissionClaimRequest":             true,
@@ -533,6 +536,13 @@ func TestRunnerLedgerEntryExecutionAdmissionAuthorityHasOnlyReviewedProductionCo
 		"runner_ledger_consumer_service.go": {
 			"prepareRunnerLedgerEntryExecutionAdmission": true,
 			"closeRunnerLedgerEntryExecutionPermit":      true,
+		},
+		"runner_ledger_entry_success_kernel.go": {
+			"runnerLedgerEntryExecutionAdmissionUseRecord":   true,
+			"runnerLedgerEntryExecutionPermit":               true,
+			"runnerLedgerEntryExecutionPermitRegistryRecord": true,
+			"runnerLedgerEntryExecutionPermitRegistry":       true,
+			"validRunnerLedgerEntryExecutionAdmissionUse":    true,
 		},
 	}
 	ownedFiles := map[string]bool{

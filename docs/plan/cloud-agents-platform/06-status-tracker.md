@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-22
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 generated-contract Slice A 候选 `1f1b0c5` 已由 `7615fe5` review 返回 `APPROVE, P0=0/P1=0/P2=0`，Slice B fresh execution admission 已完成 local normal/race/contracts 门禁且独立复核 pending，one-entry success/recovery writer 仍为 `NOT_IMPLEMENTED`；live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A `1f1b0c5` 与 Slice B `c375fac` 已分别由 `7615fe5`、`d49f89c` review 返回 `APPROVE, P0=0/P1=0/P2=0`，Slice C disconnected one-entry known-success kernel 正在本地实现/矩阵/独立复核，retry/abort/reconcile/failure writer 与 Slice D caller 仍为 `NOT_IMPLEMENTED`；live PostgreSQL 与所有 Gate 均未关闭；HTTP/P2/provider external side effect 仍未开放；brand-new、registered ancestor、live successor 与 crash-reopened historical successor 的 local authority path 保持到达 current `EvidenceSession`；test-only authority 的既有 ext4/XFS、QEMU power-cycle 与 durability barrier matrices 保持固定证据；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -257,20 +257,24 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       permit 不可扩权复用、当前 signed bundle 需要最高 161-statement entry、旧 brand-new single-statement writer
       不可作为一般 kernel。ADR-0022 已冻结两个新 generated profile、四个 first-attempt pair、one-entry
       known-success state machine 与分层 review 顺序；D-046 已批准，Slice A 候选 `1f1b0c5` 已由 `7615fe5`
-      独立批准，Slice B fresh execution admission 正在本地实现/门禁；它仅替换既有 `Runner.Run` entry
-      `NOT_IMPLEMENTED` 分支内的 read-only close path，仍未接 transaction、mutation 或 writer。见
+      独立批准，Slice B 候选 `c375fac` 又由 `d49f89c` 独立批准。Slice C disconnected kernel 正在本地实现/矩阵/
+      独立复核，仍未接入 `Runner.Run` caller 或 entry loop。见
       [`contract audit`](../p1/runner-ledger-entry-writer-contract-audit-20260822.md)。
-- [x] D-046 已按 standing automatic-execution approval 接受；当前依序推进已获批的 Slice B。runtime
-      entry/recovery writer、SQL、ledger/evidence mutation、production DB、HTTP/P2/provider、部署、发布与 Gate
-      closure 继续 `NOT_IMPLEMENTED`/未授权，直到各自 ordered slice 完成。
+- [x] D-046 已按 standing automatic-execution approval 接受；当前依序推进已获批的 Slice C。Slice D caller、
+      retry/abort/reconcile/failure writer、production DB、HTTP/P2/provider、部署、发布与 Gate closure 继续
+      `NOT_IMPLEMENTED`/未授权，直到各自 ordered slice 完成。
 - [x] D-046 Slice A 已生成两份 registry、ordinary Go profile、fixtures/manifests/lock，并保持历史 v1
       same-bits；[implementation record](../p1/runner-ledger-entry-writer-profile-implementation-20260822.md) 的
       fixed candidate `1f1b0c5` 已由 review commit `7615fe5` 返回 `APPROVE, P0=0/P1=0/P2=0`。
-- [ ] D-046 Slice B 已实现 fresh same-verifier claim、fresh dedicated locked session 上的 final
+- [x] D-046 Slice B 已实现 fresh same-verifier claim、fresh dedicated locked session 上的 final
       authority/ledger/catalog/evidence/session-boundary reread，以及仅可 `close_without_mutation` 的 one-shot
-      execution permit；local normal/race/contracts 门禁已通过，独立审查仍须收口。success/recovery writer、
-      transaction/SQL/ledger/evidence mutation、production DB、HTTP/P2/provider、部署、发布与 Gate 均未开放。见
-      [`matrix`](../p1/runner-ledger-entry-execution-admission-service-matrix-20260822.md)。
+      execution permit；固定候选 `c375fac` 的 independent review commit `d49f89c` 返回
+      `APPROVE, P0=0/P1=0/P2=0`。见
+      [`matrix`](../p1/runner-ledger-entry-execution-admission-service-matrix-20260822.md) 与
+      [`independent review`](../p1/runner-ledger-entry-execution-admission-service-independent-review-20260822.md)。
+- [ ] D-046 Slice C 已实现但尚未固定/独立批准 disconnected one-entry multi-statement known-success kernel；
+      `Runner.Run` 生产调用数保持零，Slice D entry loop 与所有 retry/abort/reconcile/failure writer 未实现。见
+      [`local matrix`](../p1/runner-ledger-entry-success-kernel-service-matrix-20260822.md)。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。

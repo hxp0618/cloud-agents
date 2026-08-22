@@ -591,6 +591,91 @@ func (s *generationEvidenceSession) bindRunnerCommittedTerminalRecord(ctx contex
 
 func (*generationEvidenceSession) runnerCommittedTerminalRecordBinderSealed() {}
 
+func (*generationEvidenceSession) runnerLedgerEntrySuccessEvidenceBinderSealed() {}
+
+func (s *generationEvidenceSession) bindRunnerLedgerEntrySuccessRecord(ctx context.Context, request *runnerLedgerEntrySuccessEvidenceRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	claimed, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, s)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if s == nil || s.self != s {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-evidence", "evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != claimed.candidateBinding || s.active.kind != activeGenerationCurrent ||
+		s.active.recoveryExecutionBindings != nil || !sameGenerationIdentity(s.active.identity, claimed.generation) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-evidence", "current same-verifier evidence session changed", nil)
+	}
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil ||
+		!sameCursorIdentity(journal.state.cursor, claimed.cursor) ||
+		generationJournalRecoveryDigest(journal.state.recovery) != claimed.recoveryDigest ||
+		journal.schema.maxAttempts[claimed.plan.MigrationID] != claimed.maxAttempts {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-evidence", "current journal boundary changed", nil)
+	}
+	prefix, prefixErr := readRunnerLedgerEntrySuccessPrefixLocked(ctx, journal)
+	if prefixErr != nil {
+		return nil, JournalCursor{}, nil, prefixErr
+	}
+	if len(prefix) == 0 || claimed.cursor.previousRecordDigest == nil ||
+		prefix[len(prefix)-1].RecordDigest != *claimed.cursor.previousRecordDigest ||
+		prefix[len(prefix)-1].Sequence+1 != claimed.cursor.nextSequence {
+		return nil, JournalCursor{}, nil, admissionCorrupt("runner-ledger-entry-success-evidence", "stored evidence prefix differs from the current cursor", nil)
+	}
+	owned, bindErr := bindRunnerLedgerEntrySuccessOwnedRecord(claimed, prefix, journal.schema.chainWitness)
+	if bindErr != nil {
+		return nil, JournalCursor{}, nil, admissionCorrupt("runner-ledger-entry-success-evidence", "candidate evidence record is invalid", bindErr)
+	}
+	return journal, journal.state.cursor.clone(), owned, nil
+}
+
+func readRunnerLedgerEntrySuccessPrefixLocked(ctx context.Context, journal *generationEvidenceJournal) ([]EvidenceFrame, error) {
+	if journal == nil || journal.state == nil || journal.state.snapshot == nil {
+		return nil, admissionFailed("runner-ledger-entry-success-evidence-read", "generation snapshot is unavailable", nil)
+	}
+	count, err := journal.state.snapshot.SegmentCount()
+	if err != nil {
+		return nil, mapEvidenceAdmissionError(err, "runner-ledger-entry-success-evidence-read")
+	}
+	if count == 0 || count > maxSupportedEvidenceReservedSegments {
+		return nil, admissionCorrupt("runner-ledger-entry-success-evidence-read", "stored segment count is invalid", nil)
+	}
+	frames := make([]EvidenceFrame, 0, journal.state.journalRecords)
+	for ordinal := uint32(0); ordinal < count; ordinal++ {
+		raw, readErr := journal.state.snapshot.ReadSegment(ctx, ordinal)
+		if readErr != nil {
+			return nil, mapEvidenceAdmissionError(readErr, "runner-ledger-entry-success-evidence-read")
+		}
+		decodeErr := decodeAdmissionFramedBytes(raw, evidenceSegmentMaximumBytes, evidenceSegmentMaximumRecords, maxEvidenceFrameBytes, func(framed []byte) error {
+			frame, frameErr := DecodeCanonicalEvidenceFrame(framed)
+			if frameErr != nil {
+				return frameErr
+			}
+			frames = append(frames, cloneProjectionValue(*frame))
+			return nil
+		})
+		if decodeErr != nil {
+			return nil, admissionCorrupt("runner-ledger-entry-success-evidence-read", "stored evidence segment is invalid", decodeErr)
+		}
+	}
+	if err := journal.state.snapshot.Revalidate(ctx); err != nil {
+		return nil, mapEvidenceAdmissionError(err, "runner-ledger-entry-success-evidence-revalidate")
+	}
+	if uint64(len(frames)) != journal.state.journalRecords {
+		return nil, admissionCorrupt("runner-ledger-entry-success-evidence-read", "stored evidence record count changed", nil)
+	}
+	if err := validateEvidenceChainWithWitness(frames, journal.schema.chainWitness); err != nil {
+		return nil, admissionCorrupt("runner-ledger-entry-success-evidence-read", "stored evidence chain is invalid", err)
+	}
+	return frames, nil
+}
+
 // RecoverySnapshot always clones the journal's current state. An append makes
 // every older cursor invalid, so a session must never cache the snapshot that
 // existed when it was first sealed.

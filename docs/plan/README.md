@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 generated-contract Slice A 候选 `1f1b0c5` 已由 `7615fe5` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`，Slice B fresh execution admission 已完成本地实现/normal/race/contracts 门禁且独立复核仍 pending，one-entry success/recovery writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5` 与 Slice B `c375fac` 已分别由 `7615fe5`、`d49f89c` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`，Slice C disconnected one-entry known-success kernel 正在本地实现/矩阵/独立复核，retry/abort/reconcile/failure writer 与 Slice D caller 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -123,7 +123,9 @@ registry 与 ordinary Go profile；固定候选 `1f1b0c5` 已由独立 review co
 `APPROVE, P0=0/P1=0/P2=0`。随后 Slice B 仅把四个 generated first-attempt pair 接入 fresh locked
 execution-admission revalidation 与 registry-backed one-shot permit；其临时生产 transition 仍只有
 `close_without_mutation`，[本地实现/矩阵](p1/runner-ledger-entry-execution-admission-service-matrix-20260822.md)
-已完成 local normal/race/contracts 门禁，独立复核 pending，success/recovery writer 继续不存在。
+的固定候选 `c375fac` 已由 `d49f89c` 独立复核批准。Slice C 的
+[disconnected one-entry known-success kernel](p1/runner-ledger-entry-success-kernel-service-matrix-20260822.md)
+正在本地实现/矩阵/独立复核；`Runner.Run` caller、entry loop 与 retry/abort/reconcile/failure writer 继续不存在。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

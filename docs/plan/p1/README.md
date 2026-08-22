@@ -159,8 +159,10 @@
   [implementation record](runner-ledger-entry-writer-profile-implementation-20260822.md) 已固定 registry/Go ordinary
   profile，候选 `1f1b0c5` 已由 `7615fe5` 独立复核批准。Slice B fresh execution admission 仅接入四个
   generated first-attempt pair、最终 authority/ledger/catalog/evidence/session-boundary 复读与 one-shot
-  `close_without_mutation` permit；[本地实现/矩阵](runner-ledger-entry-execution-admission-service-matrix-20260822.md)
-  normal/race/contracts 门禁已通过，独立复核 pending，success/recovery writer 仍未实现。
+  `close_without_mutation` permit；固定候选 `c375fac` 已由 `d49f89c` 独立复核返回
+  `APPROVE, P0=0/P1=0/P2=0`。Slice C 的
+  [disconnected one-entry known-success kernel](runner-ledger-entry-success-kernel-service-matrix-20260822.md)
+  正在本地实现/矩阵/独立复核；`Runner.Run` caller、entry loop 与 retry/abort/reconcile/failure writer 仍未实现。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

@@ -507,11 +507,13 @@ type runnerPreflightTransaction struct {
 	executeCalls           int
 	executeAllowed         bool
 	executeErr             error
+	executeErrAt           map[int]error
 	executeMutate          func([]byte)
 	executedSQL            [][]byte
 	ledgerInsertErr        error
 	ledgerReadErr          error
 	ledgerReadMutate       func([]LedgerRow) []LedgerRow
+	ledgerPrefix           []LedgerRow
 	pendingLedger          *LedgerRow
 	ledgerInsertCalls      int
 	ledgerReadCalls        int
@@ -530,7 +532,7 @@ func newRunnerPreflightTransaction(session *runnerPreflightSession) *runnerPrefl
 	expected := minimalAuthorityProjection(AuthorityPhaseMigrationTransaction)
 	return &runnerPreflightTransaction{
 		session: session,
-		status:  'I', commitStatusAfter: 'I',
+		status:  'I', commitStatusAfter: 'I', executeErrAt: map[int]error{},
 		metadata: []any{
 			"160000", expected.DatabaseName, expected.SessionUser, expected.CurrentUser,
 			"serializable", "off", "off",
@@ -608,6 +610,9 @@ func (transaction *runnerPreflightTransaction) ExecuteStatement(ctx context.Cont
 	if transaction.executeMutate != nil {
 		transaction.executeMutate(raw)
 	}
+	if err := transaction.executeErrAt[transaction.executeCalls]; err != nil {
+		return err
+	}
 	return transaction.executeErr
 }
 
@@ -631,7 +636,7 @@ func (transaction *runnerPreflightTransaction) insertAndReadRunnerLedgerRow(ctx 
 	if transaction.ledgerReadErr != nil {
 		return nil, transaction.ledgerReadErr
 	}
-	rows := []LedgerRow{cloneProjectionValue(row)}
+	rows := append(cloneProjectionValue(transaction.ledgerPrefix), cloneProjectionValue(row))
 	if transaction.ledgerReadMutate != nil {
 		rows = transaction.ledgerReadMutate(rows)
 	}

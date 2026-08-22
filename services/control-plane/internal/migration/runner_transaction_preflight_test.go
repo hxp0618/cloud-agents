@@ -342,6 +342,10 @@ func TestRunnerTransactionProjectionProfileHasOnlyReviewedProductionConsumers(t 
 		"restoreRunnerExecutionProfile": true, "runnerTransactionProjectionProfileSealed": true,
 	}
 	allowed := map[string]bool{"pgx.go": true, "runner_transaction_preflight.go": true, "runner_statement_after.go": true, "runner_preledger.go": true}
+	successKernelAllowed := map[string]bool{
+		"runnerTransactionProjectionProfile": true, "enterRunnerProjectionProfile": true,
+		"restoreRunnerExecutionProfile": true,
+	}
 	for _, path := range paths {
 		name := filepath.Base(path)
 		if strings.HasSuffix(name, "_test.go") || allowed[name] {
@@ -353,7 +357,7 @@ func TestRunnerTransactionProjectionProfileHasOnlyReviewedProductionConsumers(t 
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && symbols[identifier.Name] {
+			if ok && symbols[identifier.Name] && !(name == "runner_ledger_entry_success_kernel.go" && successKernelAllowed[identifier.Name]) {
 				t.Fatalf("transaction projection profile %s acquired unreviewed production consumer %s", identifier.Name, name)
 			}
 			return true

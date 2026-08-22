@@ -443,6 +443,12 @@ func buildExactTwoMigrationAdmissionRuntime(t *testing.T) ([]byte, VerifiedTrust
 }
 
 func buildExactAdmissionRuntimeForMigrationCount(t *testing.T, migrationCount int, expected *AuthorityExpectedProjections) ([]byte, VerifiedTrustDecision) {
+	return buildExactAdmissionRuntimeForMigrationCountConfigured(t, migrationCount, expected, nil)
+}
+
+type exactAdmissionFirstEntryFixtureMutator func(*testing.T, *MigrationEntry, *CatalogContract, map[string][]byte)
+
+func buildExactAdmissionRuntimeForMigrationCountConfigured(t *testing.T, migrationCount int, expected *AuthorityExpectedProjections, mutateFirst exactAdmissionFirstEntryFixtureMutator) ([]byte, VerifiedTrustDecision) {
 	t.Helper()
 	if migrationCount != 1 && migrationCount != 2 {
 		t.Fatalf("exact admission fixture migration count=%d", migrationCount)
@@ -473,6 +479,13 @@ func buildExactAdmissionRuntimeForMigrationCount(t *testing.T, migrationCount in
 	entry.TransactionMode = "transactional"
 	entry.Reentrancy = "ledger_guarded"
 	entry.RollbackBoundary = "point_in_time_restore"
+	if mutateFirst != nil {
+		mutateFirst(t, &entry, &firstCatalog, direct.Files)
+	}
+	firstCatalogRaw := mustJSON(t, firstCatalog)
+	entry.CatalogContract.SizeBytes = uint64(len(firstCatalogRaw))
+	entry.CatalogContract.SHA256 = DigestBytes(firstCatalogRaw)
+	direct.Files[entry.CatalogContract.Path] = append([]byte(nil), firstCatalogRaw...)
 	entries := []MigrationEntry{entry}
 	catalogs := []CatalogContract{firstCatalog}
 	artifactBytes := map[string][]byte{
@@ -1399,12 +1412,17 @@ type runnerEvidenceJournalFake struct {
 	replayErr             error
 	replayCalls           int
 	appendErr             error
+	appendErrAt           map[int]error
 	appendValuesWithError bool
+	appendValuesAt        map[int]bool
 	appendOutcome         appendOutcome
+	appendOutcomeAt       map[int]appendOutcome
+	rotateAt              map[int]bool
 	mutateAppendResult    func(*AppendResult)
 	mutateAppendSnapshot  func(*RecoverySnapshot)
 	appendCalls           int
 	appendedRecord        EvidenceRecord
+	appendedRecords       []EvidenceRecord
 	closeCalls            int
 	closed                bool
 }
@@ -1428,8 +1446,13 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 	if journal.closed {
 		return AppendResult{}, errors.New("journal closed")
 	}
-	if journal.appendErr != nil && !journal.appendValuesWithError {
-		return AppendResult{}, journal.appendErr
+	appendErr := journal.appendErr
+	if err := journal.appendErrAt[journal.appendCalls]; err != nil {
+		appendErr = err
+	}
+	appendValuesWithError := journal.appendValuesWithError || journal.appendValuesAt[journal.appendCalls]
+	if appendErr != nil && !appendValuesWithError {
+		return AppendResult{}, appendErr
 	}
 	record, err := owned.consume(cursor.generation, cursor)
 	kind := EvidenceRecordKind("")
@@ -1455,9 +1478,21 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 	}
 	previousSnapshot := cloneRecoverySnapshot(journal.snapshot)
 	journal.appendedRecord = cloneEvidenceRecord(record)
+	journal.appendedRecords = append(journal.appendedRecords, cloneEvidenceRecord(record))
+	rotated := journal.rotateAt[journal.appendCalls]
+	sequence := cursor.nextSequence
+	previous := cloneDigestPointer(cursor.previousRecordDigest)
+	rotationRecordDigest := Digest("")
+	rotationCheckpointDigest := Digest("")
+	if rotated {
+		rotationRecordDigest = DigestBytes([]byte("runner-test-rotation-record:" + cursor.previousRecordDigest.String()))
+		rotationCheckpointDigest = DigestBytes([]byte("runner-test-rotation-checkpoint:" + rotationRecordDigest.String()))
+		sequence++
+		previous = digestPointer(rotationRecordDigest)
+	}
 	frame := EvidenceFrame{
-		FormatVersion: EvidenceFrameFormat, Sequence: cursor.nextSequence,
-		PreviousRecordDigest: cloneDigestPointer(cursor.previousRecordDigest),
+		FormatVersion: EvidenceFrameFormat, Sequence: sequence,
+		PreviousRecordDigest: previous,
 		RecordKind:           kind, Record: cloneEvidenceRecord(record),
 	}
 	frame.RecordDigest, err = frame.ComputeDigest()
@@ -1466,6 +1501,9 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 	}
 	checkpoint := DigestBytes([]byte("runner-test-checkpoint:" + frame.RecordDigest.String()))
 	outcome := journal.appendOutcome
+	if selected := journal.appendOutcomeAt[journal.appendCalls]; selected != "" {
+		outcome = selected
+	}
 	if outcome == "" {
 		outcome = appendOutcomeDurable
 	}
@@ -1475,14 +1513,25 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 		valid.Store(true)
 		next := cursor.clone()
 		next.valid = valid
-		next.nextSequence++
+		if rotated {
+			next.segmentIndex++
+			next.nextSequence += 2
+			next.lineageIndexNextSequence += 2
+		} else {
+			next.nextSequence++
+			next.lineageIndexNextSequence++
+		}
 		next.previousRecordDigest = digestPointer(frame.RecordDigest)
-		next.lineageIndexNextSequence++
 		next.lineageIndexPreviousRecordDigest = checkpoint
 		next.latestCheckpointRecordDigest = digestPointer(checkpoint)
 		durable = &next
 	}
-	result, err := finishConsumedAppend(cursor, cursor.generation, outcome, durable, frame.RecordDigest, checkpoint)
+	var result AppendResult
+	if rotated {
+		result, err = finishConsumedRotationAppend(cursor, cursor.generation, outcome, durable, frame.RecordDigest, checkpoint, rotationRecordDigest, rotationCheckpointDigest)
+	} else {
+		result, err = finishConsumedAppend(cursor, cursor.generation, outcome, durable, frame.RecordDigest, checkpoint)
+	}
 	if err != nil {
 		return AppendResult{}, err
 	}
@@ -1571,7 +1620,7 @@ func (journal *runnerEvidenceJournalFake) AppendDurable(ctx context.Context, cur
 	if journal.mutateAppendResult != nil {
 		journal.mutateAppendResult(&result)
 	}
-	return result, journal.appendErr
+	return result, appendErr
 }
 
 func (journal *runnerEvidenceJournalFake) Close(context.Context) error {
