@@ -54,7 +54,7 @@
 | D-044 | Runner ledger consumer 按 versioned generated profile → complete-ledger no-op → matrix/review 三切片推进                    | APPROVED | 用户于 2026-08-22 批准；v1 immutable，entry/recovery writer 继续 NI；无外部副作用/Gate  |
 | D-045 | Runner entry admission 按 generated five-pair profile → fresh-session read-only permit → matrix/review 三切片推进           | APPROVED | ADR-0021；permit 仅 close_without_mutation，entry/recovery writer 继续 NI；无 Gate      |
 | D-046 | Runner entry execution/success writer 拆为新 generated admission + one-entry multi-statement success profile                | APPROVED | ADR-0022；standing automatic-execution approval；不含 recovery/production DB/外部副作用 |
-| D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution-admission/success-writer/failure profiles      | PROPOSED | ADR-0023；需 owner 明确批准；当前不生成、不实现、不扩权                                 |
+| D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution-admission/success-writer/failure profiles      | APPROVED | ADR-0023；2026-08-22 owner 批准 A-G；逐 slice 独立复核，Gate OPEN                       |
 
 ## 2. 阶段追踪
 
@@ -283,21 +283,23 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       `351e5ea` 返回 `APPROVE, P0=0/P1=0/P2=0`。retry/abort/reconcile/failure writer 继续
       `NOT_IMPLEMENTED`。见 [`local matrix`](../p1/runner-ledger-entry-loop-service-matrix-20260822.md) 与
       [`independent review`](../p1/runner-ledger-entry-loop-service-independent-review-20260822.md)。
-- [ ] D-047 runner recovery decision 仍为 `PROPOSED`；supporting contract-only audit 已分型 1 个 excluded retry
+- [x] D-047 runner recovery decision 已由 owner 于 2026-08-22 明确批准；supporting contract-only audit 已分型 1 个 excluded retry
       pair 与 11 个 recovery/reconcile/failure pair，并形成
-      [`ADR-0023 proposal`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)。
+      [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)。
       Superseding candidate `deb3dc6` 的
       [`6d4da5b` independent review](../p1/runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md)
-      返回 `APPROVE, P0=0/P1=0/P2=0`，仅关闭 contract-only audit/review；D-047 仍未批准且保持 unchecked。
-      未获 owner 批准前不得生成 registry/profile、mint recovery permit、调用 writer 或改变现有
-      `MIGRATION_PROJECTION_NOT_IMPLEMENTED` 行为。见
+      返回 `APPROVE, P0=0/P1=0/P2=0`，仅关闭 contract-only audit/review。Owner approval 记录在
+      [`decision record`](../p1/runner-ledger-recovery-contract-decision-20260822.md)；当前仅授权按 Slices A-G
+      依序本地实现/独立复核，未归属已批准并通过 review 的行为继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
+      不授权生产数据库、HTTP/P2/provider、部署、发布或 Gate closure。见
       [`audit`](../p1/runner-ledger-recovery-contract-audit-20260822.md)。
 - [x] [P1 aggregate Gate gap audit](../p1/p1-aggregate-gate-gap-audit-20260822.md) 已在固定
       `1416fb3` 按 `G-CONTRACT/G-DATA/G-AUTHORITY-P1/G-SECURITY-P1` 的逐项退出标准区分已存在 evidence、
       缺失 immutable phase record、D-047 owner decision 与 physical-controller 环境 blocker。该项是只读
       entry audit；固定候选 `6274ad0` 的
       [`d03d62b` independent review](../p1/p1-aggregate-gate-gap-audit-independent-review-20260822.md)
-      返回 `APPROVE, P0=0/P1=0/P2=0`。未重跑 full migration、未批准 ADR-0023、未改变任何 Gate 状态。
+      返回 `APPROVE, P0=0/P1=0/P2=0`。该 audited source 当时尚未批准 ADR-0023；后续 D-047 owner decision
+      仅关闭决策 blocker，未重跑 full migration、未改变任何 Gate 状态。
 - [x] 首个新增第三方 dependency `ajv@8.20.0` / `ajv-formats@3.0.1` 已由未参与实现的 Codex
       supply-chain reviewer 完成[独立审查](../p1/dependency-reviews/ajv-8.20.0.md)；无疑难 license 豁免，后续新增
       dependency 仍须逐项重复该流程。

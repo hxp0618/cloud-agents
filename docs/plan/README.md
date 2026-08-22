@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`，retry/abort/reconcile/failure writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`；ADR-0023/D-047 已获 owner 批准并按 Slices A-G 进入 ordered local implementation/review，当前 retry/abort/reconcile/failure writer 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -19,8 +19,8 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
    [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)；
 2. 已接受、仅授权 ordered local slices 的
    [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)；
-3. 尚未接受且不授予实现 authority 的
-   [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md) proposal；
+3. 已接受、仅授权 ordered local Slices A-G 的
+   [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)；
 4. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 5. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 6. `legacy/` 历史计划；
@@ -59,7 +59,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0020`](adr/0020-p1-runner-ledger-consumer-contract.md)                                             | P1 runner ledger read-only consumer 决定         |
 | [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)                                      | P1 runner ledger close-only entry admission 决定 |
 | [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)                                 | P1 runner entry execution/success-writer 决定    |
-| [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)                                      | P1 runner recovery writer 提案（未批准）         |
+| [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)                                      | P1 runner recovery ordered writer 决定           |
 
 ## 历史与参考
 
@@ -149,11 +149,13 @@ execution-admission revalidation 与 registry-backed one-shot permit；其临时
 retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须独立 generated recovery contract
 与批准，当前结果不构成该 authority。后续
 [`contract-only audit`](p1/runner-ledger-recovery-contract-audit-20260822.md) 已把 1 个 excluded retry pair 与
-11 个 recovery/reconcile/failure pair 分型，并形成 [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)
-proposal；superseding candidate `deb3dc6` 的
+11 个 recovery/reconcile/failure pair 分型，并形成当时尚未批准的
+[`ADR-0023 proposal`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)；superseding candidate `deb3dc6` 的
 [`6d4da5b` independent review](p1/runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md) 返回
-`APPROVE, P0=0/P1=0/P2=0`。该 verdict 仅批准 audit/proposal 的准确性；proposal 状态仍为未批准，不允许生成
-profile、接入 claim/permit 或调用任何 recovery writer。
+`APPROVE, P0=0/P1=0/P2=0`。该 verdict 仅批准 audit/proposal 的准确性；owner 随后在
+[`D-047 decision record`](p1/runner-ledger-recovery-contract-decision-20260822.md) 接受 ADR-0023 的 Decision、Closed
+pair mapping 与 ordered Slices A-G。当前仅授权依序本地实现/独立复核，尚未完成的 recovery rows 继续
+`NOT_IMPLEMENTED`。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

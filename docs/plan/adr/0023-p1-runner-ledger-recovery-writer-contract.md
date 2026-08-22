@@ -1,12 +1,12 @@
 # ADR-0023: P1 runner ledger recovery writer versioned contract
 
-- Status: Proposed; explicit owner approval required
+- Status: Accepted by explicit owner approval on 2026-08-22
 - Scope: versioned runner recovery admission, action-specific writer profiles, and ordered local implementation/review
 - Depends on: ADR-0010, ADR-0019, ADR-0020, ADR-0021, ADR-0022, and the runner recovery contract audit
 
-This proposal grants no implementation authority. The twelve audited retry/recovery/reconcile/failure pairs continue
-to return `MIGRATION_PROJECTION_NOT_IMPLEMENTED` until this ADR is explicitly accepted and each ordered fixed slice is
-independently reviewed.
+This decision authorizes only the ordered local Slices A-G below, with a fixed independent review at each stated
+boundary. The twelve audited retry/recovery/reconcile/failure pairs continue to return
+`MIGRATION_PROJECTION_NOT_IMPLEMENTED` until their owning slice is implemented and independently approved.
 
 ## Context
 
@@ -19,13 +19,13 @@ lineage handoff machinery, and append/checkpoint primitives. It does not contain
 may combine those mechanisms for any audited pair. Reusing the close-only entry permit, the first-attempt execution
 permit, the historical brand-new writer, or the legacy reconcile helper would silently widen an immutable identity.
 
-## Proposed decision
+## Decision
 
 Keep every preflight, consumer, entry-admission, execution-admission, and first-attempt success-writer v1 artifact
 byte-identical. Add a new recovery admission registry bound to those exact identities, then mint only an
 action-specific one-shot permit for the selected generated pair.
 
-Beyond the common recovery-admission identity, the proposal uses separate generated identities for:
+Beyond the common recovery-admission identity, this decision uses separate generated identities for:
 
 1. abort-terminal append;
 2. dangling-commit observation terminal;
@@ -39,7 +39,7 @@ No permit is a union writer. The execution-admission and success-writer profile 
 records are distinct; a consumer for one family cannot call another family's binder or mutation port, and an ordinary
 outcome cannot be converted into either permit.
 
-## Proposed closed pair mapping
+## Closed pair mapping
 
 | Family                       | Exact generated pair or binding                                                                                                     |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -54,7 +54,7 @@ outcome cannot be converted into either permit.
 Unknown, complete, first-attempt success, next-entry success, caller-selected, copied, literal, stale, foreign-verifier,
 cross-profile, cross-generation, replaced-registry, and second-consume inputs do not match any family.
 
-## Proposed common recovery admission
+## Common recovery admission
 
 The common admission consumes one exact same-verifier consumer fact, reacquires the full-root evidence inventory,
 and, where a database observation is required, opens a fresh dedicated session. Before sealing it cross-binds:
@@ -70,7 +70,7 @@ and, where a database observation is required, opens a fresh dedicated session. 
 The admission permit is registry-backed, pointer/owner-bound, non-copyable, and one-shot. Its initial implementation
 slice is `close_without_mutation` only.
 
-## Proposed action boundaries
+## Action boundaries
 
 ### Abort terminal
 
@@ -111,7 +111,7 @@ The result path performs no mutation. It returns a stable typed failure only aft
 ledger/catalog boundary, and runtime identity are sealed. The result is ordinary data and cannot authorize retry,
 handoff, append, SQL, or a second transition.
 
-## Proposed failure precedence
+## Failure precedence
 
 - stored evidence/ledger/catalog contradiction is corruption and takes precedence over a requested action;
 - context, filesystem, session, lock, projection, cleanup, or other operational uncertainty takes precedence over
@@ -121,7 +121,7 @@ handoff, append, SQL, or a second transition.
 - a known pending/rejected outcome cannot be relabeled committed; and
 - no recovery output is reused as the next permit.
 
-## Proposed ordered slices
+## Ordered slices
 
 ### Slice A - generated contracts only
 
@@ -178,6 +178,7 @@ fresh re-entry, bounded attempts, and no ordinary-result reuse; obtain a final i
 
 ## Explicit non-claims
 
-This proposal does not authorize its own implementation. It does not change the current `NOT_IMPLEMENTED` behavior,
-permit production database writes, add external surfaces, deploy, publish, release, merge main, or close any immutable
-or aggregate Gate. Explicit owner approval and ordered fixed-candidate independent review remain mandatory.
+This decision authorizes only ordered local implementation and review. It does not itself change current
+`NOT_IMPLEMENTED` behavior, permit production database writes, add external surfaces, deploy, publish, release, merge
+main, or close any immutable or aggregate Gate. Each ordered fixed candidate still requires its stated independent
+review before the next authority-expanding slice proceeds.
