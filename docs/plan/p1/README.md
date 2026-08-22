@@ -177,7 +177,9 @@
   1 个 excluded retry pair 与 11 个 recovery/reconcile/failure pair，并形成
   [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md) proposal。该 proposal 未获 owner 批准；
   所有 pair 继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，没有新增 generated profile、claim/permit、writer、
-  production database、HTTP/P2/provider、部署、发布或 Gate authority。
+  production database、HTTP/P2/provider、部署、发布或 Gate authority。Superseding candidate `deb3dc6` 已由
+  [`6d4da5b` independent review](runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`；该 verdict 不接受 ADR-0023，也不授予任何实现 authority。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

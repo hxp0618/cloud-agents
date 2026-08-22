@@ -6,6 +6,8 @@
 - Control-plane subtree: `c78ffc27c88b0f50871795a281669b7b2ef9bd27`
 - Proposed decision: [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)
 - Scope: read-only source audit and versioned contract proposal only
+- Independent review: [`6d4da5b`, `APPROVE, P0=0/P1=0/P2=0`](runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md)
+- Review record SHA-256: `e8192b5ae4525ed11717935b2e821e9160f0f24161d3868f8869a4d2cfeb924c`
 
 This record does not add or approve a generated profile, claim, permit, database session, transaction, SQL execution,
 ledger/evidence mutation, lineage mutation, `Runner.Run` branch, HTTP/P2/provider surface, production database write,
@@ -193,5 +195,8 @@ The fixed worktree produced the following document/source-audit results before i
 | Secret scan                    | Gitleaks stdin scan of the candidate patch passed with no findings                                                                                                 |
 | Runtime suites                 | intentionally not run: this slice changes no runtime/generated source and makes no runtime conformance claim                                                       |
 
-Independent review remains pending. These local results close only the audit preparation, not ADR acceptance,
-implementation authority, any immutable/aggregate Gate, or Platform RC.
+The superseding fixed candidate `deb3dc61fe3fba11c4b09af1b714dbae592554ed` received independent review commit
+`6d4da5ba6c2f9cff5b08ae48fb28d8dbbf5e1e5f` with `APPROVE, P0=0/P1=0/P2=0`. The earlier candidate/review remains
+preserved and explicitly invalidated by `395a5fd508bd74da0a03fc1939e04a776d006400`; it is not reusable evidence.
+This closes only the contract-only audit/review preparation, not ADR acceptance, implementation authority, any
+immutable/aggregate Gate, or Platform RC.

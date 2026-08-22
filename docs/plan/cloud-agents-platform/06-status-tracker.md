@@ -286,6 +286,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
 - [ ] D-047 runner recovery decision 仍为 `PROPOSED`；supporting contract-only audit 已分型 1 个 excluded retry
       pair 与 11 个 recovery/reconcile/failure pair，并形成
       [`ADR-0023 proposal`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)。
+      Superseding candidate `deb3dc6` 的
+      [`6d4da5b` independent review](../p1/runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md)
+      返回 `APPROVE, P0=0/P1=0/P2=0`，仅关闭 contract-only audit/review；D-047 仍未批准且保持 unchecked。
       未获 owner 批准前不得生成 registry/profile、mint recovery permit、调用 writer 或改变现有
       `MIGRATION_PROJECTION_NOT_IMPLEMENTED` 行为。见
       [`audit`](../p1/runner-ledger-recovery-contract-audit-20260822.md)。

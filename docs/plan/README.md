@@ -139,7 +139,10 @@ retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须�
 与批准，当前结果不构成该 authority。后续
 [`contract-only audit`](p1/runner-ledger-recovery-contract-audit-20260822.md) 已把 1 个 excluded retry pair 与
 11 个 recovery/reconcile/failure pair 分型，并形成 [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)
-proposal；该 proposal 状态为未批准，不允许生成 profile、接入 claim/permit 或调用任何 recovery writer。
+proposal；superseding candidate `deb3dc6` 的
+[`6d4da5b` independent review](p1/runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md) 返回
+`APPROVE, P0=0/P1=0/P2=0`。该 verdict 仅批准 audit/proposal 的准确性；proposal 状态仍为未批准，不允许生成
+profile、接入 claim/permit 或调用任何 recovery writer。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS
