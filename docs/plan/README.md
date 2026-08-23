@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 均已独立批准；ADR-0023/D-047 ordered Slices A–G 也已全部固定并取得 `APPROVE, P0=0/P1=0/P2=0`，最终 Slice G candidate `2b01ede` 由 review `40ad401` 批准。这只完成 ordered local implementation/review package；`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 仍因 current-source immutable phase records 与 physical controller/host power-loss evidence 未闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 均已独立批准；ADR-0023/D-047 ordered Slices A–G 也已全部固定并取得 `APPROVE, P0=0/P1=0/P2=0`，最终 Slice G candidate `2b01ede` 由 review `40ad401` 批准。ADR-0024/D-048 已接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，但不把 clean `poweroff` 当崩溃证据，也不声明任何物理断电结果；`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 仍因 current-source immutable phase records、剩余矩阵与独立 Gate 复核未闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -21,11 +21,13 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
    [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)；
 3. 已接受、仅授权 ordered local Slices A-G 的
    [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)；
-4. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
-5. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
-6. `legacy/` 历史计划；
-7. `references/` 冻结参考合同；
-8. 代码现状。
+4. 已接受、限定 P1 durability evidence/RC acceptance 的
+   [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)；
+5. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
+6. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
+7. `legacy/` 历史计划；
+8. `references/` 冻结参考合同；
+9. 代码现状。
 
 ## 当前计划
 
@@ -60,6 +62,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0021`](adr/0021-p1-runner-ledger-entry-admission-contract.md)                                      | P1 runner ledger close-only entry admission 决定 |
 | [`ADR-0022`](adr/0022-p1-runner-ledger-entry-success-writer-contract.md)                                 | P1 runner entry execution/success-writer 决定    |
 | [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)                                      | P1 runner recovery ordered writer 决定           |
+| [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)                                        | P1 软件崩溃 durability acceptance 边界           |
 
 ## 历史与参考
 
@@ -116,10 +119,12 @@ rejection；只复用固定历史 artifact 并运行短 fake fixture，未重跑
 [`1a98f72` independent review](p1/migration-shard-runner-closure-repair-independent-review-20260822.md) 返回
 `APPROVE, P0=0/P1=0/P2=0`；该 verdict 只关闭 reusable-runner implementation/review slice，不构成 Gate closure。
 当前 [`P1 aggregate Gate gap audit`](p1/p1-aggregate-gate-gap-audit-20260822.md) 把四个 P1 Exit Gate 的现有
-evidence 与缺口分开：D-047/ADR-0023 仍须 owner 显式决定，physical controller/host power-loss 仍受 dedicated
+evidence 与当时缺口分开：D-047/ADR-0023 仍须 owner 显式决定，physical controller/host power-loss 仍受 dedicated
 DUT/storage/out-of-band controller 阻塞，最终 current-source immutable phase records 仍未形成。固定候选
 `6274ad0` 的 [`d03d62b` independent review](p1/p1-aggregate-gate-gap-audit-independent-review-20260822.md)
-返回 `APPROVE, P0=0/P1=0/P2=0`；审计与复核均未改变 Gate。
+返回 `APPROVE, P0=0/P1=0/P2=0`；审计与复核均未改变 Gate。后续 D-048/ADR-0024 只把物理硬断电从当前
+P1/RC 必需证据改为可选 hardening，并要求无同步 bare-metal 软件崩溃、既有 ext4/XFS/QEMU matrices、重启后
+精确核验、current-source record 与独立 Gate review 的组合；旧审计仍是其固定 source 的准确历史记录。
 其后 runner ledger consumer 已在 `dcb4b3a` 固定 complete-ledger `return_success` read-only no-op，并由
 `4209e12` 独立复核批准；ADR-0021 的 generated five-pair entry-admission profile、same-verifier fresh-session
 read-only revalidation 与 registry-backed `close_without_mutation` permit 又在修复 generation-lock 漂移后的
