@@ -75,12 +75,12 @@ type databaseState struct {
 // projection on its dedicated database connection. The historical exact
 // single-entry path remains closed over its original authority chain. A wider
 // verified bundle enters the generated ledger consumer: an already-complete
-// ledger returns the reviewed no-op result, while each of the four generated
-// first-attempt pairs may consume one fresh execution admission and the
-// reviewed success kernel before the loop re-enters fresh preflight. Every
-// intent, intermediate, commit intent, committed terminal, and checkpoint
-// remains ordered; retry, abort, reconciliation, failure, and unsupported entry
-// pairs remain NOT_IMPLEMENTED.
+// ledger returns the reviewed no-op result. Generated entry and recovery
+// actions consume one exact admission at a time: writers and handoffs re-enter
+// fresh preflight, successful execution returns an ordinary committed outcome,
+// and terminal or divergent evidence returns a bounded typed failure. Every
+// intent, intermediate, commit intent, terminal, resolution, and checkpoint
+// remains ordered; no ordinary outcome is reusable as mutation authority.
 func (runner *Runner) Run(ctx context.Context, request RunRequest) (RunResult, error) {
 	if err := runner.validateAdmissionDependencies(request); err != nil {
 		return RunResult{}, err

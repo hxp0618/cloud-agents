@@ -10,14 +10,16 @@ type runnerLedgerPreflightStepKind uint8
 const (
 	runnerLedgerPreflightStepComplete runnerLedgerPreflightStepKind = iota + 1
 	runnerLedgerPreflightStepEntryCommitted
+	runnerLedgerPreflightStepReenter
 )
 
 type runnerLedgerPreflightStep struct {
-	kind         runnerLedgerPreflightStepKind
-	prefixLength uint32
-	nextEntryID  string
-	result       RunResult
-	outcome      runnerLedgerEntrySuccessOutcome
+	kind               runnerLedgerPreflightStepKind
+	prefixLength       uint32
+	nextEntryID        string
+	result             RunResult
+	outcome            runnerLedgerEntrySuccessOutcome
+	ambiguousRecovered bool
 }
 
 // consumeRunnerLedgerPreflight is the only production entry loop for the
@@ -34,28 +36,37 @@ func (runner *Runner) consumeRunnerLedgerPreflight(ctx context.Context, dsn stri
 	}
 	bundle = verifiedBundle
 	entries := bundle.Manifest.SchemaBundle.Migrations
-	if len(entries) == 0 || uint64(len(entries)) > uint64(^uint32(0)) {
-		return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "verified runtime entry order is unavailable", nil)
+	policy := bundle.Manifest.ExecutionPolicy
+	maxIterations, err := runnerLedgerRecoveryIterationLimit(len(entries), policy)
+	if err != nil {
+		return RunResult{}, err
 	}
 	applied := make([]string, 0, len(entries))
+	ambiguousRecovered := make([]string, 0, len(entries))
 	var expectedPrefix uint32
 	haveExpectedPrefix := false
-	for iteration := 0; iteration <= len(entries); iteration++ {
+	for iteration := uint64(0); iteration < maxIterations; iteration++ {
 		step, stepErr := runner.consumeRunnerLedgerPreflightStep(ctx, dsn, inputBundle, plans, evidence, candidate)
 		if stepErr != nil {
 			return RunResult{}, stepErr
 		}
 		switch step.kind {
 		case runnerLedgerPreflightStepComplete:
-			if len(applied) != 0 || step.prefixLength != uint32(len(entries)) ||
+			if step.prefixLength != uint32(len(entries)) ||
 				step.result.SchemaBundleDigest != bundle.Manifest.SchemaBundleDigest ||
 				step.result.ManifestDigest != bundle.Manifest.ManifestDigest ||
 				step.result.FinalHead != entries[len(entries)-1].ID || step.result.Applied == nil ||
 				step.result.AmbiguousRecovered == nil || len(step.result.Applied) != 0 ||
-				len(step.result.AmbiguousRecovered) != 0 {
+				len(step.result.AmbiguousRecovered) != 0 || haveExpectedPrefix && expectedPrefix != uint32(len(entries)) {
 				return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "complete ledger step is contradictory", nil)
 			}
-			return step.result, nil
+			return RunResult{
+				SchemaBundleDigest: bundle.Manifest.SchemaBundleDigest,
+				ManifestDigest:     bundle.Manifest.ManifestDigest,
+				FinalHead:          entries[len(entries)-1].ID,
+				Applied:            append([]string{}, applied...),
+				AmbiguousRecovered: append([]string{}, ambiguousRecovered...),
+			}, nil
 		case runnerLedgerPreflightStepEntryCommitted:
 			if !step.outcome.valid() || step.prefixLength >= uint32(len(entries)) ||
 				step.nextEntryID != entries[step.prefixLength].ID || step.outcome.migrationID != step.nextEntryID ||
@@ -63,27 +74,47 @@ func (runner *Runner) consumeRunnerLedgerPreflight(ctx context.Context, dsn stri
 				haveExpectedPrefix && step.prefixLength != expectedPrefix {
 				return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "committed entry step is contradictory", nil)
 			}
-			applied = append(applied, step.outcome.migrationID)
+			if step.ambiguousRecovered {
+				ambiguousRecovered = append(ambiguousRecovered, step.outcome.migrationID)
+			} else {
+				applied = append(applied, step.outcome.migrationID)
+			}
 			expectedPrefix, haveExpectedPrefix = step.outcome.ledgerLength, true
 			complete := expectedPrefix == uint32(len(entries))
 			if complete != (step.outcome.state == runnerLedgerEntrySuccessEntryCommittedComplete) ||
 				!complete && step.outcome.state != runnerLedgerEntrySuccessEntryCommittedNextEntry {
 				return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "committed entry classification differs from the verified order", nil)
 			}
-			if complete {
-				return RunResult{
-					SchemaBundleDigest: bundle.Manifest.SchemaBundleDigest,
-					ManifestDigest:     bundle.Manifest.ManifestDigest,
-					FinalHead:          step.outcome.ledgerHead,
-					Applied:            append([]string{}, applied...),
-					AmbiguousRecovered: []string{},
-				}, nil
+		case runnerLedgerPreflightStepReenter:
+			if step.outcome.valid() || step.result.SchemaBundleDigest != "" || step.result.ManifestDigest != "" ||
+				step.result.FinalHead != "" || step.result.Applied != nil || step.result.AmbiguousRecovered != nil || step.nextEntryID != "" ||
+				step.prefixLength > uint32(len(entries)) || haveExpectedPrefix && step.prefixLength != expectedPrefix {
+				return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "re-entry step is contradictory", nil)
 			}
+			expectedPrefix, haveExpectedPrefix = step.prefixLength, true
 		default:
 			return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "runner ledger step is outside the closed state machine", nil)
 		}
 	}
-	return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "runner ledger entry loop exceeded the verified order", nil)
+	return RunResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "runner ledger recovery loop exceeded the verified bound", nil)
+}
+
+func runnerLedgerRecoveryIterationLimit(entryCount int, policy ExecutionPolicy) (uint64, error) {
+	if entryCount <= 0 || uint64(entryCount) > uint64(^uint32(0)) {
+		return 0, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "verified runtime entry order is unavailable", nil)
+	}
+	if policy.Validate() != nil || policy.MaxAttempts == 0 || policy.MaxAttempts > uint64(^uint32(0)) {
+		return 0, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "verified execution policy is unavailable", nil)
+	}
+	perEntry := policy.MaxAttempts*3 + 2
+	if perEntry < policy.MaxAttempts || uint64(entryCount) > (maxJSONInteger-1)/perEntry {
+		return 0, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "verified recovery iteration bound overflows", nil)
+	}
+	maximum := uint64(entryCount)*perEntry + 1
+	if maximum == 0 || maximum > maxJSONInteger {
+		return 0, fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-loop", "verified recovery iteration bound is invalid", nil)
+	}
+	return maximum, nil
 }
 
 // consumeRunnerLedgerPreflightStep obtains ordinary dispatch data only by
@@ -161,10 +192,11 @@ func (runner *Runner) consumeRunnerLedgerPreflightStep(ctx context.Context, dsn 
 		if _, ok := generatedRunnerLedgerRecoveryAdmissionAction(
 			fact.dispatch.fact.disposition, fact.dispatch.fact.recovery.State, fact.dispatch.fact.recovery.Action,
 		); ok {
-			if err := runner.admitRunnerLedgerRecoveryAction(ctx, dsn, bundle, plans, evidence, candidate, fact); err != nil {
+			result, err := runner.consumeRunnerLedgerRecoveryAction(ctx, dsn, bundle, plans, evidence, candidate, fact)
+			if err != nil {
 				return runnerLedgerPreflightStep{}, err
 			}
-			return runnerLedgerPreflightStep{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-entry", "entry writer is not implemented", nil)
+			return runnerLedgerRecoveryStep(fact, bundle, result)
 		}
 		permit, err := runner.prepareRunnerLedgerEntryExecutionAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
 		if err != nil {
@@ -204,13 +236,39 @@ func (runner *Runner) consumeRunnerLedgerPreflightStep(ctx context.Context, dsn 
 		if _, ok := generatedRunnerLedgerRecoveryAdmissionAction(
 			fact.dispatch.fact.disposition, fact.dispatch.fact.recovery.State, fact.dispatch.fact.recovery.Action,
 		); ok {
-			if err := runner.admitRunnerLedgerRecoveryAction(ctx, dsn, bundle, plans, evidence, candidate, fact); err != nil {
+			result, err := runner.consumeRunnerLedgerRecoveryAction(ctx, dsn, bundle, plans, evidence, candidate, fact)
+			if err != nil {
 				return runnerLedgerPreflightStep{}, err
 			}
+			return runnerLedgerRecoveryStep(fact, bundle, result)
 		}
 		return runnerLedgerPreflightStep{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer-recovery", "recovery consumer and writer are not implemented", nil)
 	default:
 		return runnerLedgerPreflightStep{}, fail(CodeProjectionNotImplemented, "runner-ledger-consumer", "runner ledger consumer action is not implemented", nil)
+	}
+}
+
+func runnerLedgerRecoveryStep(fact runnerLedgerConsumerFact, bundle *RuntimeBundle, result runnerLedgerRecoveryActionResult) (runnerLedgerPreflightStep, error) {
+	if !fact.valid() || bundle == nil || bundle.Manifest == nil || !result.valid() {
+		return runnerLedgerPreflightStep{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-consumer-recovery", "recovery action returned an invalid ordinary result", nil)
+	}
+	prefixLength := fact.dispatch.fact.orderedMigrationPrefixLength
+	switch result.kind {
+	case runnerLedgerRecoveryActionReenter:
+		return runnerLedgerPreflightStep{kind: runnerLedgerPreflightStepReenter, prefixLength: prefixLength}, nil
+	case runnerLedgerRecoveryActionEntryCommitted:
+		entries := bundle.Manifest.SchemaBundle.Migrations
+		if prefixLength >= uint32(len(entries)) || fact.dispatch.fact.nextEntry != nil && fact.dispatch.fact.nextEntry.MigrationID != result.outcome.migrationID ||
+			result.outcome.migrationID != entries[prefixLength].ID || result.outcome.ledgerLength != prefixLength+1 {
+			return runnerLedgerPreflightStep{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-consumer-recovery", "recovery action result differs from the verified entry order", nil)
+		}
+		return runnerLedgerPreflightStep{
+			kind: runnerLedgerPreflightStepEntryCommitted, prefixLength: prefixLength,
+			nextEntryID: result.outcome.migrationID, outcome: result.outcome,
+			ambiguousRecovered: result.ambiguousRecovered,
+		}, nil
+	default:
+		return runnerLedgerPreflightStep{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-consumer-recovery", "recovery action result is outside the closed state machine", nil)
 	}
 }
 

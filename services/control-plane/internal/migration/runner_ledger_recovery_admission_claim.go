@@ -265,6 +265,23 @@ func validRunnerLedgerRecoveryAdmissionUse(binder runnerLedgerRecoveryAdmissionC
 	return record.factSubject == subject && record.action == action && record.consumed == consumed && record.boundary == boundary
 }
 
+func retireRunnerLedgerRecoveryAdmissionUse(binder runnerLedgerRecoveryAdmissionClaimBinder, expected *runnerLedgerRecoveryAdmissionUseRecord, subject Digest, action runnerLedgerRecoveryAction, boundary [32]byte) bool {
+	if binder == nil || expected == nil || boundary == ([32]byte{}) {
+		return false
+	}
+	value, ok := runnerLedgerRecoveryAdmissionUseByEvidenceBind.LoadAndDelete(binder)
+	record, recordOK := value.(*runnerLedgerRecoveryAdmissionUseRecord)
+	if !ok || !recordOK || record != expected {
+		if ok {
+			runnerLedgerRecoveryAdmissionUseByEvidenceBind.Store(binder, value)
+		}
+		return false
+	}
+	record.mu.Lock()
+	defer record.mu.Unlock()
+	return record.factSubject == subject && record.action == action && record.consumed && record.boundary == boundary
+}
+
 func validRunnerLedgerRecoveryAdmissionClaim(claim *runnerLedgerRecoveryAdmissionClaim, binder runnerLedgerRecoveryAdmissionClaimBinder, candidateBinding *verifiedEvidenceRunBinding) bool {
 	if claim == nil || claim.self != claim || claim.binding == nil || claim.binding.claim != claim ||
 		!sameRunnerOwnedPointer(claim.binding.binder, binder) || claim.binding.candidateBinding != candidateBinding ||

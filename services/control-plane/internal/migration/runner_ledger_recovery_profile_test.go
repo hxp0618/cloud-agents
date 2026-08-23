@@ -194,6 +194,7 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 			"runner_ledger_recovery_admission_claim.go":       true,
 			"runner_ledger_recovery_admission_permit.go":      true,
 			"runner_ledger_recovery_commit_reconciliation.go": true,
+			"runner_ledger_recovery_result.go":                true,
 			"runner_ledger_recovery_retry_handoff.go":         true,
 			"runner_ledger_recovery_success_kernel.go":        true,
 		},
@@ -222,7 +223,8 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 			name == "evidence_runner_ledger_recovery_success.go" || name == "runner_ledger_entry_success_kernel.go" ||
 			name == "runner_ledger_recovery_abort_terminal.go" || name == "runner_ledger_recovery_admission_claim.go" ||
 			name == "runner_ledger_recovery_admission_permit.go" || name == "runner_ledger_recovery_commit_reconciliation.go" ||
-			name == "runner_ledger_recovery_retry_handoff.go" || name == "runner_ledger_recovery_success_kernel.go" {
+			name == "runner_ledger_recovery_result.go" || name == "runner_ledger_recovery_retry_handoff.go" ||
+			name == "runner_ledger_recovery_success_kernel.go" {
 			for _, imported := range file.Imports {
 				path := strings.Trim(imported.Path.Value, `"`)
 				if path == "database/sql" || path == "net/http" || strings.Contains(path, "pgx") {
@@ -275,6 +277,7 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 		t.Fatal(err)
 	}
 	admissionCalls := 0
+	legacyAdmissionCalls := 0
 	abortWriterCalls := 0
 	commitObservationWriterCalls := 0
 	ambiguousResolutionWriterCalls := 0
@@ -302,11 +305,17 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 				return true
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if ok && selector.Sel.Name == "admitRunnerLedgerRecoveryAction" {
-				admissionCalls++
-				if name != "runner_ledger_consumer_service.go" {
+			if ok && selector.Sel.Name == "consumeRunnerLedgerRecoveryAction" {
+				if name == "runner_ledger_consumer_service.go" {
+					admissionCalls++
+				} else if name == "runner_ledger_recovery_admission_permit.go" {
+					legacyAdmissionCalls++
+				} else {
 					t.Errorf("recovery admission has production caller in %s", name)
 				}
+			}
+			if ok && selector.Sel.Name == "admitRunnerLedgerRecoveryAction" {
+				t.Errorf("legacy recovery admission has production caller in %s", name)
 			}
 			if ok && selector.Sel.Name == "appendRunnerLedgerRecoveryAbortTerminal" {
 				abortWriterCalls++
@@ -347,6 +356,7 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 			return true
 		})
 		if name != "runner_ledger_recovery_admission_claim.go" && name != "runner_ledger_recovery_admission_permit.go" &&
+			name != "runner_ledger_recovery_result.go" &&
 			name != "runner_ledger_recovery_retry_handoff.go" && name != "evidence_session.go" {
 			continue
 		}
@@ -381,7 +391,10 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 		}
 	}
 	if admissionCalls != 2 {
-		t.Fatalf("recovery close-only production calls=%d want=2", admissionCalls)
+		t.Fatalf("recovery production calls=%d want=2", admissionCalls)
+	}
+	if legacyAdmissionCalls != 1 {
+		t.Fatalf("legacy recovery adapter calls=%d want=1", legacyAdmissionCalls)
 	}
 	if abortWriterCalls != 1 {
 		t.Fatalf("abort-terminal writer production calls=%d want=1", abortWriterCalls)

@@ -50,9 +50,12 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 		t.Fatalf("matrix cases=%d want=%d", len(cases), generatedRunnerLedgerConsumerPairCount)
 	}
 	counts := map[runnerLedgerConsumerAction]int{}
+	executed := 0
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			if action, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok &&
+			executed++
+			action, recoveryAction := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action)
+			if recoveryAction &&
 				action == generatedRunnerLedgerRecoveryProfiles[1].action {
 				fixture := newRunnerLedgerRecoveryAbortTerminalFixture(t, test.state, test.action)
 				defer fixture.close(t)
@@ -68,9 +71,9 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 					fixture.success.execution.base.service.evidence, base.candidate,
 				)
 				counts[test.wantAction]++
-				assertRunnerLedgerConsumerNotImplemented(t, RunResult{}, err, "runner-ledger-consumer-recovery")
 				journal := fixture.success.execution.base.service.evidence.runnerEvidenceSessionFake.journal
-				if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) || sequence.attempts != 2 || preflight.ledgerReadCalls != 2 ||
+				if err != nil || step.kind != runnerLedgerPreflightStepReenter || step.prefixLength != 1 ||
+					sequence.attempts != 2 || preflight.ledgerReadCalls != 2 ||
 					preflight.unlockCalls != 1 || preflight.closeCalls != 1 || fixture.database.ledgerReadCalls != 6 ||
 					fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 || fixture.database.beginCalls != 0 ||
 					journal.appendedRecord.AttemptTerminal == nil || fixture.beforeCursor.Valid() {
@@ -78,7 +81,7 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 				}
 				return
 			}
-			if action, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok &&
+			if recoveryAction &&
 				(action == generatedRunnerLedgerRecoveryProfiles[2].action || action == generatedRunnerLedgerRecoveryProfiles[3].action) {
 				fixture := newRunnerLedgerRecoveryReconciliationFixture(t, test.state, runnerLedgerReconciliationExactPending, 16)
 				defer fixture.close(t)
@@ -96,8 +99,8 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 					fixture.success.execution.base.service.evidence, base.candidate,
 				)
 				counts[test.wantAction]++
-				assertRunnerLedgerConsumerNotImplemented(t, RunResult{}, err, "runner-ledger-consumer-recovery")
-				if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) || sequence.attempts != 2 || preflight.ledgerReadCalls != 2 ||
+				if err != nil || step.kind != runnerLedgerPreflightStepReenter || step.prefixLength != 1 ||
+					sequence.attempts != 2 || preflight.ledgerReadCalls != 2 ||
 					preflight.unlockCalls != 1 || preflight.closeCalls != 1 || fixture.database.ledgerReadCalls != 6 ||
 					fixture.database.unlockCalls != 1 || fixture.database.closeCalls != 1 || fixture.database.beginCalls != 0 ||
 					journal.appendCalls != beforeAppends+1 || fixture.beforeCursor.Valid() {
@@ -109,7 +112,7 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 				}
 				return
 			}
-			if action, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok &&
+			if recoveryAction &&
 				action == generatedRunnerLedgerRecoveryProfiles[4].action {
 				fixture := runnerLedgerRetryHandoffOutcomeCases()[0].open(t)
 				defer fixture.close()
@@ -124,8 +127,7 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 					context.Background(), "test-only", fixture.bundle, fixture.plans, fixture.evidence, fixture.candidate,
 				)
 				counts[test.wantAction]++
-				assertRunnerLedgerConsumerNotImplemented(t, RunResult{}, err, "runner-ledger-consumer-recovery")
-				if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) || sequence.attempts != 2 ||
+				if err != nil || step.kind != runnerLedgerPreflightStepReenter || step.prefixLength != 1 || sequence.attempts != 2 ||
 					fixture.evidence.retryHandoffBindCalls != 1 || oldCursor.Valid() ||
 					!preflight.closed || !admission.closed || preflight.unlockCalls != 1 || admission.unlockCalls != 1 ||
 					preflight.beginCalls != 0 || admission.beginCalls != 0 ||
@@ -133,6 +135,42 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 					preflight.backend.ledgerInsertCalls != 0 || admission.backend.ledgerInsertCalls != 0 {
 					t.Fatalf("retry-handoff consumer matrix escaped its boundary: step=%+v sequence=%+v preflight=%+v admission=%+v", step, sequence, preflight, admission)
 				}
+				return
+			}
+			if recoveryAction && action == generatedRunnerLedgerRecoveryProfiles[5].action {
+				fixture := newRunnerLedgerRecoverySuccessAdmissionFixture(t, test.disposition, test.action)
+				defer fixture.close(t)
+				base := fixture.service.kernel.base
+				prefixLength := len(fixture.service.evidence.schema.durableObservedLedgerPrefix)
+				planCount := configureRunnerLedgerConsumerRecoveryExecution(t, fixture, prefixLength)
+				rows := runnerLedgerConsumerPrefixRows(base.bundle, prefixLength)
+				preflight := newRunnerPreflightSession()
+				preflight.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(rows), cloneProjectionValue(rows)}
+				sequence := &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{preflight, fixture.database}}
+				fixture.service.kernel.runner.Connector = sequence
+				step, err := fixture.service.kernel.runner.consumeRunnerLedgerPreflightStep(
+					context.Background(), "test-only", base.bundle, base.plans, fixture.service.evidence, base.candidate,
+				)
+				counts[test.wantAction]++
+				entries := base.bundle.Manifest.SchemaBundle.Migrations
+				wantState := runnerLedgerEntrySuccessEntryCommittedNextEntry
+				if prefixLength+1 == len(entries) {
+					wantState = runnerLedgerEntrySuccessEntryCommittedComplete
+				}
+				if err != nil || step.kind != runnerLedgerPreflightStepEntryCommitted || step.ambiguousRecovered ||
+					step.prefixLength != uint32(prefixLength) || step.nextEntryID != entries[prefixLength].ID ||
+					step.outcome.state != wantState || step.outcome.migrationID != entries[prefixLength].ID ||
+					step.outcome.ledgerLength != uint32(prefixLength+1) || sequence.attempts != 2 ||
+					preflight.closed != true || fixture.database.closed != true || fixture.database.beginCalls != 1 ||
+					fixture.database.transaction.executeCalls != planCount || fixture.database.transaction.ledgerInsertCalls != 1 ||
+					fixture.database.transaction.commitCalls != 1 {
+					t.Fatalf("recovery execution matrix step=%+v err=%v sequence=%+v preflight=%+v admission=%+v", step, err, sequence, preflight, fixture.database)
+				}
+				return
+			}
+			if recoveryAction && action == generatedRunnerLedgerRecoveryProfiles[7].action {
+				assertRunnerLedgerConsumerMatrixFailure(t, test.state)
+				counts[test.wantAction]++
 				return
 			}
 			fixture := newRunnerLedgerPreflightServiceFixture(t)
@@ -143,7 +181,7 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 			entrySupported := false
 			recoverySupported := false
 			planCount := 0
-			if _, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok {
+			if recoveryAction {
 				recoverySupported = true
 			}
 			if test.wantAction == runnerLedgerConsumerEntryNotImplemented || recoverySupported {
@@ -240,8 +278,89 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 			}
 		})
 	}
-	if counts[runnerLedgerConsumerReturnSuccessNoop] != 1 || counts[runnerLedgerConsumerEntryNotImplemented] != 5 || counts[runnerLedgerConsumerRecoveryNotImplemented] != 11 {
+	if executed == len(cases) && (counts[runnerLedgerConsumerReturnSuccessNoop] != 1 || counts[runnerLedgerConsumerEntryNotImplemented] != 5 || counts[runnerLedgerConsumerRecoveryNotImplemented] != 11) {
 		t.Fatalf("consumer counts=%v", counts)
+	}
+}
+
+func configureRunnerLedgerConsumerRecoveryExecution(t *testing.T, fixture *runnerLedgerRecoveryAdmissionFixture, prefixLength int) int {
+	t.Helper()
+	base := fixture.service.kernel.base
+	evidence := fixture.service.evidence
+	snapshot := cloneRecoverySnapshot(evidence.recovery)
+	evidence.runnerEvidenceSessionFake.snapshot = snapshot
+	evidence.runnerEvidenceSessionFake.journal.snapshot = snapshot
+	evidence.runnerEvidenceSessionFake.journal.cursor = snapshot.cursor.clone()
+	entries := base.bundle.Manifest.SchemaBundle.Migrations
+	if prefixLength < 0 || prefixLength >= len(entries) {
+		t.Fatalf("recovery execution prefix=%d entries=%d", prefixLength, len(entries))
+	}
+	selected := make([]StatementPlan, 0)
+	for _, plan := range base.plans {
+		if plan.MigrationID == entries[prefixLength].ID {
+			selected = append(selected, plan)
+		}
+	}
+	if len(selected) == 0 {
+		t.Fatal("recovery execution plans are unavailable")
+	}
+	factory := fixture.service.kernel.factory
+	before := catalogStateForRunnerLedgerEntryPlan(t, evidence, selected[0], selected[0].ExpectedTransition.CatalogBefore)
+	factory.transitionState = &before
+	transaction := fixture.database.transaction
+	transaction.ledgerPrefix = runnerLedgerConsumerPrefixRows(base.bundle, prefixLength)
+	transaction.executeAllowed = true
+	transaction.executeMutate = func([]byte) {
+		index := transaction.executeCalls - 1
+		if index < 0 || index >= len(selected) {
+			t.Fatalf("unexpected recovery execute index %d", index)
+		}
+		after := catalogStateForRunnerLedgerEntryPlan(t, evidence, selected[index], selected[index].ExpectedTransition.CatalogAfter)
+		factory.transitionState = &after
+	}
+	fixture.service.evidence.runnerEvidenceSessionFake.journal.bundleComplete = prefixLength+1 == len(entries)
+	return len(selected)
+}
+
+func assertRunnerLedgerConsumerMatrixFailure(t *testing.T, state RecoveryState) {
+	t.Helper()
+	if state == RecoveryTerminal {
+		fixture := newRunnerLedgerRecoveryAbortTerminalFixture(t, RecoveryDanglingStatementIntent, RecoveryAppendAbortedTerminal)
+		defer fixture.close(t)
+		if err := fixture.run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		evidence := fixture.success.execution.base.service.evidence
+		refreshRunnerLedgerRecoveryTestFacts(evidence)
+		base := fixture.success.execution.base.service.kernel.base
+		sequence, _, _ := runnerLedgerReturnFailureTestSessions(base.bundle, evidence)
+		fixture.success.execution.base.service.kernel.runner.Connector = sequence
+		step, err := fixture.success.execution.base.service.kernel.runner.consumeRunnerLedgerPreflightStep(
+			context.Background(), "test-only", base.bundle, base.plans, evidence, base.candidate,
+		)
+		assertRunnerLedgerTypedFailure(t, err, evidence.RecoverySnapshot().lastTerminal.Value())
+		if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) {
+			t.Fatalf("terminal failure step=%+v", step)
+		}
+		return
+	}
+	fixture := newRunnerLedgerRecoveryReconciliationFixture(t, RecoveryAmbiguousUnresolved, runnerLedgerReconciliationDivergent, 16)
+	defer fixture.close(t)
+	if err := fixture.run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fixture.success.execution.base.service.kernel.factory.mutateCatalog = nil
+	evidence := fixture.success.execution.base.service.evidence
+	refreshRunnerLedgerRecoveryTestFacts(evidence)
+	base := fixture.success.execution.base.service.kernel.base
+	sequence, _, _ := runnerLedgerReturnFailureTestSessions(base.bundle, evidence)
+	fixture.success.execution.base.service.kernel.runner.Connector = sequence
+	step, err := fixture.success.execution.base.service.kernel.runner.consumeRunnerLedgerPreflightStep(
+		context.Background(), "test-only", base.bundle, base.plans, evidence, base.candidate,
+	)
+	assertRunnerLedgerTypedFailure(t, err, evidence.RecoverySnapshot().lastTerminal.Value())
+	if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) {
+		t.Fatalf("divergent failure step=%+v", step)
 	}
 }
 
@@ -677,7 +796,10 @@ func TestPublicRunnerExecutesGeneratedFirstAttemptEntryLoopWithFreshSessions(t *
 	firstRows := runnerLedgerConsumerPrefixRows(bundle, 1)
 	preflightSecond.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(firstRows), cloneProjectionValue(firstRows)}
 	executeSecond := newRunnerPreflightSession()
-	sessions := []*runnerPreflightSession{preflightFirst, executeFirst, preflightSecond, executeSecond}
+	preflightComplete := newRunnerPreflightSession()
+	completeRows := runnerLedgerConsumerPrefixRows(bundle, len(entries))
+	preflightComplete.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(completeRows), cloneProjectionValue(completeRows)}
+	sessions := []*runnerPreflightSession{preflightFirst, executeFirst, preflightSecond, executeSecond, preflightComplete}
 	connector := &runnerLedgerConsumerSequenceConnector{sessions: sessions}
 	factory := &runnerPreflightProjectorFactory{allowMigrationRoleCatalog: true}
 	factory.initialize()
@@ -706,8 +828,8 @@ func TestPublicRunnerExecutesGeneratedFirstAttemptEntryLoopWithFreshSessions(t *
 		len(result.AmbiguousRecovered) != 0 {
 		t.Fatalf("entry-loop result=%+v err=%v", result, runErr)
 	}
-	if connector.attempts != len(sessions) || sink.session == nil || sink.session.bindCalls != 2 ||
-		sink.session.consumeCalls != 2 || sink.session.executionBindCalls != 2 || sink.session.executionConsumeCalls != 2 ||
+	if connector.attempts != len(sessions) || sink.session == nil || sink.session.bindCalls != 3 ||
+		sink.session.consumeCalls != 3 || sink.session.executionBindCalls != 2 || sink.session.executionConsumeCalls != 2 ||
 		sink.session.entryBindCalls != 0 || sink.session.entryConsumeCalls != 0 ||
 		sink.session.successBindCalls != 2*(planCounts[0]+planCounts[1])+4 ||
 		sink.session.journal.appendCalls != 2*(planCounts[0]+planCounts[1])+4 ||
@@ -766,7 +888,10 @@ func TestPublicRunnerExecutesPartialImmediateNextEntryOnOneFreshSession(t *testi
 	preflight := newRunnerPreflightSession()
 	preflight.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(rows), cloneProjectionValue(rows)}
 	execution := newRunnerPreflightSession()
-	connector := &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{preflight, execution}}
+	complete := newRunnerPreflightSession()
+	completeRows := runnerLedgerConsumerPrefixRows(bundle, len(entries))
+	complete.ledgerRowsByRead = [][]LedgerRow{cloneProjectionValue(completeRows), cloneProjectionValue(completeRows)}
+	connector := &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{preflight, execution, complete}}
 	factory := &runnerPreflightProjectorFactory{allowMigrationRoleCatalog: true}
 	factory.initialize()
 	planCount := 0
@@ -787,12 +912,13 @@ func TestPublicRunnerExecutesPartialImmediateNextEntryOnOneFreshSession(t *testi
 		len(result.AmbiguousRecovered) != 0 {
 		t.Fatalf("partial entry-loop result=%+v err=%v", result, runErr)
 	}
-	if connector.attempts != 2 || preflight.ledgerReadCalls != 2 || preflight.beginCalls != 0 ||
+	if connector.attempts != 3 || preflight.ledgerReadCalls != 2 || preflight.beginCalls != 0 ||
 		preflight.unlockCalls != 1 || preflight.closeCalls != 1 || !preflight.closed ||
 		execution.ledgerReadCalls != 4 || execution.beginCalls != 1 || execution.transaction.executeCalls != planCount ||
 		execution.transaction.ledgerInsertCalls != 1 || execution.transaction.commitCalls != 1 ||
 		execution.transaction.rollbackCalls != 0 || execution.unlockCalls != 0 || execution.closeCalls != 1 ||
-		!execution.closed || sink.session == nil || sink.session.bindCalls != 1 || sink.session.consumeCalls != 1 ||
+		!execution.closed || complete.ledgerReadCalls != 2 || complete.beginCalls != 0 || complete.unlockCalls != 1 ||
+		complete.closeCalls != 1 || !complete.closed || sink.session == nil || sink.session.bindCalls != 2 || sink.session.consumeCalls != 2 ||
 		sink.session.executionBindCalls != 1 || sink.session.executionConsumeCalls != 1 {
 		t.Fatalf("partial entry-loop lifecycle: connector=%+v preflight=%+v execution=%+v evidence=%+v", connector, preflight, execution, sink.session)
 	}
@@ -848,7 +974,7 @@ func TestPublicRunnerReentersFreshPreflightAfterCommitAndDoesNotReuseEntryOutcom
 	}
 }
 
-func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWriterEffects(t *testing.T) {
+func TestPublicRunnerGeneratedRecoveryRequiresAuthenticDurableBoundary(t *testing.T) {
 	raw, decision := buildExactTwoMigrationAdmissionRuntime(t)
 	bundle, err := LoadRuntimeBundle(raw, decision)
 	if err != nil {
@@ -859,10 +985,10 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 		prefixLength int
 		state        RecoveryState
 		action       RecoveryAction
-		wantOp       string
+		consumeCalls int
 	}{
-		{"unsupported-entry-retry", 0, RecoveryBrandNewInherited, RecoveryBeginNextAttempt, "runner-ledger-consumer-entry"},
-		{"partial-recovery", 1, RecoveryTerminal, RecoveryBeginNextAttempt, "runner-ledger-consumer-recovery"},
+		{"inherited-retry-without-continuation", 0, RecoveryBrandNewInherited, RecoveryBeginNextAttempt, 1},
+		{"terminal-retry-without-terminal", 1, RecoveryTerminal, RecoveryBeginNextAttempt, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			database := newRunnerPreflightSession()
@@ -888,11 +1014,15 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 			}
 			before := liveVerifiedEvidenceRunBindings()
 			result, runErr := runner.Run(context.Background(), RunRequest{Artifact: &memoryArtifactSource{data: raw}, TargetDSN: "test-only"})
-			assertRunnerLedgerConsumerNotImplemented(t, result, runErr, test.wantOp)
+			var stable *Error
+			if !reflect.DeepEqual(result, RunResult{}) || !errors.As(runErr, &stable) ||
+				stable.Code != CodeEvidenceRecoveryRequired || stable.Err != nil {
+				t.Fatalf("result=%+v error=%#v", result, stable)
+			}
 			if sink.session == nil || sink.session.bindCalls != 1 || sink.session.consumeCalls != 1 ||
 				sink.session.entryBindCalls != 0 || sink.session.entryConsumeCalls != 0 ||
 				sink.session.executionBindCalls != 0 || sink.session.executionConsumeCalls != 0 ||
-				sink.session.recoveryBindCalls != 1 || sink.session.recoveryConsumeCalls != 1 ||
+				sink.session.recoveryBindCalls != 1 || sink.session.recoveryConsumeCalls != test.consumeCalls ||
 				sink.session.runnerEvidenceSessionFake.bindCalls != 0 || sink.session.intermediateBindCalls != 0 ||
 				sink.session.commitBindCalls != 0 || sink.session.terminalBindCalls != 0 ||
 				sink.session.journal.appendCalls != 0 || sink.session.closeCalls != 1 || sink.session.journal.closeCalls != 1 ||
@@ -901,12 +1031,19 @@ func TestPublicRunnerUnsupportedEntryAndRecoveryRemainNotImplementedWithoutWrite
 			}
 			for index, observed := range databases {
 				wantReads := 2
+				wantUnlocks := 1
+				wantCloses := 1
+				wantClosed := true
 				if index == 1 {
-					wantReads = 4
+					if test.consumeCalls == 0 {
+						wantReads, wantUnlocks, wantCloses, wantClosed = 0, 0, 0, false
+					} else {
+						wantReads = 4
+					}
 				}
 				if observed.ledgerReadCalls != wantReads || observed.beginCalls != 0 || observed.transaction.executeCalls != 0 ||
 					observed.backend.executeCalls != 0 || observed.backend.ledgerInsertCalls != 0 || observed.backend.commitCalls != 0 ||
-					observed.unlockCalls != 1 || observed.closeCalls != 1 || !observed.closed {
+					observed.unlockCalls != wantUnlocks || observed.closeCalls != wantCloses || observed.closed != wantClosed {
 					t.Fatalf("public %s database %d escaped boundary: %+v", test.name, index, observed)
 				}
 			}

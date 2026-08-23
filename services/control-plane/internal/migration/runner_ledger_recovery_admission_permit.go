@@ -194,27 +194,116 @@ func (runner *Runner) prepareRunnerLedgerRecoveryAdmission(ctx context.Context, 
 }
 
 func (runner *Runner) admitRunnerLedgerRecoveryAction(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate, fact runnerLedgerConsumerFact) error {
+	_, err := runner.consumeRunnerLedgerRecoveryAction(ctx, dsn, bundle, plans, evidence, candidate, fact)
+	return err
+}
+
+func (runner *Runner) consumeRunnerLedgerRecoveryAction(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate, fact runnerLedgerConsumerFact) (runnerLedgerRecoveryActionResult, error) {
 	permit, err := runner.prepareRunnerLedgerRecoveryAdmission(ctx, dsn, bundle, plans, evidence, candidate, fact)
 	if err != nil {
-		return err
+		return runnerLedgerRecoveryActionResult{}, err
+	}
+	retirement := runnerLedgerRecoveryRetirementFromPermit(permit)
+	finish := func(result runnerLedgerRecoveryActionResult, err error) (runnerLedgerRecoveryActionResult, error) {
+		if err != nil {
+			return runnerLedgerRecoveryActionResult{}, err
+		}
+		if !retirement.retire() {
+			return runnerLedgerRecoveryActionResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-action", "consumed recovery admission could not be retired", nil)
+		}
+		return result, nil
 	}
 	if abort, ok := permit.(*runnerLedgerAbortTerminalAdmissionPermit); ok {
-		return runner.appendRunnerLedgerRecoveryAbortTerminal(ctx, abort, bundle, plans)
+		err := runner.appendRunnerLedgerRecoveryAbortTerminal(ctx, abort, bundle, plans)
+		return finish(runnerLedgerRecoveryActionResult{kind: runnerLedgerRecoveryActionReenter}, err)
 	}
 	if observation, ok := permit.(*runnerLedgerCommitObservationAdmissionPermit); ok {
-		return runner.appendRunnerLedgerRecoveryCommitObservation(ctx, observation, bundle, plans)
+		selection := observation.core.selection
+		if err := runner.appendRunnerLedgerRecoveryCommitObservation(ctx, observation, bundle, plans); err != nil {
+			return runnerLedgerRecoveryActionResult{}, err
+		}
+		result, err := runner.classifyRunnerLedgerReconciliationResult(bundle, evidence, selection)
+		return finish(result, err)
 	}
 	if resolution, ok := permit.(*runnerLedgerAmbiguousResolutionAdmissionPermit); ok {
-		return runner.appendRunnerLedgerRecoveryAmbiguousResolution(ctx, resolution, bundle, plans)
+		selection := resolution.core.selection
+		if err := runner.appendRunnerLedgerRecoveryAmbiguousResolution(ctx, resolution, bundle, plans); err != nil {
+			return runnerLedgerRecoveryActionResult{}, err
+		}
+		result, err := runner.classifyRunnerLedgerReconciliationResult(bundle, evidence, selection)
+		return finish(result, err)
 	}
 	if handoff, ok := permit.(*runnerLedgerRetryHandoffAdmissionPermit); ok {
-		return runner.prepareRunnerLedgerRetryHandoff(ctx, handoff, bundle, plans)
+		err := runner.prepareRunnerLedgerRetryHandoff(ctx, handoff, bundle, plans)
+		return finish(runnerLedgerRecoveryActionResult{kind: runnerLedgerRecoveryActionReenter}, err)
 	}
 	if execution, ok := permit.(*runnerLedgerRecoveryExecutionAdmissionPermit); ok {
-		_, err := runner.executeRunnerLedgerRecoverySuccess(ctx, execution, bundle, plans)
-		return err
+		outcome, err := runner.executeRunnerLedgerRecoverySuccess(ctx, execution, bundle, plans)
+		return finish(runnerLedgerRecoveryActionResult{kind: runnerLedgerRecoveryActionEntryCommitted, outcome: outcome}, err)
 	}
-	return permit.closeWithoutMutation(nil)
+	if failure, ok := permit.(*runnerLedgerReturnFailureAdmissionPermit); ok {
+		return runnerLedgerRecoveryActionResult{}, runner.returnRunnerLedgerRecoveryFailure(ctx, failure, evidence, retirement)
+	}
+	return runnerLedgerRecoveryActionResult{}, permit.closeWithoutMutation(
+		fail(CodeProjectionNotImplemented, "runner-ledger-recovery-action", "recovery action permit is not implemented", nil),
+	)
+}
+
+type runnerLedgerRecoveryAdmissionRetirement struct {
+	binder   runnerLedgerRecoveryAdmissionClaimBinder
+	use      *runnerLedgerRecoveryAdmissionUseRecord
+	subject  Digest
+	action   runnerLedgerRecoveryAction
+	boundary [32]byte
+}
+
+func runnerLedgerRecoveryRetirementFromPermit(permit runnerLedgerRecoveryCloseOnlyPermit) runnerLedgerRecoveryAdmissionRetirement {
+	core := runnerLedgerRecoveryPermitCore(permit)
+	if core == nil {
+		return runnerLedgerRecoveryAdmissionRetirement{}
+	}
+	return runnerLedgerRecoveryAdmissionRetirement{
+		binder: core.evidenceBinder, use: core.use, subject: core.consumerFactSubject,
+		action: core.action, boundary: core.evidenceBoundary,
+	}
+}
+
+func (retirement runnerLedgerRecoveryAdmissionRetirement) retire() bool {
+	return retireRunnerLedgerRecoveryAdmissionUse(
+		retirement.binder, retirement.use, retirement.subject, retirement.action, retirement.boundary,
+	)
+}
+
+func (runner *Runner) classifyRunnerLedgerReconciliationResult(bundle *RuntimeBundle, evidence EvidenceSession, selection runnerLedgerRecoveryAdmissionSelection) (runnerLedgerRecoveryActionResult, error) {
+	if runner == nil || bundle == nil || bundle.Manifest == nil || evidence == nil ||
+		selection.entryIndex >= uint32(len(bundle.Manifest.SchemaBundle.Migrations)) {
+		return runnerLedgerRecoveryActionResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-reconciliation-result", "reconciliation result inputs are unavailable", nil)
+	}
+	snapshot := evidence.RecoverySnapshot()
+	if snapshot == nil || snapshot.migrationID == nil || *snapshot.migrationID != selection.migrationID ||
+		snapshot.attemptIndex == nil || *snapshot.attemptIndex != selection.attemptIndex {
+		return runnerLedgerRecoveryActionResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-reconciliation-result", "reconciliation result differs from the selected attempt", nil)
+	}
+	if snapshot.state != RecoveryCompleted &&
+		!(snapshot.state == RecoveryTerminal && snapshot.nextPermittedAction == RecoveryBeginFirstAttemptNextEntry) {
+		return runnerLedgerRecoveryActionResult{kind: runnerLedgerRecoveryActionReenter}, nil
+	}
+	ledgerLength := selection.entryIndex + 1
+	state := runnerLedgerEntrySuccessEntryCommittedNextEntry
+	if ledgerLength == uint32(len(bundle.Manifest.SchemaBundle.Migrations)) {
+		state = runnerLedgerEntrySuccessEntryCommittedComplete
+	}
+	result := runnerLedgerRecoveryActionResult{
+		kind: runnerLedgerRecoveryActionEntryCommitted,
+		outcome: runnerLedgerEntrySuccessOutcome{
+			state: state, migrationID: selection.migrationID, ledgerHead: selection.migrationID, ledgerLength: ledgerLength,
+		},
+		ambiguousRecovered: true,
+	}
+	if !result.valid() {
+		return runnerLedgerRecoveryActionResult{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-reconciliation-result", "reconciliation result could not be classified", nil)
+	}
+	return result, nil
 }
 
 func validateRunnerLedgerRecoveryAdmissionObservation(fact runnerLedgerConsumerFact, projection *runnerLedgerCatalogPreflight, observation *runnerLockedLedgerCatalogObservation, action runnerLedgerRecoveryAction) (runnerLedgerRecoveryAdmissionSelection, error) {
