@@ -470,6 +470,11 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       已在 `d6ec6c8` 完成只读环境与安全边界核验：可达裸机仍承载活动工作负载、没有独立一次性测试盘，也没有由第二
       控制机证明的 external hard-off/hard-on recovery path；因此拒绝把该主机作为破坏性 DUT，未执行断电、重启、
       安装、文件系统或数据库操作。该项是 environmental blocker record，不是 physical durability result 或 Gate evidence。
+- [x] [bare-metal host-crash simulation](../p1/evidencefs-host-crash-simulation-20260823.md) 已在固定
+      `2023f73` 对 ext4 `after-directory-fsync` object barrier 执行一次 owner-authorized SysRq `b`：独立控制机记录
+      `UP → DOWN → UP`，same-UUID fresh mount 进入 journal recovery，classifier 返回 `final`/44-byte/no-temp，
+      `e2fsck -fn` status 0。该结果只证明命名的软件崩溃烟测；存储供电未中断，且没有独立物理测试盘、XFS 或完整
+      barrier matrix，因此 physical controller/cache-loss、filesystem Done 与所有 Gate 继续开放。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
