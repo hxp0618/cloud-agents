@@ -290,6 +290,15 @@ SQL
     go -C "$module_dir" test \
       -run '^TestPostgresExternalVerifiedPrincipalDurableCoordinationConformance$' \
       -count=1 -v ./internal/authn
+  CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
+  CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
+  CLOUD_AGENTS_COORDINATION_TENANT_ID='tenant-coordination-normal' \
+  CLOUD_AGENTS_COORDINATION_RUN_ID='normal' \
+  CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
+  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+    go -C "$module_dir" test \
+      -run '^TestPostgresExternalManagedAgentCreateProjectServerConformance$' \
+      -count=1 -v ./internal/authn
 
   docker exec -e PGPASSWORD="$test_password" "$active_container" \
     psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cag_migration -d cagtest \
@@ -313,6 +322,15 @@ SQL
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
       -run '^TestPostgresExternalVerifiedPrincipalDurableCoordinationConformance$' \
+      -count=1 -v ./internal/authn
+  CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
+  CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
+  CLOUD_AGENTS_COORDINATION_TENANT_ID='tenant-coordination-race' \
+  CLOUD_AGENTS_COORDINATION_RUN_ID='race' \
+  CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
+  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+    go -C "$module_dir" test -race \
+      -run '^TestPostgresExternalManagedAgentCreateProjectServerConformance$' \
       -count=1 -v ./internal/authn
 
   expect_sql_failure cag_runtime \
