@@ -139,9 +139,10 @@
   raw actor/standalone `Authorize` seam across five RBAC and three JWT-user durable-coordination methods with exact
   callback-scoped `*VerifiedPrincipal` authority. Its Go 1.26.6 package checks and local PG15/16/17 membership/RBAC
   and durable normal/race/fault matrices pass, including row-lock invalidation lease-through-commit and cancellation
-  rollback. The Slice C commit and independent P0/P1/P2 verdict remain pending, so it is not approved. There is still
-  no production trust root、HTTP/OIDC/JWKS、provider/P2、production database write、deployment/publication、merge or Gate
-  closure.
+  rollback. The fixed candidate `d6ae9c7` is independently
+  [approved](identity-verifier-authz-binder-independent-review-20260824.md) by review commit `aa83e37` with
+  `P0=0/P1=0/P2=0`, completing the ordered A-C local implementation/review package. There is still no production trust
+  root、HTTP/OIDC/JWKS、provider/P2、production database write、deployment/publication、merge or Gate closure.
 - Runner ledger/catalog preflight：generated profile、locked read-only projection kernel 与 typed same-verifier
   claim/no-op dispatch 已依序固定；Slice A/B fixed candidate `01b1a5f` 的
   [`independent review`](migration-ledger-catalog-preflight-independent-review-20260821.md) 为

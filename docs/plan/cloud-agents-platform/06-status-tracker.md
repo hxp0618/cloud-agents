@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-24
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，普通 clean `poweroff` 仅算 lifecycle smoke，物理 controller/cache-loss 结果明确不声称；D-049/ADR-0025 Slice A 与 Slice B offline crypto kernel/opaque principal 均已固定并独立批准，Slice C authz-binder 已形成 implementation candidate，五个 RBAC 与三个 JWT-user durable 路径的 callback-scoped authority 与本地 Go/PG15/16/17 matrix 已实现并通过，但 fixed-candidate independent review 仍待进行；production database、remote host、HTTP/OIDC/JWKS、P2/provider external side effect、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，普通 clean `poweroff` 仅算 lifecycle smoke，物理 controller/cache-loss 结果明确不声称；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -56,7 +56,7 @@
 | D-046 | Runner entry execution/success writer 拆为新 generated admission + one-entry multi-statement success profile                | APPROVED | ADR-0022；standing automatic-execution approval；不含 recovery/production DB/外部副作用 |
 | D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution-admission/success-writer/failure profiles      | APPROVED | ADR-0023；2026-08-22 owner 批准 A-G；逐 slice 独立复核，Gate OPEN                       |
 | D-048 | P1/RC durability 接受无同步 bare-metal 软件崩溃替代物理硬断电；clean poweroff 仅算 lifecycle smoke                          | APPROVED | ADR-0024；2026-08-23 owner 明确批准；不声称物理 power-loss，不关闭 Gate                 |
-| D-049 | Offline JWT verifier profile + ordered Slices A-C                                                                           | APPROVED | A/B 已独立批准；C candidate 已实现、review 待定；Gate OPEN                              |
+| D-049 | Offline JWT verifier profile + ordered Slices A-C                                                                           | APPROVED | A-C 均已独立批准；C `d6ae9c7` / review `aa83e37`；Gate OPEN                             |
 
 ## 2. 阶段追踪
 

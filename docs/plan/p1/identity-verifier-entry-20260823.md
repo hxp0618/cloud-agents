@@ -1,6 +1,6 @@
 # P1 offline JWT access-token verifier implementation entry - 2026-08-23
 
-- Status: **SLICE A APPROVED; SLICE B APPROVED; SLICE C IMPLEMENTED CANDIDATE — FIXED-CANDIDATE INDEPENDENT REVIEW PENDING**
+- Status: **ORDERED SLICES A-C APPROVED — GATES OPEN**
 - Last updated: 2026-08-24
 - Source: [`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md)
 - Baseline: `bf2bb8fa916a723bca2b64e156d2b3e64f374582`
@@ -67,12 +67,13 @@ trust/context-source adapter requires its own versioned decision and review.
 - run generated same-bits, focused normal/race, vet/build, secret and forbidden-surface checks; and
 - obtain an independent fixed-candidate P0/P1/P2 verdict.
 
-Current Slice C implementation evidence is recorded in
+Slice C implementation evidence is recorded in
 [`identity-verifier-authz-binder-implementation-20260824.md`](identity-verifier-authz-binder-implementation-20260824.md).
-The working candidate is based on Slice B's independently approved review commit
-`d2e464be0f3e54aa25e55d6cca7d4f744b04bc1c` on
-`codex/cloud-agents-p1-identity-verifier-slice-c-20260824`. Implementation and the local Go/PostgreSQL matrices are
-complete, but the exact candidate commit is not yet fixed and its independent P0/P1/P2 review remains pending.
+Its fixed candidate `d6ae9c789f5be06612764c06a5649f5ebd1557c7` is based on Slice B's independently approved review commit
+`d2e464be0f3e54aa25e55d6cca7d4f744b04bc1c` and is independently
+[approved](identity-verifier-authz-binder-independent-review-20260824.md) by review commit
+`aa83e37112f6e80c8e4553f931c30c99043ce6a7` with `P0=0/P1=0/P2=0`. This completes the ordered A-C local
+implementation/review package without changing any Gate.
 
 ## 4. Acceptance and stop conditions
 
