@@ -61,3 +61,9 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
   support。[Independent review](G-DATA/CAG-G-DATA-P1-20260823-R1-independent-review.md) 返回
   `APPROVE, P0=0/P1=0/P2=0`。状态仍为 `IN PROGRESS`；expand/backfill/cutover/contract、deployed N/N-1、PITR
   preflight 与 current filesystem Done 均保持 open，Gate effect 为 none。
+
+- [`CAG-G-AUTHORITY-P1-20260823-R1`](G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1.md)：first
+  current-source P1 authority candidate；只继承 exact G-CONTRACT generation、live-instance retirement 与 ADR-0023
+  Slice G review scopes。Fresh focused authority/store tests 与 descriptor checks PASS；provider catalog、enabled
+  operation receipt writer、published/runtime database authority、executable projection、current filesystem Done 与
+  independent review 均未完成。状态为 `IN PROGRESS`、reviewer `PENDING`，Gate effect 为 none。
