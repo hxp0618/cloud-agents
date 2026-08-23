@@ -10,12 +10,19 @@ import (
 
 const runnerLedgerEntrySuccessEvidenceRequestDomain = "cloud-agents/runner-ledger-entry-success-writer/evidence-request/v1"
 
-// runnerLedgerEntrySuccessEvidenceBinder is the sole evidence-side mutation
-// bridge for ADR-0022 Slice C. It is deliberately separate from the four
-// historical single-statement binders and accepts only a registry-backed
-// request minted by the closed success kernel.
-type runnerLedgerEntrySuccessEvidenceBinder interface {
+// runnerLedgerSuccessEvidence is the common read-only surface shared by the
+// two separately versioned success writers. Mutation remains behind their
+// distinct request types and binder methods below.
+type runnerLedgerSuccessEvidence interface {
 	EvidenceSession
+	runnerLedgerSuccessEvidenceSealed()
+}
+
+// runnerLedgerEntrySuccessEvidenceBinder is the sole evidence-side mutation
+// bridge for ADR-0022 Slice C. It is deliberately separate from the recovery
+// success writer and accepts only a registry-backed entry-v1 request.
+type runnerLedgerEntrySuccessEvidenceBinder interface {
+	runnerLedgerSuccessEvidence
 	runnerLedgerEntryExecutionAdmissionClaimBinder
 	bindRunnerLedgerEntrySuccessRecord(context.Context, *runnerLedgerEntrySuccessEvidenceRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error)
 	runnerLedgerEntrySuccessEvidenceBinderSealed()
@@ -198,6 +205,25 @@ func runnerLedgerEntrySuccessWriterIdentityStrings() []string {
 }
 
 func bindRunnerLedgerEntrySuccessOwnedRecord(claimed runnerLedgerEntrySuccessEvidenceRequest, prefix []EvidenceFrame, chain verifiedEvidenceChainWitness) (*OwnedEvidenceRecord, error) {
+	return bindRunnerLedgerSuccessOwnedRecord(runnerLedgerSuccessEvidenceClaim{
+		candidateBinding: claimed.candidateBinding, generation: claimed.generation,
+		recoveryDigest: claimed.recoveryDigest, cursor: claimed.cursor.clone(),
+		record: cloneEvidenceRecord(claimed.record), plan: claimed.plan,
+		maxAttempts: claimed.maxAttempts,
+	}, prefix, chain)
+}
+
+type runnerLedgerSuccessEvidenceClaim struct {
+	candidateBinding *verifiedEvidenceRunBinding
+	generation       generationIdentity
+	recoveryDigest   [32]byte
+	cursor           JournalCursor
+	record           EvidenceRecord
+	plan             StatementPlan
+	maxAttempts      uint32
+}
+
+func bindRunnerLedgerSuccessOwnedRecord(claimed runnerLedgerSuccessEvidenceClaim, prefix []EvidenceFrame, chain verifiedEvidenceChainWitness) (*OwnedEvidenceRecord, error) {
 	if len(prefix) == 0 || claimed.plan.validateExact() != nil || claimed.maxAttempts == 0 ||
 		!claimed.cursor.Valid() || claimed.cursor.previousRecordDigest == nil ||
 		prefix[len(prefix)-1].RecordDigest != *claimed.cursor.previousRecordDigest {

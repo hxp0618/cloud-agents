@@ -591,6 +591,8 @@ func (s *generationEvidenceSession) bindRunnerCommittedTerminalRecord(ctx contex
 
 func (*generationEvidenceSession) runnerCommittedTerminalRecordBinderSealed() {}
 
+func (*generationEvidenceSession) runnerLedgerSuccessEvidenceSealed() {}
+
 func (*generationEvidenceSession) runnerLedgerEntrySuccessEvidenceBinderSealed() {}
 
 func (s *generationEvidenceSession) bindRunnerLedgerEntrySuccessRecord(ctx context.Context, request *runnerLedgerEntrySuccessEvidenceRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
@@ -631,6 +633,50 @@ func (s *generationEvidenceSession) bindRunnerLedgerEntrySuccessRecord(ctx conte
 	owned, bindErr := bindRunnerLedgerEntrySuccessOwnedRecord(claimed, prefix, journal.schema.chainWitness)
 	if bindErr != nil {
 		return nil, JournalCursor{}, nil, admissionCorrupt("runner-ledger-entry-success-evidence", "candidate evidence record is invalid", bindErr)
+	}
+	return journal, journal.state.cursor.clone(), owned, nil
+}
+
+func (*generationEvidenceSession) runnerLedgerRecoverySuccessEvidenceBinderSealed() {}
+
+func (s *generationEvidenceSession) bindRunnerLedgerRecoverySuccessRecord(ctx context.Context, request *runnerLedgerRecoverySuccessEvidenceRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
+	claimed, err := consumeRunnerLedgerRecoverySuccessEvidenceRequest(request, s)
+	if err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if err := contextAdmissionError(ctx); err != nil {
+		return nil, JournalCursor{}, nil, err
+	}
+	if s == nil || s.self != s {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-success-evidence", "evidence session is unavailable", nil)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.validLocked() || s.candidate.binding != claimed.candidateBinding || s.active.kind != activeGenerationCurrent ||
+		s.active.recoveryExecutionBindings != nil || !sameGenerationIdentity(s.active.identity, claimed.generation) {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-success-evidence", "current same-verifier evidence session changed", nil)
+	}
+	journal := s.journal
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if !journal.validLocked() || journal.state == nil || journal.state.unknown != nil ||
+		!sameCursorIdentity(journal.state.cursor, claimed.cursor) ||
+		generationJournalRecoveryDigest(journal.state.recovery) != claimed.recoveryDigest ||
+		journal.schema.maxAttempts[claimed.plan.MigrationID] != claimed.maxAttempts {
+		return nil, JournalCursor{}, nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-success-evidence", "current journal boundary changed", nil)
+	}
+	prefix, prefixErr := readRunnerLedgerEntrySuccessPrefixLocked(ctx, journal)
+	if prefixErr != nil {
+		return nil, JournalCursor{}, nil, prefixErr
+	}
+	if len(prefix) == 0 || claimed.cursor.previousRecordDigest == nil ||
+		prefix[len(prefix)-1].RecordDigest != *claimed.cursor.previousRecordDigest ||
+		prefix[len(prefix)-1].Sequence+1 != claimed.cursor.nextSequence {
+		return nil, JournalCursor{}, nil, admissionCorrupt("runner-ledger-recovery-success-evidence", "stored evidence prefix differs from the current cursor", nil)
+	}
+	owned, bindErr := bindRunnerLedgerSuccessOwnedRecord(claimed, prefix, journal.schema.chainWitness)
+	if bindErr != nil {
+		return nil, JournalCursor{}, nil, admissionCorrupt("runner-ledger-recovery-success-evidence", "candidate evidence record is invalid", bindErr)
 	}
 	return journal, journal.state.cursor.clone(), owned, nil
 }

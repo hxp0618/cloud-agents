@@ -38,6 +38,7 @@ func (runnerLedgerEntrySuccessFakeWitness) prefixAndChain() ([]EvidenceFrame, ve
 }
 
 func (*runnerLedgerPreflightEvidenceFake) runnerLedgerEntrySuccessEvidenceBinderSealed() {}
+func (*runnerLedgerPreflightEvidenceFake) runnerLedgerSuccessEvidenceSealed()            {}
 
 func (evidence *runnerLedgerPreflightEvidenceFake) bindRunnerLedgerEntrySuccessRecord(ctx context.Context, request *runnerLedgerEntrySuccessEvidenceRequest) (EvidenceJournal, JournalCursor, *OwnedEvidenceRecord, error) {
 	evidence.successBindCalls++
@@ -528,6 +529,14 @@ func TestRunnerLedgerEntrySuccessSealFailureRequiresReopenAfterMutation(t *testi
 }
 
 func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBound(t *testing.T) {
+	binder := func(t *testing.T, state *runnerLedgerEntrySuccessState) runnerLedgerEntrySuccessEvidenceBinder {
+		t.Helper()
+		value, ok := state.data.evidence.(runnerLedgerEntrySuccessEvidenceBinder)
+		if !ok || value == nil {
+			t.Fatal("entry success evidence binder is unavailable")
+		}
+		return value
+	}
 	prepare := func(t *testing.T) (*runnerLedgerEntrySuccessFixture, *runnerLedgerEntrySuccessState) {
 		t.Helper()
 		raw, decision := buildExactAdmissionRuntime(t)
@@ -555,11 +564,12 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 	mint := func(t *testing.T, state *runnerLedgerEntrySuccessState) *runnerLedgerEntrySuccessEvidenceRequest {
 		t.Helper()
 		data := state.data
+		evidence := binder(t, state)
 		request, err := mintRunnerLedgerEntrySuccessEvidenceRequest(
-			data.evidence, data.candidateBinding, data.generation, data.recoveryDigest, data.cursor,
+			evidence, data.candidateBinding, data.generation, data.recoveryDigest, data.cursor,
 			EvidenceRecord{StatementIntent: cloneStatementIntentPointer(&data.intent)}, data.plans[data.statementIndex], data.maxAttempts,
 		)
-		if err != nil || !validRunnerLedgerEntrySuccessEvidenceRequest(request, data.evidence) {
+		if err != nil || !validRunnerLedgerEntrySuccessEvidenceRequest(request, evidence) {
 			t.Fatalf("request=%+v err=%v", request, err)
 		}
 		return request
@@ -570,14 +580,15 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 		defer fixture.close(t)
 		defer func() { _ = closeRunnerLedgerEntrySuccessState(prepared, errors.New("test cleanup")) }()
 		request := mint(t, prepared)
+		evidence := binder(t, prepared)
 		copyValue := *request
-		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(&copyValue, prepared.data.evidence); !IsCode(err, CodeEvidenceRecoveryRequired) || !validRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence) {
-			t.Fatalf("copy err=%v original-valid=%t", err, validRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence))
+		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(&copyValue, evidence); !IsCode(err, CodeEvidenceRecoveryRequired) || !validRunnerLedgerEntrySuccessEvidenceRequest(request, evidence) {
+			t.Fatalf("copy err=%v original-valid=%t", err, validRunnerLedgerEntrySuccessEvidenceRequest(request, evidence))
 		}
-		if claimed, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence); err != nil || claimed.record.StatementIntent == nil {
+		if claimed, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, evidence); err != nil || claimed.record.StatementIntent == nil {
 			t.Fatalf("claim=%+v err=%v", claimed, err)
 		}
-		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, evidence); !IsCode(err, CodeEvidenceRecoveryRequired) {
 			t.Fatalf("second consume err=%v", err)
 		}
 	})
@@ -587,6 +598,7 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 		defer fixture.close(t)
 		defer func() { _ = closeRunnerLedgerEntrySuccessState(prepared, errors.New("test cleanup")) }()
 		request := mint(t, prepared)
+		evidence := binder(t, prepared)
 		type claimResult struct {
 			claimed runnerLedgerEntrySuccessEvidenceRequest
 			err     error
@@ -596,7 +608,7 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 		for range 2 {
 			go func() {
 				<-start
-				claimed, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence)
+				claimed, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, evidence)
 				results <- claimResult{claimed: claimed, err: err}
 			}()
 		}
@@ -614,8 +626,8 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 				t.Fatalf("claim=%+v err=%v", result.claimed, result.err)
 			}
 		}
-		if successes != 1 || rejected != 1 || validRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence) {
-			t.Fatalf("successes=%d rejected=%d request-valid=%t", successes, rejected, validRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence))
+		if successes != 1 || rejected != 1 || validRunnerLedgerEntrySuccessEvidenceRequest(request, evidence) {
+			t.Fatalf("successes=%d rejected=%d request-valid=%t", successes, rejected, validRunnerLedgerEntrySuccessEvidenceRequest(request, evidence))
 		}
 	})
 
@@ -632,8 +644,8 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 		defer fixture.close(t)
 		defer func() { _ = closeRunnerLedgerEntrySuccessState(prepared, errors.New("test cleanup")) }()
 		request := mint(t, prepared)
-		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, &runnerLedgerPreflightEvidenceFake{}); !IsCode(err, CodeEvidenceRecoveryRequired) || validRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence) {
-			t.Fatalf("foreign binder err=%v request-valid=%t", err, validRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence))
+		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, &runnerLedgerPreflightEvidenceFake{}); !IsCode(err, CodeEvidenceRecoveryRequired) || validRunnerLedgerEntrySuccessEvidenceRequest(request, binder(t, prepared)) {
+			t.Fatalf("foreign binder err=%v request-valid=%t", err, validRunnerLedgerEntrySuccessEvidenceRequest(request, binder(t, prepared)))
 		}
 	})
 
@@ -643,7 +655,7 @@ func TestRunnerLedgerEntrySuccessEvidenceRequestIsNonCopyableOneShotAndBinderBou
 		defer func() { _ = closeRunnerLedgerEntrySuccessState(prepared, errors.New("test cleanup")) }()
 		request := mint(t, prepared)
 		request.maxAttempts++
-		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, prepared.data.evidence); !IsCode(err, CodeEvidenceRecoveryRequired) {
+		if _, err := consumeRunnerLedgerEntrySuccessEvidenceRequest(request, binder(t, prepared)); !IsCode(err, CodeEvidenceRecoveryRequired) {
 			t.Fatalf("tamper err=%v", err)
 		}
 	})

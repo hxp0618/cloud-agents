@@ -210,6 +210,10 @@ func (runner *Runner) admitRunnerLedgerRecoveryAction(ctx context.Context, dsn s
 	if handoff, ok := permit.(*runnerLedgerRetryHandoffAdmissionPermit); ok {
 		return runner.prepareRunnerLedgerRetryHandoff(ctx, handoff, bundle, plans)
 	}
+	if execution, ok := permit.(*runnerLedgerRecoveryExecutionAdmissionPermit); ok {
+		_, err := runner.executeRunnerLedgerRecoverySuccess(ctx, execution, bundle, plans)
+		return err
+	}
 	return permit.closeWithoutMutation(nil)
 }
 
@@ -429,7 +433,7 @@ func bindRunnerLedgerRecoveryAdmissionPermit(observation *runnerLockedLedgerCata
 		use: use, key: observation.key, candidateBinding: candidate.binding, canonical: core.canonical,
 	})
 	if (core.action == generatedRunnerLedgerRecoveryProfiles[2].action || core.action == generatedRunnerLedgerRecoveryProfiles[3].action ||
-		core.action == generatedRunnerLedgerRecoveryProfiles[4].action) &&
+		core.action == generatedRunnerLedgerRecoveryProfiles[4].action || core.action == generatedRunnerLedgerRecoveryProfiles[5].action) &&
 		!registerRunnerLedgerReconciliationAdmissionCleanup(owner, core) {
 		runnerLedgerRecoveryAdmissionPermitRegistry.Delete(owner)
 		deleteRunnerLedgerReconciliationAdmissionCleanup(owner)
@@ -665,7 +669,7 @@ func closeRunnerLedgerRecoveryAdmissionPermit(owner runnerLedgerRecoveryCloseOnl
 		return primary
 	}
 	if expected == generatedRunnerLedgerRecoveryProfiles[2].action || expected == generatedRunnerLedgerRecoveryProfiles[3].action ||
-		expected == generatedRunnerLedgerRecoveryProfiles[4].action {
+		expected == generatedRunnerLedgerRecoveryProfiles[4].action || expected == generatedRunnerLedgerRecoveryProfiles[5].action {
 		return closeRunnerLedgerReconciliationAdmissionPermit(owner, expected, primary)
 	}
 	registered, ok := runnerLedgerRecoveryAdmissionPermitRegistry.LoadAndDelete(owner)

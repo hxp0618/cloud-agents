@@ -188,11 +188,14 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 	}
 	allowedProductionSymbols := map[string]map[string]bool{
 		"generatedRunnerLedgerRecoveryProfiles": {
+			"evidence_runner_ledger_recovery_success.go":      true,
+			"runner_ledger_entry_success_kernel.go":           true,
 			"runner_ledger_recovery_abort_terminal.go":        true,
 			"runner_ledger_recovery_admission_claim.go":       true,
 			"runner_ledger_recovery_admission_permit.go":      true,
 			"runner_ledger_recovery_commit_reconciliation.go": true,
 			"runner_ledger_recovery_retry_handoff.go":         true,
+			"runner_ledger_recovery_success_kernel.go":        true,
 		},
 		"generatedRunnerLedgerRecoveryAdmissionAction": {
 			"runner_ledger_consumer_service.go":          true,
@@ -202,7 +205,9 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 		"generatedRunnerLedgerRecoveryProfileAllows": {
 			"runner_ledger_recovery_admission_permit.go": true,
 		},
-		"generatedRunnerLedgerRecoverySuccessWriterAction": {},
+		"generatedRunnerLedgerRecoverySuccessWriterAction": {
+			"runner_ledger_entry_success_kernel.go": true,
+		},
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -214,9 +219,10 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 			t.Fatal(err)
 		}
 		if name == "runner_ledger_recovery_profile.go" || name == "runner_ledger_recovery_profile_generated.go" ||
+			name == "evidence_runner_ledger_recovery_success.go" || name == "runner_ledger_entry_success_kernel.go" ||
 			name == "runner_ledger_recovery_abort_terminal.go" || name == "runner_ledger_recovery_admission_claim.go" ||
 			name == "runner_ledger_recovery_admission_permit.go" || name == "runner_ledger_recovery_commit_reconciliation.go" ||
-			name == "runner_ledger_recovery_retry_handoff.go" {
+			name == "runner_ledger_recovery_retry_handoff.go" || name == "runner_ledger_recovery_success_kernel.go" {
 			for _, imported := range file.Imports {
 				path := strings.Trim(imported.Path.Value, `"`)
 				if path == "database/sql" || path == "net/http" || strings.Contains(path, "pgx") {
@@ -245,7 +251,7 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 				}
 				admissionCalls++
 			case "generatedRunnerLedgerRecoverySuccessWriterAction":
-				if name != "runner_ledger_recovery_profile.go" {
+				if name != "runner_ledger_recovery_profile.go" && !allowedProductionSymbols[identifier.Name][name] {
 					t.Fatalf("recovery success-writer selector has production caller in %s", name)
 				}
 				writerCalls++
@@ -258,8 +264,8 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 			return true
 		})
 	}
-	if admissionCalls != 5 || writerCalls != 1 || profileAllowsCalls != 2 {
-		t.Fatalf("generated recovery selectors have admission=%d writer=%d profile=%d production calls; want 5/1/2", admissionCalls, writerCalls, profileAllowsCalls)
+	if admissionCalls != 5 || writerCalls != 3 || profileAllowsCalls != 2 {
+		t.Fatalf("generated recovery selectors have admission=%d writer=%d profile=%d production calls; want 5/3/2", admissionCalls, writerCalls, profileAllowsCalls)
 	}
 }
 
@@ -273,6 +279,7 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 	commitObservationWriterCalls := 0
 	ambiguousResolutionWriterCalls := 0
 	retryHandoffCalls := 0
+	recoverySuccessCalls := 0
 	successorCalls := 0
 	forbidden := map[string]bool{
 		"Append": true, "AppendDurable": true, "AppendGenerationSuperseded": true,
@@ -323,6 +330,12 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 				retryHandoffCalls++
 				if name != "runner_ledger_recovery_admission_permit.go" {
 					t.Errorf("retry-handoff service has production caller in %s", name)
+				}
+			}
+			if ok && selector.Sel.Name == "executeRunnerLedgerRecoverySuccess" {
+				recoverySuccessCalls++
+				if name != "runner_ledger_recovery_admission_permit.go" {
+					t.Errorf("recovery success writer has production caller in %s", name)
 				}
 			}
 			if ok && selector.Sel.Name == "ReserveAndActivateSuccessor" {
@@ -378,5 +391,8 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 	}
 	if retryHandoffCalls != 1 || successorCalls != 1 {
 		t.Fatalf("retry-handoff production calls=%d successor transitions=%d want=1/1", retryHandoffCalls, successorCalls)
+	}
+	if recoverySuccessCalls != 1 {
+		t.Fatalf("recovery success-writer production calls=%d want=1", recoverySuccessCalls)
 	}
 }

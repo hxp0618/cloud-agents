@@ -9,8 +9,17 @@ import (
 )
 
 const (
-	runnerLedgerEntrySuccessStateDigestDomain   = "cloud-agents/runner-ledger-entry-success-writer/state/v1"
-	runnerLedgerEntrySuccessCleanupDigestDomain = "cloud-agents/runner-ledger-entry-success-writer/cleanup/v1"
+	runnerLedgerEntrySuccessStateDigestDomain      = "cloud-agents/runner-ledger-entry-success-writer/state/v1"
+	runnerLedgerEntrySuccessCleanupDigestDomain    = "cloud-agents/runner-ledger-entry-success-writer/cleanup/v1"
+	runnerLedgerRecoverySuccessStateDigestDomain   = "cloud-agents/runner-ledger-recovery-success-writer/state/v1"
+	runnerLedgerRecoverySuccessCleanupDigestDomain = "cloud-agents/runner-ledger-recovery-success-writer/cleanup/v1"
+)
+
+type runnerLedgerSuccessWriterKind string
+
+const (
+	runnerLedgerSuccessWriterEntryV1    runnerLedgerSuccessWriterKind = "entry_success_writer_v1"
+	runnerLedgerSuccessWriterRecoveryV1 runnerLedgerSuccessWriterKind = "recovery_success_writer_v1"
 )
 
 const (
@@ -42,12 +51,14 @@ func (outcome runnerLedgerEntrySuccessOutcome) valid() bool {
 }
 
 type runnerLedgerEntrySuccessData struct {
+	writerKind               runnerLedgerSuccessWriterKind
 	phase                    string
 	session                  DatabaseSession
 	transaction              MigrationTransaction
-	evidence                 runnerLedgerEntrySuccessEvidenceBinder
+	evidence                 runnerLedgerSuccessEvidence
 	journal                  EvidenceJournal
 	use                      *runnerLedgerEntryExecutionAdmissionUseRecord
+	recoveryUse              *runnerLedgerRecoveryAdmissionUseRecord
 	key                      int64
 	candidateBinding         *verifiedEvidenceRunBinding
 	generation               generationIdentity
@@ -57,6 +68,11 @@ type runnerLedgerEntrySuccessData struct {
 	recoveryTail             Digest
 	database                 runnerPreparedDatabaseIdentity
 	selection                runnerLedgerEntryAdmissionSelection
+	attemptIndex             uint32
+	previousAttemptTerminal  *Digest
+	initialRecoveryState     RecoveryState
+	initialRecoveryAction    RecoveryAction
+	admissionPermitCanonical [32]byte
 	ledgerBeforeDigest       Digest
 	ledgerBeforeHead         string
 	ledgerBeforeLength       uint32
@@ -114,7 +130,7 @@ type runnerLedgerEntrySuccessStateBinding struct {
 	state            *runnerLedgerEntrySuccessState
 	session          DatabaseSession
 	transaction      MigrationTransaction
-	evidence         runnerLedgerEntrySuccessEvidenceBinder
+	evidence         runnerLedgerSuccessEvidence
 	journal          EvidenceJournal
 	candidateBinding *verifiedEvidenceRunBinding
 	cursorValid      *atomic.Bool
@@ -136,10 +152,11 @@ type runnerLedgerEntrySuccessStateRegistryRecord struct {
 // authorize a successor state: the full primary+cleanup data pair remains
 // mandatory for registriesValid.
 type runnerLedgerEntrySuccessCleanupFacts struct {
+	writerKind        runnerLedgerSuccessWriterKind
 	phase             string
 	session           DatabaseSession
 	transaction       MigrationTransaction
-	evidence          runnerLedgerEntrySuccessEvidenceBinder
+	evidence          runnerLedgerSuccessEvidence
 	journal           EvidenceJournal
 	key               int64
 	candidateBinding  *verifiedEvidenceRunBinding
@@ -156,6 +173,11 @@ func (runner *Runner) executeRunnerLedgerEntrySuccess(ctx context.Context, permi
 	if err != nil {
 		return runnerLedgerEntrySuccessOutcome{}, err
 	}
+	return runner.executeRunnerLedgerSuccessState(ctx, ready)
+}
+
+func (runner *Runner) executeRunnerLedgerSuccessState(ctx context.Context, ready *runnerLedgerEntrySuccessState) (runnerLedgerEntrySuccessOutcome, error) {
+	var err error
 	transaction, err := runner.beginRunnerLedgerEntrySuccessTransaction(ctx, ready)
 	if err != nil {
 		return runnerLedgerEntrySuccessOutcome{}, err
@@ -318,11 +340,13 @@ func runnerLedgerEntrySuccessInitialData(permit *runnerLedgerEntryExecutionPermi
 		return data, fail(CodeUntrusted, "runner-ledger-entry-success-input", "next entry predecessor catalog differs from the locked ledger head", nil)
 	}
 	data = runnerLedgerEntrySuccessData{
-		phase: runnerLedgerEntrySuccessExecutionReady, session: record.session, evidence: evidence, journal: journal,
+		writerKind: runnerLedgerSuccessWriterEntryV1,
+		phase:      runnerLedgerEntrySuccessExecutionReady, session: record.session, evidence: evidence, journal: journal,
 		use: record.use, key: record.key, candidateBinding: record.candidateBinding, generation: permit.generation,
 		consumerFactSubject: permit.consumerFactSubject, evidenceBoundary: permit.evidenceBoundary,
 		recoveryDigest: permit.recoveryDigest, recoveryTail: permit.recoveryTail, database: permit.database,
-		selection: permit.selection, ledgerBeforeDigest: permit.ledgerDigest, ledgerBeforeHead: permit.ledgerHead,
+		selection: permit.selection, attemptIndex: 1, admissionPermitCanonical: permit.canonical,
+		ledgerBeforeDigest: permit.ledgerDigest, ledgerBeforeHead: permit.ledgerHead,
 		ledgerBeforeLength: permit.ledgerLength, connectedAuthority: permit.connectedAuthorityDigest,
 		migrationAuthority: permit.migrationAuthorityDigest, projectionSubject: permit.projectionSubject,
 		observedCatalogContract: cloneDigestPointer(permit.catalogContractDigest), observedCatalogDigest: permit.catalogDigest,
@@ -348,7 +372,7 @@ func runnerLedgerEntrySuccessInitialRecoveryMatches(snapshot *RecoverySnapshot, 
 }
 
 func sealRunnerLedgerEntrySuccessState(data runnerLedgerEntrySuccessData, from, event string) (*runnerLedgerEntrySuccessState, error) {
-	if !runnerLedgerEntrySuccessTransitionAllowed(from, event, data.phase) {
+	if !runnerLedgerEntrySuccessTransitionAllowed(data.writerKind, from, event, data.phase) {
 		return nil, runnerLedgerEntrySuccessSealFailure(data, "success writer transition is outside the generated registry")
 	}
 	owned, err := cloneRunnerLedgerEntrySuccessData(data)
@@ -412,13 +436,33 @@ func runnerLedgerEntrySuccessPostCommitFailure(data runnerLedgerEntrySuccessData
 	return fail(CodeEvidenceRecoveryRequired, op, message, cause)
 }
 
-func runnerLedgerEntrySuccessTransitionAllowed(from, event, to string) bool {
-	if !validRunnerLedgerEntryExecutionAdmissionProfiles() {
-		return false
-	}
-	for _, transition := range generatedRunnerLedgerEntrySuccessWriterTransitions {
-		if transition.from == from && transition.event == event && transition.to == to {
-			return true
+func runnerLedgerEntrySuccessTransitionAllowed(kind runnerLedgerSuccessWriterKind, from, event, to string) bool {
+	switch kind {
+	case runnerLedgerSuccessWriterEntryV1:
+		if !validRunnerLedgerEntryExecutionAdmissionProfiles() {
+			return false
+		}
+		for _, transition := range generatedRunnerLedgerEntrySuccessWriterTransitions {
+			if transition.from == from && transition.event == event && transition.to == to {
+				return true
+			}
+		}
+	case runnerLedgerSuccessWriterRecoveryV1:
+		if !validGeneratedRunnerLedgerRecoveryProfiles() {
+			return false
+		}
+		admission := generatedRunnerLedgerRecoveryProfiles[5]
+		writer := generatedRunnerLedgerRecoveryProfiles[6]
+		action, ok := generatedRunnerLedgerRecoverySuccessWriterAction(admission.action)
+		if !ok || action != writer.action || writer.predecessor != admission.registryBinding() ||
+			writer.permitFromProfileID != admission.profileID {
+			return false
+		}
+		for i := uint8(0); i < writer.transitionCount; i++ {
+			transition := writer.transitions[i]
+			if transition.from == from && transition.event == event && transition.to == to {
+				return true
+			}
 		}
 	}
 	return false
@@ -473,7 +517,7 @@ func validRunnerLedgerEntrySuccessCleanupRecord(record *runnerLedgerEntrySuccess
 }
 
 func runnerLedgerEntrySuccessCleanupFactsMatchData(facts runnerLedgerEntrySuccessCleanupFacts, data runnerLedgerEntrySuccessData) bool {
-	return facts.phase == data.phase && facts.key == data.key && facts.mutationAttempted == data.mutationAttempted &&
+	return facts.writerKind == data.writerKind && facts.phase == data.phase && facts.key == data.key && facts.mutationAttempted == data.mutationAttempted &&
 		facts.candidateBinding == data.candidateBinding && sameCursorIdentity(facts.cursor, data.cursor) &&
 		sameOptionalRunnerOwnedPointer(facts.session, data.session) &&
 		sameOptionalRunnerOwnedPointer(facts.transaction, data.transaction) &&
@@ -481,7 +525,7 @@ func runnerLedgerEntrySuccessCleanupFactsMatchData(facts runnerLedgerEntrySucces
 }
 
 func sameRunnerLedgerEntrySuccessCleanupFacts(left, right runnerLedgerEntrySuccessCleanupFacts) bool {
-	return left.canonical != ([32]byte{}) && left.canonical == right.canonical && left.phase == right.phase &&
+	return left.canonical != ([32]byte{}) && left.canonical == right.canonical && left.writerKind == right.writerKind && left.phase == right.phase &&
 		left.key == right.key && left.mutationAttempted == right.mutationAttempted &&
 		left.candidateBinding != nil && left.candidateBinding == right.candidateBinding &&
 		sameCursorIdentity(left.cursor, right.cursor) &&
@@ -492,7 +536,7 @@ func sameRunnerLedgerEntrySuccessCleanupFacts(left, right runnerLedgerEntrySucce
 
 func bindRunnerLedgerEntrySuccessCleanupFacts(data runnerLedgerEntrySuccessData, stateCanonical [32]byte) runnerLedgerEntrySuccessCleanupFacts {
 	facts := runnerLedgerEntrySuccessCleanupFacts{
-		phase: data.phase, session: data.session, transaction: data.transaction, evidence: data.evidence, journal: data.journal,
+		writerKind: data.writerKind, phase: data.phase, session: data.session, transaction: data.transaction, evidence: data.evidence, journal: data.journal,
 		key: data.key, candidateBinding: data.candidateBinding, cursor: data.cursor.clone(), mutationAttempted: data.mutationAttempted,
 	}
 	facts.canonical = runnerLedgerEntrySuccessCleanupFactsDigest(facts, stateCanonical)
@@ -504,11 +548,18 @@ func runnerLedgerEntrySuccessCleanupFactsDigest(facts runnerLedgerEntrySuccessCl
 		facts.cursor.valid == nil || facts.cursor.owner == nil || !sameGenerationIdentity(facts.cursor.generation, facts.cursor.generation) {
 		return [32]byte{}
 	}
+	domain := runnerLedgerEntrySuccessCleanupDigestDomain
+	if facts.writerKind == runnerLedgerSuccessWriterRecoveryV1 {
+		domain = runnerLedgerRecoverySuccessCleanupDigestDomain
+	} else if facts.writerKind != runnerLedgerSuccessWriterEntryV1 {
+		return [32]byte{}
+	}
 	h := sha256.New()
-	h.Write([]byte(runnerLedgerEntrySuccessCleanupDigestDomain + "\x00"))
+	h.Write([]byte(domain + "\x00"))
 	h.Write(stateCanonical[:])
 	h.Write(facts.candidateBinding.canonical[:])
 	writeAdmissionString(h, facts.phase)
+	writeAdmissionString(h, string(facts.writerKind))
 	writeAdmissionUint(h, uint64(facts.key))
 	writeAdmissionUint(h, boolUint64(facts.mutationAttempted))
 	for _, value := range []Digest{
@@ -552,8 +603,7 @@ func sameOptionalRunnerOwnedPointer(left, right any) bool {
 }
 
 func validRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) bool {
-	if !validRunnerLedgerEntryExecutionAdmissionProfiles() || data.evidence == nil || data.journal == nil ||
-		!runnerOwnedPointer(data.evidence) || !runnerOwnedPointer(data.journal) || data.use == nil ||
+	if data.evidence == nil || data.journal == nil || !runnerOwnedPointer(data.evidence) || !runnerOwnedPointer(data.journal) ||
 		data.candidateBinding == nil || data.generation.owner == nil || data.generation.owner != data.candidateBinding.owner ||
 		data.recoveryDigest == ([32]byte{}) || data.recoveryTail.Validate() != nil || data.ledgerBeforeDigest.Validate() != nil ||
 		data.connectedAuthority.Validate() != nil || data.migrationAuthority.Validate() != nil || data.projectionSubject.Validate() != nil ||
@@ -563,8 +613,8 @@ func validRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) bool {
 		data.runtimePolicy.MaxAttempts != uint64(data.maxAttempts) || data.runtimeEntryCount == 0 || data.selection.entryIndex >= data.runtimeEntryCount ||
 		data.entry.ID != data.selection.migrationID || data.statementIndex >= uint32(len(data.plans)) ||
 		!data.cursor.Valid() || !sameGenerationIdentity(data.cursor.generation, data.generation) ||
-		data.consumerFactSubject.Validate() != nil || data.evidenceBoundary == ([32]byte{}) ||
-		!validRunnerLedgerEntryExecutionAdmissionUse(data.evidence, data.use, data.consumerFactSubject, data.evidenceBoundary, true) ||
+		data.consumerFactSubject.Validate() != nil || data.evidenceBoundary == ([32]byte{}) || data.admissionPermitCanonical == ([32]byte{}) ||
+		!validRunnerLedgerSuccessWriterSource(data) ||
 		!runnerLedgerEntrySuccessEvidenceMatches(data) {
 		return false
 	}
@@ -593,6 +643,40 @@ func validRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) bool {
 		return data.session == nil && data.transaction == nil && validRunnerCommitProtocolFacts(data.commitFacts) &&
 			data.commitFacts.outcome == runnerCommitProtocolCommitted && data.terminal.Validate(data.maxAttempts) == nil &&
 			data.terminalRecordDigest.Validate() == nil
+	default:
+		return false
+	}
+}
+
+func validRunnerLedgerSuccessWriterSource(data runnerLedgerEntrySuccessData) bool {
+	switch data.writerKind {
+	case runnerLedgerSuccessWriterEntryV1:
+		binder, ok := data.evidence.(runnerLedgerEntrySuccessEvidenceBinder)
+		return ok && binder != nil && data.use != nil && data.recoveryUse == nil && data.attemptIndex == 1 &&
+			data.previousAttemptTerminal == nil && data.initialRecoveryState == "" && data.initialRecoveryAction == "" &&
+			validRunnerLedgerEntryExecutionAdmissionProfiles() &&
+			validRunnerLedgerEntryExecutionAdmissionUse(binder, data.use, data.consumerFactSubject, data.evidenceBoundary, true)
+	case runnerLedgerSuccessWriterRecoveryV1:
+		binder, ok := data.evidence.(runnerLedgerRecoverySuccessEvidenceBinder)
+		if !ok || binder == nil || data.use != nil || data.recoveryUse == nil || data.attemptIndex == 0 ||
+			data.attemptIndex > data.maxAttempts || data.initialRecoveryState != RecoveryBrandNewInherited ||
+			!validGeneratedRunnerLedgerRecoveryProfiles() ||
+			!validRunnerLedgerRecoveryAdmissionUse(binder, data.recoveryUse, data.consumerFactSubject,
+				generatedRunnerLedgerRecoveryProfiles[5].action, data.evidenceBoundary, true) {
+			return false
+		}
+		action, actionOK := generatedRunnerLedgerRecoverySuccessWriterAction(generatedRunnerLedgerRecoveryProfiles[5].action)
+		if !actionOK || action != generatedRunnerLedgerRecoveryProfiles[6].action {
+			return false
+		}
+		switch data.initialRecoveryAction {
+		case RecoveryBeginFirstAttempt:
+			return data.attemptIndex == 1 && data.previousAttemptTerminal == nil
+		case RecoveryBeginNextAttempt:
+			return data.attemptIndex >= 2 && data.previousAttemptTerminal != nil && data.previousAttemptTerminal.Validate() == nil
+		default:
+			return false
+		}
 	default:
 		return false
 	}
@@ -632,6 +716,7 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 	state.data.evidence = nil
 	state.data.journal = nil
 	state.data.use = nil
+	state.data.recoveryUse = nil
 	state.binding = nil
 	if !valid {
 		revokeRunnerLedgerEntrySuccessCursor(owned)
@@ -645,7 +730,7 @@ func consumeRunnerLedgerEntrySuccessState(state *runnerLedgerEntrySuccessState, 
 
 func runnerLedgerEntrySuccessCleanupData(facts runnerLedgerEntrySuccessCleanupFacts) runnerLedgerEntrySuccessData {
 	return runnerLedgerEntrySuccessData{
-		phase: facts.phase, session: facts.session, transaction: facts.transaction, evidence: facts.evidence,
+		writerKind: facts.writerKind, phase: facts.phase, session: facts.session, transaction: facts.transaction, evidence: facts.evidence,
 		journal: facts.journal, key: facts.key, candidateBinding: facts.candidateBinding,
 		cursor: facts.cursor.clone(), mutationAttempted: facts.mutationAttempted,
 	}
@@ -810,6 +895,7 @@ func cloneRunnerLedgerEntrySuccessData(data runnerLedgerEntrySuccessData) (runne
 		owned.plans[index] = plan
 	}
 	owned.cursor = data.cursor.clone()
+	owned.previousAttemptTerminal = cloneDigestPointer(data.previousAttemptTerminal)
 	owned.previousIntermediate = cloneDigestPointer(data.previousIntermediate)
 	owned.authorityBefore = cloneProjectionValue(data.authorityBefore)
 	owned.catalogBefore = cloneProjectionValue(data.catalogBefore)
@@ -849,26 +935,37 @@ func runnerLedgerEntrySuccessStateDigest(state *runnerLedgerEntrySuccessState) [
 func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]byte {
 	if data.candidateBinding == nil || data.candidateBinding.canonical == ([32]byte{}) || data.recoveryDigest == ([32]byte{}) ||
 		data.selection.planDigest == ([32]byte{}) || !validRunnerLedgerEntrySuccessRuntimeHandle(data.bundle, data.runtimeInputs) ||
-		data.runtimePolicy.Validate() != nil || data.cursor.valid == nil {
+		data.runtimePolicy.Validate() != nil || data.cursor.valid == nil || data.admissionPermitCanonical == ([32]byte{}) ||
+		data.attemptIndex == 0 || data.attemptIndex > data.maxAttempts {
 		return [32]byte{}
 	}
 	policyCanonical, err := canonicalContractKey(data.runtimePolicy)
 	if err != nil || policyCanonical == "" {
 		return [32]byte{}
 	}
+	domain := runnerLedgerEntrySuccessStateDigestDomain
+	identities := runnerLedgerEntrySuccessWriterIdentityStrings()
+	if data.writerKind == runnerLedgerSuccessWriterRecoveryV1 {
+		domain = runnerLedgerRecoverySuccessStateDigestDomain
+		identities = runnerLedgerRecoverySuccessWriterIdentityStrings()
+	} else if data.writerKind != runnerLedgerSuccessWriterEntryV1 {
+		return [32]byte{}
+	}
 	h := sha256.New()
-	h.Write([]byte(runnerLedgerEntrySuccessStateDigestDomain + "\x00"))
+	h.Write([]byte(domain + "\x00"))
 	h.Write(data.candidateBinding.canonical[:])
 	h.Write(data.evidenceBoundary[:])
 	h.Write(data.recoveryDigest[:])
 	h.Write(data.selection.planDigest[:])
 	h.Write(data.runtimeInputs[:])
+	h.Write(data.admissionPermitCanonical[:])
 	writeAdmissionString(h, policyCanonical)
-	for _, identity := range runnerLedgerEntrySuccessWriterIdentityStrings() {
+	for _, identity := range identities {
 		writeAdmissionString(h, identity)
 	}
 	for _, value := range []string{
-		data.phase, data.generation.executionLineageDigest.String(), data.generation.journalIdentityDigest.String(),
+		string(data.writerKind), data.phase, string(data.initialRecoveryState), string(data.initialRecoveryAction),
+		data.generation.executionLineageDigest.String(), data.generation.journalIdentityDigest.String(),
 		data.generation.runnerProjectionDecisionDigest.String(), data.generation.schemaBundleDigest.String(),
 		data.consumerFactSubject.String(), data.recoveryTail.String(), data.selection.migrationID, data.selection.entryDigest.String(),
 		data.ledgerBeforeDigest.String(), data.ledgerBeforeHead, data.connectedAuthority.String(),
@@ -886,6 +983,7 @@ func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]b
 	writeAdmissionUint(h, uint64(data.runtimeEntryCount))
 	writeAdmissionUint(h, uint64(data.ledgerBeforeLength))
 	writeAdmissionUint(h, uint64(data.maxAttempts))
+	writeAdmissionUint(h, uint64(data.attemptIndex))
 	writeAdmissionUint(h, uint64(data.statementIndex))
 	writeAdmissionUint(h, uint64(data.ledgerLength))
 	writeAdmissionUint(h, boolUint64(data.mutationAttempted))
@@ -894,6 +992,7 @@ func runnerLedgerEntrySuccessDataDigest(data runnerLedgerEntrySuccessData) [32]b
 	writeAdmissionUint(h, boolUint64(data.commitFacts.connectionClosed))
 	writeGenerationJournalCursor(h, data.cursor)
 	writeOptionalAdmissionDigest(h, data.observedCatalogContract)
+	writeOptionalAdmissionDigest(h, data.previousAttemptTerminal)
 	writeOptionalAdmissionDigest(h, data.previousIntermediate)
 	if data.catalogAfterProjection.Absent == nil && data.catalogAfterProjection.Present == nil {
 		writeAdmissionString(h, "catalog-after-projection-absent")
@@ -1064,15 +1163,15 @@ func (runner *Runner) prepareRunnerLedgerEntrySuccessStatementData(ctx context.C
 	intent := StatementIntent{
 		SchemaBundleDigest: data.generation.schemaBundleDigest, CatalogContractDigest: catalog.catalogContractDigest,
 		AuthorityProfileDigest: data.bindings.authorityProfileDigest, AuthorityBindingDigest: data.bindings.authorityBindingDigest,
-		MigrationID: plan.MigrationID, AttemptIndex: 1, StatementIndex: plan.StatementIndex,
+		MigrationID: plan.MigrationID, AttemptIndex: data.attemptIndex, StatementIndex: plan.StatementIndex,
 		SQLPath: plan.SQLArtifactPath, SQLArtifactSHA256: plan.SQLArtifactSHA256, SQLArtifactSizeBytes: plan.SQLArtifactSizeBytes,
 		StartOffset: plan.StartOffset, EndOffset: plan.EndOffset, StatementSHA256: plan.StatementSHA256,
-		Classification: cloneProjectionValue(plan.Classification), PreviousAttemptTerminalDigest: nil,
+		Classification: cloneProjectionValue(plan.Classification), PreviousAttemptTerminalDigest: cloneDigestPointer(data.previousAttemptTerminal),
 		PreviousIntermediateStateDigest: cloneDigestPointer(data.previousIntermediate), ExpectedTransitionDigest: plan.ExpectedTransitionDigest,
 		AuthorityBeforeDigest: before.authorityResult.Digest, CatalogBeforeDigest: before.catalogResult.Digest,
 		AuthorityBeforeResult: cloneProjectionValue(before.authorityResult), CatalogBeforeResult: cloneProjectionValue(before.catalogResult),
 	}
-	if intent.Validate() != nil || !planMatchesIntent(exactStatementWitnessFromPlan(plan, 1), intent) ||
+	if intent.Validate() != nil || !planMatchesIntent(exactStatementWitnessFromPlan(plan, data.attemptIndex), intent) ||
 		!runnerStatementIntentProjectionEvidenceMatches(plan, intent.AuthorityBeforeResult, intent.CatalogBeforeResult) {
 		return data, fail(CodeUntrusted, "runner-ledger-entry-success-statement", "statement intent cannot be reproduced from verified inputs", nil)
 	}
@@ -1174,14 +1273,40 @@ func appendRunnerLedgerEntrySuccessRecord(ctx context.Context, data runnerLedger
 		validateEvidenceRecord(record) != nil || plan.validateExact() != nil || !runnerLedgerEntrySuccessEvidenceMatches(data) {
 		return data, "", fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-append", "evidence append inputs are unavailable", nil)
 	}
-	request, err := mintRunnerLedgerEntrySuccessEvidenceRequest(
-		data.evidence, data.candidateBinding, data.generation, data.recoveryDigest,
-		data.cursor, record, plan, data.maxAttempts,
-	)
-	if err != nil {
-		return data, "", err
+	var journal EvidenceJournal
+	var cursor JournalCursor
+	var owned *OwnedEvidenceRecord
+	var err error
+	switch data.writerKind {
+	case runnerLedgerSuccessWriterEntryV1:
+		binder, ok := data.evidence.(runnerLedgerEntrySuccessEvidenceBinder)
+		if !ok || binder == nil {
+			return data, "", fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-append", "entry success evidence binder is unavailable", nil)
+		}
+		request, requestErr := mintRunnerLedgerEntrySuccessEvidenceRequest(
+			binder, data.candidateBinding, data.generation, data.recoveryDigest,
+			data.cursor, record, plan, data.maxAttempts,
+		)
+		if requestErr != nil {
+			return data, "", requestErr
+		}
+		journal, cursor, owned, err = binder.bindRunnerLedgerEntrySuccessRecord(ctx, request)
+	case runnerLedgerSuccessWriterRecoveryV1:
+		binder, ok := data.evidence.(runnerLedgerRecoverySuccessEvidenceBinder)
+		if !ok || binder == nil {
+			return data, "", fail(CodeEvidenceRecoveryRequired, "runner-ledger-recovery-success-append", "recovery success evidence binder is unavailable", nil)
+		}
+		request, requestErr := mintRunnerLedgerRecoverySuccessEvidenceRequest(
+			binder, data.candidateBinding, data.generation, data.recoveryDigest,
+			data.cursor, record, plan, data.maxAttempts,
+		)
+		if requestErr != nil {
+			return data, "", requestErr
+		}
+		journal, cursor, owned, err = binder.bindRunnerLedgerRecoverySuccessRecord(ctx, request)
+	default:
+		return data, "", fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-append", "success writer profile is unavailable", nil)
 	}
-	journal, cursor, owned, err := data.evidence.bindRunnerLedgerEntrySuccessRecord(ctx, request)
 	if err != nil {
 		return data, "", err
 	}
@@ -1308,7 +1433,7 @@ func admissionEvidenceRecordKind(record EvidenceRecord) EvidenceRecordKind {
 func runnerLedgerEntrySuccessIntentRecoveryMatches(data runnerLedgerEntrySuccessData) bool {
 	snapshot := data.evidence.RecoverySnapshot()
 	if snapshot == nil || snapshot.state != RecoveryDanglingStatementIntent || snapshot.migrationID == nil ||
-		*snapshot.migrationID != data.intent.MigrationID || snapshot.attemptIndex == nil || *snapshot.attemptIndex != 1 ||
+		*snapshot.migrationID != data.intent.MigrationID || snapshot.attemptIndex == nil || *snapshot.attemptIndex != data.attemptIndex ||
 		snapshot.lastStatementIntent == nil || snapshot.lastStatementIntentRecordDigest == nil ||
 		*snapshot.lastStatementIntentRecordDigest != data.intentRecordDigest || snapshot.tailDigest != data.intentRecordDigest ||
 		snapshot.lastStatementIntent.recordDigest != data.intentRecordDigest ||
@@ -1333,7 +1458,7 @@ func (runner *Runner) executeRunnerLedgerEntrySuccessStatement(ctx context.Conte
 	plan := data.plans[data.statementIndex]
 	sql, err := plan.exactSQLBytes()
 	if err != nil || DigestBytes(sql) != data.intent.StatementSHA256 || data.intent.StatementSHA256 != plan.StatementSHA256 ||
-		!planMatchesIntent(exactStatementWitnessFromPlan(plan, 1), data.intent) {
+		!planMatchesIntent(exactStatementWitnessFromPlan(plan, data.attemptIndex), data.intent) {
 		return failClosed(fail(CodeEvidenceRecoveryRequired, "runner-ledger-entry-success-execute", "owned SQL bytes differ from the durable intent", nil))
 	}
 	data.mutationAttempted = true
@@ -1428,7 +1553,7 @@ func (runner *Runner) appendRunnerLedgerEntrySuccessIntermediate(ctx context.Con
 		intermediate.PreledgerAuthorityResult = &preledgerAuthority
 		intermediate.PreledgerCatalogResult = &preledgerCatalog
 	}
-	if !runnerLedgerEntrySuccessIntermediateMatches(plan, data.intent, intermediate, final) {
+	if !runnerLedgerEntrySuccessIntermediateMatches(plan, data.intent, intermediate, data.attemptIndex, final) {
 		return failClosed(fail(CodeIntermediateStateMismatch, "runner-ledger-entry-success-intermediate", "intermediate evidence differs from the exact statement transition", nil))
 	}
 	data.authorityAfterProjection = cloneProjectionValue(after.authority.Projection)
@@ -1471,16 +1596,16 @@ func cloneStatementIntermediatePointer(value *StatementIntermediateEvidence) *St
 	return &owned
 }
 
-func runnerLedgerEntrySuccessIntermediateMatches(plan StatementPlan, intent StatementIntent, intermediate StatementIntermediateEvidence, final bool) bool {
+func runnerLedgerEntrySuccessIntermediateMatches(plan StatementPlan, intent StatementIntent, intermediate StatementIntermediateEvidence, attemptIndex uint32, final bool) bool {
 	if plan.validateExact() != nil || intent.Validate() != nil || intermediate.Validate() != nil ||
-		!planMatchesIntent(exactStatementWitnessFromPlan(plan, 1), intent) ||
+		!planMatchesIntent(exactStatementWitnessFromPlan(plan, attemptIndex), intent) ||
 		(intermediate.PreledgerAuthorityResult != nil) != final || (intermediate.PreledgerCatalogResult != nil) != final ||
 		!projectionEvidenceEqual(intermediate.AuthorityBeforeResult, intent.AuthorityBeforeResult) ||
 		!projectionEvidenceEqual(intermediate.CatalogBeforeResult, intent.CatalogBeforeResult) {
 		return false
 	}
 	state := intermediate.State
-	if state.MigrationID != plan.MigrationID || state.AttemptIndex != 1 || state.StatementIndex != plan.StatementIndex ||
+	if state.MigrationID != plan.MigrationID || state.AttemptIndex != attemptIndex || state.StatementIndex != plan.StatementIndex ||
 		state.StatementSHA256 != plan.StatementSHA256 || state.SchemaBundleDigest != intent.SchemaBundleDigest ||
 		state.CatalogContractDigest != intent.CatalogContractDigest || state.AuthorityProfileDigest != intent.AuthorityProfileDigest ||
 		state.AuthorityBindingDigest != intent.AuthorityBindingDigest || state.ControlPlaneStates.ExpectedTransitionDigest != plan.ExpectedTransitionDigest ||
@@ -1499,7 +1624,7 @@ func runnerLedgerEntrySuccessIntermediateMatches(plan StatementPlan, intent Stat
 func runnerLedgerEntrySuccessIntermediateRecoveryMatches(data runnerLedgerEntrySuccessData) bool {
 	snapshot := data.evidence.RecoverySnapshot()
 	if snapshot == nil || snapshot.state != RecoveryDanglingIntermediate || snapshot.migrationID == nil ||
-		*snapshot.migrationID != data.intermediate.State.MigrationID || snapshot.attemptIndex == nil || *snapshot.attemptIndex != 1 ||
+		*snapshot.migrationID != data.intermediate.State.MigrationID || snapshot.attemptIndex == nil || *snapshot.attemptIndex != data.attemptIndex ||
 		snapshot.lastStatementIntent == nil || snapshot.lastIntermediateEvidence == nil ||
 		snapshot.lastStatementIntentRecordDigest == nil || *snapshot.lastStatementIntentRecordDigest != data.intentRecordDigest ||
 		snapshot.lastIntermediateEvidenceRecordDigest == nil || *snapshot.lastIntermediateEvidenceRecordDigest != data.intermediateRecordDigest ||
@@ -1627,7 +1752,7 @@ func (runner *Runner) appendRunnerLedgerEntrySuccessCommitIntent(ctx context.Con
 		CatalogContractDigest:  data.intent.CatalogContractDigest,
 		AuthorityProfileDigest: data.bindings.authorityProfileDigest,
 		AuthorityBindingDigest: data.bindings.authorityBindingDigest,
-		MigrationID:            data.entry.ID, AttemptIndex: 1, PreviousAttemptTerminalDigest: nil,
+		MigrationID:            data.entry.ID, AttemptIndex: data.attemptIndex, PreviousAttemptTerminalDigest: cloneDigestPointer(data.previousAttemptTerminal),
 		AttemptPredecessorCatalogDigest: data.firstCatalogBeforeDigest,
 		LastIntermediateStateDigest:     data.intermediate.State.IntermediateStateDigest,
 		ExpectedLedgerLength:            data.ledgerLength, ExpectedLedgerHead: data.ledgerHead,
@@ -1668,7 +1793,7 @@ func cloneCommitIntentPointer(value *CommitIntent) *CommitIntent {
 func runnerLedgerEntrySuccessCommitRecoveryMatches(data runnerLedgerEntrySuccessData) bool {
 	snapshot := data.evidence.RecoverySnapshot()
 	if snapshot == nil || snapshot.state != RecoveryDanglingCommitIntent || snapshot.nextPermittedAction != RecoveryReconcileCommit ||
-		snapshot.migrationID == nil || *snapshot.migrationID != data.commit.MigrationID || snapshot.attemptIndex == nil || *snapshot.attemptIndex != 1 ||
+		snapshot.migrationID == nil || *snapshot.migrationID != data.commit.MigrationID || snapshot.attemptIndex == nil || *snapshot.attemptIndex != data.attemptIndex ||
 		snapshot.commitIntent == nil || snapshot.lastCommitIntentRecordDigest == nil || *snapshot.lastCommitIntentRecordDigest != data.commitRecordDigest ||
 		snapshot.tailDigest != data.commitRecordDigest || !runnerCanonicalEqual(snapshot.commitIntent.value, data.commit) ||
 		snapshot.lastStatementIntent == nil || !runnerCanonicalEqual(snapshot.lastStatementIntent.value, data.intent) ||
@@ -1737,7 +1862,7 @@ func (runner *Runner) appendRunnerLedgerEntrySuccessTerminal(ctx context.Context
 	terminal := AttemptTerminalState{
 		SchemaBundleDigest: data.generation.schemaBundleDigest, CatalogContractDigest: data.commit.CatalogContractDigest,
 		AuthorityProfileDigest: data.commit.AuthorityProfileDigest, AuthorityBindingDigest: data.commit.AuthorityBindingDigest,
-		MigrationID: data.commit.MigrationID, AttemptIndex: 1, PreviousAttemptTerminalDigest: nil,
+		MigrationID: data.commit.MigrationID, AttemptIndex: data.attemptIndex, PreviousAttemptTerminalDigest: cloneDigestPointer(data.previousAttemptTerminal),
 		LastIntermediateStateDigest: &lastIntermediate, Outcome: "committed", ReconcileResult: "not_run",
 	}
 	terminal.TerminalDigest, err = terminal.ComputeDigest()
@@ -1773,7 +1898,7 @@ func cloneAttemptTerminalPointer(value *AttemptTerminalState) *AttemptTerminalSt
 func runnerLedgerEntrySuccessTerminalRecoveryMatches(data runnerLedgerEntrySuccessData) bool {
 	snapshot := data.evidence.RecoverySnapshot()
 	if snapshot == nil || snapshot.migrationID == nil || *snapshot.migrationID != data.terminal.MigrationID ||
-		snapshot.attemptIndex == nil || *snapshot.attemptIndex != 1 || snapshot.lastTerminal == nil ||
+		snapshot.attemptIndex == nil || *snapshot.attemptIndex != data.attemptIndex || snapshot.lastTerminal == nil ||
 		snapshot.lastTerminalDigest == nil || *snapshot.lastTerminalDigest != data.terminal.TerminalDigest ||
 		snapshot.lastTerminal.recordDigest != data.terminalRecordDigest || snapshot.tailDigest != data.terminalRecordDigest ||
 		!runnerCanonicalEqual(snapshot.lastTerminal.value, data.terminal) || snapshot.commitIntent == nil ||
@@ -1805,7 +1930,7 @@ func finishRunnerLedgerEntrySuccess(terminal *runnerLedgerEntrySuccessState) (ru
 		state = runnerLedgerEntrySuccessEntryCommittedComplete
 		event = "classify_bundle_complete"
 	}
-	if !runnerLedgerEntrySuccessTransitionAllowed(runnerLedgerEntrySuccessTerminalDurable, event, state) {
+	if !runnerLedgerEntrySuccessTransitionAllowed(data.writerKind, runnerLedgerEntrySuccessTerminalDurable, event, state) {
 		return runnerLedgerEntrySuccessOutcome{}, runnerLedgerEntrySuccessPostCommitFailure(data, "runner-ledger-entry-success-result", "terminal classification is outside the generated registry", nil)
 	}
 	outcome := runnerLedgerEntrySuccessOutcome{state: state, migrationID: data.entry.ID, ledgerHead: data.ledgerHead, ledgerLength: data.ledgerLength}

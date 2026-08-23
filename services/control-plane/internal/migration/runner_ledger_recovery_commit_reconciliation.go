@@ -229,6 +229,10 @@ func runnerLedgerRecoveryPermitRawCore(owner runnerLedgerRecoveryCloseOnlyPermit
 		if permit != nil {
 			return permit.core
 		}
+	case *runnerLedgerRecoveryExecutionAdmissionPermit:
+		if permit != nil {
+			return permit.core
+		}
 	}
 	return nil
 }
@@ -241,7 +245,7 @@ func sameRunnerLedgerReconciliationAdmissionCleanup(left, right runnerLedgerReco
 func registerRunnerLedgerReconciliationAdmissionCleanup(owner runnerLedgerRecoveryCloseOnlyPermit, core *runnerLedgerRecoveryAdmissionPermitCore) bool {
 	if owner == nil || core == nil || core.binding == nil || core.session == nil || core.canonical == ([32]byte{}) ||
 		(core.action != generatedRunnerLedgerRecoveryProfiles[2].action && core.action != generatedRunnerLedgerRecoveryProfiles[3].action &&
-			core.action != generatedRunnerLedgerRecoveryProfiles[4].action) {
+			core.action != generatedRunnerLedgerRecoveryProfiles[4].action && core.action != generatedRunnerLedgerRecoveryProfiles[5].action) {
 		return false
 	}
 	binding := &runnerLedgerReconciliationAdmissionCleanupBinding{
@@ -263,7 +267,7 @@ func deleteRunnerLedgerReconciliationAdmissionCleanup(owner runnerLedgerRecovery
 
 func validRunnerLedgerReconciliationAdmissionCleanupRegistry(owner runnerLedgerRecoveryCloseOnlyPermit, core *runnerLedgerRecoveryAdmissionPermitCore) bool {
 	if core == nil || (core.action != generatedRunnerLedgerRecoveryProfiles[2].action && core.action != generatedRunnerLedgerRecoveryProfiles[3].action &&
-		core.action != generatedRunnerLedgerRecoveryProfiles[4].action) {
+		core.action != generatedRunnerLedgerRecoveryProfiles[4].action && core.action != generatedRunnerLedgerRecoveryProfiles[5].action) {
 		return true
 	}
 	value, loaded := runnerLedgerReconciliationAdmissionCleanupRegistry.Load(owner)
@@ -326,6 +330,10 @@ func invalidateRunnerLedgerReconciliationAdmissionOwner(owner runnerLedgerRecove
 			permit.core = nil
 		}
 	case *runnerLedgerRetryHandoffAdmissionPermit:
+		if permit != nil {
+			permit.core = nil
+		}
+	case *runnerLedgerRecoveryExecutionAdmissionPermit:
 		if permit != nil {
 			permit.core = nil
 		}
@@ -416,6 +424,10 @@ func claimRunnerLedgerReconciliationAdmissionPermit(owner runnerLedgerRecoveryCl
 		case generatedRunnerLedgerRecoveryProfiles[4].action:
 			var exact runnerLedgerRetryHandoffBinder
 			exact, binderOK = record.evidenceBinder.(runnerLedgerRetryHandoffBinder)
+			binder = exact
+		case generatedRunnerLedgerRecoveryProfiles[5].action:
+			var exact runnerLedgerRecoverySuccessEvidenceBinder
+			exact, binderOK = record.evidenceBinder.(runnerLedgerRecoverySuccessEvidenceBinder)
 			binder = exact
 		}
 	}
