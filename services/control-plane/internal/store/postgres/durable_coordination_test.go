@@ -3,6 +3,9 @@ package postgres
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"testing"
 	"time"
 
@@ -18,157 +21,260 @@ const (
 	coordinationPayload = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 )
 
-func TestDurableCoordinationClaimUsesOnlyGeneratedProfileFunction(t *testing.T) {
+func TestDurableCoordinationJWTUserSurfaceRequiresVerifiedPrincipal(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "durable_coordination.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]bool{
+		"IdempotencyClaimInput": false, "IdempotencySuccessInput": false, "IdempotencyFailureInput": false,
+	}
+	methods := map[string]bool{
+		"ClaimIdempotency": false, "CompleteIdempotencySuccess": false, "CompleteIdempotencyFailure": false,
+	}
+	settlements := map[string]string{
+		"ClaimIdempotency":           "settleIdempotencyClaim",
+		"CompleteIdempotencySuccess": "settleIdempotencySuccess",
+		"CompleteIdempotencyFailure": "settleIdempotencyFailure",
+	}
+	for _, declaration := range file.Decls {
+		switch declaration := declaration.(type) {
+		case *ast.GenDecl:
+			for _, specification := range declaration.Specs {
+				typeSpecification, ok := specification.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				if _, tracked := inputs[typeSpecification.Name.Name]; !tracked {
+					continue
+				}
+				structure, ok := typeSpecification.Type.(*ast.StructType)
+				if !ok {
+					t.Fatalf("%s is not a struct", typeSpecification.Name.Name)
+				}
+				for _, field := range structure.Fields.List {
+					for _, name := range field.Names {
+						if name.Name == "Actor" {
+							t.Fatalf("%s exposes raw Actor", typeSpecification.Name.Name)
+						}
+					}
+				}
+				inputs[typeSpecification.Name.Name] = true
+			}
+		case *ast.FuncDecl:
+			if _, tracked := methods[declaration.Name.Name]; !tracked || declaration.Recv == nil {
+				continue
+			}
+			if len(declaration.Type.Params.List) != 4 {
+				t.Fatalf("%s params = %#v", declaration.Name.Name, declaration.Type.Params.List)
+			}
+			pointer, ok := declaration.Type.Params.List[2].Type.(*ast.StarExpr)
+			if !ok {
+				t.Fatalf("%s principal parameter is not a pointer", declaration.Name.Name)
+			}
+			selector, selectorOK := pointer.X.(*ast.SelectorExpr)
+			if !selectorOK {
+				t.Fatalf("%s principal parameter is not package-qualified", declaration.Name.Name)
+			}
+			packageName, packageOK := selector.X.(*ast.Ident)
+			if !packageOK || packageName.Name != "authn" || selector.Sel.Name != "VerifiedPrincipal" {
+				t.Fatalf("%s does not require *authn.VerifiedPrincipal", declaration.Name.Name)
+			}
+			var callback *ast.FuncLit
+			ast.Inspect(declaration.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || selector.Sel.Name != "WithVerifiedOperation" || len(call.Args) != 2 {
+					return true
+				}
+				packageName, ok := selector.X.(*ast.Ident)
+				if ok && packageName.Name == "authz" {
+					callback, _ = call.Args[1].(*ast.FuncLit)
+				}
+				return true
+			})
+			if callback == nil {
+				t.Fatalf("%s does not outer-wrap with authz.WithVerifiedOperation", declaration.Name.Name)
+			}
+			calls := make(map[string]int)
+			ast.Inspect(callback.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch function := call.Fun.(type) {
+				case *ast.Ident:
+					calls[function.Name]++
+				case *ast.SelectorExpr:
+					calls[function.Sel.Name]++
+				}
+				return true
+			})
+			for _, required := range []string{"Bind", "withTenantMutation", "executeVerifiedRBACOperation", settlements[declaration.Name.Name]} {
+				if calls[required] != 1 {
+					t.Fatalf("%s callback call count %s = %d", declaration.Name.Name, required, calls[required])
+				}
+			}
+			if calls["authorizeMutation"] != 0 || calls["bindAuthorizedProfile"] != 0 {
+				t.Fatalf("%s retains a raw actor authorization bypass", declaration.Name.Name)
+			}
+			methods[declaration.Name.Name] = true
+		}
+	}
+	for name, found := range inputs {
+		if !found {
+			t.Fatalf("input type %s not found", name)
+		}
+	}
+	for name, found := range methods {
+		if !found {
+			t.Fatalf("method %s not found", name)
+		}
+	}
+}
+
+func TestDurableCoordinationClaimSettlementStaysClosed(t *testing.T) {
 	expires := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
-	transaction := authorizedCoordinationTransaction(t, rowValues(
-		"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-		(*int64)(nil), (*string)(nil), timePtr(expires),
-	))
-	service, connection := coordinationService(t, transaction)
-	result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
-		IdempotencyKey: "idempotency-key-0001",
-		AuditFactID:    "audit-idempotency-claim",
-	})
+	result, err := settleIdempotencyClaim(IdempotencyClaimResult{Disposition: "created"}, stringPtr("pending"), &expires, nil)
 	if err != nil || result.DatabaseOutcome != DatabaseCommitted || result.Disposition != "created" ||
 		result.ReplayState != "pending" || !result.ExpiresAt.Equal(expires) {
-		t.Fatalf("claim result/error = %#v / %v", result, err)
+		t.Fatalf("created result/error = %#v / %v", result, err)
 	}
-	if len(transaction.queries) != 6 || transaction.queries[5].sql != claimManagedAgentCreateProjectIdempotencySQL {
-		t.Fatalf("claim query trace = %#v", transaction.queries)
+	conflict, err := settleIdempotencyClaim(IdempotencyClaimResult{Disposition: "conflict"}, nil, nil, nil)
+	if err != nil || conflict != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected, Disposition: "conflict"}) {
+		t.Fatalf("conflict result/error = %#v / %v", conflict, err)
 	}
-	arguments := transaction.queries[5].arguments
-	wantSubject, err := coordinationActor().Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	intent, err := coordination.BindManagedAgentCreateProject(
-		coordination.ManagedAgentCreateProject(), coordinationTenant, coordinationProjectRequest(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(arguments) != 5 || arguments[0] != coordinationTenant || arguments[1] != wantSubject ||
-		arguments[2] != "idempotency-key-0001" || arguments[3] != intent.RequestDigest() ||
-		arguments[4] != "audit-idempotency-claim" {
-		t.Fatalf("claim arguments = %#v", arguments)
-	}
-	assertCoordinationCommitted(t, transaction, connection)
-}
-
-func TestDurableCoordinationClaimReturnsClosedReplayAndConflict(t *testing.T) {
-	expires := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
-	resourceKind := "project"
-	resourceID := "project-alpha"
-	resourceVersion := int64(7)
-	tests := []struct {
-		name        string
-		disposition string
-		wantOutcome DatabaseOutcome
-	}{
-		{name: "terminal replay", disposition: "replay", wantOutcome: DatabaseCommitted},
-		{name: "digest conflict", disposition: "conflict", wantOutcome: DatabaseRejected},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			values := []any{test.disposition, stringPtr("succeeded"), (*string)(nil), (*int64)(nil), &resourceKind, &resourceID,
-				&resourceVersion, (*string)(nil), &expires}
-			if test.disposition == "conflict" {
-				values = []any{test.disposition, (*string)(nil), (*string)(nil), (*int64)(nil), (*string)(nil),
-					(*string)(nil), (*int64)(nil), (*string)(nil), (*time.Time)(nil)}
-			}
-			transaction := authorizedCoordinationTransaction(t, rowValues(values...))
-			service, _ := coordinationService(t, transaction)
-			result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-				Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
-				IdempotencyKey: "idempotency-key-0001",
-				AuditFactID:    "audit-idempotency-replay",
-			})
-			if err != nil || result.DatabaseOutcome != test.wantOutcome || result.Disposition != test.disposition {
-				t.Fatalf("replay result/error = %#v / %v", result, err)
-			}
-			if test.disposition == "replay" && (result.ResourceID == nil || *result.ResourceID != resourceID) {
-				t.Fatalf("terminal replay result = %#v", result)
-			}
-			if test.disposition == "conflict" && result != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected, Disposition: "conflict"}) {
-				t.Fatalf("conflict leaked envelope = %#v", result)
-			}
-		})
-	}
-}
-
-func TestDurableCoordinationClaimConvertsSerializationFailureToClosedRejection(t *testing.T) {
-	transaction := authorizedCoordinationTransaction(t, rowError(&pgconn.PgError{Code: "40001", Message: "serialization"}))
-	service, _ := coordinationService(t, transaction)
-	result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
-		IdempotencyKey: "idempotency-key-0001",
-		AuditFactID:    "audit-idempotency-claim",
-	})
-	if err != nil || result != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected}) ||
-		transaction.rollbackCalls != 1 || transaction.commitCalls != 0 {
-		t.Fatalf("serialization result/error/settlement = %#v / %v / %d/%d", result, err, transaction.commitCalls, transaction.rollbackCalls)
+	rejected, err := settleIdempotencyClaim(IdempotencyClaimResult{Disposition: "created"}, stringPtr("pending"), &expires,
+		&pgconn.PgError{Code: "40001", Message: "serialization"})
+	if err != nil || rejected != (IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected}) {
+		t.Fatalf("rejected result/error = %#v / %v", rejected, err)
 	}
 }
 
 func TestDurableCoordinationCompletionHasClosedCommitOutcomes(t *testing.T) {
 	success := IdempotencySuccessInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+		Profile: coordination.ManagedAgentCreateProject(), Request: coordinationProjectRequest(),
 		IdempotencyKey: "idempotency-key-0001",
 		ResourceID:     "project-alpha", ResourceVersion: 7, EventID: "event-project-alpha",
 		PayloadDigest: coordinationPayload, AuditFactID: "audit-idempotency-success",
 	}
 	tests := []struct {
 		name        string
-		commitErr   error
+		settleErr   error
 		wantOutcome DatabaseOutcome
 	}{
 		{name: "confirmed", wantOutcome: DatabaseCommitted},
-		{name: "rejected", commitErr: &pgconn.PgError{Code: "40001", Message: "serialization"}, wantOutcome: DatabaseRejected},
-		{name: "unknown", commitErr: errors.New("commit response lost"), wantOutcome: DatabaseUnknown},
+		{name: "rejected", settleErr: &pgconn.PgError{Code: "40001", Message: "serialization"}, wantOutcome: DatabaseRejected},
+		{name: "unknown", settleErr: ErrMutationCommitUnknown, wantOutcome: DatabaseUnknown},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			transaction := authorizedCoordinationTransaction(t, rowValues(
-				"succeeded", "project", "project-alpha", int64(7), "event-project-alpha", "pending",
-			))
-			transaction.commitErr = test.commitErr
-			service, connection := coordinationService(t, transaction)
-			result, err := service.CompleteIdempotencySuccess(context.Background(), coordinationTenant, success)
+			result, err := settleIdempotencySuccess(IdempotencySuccessResult{
+				ReplayState: "succeeded", ResourceKind: "project", ResourceID: "project-alpha",
+				ResourceVersion: 7, OutboxEventID: "event-project-alpha", OutboxState: "pending",
+			}, test.settleErr, success)
 			if err != nil || result.DatabaseOutcome != test.wantOutcome {
 				t.Fatalf("completion result/error = %#v / %v", result, err)
 			}
 			if test.wantOutcome != DatabaseCommitted && result != (IdempotencySuccessResult{DatabaseOutcome: test.wantOutcome}) {
 				t.Fatalf("non-committed result leaked = %#v", result)
 			}
-			if test.commitErr != nil && connection.hijackCalls != 1 {
-				t.Fatalf("unknown/rejected connection hijacks = %d", connection.hijackCalls)
-			}
 		})
 	}
 }
 
 func TestDurableCoordinationFailureAndResultDriftFailClosed(t *testing.T) {
-	transaction := authorizedCoordinationTransaction(t, rowValues("failed", "stable.failure"))
-	service, _ := coordinationService(t, transaction)
-	result, err := service.CompleteIdempotencyFailure(context.Background(), coordinationTenant, IdempotencyFailureInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
+	input := IdempotencyFailureInput{
+		Profile: coordination.ManagedAgentCreateProject(), Request: coordinationProjectRequest(),
 		IdempotencyKey:  "idempotency-key-0001",
 		StableErrorCode: "stable.failure", AuditFactID: "audit-idempotency-failure",
-	})
+	}
+	result, err := settleIdempotencyFailure(IdempotencyFailureResult{ReplayState: "failed", StableErrorCode: "stable.failure"}, nil, input)
 	if err != nil || result.DatabaseOutcome != DatabaseCommitted || result.ReplayState != "failed" {
 		t.Fatalf("failure result/error = %#v / %v", result, err)
 	}
-
-	driftTransaction := authorizedCoordinationTransaction(t, rowValues("failed", "different.failure"))
-	driftService, _ := coordinationService(t, driftTransaction)
-	_, err = driftService.CompleteIdempotencyFailure(context.Background(), coordinationTenant, IdempotencyFailureInput{
-		Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(), Request: coordinationProjectRequest(),
-		IdempotencyKey:  "idempotency-key-0001",
-		StableErrorCode: "stable.failure", AuditFactID: "audit-idempotency-failure",
-	})
+	_, err = settleIdempotencyFailure(IdempotencyFailureResult{ReplayState: "failed", StableErrorCode: "different.failure"}, nil, input)
 	if !errors.Is(err, ErrCoordinationResultDrift) {
 		t.Fatalf("drift error = %v", err)
+	}
+}
+
+func TestDurableCoordinationTypedJWTKernelsUseOnlyGeneratedFunctions(t *testing.T) {
+	ctx := context.Background()
+	request := coordinationProjectRequest()
+	intent, err := coordination.BindManagedAgentCreateProject(
+		coordination.ManagedAgentCreateProject(), coordinationTenant, request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	claimInput := IdempotencyClaimInput{
+		Profile: coordination.ManagedAgentCreateProject(), Request: request,
+		IdempotencyKey: "idempotency-key-0001", AuditFactID: "audit-idempotency-claim",
+	}
+	claimTransaction := &fakeTransaction{rows: []rowScanner{rowValues(
+		"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
+		(*int64)(nil), (*string)(nil), &expires,
+	)}}
+	claim, replayState, claimExpiresAt, err := claimIdempotencyTransaction(
+		ctx, &tenantReadHandle{transaction: claimTransaction}, coordinationTenant,
+		coordinationSubject, intent.RequestDigest(), claimInput,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err = settleIdempotencyClaim(claim, replayState, claimExpiresAt, nil)
+	if err != nil || claim.DatabaseOutcome != DatabaseCommitted || len(claimTransaction.queries) != 1 ||
+		claimTransaction.queries[0].sql != claimManagedAgentCreateProjectIdempotencySQL {
+		t.Fatalf("claim kernel/result = %#v / %v / %#v", claim, err, claimTransaction.queries)
+	}
+	claimArguments := claimTransaction.queries[0].arguments
+	if len(claimArguments) != 5 || claimArguments[0] != coordinationTenant || claimArguments[1] != coordinationSubject ||
+		claimArguments[2] != claimInput.IdempotencyKey || claimArguments[3] != intent.RequestDigest() || claimArguments[4] != claimInput.AuditFactID {
+		t.Fatalf("claim arguments = %#v", claimArguments)
+	}
+
+	successInput := IdempotencySuccessInput{
+		Profile: coordination.ManagedAgentCreateProject(), Request: request, IdempotencyKey: claimInput.IdempotencyKey,
+		ResourceID: "project-alpha", ResourceVersion: 7, EventID: "event-project-alpha",
+		PayloadDigest: coordinationPayload, AuditFactID: "audit-idempotency-success",
+	}
+	successTransaction := &fakeTransaction{rows: []rowScanner{rowValues(
+		"succeeded", "project", successInput.ResourceID, successInput.ResourceVersion, successInput.EventID, "pending",
+	)}}
+	success, err := completeIdempotencySuccessTransaction(
+		ctx, &tenantReadHandle{transaction: successTransaction}, coordinationTenant,
+		coordinationSubject, intent.RequestDigest(), successInput,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	success, err = settleIdempotencySuccess(success, nil, successInput)
+	if err != nil || success.DatabaseOutcome != DatabaseCommitted || len(successTransaction.queries) != 1 ||
+		successTransaction.queries[0].sql != completeManagedAgentCreateProjectSuccessSQL {
+		t.Fatalf("success kernel/result = %#v / %v / %#v", success, err, successTransaction.queries)
+	}
+
+	failureInput := IdempotencyFailureInput{
+		Profile: coordination.ManagedAgentCreateProject(), Request: request, IdempotencyKey: claimInput.IdempotencyKey,
+		StableErrorCode: "stable.failure", AuditFactID: "audit-idempotency-failure",
+	}
+	failureTransaction := &fakeTransaction{rows: []rowScanner{rowValues("failed", failureInput.StableErrorCode)}}
+	failure, err := completeIdempotencyFailureTransaction(
+		ctx, &tenantReadHandle{transaction: failureTransaction}, coordinationTenant,
+		coordinationSubject, intent.RequestDigest(), failureInput,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure, err = settleIdempotencyFailure(failure, nil, failureInput)
+	if err != nil || failure.DatabaseOutcome != DatabaseCommitted || len(failureTransaction.queries) != 1 ||
+		failureTransaction.queries[0].sql != completeManagedAgentCreateProjectFailureSQL {
+		t.Fatalf("failure kernel/result = %#v / %v / %#v", failure, err, failureTransaction.queries)
 	}
 }
 
@@ -274,65 +380,24 @@ func TestDurableCoordinationOutboxBindsFullClaimTuple(t *testing.T) {
 }
 
 func TestDurableCoordinationRejectsZeroProfileBeforeDatabase(t *testing.T) {
-	transaction := authorizedCoordinationTransaction(t, rowValues(
-		"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-		(*int64)(nil), (*string)(nil), timePtr(time.Now()),
-	))
+	transaction := coordinationTransaction(rowValues((*string)(nil)))
 	service, connection := coordinationService(t, transaction)
-	_, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-		Actor: coordinationActor(), Request: coordinationProjectRequest(), IdempotencyKey: "idempotency-key-0001",
-		AuditFactID: "audit-idempotency-claim",
-	})
+	_, _, err := service.bindProfile(context.Background(), coordinationTenant, coordination.Profile{}, coordinationProjectRequest(), "audit-idempotency-claim")
 	if !errors.Is(err, ErrCoordinationInvalidInput) || connection.beginOptions != nil {
 		t.Fatalf("zero profile error/database use = %v / %#v", err, connection.beginOptions)
 	}
 }
 
-func TestDurableCoordinationAuthorizesGeneratedProfileInSameTransaction(t *testing.T) {
-	t.Run("denied actor", func(t *testing.T) {
-		actor := coordinationActor()
-		digest, err := actor.Digest()
-		if err != nil {
-			t.Fatal(err)
-		}
-		rows := mutationAuthorizationRows(t, coordinationTenant, actor, digest, authz.ScopeOrganization, "organization-alpha")
-		rows[len(rows)-1] = rowValues([]byte("[]"))
-		transaction := &fakeTransaction{rows: append(rows, rowValues(
-			"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-			(*int64)(nil), (*string)(nil), timePtr(time.Now()),
-		))}
-		service, _ := coordinationService(t, transaction)
-		_, err = service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-			Profile: coordination.ManagedAgentCreateProject(), Actor: actor, Request: coordinationProjectRequest(),
-			IdempotencyKey: "idempotency-key-0001",
-			AuditFactID:    "audit-idempotency-denied",
-		})
-		if !errors.Is(err, ErrMutationDenied) || len(transaction.queries) != 5 ||
-			transaction.rollbackCalls != 1 || transaction.commitCalls != 0 {
-			t.Fatalf("denied error/query/settlement = %v / %d / %d/%d", err, len(transaction.queries), transaction.commitCalls, transaction.rollbackCalls)
-		}
+func TestDurableCoordinationPublicJWTUserPathRejectsMissingPrincipalBeforeDatabase(t *testing.T) {
+	transaction := coordinationTransaction(rowValues((*string)(nil)))
+	service, connection := coordinationService(t, transaction)
+	result, err := service.ClaimIdempotency(context.Background(), coordinationTenant, nil, IdempotencyClaimInput{
+		Profile: coordination.ManagedAgentCreateProject(), Request: coordinationProjectRequest(),
+		IdempotencyKey: "idempotency-key-0001", AuditFactID: "audit-idempotency-claim",
 	})
-
-	t.Run("profile-excluded unicode organization scope", func(t *testing.T) {
-		transaction := authorizedCoordinationTransaction(t, rowValues(
-			"created", stringPtr("pending"), (*string)(nil), (*int64)(nil), (*string)(nil), (*string)(nil),
-			(*int64)(nil), (*string)(nil), timePtr(time.Now()),
-		))
-		service, connection := coordinationService(t, transaction)
-		_, err := service.ClaimIdempotency(context.Background(), coordinationTenant, IdempotencyClaimInput{
-			Profile: coordination.ManagedAgentCreateProject(), Actor: coordinationActor(),
-			Request: func() coordination.ManagedAgentCreateProjectRequest {
-				request := coordinationProjectRequest()
-				request.OrganizationRef.ID = "organization-café"
-				return request
-			}(),
-			IdempotencyKey: "idempotency-key-0001",
-			AuditFactID:    "audit-idempotency-wrong-scope",
-		})
-		if !errors.Is(err, ErrCoordinationInvalidInput) || connection.beginOptions != nil {
-			t.Fatalf("wrong scope error/database use = %v / %#v", err, connection.beginOptions)
-		}
-	})
+	if err == nil || result != (IdempotencyClaimResult{}) || connection.beginOptions != nil {
+		t.Fatalf("nil principal result/error/database use = %#v / %v / %#v", result, err, connection.beginOptions)
+	}
 }
 
 type fixedOutboxPort struct {
@@ -381,23 +446,6 @@ func coordinationTransaction(operation rowScanner) *fakeTransaction {
 	return &fakeTransaction{rows: []rowScanner{
 		rowValues(coordinationTenant), rowValues(coordinationTenant), operation,
 	}}
-}
-
-func authorizedCoordinationTransaction(t *testing.T, operation rowScanner) *fakeTransaction {
-	t.Helper()
-	actor := coordinationActor()
-	digest, err := actor.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &fakeTransaction{rows: append(
-		mutationAuthorizationRows(t, coordinationTenant, actor, digest, authz.ScopeOrganization, "organization-alpha"),
-		operation,
-	)}
-}
-
-func coordinationActor() authz.SubjectRef {
-	return authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-admin"}
 }
 
 func coordinationScope() authz.ScopeRef {

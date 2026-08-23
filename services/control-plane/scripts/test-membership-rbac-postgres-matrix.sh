@@ -292,11 +292,12 @@ SQL
   host_port=$(docker port "$active_container" 5432/tcp | sed -E 's/.*:([0-9]+)$/\1/')
   database_url="postgres://cag_runtime:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
   migration_database_url="postgres://cag_migration:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
+  observer_database_url="postgres://postgres:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test \
-      -run '^TestTenantAuthorizationPostgresConformance$' \
+      -run '^TestTenantRBACFactMaterializationPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
@@ -304,13 +305,23 @@ SQL
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test \
-      -run '^TestTenantRBACMutationPostgresConformance$' \
+      -run '^TestTenantRBACMutationAuthorityPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
+  CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
+  CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
+  CLOUD_AGENTS_TEST_OBSERVER_DATABASE_URL="$observer_database_url" \
+  CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-normal' \
+  CLOUD_AGENTS_EXTERNAL_POSTGRES_RUN_ID='normal' \
+  CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
+  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+    go -C "$module_dir" test \
+      -run '^TestPostgresExternalVerifiedPrincipal(RBACConformance|LeaseThroughCommitAndCancelRollback)$' \
+      -count=1 -v ./internal/authn
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
-      -run '^TestTenantAuthorizationPostgresConformance$' \
+      -run '^TestTenantRBACFactMaterializationPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
@@ -318,8 +329,18 @@ SQL
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
   GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
-      -run '^TestTenantRBACMutationPostgresConformance$' \
+      -run '^TestTenantRBACMutationAuthorityPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
+  CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
+  CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
+  CLOUD_AGENTS_TEST_OBSERVER_DATABASE_URL="$observer_database_url" \
+  CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-race' \
+  CLOUD_AGENTS_EXTERNAL_POSTGRES_RUN_ID='race' \
+  CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
+  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+    go -C "$module_dir" test -race \
+      -run '^TestPostgresExternalVerifiedPrincipal(RBACConformance|LeaseThroughCommitAndCancelRollback)$' \
+      -count=1 -v ./internal/authn
 
   cross_tenant_fault=$(docker exec -i -e PGPASSWORD="$test_password" "$active_container" \
     psql -X -v ON_ERROR_STOP=0 -At -h 127.0.0.1 -U cag_runtime -d cagtest 2>&1 <<'SQL'

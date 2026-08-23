@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -134,7 +136,7 @@ func TestEvaluateDefaultDenyAndScopeContainment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := Request{
+	request := authorizationRequest{
 		Subject:    subject,
 		Permission: "projects.get",
 		Resource:   ScopeRef{Level: ScopeProject, ID: "project-alpha"},
@@ -175,56 +177,56 @@ func TestEvaluateDefaultDenyAndScopeContainment(t *testing.T) {
 		Catalog:       builtinCatalogFixture(t),
 		Candidates:    []Candidate{candidate},
 	}
-	decision, err := Evaluate(base, request, now)
-	if err != nil || !decision.Allowed || decision.Evidence == nil || decision.Evidence.RoleBindingUID != "role-binding-alpha" {
+	decision, err := evaluate(base, request, now)
+	if err != nil || !decision.Allowed || decision.evidence == nil || decision.evidence.RoleBindingUID != "role-binding-alpha" {
 		t.Fatalf("allow decision = %#v err=%v", decision, err)
 	}
 
 	tests := []struct {
 		name   string
-		mutate func(*Snapshot, *Request)
-		reason DenyReason
+		mutate func(*Snapshot, *authorizationRequest)
+		reason denyReason
 	}{
-		{name: "missing candidates", mutate: func(snapshot *Snapshot, _ *Request) {
+		{name: "missing candidates", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates = nil
-		}, reason: DenyNoEligibleBinding},
-		{name: "suspended membership", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "suspended membership", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates[0].Membership.State = MembershipSuspended
-		}, reason: DenyNoEligibleBinding},
-		{name: "revoked binding", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "revoked binding", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates[0].Binding.State = BindingRevoked
-		}, reason: DenyNoEligibleBinding},
-		{name: "expiry equality", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "expiry equality", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates[0].Binding.ExpiresAt = cloneTime(now)
-		}, reason: DenyNoEligibleBinding},
-		{name: "membership narrower than binding", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "membership narrower than binding", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates[0].Membership.Scope = ScopePath{Level: ScopeProject, TenantID: tenantID, OrganizationID: "organization-other", ProjectID: "project-alpha"}
-		}, reason: DenyNoEligibleBinding},
-		{name: "binding outside request", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "binding outside request", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates[0].Binding.Scope = ScopePath{Level: ScopeProject, TenantID: tenantID, OrganizationID: "organization-other", ProjectID: "project-alpha"}
-		}, reason: DenyNoEligibleBinding},
-		{name: "platform role is not tenant runtime authority", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "platform role is not tenant runtime authority", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.Candidates[0].Membership.Scope = ScopePath{Level: ScopePlatform}
 			snapshot.Candidates[0].Binding.RoleName = "platform.admin"
 			snapshot.Candidates[0].Binding.Scope = ScopePath{Level: ScopePlatform}
-		}, reason: DenyNoEligibleBinding},
-		{name: "unregistered permission", mutate: func(_ *Snapshot, request *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "unregistered permission", mutate: func(_ *Snapshot, request *authorizationRequest) {
 			request.Permission = "projects.future"
-		}, reason: DenyNoEligibleBinding},
-		{name: "unresolved scope", mutate: func(snapshot *Snapshot, _ *Request) {
+		}, reason: denyNoEligibleBinding},
+		{name: "unresolved scope", mutate: func(snapshot *Snapshot, _ *authorizationRequest) {
 			snapshot.ScopeResolved = false
-		}, reason: DenyUnknownScope},
-		{name: "platform runtime", mutate: func(_ *Snapshot, request *Request) {
+		}, reason: denyUnknownScope},
+		{name: "platform runtime", mutate: func(_ *Snapshot, request *authorizationRequest) {
 			request.Resource = ScopeRef{Level: ScopePlatform}
-		}, reason: DenyPlatformRuntime},
+		}, reason: denyPlatformRuntime},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			snapshot := cloneSnapshot(base)
 			requestCopy := request
 			test.mutate(&snapshot, &requestCopy)
-			got, gotErr := Evaluate(snapshot, requestCopy, now)
-			if gotErr != nil || got.Allowed || got.Reason != test.reason || got.Evidence != nil {
+			got, gotErr := evaluate(snapshot, requestCopy, now)
+			if gotErr != nil || got.Allowed || got.Reason != test.reason || got.evidence != nil {
 				t.Fatalf("decision = %#v err=%v, want deny %s", got, gotErr, test.reason)
 			}
 		})
@@ -248,9 +250,9 @@ func TestEvaluateActiveNarrowMembershipSurvivesInactiveBroadMembership(t *testin
 			{Membership: MembershipFact{UID: "membership-narrow", Subject: subject, SubjectHash: digest, Scope: project, State: MembershipActive}, Binding: binding},
 		},
 	}
-	request := Request{Subject: subject, Permission: "projects.get", Resource: ScopeRef{Level: ScopeProject, ID: "project-alpha"}}
-	decision, err := Evaluate(snapshot, request, now)
-	if err != nil || !decision.Allowed || decision.Evidence == nil || decision.Evidence.MembershipUID != "membership-narrow" {
+	request := authorizationRequest{Subject: subject, Permission: "projects.get", Resource: ScopeRef{Level: ScopeProject, ID: "project-alpha"}}
+	decision, err := evaluate(snapshot, request, now)
+	if err != nil || !decision.Allowed || decision.evidence == nil || decision.evidence.MembershipUID != "membership-narrow" {
 		t.Fatalf("narrow allow = %#v err=%v", decision, err)
 	}
 }
@@ -269,7 +271,7 @@ func TestEvaluateIntegrityFaultsReturnErrors(t *testing.T) {
 		Binding:    RoleBindingFact{UID: "role-binding-alpha", Subject: subject, SubjectHash: digest, RoleName: "project.viewer", RoleVersion: 1, Scope: project, State: BindingActive},
 	}
 	base := Snapshot{TenantID: tenantID, Scope: project, ScopeResolved: true, Catalog: builtinCatalogFixture(t), Candidates: []Candidate{candidate}}
-	request := Request{Subject: subject, Permission: "projects.get", Resource: ScopeRef{Level: ScopeProject, ID: "project-alpha"}}
+	request := authorizationRequest{Subject: subject, Permission: "projects.get", Resource: ScopeRef{Level: ScopeProject, ID: "project-alpha"}}
 
 	tests := []struct {
 		name   string
@@ -296,11 +298,192 @@ func TestEvaluateIntegrityFaultsReturnErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			snapshot := cloneSnapshot(base)
 			test.mutate(&snapshot)
-			decision, gotErr := Evaluate(snapshot, request, now)
+			decision, gotErr := evaluate(snapshot, request, now)
 			if decision.Allowed || !errors.Is(gotErr, test.target) {
 				t.Fatalf("decision=%#v err=%v, want %v", decision, gotErr, test.target)
 			}
 		})
+	}
+}
+
+func TestVerifiedOperationBindExecuteOneShotAndDefaultDeny(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
+	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	resource := ScopeRef{Level: ScopeProject, ID: "project-alpha"}
+	binder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	operation, err := binder.Bind("tenant-alpha", resource, "projects.get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := operation.Actor(); !ok || got != actor {
+		t.Fatalf("operation actor = %#v ok=%v", got, ok)
+	}
+	snapshot := allowedSnapshot(t, actor, "tenant-alpha", "project-alpha")
+	called := 0
+	if err := operation.Execute(snapshot, now, func() error { called++; return nil }); err != nil || called != 1 {
+		t.Fatalf("execute err=%v called=%d", err, called)
+	}
+	if _, ok := operation.Actor(); ok {
+		t.Fatal("spent operation retained actor authority")
+	}
+	if err := operation.Execute(snapshot, now, func() error { called++; return nil }); !errors.Is(err, ErrOperationDenied) || called != 1 {
+		t.Fatalf("second execute err=%v called=%d", err, called)
+	}
+
+	deniedBinder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	deniedOperation, err := deniedBinder.Bind("tenant-alpha", resource, "projects.get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Candidates = nil
+	if err := deniedOperation.Execute(snapshot, now, func() error { called++; return nil }); !errors.Is(err, ErrOperationDenied) || called != 1 {
+		t.Fatalf("deny err=%v called=%d", err, called)
+	}
+}
+
+func TestVerifiedOperationProtectedCallbackErrorPreservesExecutedProgress(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
+	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	resource := ScopeRef{Level: ScopeProject, ID: "project-alpha"}
+	protectedErr := errors.New("protected operation rejected")
+	progress := &atomic.Uint32{}
+	binder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	binder.progress = progress
+	operation, err := binder.Bind("tenant-alpha", resource, "projects.get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := operation.Execute(allowedSnapshot(t, actor, "tenant-alpha", "project-alpha"), now, func() error {
+		return protectedErr
+	}); !errors.Is(err, protectedErr) {
+		t.Fatalf("protected callback error = %v", err)
+	}
+	if got := progress.Load(); got != operationProgressExecuted {
+		t.Fatalf("protected callback progress = %d, want %d", got, operationProgressExecuted)
+	}
+}
+
+func TestVerifiedOperationCopyTamperMismatchAndEscapeFailClosed(t *testing.T) {
+	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	resource := ScopeRef{Level: ScopeProject, ID: "project-alpha"}
+
+	mismatch := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	if _, err := mismatch.Bind("tenant-other", resource, "projects.get"); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("mismatch bind err=%v", err)
+	}
+	if _, err := mismatch.Bind("tenant-alpha", resource, "projects.get"); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("mismatch retry err=%v", err)
+	}
+
+	copySource := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	copyValue := *copySource
+	if _, err := copyValue.Bind("tenant-alpha", resource, "projects.get"); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("binder copy err=%v", err)
+	}
+	if _, err := copySource.Bind("tenant-alpha", resource, "projects.get"); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("binder source after copy err=%v", err)
+	}
+
+	tampered := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	tampered.permission = "projects.update"
+	if _, err := tampered.Bind("tenant-alpha", resource, "projects.update"); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("tampered binder err=%v", err)
+	}
+
+	operationBinder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	operation, err := operationBinder.Bind("tenant-alpha", resource, "projects.get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationCopy := *operation
+	if err := operationCopy.Execute(Snapshot{}, time.Now(), func() error { return nil }); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("operation copy err=%v", err)
+	}
+	if err := operation.Execute(Snapshot{}, time.Now(), func() error { return nil }); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("operation source after copy err=%v", err)
+	}
+
+	tamperedOperationBinder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	tamperedOperation, err := tamperedOperationBinder.Bind("tenant-alpha", resource, "projects.get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedOperation.actor.Subject = "attacker"
+	if err := tamperedOperation.Execute(Snapshot{}, time.Now(), func() error { return nil }); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("tampered operation err=%v", err)
+	}
+
+	escapedBinder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	escapedBinder.lifetime.close()
+	if _, err := escapedBinder.Bind("tenant-alpha", resource, "projects.get"); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("escaped binder err=%v", err)
+	}
+}
+
+func TestVerifiedOperationConcurrentBindAndExecuteHaveOneWinner(t *testing.T) {
+	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
+	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	resource := ScopeRef{Level: ScopeProject, ID: "project-alpha"}
+	binder := testVerifiedOperationBinder(actor, "tenant-alpha", resource, "projects.get")
+	var bindSuccesses atomic.Int32
+	operations := make(chan *VerifiedOperation, 16)
+	var wait sync.WaitGroup
+	for range 16 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			operation, err := binder.Bind("tenant-alpha", resource, "projects.get")
+			if err == nil {
+				bindSuccesses.Add(1)
+				operations <- operation
+			}
+		}()
+	}
+	wait.Wait()
+	close(operations)
+	if bindSuccesses.Load() != 1 {
+		t.Fatalf("concurrent bind successes=%d", bindSuccesses.Load())
+	}
+	operation := <-operations
+	snapshot := allowedSnapshot(t, actor, "tenant-alpha", "project-alpha")
+	var executeSuccesses atomic.Int32
+	for range 16 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if operation.Execute(snapshot, now, func() error { return nil }) == nil {
+				executeSuccesses.Add(1)
+			}
+		}()
+	}
+	wait.Wait()
+	if executeSuccesses.Load() != 1 {
+		t.Fatalf("concurrent execute successes=%d", executeSuccesses.Load())
+	}
+}
+
+func testVerifiedOperationBinder(actor SubjectRef, tenantID string, resource ScopeRef, permission string) *VerifiedOperationBinder {
+	binder := &VerifiedOperationBinder{
+		lifetime: newOperationLifetime(), consumed: &atomic.Bool{}, progress: &atomic.Uint32{}, actor: actor, tenantID: tenantID, resource: resource, permission: permission,
+	}
+	binder.binding = operationBinding(actor, tenantID, resource, permission)
+	binder.self = binder
+	return binder
+}
+
+func allowedSnapshot(t *testing.T, actor SubjectRef, tenantID, projectID string) Snapshot {
+	t.Helper()
+	digest, err := actor.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := ScopePath{Level: ScopeProject, TenantID: tenantID, OrganizationID: "organization-alpha", ProjectID: projectID}
+	return Snapshot{
+		TenantID: tenantID, Scope: project, ScopeResolved: true, Catalog: builtinCatalogFixture(t),
+		Candidates: []Candidate{{
+			Membership: MembershipFact{UID: "membership-alpha", Subject: actor, SubjectHash: digest, Scope: project, State: MembershipActive},
+			Binding:    RoleBindingFact{UID: "role-binding-alpha", Subject: actor, SubjectHash: digest, RoleName: "project.viewer", RoleVersion: 1, Scope: project, State: BindingActive},
+		}},
 	}
 }
 

@@ -1,6 +1,6 @@
 # P1 offline JWT access-token verifier implementation entry - 2026-08-23
 
-- Status: **SLICE A APPROVED; SLICE B IMPLEMENTED CANDIDATE — INDEPENDENT REVIEW PENDING; SLICE C NOT STARTED**
+- Status: **SLICE A APPROVED; SLICE B APPROVED; SLICE C IMPLEMENTED CANDIDATE — FIXED-CANDIDATE INDEPENDENT REVIEW PENDING**
 - Last updated: 2026-08-24
 - Source: [`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md)
 - Baseline: `bf2bb8fa916a723bca2b64e156d2b3e64f374582`
@@ -67,13 +67,20 @@ trust/context-source adapter requires its own versioned decision and review.
 - run generated same-bits, focused normal/race, vet/build, secret and forbidden-surface checks; and
 - obtain an independent fixed-candidate P0/P1/P2 verdict.
 
+Current Slice C implementation evidence is recorded in
+[`identity-verifier-authz-binder-implementation-20260824.md`](identity-verifier-authz-binder-implementation-20260824.md).
+The working candidate is based on Slice B's independently approved review commit
+`d2e464be0f3e54aa25e55d6cca7d4f744b04bc1c` on
+`codex/cloud-agents-p1-identity-verifier-slice-c-20260824`. Implementation and the local Go/PostgreSQL matrices are
+complete, but the exact candidate commit is not yet fixed and its independent P0/P1/P2 review remains pending.
+
 ## 4. Acceptance and stop conditions
 
 Each slice stops before the next authority-bearing slice until its fixed candidate is independently approved. The
 production dependency direction is `store/postgres -> authz -> authn`; Slice B does not touch authz/store and Slice C
-owns both request/evaluator and PostgreSQL seams. Any new algorithm, token kind, claim mapping, external JOSE
-dependency, trust/context provisioning, discovery/JWKS network path, or production consumer requires a new explicit
-versioned boundary rather than widening v1.
+owns both request/evaluator and the eight reviewed PostgreSQL seams. Any additional algorithm, token kind, claim
+mapping, external JOSE dependency, trust/context provisioning, discovery/JWKS network path, or production consumer
+requires a new explicit versioned boundary rather than widening v1.
 
 Passing these slices is non-Gate evidence. Production OIDC/JWKS refresh, HTTP enforcement, current whole-schema tenant
 isolation, current vulnerability/secret/limit evidence, accepted durability aggregation, deployment and publication

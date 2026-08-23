@@ -153,13 +153,12 @@ func recoverDurableCoordination(
 	if err != nil || settled.DatabaseOutcome != DatabaseCommitted || settled.State != "delivered" {
 		t.Fatalf("restored outbox settlement = %#v / %v", settled, err)
 	}
-	failed, err := service.CompleteIdempotencyFailure(ctx, tenantID, IdempotencyFailureInput{
-		Profile: profile, Actor: actor, Request: coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
-		IdempotencyKey: dataRecoveryPendingKey, StableErrorCode: "recovered.terminal",
-		AuditFactID: "audit-recovery-pending-complete",
-	})
-	if err != nil || failed.DatabaseOutcome != DatabaseCommitted || failed.ReplayState != "failed" || failed.StableErrorCode != "recovered.terminal" {
-		t.Fatalf("restored pending idempotency completion = %#v / %v", failed, err)
+	failed := completeCoordinationIntegrationFailure(
+		t, ctx, service, tenantID, profile, actor, scope, dataRecoveryPendingKey,
+		coordinationIntegrationRequest, "recovered.terminal", "audit-recovery-pending-complete",
+	)
+	if failed.DatabaseOutcome != DatabaseCommitted || failed.ReplayState != "failed" || failed.StableErrorCode != "recovered.terminal" {
+		t.Fatalf("restored pending idempotency completion = %#v", failed)
 	}
 
 	var succeeded, failedCount, delivered, recoveredLeader int64

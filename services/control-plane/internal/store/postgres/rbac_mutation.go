@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -150,43 +151,26 @@ func newRBACMutationService(runner *TenantTransactionRunner) (*RBACMutationServi
 func (service *RBACMutationService) CreateMembership(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	principal *authn.VerifiedPrincipal,
 	input CreateMembershipInput,
 ) (MutationResult, error) {
-	if err := service.validateCommon(ctx, tenantID, actor, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
-		return MutationResult{}, err
-	}
-	if err := input.Subject.Validate(); err != nil || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
-		!validMutationIdentifier(input.MembershipUID) || !validMutationIdentifier(input.MembershipName) ||
-		!validMutationExpiry(input.ExpiresAt, service.runner.clock()) {
-		return MutationResult{}, fmt.Errorf("%w: membership create", ErrMutationInvalidInput)
-	}
-
-	return service.withAuthorizedMutation(ctx, tenantID, actor, permissionMembershipCreate, input.Scope, func(handle *tenantReadHandle) (MutationResult, error) {
-		return scanMutationResult(
-			handle.transaction.queryRow(
-				ctx,
-				createMembershipSQL,
-				tenantID,
-				input.ExpectedTenantRevision,
-				input.MembershipUID,
-				input.MembershipName,
-				input.Subject.Kind,
-				input.Subject.Issuer,
-				input.Subject.Subject,
-				string(input.Scope.Level),
-				input.Scope.ID,
-				input.ExpiresAt,
-				input.AuditFactUID,
-				input.ReasonCode,
-			),
-			tenantID,
-			input.MembershipUID,
-			input.ExpectedTenantRevision,
-			authz.MembershipActive,
-			"create membership",
-		)
+	var result MutationResult
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+			return err
+		}
+		if err := input.Subject.Validate(); err != nil || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
+			!validMutationIdentifier(input.MembershipUID) || !validMutationIdentifier(input.MembershipName) ||
+			!validMutationExpiry(input.ExpiresAt, service.runner.clock()) {
+			return fmt.Errorf("%w: membership create", ErrMutationInvalidInput)
+		}
+		var mutationErr error
+		result, mutationErr = service.withKnownScopeMutation(ctx, tenantID, binder, permissionMembershipCreate, input.Scope, func(handle *tenantReadHandle) (MutationResult, error) {
+			return createMembershipInTransaction(ctx, handle, tenantID, input)
+		})
+		return mutationErr
 	})
+	return settledMutationResult(result, mapVerifiedMutationError(err))
 }
 
 // SuspendMembership authorizes memberships.update at the stored target scope
@@ -194,10 +178,10 @@ func (service *RBACMutationService) CreateMembership(
 func (service *RBACMutationService) SuspendMembership(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	principal *authn.VerifiedPrincipal,
 	input MembershipTransitionInput,
 ) (MutationResult, error) {
-	return service.transitionMembership(ctx, tenantID, actor, input, permissionMembershipUpdate, suspendMembershipSQL, authz.MembershipSuspended)
+	return service.transitionMembership(ctx, tenantID, principal, input, permissionMembershipUpdate, suspendMembershipSQL, authz.MembershipSuspended)
 }
 
 // RevokeMembership authorizes memberships.delete at the stored target scope
@@ -205,47 +189,36 @@ func (service *RBACMutationService) SuspendMembership(
 func (service *RBACMutationService) RevokeMembership(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	principal *authn.VerifiedPrincipal,
 	input MembershipTransitionInput,
 ) (MutationResult, error) {
-	return service.transitionMembership(ctx, tenantID, actor, input, permissionMembershipDelete, revokeMembershipSQL, authz.MembershipRevoked)
+	return service.transitionMembership(ctx, tenantID, principal, input, permissionMembershipDelete, revokeMembershipSQL, authz.MembershipRevoked)
 }
 
 func (service *RBACMutationService) transitionMembership(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	principal *authn.VerifiedPrincipal,
 	input MembershipTransitionInput,
 	permission string,
 	statement string,
 	targetState string,
 ) (MutationResult, error) {
-	if err := service.validateCommon(ctx, tenantID, actor, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
-		return MutationResult{}, err
-	}
-	if !validMutationIdentifier(input.MembershipUID) || input.ExpectedResourceVersion < 1 {
-		return MutationResult{}, fmt.Errorf("%w: membership transition", ErrMutationInvalidInput)
-	}
-
-	return service.withStoredScopeMutation(ctx, tenantID, actor, permission, input.MembershipUID, readMembershipMutationScopeSQL, func(handle *tenantReadHandle) (MutationResult, error) {
-		return scanMutationResult(
-			handle.transaction.queryRow(
-				ctx,
-				statement,
-				tenantID,
-				input.ExpectedTenantRevision,
-				input.MembershipUID,
-				input.ExpectedResourceVersion,
-				input.AuditFactUID,
-				input.ReasonCode,
-			),
-			tenantID,
-			input.MembershipUID,
-			input.ExpectedTenantRevision,
-			targetState,
-			"transition membership",
-		)
+	var result MutationResult
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+			return err
+		}
+		if !validMutationIdentifier(input.MembershipUID) || input.ExpectedResourceVersion < 1 {
+			return fmt.Errorf("%w: membership transition", ErrMutationInvalidInput)
+		}
+		var mutationErr error
+		result, mutationErr = service.withStoredScopeMutation(ctx, tenantID, binder, permission, input.MembershipUID, readMembershipMutationScopeSQL, func(handle *tenantReadHandle) (MutationResult, error) {
+			return transitionMembershipInTransaction(ctx, handle, tenantID, input, statement, targetState)
+		})
+		return mutationErr
 	})
+	return settledMutationResult(result, mapVerifiedMutationError(err))
 }
 
 // BindRole authorizes role-bindings.bind and calls only the typed bind_role
@@ -253,46 +226,27 @@ func (service *RBACMutationService) transitionMembership(
 func (service *RBACMutationService) BindRole(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	principal *authn.VerifiedPrincipal,
 	input BindRoleInput,
 ) (MutationResult, error) {
-	if err := service.validateCommon(ctx, tenantID, actor, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
-		return MutationResult{}, err
-	}
-	if err := input.Subject.Validate(); err != nil || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
-		!validMutationIdentifier(input.RoleBindingUID) || !validMutationIdentifier(input.RoleBindingName) ||
-		!validMutationIdentifier(input.RoleName) || input.RoleName == "platform.admin" || input.RoleVersion < 1 ||
-		!validMutationExpiry(input.ExpiresAt, service.runner.clock()) {
-		return MutationResult{}, fmt.Errorf("%w: role binding create", ErrMutationInvalidInput)
-	}
-
-	return service.withAuthorizedMutation(ctx, tenantID, actor, permissionRoleBindingBind, input.Scope, func(handle *tenantReadHandle) (MutationResult, error) {
-		return scanMutationResult(
-			handle.transaction.queryRow(
-				ctx,
-				bindRoleSQL,
-				tenantID,
-				input.ExpectedTenantRevision,
-				input.RoleBindingUID,
-				input.RoleBindingName,
-				input.Subject.Kind,
-				input.Subject.Issuer,
-				input.Subject.Subject,
-				input.RoleName,
-				input.RoleVersion,
-				string(input.Scope.Level),
-				input.Scope.ID,
-				input.ExpiresAt,
-				input.AuditFactUID,
-				input.ReasonCode,
-			),
-			tenantID,
-			input.RoleBindingUID,
-			input.ExpectedTenantRevision,
-			authz.BindingActive,
-			"bind role",
-		)
+	var result MutationResult
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+			return err
+		}
+		if err := input.Subject.Validate(); err != nil || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
+			!validMutationIdentifier(input.RoleBindingUID) || !validMutationIdentifier(input.RoleBindingName) ||
+			!validMutationIdentifier(input.RoleName) || input.RoleName == "platform.admin" || input.RoleVersion < 1 ||
+			!validMutationExpiry(input.ExpiresAt, service.runner.clock()) {
+			return fmt.Errorf("%w: role binding create", ErrMutationInvalidInput)
+		}
+		var mutationErr error
+		result, mutationErr = service.withKnownScopeMutation(ctx, tenantID, binder, permissionRoleBindingBind, input.Scope, func(handle *tenantReadHandle) (MutationResult, error) {
+			return bindRoleInTransaction(ctx, handle, tenantID, input)
+		})
+		return mutationErr
 	})
+	return settledMutationResult(result, mapVerifiedMutationError(err))
 }
 
 // RevokeRoleBinding authorizes role-bindings.delete at the stored target scope
@@ -300,41 +254,29 @@ func (service *RBACMutationService) BindRole(
 func (service *RBACMutationService) RevokeRoleBinding(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	principal *authn.VerifiedPrincipal,
 	input RevokeRoleBindingInput,
 ) (MutationResult, error) {
-	if err := service.validateCommon(ctx, tenantID, actor, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
-		return MutationResult{}, err
-	}
-	if !validMutationIdentifier(input.RoleBindingUID) || input.ExpectedResourceVersion < 1 {
-		return MutationResult{}, fmt.Errorf("%w: role binding revoke", ErrMutationInvalidInput)
-	}
-
-	return service.withStoredScopeMutation(ctx, tenantID, actor, permissionRoleBindingDelete, input.RoleBindingUID, readRoleBindingMutationScopeSQL, func(handle *tenantReadHandle) (MutationResult, error) {
-		return scanMutationResult(
-			handle.transaction.queryRow(
-				ctx,
-				revokeRoleBindingSQL,
-				tenantID,
-				input.ExpectedTenantRevision,
-				input.RoleBindingUID,
-				input.ExpectedResourceVersion,
-				input.AuditFactUID,
-				input.ReasonCode,
-			),
-			tenantID,
-			input.RoleBindingUID,
-			input.ExpectedTenantRevision,
-			authz.BindingRevoked,
-			"revoke role binding",
-		)
+	var result MutationResult
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+			return err
+		}
+		if !validMutationIdentifier(input.RoleBindingUID) || input.ExpectedResourceVersion < 1 {
+			return fmt.Errorf("%w: role binding revoke", ErrMutationInvalidInput)
+		}
+		var mutationErr error
+		result, mutationErr = service.withStoredScopeMutation(ctx, tenantID, binder, permissionRoleBindingDelete, input.RoleBindingUID, readRoleBindingMutationScopeSQL, func(handle *tenantReadHandle) (MutationResult, error) {
+			return revokeRoleBindingInTransaction(ctx, handle, tenantID, input)
+		})
+		return mutationErr
 	})
+	return settledMutationResult(result, mapVerifiedMutationError(err))
 }
 
 func (service *RBACMutationService) validateCommon(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
 	expectedTenantRevision int64,
 	auditFactUID string,
 	reasonCode string,
@@ -348,7 +290,7 @@ func (service *RBACMutationService) validateCommon(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !validMutationIdentifier(tenantID) || actor.Validate() != nil || expectedTenantRevision < 1 ||
+	if !validMutationIdentifier(tenantID) || expectedTenantRevision < 1 ||
 		expectedTenantRevision == math.MaxInt64 || !validMutationIdentifier(auditFactUID) ||
 		!validMutationIdentifier(reasonCode) {
 		return ErrMutationInvalidInput
@@ -358,22 +300,141 @@ func (service *RBACMutationService) validateCommon(
 
 type tenantMutationOperation func(*tenantReadHandle) (MutationResult, error)
 
-func (service *RBACMutationService) withAuthorizedMutation(
+func createMembershipInTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	input CreateMembershipInput,
+) (MutationResult, error) {
+	return scanMutationResult(
+		handle.transaction.queryRow(
+			ctx,
+			createMembershipSQL,
+			tenantID,
+			input.ExpectedTenantRevision,
+			input.MembershipUID,
+			input.MembershipName,
+			input.Subject.Kind,
+			input.Subject.Issuer,
+			input.Subject.Subject,
+			string(input.Scope.Level),
+			input.Scope.ID,
+			input.ExpiresAt,
+			input.AuditFactUID,
+			input.ReasonCode,
+		),
+		tenantID,
+		input.MembershipUID,
+		input.ExpectedTenantRevision,
+		authz.MembershipActive,
+		"create membership",
+	)
+}
+
+func transitionMembershipInTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	input MembershipTransitionInput,
+	statement string,
+	targetState string,
+) (MutationResult, error) {
+	return scanMutationResult(
+		handle.transaction.queryRow(
+			ctx,
+			statement,
+			tenantID,
+			input.ExpectedTenantRevision,
+			input.MembershipUID,
+			input.ExpectedResourceVersion,
+			input.AuditFactUID,
+			input.ReasonCode,
+		),
+		tenantID,
+		input.MembershipUID,
+		input.ExpectedTenantRevision,
+		targetState,
+		"transition membership",
+	)
+}
+
+func bindRoleInTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	input BindRoleInput,
+) (MutationResult, error) {
+	return scanMutationResult(
+		handle.transaction.queryRow(
+			ctx,
+			bindRoleSQL,
+			tenantID,
+			input.ExpectedTenantRevision,
+			input.RoleBindingUID,
+			input.RoleBindingName,
+			input.Subject.Kind,
+			input.Subject.Issuer,
+			input.Subject.Subject,
+			input.RoleName,
+			input.RoleVersion,
+			string(input.Scope.Level),
+			input.Scope.ID,
+			input.ExpiresAt,
+			input.AuditFactUID,
+			input.ReasonCode,
+		),
+		tenantID,
+		input.RoleBindingUID,
+		input.ExpectedTenantRevision,
+		authz.BindingActive,
+		"bind role",
+	)
+}
+
+func revokeRoleBindingInTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	input RevokeRoleBindingInput,
+) (MutationResult, error) {
+	return scanMutationResult(
+		handle.transaction.queryRow(
+			ctx,
+			revokeRoleBindingSQL,
+			tenantID,
+			input.ExpectedTenantRevision,
+			input.RoleBindingUID,
+			input.ExpectedResourceVersion,
+			input.AuditFactUID,
+			input.ReasonCode,
+		),
+		tenantID,
+		input.RoleBindingUID,
+		input.ExpectedTenantRevision,
+		authz.BindingRevoked,
+		"revoke role binding",
+	)
+}
+
+func (service *RBACMutationService) withKnownScopeMutation(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	binder *authz.VerifiedOperationBinder,
 	permission string,
 	scope authz.ScopeRef,
 	operation tenantMutationOperation,
 ) (MutationResult, error) {
 	var result MutationResult
-	err := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, actor, permission, scope); err != nil {
-			return err
-		}
+	verified, err := binder.Bind(tenantID, scope, permission)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 		var mutationErr error
-		result, mutationErr = operation(handle)
-		return mutationErr
+		return executeVerifiedRBACOperation(ctx, handle, verified, scope, func() error {
+			result, mutationErr = operation(handle)
+			return mutationErr
+		})
 	})
 	return settledMutationResult(result, err)
 }
@@ -381,7 +442,7 @@ func (service *RBACMutationService) withAuthorizedMutation(
 func (service *RBACMutationService) withStoredScopeMutation(
 	ctx context.Context,
 	tenantID string,
-	actor authz.SubjectRef,
+	binder *authz.VerifiedOperationBinder,
 	permission string,
 	resourceUID string,
 	scopeQuery string,
@@ -393,11 +454,14 @@ func (service *RBACMutationService) withStoredScopeMutation(
 		if err != nil {
 			return err
 		}
-		if err := authorizeMutation(ctx, handle, actor, permission, scope); err != nil {
+		verified, err := binder.Bind(tenantID, scope, permission)
+		if err != nil {
 			return err
 		}
-		result, err = operation(handle)
-		return err
+		return executeVerifiedRBACOperation(ctx, handle, verified, scope, func() error {
+			result, err = operation(handle)
+			return err
+		})
 	})
 	return settledMutationResult(result, err)
 }
@@ -412,23 +476,11 @@ func settledMutationResult(result MutationResult, err error) (MutationResult, er
 	return result, nil
 }
 
-func authorizeMutation(
-	ctx context.Context,
-	handle *tenantReadHandle,
-	actor authz.SubjectRef,
-	permission string,
-	scope authz.ScopeRef,
-) error {
-	decision, err := handle.Authorize(ctx, authz.Request{
-		Subject: actor, Permission: permission, Resource: scope,
-	})
-	if err != nil {
-		return fmt.Errorf("authorize RBAC mutation: %w", err)
+func mapVerifiedMutationError(err error) error {
+	if errors.Is(err, authz.ErrOperationDenied) {
+		return ErrMutationDenied
 	}
-	if !decision.Allowed || decision.Evidence == nil {
-		return fmt.Errorf("%w: %s", ErrMutationDenied, decision.Reason)
-	}
-	return nil
+	return err
 }
 
 func readMutationScope(

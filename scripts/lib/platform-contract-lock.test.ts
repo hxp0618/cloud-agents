@@ -14,11 +14,50 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  IDENTITY_VERIFIER_RUNTIME_SOURCES,
   listRegularMigrationInputFiles,
   normalizedSourceManifestDigest,
   platformMigrationInputs,
   serializePlatformContractLock,
 } from "./platform-contract-lock";
+
+const SLICE_B_IDENTITY_VERIFIER_RUNTIME_INPUTS = [
+  "services/control-plane/internal/authn/canonical.go",
+  "services/control-plane/internal/authn/errors.go",
+  "services/control-plane/internal/authn/lexical.go",
+  "services/control-plane/internal/authn/principal.go",
+  "services/control-plane/internal/authn/strict_json.go",
+  "services/control-plane/internal/authn/surface_test.go",
+  "services/control-plane/internal/authn/trust.go",
+  "services/control-plane/internal/authn/trust_test.go",
+  "services/control-plane/internal/authn/verifier.go",
+  "services/control-plane/internal/authn/verifier_test.go",
+] as const;
+
+const SLICE_C_IDENTITY_VERIFIER_RUNTIME_INPUTS = [
+  "services/control-plane/internal/authn/authz_callgraph_test.go",
+  "services/control-plane/internal/authn/binder_external_test.go",
+  "services/control-plane/internal/authn/export_test.go",
+  "services/control-plane/internal/authn/postgres_external_test.go",
+  "services/control-plane/internal/authz/rbac.go",
+  "services/control-plane/internal/authz/rbac_test.go",
+  "services/control-plane/internal/store/postgres/data_recovery_integration_test.go",
+  "services/control-plane/internal/store/postgres/durable_coordination.go",
+  "services/control-plane/internal/store/postgres/durable_coordination_integration_test.go",
+  "services/control-plane/internal/store/postgres/durable_coordination_test.go",
+  "services/control-plane/internal/store/postgres/rbac.go",
+  "services/control-plane/internal/store/postgres/rbac_integration_test.go",
+  "services/control-plane/internal/store/postgres/rbac_mutation.go",
+  "services/control-plane/internal/store/postgres/rbac_mutation_integration_test.go",
+  "services/control-plane/internal/store/postgres/rbac_mutation_test.go",
+  "services/control-plane/internal/store/postgres/rbac_test.go",
+  "services/control-plane/internal/store/postgres/tenant_transaction.go",
+  "services/control-plane/internal/store/postgres/tenant_transaction_integration_test.go",
+  "services/control-plane/internal/store/postgres/tenant_transaction_test.go",
+  "services/control-plane/internal/store/postgres/verified_operation_structure_test.go",
+  "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
+  "services/control-plane/scripts/test-membership-rbac-postgres-matrix.sh",
+] as const;
 
 const temporaryRoots: string[] = [];
 
@@ -33,6 +72,24 @@ function temporaryRoot(): string {
 }
 
 describe("Platform contract generation lock", () => {
+  it("keeps the Slice C mutable identity-verifier runtime closure exact, sorted, and unique", () => {
+    expect(IDENTITY_VERIFIER_RUNTIME_SOURCES).toEqual(
+      [...IDENTITY_VERIFIER_RUNTIME_SOURCES].toSorted(),
+    );
+    expect(new Set(IDENTITY_VERIFIER_RUNTIME_SOURCES).size).toBe(
+      IDENTITY_VERIFIER_RUNTIME_SOURCES.length,
+    );
+    expect(SLICE_C_IDENTITY_VERIFIER_RUNTIME_INPUTS).toEqual(
+      [...SLICE_C_IDENTITY_VERIFIER_RUNTIME_INPUTS].toSorted(),
+    );
+    expect(IDENTITY_VERIFIER_RUNTIME_SOURCES).toEqual(
+      [
+        ...SLICE_B_IDENTITY_VERIFIER_RUNTIME_INPUTS,
+        ...SLICE_C_IDENTITY_VERIFIER_RUNTIME_INPUTS,
+      ].toSorted(),
+    );
+  });
+
   it("serializes without timestamps or host paths", () => {
     const serialized = serializePlatformContractLock({
       lockVersion: 1,
@@ -613,7 +670,7 @@ describe("Platform contract generation lock", () => {
     );
   });
 
-  it("records the identity verifier registry and package-private Go facts without a runtime surface", () => {
+  it("records the identity verifier registry and callback-scoped Slice C runtime closure", () => {
     const root = join(import.meta.dirname, "../..");
     const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
       tools: Array<Record<string, unknown>>;
@@ -676,7 +733,7 @@ describe("Platform contract generation lock", () => {
         runtimeVerifier: "IMPLEMENTED_OFFLINE_SLICE_B",
         mutableRuntimeConformanceInputs: true,
         principalConsumeSeam: "OPAQUE_ONE_SHOT_CALLBACK_SCOPED",
-        productionConsumer: "NONE_IN_SLICE_B",
+        productionConsumer: "STORE_POSTGRES_EIGHT_VERIFIED_PRINCIPAL_PATHS_SLICE_C",
         httpSurface: "NOT_IMPLEMENTED",
         oidcDiscovery: "NOT_IMPLEMENTED",
         remoteJwks: "NOT_IMPLEMENTED",
@@ -696,6 +753,13 @@ describe("Platform contract generation lock", () => {
     for (const pipeline of [registry, go]) {
       expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
     }
+    const goInputs = (go?.inputs ?? []) as string[];
+    expect(new Set(goInputs).size).toBe(goInputs.length);
+    expect(
+      goInputs.filter((input) =>
+        (SLICE_C_IDENTITY_VERIFIER_RUNTIME_INPUTS as readonly string[]).includes(input),
+      ),
+    ).toEqual(SLICE_C_IDENTITY_VERIFIER_RUNTIME_INPUTS);
     expect(registry?.inputs).toContain(
       "tools/platform-identity-verifier/v1/fixtures/manifest.json",
     );

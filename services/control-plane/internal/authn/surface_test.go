@@ -125,6 +125,8 @@ func TestProductionSurfaceAndDependencyClosure(t *testing.T) {
 	if productionReferences != 0 {
 		t.Fatalf("Slice B has %d production principal/verifier identifier references", productionReferences)
 	}
+	consumeCallers := make([]string, 0)
+	verifyCallers := make([]string, 0)
 	err = filepath.WalkDir("../..", func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -140,21 +142,102 @@ func TestProductionSurfaceAndDependencyClosure(t *testing.T) {
 		if parseErr != nil {
 			return parseErr
 		}
-		escapedReferences := 0
 		ast.Inspect(file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "ConsumeVerifiedPrincipal" || identifier.Name == "verifyAccessToken") {
-				escapedReferences++
+			if ok && identifier.Name == "ConsumeVerifiedPrincipal" {
+				consumeCallers = append(consumeCallers, path)
+			}
+			if ok && identifier.Name == "verifyAccessToken" {
+				verifyCallers = append(verifyCallers, path)
 			}
 			return true
 		})
-		if escapedReferences != 0 {
-			t.Fatalf("Slice B production caller escaped authn: %s (%d identifier references)", path, escapedReferences)
-		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(consumeCallers) != 1 || filepath.Clean(consumeCallers[0]) != filepath.Clean("../../internal/authz/rbac.go") {
+		t.Fatalf("Slice C ConsumeVerifiedPrincipal closure changed: %v", consumeCallers)
+	}
+	if len(verifyCallers) != 0 {
+		t.Fatalf("production verifyAccessToken caller escaped authn: %v", verifyCallers)
+	}
+	assertAuthzBinderSurface(t)
+}
+
+func assertAuthzBinderSurface(t *testing.T) {
+	t.Helper()
+	path := filepath.Clean("../authz/rbac.go")
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imports := make([]string, 0, len(file.Imports))
+	for _, imported := range file.Imports {
+		value, unquoteErr := strconv.Unquote(imported.Path.Value)
+		if unquoteErr != nil {
+			t.Fatal(unquoteErr)
+		}
+		imports = append(imports, value)
+	}
+	sort.Strings(imports)
+	wantImports := []string{
+		"bytes", "crypto/sha256", "encoding/binary", "encoding/hex", "encoding/json", "errors", "fmt",
+		"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn", "strings", "sync", "sync/atomic", "time", "unicode/utf8",
+	}
+	sort.Strings(wantImports)
+	if strings.Join(imports, ",") != strings.Join(wantImports, ",") {
+		t.Fatalf("authz dependency closure changed: got=%v want=%v", imports, wantImports)
+	}
+
+	exported := make([]string, 0)
+	methods := make(map[string][]string)
+	for _, declaration := range file.Decls {
+		switch item := declaration.(type) {
+		case *ast.FuncDecl:
+			receiver := receiverTypeName(item)
+			if receiver != "" && ast.IsExported(item.Name.Name) {
+				methods[receiver] = append(methods[receiver], item.Name.Name)
+			} else if item.Recv == nil && ast.IsExported(item.Name.Name) {
+				exported = append(exported, item.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, specification := range item.Specs {
+				switch value := specification.(type) {
+				case *ast.TypeSpec:
+					if ast.IsExported(value.Name.Name) {
+						exported = append(exported, value.Name.Name)
+					}
+				case *ast.ValueSpec:
+					for _, name := range value.Names {
+						if ast.IsExported(name.Name) {
+							exported = append(exported, name.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+	assertExactNames(t, "authz exports", exported, []string{
+		"BindingActive", "BindingRevoked", "Candidate", "Catalog", "ErrCatalogDrift", "ErrInvalidRequest",
+		"ErrOperationDenied", "ErrScopeUnresolved", "ErrSnapshotMalformed", "MembershipActive", "MembershipFact",
+		"MembershipRevoked", "MembershipSuspended", "Role", "RoleBindingFact", "ScopeLevel", "ScopeOrganization",
+		"ScopePath", "ScopePlatform", "ScopeProject", "ScopeRef", "ScopeTenant", "Snapshot", "SubjectRef",
+		"VerifiedOperation", "VerifiedOperationBinder", "WithVerifiedOperation",
+	})
+	assertExactNames(t, "VerifiedOperation methods", methods["VerifiedOperation"], []string{"Actor", "Execute"})
+	assertExactNames(t, "VerifiedOperationBinder methods", methods["VerifiedOperationBinder"], []string{"Bind"})
+	for _, forbidden := range []string{"Request", "Decision", "Evaluate", "DenyReason"} {
+		for _, name := range exported {
+			if name == forbidden {
+				t.Fatalf("raw authorization bypass remains exported: %s", forbidden)
+			}
+		}
 	}
 }
 

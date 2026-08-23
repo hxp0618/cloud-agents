@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -58,18 +57,6 @@ func TestDurableCoordinationPostgresConformance(t *testing.T) {
 	profile := coordination.ManagedAgentCreateProject()
 	projectID := "project-" + runID
 
-	denied, err := service.ClaimIdempotency(ctx, tenantID, IdempotencyClaimInput{
-		Profile: profile,
-		Actor: authz.SubjectRef{
-			Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-denied",
-		},
-		Request:        coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
-		IdempotencyKey: "idempotency-" + runID + "-denied", AuditFactID: "audit-" + runID + "-denied",
-	})
-	if !errors.Is(err, ErrMutationDenied) || denied != (IdempotencyClaimResult{}) {
-		t.Fatalf("unauthorized claim result/error = %#v / %v", denied, err)
-	}
-
 	mainKey := "idempotency-" + runID + "-main"
 	mainClaim := claimCoordinationIntegration(t, ctx, service, tenantID, profile, actor, scope, mainKey, coordinationIntegrationRequest, "audit-"+runID+"-main-claim")
 	if mainClaim.DatabaseOutcome != DatabaseCommitted || mainClaim.Disposition != "created" || mainClaim.ReplayState != "pending" {
@@ -105,14 +92,12 @@ func TestDurableCoordinationPostgresConformance(t *testing.T) {
 	if failureClaim.Disposition != "created" {
 		t.Fatalf("failure claim = %#v", failureClaim)
 	}
-	failure, err := service.CompleteIdempotencyFailure(ctx, tenantID, IdempotencyFailureInput{
-		Profile: profile, Actor: actor,
-		Request:        coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
-		IdempotencyKey: failureKey, StableErrorCode: "stable.failure",
-		AuditFactID: "audit-" + runID + "-failure-complete",
-	})
-	if err != nil || failure.DatabaseOutcome != DatabaseCommitted || failure.ReplayState != "failed" {
-		t.Fatalf("failure completion = %#v / %v", failure, err)
+	failure := completeCoordinationIntegrationFailure(
+		t, ctx, service, tenantID, profile, actor, scope, failureKey, coordinationIntegrationRequest,
+		"stable.failure", "audit-"+runID+"-failure-complete",
+	)
+	if failure.DatabaseOutcome != DatabaseCommitted || failure.ReplayState != "failed" {
+		t.Fatalf("failure completion = %#v", failure)
 	}
 
 	assertCoordinationClaimRace(t, ctx, service, tenantID, profile, actor, scope, runID)
@@ -245,10 +230,22 @@ func claimCoordinationIntegration(
 	auditFactID string,
 ) IdempotencyClaimResult {
 	t.Helper()
-	result, err := service.ClaimIdempotency(ctx, tenantID, IdempotencyClaimInput{
-		Profile: profile, Actor: actor, Request: coordinationIntegrationProjectRequest(scope.ID, requestDigest),
+	input := IdempotencyClaimInput{
+		Profile: profile, Request: coordinationIntegrationProjectRequest(scope.ID, requestDigest),
 		IdempotencyKey: key, AuditFactID: auditFactID,
+	}
+	subjectDigest, boundRequestDigest := coordinationIntegrationBinding(t, profile, tenantID, actor, input.Request)
+	var candidate IdempotencyClaimResult
+	var replayState *string
+	var expiresAt *time.Time
+	err := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		var operationErr error
+		candidate, replayState, expiresAt, operationErr = claimIdempotencyTransaction(
+			ctx, handle, tenantID, subjectDigest, boundRequestDigest, input,
+		)
+		return operationErr
 	})
+	result, err := settleIdempotencyClaim(candidate, replayState, expiresAt, err)
 	if err != nil {
 		t.Fatalf("claim %s: %v", key, err)
 	}
@@ -270,16 +267,79 @@ func completeCoordinationIntegrationSuccess(
 	auditFactID string,
 ) IdempotencySuccessResult {
 	t.Helper()
-	result, err := service.CompleteIdempotencySuccess(ctx, tenantID, IdempotencySuccessInput{
-		Profile: profile, Actor: actor, Request: coordinationIntegrationProjectRequest(scope.ID, requestDigest),
+	input := IdempotencySuccessInput{
+		Profile: profile, Request: coordinationIntegrationProjectRequest(scope.ID, requestDigest),
 		IdempotencyKey: key,
 		ResourceID:     projectID, ResourceVersion: 3, EventID: eventID,
 		PayloadDigest: coordinationIntegrationPayload, AuditFactID: auditFactID,
+	}
+	subjectDigest, boundRequestDigest := coordinationIntegrationBinding(t, profile, tenantID, actor, input.Request)
+	var candidate IdempotencySuccessResult
+	err := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		var operationErr error
+		candidate, operationErr = completeIdempotencySuccessTransaction(
+			ctx, handle, tenantID, subjectDigest, boundRequestDigest, input,
+		)
+		return operationErr
 	})
+	result, err := settleIdempotencySuccess(candidate, err, input)
 	if err != nil {
 		t.Fatalf("complete %s: %v", key, err)
 	}
 	return result
+}
+
+func completeCoordinationIntegrationFailure(
+	t *testing.T,
+	ctx context.Context,
+	service *DurableCoordinationService,
+	tenantID string,
+	profile coordination.Profile,
+	actor authz.SubjectRef,
+	scope authz.ScopeRef,
+	key string,
+	requestVariant string,
+	stableErrorCode string,
+	auditFactID string,
+) IdempotencyFailureResult {
+	t.Helper()
+	input := IdempotencyFailureInput{
+		Profile: profile, Request: coordinationIntegrationProjectRequest(scope.ID, requestVariant),
+		IdempotencyKey: key, StableErrorCode: stableErrorCode, AuditFactID: auditFactID,
+	}
+	subjectDigest, requestDigest := coordinationIntegrationBinding(t, profile, tenantID, actor, input.Request)
+	var candidate IdempotencyFailureResult
+	err := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+		var operationErr error
+		candidate, operationErr = completeIdempotencyFailureTransaction(
+			ctx, handle, tenantID, subjectDigest, requestDigest, input,
+		)
+		return operationErr
+	})
+	result, err := settleIdempotencyFailure(candidate, err, input)
+	if err != nil {
+		t.Fatalf("complete failure %s: %v", key, err)
+	}
+	return result
+}
+
+func coordinationIntegrationBinding(
+	t *testing.T,
+	profile coordination.Profile,
+	tenantID string,
+	actor authz.SubjectRef,
+	request coordination.ManagedAgentCreateProjectRequest,
+) (string, string) {
+	t.Helper()
+	subjectDigest, err := actor.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := coordination.BindManagedAgentCreateProject(profile, tenantID, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return subjectDigest, intent.RequestDigest()
 }
 
 func createAndClaimCoordinationOutbox(
@@ -327,6 +387,8 @@ func assertCoordinationClaimRace(
 ) {
 	t.Helper()
 	key := "idempotency-" + runID + "-race"
+	request := coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest)
+	subjectDigest, requestDigest := coordinationIntegrationBinding(t, profile, tenantID, actor, request)
 	start := make(chan struct{})
 	results := make(chan IdempotencyClaimResult, 2)
 	errorsSeen := make(chan error, 2)
@@ -337,12 +399,21 @@ func assertCoordinationClaimRace(
 		go func() {
 			defer wait.Done()
 			<-start
-			result, err := service.ClaimIdempotency(ctx, tenantID, IdempotencyClaimInput{
-				Profile: profile, Actor: actor,
-				Request:        coordinationIntegrationProjectRequest(scope.ID, coordinationIntegrationRequest),
-				IdempotencyKey: key,
-				AuditFactID:    fmt.Sprintf("audit-%s-race-%d", runID, index),
+			input := IdempotencyClaimInput{
+				Profile: profile, Request: request, IdempotencyKey: key,
+				AuditFactID: fmt.Sprintf("audit-%s-race-%d", runID, index),
+			}
+			var candidate IdempotencyClaimResult
+			var replayState *string
+			var expiresAt *time.Time
+			err := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+				var operationErr error
+				candidate, replayState, expiresAt, operationErr = claimIdempotencyTransaction(
+					ctx, handle, tenantID, subjectDigest, requestDigest, input,
+				)
+				return operationErr
 			})
+			result, err := settleIdempotencyClaim(candidate, replayState, expiresAt, err)
 			if err != nil {
 				errorsSeen <- err
 				return

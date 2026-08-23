@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/coordination"
 	"github.com/jackc/pgx/v5"
@@ -65,7 +66,6 @@ const (
 
 type IdempotencyClaimInput struct {
 	Profile        coordination.Profile
-	Actor          authz.SubjectRef
 	Request        coordination.ManagedAgentCreateProjectRequest
 	IdempotencyKey string
 	AuditFactID    string
@@ -86,7 +86,6 @@ type IdempotencyClaimResult struct {
 
 type IdempotencySuccessInput struct {
 	Profile         coordination.Profile
-	Actor           authz.SubjectRef
 	Request         coordination.ManagedAgentCreateProjectRequest
 	IdempotencyKey  string
 	ResourceID      string
@@ -108,7 +107,6 @@ type IdempotencySuccessResult struct {
 
 type IdempotencyFailureInput struct {
 	Profile         coordination.Profile
-	Actor           authz.SubjectRef
 	Request         coordination.ManagedAgentCreateProjectRequest
 	IdempotencyKey  string
 	StableErrorCode string
@@ -223,54 +221,55 @@ func newDurableCoordinationService(runner *TenantTransactionRunner) (*DurableCoo
 func (service *DurableCoordinationService) ClaimIdempotency(
 	ctx context.Context,
 	tenantID string,
+	principal *authn.VerifiedPrincipal,
 	input IdempotencyClaimInput,
 ) (IdempotencyClaimResult, error) {
-	subjectDigest, scope, requestDigest, err := service.bindAuthorizedProfile(
-		ctx, tenantID, input.Profile, input.Actor, input.Request, input.AuditFactID,
-	)
-	if err != nil || !validIdempotencyKey(input.IdempotencyKey) {
-		if err != nil {
-			return IdempotencyClaimResult{}, err
-		}
-		return IdempotencyClaimResult{}, ErrCoordinationInvalidInput
+	if service == nil || service.runner == nil {
+		return IdempotencyClaimResult{}, ErrNilCoordinationRunner
 	}
 	var result IdempotencyClaimResult
-	var replayState *string
-	var expiresAt *time.Time
-	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), scope); err != nil {
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope, requestDigest, err := service.bindProfile(ctx, tenantID, input.Profile, input.Request, input.AuditFactID)
+		if err != nil || !validIdempotencyKey(input.IdempotencyKey) {
+			if err != nil {
+				return err
+			}
+			return ErrCoordinationInvalidInput
+		}
+		operation, err := binder.Bind(tenantID, scope, input.Profile.RequiredPermission())
+		if err != nil {
+			return mapVerifiedCoordinationAuthorizationError(err)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return ErrMutationDenied
+		}
+		subjectDigest, err := actor.Digest()
+		if err != nil || !validCoordinationDigest(subjectDigest) {
+			return ErrCoordinationInvalidInput
+		}
+
+		var candidate IdempotencyClaimResult
+		var replayState *string
+		var expiresAt *time.Time
+		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				candidate, replayState, expiresAt, err = claimIdempotencyTransaction(
+					ctx, handle, tenantID, subjectDigest, requestDigest, input,
+				)
+				return err
+			})
+		})
+		transactionErr = mapVerifiedCoordinationAuthorizationError(transactionErr)
+		candidate, err = settleIdempotencyClaim(candidate, replayState, expiresAt, transactionErr)
+		if err != nil {
 			return err
 		}
-		return handle.transaction.queryRow(ctx, claimManagedAgentCreateProjectIdempotencySQL,
-			tenantID, subjectDigest, input.IdempotencyKey, requestDigest, input.AuditFactID,
-		).Scan(
-			&result.Disposition, &replayState, &result.OperationID, &result.OperationGeneration,
-			&result.ResourceKind, &result.ResourceID, &result.ResourceVersion, &result.StableErrorCode,
-			&expiresAt,
-		)
+		result = candidate
+		return nil
 	})
-	if errors.Is(err, ErrMutationCommitUnknown) {
-		return IdempotencyClaimResult{DatabaseOutcome: DatabaseUnknown}, nil
-	}
-	if isCoordinationRejection(err) {
-		return IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected}, nil
-	}
 	if err != nil {
-		return IdempotencyClaimResult{}, mapCoordinationDatabaseError("claim idempotency", err)
-	}
-	if replayState != nil {
-		result.ReplayState = *replayState
-	}
-	if expiresAt != nil {
-		result.ExpiresAt = *expiresAt
-	}
-	if !validIdempotencyClaimResult(result) {
-		return IdempotencyClaimResult{}, ErrCoordinationResultDrift
-	}
-	if result.Disposition == "conflict" {
-		result.DatabaseOutcome = DatabaseRejected
-	} else {
-		result.DatabaseOutcome = DatabaseCommitted
+		return IdempotencyClaimResult{}, err
 	}
 	return result, nil
 }
@@ -278,72 +277,165 @@ func (service *DurableCoordinationService) ClaimIdempotency(
 func (service *DurableCoordinationService) CompleteIdempotencySuccess(
 	ctx context.Context,
 	tenantID string,
+	principal *authn.VerifiedPrincipal,
 	input IdempotencySuccessInput,
 ) (IdempotencySuccessResult, error) {
-	subjectDigest, scope, requestDigest, err := service.bindAuthorizedProfile(
-		ctx, tenantID, input.Profile, input.Actor, input.Request, input.AuditFactID,
-	)
+	if service == nil || service.runner == nil {
+		return IdempotencySuccessResult{}, ErrNilCoordinationRunner
+	}
+	var result IdempotencySuccessResult
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope, requestDigest, err := service.bindProfile(ctx, tenantID, input.Profile, input.Request, input.AuditFactID)
+		if err != nil {
+			return err
+		}
+		if !validIdempotencyKey(input.IdempotencyKey) ||
+			!validMutationIdentifier(input.ResourceID) || input.ResourceVersion < 1 ||
+			!validMutationIdentifier(input.EventID) || !validCoordinationDigest(input.PayloadDigest) {
+			return ErrCoordinationInvalidInput
+		}
+		operation, err := binder.Bind(tenantID, scope, input.Profile.RequiredPermission())
+		if err != nil {
+			return mapVerifiedCoordinationAuthorizationError(err)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return ErrMutationDenied
+		}
+		subjectDigest, err := actor.Digest()
+		if err != nil || !validCoordinationDigest(subjectDigest) {
+			return ErrCoordinationInvalidInput
+		}
+
+		var candidate IdempotencySuccessResult
+		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				candidate, err = completeIdempotencySuccessTransaction(
+					ctx, handle, tenantID, subjectDigest, requestDigest, input,
+				)
+				return err
+			})
+		})
+		transactionErr = mapVerifiedCoordinationAuthorizationError(transactionErr)
+		candidate, err = settleIdempotencySuccess(candidate, transactionErr, input)
+		if err != nil {
+			return err
+		}
+		result = candidate
+		return nil
+	})
 	if err != nil {
 		return IdempotencySuccessResult{}, err
 	}
-	if !validIdempotencyKey(input.IdempotencyKey) ||
-		!validMutationIdentifier(input.ResourceID) || input.ResourceVersion < 1 ||
-		!validMutationIdentifier(input.EventID) || !validCoordinationDigest(input.PayloadDigest) {
-		return IdempotencySuccessResult{}, ErrCoordinationInvalidInput
-	}
-	var result IdempotencySuccessResult
-	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), scope); err != nil {
-			return err
-		}
-		return handle.transaction.queryRow(ctx, completeManagedAgentCreateProjectSuccessSQL,
-			tenantID, subjectDigest, input.IdempotencyKey, requestDigest, input.ResourceID,
-			input.ResourceVersion, input.EventID, input.PayloadDigest, input.AuditFactID,
-		).Scan(&result.ReplayState, &result.ResourceKind, &result.ResourceID, &result.ResourceVersion,
-			&result.OutboxEventID, &result.OutboxState)
-	})
-	return settleIdempotencySuccess(result, err, input)
+	return result, nil
 }
 
 func (service *DurableCoordinationService) CompleteIdempotencyFailure(
 	ctx context.Context,
 	tenantID string,
+	principal *authn.VerifiedPrincipal,
 	input IdempotencyFailureInput,
 ) (IdempotencyFailureResult, error) {
-	subjectDigest, scope, requestDigest, err := service.bindAuthorizedProfile(
-		ctx, tenantID, input.Profile, input.Actor, input.Request, input.AuditFactID,
-	)
+	if service == nil || service.runner == nil {
+		return IdempotencyFailureResult{}, ErrNilCoordinationRunner
+	}
+	var result IdempotencyFailureResult
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		scope, requestDigest, err := service.bindProfile(ctx, tenantID, input.Profile, input.Request, input.AuditFactID)
+		if err != nil {
+			return err
+		}
+		if !validIdempotencyKey(input.IdempotencyKey) || !validMutationIdentifier(input.StableErrorCode) {
+			return ErrCoordinationInvalidInput
+		}
+		operation, err := binder.Bind(tenantID, scope, input.Profile.RequiredPermission())
+		if err != nil {
+			return mapVerifiedCoordinationAuthorizationError(err)
+		}
+		actor, ok := operation.Actor()
+		if !ok {
+			return ErrMutationDenied
+		}
+		subjectDigest, err := actor.Digest()
+		if err != nil || !validCoordinationDigest(subjectDigest) {
+			return ErrCoordinationInvalidInput
+		}
+
+		var candidate IdempotencyFailureResult
+		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
+			return executeVerifiedRBACOperation(ctx, handle, operation, scope, func() error {
+				candidate, err = completeIdempotencyFailureTransaction(
+					ctx, handle, tenantID, subjectDigest, requestDigest, input,
+				)
+				return err
+			})
+		})
+		transactionErr = mapVerifiedCoordinationAuthorizationError(transactionErr)
+		candidate, err = settleIdempotencyFailure(candidate, transactionErr, input)
+		if err != nil {
+			return err
+		}
+		result = candidate
+		return nil
+	})
 	if err != nil {
 		return IdempotencyFailureResult{}, err
 	}
-	if !validIdempotencyKey(input.IdempotencyKey) ||
-		!validMutationIdentifier(input.StableErrorCode) {
-		return IdempotencyFailureResult{}, ErrCoordinationInvalidInput
-	}
-	var result IdempotencyFailureResult
-	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
-		if err := authorizeMutation(ctx, handle, input.Actor, input.Profile.RequiredPermission(), scope); err != nil {
-			return err
-		}
-		return handle.transaction.queryRow(ctx, completeManagedAgentCreateProjectFailureSQL,
-			tenantID, subjectDigest, input.IdempotencyKey, requestDigest,
-			input.StableErrorCode, input.AuditFactID,
-		).Scan(&result.ReplayState, &result.StableErrorCode)
-	})
-	if errors.Is(err, ErrMutationCommitUnknown) {
-		return IdempotencyFailureResult{DatabaseOutcome: DatabaseUnknown}, nil
-	}
-	if isCoordinationRejection(err) {
-		return IdempotencyFailureResult{DatabaseOutcome: DatabaseRejected}, nil
-	}
-	if err != nil {
-		return IdempotencyFailureResult{}, mapCoordinationDatabaseError("complete idempotency failure", err)
-	}
-	if result.ReplayState != "failed" || result.StableErrorCode != input.StableErrorCode {
-		return IdempotencyFailureResult{}, ErrCoordinationResultDrift
-	}
-	result.DatabaseOutcome = DatabaseCommitted
 	return result, nil
+}
+
+func claimIdempotencyTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	subjectDigest string,
+	requestDigest string,
+	input IdempotencyClaimInput,
+) (IdempotencyClaimResult, *string, *time.Time, error) {
+	var result IdempotencyClaimResult
+	var replayState *string
+	var expiresAt *time.Time
+	err := handle.transaction.queryRow(ctx, claimManagedAgentCreateProjectIdempotencySQL,
+		tenantID, subjectDigest, input.IdempotencyKey, requestDigest, input.AuditFactID,
+	).Scan(
+		&result.Disposition, &replayState, &result.OperationID, &result.OperationGeneration,
+		&result.ResourceKind, &result.ResourceID, &result.ResourceVersion, &result.StableErrorCode,
+		&expiresAt,
+	)
+	return result, replayState, expiresAt, err
+}
+
+func completeIdempotencySuccessTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	subjectDigest string,
+	requestDigest string,
+	input IdempotencySuccessInput,
+) (IdempotencySuccessResult, error) {
+	var result IdempotencySuccessResult
+	err := handle.transaction.queryRow(ctx, completeManagedAgentCreateProjectSuccessSQL,
+		tenantID, subjectDigest, input.IdempotencyKey, requestDigest, input.ResourceID,
+		input.ResourceVersion, input.EventID, input.PayloadDigest, input.AuditFactID,
+	).Scan(&result.ReplayState, &result.ResourceKind, &result.ResourceID, &result.ResourceVersion,
+		&result.OutboxEventID, &result.OutboxState)
+	return result, err
+}
+
+func completeIdempotencyFailureTransaction(
+	ctx context.Context,
+	handle *tenantReadHandle,
+	tenantID string,
+	subjectDigest string,
+	requestDigest string,
+	input IdempotencyFailureInput,
+) (IdempotencyFailureResult, error) {
+	var result IdempotencyFailureResult
+	err := handle.transaction.queryRow(ctx, completeManagedAgentCreateProjectFailureSQL,
+		tenantID, subjectDigest, input.IdempotencyKey, requestDigest,
+		input.StableErrorCode, input.AuditFactID,
+	).Scan(&result.ReplayState, &result.StableErrorCode)
+	return result, err
 }
 
 func (service *DurableCoordinationService) AcquireLeader(
@@ -599,30 +691,28 @@ func (service *DurableCoordinationService) validateProfile(
 	return nil
 }
 
-func (service *DurableCoordinationService) bindAuthorizedProfile(
+func (service *DurableCoordinationService) bindProfile(
 	ctx context.Context,
 	tenantID string,
 	profile coordination.Profile,
-	actor authz.SubjectRef,
 	request coordination.ManagedAgentCreateProjectRequest,
 	auditFactID string,
-) (string, authz.ScopeRef, string, error) {
+) (authz.ScopeRef, string, error) {
 	if err := service.validateProfile(ctx, tenantID, profile, auditFactID); err != nil {
-		return "", authz.ScopeRef{}, "", err
+		return authz.ScopeRef{}, "", err
 	}
 	intent, err := coordination.BindManagedAgentCreateProject(profile, tenantID, request)
 	if err != nil {
-		return "", authz.ScopeRef{}, "", ErrCoordinationInvalidInput
+		return authz.ScopeRef{}, "", ErrCoordinationInvalidInput
 	}
 	scope := authz.ScopeRef{Level: authz.ScopeOrganization, ID: intent.OrganizationID()}
-	if actor.Validate() != nil || scope.Level != authz.ScopeOrganization || scope.Validate(tenantID) != nil {
-		return "", authz.ScopeRef{}, "", ErrCoordinationInvalidInput
+	if scope.Level != authz.ScopeOrganization || scope.Validate(tenantID) != nil {
+		return authz.ScopeRef{}, "", ErrCoordinationInvalidInput
 	}
-	digest, err := actor.Digest()
-	if err != nil || !validCoordinationDigest(digest) || !validCoordinationDigest(intent.RequestDigest()) {
-		return "", authz.ScopeRef{}, "", ErrCoordinationInvalidInput
+	if !validCoordinationDigest(intent.RequestDigest()) {
+		return authz.ScopeRef{}, "", ErrCoordinationInvalidInput
 	}
-	return digest, scope, intent.RequestDigest(), nil
+	return scope, intent.RequestDigest(), nil
 }
 
 func (service *DurableCoordinationService) validateGlobal(ctx context.Context) error {
@@ -633,6 +723,38 @@ func (service *DurableCoordinationService) validateGlobal(ctx context.Context) e
 		return ErrNilCoordinationRunner
 	}
 	return ctx.Err()
+}
+
+func settleIdempotencyClaim(
+	result IdempotencyClaimResult,
+	replayState *string,
+	expiresAt *time.Time,
+	err error,
+) (IdempotencyClaimResult, error) {
+	if errors.Is(err, ErrMutationCommitUnknown) {
+		return IdempotencyClaimResult{DatabaseOutcome: DatabaseUnknown}, nil
+	}
+	if isCoordinationRejection(err) {
+		return IdempotencyClaimResult{DatabaseOutcome: DatabaseRejected}, nil
+	}
+	if err != nil {
+		return IdempotencyClaimResult{}, mapCoordinationDatabaseError("claim idempotency", err)
+	}
+	if replayState != nil {
+		result.ReplayState = *replayState
+	}
+	if expiresAt != nil {
+		result.ExpiresAt = *expiresAt
+	}
+	if !validIdempotencyClaimResult(result) {
+		return IdempotencyClaimResult{}, ErrCoordinationResultDrift
+	}
+	if result.Disposition == "conflict" {
+		result.DatabaseOutcome = DatabaseRejected
+	} else {
+		result.DatabaseOutcome = DatabaseCommitted
+	}
+	return result, nil
 }
 
 func settleIdempotencySuccess(result IdempotencySuccessResult, err error, input IdempotencySuccessInput) (IdempotencySuccessResult, error) {
@@ -652,6 +774,30 @@ func settleIdempotencySuccess(result IdempotencySuccessResult, err error, input 
 	}
 	result.DatabaseOutcome = DatabaseCommitted
 	return result, nil
+}
+
+func settleIdempotencyFailure(result IdempotencyFailureResult, err error, input IdempotencyFailureInput) (IdempotencyFailureResult, error) {
+	if errors.Is(err, ErrMutationCommitUnknown) {
+		return IdempotencyFailureResult{DatabaseOutcome: DatabaseUnknown}, nil
+	}
+	if isCoordinationRejection(err) {
+		return IdempotencyFailureResult{DatabaseOutcome: DatabaseRejected}, nil
+	}
+	if err != nil {
+		return IdempotencyFailureResult{}, mapCoordinationDatabaseError("complete idempotency failure", err)
+	}
+	if result.ReplayState != "failed" || result.StableErrorCode != input.StableErrorCode {
+		return IdempotencyFailureResult{}, ErrCoordinationResultDrift
+	}
+	result.DatabaseOutcome = DatabaseCommitted
+	return result, nil
+}
+
+func mapVerifiedCoordinationAuthorizationError(err error) error {
+	if errors.Is(err, authz.ErrOperationDenied) {
+		return ErrMutationDenied
+	}
+	return err
 }
 
 func settleLeaderResult(result LeaderLeaseResult, err error, accepted, rejected string) (LeaderLeaseResult, error) {

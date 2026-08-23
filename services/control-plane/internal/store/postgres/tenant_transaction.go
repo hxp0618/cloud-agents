@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -60,7 +59,6 @@ type PlatformTenant struct {
 // Implementations become invalid as soon as the callback returns.
 type TenantReadCapability interface {
 	GetPlatformTenant(context.Context) (PlatformTenant, error)
-	Authorize(context.Context, authz.Request) (authz.Decision, error)
 }
 
 // TenantReadCallback runs inside one read-only, tenant-bound transaction.

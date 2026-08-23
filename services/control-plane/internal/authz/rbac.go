@@ -3,13 +3,18 @@ package authz
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 )
 
 const (
@@ -31,6 +36,7 @@ var (
 	ErrCatalogDrift      = errors.New("builtin role catalog drift")
 	ErrSnapshotMalformed = errors.New("authorization snapshot is malformed")
 	ErrScopeUnresolved   = errors.New("authorization request scope is unresolved")
+	ErrOperationDenied   = errors.New("verified operation denied")
 )
 
 type ScopeLevel string
@@ -374,75 +380,290 @@ type Snapshot struct {
 	Candidates    []Candidate
 }
 
-type Request struct {
+// VerifiedOperationBinder exists only while WithVerifiedOperation's callback
+// is active. Its fields are deliberately private so a caller cannot mint or
+// alter an actor, target, or permission binding.
+type VerifiedOperationBinder struct {
+	self       *VerifiedOperationBinder
+	lifetime   *operationLifetime
+	consumed   *atomic.Bool
+	progress   *atomic.Uint32
+	actor      SubjectRef
+	tenantID   string
+	resource   ScopeRef
+	permission string
+	binding    [sha256.Size]byte
+}
+
+// VerifiedOperation is a one-shot, callback-live authorization operation.
+// Actor is only a bounded lookup key; Execute is the sole authority-bearing
+// method and never returns a reusable allow decision.
+type VerifiedOperation struct {
+	self       *VerifiedOperation
+	lifetime   *operationLifetime
+	consumed   *atomic.Bool
+	progress   *atomic.Uint32
+	actor      SubjectRef
+	tenantID   string
+	resource   ScopeRef
+	permission string
+	binding    [sha256.Size]byte
+}
+
+// WithVerifiedOperation atomically consumes a verified principal and keeps
+// its exact trust-generation lease through callback completion.
+func WithVerifiedOperation(principal *authn.VerifiedPrincipal, callback func(*VerifiedOperationBinder) error) error {
+	return authn.ConsumeVerifiedPrincipal(principal, func(view authn.VerifiedPrincipalView) error {
+		if callback == nil || !view.Check() {
+			return ErrOperationDenied
+		}
+		kind, issuer, value, actorOK := view.Actor()
+		tenantID, resourceLevel, resourceID, permission, contextOK := view.AuthorizationContext()
+		if !actorOK || !contextOK || !view.Check() {
+			return ErrOperationDenied
+		}
+		actor := SubjectRef{Kind: kind, Issuer: issuer, Subject: value}
+		resource := ScopeRef{Level: ScopeLevel(resourceLevel), ID: resourceID}
+		if actor.Validate() != nil || validateOpaqueTenant(tenantID) != nil || resource.Validate(tenantID) != nil || !validPermission(permission) {
+			return ErrOperationDenied
+		}
+		lifetime := newOperationLifetime()
+		progress := &atomic.Uint32{}
+		binder := &VerifiedOperationBinder{
+			lifetime: lifetime, consumed: &atomic.Bool{}, progress: progress, actor: actor, tenantID: tenantID, resource: resource, permission: permission,
+		}
+		binder.binding = operationBinding(actor, tenantID, resource, permission)
+		binder.self = binder
+		closed := false
+		defer func() {
+			if !closed {
+				lifetime.close()
+			}
+		}()
+		callbackErr := callback(binder)
+		// Drain any Execute call that acquired the callback lifetime before the
+		// callback returned. This makes the success check race-free while still
+		// denying a goroutine that starts only after authority has expired.
+		lifetime.close()
+		closed = true
+		if callbackErr != nil {
+			return callbackErr
+		}
+		if progress.Load() != operationProgressExecuted {
+			return ErrOperationDenied
+		}
+		return nil
+	})
+}
+
+// Bind spends the binder before validating the requested operation. Thus a
+// mismatch, malformed request, shallow copy, or tamper cannot be retried.
+func (binder *VerifiedOperationBinder) Bind(tenantID string, resource ScopeRef, permission string) (*VerifiedOperation, error) {
+	if binder == nil || binder.consumed == nil || binder.progress == nil || !binder.consumed.CompareAndSwap(false, true) {
+		return nil, ErrOperationDenied
+	}
+	if binder.self != binder || binder.lifetime == nil ||
+		binder.binding != operationBinding(binder.actor, binder.tenantID, binder.resource, binder.permission) || !binder.lifetime.acquire() {
+		return nil, ErrOperationDenied
+	}
+	defer binder.lifetime.release()
+	if tenantID != binder.tenantID || resource != binder.resource || permission != binder.permission {
+		return nil, ErrOperationDenied
+	}
+	operation := &VerifiedOperation{
+		lifetime: binder.lifetime, consumed: &atomic.Bool{}, progress: binder.progress, actor: binder.actor, tenantID: binder.tenantID,
+		resource: binder.resource, permission: binder.permission, binding: binder.binding,
+	}
+	operation.self = operation
+	binder.progress.Store(operationProgressBound)
+	return operation, nil
+}
+
+// Actor returns the exact decoded lexical identity only while this unspent
+// operation and its enclosing verified-principal callback remain live.
+func (operation *VerifiedOperation) Actor() (SubjectRef, bool) {
+	if !operation.selfBound() || operation.consumed == nil || operation.progress == nil || operation.consumed.Load() || !operation.lifetime.acquire() {
+		return SubjectRef{}, false
+	}
+	defer operation.lifetime.release()
+	if operation.consumed.Load() {
+		return SubjectRef{}, false
+	}
+	return operation.actor, true
+}
+
+// Execute spends the operation and invokes callback only when the current
+// snapshot permits its exact bound actor, target, and permission.
+func (operation *VerifiedOperation) Execute(snapshot Snapshot, now time.Time, callback func() error) error {
+	if operation == nil || operation.consumed == nil || operation.progress == nil || !operation.consumed.CompareAndSwap(false, true) {
+		return ErrOperationDenied
+	}
+	if !operation.selfBound() || callback == nil || !operation.lifetime.acquire() {
+		return ErrOperationDenied
+	}
+	defer operation.lifetime.release()
+	if snapshot.TenantID != operation.tenantID {
+		return ErrOperationDenied
+	}
+	result, err := evaluate(snapshot, authorizationRequest{Subject: operation.actor, Permission: operation.permission, Resource: operation.resource}, now)
+	if err != nil {
+		return err
+	}
+	if !result.Allowed {
+		return ErrOperationDenied
+	}
+	// Reaching the protected callback spends the authorized operation even
+	// when the protected work reports an operational error. Callers may settle
+	// a database rejection or unknown commit outcome into a typed result inside
+	// WithVerifiedOperation's callback; leaving progress at Bound would then
+	// incorrectly rewrite that successful settlement as ErrOperationDenied.
+	operation.progress.Store(operationProgressExecuted)
+	return callback()
+}
+
+func (operation *VerifiedOperation) selfBound() bool {
+	return operation != nil && operation.self == operation && operation.lifetime != nil &&
+		operation.binding == operationBinding(operation.actor, operation.tenantID, operation.resource, operation.permission)
+}
+
+const (
+	operationProgressBound uint32 = iota + 1
+	operationProgressExecuted
+)
+
+type operationLifetime struct {
+	mutex     sync.Mutex
+	condition *sync.Cond
+	live      bool
+	active    int
+}
+
+func newOperationLifetime() *operationLifetime {
+	lifetime := &operationLifetime{live: true}
+	lifetime.condition = sync.NewCond(&lifetime.mutex)
+	return lifetime
+}
+
+func (lifetime *operationLifetime) acquire() bool {
+	if lifetime == nil {
+		return false
+	}
+	lifetime.mutex.Lock()
+	defer lifetime.mutex.Unlock()
+	if !lifetime.live {
+		return false
+	}
+	lifetime.active++
+	return true
+}
+
+func (lifetime *operationLifetime) release() {
+	if lifetime == nil {
+		return
+	}
+	lifetime.mutex.Lock()
+	lifetime.active--
+	if lifetime.active == 0 && lifetime.condition != nil {
+		lifetime.condition.Broadcast()
+	}
+	lifetime.mutex.Unlock()
+}
+
+func (lifetime *operationLifetime) close() {
+	if lifetime == nil {
+		return
+	}
+	lifetime.mutex.Lock()
+	lifetime.live = false
+	for lifetime.active != 0 {
+		lifetime.condition.Wait()
+	}
+	lifetime.mutex.Unlock()
+}
+
+func operationBinding(actor SubjectRef, tenantID string, resource ScopeRef, permission string) [sha256.Size]byte {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("cloud-agents/authz/verified-operation/v1\x00"))
+	for _, value := range []string{actor.Kind, actor.Issuer, actor.Subject, tenantID, string(resource.Level), resource.ID, permission} {
+		var size [8]byte
+		binary.BigEndian.PutUint64(size[:], uint64(len(value)))
+		_, _ = hash.Write(size[:])
+		_, _ = hash.Write([]byte(value))
+	}
+	var result [sha256.Size]byte
+	copy(result[:], hash.Sum(nil))
+	return result
+}
+
+type authorizationRequest struct {
 	Subject    SubjectRef
 	Permission string
 	Resource   ScopeRef
 }
 
-type DenyReason string
+type denyReason string
 
 const (
-	DenyInvalidRequest    DenyReason = "invalid_request"
-	DenyUnknownScope      DenyReason = "unknown_scope"
-	DenyNoEligibleBinding DenyReason = "no_eligible_binding"
-	DenyPlatformRuntime   DenyReason = "platform_scope_requires_bootstrap"
+	denyInvalidRequest    denyReason = "invalid_request"
+	denyUnknownScope      denyReason = "unknown_scope"
+	denyNoEligibleBinding denyReason = "no_eligible_binding"
+	denyPlatformRuntime   denyReason = "platform_scope_requires_bootstrap"
 )
 
-type Evidence struct {
+type evidence struct {
 	MembershipUID  string
 	RoleBindingUID string
 	RoleName       string
 	RoleVersion    int64
 }
 
-type Decision struct {
+type decision struct {
 	Allowed  bool
-	Reason   DenyReason
-	Evidence *Evidence
+	Reason   denyReason
+	evidence *evidence
 }
 
-func Evaluate(snapshot Snapshot, request Request, now time.Time) (Decision, error) {
+func evaluate(snapshot Snapshot, request authorizationRequest, now time.Time) (decision, error) {
 	if err := validateOpaqueTenant(snapshot.TenantID); err != nil || now.IsZero() {
-		return Decision{}, fmt.Errorf("%w: tenant or clock", ErrInvalidRequest)
+		return decision{}, fmt.Errorf("%w: tenant or clock", ErrInvalidRequest)
 	}
 	if err := request.Subject.Validate(); err != nil {
-		return Decision{Reason: DenyInvalidRequest}, nil
+		return decision{Reason: denyInvalidRequest}, nil
 	}
 	if err := request.Resource.Validate(snapshot.TenantID); err != nil {
-		return Decision{Reason: DenyInvalidRequest}, nil
+		return decision{Reason: denyInvalidRequest}, nil
 	}
 	if request.Resource.Level == ScopePlatform {
-		return Decision{Reason: DenyPlatformRuntime}, nil
+		return decision{Reason: denyPlatformRuntime}, nil
 	}
 	if !snapshot.ScopeResolved {
-		return Decision{Reason: DenyUnknownScope}, nil
+		return decision{Reason: denyUnknownScope}, nil
 	}
 	if err := snapshot.Scope.Validate(snapshot.TenantID); err != nil {
-		return Decision{}, err
+		return decision{}, err
 	}
 	if !snapshot.Scope.matches(request.Resource, snapshot.TenantID) {
-		return Decision{}, fmt.Errorf("%w: resolved request scope", ErrSnapshotMalformed)
+		return decision{}, fmt.Errorf("%w: resolved request scope", ErrSnapshotMalformed)
 	}
 	if err := snapshot.Catalog.Validate(); err != nil {
-		return Decision{}, err
+		return decision{}, err
 	}
 	requestedDigest, err := request.Subject.Digest()
 	if err != nil {
-		return Decision{Reason: DenyInvalidRequest}, nil
+		return decision{Reason: denyInvalidRequest}, nil
 	}
 	seen := make(map[string]struct{}, len(snapshot.Candidates))
 	for _, candidate := range snapshot.Candidates {
 		key := candidate.Membership.UID + "\x00" + candidate.Binding.UID
 		if _, exists := seen[key]; exists {
-			return Decision{}, fmt.Errorf("%w: duplicate candidate", ErrSnapshotMalformed)
+			return decision{}, fmt.Errorf("%w: duplicate candidate", ErrSnapshotMalformed)
 		}
 		seen[key] = struct{}{}
 		if err := validateCandidate(snapshot.TenantID, candidate); err != nil {
-			return Decision{}, err
+			return decision{}, err
 		}
 		if candidate.Membership.Subject != request.Subject || candidate.Binding.Subject != request.Subject || candidate.Membership.SubjectHash != requestedDigest || candidate.Binding.SubjectHash != requestedDigest {
-			return Decision{}, fmt.Errorf("%w: subject binding", ErrSnapshotMalformed)
+			return decision{}, fmt.Errorf("%w: subject binding", ErrSnapshotMalformed)
 		}
 	}
 	for _, candidate := range snapshot.Candidates {
@@ -456,9 +677,9 @@ func Evaluate(snapshot Snapshot, request Request, now time.Time) (Decision, erro
 		if !candidate.Membership.Scope.Contains(candidate.Binding.Scope, snapshot.TenantID) || !candidate.Binding.Scope.Contains(snapshot.Scope, snapshot.TenantID) {
 			continue
 		}
-		return Decision{
+		return decision{
 			Allowed: true,
-			Evidence: &Evidence{
+			evidence: &evidence{
 				MembershipUID:  candidate.Membership.UID,
 				RoleBindingUID: candidate.Binding.UID,
 				RoleName:       role.Name,
@@ -466,7 +687,7 @@ func Evaluate(snapshot Snapshot, request Request, now time.Time) (Decision, erro
 			},
 		}, nil
 	}
-	return Decision{Reason: DenyNoEligibleBinding}, nil
+	return decision{Reason: denyNoEligibleBinding}, nil
 }
 
 func (scope ScopePath) matches(resource ScopeRef, tenantID string) bool {

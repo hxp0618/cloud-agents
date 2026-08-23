@@ -134,9 +134,14 @@
   [approved](identity-verifier-profile-independent-review-20260823.md) with `P0=0/P1=0/P2=0`; Slice B's fixed candidate
   `6e79eda`, [offline-kernel record](identity-verifier-offline-kernel-implementation-20260824.md), and
   [independent review](identity-verifier-offline-kernel-independent-review-20260824.md) are also approved with
-  `P0=0/P1=0/P2=0`. Slice C is eligible only under the existing approval and remains `NOT STARTED`. Slice B adds no
-  production caller、HTTP discovery/JWKS fetch、provider/P2、production trust root/database write、deployment/publication
-  or Gate closure.
+  `P0=0/P1=0/P2=0`. Slice C's
+  [authz-binder implementation candidate](identity-verifier-authz-binder-implementation-20260824.md) now replaces the
+  raw actor/standalone `Authorize` seam across five RBAC and three JWT-user durable-coordination methods with exact
+  callback-scoped `*VerifiedPrincipal` authority. Its Go 1.26.6 package checks and local PG15/16/17 membership/RBAC
+  and durable normal/race/fault matrices pass, including row-lock invalidation lease-through-commit and cancellation
+  rollback. The Slice C commit and independent P0/P1/P2 verdict remain pending, so it is not approved. There is still
+  no production trust root、HTTP/OIDC/JWKS、provider/P2、production database write、deployment/publication、merge or Gate
+  closure.
 - Runner ledger/catalog preflight：generated profile、locked read-only projection kernel 与 typed same-verifier
   claim/no-op dispatch 已依序固定；Slice A/B fixed candidate `01b1a5f` 的
   [`independent review`](migration-ledger-catalog-preflight-independent-review-20260821.md) 为

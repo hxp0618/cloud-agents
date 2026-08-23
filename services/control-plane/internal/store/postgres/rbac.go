@@ -185,46 +185,55 @@ SELECT COALESCE(
 )
 FROM candidate_rows`
 
-func (handle *tenantReadHandle) Authorize(
+// executeVerifiedRBACOperation is the only store-owned bridge from a sealed
+// verified operation to database-backed RBAC facts. The handle lock remains
+// held through evaluation and the exact protected callback, so neither a
+// transaction capability nor a reusable authorization decision can escape.
+func executeVerifiedRBACOperation(
 	ctx context.Context,
-	request authz.Request,
-) (authz.Decision, error) {
+	handle *tenantReadHandle,
+	operation *authz.VerifiedOperation,
+	resource authz.ScopeRef,
+	callback func() error,
+) error {
+	if handle == nil {
+		return ErrTenantCapabilityClosed
+	}
 	handle.mutex.Lock()
 	defer handle.mutex.Unlock()
 
 	if ctx == nil {
-		return authz.Decision{}, ErrNilContext
+		return ErrNilContext
 	}
-	if !handle.active || handle.transaction == nil || handle.tenantID == "" || handle.clock == nil {
-		return authz.Decision{}, ErrTenantCapabilityClosed
+	if operation == nil || callback == nil || !handle.active || handle.transaction == nil || handle.tenantID == "" || handle.clock == nil {
+		return authz.ErrOperationDenied
+	}
+	actor, ok := operation.Actor()
+	if !ok {
+		return authz.ErrOperationDenied
 	}
 	now := handle.clock().UTC()
 	base := authz.Snapshot{TenantID: handle.tenantID}
-	if request.Subject.Validate() != nil || request.Resource.Validate(handle.tenantID) != nil || request.Resource.Level == authz.ScopePlatform {
-		return authz.Evaluate(base, request, now)
-	}
 
-	scope, resolved, err := handle.resolveAuthorizationScope(ctx, request.Resource)
+	scope, resolved, err := handle.resolveAuthorizationScope(ctx, resource)
 	if err != nil {
-		return authz.Decision{}, err
+		return err
 	}
 	base.Scope = scope
 	base.ScopeResolved = resolved
-	if !resolved {
-		return authz.Evaluate(base, request, now)
+	if resolved {
+		catalog, catalogErr := handle.readBuiltinRoleCatalog(ctx)
+		if catalogErr != nil {
+			return catalogErr
+		}
+		base.Catalog = catalog
+		candidates, candidatesErr := handle.readAuthorizationCandidates(ctx, actor)
+		if candidatesErr != nil {
+			return candidatesErr
+		}
+		base.Candidates = candidates
 	}
-
-	catalog, err := handle.readBuiltinRoleCatalog(ctx)
-	if err != nil {
-		return authz.Decision{}, err
-	}
-	base.Catalog = catalog
-	candidates, err := handle.readAuthorizationCandidates(ctx, request.Subject)
-	if err != nil {
-		return authz.Decision{}, err
-	}
-	base.Candidates = candidates
-	return authz.Evaluate(base, request, now)
+	return operation.Execute(base, now, callback)
 }
 
 func (handle *tenantReadHandle) resolveAuthorizationScope(

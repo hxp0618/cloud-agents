@@ -3,21 +3,21 @@ package postgres
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
-	"github.com/jackc/pgx/v5"
 )
 
-func TestTenantAuthorizationUsesOneBoundReadTransactionAndExactQueries(t *testing.T) {
+func TestRBACFactReadersUseExactBoundedQueries(t *testing.T) {
 	tenantID := "tenant-alpha"
-	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
 	subject := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
 	digest, err := subject.Digest()
 	if err != nil {
@@ -26,262 +26,103 @@ func TestTenantAuthorizationUsesOneBoundReadTransactionAndExactQueries(t *testin
 	organizationID := "organization-alpha"
 	projectID := "project-alpha"
 	transaction := &fakeTransaction{rows: []rowScanner{
-		rowValues(tenantID),
-		rowValues(tenantID),
 		rowValues("project", tenantID, &organizationID, &projectID),
 		rowValues(databaseCatalogFixture(t)),
 		rowValues(databaseCandidateFixture(t, subject, digest, nil)),
 	}}
-	connection := newFakeConnection(transaction)
-	connection.outsideRows = []rowScanner{rowValues((*string)(nil))}
-	runner := newTenantTransactionRunner(&fakePool{connection: connection}, time.Second)
-	runner.clock = func() time.Time { return now }
+	handle := &tenantReadHandle{active: true, transaction: transaction, tenantID: tenantID, clock: time.Now}
 
-	request := authz.Request{
-		Subject: subject, Permission: "projects.get",
-		Resource: authz.ScopeRef{Level: authz.ScopeProject, ID: projectID},
+	scope, resolved, err := handle.resolveAuthorizationScope(context.Background(), authz.ScopeRef{Level: authz.ScopeProject, ID: projectID})
+	if err != nil || !resolved || scope.ProjectID != projectID || scope.OrganizationID != organizationID {
+		t.Fatalf("resolved scope/error = %#v/%v", scope, err)
 	}
-	var saved TenantReadCapability
-	err = runner.WithTenantRead(context.Background(), tenantID, func(
-		ctx context.Context,
-		capability TenantReadCapability,
-	) error {
-		saved = capability
-		decision, authorizeErr := capability.Authorize(ctx, request)
-		if authorizeErr != nil {
-			return authorizeErr
-		}
-		if !decision.Allowed || decision.Evidence == nil || decision.Evidence.MembershipUID != "membership-alpha" || decision.Evidence.RoleBindingUID != "role-binding-alpha" {
-			t.Fatalf("authorization decision = %#v", decision)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("WithTenantRead() error = %v", err)
+	catalog, err := handle.readBuiltinRoleCatalog(context.Background())
+	if err != nil || len(catalog.Roles) != 7 {
+		t.Fatalf("catalog roles/error = %d/%v", len(catalog.Roles), err)
 	}
-	if _, err := saved.Authorize(context.Background(), request); !errors.Is(err, ErrTenantCapabilityClosed) {
-		t.Fatalf("saved authorization capability error = %v", err)
+	candidates, err := handle.readAuthorizationCandidates(context.Background(), subject)
+	if err != nil || len(candidates) != 1 || candidates[0].Membership.Subject != subject {
+		t.Fatalf("candidates/error = %#v/%v", candidates, err)
 	}
-	if len(transaction.queries) != 5 {
-		t.Fatalf("transaction query count = %d, want 5", len(transaction.queries))
+	if len(transaction.queries) != 3 || transaction.queries[0].sql != resolveAuthorizationScopeSQL ||
+		transaction.queries[1].sql != readBuiltinRoleCatalogSQL || transaction.queries[2].sql != readAuthorizationCandidatesSQL {
+		t.Fatalf("query identities = %#v", transaction.queries)
 	}
-	if transaction.queries[2].sql != resolveAuthorizationScopeSQL || transaction.queries[3].sql != readBuiltinRoleCatalogSQL || transaction.queries[4].sql != readAuthorizationCandidatesSQL {
-		t.Fatalf("authorization query identity drift: %#v", transaction.queries[2:])
+	if got := transaction.queries[2].arguments; len(got) != 3 || got[0] != subject.Kind || got[1] != subject.Issuer || got[2] != subject.Subject {
+		t.Fatalf("candidate arguments = %#v", got)
 	}
-	if got := transaction.queries[2].arguments; len(got) != 2 || got[0] != "project" || got[1] != projectID {
-		t.Fatalf("scope query arguments = %#v", got)
-	}
-	if got := transaction.queries[3].arguments; len(got) != 0 {
-		t.Fatalf("catalog query accepted arguments: %#v", got)
-	}
-	if got := transaction.queries[4].arguments; len(got) != 3 || got[0] != subject.Kind || got[1] != subject.Issuer || got[2] != subject.Subject {
-		t.Fatalf("candidate query arguments = %#v", got)
-	}
-	if strings.Contains(readAuthorizationCandidatesSQL, "binding.subject_digest = membership.subject_digest") || strings.Contains(readAuthorizationCandidatesSQL, "membership.subject_digest = $4") {
-		t.Fatal("candidate query hides stored subject digest drift")
-	}
-	if !strings.Contains(readAuthorizationCandidatesSQL, "membership.resource_version < binding.resource_version") {
-		t.Fatal("candidate query admits membership authority created after the role binding")
-	}
-	for _, query := range transaction.queries[2:] {
-		if !strings.Contains(query.sql, "cloud_agents.") || strings.Contains(query.sql, tenantID) {
-			t.Fatalf("query is not fully qualified or embedded tenant input: %s", query.sql)
-		}
-	}
-	assertConnectionDisposition(t, connection, 1, 0)
-}
-
-func TestTenantAuthorizationStoredSubjectDigestDriftFailsClosed(t *testing.T) {
-	tenantID := "tenant-alpha"
-	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
-	subject := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
-	digest, err := subject.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var candidates []map[string]any
-	if err := json.Unmarshal(databaseCandidateFixture(t, subject, digest, nil), &candidates); err != nil {
-		t.Fatal(err)
-	}
-	candidates[0]["binding"].(map[string]any)["subject_digest"] = "sha256:" + strings.Repeat("0", 64)
-	raw, err := json.Marshal(candidates)
-	if err != nil {
-		t.Fatal(err)
-	}
-	organizationID := "organization-alpha"
-	projectID := "project-alpha"
-	transaction := &fakeTransaction{rows: []rowScanner{
-		rowValues(tenantID), rowValues(tenantID),
-		rowValues("project", tenantID, &organizationID, &projectID),
-		rowValues(databaseCatalogFixture(t)), rowValues(raw),
-	}}
-	connection := newFakeConnection(transaction)
-	connection.outsideRows = []rowScanner{rowValues((*string)(nil))}
-	runner := newTenantTransactionRunner(&fakePool{connection: connection}, time.Second)
-	runner.clock = func() time.Time { return now }
-	err = runner.WithTenantRead(context.Background(), tenantID, func(ctx context.Context, capability TenantReadCapability) error {
-		_, authorizeErr := capability.Authorize(ctx, authz.Request{
-			Subject: subject, Permission: "projects.get",
-			Resource: authz.ScopeRef{Level: authz.ScopeProject, ID: projectID},
-		})
-		return authorizeErr
-	})
-	if !errors.Is(err, authz.ErrSnapshotMalformed) {
-		t.Fatalf("stored digest drift error = %v, want ErrSnapshotMalformed", err)
-	}
-	if transaction.rollbackCalls != 1 || transaction.commitCalls != 0 {
-		t.Fatalf("commit/rollback calls = %d/%d", transaction.commitCalls, transaction.rollbackCalls)
-	}
-	assertConnectionDisposition(t, connection, 1, 0)
-}
-
-func TestTenantAuthorizationUnknownAndPlatformScopeAvoidUnneededReads(t *testing.T) {
-	tenantID := "tenant-alpha"
-	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
-	subject := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
-	tests := []struct {
-		name        string
-		resource    authz.ScopeRef
-		extraRows   []rowScanner
-		wantReason  authz.DenyReason
-		wantQueries int
-	}{
-		{
-			name: "unknown project", resource: authz.ScopeRef{Level: authz.ScopeProject, ID: "project-missing"},
-			extraRows: []rowScanner{rowError(pgx.ErrNoRows)}, wantReason: authz.DenyUnknownScope, wantQueries: 3,
-		},
-		{
-			name: "platform runtime", resource: authz.ScopeRef{Level: authz.ScopePlatform},
-			wantReason: authz.DenyPlatformRuntime, wantQueries: 2,
-		},
-		{
-			name: "invalid tenant scope", resource: authz.ScopeRef{Level: authz.ScopeTenant, ID: "tenant-other"},
-			wantReason: authz.DenyInvalidRequest, wantQueries: 2,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			rows := []rowScanner{rowValues(tenantID), rowValues(tenantID)}
-			rows = append(rows, test.extraRows...)
-			transaction := &fakeTransaction{rows: rows}
-			connection := newFakeConnection(transaction)
-			connection.outsideRows = []rowScanner{rowValues((*string)(nil))}
-			runner := newTenantTransactionRunner(&fakePool{connection: connection}, time.Second)
-			runner.clock = func() time.Time { return now }
-			err := runner.WithTenantRead(context.Background(), tenantID, func(
-				ctx context.Context,
-				capability TenantReadCapability,
-			) error {
-				decision, authorizeErr := capability.Authorize(ctx, authz.Request{
-					Subject: subject, Permission: "projects.get", Resource: test.resource,
-				})
-				if authorizeErr != nil {
-					return authorizeErr
-				}
-				if decision.Allowed || decision.Reason != test.wantReason {
-					t.Fatalf("decision = %#v, want %s", decision, test.wantReason)
-				}
-				return nil
-			})
-			if err != nil {
-				t.Fatalf("WithTenantRead() error = %v", err)
-			}
-			if len(transaction.queries) != test.wantQueries {
-				t.Fatalf("query count = %d, want %d", len(transaction.queries), test.wantQueries)
-			}
-			assertConnectionDisposition(t, connection, 1, 0)
-		})
+	if strings.Contains(readAuthorizationCandidatesSQL, "binding.subject_digest = membership.subject_digest") ||
+		!strings.Contains(readAuthorizationCandidatesSQL, "membership.resource_version < binding.resource_version") {
+		t.Fatal("candidate query no longer exposes digest drift or creation ordering")
 	}
 }
 
-func TestTenantAuthorizationOperationalAndDecodeFailuresRollback(t *testing.T) {
-	tenantID := "tenant-alpha"
-	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
-	subject := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
-	organizationID := "organization-alpha"
-	projectID := "project-alpha"
-	request := authz.Request{Subject: subject, Permission: "projects.get", Resource: authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}}
-	readErr := errors.New("scope read failed")
-	tests := []struct {
+func TestRBACFactReadersRejectMalformedAndOversizedJSON(t *testing.T) {
+	handle := &tenantReadHandle{active: true, tenantID: "tenant-alpha", clock: time.Now}
+	for _, test := range []struct {
 		name string
-		rows []rowScanner
+		raw  []byte
 	}{
-		{name: "scope query", rows: []rowScanner{rowError(readErr)}},
-		{name: "catalog unknown field", rows: []rowScanner{
-			rowValues("project", tenantID, &organizationID, &projectID),
-			rowValues([]byte(`[{"unknown":true}]`)),
-		}},
-		{name: "candidate trailing JSON", rows: []rowScanner{
-			rowValues("project", tenantID, &organizationID, &projectID),
-			rowValues(databaseCatalogFixture(t)),
-			rowValues([]byte(`[] []`)),
-		}},
-	}
-	for _, test := range tests {
+		{name: "unknown catalog member", raw: []byte(`[{"unknown":true}]`)},
+		{name: "trailing candidate value", raw: []byte(`[] []`)},
+		{name: "oversized", raw: make([]byte, maxCandidateJSONBytes+1)},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			rows := []rowScanner{rowValues(tenantID), rowValues(tenantID)}
-			rows = append(rows, test.rows...)
-			transaction := &fakeTransaction{rows: rows}
-			connection := newFakeConnection(transaction)
-			connection.outsideRows = []rowScanner{rowValues((*string)(nil))}
-			runner := newTenantTransactionRunner(&fakePool{connection: connection}, time.Second)
-			runner.clock = func() time.Time { return now }
-			err := runner.WithTenantRead(context.Background(), tenantID, func(ctx context.Context, capability TenantReadCapability) error {
-				_, authorizeErr := capability.Authorize(ctx, request)
-				return authorizeErr
-			})
+			handle.transaction = &fakeTransaction{rows: []rowScanner{rowValues(test.raw)}}
+			var err error
+			if strings.Contains(test.name, "catalog") {
+				_, err = handle.readBuiltinRoleCatalog(context.Background())
+			} else {
+				_, err = handle.readAuthorizationCandidates(context.Background(), authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"})
+			}
 			if err == nil {
-				t.Fatal("authorization fault returned nil")
+				t.Fatal("malformed database JSON was accepted")
 			}
-			if transaction.rollbackCalls != 1 || transaction.commitCalls != 0 {
-				t.Fatalf("commit/rollback calls = %d/%d", transaction.commitCalls, transaction.rollbackCalls)
-			}
-			assertConnectionDisposition(t, connection, 1, 0)
 		})
 	}
 }
 
-func TestTenantAuthorizationCandidateLimitFailsClosed(t *testing.T) {
-	tenantID := "tenant-alpha"
-	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
-	subject := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
-	digest, err := subject.Digest()
-	if err != nil {
-		t.Fatal(err)
+func TestRBACProductionSurfaceHasNoStandaloneAuthorizeOrRawActor(t *testing.T) {
+	files := []string{"tenant_transaction.go", "rbac.go", "rbac_mutation.go"}
+	fileSet := token.NewFileSet()
+	for _, name := range files {
+		parsed, err := parser.ParseFile(fileSet, name, nil, parser.AllErrors)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			function, ok := node.(*ast.FuncDecl)
+			if !ok {
+				return true
+			}
+			if function.Name.Name == "Authorize" || function.Name.Name == "authorizeMutation" {
+				t.Errorf("forbidden standalone authorization function %s remains", function.Name.Name)
+			}
+			if function.Name.Name == "CreateMembership" || function.Name.Name == "SuspendMembership" ||
+				function.Name.Name == "RevokeMembership" || function.Name.Name == "BindRole" || function.Name.Name == "RevokeRoleBinding" {
+				if function.Type.Params == nil || len(function.Type.Params.List) != 4 {
+					t.Errorf("%s parameter shape drift", function.Name.Name)
+					return true
+				}
+				pointer, ok := function.Type.Params.List[2].Type.(*ast.StarExpr)
+				if !ok {
+					t.Errorf("%s third parameter is not a pointer", function.Name.Name)
+					return true
+				}
+				selector, selectorOK := pointer.X.(*ast.SelectorExpr)
+				if !selectorOK {
+					t.Errorf("%s third parameter is not qualified", function.Name.Name)
+					return true
+				}
+				packageName, packageOK := selector.X.(*ast.Ident)
+				if !packageOK || packageName.Name != "authn" || selector.Sel.Name != "VerifiedPrincipal" {
+					t.Errorf("%s third parameter is not *authn.VerifiedPrincipal", function.Name.Name)
+				}
+			}
+			return true
+		})
 	}
-	organizationID := "organization-alpha"
-	projectID := "project-alpha"
-	var template []map[string]any
-	if err := json.Unmarshal(databaseCandidateFixture(t, subject, digest, nil), &template); err != nil {
-		t.Fatal(err)
-	}
-	rows := make([]map[string]any, 257)
-	for index := range rows {
-		row := deepCopyJSON(t, template[0])
-		row["membership"].(map[string]any)["uid"] = "membership-" + zeroPadded(index)
-		rows[index] = row
-	}
-	raw, err := json.Marshal(rows)
-	if err != nil {
-		t.Fatal(err)
-	}
-	transaction := &fakeTransaction{rows: []rowScanner{
-		rowValues(tenantID), rowValues(tenantID),
-		rowValues("project", tenantID, &organizationID, &projectID),
-		rowValues(databaseCatalogFixture(t)), rowValues(raw),
-	}}
-	connection := newFakeConnection(transaction)
-	connection.outsideRows = []rowScanner{rowValues((*string)(nil))}
-	runner := newTenantTransactionRunner(&fakePool{connection: connection}, time.Second)
-	runner.clock = func() time.Time { return now }
-	err = runner.WithTenantRead(context.Background(), tenantID, func(ctx context.Context, capability TenantReadCapability) error {
-		_, authorizeErr := capability.Authorize(ctx, authz.Request{Subject: subject, Permission: "projects.get", Resource: authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}})
-		return authorizeErr
-	})
-	if err == nil || !strings.Contains(err.Error(), "candidate limit") {
-		t.Fatalf("candidate limit error = %v", err)
-	}
-	assertConnectionDisposition(t, connection, 1, 0)
+	var _ *authn.VerifiedPrincipal
 }
 
 func databaseCatalogFixture(t *testing.T) []byte {
@@ -311,33 +152,16 @@ func databaseCatalogFixture(t *testing.T) []byte {
 	return raw
 }
 
-func databaseCandidateFixture(
-	t *testing.T,
-	subject authz.SubjectRef,
-	digest string,
-	expiresAt *time.Time,
-) []byte {
+func databaseCandidateFixture(t *testing.T, subject authz.SubjectRef, digest string, expiresAt *time.Time) []byte {
 	t.Helper()
 	expiry := any(nil)
 	if expiresAt != nil {
 		expiry = expiresAt.UTC().Format(time.RFC3339Nano)
 	}
-	scope := map[string]any{
-		"level": "project", "tenant_id": "tenant-alpha",
-		"organization_id": "organization-alpha", "project_id": "project-alpha",
-	}
+	scope := map[string]any{"level": "project", "tenant_id": "tenant-alpha", "organization_id": "organization-alpha", "project_id": "project-alpha"}
 	rows := []map[string]any{{
-		"membership": map[string]any{
-			"uid": "membership-alpha", "subject_kind": subject.Kind,
-			"subject_issuer": subject.Issuer, "subject_value": subject.Subject,
-			"subject_digest": digest, "scope": scope, "state": "active", "expires_at": expiry,
-		},
-		"binding": map[string]any{
-			"uid": "role-binding-alpha", "subject_kind": subject.Kind,
-			"subject_issuer": subject.Issuer, "subject_value": subject.Subject,
-			"subject_digest": digest, "role_name": "project.viewer", "role_version": int64(1),
-			"scope": scope, "state": "active", "expires_at": expiry,
-		},
+		"membership": map[string]any{"uid": "membership-alpha", "subject_kind": subject.Kind, "subject_issuer": subject.Issuer, "subject_value": subject.Subject, "subject_digest": digest, "scope": scope, "state": "active", "expires_at": expiry},
+		"binding":    map[string]any{"uid": "role-binding-alpha", "subject_kind": subject.Kind, "subject_issuer": subject.Issuer, "subject_value": subject.Subject, "subject_digest": digest, "role_name": "project.viewer", "role_version": int64(1), "scope": scope, "state": "active", "expires_at": expiry},
 	}}
 	raw, err := json.Marshal(rows)
 	if err != nil {
@@ -358,20 +182,46 @@ func readRepositoryJSON(t *testing.T, relative string, target any) {
 	}
 }
 
-func deepCopyJSON(t *testing.T, value map[string]any) map[string]any {
+func stringPtr(value string) *string { return &value }
+
+// mutationAuthorizationRows remains a test-only compatibility fixture for
+// other store settlement tests. Production authorization no longer accepts
+// these raw actor facts.
+func mutationAuthorizationRows(
+	t *testing.T,
+	tenantID string,
+	actor authz.SubjectRef,
+	digest string,
+	scopeLevel authz.ScopeLevel,
+	scopeID string,
+) []rowScanner {
 	t.Helper()
-	raw, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
+	var organizationID *string
+	var projectID *string
+	if scopeLevel == authz.ScopeOrganization {
+		organizationID = stringPtr(scopeID)
 	}
-	var copy map[string]any
-	if err := json.Unmarshal(raw, &copy); err != nil {
-		t.Fatal(err)
+	if scopeLevel == authz.ScopeProject {
+		projectID = stringPtr(scopeID)
 	}
-	return copy
+	return []rowScanner{
+		rowValues(tenantID),
+		rowValues(tenantID),
+		rowValues(string(scopeLevel), tenantID, organizationID, projectID),
+		rowValues(databaseCatalogFixture(t)),
+		rowValues(databaseTenantAdminCandidateFixture(tenantID, actor, digest)),
+	}
 }
 
-func zeroPadded(value int) string {
-	result := "000" + strconv.Itoa(value)
-	return result[len(result)-3:]
+func databaseTenantAdminCandidateFixture(tenantID string, subject authz.SubjectRef, digest string) []byte {
+	scope := map[string]any{"level": "tenant", "tenant_id": tenantID, "organization_id": nil, "project_id": nil}
+	rows := []map[string]any{{
+		"membership": map[string]any{"uid": "membership-actor", "subject_kind": subject.Kind, "subject_issuer": subject.Issuer, "subject_value": subject.Subject, "subject_digest": digest, "scope": scope, "state": "active", "expires_at": nil},
+		"binding":    map[string]any{"uid": "role-binding-actor", "subject_kind": subject.Kind, "subject_issuer": subject.Issuer, "subject_value": subject.Subject, "subject_digest": digest, "role_name": "tenant.admin", "role_version": int64(1), "scope": scope, "state": "active", "expires_at": nil},
+	}}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
