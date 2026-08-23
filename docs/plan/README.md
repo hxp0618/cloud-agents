@@ -25,6 +25,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
    [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)；
 5. 已接受、仅授权 offline identity-verifier ordered local Slices A-C 的
    [`ADR-0025`](adr/0025-p1-offline-jwt-access-token-verifier-contract.md)；
+   [`ADR-0026`](adr/0026-p1-json-schema-official-suite-evidence-closure.md)；
 6. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
 7. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
 8. `legacy/` 历史计划；
@@ -66,6 +67,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0023`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)                                      | P1 runner recovery ordered writer 决定           |
 | [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)                                        | P1 software-crash durability acceptance 边界     |
 | [`ADR-0025`](adr/0025-p1-offline-jwt-access-token-verifier-contract.md)                                  | P1 offline JWT access-token verifier 边界        |
+| [`ADR-0026`](adr/0026-p1-json-schema-official-suite-evidence-closure.md)                                 | P1 JSON Schema official-suite evidence closure   |
 
 ## 历史与参考
 

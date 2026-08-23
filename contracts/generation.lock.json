@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:7aeed27a73a7e1e7c08497f099f913a84afe0ae9b5e89ef57baa3329b9f72ff8",
+    "manifestSha256": "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -61,7 +61,7 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:24cccfbeeae1f161f17054e9185da9e773f07aad7f79f767276c633c4b04162e",
+      "sourceManifestSha256": "sha256:d2524246f04eb8835bd819c346e76a956a5068715aa4a7a28ad8db14d2f9085a",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
@@ -94,7 +94,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:33ad2677c9f1604cd0dfa0e04862d17c3849168f0d6148dfbf9cef27fc83a64a",
+      "sourceManifestSha256": "sha256:ac47cfba33fc29a02267094e645bcc5ee062fe11381f451f8dfceef3c44fbf37",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.test.ts",
@@ -121,12 +121,17 @@
       "id": "platform-contract-closure-profile-generator",
       "kind": "in-repo-typescript-deterministic-versioned-contract-closure-profile",
       "entrypoint": "scripts/generate-platform-contract-closure-profile.ts",
-      "sourceManifestSha256": "sha256:f7b668735463bd5a6cb55ba42757d6c093d8320c059bc5382f7238f01a574680",
+      "sourceManifestSha256": "sha256:13d72f794fa46533d6c143efc012e9d0dd1e5561a02d2bca3c88beff88bcd3f9",
       "sources": [
         "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json",
         "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
+        "docs/plan/adr/0026-p1-json-schema-official-suite-evidence-closure.md",
         "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
+        "docs/plan/p1/g-contract-r5-b2-official-suite-evidence-closure-20260824.md",
         "scripts/generate-platform-contract-closure-profile.ts",
         "scripts/lib/platform-contract-closure-profile.test.ts",
         "scripts/lib/platform-contract-closure-profile.ts",
@@ -469,7 +474,7 @@
       "id": "platform-ajv-official-suite-auditor",
       "kind": "in-repo-typescript-deterministic-offline-ajv-audit",
       "entrypoint": "scripts/check-platform-ajv-official-suite.ts",
-      "sourceManifestSha256": "sha256:30fa37f88c6e31f5d0b06bbcd5df8f20dffaa4e1adf743217d7cd5a01c31539d",
+      "sourceManifestSha256": "sha256:22e743495c5347564a7c223c19cf996a844fbbe49a442bc7dd4bb30f7a6d7151",
       "sources": [
         "bun.lock",
         "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
@@ -780,7 +785,7 @@
       "id": "platform-contract-standards-checker",
       "kind": "in-repo-python-independent-json-schema-openapi-checker",
       "entrypoint": "tools/contract-standards/check_contract_standards.py",
-      "sourceManifestSha256": "sha256:d1a23199e3d0748250b793b66b42402434d8b4fed54706df9ed18bae3446e7f8",
+      "sourceManifestSha256": "sha256:3b4777ea81bfefb709858e12a7dfa808f885afaead3f63251af018c7e26e295d",
       "sources": [
         ".gitattributes",
         ".mise.toml",
@@ -955,7 +960,7 @@
     {
       "id": "ajv-official-suite-audit-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:30fa37f88c6e31f5d0b06bbcd5df8f20dffaa4e1adf743217d7cd5a01c31539d",
+      "inputManifestSha256": "sha256:22e743495c5347564a7c223c19cf996a844fbbe49a442bc7dd4bb30f7a6d7151",
       "inputs": [
         "bun.lock",
         "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
@@ -1119,35 +1124,51 @@
         "runtimeErrors": 8,
         "discrepancyRecords": 45,
         "nonPassingAssertions": 58,
-        "closureCriterion": "REMAINS_MISSING",
+        "closureCriterion": "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
+        "auditAloneConformanceEvidence": false,
         "gateStatus": "ALL_GATES_OPEN"
       }
     },
     {
       "id": "contract-closure-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:cb2fffb9e9eaa1dd62ce39f2761c0366675675bde2c8132179281f414d234e21",
+      "inputManifestSha256": "sha256:07a3bfa1570656c30d9e848f786f843c77301328df524d5fd08081376f807c95",
       "inputs": [
         "bun.lock",
+        "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
+        "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json",
         "contracts/managed-agent/v1alpha1/openapi.json",
         "contracts/managed-host/v1alpha1/openapi.json",
+        "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
         "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+        "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json",
+        "contracts/platform/v1alpha1/schemas/ajv-official-suite-audit-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/ajv-official-suite-audit-v1.schema.json",
         "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
         "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
         "contracts/proto-generation.profile.json",
         "docs/plan/adr/0007-p1-contract-data-toolchain-foundation.md",
+        "docs/plan/adr/0026-p1-json-schema-official-suite-evidence-closure.md",
         "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
         "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md",
         "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md",
+        "docs/plan/p1/g-contract-r5-b1-ajv-official-suite-audit-20260824.md",
+        "docs/plan/p1/g-contract-r5-b1-ajv-official-suite-audit-independent-review-20260824.md",
+        "docs/plan/p1/g-contract-r5-b2-official-suite-evidence-closure-20260824.md",
         "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
         "docs/plan/p1/identity-verifier-authz-binder-independent-review-20260824.md",
         "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
         "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
         "package.json",
+        "scripts/check-platform-ajv-official-suite.ts",
         "scripts/generate-platform-contract-closure-profile.ts",
         "scripts/generate-platform-identity-sdks.ts",
         "scripts/generate-platform-json-sdks.ts",
         "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-ajv-official-suite.test.ts",
+        "scripts/lib/platform-ajv-official-suite.ts",
         "scripts/lib/platform-contract-closure-profile.test.ts",
         "scripts/lib/platform-contract-closure-profile.ts",
         "scripts/lib/platform-json-sdk.test.ts",
@@ -1164,6 +1185,7 @@
         "services/control-plane/internal/authn/verifier.go",
         "tools/contract-standards/check_contract_standards.py",
         "tools/contract-standards/profile.json",
+        "tools/contract-standards/test_contract_standards.py",
         "tools/contract-standards/uv.lock",
         "tools/contract-standards/vendor/json-schema-test-suite/LICENSE",
         "tools/contract-standards/vendor/json-schema-test-suite/remotes/baseUriChange/folderInteger.json",
@@ -1299,20 +1321,61 @@
           "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json",
           "sha256": "sha256:823e9356342511b611538fb669e8af99962555b153324d09c7208f3f00b51e68",
           "sizeBytes": 6364
+        },
+        {
+          "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+          "sha256": "sha256:5069f0f1bdca9b7b7c161cb36870c00be254acb315cafab45adcc944b19e33fe",
+          "sizeBytes": 8690
         }
       ],
       "outputSummary": {
-        "registryDigest": "sha256:c01ef40f826bbec63ede5f43b49dd3e2c4bd5d4c1cd2744d03cf28784a6cf5bd",
-        "profileId": "contract-closure-profile/v1",
-        "profileDigest": "sha256:08746a7986a583c550eecb5ef5d7ab15f08511fe934a4c176d2f087bc449a715",
+        "registryDigest": "sha256:e6404a56c51af90ab8f1421f1ea81313a8894233e8d5ae38912ab91a706516bc",
+        "profileId": "contract-closure-profile/v2",
+        "profileDigest": "sha256:19218e6b004d90fba6dc29aaf5edfa088fd310fd640961e8d53c6bef90bf3c13",
         "status": "BOOTSTRAP_VALIDATED",
         "missing": [
-          "json-schema-2020-12-official-test-suite",
           "runtime-server-path-and-tenant-authority-enforcement",
           "remaining-generator-supply-chain-review"
         ],
         "manualMissingRemoval": "FORBIDDEN",
-        "officialAjvSuiteRunner": "NOT_IMPLEMENTED",
+        "predecessor": {
+          "profileId": "contract-closure-profile/v1",
+          "predecessorMutation": "forbidden",
+          "sourceSha256": "sha256:411e4b649c5b812339817b5836c25a6a2f27c9aa0e24497b7aa65da8fe2baa49",
+          "sourceSchemaSha256": "sha256:8b87a0e24e42db87987a1dc1b4931b7ff2b8edef6bef6ccd184e0586a7bdc4af",
+          "outputSchemaSha256": "sha256:107dbc21f240cd912f567ef1e0a6bfaf78d2e6171f0f4189ca9812c225630bc0",
+          "generatedRegistrySha256": "sha256:823e9356342511b611538fb669e8af99962555b153324d09c7208f3f00b51e68"
+        },
+        "independentOracle": {
+          "validator": "jsonschema-rs 0.50.1",
+          "files": 46,
+          "cases": 383,
+          "assertions": 1299,
+          "passedAssertions": 1299,
+          "remotes": 79,
+          "failures": 0
+        },
+        "productionAjvAudit": {
+          "validator": "Ajv 8.20.0",
+          "status": "EXECUTED_NONCONFORMANT",
+          "conformanceClaim": false,
+          "assertions": 1299,
+          "passedAssertions": 1241,
+          "nonPassingAssertions": 58,
+          "normalReplay": "exact",
+          "requireConformance": "nonzero"
+        },
+        "currentContractParity": {
+          "schemaFiles": 58,
+          "fixtureManifests": 2,
+          "fixtureCases": 77,
+          "productionValidator": "Ajv 8.20.0 plus in-repo semantics",
+          "independentValidator": "jsonschema-rs 0.50.1",
+          "crossEngineExactFixtureResults": true
+        },
+        "contractManifestSha256": "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
+        "officialSuiteCriterion": "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
+        "ajvGenericConformanceClaim": false,
         "runtimeTrustAndHttp": "NOT_IMPLEMENTED",
         "supplyScanner": "NOT_IMPLEMENTED",
         "productionDatabaseWrites": "NOT_AUTHORIZED",
@@ -1323,14 +1386,14 @@
     },
     {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:7aeed27a73a7e1e7c08497f099f913a84afe0ae9b5e89ef57baa3329b9f72ff8",
+      "inputManifestSha256": "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
     {
       "id": "independent-contract-standards-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d1a23199e3d0748250b793b66b42402434d8b4fed54706df9ed18bae3446e7f8",
+      "inputManifestSha256": "sha256:3b4777ea81bfefb709858e12a7dfa808f885afaead3f63251af018c7e26e295d",
       "inputs": [
         ".gitattributes",
         ".mise.toml",
@@ -1474,7 +1537,7 @@
       "generatedOutputs": [],
       "outputSummary": {
         "profile": "cloud-agents-contract-standards-profile/v1",
-        "sourceContractManifestSha256": "sha256:7aeed27a73a7e1e7c08497f099f913a84afe0ae9b5e89ef57baa3329b9f72ff8",
+        "sourceContractManifestSha256": "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
         "toolchain": {
           "bun": "1.3.14",
           "python": "3.14.7",
@@ -1487,16 +1550,17 @@
           "files": 46,
           "cases": 383,
           "assertions": 1299,
-          "expectedFailures": 0
+          "expectedFailures": 0,
+          "closureCriterion": "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE"
         },
         "productionAjvOfficialSuiteAudit": {
           "validator": "Ajv 8.20.0",
           "status": "EXECUTED_NONCONFORMANT"
         },
         "currentJsonSchema": {
-          "schemas": 56,
+          "schemas": 58,
           "fixtureManifests": 2,
-          "fixtureCases": 75,
+          "fixtureCases": 77,
           "crossEngineExactFixtureResults": true
         },
         "openapi31": {
@@ -2442,12 +2506,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-          "sha256": "sha256:4a83e9b2f75254071e09eff982ae102012a7ed29c1c8e6717e9d5387b7061ac9",
+          "sha256": "sha256:ceba0642ff572048ed1c1888641dbb838916d3e8bd8fb64a32c0c0bced233329",
           "sizeBytes": 13530
         },
         {
           "path": "sdk/go/generated-manifest.json",
-          "sha256": "sha256:7d3918faf76da3761174b25670add105a0d004b22a1f81f7903079b71ea44e30",
+          "sha256": "sha256:eef0cd5556b0335c601bb942d48080688d6bb7aa629661224aaca38ccbed00ca",
           "sizeBytes": 3740
         }
       ],
@@ -2503,12 +2567,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/index.ts",
-          "sha256": "sha256:55939e6416d410f17601ab0d7196b9d99f9bbf7a0c3e905e050c5fb70c01e144",
+          "sha256": "sha256:a22fa6519e6a145a979328b4074491ca9548e67458426673f29cba256636d889",
           "sizeBytes": 12982
         },
         {
           "path": "sdk/typescript/generated-manifest.json",
-          "sha256": "sha256:19ab2ee14772421d7bc7f7c994ef12b55e4da565b73d4a15f1f3763cdd8e7e25",
+          "sha256": "sha256:97a3a2f8b517b1369e2e12e81a2c0787fcfa680ea696d095f01f3e0334cf3c89",
           "sizeBytes": 3278
         }
       ],
@@ -2528,7 +2592,7 @@
     {
       "id": "platform-json-contract-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:e445dd83037c5b9d155d30443cf0e8d63fbe64993a78216bd0c317ad31409246",
+      "inputManifestSha256": "sha256:4ea833c8ea514818bd7da2b17ae176f3800b4fdd051dc34b8e006583e85108c2",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -2610,22 +2674,22 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:4aa540ec79aa2a2eae3eec8f359db5322d9514a751dd7dadecc5cfe2b90cff5f",
+          "sha256": "sha256:f1e24a46861aec86b6d04df35c2cad2cecc0b304f33a34d2996ed949c6296bf1",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:3e54e0f1fb28dc8b8f92fcc379874a10b1688fd0840094c162dc73ddda8b1f53",
+          "sha256": "sha256:707f36e329c8126f199e3e04503ae0fd8725ea6ef991be0ef548f4c5a328a394",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:1baaab787c1799e114df2a3fcceacbad5008bae6b1e01b616e70097f944775a0",
+          "sha256": "sha256:e4caab318920a7d1970facdef3779437ffe4f939586583dc248136f93d993a77",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:d6e48c9b868805c9adfdb0bee9012fce34c43050c3b111b5e367089a7b0162f4",
+          "sha256": "sha256:f0fbade9599179244d018ea1d420ef980e2b07e61bda3633baa909d50b611efc",
           "sizeBytes": 9802
         }
       ],
@@ -2646,7 +2710,7 @@
     {
       "id": "platform-json-contract-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f34e823a5edcfb5f42bc82d7c41372802cc8bd096e5282d2ed1f703edabb9fd0",
+      "inputManifestSha256": "sha256:fa95e457d3ee2411cd4ce0a283d7901c26c0390703c44c9cb127a436ffd19113",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -2728,12 +2792,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:3af096974b3cdae98462fda4f716f252f330290c11451093d8f50cb951bcf892",
+          "sha256": "sha256:dbe6e35e9ee164aef41262062f47b4427607814df9db5c98d4b93eadb6da526d",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:7948cd45c00a2c0b66d7a6cb51fbc0e614ddc9d948d2f744e4b8ded4ec3591ae",
+          "sha256": "sha256:2301e3071747b7ee2141f357540279af89f0b9dc53d03a55cba7a40634075892",
           "sizeBytes": 9412
         }
       ],
@@ -2788,7 +2852,7 @@
         },
         {
           "path": "contracts/generated/proto/manifest.json",
-          "sha256": "sha256:fe859cdabc2cd943e3e0b958c9f49242026b14d64b35a075c24b2c4cdd9a7d2c",
+          "sha256": "sha256:c39ab006206a3fd68ddfcd2d7ad68e6352275de4cbdec24bac68369ed46b5606",
           "sizeBytes": 5139
         }
       ],
@@ -2839,7 +2903,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/proto-generated-manifest.json",
-          "sha256": "sha256:51613a22545e75239dc724da2ed472a6ee87bd5286c39def53e3209bbc30e07f",
+          "sha256": "sha256:7eb2b43939c0dcc17d93cfbe248cd72d8c8426cb2adbcded43ff4b1109c3afe5",
           "sizeBytes": 7912
         },
         {
@@ -2919,7 +2983,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/proto-generated-manifest.json",
-          "sha256": "sha256:e592b33983e714f50b53ab448abe69507e9ba54f5091584d65aab85391c447c4",
+          "sha256": "sha256:63691f95005728147fb2f1ea6d47deae25e3a1e9cd7b916ee1e303bea5fb413f",
           "sizeBytes": 6913
         },
         {
@@ -3388,7 +3452,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:6c909883d4325c87f65fed1c65d2cfacde68b3d631fc09ca5b445ef9c06c00fe",
+      "inputManifestSha256": "sha256:7c762cbce8136d6b3d71265763ee4d420e0157e7065501d39975560fe907de53",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",
@@ -3412,7 +3476,6 @@
     }
   ],
   "missing": [
-    "json-schema-2020-12-official-test-suite",
     "runtime-server-path-and-tenant-authority-enforcement",
     "remaining-generator-supply-chain-review"
   ]

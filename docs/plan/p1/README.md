@@ -23,6 +23,8 @@
   [`ADR-0024`](../adr/0024-p1-software-crash-durability-acceptance.md)
 - Accepted offline identity-verifier boundary（仅授权 ordered local Slices A-C）：
   [`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md)
+- Accepted G-CONTRACT official-suite evidence boundary（candidate only；不声称 Ajv generic conformance）：
+  [`ADR-0026`](../adr/0026-p1-json-schema-official-suite-evidence-closure.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；

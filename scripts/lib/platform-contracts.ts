@@ -342,6 +342,18 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       instance: "../../../generated/platform/v1alpha1/contract-closure-profile-v1.json",
       expectedSchemaValid: true,
     },
+    {
+      name: "contract-closure-profile-source-v2",
+      schema: "../schemas/contract-closure-profile-source-v2.schema.json",
+      instance: "golden/contract-closure-profile-source-v2.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "contract-closure-profile-v2",
+      schema: "../schemas/contract-closure-profile-v2.schema.json",
+      instance: "../../../generated/platform/v1alpha1/contract-closure-profile-v2.json",
+      expectedSchemaValid: true,
+    },
   ],
 };
 

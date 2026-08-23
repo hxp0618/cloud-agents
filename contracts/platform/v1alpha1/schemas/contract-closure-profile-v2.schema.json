@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
+  "title": "ContractClosureProfileV2",
+  "description": "Generated digest-bound non-Gate G-CONTRACT closure profile registry v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "sourceDigest",
+    "predecessor",
+    "officialSuiteEvidence",
+    "profile",
+    "missing",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-closure-profile-registry/v2" },
+    "registryId": { "const": "cloud-agents/platform/contract-closure-profile" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "predecessor": {
+      "$ref": "contract-closure-profile-source-v2.schema.json#/properties/predecessor"
+    },
+    "officialSuiteEvidence": {
+      "$ref": "contract-closure-profile-source-v2.schema.json#/properties/officialSuiteEvidence"
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": { "$ref": "contract-closure-profile-source-v2.schema.json#/$defs/profile" }
+      }
+    },
+    "missing": {
+      "const": [
+        "runtime-server-path-and-tenant-authority-enforcement",
+        "remaining-generator-supply-chain-review"
+      ]
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "status": "BOOTSTRAP_VALIDATED",
+    "notGateClosure": true,
+    "ajvGenericConformanceClaim": false,
+    "gateStatus": "all_gates_open"
+  }
+}

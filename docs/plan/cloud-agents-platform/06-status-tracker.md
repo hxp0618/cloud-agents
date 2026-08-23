@@ -57,6 +57,7 @@
 | D-047 | Runner recovery 拆为 read-only admission + abort/reconcile/handoff/execution-admission/success-writer/failure profiles      | APPROVED | ADR-0023；2026-08-22 owner 批准 A-G；逐 slice 独立复核，Gate OPEN                       |
 | D-048 | P1/RC durability 接受无同步 bare-metal 软件崩溃替代物理硬断电；clean poweroff 仅算 lifecycle smoke                          | APPROVED | ADR-0024；2026-08-23 owner 明确批准；不声称物理 power-loss，不关闭 Gate                 |
 | D-049 | Offline JWT verifier profile + ordered Slices A-C                                                                           | APPROVED | A-C 均已独立批准；C `d6ae9c7` / review `aa83e37`；Gate OPEN                             |
+| D-050 | JSON Schema official-suite criterion 表示固定 corpus/authority evidence completeness；不声称 Ajv generic conformance        | APPROVED | ADR-0026；v2 candidate only；Ajv 1241/1299、58 non-passing；所有 Gate OPEN              |
 
 ## 2. 阶段追踪
 

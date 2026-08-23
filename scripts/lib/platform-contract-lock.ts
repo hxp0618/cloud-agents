@@ -15,6 +15,7 @@ import {
   buildContractClosureProfileRegistry,
   contractClosureProfileInputs,
   CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH,
+  CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH,
 } from "./platform-contract-closure-profile";
 import {
   assertCompatibilityRecoveryRegistryCurrent,
@@ -431,9 +432,14 @@ const IDENTITY_VERIFIER_GO_GENERATOR_SOURCES = [
 ] as const;
 const CONTRACT_CLOSURE_PROFILE_GENERATOR_SOURCES = [
   "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+  "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json",
   "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
   "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+  "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
+  "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
+  "docs/plan/adr/0026-p1-json-schema-official-suite-evidence-closure.md",
   "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
+  "docs/plan/p1/g-contract-r5-b2-official-suite-evidence-closure-20260824.md",
   "scripts/generate-platform-contract-closure-profile.ts",
   "scripts/lib/platform-contract-closure-profile.test.ts",
   "scripts/lib/platform-contract-closure-profile.ts",
@@ -817,6 +823,12 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const contractClosureRegistry = buildContractClosureProfileRegistry(root) as unknown as {
     readonly registryDigest: string;
     readonly missing: ReadonlyArray<string>;
+    readonly predecessor: Readonly<Record<string, string>>;
+    readonly officialSuiteEvidence: {
+      readonly independentOracle: Readonly<Record<string, number | string>>;
+      readonly productionAjvAudit: Readonly<Record<string, number | string | boolean>>;
+      readonly currentContractParity: Readonly<Record<string, number | string | boolean>>;
+    };
     readonly profile: {
       readonly profileDigest: string;
       readonly spec: { readonly profileId: string; readonly status: string };
@@ -996,7 +1008,8 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           status: ajvOfficialSuiteAudit.status,
           conformanceClaim: ajvOfficialSuiteAudit.conformanceClaim,
           ...ajvOfficialSuiteAudit.summary,
-          closureCriterion: "REMAINS_MISSING",
+          closureCriterion: "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
+          auditAloneConformanceEvidence: false,
           gateStatus: "ALL_GATES_OPEN",
         },
       },
@@ -1008,6 +1021,12 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         outputStatus: "GENERATED_CONTRACT_CLOSURE_PROFILE",
         notGateClosure: true,
         generatedOutputs: [
+          {
+            path: CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH,
+            sha256: fileSha256(root, CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH))
+              .byteLength,
+          },
           {
             path: CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH,
             sha256: fileSha256(root, CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH),
@@ -1021,7 +1040,14 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           status: contractClosureRegistry.profile.spec.status,
           missing: contractClosureRegistry.missing,
           manualMissingRemoval: "FORBIDDEN",
-          officialAjvSuiteRunner: "NOT_IMPLEMENTED",
+          predecessor: contractClosureRegistry.predecessor,
+          independentOracle: contractClosureRegistry.officialSuiteEvidence.independentOracle,
+          productionAjvAudit: contractClosureRegistry.officialSuiteEvidence.productionAjvAudit,
+          currentContractParity:
+            contractClosureRegistry.officialSuiteEvidence.currentContractParity,
+          contractManifestSha256: summary.contractManifestSha256,
+          officialSuiteCriterion: "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
+          ajvGenericConformanceClaim: false,
           runtimeTrustAndHttp: "NOT_IMPLEMENTED",
           supplyScanner: "NOT_IMPLEMENTED",
           productionDatabaseWrites: "NOT_AUTHORIZED",
@@ -1060,6 +1086,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
             cases: contractStandardsProfile.jsonSchemaOfficialSuite.cases,
             assertions: contractStandardsProfile.jsonSchemaOfficialSuite.assertions,
             expectedFailures: contractStandardsProfile.jsonSchemaOfficialSuite.expectedFailures,
+            closureCriterion: "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
           },
           productionAjvOfficialSuiteAudit:
             contractStandardsProfile.jsonSchemaOfficialSuite.productionAjvOfficialSuiteAudit,
@@ -2027,9 +2054,9 @@ function assertContractStandardsProfileCurrent(root: string): ContractStandardsP
     throw new Error("Contract standards official JSON Schema suite binding is stale.");
   }
   if (
-    profile.currentContracts.schemaFiles !== 56 ||
+    profile.currentContracts.schemaFiles !== 58 ||
     profile.currentContracts.fixtureManifests !== 2 ||
-    profile.currentContracts.fixtureCases !== 75 ||
+    profile.currentContracts.fixtureCases !== 77 ||
     profile.currentContracts.crossEngineExactFixtureResults !== true
   ) {
     throw new Error("Contract standards current-contract cardinalities are stale.");

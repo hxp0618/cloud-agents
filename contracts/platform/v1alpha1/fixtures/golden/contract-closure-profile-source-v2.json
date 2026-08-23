@@ -1,0 +1,189 @@
+{
+  "formatVersion": "cloud-agents-contract-closure-profile-source/v2",
+  "registryId": "cloud-agents/platform/contract-closure-profile",
+  "predecessor": {
+    "profileId": "contract-closure-profile/v1",
+    "predecessorMutation": "forbidden",
+    "sourceSha256": "sha256:411e4b649c5b812339817b5836c25a6a2f27c9aa0e24497b7aa65da8fe2baa49",
+    "sourceSchemaSha256": "sha256:8b87a0e24e42db87987a1dc1b4931b7ff2b8edef6bef6ccd184e0586a7bdc4af",
+    "outputSchemaSha256": "sha256:107dbc21f240cd912f567ef1e0a6bfaf78d2e6171f0f4189ca9812c225630bc0",
+    "generatedRegistrySha256": "sha256:823e9356342511b611538fb669e8af99962555b153324d09c7208f3f00b51e68"
+  },
+  "officialSuiteEvidence": {
+    "criterionMeaning": "fixed_corpus_and_authority_evidence_complete",
+    "independentOracle": {
+      "validator": "jsonschema-rs 0.50.1",
+      "files": 46,
+      "cases": 383,
+      "assertions": 1299,
+      "passedAssertions": 1299,
+      "remotes": 79,
+      "failures": 0
+    },
+    "productionAjvAudit": {
+      "validator": "Ajv 8.20.0",
+      "status": "EXECUTED_NONCONFORMANT",
+      "conformanceClaim": false,
+      "assertions": 1299,
+      "passedAssertions": 1241,
+      "nonPassingAssertions": 58,
+      "normalReplay": "exact",
+      "requireConformance": "nonzero"
+    },
+    "currentContractParity": {
+      "schemaFiles": 58,
+      "fixtureManifests": 2,
+      "fixtureCases": 77,
+      "productionValidator": "Ajv 8.20.0 plus in-repo semantics",
+      "independentValidator": "jsonschema-rs 0.50.1",
+      "crossEngineExactFixtureResults": true
+    }
+  },
+  "profile": {
+    "profileId": "contract-closure-profile/v2",
+    "status": "BOOTSTRAP_VALIDATED",
+    "notGateClosure": true,
+    "derivation": {
+      "lockMissing": "criteria_status_not_satisfied_candidate",
+      "manualRemoval": "forbidden"
+    },
+    "criteria": [
+      {
+        "id": "json-schema-2020-12-official-test-suite",
+        "status": "SATISFIED_CANDIDATE",
+        "authorityPaths": [
+          "docs/plan/adr/0026-p1-json-schema-official-suite-evidence-closure.md",
+          "tools/contract-standards/profile.json",
+          "tools/contract-standards/vendor/json-schema-test-suite"
+        ],
+        "evidencePaths": [
+          "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
+          "contracts/platform/v1alpha1/schemas/ajv-official-suite-audit-source-v1.schema.json",
+          "contracts/platform/v1alpha1/schemas/ajv-official-suite-audit-v1.schema.json",
+          "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
+          "scripts/check-platform-ajv-official-suite.ts",
+          "scripts/lib/platform-ajv-official-suite.ts",
+          "scripts/lib/platform-ajv-official-suite.test.ts",
+          "docs/plan/p1/g-contract-r5-b1-ajv-official-suite-audit-20260824.md",
+          "tools/contract-standards/check_contract_standards.py",
+          "tools/contract-standards/test_contract_standards.py"
+        ],
+        "review": {
+          "path": "docs/plan/p1/g-contract-r5-b1-ajv-official-suite-audit-independent-review-20260824.md",
+          "sha256": "sha256:01b5c410879be0230e9a975a34c64242835905729adc413feed98b0d519413bb",
+          "verdict": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      },
+      {
+        "id": "openapi-3.1-semantic-validation",
+        "status": "SATISFIED_CANDIDATE",
+        "authorityPaths": [
+          "contracts/managed-agent/v1alpha1/openapi.json",
+          "contracts/managed-host/v1alpha1/openapi.json",
+          "tools/contract-standards/check_contract_standards.py"
+        ],
+        "evidencePaths": [
+          "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md"
+        ],
+        "review": {
+          "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+          "sha256": "sha256:f0d5b12f1f6e0f2936783868331d4d74d7a3ee0fc49b3e370894b95884458f61",
+          "verdict": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      },
+      {
+        "id": "generated-sdk-replay",
+        "status": "SATISFIED_CANDIDATE",
+        "authorityPaths": [
+          "contracts/proto-generation.profile.json",
+          "scripts/generate-platform-identity-sdks.ts",
+          "scripts/generate-platform-json-sdks.ts",
+          "scripts/generate-platform-proto-sdks.ts"
+        ],
+        "evidencePaths": [
+          "scripts/test-platform-sdk-consumers.ts",
+          "docs/plan/p1/sdk-proto-consumer-closure-20260821.md"
+        ],
+        "review": {
+          "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+          "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+          "verdict": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      },
+      {
+        "id": "n-minus-one-compatibility",
+        "status": "SATISFIED_CANDIDATE",
+        "authorityPaths": [
+          "scripts/lib/platform-json-sdk.ts",
+          "scripts/lib/platform-json-sdk.test.ts",
+          "scripts/lib/platform-proto-sdk.ts",
+          "scripts/lib/platform-proto-sdk.test.ts",
+          "contracts/proto-generation.profile.json"
+        ],
+        "evidencePaths": [
+          "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+          "sdk/typescript/src/platform.test.ts",
+          "sdk/go/proto_conformance_test.go",
+          "sdk/typescript/src/proto.test.ts"
+        ],
+        "review": {
+          "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+          "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+          "verdict": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      },
+      {
+        "id": "response-watch-unknown-field-preservation",
+        "status": "SATISFIED_CANDIDATE",
+        "authorityPaths": ["scripts/lib/platform-json-sdk.ts", "scripts/lib/platform-proto-sdk.ts"],
+        "evidencePaths": [
+          "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+          "sdk/typescript/src/platform.test.ts",
+          "sdk/go/proto_conformance_test.go",
+          "sdk/typescript/src/proto.test.ts"
+        ],
+        "review": {
+          "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+          "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+          "verdict": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      },
+      {
+        "id": "runtime-server-path-and-tenant-authority-enforcement",
+        "status": "MISSING",
+        "authorityPaths": [
+          "docs/plan/adr/0007-p1-contract-data-toolchain-foundation.md",
+          "services/control-plane/internal/authn/verifier.go"
+        ],
+        "evidencePaths": [
+          "docs/plan/p1/identity-verifier-authz-binder-independent-review-20260824.md"
+        ],
+        "reason": "Offline verifier and typed binder evidence does not implement production trust provisioning or HTTP/server path enforcement."
+      },
+      {
+        "id": "remaining-generator-supply-chain-review",
+        "status": "MISSING",
+        "authorityPaths": [
+          "package.json",
+          "bun.lock",
+          "tools/contract-standards/uv.lock",
+          "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md"
+        ],
+        "evidencePaths": [
+          "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md"
+        ],
+        "reason": "No current vulnerability scan, all-platform executable and wheel closure, or immutable generator supply-chain signature exists."
+      }
+    ],
+    "implementationBoundary": {
+      "officialAjvSuiteAudit": "executed_nonconformant",
+      "ajvGenericConformanceClaim": false,
+      "runtimeTrustAndHttp": "not_implemented",
+      "supplyScanner": "not_implemented",
+      "productionDatabaseWrites": "not_authorized",
+      "deployment": "not_authorized",
+      "publication": "not_authorized",
+      "gateStatus": "all_gates_open"
+    }
+  }
+}
