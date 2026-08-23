@@ -58,5 +58,6 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
 - [`CAG-G-DATA-P1-20260823-R1`](G-DATA/CAG-G-DATA-P1-20260823-R1.md)：first current-source G-DATA
   candidate；固定 Baseline R4、reviewed G-CONTRACT R4、当前十二条 migration，并只继承 exact retirement
   control-plane 与 ADR-0023 Slice G migration subtrees；旧 EvidenceSink/catalog/quota records 仅作 historical
-  support。状态为 `IN PROGRESS`、reviewer `PENDING`；expand/backfill/cutover/contract、deployed N/N-1、PITR
+  support。[Independent review](G-DATA/CAG-G-DATA-P1-20260823-R1-independent-review.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`。状态仍为 `IN PROGRESS`；expand/backfill/cutover/contract、deployed N/N-1、PITR
   preflight 与 current filesystem Done 均保持 open，Gate effect 为 none。

@@ -240,8 +240,9 @@
   Baseline R4、reviewed G-CONTRACT R4 与十二条 migration 显式绑定；只继承 exact retirement control-plane 和
   ADR-0023 Slice G migration subtrees，旧 EvidenceSink/catalog/quota records 仅作 historical support。fresh
   validator/Bash/no-ORM/public lineage+numbering+schema-authority/manifest-shape checks PASS。由于全部 migration 仍是
-  `expand`、PITR/live preflight flags 全为 false，deployed N/N-1 与 filesystem Done 均未完成，candidate 保持
-  `IN PROGRESS`、reviewer `PENDING`、Gate effect none。
+  `expand`、PITR/live preflight flags 全为 false，deployed N/N-1 与 filesystem Done 均未完成，candidate 的
+  [independent review](../cloud-agents-platform/evidence/G-DATA/CAG-G-DATA-P1-20260823-R1-independent-review.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`，但状态仍为 `IN PROGRESS`、Gate effect none。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
