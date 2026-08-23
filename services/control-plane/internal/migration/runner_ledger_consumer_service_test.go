@@ -109,6 +109,32 @@ func TestRunnerLedgerConsumerServiceCoversGeneratedMatrix(t *testing.T) {
 				}
 				return
 			}
+			if action, ok := generatedRunnerLedgerRecoveryAdmissionAction(test.disposition, test.state, test.action); ok &&
+				action == generatedRunnerLedgerRecoveryProfiles[4].action {
+				fixture := runnerLedgerRetryHandoffOutcomeCases()[0].open(t)
+				defer fixture.close()
+				configureRunnerLedgerRetryHandoffAncestor(t, fixture.evidence)
+				rows := runnerLedgerRetryHandoffDatabaseRows(fixture.bundle)
+				preflight := runnerLedgerRetryHandoffDatabaseSession(rows, 2)
+				admission := runnerLedgerRetryHandoffDatabaseSession(rows, 8)
+				sequence := &runnerLedgerConsumerSequenceConnector{sessions: []*runnerPreflightSession{preflight, admission}}
+				fixture.runner.Connector = sequence
+				oldCursor := fixture.evidence.RecoverySnapshot().cursor.clone()
+				step, err := fixture.runner.consumeRunnerLedgerPreflightStep(
+					context.Background(), "test-only", fixture.bundle, fixture.plans, fixture.evidence, fixture.candidate,
+				)
+				counts[test.wantAction]++
+				assertRunnerLedgerConsumerNotImplemented(t, RunResult{}, err, "runner-ledger-consumer-recovery")
+				if !reflect.DeepEqual(step, runnerLedgerPreflightStep{}) || sequence.attempts != 2 ||
+					fixture.evidence.retryHandoffBindCalls != 1 || oldCursor.Valid() ||
+					!preflight.closed || !admission.closed || preflight.unlockCalls != 1 || admission.unlockCalls != 1 ||
+					preflight.beginCalls != 0 || admission.beginCalls != 0 ||
+					preflight.backend.executeCalls != 0 || admission.backend.executeCalls != 0 ||
+					preflight.backend.ledgerInsertCalls != 0 || admission.backend.ledgerInsertCalls != 0 {
+					t.Fatalf("retry-handoff consumer matrix escaped its boundary: step=%+v sequence=%+v preflight=%+v admission=%+v", step, sequence, preflight, admission)
+				}
+				return
+			}
 			fixture := newRunnerLedgerPreflightServiceFixture(t)
 			defer fixture.close(t)
 			fixture.configure(t, test.disposition, test.state, test.action, 16)

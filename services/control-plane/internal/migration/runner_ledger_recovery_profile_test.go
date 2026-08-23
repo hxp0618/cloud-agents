@@ -192,6 +192,7 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 			"runner_ledger_recovery_admission_claim.go":       true,
 			"runner_ledger_recovery_admission_permit.go":      true,
 			"runner_ledger_recovery_commit_reconciliation.go": true,
+			"runner_ledger_recovery_retry_handoff.go":         true,
 		},
 		"generatedRunnerLedgerRecoveryAdmissionAction": {
 			"runner_ledger_consumer_service.go":          true,
@@ -214,7 +215,8 @@ func TestRunnerLedgerRecoveryProfilesHaveOnlyApprovedConsumersAndNoExternalSideE
 		}
 		if name == "runner_ledger_recovery_profile.go" || name == "runner_ledger_recovery_profile_generated.go" ||
 			name == "runner_ledger_recovery_abort_terminal.go" || name == "runner_ledger_recovery_admission_claim.go" ||
-			name == "runner_ledger_recovery_admission_permit.go" || name == "runner_ledger_recovery_commit_reconciliation.go" {
+			name == "runner_ledger_recovery_admission_permit.go" || name == "runner_ledger_recovery_commit_reconciliation.go" ||
+			name == "runner_ledger_recovery_retry_handoff.go" {
 			for _, imported := range file.Imports {
 				path := strings.Trim(imported.Path.Value, `"`)
 				if path == "database/sql" || path == "net/http" || strings.Contains(path, "pgx") {
@@ -270,6 +272,8 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 	abortWriterCalls := 0
 	commitObservationWriterCalls := 0
 	ambiguousResolutionWriterCalls := 0
+	retryHandoffCalls := 0
+	successorCalls := 0
 	forbidden := map[string]bool{
 		"Append": true, "AppendDurable": true, "AppendGenerationSuperseded": true,
 		"AppendGenerationReserved": true, "AppendGenerationActivated": true,
@@ -315,9 +319,22 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 					t.Errorf("ambiguous-resolution writer has production caller in %s", name)
 				}
 			}
+			if ok && selector.Sel.Name == "prepareRunnerLedgerRetryHandoff" {
+				retryHandoffCalls++
+				if name != "runner_ledger_recovery_admission_permit.go" {
+					t.Errorf("retry-handoff service has production caller in %s", name)
+				}
+			}
+			if ok && selector.Sel.Name == "ReserveAndActivateSuccessor" {
+				successorCalls++
+				if name != "runner_ledger_recovery_retry_handoff.go" {
+					t.Errorf("successor-generation transition has recovery caller in %s", name)
+				}
+			}
 			return true
 		})
-		if name != "runner_ledger_recovery_admission_claim.go" && name != "runner_ledger_recovery_admission_permit.go" && name != "evidence_session.go" {
+		if name != "runner_ledger_recovery_admission_claim.go" && name != "runner_ledger_recovery_admission_permit.go" &&
+			name != "runner_ledger_recovery_retry_handoff.go" && name != "evidence_session.go" {
 			continue
 		}
 		for _, declaration := range file.Decls {
@@ -342,7 +359,8 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 				case *ast.SelectorExpr:
 					called = value.Sel.Name
 				}
-				if forbidden[called] {
+				if forbidden[called] && !(name == "runner_ledger_recovery_retry_handoff.go" &&
+					function.Name.Name == "bindRunnerLedgerRetryHandoff" && called == "ReserveAndActivateSuccessor") {
 					t.Errorf("%s.%s acquired forbidden writer edge %s", name, function.Name.Name, called)
 				}
 				return true
@@ -357,5 +375,8 @@ func TestRunnerLedgerRecoveryAdmissionProductionGraphHasOnlyApprovedWriterEdges(
 	}
 	if commitObservationWriterCalls != 1 || ambiguousResolutionWriterCalls != 1 {
 		t.Fatalf("reconciliation writer production calls=%d/%d want=1/1", commitObservationWriterCalls, ambiguousResolutionWriterCalls)
+	}
+	if retryHandoffCalls != 1 || successorCalls != 1 {
+		t.Fatalf("retry-handoff production calls=%d successor transitions=%d want=1/1", retryHandoffCalls, successorCalls)
 	}
 }

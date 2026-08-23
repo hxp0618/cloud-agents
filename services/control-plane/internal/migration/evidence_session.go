@@ -1636,8 +1636,8 @@ func (s *generationEvidenceSession) bindRunnerLedgerPreflightClaim(ctx context.C
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.validLocked() || s.candidate.binding != request.candidate.binding || s.active.kind != activeGenerationCurrent {
-		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "current same-verifier evidence session is unavailable", nil)
+	if !s.validLocked() || s.candidate.binding != request.candidate.binding {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "same-verifier evidence session is unavailable", nil)
 	}
 	j := s.journal
 	j.mu.Lock()
@@ -1645,8 +1645,13 @@ func (s *generationEvidenceSession) bindRunnerLedgerPreflightClaim(ctx context.C
 	if !j.validLocked() || j.state == nil || j.state.unknown != nil || j.state.recovery == nil {
 		return nil, fail(CodeEvidenceJournalFailed, "runner-ledger-preflight-evidence", "current evidence journal has no stable recovery boundary", nil)
 	}
+	activeKind, executionDigest, ok := runnerLedgerPreflightActiveIdentity(s.active, j.state.recovery, s.candidate)
+	if !ok {
+		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "active generation cannot enter the selected preflight", nil)
+	}
 	facts := runnerLedgerPreflightEvidenceFacts{
 		binder: s, candidateBinding: s.candidate.binding, generation: j.generation,
+		activeKind: activeKind, executionDigest: executionDigest,
 		schema: cloneGenerationJournalSchema(j.schema), recovery: cloneRecoverySnapshot(j.state.recovery),
 		schemaDigest:   generationJournalSchemaDigest(j.schema, j.generation),
 		recoveryDigest: generationJournalRecoveryDigest(j.state.recovery),
@@ -1664,8 +1669,8 @@ func (s *generationEvidenceSession) consumeRunnerLedgerPreflightClaim(ctx contex
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.validLocked() || s.candidate.binding != candidate.binding || s.active.kind != activeGenerationCurrent {
-		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "current same-verifier evidence session is unavailable", nil)
+	if !s.validLocked() || s.candidate.binding != candidate.binding {
+		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "same-verifier evidence session is unavailable", nil)
 	}
 	j := s.journal
 	j.mu.Lock()
@@ -1674,8 +1679,14 @@ func (s *generationEvidenceSession) consumeRunnerLedgerPreflightClaim(ctx contex
 		revokeRunnerLedgerPreflightClaim(claim)
 		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceJournalFailed, "runner-ledger-preflight-evidence", "current evidence journal has no stable recovery boundary", nil)
 	}
+	activeKind, executionDigest, ok := runnerLedgerPreflightActiveIdentity(s.active, j.state.recovery, s.candidate)
+	if !ok {
+		revokeRunnerLedgerPreflightClaim(claim)
+		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-evidence", "active generation cannot enter the selected preflight", nil)
+	}
 	facts := runnerLedgerPreflightEvidenceFacts{
 		binder: s, candidateBinding: s.candidate.binding, generation: j.generation,
+		activeKind: activeKind, executionDigest: executionDigest,
 		schema: cloneGenerationJournalSchema(j.schema), recovery: cloneRecoverySnapshot(j.state.recovery),
 		schemaDigest:   generationJournalSchemaDigest(j.schema, j.generation),
 		recoveryDigest: generationJournalRecoveryDigest(j.state.recovery),

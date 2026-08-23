@@ -67,6 +67,8 @@ type runnerLedgerPreflightEvidenceFacts struct {
 	binder           runnerLedgerPreflightClaimBinder
 	candidateBinding *verifiedEvidenceRunBinding
 	generation       generationIdentity
+	activeKind       activeGenerationKind
+	executionDigest  Digest
 	schema           verifiedRecoverySchemaWitness
 	recovery         *RecoverySnapshot
 	schemaDigest     [32]byte
@@ -83,6 +85,8 @@ type runnerLedgerPreflightClaim struct {
 	binding                 *runnerLedgerPreflightClaimBinding
 	candidateBinding        *verifiedEvidenceRunBinding
 	generation              generationIdentity
+	activeKind              activeGenerationKind
+	executionDigest         Digest
 	projectionSubjectDigest Digest
 	schemaDigest            [32]byte
 	recoveryDigest          [32]byte
@@ -128,7 +132,9 @@ func (runner *Runner) prepareRunnerLedgerPreflightClaim(ctx context.Context, dsn
 	if err != nil {
 		return nil, err
 	}
-	if hint == nil {
+	if hint == nil && runnerLedgerRetryHandoffEvidenceSession(evidence, candidate, snapshot) {
+		projection, err = runner.projectRunnerLedgerRetryHandoffPreflight(ctx, dsn, bundle, plans, evidence, candidate)
+	} else if hint == nil {
 		projection, err = runner.projectRunnerLedgerCatalogPreflight(ctx, dsn, bundle, plans, evidence, candidate)
 	} else {
 		projection, err = runner.projectRunnerLedgerReconciliationPreflight(ctx, dsn, bundle, plans, evidence, candidate, hint)
@@ -172,15 +178,16 @@ func bindRunnerLedgerPreflightClaimFromEvidence(ctx context.Context, request run
 	if err := contextAdmissionError(ctx); err != nil {
 		return nil, err
 	}
-	if !validOwnedCurrentCandidate(request.candidate) || !validRunnerLedgerPreflightEvidenceFacts(facts, request.candidate.binding) {
+	if !validRunnerLedgerPreflightEvidenceFacts(facts, request.candidate) {
 		return nil, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-bind", "same-verifier evidence facts are unavailable", nil)
 	}
-	dispatch, err := buildRunnerLedgerPreflightDispatch(request.projection, facts)
+	dispatch, err := buildRunnerLedgerPreflightDispatch(request.projection, facts, request.candidate)
 	if err != nil {
 		return nil, err
 	}
 	claim := &runnerLedgerPreflightClaim{
 		candidateBinding: request.candidate.binding, generation: facts.generation,
+		activeKind: facts.activeKind, executionDigest: facts.executionDigest,
 		projectionSubjectDigest: request.projection.subjectDigest,
 		schemaDigest:            facts.schemaDigest, recoveryDigest: facts.recoveryDigest,
 		sessionDigest: facts.sessionDigest, journalDigest: facts.journalDigest,
@@ -219,7 +226,7 @@ func consumeRunnerLedgerPreflightClaimFromEvidence(ctx context.Context, claim *r
 	if err := contextAdmissionError(ctx); err != nil {
 		return runnerLedgerPreflightDispatch{}, err
 	}
-	if !validOwnedCurrentCandidate(candidate) || !validRunnerLedgerPreflightEvidenceFacts(facts, candidate.binding) {
+	if !validRunnerLedgerPreflightEvidenceFacts(facts, candidate) {
 		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-claim", "typed preflight claim is unavailable or changed", nil)
 	}
 	if !validRunnerLedgerPreflightClaim(claim, facts.binder, candidate.binding) {
@@ -231,7 +238,8 @@ func consumeRunnerLedgerPreflightClaimFromEvidence(ctx context.Context, claim *r
 		}
 		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-claim", "typed preflight claim is unavailable or changed", nil)
 	}
-	if !sameGenerationIdentity(claim.generation, facts.generation) || claim.schemaDigest != facts.schemaDigest ||
+	if !sameGenerationIdentity(claim.generation, facts.generation) || claim.activeKind != facts.activeKind ||
+		claim.executionDigest != facts.executionDigest || claim.schemaDigest != facts.schemaDigest ||
 		claim.recoveryDigest != facts.recoveryDigest || claim.sessionDigest != facts.sessionDigest ||
 		claim.journalDigest != facts.journalDigest {
 		revokeRunnerLedgerPreflightClaim(claim)
@@ -250,12 +258,9 @@ func consumeRunnerLedgerPreflightClaimFromEvidence(ctx context.Context, claim *r
 	return dispatch, nil
 }
 
-func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight, facts runnerLedgerPreflightEvidenceFacts) (runnerLedgerPreflightDispatch, error) {
-	if !validRunnerLedgerCatalogPreflight(projection) || !validRunnerLedgerPreflightEvidenceFacts(facts, facts.candidateBinding) ||
-		projection.schemaBundleDigest != facts.generation.schemaBundleDigest ||
-		projection.executionLineageDigest != facts.generation.executionLineageDigest ||
-		projection.runnerProjectionDecisionDigest != facts.generation.runnerProjectionDecisionDigest ||
-		uint64(projection.migrationCount) != uint64(len(facts.schema.signedExpectedLedgerRows)) ||
+func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight, facts runnerLedgerPreflightEvidenceFacts, candidate OwnedCurrentCandidate) (runnerLedgerPreflightDispatch, error) {
+	if !validRunnerLedgerCatalogPreflight(projection) || !validRunnerLedgerPreflightEvidenceFacts(facts, candidate) ||
+		!runnerLedgerPreflightProjectionMatchesEvidence(projection, facts, candidate) ||
 		len(facts.schema.orderedMigrations) != len(facts.schema.signedExpectedLedgerRows) {
 		return runnerLedgerPreflightDispatch{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-preflight-bind", "projection and evidence describe different verified runtime identities", nil)
 	}
@@ -286,6 +291,8 @@ func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight
 	var nextEntry *runnerLedgerPreflightNextEntry
 	var kind runnerLedgerPreflightDispatchKind
 	if projection.reconciliation != nil {
+		disposition, kind = runnerLedgerPreflightPartialRetryOrRecovery, runnerLedgerPreflightDispatchRecovery
+	} else if facts.activeKind == activeGenerationAncestorRecovery && recovery.state == RecoveryTerminal && recovery.nextPermittedAction == RecoveryBeginNextAttempt {
 		disposition, kind = runnerLedgerPreflightPartialRetryOrRecovery, runnerLedgerPreflightDispatchRecovery
 	} else {
 		switch projection.state {
@@ -334,8 +341,12 @@ func buildRunnerLedgerPreflightDispatch(projection *runnerLedgerCatalogPreflight
 		}
 		factCatalogSubject = projection.reconciliation.predecessorProjectionSubject
 	}
+	factSchemaBundleDigest := projection.schemaBundleDigest
+	if facts.activeKind == activeGenerationAncestorRecovery {
+		factSchemaBundleDigest = facts.generation.schemaBundleDigest
+	}
 	fact, err := bindRunnerLedgerPreflightFact(generatedRunnerLedgerPreflightProfile, disposition, runnerLedgerPreflightFactInput{
-		SchemaBundleDigest: projection.schemaBundleDigest, ExecutionLineageDigest: projection.executionLineageDigest,
+		SchemaBundleDigest: factSchemaBundleDigest, ExecutionLineageDigest: projection.executionLineageDigest,
 		OrderedMigrationPrefixDigest: factLedger.digest, OrderedMigrationPrefixLength: uint32(len(factLedger.rows)),
 		OrderedMigrationPrefixHead:       cloneStringPointerIfNonEmpty(factLedger.head),
 		LastAppliedCatalogContractDigest: factCatalogSubject,
@@ -462,10 +473,26 @@ func validateRunnerLedgerPreflightFinalCatalog(projection *runnerLedgerCatalogPr
 	return nil
 }
 
-func validRunnerLedgerPreflightEvidenceFacts(facts runnerLedgerPreflightEvidenceFacts, candidateBinding *verifiedEvidenceRunBinding) bool {
-	return facts.binder != nil && runnerOwnedPointer(facts.binder) && candidateBinding != nil && facts.candidateBinding == candidateBinding &&
-		facts.generation.owner != nil && facts.generation.owner == candidateBinding.owner &&
-		facts.schemaDigest != ([32]byte{}) && facts.schemaDigest == generationJournalSchemaDigest(facts.schema, facts.generation) &&
+func validRunnerLedgerPreflightEvidenceFacts(facts runnerLedgerPreflightEvidenceFacts, candidate OwnedCurrentCandidate) bool {
+	if facts.binder == nil || !runnerOwnedPointer(facts.binder) || !validOwnedCurrentCandidate(candidate) ||
+		facts.candidateBinding != candidate.binding || facts.generation.owner == nil || facts.generation.owner != candidate.owner ||
+		facts.generation.executionLineageDigest != candidate.verifiedRun.executionLineageDigest {
+		return false
+	}
+	switch facts.activeKind {
+	case activeGenerationCurrent:
+		if facts.executionDigest != "" || facts.generation.runnerProjectionDecisionDigest != candidate.verifiedRun.runnerProjectionDecisionDigest ||
+			facts.generation.schemaBundleDigest != candidate.verifiedRun.schemaBundleDigest {
+			return false
+		}
+	case activeGenerationAncestorRecovery:
+		if facts.executionDigest.Validate() != nil || facts.generation.runnerProjectionDecisionDigest == candidate.verifiedRun.runnerProjectionDecisionDigest {
+			return false
+		}
+	default:
+		return false
+	}
+	return facts.schemaDigest != ([32]byte{}) && facts.schemaDigest == generationJournalSchemaDigest(facts.schema, facts.generation) &&
 		facts.recovery != nil && validRecoverySnapshotForJournal(facts.recovery, facts.generation, facts.recovery.cursor) &&
 		facts.recoveryDigest != ([32]byte{}) && facts.recoveryDigest == generationJournalRecoveryDigest(facts.recovery) &&
 		facts.sessionDigest != ([32]byte{}) && facts.journalDigest != ([32]byte{})
@@ -548,6 +575,13 @@ func runnerLedgerPreflightClaimDigest(claim *runnerLedgerPreflightClaim) [32]byt
 		claim.generation.owner == nil || claim.generation.owner != claim.candidateBinding.owner {
 		return [32]byte{}
 	}
+	if claim.activeKind == activeGenerationCurrent {
+		if claim.executionDigest != "" {
+			return [32]byte{}
+		}
+	} else if claim.activeKind != activeGenerationAncestorRecovery || claim.executionDigest.Validate() != nil {
+		return [32]byte{}
+	}
 	h := sha256.New()
 	h.Write([]byte(runnerLedgerPreflightClaimDigestDomain + "\x00"))
 	h.Write(claim.candidateBinding.canonical[:])
@@ -561,6 +595,8 @@ func runnerLedgerPreflightClaimDigest(claim *runnerLedgerPreflightClaim) [32]byt
 		}
 		writeAdmissionString(h, value.String())
 	}
+	writeAdmissionString(h, string(claim.activeKind))
+	writeAdmissionString(h, claim.executionDigest.String())
 	h.Write(claim.schemaDigest[:])
 	h.Write(claim.recoveryDigest[:])
 	h.Write(claim.sessionDigest[:])

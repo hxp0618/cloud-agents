@@ -1274,7 +1274,7 @@
     {
       "id": "runner-ledger-recovery-go-profile-suite-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:0993e3131bb3c7db0390bb0d3d8fada01395a08861afd387deb14034d596fedb",
+      "inputManifestSha256": "sha256:eeb198248c6bfeb6af1689a91eca852261f06cb601e2b8bcd340dff7f35747a0",
       "inputs": [
         "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
         "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",

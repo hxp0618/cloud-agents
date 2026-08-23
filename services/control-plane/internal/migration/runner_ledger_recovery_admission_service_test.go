@@ -124,6 +124,38 @@ func TestRunnerLedgerRecoveryAdmissionAcceptsExactlyTwelveGeneratedPairs(t *test
 				}
 				return
 			}
+			if pair.profileAction == generatedRunnerLedgerRecoveryProfiles[4].action {
+				fixture := runnerLedgerRetryHandoffOutcomeCases()[0].open(t)
+				defer fixture.close()
+				configureRunnerLedgerRetryHandoffAncestor(t, fixture.evidence)
+				fact, preflight := prepareRunnerLedgerRetryHandoffFactFixture(t, fixture)
+				rows := runnerLedgerRetryHandoffDatabaseRows(fixture.bundle)
+				database := runnerLedgerRetryHandoffDatabaseSession(rows, 4)
+				fixture.runner.Connector = &runnerPreflightConnector{session: database}
+				permit, err := fixture.runner.prepareRunnerLedgerRecoveryAdmission(
+					context.Background(), "test-only", fixture.bundle, fixture.plans, fixture.evidence, fixture.candidate, fact,
+				)
+				core := runnerLedgerRecoveryPermitCore(permit)
+				if err != nil || !validRunnerLedgerRecoveryAdmissionPermit(permit) || core == nil ||
+					core.action != pair.profileAction || core.selection.action != pair.profileAction ||
+					core.selection.planCount == 0 || core.selection.planDigest == ([32]byte{}) ||
+					core.selection.maxAttempts == 0 || core.selection.attemptIndex == 0 {
+					t.Fatalf("retry-handoff permit=%T core=%+v err=%v", permit, core, err)
+				}
+				assertRunnerLedgerRecoveryPermitType(t, permit, pair.profileAction)
+				counts[pair.profileAction]++
+				if err := permit.closeWithoutMutation(nil); err != nil {
+					t.Fatal(err)
+				}
+				if !preflight.closed || preflight.unlockCalls != 1 || preflight.closeCalls != 1 ||
+					!database.closed || database.unlockCalls != 1 || database.closeCalls != 1 ||
+					database.beginCalls != 0 || database.backend.executeCalls != 0 ||
+					database.backend.ledgerInsertCalls != 0 || database.backend.commitCalls != 0 ||
+					fixture.evidence.retryHandoffBindCalls != 0 {
+					t.Fatalf("retry-handoff admission escaped close-only boundary: preflight=%+v admission=%+v", preflight, database)
+				}
+				return
+			}
 			fixture := newRunnerLedgerRecoveryAdmissionFixture(t, pair.disposition, pair.state, pair.action)
 			defer fixture.close(t)
 			permit, err := fixture.prepare(context.Background())

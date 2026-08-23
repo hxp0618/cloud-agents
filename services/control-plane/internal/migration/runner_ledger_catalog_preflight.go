@@ -116,20 +116,51 @@ func (runner *Runner) projectRunnerLedgerCatalogPreflight(ctx context.Context, d
 	return observation.bind()
 }
 
+// projectRunnerLedgerRetryHandoffPreflight is the only read-only database
+// projection that accepts an ancestor-recovery evidence session. The database
+// and bundle are projected with the exact current candidate bindings; the old
+// generation identity remains separately bound by the recovery claim and can
+// only reach the generated retry-handoff action.
+func (runner *Runner) projectRunnerLedgerRetryHandoffPreflight(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLedgerCatalogPreflight, error) {
+	observation, err := runner.openRunnerLockedLedgerCatalogObservationForRetryHandoff(ctx, dsn, bundle, plans, evidence, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if err := observation.close(nil); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, mapRunnerDatabasePreflightError(err, "runner-ledger-retry-handoff-preflight", "retry handoff preflight was interrupted before sealing")
+	}
+	return observation.bind()
+}
+
 func (runner *Runner) openRunnerLockedLedgerCatalogObservation(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLockedLedgerCatalogObservation, error) {
 	return runner.openRunnerLockedLedgerCatalogObservationWithReconciliation(ctx, dsn, bundle, plans, evidence, candidate, nil)
 }
 
 func (runner *Runner) openRunnerLockedLedgerCatalogObservationWithReconciliation(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate, hint *runnerLedgerReconciliationHint) (*runnerLockedLedgerCatalogObservation, error) {
+	bindings, err := runnerCurrentProjectionBindings(evidence, candidate)
+	if err != nil {
+		return nil, err
+	}
+	return runner.openRunnerLockedLedgerCatalogObservationWithBindings(ctx, dsn, bundle, plans, candidate, bindings, hint)
+}
+
+func (runner *Runner) openRunnerLockedLedgerCatalogObservationForRetryHandoff(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, evidence EvidenceSession, candidate OwnedCurrentCandidate) (*runnerLockedLedgerCatalogObservation, error) {
+	bindings, err := runnerLedgerRetryHandoffProjectionBindings(evidence, candidate)
+	if err != nil {
+		return nil, err
+	}
+	return runner.openRunnerLockedLedgerCatalogObservationWithBindings(ctx, dsn, bundle, plans, candidate, bindings, nil)
+}
+
+func (runner *Runner) openRunnerLockedLedgerCatalogObservationWithBindings(ctx context.Context, dsn string, bundle *RuntimeBundle, plans []StatementPlan, candidate OwnedCurrentCandidate, bindings RunnerProjectionBindings, hint *runnerLedgerReconciliationHint) (*runnerLockedLedgerCatalogObservation, error) {
 	if runner == nil || ctx == nil {
 		return nil, fail(CodeTransactionBoundary, "runner-ledger-catalog-preflight", "runner or projection context is unavailable", nil)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, mapRunnerDatabasePreflightError(err, "runner-ledger-catalog-preflight", "ledger catalog preflight was interrupted")
-	}
-	bindings, err := runnerCurrentProjectionBindings(evidence, candidate)
-	if err != nil {
-		return nil, err
 	}
 	if err := bindings.validateAt(time.Now()); err != nil {
 		return nil, err

@@ -58,6 +58,9 @@ type runnerLedgerPreflightEvidenceFake struct {
 	reconciliationNoRecord        bool
 	mutateReconciliationRecord    func(*EvidenceRecord)
 	mutateReconciliationAuthority func(*JournalCursor, *OwnedEvidenceRecord)
+	retryHandoffBindErr           error
+	retryHandoffBindCalls         int
+	mutateRetryHandoffResult      func(*ActiveGeneration, *RecoverySnapshot)
 }
 
 var _ runnerLedgerPreflightClaimBinder = (*generationEvidenceSession)(nil)
@@ -158,8 +161,13 @@ func (evidence *runnerLedgerPreflightEvidenceFake) consumeRunnerLedgerPreflightC
 
 func (evidence *runnerLedgerPreflightEvidenceFake) factsLocked() runnerLedgerPreflightEvidenceFacts {
 	generation := evidence.active.identity
+	executionDigest := Digest("")
+	if evidence.active.recoveryExecutionBindings != nil {
+		executionDigest = evidence.active.recoveryExecutionBindings.digest
+	}
 	return runnerLedgerPreflightEvidenceFacts{
 		binder: evidence, candidateBinding: evidence.candidate.binding, generation: generation,
+		activeKind: evidence.active.kind, executionDigest: executionDigest,
 		schema: cloneGenerationJournalSchema(evidence.schema), recovery: cloneRecoverySnapshot(evidence.recovery),
 		schemaDigest:   generationJournalSchemaDigest(evidence.schema, generation),
 		recoveryDigest: generationJournalRecoveryDigest(evidence.recovery),

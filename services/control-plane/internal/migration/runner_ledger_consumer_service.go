@@ -118,8 +118,7 @@ func (runner *Runner) consumeRunnerLedgerPreflightStep(ctx context.Context, dsn 
 	bundle = verifiedBundle
 	if !validOwnedCurrentCandidate(candidate) || bundle.Manifest.ManifestDigest != candidate.verifiedRun.manifestDigest ||
 		bundle.Manifest.SchemaBundleDigest != candidate.verifiedRun.schemaBundleDigest ||
-		dispatch.runnerProjectionDecisionDigest != candidate.verifiedRun.runnerProjectionDecisionDigest ||
-		dispatch.fact.executionLineageDigest != candidate.verifiedRun.executionLineageDigest {
+		!runnerLedgerConsumerDispatchMatchesCandidate(dispatch, evidence, candidate) {
 		return runnerLedgerPreflightStep{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-consumer", "verified runtime changed after claim consumption", nil)
 	}
 	fact, err := bindRunnerLedgerConsumerFact(generatedRunnerLedgerConsumerProfile, dispatch, bundle.Manifest.ManifestDigest)
@@ -130,7 +129,7 @@ func (runner *Runner) consumeRunnerLedgerPreflightStep(ctx context.Context, dsn 
 		return runnerLedgerPreflightStep{}, err
 	}
 	if !fact.valid() || fact.manifestDigest != bundle.Manifest.ManifestDigest ||
-		fact.dispatch.fact.schemaBundleDigest != bundle.Manifest.SchemaBundleDigest {
+		!runnerLedgerConsumerFactMatchesBundle(fact, evidence, candidate, bundle) {
 		return runnerLedgerPreflightStep{}, fail(CodeEvidenceRecoveryRequired, "runner-ledger-consumer", "generated consumer fact differs from the verified runtime", nil)
 	}
 

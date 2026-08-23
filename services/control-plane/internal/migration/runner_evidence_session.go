@@ -39,16 +39,16 @@ func validateRunnerEvidenceSession(ctx context.Context, session EvidenceSession,
 	journal := session.Journal()
 	active := session.ActiveGeneration()
 	ownedSnapshot := session.RecoverySnapshot()
-	if !validOwnedCurrentCandidate(current) || current.binding != candidate.binding || journal == nil || active.journal != journal || active.identity.owner != candidate.owner || active.identity.executionLineageDigest != candidate.verifiedRun.executionLineageDigest || active.identity.schemaBundleDigest != candidate.verifiedRun.schemaBundleDigest || active.ownedDecision.owner != candidate.verifiedRun.currentDecision.owner || active.ownedDecision.digest != active.identity.runnerProjectionDecisionDigest || snapshot == nil || ownedSnapshot == nil || !sameGenerationIdentity(snapshot.generation, active.identity) || snapshot.owner != candidate.owner {
+	if !validOwnedCurrentCandidate(current) || current.binding != candidate.binding || journal == nil || active.journal != journal || active.identity.owner != candidate.owner || active.identity.executionLineageDigest != candidate.verifiedRun.executionLineageDigest || active.ownedDecision.owner != candidate.verifiedRun.currentDecision.owner || active.ownedDecision.digest != active.identity.runnerProjectionDecisionDigest || snapshot == nil || ownedSnapshot == nil || !sameGenerationIdentity(snapshot.generation, active.identity) || snapshot.owner != candidate.owner {
 		return fail(CodeEvidenceJournalFailed, "runner-evidence-session", "evidence session authority is unavailable or mismatched", nil)
 	}
 	switch active.kind {
 	case activeGenerationCurrent:
-		if active.ownedDecision.digest != candidate.verifiedRun.currentDecision.digest || active.ownedDecision.capability.owner != candidate.verifiedRun.currentDecision.capability.owner || !active.ownedDecision.decision.exactlyMatches(candidate.verifiedRun.currentDecision.decision) || active.recoveryExecutionBindings != nil {
+		if active.identity.schemaBundleDigest != candidate.verifiedRun.schemaBundleDigest || active.ownedDecision.digest != candidate.verifiedRun.currentDecision.digest || active.ownedDecision.capability.owner != candidate.verifiedRun.currentDecision.capability.owner || !active.ownedDecision.decision.exactlyMatches(candidate.verifiedRun.currentDecision.decision) || active.recoveryExecutionBindings != nil {
 			return fail(CodeEvidenceJournalFailed, "runner-evidence-session", "current generation authority is mismatched", nil)
 		}
 	case activeGenerationAncestorRecovery:
-		if active.ownedDecision.digest == candidate.verifiedRun.currentDecision.digest || active.ownedDecision.capability.owner != candidate.verifiedRun.currentDecision.capability.owner || active.recoveryExecutionBindings == nil || !sameRecoveryExecutionBindings(active.recoveryExecutionBindings, active.recoveryExecutionBindings, active.identity, candidate.verifiedRun.currentDecision.digest) {
+		if active.ownedDecision.digest == candidate.verifiedRun.currentDecision.digest || active.ownedDecision.capability.owner != candidate.verifiedRun.currentDecision.capability.owner || active.recoveryExecutionBindings == nil || active.recoveryExecutionBindings.policy.SuccessorSchemaBundleDigest != candidate.verifiedRun.schemaBundleDigest || !sameRecoveryExecutionBindings(active.recoveryExecutionBindings, active.recoveryExecutionBindings, active.identity, candidate.verifiedRun.currentDecision.digest) {
 			return fail(CodeEvidenceJournalFailed, "runner-evidence-session", "ancestor recovery authority is mismatched", nil)
 		}
 	default:
