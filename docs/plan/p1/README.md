@@ -205,6 +205,13 @@
   loop/no-result-reuse/zero external side-effect 已有 focused evidence。ADR-0023 A–G 现仅在 ordered local
   implementation/review 边界上完成；没有授权 production database、HTTP/P2/provider、部署、发布或
   Gate authority。
+- `G-CONTRACT` current-source candidate：固定 source `2023f73` 已将 JSON SDK deterministic-render test 的实际
+  runtime bound 纳入 source provenance，并固定 JSON Schema/OpenAPI/Proto authority、descriptor/baseline、fixtures、
+  Go/TypeScript SDK manifests 与 contract lock。对应
+  [`CAG-G-CONTRACT-P1-20260823-R1`](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md)
+  只记录 current-source focused replay 与 fresh-consumer candidate evidence；状态仍为 `IN PROGRESS`，reviewer
+  `PENDING`，official JSON Schema suite、独立 OpenAPI 3.1 semantic validation、remaining generator supply review 和
+  immutable Gate signature 均未完成。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

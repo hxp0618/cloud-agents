@@ -33,3 +33,10 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 [`../06-status-tracker.md`](../06-status-tracker.md) 登记状态与链接。
 
 当前没有已关闭的 Platform Gate；不要用 M1 Runtime 历史证据创建虚假的 Platform closure record。
+
+## Current candidates
+
+- [`CAG-G-CONTRACT-P1-20260823-R1`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md)：固定 current-source
+  contract/SDK/descriptor/fixture/lock identity 与 focused replay；状态 `IN PROGRESS`，independent reviewer
+  `PENDING`，official JSON Schema suite、独立 OpenAPI 语义验证和 generator supply review 仍开放，不关闭
+  `G-CONTRACT` 或任何其他 Gate。
