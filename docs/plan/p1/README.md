@@ -217,8 +217,10 @@
   Superseding
   [`CAG-G-CONTRACT-P1-20260823-R4`](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md)
   将 current source `1a9f15e`、Baseline R4、27-pipeline lock、fresh generated SDK consumer 与 migration `000012`
-  bundle 重放显式绑定。R4 状态仍为 `IN PROGRESS`，reviewer `PENDING`，formal `missing` 未移除，remaining
-  generator supply review 与 immutable Gate signature 仍未完成。
+  bundle 重放显式绑定；其
+  [independent review](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`。R4 状态仍为 `IN PROGRESS`，formal `missing` 未移除，remaining generator
+  supply review 与 immutable Gate signature 仍未完成。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见

@@ -52,5 +52,5 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
   `G-CONTRACT`。
 - [`CAG-G-CONTRACT-P1-20260823-R4`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md)：current-source R4 rebind
   candidate；固定 Inventory R3、Baseline R4、当前 27-pipeline generation lock、fresh generated SDK consumer 与
-  migration `000012` bundle replay。状态仍为 `IN PROGRESS`、reviewer `PENDING`、7 个 formal `missing` 保持不变，
-  Gate effect 为 none。
+  migration `000012` bundle replay。[Independent review](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`、7 个 formal `missing` 保持不变，Gate effect 为 none。
