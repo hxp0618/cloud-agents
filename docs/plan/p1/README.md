@@ -253,6 +253,13 @@
   与 accepted durability combination 均未完成；其
   [independent review](../cloud-agents-platform/evidence/G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1-independent-review.md)
   返回 `APPROVE, P0=0/P1=0/P2=0`，因此仍保持 `IN PROGRESS`、Gate effect none。
+- `G-SECURITY-P1` current-source candidate：
+  [`CAG-G-SECURITY-P1-20260823-R1`](../cloud-agents-platform/evidence/G-SECURITY/P1/CAG-G-SECURITY-P1-20260823-R1.md)
+  只继承 exact G-CONTRACT、ADR-0012 issuer/authz、A2.3/A2.4 coordination/compatibility-recovery、ADR-0023 Slice G
+  与 ADR-0024 review scopes；fresh focused identity/RBAC、tenant transaction/authorization 与 recovery
+  redaction/profile tests PASS。生产 OIDC/JWT/JWKS verifier 与 HTTP enforcement 仍不存在，whole-schema live
+  RLS/pool isolation、current vulnerability/secret/limit closure、accepted durability aggregation 与 independent
+  review 均未完成，因此保持 `IN PROGRESS`、reviewer `PENDING`、Gate effect none。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
