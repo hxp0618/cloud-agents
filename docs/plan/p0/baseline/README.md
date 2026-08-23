@@ -2,9 +2,10 @@
 
 本目录把两个不同的 closure 明确拆开：
 
-- `platformP0CharacterizationClosure=false`：固定 ref 上的 Synara legacy、T3 embedded 机制与本地
-  greenfield spec/negative/reference-host fixture 已形成可审计输入，但 criterion 仍有 `NOT_RUN`、
-  `SPEC_ONLY` 与 `NOT_BOUND`，不能声称 closure；
+- `platformP0CharacterizationClosure=true/status=COMPLETE`：固定 ref 上的 Synara legacy、T3 embedded 机制与
+  本地 greenfield spec/negative/reference-host fixture 已完成 Platform P0 characterization。这个字段只关闭
+  `G-BASELINE-P0` 的输入范围；criterion 中保留的 `NOT_RUN`、`SPEC_ONLY` 与 retention boundary 不会被提升，
+  也不决定 aggregate Gate；
 - `m1BehaviorClosure=false`：真实 Provider、SendTurn、Workspace 修改、checkpoint/rollback、重连和 same-bits
   行为仍为 `NOT_RUN`，由 M1 单独关闭。
 
@@ -42,10 +43,11 @@ structural validator、当前 JSON Schema 和公共 testkit 测试读取。它�
 
 ## Fail-closed 审计
 
-从仓库根目录运行：
+从仓库根目录、使用固定 Node 24.13.1 运行：
 
 ```bash
-node docs/plan/p0/scripts/audit-baseline-evidence.mjs
+/Users/huang/devel/soft/nvm/versions/node/v24.13.1/bin/node \
+  docs/plan/p0/scripts/audit-baseline-evidence.mjs
 bun run --filter '@synara/cloud-agent-protocol' test
 bun run --filter '@synara/cloud-agent-testkit' test
 ```
@@ -61,7 +63,8 @@ PASS。
 
 ## 证据边界
 
-- 三份 manifest 均固定 `platformP0CharacterizationClosure.complete=false/status=INCOMPLETE`、
+- 三份 manifest 均固定 `platformP0CharacterizationClosure.complete=true/status=COMPLETE`、
+  `platformP0CharacterizationClosure.doesNotDecideAggregateGate=true`、
   `m1BehaviorClosure.complete=false/status=NOT_RUN`、`aggregateGateDecision=NOT_CLAIMED`；
 - 历史 source/test 只能证明已存在机制和负向 oracle，不能证明同一不可变 candidate 的真实行为；
 - lifecycle trace 证明规范覆盖完整，但没有生产 Managed Host create→ready→terminate 执行；
