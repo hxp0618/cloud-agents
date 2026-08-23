@@ -19,6 +19,8 @@
 - Accepted decision（仅授权 ordered local implementation/review）：
   [`ADR-0022`](../adr/0022-p1-runner-ledger-entry-success-writer-contract.md)、
   [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)
+- Accepted durability evidence boundary：
+  [`ADR-0024`](../adr/0024-p1-software-crash-durability-acceptance.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -374,11 +376,15 @@ Platform RC、Beta 或 GA。
   [`1a98f72` independent review](migration-shard-runner-closure-repair-independent-review-20260822.md) 返回
   `APPROVE, P0=0/P1=0/P2=0`，所有 Gate 保持 OPEN
 - [`p1-aggregate-gate-gap-audit-20260822.md`](p1-aggregate-gate-gap-audit-20260822.md)：
-  固定 `1416fb3` 逐项核对四个 P1 Exit Gate；明确 D-047/ADR-0023 仍须 owner 显式决定、physical
+  固定 `1416fb3` 逐项核对四个 P1 Exit Gate；当时明确 D-047/ADR-0023 仍须 owner 显式决定、physical
   controller/host power-loss 仍须 dedicated DUT/storage/out-of-band controller，并列出最终 current-source
   immutable phase records 的顺序。固定候选 `6274ad0` 的
   [`d03d62b` independent review](p1-aggregate-gate-gap-audit-independent-review-20260822.md) 返回
-  `APPROVE, P0=0/P1=0/P2=0`。该记录不重跑 full migration、不扩权且不关闭 Gate
+  `APPROVE, P0=0/P1=0/P2=0`。该记录不重跑 full migration、不扩权且不关闭 Gate。后续
+  [`ADR-0024`](../adr/0024-p1-software-crash-durability-acceptance.md) 仅 supersede 其中“必须取得物理硬断电”这项
+  current acceptance prerequisite；历史审计仍保持 byte/history 边界，其
+  [independent review](software-crash-durability-acceptance-independent-review-20260823.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`
 
 ## Data kernel decisions
 
@@ -477,12 +483,14 @@ Platform RC、Beta 或 GA。
 - [`evidencefs-physical-powerloss-entry-audit-20260822.md`](evidencefs-physical-powerloss-entry-audit-20260822.md)
   在固定 source `d6ec6c8` 上完成物理掉电入口的只读安全审计：可达裸机仍承载活动工作负载且没有独立一次性测试盘，
   DUT-local management interface 也不能替代第二控制机的外部 hard-off/hard-on recovery path；因此未执行任何断电、
-  重启、安装、文件系统或数据库操作，physical controller/host power-loss 与 filesystem-slice Done 继续开放。
+  重启、安装、文件系统或数据库操作。该记录对其固定 source 仍准确；D-048/ADR-0024 后，物理硬断电转为 optional
+  hardening，不再单独阻塞 P1/RC，但该审计本身不是 durability result。
 - [`evidencefs-host-crash-simulation-20260823.md`](evidencefs-host-crash-simulation-20260823.md)
   在固定 source `2023f73` 上完成 owner-authorized bare-metal SysRq `b` 软件崩溃烟测：ext4
   `after-directory-fsync` object barrier 经独立控制机观测 `UP → DOWN → UP`，fresh mount 显示 journal recovery，
   classifier 返回 exact `final`/44-byte/no-temp，卸载后 `e2fsck -fn` status 0。该单场景不包含物理断电、SSD cache
-  loss、独立测试盘、XFS 或完整 barrier matrix，不关闭 physical blocker、filesystem Done 或任何 Gate。
+  loss、独立测试盘、XFS 或完整 barrier matrix；它是 ADR-0024 所需 bare-metal abrupt-software-crash 的一个
+  candidate，不单独关闭 filesystem Done 或任何 Gate。普通 clean `poweroff` 仍只算 lifecycle smoke。
 - [`go-toolchain-1.26.6-security-refresh-20260816.md`](go-toolchain-1.26.6-security-refresh-20260816.md) 固定 source
   `77d92c5`，记录 Go 1.26.5 reachable stdlib finding → 1.26.6 remediation、穷尽 race 分片、三平台 compile、
   ext4/XFS clean-restart、42-barrier QEMU repair 与 fresh vulnerability scan；同时保留 `x/mod v0.37.0` OSV blocker。
@@ -490,8 +498,8 @@ Platform RC、Beta 或 GA。
   test-only exact direct floor、`x/mod v0.40.0`/`x/tools v0.49.0` provenance、16-module fresh zero-finding scan，
   以及 unchanged Linux 7/30、Darwin 6/29 production closure。
 - 以上记录都是 local implementation evidence，不是独立 reviewer 签署的 immutable Gate closure；public production
-  `EvidenceSink` 已存在并通过 scoped real ext4/XFS cross-package replay，但仍没有 runner/DB、physical controller
-  power-loss 或 immutable Gate authority。
+  `EvidenceSink` 已存在并通过 scoped real ext4/XFS cross-package replay，但仍没有 runner/DB 或 immutable Gate
+  authority。物理 controller/cache-loss 结果明确未声称；ADR-0024 只移除其 mandatory blocker 地位。
 
 ## Projection runner boundary (still open)
 
@@ -534,8 +542,9 @@ exact target lineage + generation lock pair，并已完成 compact snapshot/stri
 receipt 自有化，以及当前 cursor/recovery snapshot 的 session accessor。
 但这没有改变 Gate 结论：`381b04a` 关闭 production trusted-mount constructor/wiring 和 scoped positive
 production `Open`，`3fe05ec` 再关闭 public sink 与 scoped production-opened cross-package
-brand-new/registered activation-handoff；runner/DB `Connect` 与真实 physical controller
-power-loss 证据仍然开放。
+brand-new/registered activation-handoff；runner/DB `Connect`、current-source phase records、remaining durability
+matrices 与 independent Gate reviews 仍然开放。ADR-0024 不再要求 physical controller power-loss，且不声称已经取得
+该物理结果。
 `b6cfa88`、`daa6b9f`、`0e242ee`、`be7cae8`、`139d53a`、`f650fae` 只在 package-private test authority 下完成
 isolated QEMU guest 的 object publish、existing-segment append、retained rotation、activation、target registration/recovery
 与 generation header create/recovery barrier kill/recovery；
