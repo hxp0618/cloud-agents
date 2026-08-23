@@ -250,7 +250,9 @@
   只继承 exact G-CONTRACT generation、live-instance retirement 与 ADR-0023 Slice G review scopes；fresh focused
   migration/store authority tests 和 mutable/unpublished/runtime-NI catalog checks PASS。Provider catalog、enabled
   operation receipt writer、complete neutral-resource ownership、executable catalog projection、current filesystem Done
-  与 independent review 均未完成，因此保持 `IN PROGRESS`、reviewer `PENDING`、Gate effect none。
+  与 accepted durability combination 均未完成；其
+  [independent review](../cloud-agents-platform/evidence/G-AUTHORITY/P1/CAG-G-AUTHORITY-P1-20260823-R1-independent-review.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`，因此仍保持 `IN PROGRESS`、Gate effect none。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
