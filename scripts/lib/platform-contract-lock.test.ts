@@ -90,6 +90,76 @@ describe("Platform contract generation lock", () => {
     );
   });
 
+  it("records the independent standards runner as a pending non-Gate candidate", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      tools: Array<Record<string, unknown>>;
+      pipelines: Array<{
+        id?: string;
+        inputs?: string[];
+        outputStatus?: string;
+        notGateClosure?: boolean;
+        outputSummary?: Record<string, unknown>;
+      }>;
+      missing: string[];
+    };
+    expect(lock.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "jsonschema-rs",
+          version: "0.50.1",
+          sourceBuild: "FORBIDDEN",
+          productionRuntimeDependency: "FORBIDDEN",
+        }),
+        expect.objectContaining({
+          id: "openapi-spec-validator",
+          version: "0.9.0",
+          sourceBuild: "FORBIDDEN",
+          productionRuntimeDependency: "FORBIDDEN",
+        }),
+      ]),
+    );
+    const pipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "independent-contract-standards-validation",
+    );
+    expect(pipeline).toMatchObject({
+      outputStatus: "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
+      notGateClosure: true,
+      outputSummary: {
+        sourceContractManifestSha256:
+          "sha256:eb51453861feb6685eadcd335c0620fea5ca98de9058a9a3d3f5198f6e67406e",
+        toolchain: { bun: "1.3.14", python: "3.14.7", uv: "0.12.5" },
+        officialJsonSchemaSuite: {
+          files: 46,
+          cases: 383,
+          assertions: 1299,
+          expectedFailures: 0,
+        },
+        currentJsonSchema: {
+          schemas: 52,
+          fixtureManifests: 2,
+          fixtureCases: 71,
+          crossEngineExactFixtureResults: true,
+        },
+        openapi31: { documents: 2, operations: 9, expectedFailures: 0 },
+        productionRuntimeDependency: "FORBIDDEN",
+        independentReview: "PENDING",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+    });
+    expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
+    expect(pipeline?.inputs).toContain(
+      "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
+    );
+    expect(lock.missing).toEqual(
+      expect.arrayContaining([
+        "json-schema-2020-12-official-test-suite",
+        "openapi-3.1-semantic-validation",
+        "remaining-generator-supply-chain-review",
+      ]),
+    );
+  });
+
   it("records the generated durable coordination registry as a non-Gate pipeline", () => {
     const root = join(import.meta.dirname, "../..");
     const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {

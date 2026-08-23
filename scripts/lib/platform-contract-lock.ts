@@ -94,7 +94,67 @@ import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
 
 const NODE_VERSION = "24.13.1";
 const BUN_VERSION = "1.3.14";
+const PYTHON_VERSION = "3.14.7";
+const UV_VERSION = "0.12.5";
 const AJV_REVIEW = "docs/plan/p1/dependency-reviews/ajv-8.20.0.md";
+const CONTRACT_STANDARDS_REVIEW =
+  "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md";
+const CONTRACT_STANDARDS_PROFILE = "tools/contract-standards/profile.json";
+const CONTRACT_STANDARDS_CORPUS = "tools/contract-standards/vendor/json-schema-test-suite";
+const CONTRACT_STANDARDS_FIXED_INPUTS = [
+  ".gitattributes",
+  ".mise.toml",
+  "package.json",
+  CONTRACT_STANDARDS_PROFILE,
+  CONTRACT_STANDARDS_REVIEW,
+  "tools/contract-standards/pyproject.toml",
+  "tools/contract-standards/uv.lock",
+  "tools/contract-standards/check_contract_standards.py",
+  "tools/contract-standards/test_contract_standards.py",
+  "scripts/check-platform-contract-standards.ts",
+] as const;
+type ContractStandardsProfile = {
+  readonly formatVersion: string;
+  readonly status: string;
+  readonly notGateClosure: boolean;
+  readonly toolchain: {
+    readonly bun: string;
+    readonly python: string;
+    readonly uv: string;
+    readonly pyproject: { readonly path: string; readonly sha256: string };
+    readonly lock: { readonly path: string; readonly sha256: string };
+  };
+  readonly packages: Record<string, string>;
+  readonly jsonSchemaOfficialSuite: {
+    readonly commit: string;
+    readonly tree: string;
+    readonly mandatoryTree: string;
+    readonly localRoot: string;
+    readonly corpusManifestAlgorithm: string;
+    readonly corpusManifestSha256: string;
+    readonly corpusFiles: number;
+    readonly licenseSha256: string;
+    readonly mandatoryFiles: number;
+    readonly cases: number;
+    readonly assertions: number;
+    readonly remoteFiles: number;
+    readonly expectedFailures: number;
+  };
+  readonly currentContracts: {
+    readonly schemaFiles: number;
+    readonly fixtureManifests: number;
+    readonly fixtureCases: number;
+    readonly crossEngineExactFixtureResults: boolean;
+  };
+  readonly openapi: {
+    readonly documentVersion: string;
+    readonly documents: readonly string[];
+    readonly documentCount: number;
+    readonly operationCount: number;
+    readonly expectedFailures: number;
+  };
+  readonly implementationBoundary: Record<string, string>;
+};
 const TOOLCHAIN_AUTHORITY_FILES = [".mise.toml", "package.json"] as const;
 const PLATFORM_GO_INPUTS = [
   "go.work",
@@ -493,6 +553,11 @@ const IN_REPO_TOOLS = [
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
   const summary = validatePlatformContractTree(root);
   const runtimes = validatePlatformToolchains(root);
+  const contractStandardsProfile = assertContractStandardsProfileCurrent(root);
+  const contractStandardsInputs = [
+    ...CONTRACT_STANDARDS_FIXED_INPUTS,
+    ...listRegularMigrationInputFiles(root, CONTRACT_STANDARDS_CORPUS),
+  ].toSorted();
   const migration = validateCheckedInMigrationBundle(root);
   const migrationInputs = platformMigrationInputs(root);
   assertDurableCoordinationRegistryCurrent(root);
@@ -642,10 +707,14 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
       jsonSchema: {
         identity: "https://json-schema.org/draft/2020-12/schema",
         semanticValidation: "BOOTSTRAP_AJV_AND_IN_REPO_SEMANTIC_FIXTURES",
+        independentStandardsCandidate:
+          "JSONSCHEMA_RS_0_50_1_OFFICIAL_MANDATORY_SUITE_AND_CURRENT_FIXTURES",
+        productionAjvOfficialSuiteStatus: "NOT_FULL_OFFICIAL_SUITE_COMPLIANT_53_DIFFERENCES",
       },
       openapi: {
         documentVersion: "3.1.1",
         semanticValidation: "BOOTSTRAP_FAIL_CLOSED_SUBSET",
+        independentStandardsCandidate: "OPENAPI_SPEC_VALIDATOR_0_9_0",
       },
       proto: {
         syntax: "proto3",
@@ -717,6 +786,43 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           status: "APPROVED",
         },
       },
+      {
+        id: "platform-contract-standards-checker",
+        kind: "in-repo-python-independent-json-schema-openapi-checker",
+        entrypoint: "tools/contract-standards/check_contract_standards.py",
+        sourceManifestSha256: normalizedSourceManifestDigest(root, contractStandardsInputs),
+        sources: contractStandardsInputs,
+        license: "MIT",
+        status: "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
+      },
+      {
+        id: "jsonschema-rs",
+        kind: "python-wheel-test-only",
+        version: contractStandardsProfile.packages["jsonschema-rs"],
+        license: "MIT",
+        dependencyLock: "tools/contract-standards/uv.lock",
+        sourceBuild: "FORBIDDEN",
+        productionRuntimeDependency: "FORBIDDEN",
+        reviewEvidence: {
+          path: CONTRACT_STANDARDS_REVIEW,
+          sha256: fileSha256(root, CONTRACT_STANDARDS_REVIEW),
+          status: "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
+        },
+      },
+      {
+        id: "openapi-spec-validator",
+        kind: "python-wheel-test-only",
+        version: contractStandardsProfile.packages["openapi-spec-validator"],
+        license: "Apache-2.0",
+        dependencyLock: "tools/contract-standards/uv.lock",
+        sourceBuild: "FORBIDDEN",
+        productionRuntimeDependency: "FORBIDDEN",
+        reviewEvidence: {
+          path: CONTRACT_STANDARDS_REVIEW,
+          sha256: fileSha256(root, CONTRACT_STANDARDS_REVIEW),
+          status: "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
+        },
+      },
     ],
     pipelines: [
       {
@@ -724,6 +830,48 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         inputManifestSha256: summary.contractManifestSha256,
         outputStatus: "BOOTSTRAP_VALIDATED",
         generatedOutputs: [],
+      },
+      {
+        id: "independent-contract-standards-validation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, contractStandardsInputs),
+        inputs: contractStandardsInputs,
+        outputStatus: "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
+        notGateClosure: true,
+        generatedOutputs: [],
+        outputSummary: {
+          profile: contractStandardsProfile.formatVersion,
+          sourceContractManifestSha256: summary.contractManifestSha256,
+          toolchain: {
+            bun: contractStandardsProfile.toolchain.bun,
+            python: contractStandardsProfile.toolchain.python,
+            uv: contractStandardsProfile.toolchain.uv,
+          },
+          officialJsonSchemaSuite: {
+            commit: contractStandardsProfile.jsonSchemaOfficialSuite.commit,
+            tree: contractStandardsProfile.jsonSchemaOfficialSuite.tree,
+            mandatoryTree: contractStandardsProfile.jsonSchemaOfficialSuite.mandatoryTree,
+            files: contractStandardsProfile.jsonSchemaOfficialSuite.mandatoryFiles,
+            cases: contractStandardsProfile.jsonSchemaOfficialSuite.cases,
+            assertions: contractStandardsProfile.jsonSchemaOfficialSuite.assertions,
+            expectedFailures: contractStandardsProfile.jsonSchemaOfficialSuite.expectedFailures,
+          },
+          currentJsonSchema: {
+            schemas: contractStandardsProfile.currentContracts.schemaFiles,
+            fixtureManifests: contractStandardsProfile.currentContracts.fixtureManifests,
+            fixtureCases: contractStandardsProfile.currentContracts.fixtureCases,
+            crossEngineExactFixtureResults:
+              contractStandardsProfile.currentContracts.crossEngineExactFixtureResults,
+          },
+          openapi31: {
+            documents: contractStandardsProfile.openapi.documentCount,
+            operations: contractStandardsProfile.openapi.operationCount,
+            expectedFailures: contractStandardsProfile.openapi.expectedFailures,
+          },
+          productionRuntimeDependency: "FORBIDDEN",
+          independentReview: "PENDING",
+          gateStatus: "ALL_GATES_OPEN",
+        },
       },
       {
         id: "durable-coordination-registry-generation",
@@ -1543,6 +1691,118 @@ export function assertPlatformContractLockCurrent(root: string): void {
       "contracts/generation.lock.json is stale; run bun scripts/generate-platform-contract-lock.ts --write.",
     );
   }
+}
+
+function assertContractStandardsProfileCurrent(root: string): ContractStandardsProfile {
+  const profile = JSON.parse(
+    readFileSync(resolve(root, CONTRACT_STANDARDS_PROFILE), "utf8"),
+  ) as ContractStandardsProfile;
+  if (
+    profile.formatVersion !== "cloud-agents-contract-standards-profile/v1" ||
+    profile.status !== "GENERATED_NON_GATE_EVIDENCE" ||
+    profile.notGateClosure !== true
+  ) {
+    throw new Error("Contract standards profile identity or non-Gate status is invalid.");
+  }
+  if (
+    profile.toolchain.bun !== BUN_VERSION ||
+    profile.toolchain.python !== PYTHON_VERSION ||
+    profile.toolchain.uv !== UV_VERSION
+  ) {
+    throw new Error("Contract standards profile toolchain versions are stale.");
+  }
+  for (const [label, fact, expectedPath] of [
+    ["pyproject", profile.toolchain.pyproject, "tools/contract-standards/pyproject.toml"],
+    ["lock", profile.toolchain.lock, "tools/contract-standards/uv.lock"],
+  ] as const) {
+    if (
+      fact.path !== expectedPath ||
+      fact.sha256 !== fileSha256(root, expectedPath).replace(/^sha256:/u, "")
+    ) {
+      throw new Error(`Contract standards ${label} binding is stale.`);
+    }
+  }
+  if (
+    profile.packages["jsonschema-rs"] !== "0.50.1" ||
+    profile.packages["openapi-spec-validator"] !== "0.9.0"
+  ) {
+    throw new Error("Contract standards primary package versions are stale.");
+  }
+  const suite = profile.jsonSchemaOfficialSuite;
+  const corpusFiles = listRegularMigrationInputFiles(root, CONTRACT_STANDARDS_CORPUS);
+  if (
+    suite.localRoot !== CONTRACT_STANDARDS_CORPUS ||
+    suite.corpusManifestAlgorithm !== "sorted-path-nul-sha256-nul-size-v1" ||
+    suite.corpusManifestSha256 !== standardsCorpusManifestDigest(root, CONTRACT_STANDARDS_CORPUS) ||
+    suite.corpusFiles !== corpusFiles.length ||
+    suite.licenseSha256 !==
+      fileSha256(root, `${CONTRACT_STANDARDS_CORPUS}/LICENSE`).replace(/^sha256:/u, "") ||
+    suite.mandatoryFiles !== 46 ||
+    suite.cases !== 383 ||
+    suite.assertions !== 1299 ||
+    suite.remoteFiles !== 79 ||
+    suite.expectedFailures !== 0
+  ) {
+    throw new Error("Contract standards official JSON Schema suite binding is stale.");
+  }
+  if (
+    profile.currentContracts.schemaFiles !== 52 ||
+    profile.currentContracts.fixtureManifests !== 2 ||
+    profile.currentContracts.fixtureCases !== 71 ||
+    profile.currentContracts.crossEngineExactFixtureResults !== true
+  ) {
+    throw new Error("Contract standards current-contract cardinalities are stale.");
+  }
+  const expectedOpenApiDocuments = [
+    "contracts/managed-agent/v1alpha1/openapi.json",
+    "contracts/managed-host/v1alpha1/openapi.json",
+  ];
+  if (
+    profile.openapi.documentVersion !== "3.1.1" ||
+    JSON.stringify(profile.openapi.documents) !== JSON.stringify(expectedOpenApiDocuments) ||
+    profile.openapi.documentCount !== 2 ||
+    profile.openapi.operationCount !== 9 ||
+    profile.openapi.expectedFailures !== 0
+  ) {
+    throw new Error("Contract standards OpenAPI 3.1 binding is stale.");
+  }
+  const boundary = {
+    productionRuntimeDependency: "FORBIDDEN",
+    productionDatabaseWrites: "NOT_AUTHORIZED",
+    httpSurface: "NOT_IMPLEMENTED",
+    p2Surface: "NOT_IMPLEMENTED",
+    providerSideEffects: "FORBIDDEN",
+    deployment: "NOT_AUTHORIZED",
+    publication: "NOT_AUTHORIZED",
+    gateStatus: "ALL_GATES_OPEN",
+    independentReview: "PENDING",
+  };
+  if (
+    Object.keys(profile.implementationBoundary).length !== Object.keys(boundary).length ||
+    Object.entries(boundary).some(([key, value]) => profile.implementationBoundary[key] !== value)
+  ) {
+    throw new Error("Contract standards implementation boundary is invalid.");
+  }
+  return profile;
+}
+
+function standardsCorpusManifestDigest(root: string, directory: string): string {
+  const hash = createHash("sha256");
+  const prefix = `${directory}/`;
+  for (const file of listRegularMigrationInputFiles(root, directory).toSorted()) {
+    if (!file.startsWith(prefix)) {
+      throw new Error(`Contract standards corpus path escapes its root: ${file}.`);
+    }
+    const bytes = readFileSync(resolve(root, file));
+    hash
+      .update(file.slice(prefix.length))
+      .update("\0")
+      .update(createHash("sha256").update(bytes).digest("hex"))
+      .update("\0")
+      .update(String(bytes.byteLength))
+      .update("\0");
+  }
+  return hash.digest("hex");
 }
 
 export function platformMigrationInputs(root: string): string[] {

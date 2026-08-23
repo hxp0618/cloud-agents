@@ -1,0 +1,2 @@
+# Preserve the fixed upstream JSON Schema Test Suite bytes, including four upstream trailing spaces.
+tools/contract-standards/vendor/json-schema-test-suite/** -whitespace
