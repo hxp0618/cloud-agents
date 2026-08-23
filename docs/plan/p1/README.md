@@ -193,9 +193,12 @@
   已由 `be597de` 独立复核批准；Slice D 的
   [`commit reconciliation writers`](runner-ledger-recovery-commit-reconciliation-service-matrix-20260823.md)
   fixed candidate `7bbc391` 已由 `cb94b53` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice E 的
-  [`retry lineage handoff`](runner-ledger-recovery-retry-handoff-service-matrix-20260823.md) 正在固定候选与独立复核；
-  recovery execution/success 与 public failure result 继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，且没有新增
-  production database、HTTP/P2/provider、部署、发布或 Gate authority。
+  [`retry lineage handoff`](runner-ledger-recovery-retry-handoff-service-matrix-20260823.md) fixed candidate `f86e8ca`
+  已由 `48ba3cc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice F 的
+  [`recovery execution/success writer`](runner-ledger-recovery-execution-service-matrix-20260823.md) 已固定 code commit
+  `f95a220`，正在等待独立只读复核；public typed failure/result 与完整 caller matrix 继续由 Slice G 保持
+  `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。没有授权 production database、HTTP/P2/provider、部署、发布或 Gate
+  authority。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
