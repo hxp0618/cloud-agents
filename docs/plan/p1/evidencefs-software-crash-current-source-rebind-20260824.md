@@ -1,6 +1,6 @@
 # P1 evidencefs software-crash current-source same-bits rebind — 2026-08-24
 
-- Status: **CURRENT-SOURCE SAME-BITS CANDIDATE; INDEPENDENT REVIEW PENDING; FILESYSTEM DONE AND GATES OPEN**
+- Status: **CURRENT-SOURCE SAME-BITS CANDIDATE; INDEPENDENT REVIEW PENDING; FILESYSTEM DONE: OPEN; ALL GATES: OPEN**
 - Current source commit/tree: `98cd0a30d151cdb3c667911a540a3e4006972bbf` /
   `fa40473b29c7c4782f5d2811ef6b144c8760d29d`
 - Current evidencefs subtree: `5e4b0b76a8f1b8c6408b4505a8befa8e5e3369ed`
