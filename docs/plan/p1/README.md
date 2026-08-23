@@ -21,6 +21,8 @@
   [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)
 - Accepted durability evidence boundary：
   [`ADR-0024`](../adr/0024-p1-software-crash-durability-acceptance.md)
+- Accepted offline identity-verifier boundary（仅授权 ordered local Slices A-C）：
+  [`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -125,6 +127,11 @@
   [`independent review`](sdk-identity-closure-independent-review-20260821.md) returned
   `APPROVE, P0=0/P1=0/P2=0`; this completes the ordered A3 implementation/review package but is not an immutable Gate
   signature.
+- P1 identity-verifier repair：[`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md) freezes
+  `platform-identity-verifier/v1` as an offline RFC 9068 / RS256 boundary and orders generated profile、pure crypto
+  kernel、opaque principal/authz binder and independent review Slices A-C. The
+  [implementation entry](identity-verifier-entry-20260823.md) adds no HTTP discovery/JWKS fetch、provider/P2、production
+  trust root/database write、deployment/publication or Gate closure；all three slices are initially `NOT STARTED`.
 - Runner ledger/catalog preflight：generated profile、locked read-only projection kernel 与 typed same-verifier
   claim/no-op dispatch 已依序固定；Slice A/B fixed candidate `01b1a5f` 的
   [`independent review`](migration-ledger-catalog-preflight-independent-review-20260821.md) 为
