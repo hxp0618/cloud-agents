@@ -195,10 +195,13 @@
   fixed candidate `7bbc391` 已由 `cb94b53` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice E 的
   [`retry lineage handoff`](runner-ledger-recovery-retry-handoff-service-matrix-20260823.md) fixed candidate `f86e8ca`
   已由 `48ba3cc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice F 的
-  [`recovery execution/success writer`](runner-ledger-recovery-execution-service-matrix-20260823.md) 已固定 code commit
-  `f95a220`，正在等待独立只读复核；public typed failure/result 与完整 caller matrix 继续由 Slice G 保持
-  `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。没有授权 production database、HTTP/P2/provider、部署、发布或 Gate
-  authority。
+  [`recovery execution/success writer`](runner-ledger-recovery-execution-service-matrix-20260823.md) fixed candidate
+  `e1cb598` 已由 `39d5d75` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice G 的
+  [`typed failure result / complete caller matrix`](runner-ledger-recovery-result-service-matrix-20260823.md) 已固定
+  code commit `1d58d43`：12 个 generated recovery pairs 已接入 approved family，所有 committed outcome 必须 fresh
+  preflight，terminal/divergent 只返回 exact/redacted ordinary failure，且 bounded loop/no-result-reuse/zero external
+  side-effect 已有 focused evidence；正在等待独立只读复核。没有授权 production database、HTTP/P2/provider、
+  部署、发布或 Gate authority。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
