@@ -86,6 +86,12 @@ describe("Platform contract generation lock", () => {
       "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
     );
     expect(inputs).toContain(
+      "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
+    );
+    expect(inputs).toContain(
+      "services/control-plane/scripts/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh",
+    );
+    expect(inputs).toContain(
       "services/control-plane/migrations/fixtures/bundle/negative/ancestor-descriptor-cases.json",
     );
   });

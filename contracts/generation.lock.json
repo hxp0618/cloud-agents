@@ -93,7 +93,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:6f772183f4ec0053d0d232c53da172cb0df7ca76c240de37f42c5c9c4bd34229",
+      "sourceManifestSha256": "sha256:ad6c92bf7baabdb5d0b36557082b865bf91e17cfb613140ba3863dab2a3418b5",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -421,7 +421,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:732f00bba30f0bce65eb8b5a1d35a91be61f157e41742e4bae27b258d45a1a87",
+      "sourceManifestSha256": "sha256:65f4c66acd01eae8c9e1f2f2750df1d4e8fb3ad729969d91fb56d6cc5264f693",
       "sources": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -472,8 +472,10 @@
         "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
         "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+        "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
+        "services/control-plane/migrations/archive/6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
         "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
         "services/control-plane/migrations/archive/a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09.schema-bundle.json",
@@ -497,6 +499,7 @@
         "services/control-plane/migrations/catalog/schema-000009.json",
         "services/control-plane/migrations/catalog/schema-000010.json",
         "services/control-plane/migrations/catalog/schema-000011.json",
+        "services/control-plane/migrations/catalog/schema-000012.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -542,6 +545,7 @@
         "services/control-plane/migrations/manifest.json",
         "services/control-plane/migrations/schema-bundle.json",
         "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
+        "services/control-plane/scripts/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh",
         "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh"
@@ -2260,7 +2264,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:732f00bba30f0bce65eb8b5a1d35a91be61f157e41742e4bae27b258d45a1a87",
+      "inputManifestSha256": "sha256:65f4c66acd01eae8c9e1f2f2750df1d4e8fb3ad729969d91fb56d6cc5264f693",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -2311,8 +2315,10 @@
         "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
         "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+        "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
         "services/control-plane/migrations/README.md",
         "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
+        "services/control-plane/migrations/archive/6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110.schema-bundle.json",
         "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
         "services/control-plane/migrations/archive/9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab.schema-bundle.json",
         "services/control-plane/migrations/archive/a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09.schema-bundle.json",
@@ -2336,6 +2342,7 @@
         "services/control-plane/migrations/catalog/schema-000009.json",
         "services/control-plane/migrations/catalog/schema-000010.json",
         "services/control-plane/migrations/catalog/schema-000011.json",
+        "services/control-plane/migrations/catalog/schema-000012.json",
         "services/control-plane/migrations/fixtures/bundle/golden/ancestor-ledger.json",
         "services/control-plane/migrations/fixtures/bundle/golden/rfc8785.json",
         "services/control-plane/migrations/fixtures/bundle/golden/signed-int64.json",
@@ -2381,6 +2388,7 @@
         "services/control-plane/migrations/manifest.json",
         "services/control-plane/migrations/schema-bundle.json",
         "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
+        "services/control-plane/scripts/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh",
         "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
         "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh"
@@ -2392,6 +2400,11 @@
           "path": "services/control-plane/migrations/archive/52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d.schema-bundle.json",
           "sha256": "sha256:d938ca1dc174816d1ccb719d82e57505ed2f9d8e5836dfe4109ab82ae20905ae",
           "sizeBytes": 5456
+        },
+        {
+          "path": "services/control-plane/migrations/archive/6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110.schema-bundle.json",
+          "sha256": "sha256:a01a22e09c7301aeafc87eb1f09b67cb844e5ac5bc5b3c6dd1e66827e348b90f",
+          "sizeBytes": 19416
         },
         {
           "path": "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
@@ -2497,6 +2510,11 @@
           "path": "services/control-plane/migrations/catalog/schema-000011.json",
           "sha256": "sha256:e3e08d50421849813238d0ba7f0c9b704f5500706448380c5cf2ac4300fd267d",
           "sizeBytes": 382454
+        },
+        {
+          "path": "services/control-plane/migrations/catalog/schema-000012.json",
+          "sha256": "sha256:c424e9a62180c8e3de4cb444d95812c2606c6355065f4fa7e5655fcd733dab48",
+          "sizeBytes": 383306
         },
         {
           "path": "services/control-plane/migrations/fixtures/projection/golden/attempt-terminal-state-v1.json",
@@ -2635,22 +2653,22 @@
         },
         {
           "path": "services/control-plane/migrations/manifest.json",
-          "sha256": "sha256:d716baa0e2e3dc8dfdb8acdf9d7732c564f4105826d28e76d417ec5432c63980",
-          "sizeBytes": 29387
+          "sha256": "sha256:97c02a54639d9a7d00dbc55a14e06db8e97bc2c36444cf51b61a680539cfd44e",
+          "sizeBytes": 31685
         },
         {
           "path": "services/control-plane/migrations/schema-bundle.json",
-          "sha256": "sha256:a01a22e09c7301aeafc87eb1f09b67cb844e5ac5bc5b3c6dd1e66827e348b90f",
-          "sizeBytes": 19416
+          "sha256": "sha256:948e504b77c409065d2160056f45356d84d136d2512f35a4c4fe9e16e575aaaf",
+          "sizeBytes": 20932
         }
       ],
       "outputSummary": {
-        "schemaBundleDigest": "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110",
+        "schemaBundleDigest": "sha256:54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907",
         "bootstrapBundleDigest": "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
-        "manifestDigest": "sha256:118cbb51f47a94fb7129b95c10f19685c79fd1dc4c05a47cf78d504695e4d98c",
+        "manifestDigest": "sha256:454345322827369258f8496cce2c1e7f4d4b3e5b8b5f841f20c9fc84f53b3ddc",
         "runtimeTar": {
-          "sizeBytes": 2181120,
-          "sha256": "sha256:b15cafdb28440fa537a1740d1eb9ef7db0d8fc54c636e52cd3c484907d7d77c2"
+          "sizeBytes": 2598400,
+          "sha256": "sha256:5e5c34b6c6cda7467c4b1fb2527dd03695b6204ac9b26ffc42628e9bcd8e4c12"
         },
         "bootstrapTar": {
           "sizeBytes": 32256,

@@ -244,6 +244,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
   "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
   "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+  "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
   "services/control-plane/migrations/README.md",
   "services/control-plane/migrations/bootstrap/database.sql",
   "services/control-plane/migrations/bootstrap/roles.sql",
@@ -252,6 +253,7 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
   "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
   "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
+  "services/control-plane/scripts/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh",
   "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [

@@ -15,6 +15,7 @@ import {
   validateDurableCoordinationRepair,
   validateDurableCoordinationService,
   validateCompatibilityRecoveryKernel,
+  validateCompatibilityRecoveryPreflightRepair,
   validateCompatibilityRecoveryWriterKernel,
   validateLedgerPrefix,
   validateProjectionScopeAuthority,
@@ -38,7 +39,7 @@ describe("migration bundle bootstrap", () => {
     expect(bundle.manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(
       new TextDecoder().decode(
-        bundle.files.get("services/control-plane/migrations/catalog/schema-000011.json"),
+        bundle.files.get("services/control-plane/migrations/catalog/schema-000012.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
   });
@@ -49,16 +50,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110",
+      "sha256:54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:118cbb51f47a94fb7129b95c10f19685c79fd1dc4c05a47cf78d504695e4d98c",
+      "sha256:454345322827369258f8496cce2c1e7f4d4b3e5b8b5f841f20c9fc84f53b3ddc",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:b15cafdb28440fa537a1740d1eb9ef7db0d8fc54c636e52cd3c484907d7d77c2",
+      "sha256:5e5c34b6c6cda7467c4b1fb2527dd03695b6204ac9b26ffc42628e9bcd8e4c12",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -392,6 +393,47 @@ describe("migration bundle bootstrap", () => {
     );
   });
 
+  it("binds migration 000012 to the receipt-only live-set exclusion repair", () => {
+    const sql = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
+      ),
+    );
+    expect(() => validateCompatibilityRecoveryPreflightRepair(sql)).not.toThrow();
+
+    const sqlText = new TextDecoder().decode(sql);
+    const fencedShortcut = new TextEncoder().encode(
+      sqlText.replace(
+        "WHERE instance.tenant_id = p_tenant_id\n        AND instance.heartbeat_at",
+        "WHERE instance.tenant_id = p_tenant_id\n        AND instance.drain_state <> 'fenced'\n        AND instance.heartbeat_at",
+      ),
+    );
+    expect(() => validateCompatibilityRecoveryPreflightRepair(fencedShortcut)).toThrow(
+      /COMPATIBILITY_PREFLIGHT_REPAIR_FENCED_SHORTCUT/u,
+    );
+
+    const missingReceiptBinding = new TextEncoder().encode(
+      sqlText.replace(
+        "                AND receipt.endpoint_revoked\n",
+        "                AND true\n",
+      ),
+    );
+    expect(() => validateCompatibilityRecoveryPreflightRepair(missingReceiptBinding)).toThrow(
+      /COMPATIBILITY_PREFLIGHT_REPAIR_RECEIPT_BINDING/u,
+    );
+
+    const sideEffect = new TextEncoder().encode(
+      sqlText.replace(
+        "    state := 'approved';",
+        "    DELETE FROM cloud_agents.compatibility_recovery_live_instances_v2;\n    state := 'approved';",
+      ),
+    );
+    expect(() => validateCompatibilityRecoveryPreflightRepair(sideEffect)).toThrow(
+      /COMPATIBILITY_PREFLIGHT_REPAIR_SIDE_EFFECT/u,
+    );
+  });
+
   it("rejects detached deployment authority from the runtime artifact closure", () => {
     expect(() =>
       validateRuntimeArtifactSafety([
@@ -425,6 +467,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
         "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+        "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -458,6 +501,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
       "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
       "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+      "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [

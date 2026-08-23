@@ -210,7 +210,8 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set(["000005", "000006", "000009"]).has(migrationId) || tokens[3] !== "FUNCTION")
+      (!new Set(["000005", "000006", "000009", "000012"]).has(migrationId) ||
+        tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
     }
@@ -294,6 +295,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:append_coordination_audit(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:timestamptz)",
             "function:unquoted:cloud_agents/unquoted:claim_managed_agent_create_project_idempotency(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
             "function:unquoted:cloud_agents/unquoted:transition_outbox_claim(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000012",
+          [
+            "function:unquoted:cloud_agents/unquoted:compatibility_recovery_migration_preflight_evaluate_v2(unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:boolean,unquoted:text)",
           ],
         ],
       ]).get(migrationId);

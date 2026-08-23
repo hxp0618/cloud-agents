@@ -81,6 +81,7 @@ const SQL_PATHS = [
   `${ROOT}/000009_redact_coordination_conflicts.sql`,
   `${ROOT}/000010_expand_compatibility_recovery_kernel.sql`,
   `${ROOT}/000011_add_compatibility_recovery_writer.sql`,
+  `${ROOT}/000012_fix_compatibility_recovery_preflight.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -97,17 +98,23 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000009.json`,
   `${ROOT}/catalog/schema-000010.json`,
   `${ROOT}/catalog/schema-000011.json`,
+  `${ROOT}/catalog/schema-000012.json`,
 ] as const;
 const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
 const GLOBAL_TABLE_AUTHORITY_V3_PATH = `${ROOT}/catalog/global-table-authority-v3.json`;
 const GLOBAL_TABLE_AUTHORITY_V4_PATH = `${ROOT}/catalog/global-table-authority-v4.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09";
+  "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 17904;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 19416;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:ca5fea1b9f0056439fd2b58af4a796616d9be3e7ec483869f1cb5bb4f5bfdbb8";
+  "sha256:a01a22e09c7301aeafc87eb1f09b67cb844e5ac5bc5b3c6dd1e66827e348b90f";
 const ANCESTOR_SCHEMA_BUNDLES = [
+  {
+    digest: "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09",
+    size: 17904,
+    sha256: "sha256:ca5fea1b9f0056439fd2b58af4a796616d9be3e7ec483869f1cb5bb4f5bfdbb8",
+  },
   {
     digest: "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab",
     size: 14883,
@@ -444,6 +451,7 @@ const DECLARED_IDENTITIES_000011 = [
   "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_retirement_receipts_v2_tenant",
   "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_transition_facts_v2_tenant",
 ] as const;
+const DECLARED_IDENTITIES_000012 = [...DECLARED_IDENTITIES_000011] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -509,6 +517,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     sqlBytes.get(SQL_PATHS[10])!,
     compatibilityRecoveryRegistryV2,
   );
+  validateCompatibilityRecoveryPreflightRepair(sqlBytes.get(SQL_PATHS[11])!);
   validateBuiltinRoleSeedFixture(
     sqlBytes.get(SQL_PATHS[2])!,
     readExactFile(root, BUILTIN_ROLE_CATALOG_PATH),
@@ -530,7 +539,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000011",
+    schema_head: "000012",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -644,6 +653,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         sql: sqlArtifacts.get(SQL_PATHS[10])!,
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[11])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[12])!,
+      }),
+      migrationEntry({
+        id: "000012",
+        name: "fix_compatibility_recovery_preflight",
+        predecessor: "000011",
+        schemaFrom: "000011",
+        sql: sqlArtifacts.get(SQL_PATHS[11])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[12])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[13])!,
       }),
     ],
   };
@@ -804,6 +822,7 @@ export function validateCatalogStatementBindings(
     ["000009", generatedCatalogs.get(CATALOG_PATHS[10])!.source_descriptors!],
     ["000010", generatedCatalogs.get(CATALOG_PATHS[11])!.source_descriptors!],
     ["000011", generatedCatalogs.get(CATALOG_PATHS[12])!.source_descriptors!],
+    ["000012", generatedCatalogs.get(CATALOG_PATHS[13])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -817,6 +836,7 @@ export function validateCatalogStatementBindings(
     ["000009", DECLARED_IDENTITIES_000009],
     ["000010", DECLARED_IDENTITIES_000010],
     ["000011", DECLARED_IDENTITIES_000011],
+    ["000012", DECLARED_IDENTITIES_000012],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -2369,6 +2389,84 @@ export function validateCompatibilityRecoveryWriterKernel(
   }
 }
 
+export function validateCompatibilityRecoveryPreflightRepair(sqlBytes: Uint8Array): void {
+  const sql = new TextDecoder("utf-8", { fatal: true }).decode(sqlBytes);
+  const statements = splitPostgresStatements(sqlBytes);
+  if (statements.length !== 1) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_PREFLIGHT_REPAIR_STATEMENT_COUNT",
+      String(statements.length),
+    );
+  }
+  const classification = classifyMigrationStatement(statements[0]!, "000012");
+  const expectedIdentity = DECLARED_IDENTITIES_000012.find((identity) =>
+    identity.includes("/unquoted:compatibility_recovery_migration_preflight_evaluate_v2("),
+  );
+  if (
+    !expectedIdentity ||
+    classification.command !== "CREATE" ||
+    classification.object_kind !== "FUNCTION" ||
+    classification.target_identity !== expectedIdentity
+  ) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_PREFLIGHT_REPAIR_TARGET",
+      classification.target_identity,
+    );
+  }
+  for (const fragment of [
+    "CREATE OR REPLACE FUNCTION cloud_agents.compatibility_recovery_migration_preflight_evaluate_v2(",
+    "SECURITY DEFINER",
+    "SET search_path = pg_catalog, cloud_agents",
+    "preflight_unexpired_instance_incompatible",
+    "preflight_expired_instance_unretired",
+    "sha256:d5ca128f28d637349dd6f8515f9ca6bb182fb0778a3160e24d731712589f2973",
+    "sha256:e02302ea60eca9855d362d8bcab7efc0466adab6d3a486d828adccdbc5411d7a",
+  ]) {
+    requireSqlFragment(sql, "compatibility preflight repair", fragment);
+  }
+  if (sql.includes("instance.drain_state <> 'fenced'")) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_PREFLIGHT_REPAIR_FENCED_SHORTCUT",
+      "drain_state",
+    );
+  }
+  const exactTwice = [
+    "AND NOT EXISTS (",
+    "receipt.tenant_id = instance.tenant_id",
+    "receipt.service_kind = instance.service_kind",
+    "receipt.instance_id = instance.instance_id",
+    "receipt.incarnation = instance.incarnation",
+    "receipt.rollout_generation = instance.rollout_generation",
+    "receipt.writer_epoch = instance.writer_epoch",
+    "receipt.state = 'complete'",
+    "receipt.credential_revoked",
+    "receipt.endpoint_revoked",
+    "receipt.process_terminated",
+    "receipt.leader_released",
+    "receipt.claim_released",
+    "receipt.generation_fenced",
+    "receipt.receipt_digest IS NOT NULL",
+  ];
+  for (const fragment of exactTwice) {
+    if (sql.split(fragment).length - 1 !== 2) {
+      throw new MigrationValidationError(
+        "COMPATIBILITY_PREFLIGHT_REPAIR_RECEIPT_BINDING",
+        fragment,
+      );
+    }
+  }
+  if (
+    /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|MERGE|CALL|COPY|DROP|ALTER|GRANT|REVOKE|pg_notify|dblink|http_post|net\.http|aws_lambda)\b/iu.test(
+      sql,
+    )
+  ) {
+    throw new MigrationValidationError(
+      "COMPATIBILITY_PREFLIGHT_REPAIR_SIDE_EFFECT",
+      "forbidden SQL",
+    );
+  }
+}
+
 function assertSqlCheckLiteralSet(
   sql: string,
   constraint: string,
@@ -2477,6 +2575,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000009 = typedIdentities(DECLARED_IDENTITIES_000009);
   const declared000010 = typedIdentities(DECLARED_IDENTITIES_000010);
   const declared000011 = typedIdentities(DECLARED_IDENTITIES_000011);
+  const declared000012 = typedIdentities(DECLARED_IDENTITIES_000012);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -2533,7 +2632,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000008 = contract("000008", rawSources.slice(0, 8), declared000008);
   const schema000009 = contract("000009", rawSources.slice(0, 9), declared000009);
   const schema000010 = contract("000010", rawSources.slice(0, 10), declared000010);
-  const schema000011 = contract("000011", rawSources, declared000011);
+  const schema000011 = contract("000011", rawSources.slice(0, 11), declared000011);
+  const schema000012 = contract("000012", rawSources, declared000012);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -2593,6 +2693,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[10], schema000009],
     [CATALOG_PATHS[11], schema000010],
     [CATALOG_PATHS[12], schema000011],
+    [CATALOG_PATHS[13], schema000012],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }

@@ -21,8 +21,8 @@ func TestCheckedInRecoveryPlanIsClosedAndSameBits(t *testing.T) {
 		t.Fatalf("write ledger TSV: %v", err)
 	}
 	lines := strings.Split(strings.TrimSuffix(ledger.String(), "\n"), "\n")
-	if len(lines) != 11 {
-		t.Fatalf("ledger row count = %d, want 11", len(lines))
+	if len(lines) != 12 {
+		t.Fatalf("ledger row count = %d, want 12", len(lines))
 	}
 	for index, line := range lines {
 		fields := strings.Split(line, "\t")
@@ -48,7 +48,7 @@ func TestCheckedInRecoveryPlanIsClosedAndSameBits(t *testing.T) {
 			t.Fatalf("apply SQL reference count for %s = %d", entry.ID, strings.Count(applyText, needle))
 		}
 	}
-	if strings.Count(applyText, "BEGIN;") != 12 || strings.Count(applyText, "COMMIT;") != 12 ||
+	if strings.Count(applyText, "BEGIN;") != 13 || strings.Count(applyText, "COMMIT;") != 13 ||
 		strings.Count(applyText, `\copy cloud_agents.schema_migrations`) != 1 {
 		t.Fatalf("apply SQL transaction or ledger boundary drifted:\n%s", applyText)
 	}

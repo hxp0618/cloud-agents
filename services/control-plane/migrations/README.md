@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000010`, under the migration advisory lock. Each
+   `000001` through `000012`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -128,6 +128,19 @@ silently alter this schema.
     receipts. Five pure immutable helpers expose exact registry/profile digests;
     runtime, bootstrap, and PUBLIC receive no table access, and no writer service,
     HTTP/P2 adapter, PITR/HA path, or external side effect exists in this slice.
+14. `000011` preserves every earlier SQL artifact and adds the generated-profile
+    typed compatibility/recovery writer functions, forced-RLS storage, and
+    read-only migration preflight. Runtime receives only the exact live-instance,
+    retirement-receipt, and preflight entry points; migration/bootstrap roles
+    receive only their profile-specific operations. Commit ambiguity remains an
+    explicit reconcile outcome, and no HTTP/P2/provider or deployment path is
+    introduced.
+15. `000012` replaces only the existing read-only migration-preflight function.
+    An incompatible unexpired instance and an expired instance remain blocking
+    even when fenced; either is excluded only by an exact complete retirement
+    receipt matching tenant, service, instance, incarnation, rollout generation,
+    writer epoch, all six revoke/release flags, and a non-null receipt digest. It
+    creates no table, role, grant, writer, or external side effect.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -177,7 +190,9 @@ effective typed RBAC mutation entry points, seven pure coordination
 registry/profile helpers, and ten typed `000008` coordination service entry
 points. `000009` preserves the versioned service surface while redacting
 conflicts; `000010` grants only five pure compatibility/recovery digest helpers
-and no table access. Project, Membership, RoleBinding, and coordination mutation is never
+and no table access. `000011` adds only generated-profile typed compatibility
+writer/reconcile/preflight entry points, and `000012` changes only the read-only
+preflight body without widening ACLs. Project, Membership, RoleBinding, and coordination mutation is never
 granted as raw table write authority. Each existing typed RBAC mutation allocates
 and publishes its tenant revision atomically through the reviewed store path.
 The generated profile service covers only idempotency, leader and internal
@@ -244,6 +259,22 @@ The matrix never pulls implicitly, reuses a database, exposes a writer service,
 or performs an HTTP/P2/provider effect. Its PASS is local schema-kernel evidence,
 not production mutation, independent review, release publication, or Gate
 closure.
+
+The focused live-instance retirement repair matrix starts fresh exact PostgreSQL
+15/16/17 containers and applies `000001` through `000012`. It proves an active
+incompatible N-1 writer blocks preflight; fencing alone and a collecting/incomplete
+receipt still block; only the exact complete receipt permits N. It repeats the
+same boundary after the fenced predecessor expires, so neither fencing nor TTL
+expiry can silently remove an unretired registration:
+
+```sh
+./services/control-plane/scripts/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh
+```
+
+This focused matrix uses only run-labelled local containers, refuses implicit
+image pulls, removes each owned container before publishing PASS, and does not
+run the older broad writer/service matrices. It is local implementation evidence,
+not a production database write, deployment, publication, or Gate closure.
 
 ## Immutable boundary
 
