@@ -5,6 +5,12 @@ import { relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
 import {
+  assertContractClosureProfileRegistryCurrent,
+  buildContractClosureProfileRegistry,
+  contractClosureProfileInputs,
+  CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH,
+} from "./platform-contract-closure-profile";
+import {
   assertCompatibilityRecoveryRegistryCurrent,
   assertCompatibilityRecoveryRegistryV2Current,
   buildCompatibilityRecoveryRegistry,
@@ -417,6 +423,16 @@ const IDENTITY_VERIFIER_GO_GENERATOR_SOURCES = [
   "scripts/lib/platform-identity-verifier-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
+const CONTRACT_CLOSURE_PROFILE_GENERATOR_SOURCES = [
+  "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+  "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
+  "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+  "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
+  "scripts/generate-platform-contract-closure-profile.ts",
+  "scripts/lib/platform-contract-closure-profile.test.ts",
+  "scripts/lib/platform-contract-closure-profile.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
 export const IDENTITY_VERIFIER_RUNTIME_SOURCES = [
   "services/control-plane/internal/authn/authz_callgraph_test.go",
   "services/control-plane/internal/authn/binder_external_test.go",
@@ -460,6 +476,7 @@ const IN_REPO_TOOLS = [
     sources: [
       "scripts/check-platform-contracts.ts",
       "scripts/lib/platform-contracts.ts",
+      "scripts/lib/platform-contract-closure-profile.ts",
       "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -490,6 +507,7 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-contract-lock.test.ts",
       "scripts/lib/platform-contract-lock.ts",
       "scripts/lib/platform-contracts.ts",
+      "scripts/lib/platform-contract-closure-profile.ts",
       "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -504,6 +522,12 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-go-modules.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
+  },
+  {
+    id: "platform-contract-closure-profile-generator",
+    kind: "in-repo-typescript-deterministic-versioned-contract-closure-profile",
+    entrypoint: "scripts/generate-platform-contract-closure-profile.ts",
+    sources: CONTRACT_CLOSURE_PROFILE_GENERATOR_SOURCES,
   },
   {
     id: "platform-durable-coordination-registry-generator",
@@ -647,6 +671,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertRunnerLedgerEntrySuccessWriterRegistryCurrent(root);
   assertRunnerLedgerRecoveryRegistriesCurrent(root);
   assertIdentityVerifierRegistryCurrent(root);
+  assertContractClosureProfileRegistryCurrent(root);
   assertIdentityVerifierGoCurrent(root);
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
@@ -662,6 +687,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerEntrySuccessWriterInputs = runnerLedgerEntrySuccessWriterRegistryInputs(root);
   const runnerLedgerRecoveryInputs = runnerLedgerRecoveryRegistryInputs(root);
   const identityVerifierInputs = identityVerifierRegistryInputs(root);
+  const contractClosureInputs = contractClosureProfileInputs(root);
   const identityVerifierGoInputs = [
     ...identityVerifierInputs,
     IDENTITY_VERIFIER_OUTPUT_PATH,
@@ -774,6 +800,14 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerEntrySuccessWriterRegistry = buildRunnerLedgerEntrySuccessWriterRegistry(root);
   const runnerLedgerRecoveryRegistries = buildRunnerLedgerRecoveryRegistries(root);
   const identityVerifierRegistry = buildIdentityVerifierRegistry(root);
+  const contractClosureRegistry = buildContractClosureProfileRegistry(root) as unknown as {
+    readonly registryDigest: string;
+    readonly missing: ReadonlyArray<string>;
+    readonly profile: {
+      readonly profileDigest: string;
+      readonly spec: { readonly profileId: string; readonly status: string };
+    };
+  };
   const identityVerifierProfile = identityVerifierRegistry.profile as {
     readonly profileId: string;
     readonly profileDigest: string;
@@ -919,6 +953,36 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
       },
     ],
     pipelines: [
+      {
+        id: "contract-closure-profile-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, contractClosureInputs),
+        inputs: contractClosureInputs,
+        outputStatus: "GENERATED_CONTRACT_CLOSURE_PROFILE",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH,
+            sha256: fileSha256(root, CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          registryDigest: contractClosureRegistry.registryDigest,
+          profileId: contractClosureRegistry.profile.spec.profileId,
+          profileDigest: contractClosureRegistry.profile.profileDigest,
+          status: contractClosureRegistry.profile.spec.status,
+          missing: contractClosureRegistry.missing,
+          manualMissingRemoval: "FORBIDDEN",
+          officialAjvSuiteRunner: "NOT_IMPLEMENTED",
+          runtimeTrustAndHttp: "NOT_IMPLEMENTED",
+          supplyScanner: "NOT_IMPLEMENTED",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
       {
         id: "bootstrap-contract-validation",
         inputManifestSha256: summary.contractManifestSha256,
@@ -1916,9 +1980,9 @@ function assertContractStandardsProfileCurrent(root: string): ContractStandardsP
     throw new Error("Contract standards official JSON Schema suite binding is stale.");
   }
   if (
-    profile.currentContracts.schemaFiles !== 52 ||
+    profile.currentContracts.schemaFiles !== 54 ||
     profile.currentContracts.fixtureManifests !== 2 ||
-    profile.currentContracts.fixtureCases !== 71 ||
+    profile.currentContracts.fixtureCases !== 73 ||
     profile.currentContracts.crossEngineExactFixtureResults !== true
   ) {
     throw new Error("Contract standards current-contract cardinalities are stale.");

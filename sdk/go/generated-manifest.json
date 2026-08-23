@@ -5,7 +5,7 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:eb51453861feb6685eadcd335c0620fea5ca98de9058a9a3d3f5198f6e67406e",
+    "manifestSha256": "sha256:0aee6843cd09fe301bcc3caa55c55686917531e38a1f683b73a8a4308f183de4",
     "inputManifestSha256": "sha256:2253e5baab41fb44d276214b0007b58ed92b5736ef29ab0481628038e8912cbf",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -64,11 +64,11 @@
     }
   ],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:3a9f9f1cc397a338af5ad0147345c550df248fb25be1a849dfd1e3ec516b6c41",
+  "outputTreeSha256": "sha256:3b7b7cfa2719460df7ffc080ef0f1e0abdae9766e16207e78d50cb795adcf144",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-      "sha256": "sha256:5378809622337dc0632d650bce3893d046fe580d840621a3f4a8551230175b1d",
+      "sha256": "sha256:c2a7e100fc6d01f0e0728f20d705a091a9e6049df9359a2a7445366bb76b6635",
       "sizeBytes": 13530
     }
   ]

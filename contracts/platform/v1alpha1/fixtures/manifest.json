@@ -365,6 +365,18 @@
       "instance": "../../../generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
       "expectedSchemaValid": true,
       "expectedSemanticValid": true
+    },
+    {
+      "name": "contract-closure-profile-source-v1",
+      "schema": "../schemas/contract-closure-profile-source-v1.schema.json",
+      "instance": "golden/contract-closure-profile-source-v1.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "contract-closure-profile-v1",
+      "schema": "../schemas/contract-closure-profile-v1.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/contract-closure-profile-v1.json",
+      "expectedSchemaValid": true
     }
   ]
 }

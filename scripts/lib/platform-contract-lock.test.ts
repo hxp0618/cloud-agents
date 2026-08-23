@@ -195,7 +195,7 @@ describe("Platform contract generation lock", () => {
       notGateClosure: true,
       outputSummary: {
         sourceContractManifestSha256:
-          "sha256:eb51453861feb6685eadcd335c0620fea5ca98de9058a9a3d3f5198f6e67406e",
+          "sha256:0aee6843cd09fe301bcc3caa55c55686917531e38a1f683b73a8a4308f183de4",
         toolchain: { bun: "1.3.14", python: "3.14.7", uv: "0.12.5" },
         officialJsonSchemaSuite: {
           files: 46,
@@ -208,9 +208,9 @@ describe("Platform contract generation lock", () => {
           status: "NOT_RUN_NOT_CLAIMED",
         },
         currentJsonSchema: {
-          schemas: 52,
+          schemas: 54,
           fixtureManifests: 2,
-          fixtureCases: 71,
+          fixtureCases: 73,
           crossEngineExactFixtureResults: true,
         },
         openapi31: { documents: 2, operations: 9, expectedFailures: 0 },
@@ -223,13 +223,56 @@ describe("Platform contract generation lock", () => {
     expect(pipeline?.inputs).toContain(
       "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
     );
-    expect(lock.missing).toEqual(
-      expect.arrayContaining([
-        "json-schema-2020-12-official-test-suite",
-        "openapi-3.1-semantic-validation",
-        "remaining-generator-supply-chain-review",
-      ]),
+    expect(lock.missing).toEqual([
+      "json-schema-2020-12-official-test-suite",
+      "runtime-server-path-and-tenant-authority-enforcement",
+      "remaining-generator-supply-chain-review",
+    ]);
+  });
+
+  it("records the generated formal closure profile without closing G-CONTRACT", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      status: string;
+      notGateClosure: boolean;
+      missing: string[];
+      pipelines: Array<{
+        id?: string;
+        inputs?: string[];
+        generatedOutputs?: Array<{ path?: string }>;
+        outputSummary?: Record<string, unknown>;
+      }>;
+    };
+    const pipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "contract-closure-profile-generation",
     );
+    expect(lock).toMatchObject({ status: "BOOTSTRAP_VALIDATED", notGateClosure: true });
+    expect(pipeline).toMatchObject({
+      outputStatus: "GENERATED_CONTRACT_CLOSURE_PROFILE",
+      notGateClosure: true,
+      generatedOutputs: [
+        { path: "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json" },
+      ],
+      outputSummary: {
+        profileId: "contract-closure-profile/v1",
+        status: "BOOTSTRAP_VALIDATED",
+        missing: lock.missing,
+        manualMissingRemoval: "FORBIDDEN",
+        officialAjvSuiteRunner: "NOT_IMPLEMENTED",
+        runtimeTrustAndHttp: "NOT_IMPLEMENTED",
+        supplyScanner: "NOT_IMPLEMENTED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+    });
+    expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
+    for (const evidence of [
+      "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+      "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+      "sdk/go/proto_conformance_test.go",
+      "sdk/typescript/src/proto.test.ts",
+    ]) {
+      expect(pipeline?.inputs).toContain(evidence);
+    }
   });
 
   it("records the generated durable coordination registry as a non-Gate pipeline", () => {

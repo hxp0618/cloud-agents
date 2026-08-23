@@ -30,7 +30,7 @@ class ContractStandardsTest(unittest.TestCase):
         result = run(ROOT, PROFILE_PATH)
         self.assertEqual(result["status"], "INDEPENDENT_CONTRACT_STANDARDS_VALIDATED")
         self.assertEqual(result["jsonSchemaOfficialSuite"]["assertions"], 1299)
-        self.assertEqual(result["currentJsonSchema"]["cases"], 71)
+        self.assertEqual(result["currentJsonSchema"]["cases"], 73)
         self.assertEqual(result["openapi31"]["operations"], 9)
         self.assertTrue(result["notGateClosure"])
         self.assertEqual(result["gateStatus"], "ALL_GATES_OPEN")

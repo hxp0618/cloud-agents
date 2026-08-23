@@ -4,7 +4,7 @@
   "notGateClosure": true,
   "sourceContract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:eb51453861feb6685eadcd335c0620fea5ca98de9058a9a3d3f5198f6e67406e",
+    "manifestSha256": "sha256:0aee6843cd09fe301bcc3caa55c55686917531e38a1f683b73a8a4308f183de4",
     "sourceTreeBinding": "REQUIRED_AT_GATE",
     "excludes": [
       "contracts/generation.lock.json",
@@ -45,7 +45,7 @@
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:99c6358f0e8e3546bfb5f178f1e2a780aab0257fadeca17643b294a62106ca2a",
+    "manifestSha256": "sha256:a2faf1e1b60eec1e09d0af78912ae191993f88c7a2f2d6e85f762e985bd97cbd",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -61,10 +61,11 @@
       "id": "platform-contract-bootstrap-checker",
       "kind": "in-repo-typescript-ajv",
       "entrypoint": "scripts/check-platform-contracts.ts",
-      "sourceManifestSha256": "sha256:e38493a8bcbb90515cbdfaf57c77cf219864622bf62acee8cea5e782653184ce",
+      "sourceManifestSha256": "sha256:24cccfbeeae1f161f17054e9185da9e773f07aad7f79f767276c633c4b04162e",
       "sources": [
         "scripts/check-platform-contracts.ts",
         "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-contract-closure-profile.ts",
         "scripts/lib/platform-compatibility-recovery-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -93,12 +94,13 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:2fe5bb617c7c64553aef2834464533d31e03094c6546bf002d2c79a0f957ba96",
+      "sourceManifestSha256": "sha256:b1a47ce6b7ec3d5d23a208ffba42ac0aae47af1fc669d6c8bee060b4eb467e87",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.test.ts",
         "scripts/lib/platform-contract-lock.ts",
         "scripts/lib/platform-contracts.ts",
+        "scripts/lib/platform-contract-closure-profile.ts",
         "scripts/lib/platform-compatibility-recovery-registry.ts",
         "scripts/lib/platform-durable-coordination-registry.ts",
         "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -111,6 +113,23 @@
         "scripts/lib/platform-identity-sdk.ts",
         "scripts/lib/platform-proto-sdk.ts",
         "scripts/lib/platform-go-modules.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-contract-closure-profile-generator",
+      "kind": "in-repo-typescript-deterministic-versioned-contract-closure-profile",
+      "entrypoint": "scripts/generate-platform-contract-closure-profile.ts",
+      "sourceManifestSha256": "sha256:f7b668735463bd5a6cb55ba42757d6c093d8320c059bc5382f7238f01a574680",
+      "sources": [
+        "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+        "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
+        "scripts/generate-platform-contract-closure-profile.ts",
+        "scripts/lib/platform-contract-closure-profile.test.ts",
+        "scripts/lib/platform-contract-closure-profile.ts",
         "scripts/lib/platform-json-semantics.ts"
       ],
       "license": "MIT"
@@ -613,7 +632,7 @@
       "id": "platform-contract-standards-checker",
       "kind": "in-repo-python-independent-json-schema-openapi-checker",
       "entrypoint": "tools/contract-standards/check_contract_standards.py",
-      "sourceManifestSha256": "sha256:eeb0ef55b6d9ea487d2ce1a3e3bc1c72818abead4c97b5b6363884fd9d0e7695",
+      "sourceManifestSha256": "sha256:f4c3e4425875c8e55c3bdceb32df26caeb6f63eec6ec2029585f8d395bdf7c16",
       "sources": [
         ".gitattributes",
         ".mise.toml",
@@ -786,15 +805,213 @@
   ],
   "pipelines": [
     {
+      "id": "contract-closure-profile-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:5ea618899d1ffe393fa9c7f9e02a6792a240b1658625ce11cf253d124d6b4d79",
+      "inputs": [
+        "bun.lock",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-host/v1alpha1/openapi.json",
+        "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
+        "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+        "contracts/proto-generation.profile.json",
+        "docs/plan/adr/0007-p1-contract-data-toolchain-foundation.md",
+        "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+        "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md",
+        "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md",
+        "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
+        "docs/plan/p1/identity-verifier-authz-binder-independent-review-20260824.md",
+        "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+        "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
+        "package.json",
+        "scripts/generate-platform-contract-closure-profile.ts",
+        "scripts/generate-platform-identity-sdks.ts",
+        "scripts/generate-platform-json-sdks.ts",
+        "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-contract-closure-profile.test.ts",
+        "scripts/lib/platform-contract-closure-profile.ts",
+        "scripts/lib/platform-json-sdk.test.ts",
+        "scripts/lib/platform-json-sdk.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/lib/platform-proto-sdk.test.ts",
+        "scripts/lib/platform-proto-sdk.ts",
+        "scripts/test-platform-sdk-consumers.ts",
+        "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+        "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+        "sdk/go/proto_conformance_test.go",
+        "sdk/typescript/src/platform.test.ts",
+        "sdk/typescript/src/proto.test.ts",
+        "services/control-plane/internal/authn/verifier.go",
+        "tools/contract-standards/check_contract_standards.py",
+        "tools/contract-standards/profile.json",
+        "tools/contract-standards/uv.lock",
+        "tools/contract-standards/vendor/json-schema-test-suite/LICENSE",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/baseUriChange/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/baseUriChangeFolder/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/baseUriChangeFolderInSubschema/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/baseUriChange/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/baseUriChangeFolder/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/baseUriChangeFolderInSubschema/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/dependentRequired.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/detached-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/different-id-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/extendible-dynamic-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/ignore-prefixItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/integer.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/locationIndependentIdentifier.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/metaschema-no-validation.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/metaschema-optional-vocabulary.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/name-defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/nested-absolute-ref-to-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/nested/foo-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/nested/string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/ref-and-defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2019-09/urn-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/baseUriChange/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/baseUriChangeFolder/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/baseUriChangeFolderInSubschema/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/detached-dynamicref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/detached-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/different-id-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/extendible-dynamic-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/format-assertion-false.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/format-assertion-true.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/integer.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/locationIndependentIdentifier.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/metaschema-no-validation.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/metaschema-optional-vocabulary.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/name-defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/nested-absolute-ref-to-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/nested/foo-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/nested/string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/prefixItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/ref-and-defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/tree.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft2020-12/urn-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft3/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft4/locationIndependentIdentifier.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft4/name.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft4/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft6/detached-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft6/locationIndependentIdentifier.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft6/name.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft6/ref-and-definitions.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft6/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft7/detached-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft7/ignore-dependentRequired.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft7/locationIndependentIdentifier.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft7/name.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft7/ref-and-definitions.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/draft7/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/integer.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/nested/foo-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/nested/string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/baseUriChange/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/baseUriChangeFolder/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/baseUriChangeFolderInSubschema/folderInteger.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/detached-dynamicref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/detached-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/different-id-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/extendible-dynamic-ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/integer.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/locationIndependentIdentifier.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/name-defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/nested-absolute-ref-to-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/nested/foo-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/nested/string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/ref-and-defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/subSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/tree.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/remotes/v1/urn-ref-string.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/additionalProperties.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/allOf.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/anchor.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/anyOf.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/boolean_schema.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/const.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/contains.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/content.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/default.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/defs.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/dependentRequired.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/dependentSchemas.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/dynamicRef.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/enum.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/exclusiveMaximum.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/exclusiveMinimum.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/format.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/if-then-else.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/infinite-loop-detection.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/items.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/maxContains.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/maxItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/maxLength.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/maxProperties.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/maximum.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/minContains.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/minItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/minLength.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/minProperties.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/minimum.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/multipleOf.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/not.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/oneOf.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/pattern.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/patternProperties.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/prefixItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/properties.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/propertyNames.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/refRemote.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/required.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/type.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/unevaluatedItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/unevaluatedProperties.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/uniqueItems.json",
+        "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/vocabulary.json"
+      ],
+      "outputStatus": "GENERATED_CONTRACT_CLOSURE_PROFILE",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json",
+          "sha256": "sha256:823e9356342511b611538fb669e8af99962555b153324d09c7208f3f00b51e68",
+          "sizeBytes": 6364
+        }
+      ],
+      "outputSummary": {
+        "registryDigest": "sha256:c01ef40f826bbec63ede5f43b49dd3e2c4bd5d4c1cd2744d03cf28784a6cf5bd",
+        "profileId": "contract-closure-profile/v1",
+        "profileDigest": "sha256:08746a7986a583c550eecb5ef5d7ab15f08511fe934a4c176d2f087bc449a715",
+        "status": "BOOTSTRAP_VALIDATED",
+        "missing": [
+          "json-schema-2020-12-official-test-suite",
+          "runtime-server-path-and-tenant-authority-enforcement",
+          "remaining-generator-supply-chain-review"
+        ],
+        "manualMissingRemoval": "FORBIDDEN",
+        "officialAjvSuiteRunner": "NOT_IMPLEMENTED",
+        "runtimeTrustAndHttp": "NOT_IMPLEMENTED",
+        "supplyScanner": "NOT_IMPLEMENTED",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
       "id": "bootstrap-contract-validation",
-      "inputManifestSha256": "sha256:eb51453861feb6685eadcd335c0620fea5ca98de9058a9a3d3f5198f6e67406e",
+      "inputManifestSha256": "sha256:0aee6843cd09fe301bcc3caa55c55686917531e38a1f683b73a8a4308f183de4",
       "outputStatus": "BOOTSTRAP_VALIDATED",
       "generatedOutputs": []
     },
     {
       "id": "independent-contract-standards-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:eeb0ef55b6d9ea487d2ce1a3e3bc1c72818abead4c97b5b6363884fd9d0e7695",
+      "inputManifestSha256": "sha256:f4c3e4425875c8e55c3bdceb32df26caeb6f63eec6ec2029585f8d395bdf7c16",
       "inputs": [
         ".gitattributes",
         ".mise.toml",
@@ -938,7 +1155,7 @@
       "generatedOutputs": [],
       "outputSummary": {
         "profile": "cloud-agents-contract-standards-profile/v1",
-        "sourceContractManifestSha256": "sha256:eb51453861feb6685eadcd335c0620fea5ca98de9058a9a3d3f5198f6e67406e",
+        "sourceContractManifestSha256": "sha256:0aee6843cd09fe301bcc3caa55c55686917531e38a1f683b73a8a4308f183de4",
         "toolchain": {
           "bun": "1.3.14",
           "python": "3.14.7",
@@ -958,9 +1175,9 @@
           "status": "NOT_RUN_NOT_CLAIMED"
         },
         "currentJsonSchema": {
-          "schemas": 52,
+          "schemas": 54,
           "fixtureManifests": 2,
-          "fixtureCases": 71,
+          "fixtureCases": 73,
           "crossEngineExactFixtureResults": true
         },
         "openapi31": {
@@ -1734,7 +1951,7 @@
     {
       "id": "identity-verifier-registry-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f9475b5765ea49b9e38ad16b65980cf59cb7c10262c6aba06ee76cd0f44916b8",
+      "inputManifestSha256": "sha256:1e918e65081a51754e8cc971cb79357d72df851118fb42677fae1cf929e1c2b3",
       "inputs": [
         "docs/plan/adr/0025-p1-offline-jwt-access-token-verifier-contract.md",
         "docs/plan/p1/identity-verifier-entry-20260823.md",
@@ -1783,7 +2000,7 @@
     {
       "id": "identity-verifier-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:848b7760dd4670791348378913d2c1c6d41f24a456092ff79b471078a2db373e",
+      "inputManifestSha256": "sha256:de4b53b10a03e789f5b5d738b56084d9ded9c35814c23f0f530f44dc4480b3cf",
       "inputs": [
         "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
         "docs/plan/adr/0025-p1-offline-jwt-access-token-verifier-contract.md",
@@ -1906,12 +2123,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-          "sha256": "sha256:5378809622337dc0632d650bce3893d046fe580d840621a3f4a8551230175b1d",
+          "sha256": "sha256:c2a7e100fc6d01f0e0728f20d705a091a9e6049df9359a2a7445366bb76b6635",
           "sizeBytes": 13530
         },
         {
           "path": "sdk/go/generated-manifest.json",
-          "sha256": "sha256:89a60bf047608910570afdc401648a60d1e021aec5580c9c88863fa8fff53734",
+          "sha256": "sha256:0e6ed7fea25d8eb846665365f3b5c614edd5994170c67d96d7aea2dfc520acc1",
           "sizeBytes": 3740
         }
       ],
@@ -1930,7 +2147,7 @@
     {
       "id": "common-identity-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d1a1e27185bd88bb0c6f45b7e8964fd6ff1932ffd437e2c19d63b8e1ed74855f",
+      "inputManifestSha256": "sha256:32d4db9da4cd3b337fc547899f6bddf2eee56a23a7105c51ff9dcac4fb8a5348",
       "inputs": [
         "bun.lock",
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -1967,12 +2184,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/index.ts",
-          "sha256": "sha256:c405209517ba6352ed79d99dd23a277152106cdd0d26d0b08000350432112483",
+          "sha256": "sha256:a875008b3031abf3d4ab341d78df570cb5277a56aa21527f534713c0343ef64f",
           "sizeBytes": 12982
         },
         {
           "path": "sdk/typescript/generated-manifest.json",
-          "sha256": "sha256:2541343d98afbfa409a6b25f01739ce1a1f1b44aca3e09e5b842688131040322",
+          "sha256": "sha256:908f978a3915598a6d65a699f8fb8229d559427cdb69c5d31f557852f7319bd4",
           "sizeBytes": 3278
         }
       ],
@@ -1992,7 +2209,7 @@
     {
       "id": "platform-json-contract-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:d63692cd1731174b7cd2879328acb30577c16ff64d1cd36c1ab3a184ee0cc356",
+      "inputManifestSha256": "sha256:54c9b1390e1b7d911bd5840bd2f674715eaf5506638e8b78fb60783bf5715da0",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -2074,22 +2291,22 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:18f1d02f6bb56a17f7d38ace3a44bf52b6f5d78f9492bcea41644513b0fa907f",
+          "sha256": "sha256:48a1f523d678da548e8f5607d248a130cf0df87b25f235a29ec1bd22dbaf310f",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:757544ba92a633dfb4024c47a62611445d8521fcf3ee7c4b7ed7d676cc9aa38f",
+          "sha256": "sha256:d798977b572c74b32ab6c6725d472e78e57dd15469e57bfa685869998dedb54d",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:1b9f2134a21b6e8fa8fa83a4d277f0a8ec147f33ac777271e54fdd091682278b",
+          "sha256": "sha256:9cbc8b80be75b560a22179259a0d3bbc65591f9bee1805c4ed151ebd5632db38",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:7cf7e8eddac3fbbe2de5cbee50ab52ea29fb4bdb6ed5ac5d989ae99c590d6685",
+          "sha256": "sha256:bf471777724c88a09a3dbb59f0c60720d9c6d645a1da3c7d1656142d51ceaf44",
           "sizeBytes": 9802
         }
       ],
@@ -2110,7 +2327,7 @@
     {
       "id": "platform-json-contract-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:22121b741ee6b8e01abf237ea27c932b265dbf129e664f101e4fc351bd0d15b0",
+      "inputManifestSha256": "sha256:696d6ca61fb0534df0da48d69fd5c12583639c158a357619d8ec052148b1f2bd",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -2192,12 +2409,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:572f9529560d4df3d1cb4b275de947aeea02923ecef00a60b59f1e27f3072d7f",
+          "sha256": "sha256:48af0cc6cfc9963dc8a9a458f02a3707ed759c09b330864a8636992e23b0f41e",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:9e1f45de9924efdfe20b8f3ca8864a7d1d3d9001b6fa2a6233c67bcb0e25fecb",
+          "sha256": "sha256:9abf9afd39f9b88fa19bef930fe99e4ef0ca1ff4f8e94f5ede1b8181f4aba579",
           "sizeBytes": 9412
         }
       ],
@@ -2218,7 +2435,7 @@
     {
       "id": "platform-proto-descriptor-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:f5f9bdc2da944e062bddc3fad407fed38052a9fc5cbf158248173a5949251bef",
+      "inputManifestSha256": "sha256:97e789734262491981d9b0105b10347a019f406612975464ee67a90d24249a22",
       "inputs": [
         "bun.lock",
         "contracts/platform-adapter/v1alpha1/README.md",
@@ -2252,7 +2469,7 @@
         },
         {
           "path": "contracts/generated/proto/manifest.json",
-          "sha256": "sha256:16f9f2d59710a682fe61a70b2b64d8f35922e169ff514cd9964bea59140fc3af",
+          "sha256": "sha256:89d8821c70e4f4bf2f4f4232c61c77100176a938c288295fdf676b8610b2a93c",
           "sizeBytes": 5139
         }
       ],
@@ -2303,7 +2520,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/proto-generated-manifest.json",
-          "sha256": "sha256:ceb1df7f72070b1b5aab5f16757136b381418d5ad827c9df30decc4273e9293d",
+          "sha256": "sha256:4c113b4da60c20adda7247a193ea5871a89b8180f78e0cb55f01ac53c7e254d2",
           "sizeBytes": 7912
         },
         {
@@ -2353,7 +2570,7 @@
     {
       "id": "platform-proto-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:6b534458173519e7621fc9e735d2c5117e46781b88dab761b7b0840190e3aeee",
+      "inputManifestSha256": "sha256:5dd65aef65adef9244818b8b71c78941e8cfe26062b89978c4b47e2ab68a309e",
       "inputs": [
         "bun.lock",
         "contracts/platform-adapter/v1alpha1/README.md",
@@ -2383,7 +2600,7 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/proto-generated-manifest.json",
-          "sha256": "sha256:a523e1899b9bd1724acebffef5dd84212d9c23b4c1450a7448a3a537e8e2c9d1",
+          "sha256": "sha256:2e4f9abbbcfbb9d0614e6bf362bfceafb1084fc423e4bde48596250e83ab0985",
           "sizeBytes": 6913
         },
         {
@@ -2852,7 +3069,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:90ce0f1beb21362ff097e98896d91e8c0b068c7d79ebd4d753c397a0b2ac5e21",
+      "inputManifestSha256": "sha256:b4fa6c6a9ee6191007f8510736f7e5217d7cef7b7885e7a2f52ca0cc1e2d9178",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",
@@ -2877,10 +3094,6 @@
   ],
   "missing": [
     "json-schema-2020-12-official-test-suite",
-    "openapi-3.1-semantic-validation",
-    "generated-sdk-replay",
-    "n-minus-one-compatibility",
-    "response-watch-unknown-field-preservation",
     "runtime-server-path-and-tenant-authority-enforcement",
     "remaining-generator-supply-chain-review"
   ]

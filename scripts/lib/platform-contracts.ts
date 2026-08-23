@@ -7,6 +7,7 @@ import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
 import { validateCompatibilityRecoveryFixture } from "./platform-compatibility-recovery-registry";
+import { buildContractClosureProfileRegistry } from "./platform-contract-closure-profile";
 import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
 import { validateRunnerLedgerPreflightFixture } from "./platform-runner-ledger-preflight-registry";
 import { validateRunnerLedgerConsumerFixture } from "./platform-runner-ledger-consumer-registry";
@@ -329,6 +330,18 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       expectedSchemaValid: true,
       expectedSemanticValid: true,
     })),
+    {
+      name: "contract-closure-profile-source-v1",
+      schema: "../schemas/contract-closure-profile-source-v1.schema.json",
+      instance: "golden/contract-closure-profile-source-v1.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "contract-closure-profile-v1",
+      schema: "../schemas/contract-closure-profile-v1.schema.json",
+      instance: "../../../generated/platform/v1alpha1/contract-closure-profile-v1.json",
+      expectedSchemaValid: true,
+    },
   ],
 };
 
@@ -395,6 +408,9 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
   validateP1A1HttpIdempotencyBinding(openApiFiles, schemaFiles);
 
   const fixtureCases = validateJsonSchemaFixtures(schemaFiles, fixtureManifests, contractRoot);
+  const closureProfile = buildContractClosureProfileRegistry(root) as JsonRecord & {
+    readonly missing: ReadonlyArray<string>;
+  };
 
   if (schemaFiles.length === 0 || openApiFiles.length !== 2 || protoFiles.length < 3) {
     throw new Error(
@@ -417,15 +433,7 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
     operationIds,
     jsonSchemaValidation: "AJV_2020_AND_IN_REPO_SEMANTICS_PASS",
     contractManifestSha256: contractManifestDigest(contractRoot, files),
-    missing: [
-      "json-schema-2020-12-official-test-suite",
-      "openapi-3.1-semantic-validation",
-      "generated-sdk-replay",
-      "n-minus-one-compatibility",
-      "response-watch-unknown-field-preservation",
-      "runtime-server-path-and-tenant-authority-enforcement",
-      "remaining-generator-supply-chain-review",
-    ],
+    missing: closureProfile.missing,
   };
 }
 

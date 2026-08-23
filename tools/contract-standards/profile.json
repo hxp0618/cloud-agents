@@ -62,9 +62,9 @@
     }
   },
   "currentContracts": {
-    "schemaFiles": 52,
+    "schemaFiles": 54,
     "fixtureManifests": 2,
-    "fixtureCases": 71,
+    "fixtureCases": 73,
     "productionValidator": "Ajv 8.20.0 plus in-repo semantics",
     "independentValidator": "jsonschema-rs 0.50.1",
     "crossEngineExactFixtureResults": true
