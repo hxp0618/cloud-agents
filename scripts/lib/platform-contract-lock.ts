@@ -417,6 +417,18 @@ const IDENTITY_VERIFIER_GO_GENERATOR_SOURCES = [
   "scripts/lib/platform-identity-verifier-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
+const IDENTITY_VERIFIER_RUNTIME_SOURCES = [
+  "services/control-plane/internal/authn/canonical.go",
+  "services/control-plane/internal/authn/errors.go",
+  "services/control-plane/internal/authn/lexical.go",
+  "services/control-plane/internal/authn/principal.go",
+  "services/control-plane/internal/authn/strict_json.go",
+  "services/control-plane/internal/authn/surface_test.go",
+  "services/control-plane/internal/authn/trust.go",
+  "services/control-plane/internal/authn/trust_test.go",
+  "services/control-plane/internal/authn/verifier.go",
+  "services/control-plane/internal/authn/verifier_test.go",
+] as const;
 
 const IN_REPO_TOOLS = [
   {
@@ -635,6 +647,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     "scripts/lib/platform-identity-verifier-go.ts",
     "services/control-plane/internal/authn/profile.go",
     "services/control-plane/internal/authn/profile_test.go",
+    ...IDENTITY_VERIFIER_RUNTIME_SOURCES,
   ].toSorted();
   const identityContractInputs = identitySDKContractInputs(root);
   const identityGeneratorInputs = identitySDKGeneratorSources();
@@ -1545,8 +1558,11 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           generatedFactsOnly: true,
           packagePrivate: true,
           handWrittenProfileFallback: "FORBIDDEN",
-          productionConstructor: "NONE_IN_SLICE_A",
-          runtimeVerifier: "NOT_IMPLEMENTED_IN_SLICE_A",
+          productionConstructor: "NONE_PRIVATE_TEST_BUILDERS_ONLY",
+          runtimeVerifier: "IMPLEMENTED_OFFLINE_SLICE_B",
+          mutableRuntimeConformanceInputs: true,
+          principalConsumeSeam: "OPAQUE_ONE_SHOT_CALLBACK_SCOPED",
+          productionConsumer: "NONE_IN_SLICE_B",
           httpSurface: "NOT_IMPLEMENTED",
           oidcDiscovery: "NOT_IMPLEMENTED",
           remoteJwks: "NOT_IMPLEMENTED",

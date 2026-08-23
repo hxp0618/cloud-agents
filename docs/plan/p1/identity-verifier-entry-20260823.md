@@ -1,6 +1,7 @@
 # P1 offline JWT access-token verifier implementation entry - 2026-08-23
 
-- Status: **SLICE A IMPLEMENTED CANDIDATE; INDEPENDENT REVIEW PENDING; SLICES B-C NOT STARTED**
+- Status: **SLICE A APPROVED; SLICE B IMPLEMENTED CANDIDATE — INDEPENDENT REVIEW PENDING; SLICE C NOT STARTED**
+- Last updated: 2026-08-24
 - Source: [`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md)
 - Baseline: `bf2bb8fa916a723bca2b64e156d2b3e64f374582`
 - Scope: versioned generated verifier profile, offline pure verifier, opaque principal, authz binder, and independent review

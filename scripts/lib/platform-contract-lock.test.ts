@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -671,8 +672,11 @@ describe("Platform contract generation lock", () => {
         generatedFactsOnly: true,
         packagePrivate: true,
         handWrittenProfileFallback: "FORBIDDEN",
-        productionConstructor: "NONE_IN_SLICE_A",
-        runtimeVerifier: "NOT_IMPLEMENTED_IN_SLICE_A",
+        productionConstructor: "NONE_PRIVATE_TEST_BUILDERS_ONLY",
+        runtimeVerifier: "IMPLEMENTED_OFFLINE_SLICE_B",
+        mutableRuntimeConformanceInputs: true,
+        principalConsumeSeam: "OPAQUE_ONE_SHOT_CALLBACK_SCOPED",
+        productionConsumer: "NONE_IN_SLICE_B",
         httpSurface: "NOT_IMPLEMENTED",
         oidcDiscovery: "NOT_IMPLEMENTED",
         remoteJwks: "NOT_IMPLEMENTED",
@@ -700,6 +704,23 @@ describe("Platform contract generation lock", () => {
       "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
     );
     expect(go?.inputs).toContain("services/control-plane/internal/authn/profile_test.go");
+    const authnDirectory = "services/control-plane/internal/authn";
+    const authnConformanceInputs = readdirSync(join(root, authnDirectory), {
+      withFileTypes: true,
+    })
+      .filter(
+        (entry) =>
+          entry.isFile() && entry.name.endsWith(".go") && entry.name !== "profile_generated.go",
+      )
+      .map((entry) => `${authnDirectory}/${entry.name}`)
+      .toSorted();
+    expect(
+      go?.inputs.filter(
+        (input: string) =>
+          input.startsWith(`${authnDirectory}/`) &&
+          input !== `${authnDirectory}/profile_generated.go`,
+      ),
+    ).toEqual(authnConformanceInputs);
   });
 
   it("records both generated common identity SDK profiles as non-Gate evidence", () => {
