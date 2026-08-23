@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。ADR-0024/D-048 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，但不把 clean `poweroff` 当崩溃证据，也不声称任何物理断电结果；ADR-0025/D-049 的 offline JWT access-token verifier Slice A 已固定并独立批准，Slice B offline crypto kernel/opaque principal 已形成待独立复核候选，Slice C 尚未开始且 production caller 仍为 0；`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 仍因 current-source phase records、剩余 durability matrices 与独立 Gate review 未全部闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。ADR-0024/D-048 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，但不把 clean `poweroff` 当崩溃证据，也不声称任何物理断电结果；ADR-0025/D-049 的 offline JWT access-token verifier Slice A 与 Slice B offline crypto kernel/opaque principal 均已固定并独立批准，Slice C 仅按既有批准变为 eligible 且尚未开始，production caller 仍为 0；`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 仍因 current-source phase records、剩余 durability matrices 与独立 Gate review 未全部闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
