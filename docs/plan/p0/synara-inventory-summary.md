@@ -109,7 +109,8 @@ artifacts` 是跨语言、跨镜像边。
 复核。P1 contract review 随后发现 R2 的 24 个 legacy helper 与 42 个 legacy contract target 违反公开 SDK 与
 正式 wire authority 边界；R3 只纠正这 66 个 target，不改变 classification、owner、capability、source、license
 或 secret triage，并新增对应 fail-closed invariant。`CAG-G-INVENTORY-P0-20260810-R3` 已 supersede R2，将
-`G-INVENTORY` 保持为 `VERIFIED`；`G-BASELINE-P0` R3 已将未变化的行为证据重绑定到 Inventory R3，因此
+`G-INVENTORY` 保持为 `VERIFIED`；`G-BASELINE-P0` R4 已将未变化的行为证据与当前 closure semantics
+重绑定到 Inventory R3，因此
 P1 Entry satisfied。
 
 ## Reproduce

@@ -1,15 +1,15 @@
-# Gate candidate record: `G-BASELINE-P0` / P0 / R4
+# Gate record: `G-BASELINE-P0` / P0 / R4
 
 - Evidence ID：`CAG-G-BASELINE-P0-20260823-R4`
 - Record type：PHASE
 - Phase / aggregate Gate：`G-BASELINE-P0`；aggregate `G-BASELINE` remains open
 - Prerequisite record IDs：`CAG-G-INVENTORY-P0-20260810-R3`
-- Status：`IN PROGRESS`
+- Status：`VERIFIED`
 - DRI：hxp0618（owner）；Codex P0 closure-repair executor
-- Independent reviewer：`PENDING`
+- Independent reviewers：Codex P0 baseline fixed-input reviewer；Codex P0 Inventory-R3 cross-reviewer
 - Date：2026-08-23 Asia/Shanghai
 - Supersedes：`CAG-G-BASELINE-P0-20260810-R3` after fixed-input audit lineage review
-- Gate effect：none while this candidate remains `IN PROGRESS`
+- Gate effect：closes `G-BASELINE-P0` only；aggregate `G-BASELINE` remains open
 
 ## Why R4 supersedes R3
 
@@ -28,8 +28,8 @@ R4 does not rerun or reinterpret product behavior. It separates two identities t
 2. the phase-closure semantics are fixed at candidate `1d442638...`, where all three manifests are
    `true/COMPLETE`, the audit validates that state, and the README is checked for the same current markers.
 
-R1, R2 and R3 remain immutable historical files. A final `VERIFIED` decision requires an independent fixed-candidate
-review of the identities below.
+R1, R2 and R3 remain immutable historical files. The fixed candidate below received two independent read-only
+`APPROVE, P0=0/P1=0/P2=0` reviews before this status transition.
 
 ## Fixed inputs
 
@@ -37,6 +37,11 @@ review of the identities below.
 - Closure-semantics candidate tree：`f4840b2fb14fd325c296111fc64a2dab6f4635a8`
 - Candidate parent / current reviewed platform lineage：`e3b8812f122c40fdf50ff586083839295119b16b`
 - Candidate branch：`codex/cloud-agents-p0-baseline-r4-repair-20260823`
+- Independent review commit/tree：`3f2f9f077c8122b767a2f2947013eab1f42fedc7` /
+  `8abfdb950fcf3072e0291fdc1bcca50de940de52`
+- Independent review record / SHA-256：
+  [`CAG-G-BASELINE-P0-20260823-R4-independent-review.md`](CAG-G-BASELINE-P0-20260823-R4-independent-review.md) /
+  `44db2df153bbfcc5fa0bd4c928bbdf9b207c60c4458ec61b2e2557c7d97d4c94`
 - Inventory prerequisite record / decision SHA-256：
   - `CAG-G-INVENTORY-P0-20260810-R3`
   - `d865bb9fd1195342a7251bd6822130437753f5be4af8312d9d5c5ee4d5b71400`
@@ -91,7 +96,7 @@ review of the identities below.
 | closure manifest/audit/README semantics agree               | PASS                                  | all manifests `true/COMPLETE`；audit and README SHA fixed；stale markers rejected                            |
 | real Codex/Claude and real T3 workspace/checkpoint behavior | NOT RUN                               | belongs to `G-BASELINE-M1`                                                                                   |
 | production Managed Host create→ready→terminate              | NOT RUN                               | belongs to P3 implementation and `G-MANAGED-HOST`                                                            |
-| independent fixed-candidate review                          | PENDING                               | required before any closure decision                                                                         |
+| independent fixed-candidate review                          | PASS                                  | two read-only reviews；`P0=0/P1=0/P2=0`；review commit `3f2f9f0...`                                          |
 
 `PASS WITH KNOWN PRECONDITION FAILURES` preserves the observed frozen-source result. It does not turn the four Synara
 concurrency assertions into passes. `PASS AS SPEC/NEGATIVE ORACLE` is not production lifecycle execution.
@@ -139,9 +144,11 @@ commit/tree/blob, normalized record digest, raw evidence index, manifest closure
 or closure-semantics candidate identity changes. Loss or mismatch of the only raw evidence copy invalidates replayability
 until the same fixed source is re-characterized and a superseding record is independently reviewed.
 
-## Candidate sign-off
+## Sign-off
 
 - DRI conclusion：the unchanged behavior evidence is complete for the Platform P0 characterization scope when bound to
   Inventory R3 and the current `true/COMPLETE` closure audit semantics.
-- Reviewer conclusion：`PENDING`.
-- Closure decision：`PENDING`；`G-BASELINE-P0` must not be marked `VERIFIED` from this candidate.
+- Reviewer conclusion：fixed identities, bounded audit, two README fault injections, Inventory R3 prerequisite and
+  all no-upgrade boundaries passed with `P0=0/P1=0/P2=0`.
+- Closure decision：`G-BASELINE-P0 = VERIFIED`。R3 becomes historical `INVALIDATED`；aggregate `G-BASELINE`, M1,
+  downstream P1-P6 Gates, release, deployment, Beta and GA remain open or in progress.

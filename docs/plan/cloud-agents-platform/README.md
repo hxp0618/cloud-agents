@@ -22,9 +22,10 @@ Synara 与 T3Code 都只消费公共 API/SDK/制品，不再各自维护一份 C
 ## 当前执行边界
 
 用户已批准 ADR-0006～ADR-0019 与 D-001～D-043；P0 当前由 `G-INVENTORY` R3 和
-`G-BASELINE-P0` R3 关闭，两者均 supersede 各自 R2，因此 P1 Entry 满足；Inventory R3 仅纠正 66 个 legacy
-helper/contract target 的公开 ABI 与 authority 方向，Baseline R3 仅把未变化的行为证据重绑定到该前置；旧
-decision digest 的下游证据不得继承。P1-A2.1a-impl-1 strict projection contract/fixture 已由 `b36f45a`
+`G-BASELINE-P0` R4 关闭。Inventory R3 纠正 66 个 legacy helper/contract target 的公开 ABI 与 authority
+方向；Baseline R4 将未变化的行为证据、Inventory R3 与当前 `true/COMPLETE` audit semantics 分开绑定，并
+supersede audit-semantics-invalid R3。旧 decision digest 或 Baseline R3 prerequisite 的下游证据不得继承，必须
+显式 rebind R4。P1-A2.1a-impl-1 strict projection contract/fixture 已由 `b36f45a`
 完成；P1-A2.1a-impl-2 PG15/16/17 adapters 与本地矩阵已由 `e2541c5` / `a0eac37` 完成；
 P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 contract/catalog 与 impl-2 data/read evaluator 已由
 `f988e45`、`e36e1cf` 完成，production mutation/catalog publication 仍 fail closed。当前只进入

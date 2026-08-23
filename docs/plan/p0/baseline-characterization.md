@@ -4,7 +4,7 @@
 - Phase Gate：`G-BASELINE-P0`
 - Aggregate Gate：`G-BASELINE` OPEN（仍缺 `G-BASELINE-M1`）
 - Real Provider execution：NOT RUN（M1 remains paused）
-- Conclusion：`CAG-G-BASELINE-P0-20260810-R3` closes the P0 phase only；behavior evidence remains R2-identical
+- Conclusion：`CAG-G-BASELINE-P0-20260823-R4` closes the P0 phase only；behavior evidence remains R2-identical
 
 ## Frozen reference profiles
 
@@ -87,8 +87,8 @@ Synara 的 `FAIL_KNOWN_PRECONDITION` 是固定源码的实际 characterization�
 
 ## Closure boundary
 
-`G-BASELINE-P0` 已由独立 reviewer 在固定 evidence commit `66e2f127...` 上签署行为证据，并由 R3 将其
-重绑定到当前 `G-INVENTORY` R3；R2 行为输入与结果没有重跑或提升：
+`G-BASELINE-P0` 的原始行为证据固定在 `66e2f127...`，R4 将其与当前 `G-INVENTORY` R3 及
+`1d442638...` 的 `true/COMPLETE` closure audit semantics 分开绑定；R2 行为输入与结果没有重跑或提升：
 
 1. 三份 normalized machine record 与 Synara 21-entry evidence index 已 Git-bound；
 2. 本地 audit v3 与远端 index verification 均通过；

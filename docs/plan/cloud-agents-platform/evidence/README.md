@@ -32,14 +32,21 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 每条 evidence 使用 [`../templates/gate-closure-record.md`](../templates/gate-closure-record.md)，并在
 [`../06-status-tracker.md`](../06-status-tracker.md) 登记状态与链接。
 
-当前没有已关闭的 Platform Gate；不要用 M1 Runtime 历史证据创建虚假的 Platform closure record。
+当前 Platform P0 phase 由 `G-INVENTORY` R3 与 `G-BASELINE-P0` R4 关闭；aggregate `G-BASELINE` 仍等待
+`G-BASELINE-M1`，所有 P1-P6 aggregate/phase Gate 仍保持 open、in progress 或 not started。不得用 P0、M1
+Runtime 历史证据或本地候选替代后续 immutable closure。
 
 ## Current candidates
+
+- [`CAG-G-BASELINE-P0-20260823-R4`](G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md)：current verified P0
+  phase record；supersedes audit-semantics-invalid R3 while retaining the unchanged behavior evidence and all M1/
+  aggregate boundaries。
 
 - [`CAG-G-CONTRACT-P1-20260823-R1`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md)：historical candidate；其固定
   source 已由 R2 supersede。R1 保留 contract/SDK/descriptor/fixture/lock identity 与 focused replay 证据，但不能作为
   current-source review 或 Gate closure。
-- [`CAG-G-CONTRACT-P1-20260823-R2`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md)：supersede R1 的
-  current-source candidate；以 exact vendored official suite、`jsonschema-rs`、`openapi-spec-validator`、hash-locked
-  Python closure 与 generation-lock profile 补齐 standards implementation evidence。reviewer 仍 `PENDING`，formal
-  `missing` 保留，`G-CONTRACT` 仍 `IN PROGRESS`。
+- [`CAG-G-CONTRACT-P1-20260823-R2`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md)：historical blocked
+  candidate；独立 review 的 quantitative-claim/bytecode-residue findings 由 R3 修复，但 R2 本身不能关闭 Gate。
+- [`CAG-G-CONTRACT-P1-20260823-R3`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R3.md)：historical repaired
+  candidate；其固定 prerequisite 仍命名 Baseline R3，因此在生成显式 R4 rebind candidate 前不能关闭
+  `G-CONTRACT`。

@@ -72,7 +72,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 
 ## 执行边界
 
-P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R3 两个 independently reviewed closure record 完成；
+P0 已由当前 `G-INVENTORY` R3 与 `G-BASELINE-P0` R4 两个 independently reviewed closure record 完成；
 P1-A2.1b-impl-3 已由 `401206a` 完成；A2.2-impl-1 catalog contract 与 impl-2 data/read evaluator 已分别由
 `f988e45`、`e36e1cf` 完成；A2.2-impl-3 mutation/service/matrix 已由 `de36ca3` 固定，`350b53c` 关闭
 failed/unknown commit 的非零结果缺口，`afe6cb2 → 1ff7713 → 2dc443d` 再关闭 Membership/RoleBinding

@@ -14,7 +14,7 @@
 | [`synara-inventory-decisions.tsv`](synara-inventory-decisions.tsv)                           | owner/target/authority/license/secret/review final decision | generated；8,625 rows，exact secret triage bound        |
 | [`synara-inventory-graph.json`](synara-inventory-graph.json)                                 | binary/image/deploy/external artifact nodes + edges         | generated；25 nodes/26 edges，no dangling/orphans       |
 | [`synara-inventory-summary.md`](synara-inventory-summary.md)                                 | 数量、能力映射、混合包与生成链风险                          | R3 reviewed；`G-INVENTORY` verified                     |
-| [`baseline-characterization.md`](baseline-characterization.md)                               | spec/negative/reference-host 与 fixed-source execution      | `G-BASELINE-P0` R3 verified；same behavior evidence     |
+| [`baseline-characterization.md`](baseline-characterization.md)                               | spec/negative/reference-host 与 fixed-source execution      | `G-BASELINE-P0` R4 verified；same behavior evidence     |
 | [`baseline/synara-linux-amd64-execution.json`](baseline/synara-linux-amd64-execution.json)   | Synara fixed-source Linux characterization                  | executed；known precondition failures retained          |
 | [`baseline/t3-linux-amd64-execution.json`](baseline/t3-linux-amd64-execution.json)           | T3 main + feature Linux characterization                    | install/tests/typecheck PASS；real Provider NOT RUN     |
 | [`baseline/runtime-linux-amd64-execution.json`](baseline/runtime-linux-amd64-execution.json) | current Runtime/golden corpus Linux characterization        | focused tests/typecheck/audit/fmt/lint PASS             |
@@ -24,7 +24,8 @@
 Gate records：
 
 - [`G-INVENTORY` P0 R3](../cloud-agents-platform/evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R3.md)（VERIFIED；supersedes R2）；
-- [`G-BASELINE-P0` R3](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R3.md)（VERIFIED；supersedes R2）；
+- [`G-BASELINE-P0` R4](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md)（VERIFIED；supersedes R3）；
+- [`G-BASELINE-P0` R3](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R3.md)（INVALIDATED；historical only）；
 - [`G-INVENTORY` P0 R2](../cloud-agents-platform/evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R2.md)（INVALIDATED；historical only）；
 - [`G-BASELINE-P0` R2](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R2.md)（INVALIDATED；historical only）；
 - [`G-BASELINE` P0 R1](../cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260810-R1.md)（INVALIDATED；historical only）。
