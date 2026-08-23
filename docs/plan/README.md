@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A `1f1b0c5`、Slice B `c375fac`、Slice C `9db5891` 与 Slice D `9fcdb73` 已分别由 `7615fe5`、`d49f89c`、`818c4d5`、`351e5ea` 独立复核返回 `APPROVE, P0=0/P1=0/P2=0`；ADR-0023/D-047 Slice A `67210b7` 与 Slice B `23c3083` 已分别由 `88f1ecc`、`4808d20` 独立复核批准，Slice C abort-terminal writer 是下一 ordered local slice，当前 recovery writer/result 仍为 `NOT_IMPLEMENTED`，所有 immutable/aggregate Gate 仍 OPEN）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 均已独立批准；ADR-0023/D-047 ordered Slices A–G 也已全部固定并取得 `APPROVE, P0=0/P1=0/P2=0`，最终 Slice G candidate `2b01ede` 由 review `40ad401` 批准。这只完成 ordered local implementation/review package；`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 仍因 current-source immutable phase records 与 physical controller/host power-loss evidence 未闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -145,17 +145,15 @@ execution-admission revalidation 与 registry-backed one-shot permit；其临时
 [typed caller/first-attempt entry loop](p1/runner-ledger-entry-loop-service-matrix-20260822.md) 已在固定候选
 `9fcdb73` 完成，并由
 [`351e5ea` independent review](p1/runner-ledger-entry-loop-service-independent-review-20260822.md)
-返回 `APPROVE, P0=0/P1=0/P2=0`。四个 generated first-attempt pair 之外的
-retry/abort/reconcile/failure writer 继续 `NOT_IMPLEMENTED`；Slice E 仍须独立 generated recovery contract
-与批准，当前结果不构成该 authority。后续
+返回 `APPROVE, P0=0/P1=0/P2=0`。在该 ADR-0022 边界下，四个 generated first-attempt pair 之外的
+retry/abort/reconcile/failure writer 当时仍为 `NOT_IMPLEMENTED`。后续
 [`contract-only audit`](p1/runner-ledger-recovery-contract-audit-20260822.md) 已把 1 个 excluded retry pair 与
 11 个 recovery/reconcile/failure pair 分型，并形成当时尚未批准的
 [`ADR-0023 proposal`](adr/0023-p1-runner-ledger-recovery-writer-contract.md)；superseding candidate `deb3dc6` 的
 [`6d4da5b` independent review](p1/runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md) 返回
 `APPROVE, P0=0/P1=0/P2=0`。该 verdict 仅批准 audit/proposal 的准确性；owner 随后在
 [`D-047 decision record`](p1/runner-ledger-recovery-contract-decision-20260822.md) 接受 ADR-0023 的 Decision、Closed
-pair mapping 与 ordered Slices A-G。当前仅授权依序本地实现/独立复核，尚未完成的 recovery rows 继续
-`NOT_IMPLEMENTED`。Slice A 的
+pair mapping 与 ordered Slices A-G。Slice A 的
 [`generated registry/profile implementation`](p1/runner-ledger-recovery-profile-implementation-20260822.md) 已在独立
 工作树完成 8 个 versioned registry、ordinary Go profile 与 generation-lock closure；superseding candidate
 `67210b7` 已由 independent review `88f1ecc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice B 的
@@ -163,8 +161,13 @@ pair mapping 与 ordered Slices A-G。当前仅授权依序本地实现/独立�
 `b7a9962` 完成 fixed implementation：exact 12 pairs 仅进入同 verifier full replay、fresh locked reread 与六类
 action-specific `close_without_mutation` permit；fixed candidate `23c3083` 已由
 [`4808d20` independent review](p1/runner-ledger-recovery-admission-service-independent-review-20260823.md)
-返回 `APPROVE, P0=0/P1=0/P2=0`。该 verdict 只关闭 Slice B implementation/review，满足 Slice C Entry；所有
-recovery writer 与 public recovery result 在各自后续 slice 实现并独立批准前继续 `NOT_IMPLEMENTED`。
+返回 `APPROVE, P0=0/P1=0/P2=0`。Slice C/D/E/F 的 fixed candidates `6fd2873` / `7bbc391` / `f86e8ca` /
+`e1cb598` 又分别由 reviews `be597de` / `cb94b53` / `48ba3cc` / `39d5d75` 批准。最终 Slice G
+[`typed failure result / complete caller matrix`](p1/runner-ledger-recovery-result-service-matrix-20260823.md)
+fixed candidate `2b01ede` 获得
+[`40ad401` independent review](p1/runner-ledger-recovery-result-service-independent-review-20260823.md)
+`APPROVE, P0=0/P1=0/P2=0`。ADR-0023 A–G 因此只在 ordered local implementation/review 边界上完成；这不构成
+production database invocation、HTTP/P2/provider effect、deployment/release 或任何 immutable/aggregate Gate closure。
 Inventory R2 因
 66 个公开 target 的 ABI/authority 方向冲突被
 R3 supersede，任何固定旧 decision digest 的下游证据不得继承。P1 仅允许在公共仓实施 contracts、Go/TS

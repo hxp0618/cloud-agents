@@ -1,12 +1,18 @@
 # Runner ledger recovery result service matrix — 2026-08-23
 
-- Status: `SLICE_G_FIXED_IMPLEMENTATION_PENDING_INDEPENDENT_REVIEW`
+- Status: `SLICE_G_IMPLEMENTATION_AND_INDEPENDENT_REVIEW_APPROVED`
 - Approved Slice F candidate: `e1cb598c0c950e6f0ce34ae38e629e5ec4c5438f`
 - Slice F independent review: `39d5d758eab82f09d2d27593a7fdc2994b49a419` — `APPROVE, P0=0/P1=0/P2=0`
 - Slice G code commit: `1d58d43e4fe0551f3aabaeebfccbcd04835ca26f`
 - Slice G code tree: `10195a06066f95ea1faf00407a1d9a3286629436`
 - Slice G control-plane subtree: `c1d678f708ec231b446a11e46572a11fccefc97c`
 - Slice G branch: `codex/cloud-agents-p1-runner-recovery-result-20260823`
+- Fixed candidate: `2b01ede54b7a1b2a1c42dfcce3361a8301ab7fce`
+- Fixed candidate tree: `7a6a3028a9fa1486aa6674d9a3cfe40a235596f8`
+- Independent review: `40ad401ee94454e86e3b6346af5f83b79d189cf4` — `APPROVE, P0=0/P1=0/P2=0`
+- Independent review record:
+  [`runner-ledger-recovery-result-service-independent-review-20260823.md`](runner-ledger-recovery-result-service-independent-review-20260823.md)
+- Independent review record SHA-256: `5cf26966f873c563ba2bc6e84d8b94ebe237534b2d95a137ea89b44db8ce030c`
 - Decision: [`D-047 / ADR-0023`](runner-ledger-recovery-contract-decision-20260822.md)
 - Gate effect: none; every immutable and aggregate Gate remains open
 
@@ -103,6 +109,7 @@ in-process fixtures. This record does not claim production authority invocation 
 
 ## Independent review boundary
 
-Slice G remains incomplete until a fixed candidate containing this record receives an independent read-only P0/P1/P2
-verdict. An `APPROVE` verdict closes only ADR-0023's ordered local implementation/review boundary. It cannot merge the
-candidate, authorize external side effects, or close any immutable or aggregate Gate.
+Fixed candidate `2b01ede54b7a1b2a1c42dfcce3361a8301ab7fce` received independent read-only verdict
+`APPROVE, P0=0/P1=0/P2=0` at review commit `40ad401ee94454e86e3b6346af5f83b79d189cf4`. This closes only
+ADR-0023's ordered local implementation/review boundary. It does not merge the candidate, authorize external side
+effects, or close any immutable or aggregate Gate.

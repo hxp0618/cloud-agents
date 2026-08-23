@@ -174,9 +174,9 @@
 - Runner recovery 的
   [`contract-only audit`](runner-ledger-recovery-contract-audit-20260822.md) 已在 current source 上逐项分型
   1 个 excluded retry pair 与 11 个 recovery/reconcile/failure pair，并形成当时尚未获 owner 批准的
-  [`ADR-0023 proposal`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)；
-  所有 pair 继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，没有新增 generated profile、claim/permit、writer、
-  production database、HTTP/P2/provider、部署、发布或 Gate authority。Superseding candidate `deb3dc6` 已由
+  [`ADR-0023 proposal`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)；在该 contract-audit 时点，所有 pair
+  仍为 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，且没有 generated profile、claim/permit 或 writer authority。Superseding
+  candidate `deb3dc6` 已由
   [`6d4da5b` independent review](runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md) 返回
   `APPROVE, P0=0/P1=0/P2=0`；该 verdict 不接受 ADR-0023，也不授予任何实现 authority。Owner 随后通过
   [`D-047 decision record`](runner-ledger-recovery-contract-decision-20260822.md) 接受 Decision、Closed pair mapping
@@ -197,11 +197,14 @@
   已由 `48ba3cc` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice F 的
   [`recovery execution/success writer`](runner-ledger-recovery-execution-service-matrix-20260823.md) fixed candidate
   `e1cb598` 已由 `39d5d75` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice G 的
-  [`typed failure result / complete caller matrix`](runner-ledger-recovery-result-service-matrix-20260823.md) 已固定
-  code commit `1d58d43`：12 个 generated recovery pairs 已接入 approved family，所有 committed outcome 必须 fresh
-  preflight，terminal/divergent 只返回 exact/redacted ordinary failure，且 bounded loop/no-result-reuse/zero external
-  side-effect 已有 focused evidence；正在等待独立只读复核。没有授权 production database、HTTP/P2/provider、
-  部署、发布或 Gate authority。
+  [`typed failure result / complete caller matrix`](runner-ledger-recovery-result-service-matrix-20260823.md) fixed candidate
+  `2b01ede` 已由
+  [`40ad401` independent review](runner-ledger-recovery-result-service-independent-review-20260823.md)
+  返回 `APPROVE, P0=0/P1=0/P2=0`：12 个 generated recovery pairs 均接入 independently approved family，所有
+  committed outcome 必须 fresh preflight，terminal/divergent 只返回 exact/redacted ordinary failure，且 bounded
+  loop/no-result-reuse/zero external side-effect 已有 focused evidence。ADR-0023 A–G 现仅在 ordered local
+  implementation/review 边界上完成；没有授权 production database、HTTP/P2/provider、部署、发布或
+  Gate authority。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
