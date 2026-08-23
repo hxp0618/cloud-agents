@@ -231,8 +231,17 @@
   才能从 preflight 排除 N-1/expired instance；新增 PG15/16/17 focused matrix，并在 12-migration current manifest
   上重做一次 PG17 logical dump/restore。详见
   [`current-source data recovery and retirement preflight`](p1-current-source-data-recovery-retirement-20260823.md)。
-  该记录仍为 independent review `PENDING`；不声明 deployed rolling upgrade、PITR/HA、current-source filesystem
-  crash closure、生产数据库写入或任何 Gate closure。
+  原 implementation record 保留其当时的 reviewer `PENDING` 字段；随后
+  [independent review](p1-current-source-data-recovery-retirement-independent-review-20260823.md) 已返回
+  `APPROVE, P0=0/P1=0/P2=0`。该 review 只批准 bounded local evidence；不声明 deployed rolling upgrade、
+  PITR/HA、current-source filesystem crash closure、生产数据库写入或任何 Gate closure。
+- `G-DATA` current-source candidate：
+  [`CAG-G-DATA-P1-20260823-R1`](../cloud-agents-platform/evidence/G-DATA/CAG-G-DATA-P1-20260823-R1.md) 将
+  Baseline R4、reviewed G-CONTRACT R4 与十二条 migration 显式绑定；只继承 exact retirement control-plane 和
+  ADR-0023 Slice G migration subtrees，旧 EvidenceSink/catalog/quota records 仅作 historical support。fresh
+  validator/Bash/no-ORM/public lineage+numbering+schema-authority/manifest-shape checks PASS。由于全部 migration 仍是
+  `expand`、PITR/live preflight flags 全为 false，deployed N/N-1 与 filesystem Done 均未完成，candidate 保持
+  `IN PROGRESS`、reviewer `PENDING`、Gate effect none。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有

@@ -54,3 +54,9 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
   candidate；固定 Inventory R3、Baseline R4、当前 27-pipeline generation lock、fresh generated SDK consumer 与
   migration `000012` bundle replay。[Independent review](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)
   返回 `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`、7 个 formal `missing` 保持不变，Gate effect 为 none。
+
+- [`CAG-G-DATA-P1-20260823-R1`](G-DATA/CAG-G-DATA-P1-20260823-R1.md)：first current-source G-DATA
+  candidate；固定 Baseline R4、reviewed G-CONTRACT R4、当前十二条 migration，并只继承 exact retirement
+  control-plane 与 ADR-0023 Slice G migration subtrees；旧 EvidenceSink/catalog/quota records 仅作 historical
+  support。状态为 `IN PROGRESS`、reviewer `PENDING`；expand/backfill/cutover/contract、deployed N/N-1、PITR
+  preflight 与 current filesystem Done 均保持 open，Gate effect 为 none。
