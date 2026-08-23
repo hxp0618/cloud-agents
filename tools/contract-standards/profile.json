@@ -58,13 +58,13 @@
     "expectedFailures": 0,
     "productionAjvOfficialSuiteAudit": {
       "validator": "Ajv 8.20.0",
-      "status": "NOT_RUN_NOT_CLAIMED"
+      "status": "EXECUTED_NONCONFORMANT"
     }
   },
   "currentContracts": {
-    "schemaFiles": 54,
+    "schemaFiles": 56,
     "fixtureManifests": 2,
-    "fixtureCases": 73,
+    "fixtureCases": 75,
     "productionValidator": "Ajv 8.20.0 plus in-repo semantics",
     "independentValidator": "jsonschema-rs 0.50.1",
     "crossEngineExactFixtureResults": true

@@ -5,6 +5,12 @@ import { relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
 import {
+  AJV_OFFICIAL_SUITE_AUDIT_OUTPUT_PATH,
+  ajvOfficialSuiteAuditInputs,
+  assertAjvOfficialSuiteAuditCurrent,
+  buildAjvOfficialSuiteAudit,
+} from "./platform-ajv-official-suite";
+import {
   assertContractClosureProfileRegistryCurrent,
   buildContractClosureProfileRegistry,
   contractClosureProfileInputs,
@@ -671,6 +677,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertRunnerLedgerEntrySuccessWriterRegistryCurrent(root);
   assertRunnerLedgerRecoveryRegistriesCurrent(root);
   assertIdentityVerifierRegistryCurrent(root);
+  assertAjvOfficialSuiteAuditCurrent(root);
   assertContractClosureProfileRegistryCurrent(root);
   assertIdentityVerifierGoCurrent(root);
   assertIdentitySDKCurrent(root);
@@ -687,6 +694,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerEntrySuccessWriterInputs = runnerLedgerEntrySuccessWriterRegistryInputs(root);
   const runnerLedgerRecoveryInputs = runnerLedgerRecoveryRegistryInputs(root);
   const identityVerifierInputs = identityVerifierRegistryInputs(root);
+  const ajvOfficialSuiteInputs = ajvOfficialSuiteAuditInputs(root);
   const contractClosureInputs = contractClosureProfileInputs(root);
   const identityVerifierGoInputs = [
     ...identityVerifierInputs,
@@ -800,6 +808,12 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerEntrySuccessWriterRegistry = buildRunnerLedgerEntrySuccessWriterRegistry(root);
   const runnerLedgerRecoveryRegistries = buildRunnerLedgerRecoveryRegistries(root);
   const identityVerifierRegistry = buildIdentityVerifierRegistry(root);
+  const ajvOfficialSuiteAudit = buildAjvOfficialSuiteAudit(root) as unknown as {
+    readonly auditDigest: string;
+    readonly status: string;
+    readonly conformanceClaim: boolean;
+    readonly summary: Readonly<Record<string, number>>;
+  };
   const contractClosureRegistry = buildContractClosureProfileRegistry(root) as unknown as {
     readonly registryDigest: string;
     readonly missing: ReadonlyArray<string>;
@@ -837,7 +851,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         semanticValidation: "BOOTSTRAP_AJV_AND_IN_REPO_SEMANTIC_FIXTURES",
         independentStandardsCandidate:
           "JSONSCHEMA_RS_0_50_1_OFFICIAL_MANDATORY_SUITE_AND_CURRENT_FIXTURES",
-        productionAjvOfficialSuiteStatus: "NOT_RUN_NOT_CLAIMED",
+        productionAjvOfficialSuiteStatus: ajvOfficialSuiteAudit.status,
       },
       openapi: {
         documentVersion: "3.1.1",
@@ -879,6 +893,16 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         sources: [...tool.sources],
         license: "MIT",
       })),
+      {
+        id: "platform-ajv-official-suite-auditor",
+        kind: "in-repo-typescript-deterministic-offline-ajv-audit",
+        entrypoint: "scripts/check-platform-ajv-official-suite.ts",
+        sourceManifestSha256: normalizedSourceManifestDigest(root, ajvOfficialSuiteInputs),
+        sources: ajvOfficialSuiteInputs,
+        license: "MIT",
+        status: ajvOfficialSuiteAudit.status,
+        conformanceClaim: false,
+      },
       {
         id: "platform-migration-bundle-checker",
         kind: "in-repo-typescript-strict-postgresql-bundle",
@@ -953,6 +977,29 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
       },
     ],
     pipelines: [
+      {
+        id: "ajv-official-suite-audit-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, ajvOfficialSuiteInputs),
+        inputs: ajvOfficialSuiteInputs,
+        outputStatus: ajvOfficialSuiteAudit.status,
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: AJV_OFFICIAL_SUITE_AUDIT_OUTPUT_PATH,
+            sha256: fileSha256(root, AJV_OFFICIAL_SUITE_AUDIT_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, AJV_OFFICIAL_SUITE_AUDIT_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          auditDigest: ajvOfficialSuiteAudit.auditDigest,
+          status: ajvOfficialSuiteAudit.status,
+          conformanceClaim: ajvOfficialSuiteAudit.conformanceClaim,
+          ...ajvOfficialSuiteAudit.summary,
+          closureCriterion: "REMAINS_MISSING",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
       {
         id: "contract-closure-profile-generation",
         inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
@@ -1974,15 +2021,15 @@ function assertContractStandardsProfileCurrent(root: string): ContractStandardsP
     suite.remoteFiles !== 79 ||
     suite.expectedFailures !== 0 ||
     suite.productionAjvOfficialSuiteAudit.validator !== "Ajv 8.20.0" ||
-    suite.productionAjvOfficialSuiteAudit.status !== "NOT_RUN_NOT_CLAIMED" ||
+    suite.productionAjvOfficialSuiteAudit.status !== "EXECUTED_NONCONFORMANT" ||
     Object.keys(suite.productionAjvOfficialSuiteAudit).length !== 2
   ) {
     throw new Error("Contract standards official JSON Schema suite binding is stale.");
   }
   if (
-    profile.currentContracts.schemaFiles !== 54 ||
+    profile.currentContracts.schemaFiles !== 56 ||
     profile.currentContracts.fixtureManifests !== 2 ||
-    profile.currentContracts.fixtureCases !== 73 ||
+    profile.currentContracts.fixtureCases !== 75 ||
     profile.currentContracts.crossEngineExactFixtureResults !== true
   ) {
     throw new Error("Contract standards current-contract cardinalities are stale.");

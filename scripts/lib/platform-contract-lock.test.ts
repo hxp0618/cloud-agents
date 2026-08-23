@@ -170,9 +170,16 @@ describe("Platform contract generation lock", () => {
       }>;
       missing: string[];
     };
-    expect(lock.dialects.jsonSchema.productionAjvOfficialSuiteStatus).toBe("NOT_RUN_NOT_CLAIMED");
+    expect(lock.dialects.jsonSchema.productionAjvOfficialSuiteStatus).toBe(
+      "EXECUTED_NONCONFORMANT",
+    );
     expect(lock.tools).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          id: "platform-ajv-official-suite-auditor",
+          status: "EXECUTED_NONCONFORMANT",
+          conformanceClaim: false,
+        }),
         expect.objectContaining({
           id: "jsonschema-rs",
           version: "0.50.1",
@@ -195,7 +202,7 @@ describe("Platform contract generation lock", () => {
       notGateClosure: true,
       outputSummary: {
         sourceContractManifestSha256:
-          "sha256:0aee6843cd09fe301bcc3caa55c55686917531e38a1f683b73a8a4308f183de4",
+          "sha256:7aeed27a73a7e1e7c08497f099f913a84afe0ae9b5e89ef57baa3329b9f72ff8",
         toolchain: { bun: "1.3.14", python: "3.14.7", uv: "0.12.5" },
         officialJsonSchemaSuite: {
           files: 46,
@@ -205,12 +212,12 @@ describe("Platform contract generation lock", () => {
         },
         productionAjvOfficialSuiteAudit: {
           validator: "Ajv 8.20.0",
-          status: "NOT_RUN_NOT_CLAIMED",
+          status: "EXECUTED_NONCONFORMANT",
         },
         currentJsonSchema: {
-          schemas: 54,
+          schemas: 56,
           fixtureManifests: 2,
-          fixtureCases: 73,
+          fixtureCases: 75,
           crossEngineExactFixtureResults: true,
         },
         openapi31: { documents: 2, operations: 9, expectedFailures: 0 },
@@ -221,6 +228,27 @@ describe("Platform contract generation lock", () => {
     });
     expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
     expect(pipeline?.inputs).toContain(
+      "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
+    );
+    const auditPipeline = lock.pipelines.find(
+      (candidate) => candidate.id === "ajv-official-suite-audit-generation",
+    );
+    expect(auditPipeline).toMatchObject({
+      outputStatus: "EXECUTED_NONCONFORMANT",
+      notGateClosure: true,
+      outputSummary: {
+        status: "EXECUTED_NONCONFORMANT",
+        conformanceClaim: false,
+        assertions: 1299,
+        passedAssertions: 1241,
+        nonPassingAssertions: 58,
+        discrepancyRecords: 45,
+        closureCriterion: "REMAINS_MISSING",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+    });
+    expect(auditPipeline?.inputs).toEqual([...(auditPipeline?.inputs ?? [])].toSorted());
+    expect(auditPipeline?.inputs).toContain(
       "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
     );
     expect(lock.missing).toEqual([

@@ -30,7 +30,7 @@ class ContractStandardsTest(unittest.TestCase):
         result = run(ROOT, PROFILE_PATH)
         self.assertEqual(result["status"], "INDEPENDENT_CONTRACT_STANDARDS_VALIDATED")
         self.assertEqual(result["jsonSchemaOfficialSuite"]["assertions"], 1299)
-        self.assertEqual(result["currentJsonSchema"]["cases"], 73)
+        self.assertEqual(result["currentJsonSchema"]["cases"], 75)
         self.assertEqual(result["openapi31"]["operations"], 9)
         self.assertTrue(result["notGateClosure"])
         self.assertEqual(result["gateStatus"], "ALL_GATES_OPEN")
@@ -47,10 +47,10 @@ class ContractStandardsTest(unittest.TestCase):
         with self.assertRaisesRegex(ContractStandardsError, "implementation boundary mismatch"):
             validate_profile(profile)
 
-    def test_production_ajv_official_suite_cannot_be_claimed_without_a_runner(self) -> None:
+    def test_production_ajv_official_suite_cannot_be_claimed_after_nonconformant_audit(self) -> None:
         profile = copy.deepcopy(load_json(PROFILE_PATH))
         profile["jsonSchemaOfficialSuite"]["productionAjvOfficialSuiteAudit"]["status"] = "PASS"
-        with self.assertRaisesRegex(ContractStandardsError, "must remain NOT_RUN_NOT_CLAIMED"):
+        with self.assertRaisesRegex(ContractStandardsError, "must remain EXECUTED_NONCONFORMANT"):
             validate_profile(profile)
 
     def test_source_tree_has_no_python_bytecode(self) -> None:

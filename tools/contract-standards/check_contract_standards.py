@@ -469,10 +469,10 @@ def validate_profile(profile: dict[str, Any]) -> None:
     )
     if production_ajv_audit != {
         "validator": "Ajv 8.20.0",
-        "status": "NOT_RUN_NOT_CLAIMED",
+        "status": "EXECUTED_NONCONFORMANT",
     }:
         raise ContractStandardsError(
-            "production Ajv official-suite audit must remain NOT_RUN_NOT_CLAIMED"
+            "production Ajv official-suite audit must remain EXECUTED_NONCONFORMANT"
         )
     boundary = required_object(profile.get("implementationBoundary"), "implementation boundary")
     expected_boundary = {

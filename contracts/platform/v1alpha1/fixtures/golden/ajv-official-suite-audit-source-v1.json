@@ -1,0 +1,140 @@
+{
+  "formatVersion": "cloud-agents-ajv-official-suite-audit-source/v1",
+  "auditId": "cloud-agents/platform/ajv-official-suite-audit",
+  "status": "VERSIONED_EXPECTATION",
+  "notGateClosure": true,
+  "validator": {
+    "package": "ajv",
+    "name": "Ajv",
+    "version": "8.20.0",
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "packageManifestSha256": "1f9033ee5a6515e7d76938b7072941862d1ed228a6879cc7fe10cdeb75107989",
+    "dependencyAuthority": ["package.json", "bun.lock"]
+  },
+  "execution": {
+    "freshValidatorPerCase": true,
+    "options": {
+      "allErrors": true,
+      "strict": false,
+      "validateSchema": true,
+      "validateFormats": false,
+      "ownProperties": true,
+      "removeAdditional": false,
+      "useDefaults": false,
+      "coerceTypes": false
+    },
+    "remoteRegistry": {
+      "baseUri": "http://localhost:1234/",
+      "files": 79,
+      "registration": "addSchema(schema, uri, false, false)",
+      "networkFetch": "forbidden",
+      "loadSchema": "forbidden"
+    }
+  },
+  "corpus": {
+    "profilePath": "tools/contract-standards/profile.json",
+    "localRoot": "tools/contract-standards/vendor/json-schema-test-suite",
+    "commit": "ea54899edb898f4cd99fb0f778e0856e7d337c8f",
+    "tree": "b41de18d1ce464a942ca78fd0e286cd726e9090f",
+    "mandatoryTree": "8caa839664321324a31424adf0dae3811a73e6da",
+    "manifestAlgorithm": "sorted-path-nul-sha256-nul-size-v1",
+    "manifestSha256": "d69af29cbaf4c7ffd1f8577c986294c51ec4efb177ebc340022978043b2a88a1",
+    "corpusFiles": 126,
+    "mandatoryFiles": 46,
+    "cases": 383,
+    "assertions": 1299,
+    "remoteFiles": 79
+  },
+  "expected": {
+    "status": "EXECUTED_NONCONFORMANT",
+    "conformanceClaim": false,
+    "summary": {
+      "files": 46,
+      "cases": 383,
+      "assertions": 1299,
+      "remotes": 79,
+      "passedAssertions": 1241,
+      "compileFailedCases": 7,
+      "notRunAssertions": 20,
+      "validityMismatches": 30,
+      "runtimeErrors": 8,
+      "discrepancyRecords": 45,
+      "nonPassingAssertions": 58
+    },
+    "categories": [
+      {
+        "category": "dynamicRef",
+        "compileFailedCases": 3,
+        "notRunAssertions": 6,
+        "validityMismatches": 15,
+        "runtimeErrors": 4,
+        "discrepancyRecords": 22,
+        "nonPassingAssertions": 25
+      },
+      {
+        "category": "enum",
+        "compileFailedCases": 1,
+        "notRunAssertions": 6,
+        "validityMismatches": 0,
+        "runtimeErrors": 0,
+        "discrepancyRecords": 1,
+        "nonPassingAssertions": 6
+      },
+      {
+        "category": "properties",
+        "compileFailedCases": 0,
+        "notRunAssertions": 0,
+        "validityMismatches": 1,
+        "runtimeErrors": 0,
+        "discrepancyRecords": 1,
+        "nonPassingAssertions": 1
+      },
+      {
+        "category": "ref",
+        "compileFailedCases": 3,
+        "notRunAssertions": 8,
+        "validityMismatches": 0,
+        "runtimeErrors": 0,
+        "discrepancyRecords": 3,
+        "nonPassingAssertions": 8
+      },
+      {
+        "category": "unevaluatedItems",
+        "compileFailedCases": 0,
+        "notRunAssertions": 0,
+        "validityMismatches": 10,
+        "runtimeErrors": 2,
+        "discrepancyRecords": 12,
+        "nonPassingAssertions": 12
+      },
+      {
+        "category": "unevaluatedProperties",
+        "compileFailedCases": 0,
+        "notRunAssertions": 0,
+        "validityMismatches": 3,
+        "runtimeErrors": 2,
+        "discrepancyRecords": 5,
+        "nonPassingAssertions": 5
+      },
+      {
+        "category": "vocabulary",
+        "compileFailedCases": 0,
+        "notRunAssertions": 0,
+        "validityMismatches": 1,
+        "runtimeErrors": 0,
+        "discrepancyRecords": 1,
+        "nonPassingAssertions": 1
+      }
+    ]
+  },
+  "implementationBoundary": {
+    "closureCriterion": "remains_missing",
+    "gateStatus": "all_gates_open",
+    "productionRuntimeDependency": "forbidden",
+    "networkFetch": "forbidden",
+    "httpSurface": "not_implemented",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized"
+  }
+}
