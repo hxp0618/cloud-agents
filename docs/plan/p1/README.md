@@ -188,8 +188,14 @@
   `b7a9962` 固定：同 verifier full replay、fresh locked reread 与六类 action-specific close-only permit 覆盖 exact
   12 pairs；fixed candidate `23c3083` 已由
   [`4808d20` independent review](runner-ledger-recovery-admission-service-independent-review-20260823.md)
-  返回 `APPROVE, P0=0/P1=0/P2=0`。该 verdict 满足 ordered Slice C Entry，但不实现或授权 writer；所有 writer
-  与 public recovery result 继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`。
+  返回 `APPROVE, P0=0/P1=0/P2=0`。Slice C 的
+  [`abort terminal writer`](runner-ledger-recovery-abort-terminal-service-matrix-20260823.md) 固定候选 `6fd2873`
+  已由 `be597de` 独立复核批准；Slice D 的
+  [`commit reconciliation writers`](runner-ledger-recovery-commit-reconciliation-service-matrix-20260823.md)
+  fixed candidate `7bbc391` 已由 `cb94b53` 返回 `APPROVE, P0=0/P1=0/P2=0`。Slice E 的
+  [`retry lineage handoff`](runner-ledger-recovery-retry-handoff-service-matrix-20260823.md) 正在固定候选与独立复核；
+  recovery execution/success 与 public failure result 继续 `MIGRATION_PROJECTION_NOT_IMPLEMENTED`，且没有新增
+  production database、HTTP/P2/provider、部署、发布或 Gate authority。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
