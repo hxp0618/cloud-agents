@@ -220,6 +220,13 @@
   idempotency、outbox 与 leader recovery；详见
   [`local logical data recovery matrix`](p1-local-logical-data-recovery-20260823.md)。该记录仍为 independent review
   `PENDING`，不覆盖 N/N-1、PITR/HA、physical power loss、current-source aggregate signature 或任何 Gate closure。
+- `G-DATA` current-source retirement/recovery：固定实现 `fa3c568` 以 append-only `000012` 移除 fenced-only live-set
+  shortcut，只有与 live registration 六元组和全部 revoke/release facts 精确匹配的 complete retirement receipt
+  才能从 preflight 排除 N-1/expired instance；新增 PG15/16/17 focused matrix，并在 12-migration current manifest
+  上重做一次 PG17 logical dump/restore。详见
+  [`current-source data recovery and retirement preflight`](p1-current-source-data-recovery-retirement-20260823.md)。
+  该记录仍为 independent review `PENDING`；不声明 deployed rolling upgrade、PITR/HA、current-source filesystem
+  crash closure、生产数据库写入或任何 Gate closure。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
