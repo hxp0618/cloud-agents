@@ -129,10 +129,12 @@
   signature.
 - P1 identity-verifier repair：[`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md) freezes
   `platform-identity-verifier/v1` as an offline RFC 9068 / RS256 boundary and orders generated profile、pure crypto
-  kernel、opaque principal/authz binder and independent review Slices A-C. Slice A's
-  [generated-profile candidate](identity-verifier-profile-implementation-20260823.md) is implemented with independent
-  review pending；Slices B-C remain `NOT STARTED`. The package adds no verifier/parser/principal、HTTP discovery/JWKS
-  fetch、provider/P2、production trust root/database write、deployment/publication or Gate closure.
+  kernel、opaque principal/authz binder and independent review Slices A-C. Slice A's fixed candidate `495174b` and
+  [generated-profile record](identity-verifier-profile-implementation-20260823.md) are independently
+  [approved](identity-verifier-profile-independent-review-20260823.md) with `P0=0/P1=0/P2=0`; Slice B is now eligible
+  under the existing approval but remains unimplemented, and Slice C remains `NOT STARTED`. The package adds no
+  verifier/parser/principal、HTTP discovery/JWKS fetch、provider/P2、production trust root/database write、
+  deployment/publication or Gate closure.
 - Runner ledger/catalog preflight：generated profile、locked read-only projection kernel 与 typed same-verifier
   claim/no-op dispatch 已依序固定；Slice A/B fixed candidate `01b1a5f` 的
   [`independent review`](migration-ledger-catalog-preflight-independent-review-20260821.md) 为
