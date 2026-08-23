@@ -48,5 +48,9 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
 - [`CAG-G-CONTRACT-P1-20260823-R2`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md)：historical blocked
   candidate；独立 review 的 quantitative-claim/bytecode-residue findings 由 R3 修复，但 R2 本身不能关闭 Gate。
 - [`CAG-G-CONTRACT-P1-20260823-R3`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R3.md)：historical repaired
-  candidate；其固定 prerequisite 仍命名 Baseline R3，因此在生成显式 R4 rebind candidate 前不能关闭
+  candidate；其固定 prerequisite 仍命名 Baseline R3，且 generation lock 已落后于 current source，因此不能关闭
   `G-CONTRACT`。
+- [`CAG-G-CONTRACT-P1-20260823-R4`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md)：current-source R4 rebind
+  candidate；固定 Inventory R3、Baseline R4、当前 27-pipeline generation lock、fresh generated SDK consumer 与
+  migration `000012` bundle replay。状态仍为 `IN PROGRESS`、reviewer `PENDING`、7 个 formal `missing` 保持不变，
+  Gate effect 为 none。

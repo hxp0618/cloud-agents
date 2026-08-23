@@ -205,7 +205,7 @@
   loop/no-result-reuse/zero external side-effect 已有 focused evidence。ADR-0023 A–G 现仅在 ordered local
   implementation/review 边界上完成；没有授权 production database、HTTP/P2/provider、部署、发布或
   Gate authority。
-- `G-CONTRACT` current-source candidate：修复 source `e14780d` 保留 R1/R2 的 JSON Schema/OpenAPI/Proto authority、
+- `G-CONTRACT` current-source lineage：修复 source `e14780d` 保留 R1/R2 的 JSON Schema/OpenAPI/Proto authority、
   descriptor/baseline、fixtures、Go/TypeScript SDK manifests，并新增 versioned standards profile、exact vendored
   official JSON Schema suite、`jsonschema-rs` / `openapi-spec-validator` 独立校验与 hash-locked test-only Python
   closure。R2 independent review 因无可复验 Ajv official-suite runner 的 `53` differences overclaim 与 Python
@@ -213,8 +213,12 @@
   [`CAG-G-CONTRACT-P1-20260823-R3`](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R3.md)
   删除该数值声明并固定 `Ajv official suite = NOT_RUN_NOT_CLAIMED`，同时用 Python `-B` 与 zero-bytecode test
   关闭 residue。R3 记录 jsonschema-rs official suite `46/383/1299/79`、current fixtures `52/2/71`、OpenAPI `2/9`
-  的 candidate PASS；状态仍为 `IN PROGRESS`，reviewer `PENDING`，formal `missing` 未移除，remaining generator
-  supply review 与 immutable Gate signature 仍未完成。
+  的 candidate PASS；但该记录固定了已失效的 Baseline R3 prerequisite，且 generation lock 已落后当前源码。
+  Superseding
+  [`CAG-G-CONTRACT-P1-20260823-R4`](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md)
+  将 current source `1a9f15e`、Baseline R4、27-pipeline lock、fresh generated SDK consumer 与 migration `000012`
+  bundle 重放显式绑定。R4 状态仍为 `IN PROGRESS`，reviewer `PENDING`，formal `missing` 未移除，remaining
+  generator supply review 与 immutable Gate signature 仍未完成。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见
