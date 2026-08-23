@@ -36,7 +36,10 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 
 ## Current candidates
 
-- [`CAG-G-CONTRACT-P1-20260823-R1`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md)：固定 current-source
-  contract/SDK/descriptor/fixture/lock identity 与 focused replay；状态 `IN PROGRESS`，independent reviewer
-  `PENDING`，official JSON Schema suite、独立 OpenAPI 语义验证和 generator supply review 仍开放，不关闭
-  `G-CONTRACT` 或任何其他 Gate。
+- [`CAG-G-CONTRACT-P1-20260823-R1`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md)：historical candidate；其固定
+  source 已由 R2 supersede。R1 保留 contract/SDK/descriptor/fixture/lock identity 与 focused replay 证据，但不能作为
+  current-source review 或 Gate closure。
+- [`CAG-G-CONTRACT-P1-20260823-R2`](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md)：supersede R1 的
+  current-source candidate；以 exact vendored official suite、`jsonschema-rs`、`openapi-spec-validator`、hash-locked
+  Python closure 与 generation-lock profile 补齐 standards implementation evidence。reviewer 仍 `PENDING`，formal
+  `missing` 保留，`G-CONTRACT` 仍 `IN PROGRESS`。
