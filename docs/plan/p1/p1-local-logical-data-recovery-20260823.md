@@ -5,7 +5,9 @@
 - Host-crash evidence import: `1057a22d5f1dc2a36d87e1802ac8fd9ad2476aa5`
 - Implementation commit: `298879c403c4f4d50c6dacf4e857687896c74086`
 - Implementation tree: `e54a62f17f3be0b846ac40c5619ead90216853ad`
-- Control-plane subtree: `202daf6fa0e0986d82b69a8fa25df432ba42f33f`
+- Cleanup remediation commit: `4e8c8f800c0f905e3a0bdd0cc9e2f2c3ef5c990c`
+- Remediated code tree: `dac6d08581ed38db7dc7d7e3103131d99ac6ee6a`
+- Remediated control-plane subtree: `d6df77d63bfbee7500e831dcd2414966209820d5`
 - Branch: `codex/cloud-agents-p1-data-recovery-local-20260823`
 - Independent reviewer: `PENDING`
 - Gate effect: none; `G-DATA` and every immutable or aggregate Gate remain open
@@ -23,8 +25,10 @@ deployment, release, or any external service effect.
 | ----------------------------------------------------------- | ------------------------------------------------------------------ |
 | `internal/store/postgres/data_recovery_integration_test.go` | `bb09a201a8ed60b7a5be18e413468dc2cbe33f6d796155aacf5140822543f7df` |
 | `scripts/data-recovery-validator/main.go`                   | `3471adbae5a7226b5f773cc61c2dfbbde8e68e7c33c2c1c9ceda618648607efb` |
-| `scripts/data-recovery-validator/main_test.go`              | `f713e77e909f1cb1a61871d54222d89ddd7c477bdee001bf9263c78088e765a1` |
-| `scripts/test-p1-data-recovery-postgres.sh`                 | `db435f1abe7d9e000f6c1d022889e4d12c6153f2f35e5bcc9f7008c8a0e14b56` |
+| `scripts/data-recovery-validator/main_test.go`              | `19bcfda150e9c11f9ab966c576724bbea7d83c72883d58943e87eaf7fe499807` |
+| `scripts/p1-data-recovery-cleanup.sh`                       | `2f18e9d7cb5d973f5be01c43829a00f5718ae39a4ece79cef46e5841df11d7b8` |
+| `scripts/test-p1-data-recovery-cleanup.sh`                  | `7fde374a0ae2d7b602031843756c641f9b921221e3254bde93917314d8a84c27` |
+| `scripts/test-p1-data-recovery-postgres.sh`                 | `96e58c257ff3a2540370bfd8ebf846b5d07982f805f2ec2c1443b6939222090c` |
 | `migrations/manifest.json`                                  | `d716baa0e2e3dc8dfdb8acdf9d7732c564f4105826d28e76d417ec5432c63980` |
 | `go.mod`                                                    | `a4d98dcbd65803a22bcf946cf042d17484e714500c0502b616d68742a02f1d14` |
 | `go.sum`                                                    | `c5e16bfbadc2461fd349b94ce6487aadcb2edea11fa0aa37fd29bc2f46bfc88c` |
@@ -87,17 +91,26 @@ The first two real executions are retained as `NOT PASS` evidence:
    `SET ROLE cloud_agents_migration_owner`; the check failed with PostgreSQL `42501` and was corrected to set and reset
    the migration-owner role explicitly.
 
-The third run produced the PASS facts above. After that execution, only the static validator test was extended; the
-runner, validator production code, and PostgreSQL integration test bytes stayed identical. Therefore this record does
-not call the real run a full fixed-tree Gate pass. The exact fixed candidate instead received the following bounded
-checks without repeating the real matrix:
+The third run produced the PASS facts above with predecessor runner SHA-256
+`db435f1abe7d9e000f6c1d022889e4d12c6153f2f35e5bcc9f7008c8a0e14b56`. The first independent review correctly
+blocked that candidate because an `EXIT` trap cannot propagate cleanup failure over an already successful Bash status;
+container or dump removal failure could therefore leave residue after printing `PASS`. Remediation `4e8c8f8` makes
+normal success explicit: it disables the EXIT trap, runs cleanup, propagates any cleanup failure, verifies the run
+directory is absent, and only then publishes the prepared PASS line. A shared Bash helper plus a Bash 3.2 fixture prove
+that successful cleanup precedes PASS and simulated cleanup failure returns nonzero without PASS.
 
-- `go test ./scripts/data-recovery-validator ./internal/store/postgres -count=1`: PASS (`0.833s`, `1.394s`);
-- `go test -race ./scripts/data-recovery-validator -count=1`: PASS (`1.550s`);
-- `go vet ./scripts/data-recovery-validator ./internal/store/postgres`: PASS;
-- `/bin/bash -n scripts/test-p1-data-recovery-postgres.sh`: PASS;
+The database setup, migration, snapshot, dump, restore, ledger comparison, recovery calls, image binding, and digest
+calculation preceding cleanup did not change, but the runner bytes did. Therefore this record does not call the real run
+a full remediated fixed-tree or Gate pass and does not repeat the real matrix. The remediated exact code received these
+bounded checks:
+
+- `/bin/bash scripts/test-p1-data-recovery-cleanup.sh`: PASS;
+- `go test ./scripts/data-recovery-validator -count=1`: PASS (`0.825s`);
+- `go test -race ./scripts/data-recovery-validator -count=1`: PASS (`1.595s`);
+- `go vet ./scripts/data-recovery-validator`: PASS;
+- `/bin/bash -n` over the cleanup helper, cleanup fixture, and PostgreSQL runner: PASS;
 - `git diff --check`: PASS;
-- scoped staged-input Gitleaks scan: PASS over `37.56 KiB`.
+- scoped remediation-input Gitleaks scan: PASS over `2.42 KiB`.
 
 No source/restore containers or run directories remained after the PASS. The temporary dump was deliberately deleted;
 only its size and SHA-256 plus the source/restored/recovered data digests are retained here. This record contains no test
