@@ -440,6 +440,11 @@ Platform RC、Beta 或 GA。
   在固定 source `d6ec6c8` 上完成物理掉电入口的只读安全审计：可达裸机仍承载活动工作负载且没有独立一次性测试盘，
   DUT-local management interface 也不能替代第二控制机的外部 hard-off/hard-on recovery path；因此未执行任何断电、
   重启、安装、文件系统或数据库操作，physical controller/host power-loss 与 filesystem-slice Done 继续开放。
+- [`evidencefs-host-crash-simulation-20260823.md`](evidencefs-host-crash-simulation-20260823.md)
+  在固定 source `2023f73` 上完成 owner-authorized bare-metal SysRq `b` 软件崩溃烟测：ext4
+  `after-directory-fsync` object barrier 经独立控制机观测 `UP → DOWN → UP`，fresh mount 显示 journal recovery，
+  classifier 返回 exact `final`/44-byte/no-temp，卸载后 `e2fsck -fn` status 0。该单场景不包含物理断电、SSD cache
+  loss、独立测试盘、XFS 或完整 barrier matrix，不关闭 physical blocker、filesystem Done 或任何 Gate。
 - [`go-toolchain-1.26.6-security-refresh-20260816.md`](go-toolchain-1.26.6-security-refresh-20260816.md) 固定 source
   `77d92c5`，记录 Go 1.26.5 reachable stdlib finding → 1.26.6 remediation、穷尽 race 分片、三平台 compile、
   ext4/XFS clean-restart、42-barrier QEMU repair 与 fresh vulnerability scan；同时保留 `x/mod v0.37.0` OSV blocker。
