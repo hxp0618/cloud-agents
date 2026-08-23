@@ -73,5 +73,6 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
   P1 security candidate；只继承 exact generated-contract、issuer/authz、A2.3/A2.4 coordination/compatibility-recovery、
   ADR-0023 Slice G 与 ADR-0024 review scopes。Fresh focused identity/RBAC、tenant transaction/authorization 与
   recovery redaction/profile tests PASS；生产 OIDC/JWT/JWKS verifier、whole-schema live RLS/pool isolation、current
-  vulnerability/secret/limit closure、accepted durability aggregation 与 independent review 均未完成。状态为
-  `IN PROGRESS`、reviewer `PENDING`，Gate effect 为 none。
+  vulnerability/secret/limit closure 与 accepted durability aggregation 均未完成。
+  [Independent review](G-SECURITY/P1/CAG-G-SECURITY-P1-20260823-R1-independent-review.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`，Gate effect 为 none。
