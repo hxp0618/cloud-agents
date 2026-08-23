@@ -386,7 +386,7 @@
       "id": "platform-json-contract-sdk-generator",
       "kind": "in-repo-typescript-deterministic-go-typescript-fixture-sdk",
       "entrypoint": "scripts/generate-platform-json-sdks.ts",
-      "sourceManifestSha256": "sha256:010b22c210c5379b9915b85785cb2a75a782b2326e2e16c7355b504fa6263112",
+      "sourceManifestSha256": "sha256:6461369035a4692a708641ad0db335a269e6e66a6040579fcb8464bdb8c14a45",
       "sources": [
         "scripts/generate-platform-json-sdks.ts",
         "scripts/lib/platform-json-sdk.test.ts",
@@ -1464,7 +1464,7 @@
     {
       "id": "platform-json-contract-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:7d56348dd98fe190eb3110fe0dbe651d4e49e95171ef83e50c33e841b274c6ef",
+      "inputManifestSha256": "sha256:d63692cd1731174b7cd2879328acb30577c16ff64d1cd36c1ab3a184ee0cc356",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -1546,22 +1546,22 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:b85604643cc2890dda7efb2a9100fea2f439d61f00851880f3779dbfdea4da53",
+          "sha256": "sha256:18f1d02f6bb56a17f7d38ace3a44bf52b6f5d78f9492bcea41644513b0fa907f",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:09390132956c85fe13ff263d8e71ad4ca41e2ca873ed9510f0c2ffab278fd52b",
+          "sha256": "sha256:757544ba92a633dfb4024c47a62611445d8521fcf3ee7c4b7ed7d676cc9aa38f",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:23aa7fefa7dea88780760201628e1f5854eac79b58a6305f95b190dfaddefe1b",
+          "sha256": "sha256:1b9f2134a21b6e8fa8fa83a4d277f0a8ec147f33ac777271e54fdd091682278b",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:42bb9ef625391318384028d8b2d86f8c3ea035c2de388e167411c34e6f919451",
+          "sha256": "sha256:7cf7e8eddac3fbbe2de5cbee50ab52ea29fb4bdb6ed5ac5d989ae99c590d6685",
           "sizeBytes": 9802
         }
       ],
@@ -1582,7 +1582,7 @@
     {
       "id": "platform-json-contract-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:0fcf3a0c76963932060a0471429036a186bad926c54accb1644a8dd16661e1f7",
+      "inputManifestSha256": "sha256:22121b741ee6b8e01abf237ea27c932b265dbf129e664f101e4fc351bd0d15b0",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -1664,12 +1664,12 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:7694cf790d9bc64ee894342cecde2799271ebc119147c01df803fad2d377f17e",
+          "sha256": "sha256:572f9529560d4df3d1cb4b275de947aeea02923ecef00a60b59f1e27f3072d7f",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:5c39927636082f1c7fa0a08526faac47677293636bab09e456458b842a12e00f",
+          "sha256": "sha256:9e1f45de9924efdfe20b8f3ca8864a7d1d3d9001b6fa2a6233c67bcb0e25fecb",
           "sizeBytes": 9412
         }
       ],

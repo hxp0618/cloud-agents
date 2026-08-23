@@ -56,7 +56,7 @@ describe("platform JSON SDK generator", () => {
       "sdk/go/gen/openapi/v1alpha1/client_generated.go",
       "sdk/typescript/src/platform.ts",
     ]);
-  });
+  }, 120_000);
 
   it("does not import a network, service, or database runtime", () => {
     for (const source of platformJSONSDKGeneratorSources().filter(

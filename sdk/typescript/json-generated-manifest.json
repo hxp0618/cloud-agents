@@ -114,7 +114,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:8c5ede5973e2062c0105191211df65966e1c2a56b018bb1821d3f2ecaec9561f",
+    "sourceManifestSha256": "sha256:852e4ddd14f2053d5cefc7cbb47ff364bcbf47f159506936ca629b1d3d19bc90",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -143,11 +143,11 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:aaf64dfd40559f5e6ba19c1d14dff87231accfe907f2ad50e08e7be500f7b9af",
+  "outputTreeSha256": "sha256:fb5bce9248c65fc0e44132c248104577f15a95d9e3d559ef22d1151800ef22a6",
   "outputs": [
     {
       "path": "sdk/typescript/src/platform.ts",
-      "sha256": "sha256:7694cf790d9bc64ee894342cecde2799271ebc119147c01df803fad2d377f17e",
+      "sha256": "sha256:572f9529560d4df3d1cb4b275de947aeea02923ecef00a60b59f1e27f3072d7f",
       "sizeBytes": 44209
     }
   ]
