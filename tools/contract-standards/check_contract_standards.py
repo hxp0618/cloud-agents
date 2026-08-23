@@ -458,6 +458,22 @@ def validate_profile(profile: dict[str, Any]) -> None:
     current = required_object(profile.get("currentContracts"), "current contract profile")
     if current.get("crossEngineExactFixtureResults") is not True:
         raise ContractStandardsError("cross-engine fixture comparison must remain enabled")
+    suite = required_object(profile.get("jsonSchemaOfficialSuite"), "official suite profile")
+    production_ajv_audit = required_object(
+        suite.get("productionAjvOfficialSuiteAudit"), "production Ajv official-suite audit"
+    )
+    exact_keys(
+        production_ajv_audit,
+        {"validator", "status"},
+        "production Ajv official-suite audit",
+    )
+    if production_ajv_audit != {
+        "validator": "Ajv 8.20.0",
+        "status": "NOT_RUN_NOT_CLAIMED",
+    }:
+        raise ContractStandardsError(
+            "production Ajv official-suite audit must remain NOT_RUN_NOT_CLAIMED"
+        )
     boundary = required_object(profile.get("implementationBoundary"), "implementation boundary")
     expected_boundary = {
         "productionRuntimeDependency": "FORBIDDEN",

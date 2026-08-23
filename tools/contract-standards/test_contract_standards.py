@@ -47,6 +47,24 @@ class ContractStandardsTest(unittest.TestCase):
         with self.assertRaisesRegex(ContractStandardsError, "implementation boundary mismatch"):
             validate_profile(profile)
 
+    def test_production_ajv_official_suite_cannot_be_claimed_without_a_runner(self) -> None:
+        profile = copy.deepcopy(load_json(PROFILE_PATH))
+        profile["jsonSchemaOfficialSuite"]["productionAjvOfficialSuiteAudit"]["status"] = "PASS"
+        with self.assertRaisesRegex(ContractStandardsError, "must remain NOT_RUN_NOT_CLAIMED"):
+            validate_profile(profile)
+
+    def test_source_tree_has_no_python_bytecode(self) -> None:
+        bytecode = sorted(
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "tools" / "contract-standards").rglob("*.pyc")
+        )
+        caches = sorted(
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "tools" / "contract-standards").rglob("__pycache__")
+        )
+        self.assertEqual(bytecode, [])
+        self.assertEqual(caches, [])
+
     def test_corpus_manifest_binds_path_content_and_size(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

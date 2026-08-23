@@ -13,10 +13,10 @@ validator or create a second contract authority.
 
 The independent JSON Schema oracle is `jsonschema-rs 0.50.1`. Against upstream
 `json-schema-org/JSON-Schema-Test-Suite` commit `ea54899edb898f4cd99fb0f778e0856e7d337c8f`, it passes the 46 mandatory
-Draft 2020-12 files, 383 cases and 1,299 assertions with zero failures. The same run records Ajv 8.20.0's 53
-official-suite differences rather than claiming Ajv itself is fully conformant. All 52 current schemas and 71
-checked-in schema fixture cases must produce the expected result under both the production path and the independent
-engine.
+Draft 2020-12 files, 383 cases and 1,299 assertions with zero failures. Ajv 8.20.0 does not run that vendored official
+suite in this candidate, so its official-suite result is explicitly `NOT_RUN_NOT_CLAIMED`; no Ajv official-suite
+failure count is recorded. All 52 current schemas and 71 checked-in schema fixture cases must produce the expected
+result under both the production path and the independent engine.
 
 The independent OpenAPI checker is `openapi-spec-validator 0.9.0`, explicitly using its OpenAPI 3.1 validator. It
 validates the two checked-in OpenAPI 3.1.1 documents and all nine operations with local file `$ref` resolution.
@@ -33,7 +33,9 @@ The environment is fixed by `Bun 1.3.14`, `Python 3.14.7`, `uv 0.12.5`,
 first runs the production Ajv/in-repo fixture validator, exports hash-pinned requirements directly from that lock,
 creates a temporary venv, and runs `uv pip sync` with
 `--require-hashes`, `--no-build`, and `--strict`. Python downloads are disabled. An absent compatible wheel fails
-closed; the check never downloads a Python runtime or builds an sdist. The temporary venv is deleted on every exit.
+closed; the check never downloads a Python runtime or builds an sdist. Both Python entrypoints use `-B`, and the unit
+suite rejects any `__pycache__` directory or `.pyc` file under the checked-in standards source. The temporary venv is
+deleted on every exit.
 An approved local wheel cache may be supplied through `CLOUD_AGENTS_CONTRACT_STANDARDS_WHEELHOUSE`; hashes exported
 from `uv.lock` remain mandatory, so the cache cannot substitute different package bytes.
 

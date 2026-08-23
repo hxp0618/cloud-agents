@@ -93,6 +93,9 @@ describe("Platform contract generation lock", () => {
   it("records the independent standards runner as a pending non-Gate candidate", () => {
     const root = join(import.meta.dirname, "../..");
     const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      dialects: {
+        jsonSchema: { productionAjvOfficialSuiteStatus?: string };
+      };
       tools: Array<Record<string, unknown>>;
       pipelines: Array<{
         id?: string;
@@ -103,6 +106,7 @@ describe("Platform contract generation lock", () => {
       }>;
       missing: string[];
     };
+    expect(lock.dialects.jsonSchema.productionAjvOfficialSuiteStatus).toBe("NOT_RUN_NOT_CLAIMED");
     expect(lock.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -134,6 +138,10 @@ describe("Platform contract generation lock", () => {
           cases: 383,
           assertions: 1299,
           expectedFailures: 0,
+        },
+        productionAjvOfficialSuiteAudit: {
+          validator: "Ajv 8.20.0",
+          status: "NOT_RUN_NOT_CLAIMED",
         },
         currentJsonSchema: {
           schemas: 52,

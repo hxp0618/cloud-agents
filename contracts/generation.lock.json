@@ -16,7 +16,7 @@
       "identity": "https://json-schema.org/draft/2020-12/schema",
       "semanticValidation": "BOOTSTRAP_AJV_AND_IN_REPO_SEMANTIC_FIXTURES",
       "independentStandardsCandidate": "JSONSCHEMA_RS_0_50_1_OFFICIAL_MANDATORY_SUITE_AND_CURRENT_FIXTURES",
-      "productionAjvOfficialSuiteStatus": "NOT_FULL_OFFICIAL_SUITE_COMPLIANT_53_DIFFERENCES"
+      "productionAjvOfficialSuiteStatus": "NOT_RUN_NOT_CLAIMED"
     },
     "openapi": {
       "documentVersion": "3.1.1",
@@ -93,7 +93,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:78b6388a0ab53e1c9938fb052188c019b1d760d2fb422e35e3cf3bf036e77371",
+      "sourceManifestSha256": "sha256:6f772183f4ec0053d0d232c53da172cb0df7ca76c240de37f42c5c9c4bd34229",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.ts",
@@ -580,7 +580,7 @@
       "id": "platform-contract-standards-checker",
       "kind": "in-repo-python-independent-json-schema-openapi-checker",
       "entrypoint": "tools/contract-standards/check_contract_standards.py",
-      "sourceManifestSha256": "sha256:6fc96beab00884b2bb0e723ee977630eef012d395c60ee2e6c0453c1e956dd2b",
+      "sourceManifestSha256": "sha256:eeb0ef55b6d9ea487d2ce1a3e3bc1c72818abead4c97b5b6363884fd9d0e7695",
       "sources": [
         ".gitattributes",
         ".mise.toml",
@@ -732,7 +732,7 @@
       "productionRuntimeDependency": "FORBIDDEN",
       "reviewEvidence": {
         "path": "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md",
-        "sha256": "sha256:83fd2dac50423e7e6b8c6530ee4a3d8309b52aa98cc265b7452f96988a776452",
+        "sha256": "sha256:62c66d64986e8fea38fb712cb091ae5e41aa1792823370616629acc36c39703d",
         "status": "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING"
       }
     },
@@ -746,7 +746,7 @@
       "productionRuntimeDependency": "FORBIDDEN",
       "reviewEvidence": {
         "path": "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md",
-        "sha256": "sha256:83fd2dac50423e7e6b8c6530ee4a3d8309b52aa98cc265b7452f96988a776452",
+        "sha256": "sha256:62c66d64986e8fea38fb712cb091ae5e41aa1792823370616629acc36c39703d",
         "status": "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING"
       }
     }
@@ -761,7 +761,7 @@
     {
       "id": "independent-contract-standards-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:6fc96beab00884b2bb0e723ee977630eef012d395c60ee2e6c0453c1e956dd2b",
+      "inputManifestSha256": "sha256:eeb0ef55b6d9ea487d2ce1a3e3bc1c72818abead4c97b5b6363884fd9d0e7695",
       "inputs": [
         ".gitattributes",
         ".mise.toml",
@@ -919,6 +919,10 @@
           "cases": 383,
           "assertions": 1299,
           "expectedFailures": 0
+        },
+        "productionAjvOfficialSuiteAudit": {
+          "validator": "Ajv 8.20.0",
+          "status": "NOT_RUN_NOT_CLAIMED"
         },
         "currentJsonSchema": {
           "schemas": 52,

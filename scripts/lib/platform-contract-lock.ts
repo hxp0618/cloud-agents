@@ -139,6 +139,10 @@ type ContractStandardsProfile = {
     readonly assertions: number;
     readonly remoteFiles: number;
     readonly expectedFailures: number;
+    readonly productionAjvOfficialSuiteAudit: {
+      readonly validator: string;
+      readonly status: string;
+    };
   };
   readonly currentContracts: {
     readonly schemaFiles: number;
@@ -709,7 +713,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         semanticValidation: "BOOTSTRAP_AJV_AND_IN_REPO_SEMANTIC_FIXTURES",
         independentStandardsCandidate:
           "JSONSCHEMA_RS_0_50_1_OFFICIAL_MANDATORY_SUITE_AND_CURRENT_FIXTURES",
-        productionAjvOfficialSuiteStatus: "NOT_FULL_OFFICIAL_SUITE_COMPLIANT_53_DIFFERENCES",
+        productionAjvOfficialSuiteStatus: "NOT_RUN_NOT_CLAIMED",
       },
       openapi: {
         documentVersion: "3.1.1",
@@ -856,6 +860,8 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
             assertions: contractStandardsProfile.jsonSchemaOfficialSuite.assertions,
             expectedFailures: contractStandardsProfile.jsonSchemaOfficialSuite.expectedFailures,
           },
+          productionAjvOfficialSuiteAudit:
+            contractStandardsProfile.jsonSchemaOfficialSuite.productionAjvOfficialSuiteAudit,
           currentJsonSchema: {
             schemas: contractStandardsProfile.currentContracts.schemaFiles,
             fixtureManifests: contractStandardsProfile.currentContracts.fixtureManifests,
@@ -1741,7 +1747,10 @@ function assertContractStandardsProfileCurrent(root: string): ContractStandardsP
     suite.cases !== 383 ||
     suite.assertions !== 1299 ||
     suite.remoteFiles !== 79 ||
-    suite.expectedFailures !== 0
+    suite.expectedFailures !== 0 ||
+    suite.productionAjvOfficialSuiteAudit.validator !== "Ajv 8.20.0" ||
+    suite.productionAjvOfficialSuiteAudit.status !== "NOT_RUN_NOT_CLAIMED" ||
+    Object.keys(suite.productionAjvOfficialSuiteAudit).length !== 2
   ) {
     throw new Error("Contract standards official JSON Schema suite binding is stale.");
   }

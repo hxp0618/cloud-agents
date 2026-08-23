@@ -103,8 +103,17 @@ try {
     ["pip", "sync", "--python", python, "--require-hashes", "--no-build", "--strict", "-"],
     { input: `${requirements}\n` },
   );
-  run(python, ["tools/contract-standards/check_contract_standards.py", "--root", "."]);
-  run(python, ["-m", "unittest", "discover", "-s", "tools/contract-standards", "-p", "test_*.py"]);
+  run(python, ["-B", "tools/contract-standards/check_contract_standards.py", "--root", "."]);
+  run(python, [
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tools/contract-standards",
+    "-p",
+    "test_*.py",
+  ]);
   process.stdout.write("platform-contract-standards: current non-Gate candidate\n");
 } finally {
   rmSync(temporaryRoot, { force: true, recursive: true });

@@ -56,11 +56,9 @@
     "remoteFiles": 79,
     "independentValidator": "jsonschema-rs 0.50.1",
     "expectedFailures": 0,
-    "productionAjvObservation": {
+    "productionAjvOfficialSuiteAudit": {
       "validator": "Ajv 8.20.0",
-      "assertions": 1299,
-      "failures": 53,
-      "status": "NOT_FULL_OFFICIAL_SUITE_COMPLIANT"
+      "status": "NOT_RUN_NOT_CLAIMED"
     }
   },
   "currentContracts": {
