@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -83,13 +84,16 @@ func TestRecoveryScriptKeepsLocalOwnedClosedBoundary(t *testing.T) {
 	}
 	script := string(raw)
 	required := []string{
+		`source "$script_dir/p1-data-recovery-cleanup.sh"`,
 		"postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193",
 		"--pull=never",
 		"com.hxp0618.cloud-agents.test-run",
 		"pg_dump --format=custom --compress=0 --no-owner",
 		"pg_restore --exit-on-error --no-owner --role=cloud_agents_migration_owner",
 		`if [[ $restored_digest != "$source_digest" ]]`,
+		`rm -rf "$artifact_dir" || status=1`,
 		"TestDurableCoordinationPostgresRecovery",
+		`p1_data_recovery_finish "$pass_line"`,
 	}
 	for _, value := range required {
 		if !strings.Contains(script, value) {
@@ -101,6 +105,19 @@ func TestRecoveryScriptKeepsLocalOwnedClosedBoundary(t *testing.T) {
 		if strings.Contains(script, value) {
 			t.Fatalf("recovery script contains forbidden expansion %q", value)
 		}
+	}
+}
+
+func TestRecoveryCleanupFixtureUsesBash32(t *testing.T) {
+	repoRoot := findRepositoryRoot(t)
+	fixture := filepath.Join(repoRoot, "services", "control-plane", "scripts", "test-p1-data-recovery-cleanup.sh")
+	command := exec.Command("/bin/bash", fixture)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run Bash 3.2 cleanup fixture: %v\n%s", err, output)
+	}
+	if string(output) != "p1-data-recovery-cleanup-fixture: PASS\n" {
+		t.Fatalf("cleanup fixture output = %q", output)
 	}
 }
 

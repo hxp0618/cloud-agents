@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd -- "$script_dir/../../.." && pwd -P)
 module_dir="$repo_root/services/control-plane"
+source "$script_dir/p1-data-recovery-cleanup.sh"
 manifest_path="$module_dir/migrations/manifest.json"
 postgres_image="postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
 expected_server_version="170010"
@@ -59,7 +60,10 @@ cleanup() {
   restore_container=""
   if [[ -d $artifact_dir ]]; then
     find "$artifact_dir" -type f -exec chmod u+rw {} + 2>/dev/null || true
-    rm -rf "$artifact_dir"
+    rm -rf "$artifact_dir" || status=1
+    if [[ -e $artifact_dir ]]; then
+      status=1
+    fi
   fi
   return "$status"
 }
@@ -352,6 +356,7 @@ run_recovery_test "$restore_container" cagrestore recover
 snapshot_database "$restore_container" cagrestore "$artifact_dir/recovered.snapshot"
 recovered_digest=$(sha256_file "$artifact_dir/recovered.snapshot")
 image_id=$(docker image inspect --format '{{.Id}}' "$postgres_image")
-
-printf 'p1-data-recovery: postgres=17 server_version=%s image=%s backup_sha256=%s backup_size=%s source_data_sha256=%s restored_data_sha256=%s recovered_data_sha256=%s PASS\n' \
+printf -v pass_line \
+  'p1-data-recovery: postgres=17 server_version=%s image=%s backup_sha256=%s backup_size=%s source_data_sha256=%s restored_data_sha256=%s recovered_data_sha256=%s PASS' \
   "$expected_server_version" "$image_id" "$backup_digest" "$backup_size" "$source_digest" "$restored_digest" "$recovered_digest"
+p1_data_recovery_finish "$pass_line"
