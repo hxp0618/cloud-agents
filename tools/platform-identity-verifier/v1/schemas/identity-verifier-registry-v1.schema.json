@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/identity-verifier-registry-v1.schema.json",
+  "title": "IdentityVerifierRegistryV1",
+  "description": "Generated immutable and closed platform-identity-verifier/v1 profile and registry digests for the offline access-token verifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "registryId", "profile", "registryDigest"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-platform-identity-verifier-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/identity-verifier" },
+    "profile": { "$ref": "#/$defs/generatedProfile" },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "generatedProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "token",
+        "algorithm",
+        "protectedHeader",
+        "jwk",
+        "claims",
+        "limits",
+        "lexicalRules",
+        "timeRules",
+        "parsingRules",
+        "bindingRules",
+        "errorRules",
+        "digestRules",
+        "keyLineage",
+        "trustSnapshot",
+        "verificationContext",
+        "verifiedPrincipal",
+        "implementationNonClaims",
+        "profileDigest"
+      ],
+      "properties": {
+        "profileId": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/profile/properties/profileId"
+        },
+        "token": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/token"
+        },
+        "algorithm": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/algorithm"
+        },
+        "protectedHeader": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/protectedHeader"
+        },
+        "jwk": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/jwk"
+        },
+        "claims": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/claims"
+        },
+        "limits": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/limits"
+        },
+        "lexicalRules": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/lexicalRules"
+        },
+        "timeRules": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/timeRules"
+        },
+        "parsingRules": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/parsingRules"
+        },
+        "bindingRules": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/bindingRules"
+        },
+        "errorRules": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/errorRules"
+        },
+        "digestRules": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/digestRules"
+        },
+        "keyLineage": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/keyLineage"
+        },
+        "trustSnapshot": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/trustSnapshot"
+        },
+        "verificationContext": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/verificationContext"
+        },
+        "verifiedPrincipal": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/verifiedPrincipal"
+        },
+        "implementationNonClaims": {
+          "$ref": "identity-verifier-registry-source-v1.schema.json#/$defs/implementationNonClaims"
+        },
+        "profileDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "lookup": "exact_profile_id_profile_digest_and_registry_digest",
+    "networkLookup": "forbidden",
+    "productionTrustProvisioning": "absent",
+    "writerAuthority": "none"
+  }
+}

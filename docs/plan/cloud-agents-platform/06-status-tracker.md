@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-23
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，普通 clean `poweroff` 仅算 lifecycle smoke，物理 controller/cache-loss 结果明确不声称；D-049/ADR-0025 已冻结 offline JWT access-token verifier ordered Slices A-C 但尚未开始实现；live PostgreSQL、current-source phase records、remaining durability matrices、independent Gate reviews 与所有 Gate closure 仍未完成；HTTP/P2/provider external side effect 仍未开放；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，普通 clean `poweroff` 仅算 lifecycle smoke，物理 controller/cache-loss 结果明确不声称；D-049/ADR-0025 Slice A generated registry/package-private profile candidate 已实现并等待独立复核，Slices B-C 尚未开始；live PostgreSQL、current-source phase records、remaining durability matrices、independent Gate reviews 与所有 Gate closure 仍未完成；HTTP/P2/provider external side effect 仍未开放；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 

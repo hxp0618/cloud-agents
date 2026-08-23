@@ -612,6 +612,96 @@ describe("Platform contract generation lock", () => {
     );
   });
 
+  it("records the identity verifier registry and package-private Go facts without a runtime surface", () => {
+    const root = join(import.meta.dirname, "../..");
+    const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {
+      tools: Array<Record<string, unknown>>;
+      pipelines: Array<Record<string, any>>;
+    };
+    expect(lock.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "platform-identity-verifier-registry-generator",
+          entrypoint: "scripts/generate-platform-identity-verifier-registry.ts",
+        }),
+        expect.objectContaining({
+          id: "platform-identity-verifier-go-generator",
+          entrypoint: "scripts/generate-platform-identity-verifier-go.ts",
+        }),
+      ]),
+    );
+
+    const registry = lock.pipelines.find(
+      (candidate) => candidate.id === "identity-verifier-registry-generation",
+    );
+    const go = lock.pipelines.find(
+      (candidate) => candidate.id === "identity-verifier-go-profile-generation",
+    );
+    expect(registry).toMatchObject({
+      outputStatus: "GENERATED_IDENTITY_VERIFIER_REGISTRY",
+      notGateClosure: true,
+      outputSummary: {
+        registryId: "cloud-agents/platform/identity-verifier",
+        profileId: "platform-identity-verifier/v1",
+        algorithm: "RS256_ONLY",
+        audienceCardinality: "EXACTLY_ONE_SNAPSHOT_OWNED",
+        generatedProfileOnly: true,
+        runtimeVerifier: "NOT_IMPLEMENTED_IN_SLICE_A",
+        productionTrustProvisioning: "NOT_IMPLEMENTED",
+        httpSurface: "NOT_IMPLEMENTED",
+        oidcDiscovery: "NOT_IMPLEMENTED",
+        remoteJwks: "NOT_IMPLEMENTED",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        deployment: "NOT_AUTHORIZED",
+        publication: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
+        },
+      ],
+    });
+    expect(go).toMatchObject({
+      outputStatus: "GENERATED_IDENTITY_VERIFIER_GO_PROFILE",
+      notGateClosure: true,
+      outputSummary: {
+        generatedFactsOnly: true,
+        packagePrivate: true,
+        handWrittenProfileFallback: "FORBIDDEN",
+        productionConstructor: "NONE_IN_SLICE_A",
+        runtimeVerifier: "NOT_IMPLEMENTED_IN_SLICE_A",
+        httpSurface: "NOT_IMPLEMENTED",
+        oidcDiscovery: "NOT_IMPLEMENTED",
+        remoteJwks: "NOT_IMPLEMENTED",
+        p2Surface: "NOT_IMPLEMENTED",
+        providerSideEffects: "FORBIDDEN",
+        productionDatabaseWrites: "NOT_AUTHORIZED",
+        deployment: "NOT_AUTHORIZED",
+        publication: "NOT_AUTHORIZED",
+        gateStatus: "ALL_GATES_OPEN",
+      },
+      generatedOutputs: [
+        {
+          path: "services/control-plane/internal/authn/profile_generated.go",
+        },
+      ],
+    });
+    for (const pipeline of [registry, go]) {
+      expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
+    }
+    expect(registry?.inputs).toContain(
+      "tools/platform-identity-verifier/v1/fixtures/manifest.json",
+    );
+    expect(registry?.inputs).not.toContain("contracts/generation.lock.json");
+    expect(go?.inputs).toContain(
+      "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
+    );
+    expect(go?.inputs).toContain("services/control-plane/internal/authn/profile_test.go");
+  });
+
   it("records both generated common identity SDK profiles as non-Gate evidence", () => {
     const root = join(import.meta.dirname, "../..");
     const lock = JSON.parse(readFileSync(join(root, "contracts/generation.lock.json"), "utf8")) as {

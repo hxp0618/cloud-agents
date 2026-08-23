@@ -93,9 +93,10 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:ad6c92bf7baabdb5d0b36557082b865bf91e17cfb613140ba3863dab2a3418b5",
+      "sourceManifestSha256": "sha256:2247f564ebe1a79ef6306cf328ddcf0fec4cf48d0f808caca2045cb8447703ee",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
+        "scripts/lib/platform-contract-lock.test.ts",
         "scripts/lib/platform-contract-lock.ts",
         "scripts/lib/platform-contracts.ts",
         "scripts/lib/platform-compatibility-recovery-registry.ts",
@@ -105,6 +106,8 @@
         "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
         "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
         "scripts/lib/platform-runner-ledger-recovery-registry.ts",
+        "scripts/lib/platform-identity-verifier-go.ts",
+        "scripts/lib/platform-identity-verifier-registry.ts",
         "scripts/lib/platform-identity-sdk.ts",
         "scripts/lib/platform-proto-sdk.ts",
         "scripts/lib/platform-go-modules.ts",
@@ -368,6 +371,32 @@
         "scripts/lib/platform-runner-ledger-recovery-registry.test.ts",
         "scripts/lib/platform-runner-ledger-recovery-registry.ts",
         "scripts/generate-platform-runner-ledger-recovery-go.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-identity-verifier-registry-generator",
+      "kind": "in-repo-typescript-deterministic-versioned-contract-registry",
+      "entrypoint": "scripts/generate-platform-identity-verifier-registry.ts",
+      "sourceManifestSha256": "sha256:57c4033637319ba4b73fcc09e618e5c1acac25a1267d616a5fc428c77b8f046f",
+      "sources": [
+        "scripts/generate-platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-identity-verifier-registry.test.ts",
+        "scripts/lib/platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
+      ],
+      "license": "MIT"
+    },
+    {
+      "id": "platform-identity-verifier-go-generator",
+      "kind": "in-repo-typescript-deterministic-gofmt-go-profile",
+      "entrypoint": "scripts/generate-platform-identity-verifier-go.ts",
+      "sourceManifestSha256": "sha256:6a2236044ba41218f391f4fd9b0a83bd9bb8e68a1ab0ed9b5267ce30c1135b25",
+      "sources": [
+        "scripts/generate-platform-identity-verifier-go.ts",
+        "scripts/lib/platform-identity-verifier-go.ts",
+        "scripts/lib/platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-json-semantics.ts"
       ],
       "license": "MIT"
     },
@@ -1694,6 +1723,107 @@
         "entryWriter": "NOT_IMPLEMENTED",
         "recoveryWriters": "NOT_IMPLEMENTED",
         "httpSurface": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "identity-verifier-registry-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:b0f0db3351318b427ba39f2d0890bead63e49c188d0bdbec2f351ff3f8d0c4b2",
+      "inputs": [
+        "docs/plan/adr/0025-p1-offline-jwt-access-token-verifier-contract.md",
+        "docs/plan/p1/identity-verifier-entry-20260823.md",
+        "scripts/generate-platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-identity-verifier-registry.test.ts",
+        "scripts/lib/platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "tools/platform-identity-verifier/v1/fixtures/golden/identity-verifier-registry-source-v1.json",
+        "tools/platform-identity-verifier/v1/fixtures/manifest.json",
+        "tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-caller-selected-algorithm.json",
+        "tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-http-authority.json",
+        "tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-multiple-audiences.json",
+        "tools/platform-identity-verifier/v1/schemas/identity-verifier-registry-source-v1.schema.json",
+        "tools/platform-identity-verifier/v1/schemas/identity-verifier-registry-v1.schema.json"
+      ],
+      "outputStatus": "GENERATED_IDENTITY_VERIFIER_REGISTRY",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
+          "sha256": "sha256:474bb31fa5721dd20fc5723b790f39d45fda5ac0392d9e5bb73cb0ecef3e0ccf",
+          "sizeBytes": 13744
+        }
+      ],
+      "outputSummary": {
+        "registryId": "cloud-agents/platform/identity-verifier",
+        "registryDigest": "sha256:654d5f8d20dfd1fcf8a9da3a06dd445d46f813f5c60d926ce3b3a00cd9eccde1",
+        "profileId": "platform-identity-verifier/v1",
+        "profileDigest": "sha256:1846e974ad3efc192704e4409f1d97786e3fb7df9de17e5ea2f2024d729b3c07",
+        "algorithm": "RS256_ONLY",
+        "audienceCardinality": "EXACTLY_ONE_SNAPSHOT_OWNED",
+        "generatedProfileOnly": true,
+        "runtimeVerifier": "NOT_IMPLEMENTED_IN_SLICE_A",
+        "productionTrustProvisioning": "NOT_IMPLEMENTED",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "oidcDiscovery": "NOT_IMPLEMENTED",
+        "remoteJwks": "NOT_IMPLEMENTED",
+        "p2Surface": "NOT_IMPLEMENTED",
+        "providerSideEffects": "FORBIDDEN",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
+      "id": "identity-verifier-go-profile-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:60921f0b289cab3a3f3403962a781b5ba608a13c0bd190dcf3e1bbf400dd406c",
+      "inputs": [
+        "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
+        "docs/plan/adr/0025-p1-offline-jwt-access-token-verifier-contract.md",
+        "docs/plan/p1/identity-verifier-entry-20260823.md",
+        "scripts/generate-platform-identity-verifier-go.ts",
+        "scripts/generate-platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-identity-verifier-go.ts",
+        "scripts/lib/platform-identity-verifier-registry.test.ts",
+        "scripts/lib/platform-identity-verifier-registry.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "services/control-plane/internal/authn/profile.go",
+        "services/control-plane/internal/authn/profile_test.go",
+        "tools/platform-identity-verifier/v1/fixtures/golden/identity-verifier-registry-source-v1.json",
+        "tools/platform-identity-verifier/v1/fixtures/manifest.json",
+        "tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-caller-selected-algorithm.json",
+        "tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-http-authority.json",
+        "tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-multiple-audiences.json",
+        "tools/platform-identity-verifier/v1/schemas/identity-verifier-registry-source-v1.schema.json",
+        "tools/platform-identity-verifier/v1/schemas/identity-verifier-registry-v1.schema.json"
+      ],
+      "outputStatus": "GENERATED_IDENTITY_VERIFIER_GO_PROFILE",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "services/control-plane/internal/authn/profile_generated.go",
+          "sha256": "sha256:e3d9ed08b69b3a7f4ce0ac6d100ea49f577dafdf857ff33be32c4170c357b8de",
+          "sizeBytes": 14205
+        }
+      ],
+      "outputSummary": {
+        "registryDigest": "sha256:654d5f8d20dfd1fcf8a9da3a06dd445d46f813f5c60d926ce3b3a00cd9eccde1",
+        "profileDigest": "sha256:1846e974ad3efc192704e4409f1d97786e3fb7df9de17e5ea2f2024d729b3c07",
+        "generatedFactsOnly": true,
+        "packagePrivate": true,
+        "handWrittenProfileFallback": "FORBIDDEN",
+        "productionConstructor": "NONE_IN_SLICE_A",
+        "runtimeVerifier": "NOT_IMPLEMENTED_IN_SLICE_A",
+        "httpSurface": "NOT_IMPLEMENTED",
+        "oidcDiscovery": "NOT_IMPLEMENTED",
+        "remoteJwks": "NOT_IMPLEMENTED",
         "p2Surface": "NOT_IMPLEMENTED",
         "providerSideEffects": "FORBIDDEN",
         "productionDatabaseWrites": "NOT_AUTHORIZED",

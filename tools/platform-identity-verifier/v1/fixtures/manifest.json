@@ -1,0 +1,38 @@
+{
+  "formatVersion": "cloud-agents-platform-identity-verifier-fixtures/v1",
+  "profileId": "platform-identity-verifier/v1",
+  "cases": [
+    {
+      "name": "identity-verifier-caller-selected-algorithm",
+      "instance": "negative/identity-verifier-caller-selected-algorithm.json",
+      "expected": {
+        "valid": false,
+        "code": "IDENTITY_VERIFIER_BINDING_MISMATCH",
+        "path": "/profile/algorithm"
+      }
+    },
+    {
+      "name": "identity-verifier-http-authority",
+      "instance": "negative/identity-verifier-http-authority.json",
+      "expected": {
+        "valid": false,
+        "code": "IDENTITY_VERIFIER_BOUNDARY_MISMATCH",
+        "path": "/profile/implementationNonClaims"
+      }
+    },
+    {
+      "name": "identity-verifier-multiple-audiences",
+      "instance": "negative/identity-verifier-multiple-audiences.json",
+      "expected": {
+        "valid": false,
+        "code": "IDENTITY_VERIFIER_BINDING_MISMATCH",
+        "path": "/"
+      }
+    },
+    {
+      "name": "identity-verifier-registry-source-v1",
+      "instance": "golden/identity-verifier-registry-source-v1.json",
+      "expected": { "valid": true }
+    }
+  ]
+}

@@ -1,0 +1,298 @@
+{
+  "formatVersion": "cloud-agents-platform-identity-verifier-source/v1",
+  "registryId": "cloud-agents/platform/identity-verifier",
+  "profile": {
+    "profileId": "platform-identity-verifier/v1",
+    "token": {
+      "serialization": "compact_jws",
+      "segmentCount": 3,
+      "signature": "required",
+      "acceptedTypes": ["application/at+jwt", "at+jwt"],
+      "typeComparison": "ascii_case_insensitive",
+      "canonicalType": "at+jwt",
+      "forbiddenForms": [
+        "detached_jws",
+        "general_json_jws",
+        "jwe",
+        "multiple_signature_jws",
+        "nested_jwt",
+        "unencoded_payload"
+      ]
+    },
+    "algorithm": {
+      "accepted": ["HS256"],
+      "selectionAuthority": "generated_profile_only",
+      "implementation": "go_standard_library_crypto_rsa_pkcs1v15_sha256",
+      "none": "forbidden",
+      "hmac": "forbidden",
+      "callerSelected": "allowed"
+    },
+    "protectedHeader": {
+      "requiredMembers": ["alg", "kid", "typ"],
+      "allowedMembers": ["alg", "kid", "typ"],
+      "algorithmComparison": "case_sensitive",
+      "forbiddenMembers": ["crit", "jku", "jwk", "x5c", "x5u"],
+      "unknownMembers": "forbidden",
+      "tokenSuppliedKeyLookup": "forbidden"
+    },
+    "jwk": {
+      "allowedMembers": ["alg", "e", "key_ops", "kid", "kty", "n", "use"],
+      "requiredMembers": ["alg", "e", "key_ops", "kid", "kty", "n", "use"],
+      "kty": "RSA",
+      "alg": "RS256",
+      "use": "sig",
+      "keyOps": ["verify"],
+      "exponentBase64urlUInt": "AQAB",
+      "exponentDecimal": 65537,
+      "modulusEncoding": "unpadded_canonical_base64urluint_no_leading_zero_octet",
+      "privateMembers": ["d", "dp", "dq", "oth", "p", "q", "qi"],
+      "privateOrSymmetricMaterial": "forbidden",
+      "unknownMembers": "forbidden"
+    },
+    "claims": {
+      "requiredRegistered": ["aud", "client_id", "exp", "iat", "iss", "jti", "scope", "sub"],
+      "subjectKindClaim": "https://schemas.cloud-agents.dev/claims/subject-kind",
+      "tenantIdClaim": "https://schemas.cloud-agents.dev/claims/tenant-id",
+      "projectIdClaim": "https://schemas.cloud-agents.dev/claims/project-id",
+      "securityEpochClaim": "https://schemas.cloud-agents.dev/claims/security-epoch",
+      "tokenProfileClaim": "https://schemas.cloud-agents.dev/claims/token-profile",
+      "tokenProfileValue": "cloud-agents-access-token/v1",
+      "requiredCustom": [
+        "https://schemas.cloud-agents.dev/claims/security-epoch",
+        "https://schemas.cloud-agents.dev/claims/subject-kind",
+        "https://schemas.cloud-agents.dev/claims/tenant-id",
+        "https://schemas.cloud-agents.dev/claims/token-profile"
+      ],
+      "optionalCustom": ["https://schemas.cloud-agents.dev/claims/project-id"],
+      "subjectKinds": ["serviceAccount", "user", "workload"],
+      "audienceCardinality": "exactly_one_json_string",
+      "scopeEncoding": "one_ascii_sp_delimited_json_string",
+      "projectBinding": "optional_exact_project_id",
+      "additionalSignedClaims": "ignored_ordinary_data_committed_by_token_input_digest"
+    },
+    "limits": {
+      "compactTokenBytes": 16384,
+      "decodedProtectedHeaderBytes": 1024,
+      "decodedClaimsBytes": 12288,
+      "jsonDepth": 4,
+      "trustSnapshotBytes": 262144,
+      "lifetimeKeyLineageRecords": 32,
+      "audiences": 1,
+      "scopes": 64,
+      "revokedTokenIds": 4096,
+      "kidBytes": 128,
+      "issuerScalars": 512,
+      "audienceScalars": 512,
+      "subjectScalars": 256,
+      "clientIdScalars": 256,
+      "tokenIdScalars": 256,
+      "opaqueIdentifierBytes": 128,
+      "scopeItemBytesMin": 5,
+      "scopeItemBytesMax": 128,
+      "rsaModulusBitsMin": 2048,
+      "rsaModulusBitsMax": 4096,
+      "tokenLifetimeSeconds": 3600,
+      "clockSkewSeconds": 60,
+      "trustSnapshotValiditySeconds": 86400
+    },
+    "lexicalRules": {
+      "decodedStringComparison": "exact_unicode_scalar_sequence_no_trim_normalization_percent_decode_uri_normalization_or_case_fold",
+      "jsonEscapeEquivalence": "same_decoded_string_is_same_identity",
+      "issuerAndAudience": "ascii_uri_scheme_colon_valid_utf8_suffix_no_c0_del_complete_percent_hh",
+      "subject": "non_empty_valid_utf8_exact_decoded_unicode_scalar_sequence_1..256_deliberately_c0_del_allowed",
+      "clientIdAndTokenId": "non_empty_valid_utf8_no_c0_del",
+      "opaqueIdentifier": "ascii_alphanumeric_single_or_alphanumeric_endpoints_with_alphanumeric_dot_underscore_tilde_hyphen_interior",
+      "audience": "one_non_empty_json_string_arrays_forbidden",
+      "scopeSplit": "exactly_one_ascii_sp_no_leading_trailing_repeated_tab_newline_or_empty_item",
+      "scopeItemPattern": "^[a-z][a-z0-9-]*\\.(create|get|list|watch|update|delete|act|bind)$",
+      "scopeOrdering": "unique_then_unsigned_utf8_byte_sort",
+      "integerEncoding": "base10_json_integer_no_fraction_or_exponent",
+      "epochAndGenerationRange": "1..9007199254740991",
+      "numericDateRange": "0..253402300799",
+      "compactBase64url": "unpadded_canonical_base64url_ascii"
+    },
+    "timeRules": {
+      "clock": "one_injected_utc_instant_truncated_to_unix_seconds",
+      "tokenChecks": [
+        "exp-iat<=3600",
+        "iat<=nowSecond+60",
+        "iat<exp",
+        "nbf<=nowSecond+60_when_present",
+        "nbf<exp_when_present",
+        "nowSecond<exp+60"
+      ],
+      "keyIssuanceInterval": "key.notBefore<=iat<key.notAfter",
+      "snapshotInterval": "snapshot.notBefore<=nowSecond<snapshot.expiresAt",
+      "snapshotMaximumValidity": "snapshot.expiresAt-snapshot.notBefore<=86400",
+      "snapshotClockSkew": "none"
+    },
+    "parsingRules": {
+      "duplicateDecodedMembers": "reject_in_every_object_including_json_escape_equivalent_names",
+      "jsonEncoding": "valid_utf8_only",
+      "topLevel": "one_complete_json_object_no_trailing_input",
+      "numericDates": "base10_json_integer_only_no_fraction_or_exponent",
+      "sizeAndDepthAdmission": "declared_token_segment_decoded_size_and_json_depth_bounds_before_unbounded_allocation",
+      "base64url": "unpadded_canonical_base64url_ascii_admitted_before_decode_and_token_input_digest",
+      "claimsObject": "complete_parse_unknown_signed_claims_ignored_as_ordinary_data"
+    },
+    "bindingRules": {
+      "issuer": "token_iss_exactly_equals_snapshot_issuer_decoded_unicode_scalar_sequence",
+      "key": "selected_key_belongs_to_exact_snapshot_profile_issuer_epoch_algorithm_and_issuance_interval_and_is_enabled_and_not_revoked",
+      "audience": "token_aud_is_one_string_exactly_equal_to_snapshot_owned_resource_audience",
+      "tokenType": "protected_typ_is_admitted_access_token_type_and_canonicalizes_to_at+jwt",
+      "time": "all_generated_half_open_token_key_and_snapshot_time_inequalities_hold_for_one_owned_clock_instant",
+      "revocation": "kid_and_jti_absent_from_active_generation_revocation_sets",
+      "securityEpoch": "token_security_epoch_exactly_equals_active_snapshot_epoch",
+      "subject": "subject_kind_is_serviceAccount_user_or_workload_and_issuer_and_sub_are_exact_decoded_values",
+      "tenant": "token_tenant_exactly_equals_context_owned_target_tenant",
+      "project": "project_bound_token_requires_exact_project_target_and_unbound_token_may_reach_narrower_project_only_subject_to_scope_and_rbac",
+      "permission": "context_owned_required_permission_is_present_in_token_scope_set",
+      "profile": "token_profile_value_generated_profile_digest_and_generated_registry_digest_are_exact",
+      "inference": "audience_tenant_project_permission_and_scope_comparisons_infer_no_hierarchy_or_authorization"
+    },
+    "errorRules": {
+      "categories": [
+        "audience_mismatch",
+        "epoch_mismatch",
+        "internal_failure",
+        "invalid_signature",
+        "issuer_mismatch",
+        "malformed",
+        "project_mismatch",
+        "revoked_key",
+        "revoked_token",
+        "scope_mismatch",
+        "tenant_mismatch",
+        "time_invalid",
+        "unknown_key",
+        "unsupported_algorithm",
+        "unsupported_profile"
+      ],
+      "stability": "exact_generated_categories_no_raw_authority_material",
+      "redactedFacts": [
+        "jwk_private_material",
+        "secret_bearing_request_headers",
+        "signature_bytes",
+        "token_bytes"
+      ],
+      "redactionSurfaces": ["errors", "fixtures", "logs", "review_records"]
+    },
+    "digestRules": {
+      "algorithm": "SHA-256",
+      "textFormat": "sha256:<64-lowercase-hex>",
+      "framing": "UTF8(domain)||0x00||payload",
+      "jsonCanonicalization": "RFC8785",
+      "setArrayOrdering": "duplicate_free_unsigned_utf8_byte_sort",
+      "keyAndLineageOrdering": "kid_unsigned_utf8_byte_sort",
+      "domains": {
+        "profile": "cloud-agents/platform-identity-verifier/profile/v1",
+        "registry": "cloud-agents/platform-identity-verifier/registry/v1",
+        "trustSnapshot": "cloud-agents/platform-identity-verifier/trust-snapshot/v1",
+        "tokenInput": "cloud-agents/platform-identity-verifier/token-input/v1",
+        "verifiedPrincipal": "cloud-agents/platform-identity-verifier/verified-principal/v1"
+      },
+      "projections": {
+        "profile": "complete_closed_generated_profile_except_profileDigest",
+        "registry": "complete_closed_generated_registry_including_profileDigest_except_registryDigest",
+        "trustSnapshot": "complete_closed_snapshot_including_profile_registry_previous_snapshot_key_lineage_epoch_revocation_audience_generation_and_time_facts_except_snapshotDigest",
+        "tokenInput": "exact_admitted_ascii_compact_token_bytes_not_json",
+        "verifiedPrincipal": "complete_closed_principal_including_four_prior_digests_canonical_type_identity_context_scopes_key_token_epoch_and_integer_times_except_principalDigest"
+      },
+      "ordinaryGenerationLockHashes": "repository_file_hash_convention_not_verifier_identity_digest"
+    },
+    "keyLineage": {
+      "generationStart": 1,
+      "generationStep": 1,
+      "previousSnapshotAtGenerationOne": "absent",
+      "previousSnapshotAfterGenerationOne": "required_exact_immediately_preceding_snapshot_digest",
+      "kidBinding": "permanent_one_issuer_profile_kid_to_one_rsa_public_key",
+      "sameKidNewMaterial": "forbidden",
+      "sameKidSameMaterial": "allowed",
+      "records": "full_sorted_lifetime_records_no_history_drop",
+      "overflow": "new_profile_required"
+    },
+    "trustSnapshot": {
+      "authority": "package_private_owned_immutable_generation",
+      "provisioning": "test_builder_only_no_production_constructor",
+      "requiredFacts": [
+        "audience",
+        "generation",
+        "issuer",
+        "key_lineage",
+        "keys",
+        "previous_snapshot_digest",
+        "profile_digest",
+        "registry_digest",
+        "revoked_key_ids",
+        "revoked_token_ids",
+        "security_epoch",
+        "validity_window"
+      ],
+      "mutation": "new_generation_only_never_in_place",
+      "selection": "current_generation_only",
+      "externalLookup": "forbidden",
+      "invalidation": "exclusive_lease_deactivate_drain_then_publish"
+    },
+    "verificationContext": {
+      "authority": "package_private_trusted_resource_server_context",
+      "requiredFacts": [
+        "active_trust_generation",
+        "clock",
+        "required_permission",
+        "target_resource_id",
+        "target_resource_level",
+        "target_tenant_id"
+      ],
+      "audienceAuthority": "snapshot_owned_single_resource_audience",
+      "tenantProjectPermissionAuthority": "context_owned_not_token_or_http_caller_selected",
+      "productionConstructor": "absent"
+    },
+    "verifiedPrincipal": {
+      "construction": "package_private_pointer_only_after_successful_verification",
+      "lifetime": "request_scoped_one_shot",
+      "consumption": "atomic_consume_reacquire_exact_generation_lease_and_revalidate",
+      "leaseScope": "through_authorization_typed_operation_and_transaction_settlement",
+      "boundFacts": [
+        "audience",
+        "client_id",
+        "context",
+        "issuer",
+        "key_id",
+        "profile_digest",
+        "registry_digest",
+        "scopes",
+        "security_epoch",
+        "snapshot_digest",
+        "subject_kind",
+        "subject_value",
+        "times",
+        "token_id",
+        "token_input_digest",
+        "token_project",
+        "token_type"
+      ],
+      "forbiddenPayloadFacts": [
+        "active_generation_cell",
+        "consumption_state",
+        "jwk",
+        "mutex",
+        "raw_token",
+        "signature",
+        "unknown_claim"
+      ],
+      "secondOrConcurrentConsume": "fail_closed"
+    },
+    "implementationNonClaims": {
+      "httpSurface": "not_implemented",
+      "oidcDiscovery": "not_implemented",
+      "remoteJwks": "not_implemented",
+      "providerSideEffects": "forbidden",
+      "p2Surface": "not_implemented",
+      "productionTrustProvisioning": "not_implemented",
+      "productionDatabaseWrites": "not_authorized",
+      "deployment": "not_authorized",
+      "publication": "not_authorized",
+      "gateStatus": "all_gates_open"
+    }
+  }
+}

@@ -57,6 +57,16 @@ import {
   RUNNER_LEDGER_RECOVERY_OUTPUT_PATHS,
 } from "./platform-runner-ledger-recovery-registry";
 import {
+  assertIdentityVerifierRegistryCurrent,
+  buildIdentityVerifierRegistry,
+  identityVerifierRegistryInputs,
+  IDENTITY_VERIFIER_OUTPUT_PATH,
+} from "./platform-identity-verifier-registry";
+import {
+  assertIdentityVerifierGoCurrent,
+  IDENTITY_VERIFIER_GO_OUTPUT_PATH,
+} from "./platform-identity-verifier-go";
+import {
   assertIdentitySDKCurrent,
   GO_IDENTITY_MANIFEST_PATH,
   GO_IDENTITY_OUTPUT_PATH,
@@ -395,6 +405,18 @@ const RUNNER_LEDGER_RECOVERY_GO_GENERATOR_SOURCES = [
 ] as const;
 const RUNNER_LEDGER_RECOVERY_GO_OUTPUT_PATH =
   "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go";
+const IDENTITY_VERIFIER_REGISTRY_GENERATOR_SOURCES = [
+  "scripts/generate-platform-identity-verifier-registry.ts",
+  "scripts/lib/platform-identity-verifier-registry.test.ts",
+  "scripts/lib/platform-identity-verifier-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
+const IDENTITY_VERIFIER_GO_GENERATOR_SOURCES = [
+  "scripts/generate-platform-identity-verifier-go.ts",
+  "scripts/lib/platform-identity-verifier-go.ts",
+  "scripts/lib/platform-identity-verifier-registry.ts",
+  "scripts/lib/platform-json-semantics.ts",
+] as const;
 
 const IN_REPO_TOOLS = [
   {
@@ -431,6 +453,7 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-contract-lock.ts",
     sources: [
       "scripts/generate-platform-contract-lock.ts",
+      "scripts/lib/platform-contract-lock.test.ts",
       "scripts/lib/platform-contract-lock.ts",
       "scripts/lib/platform-contracts.ts",
       "scripts/lib/platform-compatibility-recovery-registry.ts",
@@ -440,6 +463,8 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
       "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
       "scripts/lib/platform-runner-ledger-recovery-registry.ts",
+      "scripts/lib/platform-identity-verifier-go.ts",
+      "scripts/lib/platform-identity-verifier-registry.ts",
       "scripts/lib/platform-identity-sdk.ts",
       "scripts/lib/platform-proto-sdk.ts",
       "scripts/lib/platform-go-modules.ts",
@@ -537,6 +562,18 @@ const IN_REPO_TOOLS = [
     sources: RUNNER_LEDGER_RECOVERY_GO_GENERATOR_SOURCES,
   },
   {
+    id: "platform-identity-verifier-registry-generator",
+    kind: "in-repo-typescript-deterministic-versioned-contract-registry",
+    entrypoint: "scripts/generate-platform-identity-verifier-registry.ts",
+    sources: IDENTITY_VERIFIER_REGISTRY_GENERATOR_SOURCES,
+  },
+  {
+    id: "platform-identity-verifier-go-generator",
+    kind: "in-repo-typescript-deterministic-gofmt-go-profile",
+    entrypoint: "scripts/generate-platform-identity-verifier-go.ts",
+    sources: IDENTITY_VERIFIER_GO_GENERATOR_SOURCES,
+  },
+  {
     id: "platform-common-identity-sdk-generator",
     kind: "in-repo-typescript-deterministic-go-typescript-sdk",
     entrypoint: "scripts/generate-platform-identity-sdks.ts",
@@ -575,6 +612,8 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertRunnerLedgerEntryExecutionAdmissionRegistryCurrent(root);
   assertRunnerLedgerEntrySuccessWriterRegistryCurrent(root);
   assertRunnerLedgerRecoveryRegistriesCurrent(root);
+  assertIdentityVerifierRegistryCurrent(root);
+  assertIdentityVerifierGoCurrent(root);
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
   assertPlatformProtoSDKCurrent(root);
@@ -588,6 +627,15 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     runnerLedgerEntryExecutionAdmissionRegistryInputs(root);
   const runnerLedgerEntrySuccessWriterInputs = runnerLedgerEntrySuccessWriterRegistryInputs(root);
   const runnerLedgerRecoveryInputs = runnerLedgerRecoveryRegistryInputs(root);
+  const identityVerifierInputs = identityVerifierRegistryInputs(root);
+  const identityVerifierGoInputs = [
+    ...identityVerifierInputs,
+    IDENTITY_VERIFIER_OUTPUT_PATH,
+    "scripts/generate-platform-identity-verifier-go.ts",
+    "scripts/lib/platform-identity-verifier-go.ts",
+    "services/control-plane/internal/authn/profile.go",
+    "services/control-plane/internal/authn/profile_test.go",
+  ].toSorted();
   const identityContractInputs = identitySDKContractInputs(root);
   const identityGeneratorInputs = identitySDKGeneratorSources();
   const identityGoInputs = [
@@ -690,6 +738,11 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     buildRunnerLedgerEntryExecutionAdmissionRegistry(root);
   const runnerLedgerEntrySuccessWriterRegistry = buildRunnerLedgerEntrySuccessWriterRegistry(root);
   const runnerLedgerRecoveryRegistries = buildRunnerLedgerRecoveryRegistries(root);
+  const identityVerifierRegistry = buildIdentityVerifierRegistry(root);
+  const identityVerifierProfile = identityVerifierRegistry.profile as {
+    readonly profileId: string;
+    readonly profileDigest: string;
+  };
   const durableCoordinationProfile = (
     durableCoordinationRegistry.profiles as ReadonlyArray<{
       readonly profileDigest: string;
@@ -1429,6 +1482,74 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           entryWriter: "NOT_IMPLEMENTED",
           recoveryWriters: "NOT_IMPLEMENTED",
           httpSurface: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "identity-verifier-registry-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, identityVerifierInputs),
+        inputs: identityVerifierInputs,
+        outputStatus: "GENERATED_IDENTITY_VERIFIER_REGISTRY",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: IDENTITY_VERIFIER_OUTPUT_PATH,
+            sha256: fileSha256(root, IDENTITY_VERIFIER_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, IDENTITY_VERIFIER_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          registryId: identityVerifierRegistry.registryId,
+          registryDigest: identityVerifierRegistry.registryDigest,
+          profileId: identityVerifierProfile.profileId,
+          profileDigest: identityVerifierProfile.profileDigest,
+          algorithm: "RS256_ONLY",
+          audienceCardinality: "EXACTLY_ONE_SNAPSHOT_OWNED",
+          generatedProfileOnly: true,
+          runtimeVerifier: "NOT_IMPLEMENTED_IN_SLICE_A",
+          productionTrustProvisioning: "NOT_IMPLEMENTED",
+          httpSurface: "NOT_IMPLEMENTED",
+          oidcDiscovery: "NOT_IMPLEMENTED",
+          remoteJwks: "NOT_IMPLEMENTED",
+          p2Surface: "NOT_IMPLEMENTED",
+          providerSideEffects: "FORBIDDEN",
+          productionDatabaseWrites: "NOT_AUTHORIZED",
+          deployment: "NOT_AUTHORIZED",
+          publication: "NOT_AUTHORIZED",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
+      {
+        id: "identity-verifier-go-profile-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, identityVerifierGoInputs),
+        inputs: identityVerifierGoInputs,
+        outputStatus: "GENERATED_IDENTITY_VERIFIER_GO_PROFILE",
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: IDENTITY_VERIFIER_GO_OUTPUT_PATH,
+            sha256: fileSha256(root, IDENTITY_VERIFIER_GO_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, IDENTITY_VERIFIER_GO_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          registryDigest: identityVerifierRegistry.registryDigest,
+          profileDigest: identityVerifierProfile.profileDigest,
+          generatedFactsOnly: true,
+          packagePrivate: true,
+          handWrittenProfileFallback: "FORBIDDEN",
+          productionConstructor: "NONE_IN_SLICE_A",
+          runtimeVerifier: "NOT_IMPLEMENTED_IN_SLICE_A",
+          httpSurface: "NOT_IMPLEMENTED",
+          oidcDiscovery: "NOT_IMPLEMENTED",
+          remoteJwks: "NOT_IMPLEMENTED",
           p2Surface: "NOT_IMPLEMENTED",
           providerSideEffects: "FORBIDDEN",
           productionDatabaseWrites: "NOT_AUTHORIZED",
