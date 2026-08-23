@@ -215,6 +215,11 @@
   关闭 residue。R3 记录 jsonschema-rs official suite `46/383/1299/79`、current fixtures `52/2/71`、OpenAPI `2/9`
   的 candidate PASS；状态仍为 `IN PROGRESS`，reviewer `PENDING`，formal `missing` 未移除，remaining generator
   supply review 与 immutable Gate signature 仍未完成。
+- `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
+  PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
+  idempotency、outbox 与 leader recovery；详见
+  [`local logical data recovery matrix`](p1-local-logical-data-recovery-20260823.md)。该记录仍为 independent review
+  `PENDING`，不覆盖 N/N-1、PITR/HA、physical power loss、current-source aggregate signature 或任何 Gate closure。
 - Gate closure：none
 
 本目录保存 P1 实现过程中的 dependency review、固定输入和可重放本地证据。只有
