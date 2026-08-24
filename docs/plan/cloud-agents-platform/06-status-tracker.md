@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-25
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 接受 closure-v3 + supply-v2 + detached binding registry ordered Slices A-H，一次 successor native replay，当前 R1 assembly-writer repair 仍待完成并独立复核，formal Slice C/D 未开始，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 接受 closure-v3 + supply-v2 + detached binding registry ordered Slices A-H，一次 successor native replay，R1 candidate `96d72c9` 的 fixed-object review 返回 `REQUEST_CHANGES, P0=0/P1=1/P2=0`，schema-capture repair 与 post-finding verification pending，formal Slice C/D 未开始，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -137,9 +137,13 @@ projection inputs，故 diagnostic projection/replay 为 stale/non-admissible，
 [R1 assembly-writer repair](../p1/g-contract-successor-supply-rebind-r1-assembly-writer-repair-20260825.md) 补齐 exact
 7 raw → canonical summary → ordered 8 → resumable append-only exact 10 consumer/writer；caller-owned Buffer mutability
 与完整 v1 predecessor cumulative fence 两个 working-byte P1 finding 均已列入修复记录。修复后的 7 个 named
-focused files 为 `103/103 PASS`，exact 9 code-file format/lint 与 changed-path diff check PASS；R1 fixed-object review
-仍为 `PENDING`。正式 Slice C projection 与 Slice D native replay 尚未开始，Slice E 未授权，
-`G-CONTRACT`、`G-SUPPLY-CHAIN` 与任何 aggregate Gate 继续保持 `IN PROGRESS` / OPEN。
+focused files 为 `103/103 PASS`，state/arity/exact16/lock checks PASS；但 [R1 fixed-object review](../p1/g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md)
+发现 schema authority bytes 被丢弃后按 lexical path 重读，schema A→B→A working-byte ABA 缺少 deterministic test，
+正式 verdict 为 `REQUEST_CHANGES, P0=0/P1=1/P2=0`。第二路只读 crosscheck 虽返回 `APPROVE, P0=0/P1=0/P2=0` 并将其视为
+proof hardening，当前准入按正式 reviewer 的保守结论执行；implementation record 已保留该分歧与第三个 fixed-object
+finding。schema-capture repair、post-finding format/lint/type/gitleaks 与新 fixed-object review pending。正式 Slice C
+projection 与 Slice D native replay 尚未开始，Slice E 未授权，`G-CONTRACT`、`G-SUPPLY-CHAIN` 与任何 aggregate Gate
+继续保持 `IN PROGRESS` / OPEN。
 
 ### 3.1 Immutable record history
 

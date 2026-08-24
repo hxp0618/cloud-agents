@@ -6,7 +6,8 @@ This record is the R1 repair after the fixed Slice B pre-replay candidate and
 the diagnostic Slice C/D run. It is limited to the missing production
 consumer/summary/manifest/profile and append-only assembly-writer authority
 required before a formal projection can be admitted. It does not replace the
-Slice B fixed-object review and does not create an independent-review record.
+Slice B fixed-object review or itself constitute the separate R1 fixed-object
+review.
 
 The Slice B predecessor is fixed candidate `a2f4ec986ce8ff5d6e707254ce475673eda9d3ff`,
 with its bounded independent review already returning
@@ -90,6 +91,34 @@ topology checks, collective parent/output ABA fences, no-replace publication,
 same-byte no-op, divergent conflict, resumable prefix recovery, and
 identity-safe temporary cleanup.
 
+## Fixed-object candidate rejection
+
+The implementation was fixed as candidate
+`96d72c966bd86ed29abb301cb0ff5bb1fb8ce43e` (tree
+`84e9c7125c26dc90f637d0a5afca910bdca42b61`; parent
+`7504e2ee9fb4941bcbcee3cdb4a29ebd13f5de58`). Its separate fixed-object review
+returned `REQUEST_CHANGES, P0=0/P1=1/P2=0`; see the
+[candidate review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md).
+
+The reviewer found that the writer captures source and schema identities but
+discards the schema bytes before `validateAgainstSchema`/`schemaValidator`
+lexically rereads both schema paths. A schema directory A → B → A working-byte
+ABA can therefore let Ajv validate with B while the final identity fence sees
+A. The existing tests have no deterministic schema working-byte ABA case.
+The required repair is to retain owned schema bytes, build one validator from
+that captured pair for both source/output validation, and add a deterministic
+hook/test for the A → B → A sequence. This is a third, fixed-object authority
+finding; the two earlier working-byte findings above remain unchanged and are
+not rewritten.
+
+A second read-only crosscheck returned `APPROVE, P0=0/P1=0/P2=0` and treated
+the schema sequence as proof hardening because canonical output bytes are not
+changed by Ajv's B read and the final A identity is rechecked. The formal
+fixed-object reviewer treated the uncaptured validation authority as a P1
+proof gap. The conservative progression control verdict is therefore
+`REQUEST_CHANGES`; the disagreement is retained rather than presented as
+consensus.
+
 ## Expected state machine
 
 The repaired state transition is:
@@ -100,7 +129,7 @@ DECLARED_PRE_REPLAY
   -> canonical derived replay summary prepared
   -> ordered eight receipts prepared
   -> exact ten-file assembly published/resumed
-  -> ASSEMBLED_PROFILE_CURRENT (independent review still pending)
+  -> ASSEMBLED_PROFILE_CURRENT (fixed-object review rejected; repair pending)
 ```
 
 The assembly state is not a review verdict. It cannot create a detached review
@@ -128,25 +157,27 @@ formal lineage. The two review layers are intentionally recorded separately.
 
 ## Verification and review status
 
-| Check                                                                                                                      | Current status                                                                               |
-| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Seven named focused Vitest files                                                                                           | `103/103 PASS`                                                                               |
-| R1 writer/replay/predecessor focused subset, including exact ten/no-op/lock sentinel and adversarial ABA/race/resume cases | `52/52 PASS`                                                                                 |
-| Assembly CLI current-state checks                                                                                          | supply v2 `DECLARED_PRE_REPLAY`; binding `PRE_REVIEW_ABSENT`; exact-arity negatives PASS     |
-| Exact late-bound state                                                                                                     | 16 exclusions; only the immutable legacy generation lock is present                          |
-| Formatter / linter / changed-path diff check                                                                               | exact nine code files PASS / PASS; `git diff --check` PASS                                   |
-| Narrow TypeScript diagnostic                                                                                               | no diagnostic in the nine R1 files; 11 inherited diagnostics remain in two unchanged modules |
-| Root dependency topology                                                                                                   | repository-root `node_modules` absent after every check                                      |
-| Fresh working-byte reviews after both P1 repairs                                                                           | two independent `APPROVE, P0=0/P1=0/P2=0`; not a fixed-object review                         |
-| Gitleaks 8.30.1 staged changed-path scan                                                                                   | 80,793 bytes; zero findings                                                                  |
-| Fixed-object implementation candidate                                                                                      | `READY_TO_COMMIT`; exact identity will be bound by the separate review record                |
-| R1 fixed-object review verdict                                                                                             | `PENDING`                                                                                    |
-| Formal Slice C projection                                                                                                  | `NOT_STARTED`                                                                                |
-| Formal Slice D Darwin/Linux native replay                                                                                  | `NOT_STARTED`                                                                                |
-| Slice E successor-lock/evidence assembly                                                                                   | `NOT_AUTHORIZED`                                                                             |
+| Check                                                                                                                      | Current status                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Seven named focused Vitest files                                                                                           | `103/103 PASS`                                                                                                     |
+| R1 writer/replay/predecessor focused subset, including exact ten/no-op/lock sentinel and adversarial ABA/race/resume cases | `52/52 PASS`                                                                                                       |
+| Assembly CLI current-state checks                                                                                          | supply v2 `DECLARED_PRE_REPLAY`; binding `PRE_REVIEW_ABSENT`; exact-arity negatives PASS                           |
+| Exact late-bound state                                                                                                     | 16 exclusions; only the immutable legacy generation lock is present                                                |
+| Formatter / linter / changed-path diff check                                                                               | exact nine code files PASS / PASS; `git diff --check` PASS before fixed-object finding; post-finding rerun pending |
+| Narrow TypeScript diagnostic                                                                                               | no diagnostic in the nine R1 files; 11 inherited diagnostics remain in two unchanged modules                       |
+| Root dependency topology                                                                                                   | repository-root `node_modules` absent after every check                                                            |
+| Fresh working-byte reviews after both P1 repairs                                                                           | two independent `APPROVE, P0=0/P1=0/P2=0`; not a fixed-object review                                               |
+| Gitleaks 8.30.1 staged changed-path scan                                                                                   | 80,793 bytes; zero findings before fixed-object finding; post-finding rerun pending                                |
+| Fixed-object implementation candidate                                                                                      | `96d72c9` / `96d72c966bd86ed29abb301cb0ff5bb1fb8ce43e`                                                             |
+| R1 fixed-object review verdict                                                                                             | `REQUEST_CHANGES, P0=0/P1=1/P2=0`                                                                                  |
+| Formal Slice C projection                                                                                                  | `NOT_STARTED`                                                                                                      |
+| Formal Slice D Darwin/Linux native replay                                                                                  | `NOT_STARTED`                                                                                                      |
+| Slice E successor-lock/evidence assembly                                                                                   | `NOT_AUTHORIZED`                                                                                                   |
 
-The next admissible order is: complete R1 implementation and focused
-verification; create the implementation candidate; obtain a fresh independent
-fixed-object review; rebuild the projection from the repaired candidate; rerun
-Darwin/Linux A/B replay; then continue only according to ADR-0029's ordered
-Slices C-H. The v1 profile and all v1 writer paths remain unchanged.
+The next admissible order is: repair the captured-schema validation authority;
+add the deterministic schema A → B → A test; rerun focused verification and
+post-finding format/lint/type/secret checks; create a superseding candidate;
+obtain a fresh independent fixed-object review; rebuild the projection from
+that repaired candidate; rerun Darwin/Linux A/B replay; then continue only
+according to ADR-0029's ordered Slices C-H. The v1 profile and all v1 writer
+paths remain unchanged.

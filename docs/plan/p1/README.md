@@ -272,8 +272,12 @@
   [`R1 assembly-writer repair`](g-contract-successor-supply-rebind-r1-assembly-writer-repair-20260825.md)
   补齐 exact 7 raw → canonical summary → ordered 8 → resumable append-only exact 10
   consumer/writer，并保留 caller-owned Buffer mutability 与 complete v1 predecessor cumulative
-  fence 两个 working-byte P1 finding；修复后的 7 个 named focused files 为 `103/103 PASS`，exact 9 code-file
-  format/lint 与 changed-path diff check PASS，R1 fixed-object review 仍为 `PENDING`。正式 Slice C projection 与
+  fence 两个 working-byte P1 finding。Candidate `96d72c9` 的 7 个 named focused files 为 `103/103 PASS`，
+  state/arity/exact16/lock checks PASS；但 [R1 fixed-object review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md)
+  发现 schema authority bytes 被丢弃后按 lexical path 重读，schema A→B→A working-byte ABA 未有 deterministic test，
+  正式 verdict 为 `REQUEST_CHANGES, P0=0/P1=1/P2=0`。第二路只读 crosscheck 虽返回 `APPROVE, P0=0/P1=0/P2=0` 并将其视为
+  proof hardening，准入按正式 reviewer 的保守结论执行；implementation record 已保留该分歧与第三个 fixed-object finding。
+  schema-capture repair、post-finding format/lint/type/gitleaks 与新 fixed-object review pending。正式 Slice C projection 与
   Slice D native replay 尚未开始，Slice E 未授权；不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
