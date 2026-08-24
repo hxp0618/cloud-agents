@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "cloud-agents.p0.remote-ref-monitor/v1",
+  "kind": "cloud-agents-p0-live-remote-ref-refresh",
+  "observedAt": "2026-08-23T02:49:52+08:00",
+  "observedAtUtc": "2026-08-22T18:49:52Z",
+  "transport": {
+    "protocol": "ssh",
+    "endpoint": "ssh.github.com:443",
+    "fetchPerformed": false,
+    "remoteMutationPerformed": false,
+    "pushAttempted": false,
+    "pushResult": "NOT_ATTEMPTED_DURING_OBSERVATION"
+  },
+  "repositories": {
+    "hxp0618/cloud-agents": {
+      "refs/heads/main": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a",
+      "refs/heads/codex/cloud-agents-platform-p0": "8bae2954a0ca88594eea0b55bfe041a77082f1b9",
+      "refs/heads/codex/cloud-agents-p0-ref-refresh-20260821": "9f7d8555164eafdd5ac7d0fffc4336586599e19e",
+      "refs/heads/codex/cloud-agents-platform-p1": "a5df1cb672d7636e551b9fb24b74c9cc5e047ba6",
+      "refs/tags/cloud-agent-m1-rc.1": "ac64d6f2fd29f3a1b9d2e514efe2c72eb6118d62",
+      "refs/tags/cloud-agent-m1-rc.1^{}": "49e8cdc6a3a4f88c7324d055ce519e9f25a8ca8a"
+    },
+    "hxp0618/synara": {
+      "refs/heads/main": "95cd068a9f3b1ec3a80b50e4551eae1957aa26ea",
+      "refs/heads/codex/cloud-agent-external-runtime": "2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0",
+      "refs/heads/codex/saas-tenancy-user": "b86d30b1aa6f383cf3a8453e6944abeaefe2db65"
+    },
+    "hxp0618/t3code": {
+      "refs/heads/main": "8101cd044911c7dc2a2adf7c7a9ba7962abf57b6",
+      "refs/heads/feat/cloud-agent": "9584a266e91fa94354e8c07f79af3a5e01755d16"
+    }
+  },
+  "comparison": {
+    "fixedRecord": "provenance/remote-ref-verification.json",
+    "fixedRecordSha256": "a3c7f8ede7f878e9510a62a18ee5df509500a76154050b034223d89fb3fa8c67",
+    "fixedEvidenceCommit": "2b2c5ed",
+    "p0BranchFixedEvidenceIsAncestor": true,
+    "p0BranchLocalHead": "8bae2954a0ca88594eea0b55bfe041a77082f1b9",
+    "p0BranchUpstreamMatchesLocalHead": true,
+    "p0MonitoringBranchLocalHead": "9f7d8555164eafdd5ac7d0fffc4336586599e19e",
+    "p0MonitoringBranchUpstreamMatchesLocalHead": true,
+    "p1BranchLocalHead": "a5df1cb672d7636e551b9fb24b74c9cc5e047ba6",
+    "p1BranchUpstreamMatchesLocalHead": true
+  },
+  "claimBoundary": {
+    "supersedesHistoricalFixedRecord": false,
+    "changesAnyGateStatus": false,
+    "productionDeploymentObserved": false,
+    "releaseAuthorization": false,
+    "note": "Monitoring-only live refs; the historical fixed record remains the G-INVENTORY R2 input and is not rewritten. P0 monitoring and P1 refs are observed for drift only and do not change any phase or Gate decision."
+  }
+}
