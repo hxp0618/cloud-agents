@@ -24,6 +24,7 @@ import {
   assertImmutableFileMap,
   assertStablePredecessorReadMutationForTest,
   assertSuccessorPredecessorsImmutable,
+  captureGeneratorSupplyV1PredecessorSnapshot,
   CONTRACT_CLOSURE_V1_IMMUTABLE_FILES,
   CONTRACT_CLOSURE_V2_IMMUTABLE_FILES,
   GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST,
@@ -357,6 +358,25 @@ describe("successor immutable predecessor authority", () => {
       expect.objectContaining<Partial<SuccessorPredecessorError>>({
         code: "PREDECESSOR_FILE_MISMATCH",
         path: memberPath,
+      }),
+    );
+  });
+
+  it("returns a frozen cumulative v1 snapshot that rejects later outer-file replacement", () => {
+    const root = createRoot("successor-predecessor-production-snapshot-");
+    materializeGeneratorSupplyV1(root);
+    const snapshot = captureGeneratorSupplyV1PredecessorSnapshot(root);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(() => snapshot.assertCurrent()).not.toThrow();
+    const outerPath = GENERATOR_SUPPLY_V1_IMMUTABLE_FILES[1].path;
+    const target = resolve(root, outerPath);
+    const replacement = resolve(dirname(target), ".outer-same-bytes-replacement");
+    writeFileSync(replacement, readFileSync(target));
+    renameSync(replacement, target);
+    expect(() => snapshot.assertCurrent()).toThrowError(
+      expect.objectContaining<Partial<SuccessorPredecessorError>>({
+        code: "PREDECESSOR_FILE_MISMATCH",
+        path: outerPath,
       }),
     );
   });

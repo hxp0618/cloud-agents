@@ -13,7 +13,9 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { canonicalizeJson, type JsonRecord } from "./platform-json-semantics";
 import {
   SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
+  SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
+  SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
 } from "./platform-successor-dag";
 import {
@@ -109,6 +111,22 @@ export type GeneratorSupplyReplayV2Validation = Readonly<{
   projection: GeneratorSupplyReplayV2Projection;
   candidateManifestSha256: string;
   assertSnapshotCurrent: () => void;
+}>;
+
+export type GeneratorSupplyReplayV2PreparedReceipt = Readonly<{
+  path: (typeof SUCCESSOR_REPLAY_RECEIPT_PATHS)[number];
+  sha256: string;
+  sizeBytes: number;
+}>;
+
+export type GeneratorSupplyReplayV2PreparedReceipts = Readonly<{
+  receipts: ReadonlyMap<(typeof SUCCESSOR_REPLAY_RECEIPT_PATHS)[number], Buffer>;
+  receiptRecords: readonly GeneratorSupplyReplayV2PreparedReceipt[];
+  projection: GeneratorSupplyReplayV2Projection;
+  candidateManifestSha256: string;
+  outputFiles: number;
+  assertInputSnapshotCurrent: () => void;
+  assertPreparedSnapshotCurrent: () => void;
 }>;
 
 export class GeneratorSupplyReplayV2Error extends Error {
@@ -247,6 +265,79 @@ export function assertGeneratorSupplyReplayV2Receipts(
   return assertGeneratorSupplyReplayV2ReceiptsInternal(root, expected);
 }
 
+/**
+ * Validates the exact seven caller-owned native replay receipts, derives the
+ * canonical summary, and returns the complete ordered eight-receipt set.
+ * Each caller Buffer is immediately copied into an independent stable
+ * snapshot. Public map reads return fresh copies, never the internal authority.
+ */
+export function buildGeneratorSupplyReplayV2PreparedReceipts(
+  root: string,
+  replayContract: GeneratorSupplyReplayV2Contract,
+  rawReceiptBytes: ReadonlyMap<string, Buffer>,
+): GeneratorSupplyReplayV2PreparedReceipts {
+  const rawSnapshots = snapshotRawReceiptBytes(rawReceiptBytes);
+  validateContract(replayContract);
+  const inputIdentities: StableFileIdentity[] = [];
+  validateAuthorityFiles(root, replayContract, inputIdentities);
+  const expected = buildGeneratorSupplyReplayV2ExpectedFromImmutableV1Internal(
+    root,
+    replayContract,
+    inputIdentities,
+  );
+  validateExpected(expected);
+
+  const receipts = new Map<string, ReadReceipt>();
+  for (const path of SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS) {
+    const bytes = rawSnapshots.get(path);
+    if (!bytes) fail(`/${path}`, "Stable raw receipt snapshot is absent.");
+    receipts.set(path, parseReceiptBytes(path, bytes));
+  }
+  const rawGraph = validateReceiptGraph(receipts, expected, "derive-summary");
+  const summaryValue = buildSummary(receipts, expected, rawGraph.projection, rawGraph.output);
+  const summaryBytes = serializeDerivedSummary(summaryValue);
+  receipts.set(
+    SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH,
+    parseReceiptBytes(SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH, summaryBytes),
+  );
+  const validatedGraph = validateReceiptGraph(receipts, expected, "require-summary");
+  const completeGraph: ReceiptGraphValidation = Object.freeze({
+    projection: Object.freeze({ ...validatedGraph.projection }),
+    output: Object.freeze({ ...validatedGraph.output }),
+  });
+  const assertInputSnapshotCurrent = (): void => assertStableSnapshotCurrent(root, inputIdentities);
+  const assertPreparedSnapshotCurrent = (): void => {
+    assertInputSnapshotCurrent();
+    assertPreparedReceiptSetCurrent(receipts, expected, completeGraph);
+  };
+  assertPreparedSnapshotCurrent();
+
+  const get = receiptGetter(receipts);
+  const publicReceipts = Object.freeze(
+    new CopyingReadonlyBufferMap(
+      SUCCESSOR_REPLAY_RECEIPT_PATHS.map((path) => [path, get(path).bytes] as const),
+    ),
+  );
+  const receiptRecords = Object.freeze(
+    SUCCESSOR_REPLAY_RECEIPT_PATHS.map((path) =>
+      Object.freeze({
+        path,
+        sha256: get(path).sha256,
+        sizeBytes: get(path).bytes.byteLength,
+      }),
+    ),
+  );
+  return Object.freeze({
+    receipts: publicReceipts,
+    receiptRecords,
+    projection: completeGraph.projection,
+    candidateManifestSha256: completeGraph.output.candidateManifestSha256,
+    outputFiles: completeGraph.output.outputFiles,
+    assertInputSnapshotCurrent,
+    assertPreparedSnapshotCurrent,
+  });
+}
+
 export function assertGeneratorSupplyReplayV2SnapshotMutationForTest(
   root: string,
   expected: GeneratorSupplyReplayV2Expected,
@@ -297,86 +388,11 @@ function assertGeneratorSupplyReplayV2ReceiptsInternal(
   const receipts = new Map<string, ReadReceipt>();
   for (const path of SUCCESSOR_REPLAY_RECEIPT_PATHS) {
     const snapshot = readContainedRegularFileSnapshot(root, path);
-    const { bytes } = snapshot;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(bytes.toString("utf8"));
-    } catch (error) {
-      fail(`/${path}`, `Receipt is not valid JSON: ${String(error)}.`);
-    }
-    const value = object(parsed, `/${path}`);
-    receipts.set(path, {
-      path,
-      bytes,
-      sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-      value,
-      identity: snapshot.identity,
-    });
+    receipts.set(path, { ...parseReceiptBytes(path, snapshot.bytes), identity: snapshot.identity });
   }
   if (mutation?.phase === "receipts") mutation.mutate();
-
-  const get = (path: (typeof SUCCESSOR_REPLAY_RECEIPT_PATHS)[number]): ReadReceipt => {
-    const receipt = receipts.get(path);
-    if (!receipt) fail(`/${path}`, "Exact receipt is absent after the stable-read snapshot.");
-    return receipt;
-  };
-  const [
-    summaryPath,
-    darwinAPath,
-    darwinBPath,
-    darwinIsolationPath,
-    linuxAPath,
-    linuxBPath,
-    linuxIsolationPath,
-    projectionPath,
-  ] = SUCCESSOR_REPLAY_RECEIPT_PATHS;
-  const projection = validateProjection(get(projectionPath), expected);
-  const runs = {
-    "darwin-arm64": [
-      validateRun(get(darwinAPath), "darwin-arm64", "A", expected, projection),
-      validateRun(get(darwinBPath), "darwin-arm64", "B", expected, projection),
-    ],
-    "linux-amd64": [
-      validateRun(get(linuxAPath), "linux-amd64", "A", expected, projection),
-      validateRun(get(linuxBPath), "linux-amd64", "B", expected, projection),
-    ],
-  } as const;
-
-  for (const [platform, pair] of Object.entries(runs) as [Platform, readonly JsonRecord[]][]) {
-    if (!canonicalEqual(stableRun(pair[0]!), stableRun(pair[1]!))) {
-      fail(`/replay/${platform}`, "A/B reports differ outside the exact run-specific fields.");
-    }
-  }
-  const allRuns = [...runs["darwin-arm64"], ...runs["linux-amd64"]];
-  const output = {
-    candidateManifestSha256: String(allRuns[0]!.candidateManifestSha256),
-    outputFiles: Number(allRuns[0]!.outputFiles),
-  };
-  for (const report of allRuns) {
-    if (
-      !canonicalEqual(projectionFrom(report), projection) ||
-      report.candidateManifestSha256 !== output.candidateManifestSha256 ||
-      report.replayManifestSha256 !== output.candidateManifestSha256 ||
-      report.outputFiles !== output.outputFiles
-    ) {
-      fail("/replay/runs", "All platforms must bind the fixed projection and identical output.");
-    }
-  }
-  validateIsolation(
-    get(darwinIsolationPath),
-    "darwin-arm64",
-    [get(darwinAPath), get(darwinBPath)],
-    expected,
-    projection,
-  );
-  validateIsolation(
-    get(linuxIsolationPath),
-    "linux-amd64",
-    [get(linuxAPath), get(linuxBPath)],
-    expected,
-    projection,
-  );
-  validateSummary(get(summaryPath), receipts, expected, projection, output);
+  const graph = validateReceiptGraph(receipts, expected, "require-summary");
+  const get = receiptGetter(receipts);
   const snapshotIdentities = [
     ...inputIdentities,
     ...SUCCESSOR_REPLAY_RECEIPT_PATHS.map((path) => {
@@ -397,10 +413,224 @@ function assertGeneratorSupplyReplayV2ReceiptsInternal(
       sha256: get(path).sha256,
       sizeBytes: get(path).bytes.byteLength,
     })),
-    projection,
-    candidateManifestSha256: output.candidateManifestSha256,
+    projection: graph.projection,
+    candidateManifestSha256: graph.output.candidateManifestSha256,
     assertSnapshotCurrent,
   };
+}
+
+type ReceiptGraphValidation = Readonly<{
+  projection: GeneratorSupplyReplayV2Projection;
+  output: Readonly<{ candidateManifestSha256: string; outputFiles: number }>;
+}>;
+
+function validateReceiptGraph(
+  receipts: ReadonlyMap<string, ReadReceipt>,
+  expected: GeneratorSupplyReplayV2Expected,
+  summaryPolicy: "derive-summary" | "require-summary",
+): ReceiptGraphValidation {
+  const get = receiptGetter(receipts);
+  const [
+    summaryPath,
+    darwinAPath,
+    darwinBPath,
+    darwinIsolationPath,
+    linuxAPath,
+    linuxBPath,
+    linuxIsolationPath,
+    projectionPath,
+  ] = SUCCESSOR_REPLAY_RECEIPT_PATHS;
+  const requiredPaths =
+    summaryPolicy === "require-summary"
+      ? SUCCESSOR_REPLAY_RECEIPT_PATHS
+      : SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS;
+  assertExactReceiptMapKeys(receipts, requiredPaths);
+
+  const projection = validateProjection(get(projectionPath), expected);
+  const runs = {
+    "darwin-arm64": [
+      validateRun(get(darwinAPath), "darwin-arm64", "A", expected, projection),
+      validateRun(get(darwinBPath), "darwin-arm64", "B", expected, projection),
+    ],
+    "linux-amd64": [
+      validateRun(get(linuxAPath), "linux-amd64", "A", expected, projection),
+      validateRun(get(linuxBPath), "linux-amd64", "B", expected, projection),
+    ],
+  } as const;
+  for (const [platform, pair] of Object.entries(runs) as [Platform, readonly JsonRecord[]][]) {
+    if (!canonicalEqual(stableRun(pair[0]!), stableRun(pair[1]!)))
+      fail(`/replay/${platform}`, "A/B reports differ outside the exact run-specific fields.");
+  }
+  const allRuns = [...runs["darwin-arm64"], ...runs["linux-amd64"]];
+  const output = {
+    candidateManifestSha256: String(allRuns[0]!.candidateManifestSha256),
+    outputFiles: Number(allRuns[0]!.outputFiles),
+  };
+  for (const report of allRuns) {
+    if (
+      !canonicalEqual(projectionFrom(report), projection) ||
+      report.candidateManifestSha256 !== output.candidateManifestSha256 ||
+      report.replayManifestSha256 !== output.candidateManifestSha256 ||
+      report.outputFiles !== output.outputFiles
+    )
+      fail("/replay/runs", "All platforms must bind the fixed projection and identical output.");
+  }
+  validateIsolation(
+    get(darwinIsolationPath),
+    "darwin-arm64",
+    [get(darwinAPath), get(darwinBPath)],
+    expected,
+    projection,
+  );
+  validateIsolation(
+    get(linuxIsolationPath),
+    "linux-amd64",
+    [get(linuxAPath), get(linuxBPath)],
+    expected,
+    projection,
+  );
+  if (summaryPolicy === "require-summary")
+    validateSummary(get(summaryPath), receipts, expected, projection, output);
+  return { projection, output };
+}
+
+function parseReceiptBytes(path: string, bytes: Buffer): ReadReceipt {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    fail(`/${path}`, `Receipt is not valid JSON: ${String(error)}.`);
+  }
+  return {
+    path,
+    bytes,
+    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    value: object(parsed, `/${path}`),
+  };
+}
+
+function receiptGetter(
+  receipts: ReadonlyMap<string, ReadReceipt>,
+): (path: (typeof SUCCESSOR_REPLAY_RECEIPT_PATHS)[number]) => ReadReceipt {
+  return (path) => {
+    const receipt = receipts.get(path);
+    if (!receipt) fail(`/${path}`, "Exact receipt is absent from the fixed receipt set.");
+    return receipt;
+  };
+}
+
+function assertExactRawReceiptByteSet(rawReceiptBytes: ReadonlyMap<string, Buffer>): void {
+  assertExactReceiptMapKeys(rawReceiptBytes, SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS);
+}
+
+function snapshotRawReceiptBytes(
+  rawReceiptBytes: ReadonlyMap<string, Buffer>,
+): ReadonlyMap<(typeof SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS)[number], Buffer> {
+  assertExactRawReceiptByteSet(rawReceiptBytes);
+  const snapshots = new Map<(typeof SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS)[number], Buffer>();
+  for (const path of SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS) {
+    const callerBytes = rawReceiptBytes.get(path);
+    if (!Buffer.isBuffer(callerBytes)) fail(`/${path}`, "Raw receipt value must be a Buffer.");
+    if (typeof SharedArrayBuffer !== "undefined" && callerBytes.buffer instanceof SharedArrayBuffer)
+      fail(`/${path}`, "SharedArrayBuffer-backed raw receipt bytes are not stable authority.");
+    const snapshot = Buffer.allocUnsafeSlow(callerBytes.byteLength);
+    const copied = Buffer.prototype.copy.call(callerBytes, snapshot, 0, 0, callerBytes.byteLength);
+    if (copied !== callerBytes.byteLength)
+      fail(`/${path}`, "Raw receipt bytes changed while the stable snapshot was copied.");
+    snapshots.set(path, snapshot);
+  }
+  return snapshots;
+}
+
+function assertPreparedReceiptSetCurrent(
+  receipts: ReadonlyMap<string, ReadReceipt>,
+  expected: GeneratorSupplyReplayV2Expected,
+  fixedGraph: ReceiptGraphValidation,
+): void {
+  assertExactReceiptMapKeys(receipts, SUCCESSOR_REPLAY_RECEIPT_PATHS);
+  const get = receiptGetter(receipts);
+  for (const path of SUCCESSOR_REPLAY_RECEIPT_PATHS) {
+    const receipt = get(path);
+    const currentSha256 = `sha256:${createHash("sha256").update(receipt.bytes).digest("hex")}`;
+    if (currentSha256 !== receipt.sha256)
+      fail(`/${path}`, "Prepared receipt bytes changed after stable capture.");
+    const current = parseReceiptBytes(path, receipt.bytes);
+    if (!canonicalEqual(current.value, receipt.value))
+      fail(`/${path}`, "Prepared receipt bytes and semantic value are no longer identical.");
+    if (
+      path === SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH &&
+      !receipt.bytes.equals(serializeDerivedSummary(receipt.value))
+    )
+      fail(`/${path}`, "Derived summary bytes are no longer canonical two-space JSON.");
+  }
+  const currentGraph = validateReceiptGraph(receipts, expected, "require-summary");
+  if (!canonicalEqual(currentGraph, fixedGraph))
+    fail("/receipts", "Prepared receipt graph changed after stable capture.");
+}
+
+class CopyingReadonlyBufferMap<K extends string> implements ReadonlyMap<K, Buffer> {
+  readonly #bytes: ReadonlyMap<K, Buffer>;
+
+  constructor(entries: readonly (readonly [K, Buffer])[]) {
+    this.#bytes = new Map(entries);
+  }
+
+  get size(): number {
+    return this.#bytes.size;
+  }
+
+  get(key: K): Buffer | undefined {
+    const bytes = this.#bytes.get(key);
+    return bytes === undefined ? undefined : Buffer.from(bytes);
+  }
+
+  has(key: K): boolean {
+    return this.#bytes.has(key);
+  }
+
+  *entries(): MapIterator<[K, Buffer]> {
+    for (const [path, bytes] of this.#bytes) yield [path, Buffer.from(bytes)];
+  }
+
+  keys(): MapIterator<K> {
+    return this.#bytes.keys();
+  }
+
+  *values(): MapIterator<Buffer> {
+    for (const bytes of this.#bytes.values()) yield Buffer.from(bytes);
+  }
+
+  forEach(
+    callbackfn: (value: Buffer, key: K, map: ReadonlyMap<K, Buffer>) => void,
+    thisArg?: unknown,
+  ): void {
+    for (const [path, bytes] of this.#bytes)
+      callbackfn.call(thisArg, Buffer.from(bytes), path, this);
+  }
+
+  [Symbol.iterator](): MapIterator<[K, Buffer]> {
+    return this.entries();
+  }
+
+  readonly [Symbol.toStringTag] = "CopyingReadonlyBufferMap";
+}
+
+function assertExactReceiptMapKeys(
+  receipts: ReadonlyMap<string, unknown>,
+  expectedPaths: readonly string[],
+): void {
+  const actual = [...receipts.keys()].toSorted((left, right) =>
+    Buffer.compare(Buffer.from(left), Buffer.from(right)),
+  );
+  const expected = [...expectedPaths].toSorted((left, right) =>
+    Buffer.compare(Buffer.from(left), Buffer.from(right)),
+  );
+  if (!canonicalEqual(actual, expected))
+    fail("/receipts", "Receipt paths must be the exact closed path set.");
+}
+
+function serializeDerivedSummary(value: JsonRecord): Buffer {
+  return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 }
 
 function validateRun(
@@ -1745,11 +1975,6 @@ function bareDigest(value: unknown, path: string): void {
 function prefixed(value: string): string {
   bareDigest(value, "/digest");
   return `sha256:${value}`;
-}
-
-function stripSha256(value: string): string {
-  digest(value, "/digest");
-  return value.slice("sha256:".length);
 }
 
 function canonicalEqual(left: unknown, right: unknown): boolean {

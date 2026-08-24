@@ -192,6 +192,10 @@ type PredecessorSnapshot = {
   };
 };
 
+export type GeneratorSupplyV1PredecessorSnapshot = Readonly<{
+  assertCurrent: () => void;
+}>;
+
 const FIXED_GIT_ENV = {
   PATH: "/usr/bin:/bin",
   LANG: "C",
@@ -227,7 +231,13 @@ export function assertContractClosureV2Immutable(root: string): void {
 }
 
 export function assertGeneratorSupplyV1PredecessorImmutable(root: string): void {
-  assertGeneratorSupplyV1PredecessorImmutableInternal(root);
+  captureGeneratorSupplyV1PredecessorSnapshot(root);
+}
+
+export function captureGeneratorSupplyV1PredecessorSnapshot(
+  root: string,
+): GeneratorSupplyV1PredecessorSnapshot {
+  return captureGeneratorSupplyV1PredecessorSnapshotInternal(root);
 }
 
 export function assertGeneratorSupplyV1SnapshotMutationForTest(
@@ -242,6 +252,13 @@ function assertGeneratorSupplyV1PredecessorImmutableInternal(
   root: string,
   mutationHook?: PredecessorSnapshot["mutationHook"],
 ): void {
+  captureGeneratorSupplyV1PredecessorSnapshotInternal(root, mutationHook);
+}
+
+function captureGeneratorSupplyV1PredecessorSnapshotInternal(
+  root: string,
+  mutationHook?: PredecessorSnapshot["mutationHook"],
+): GeneratorSupplyV1PredecessorSnapshot {
   const snapshot: PredecessorSnapshot = {
     rootReal: realpathSync(root),
     identities: new Map(),
@@ -268,6 +285,9 @@ function assertGeneratorSupplyV1PredecessorImmutableInternal(
     );
   }
   assertPredecessorSnapshotCurrent(root, snapshot);
+  return Object.freeze({
+    assertCurrent: (): void => assertPredecessorSnapshotCurrent(root, snapshot),
+  });
 }
 
 export function assertSuccessorPredecessorsImmutable(root: string): void {

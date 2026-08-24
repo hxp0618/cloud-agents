@@ -14,8 +14,10 @@ import {
   SUCCESSOR_ASSEMBLY_PATHS,
   SUCCESSOR_BINDING_LATE_PATHS,
   SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
+  SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH,
   SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
+  SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
   SuccessorDagError,
 } from "./platform-successor-dag";
@@ -59,6 +61,12 @@ describe("successor DAG authority", () => {
     ] as const;
     expect(SUCCESSOR_PROJECTION_EXCLUSIONS).toHaveLength(16);
     expect(SUCCESSOR_PROJECTION_EXCLUSIONS).toEqual(expected);
+    expect(SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH).toBe(expected[3]);
+    expect(SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS).toEqual(expected.slice(4, 11));
+    expect(SUCCESSOR_REPLAY_RECEIPT_PATHS).toEqual([
+      SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH,
+      ...SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS,
+    ]);
     expect(() => assertSuccessorDagAuthority()).not.toThrow();
     for (const path of SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS) {
       expect(SUCCESSOR_PROJECTION_EXCLUSIONS).not.toContain(path);

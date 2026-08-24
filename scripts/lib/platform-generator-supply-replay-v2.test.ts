@@ -19,13 +19,17 @@ import {
   assertGeneratorSupplyReplayV2Receipts,
   assertGeneratorSupplyReplayV2SnapshotMutationForTest,
   assertGeneratorSupplyReplayV2V1DerivedABAMutationForTest,
+  buildGeneratorSupplyReplayV2PreparedReceipts,
   buildGeneratorSupplyReplayV2SummaryForTest,
   buildGeneratorSupplyReplayV2TestFixture,
   type GeneratorSupplyReplayV2Contract,
   type GeneratorSupplyReplayV2Expected,
 } from "./platform-generator-supply-replay-v2";
 import {
+  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
+  SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
+  SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
 } from "./platform-successor-dag";
 import type { JsonRecord } from "./platform-json-semantics";
@@ -120,6 +124,15 @@ function writeReceipts(fixture: Fixture): void {
     writeJson(fixture.root, path, fixture.receipts[path]);
 }
 
+function rawReceiptMap(fixture: Fixture): Map<string, Buffer> {
+  return new Map(
+    SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS.map((path) => [
+      path,
+      readFileSync(resolve(fixture.root, path)),
+    ]),
+  );
+}
+
 function refreshRunBindingsAndSummary(fixture: Fixture): void {
   const [, darwinA, darwinB, darwinIsolation, linuxA, linuxB, linuxIsolation] =
     SUCCESSOR_REPLAY_RECEIPT_PATHS;
@@ -180,6 +193,149 @@ function expectInvalid(action: () => unknown, path?: string): void {
 }
 
 describe("generator-supply v2 exact receipt semantics", () => {
+  it("prepares the canonical derived summary and exact ordered eight from caller raw bytes", () => {
+    const fixture = createFixture();
+    const raw = rawReceiptMap(fixture);
+    const prepared = buildGeneratorSupplyReplayV2PreparedReceipts(
+      fixture.root,
+      fixture.expected.replayContract,
+      raw,
+    );
+
+    expect([...prepared.receipts.keys()]).toEqual([...SUCCESSOR_REPLAY_RECEIPT_PATHS]);
+    expect(prepared.receiptRecords.map(({ path }) => path)).toEqual([
+      ...SUCCESSOR_REPLAY_RECEIPT_PATHS,
+    ]);
+    for (const path of SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS) {
+      expect(prepared.receipts.get(path)).not.toBe(raw.get(path));
+      expect(prepared.receipts.get(path)).toEqual(raw.get(path));
+    }
+    expect(prepared.receipts.get(SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH)).toEqual(
+      serialize(fixture.receipts[SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH]),
+    );
+    expect(prepared.candidateManifestSha256).toBe(
+      fixture.receipts[SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS[0]]!.candidateManifestSha256,
+    );
+    expect(prepared.outputFiles).toBe(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.length);
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(Object.isFrozen(prepared.receipts)).toBe(true);
+    expect(Object.isFrozen(prepared.receiptRecords)).toBe(true);
+    expect(prepared.receiptRecords.every((record) => Object.isFrozen(record))).toBe(true);
+    expect(Object.isFrozen(prepared.projection)).toBe(true);
+    expect(() => prepared.assertInputSnapshotCurrent()).not.toThrow();
+    expect(() => prepared.assertPreparedSnapshotCurrent()).not.toThrow();
+  });
+
+  it("isolates prepared authority from caller and returned Buffer mutation", () => {
+    const fixture = createFixture();
+    const raw = rawReceiptMap(fixture);
+    const prepared = buildGeneratorSupplyReplayV2PreparedReceipts(
+      fixture.root,
+      fixture.expected.replayContract,
+      raw,
+    );
+    const path = SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS[0];
+    const fixed = prepared.receipts.get(path)!;
+
+    raw.get(path)!.fill(0);
+    expect(prepared.receipts.get(path)).toEqual(fixed);
+
+    const returned = prepared.receipts.get(path)!;
+    returned.fill(1);
+    expect(prepared.receipts.get(path)).toEqual(fixed);
+
+    for (const [candidatePath, bytes] of prepared.receipts) {
+      if (candidatePath === path) bytes.fill(2);
+    }
+    expect(prepared.receipts.get(path)).toEqual(fixed);
+    expect(() => prepared.assertPreparedSnapshotCurrent()).not.toThrow();
+  });
+
+  it("rejects SharedArrayBuffer-backed caller receipt authority", () => {
+    if (typeof SharedArrayBuffer === "undefined") return;
+    const fixture = createFixture();
+    const raw = rawReceiptMap(fixture);
+    const path = SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS[0];
+    const original = raw.get(path)!;
+    const shared = new SharedArrayBuffer(original.byteLength);
+    const sharedBytes = Buffer.from(shared);
+    original.copy(sharedBytes);
+    raw.set(path, sharedBytes);
+    expectInvalid(
+      () =>
+        buildGeneratorSupplyReplayV2PreparedReceipts(
+          fixture.root,
+          fixture.expected.replayContract,
+          raw,
+        ),
+      path,
+    );
+  });
+
+  it("rejects missing, extra, and path-swapped caller raw receipt mappings", () => {
+    const missingFixture = createFixture();
+    const missing = rawReceiptMap(missingFixture);
+    missing.delete(SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS[0]);
+    expectInvalid(() =>
+      buildGeneratorSupplyReplayV2PreparedReceipts(
+        missingFixture.root,
+        missingFixture.expected.replayContract,
+        missing,
+      ),
+    );
+
+    const extraFixture = createFixture();
+    const extra = rawReceiptMap(extraFixture);
+    extra.set("tools/generator-supply/v2/evidence/replay/extra.json", Buffer.from("{}\n"));
+    expectInvalid(() =>
+      buildGeneratorSupplyReplayV2PreparedReceipts(
+        extraFixture.root,
+        extraFixture.expected.replayContract,
+        extra,
+      ),
+    );
+
+    const swappedFixture = createFixture();
+    const swapped = rawReceiptMap(swappedFixture);
+    const darwinA = SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS[0];
+    const darwinB = SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS[1];
+    const aBytes = swapped.get(darwinA)!;
+    swapped.set(darwinA, swapped.get(darwinB)!);
+    swapped.set(darwinB, aBytes);
+    expectInvalid(
+      () =>
+        buildGeneratorSupplyReplayV2PreparedReceipts(
+          swappedFixture.root,
+          swappedFixture.expected.replayContract,
+          swapped,
+        ),
+      "replayRun",
+    );
+  });
+
+  it("terminal-fences authority and immutable-v1 inputs captured by the production builder", () => {
+    const fixture = createFixture();
+    const prepared = buildGeneratorSupplyReplayV2PreparedReceipts(
+      fixture.root,
+      fixture.expected.replayContract,
+      rawReceiptMap(fixture),
+    );
+    const wrapper = resolve(fixture.root, authorityPaths.wrapper);
+    writeFileSync(wrapper, Buffer.concat([readFileSync(wrapper), Buffer.from("\n# drift\n")]));
+    expectInvalid(() => prepared.assertInputSnapshotCurrent(), authorityPaths.wrapper);
+
+    const v1Fixture = createFixture();
+    const v1Prepared = buildGeneratorSupplyReplayV2PreparedReceipts(
+      v1Fixture.root,
+      v1Fixture.expected.replayContract,
+      rawReceiptMap(v1Fixture),
+    );
+    const sourcePath = "tools/generator-supply/v1/source.json";
+    const source = resolve(v1Fixture.root, sourcePath);
+    writeFileSync(source, Buffer.concat([readFileSync(source), Buffer.from("\n")]));
+    expectInvalid(() => v1Prepared.assertInputSnapshotCurrent(), sourcePath);
+  });
+
   it("accepts a constructable exact-eight fixture bound to immutable v1 material", () => {
     const fixture = createFixture();
     const result = assertGeneratorSupplyReplayV2Receipts(fixture.root, fixture.expected);

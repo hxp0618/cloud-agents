@@ -2,14 +2,19 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   constants,
+  fsyncSync,
   fstatSync,
+  linkSync,
   lstatSync,
+  mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -17,8 +22,10 @@ import { canonicalizeJson, type JsonRecord } from "./platform-json-semantics";
 import {
   assertGeneratorSupplyReplayV2ContractCurrent,
   assertGeneratorSupplyReplayV2Receipts,
+  buildGeneratorSupplyReplayV2PreparedReceipts,
   buildGeneratorSupplyReplayV2ExpectedFromImmutableV1,
   type GeneratorSupplyReplayV2Contract,
+  type GeneratorSupplyReplayV2PreparedReceipts,
   type GeneratorSupplyReplayV2Validation,
 } from "./platform-generator-supply-replay-v2";
 import {
@@ -30,6 +37,7 @@ import {
 } from "./platform-successor-dag";
 import {
   assertGeneratorSupplyV1PredecessorImmutable,
+  captureGeneratorSupplyV1PredecessorSnapshot,
   GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST,
   GENERATOR_SUPPLY_V1_GIT_LINEAGE,
   GENERATOR_SUPPLY_V1_IMMUTABLE_FILES,
@@ -182,6 +190,49 @@ type GeneratorSupplyV2StableFileIdentity = Readonly<{
   ctimeNs: bigint;
 }>;
 
+export type GeneratorSupplyV2AssemblyInputs = Readonly<{
+  projection: string;
+  darwinOutputDirectory: string;
+  linuxOutputDirectory: string;
+}>;
+
+export type GeneratorSupplyV2AssemblyWriteHooks = Readonly<{
+  afterRawSnapshot?: () => void;
+  beforePublish?: (path: string, index: number, temporary: string, output: string) => void;
+  afterPublish?: (path: string, index: number) => void;
+}>;
+
+type ExternalRawIdentity = Readonly<{
+  path: string;
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}>;
+
+type ParentDirectoryIdentity = Readonly<{
+  path: string;
+  dev: bigint;
+  ino: bigint;
+}>;
+
+type ExternalTopologyIdentity = Readonly<{
+  path: string;
+  kind: "file" | "directory";
+  dev: bigint;
+  ino: bigint;
+}>;
+
+type OwnedTemporaryIdentity = Readonly<{
+  path: string;
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}>;
+
 export class GeneratorSupplyV2Error extends Error {
   constructor(
     readonly code:
@@ -190,7 +241,9 @@ export class GeneratorSupplyV2Error extends Error {
       | "GENERATOR_SUPPLY_V2_PREDECESSOR_MISMATCH"
       | "GENERATOR_SUPPLY_V2_PARTIAL_STATE"
       | "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH"
-      | "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+      | "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH"
+      | "GENERATOR_SUPPLY_V2_RAW_INPUT_INVALID"
+      | "GENERATOR_SUPPLY_V2_WRITE_CONFLICT",
     readonly path: string,
     message: string,
   ) {
@@ -530,6 +583,784 @@ function assertGeneratorSupplyV2RegistrySemanticsInternal(
     outputFiles,
     assertCurrent: semanticValidation.assertSnapshotCurrent,
   };
+}
+
+export function buildGeneratorSupplyV2EvidenceManifest(
+  prepared: GeneratorSupplyReplayV2PreparedReceipts,
+): EvidenceManifest {
+  prepared.assertPreparedSnapshotCurrent();
+  assertPreparedReceiptSet(prepared);
+  return {
+    algorithm: EVIDENCE_MANIFEST_ALGORITHM,
+    files: prepared.receiptRecords.map(({ path, sha256, sizeBytes }) => ({
+      path,
+      sha256,
+      sizeBytes,
+    })),
+  };
+}
+
+export function buildGeneratorSupplyV2Registry(
+  source: GeneratorSupplyV2Source,
+  prepared: GeneratorSupplyReplayV2PreparedReceipts,
+  evidenceManifest: EvidenceManifest = buildGeneratorSupplyV2EvidenceManifest(prepared),
+): GeneratorSupplyV2Registry {
+  prepared.assertPreparedSnapshotCurrent();
+  assertPreparedReceiptSet(prepared);
+  const receipts = evidenceManifest.files;
+  if (
+    evidenceManifest.algorithm !== EVIDENCE_MANIFEST_ALGORITHM ||
+    !canonicalEqual(evidenceManifest, buildGeneratorSupplyV2EvidenceManifest(prepared))
+  ) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+      "/assembly/evidenceManifest",
+      "Generator-supply v2 assembly must bind the exact prepared receipt bytes.",
+    );
+  }
+  const sourceDigest = domainDigest("cloud-agents/generator-supply/source/v2", source);
+  const artifactSetDigest = domainDigest("cloud-agents/generator-supply/artifact-set/v2", {
+    predecessor: source.predecessor,
+    inheritance: source.inheritance,
+    receipts,
+  });
+  const evidenceManifestDigest = domainDigest(
+    "cloud-agents/generator-supply/evidence-manifest/v2",
+    evidenceManifest,
+  );
+  const evidence = {
+    state: "ASSEMBLED_LATE_BOUND",
+    inheritance: source.inheritance,
+    receipts,
+    evidenceManifest,
+  } as const;
+  const body = {
+    formatVersion: "cloud-agents-generator-supply-profile-registry/v2",
+    registryId: REGISTRY_ID,
+    predecessor: source.predecessor,
+    sourceDigest,
+    artifactSetDigest,
+    evidenceManifestDigest,
+    profile: {
+      profileDigest: domainDigest("cloud-agents/generator-supply/profile/v2", {
+        sourceDigest,
+        artifactSetDigest,
+        evidenceManifestDigest,
+        spec: source.declaredProfile,
+        evidence,
+      }),
+      spec: source.declaredProfile,
+      evidence,
+    },
+  };
+  return {
+    ...body,
+    registryDigest: domainDigest("cloud-agents/generator-supply/registry/v2", body),
+  } as GeneratorSupplyV2Registry;
+}
+
+export function writeGeneratorSupplyV2Assembly(
+  root: string,
+  inputs: GeneratorSupplyV2AssemblyInputs,
+): void {
+  writeGeneratorSupplyV2AssemblyInternal(root, inputs, {});
+}
+
+export function writeGeneratorSupplyV2AssemblyForTest(
+  root: string,
+  inputs: GeneratorSupplyV2AssemblyInputs,
+  hooks: GeneratorSupplyV2AssemblyWriteHooks,
+): void {
+  writeGeneratorSupplyV2AssemblyInternal(root, inputs, hooks);
+}
+
+function writeGeneratorSupplyV2AssemblyInternal(
+  root: string,
+  inputs: GeneratorSupplyV2AssemblyInputs,
+  hooks: GeneratorSupplyV2AssemblyWriteHooks,
+): void {
+  const rootReal = realpathSync(root);
+  const authorityIdentities: GeneratorSupplyV2StableFileIdentity[] = [];
+  const source = readSource(rootReal, authorityIdentities);
+  readContainedRegularFile(
+    rootReal,
+    GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
+    undefined,
+    authorityIdentities,
+  );
+  readContainedRegularFile(
+    rootReal,
+    GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
+    undefined,
+    authorityIdentities,
+  );
+  const predecessorSnapshot = captureGeneratorSupplyV1PredecessorSnapshot(rootReal);
+  validateGeneratorSupplyV2Source(rootReal, source);
+  predecessorSnapshot.assertCurrent();
+
+  const raw = readGeneratorSupplyV2RawInputs(rootReal, inputs);
+  hooks.afterRawSnapshot?.();
+  raw.assertCurrent();
+  const prepared = buildGeneratorSupplyReplayV2PreparedReceipts(
+    rootReal,
+    GENERATOR_SUPPLY_V2_REPLAY_CONTRACT,
+    raw.bytes,
+  );
+  prepared.assertPreparedSnapshotCurrent();
+  assertPreparedReceiptSet(prepared);
+  prepared.assertInputSnapshotCurrent();
+  predecessorSnapshot.assertCurrent();
+  raw.assertCurrent();
+  assertGeneratorSupplyV2AuthoritySnapshotCurrent(rootReal, authorityIdentities);
+
+  const evidenceManifest = buildGeneratorSupplyV2EvidenceManifest(prepared);
+  const registry = buildGeneratorSupplyV2Registry(source, prepared, evidenceManifest);
+  prepared.assertPreparedSnapshotCurrent();
+  predecessorSnapshot.assertCurrent();
+  validateAgainstSchema(rootReal, OUTPUT_SCHEMA_ID, registry);
+  const outputs = new Map<string, Buffer>();
+  for (const path of SUCCESSOR_REPLAY_RECEIPT_PATHS) {
+    const bytes = prepared.receipts.get(path);
+    if (!bytes) {
+      throw v2Error(
+        "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+        `/${path}`,
+        "Prepared generator-supply v2 receipt bytes are absent.",
+      );
+    }
+    outputs.set(path, Buffer.from(bytes));
+  }
+  outputs.set(
+    GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
+    Buffer.from(serializeGeneratorSupplyV2Source(evidenceManifest), "utf8"),
+  );
+  outputs.set(
+    GENERATOR_SUPPLY_V2_OUTPUT_PATH,
+    Buffer.from(serializeGeneratorSupplyV2Source(registry), "utf8"),
+  );
+  const orderedPaths = [...SUCCESSOR_REPLAY_RECEIPT_PATHS, ...SUCCESSOR_ASSEMBLY_PATHS];
+  if (
+    outputs.size !== 10 ||
+    orderedPaths.length !== 10 ||
+    orderedPaths.some((path) => !outputs.has(path))
+  ) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_WRITE_CONFLICT",
+      "/assembly",
+      "Generator-supply v2 writer must publish exactly the ten DAG late-bound paths.",
+    );
+  }
+
+  const parentIdentityMap = new Map<string, ParentDirectoryIdentity>();
+  for (const path of orderedPaths) {
+    for (const identity of ensureGeneratorSupplyV2ParentDirectories(
+      rootReal,
+      dirname(resolve(rootReal, path)),
+    )) {
+      const previous = parentIdentityMap.get(identity.path);
+      if (previous && (previous.dev !== identity.dev || previous.ino !== identity.ino)) {
+        throw writeConflict(identity.path, "Destination parent changed during initial capture.");
+      }
+      parentIdentityMap.set(identity.path, identity);
+    }
+  }
+  const parentIdentities = [...parentIdentityMap.values()];
+  assertParentDirectoriesCurrent(parentIdentities);
+  const outputIdentities: GeneratorSupplyV2StableFileIdentity[] = [];
+  for (const [index, path] of orderedPaths.entries()) {
+    prepared.assertPreparedSnapshotCurrent();
+    prepared.assertInputSnapshotCurrent();
+    predecessorSnapshot.assertCurrent();
+    raw.assertCurrent();
+    assertGeneratorSupplyV2AuthoritySnapshotCurrent(rootReal, authorityIdentities);
+    assertParentDirectoriesCurrent(parentIdentities);
+    assertPublishedOutputsCurrent(rootReal, outputIdentities);
+    outputIdentities.push(
+      publishGeneratorSupplyV2FileAppendOnly(
+        rootReal,
+        path,
+        outputs.get(path)!,
+        index,
+        hooks,
+        parentIdentities,
+      ),
+    );
+    prepared.assertPreparedSnapshotCurrent();
+    prepared.assertInputSnapshotCurrent();
+    predecessorSnapshot.assertCurrent();
+    raw.assertCurrent();
+    assertGeneratorSupplyV2AuthoritySnapshotCurrent(rootReal, authorityIdentities);
+    assertParentDirectoriesCurrent(parentIdentities);
+    assertPublishedOutputsCurrent(rootReal, outputIdentities);
+  }
+
+  prepared.assertPreparedSnapshotCurrent();
+  prepared.assertInputSnapshotCurrent();
+  predecessorSnapshot.assertCurrent();
+  raw.assertCurrent();
+  assertGeneratorSupplyV2AuthoritySnapshotCurrent(rootReal, authorityIdentities);
+  assertParentDirectoriesCurrent(parentIdentities);
+  assertPublishedOutputsCurrent(rootReal, outputIdentities);
+  const current = assertGeneratorSupplyV2RegistryCurrent(rootReal, registry);
+  current.assertCurrent();
+}
+
+function assertPreparedReceiptSet(prepared: GeneratorSupplyReplayV2PreparedReceipts): void {
+  if (
+    prepared.receipts.size !== SUCCESSOR_REPLAY_RECEIPT_PATHS.length ||
+    prepared.receiptRecords.length !== SUCCESSOR_REPLAY_RECEIPT_PATHS.length
+  ) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+      "/assembly/receipts",
+      "Prepared generator-supply v2 receipts must contain exactly eight entries.",
+    );
+  }
+  for (const [index, path] of SUCCESSOR_REPLAY_RECEIPT_PATHS.entries()) {
+    const bytes = prepared.receipts.get(path);
+    const record = prepared.receiptRecords[index];
+    if (
+      !bytes ||
+      record?.path !== path ||
+      record.sizeBytes !== bytes.byteLength ||
+      record.sha256 !== `sha256:${createHash("sha256").update(bytes).digest("hex")}`
+    ) {
+      throw v2Error(
+        "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+        `/assembly/receipts/${index}`,
+        "Prepared generator-supply v2 receipt order, digest, or size drifted.",
+      );
+    }
+  }
+}
+
+function readGeneratorSupplyV2RawInputs(
+  rootReal: string,
+  inputs: GeneratorSupplyV2AssemblyInputs,
+): Readonly<{
+  bytes: ReadonlyMap<string, Buffer>;
+  assertCurrent: () => void;
+}> {
+  const topology = new Map<string, ExternalTopologyIdentity>();
+  const projection = assertCanonicalExternalPath(rootReal, inputs.projection, "file", topology);
+  const darwin = assertCanonicalExternalPath(
+    rootReal,
+    inputs.darwinOutputDirectory,
+    "directory",
+    topology,
+  );
+  const linux = assertCanonicalExternalPath(
+    rootReal,
+    inputs.linuxOutputDirectory,
+    "directory",
+    topology,
+  );
+  if (new Set([projection, darwin, linux]).size !== 3) {
+    throw rawInputError("/raw", "Projection and platform output roots must be distinct.");
+  }
+  const expectedDirectoryEntries = {
+    [darwin]: ["darwin-a.json", "darwin-b.json", "darwin-isolation.json"],
+    [linux]: ["linux-a.json", "linux-b.json", "linux-isolation.json"],
+  } as const;
+  for (const [directory, expected] of Object.entries(expectedDirectoryEntries)) {
+    let actual: string[];
+    try {
+      actual = readdirSync(directory).toSorted((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right)),
+      );
+    } catch (error) {
+      throw rawInputError(
+        directory,
+        `Raw output directory cannot be enumerated: ${String(error)}.`,
+      );
+    }
+    const orderedExpected = [...expected].toSorted((left, right) =>
+      Buffer.compare(Buffer.from(left), Buffer.from(right)),
+    );
+    if (!canonicalEqual(actual, orderedExpected)) {
+      throw rawInputError(
+        directory,
+        "Raw output directory must contain exactly its three named platform receipts.",
+      );
+    }
+  }
+  const [, darwinA, darwinB, darwinIsolation, linuxA, linuxB, linuxIsolation, projectionPath] =
+    SUCCESSOR_REPLAY_RECEIPT_PATHS;
+  const mapping = [
+    [darwinA, resolve(darwin, "darwin-a.json")],
+    [darwinB, resolve(darwin, "darwin-b.json")],
+    [darwinIsolation, resolve(darwin, "darwin-isolation.json")],
+    [linuxA, resolve(linux, "linux-a.json")],
+    [linuxB, resolve(linux, "linux-b.json")],
+    [linuxIsolation, resolve(linux, "linux-isolation.json")],
+    [projectionPath, projection],
+  ] as const;
+  const identities: ExternalRawIdentity[] = [];
+  const bytes = new Map<string, Buffer>();
+  for (const [receiptPath, externalPath] of mapping) {
+    const snapshot = readExternalRawFileOnce(rootReal, externalPath);
+    bytes.set(receiptPath, snapshot.bytes);
+    identities.push(snapshot.identity);
+  }
+  const assertCurrent = (): void => {
+    assertExternalTopologyCurrent(topology);
+    for (const identity of identities) assertExternalRawIdentityCurrent(rootReal, identity);
+    for (const [directory, expected] of Object.entries(expectedDirectoryEntries)) {
+      const actual = readdirSync(directory).toSorted((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right)),
+      );
+      const orderedExpected = [...expected].toSorted((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right)),
+      );
+      if (!canonicalEqual(actual, orderedExpected)) {
+        throw rawInputError(directory, "Raw output directory entries changed after snapshot.");
+      }
+    }
+  };
+  assertCurrent();
+  return { bytes, assertCurrent };
+}
+
+function assertCanonicalExternalPath(
+  rootReal: string,
+  value: string,
+  kind: "file" | "directory",
+  identities?: Map<string, ExternalTopologyIdentity>,
+): string {
+  if (!isAbsolute(value) || resolve(value) !== value || value.includes("\\")) {
+    throw rawInputError(value, "Raw input paths must be absolute canonical paths.");
+  }
+  const relation = relative(rootReal, value);
+  if (relation === "" || (!relation.startsWith(`..${sep}`) && relation !== "..")) {
+    throw rawInputError(value, "Raw input paths must remain external to the repository root.");
+  }
+  let current: string = sep;
+  const components = value.split(sep).filter(Boolean);
+  try {
+    for (const [index, component] of components.entries()) {
+      current = resolve(current, component);
+      const stat = lstatSync(current);
+      const final = index === components.length - 1;
+      if (
+        stat.isSymbolicLink() ||
+        (!final && !stat.isDirectory()) ||
+        (final && (kind === "file" ? !stat.isFile() : !stat.isDirectory()))
+      ) {
+        throw new Error("path topology is not the required no-symlink type");
+      }
+      const topologyIdentity: ExternalTopologyIdentity = {
+        path: current,
+        kind: final ? kind : "directory",
+        dev: BigInt(stat.dev),
+        ino: BigInt(stat.ino),
+      };
+      const previous = identities?.get(current);
+      if (
+        previous &&
+        (previous.kind !== topologyIdentity.kind ||
+          previous.dev !== topologyIdentity.dev ||
+          previous.ino !== topologyIdentity.ino)
+      ) {
+        throw new Error("shared raw input ancestor identity drifted");
+      }
+      identities?.set(current, topologyIdentity);
+    }
+    if (realpathSync(value) !== value) throw new Error("real path is not canonical");
+  } catch (error) {
+    throw rawInputError(value, `Raw input path is unsafe or unavailable: ${String(error)}.`);
+  }
+  return value;
+}
+
+function assertExternalTopologyCurrent(
+  identities: ReadonlyMap<string, ExternalTopologyIdentity>,
+): void {
+  for (const identity of identities.values()) {
+    try {
+      const stat = lstatSync(identity.path, { bigint: true });
+      if (
+        stat.isSymbolicLink() ||
+        (identity.kind === "file" ? !stat.isFile() : !stat.isDirectory()) ||
+        stat.dev !== identity.dev ||
+        stat.ino !== identity.ino ||
+        realpathSync(identity.path) !== identity.path
+      ) {
+        throw new Error("raw topology identity changed");
+      }
+    } catch (error) {
+      throw rawInputError(
+        identity.path,
+        `Raw input ancestor or directory snapshot is no longer current: ${String(error)}.`,
+      );
+    }
+  }
+}
+
+function readExternalRawFileOnce(
+  rootReal: string,
+  path: string,
+): Readonly<{ bytes: Buffer; identity: ExternalRawIdentity }> {
+  assertCanonicalExternalPath(rootReal, path, "file");
+  let descriptor: number | undefined;
+  try {
+    const pathBefore = lstatSync(path, { bigint: true });
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const descriptorBefore = fstatSync(descriptor, { bigint: true });
+    if (
+      !descriptorBefore.isFile() ||
+      descriptorBefore.dev !== pathBefore.dev ||
+      descriptorBefore.ino !== pathBefore.ino
+    ) {
+      throw new Error("raw input changed before descriptor binding");
+    }
+    const bytes = readFileSync(descriptor);
+    const descriptorAfter = fstatSync(descriptor, { bigint: true });
+    const identity: ExternalRawIdentity = {
+      path,
+      dev: descriptorAfter.dev,
+      ino: descriptorAfter.ino,
+      size: descriptorAfter.size,
+      mtimeNs: descriptorAfter.mtimeNs,
+      ctimeNs: descriptorAfter.ctimeNs,
+    };
+    if (
+      descriptorAfter.dev !== descriptorBefore.dev ||
+      descriptorAfter.ino !== descriptorBefore.ino ||
+      descriptorAfter.size !== descriptorBefore.size ||
+      descriptorAfter.mtimeNs !== descriptorBefore.mtimeNs ||
+      descriptorAfter.ctimeNs !== descriptorBefore.ctimeNs
+    ) {
+      throw new Error("raw input changed during its one stable read");
+    }
+    assertExternalRawIdentityCurrent(rootReal, identity);
+    return { bytes, identity };
+  } catch (error) {
+    if (error instanceof GeneratorSupplyV2Error) throw error;
+    throw rawInputError(path, `Raw input cannot be read stably: ${String(error)}.`);
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function assertExternalRawIdentityCurrent(rootReal: string, identity: ExternalRawIdentity): void {
+  assertCanonicalExternalPath(rootReal, identity.path, "file");
+  try {
+    const current = lstatSync(identity.path, { bigint: true });
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      current.dev !== identity.dev ||
+      current.ino !== identity.ino ||
+      current.size !== identity.size ||
+      current.mtimeNs !== identity.mtimeNs ||
+      current.ctimeNs !== identity.ctimeNs
+    ) {
+      throw new Error("raw input identity changed after snapshot");
+    }
+  } catch (error) {
+    if (error instanceof GeneratorSupplyV2Error) throw error;
+    throw rawInputError(
+      identity.path,
+      `Raw input snapshot is no longer current: ${String(error)}.`,
+    );
+  }
+}
+
+function publishGeneratorSupplyV2FileAppendOnly(
+  rootReal: string,
+  path: string,
+  bytes: Buffer,
+  index: number,
+  hooks: GeneratorSupplyV2AssemblyWriteHooks,
+  parents: readonly ParentDirectoryIdentity[],
+): GeneratorSupplyV2StableFileIdentity {
+  const output = resolve(rootReal, path);
+  const existing = readExistingDestination(rootReal, path);
+  if (existing) {
+    if (!existing.bytes.equals(bytes))
+      throw writeConflict(path, "Existing late-bound file diverges.");
+    assertParentDirectoriesCurrent(parents);
+    hooks.afterPublish?.(path, index);
+    return existing.identity;
+  }
+  const token = `${process.pid}-${Date.now()}-${process.hrtime.bigint()}-${index}`;
+  const temporary = resolve(dirname(output), `.${basename(output)}.write-${token}`);
+  let descriptor: number | undefined;
+  let temporaryIdentity: OwnedTemporaryIdentity | undefined;
+  let temporaryOwned = false;
+  try {
+    descriptor = openSync(
+      temporary,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    writeFileSync(descriptor, bytes);
+    fsyncSync(descriptor);
+    const temporaryStat = fstatSync(descriptor, { bigint: true });
+    temporaryIdentity = {
+      path: temporary,
+      dev: temporaryStat.dev,
+      ino: temporaryStat.ino,
+      size: temporaryStat.size,
+      mtimeNs: temporaryStat.mtimeNs,
+      ctimeNs: temporaryStat.ctimeNs,
+    };
+    temporaryOwned = true;
+    closeSync(descriptor);
+    descriptor = undefined;
+    assertParentDirectoriesCurrent(parents);
+    hooks.beforePublish?.(path, index, temporary, output);
+    assertParentDirectoriesCurrent(parents);
+    assertOwnedTemporaryCurrent(temporaryIdentity);
+    let linkedByWriter = false;
+    try {
+      linkSync(temporary, output);
+      linkedByWriter = true;
+      fsyncDirectory(dirname(output));
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      const winner = readExistingDestination(rootReal, path);
+      if (!winner || !winner.bytes.equals(bytes)) {
+        throw writeConflict(path, "A divergent destination won the no-replace publish race.");
+      }
+    }
+    if (linkedByWriter) temporaryIdentity = refreshOwnedTemporaryAfterLink(temporaryIdentity);
+    cleanupGeneratorSupplyV2Temporary(temporaryIdentity, parents);
+    temporaryOwned = false;
+    fsyncDirectory(dirname(output));
+    assertParentDirectoriesCurrent(parents);
+    const published = readExistingDestination(rootReal, path);
+    if (!published || !published.bytes.equals(bytes)) {
+      throw writeConflict(path, "Published late-bound bytes are not exact.");
+    }
+    hooks.afterPublish?.(path, index);
+    return published.identity;
+  } catch (error) {
+    if (error instanceof GeneratorSupplyV2Error) throw error;
+    throw writeConflict(path, `Append-only publish failed: ${String(error)}.`);
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (temporaryOwned && temporaryIdentity) {
+      cleanupGeneratorSupplyV2Temporary(temporaryIdentity, parents);
+      temporaryOwned = false;
+      fsyncDirectory(dirname(output));
+    }
+  }
+}
+
+function refreshOwnedTemporaryAfterLink(identity: OwnedTemporaryIdentity): OwnedTemporaryIdentity {
+  try {
+    const current = lstatSync(identity.path, { bigint: true });
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      current.dev !== identity.dev ||
+      current.ino !== identity.ino ||
+      current.size !== identity.size ||
+      current.mtimeNs !== identity.mtimeNs
+    ) {
+      throw new Error("owned temporary changed across no-replace link");
+    }
+    return {
+      path: identity.path,
+      dev: current.dev,
+      ino: current.ino,
+      size: current.size,
+      mtimeNs: current.mtimeNs,
+      ctimeNs: current.ctimeNs,
+    };
+  } catch (error) {
+    throw writeConflict(
+      identity.path,
+      `Owned temporary could not be rebound after publish: ${String(error)}.`,
+    );
+  }
+}
+
+function cleanupGeneratorSupplyV2Temporary(
+  identity: OwnedTemporaryIdentity,
+  parents: readonly ParentDirectoryIdentity[],
+): void {
+  assertParentDirectoriesCurrent(parents);
+  assertOwnedTemporaryCurrent(identity);
+  unlinkSync(identity.path);
+}
+
+function assertOwnedTemporaryCurrent(identity: OwnedTemporaryIdentity): void {
+  try {
+    const current = lstatSync(identity.path, { bigint: true });
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      current.dev !== identity.dev ||
+      current.ino !== identity.ino ||
+      current.size !== identity.size ||
+      current.mtimeNs !== identity.mtimeNs ||
+      current.ctimeNs !== identity.ctimeNs
+    ) {
+      throw writeConflict(
+        identity.path,
+        "Owned temporary identity changed; cleanup refused without unlinking the lexical path.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof GeneratorSupplyV2Error) throw error;
+    throw writeConflict(
+      identity.path,
+      `Owned temporary disappeared before identity-safe cleanup: ${String(error)}.`,
+    );
+  }
+}
+
+function ensureGeneratorSupplyV2ParentDirectories(
+  rootReal: string,
+  targetParent: string,
+): ParentDirectoryIdentity[] {
+  const relation = relative(rootReal, targetParent);
+  if (
+    relation === "" ||
+    relation.startsWith(`..${sep}`) ||
+    relation === ".." ||
+    isAbsolute(relation)
+  ) {
+    throw writeConflict(targetParent, "Destination parent escaped the repository root.");
+  }
+  const identities: ParentDirectoryIdentity[] = [];
+  let current = rootReal;
+  for (const component of relation.split(sep)) {
+    current = resolve(current, component);
+    try {
+      mkdirSync(current, { mode: 0o700 });
+      fsyncDirectory(dirname(current));
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+        throw writeConflict(current, `Destination parent cannot be created: ${String(error)}.`);
+      }
+    }
+    const stat = lstatSync(current, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(current) !== current) {
+      throw writeConflict(current, "Destination parent must be a regular no-symlink directory.");
+    }
+    identities.push({ path: current, dev: stat.dev, ino: stat.ino });
+  }
+  assertParentDirectoriesCurrent(identities);
+  return identities;
+}
+
+function assertParentDirectoriesCurrent(identities: readonly ParentDirectoryIdentity[]): void {
+  for (const identity of identities) {
+    try {
+      const stat = lstatSync(identity.path, { bigint: true });
+      if (
+        !stat.isDirectory() ||
+        stat.isSymbolicLink() ||
+        stat.dev !== identity.dev ||
+        stat.ino !== identity.ino ||
+        realpathSync(identity.path) !== identity.path
+      ) {
+        throw new Error("parent identity changed");
+      }
+    } catch (error) {
+      throw writeConflict(identity.path, `Destination parent fence failed: ${String(error)}.`);
+    }
+  }
+}
+
+function readExistingDestination(
+  rootReal: string,
+  path: string,
+): Readonly<{ bytes: Buffer; identity: GeneratorSupplyV2StableFileIdentity }> | undefined {
+  const absolute = resolve(rootReal, path);
+  try {
+    const stat = lstatSync(absolute);
+    if (!stat.isFile() || stat.isSymbolicLink() || realpathSync(absolute) !== absolute) {
+      throw writeConflict(path, "Existing destination must be a regular non-symlink file.");
+    }
+    const identities: GeneratorSupplyV2StableFileIdentity[] = [];
+    const bytes = readContainedRegularFile(rootReal, path, undefined, identities);
+    const identity = identities[0];
+    if (!identity) throw new Error("destination identity was not captured");
+    return { bytes, identity };
+  } catch (error) {
+    if (error instanceof GeneratorSupplyV2Error) throw error;
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+    throw writeConflict(path, `Existing destination cannot be inspected: ${String(error)}.`);
+  }
+}
+
+function assertPublishedOutputsCurrent(
+  root: string,
+  identities: readonly GeneratorSupplyV2StableFileIdentity[],
+): void {
+  for (const identity of identities) {
+    try {
+      const current = lstatSync(identity.absolute, { bigint: true });
+      if (
+        realpathSync(root) !== identity.rootReal ||
+        current.dev !== identity.dev ||
+        current.ino !== identity.ino ||
+        current.size !== identity.size ||
+        current.mtimeNs !== identity.mtimeNs ||
+        current.ctimeNs !== identity.ctimeNs ||
+        !current.isFile() ||
+        current.isSymbolicLink() ||
+        realpathSync(identity.absolute) !== identity.absolute
+      ) {
+        throw new Error("published output identity changed");
+      }
+    } catch (error) {
+      throw writeConflict(identity.path, `Published output snapshot changed: ${String(error)}.`);
+    }
+  }
+}
+
+function assertGeneratorSupplyV2AuthoritySnapshotCurrent(
+  root: string,
+  identities: readonly GeneratorSupplyV2StableFileIdentity[],
+): void {
+  if (identities.length !== 3) {
+    throw writeConflict(
+      "/authority",
+      "Assembly authority snapshot must contain source and schemas.",
+    );
+  }
+  for (const identity of identities) {
+    try {
+      const current = lstatSync(identity.absolute, { bigint: true });
+      if (
+        realpathSync(root) !== identity.rootReal ||
+        current.dev !== identity.dev ||
+        current.ino !== identity.ino ||
+        current.size !== identity.size ||
+        current.mtimeNs !== identity.mtimeNs ||
+        current.ctimeNs !== identity.ctimeNs ||
+        !current.isFile() ||
+        current.isSymbolicLink() ||
+        realpathSync(identity.absolute) !== identity.absolute
+      ) {
+        throw new Error("authority identity changed");
+      }
+    } catch (error) {
+      throw writeConflict(identity.path, `Assembly authority snapshot changed: ${String(error)}.`);
+    }
+  }
+}
+
+function fsyncDirectory(path: string): void {
+  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function rawInputError(path: string, message: string): GeneratorSupplyV2Error {
+  return v2Error("GENERATOR_SUPPLY_V2_RAW_INPUT_INVALID", path, message);
+}
+
+function writeConflict(path: string, message: string): GeneratorSupplyV2Error {
+  return v2Error("GENERATOR_SUPPLY_V2_WRITE_CONFLICT", `/${path}`, message);
 }
 
 export function buildGeneratorSupplyV2Source(): GeneratorSupplyV2Source {

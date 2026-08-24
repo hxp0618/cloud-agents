@@ -55,8 +55,10 @@ export const SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS = [
   "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go",
 ] as const;
 
-export const SUCCESSOR_REPLAY_RECEIPT_PATHS = [
-  "tools/generator-supply/v2/evidence/replay.json",
+export const SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH =
+  "tools/generator-supply/v2/evidence/replay.json";
+
+export const SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS = [
   "tools/generator-supply/v2/evidence/replay/darwin-a.json",
   "tools/generator-supply/v2/evidence/replay/darwin-b.json",
   "tools/generator-supply/v2/evidence/replay/darwin-isolation.json",
@@ -64,6 +66,11 @@ export const SUCCESSOR_REPLAY_RECEIPT_PATHS = [
   "tools/generator-supply/v2/evidence/replay/linux-b.json",
   "tools/generator-supply/v2/evidence/replay/linux-isolation.json",
   "tools/generator-supply/v2/evidence/replay/projection.json",
+] as const;
+
+export const SUCCESSOR_REPLAY_RECEIPT_PATHS = [
+  SUCCESSOR_DERIVED_REPLAY_SUMMARY_PATH,
+  ...SUCCESSOR_RAW_REPLAY_RECEIPT_PATHS,
 ] as const;
 
 export const SUCCESSOR_ASSEMBLY_PATHS = [

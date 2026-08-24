@@ -264,8 +264,17 @@
   `remaining-generator-supply-chain-review`；supply-v2 为 `DECLARED_PRE_REPLAY`，binding 为 `PRE_REVIEW_ABSENT`，legacy
   generation lock 未改，另 15 个 late-bound 路径全部 absent。Slice B fixed candidate `a2f4ec9` 已由
   [independent review](g-contract-successor-supply-rebind-slice-b-independent-review-20260825.md) 返回
-  `APPROVE, P0=0/P1=0/P2=0`，因此可以进入 Slice C projection authority；尚未运行 native replay，不改变任何 Gate 的
-  OPEN / `IN PROGRESS` 状态。
+  `APPROVE, P0=0/P1=0/P2=0`。随后 diagnostic Slice C/D 的技术 replay 虽然
+  `APPROVE, P0=0/P1=0/P2=0`，但 progression review 因 Slice B 缺少 production raw
+  consumer、canonical summary、manifest/profile builder 与 append-only writer 返回
+  `REQUEST_CHANGES, P0=0/P1=1/P2=0`；修复会改变非排除 projection inputs，故 diagnostic
+  projection/replay 已标为 stale/non-admissible，不得进入 Slice E。当前按
+  [`R1 assembly-writer repair`](g-contract-successor-supply-rebind-r1-assembly-writer-repair-20260825.md)
+  补齐 exact 7 raw → canonical summary → ordered 8 → resumable append-only exact 10
+  consumer/writer，并保留 caller-owned Buffer mutability 与 complete v1 predecessor cumulative
+  fence 两个 working-byte P1 finding；修复后的 7 个 named focused files 为 `103/103 PASS`，exact 9 code-file
+  format/lint 与 changed-path diff check PASS，R1 fixed-object review 仍为 `PENDING`。正式 Slice C projection 与
+  Slice D native replay 尚未开始，Slice E 未授权；不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见

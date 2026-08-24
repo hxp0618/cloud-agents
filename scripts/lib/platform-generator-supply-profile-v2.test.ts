@@ -2,11 +2,16 @@ import { createHash } from "node:crypto";
 import {
   constants,
   copyFileSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,14 +19,18 @@ import { dirname, join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { canonicalizeJson } from "./platform-json-semantics";
-import { buildGeneratorSupplyReplayV2TestFixture } from "./platform-generator-supply-replay-v2";
+import {
+  buildGeneratorSupplyReplayV2TestFixture,
+  type GeneratorSupplyReplayV2PreparedReceipts,
+} from "./platform-generator-supply-replay-v2";
 import {
   assertGeneratorSupplyV2CurrentSnapshotMutationForTest,
   assertGeneratorSupplyV2RegistryCurrent,
   assertGeneratorSupplyV2RegistrySemantics,
   assertGeneratorSupplyV2SourceCurrent,
   assertStableGeneratorSupplyV2ReadMutationForTest,
+  buildGeneratorSupplyV2EvidenceManifest,
+  buildGeneratorSupplyV2Registry,
   buildGeneratorSupplyV2Source,
   buildGeneratorSupplyV2TestSource,
   GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
@@ -33,7 +42,10 @@ import {
   inspectGeneratorSupplyV2AuthorityState,
   serializeGeneratorSupplyV2Source,
   validateGeneratorSupplyV2Source,
+  writeGeneratorSupplyV2Assembly,
+  writeGeneratorSupplyV2AssemblyForTest,
   writeGeneratorSupplyV2Source,
+  type GeneratorSupplyV2AssemblyInputs,
   type GeneratorSupplyV2Registry,
   type GeneratorSupplyV2Source,
 } from "./platform-generator-supply-profile-v2";
@@ -76,7 +88,7 @@ function createRoot(options: { readonly source?: boolean; readonly predecessor?:
 }
 
 function materializeV1Predecessor(root: string): void {
-  const paths = new Set(GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.map((record) => record.path));
+  const paths = new Set<string>(GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.map((record) => record.path));
   for (const authority of Object.values(GENERATOR_SUPPLY_V2_REPLAY_CONTRACT.authorityFiles)) {
     paths.add(authority.path);
   }
@@ -107,6 +119,34 @@ function writeReceipts(root: string): void {
   }
 }
 
+function createAssemblyInputs(root: string): GeneratorSupplyV2AssemblyInputs {
+  const rawRoot = realpathSync(mkdtempSync(join(tmpdir(), "generator-supply-v2-raw-")));
+  temporaryRoots.push(rawRoot);
+  const darwinOutputDirectory = resolve(rawRoot, "darwin-output");
+  const linuxOutputDirectory = resolve(rawRoot, "linux-output");
+  mkdirSync(darwinOutputDirectory);
+  mkdirSync(linuxOutputDirectory);
+  const fixture = buildGeneratorSupplyReplayV2TestFixture(
+    root,
+    GENERATOR_SUPPLY_V2_REPLAY_CONTRACT,
+  );
+  const [, darwinA, darwinB, darwinIsolation, linuxA, linuxB, linuxIsolation, projectionPath] =
+    SUCCESSOR_REPLAY_RECEIPT_PATHS;
+  for (const [path, target] of [
+    [darwinA, resolve(darwinOutputDirectory, "darwin-a.json")],
+    [darwinB, resolve(darwinOutputDirectory, "darwin-b.json")],
+    [darwinIsolation, resolve(darwinOutputDirectory, "darwin-isolation.json")],
+    [linuxA, resolve(linuxOutputDirectory, "linux-a.json")],
+    [linuxB, resolve(linuxOutputDirectory, "linux-b.json")],
+    [linuxIsolation, resolve(linuxOutputDirectory, "linux-isolation.json")],
+  ] as const) {
+    writeFileSync(target, `${JSON.stringify(fixture.receipts[path], null, 2)}\n`);
+  }
+  const projection = resolve(rawRoot, "projection.json");
+  writeFileSync(projection, `${JSON.stringify(fixture.receipts[projectionPath], null, 2)}\n`);
+  return { projection, darwinOutputDirectory, linuxOutputDirectory };
+}
+
 function fileRecord(
   root: string,
   path: string,
@@ -127,66 +167,28 @@ function assembleTestRegistry(
   root: string,
   source: GeneratorSupplyV2Source,
 ): GeneratorSupplyV2Registry {
-  const receipts = SUCCESSOR_REPLAY_RECEIPT_PATHS.map((path) => fileRecord(root, path));
-  const evidenceManifest = {
-    algorithm: "sorted-path-nul-sha256-nul-size-v1",
-    files: receipts,
-  };
-  writeJson(root, GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH, evidenceManifest);
-  const profileSpec = source.declaredProfile;
-  const sourceDigest = domainDigest("cloud-agents/generator-supply/source/v2", source);
-  const artifactSetDigest = domainDigest("cloud-agents/generator-supply/artifact-set/v2", {
-    predecessor: source.predecessor,
-    inheritance: source.inheritance,
-    receipts,
+  const receipts = SUCCESSOR_REPLAY_RECEIPT_PATHS.map((path) => {
+    const bytes = readFileSync(resolve(root, path));
+    return { ...fileRecord(root, path), path, bytes };
   });
-  const evidenceManifestDigest = domainDigest(
-    "cloud-agents/generator-supply/evidence-manifest/v2",
-    evidenceManifest,
-  );
-  const evidence = {
-    state: "ASSEMBLED_LATE_BOUND",
-    inheritance: source.inheritance,
-    receipts,
-    evidenceManifest,
-  };
-  const body = {
-    formatVersion: "cloud-agents-generator-supply-profile-registry/v2",
-    registryId: "cloud-agents/generator-supply-profile",
-    predecessor: source.predecessor,
-    sourceDigest,
-    artifactSetDigest,
-    evidenceManifestDigest,
-    profile: {
-      profileDigest: domainDigest("cloud-agents/generator-supply/profile/v2", {
-        sourceDigest,
-        artifactSetDigest,
-        evidenceManifestDigest,
-        spec: profileSpec,
-        evidence,
-      }),
-      spec: profileSpec,
-      evidence,
-    },
-  };
-  return {
-    ...body,
-    registryDigest: domainDigest("cloud-agents/generator-supply/registry/v2", body),
-  } as GeneratorSupplyV2Registry;
+  const prepared = {
+    receipts: new Map(receipts.map((receipt) => [receipt.path, receipt.bytes])),
+    receiptRecords: receipts,
+    projection: {} as never,
+    candidateManifestSha256: "",
+    outputFiles: 49,
+    assertInputSnapshotCurrent: () => {},
+    assertPreparedSnapshotCurrent: () => {},
+  } satisfies GeneratorSupplyReplayV2PreparedReceipts;
+  const evidenceManifest = buildGeneratorSupplyV2EvidenceManifest(prepared);
+  writeJson(root, GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH, evidenceManifest);
+  return buildGeneratorSupplyV2Registry(source, prepared, evidenceManifest);
 }
 
 function writeJson(root: string, path: string, value: unknown): void {
   const target = resolve(root, path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function domainDigest(domain: string, value: unknown): string {
-  const hash = createHash("sha256");
-  hash.update(domain, "utf8");
-  hash.update(Uint8Array.of(0));
-  hash.update(canonicalizeJson(value));
-  return `sha256:${hash.digest("hex")}`;
 }
 
 function clone<T>(value: T): T {
@@ -475,4 +477,283 @@ describe("generator-supply v2 typed pre-replay authority", () => {
       "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
     );
   });
+
+  it("assembles exactly eight receipts plus manifest/profile and is an exact no-op on resume", () => {
+    const fixture = createRoot({ source: true, predecessor: true });
+    const inputs = createAssemblyInputs(fixture.root);
+    const lockPath = resolve(fixture.root, "contracts/generation.lock.json");
+    mkdirSync(dirname(lockPath), { recursive: true });
+    writeFileSync(lockPath, "immutable-lock-sentinel\n");
+    writeGeneratorSupplyV2Assembly(fixture.root, inputs);
+    expect(inspectGeneratorSupplyV2AuthorityState(fixture.root)).toBe("ASSEMBLED_PROFILE_CURRENT");
+    const exactLatePaths = [...SUCCESSOR_REPLAY_RECEIPT_PATHS, ...SUCCESSOR_ASSEMBLY_PATHS];
+    expect(exactLatePaths).toHaveLength(10);
+    const snapshot = (path: string) => {
+      const stat = lstatSync(resolve(fixture.root, path), { bigint: true });
+      return { record: fileRecord(fixture.root, path), ino: stat.ino, mtimeNs: stat.mtimeNs };
+    };
+    const before = new Map(exactLatePaths.map((path) => [path, snapshot(path)] as const));
+    writeGeneratorSupplyV2Assembly(fixture.root, inputs);
+    expect(new Map(exactLatePaths.map((path) => [path, snapshot(path)] as const))).toEqual(before);
+    expect(readFileSync(lockPath, "utf8")).toBe("immutable-lock-sentinel\n");
+    expect(
+      readdirSync(resolve(fixture.root, "tools/generator-supply/v2/evidence/replay")).toSorted(),
+    ).toEqual(
+      [
+        "darwin-a.json",
+        "darwin-b.json",
+        "darwin-isolation.json",
+        "linux-a.json",
+        "linux-b.json",
+        "linux-isolation.json",
+        "projection.json",
+      ].toSorted(),
+    );
+  }, 20_000);
+
+  it("rejects missing, extra, exchanged, repository-local, and symlinked raw inputs", () => {
+    for (const mutate of [
+      (inputs: GeneratorSupplyV2AssemblyInputs) =>
+        unlinkSync(resolve(inputs.darwinOutputDirectory, "darwin-b.json")),
+      (inputs: GeneratorSupplyV2AssemblyInputs) =>
+        writeFileSync(resolve(inputs.linuxOutputDirectory, "extra.json"), "{}\n"),
+      (inputs: GeneratorSupplyV2AssemblyInputs) => {
+        const a = resolve(inputs.darwinOutputDirectory, "darwin-a.json");
+        const b = resolve(inputs.darwinOutputDirectory, "darwin-b.json");
+        const temporary = resolve(inputs.darwinOutputDirectory, "swap.tmp");
+        renameSync(a, temporary);
+        renameSync(b, a);
+        renameSync(temporary, b);
+      },
+    ]) {
+      const fixture = createRoot({ source: true, predecessor: true });
+      const inputs = createAssemblyInputs(fixture.root);
+      mutate(inputs);
+      expect(() => writeGeneratorSupplyV2Assembly(fixture.root, inputs)).toThrow();
+      expect(SUCCESSOR_REPLAY_RECEIPT_PATHS.some((path) => exists(fixture.root, path))).toBe(false);
+    }
+
+    const local = createRoot({ source: true, predecessor: true });
+    const localInputs = createAssemblyInputs(local.root);
+    expectCode(
+      () =>
+        writeGeneratorSupplyV2Assembly(local.root, {
+          ...localInputs,
+          projection: resolve(local.root, GENERATOR_SUPPLY_V2_SOURCE_PATH),
+        }),
+      "GENERATOR_SUPPLY_V2_RAW_INPUT_INVALID",
+    );
+
+    const linked = createRoot({ source: true, predecessor: true });
+    const linkedInputs = createAssemblyInputs(linked.root);
+    const actualDarwin = `${linkedInputs.darwinOutputDirectory}-actual`;
+    renameSync(linkedInputs.darwinOutputDirectory, actualDarwin);
+    symlinkSync(actualDarwin, linkedInputs.darwinOutputDirectory, "dir");
+    expectCode(
+      () => writeGeneratorSupplyV2Assembly(linked.root, linkedInputs),
+      "GENERATOR_SUPPLY_V2_RAW_INPUT_INVALID",
+    );
+  }, 30_000);
+
+  it("fences raw file and ancestor ABA or atomic replacement after the one stable read", () => {
+    for (const mutate of [
+      (inputs: GeneratorSupplyV2AssemblyInputs) => {
+        const path = resolve(inputs.darwinOutputDirectory, "darwin-a.json");
+        const replacement = resolve(dirname(path), ".darwin-a-replacement.json");
+        writeFileSync(replacement, readFileSync(path));
+        renameSync(replacement, path);
+      },
+      (inputs: GeneratorSupplyV2AssemblyInputs) => {
+        const original = inputs.darwinOutputDirectory;
+        const displaced = `${original}-displaced`;
+        renameSync(original, displaced);
+        mkdirSync(original);
+        for (const name of ["darwin-a.json", "darwin-b.json", "darwin-isolation.json"]) {
+          writeFileSync(resolve(original, name), readFileSync(resolve(displaced, name)));
+        }
+      },
+    ]) {
+      const fixture = createRoot({ source: true, predecessor: true });
+      const inputs = createAssemblyInputs(fixture.root);
+      expectCode(
+        () =>
+          writeGeneratorSupplyV2AssemblyForTest(fixture.root, inputs, {
+            afterRawSnapshot: () => mutate(inputs),
+          }),
+        "GENERATOR_SUPPLY_V2_RAW_INPUT_INVALID",
+      );
+      expect(SUCCESSOR_REPLAY_RECEIPT_PATHS.some((path) => exists(fixture.root, path))).toBe(false);
+    }
+  }, 20_000);
+
+  it("uses no-replace publication, rejects divergent winners, and resumes after failure", () => {
+    const exactRace = createRoot({ source: true, predecessor: true });
+    const exactInputs = createAssemblyInputs(exactRace.root);
+    writeGeneratorSupplyV2AssemblyForTest(exactRace.root, exactInputs, {
+      beforePublish: (_path, index, temporary, output) => {
+        if (index === 0) writeFileSync(output, readFileSync(temporary));
+      },
+    });
+    expect(inspectGeneratorSupplyV2AuthorityState(exactRace.root)).toBe(
+      "ASSEMBLED_PROFILE_CURRENT",
+    );
+
+    const divergent = createRoot({ source: true, predecessor: true });
+    const divergentInputs = createAssemblyInputs(divergent.root);
+    expectCode(
+      () =>
+        writeGeneratorSupplyV2AssemblyForTest(divergent.root, divergentInputs, {
+          beforePublish: (_path, index, _temporary, output) => {
+            if (index === 0) writeFileSync(output, "divergent-winner\n");
+          },
+        }),
+      "GENERATOR_SUPPLY_V2_WRITE_CONFLICT",
+    );
+    expect(readFileSync(resolve(divergent.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[0]), "utf8")).toBe(
+      "divergent-winner\n",
+    );
+
+    const resumable = createRoot({ source: true, predecessor: true });
+    const resumableInputs = createAssemblyInputs(resumable.root);
+    expect(() =>
+      writeGeneratorSupplyV2AssemblyForTest(resumable.root, resumableInputs, {
+        afterPublish: (_path, index) => {
+          if (index === 2) throw new Error("injected after-publish failure");
+        },
+      }),
+    ).toThrow(/injected after-publish failure/u);
+    expect(
+      SUCCESSOR_REPLAY_RECEIPT_PATHS.slice(0, 3).every((path) => exists(resumable.root, path)),
+    ).toBe(true);
+    expect(exists(resumable.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[3])).toBe(false);
+    writeGeneratorSupplyV2Assembly(resumable.root, resumableInputs);
+    expect(inspectGeneratorSupplyV2AuthorityState(resumable.root)).toBe(
+      "ASSEMBLED_PROFILE_CURRENT",
+    );
+  }, 30_000);
+
+  it("detects destination parent and same-byte output replacement across the ten-file transaction", () => {
+    const replacement = createRoot({ source: true, predecessor: true });
+    const inputs = createAssemblyInputs(replacement.root);
+    expectCode(
+      () =>
+        writeGeneratorSupplyV2AssemblyForTest(replacement.root, inputs, {
+          afterPublish: (_path, index) => {
+            if (index !== 1) return;
+            const first = resolve(replacement.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[0]);
+            const temporary = resolve(dirname(first), ".same-bytes-replacement");
+            writeFileSync(temporary, readFileSync(first));
+            renameSync(temporary, first);
+          },
+        }),
+      "GENERATOR_SUPPLY_V2_WRITE_CONFLICT",
+    );
+
+    const parentRace = createRoot({ source: true, predecessor: true });
+    const parentInputs = createAssemblyInputs(parentRace.root);
+    expectCode(
+      () =>
+        writeGeneratorSupplyV2AssemblyForTest(parentRace.root, parentInputs, {
+          afterPublish: (_path, index) => {
+            if (index !== 0) return;
+            const replayParent = resolve(
+              parentRace.root,
+              "tools/generator-supply/v2/evidence/replay",
+            );
+            const displaced = `${replayParent}-displaced`;
+            renameSync(replayParent, displaced);
+            mkdirSync(replayParent);
+          },
+        }),
+      "GENERATOR_SUPPLY_V2_WRITE_CONFLICT",
+    );
+
+    const cleanupRace = createRoot({ source: true, predecessor: true });
+    const cleanupInputs = createAssemblyInputs(cleanupRace.root);
+    let attackerTemporary = "";
+    let displacedParent = "";
+    expectCode(
+      () =>
+        writeGeneratorSupplyV2AssemblyForTest(cleanupRace.root, cleanupInputs, {
+          beforePublish: (_path, index, temporary) => {
+            if (index !== 0) return;
+            const parent = dirname(temporary);
+            displacedParent = `${parent}-displaced`;
+            renameSync(parent, displacedParent);
+            mkdirSync(parent);
+            attackerTemporary = temporary;
+            writeFileSync(attackerTemporary, "attacker-sentinel\n");
+          },
+        }),
+      "GENERATOR_SUPPLY_V2_WRITE_CONFLICT",
+    );
+    expect(readFileSync(attackerTemporary, "utf8")).toBe("attacker-sentinel\n");
+    expect(readdirSync(displacedParent).some((name) => name.includes(".write-"))).toBe(true);
+  }, 20_000);
+
+  it("stops after the current item when raw or source authority drifts between publications", () => {
+    for (const mutate of [
+      (fixtureRoot: string, inputs: GeneratorSupplyV2AssemblyInputs) =>
+        writeFileSync(
+          inputs.projection,
+          Buffer.concat([readFileSync(inputs.projection), Buffer.from(" ")]),
+        ),
+      (fixtureRoot: string) => {
+        const source = resolve(fixtureRoot, GENERATOR_SUPPLY_V2_SOURCE_PATH);
+        writeFileSync(source, Buffer.concat([readFileSync(source), Buffer.from(" ")]));
+      },
+    ]) {
+      const fixture = createRoot({ source: true, predecessor: true });
+      const inputs = createAssemblyInputs(fixture.root);
+      expect(() =>
+        writeGeneratorSupplyV2AssemblyForTest(fixture.root, inputs, {
+          afterPublish: (_path, index) => {
+            if (index === 0) mutate(fixture.root, inputs);
+          },
+        }),
+      ).toThrow();
+      expect(exists(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[0])).toBe(true);
+      expect(exists(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[1])).toBe(false);
+    }
+  }, 20_000);
+
+  it("stops after the first item when an otherwise unconsumed outer v1 file loses identity", () => {
+    const outerPath = GENERATOR_SUPPLY_V1_IMMUTABLE_FILES[1].path;
+    for (const mutate of [
+      (target: string) =>
+        writeFileSync(target, Buffer.concat([readFileSync(target), Buffer.from(" ")])),
+      (target: string) => {
+        const replacement = resolve(dirname(target), ".v1-outer-same-bytes-replacement");
+        writeFileSync(replacement, readFileSync(target));
+        renameSync(replacement, target);
+      },
+    ]) {
+      const fixture = createRoot({ source: true, predecessor: true });
+      const inputs = createAssemblyInputs(fixture.root);
+      expect(() =>
+        writeGeneratorSupplyV2AssemblyForTest(fixture.root, inputs, {
+          afterPublish: (_path, index) => {
+            if (index === 0) mutate(resolve(fixture.root, outerPath));
+          },
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "PREDECESSOR_FILE_MISMATCH",
+          path: outerPath,
+        }),
+      );
+      expect(exists(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[0])).toBe(true);
+      expect(exists(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[1])).toBe(false);
+    }
+  }, 20_000);
 });
+
+function exists(root: string, path: string): boolean {
+  try {
+    readFileSync(resolve(root, path));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
