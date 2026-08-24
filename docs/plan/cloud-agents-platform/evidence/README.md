@@ -36,10 +36,6 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 `G-BASELINE-M1`，所有 P1-P6 aggregate/phase Gate 仍保持 open、in progress 或 not started。不得用 P0、M1
 Runtime 历史证据或本地候选替代后续 immutable closure。
 
-2026-08-21 与 2026-08-23 的 live remote-ref 只读复核由
-[`P0 provenance summary`](../../p0/provenance-summary.md) 索引；这些 monitoring receipts 只补充 observation
-time 与 remote identity，不 supersede 固定 Gate 输入，也不改变 Gate、发布或部署状态。
-
 ## Current candidates
 
 - [`CAG-G-BASELINE-P0-20260823-R4`](G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md)：current verified P0
