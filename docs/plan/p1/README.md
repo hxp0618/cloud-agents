@@ -272,13 +272,18 @@
   [`R1 assembly-writer repair`](g-contract-successor-supply-rebind-r1-assembly-writer-repair-20260825.md)
   补齐 exact 7 raw → canonical summary → ordered 8 → resumable append-only exact 10
   consumer/writer，并保留 caller-owned Buffer mutability 与 complete v1 predecessor cumulative
-  fence 两个 working-byte P1 finding。Candidate `96d72c9` 的 7 个 named focused files 为 `103/103 PASS`，
-  state/arity/exact16/lock checks PASS；但 [R1 fixed-object review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md)
-  发现 schema authority bytes 被丢弃后按 lexical path 重读，schema A→B→A working-byte ABA 未有 deterministic test，
-  正式 verdict 为 `REQUEST_CHANGES, P0=0/P1=1/P2=0`。第二路只读 crosscheck 虽返回 `APPROVE, P0=0/P1=0/P2=0` 并将其视为
-  proof hardening，准入按正式 reviewer 的保守结论执行；implementation record 已保留该分歧与第三个 fixed-object finding。
-  schema-capture repair、post-finding format/lint/type/gitleaks 与新 fixed-object review pending。正式 Slice C projection 与
-  Slice D native replay 尚未开始，Slice E 未授权；不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
+  fence 两个 working-byte P1 finding。历史 Candidate `96d72c9` 的 7 个 named focused files 为 `103/103 PASS`，
+  但 [R1 fixed-object review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md)
+  以 `REQUEST_CHANGES, P0=0/P1=1/P2=0` 拒绝 schema authority bytes 丢弃后按 lexical path 重读的缺口。
+  当前 candidate-ready repair 已改为 captured owned schema bytes + single Ajv validator 共用 source/output，新增 schema A→B→A
+  两阶段 deterministic test，并在 invalid/reject-all captured output schema 时于 late outputs 前 fail closed；exact seven
+  focused files 为 `105/105 PASS`，2 code files 的 oxfmt/oxlint/diff PASS，CLI 为 `DECLARED_PRE_REPLAY` /
+  `PRE_REVIEW_ABSENT` / arity PASS，16 exclusions 仅保留 legacy lock；lock 为 237,214 bytes、SHA-256
+  `29cd59f1f69e35a6c0fd312524883b6a90be6fe09616dd21864ed9ce52c96101` 且 unchanged。一次误含 out-of-scope legacy v1 supply-profile
+  的诊断 run 为 `18/28 PASS`，10 failures 均是 Slice B 已知 immutable-v1 replay/wheelhouse binding mismatch，按既有
+  Slice B review 排除，不称 broad failure。两路独立 working-byte review 均返回 `APPROVE, P0=0/P1=0/P2=0`；新 fixed
+  candidate 为 `READY_TO_COMMIT`，exact identity 将由提交后的独立 review record 绑定；fresh fixed-object review 为
+  `PENDING`，正式 Slice C/D 尚未开始，Slice E 未授权；不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见

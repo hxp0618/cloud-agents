@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -744,6 +744,62 @@ describe("generator-supply v2 typed pre-replay authority", () => {
       );
       expect(exists(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[0])).toBe(true);
       expect(exists(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[1])).toBe(false);
+    }
+  }, 20_000);
+
+  it("validates source and output only with the two captured schema byte snapshots", () => {
+    const fixture = createRoot({ source: true, predecessor: true });
+    const inputs = createAssemblyInputs(fixture.root);
+    const schemaParent = dirname(resolve(fixture.root, GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH));
+    const displacedParent = `${schemaParent}-captured-authority`;
+    const phases: Array<"source" | "output"> = [];
+    writeGeneratorSupplyV2AssemblyForTest(fixture.root, inputs, {
+      beforeCapturedSchemaValidation: (phase) => {
+        phases.push(phase);
+        renameSync(schemaParent, displacedParent);
+        mkdirSync(schemaParent);
+        for (const path of [
+          GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
+          GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
+        ]) {
+          const schema = JSON.parse(
+            readFileSync(resolve(displacedParent, basename(path)), "utf8"),
+          ) as Record<string, unknown>;
+          schema.not = {};
+          writeFileSync(resolve(schemaParent, basename(path)), `${JSON.stringify(schema)}\n`);
+        }
+      },
+      afterCapturedSchemaValidation: () => {
+        rmSync(schemaParent, { recursive: true });
+        renameSync(displacedParent, schemaParent);
+      },
+    });
+    expect(phases).toEqual(["source", "output"]);
+    expect(inspectGeneratorSupplyV2AuthorityState(fixture.root)).toBe("ASSEMBLED_PROFILE_CURRENT");
+    expect(() => assertGeneratorSupplyV2RegistryCurrent(fixture.root)).not.toThrow();
+  }, 20_000);
+
+  it("rejects invalid or canonical-rejecting captured output schema before any output", () => {
+    for (const mutateSchema of [
+      (path: string) => writeFileSync(path, "{\n"),
+      (path: string) => {
+        const schema = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+        schema.not = {};
+        writeFileSync(path, `${JSON.stringify(schema)}\n`);
+      },
+    ]) {
+      const fixture = createRoot({ source: true, predecessor: true });
+      const inputs = createAssemblyInputs(fixture.root);
+      mutateSchema(resolve(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH));
+      expectCode(
+        () => writeGeneratorSupplyV2Assembly(fixture.root, inputs),
+        "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
+      );
+      expect(
+        [...SUCCESSOR_REPLAY_RECEIPT_PATHS, ...SUCCESSOR_ASSEMBLY_PATHS].some((path) =>
+          exists(fixture.root, path),
+        ),
+      ).toBe(false);
     }
   }, 20_000);
 });

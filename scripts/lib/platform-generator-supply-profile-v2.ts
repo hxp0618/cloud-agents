@@ -198,6 +198,8 @@ export type GeneratorSupplyV2AssemblyInputs = Readonly<{
 
 export type GeneratorSupplyV2AssemblyWriteHooks = Readonly<{
   afterRawSnapshot?: () => void;
+  beforeCapturedSchemaValidation?: (phase: "source" | "output") => void;
+  afterCapturedSchemaValidation?: (phase: "source" | "output") => void;
   beforePublish?: (path: string, index: number, temporary: string, output: string) => void;
   afterPublish?: (path: string, index: number) => void;
 }>;
@@ -331,7 +333,15 @@ export function validateGeneratorSupplyV2Source(
   root: string,
   source: GeneratorSupplyV2Source,
 ): void {
-  validateAgainstSchema(root, SOURCE_SCHEMA_ID, source);
+  validateGeneratorSupplyV2SourceInternal(root, source, schemaValidator(root));
+}
+
+function validateGeneratorSupplyV2SourceInternal(
+  root: string,
+  source: GeneratorSupplyV2Source,
+  validator: Ajv2020,
+): void {
+  validateAgainstCompiledSchema(validator, SOURCE_SCHEMA_ID, source);
   const expected = buildGeneratorSupplyV2TestSource();
   if (!canonicalEqual(source, expected)) {
     throw v2Error(
@@ -682,20 +692,27 @@ function writeGeneratorSupplyV2AssemblyInternal(
   const rootReal = realpathSync(root);
   const authorityIdentities: GeneratorSupplyV2StableFileIdentity[] = [];
   const source = readSource(rootReal, authorityIdentities);
-  readContainedRegularFile(
-    rootReal,
-    GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
-    undefined,
-    authorityIdentities,
+  const sourceSchemaBytes = Buffer.from(
+    readContainedRegularFile(
+      rootReal,
+      GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
+      undefined,
+      authorityIdentities,
+    ),
   );
-  readContainedRegularFile(
-    rootReal,
-    GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
-    undefined,
-    authorityIdentities,
+  const outputSchemaBytes = Buffer.from(
+    readContainedRegularFile(
+      rootReal,
+      GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
+      undefined,
+      authorityIdentities,
+    ),
   );
+  const capturedSchemaValidator = schemaValidatorFromBytes(sourceSchemaBytes, outputSchemaBytes);
   const predecessorSnapshot = captureGeneratorSupplyV1PredecessorSnapshot(rootReal);
-  validateGeneratorSupplyV2Source(rootReal, source);
+  withCapturedSchemaValidationHooks(hooks, "source", () =>
+    validateGeneratorSupplyV2SourceInternal(rootReal, source, capturedSchemaValidator),
+  );
   predecessorSnapshot.assertCurrent();
 
   const raw = readGeneratorSupplyV2RawInputs(rootReal, inputs);
@@ -717,7 +734,9 @@ function writeGeneratorSupplyV2AssemblyInternal(
   const registry = buildGeneratorSupplyV2Registry(source, prepared, evidenceManifest);
   prepared.assertPreparedSnapshotCurrent();
   predecessorSnapshot.assertCurrent();
-  validateAgainstSchema(rootReal, OUTPUT_SCHEMA_ID, registry);
+  withCapturedSchemaValidationHooks(hooks, "output", () =>
+    validateAgainstCompiledSchema(capturedSchemaValidator, OUTPUT_SCHEMA_ID, registry),
+  );
   const outputs = new Map<string, Buffer>();
   for (const path of SUCCESSOR_REPLAY_RECEIPT_PATHS) {
     const bytes = prepared.receipts.get(path);
@@ -803,6 +822,19 @@ function writeGeneratorSupplyV2AssemblyInternal(
   assertPublishedOutputsCurrent(rootReal, outputIdentities);
   const current = assertGeneratorSupplyV2RegistryCurrent(rootReal, registry);
   current.assertCurrent();
+}
+
+function withCapturedSchemaValidationHooks(
+  hooks: GeneratorSupplyV2AssemblyWriteHooks,
+  phase: "source" | "output",
+  validate: () => void,
+): void {
+  try {
+    hooks.beforeCapturedSchemaValidation?.(phase);
+    validate();
+  } finally {
+    hooks.afterCapturedSchemaValidation?.(phase);
+  }
 }
 
 function assertPreparedReceiptSet(prepared: GeneratorSupplyReplayV2PreparedReceipts): void {
@@ -1480,27 +1512,72 @@ function readSource(
 }
 
 function validateAgainstSchema(root: string, schemaId: string, value: unknown): void {
-  const validate = schemaValidator(root).getSchema(schemaId);
+  validateAgainstCompiledSchema(schemaValidator(root), schemaId, value);
+}
+
+function validateAgainstCompiledSchema(validator: Ajv2020, schemaId: string, value: unknown): void {
+  const validate = validator.getSchema(schemaId);
   if (!validate || !validate(value)) {
     throw v2Error(
       "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
       "/",
-      `Generator-supply v2 schema validation failed: ${schemaValidator(root).errorsText(validate?.errors)}.`,
+      `Generator-supply v2 schema validation failed: ${validator.errorsText(validate?.errors)}.`,
     );
   }
 }
 
 function schemaValidator(root: string): Ajv2020 {
-  const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
-  for (const path of [
-    GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
-    GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
-  ]) {
-    ajv.addSchema(readJsonFile(root, path));
+  return schemaValidatorFromBytes(
+    readContainedRegularFile(root, GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH),
+    readContainedRegularFile(root, GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH),
+  );
+}
+
+function schemaValidatorFromBytes(sourceSchemaBytes: Buffer, outputSchemaBytes: Buffer): Ajv2020 {
+  try {
+    const sourceSchema = parseSchemaBytes(
+      sourceSchemaBytes,
+      GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
+    );
+    const outputSchema = parseSchemaBytes(
+      outputSchemaBytes,
+      GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
+    );
+    const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
+    ajv.addSchema(sourceSchema);
+    ajv.addSchema(outputSchema);
+    ajv.getSchema(SOURCE_SCHEMA_ID);
+    ajv.getSchema(OUTPUT_SCHEMA_ID);
+    return ajv;
+  } catch (error) {
+    if (error instanceof GeneratorSupplyV2Error) throw error;
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
+      "/schemas",
+      `Generator-supply v2 captured schemas are invalid or cannot be compiled: ${String(error)}.`,
+    );
   }
-  ajv.getSchema(SOURCE_SCHEMA_ID);
-  ajv.getSchema(OUTPUT_SCHEMA_ID);
-  return ajv;
+}
+
+function parseSchemaBytes(bytes: Buffer, path: string): JsonRecord {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
+      `/${path}`,
+      `Generator-supply v2 captured schema is not valid JSON: ${String(error)}.`,
+    );
+  }
+  if (!isRecord(parsed)) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
+      `/${path}`,
+      "Generator-supply v2 captured schema must be an object.",
+    );
+  }
+  return parsed;
 }
 
 function groupPresence(

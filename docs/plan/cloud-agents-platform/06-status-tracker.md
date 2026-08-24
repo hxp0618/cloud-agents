@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-25
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 接受 closure-v3 + supply-v2 + detached binding registry ordered Slices A-H，一次 successor native replay，R1 candidate `96d72c9` 的 fixed-object review 返回 `REQUEST_CHANGES, P0=0/P1=1/P2=0`，schema-capture repair 与 post-finding verification pending，formal Slice C/D 未开始，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 接受 closure-v3 + supply-v2 + detached binding registry ordered Slices A-H，一次 successor native replay，历史 R1 candidate `96d72c9` 的 fixed-object review 为 `REQUEST_CHANGES, P0=0/P1=1/P2=0`，当前 candidate-ready schema-capture repair 已通过 `105/105` focused evidence 与两路 `APPROVE, P0=0/P1=0/P2=0` working-byte review，fixed candidate 为 `READY_TO_COMMIT`，formal Slice C/D 未开始，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -136,14 +136,18 @@ manifest/profile builder 与 append-only writer 返回 `REQUEST_CHANGES, P0=0/P1
 projection inputs，故 diagnostic projection/replay 为 stale/non-admissible，不得进入 Slice E。当前按
 [R1 assembly-writer repair](../p1/g-contract-successor-supply-rebind-r1-assembly-writer-repair-20260825.md) 补齐 exact
 7 raw → canonical summary → ordered 8 → resumable append-only exact 10 consumer/writer；caller-owned Buffer mutability
-与完整 v1 predecessor cumulative fence 两个 working-byte P1 finding 均已列入修复记录。修复后的 7 个 named
-focused files 为 `103/103 PASS`，state/arity/exact16/lock checks PASS；但 [R1 fixed-object review](../p1/g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md)
-发现 schema authority bytes 被丢弃后按 lexical path 重读，schema A→B→A working-byte ABA 缺少 deterministic test，
-正式 verdict 为 `REQUEST_CHANGES, P0=0/P1=1/P2=0`。第二路只读 crosscheck 虽返回 `APPROVE, P0=0/P1=0/P2=0` 并将其视为
-proof hardening，当前准入按正式 reviewer 的保守结论执行；implementation record 已保留该分歧与第三个 fixed-object
-finding。schema-capture repair、post-finding format/lint/type/gitleaks 与新 fixed-object review pending。正式 Slice C
-projection 与 Slice D native replay 尚未开始，Slice E 未授权，`G-CONTRACT`、`G-SUPPLY-CHAIN` 与任何 aggregate Gate
-继续保持 `IN PROGRESS` / OPEN。
+与完整 v1 predecessor cumulative fence 两个 working-byte P1 finding 均已列入修复记录。历史 Candidate `96d72c9` 的
+[R1 fixed-object review](../p1/g-contract-successor-supply-rebind-r1-assembly-writer-repair-candidate-96d72c9-independent-review-20260825.md)
+因 schema authority bytes 被丢弃后按 lexical path 重读、schema A→B→A working-byte ABA 缺少 deterministic test，返回
+`REQUEST_CHANGES, P0=0/P1=1/P2=0`。当前 candidate-ready repair 已改为 captured owned schema bytes + single Ajv validator 共用
+source/output，新增 schema A→B→A 两阶段 deterministic test，并在 invalid/reject-all captured output schema 时于 late
+outputs 前 fail closed；exact seven focused files 为 `105/105 PASS`，2 code files 的 oxfmt/oxlint/diff PASS，CLI 为
+`DECLARED_PRE_REPLAY` / `PRE_REVIEW_ABSENT` / arity PASS，16 exclusions 仅保留 legacy lock，lock `237,214` bytes / SHA-256
+`29cd59f1f69e35a6c0fd312524883b6a90be6fe09616dd21864ed9ce52c96101` unchanged。一次误含 out-of-scope legacy v1 supply-profile 的诊断 run 为 `18/28 PASS`，10 failures 均是 Slice B 已知
+immutable-v1 replay/wheelhouse binding mismatch，按既有 Slice B review 排除，不称 broad failure。两路独立
+working-byte review 均返回 `APPROVE, P0=0/P1=0/P2=0`；新 fixed candidate 为 `READY_TO_COMMIT`，exact identity 将由提交后的
+独立 review record 绑定，fresh fixed-object review 为 `PENDING`；正式 Slice C/D 尚未开始，Slice E 未授权，
+`G-CONTRACT`、`G-SUPPLY-CHAIN` 与任何 aggregate Gate 继续保持 `IN PROGRESS` / OPEN。
 
 ### 3.1 Immutable record history
 
