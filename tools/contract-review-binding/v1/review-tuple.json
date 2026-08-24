@@ -1,0 +1,73 @@
+{
+  "formatVersion": "cloud-agents-contract-review-tuple/v1",
+  "registryId": "cloud-agents/platform/contract-review-binding",
+  "bindingId": "g-contract-current-source-review-binding/v1",
+  "sourceDigest": "sha256:d8b2ba5dabe07a663dcb8c576ef9fc2ab21377f530a9d355bb992eb35d75b85d",
+  "canonicalClosureAuthority": {
+    "kind": "canonical_contract_closure",
+    "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+    "profileId": "contract-closure-profile/v3",
+    "fileSha256": "sha256:e8384fb25f3828dfafeecf0040110df3a51cd64ce5877e966ecec12769099bf4",
+    "profileDigest": "sha256:bdac321b602c0fdd350a1af5a214d881804e6648f69e4d730cbb8f9a82c36f5a",
+    "registryDigest": "sha256:eaaebbe39a52c63bde0ab99110670607ca7596fd394cdff6007177dab01b31bc"
+  },
+  "supplyProfileAuthority": {
+    "kind": "generator_supply_profile",
+    "path": "tools/generator-supply/v2/profile.json",
+    "profileId": "cloud-agents/generator-supply-profile/v2",
+    "fileSha256": "sha256:e52a6e24e2903ee403abb5b7252f6472437d8cddcb78bcaf8e2699c5ab393252",
+    "profileDigest": "sha256:cee9bc94a9fce6dd30a21fa832ad264b6b01e2ad8dab1313f9d04d689faaba87",
+    "registryDigest": "sha256:88b9317ea08e4a653f1403e6a334b58cd4fa8b31ecc56164916085959f1954d2"
+  },
+  "reviews": [
+    {
+      "criterionId": "runtime-server-path-and-tenant-authority-enforcement",
+      "subject": "canonical_contract_closure",
+      "candidate": {
+        "commit": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
+        "tree": "5a73a8edd4aee56a38aeb37c37b8009e481dfeae",
+        "parent": "5def3ad5deb157264429dc5178f57ec916c66dc7",
+        "diffSha256": "sha256:c5d11be264e6b9bc1e0a5c16c5b320c2d987a26b12ab2f7b4fc16efb594c92e2"
+      },
+      "review": {
+        "commit": "d7c7468a72facc091b8a42be54d5af5c6a5785c4",
+        "tree": "92d44592cc39b513ffcbd47088a6560ff87c67ec",
+        "parent": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
+        "path": "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md",
+        "sha256": "sha256:83975f780dbcaed587988155f680c33e3b1a42ee10776af2a3077a5482d13001",
+        "verdict": "APPROVE_P0_0_P1_0_P2_0",
+        "findings": {
+          "p0": 0,
+          "p1": 0,
+          "p2": 0
+        }
+      }
+    },
+    {
+      "criterionId": "remaining-generator-supply-chain-review",
+      "subject": "generator_supply_profile",
+      "candidate": {
+        "commit": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
+        "tree": "5a73a8edd4aee56a38aeb37c37b8009e481dfeae",
+        "parent": "5def3ad5deb157264429dc5178f57ec916c66dc7",
+        "diffSha256": "sha256:c5d11be264e6b9bc1e0a5c16c5b320c2d987a26b12ab2f7b4fc16efb594c92e2"
+      },
+      "review": {
+        "commit": "d7c7468a72facc091b8a42be54d5af5c6a5785c4",
+        "tree": "92d44592cc39b513ffcbd47088a6560ff87c67ec",
+        "parent": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
+        "path": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md",
+        "sha256": "sha256:3607d4cdf9e4a9680c2af91f860385727b90ad52e17288ffc2ff40d6d04e0cec",
+        "verdict": "APPROVE_P0_0_P1_0_P2_0",
+        "findings": {
+          "p0": 0,
+          "p1": 0,
+          "p2": 0
+        }
+      }
+    }
+  ],
+  "notGateClosure": true,
+  "gateStatus": "ALL_GATES_OPEN",
+  "tupleDigest": "sha256:036c7be10799574296c2890384e242525743a986557c87676075e4e6b6ea49a9"
+}

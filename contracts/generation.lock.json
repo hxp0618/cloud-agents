@@ -1,7 +1,7 @@
 {
   "formatVersion": "cloud-agents-platform-contract-generation-lock/v2",
   "lockVersion": 2,
-  "status": "SUCCESSOR_ASSEMBLED_PRE_REVIEW",
+  "status": "SUCCESSOR_ASSEMBLED_REVIEW_BOUND",
   "notGateClosure": true,
   "gateStatus": "ALL_GATES_OPEN",
   "sourceContract": {
@@ -377,8 +377,20 @@
     ]
   },
   "reviewBinding": {
-    "state": "PRE_REVIEW_ABSENT",
-    "sourceDigest": "sha256:d8b2ba5dabe07a663dcb8c576ef9fc2ab21377f530a9d355bb992eb35d75b85d"
+    "state": "COMPLETE_TUPLE_OUTPUT_CURRENT",
+    "sourceDigest": "sha256:d8b2ba5dabe07a663dcb8c576ef9fc2ab21377f530a9d355bb992eb35d75b85d",
+    "tupleDigest": "sha256:036c7be10799574296c2890384e242525743a986557c87676075e4e6b6ea49a9",
+    "registryDigest": "sha256:f5d91de65e84e967fe898212c3c08d484cdeb6f43cea9527d25673da203616aa",
+    "tuple": {
+      "path": "tools/contract-review-binding/v1/review-tuple.json",
+      "sha256": "sha256:b98d519207cf91544b2120642df1714217fb5b70a1414cc505f3969765479c50",
+      "sizeBytes": 3374
+    },
+    "registry": {
+      "path": "tools/contract-review-binding/v1/registry.json",
+      "sha256": "sha256:e5e5a6abc573fcdcce9d0f1338dad033f5155fe76b555e1fca3a9efc19f14dde",
+      "sizeBytes": 2298
+    }
   },
   "implementationBoundary": {
     "productionDatabaseWrites": "NOT_AUTHORIZED",
@@ -389,5 +401,5 @@
     "publication": "NOT_AUTHORIZED",
     "gateStatus": "ALL_GATES_OPEN"
   },
-  "lockDigest": "sha256:f4b926f8fbb41008e0b8f996aed4c9a1d688e9a81af14d18a853f89da674028e"
+  "lockDigest": "sha256:b0d08160c2c7cf35f91940fc4b644160d715acd3d6c5796ea456b2c005dcfa4f"
 }
