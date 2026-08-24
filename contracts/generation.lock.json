@@ -39,13 +39,13 @@
     }
   },
   "runtimes": {
-    "node": "24.13.1",
+    "node": "24.18.1",
     "bun": "1.3.14",
     "go": "1.26.6"
   },
   "toolchainAuthority": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:6297a0305b81a42fbb7b36c3e86e7813d6a38f161a27e637e15a7006fbb9893d",
+    "manifestSha256": "sha256:2a9b0c3d9510212f7e7af23700e2248f3d60965b7f6f85f9d7ec2c4a85909e05",
     "sources": [
       ".mise.toml",
       "package.json"
@@ -94,7 +94,7 @@
       "id": "platform-contract-lock-writer",
       "kind": "in-repo-typescript",
       "entrypoint": "scripts/generate-platform-contract-lock.ts",
-      "sourceManifestSha256": "sha256:ac47cfba33fc29a02267094e645bcc5ee062fe11381f451f8dfceef3c44fbf37",
+      "sourceManifestSha256": "sha256:e3a74c6c0b5222035ec4957156b64fa83bd69900ad7537cf1bc7e493f8cff46a",
       "sources": [
         "scripts/generate-platform-contract-lock.ts",
         "scripts/lib/platform-contract-lock.test.ts",
@@ -442,11 +442,13 @@
       "id": "platform-json-contract-sdk-generator",
       "kind": "in-repo-typescript-deterministic-go-typescript-fixture-sdk",
       "entrypoint": "scripts/generate-platform-json-sdks.ts",
-      "sourceManifestSha256": "sha256:6461369035a4692a708641ad0db335a269e6e66a6040579fcb8464bdb8c14a45",
+      "sourceManifestSha256": "sha256:5c1509b454cdde5be83599725ed5aca42dd2077284a1edc60fd4b3ba53e553a2",
       "sources": [
         "scripts/generate-platform-json-sdks.ts",
         "scripts/lib/platform-json-sdk.test.ts",
         "scripts/lib/platform-json-sdk.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/templates/platform-json-sdk-go-common.tmpl",
         "scripts/templates/platform-json-sdk-go-openapi.tmpl",
         "scripts/templates/platform-json-sdk-go-platform.tmpl",
@@ -462,19 +464,98 @@
       "id": "platform-proto-sdk-generator",
       "kind": "in-repo-typescript-deterministic-proto-go-typescript-sdk",
       "entrypoint": "scripts/generate-platform-proto-sdks.ts",
-      "sourceManifestSha256": "sha256:5293b463fff92650ab3d09a18da367e9aa769ec1f9cf9cec53799c05578aae5f",
+      "sourceManifestSha256": "sha256:d2e148da2448802bf78b48591109051d6f27968a25af6653b7f57fc874fce80b",
       "sources": [
         "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/lib/platform-proto-sdk.test.ts",
         "scripts/lib/platform-proto-sdk.ts"
       ],
       "license": "MIT"
     },
     {
+      "id": "platform-generator-supply-profile-generator",
+      "kind": "in-repo-typescript-deterministic-versioned-generator-supply-profile",
+      "entrypoint": "scripts/generate-platform-generator-supply-profile.ts",
+      "sourceManifestSha256": "sha256:f7f345cf34f8a834bd1feb44422e9b8fd6a1110f22c4e98545e29042d037a152",
+      "sources": [
+        "docs/plan/adr/0028-p1-generator-supply-profile.md",
+        "docs/plan/p1/g-contract-generator-supply-offline-wheelhouse-implementation-20260824.md",
+        "docs/plan/p1/g-contract-generator-supply-offline-wheelhouse-independent-review-20260824.md",
+        "docs/plan/p1/g-contract-generator-supply-profile-implementation-20260824.md",
+        "scripts/check-generator-supply-evidence.ts",
+        "scripts/check-platform-contract-standards.ts",
+        "scripts/generate-platform-generator-supply-profile.ts",
+        "scripts/lib/generator-replay-path-authority.ts",
+        "scripts/lib/inspect-generator-replay-archive.py",
+        "scripts/lib/inspect-generator-replay-archive.test.py",
+        "scripts/lib/inspect-generator-supply-archive.py",
+        "scripts/lib/inspect-generator-supply-archive.test.py",
+        "scripts/lib/platform-generator-supply-profile.test.ts",
+        "scripts/lib/platform-generator-supply-profile.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/replay-platform-generators-isolated.sh",
+        "scripts/replay-platform-generators.test.ts",
+        "scripts/replay-platform-generators.ts",
+        "tools/contract-standards/uv.lock",
+        "tools/generator-supply/go/go.mod",
+        "tools/generator-supply/go/go.sum",
+        "tools/generator-supply/go/tools.go",
+        "tools/generator-supply/npm/.npmrc",
+        "tools/generator-supply/npm/package-lock.json",
+        "tools/generator-supply/npm/package.json",
+        "tools/generator-supply/v1/evidence/THIRD_PARTY_NOTICES.md",
+        "tools/generator-supply/v1/evidence/artifacts.json",
+        "tools/generator-supply/v1/evidence/go-plugins.json",
+        "tools/generator-supply/v1/evidence/notice-summary.json",
+        "tools/generator-supply/v1/evidence/npm.json",
+        "tools/generator-supply/v1/evidence/replay.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-a.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-b.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
+        "tools/generator-supply/v1/evidence/replay/linux-a.json",
+        "tools/generator-supply/v1/evidence/replay/linux-b.json",
+        "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
+        "tools/generator-supply/v1/evidence/replay/projection.json",
+        "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
+        "tools/generator-supply/v1/evidence/sbom-summary.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-darwin.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-linux.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.syft.json",
+        "tools/generator-supply/v1/evidence/security-repair.json",
+        "tools/generator-supply/v1/evidence/ubuntu-image-binding.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-db-status.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-linux.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-darwin.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-linux.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-ubuntu.json",
+        "tools/generator-supply/v1/evidence/vulnerability/osv-scanner-receipt.json",
+        "tools/generator-supply/v1/evidence/vulnerability/osv.json",
+        "tools/generator-supply/v1/evidence/vulnerability/summary.json",
+        "tools/generator-supply/v1/evidence/wheelhouse-repair-lineage.json",
+        "tools/generator-supply/v1/evidence/wheels.json",
+        "tools/generator-supply/v1/generator-supply-profile-source-v1.schema.json",
+        "tools/generator-supply/v1/generator-supply-profile-v1.schema.json",
+        "tools/generator-supply/v1/source.json"
+      ],
+      "license": "MIT",
+      "status": "REPLAY_VERIFIED_REVIEW_PENDING"
+    },
+    {
       "id": "platform-ajv-official-suite-auditor",
       "kind": "in-repo-typescript-deterministic-offline-ajv-audit",
       "entrypoint": "scripts/check-platform-ajv-official-suite.ts",
-      "sourceManifestSha256": "sha256:22e743495c5347564a7c223c19cf996a844fbbe49a442bc7dd4bb30f7a6d7151",
+      "sourceManifestSha256": "sha256:c88079b80cadf4047a5a144a234ca2537eef99e0fa2bf56140e642cd1f3973b7",
       "sources": [
         "bun.lock",
         "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
@@ -622,7 +703,7 @@
       "id": "platform-migration-bundle-checker",
       "kind": "in-repo-typescript-strict-postgresql-bundle",
       "entrypoint": "scripts/check-platform-migration-bundle.ts",
-      "sourceManifestSha256": "sha256:666543b637ae9622bdaa2847d9c36f66a99e886c03a15efa575eafd1e126583d",
+      "sourceManifestSha256": "sha256:da93bca733cff4ec0740510ab4f781d25374bc5d66cd635ccaec293ce255c7bd",
       "sources": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -785,7 +866,7 @@
       "id": "platform-contract-standards-checker",
       "kind": "in-repo-python-independent-json-schema-openapi-checker",
       "entrypoint": "tools/contract-standards/check_contract_standards.py",
-      "sourceManifestSha256": "sha256:3b4777ea81bfefb709858e12a7dfa808f885afaead3f63251af018c7e26e295d",
+      "sourceManifestSha256": "sha256:cce6157f7ae610ae10162ea0ad4ca3c9fc9733f9dcef063b47555233bb577c0c",
       "sources": [
         ".gitattributes",
         ".mise.toml",
@@ -958,9 +1039,107 @@
   ],
   "pipelines": [
     {
+      "id": "generator-supply-profile-generation",
+      "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+      "inputManifestSha256": "sha256:f7f345cf34f8a834bd1feb44422e9b8fd6a1110f22c4e98545e29042d037a152",
+      "inputs": [
+        "docs/plan/adr/0028-p1-generator-supply-profile.md",
+        "docs/plan/p1/g-contract-generator-supply-offline-wheelhouse-implementation-20260824.md",
+        "docs/plan/p1/g-contract-generator-supply-offline-wheelhouse-independent-review-20260824.md",
+        "docs/plan/p1/g-contract-generator-supply-profile-implementation-20260824.md",
+        "scripts/check-generator-supply-evidence.ts",
+        "scripts/check-platform-contract-standards.ts",
+        "scripts/generate-platform-generator-supply-profile.ts",
+        "scripts/lib/generator-replay-path-authority.ts",
+        "scripts/lib/inspect-generator-replay-archive.py",
+        "scripts/lib/inspect-generator-replay-archive.test.py",
+        "scripts/lib/inspect-generator-supply-archive.py",
+        "scripts/lib/inspect-generator-supply-archive.test.py",
+        "scripts/lib/platform-generator-supply-profile.test.ts",
+        "scripts/lib/platform-generator-supply-profile.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/replay-platform-generators-isolated.sh",
+        "scripts/replay-platform-generators.test.ts",
+        "scripts/replay-platform-generators.ts",
+        "tools/contract-standards/uv.lock",
+        "tools/generator-supply/go/go.mod",
+        "tools/generator-supply/go/go.sum",
+        "tools/generator-supply/go/tools.go",
+        "tools/generator-supply/npm/.npmrc",
+        "tools/generator-supply/npm/package-lock.json",
+        "tools/generator-supply/npm/package.json",
+        "tools/generator-supply/v1/evidence/THIRD_PARTY_NOTICES.md",
+        "tools/generator-supply/v1/evidence/artifacts.json",
+        "tools/generator-supply/v1/evidence/go-plugins.json",
+        "tools/generator-supply/v1/evidence/notice-summary.json",
+        "tools/generator-supply/v1/evidence/npm.json",
+        "tools/generator-supply/v1/evidence/replay.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-a.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-b.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
+        "tools/generator-supply/v1/evidence/replay/linux-a.json",
+        "tools/generator-supply/v1/evidence/replay/linux-b.json",
+        "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
+        "tools/generator-supply/v1/evidence/replay/projection.json",
+        "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
+        "tools/generator-supply/v1/evidence/sbom-summary.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-darwin.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-linux.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.syft.json",
+        "tools/generator-supply/v1/evidence/security-repair.json",
+        "tools/generator-supply/v1/evidence/ubuntu-image-binding.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-db-status.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-linux.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-darwin.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-linux.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-ubuntu.json",
+        "tools/generator-supply/v1/evidence/vulnerability/osv-scanner-receipt.json",
+        "tools/generator-supply/v1/evidence/vulnerability/osv.json",
+        "tools/generator-supply/v1/evidence/vulnerability/summary.json",
+        "tools/generator-supply/v1/evidence/wheelhouse-repair-lineage.json",
+        "tools/generator-supply/v1/evidence/wheels.json",
+        "tools/generator-supply/v1/generator-supply-profile-source-v1.schema.json",
+        "tools/generator-supply/v1/generator-supply-profile-v1.schema.json",
+        "tools/generator-supply/v1/source.json"
+      ],
+      "outputStatus": "REPLAY_VERIFIED_REVIEW_PENDING",
+      "notGateClosure": true,
+      "generatedOutputs": [
+        {
+          "path": "tools/generator-supply/v1/evidence-manifest.json",
+          "sha256": "sha256:4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+          "sizeBytes": 8186
+        },
+        {
+          "path": "tools/generator-supply/v1/profile.json",
+          "sha256": "sha256:dcd9c9da7cd28a254dbeb419a388875b843033c0ca522fc603cd29b30295f93b",
+          "sizeBytes": 22188
+        }
+      ],
+      "outputSummary": {
+        "profileId": "cloud-agents/generator-supply-profile/v1",
+        "profileDigest": "sha256:b1201cd3d22398fa808a05190ef4ce49422db665277e8cf8c936938cb5cd741c",
+        "registryDigest": "sha256:86452d655cd05a73211e52c28107e93d38a244026648e28a8369cefd4e4eed9c",
+        "sourceDigest": "sha256:8c2f462e30baefdf420179b66399461a22a0de71efcefca99e1ff3134bd62b3c",
+        "artifactSetDigest": "sha256:f307e4c73f56e62c5d38b928acff5db284cd5a1706bb76fa7ba55b1437faa0c5",
+        "evidenceManifestDigest": "sha256:59e7dfe0d85d7fd2cb9ad069037019c484a4c8039c897e5d5cabf45f517f64ab",
+        "independentReview": "PENDING",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    },
+    {
       "id": "ajv-official-suite-audit-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:22e743495c5347564a7c223c19cf996a844fbbe49a442bc7dd4bb30f7a6d7151",
+      "inputManifestSha256": "sha256:c88079b80cadf4047a5a144a234ca2537eef99e0fa2bf56140e642cd1f3973b7",
       "inputs": [
         "bun.lock",
         "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
@@ -1132,7 +1311,7 @@
     {
       "id": "contract-closure-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:07a3bfa1570656c30d9e848f786f843c77301328df524d5fd08081376f807c95",
+      "inputManifestSha256": "sha256:451b3c18bb429813b6f3ba76ba163eea3dd42c30c0e3037fd76adfafd13170d1",
       "inputs": [
         "bun.lock",
         "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
@@ -1393,7 +1572,7 @@
     {
       "id": "independent-contract-standards-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:3b4777ea81bfefb709858e12a7dfa808f885afaead3f63251af018c7e26e295d",
+      "inputManifestSha256": "sha256:cce6157f7ae610ae10162ea0ad4ca3c9fc9733f9dcef063b47555233bb577c0c",
       "inputs": [
         ".gitattributes",
         ".mise.toml",
@@ -2383,7 +2562,7 @@
     {
       "id": "identity-verifier-go-profile-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:de4b53b10a03e789f5b5d738b56084d9ded9c35814c23f0f530f44dc4480b3cf",
+      "inputManifestSha256": "sha256:5a6c0d884886da27a693f6c1178a7045fe5bfdac25a11fcc8933d3cd5ae1e69e",
       "inputs": [
         "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
         "docs/plan/adr/0025-p1-offline-jwt-access-token-verifier-contract.md",
@@ -2530,7 +2709,7 @@
     {
       "id": "common-identity-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:ea2595ba9ca861ff6fb7f0f0fceb978cf50b8c3bbfe40138bf20af92656cf895",
+      "inputManifestSha256": "sha256:97b837867001de22680e02c36f3b4f0d6f2043dfac6d5c6bc3c41763296f20a1",
       "inputs": [
         "bun.lock",
         "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -2592,7 +2771,7 @@
     {
       "id": "platform-json-contract-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:4ea833c8ea514818bd7da2b17ae176f3800b4fdd051dc34b8e006583e85108c2",
+      "inputManifestSha256": "sha256:37418a14c6517667e10f9b81da5f195fc7485643e1009ddf928006ed2975e72e",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -2658,6 +2837,8 @@
         "scripts/generate-platform-json-sdks.ts",
         "scripts/lib/platform-json-sdk.test.ts",
         "scripts/lib/platform-json-sdk.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/templates/platform-json-sdk-go-common.tmpl",
         "scripts/templates/platform-json-sdk-go-openapi.tmpl",
         "scripts/templates/platform-json-sdk-go-platform.tmpl",
@@ -2674,23 +2855,23 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-          "sha256": "sha256:f1e24a46861aec86b6d04df35c2cad2cecc0b304f33a34d2996ed949c6296bf1",
+          "sha256": "sha256:301694b57704faf8253aa8c5b4b313a5f8384e84f95de8194a5afe02784546bc",
           "sizeBytes": 28791
         },
         {
           "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-          "sha256": "sha256:707f36e329c8126f199e3e04503ae0fd8725ea6ef991be0ef548f4c5a328a394",
+          "sha256": "sha256:ff1c5149738ec4f5a6d05a505c74b25a96cfc02706110b9708f1790c35d82b52",
           "sizeBytes": 24032
         },
         {
           "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-          "sha256": "sha256:e4caab318920a7d1970facdef3779437ffe4f939586583dc248136f93d993a77",
+          "sha256": "sha256:49135a495af50a1e2082f20d1a4cbf0b41b0d80a4dc8cfc95a4e3ad15880de1d",
           "sizeBytes": 11624
         },
         {
           "path": "sdk/go/json-generated-manifest.json",
-          "sha256": "sha256:f0fbade9599179244d018ea1d420ef980e2b07e61bda3633baa909d50b611efc",
-          "sizeBytes": 9802
+          "sha256": "sha256:08b44dce7670079fa66521f55b7dbd3af639197db2acc2b3bb16bffd32f92f44",
+          "sizeBytes": 9885
         }
       ],
       "outputSummary": {
@@ -2710,7 +2891,7 @@
     {
       "id": "platform-json-contract-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:fa95e457d3ee2411cd4ce0a283d7901c26c0390703c44c9cb127a436ffd19113",
+      "inputManifestSha256": "sha256:1720216fe21808ac9a9078c0e0819ab8f5cd1bf647afc751e0860df3462b2277",
       "inputs": [
         "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
         "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -2776,6 +2957,8 @@
         "scripts/generate-platform-json-sdks.ts",
         "scripts/lib/platform-json-sdk.test.ts",
         "scripts/lib/platform-json-sdk.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/templates/platform-json-sdk-go-common.tmpl",
         "scripts/templates/platform-json-sdk-go-openapi.tmpl",
         "scripts/templates/platform-json-sdk-go-platform.tmpl",
@@ -2792,13 +2975,13 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/src/platform.ts",
-          "sha256": "sha256:dbe6e35e9ee164aef41262062f47b4427607814df9db5c98d4b93eadb6da526d",
+          "sha256": "sha256:2fa017e4ffe0b28560b088be0c1b301a2c55ad634d64605fbae5bdfadb6fdd26",
           "sizeBytes": 44209
         },
         {
           "path": "sdk/typescript/json-generated-manifest.json",
-          "sha256": "sha256:2301e3071747b7ee2141f357540279af89f0b9dc53d03a55cba7a40634075892",
-          "sizeBytes": 9412
+          "sha256": "sha256:4edff2e56b9e3f596e7abde719a172af3fd0c14b09e20a580d28f09f635165ab",
+          "sizeBytes": 9495
         }
       ],
       "outputSummary": {
@@ -2818,7 +3001,7 @@
     {
       "id": "platform-proto-descriptor-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:34430adc6f829e25baeb3bf9d8d3acdbe01052a38ab66ae9247d0fdf6ef9fe13",
+      "inputManifestSha256": "sha256:48314b66948d3709b837857dcf6c18cfbdd4af8a1439fce80ead14061fcf9942",
       "inputs": [
         "bun.lock",
         "contracts/platform-adapter/v1alpha1/README.md",
@@ -2833,6 +3016,8 @@
         "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
         "package.json",
         "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/lib/platform-proto-sdk.test.ts",
         "scripts/lib/platform-proto-sdk.ts",
         "sdk/typescript/THIRD_PARTY_NOTICES.md"
@@ -2852,8 +3037,8 @@
         },
         {
           "path": "contracts/generated/proto/manifest.json",
-          "sha256": "sha256:c39ab006206a3fd68ddfcd2d7ad68e6352275de4cbdec24bac68369ed46b5606",
-          "sizeBytes": 5139
+          "sha256": "sha256:2513a6971a5c3d97ea72a2e07d2fb60f66d564a42df33f574f349dfea5d45cfe",
+          "sizeBytes": 5222
         }
       ],
       "outputSummary": {
@@ -2876,7 +3061,7 @@
     {
       "id": "platform-proto-go-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:26f15507975e0ea285c3f74653b5424393d7ce0e8fb170759a15b1d3617be08b",
+      "inputManifestSha256": "sha256:df2c0937f5b34967e68e03e1413891bb383bce2805422c2bdd1c8c18492c992a",
       "inputs": [
         "contracts/platform-adapter/v1alpha1/README.md",
         "contracts/platform-adapter/v1alpha1/fixtures/descriptor.golden.json",
@@ -2890,6 +3075,8 @@
         "docs/plan/p1/sdk-identity-closure-entry-20260820.md",
         "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
         "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/lib/platform-proto-sdk.test.ts",
         "scripts/lib/platform-proto-sdk.ts",
         "scripts/test-platform-sdk-consumers.ts",
@@ -2903,8 +3090,8 @@
       "generatedOutputs": [
         {
           "path": "sdk/go/proto-generated-manifest.json",
-          "sha256": "sha256:7eb2b43939c0dcc17d93cfbe248cd72d8c8426cb2adbcded43ff4b1109c3afe5",
-          "sizeBytes": 7912
+          "sha256": "sha256:5cde4143245bf9b88e4fbd75399b604db4bfd8c0140b86fbad2540704451f5d9",
+          "sizeBytes": 7995
         },
         {
           "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
@@ -2953,7 +3140,7 @@
     {
       "id": "platform-proto-typescript-sdk-generation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:7231b8923629f241614189df889594345a563ddeeb32dc912fd14e320e991014",
+      "inputManifestSha256": "sha256:745ec4bbefed439a44f8bd6932b90cfa10b9fca723c5c072e345f6cd7084b507",
       "inputs": [
         "bun.lock",
         "contracts/platform-adapter/v1alpha1/README.md",
@@ -2969,6 +3156,8 @@
         "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
         "package.json",
         "scripts/generate-platform-proto-sdks.ts",
+        "scripts/lib/platform-oxfmt.test.ts",
+        "scripts/lib/platform-oxfmt.ts",
         "scripts/lib/platform-proto-sdk.test.ts",
         "scripts/lib/platform-proto-sdk.ts",
         "scripts/test-platform-sdk-consumers.ts",
@@ -2983,8 +3172,8 @@
       "generatedOutputs": [
         {
           "path": "sdk/typescript/proto-generated-manifest.json",
-          "sha256": "sha256:63691f95005728147fb2f1ea6d47deae25e3a1e9cd7b916ee1e303bea5fb413f",
-          "sizeBytes": 6913
+          "sha256": "sha256:f507559702477d9ab13c25a566aaf5a715bd64ceb12f9301a0a84056f21bb51c",
+          "sizeBytes": 6996
         },
         {
           "path": "sdk/typescript/src/proto.ts",
@@ -3029,7 +3218,7 @@
     {
       "id": "platform-migration-bundle-validation",
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:666543b637ae9622bdaa2847d9c36f66a99e886c03a15efa575eafd1e126583d",
+      "inputManifestSha256": "sha256:da93bca733cff4ec0740510ab4f781d25374bc5d66cd635ccaec293ce255c7bd",
       "inputs": [
         "contracts/common/v1alpha1/schemas/identifier.schema.json",
         "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
@@ -3452,7 +3641,7 @@
         "github.com/hxp0618/cloud-agents/services/worker"
       ],
       "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "inputManifestSha256": "sha256:7c762cbce8136d6b3d71265763ee4d420e0157e7065501d39975560fe907de53",
+      "inputManifestSha256": "sha256:c737c7412a5633678b9ab3dd05e358b5859ebc8baea103894125fa66e353b347",
       "inputs": [
         "go.work",
         "sdk/go/go.mod",

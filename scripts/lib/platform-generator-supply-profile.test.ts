@@ -462,7 +462,7 @@ describe("generator supply profile", () => {
     expect(() => buildGeneratorSupplyProfile(missingPurlRoot)).toThrowError(
       expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
         code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/sbom/darwin-bundle.syft/artifacts/0/purl",
+        path: "/sbom/darwin-bundle.syft/artifacts/0",
       }),
     );
 
@@ -581,7 +581,7 @@ describe("generator supply profile", () => {
     expect(() => buildGeneratorSupplyProfile(osvRoot)).toThrowError(
       expect.objectContaining<Partial<GeneratorSupplyProfileError>>({
         code: "GENERATOR_SUPPLY_EVIDENCE_MISMATCH",
-        path: "/vulnerability/osvScannerReceipt",
+        path: "/vulnerability/osvScannerReceipt/version",
       }),
     );
 
