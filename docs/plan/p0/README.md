@@ -20,6 +20,7 @@
 | [`baseline/runtime-linux-amd64-execution.json`](baseline/runtime-linux-amd64-execution.json) | current Runtime/golden corpus Linux characterization        | focused tests/typecheck/audit/fmt/lint PASS             |
 | [`provenance/runtime-supply-chain-audit.json`](provenance/runtime-supply-chain-audit.json)   | immutable rc.1 Runtime dependency/license/secret audit      | complete audit；7 blockers，release unauthorized        |
 | [`provenance-summary.md`](provenance-summary.md)                                             | license/secret/dependency/build input provenance            | extraction PASS with restrictions；release unauthorized |
+| [`post-20260819-branch-consolidation-refs-20260824.json`](post-20260819-branch-consolidation-refs-20260824.json) | post-cutoff branch/worktree consolidation lineage           | 118 refs covered by 19 maximal tips；all Gates unchanged |
 
 Gate records：
 

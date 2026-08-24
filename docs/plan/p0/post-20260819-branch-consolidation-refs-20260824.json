@@ -1,0 +1,966 @@
+{
+  "schemaVersion": "cloud-agents.branch-consolidation/v1",
+  "cutoff": "2026-08-19T22:47:00+08:00",
+  "target": {
+    "ref": "refs/heads/codex/cloud-agents-platform-p0",
+    "base": "8bae2954a0ca88594eea0b55bfe041a77082f1b9"
+  },
+  "source": {
+    "stagingHead": "c872977f362e92f90a2ce95ec190b69481fcd02c",
+    "candidateBranchCountExcludingTarget": 118,
+    "maximalTipCount": 19,
+    "liveRemoteHeadCountExcludingTarget": 114
+  },
+  "candidate": {
+    "commit": "0226ece308675f7d54ca432e854e32d6fd4b8839",
+    "tree": "bfb8509649fc06530829bd26cdad21a3e9899131",
+    "allCandidateHeadsAreAncestors": true,
+    "historyRewritePerformed": false,
+    "gateEffect": "NONE_ALL_GATES_UNCHANGED"
+  },
+  "importedDirtyState": {
+    "generatorSupply": {
+      "stagedPathCount": 96,
+      "untrackedPathCount": 3,
+      "commit": "078ee26def9fe16e92ed9e92f5a717124a946e46",
+      "status": "WIP_NOT_GATE_CLOSURE"
+    },
+    "localLogicalBackupRestore": {
+      "path": "services/control-plane/scripts/test-local-logical-backup-restore-postgres-matrix.sh",
+      "commit": "b7be428a7ef935fc6dee5ac8f685b9f008ac5f42"
+    },
+    "targetIdeMetadata": {
+      "tracked": false,
+      "retainedInTargetWorktreeAsIgnoredLocalState": true,
+      "credentialRotationRequired": true
+    },
+    "excludedCompiledArtifact": {
+      "path": "services/control-plane/migration.test",
+      "reason": "UNTRACKED_GO_TEST_BINARY_NOT_SOURCE"
+    }
+  },
+  "conflictAuthority": {
+    "aggregatePlanAndStatus": "CURRENT_GENERATOR_WIP_WITH_HISTORICAL_SIDE_RECORDS",
+    "goModuleAndSum": "STAGING_RUNTIME_CURRENT_INTEGRATION",
+    "dependencyLockAndSbom": "STAGING_CURRENT_SUPPLY_SNAPSHOTS",
+    "p0RemoteRefMonitoring": "P0_REVALIDATION_SIDE_HISTORY",
+    "gateClosure": "NOT_AUTHORIZED_NOT_CLAIMED"
+  },
+  "correctionCommits": {
+    "currentSupplySnapshots": "b37bdc35535af5f82c6e180a92c75323405360ef",
+    "generatorOwnedIndexes": "0226ece308675f7d54ca432e854e32d6fd4b8839"
+  },
+  "cleanupPlan": {
+    "oldWorktrees": 117,
+    "oldLocalBranches": 118,
+    "oldRemoteBranches": 114,
+    "preserveTargetCommitHistory": true,
+    "reflogExpiryOrGc": false
+  },
+  "maximalTips": [
+    {
+      "branch": "refs/heads/codex/cloud-agents-p0-revalidation-20260823",
+      "head": "5d8b1b471ad9ea1dc4824c79c5c027fb81175732"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-approved-slices-staging-20260824",
+      "head": "c872977f362e92f90a2ce95ec190b69481fcd02c"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-data-recovery-local-independent-review-20260823",
+      "head": "4e85467922239a187511c663e4dace9e77eb16dc"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-evidencefs-host-crash-simulation-20260823",
+      "head": "b3e6aec975a83833821bf765bba5ec915399cc4c"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-g-contract-runtime-server-independent-review-20260824",
+      "head": "dc1622811712fc3fb13859048470e21c099f620a"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-g-contract-standards-independent-review-r3-20260823",
+      "head": "de1425d2c90f502de733ca87731894902f0c4884"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-g-contract-wheelhouse-offline-independent-review-20260824",
+      "head": "2a8600b5694b45e39b0c209ae97cbe8f03561339"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-ledger-preflight-review-handoff-20260821",
+      "head": "7815c28a1aafb5dbff2de9c76b04d717b656ad17"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runner-recovery-abort-terminal-independent-review-20260823",
+      "head": "be597debb7b3edfb68616dff5ae648284c796ab7"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runner-recovery-commit-reconciliation-independent-review-20260823",
+      "head": "cb94b53f95b31edb79ce453f8992e5fbed0ce956"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runner-recovery-contract-audit-independent-review-20260822",
+      "head": "395a5fd508bd74da0a03fc1939e04a776d006400"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runner-recovery-contracts-independent-review-20260823",
+      "head": "88f1ecc165866fa2e7da6af9141a4638c1aecdf4"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runner-recovery-execution-independent-review-20260823",
+      "head": "39d5d758eab82f09d2d27593a7fdc2994b49a419"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runner-recovery-retry-handoff-independent-review-20260823",
+      "head": "48ba3cc2402857233b35131201b39a2fd4f469d1"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-runtime-current-integration-independent-review-20260824",
+      "head": "fe59f0d4059632a102171d9c1eb77a4c147ae65e"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-software-crash-acceptance-decision-independent-review-20260823",
+      "head": "79b1be5772f4eb7867f6454987af4f9588838986"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-software-crash-current-rebind-independent-review-20260824",
+      "head": "475feebc9c2e61eaa9be6f364fd7dfce9fca5bb4"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-status-reconcile-20260821",
+      "head": "8711e38b33bc474f638831331bce2621b1b72637"
+    },
+    {
+      "branch": "refs/heads/codex/cloud-agents-p1-supply-refresh-20260821",
+      "head": "be6c33d8959ca9a0368e8d40d5c1585ce596757c"
+    }
+  ],
+  "sourceRefs": [
+    {
+      "name": "refs/heads/codex/cloud-agents-p0-baseline-r4-repair-20260823",
+      "head": "1a9f15ee75a955beb993ab4bc534f4dab72d46a7",
+      "committerDate": "2026-08-23T18:54:43+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p0-ref-refresh-20260821",
+      "head": "9f7d8555164eafdd5ac7d0fffc4336586599e19e",
+      "committerDate": "2026-08-21T05:10:54+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p0-revalidation-20260823",
+      "head": "5d8b1b471ad9ea1dc4824c79c5c027fb81175732",
+      "committerDate": "2026-08-23T02:58:28+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-approved-slices-staging-20260824",
+      "head": "c872977f362e92f90a2ce95ec190b69481fcd02c",
+      "committerDate": "2026-08-24T05:43:06+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-data-recovery-local-20260823",
+      "head": "282d4cd3f8a6783eb1dceb1c8cfecf3e4b7a367a",
+      "committerDate": "2026-08-23T17:27:46+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-data-recovery-local-independent-review-20260823",
+      "head": "4e85467922239a187511c663e4dace9e77eb16dc",
+      "committerDate": "2026-08-23T17:32:11+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-evidencefs-host-crash-simulation-20260823",
+      "head": "b3e6aec975a83833821bf765bba5ec915399cc4c",
+      "committerDate": "2026-08-23T13:38:33+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-authority-r1-current-20260823",
+      "head": "c7930d5840b564f5bf10c6d0be9fb963a28ee4cb",
+      "committerDate": "2026-08-23T20:48:07+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-authority-r1-independent-review-20260823",
+      "head": "9c9ab382fbdf9578fb1a483ddd4240ce9e59aab7",
+      "committerDate": "2026-08-23T20:55:38+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-authority-r1-rebind-20260823",
+      "head": "130e0b456a3821dc8be1897fbbf250e901602eee",
+      "committerDate": "2026-08-23T20:29:13+08:00",
+      "remoteHeadObserved": false,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-authority-r1-status-20260823",
+      "head": "f399c89bb0f2cc9ee4c62a1aa7bbd61332fe0992",
+      "committerDate": "2026-08-23T21:00:25+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-ajv-audit-20260824",
+      "head": "7a0bf2a430c9572efba55b4de21e12893cb57b2f",
+      "committerDate": "2026-08-24T04:17:12+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-ajv-audit-independent-review-20260824",
+      "head": "73ba42cb8d5d17833dd96532b2a527f9ed7250f9",
+      "committerDate": "2026-08-24T04:25:40+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-candidate-20260823",
+      "head": "086c659c3b5d6411eab89582349bffa57b7e1a1c",
+      "committerDate": "2026-08-23T13:56:34+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-generator-supply-profile-20260824",
+      "head": "5599f9d20e761532e08906eab1fc8384d48e5b8e",
+      "committerDate": "2026-08-24T05:02:19+08:00",
+      "remoteHeadObserved": false,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-profile-v2-20260824",
+      "head": "5599f9d20e761532e08906eab1fc8384d48e5b8e",
+      "committerDate": "2026-08-24T05:02:19+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-profile-v2-independent-review-20260824",
+      "head": "98cd0a30d151cdb3c667911a540a3e4006972bbf",
+      "committerDate": "2026-08-24T05:13:02+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-r4-independent-review-20260823",
+      "head": "ced092e97d817b1e29181d23a6e4ac332733c3bf",
+      "committerDate": "2026-08-23T19:53:31+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-r4-rebind-20260823",
+      "head": "9d08ae0a648a263650115b3419f273a684294766",
+      "committerDate": "2026-08-23T19:39:41+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-r4-status-20260823",
+      "head": "6420eaf31e1e9350b2aafd09f47505c5a57e4b73",
+      "committerDate": "2026-08-23T19:56:04+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-r5-a-independent-review-20260824",
+      "head": "2c2222a845c3ec74d6a1400fee21f1242311933d",
+      "committerDate": "2026-08-24T03:51:49+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-r5-a-profile-20260824",
+      "head": "d4bb96a7ab15138cedfb0753a44ebe8bf3488adf",
+      "committerDate": "2026-08-24T03:45:03+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-runtime-server-20260824",
+      "head": "5cb7cec191c410432605a7dcec9ea77a76b78a12",
+      "committerDate": "2026-08-24T04:52:03+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-runtime-server-independent-review-20260824",
+      "head": "dc1622811712fc3fb13859048470e21c099f620a",
+      "committerDate": "2026-08-24T04:57:48+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-standards-entry-20260823",
+      "head": "242ecef9334b6d76a621b21b97720180950cf9e8",
+      "committerDate": "2026-08-23T16:38:17+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-standards-independent-review-r3-20260823",
+      "head": "de1425d2c90f502de733ca87731894902f0c4884",
+      "committerDate": "2026-08-23T16:48:28+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-wheelhouse-offline-20260824",
+      "head": "51ce2d6b9faa71a5e89ccf709864f4d570454a38",
+      "committerDate": "2026-08-24T04:38:05+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-contract-wheelhouse-offline-independent-review-20260824",
+      "head": "2a8600b5694b45e39b0c209ae97cbe8f03561339",
+      "committerDate": "2026-08-24T04:44:05+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-data-r4-independent-review-20260823",
+      "head": "444e64b1de7a06428c1d53f74d7170306dbc3877",
+      "committerDate": "2026-08-23T20:26:07+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-data-r4-rebind-20260823",
+      "head": "0eb281556b1408b1fc1ef7ee86de0ecf05dbdc07",
+      "committerDate": "2026-08-23T20:18:33+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-data-r4-status-20260823",
+      "head": "130e0b456a3821dc8be1897fbbf250e901602eee",
+      "committerDate": "2026-08-23T20:29:13+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-security-r1-current-20260823",
+      "head": "c95b1007eb63d32ec4e38b0b9227c62321103c1e",
+      "committerDate": "2026-08-23T21:27:42+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-security-r1-independent-review-20260823",
+      "head": "0ee94d8f65ffcb982e4196804a2c41ccec56c3eb",
+      "committerDate": "2026-08-23T21:36:13+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-g-security-r1-status-20260823",
+      "head": "bf2bb8fa916a723bca2b64e156d2b3e64f374582",
+      "committerDate": "2026-08-23T21:41:35+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-gate-gap-audit-20260822",
+      "head": "6274ad0df6f4f16c90fc84cb362e7a042f05e173",
+      "committerDate": "2026-08-22T22:15:31+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-gate-gap-audit-independent-review-20260822",
+      "head": "d03d62b89bc1ba464fea31fab5e94706fb3385d4",
+      "committerDate": "2026-08-22T22:26:35+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-gate-gap-audit-status-20260822",
+      "head": "353108ca4a7ec9019bb0f844ed4f97af815a4344",
+      "committerDate": "2026-08-22T22:30:56+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-decision-20260823",
+      "head": "15a45f44bdc753236e5954b706dcb13f3d5314ba",
+      "committerDate": "2026-08-23T22:27:27+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-slice-a-20260823",
+      "head": "495174bd8b78e3e6abb62bb1bae1f11ba6dc1999",
+      "committerDate": "2026-08-23T23:28:22+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-slice-a-independent-review-20260823",
+      "head": "7fe1492effacb80d7045548013aa3fd330ea6e58",
+      "committerDate": "2026-08-23T23:44:15+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-slice-b-20260823",
+      "head": "6e79edabbd68177023ff1ce8a848f4a7dd3307fd",
+      "committerDate": "2026-08-24T01:04:56+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-slice-b-independent-review-20260824",
+      "head": "d2e464be0f3e54aa25e55d6cca7d4f744b04bc1c",
+      "committerDate": "2026-08-24T01:15:54+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-slice-c-20260824",
+      "head": "d6ae9c789f5be06612764c06a5649f5ebd1557c7",
+      "committerDate": "2026-08-24T02:46:59+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-identity-verifier-slice-c-independent-review-20260824",
+      "head": "aa83e37112f6e80c8e4553f931c30c99043ce6a7",
+      "committerDate": "2026-08-24T02:58:26+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-contract-20260821",
+      "head": "c34bf02c9f2e40cdeff1beda151c3e48f84aba78",
+      "committerDate": "2026-08-21T05:38:36+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-independent-review-20260821",
+      "head": "f871cf334ee9b862c10c63f38567f22764873b3c",
+      "committerDate": "2026-08-21T17:22:12+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-kernel-20260821",
+      "head": "5cc94e5161b568a738b30aeee103277bafca4d3e",
+      "committerDate": "2026-08-21T15:28:54+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-kernel-repair-20260821",
+      "head": "01b1a5f5d5c68776a69c805839a1e333191e29bf",
+      "committerDate": "2026-08-21T16:34:24+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-profile-20260821",
+      "head": "6cdaa43acbeb31b598cc794b5749f3aa0a91c6c8",
+      "committerDate": "2026-08-21T10:45:54+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-profile-repair-20260821",
+      "head": "0f38d015189ec3c23aa053c7a342cab4a7450e70",
+      "committerDate": "2026-08-21T12:44:54+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-review-handoff-20260821",
+      "head": "7815c28a1aafb5dbff2de9c76b04d717b656ad17",
+      "committerDate": "2026-08-21T16:52:20+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-service-claim-20260821",
+      "head": "e64e0a28e2cd81203c91a7eba4df264bd29889f3",
+      "committerDate": "2026-08-21T19:53:33+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-service-claim-independent-review-20260821",
+      "head": "9ed71b84b8b35d1fcb2b983bba068c320793ff7d",
+      "committerDate": "2026-08-21T20:07:30+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-ledger-preflight-slice-c-status-20260821",
+      "head": "24fd89a4bc6df96504110e11b27c41097b70f6eb",
+      "committerDate": "2026-08-21T20:26:25+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-live-instance-retirement-repair-20260823",
+      "head": "91b8e59f4b2d35ab65b3b94e0ef025124a37ed56",
+      "committerDate": "2026-08-23T18:12:44+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-live-instance-retirement-repair-independent-review-20260823",
+      "head": "e3b8812f122c40fdf50ff586083839295119b16b",
+      "committerDate": "2026-08-23T18:22:24+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-local-logical-backup-restore-20260822",
+      "head": "353108ca4a7ec9019bb0f844ed4f97af815a4344",
+      "committerDate": "2026-08-22T22:30:56+08:00",
+      "remoteHeadObserved": false,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-migration-shard-runner-20260822",
+      "head": "e18a1ee228e2465a805654dbbc01a3af618ca8b5",
+      "committerDate": "2026-08-22T20:03:05+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-migration-shard-runner-repair-20260822",
+      "head": "8e4950129f1c114be4304af1706e9452ba014ccd",
+      "committerDate": "2026-08-22T21:57:01+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-migration-shard-runner-repair-independent-review-20260822",
+      "head": "1a98f729bdfd9cecacdddb1b23142648b20d6217",
+      "committerDate": "2026-08-22T22:02:10+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-migration-shard-runner-repair-status-20260822",
+      "head": "1416fb34c03a3ada25dd58728046aa753b6e03ed",
+      "committerDate": "2026-08-22T22:06:05+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-physical-powerloss-entry-audit-20260822",
+      "head": "0acbededda9e832d153a50e58710b30daddde160",
+      "committerDate": "2026-08-22T19:30:15+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-post-identity-status-reconcile-20260824",
+      "head": "252153edb3bffcae5319b0e4ff08f701687e7022",
+      "committerDate": "2026-08-24T03:09:00+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-post-identity-status-reconcile-independent-review-20260824",
+      "head": "9b4f19ce8ac96796c669ced37aa471a93b77ef1a",
+      "committerDate": "2026-08-24T03:11:32+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-cli-review-20260821",
+      "head": "3bfd75acbc2541c89221a9906a6ae394c1be39b4",
+      "committerDate": "2026-08-21T05:24:34+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-admission-contract-20260822",
+      "head": "8d4d2caf2df192770cc48a9b5959c285b6c3d3a7",
+      "committerDate": "2026-08-22T01:43:42+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-admission-independent-review-20260822",
+      "head": "dd5ea6573cee6113b12977476175a13276964cb4",
+      "committerDate": "2026-08-22T03:56:15+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-admission-service-20260822",
+      "head": "88a5392d0538550c8b1478708c0ec79df4f4827d",
+      "committerDate": "2026-08-22T03:22:06+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-admission-status-20260822",
+      "head": "d4cad5d7dab43e1bbc261d4902d8e526364d4db3",
+      "committerDate": "2026-08-22T04:04:10+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-execution-admission-20260822",
+      "head": "c375fac6ae5a7ffd95e0931dbe384ae213f5087b",
+      "committerDate": "2026-08-22T07:16:58+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-execution-admission-independent-review-20260822",
+      "head": "d49f89cd53163414ecec6ca77d6705ff9a7e84ad",
+      "committerDate": "2026-08-22T07:30:11+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-loop-20260822",
+      "head": "9fcdb731cc54118b0f86bbfcac593e9129077d1a",
+      "committerDate": "2026-08-22T18:06:34+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-loop-independent-review-20260822",
+      "head": "351e5eaeca6af4e1f179fb963b36e67df17846bd",
+      "committerDate": "2026-08-22T18:20:55+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-loop-status-20260822",
+      "head": "b72664291b0a6324e1b2c463d63a156a7b92773f",
+      "committerDate": "2026-08-22T18:33:02+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-success-kernel-20260822",
+      "head": "9db5891a7a624b1fae427ba25800ccb270b7e85e",
+      "committerDate": "2026-08-22T16:57:50+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-success-kernel-independent-review-20260822",
+      "head": "818c4d5f05e6ea9c86c33c742c7f16292a8c208d",
+      "committerDate": "2026-08-22T17:10:43+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-writer-audit-20260822",
+      "head": "866c86a2d0f1f31e024338049f1fa4713293b394",
+      "committerDate": "2026-08-22T04:25:02+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-writer-contract-20260822",
+      "head": "1f1b0c5fca759b874970b79c47b566f0125b7961",
+      "committerDate": "2026-08-22T05:20:14+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-entry-writer-profile-independent-review-20260822",
+      "head": "7615fe59919d61152f7719eacb32e707ad7ba786",
+      "committerDate": "2026-08-22T05:46:11+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-consumer-entry-audit-20260821",
+      "head": "ffab704cd26c4d817152602b0854ebb31ee1cc4b",
+      "committerDate": "2026-08-21T21:28:26+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-consumer-independent-review-20260822",
+      "head": "4209e120b2b21a84b3350f7843b2852e3de309cf",
+      "committerDate": "2026-08-22T00:55:03+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-consumer-matrix-20260822",
+      "head": "dcb4b3a706642f88dcf961196c99e4ba1a5aa1e5",
+      "committerDate": "2026-08-22T00:30:56+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-consumer-profile-20260821",
+      "head": "cc8774cc9b243d2fa58f1647eb0382cf5152a93b",
+      "committerDate": "2026-08-21T22:56:58+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-consumer-service-20260821",
+      "head": "1ad8a282eb55b1d3bd04370ee904aa7e3605db8a",
+      "committerDate": "2026-08-22T00:27:34+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-consumer-status-20260822",
+      "head": "115eaf6d47bdfd8b2e641e7b1b7bbb3a32d2fc4b",
+      "committerDate": "2026-08-22T00:59:22+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-ledger-current-source-race-closure-20260821",
+      "head": "ffab704cd26c4d817152602b0854ebb31ee1cc4b",
+      "committerDate": "2026-08-21T21:28:26+08:00",
+      "remoteHeadObserved": false,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-abort-terminal-20260823",
+      "head": "6fd2873497765336d872dfaa53cd4e12541c5c26",
+      "committerDate": "2026-08-23T04:40:30+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-abort-terminal-independent-review-20260823",
+      "head": "be597debb7b3edfb68616dff5ae648284c796ab7",
+      "committerDate": "2026-08-23T04:50:46+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-admission-20260823",
+      "head": "23c3083b7d7b58089f2cb208b1381b2d510500ff",
+      "committerDate": "2026-08-23T02:04:10+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-admission-independent-review-20260823",
+      "head": "4808d20e1d36f5f0bb6efe557ccc6347e955bab0",
+      "committerDate": "2026-08-23T02:20:42+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-admission-status-20260823",
+      "head": "457933e471545e69436091341b2ecf48d7b1a010",
+      "committerDate": "2026-08-23T03:04:55+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-commit-reconciliation-20260823",
+      "head": "7bbc39185f11e72223e40a081e6dd62b23e53de8",
+      "committerDate": "2026-08-23T07:58:14+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-commit-reconciliation-independent-review-20260823",
+      "head": "cb94b53f95b31edb79ce453f8992e5fbed0ce956",
+      "committerDate": "2026-08-23T08:03:10+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contract-audit-20260822",
+      "head": "deb3dc61fe3fba11c4b09af1b714dbae592554ed",
+      "committerDate": "2026-08-22T19:02:19+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contract-audit-independent-review-20260822",
+      "head": "395a5fd508bd74da0a03fc1939e04a776d006400",
+      "committerDate": "2026-08-22T19:00:49+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contract-audit-independent-review-r2-20260822",
+      "head": "6d4da5ba6c2f9cff5b08ae48fb28d8dbbf5e1e5f",
+      "committerDate": "2026-08-22T19:13:29+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contract-audit-status-20260822",
+      "head": "d6ec6c848d77e5b67c6602f53816d89bc261f827",
+      "committerDate": "2026-08-22T19:17:16+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contract-decision-20260822",
+      "head": "999c392ea323ef9d89a65ac5add6ce6b3041023d",
+      "committerDate": "2026-08-22T22:47:43+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contracts-20260822",
+      "head": "67210b7f194ec1591c06957ddfc86920a58af167",
+      "committerDate": "2026-08-23T00:14:25+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-contracts-independent-review-20260823",
+      "head": "88f1ecc165866fa2e7da6af9141a4638c1aecdf4",
+      "committerDate": "2026-08-23T00:23:32+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-execution-20260823",
+      "head": "e1cb598c0c950e6f0ce34ae38e629e5ec4c5438f",
+      "committerDate": "2026-08-23T10:55:44+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-execution-independent-review-20260823",
+      "head": "39d5d758eab82f09d2d27593a7fdc2994b49a419",
+      "committerDate": "2026-08-23T11:06:05+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-result-20260823",
+      "head": "2b01ede54b7a1b2a1c42dfcce3361a8301ab7fce",
+      "committerDate": "2026-08-23T12:22:00+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-result-independent-review-20260823",
+      "head": "40ad401ee94454e86e3b6346af5f83b79d189cf4",
+      "committerDate": "2026-08-23T12:33:32+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-result-status-20260823",
+      "head": "beac32007c994de8d86215b5ba7f47791e387c45",
+      "committerDate": "2026-08-23T12:45:16+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-retry-handoff-20260823",
+      "head": "f86e8ca698df8cb5cbedd3a5b8daf2854c342c27",
+      "committerDate": "2026-08-23T09:34:44+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runner-recovery-retry-handoff-independent-review-20260823",
+      "head": "48ba3cc2402857233b35131201b39a2fd4f469d1",
+      "committerDate": "2026-08-23T09:44:38+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runtime-current-integration-20260824",
+      "head": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e",
+      "committerDate": "2026-08-24T05:33:01+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-runtime-current-integration-independent-review-20260824",
+      "head": "fe59f0d4059632a102171d9c1eb77a4c147ae65e",
+      "committerDate": "2026-08-24T05:41:12+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-software-crash-acceptance-decision-20260823",
+      "head": "0d64d9b4d31655f4d36fc6c2b6662e343ef61532",
+      "committerDate": "2026-08-23T15:54:53+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-software-crash-acceptance-decision-independent-review-20260823",
+      "head": "79b1be5772f4eb7867f6454987af4f9588838986",
+      "committerDate": "2026-08-23T15:59:23+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-software-crash-current-rebind-20260824",
+      "head": "682fac82dc74d95fff62663cb3151882bd4492a0",
+      "committerDate": "2026-08-24T05:30:10+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-software-crash-current-rebind-independent-review-20260824",
+      "head": "475feebc9c2e61eaa9be6f364fd7dfce9fca5bb4",
+      "committerDate": "2026-08-24T05:27:51+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-software-crash-current-rebind-superseding-independent-review-20260824",
+      "head": "ffc43f13698317a878dbd68f08752f5c12c00fbd",
+      "committerDate": "2026-08-24T05:34:07+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-software-crash-r4-rebind-20260823",
+      "head": "a0f24cf48af40d021b47e818fd9f36ffd5b55499",
+      "committerDate": "2026-08-23T20:39:29+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-status-reconcile-20260821",
+      "head": "8711e38b33bc474f638831331bce2621b1b72637",
+      "committerDate": "2026-08-21T06:37:17+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-p1-supply-refresh-20260821",
+      "head": "be6c33d8959ca9a0368e8d40d5c1585ce596757c",
+      "committerDate": "2026-08-21T07:57:38+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    },
+    {
+      "name": "refs/heads/codex/cloud-agents-platform-p1",
+      "head": "a5df1cb672d7636e551b9fb24b74c9cc5e047ba6",
+      "committerDate": "2026-08-21T05:01:20+08:00",
+      "remoteHeadObserved": true,
+      "ancestorOfCandidate": true
+    }
+  ]
+}
