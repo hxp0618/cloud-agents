@@ -128,8 +128,10 @@ machine。前三个固定候选 `1504465`、`ea4b4a4`、`c9f9e6a` 的审查证�
 canonical closure-v3 source/output、standards-v2 60/2/79 authority、supply-v2/binding source，并将 core replay output
 closure 固定为 exact 49 paths；post-assembly successor lock derivation保持 dormant。当前 canonical `missing` 仍只有
 `remaining-generator-supply-chain-review`，supply-v2 为 `DECLARED_PRE_REPLAY`，binding 为 `PRE_REVIEW_ABSENT`；legacy
-generation lock 未修改且其余 15 个 late-bound artifacts 全 absent。Slice B fixed candidate 与独立 review 仍待完成，
-因此未进入 Slice C，也不改变 `G-CONTRACT`、`G-SUPPLY-CHAIN` 或任何 aggregate Gate 的 `IN PROGRESS` / OPEN 状态。
+generation lock 未修改且其余 15 个 late-bound artifacts 全 absent。Slice B fixed candidate `a2f4ec9` 已由
+[independent review](../p1/g-contract-successor-supply-rebind-slice-b-independent-review-20260825.md) 返回
+`APPROVE, P0=0/P1=0/P2=0`，因此允许进入 Slice C projection authority；尚未运行 native replay，也不改变
+`G-CONTRACT`、`G-SUPPLY-CHAIN` 或任何 aggregate Gate 的 `IN PROGRESS` / OPEN 状态。
 
 ### 3.1 Immutable record history
 

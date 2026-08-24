@@ -262,8 +262,10 @@
   closure-v3 source/output、standards-v2 60/2/79 profile、supply-v2/binding source，扩展并检查 exact 49 core outputs，且补充
   post-assembly successor lock derivation。当前 canonical `missing` 仍仅为
   `remaining-generator-supply-chain-review`；supply-v2 为 `DECLARED_PRE_REPLAY`，binding 为 `PRE_REVIEW_ABSENT`，legacy
-  generation lock 未改，另 15 个 late-bound 路径全部 absent。Slice B 仍须固定候选并取得新的独立
-  `APPROVE` 后才进入 Slice C；未运行 native replay，不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
+  generation lock 未改，另 15 个 late-bound 路径全部 absent。Slice B fixed candidate `a2f4ec9` 已由
+  [independent review](g-contract-successor-supply-rebind-slice-b-independent-review-20260825.md) 返回
+  `APPROVE, P0=0/P1=0/P2=0`，因此可以进入 Slice C projection authority；尚未运行 native replay，不改变任何 Gate 的
+  OPEN / `IN PROGRESS` 状态。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见
