@@ -3,6 +3,58 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export const SUCCESSOR_GENERATION_LOCK_PATH = "contracts/generation.lock.json";
 
+export const SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS = [
+  "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
+  "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+  "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
+  "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+  "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+  "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-recovery-execution-admission-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-recovery-success-writer-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
+  "contracts/generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
+  "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+  "contracts/generated/proto/manifest.json",
+  "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
+  "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
+  "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+  "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+  "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+  "sdk/go/gen/common/v1alpha1/identity_generated.go",
+  "sdk/go/gen/common/v1alpha1/json_generated.go",
+  "sdk/go/gen/openapi/v1alpha1/client_generated.go",
+  "sdk/go/gen/platform/v1alpha1/json_generated.go",
+  "sdk/go/generated-manifest.json",
+  "sdk/go/json-generated-manifest.json",
+  "sdk/go/proto-generated-manifest.json",
+  "sdk/typescript/generated-manifest.json",
+  "sdk/typescript/json-generated-manifest.json",
+  "sdk/typescript/proto-generated-manifest.json",
+  "sdk/typescript/src/gen/contracts/platform-adapter/v1alpha1/platform_adapter_pb.ts",
+  "sdk/typescript/src/gen/contracts/worker/v1alpha1/kernel_pb.ts",
+  "sdk/typescript/src/gen/contracts/worker/v1alpha1/worker_supervisor_pb.ts",
+  "sdk/typescript/src/index.ts",
+  "sdk/typescript/src/platform.ts",
+  "sdk/typescript/src/proto.ts",
+  "services/control-plane/internal/compatibility/registry_generated.go",
+  "services/control-plane/internal/coordination/registry_generated.go",
+  "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go",
+  "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
+  "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_generated.go",
+  "services/control-plane/internal/migration/runner_ledger_preflight_profile_generated.go",
+  "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go",
+] as const;
+
 export const SUCCESSOR_REPLAY_RECEIPT_PATHS = [
   "tools/generator-supply/v2/evidence/replay.json",
   "tools/generator-supply/v2/evidence/replay/darwin-a.json",
@@ -51,6 +103,10 @@ export const SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS = [
   "tools/contract-review-binding/v1/review-binding-source-v1.schema.json",
   "tools/contract-review-binding/v1/review-tuple-v1.schema.json",
   "tools/contract-review-binding/v1/review-binding-registry-v1.schema.json",
+  "tools/contract-standards/profile-v2.json",
+  "scripts/check-generator-supply-evidence.ts",
+  "scripts/check-platform-contract-standards.ts",
+  "scripts/generate-platform-generator-supply-profile.ts",
   "scripts/generate-platform-contract-review-binding.ts",
   "scripts/lib/platform-contract-review-binding.ts",
   "scripts/lib/platform-contract-review-binding.test.ts",
@@ -61,8 +117,12 @@ export const SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS = [
   "scripts/lib/platform-generator-supply-replay-v2.ts",
   "scripts/lib/platform-generator-supply-replay-v2.test.ts",
   "scripts/lib/platform-json-semantics.ts",
+  "scripts/lib/platform-contract-standards-profile.test.ts",
+  "scripts/lib/platform-contract-standards-profile.ts",
   "scripts/lib/platform-successor-dag.ts",
   "scripts/lib/platform-successor-predecessor.ts",
+  "tools/contract-standards/check_contract_standards.py",
+  "tools/contract-standards/test_contract_standards.py",
 ] as const;
 
 const FORBIDDEN_V1_EXCLUSIONS = [
@@ -94,6 +154,78 @@ export class SuccessorDagError extends Error {
 
 export function assertSuccessorDagAuthority(): void {
   assertExactSuccessorProjectionExclusions(SUCCESSOR_PROJECTION_EXCLUSIONS);
+  assertSuccessorCoreGeneratorOutputAuthority(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS);
+}
+
+export function assertSuccessorCoreGeneratorOutputAuthority(paths: readonly string[]): void {
+  if (
+    paths.length !== SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.length ||
+    paths.some((path, index) => path !== SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS[index])
+  ) {
+    throw dagError(
+      "SUCCESSOR_DAG_INVALID",
+      "/coreGeneratorOutputs",
+      "Core generator outputs must match the exact ordered 49-path authority.",
+    );
+  }
+  if (paths.length !== 49 || new Set(paths).size !== paths.length) {
+    throw dagError(
+      "SUCCESSOR_DAG_INVALID",
+      "/coreGeneratorOutputs",
+      "Core generator output authority must contain 49 unique paths.",
+    );
+  }
+  const sorted = [...paths].toSorted((left, right) =>
+    Buffer.compare(Buffer.from(left), Buffer.from(right)),
+  );
+  if (paths.some((path, index) => path !== sorted[index])) {
+    throw dagError(
+      "SUCCESSOR_DAG_INVALID",
+      "/coreGeneratorOutputs",
+      "Core generator output authority must use UTF-8 bytewise path order.",
+    );
+  }
+  const forbidden = new Set<string>([
+    SUCCESSOR_GENERATION_LOCK_PATH,
+    ...SUCCESSOR_ASSEMBLY_PATHS,
+    ...SUCCESSOR_REPLAY_RECEIPT_PATHS,
+    ...SUCCESSOR_BINDING_LATE_PATHS,
+  ]);
+  for (const path of paths) {
+    assertCanonicalFilePath(path);
+    if (forbidden.has(path)) {
+      throw dagError(
+        "SUCCESSOR_DAG_INVALID",
+        path,
+        "Late-bound or detached output cannot enter the core generator output set.",
+      );
+    }
+  }
+}
+
+export function assertSuccessorCoreGeneratorOutputsCurrent(root: string): void {
+  assertSuccessorCoreGeneratorOutputAuthority(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS);
+  const rootReal = realpathSync(root);
+  for (const path of SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS) {
+    try {
+      const absolute = resolve(rootReal, path);
+      const metadata = lstatSync(absolute);
+      if (!metadata.isFile() || metadata.isSymbolicLink() || realpathSync(absolute) !== absolute) {
+        throw dagError(
+          "SUCCESSOR_DAG_INVALID",
+          path,
+          "Core generator output must be a repository-contained regular non-symlink file.",
+        );
+      }
+    } catch (error) {
+      if (error instanceof SuccessorDagError) throw error;
+      throw dagError(
+        "SUCCESSOR_DAG_INVALID",
+        path,
+        `Core generator output is absent or unsafe: ${String(error)}.`,
+      );
+    }
+  }
 }
 
 export function assertExactSuccessorProjectionExclusions(paths: readonly string[]): void {

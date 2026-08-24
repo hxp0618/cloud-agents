@@ -10,31 +10,34 @@ readonly RUNNER_TIMEOUT_SECONDS="$((RUN_TIMEOUT_SECONDS - 60))"
 readonly MAX_CAPTURE_BYTES="1048576"
 readonly TRUSTED_PYTHON="/usr/bin/python3"
 readonly TRUSTED_GIT="/usr/bin/git"
-readonly FINAL_REVIEW_PATH="docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md"
 # Bootstrap authority: this is checked before the first archive-inspector
 # invocation.  Update it only when the inspector itself is reviewed and the
 # resulting wrapper/registry lineage is regenerated.
 readonly ARCHIVE_INSPECTOR_SHA256="sha256:db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31"
 readonly PROJECTION_EXCLUSIONS=(
   "contracts/generation.lock.json"
-  "tools/generator-supply/v1/evidence-manifest.json"
-  "tools/generator-supply/v1/profile.json"
-  "tools/generator-supply/v1/evidence/replay.json"
-  "tools/generator-supply/v1/evidence/replay/darwin-a.json"
-  "tools/generator-supply/v1/evidence/replay/darwin-b.json"
-  "tools/generator-supply/v1/evidence/replay/darwin-isolation.json"
-  "tools/generator-supply/v1/evidence/replay/linux-a.json"
-  "tools/generator-supply/v1/evidence/replay/linux-b.json"
-  "tools/generator-supply/v1/evidence/replay/linux-isolation.json"
-  "tools/generator-supply/v1/evidence/replay/projection.json"
-  "tools/generator-supply/v1/evidence/replay/rejected-executor.json"
-  "$FINAL_REVIEW_PATH"
+  "tools/generator-supply/v2/evidence-manifest.json"
+  "tools/generator-supply/v2/profile.json"
+  "tools/generator-supply/v2/evidence/replay.json"
+  "tools/generator-supply/v2/evidence/replay/darwin-a.json"
+  "tools/generator-supply/v2/evidence/replay/darwin-b.json"
+  "tools/generator-supply/v2/evidence/replay/darwin-isolation.json"
+  "tools/generator-supply/v2/evidence/replay/linux-a.json"
+  "tools/generator-supply/v2/evidence/replay/linux-b.json"
+  "tools/generator-supply/v2/evidence/replay/linux-isolation.json"
+  "tools/generator-supply/v2/evidence/replay/projection.json"
+  "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md"
+  "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md"
+  "tools/contract-review-binding/v1/review-tuple.json"
+  "tools/contract-review-binding/v1/registry.json"
+  "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md"
 )
 readonly GENERATOR_OUTPUT_FILES=(
   "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json"
   "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json"
   "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json"
   "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json"
+  "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json"
   "contracts/generated/platform/v1alpha1/durable-coordination-registry.json"
   "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json"
   "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json"
@@ -295,18 +298,21 @@ if metadata != {
     raise SystemExit("projection snapshot metadata is not an exact archive binding")
 if metadata.get("excluded") != [
     "contracts/generation.lock.json",
-    "tools/generator-supply/v1/evidence-manifest.json",
-    "tools/generator-supply/v1/profile.json",
-    "tools/generator-supply/v1/evidence/replay.json",
-    "tools/generator-supply/v1/evidence/replay/darwin-a.json",
-    "tools/generator-supply/v1/evidence/replay/darwin-b.json",
-    "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
-    "tools/generator-supply/v1/evidence/replay/linux-a.json",
-    "tools/generator-supply/v1/evidence/replay/linux-b.json",
-    "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
-    "tools/generator-supply/v1/evidence/replay/projection.json",
-    "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
-    "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+    "tools/generator-supply/v2/evidence-manifest.json",
+    "tools/generator-supply/v2/profile.json",
+    "tools/generator-supply/v2/evidence/replay.json",
+    "tools/generator-supply/v2/evidence/replay/darwin-a.json",
+    "tools/generator-supply/v2/evidence/replay/darwin-b.json",
+    "tools/generator-supply/v2/evidence/replay/darwin-isolation.json",
+    "tools/generator-supply/v2/evidence/replay/linux-a.json",
+    "tools/generator-supply/v2/evidence/replay/linux-b.json",
+    "tools/generator-supply/v2/evidence/replay/linux-isolation.json",
+    "tools/generator-supply/v2/evidence/replay/projection.json",
+    "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md",
+    "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md",
+    "tools/contract-review-binding/v1/review-tuple.json",
+    "tools/contract-review-binding/v1/registry.json",
+    "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md",
 ]:
     raise SystemExit("projection snapshot exclusion authority drifted")
 if inspection.get("profile") != "core-projection" or inspection.get("reconstructedGitTreeSha") != tree:
@@ -384,18 +390,21 @@ document = {
     "archiveInspection": inspection,
     "excluded": [
         "contracts/generation.lock.json",
-        "tools/generator-supply/v1/evidence-manifest.json",
-        "tools/generator-supply/v1/profile.json",
-        "tools/generator-supply/v1/evidence/replay.json",
-        "tools/generator-supply/v1/evidence/replay/darwin-a.json",
-        "tools/generator-supply/v1/evidence/replay/darwin-b.json",
-        "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
-        "tools/generator-supply/v1/evidence/replay/linux-a.json",
-        "tools/generator-supply/v1/evidence/replay/linux-b.json",
-        "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
-        "tools/generator-supply/v1/evidence/replay/projection.json",
-        "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
-        "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+        "tools/generator-supply/v2/evidence-manifest.json",
+        "tools/generator-supply/v2/profile.json",
+        "tools/generator-supply/v2/evidence/replay.json",
+        "tools/generator-supply/v2/evidence/replay/darwin-a.json",
+        "tools/generator-supply/v2/evidence/replay/darwin-b.json",
+        "tools/generator-supply/v2/evidence/replay/darwin-isolation.json",
+        "tools/generator-supply/v2/evidence/replay/linux-a.json",
+        "tools/generator-supply/v2/evidence/replay/linux-b.json",
+        "tools/generator-supply/v2/evidence/replay/linux-isolation.json",
+        "tools/generator-supply/v2/evidence/replay/projection.json",
+        "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md",
+        "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md",
+        "tools/contract-review-binding/v1/review-tuple.json",
+        "tools/contract-review-binding/v1/registry.json",
+        "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md",
     ],
 }
 with open(output, "x", encoding="utf-8") as destination:

@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
-    "inputManifestSha256": "sha256:d436f212a741b4139d38dbe4a10e107cdfe68f4b985beeca4b8ae6383d0992f6",
+    "manifestSha256": "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
+    "inputManifestSha256": "sha256:1cbb39bce9a20688cd672f4c1afcf99c987c950e2b2b4ed053fb881ef74c373e",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -145,21 +145,21 @@
   "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:1cea73a96c9f88bc76aee90e36702511c1c9a6f00fc3613d6df188611d144640",
+  "outputTreeSha256": "sha256:a2f5d6a63b7407819c73b3d5c58375e4b91a5b231c135d9d5aa78466d42c4ba1",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-      "sha256": "sha256:301694b57704faf8253aa8c5b4b313a5f8384e84f95de8194a5afe02784546bc",
+      "sha256": "sha256:25bd6d5db8a7fec63aaf015910764c54ff460eecf0321305af330f38730604be",
       "sizeBytes": 28791
     },
     {
       "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-      "sha256": "sha256:ff1c5149738ec4f5a6d05a505c74b25a96cfc02706110b9708f1790c35d82b52",
+      "sha256": "sha256:0d50c1aa0023782e3e2f213056f4136ceac6ea03f88ea76bb11cef7031f49e07",
       "sizeBytes": 24032
     },
     {
       "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-      "sha256": "sha256:49135a495af50a1e2082f20d1a4cbf0b41b0d80a4dc8cfc95a4e3ad15880de1d",
+      "sha256": "sha256:cbd9cc7dec2b2c6265294a29cfa321aac4b33a42b3b88a0ccc631d97d944a52f",
       "sizeBytes": 11624
     }
   ]

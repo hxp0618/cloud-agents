@@ -13,7 +13,11 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-import { assertGeneratorSupplyProfileCurrent } from "./lib/platform-generator-supply-profile";
+import { assertGeneratorSupplyV2SourceCurrent } from "./lib/platform-generator-supply-profile-v2";
+import {
+  assertGeneratorSupplyV1GitLineageCurrent,
+  assertGeneratorSupplyV1PredecessorImmutable,
+} from "./lib/platform-successor-predecessor";
 
 type Json = Record<string, unknown>;
 
@@ -24,8 +28,10 @@ if (args[0] === "--collect-materials" && args[1] !== undefined) {
   collectMaterials(resolve(args[1]));
   process.stdout.write("generator-supply-evidence: collected exact material evidence\n");
 } else if (args[0] === "--check") {
-  assertGeneratorSupplyProfileCurrent(root);
-  process.stdout.write("generator-supply-evidence: exact evidence and profile current\n");
+  assertGeneratorSupplyV1PredecessorImmutable(root);
+  assertGeneratorSupplyV1GitLineageCurrent(root);
+  const v2State = assertGeneratorSupplyV2SourceCurrent(root);
+  process.stdout.write(`generator-supply-evidence: v1 fixed predecessor current; v2 ${v2State}\n`);
 } else if (args[0] === "--sanitize-raw") {
   sanitizeRawEvidence();
   process.stdout.write("generator-supply-evidence: sanitized raw scanner evidence\n");

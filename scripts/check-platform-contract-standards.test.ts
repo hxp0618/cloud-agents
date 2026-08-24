@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { buildUvPipSyncArguments } from "./check-platform-contract-standards";
+import {
+  buildContractStandardsPythonArguments,
+  buildUvPipSyncArguments,
+} from "./check-platform-contract-standards";
 
 describe("contract standards uv pip sync arguments", () => {
+  it("explicitly selects the current versioned v2 profile", () => {
+    expect(buildContractStandardsPythonArguments()).toEqual([
+      "-B",
+      "tools/contract-standards/check_contract_standards.py",
+      "--root",
+      ".",
+      "--profile",
+      "tools/contract-standards/profile-v2.json",
+    ]);
+  });
+
   it("makes the full requirements sync strictly offline when a wheelhouse is set", () => {
     const wheelhouse = "/tmp/contract standards wheelhouse";
 

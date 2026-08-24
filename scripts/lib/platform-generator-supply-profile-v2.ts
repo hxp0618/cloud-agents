@@ -7,6 +7,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  writeFileSync,
 } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -22,6 +23,7 @@ import {
 } from "./platform-generator-supply-replay-v2";
 import {
   SUCCESSOR_ASSEMBLY_PATHS,
+  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
   SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
@@ -46,13 +48,13 @@ export const GENERATOR_SUPPLY_V2_REPLAY_CONTRACT = {
   authorityFiles: {
     wrapper: {
       path: "scripts/replay-platform-generators-isolated.sh",
-      sha256: "f85ab149a6a2daf36b3eb1a06a00f0258829ff71a3aae2dc6cec9f3d0601b250",
-      sizeBytes: 83_140,
+      sha256: "b4c0f23c45c2a3a1a391daadcc44554793fda948168f35f3ffaf4d32cedd9070",
+      sizeBytes: 83_800,
     },
     runner: {
       path: "scripts/replay-platform-generators.ts",
-      sha256: "2e07df97c7ca646b365a9090ee0d98af2ede386d56c6647c450c778f4147f58f",
-      sizeBytes: 44_958,
+      sha256: "96bc41cd702a35b0c4febfd62c48e0e261fc0656f6f91583522eb47e96cf07a1",
+      sizeBytes: 41_526,
     },
     pathHelper: {
       path: "scripts/lib/generator-replay-path-authority.ts",
@@ -158,6 +160,14 @@ export type GeneratorSupplyV2AuthorityState =
 export type GeneratorSupplyV2CurrentValidation = Readonly<{
   registry: GeneratorSupplyV2Registry;
   fileSha256: string;
+  candidateManifestSha256: string;
+  outputFiles: number;
+  assertCurrent: () => void;
+}>;
+
+type GeneratorSupplyV2SemanticAuthority = Readonly<{
+  candidateManifestSha256: string;
+  outputFiles: number;
   assertCurrent: () => void;
 }>;
 
@@ -228,6 +238,40 @@ export function inspectGeneratorSupplyV2AuthorityState(
   }
   assertGeneratorSupplyV2RegistryCurrent(root);
   return "ASSEMBLED_PROFILE_CURRENT";
+}
+
+export function assertGeneratorSupplyV2SourceCurrent(
+  root: string,
+): GeneratorSupplyV2AuthorityState {
+  const state = inspectGeneratorSupplyV2AuthorityState(root);
+  if (state === "SCHEMA_ONLY") {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_SOURCE_MISMATCH",
+      `/${GENERATOR_SUPPLY_V2_SOURCE_PATH}`,
+      "Generator-supply v2 pre-replay source authority is absent.",
+    );
+  }
+  return state;
+}
+
+export function writeGeneratorSupplyV2Source(root: string): void {
+  const state = inspectGeneratorSupplyV2AuthorityState(root);
+  if (state !== "SCHEMA_ONLY" && state !== "DECLARED_PRE_REPLAY") {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_PARTIAL_STATE",
+      `/${GENERATOR_SUPPLY_V2_SOURCE_PATH}`,
+      "Generator-supply v2 source cannot be rewritten after replay or assembly begins.",
+    );
+  }
+  const output = resolveContainedPath(root, GENERATOR_SUPPLY_V2_SOURCE_PATH, true);
+  writeFileSync(output, serializeGeneratorSupplyV2Source(buildGeneratorSupplyV2Source()));
+  if (assertGeneratorSupplyV2SourceCurrent(root) !== "DECLARED_PRE_REPLAY") {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_PARTIAL_STATE",
+      `/${GENERATOR_SUPPLY_V2_SOURCE_PATH}`,
+      "Generator-supply v2 source write did not reach declared pre-replay state.",
+    );
+  }
 }
 
 export function validateGeneratorSupplyV2Source(
@@ -313,7 +357,7 @@ function assertGeneratorSupplyV2RegistryCurrentInternal(
     );
   }
   mutateAfterOuterSnapshot?.();
-  const assertReplaySnapshotCurrent = assertGeneratorSupplyV2RegistrySemanticsInternal(
+  const semanticAuthority = assertGeneratorSupplyV2RegistrySemanticsInternal(
     root,
     registry,
     source,
@@ -330,10 +374,16 @@ function assertGeneratorSupplyV2RegistryCurrentInternal(
       );
     }
     assertGeneratorSupplyV2OuterSnapshotCurrent(root, identities);
-    assertReplaySnapshotCurrent();
+    semanticAuthority.assertCurrent();
   };
   assertCurrent();
-  return { registry, fileSha256: outputSnapshot.fileSha256, assertCurrent };
+  return {
+    registry,
+    fileSha256: outputSnapshot.fileSha256,
+    candidateManifestSha256: semanticAuthority.candidateManifestSha256,
+    outputFiles: semanticAuthority.outputFiles,
+    assertCurrent,
+  };
 }
 
 function assertGeneratorSupplyV2RegistrySemanticsInternal(
@@ -341,7 +391,7 @@ function assertGeneratorSupplyV2RegistrySemanticsInternal(
   document: unknown,
   source: GeneratorSupplyV2Source,
   standaloneManifest: EvidenceManifest,
-): () => void {
+): GeneratorSupplyV2SemanticAuthority {
   validateGeneratorSupplyV2Source(root, source);
   validateAgainstSchema(root, OUTPUT_SCHEMA_ID, document);
   if (!isRecord(document)) {
@@ -458,10 +508,31 @@ function assertGeneratorSupplyV2RegistrySemanticsInternal(
       `Generator-supply v2 semantic input snapshot changed before the assembled profile could be accepted: ${String(error)}.`,
     );
   }
-  return semanticValidation.assertSnapshotCurrent;
+  const runPath = SUCCESSOR_REPLAY_RECEIPT_PATHS[1];
+  const runSnapshot = readJsonFileSnapshot(root, runPath);
+  const semanticRunRecord = semanticValidation.receiptRecords.find(
+    (record) => record.path === runPath,
+  );
+  const outputFiles = Number(runSnapshot.value.outputFiles);
+  if (
+    semanticRunRecord?.sha256 !== runSnapshot.fileSha256 ||
+    runSnapshot.value.candidateManifestSha256 !== semanticValidation.candidateManifestSha256 ||
+    outputFiles !== SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.length
+  ) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+      "/profile/evidence/receipts/run",
+      "The exact semantic replay run must bind the candidate manifest and all 49 core outputs.",
+    );
+  }
+  return {
+    candidateManifestSha256: semanticValidation.candidateManifestSha256,
+    outputFiles,
+    assertCurrent: semanticValidation.assertSnapshotCurrent,
+  };
 }
 
-export function buildGeneratorSupplyV2TestSource(): GeneratorSupplyV2Source {
+export function buildGeneratorSupplyV2Source(): GeneratorSupplyV2Source {
   return {
     formatVersion: "cloud-agents-generator-supply-profile-source/v2",
     registryId: REGISTRY_ID,
@@ -521,6 +592,14 @@ export function buildGeneratorSupplyV2TestSource(): GeneratorSupplyV2Source {
       receiptPaths: [...SUCCESSOR_REPLAY_RECEIPT_PATHS],
     },
   };
+}
+
+export function buildGeneratorSupplyV2TestSource(): GeneratorSupplyV2Source {
+  return buildGeneratorSupplyV2Source();
+}
+
+export function serializeGeneratorSupplyV2Source(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 export function assertStableGeneratorSupplyV2ReadMutationForTest(

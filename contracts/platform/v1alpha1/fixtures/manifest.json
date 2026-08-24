@@ -391,6 +391,18 @@
       "expectedSchemaValid": true
     },
     {
+      "name": "contract-closure-profile-source-v3",
+      "schema": "../schemas/contract-closure-profile-source-v3.schema.json",
+      "instance": "golden/contract-closure-profile-source-v3.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "contract-closure-profile-v3",
+      "schema": "../schemas/contract-closure-profile-v3.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/contract-closure-profile-v3.json",
+      "expectedSchemaValid": true
+    },
+    {
       "name": "ajv-official-suite-audit-source-v1",
       "schema": "../schemas/ajv-official-suite-audit-source-v1.schema.json",
       "instance": "golden/ajv-official-suite-audit-source-v1.json",

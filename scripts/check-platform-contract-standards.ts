@@ -3,6 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import {
+  assertContractStandardsProfileCurrent,
+  CONTRACT_STANDARDS_PROFILE_V2_PATH,
+} from "./lib/platform-contract-standards-profile";
+
 const PYTHON_VERSION = "3.14.7";
 const UV_VERSION = "0.12.5";
 const BUN_VERSION = "1.3.14";
@@ -69,7 +74,19 @@ export function buildUvPipSyncArguments(
   return arguments_;
 }
 
+export function buildContractStandardsPythonArguments(): readonly string[] {
+  return [
+    "-B",
+    "tools/contract-standards/check_contract_standards.py",
+    "--root",
+    ".",
+    "--profile",
+    CONTRACT_STANDARDS_PROFILE_V2_PATH,
+  ];
+}
+
 export function main(): void {
+  assertContractStandardsProfileCurrent(root);
   const wheelhouse = process.env.CLOUD_AGENTS_CONTRACT_STANDARDS_WHEELHOUSE;
   const pythonVersion = commandOutput("python3", ["--version"]).replace(/^Python\s+/u, "");
   const uvVersion = commandOutput("uv", ["--version"]).match(/^uv\s+(\S+)/u)?.[1] ?? "";
@@ -122,7 +139,7 @@ export function main(): void {
     run("uv", buildUvPipSyncArguments(python, wheelhouse), {
       input: `${requirements}\n`,
     });
-    run(python, ["-B", "tools/contract-standards/check_contract_standards.py", "--root", "."]);
+    run(python, buildContractStandardsPythonArguments());
     run(python, [
       "-B",
       "-m",

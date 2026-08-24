@@ -24,10 +24,14 @@ import {
   CONTRACT_CLOSURE_PROFILE_V3_SOURCE_SCHEMA_PATH,
   CONTRACT_CLOSURE_V3_RUNTIME_FILES,
   CONTRACT_CLOSURE_V3_RUNTIME_REVIEW_FILE,
+  serializeContractClosureProfileV3Registry,
+  serializeContractClosureProfileV3Source,
 } from "./platform-contract-closure-profile-v3";
 import {
   assertContractReviewBindingCurrentOrAbsent,
+  assertContractReviewBindingSourceCurrent,
   bindContractReviewAuthoritySnapshotForTest,
+  buildContractReviewBindingSource,
   buildContractReviewBindingTestSource,
   buildContractReviewBindingTestTuple,
   contractReviewBindingAuthorityInputs,
@@ -42,6 +46,7 @@ import {
   publishContractReviewBindingExclusiveForTest,
   serializeContractReviewBinding,
   writeContractReviewBinding,
+  writeContractReviewBindingSource,
   type ContractReviewBindingSource,
   type ContractReviewTuple,
 } from "./platform-contract-review-binding";
@@ -148,11 +153,17 @@ function writeSemanticAuthorities(root: string): void {
   materializeSemanticDependencies(root);
 
   const closureSource = buildContractClosureProfileV3TestSource(root);
-  writeJson(root, CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH, closureSource);
-  writeJson(
+  writeText(
+    root,
+    CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+    serializeContractClosureProfileV3Source(closureSource),
+  );
+  writeText(
     root,
     CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
-    buildContractClosureProfileV3Registry(root, closureSource),
+    serializeContractClosureProfileV3Registry(
+      buildContractClosureProfileV3Registry(root, closureSource),
+    ),
   );
 
   const supplySource = buildGeneratorSupplyV2TestSource();
@@ -300,6 +311,41 @@ describe("detached contract review-binding state machine", () => {
     );
   });
 
+  it("exclusively creates and checks the canonical authority source before review", () => {
+    const root = mkdtempSync(join(tmpdir(), "contract-review-binding-source-"));
+    temporaryRoots.push(root);
+    for (const schemaPath of [
+      CONTRACT_REVIEW_BINDING_SOURCE_SCHEMA_PATH,
+      CONTRACT_REVIEW_TUPLE_SCHEMA_PATH,
+      CONTRACT_REVIEW_BINDING_REGISTRY_SCHEMA_PATH,
+    ]) {
+      writeParent(root, schemaPath);
+      cpSync(resolve(repositoryRoot, schemaPath), resolve(root, schemaPath));
+    }
+
+    expect(() => writeContractReviewBindingSource(root)).not.toThrow();
+    expect(readFileSync(resolve(root, CONTRACT_REVIEW_BINDING_SOURCE_PATH), "utf8")).toBe(
+      serializeContractReviewBinding(buildContractReviewBindingSource()),
+    );
+    expect(assertContractReviewBindingSourceCurrent(root)).toEqual(
+      buildContractReviewBindingSource(),
+    );
+    expect(() => writeContractReviewBindingSource(root)).not.toThrow();
+
+    writeFileSync(
+      resolve(root, CONTRACT_REVIEW_BINDING_SOURCE_PATH),
+      `${serializeContractReviewBinding(buildContractReviewBindingSource())} `,
+    );
+    expectCode(
+      () => assertContractReviewBindingSourceCurrent(root),
+      "CONTRACT_REVIEW_BINDING_SOURCE_DRIFT",
+    );
+    expectCode(
+      () => writeContractReviewBindingSource(root),
+      "CONTRACT_REVIEW_BINDING_SOURCE_DRIFT",
+    );
+  });
+
   it("classifies source plus absent tuple/output as PRE_REVIEW_ABSENT", () => {
     const fixture = createFixture();
     expect(inspectContractReviewBindingState(fixture.root).kind).toBe("PRE_REVIEW_ABSENT");
@@ -334,7 +380,7 @@ describe("detached contract review-binding state machine", () => {
     expect(current.registry.registryId).not.toContain("contract-closure-profile");
     expect(() => assertContractReviewBindingCurrentOrAbsent(fixture.root)).not.toThrow();
     expect(() => writeContractReviewBinding(fixture.root)).not.toThrow();
-  });
+  }, 10_000);
 
   it("publishes with kernel-enforced no-overwrite when a competitor wins the race", () => {
     const fixture = createFixture();

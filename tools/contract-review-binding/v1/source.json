@@ -1,0 +1,47 @@
+{
+  "formatVersion": "cloud-agents-contract-review-binding-source/v1",
+  "registryId": "cloud-agents/platform/contract-review-binding",
+  "bindingId": "g-contract-current-source-review-binding/v1",
+  "canonicalClosureAuthority": {
+    "kind": "canonical_contract_closure",
+    "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+    "profileId": "contract-closure-profile/v3"
+  },
+  "supplyProfileAuthority": {
+    "kind": "generator_supply_profile",
+    "path": "tools/generator-supply/v2/profile.json",
+    "profileId": "cloud-agents/generator-supply-profile/v2"
+  },
+  "reviewSlots": [
+    {
+      "criterionId": "runtime-server-path-and-tenant-authority-enforcement",
+      "subject": "canonical_contract_closure",
+      "reviewPath": "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md",
+      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0"
+    },
+    {
+      "criterionId": "remaining-generator-supply-chain-review",
+      "subject": "generator_supply_profile",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md",
+      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0"
+    }
+  ],
+  "derivation": {
+    "manualMissingRemoval": "forbidden",
+    "reviewTuplePath": "tools/contract-review-binding/v1/review-tuple.json",
+    "outputPath": "tools/contract-review-binding/v1/registry.json",
+    "finalReviewPath": "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md"
+  },
+  "implementationBoundary": {
+    "notGateClosure": true,
+    "gateStatus": "ALL_GATES_OPEN",
+    "bootstrapDiscovery": "FORBIDDEN",
+    "coreReplayOutput": "FORBIDDEN",
+    "selfReview": "FORBIDDEN",
+    "httpP2Provider": "NOT_AUTHORIZED",
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "deployment": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED",
+    "signing": "NOT_AUTHORIZED"
+  }
+}

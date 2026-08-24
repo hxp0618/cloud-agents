@@ -1,0 +1,312 @@
+{
+  "formatVersion": "cloud-agents-contract-closure-profile-registry/v3",
+  "registryId": "cloud-agents/platform/contract-closure-profile",
+  "sourceDigest": "sha256:4c05123a83d8cf861d9fef4255fc93404f324081e575250350b8f2b7ae0efc83",
+  "predecessor": {
+    "profileId": "contract-closure-profile/v2",
+    "predecessorMutation": "forbidden",
+    "files": [
+      {
+        "path": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json",
+        "sha256": "cb0c2f9efe9f54ef5ed2eb0868ff604d8fe06b8f40bd4fdc01be07c0cb160032",
+        "sizeBytes": 7932
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
+        "sha256": "2bba53f094b1b01eabc3becb769ce00bfaee140f90ced21e21a22f352eb192ad",
+        "sizeBytes": 8122
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
+        "sha256": "7e6e9f35c000e0620d8719a31102f6b4fd1cd7450892be0b815e5b7c25307146",
+        "sizeBytes": 1833
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+        "sha256": "5069f0f1bdca9b7b7c161cb36870c00be254acb315cafab45adcc944b19e33fe",
+        "sizeBytes": 8690
+      }
+    ]
+  },
+  "runtimeReviewedCandidate": {
+    "criterionId": "runtime-server-path-and-tenant-authority-enforcement",
+    "candidate": {
+      "commit": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e",
+      "tree": "2165fd70efd097e7e1decb109cee31e9f6af8ee5",
+      "parent": "9fe7338d3c424731e0b9946f5252e3f61d5326a9",
+      "diffSha256": "sha256:d4e6e96595d9d1554356e30878ce4d57143efb579d5a369ebf97c085f3f67562"
+    },
+    "moduleFiles": [
+      {
+        "path": "services/control-plane/go.mod",
+        "sha256": "1664dce4a62ceca72a721690b80aa77d069372229b42aebade535c140499f4ad",
+        "sizeBytes": 519
+      },
+      {
+        "path": "services/control-plane/go.sum",
+        "sha256": "f85e74742ea1cbbe7622488afabfa567445f2ad45bf75173840d699ef275dc65",
+        "sizeBytes": 2858
+      }
+    ],
+    "review": {
+      "path": "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md",
+      "sha256": "sha256:d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2",
+      "verdict": "APPROVE_P0_0_P1_0_P2_0",
+      "commit": "fe59f0d4059632a102171d9c1eb77a4c147ae65e",
+      "tree": "7d6f7a65f36c89fadbe02e7e75e3b395bcca97f3",
+      "parent": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e"
+    },
+    "implementationBoundary": {
+      "transport": "TRANSPORT_NEUTRAL_CLAIM_ONLY",
+      "http": "NOT_IMPLEMENTED",
+      "oidc": "NOT_IMPLEMENTED",
+      "jwks": "NOT_IMPLEMENTED",
+      "projectWriter": "NOT_IMPLEMENTED",
+      "provider": "NOT_IMPLEMENTED",
+      "externalEffects": "NOT_IMPLEMENTED"
+    }
+  },
+  "generatorSupplyV1Predecessor": {
+    "profileId": "cloud-agents/generator-supply-profile/v1",
+    "predecessorMutation": "forbidden",
+    "outerFiles": [
+      {
+        "path": "tools/generator-supply/v1/source.json",
+        "sha256": "a14e177c72afb699b47446232625ba638c68da2bc7731e213ab432244924a2f9",
+        "sizeBytes": 12111
+      },
+      {
+        "path": "tools/generator-supply/v1/generator-supply-profile-source-v1.schema.json",
+        "sha256": "6204f24913dccc98e80e415f00fce74e2bfa99b68df691b1669f0c00592002ab",
+        "sizeBytes": 8938
+      },
+      {
+        "path": "tools/generator-supply/v1/generator-supply-profile-v1.schema.json",
+        "sha256": "6f51389646fdbcf8633b56495d1d128b92bec1958dbc1acb96afaf2d75ea2d64",
+        "sizeBytes": 2077
+      },
+      {
+        "path": "tools/generator-supply/v1/evidence-manifest.json",
+        "sha256": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+        "sizeBytes": 8186
+      },
+      {
+        "path": "tools/generator-supply/v1/profile.json",
+        "sha256": "dcd9c9da7cd28a254dbeb419a388875b843033c0ca522fc603cd29b30295f93b",
+        "sizeBytes": 22188
+      },
+      {
+        "path": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+        "sha256": "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
+        "sizeBytes": 8426
+      }
+    ],
+    "evidenceManifest": {
+      "path": "tools/generator-supply/v1/evidence-manifest.json",
+      "sha256": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+      "sizeBytes": 8186,
+      "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+      "memberCount": 39,
+      "memberPathPrefix": "tools/generator-supply/v1/evidence/",
+      "memberVerification": "EXACT_PATH_SHA256_SIZE_REQUIRED"
+    },
+    "candidate": {
+      "commit": "e5f981c8197cea7527a57c391e7198570f61b92c",
+      "tree": "7fb98abf71066e8009581c658b41a299ae1a5c2c",
+      "parent": "0a331fde18a909d37b64f11efe879df7bbc09d25",
+      "diffSha256": "sha256:d012683bf1a13dda79a8393afdf44ff20088711b9ccce1c608cd74db5843587e",
+      "reviewCommit": "129e9bc128de971b9f9623e82832e80830331126",
+      "reviewTree": "b30835163d757e236781af8c16c61736e1d452da",
+      "reviewParent": "e5f981c8197cea7527a57c391e7198570f61b92c",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+      "reviewSha256": "sha256:86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
+      "reviewVerdict": "APPROVE_P0_0_P1_0_P2_0"
+    },
+    "identities": {
+      "sourceDigest": "sha256:8c2f462e30baefdf420179b66399461a22a0de71efcefca99e1ff3134bd62b3c",
+      "artifactSetDigest": "sha256:f307e4c73f56e62c5d38b928acff5db284cd5a1706bb76fa7ba55b1437faa0c5",
+      "evidenceManifestDigest": "sha256:59e7dfe0d85d7fd2cb9ad069037019c484a4c8039c897e5d5cabf45f517f64ab",
+      "profileDigest": "sha256:b1201cd3d22398fa808a05190ef4ce49422db665277e8cf8c936938cb5cd741c",
+      "registryDigest": "sha256:86452d655cd05a73211e52c28107e93d38a244026648e28a8369cefd4e4eed9c"
+    },
+    "projection": {
+      "treeSha": "4a70fb8b1e18801f4f02a753668ffe91b63b6275",
+      "archiveSha256": "36070cced3f7b7088f990b46a60b67fcabf742733782533bdfcbd46317950478",
+      "archiveSizeBytes": 46008320,
+      "receiptPath": "tools/generator-supply/v1/evidence/replay/projection.json",
+      "receiptSha256": "1587c7715157aaab99c2276b1adbe85fe070aeeb238c054b479edfd1ae1b5cf4",
+      "receiptSizeBytes": 1708
+    },
+    "futureSuccessor": {
+      "profileId": "cloud-agents/generator-supply-profile/v2",
+      "path": "tools/generator-supply/v2/profile.json",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md",
+      "reviewStatus": "REVIEW_PENDING",
+      "canonicalBuildRead": "FORBIDDEN"
+    }
+  },
+  "profile": {
+    "profileDigest": "sha256:bdac321b602c0fdd350a1af5a214d881804e6648f69e4d730cbb8f9a82c36f5a",
+    "spec": {
+      "profileId": "contract-closure-profile/v3",
+      "status": "BOOTSTRAP_VALIDATED",
+      "notGateClosure": true,
+      "gateStatus": "ALL_GATES_OPEN",
+      "derivation": {
+        "missing": "criteria_status_not_satisfied_candidate",
+        "manualRemoval": "forbidden",
+        "lateReviewConsumer": "detached_non_bootstrap_registry_only"
+      },
+      "criteria": [
+        {
+          "id": "json-schema-2020-12-official-test-suite",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "docs/plan/adr/0026-p1-json-schema-official-suite-evidence-closure.md",
+            "tools/contract-standards/profile.json",
+            "tools/contract-standards/vendor/json-schema-test-suite"
+          ],
+          "evidencePaths": [
+            "contracts/platform/v1alpha1/fixtures/golden/ajv-official-suite-audit-source-v1.json",
+            "contracts/platform/v1alpha1/schemas/ajv-official-suite-audit-source-v1.schema.json",
+            "contracts/platform/v1alpha1/schemas/ajv-official-suite-audit-v1.schema.json",
+            "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
+            "scripts/check-platform-ajv-official-suite.ts",
+            "scripts/lib/platform-ajv-official-suite.ts",
+            "scripts/lib/platform-ajv-official-suite.test.ts",
+            "docs/plan/p1/g-contract-r5-b1-ajv-official-suite-audit-20260824.md",
+            "tools/contract-standards/check_contract_standards.py",
+            "tools/contract-standards/test_contract_standards.py"
+          ],
+          "review": {
+            "path": "docs/plan/p1/g-contract-r5-b1-ajv-official-suite-audit-independent-review-20260824.md",
+            "sha256": "sha256:01b5c410879be0230e9a975a34c64242835905729adc413feed98b0d519413bb",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "openapi-3.1-semantic-validation",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "contracts/managed-agent/v1alpha1/openapi.json",
+            "contracts/managed-host/v1alpha1/openapi.json",
+            "tools/contract-standards/check_contract_standards.py"
+          ],
+          "evidencePaths": [
+            "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md"
+          ],
+          "review": {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+            "sha256": "sha256:f0d5b12f1f6e0f2936783868331d4d74d7a3ee0fc49b3e370894b95884458f61",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "generated-sdk-replay",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "contracts/proto-generation.profile.json",
+            "scripts/generate-platform-identity-sdks.ts",
+            "scripts/generate-platform-json-sdks.ts",
+            "scripts/generate-platform-proto-sdks.ts"
+          ],
+          "evidencePaths": [
+            "scripts/test-platform-sdk-consumers.ts",
+            "docs/plan/p1/sdk-proto-consumer-closure-20260821.md"
+          ],
+          "review": {
+            "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+            "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "n-minus-one-compatibility",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "scripts/lib/platform-json-sdk.ts",
+            "scripts/lib/platform-json-sdk.test.ts",
+            "scripts/lib/platform-proto-sdk.ts",
+            "scripts/lib/platform-proto-sdk.test.ts",
+            "contracts/proto-generation.profile.json"
+          ],
+          "evidencePaths": [
+            "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+            "sdk/typescript/src/platform.test.ts",
+            "sdk/go/proto_conformance_test.go",
+            "sdk/typescript/src/proto.test.ts"
+          ],
+          "review": {
+            "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+            "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "response-watch-unknown-field-preservation",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "scripts/lib/platform-json-sdk.ts",
+            "scripts/lib/platform-proto-sdk.ts"
+          ],
+          "evidencePaths": [
+            "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+            "sdk/typescript/src/platform.test.ts",
+            "sdk/go/proto_conformance_test.go",
+            "sdk/typescript/src/proto.test.ts"
+          ],
+          "review": {
+            "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+            "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "runtime-server-path-and-tenant-authority-enforcement",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": ["services/control-plane/go.mod", "services/control-plane/go.sum"],
+          "evidencePaths": [
+            "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md"
+          ],
+          "review": {
+            "path": "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md",
+            "sha256": "sha256:d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "remaining-generator-supply-chain-review",
+          "status": "REVIEW_PENDING",
+          "authorityPaths": [
+            "tools/generator-supply/v1/source.json",
+            "tools/generator-supply/v1/generator-supply-profile-source-v1.schema.json",
+            "tools/generator-supply/v1/generator-supply-profile-v1.schema.json"
+          ],
+          "evidencePaths": [
+            "tools/generator-supply/v1/evidence-manifest.json",
+            "tools/generator-supply/v1/profile.json",
+            "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md"
+          ],
+          "reason": "The immutable reviewed generator-supply v1 predecessor is historical; the declared v2 successor review does not yet exist and is consumed only by the detached non-bootstrap registry."
+        }
+      ],
+      "implementationBoundary": {
+        "runtimeCriterion": "SATISFIED_CANDIDATE_BOUNDED_TRANSPORT_NEUTRAL",
+        "supplyCriterion": "REVIEW_PENDING",
+        "http": "NOT_IMPLEMENTED",
+        "oidc": "NOT_IMPLEMENTED",
+        "jwks": "NOT_IMPLEMENTED",
+        "projectWriter": "NOT_IMPLEMENTED",
+        "provider": "NOT_IMPLEMENTED",
+        "productionDatabaseWrites": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "gateStatus": "ALL_GATES_OPEN"
+      }
+    }
+  },
+  "missing": ["remaining-generator-supply-chain-review"],
+  "notGateClosure": true,
+  "gateStatus": "ALL_GATES_OPEN",
+  "registryDigest": "sha256:eaaebbe39a52c63bde0ab99110670607ca7596fd394cdff6007177dab01b31bc"
+}

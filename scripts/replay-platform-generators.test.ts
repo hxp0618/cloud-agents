@@ -19,15 +19,15 @@ import {
   requireExactDirectoryEntries,
   requireFreshReplayPath,
 } from "./lib/generator-replay-path-authority";
+import {
+  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
+  SUCCESSOR_PROJECTION_EXCLUSIONS,
+} from "./lib/platform-successor-dag";
 
 const root = resolve(import.meta.dirname, "..");
 const runner = readFileSync(resolve(root, "scripts/replay-platform-generators.ts"), "utf8");
 const wrapper = readFileSync(
   resolve(root, "scripts/replay-platform-generators-isolated.sh"),
-  "utf8",
-);
-const staticVerifier = readFileSync(
-  resolve(root, "scripts/lib/platform-generator-supply-profile.ts"),
   "utf8",
 );
 const temporaryRoots: string[] = [];
@@ -118,46 +118,18 @@ describe("generator replay authority closure", () => {
   });
 
   it("builds the explicit acyclic core projection", () => {
-    const expectedExclusions = [
-      "contracts/generation.lock.json",
-      "tools/generator-supply/v1/evidence-manifest.json",
-      "tools/generator-supply/v1/profile.json",
-      "tools/generator-supply/v1/evidence/replay.json",
-      "tools/generator-supply/v1/evidence/replay/darwin-a.json",
-      "tools/generator-supply/v1/evidence/replay/darwin-b.json",
-      "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
-      "tools/generator-supply/v1/evidence/replay/linux-a.json",
-      "tools/generator-supply/v1/evidence/replay/linux-b.json",
-      "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
-      "tools/generator-supply/v1/evidence/replay/projection.json",
-      "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
-      "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
-    ];
-    const finalReview = /readonly FINAL_REVIEW_PATH="([^"]+)"/u.exec(wrapper)?.[1];
+    const expectedExclusions = [...SUCCESSOR_PROJECTION_EXCLUSIONS];
     const shellBlock = /readonly PROJECTION_EXCLUSIONS=\(\n([\s\S]*?)\n\)/u.exec(wrapper)?.[1];
-    expect(finalReview).toBe(expectedExclusions.at(-1));
     expect(shellBlock).toBeDefined();
     const shellExclusions = shellBlock!
       .split("\n")
       .map((line) => line.trim())
-      .map((line) => {
-        expect(line).toMatch(/^"[^"]+"$/u);
-        const value = line.slice(1, -1);
-        return value === "$FINAL_REVIEW_PATH" ? finalReview! : value;
-      });
+      .map((line) => JSON.parse(line) as string);
     expect(shellExclusions).toEqual(expectedExclusions);
 
-    const staticBlock = /const PROJECTION_EXCLUSIONS = \[\n([\s\S]*?)\n\] as const;/u.exec(
-      staticVerifier,
-    )?.[1];
-    expect(staticBlock).toBeDefined();
-    const staticExclusions = staticBlock!
-      .split("\n")
-      .map((line) => line.trim())
-      .map((line) => JSON.parse(line.replace(/,$/u, "")) as string);
-    expect(staticExclusions).toEqual(expectedExclusions);
-    expect(wrapper).not.toContain("tools/generator-supply/v1/evidence/replay/**");
-    expect(wrapper).not.toContain("g-contract-generator-supply-profile-independent-review-*.md");
+    expect([...SUCCESSOR_PROJECTION_EXCLUSIONS]).toEqual(expectedExclusions);
+    expect(wrapper).not.toContain("tools/generator-supply/v2/evidence/replay/**");
+    expect(wrapper).not.toContain("g-contract-generator-supply-profile-v2-independent-review-*.md");
     expect(wrapper).toContain('trusted_git_index "$index" -c tar.umask=0022');
     expect(wrapper).toContain("/usr/bin/env -i PATH=/usr/bin:/bin HOME=/var/empty");
     expect(wrapper).toContain('readonly TRUSTED_GIT="/usr/bin/git"');
@@ -166,12 +138,13 @@ describe("generator replay authority closure", () => {
     expect(runner).not.toContain("generate-platform-contract-lock.ts");
   });
 
-  it("binds one exact 48-file output closure to both native write boundaries", () => {
+  it("binds one exact 49-file output closure to both native write boundaries", () => {
     const expected = [
       "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
       "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
       "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
       "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+      "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
       "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
       "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
       "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
@@ -218,29 +191,30 @@ describe("generator replay authority closure", () => {
       "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go",
     ];
     const excluded = [
+      "contracts/generation.lock.json",
       "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json",
       "contracts/generated/platform/v1alpha1/identity-verifier-registry-v1.json",
       "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+      "tools/generator-supply/v2/evidence-manifest.json",
+      "tools/generator-supply/v2/profile.json",
+      "tools/contract-review-binding/v1/registry.json",
       "sdk/go/gen/common/v1alpha1/identity_generated_test.go",
       "sdk/go/gen/common/v1alpha1/json_generated_test.go",
       "sdk/go/gen/openapi/v1alpha1/client_generated_test.go",
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
     ];
     const shellBlock = /readonly GENERATOR_OUTPUT_FILES=\(\n([\s\S]*?)\n\)/u.exec(wrapper)?.[1];
-    const runnerBlock = /const GENERATOR_OUTPUT_PATHS = \[\n([\s\S]*?)\n\] as const;/u.exec(
-      runner,
-    )?.[1];
     expect(shellBlock).toBeDefined();
-    expect(runnerBlock).toBeDefined();
     const shellOutputs = shellBlock!.split("\n").map((line) => JSON.parse(line.trim()) as string);
-    const runnerOutputs = runnerBlock!
-      .split("\n")
-      .map((line) => JSON.parse(line.trim().replace(/,$/u, "")) as string);
-    expect(expected).toHaveLength(48);
+    const runnerOutputs = [...SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS];
+    expect(expected).toHaveLength(49);
     expect(new Set(expected).size).toBe(expected.length);
     expect(expected.toSorted()).toEqual(expected);
     expect(shellOutputs).toEqual(expected);
     expect(runnerOutputs).toEqual(expected);
+    expect(runner).toContain(
+      "const GENERATOR_OUTPUT_PATHS = SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS;",
+    );
     for (const path of expected) {
       const metadata = lstatSync(resolve(root, path));
       expect(metadata.isFile()).toBe(true);

@@ -7,7 +7,7 @@ import addFormats from "ajv-formats";
 import type { ErrorObject } from "ajv";
 
 import { validateCompatibilityRecoveryFixture } from "./platform-compatibility-recovery-registry";
-import { buildContractClosureProfileRegistry } from "./platform-contract-closure-profile";
+import { assertContractClosureProfileV3Current } from "./platform-contract-closure-profile-v3";
 import { validateDurableCoordinationFixture } from "./platform-durable-coordination-registry";
 import { validateRunnerLedgerPreflightFixture } from "./platform-runner-ledger-preflight-registry";
 import { validateRunnerLedgerConsumerFixture } from "./platform-runner-ledger-consumer-registry";
@@ -354,6 +354,18 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       instance: "../../../generated/platform/v1alpha1/contract-closure-profile-v2.json",
       expectedSchemaValid: true,
     },
+    {
+      name: "contract-closure-profile-source-v3",
+      schema: "../schemas/contract-closure-profile-source-v3.schema.json",
+      instance: "golden/contract-closure-profile-source-v3.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "contract-closure-profile-v3",
+      schema: "../schemas/contract-closure-profile-v3.schema.json",
+      instance: "../../../generated/platform/v1alpha1/contract-closure-profile-v3.json",
+      expectedSchemaValid: true,
+    },
   ],
 };
 
@@ -420,9 +432,7 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
   validateP1A1HttpIdempotencyBinding(openApiFiles, schemaFiles);
 
   const fixtureCases = validateJsonSchemaFixtures(schemaFiles, fixtureManifests, contractRoot);
-  const closureProfile = buildContractClosureProfileRegistry(root) as JsonRecord & {
-    readonly missing: ReadonlyArray<string>;
-  };
+  const closureProfile = assertContractClosureProfileV3Current(root).registry;
 
   if (schemaFiles.length === 0 || openApiFiles.length !== 2 || protoFiles.length < 3) {
     throw new Error(

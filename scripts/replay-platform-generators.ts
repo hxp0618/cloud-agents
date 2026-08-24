@@ -9,61 +9,13 @@ import {
   requireExactDirectoryEntries,
   requireFreshReplayPath,
 } from "./lib/generator-replay-path-authority";
+import { SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS } from "./lib/platform-successor-dag";
 
 const MANIFEST_ALGORITHM = "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1";
 const CORE_PROJECTION_MANIFEST_ALGORITHM = "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1";
 const PROJECTION_ARCHIVE_MEMBER_MANIFEST_ALGORITHM =
   "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1";
-const GENERATOR_OUTPUT_PATHS = [
-  "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
-  "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
-  "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
-  "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
-  "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-recovery-execution-admission-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-recovery-success-writer-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
-  "contracts/generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
-  "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
-  "contracts/generated/proto/manifest.json",
-  "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
-  "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
-  "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
-  "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
-  "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
-  "sdk/go/gen/common/v1alpha1/identity_generated.go",
-  "sdk/go/gen/common/v1alpha1/json_generated.go",
-  "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-  "sdk/go/gen/platform/v1alpha1/json_generated.go",
-  "sdk/go/generated-manifest.json",
-  "sdk/go/json-generated-manifest.json",
-  "sdk/go/proto-generated-manifest.json",
-  "sdk/typescript/generated-manifest.json",
-  "sdk/typescript/json-generated-manifest.json",
-  "sdk/typescript/proto-generated-manifest.json",
-  "sdk/typescript/src/gen/contracts/platform-adapter/v1alpha1/platform_adapter_pb.ts",
-  "sdk/typescript/src/gen/contracts/worker/v1alpha1/kernel_pb.ts",
-  "sdk/typescript/src/gen/contracts/worker/v1alpha1/worker_supervisor_pb.ts",
-  "sdk/typescript/src/index.ts",
-  "sdk/typescript/src/platform.ts",
-  "sdk/typescript/src/proto.ts",
-  "services/control-plane/internal/compatibility/registry_generated.go",
-  "services/control-plane/internal/coordination/registry_generated.go",
-  "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go",
-  "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
-  "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_generated.go",
-  "services/control-plane/internal/migration/runner_ledger_preflight_profile_generated.go",
-  "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go",
-] as const;
+const GENERATOR_OUTPUT_PATHS = SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS;
 const GENERATOR_OUTPUT_PATH_SET = new Set<string>(GENERATOR_OUTPUT_PATHS);
 const GENERATOR_COMMAND_TIMEOUT_MILLISECONDS = 600_000;
 const TOOL_OUTPUT_TIMEOUT_MILLISECONDS = 60_000;

@@ -1,0 +1,101 @@
+{
+  "formatVersion": "cloud-agents-contract-standards-profile/v2",
+  "status": "GENERATED_NON_GATE_EVIDENCE",
+  "notGateClosure": true,
+  "predecessor": {
+    "path": "tools/contract-standards/profile.json",
+    "sha256": "dfb79ae54631d9f61f53846c91ac74bebb5b213fac023af2527c3ce352873a11",
+    "sizeBytes": 3218,
+    "mutation": "forbidden"
+  },
+  "toolchain": {
+    "bun": "1.3.14",
+    "python": "3.14.7",
+    "uv": "0.12.5",
+    "pyproject": {
+      "path": "tools/contract-standards/pyproject.toml",
+      "sha256": "b0a8b81937d783f1021e72f788f2b567769000ccef1bef044a2cb2b783646fb6"
+    },
+    "lock": {
+      "path": "tools/contract-standards/uv.lock",
+      "sha256": "485c89d8f6bc03cc9eecf37003854d452439bd37b0252d43dcb1f8474cef6d49"
+    }
+  },
+  "packages": {
+    "annotated-types": "0.8.0",
+    "attrs": "26.1.0",
+    "jsonschema": "4.26.0",
+    "jsonschema-path": "0.5.0",
+    "jsonschema-specifications": "2025.9.1",
+    "jsonschema-rs": "0.50.1",
+    "lazy-object-proxy": "1.12.0",
+    "openapi-schema-validator": "0.9.0",
+    "openapi-spec-validator": "0.9.0",
+    "pathable": "0.6.0",
+    "pydantic": "2.13.4",
+    "pydantic-core": "2.46.4",
+    "pydantic-settings": "2.15.0",
+    "python-dotenv": "1.2.3",
+    "PyYAML": "6.0.3",
+    "referencing": "0.37.0",
+    "rfc3339-validator": "0.1.4",
+    "rpds-py": "2026.6.3",
+    "six": "1.17.0",
+    "typing-extensions": "4.16.0",
+    "typing-inspection": "0.4.4"
+  },
+  "jsonSchemaOfficialSuite": {
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "upstream": "https://github.com/json-schema-org/JSON-Schema-Test-Suite.git",
+    "commit": "ea54899edb898f4cd99fb0f778e0856e7d337c8f",
+    "tree": "b41de18d1ce464a942ca78fd0e286cd726e9090f",
+    "mandatoryTree": "8caa839664321324a31424adf0dae3811a73e6da",
+    "localRoot": "tools/contract-standards/vendor/json-schema-test-suite",
+    "corpusManifestAlgorithm": "sorted-path-nul-sha256-nul-size-v1",
+    "corpusManifestSha256": "d69af29cbaf4c7ffd1f8577c986294c51ec4efb177ebc340022978043b2a88a1",
+    "corpusFiles": 126,
+    "license": "MIT",
+    "licenseSha256": "837402bd25fad9b704265801ca3f92566a98157c1f9a7acd6f446299ba1c305a",
+    "mandatoryFiles": 46,
+    "cases": 383,
+    "assertions": 1299,
+    "remoteFiles": 79,
+    "independentValidator": "jsonschema-rs 0.50.1",
+    "expectedFailures": 0,
+    "productionAjvOfficialSuiteAudit": {
+      "validator": "Ajv 8.20.0",
+      "status": "EXECUTED_NONCONFORMANT"
+    }
+  },
+  "currentContracts": {
+    "schemaFiles": 60,
+    "fixtureManifests": 2,
+    "fixtureCases": 79,
+    "sourceContractManifestSha256": "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
+    "productionValidator": "Ajv 8.20.0 plus in-repo semantics",
+    "independentValidator": "jsonschema-rs 0.50.1",
+    "crossEngineExactFixtureResults": true
+  },
+  "openapi": {
+    "documentVersion": "3.1.1",
+    "documents": [
+      "contracts/managed-agent/v1alpha1/openapi.json",
+      "contracts/managed-host/v1alpha1/openapi.json"
+    ],
+    "documentCount": 2,
+    "operationCount": 9,
+    "independentValidator": "openapi-spec-validator 0.9.0",
+    "expectedFailures": 0
+  },
+  "implementationBoundary": {
+    "productionRuntimeDependency": "FORBIDDEN",
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "httpSurface": "NOT_IMPLEMENTED",
+    "p2Surface": "NOT_IMPLEMENTED",
+    "providerSideEffects": "FORBIDDEN",
+    "deployment": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED",
+    "gateStatus": "ALL_GATES_OPEN",
+    "independentReview": "PENDING"
+  }
+}

@@ -12,6 +12,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { canonicalizeJson, type JsonRecord } from "./platform-json-semantics";
 import {
+  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
 } from "./platform-successor-dag";
@@ -1316,6 +1317,13 @@ export function buildGeneratorSupplyReplayV2TestFixture(
     linuxIsolationPath,
   ]) {
     updateProjection(receipts[path]!);
+    receipts[path]!.replayAuthoritySha256 = expectedAuthority(replayContract);
+  }
+  for (const path of [darwinIsolationPath, linuxIsolationPath]) {
+    receipts[path]!.wrapperSha256 = prefixed(replayContract.authorityFiles.wrapper.sha256);
+  }
+  for (const path of [darwinAPath, darwinBPath, linuxAPath, linuxBPath]) {
+    receipts[path]!.outputFiles = SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.length;
   }
   const projection = receipts[projectionPath]!;
   projection.treeSha = newTree;

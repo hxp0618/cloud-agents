@@ -1,9 +1,50 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import {
+  closeSync,
+  constants,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
+import {
+  assertContractStandardsProfileCurrent,
+  CONTRACT_STANDARDS_PROFILE_V1_PATH,
+  CONTRACT_STANDARDS_PROFILE_V2_PATH,
+  contractStandardsCorpusInputs,
+} from "./platform-contract-standards-profile";
+import {
+  assertContractClosureProfileV3Current,
+  CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+} from "./platform-contract-closure-profile-v3";
+import {
+  contractReviewBindingSourceDigest,
+  inspectContractReviewBindingState,
+  CONTRACT_REVIEW_BINDING_OUTPUT_PATH,
+  CONTRACT_REVIEW_TUPLE_PATH,
+  type ContractReviewBindingState,
+} from "./platform-contract-review-binding";
+import {
+  assertGeneratorSupplyV2RegistryCurrent,
+  GENERATOR_SUPPLY_V2_OUTPUT_PATH,
+} from "./platform-generator-supply-profile-v2";
+import {
+  assertExactSuccessorProjectionExclusions,
+  assertSuccessorCoreGeneratorOutputAuthority,
+  assertSuccessorCoreGeneratorOutputsCurrent,
+  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
+  SUCCESSOR_GENERATION_LOCK_PATH,
+  SUCCESSOR_PROJECTION_EXCLUSIONS,
+} from "./platform-successor-dag";
 import {
   AJV_OFFICIAL_SUITE_AUDIT_OUTPUT_PATH,
   ajvOfficialSuiteAuditInputs,
@@ -129,66 +170,92 @@ const UV_VERSION = "0.12.5";
 const AJV_REVIEW = "docs/plan/p1/dependency-reviews/ajv-8.20.0.md";
 const CONTRACT_STANDARDS_REVIEW =
   "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md";
-const CONTRACT_STANDARDS_PROFILE = "tools/contract-standards/profile.json";
-const CONTRACT_STANDARDS_CORPUS = "tools/contract-standards/vendor/json-schema-test-suite";
 const CONTRACT_STANDARDS_FIXED_INPUTS = [
   ".gitattributes",
   ".mise.toml",
   "package.json",
-  CONTRACT_STANDARDS_PROFILE,
+  CONTRACT_STANDARDS_PROFILE_V1_PATH,
+  CONTRACT_STANDARDS_PROFILE_V2_PATH,
   CONTRACT_STANDARDS_REVIEW,
   "tools/contract-standards/pyproject.toml",
   "tools/contract-standards/uv.lock",
   "tools/contract-standards/check_contract_standards.py",
   "tools/contract-standards/test_contract_standards.py",
   "scripts/check-platform-contract-standards.ts",
+  "scripts/check-platform-contract-standards.test.ts",
+  "scripts/lib/platform-contract-standards-profile.ts",
+  "scripts/lib/platform-contract-standards-profile.test.ts",
 ] as const;
-type ContractStandardsProfile = {
-  readonly formatVersion: string;
-  readonly status: string;
-  readonly notGateClosure: boolean;
-  readonly toolchain: {
-    readonly bun: string;
-    readonly python: string;
-    readonly uv: string;
-    readonly pyproject: { readonly path: string; readonly sha256: string };
-    readonly lock: { readonly path: string; readonly sha256: string };
-  };
-  readonly packages: Record<string, string>;
-  readonly jsonSchemaOfficialSuite: {
-    readonly commit: string;
-    readonly tree: string;
-    readonly mandatoryTree: string;
-    readonly localRoot: string;
-    readonly corpusManifestAlgorithm: string;
-    readonly corpusManifestSha256: string;
-    readonly corpusFiles: number;
-    readonly licenseSha256: string;
-    readonly mandatoryFiles: number;
-    readonly cases: number;
-    readonly assertions: number;
-    readonly remoteFiles: number;
-    readonly expectedFailures: number;
-    readonly productionAjvOfficialSuiteAudit: {
-      readonly validator: string;
-      readonly status: string;
-    };
-  };
-  readonly currentContracts: {
-    readonly schemaFiles: number;
-    readonly fixtureManifests: number;
-    readonly fixtureCases: number;
-    readonly crossEngineExactFixtureResults: boolean;
-  };
-  readonly openapi: {
-    readonly documentVersion: string;
-    readonly documents: readonly string[];
-    readonly documentCount: number;
-    readonly operationCount: number;
-    readonly expectedFailures: number;
-  };
-  readonly implementationBoundary: Record<string, string>;
-};
+
+export type SuccessorLockFileRecord = Readonly<{
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+}>;
+
+export type SuccessorLockCoreOutputRecord = SuccessorLockFileRecord &
+  Readonly<{
+    gitMode: "100644" | "100755";
+  }>;
+
+export type PlatformSuccessorContractLockAuthority = Readonly<{
+  sourceContractManifestSha256: string;
+  standards: Readonly<{
+    formatVersion: string;
+    profile: SuccessorLockFileRecord;
+    predecessor: SuccessorLockFileRecord;
+    schemaFiles: number;
+    fixtureManifests: number;
+    fixtureCases: number;
+  }>;
+  closure: Readonly<{
+    formatVersion: string;
+    profileId: string;
+    profileDigest: string;
+    registryDigest: string;
+    output: SuccessorLockFileRecord;
+  }>;
+  supply: Readonly<{
+    formatVersion: string;
+    profileId: string;
+    profileDigest: string;
+    registryDigest: string;
+    candidateManifestSha256: string;
+    outputFiles: number;
+    output: SuccessorLockFileRecord;
+  }>;
+  coreOutputs: readonly SuccessorLockCoreOutputRecord[];
+  projectionExclusions: readonly string[];
+  reviewBinding:
+    | Readonly<{
+        state: "PRE_REVIEW_ABSENT";
+        sourceDigest: string;
+      }>
+    | Readonly<{
+        state: "COMPLETE_TUPLE_OUTPUT_CURRENT";
+        sourceDigest: string;
+        tupleDigest: string;
+        registryDigest: string;
+        tuple: SuccessorLockFileRecord;
+        registry: SuccessorLockFileRecord;
+      }>;
+}>;
+
+type SuccessorLockStableFileSnapshot = Readonly<{
+  record: SuccessorLockCoreOutputRecord;
+  rootReal: string;
+  absolute: string;
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+  parentAbsolute: string;
+  parentDev: bigint;
+  parentIno: bigint;
+  parentMtimeNs: bigint;
+  parentCtimeNs: bigint;
+}>;
 const TOOLCHAIN_AUTHORITY_FILES = [".mise.toml", "package.json"] as const;
 const PLATFORM_GO_INPUTS = [
   "go.work",
@@ -461,6 +528,7 @@ export const IDENTITY_VERIFIER_RUNTIME_SOURCES = [
   "services/control-plane/internal/authn/lexical.go",
   "services/control-plane/internal/authn/postgres_external_test.go",
   "services/control-plane/internal/authn/principal.go",
+  "services/control-plane/internal/authn/runtime_server_external_test.go",
   "services/control-plane/internal/authn/strict_json.go",
   "services/control-plane/internal/authn/surface_test.go",
   "services/control-plane/internal/authn/trust.go",
@@ -673,11 +741,8 @@ const IN_REPO_TOOLS = [
 export function buildPlatformContractLock(root: string): Record<string, unknown> {
   const summary = validatePlatformContractTree(root);
   const runtimes = validatePlatformToolchains(root);
-  const contractStandardsProfile = assertContractStandardsProfileCurrent(root);
-  const contractStandardsInputs = [
-    ...CONTRACT_STANDARDS_FIXED_INPUTS,
-    ...listRegularMigrationInputFiles(root, CONTRACT_STANDARDS_CORPUS),
-  ].toSorted();
+  const { profile: contractStandardsProfile, inputs: contractStandardsInputs } =
+    buildPlatformContractStandardsLockState(root);
   const migration = validateCheckedInMigrationBundle(root);
   const migrationInputs = platformMigrationInputs(root);
   assertDurableCoordinationRegistryCurrent(root);
@@ -1157,6 +1222,8 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
             schemas: contractStandardsProfile.currentContracts.schemaFiles,
             fixtureManifests: contractStandardsProfile.currentContracts.fixtureManifests,
             fixtureCases: contractStandardsProfile.currentContracts.fixtureCases,
+            sourceContractManifestSha256:
+              contractStandardsProfile.currentContracts.sourceContractManifestSha256,
             crossEngineExactFixtureResults:
               contractStandardsProfile.currentContracts.crossEngineExactFixtureResults,
           },
@@ -2047,6 +2114,30 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   };
 }
 
+export function platformContractStandardsInputs(root: string): string[] {
+  const inputs = [
+    ...CONTRACT_STANDARDS_FIXED_INPUTS,
+    ...contractStandardsCorpusInputs(root),
+  ].toSorted();
+  if (new Set(inputs).size !== inputs.length) {
+    throw new Error("Contract-standards lock inputs must be unique.");
+  }
+  if (inputs.includes("contracts/generation.lock.json")) {
+    throw new Error("The historical generation lock must remain a successor projection exclusion.");
+  }
+  return inputs;
+}
+
+export function buildPlatformContractStandardsLockState(root: string): Readonly<{
+  profile: ReturnType<typeof assertContractStandardsProfileCurrent>;
+  inputs: string[];
+}> {
+  return {
+    profile: assertContractStandardsProfileCurrent(root),
+    inputs: platformContractStandardsInputs(root),
+  };
+}
+
 export function serializePlatformContractLock(lock: Record<string, unknown>): string {
   return `${JSON.stringify(lock, null, 2)}\n`;
 }
@@ -2061,119 +2152,614 @@ export function assertPlatformContractLockCurrent(root: string): void {
   }
 }
 
-function assertContractStandardsProfileCurrent(root: string): ContractStandardsProfile {
-  const profile = JSON.parse(
-    readFileSync(resolve(root, CONTRACT_STANDARDS_PROFILE), "utf8"),
-  ) as ContractStandardsProfile;
-  if (
-    profile.formatVersion !== "cloud-agents-contract-standards-profile/v1" ||
-    profile.status !== "GENERATED_NON_GATE_EVIDENCE" ||
-    profile.notGateClosure !== true
-  ) {
-    throw new Error("Contract standards profile identity or non-Gate status is invalid.");
+export function buildPlatformSuccessorContractLockDocument(
+  authority: PlatformSuccessorContractLockAuthority,
+): Record<string, unknown> {
+  assertExactSuccessorObjectKeys(authority, [
+    "sourceContractManifestSha256",
+    "standards",
+    "closure",
+    "supply",
+    "coreOutputs",
+    "projectionExclusions",
+    "reviewBinding",
+  ]);
+  assertExactSuccessorObjectKeys(authority.standards, [
+    "formatVersion",
+    "profile",
+    "predecessor",
+    "schemaFiles",
+    "fixtureManifests",
+    "fixtureCases",
+  ]);
+  assertExactSuccessorObjectKeys(authority.closure, [
+    "formatVersion",
+    "profileId",
+    "profileDigest",
+    "registryDigest",
+    "output",
+  ]);
+  assertExactSuccessorObjectKeys(authority.supply, [
+    "formatVersion",
+    "profileId",
+    "profileDigest",
+    "registryDigest",
+    "candidateManifestSha256",
+    "outputFiles",
+    "output",
+  ]);
+  if (!/^sha256:[0-9a-f]{64}$/u.test(authority.sourceContractManifestSha256)) {
+    throw new Error("Successor lock source-contract manifest SHA-256 is invalid.");
   }
+  assertSuccessorFileRecord(
+    authority.standards.profile,
+    CONTRACT_STANDARDS_PROFILE_V2_PATH,
+    "standards v2 profile",
+  );
+  assertSuccessorFileRecord(
+    authority.standards.predecessor,
+    CONTRACT_STANDARDS_PROFILE_V1_PATH,
+    "standards v1 predecessor",
+  );
   if (
-    profile.toolchain.bun !== BUN_VERSION ||
-    profile.toolchain.python !== PYTHON_VERSION ||
-    profile.toolchain.uv !== UV_VERSION
+    authority.standards.formatVersion !== "cloud-agents-contract-standards-profile/v2" ||
+    authority.standards.schemaFiles !== 60 ||
+    authority.standards.fixtureManifests !== 2 ||
+    authority.standards.fixtureCases !== 79
   ) {
-    throw new Error("Contract standards profile toolchain versions are stale.");
+    throw new Error("Successor lock requires the exact current contract-standards v2 authority.");
   }
-  for (const [label, fact, expectedPath] of [
-    ["pyproject", profile.toolchain.pyproject, "tools/contract-standards/pyproject.toml"],
-    ["lock", profile.toolchain.lock, "tools/contract-standards/uv.lock"],
-  ] as const) {
-    if (
-      fact.path !== expectedPath ||
-      fact.sha256 !== fileSha256(root, expectedPath).replace(/^sha256:/u, "")
-    ) {
-      throw new Error(`Contract standards ${label} binding is stale.`);
+  assertSuccessorFileRecord(
+    authority.closure.output,
+    CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+    "closure v3 output",
+  );
+  if (
+    authority.closure.formatVersion !== "cloud-agents-contract-closure-profile-registry/v3" ||
+    authority.closure.profileId !== "contract-closure-profile/v3" ||
+    !isSha256(authority.closure.profileDigest) ||
+    !isSha256(authority.closure.registryDigest)
+  ) {
+    throw new Error("Successor lock requires the canonical closure-v3 registry identity.");
+  }
+  assertSuccessorFileRecord(
+    authority.supply.output,
+    GENERATOR_SUPPLY_V2_OUTPUT_PATH,
+    "generator-supply v2 output",
+  );
+  if (
+    authority.supply.formatVersion !== "cloud-agents-generator-supply-profile-registry/v2" ||
+    authority.supply.profileId !== "cloud-agents/generator-supply-profile/v2" ||
+    !isSha256(authority.supply.profileDigest) ||
+    !isSha256(authority.supply.registryDigest) ||
+    !isSha256(authority.supply.candidateManifestSha256) ||
+    authority.supply.outputFiles !== SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.length
+  ) {
+    throw new Error("Successor lock requires the assembled generator-supply-v2 registry identity.");
+  }
+  assertSuccessorCoreGeneratorOutputAuthority(authority.coreOutputs.map(({ path }) => path));
+  authority.coreOutputs.forEach((record) => {
+    assertSuccessorCoreOutputRecord(record);
+  });
+  const candidateManifestSha256 = successorReplayCandidateManifest(authority.coreOutputs);
+  if (candidateManifestSha256 !== authority.supply.candidateManifestSha256) {
+    throw new Error(
+      `Successor lock live core-output manifest disagrees with the receipt-verified supply candidate: expected=${authority.supply.candidateManifestSha256} actual=${candidateManifestSha256}.`,
+    );
+  }
+  assertExactSuccessorProjectionExclusions(authority.projectionExclusions);
+  if (authority.reviewBinding.state === "PRE_REVIEW_ABSENT") {
+    assertExactSuccessorObjectKeys(authority.reviewBinding, ["state", "sourceDigest"]);
+    if (!isSha256(authority.reviewBinding.sourceDigest)) {
+      throw new Error("Successor pre-review lock requires a binding source digest.");
     }
+  } else {
+    if (authority.reviewBinding.state !== "COMPLETE_TUPLE_OUTPUT_CURRENT") {
+      throw new Error(
+        `Successor lock rejects partial or ready-to-write review-binding state: ${String(authority.reviewBinding.state)}.`,
+      );
+    }
+    assertExactSuccessorObjectKeys(authority.reviewBinding, [
+      "state",
+      "sourceDigest",
+      "tupleDigest",
+      "registryDigest",
+      "tuple",
+      "registry",
+    ]);
+    if (
+      !isSha256(authority.reviewBinding.sourceDigest) ||
+      !isSha256(authority.reviewBinding.tupleDigest) ||
+      !isSha256(authority.reviewBinding.registryDigest)
+    ) {
+      throw new Error(
+        "Successor post-binding lock requires exact source, tuple, and registry digests.",
+      );
+    }
+    assertSuccessorFileRecord(
+      authority.reviewBinding.tuple,
+      CONTRACT_REVIEW_TUPLE_PATH,
+      "review-binding tuple",
+    );
+    assertSuccessorFileRecord(
+      authority.reviewBinding.registry,
+      CONTRACT_REVIEW_BINDING_OUTPUT_PATH,
+      "review-binding registry",
+    );
   }
-  if (
-    profile.packages["jsonschema-rs"] !== "0.50.1" ||
-    profile.packages["openapi-spec-validator"] !== "0.9.0"
-  ) {
-    throw new Error("Contract standards primary package versions are stale.");
-  }
-  const suite = profile.jsonSchemaOfficialSuite;
-  const corpusFiles = listRegularMigrationInputFiles(root, CONTRACT_STANDARDS_CORPUS);
-  if (
-    suite.localRoot !== CONTRACT_STANDARDS_CORPUS ||
-    suite.corpusManifestAlgorithm !== "sorted-path-nul-sha256-nul-size-v1" ||
-    suite.corpusManifestSha256 !== standardsCorpusManifestDigest(root, CONTRACT_STANDARDS_CORPUS) ||
-    suite.corpusFiles !== corpusFiles.length ||
-    suite.licenseSha256 !==
-      fileSha256(root, `${CONTRACT_STANDARDS_CORPUS}/LICENSE`).replace(/^sha256:/u, "") ||
-    suite.mandatoryFiles !== 46 ||
-    suite.cases !== 383 ||
-    suite.assertions !== 1299 ||
-    suite.remoteFiles !== 79 ||
-    suite.expectedFailures !== 0 ||
-    suite.productionAjvOfficialSuiteAudit.validator !== "Ajv 8.20.0" ||
-    suite.productionAjvOfficialSuiteAudit.status !== "EXECUTED_NONCONFORMANT" ||
-    Object.keys(suite.productionAjvOfficialSuiteAudit).length !== 2
-  ) {
-    throw new Error("Contract standards official JSON Schema suite binding is stale.");
-  }
-  if (
-    profile.currentContracts.schemaFiles !== 58 ||
-    profile.currentContracts.fixtureManifests !== 2 ||
-    profile.currentContracts.fixtureCases !== 77 ||
-    profile.currentContracts.crossEngineExactFixtureResults !== true
-  ) {
-    throw new Error("Contract standards current-contract cardinalities are stale.");
-  }
-  const expectedOpenApiDocuments = [
-    "contracts/managed-agent/v1alpha1/openapi.json",
-    "contracts/managed-host/v1alpha1/openapi.json",
-  ];
-  if (
-    profile.openapi.documentVersion !== "3.1.1" ||
-    JSON.stringify(profile.openapi.documents) !== JSON.stringify(expectedOpenApiDocuments) ||
-    profile.openapi.documentCount !== 2 ||
-    profile.openapi.operationCount !== 9 ||
-    profile.openapi.expectedFailures !== 0
-  ) {
-    throw new Error("Contract standards OpenAPI 3.1 binding is stale.");
-  }
-  const boundary = {
-    productionRuntimeDependency: "FORBIDDEN",
-    productionDatabaseWrites: "NOT_AUTHORIZED",
-    httpSurface: "NOT_IMPLEMENTED",
-    p2Surface: "NOT_IMPLEMENTED",
-    providerSideEffects: "FORBIDDEN",
-    deployment: "NOT_AUTHORIZED",
-    publication: "NOT_AUTHORIZED",
+
+  const coreOutputs = authority.coreOutputs.map((record) => ({ ...record }));
+  const reviewBinding =
+    authority.reviewBinding.state === "PRE_REVIEW_ABSENT"
+      ? { ...authority.reviewBinding }
+      : {
+          ...authority.reviewBinding,
+          tuple: { ...authority.reviewBinding.tuple },
+          registry: { ...authority.reviewBinding.registry },
+        };
+  const body = {
+    formatVersion: "cloud-agents-platform-contract-generation-lock/v2",
+    lockVersion: 2,
+    status:
+      reviewBinding.state === "PRE_REVIEW_ABSENT"
+        ? "SUCCESSOR_ASSEMBLED_PRE_REVIEW"
+        : "SUCCESSOR_ASSEMBLED_REVIEW_BOUND",
+    notGateClosure: true,
     gateStatus: "ALL_GATES_OPEN",
-    independentReview: "PENDING",
+    sourceContract: {
+      manifestSha256: authority.sourceContractManifestSha256,
+      schemaFiles: 60,
+      fixtureManifests: 2,
+      fixtureCases: 79,
+    },
+    authorities: {
+      standards: {
+        ...authority.standards,
+        profile: { ...authority.standards.profile },
+        predecessor: { ...authority.standards.predecessor },
+      },
+      closure: { ...authority.closure, output: { ...authority.closure.output } },
+      generatorSupply: { ...authority.supply, output: { ...authority.supply.output } },
+    },
+    coreGeneratorOutputs: {
+      algorithm: "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+      count: coreOutputs.length,
+      replayCandidateManifestSha256: candidateManifestSha256,
+      files: coreOutputs,
+    },
+    projection: {
+      generationLockPath: SUCCESSOR_GENERATION_LOCK_PATH,
+      trackedLegacyLock: "EXCLUDED_FROM_SUCCESSOR_PROJECTION",
+      exclusionCount: authority.projectionExclusions.length,
+      exclusions: [...authority.projectionExclusions],
+    },
+    reviewBinding,
+    implementationBoundary: {
+      productionDatabaseWrites: "NOT_AUTHORIZED",
+      httpSurface: "NOT_IMPLEMENTED",
+      p2Surface: "NOT_IMPLEMENTED",
+      providerSideEffects: "FORBIDDEN",
+      deployment: "NOT_AUTHORIZED",
+      publication: "NOT_AUTHORIZED",
+      gateStatus: "ALL_GATES_OPEN",
+    },
   };
-  if (
-    Object.keys(profile.implementationBoundary).length !== Object.keys(boundary).length ||
-    Object.entries(boundary).some(([key, value]) => profile.implementationBoundary[key] !== value)
-  ) {
-    throw new Error("Contract standards implementation boundary is invalid.");
-  }
-  return profile;
+  return {
+    ...body,
+    lockDigest: successorDomainDigest(
+      "cloud-agents/platform-contract-generation-lock/document/v2",
+      body,
+    ),
+  };
 }
 
-function standardsCorpusManifestDigest(root: string, directory: string): string {
-  const hash = createHash("sha256");
-  const prefix = `${directory}/`;
-  for (const file of listRegularMigrationInputFiles(root, directory).toSorted()) {
-    if (!file.startsWith(prefix)) {
-      throw new Error(`Contract standards corpus path escapes its root: ${file}.`);
+export function buildPlatformSuccessorContractLock(root: string): Record<string, unknown> {
+  const sourceContract = validatePlatformContractTree(root);
+  const standards = assertContractStandardsProfileCurrent(root);
+  if (
+    standards.currentContracts.sourceContractManifestSha256 !==
+    sourceContract.contractManifestSha256
+  ) {
+    throw new Error("Successor lock standards-v2 and canonical contract manifest disagree.");
+  }
+  assertSuccessorCoreGeneratorOutputsCurrent(root);
+  const closure = assertContractClosureProfileV3Current(root);
+  const supply = assertGeneratorSupplyV2RegistryCurrent(root);
+  const bindingState = inspectContractReviewBindingState(root);
+  const coreSnapshots = SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.map((path) =>
+    readStableSuccessorCoreOutputSnapshot(root, path),
+  );
+  const authority: PlatformSuccessorContractLockAuthority = {
+    sourceContractManifestSha256: sourceContract.contractManifestSha256,
+    standards: {
+      formatVersion: standards.formatVersion,
+      profile: readStableSuccessorFileRecord(root, CONTRACT_STANDARDS_PROFILE_V2_PATH),
+      predecessor: readStableSuccessorFileRecord(root, CONTRACT_STANDARDS_PROFILE_V1_PATH),
+      schemaFiles: standards.currentContracts.schemaFiles,
+      fixtureManifests: standards.currentContracts.fixtureManifests,
+      fixtureCases: standards.currentContracts.fixtureCases,
+    },
+    closure: {
+      formatVersion: closure.registry.formatVersion,
+      profileId: closure.registry.profile.spec.profileId,
+      profileDigest: closure.registry.profile.profileDigest,
+      registryDigest: closure.registry.registryDigest,
+      output: readStableSuccessorFileRecord(root, CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH),
+    },
+    supply: {
+      formatVersion: supply.registry.formatVersion,
+      profileId: String(supply.registry.profile.spec.profileId),
+      profileDigest: String(supply.registry.profile.profileDigest),
+      registryDigest: supply.registry.registryDigest,
+      candidateManifestSha256: supply.candidateManifestSha256,
+      outputFiles: supply.outputFiles,
+      output: readStableSuccessorFileRecord(root, GENERATOR_SUPPLY_V2_OUTPUT_PATH),
+    },
+    coreOutputs: coreSnapshots.map(({ record }) => record),
+    projectionExclusions: [...SUCCESSOR_PROJECTION_EXCLUSIONS],
+    reviewBinding: successorReviewBindingAuthority(root, bindingState),
+  };
+  assertSuccessorCoreOutputSnapshotGroupCurrent(root, coreSnapshots);
+  const document = buildPlatformSuccessorContractLockDocument(authority);
+  closure.assertCurrent();
+  supply.assertCurrent();
+  assertContractStandardsProfileCurrent(root);
+  const bindingAfter = successorReviewBindingAuthority(
+    root,
+    inspectContractReviewBindingState(root),
+  );
+  if (JSON.stringify(bindingAfter) !== JSON.stringify(authority.reviewBinding)) {
+    throw new Error("Successor lock review-binding state changed during derivation.");
+  }
+  assertSuccessorCoreOutputSnapshotGroupCurrent(root, coreSnapshots);
+  return document;
+}
+
+export function assertPlatformSuccessorCoreOutputSnapshotMutationForTest(
+  root: string,
+  mutateAfterCapture: () => void,
+): void {
+  const snapshots = SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.map((path) =>
+    readStableSuccessorCoreOutputSnapshot(root, path),
+  );
+  mutateAfterCapture();
+  assertSuccessorCoreOutputSnapshotGroupCurrent(root, snapshots);
+}
+
+export function assertPlatformSuccessorContractLockCurrent(root: string): void {
+  const expected = serializePlatformContractLock(buildPlatformSuccessorContractLock(root));
+  const actual = readFileSync(resolve(root, SUCCESSOR_GENERATION_LOCK_PATH), "utf8");
+  if (actual !== expected) {
+    throw new Error(
+      "contracts/generation.lock.json is not the current versioned successor lock; run the explicit --write-successor mode only in its authorized slice.",
+    );
+  }
+}
+
+export function writePlatformContractLockDocument(
+  root: string,
+  document: Record<string, unknown>,
+): void {
+  const destination = assertSafePlatformContractLockDestination(root);
+  const temporary = resolve(
+    destination.parentAbsolute,
+    `.generation.lock.json.${String(process.pid)}.tmp`,
+  );
+  let descriptor: number | undefined;
+  let temporaryPresent = false;
+  try {
+    descriptor = openSync(
+      temporary,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o644,
+    );
+    temporaryPresent = true;
+    writeFileSync(descriptor, serializePlatformContractLock(document), "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    const current = assertSafePlatformContractLockDestination(root);
+    if (
+      current.rootReal !== destination.rootReal ||
+      current.parentAbsolute !== destination.parentAbsolute ||
+      current.parentDev !== destination.parentDev ||
+      current.parentIno !== destination.parentIno
+    ) {
+      throw new Error("Platform contract-lock destination topology changed before commit.");
     }
-    const bytes = readFileSync(resolve(root, file));
+    renameSync(temporary, current.outputAbsolute);
+    temporaryPresent = false;
+    const parentDescriptor = openSync(current.parentAbsolute, constants.O_RDONLY);
+    try {
+      fsyncSync(parentDescriptor);
+    } finally {
+      closeSync(parentDescriptor);
+    }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (temporaryPresent) {
+      try {
+        unlinkSync(temporary);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      }
+    }
+  }
+}
+
+function assertSafePlatformContractLockDestination(root: string): Readonly<{
+  rootReal: string;
+  parentAbsolute: string;
+  outputAbsolute: string;
+  parentDev: bigint;
+  parentIno: bigint;
+}> {
+  const rootReal = realpathSync(root);
+  const parentAbsolute = resolve(rootReal, "contracts");
+  const outputAbsolute = resolve(rootReal, SUCCESSOR_GENERATION_LOCK_PATH);
+  const parent = lstatSync(parentAbsolute, { bigint: true });
+  if (
+    !parent.isDirectory() ||
+    parent.isSymbolicLink() ||
+    realpathSync(parentAbsolute) !== parentAbsolute ||
+    dirname(outputAbsolute) !== parentAbsolute
+  ) {
+    throw new Error("Platform contract-lock parent must be a contained real directory.");
+  }
+  try {
+    const output = lstatSync(outputAbsolute);
+    if (
+      !output.isFile() ||
+      output.isSymbolicLink() ||
+      realpathSync(outputAbsolute) !== outputAbsolute
+    ) {
+      throw new Error("Platform contract-lock output must be a regular non-symlink file.");
+    }
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return {
+        rootReal,
+        parentAbsolute,
+        outputAbsolute,
+        parentDev: parent.dev,
+        parentIno: parent.ino,
+      };
+    }
+    throw error;
+  }
+  return {
+    rootReal,
+    parentAbsolute,
+    outputAbsolute,
+    parentDev: parent.dev,
+    parentIno: parent.ino,
+  };
+}
+
+function successorReviewBindingAuthority(
+  root: string,
+  state: ContractReviewBindingState,
+): PlatformSuccessorContractLockAuthority["reviewBinding"] {
+  const sourceDigest = contractReviewBindingSourceDigest(state.source);
+  if (state.kind === "PRE_REVIEW_ABSENT") return { state: state.kind, sourceDigest };
+  if (state.kind === "COMPLETE_TUPLE_READY_TO_WRITE") {
+    throw new Error(
+      "Successor lock refuses COMPLETE_TUPLE_READY_TO_WRITE; the detached registry must be explicitly written and revalidated first.",
+    );
+  }
+  return {
+    state: state.kind,
+    sourceDigest,
+    tupleDigest: state.tuple.tupleDigest,
+    registryDigest: state.registry.registryDigest,
+    tuple: readStableSuccessorFileRecord(root, CONTRACT_REVIEW_TUPLE_PATH),
+    registry: readStableSuccessorFileRecord(root, CONTRACT_REVIEW_BINDING_OUTPUT_PATH),
+  };
+}
+
+function readStableSuccessorFileRecord(root: string, path: string): SuccessorLockFileRecord {
+  const rootReal = realpathSync(root);
+  const absolute = resolve(rootReal, path);
+  const relation = relative(rootReal, absolute);
+  if (relation === "" || relation === ".." || relation.startsWith(`..${sep}`)) {
+    throw new Error(`Successor lock input escapes the repository: ${path}.`);
+  }
+  const before = lstatSync(absolute, { bigint: true });
+  if (!before.isFile() || before.isSymbolicLink() || realpathSync(absolute) !== absolute) {
+    throw new Error(`Successor lock input must be a real regular file: ${path}.`);
+  }
+  const bytes = readFileSync(absolute);
+  const after = lstatSync(absolute, { bigint: true });
+  if (
+    after.dev !== before.dev ||
+    after.ino !== before.ino ||
+    after.size !== before.size ||
+    after.mtimeNs !== before.mtimeNs ||
+    after.ctimeNs !== before.ctimeNs ||
+    !after.isFile() ||
+    after.isSymbolicLink() ||
+    realpathSync(absolute) !== absolute
+  ) {
+    throw new Error(`Successor lock input changed while being read: ${path}.`);
+  }
+  return {
+    path,
+    sha256: digestBytes(bytes),
+    sizeBytes: bytes.byteLength,
+  };
+}
+
+function readStableSuccessorCoreOutputSnapshot(
+  root: string,
+  path: string,
+): SuccessorLockStableFileSnapshot {
+  const rootReal = realpathSync(root);
+  const absolute = resolve(rootReal, path);
+  const relation = relative(rootReal, absolute);
+  if (relation === "" || relation === ".." || relation.startsWith(`..${sep}`)) {
+    throw new Error(`Successor core output escapes the repository: ${path}.`);
+  }
+  const parentAbsolute = dirname(absolute);
+  const parentBefore = lstatSync(parentAbsolute, { bigint: true });
+  const before = lstatSync(absolute, { bigint: true });
+  if (
+    !parentBefore.isDirectory() ||
+    parentBefore.isSymbolicLink() ||
+    realpathSync(parentAbsolute) !== parentAbsolute ||
+    !before.isFile() ||
+    before.isSymbolicLink() ||
+    realpathSync(absolute) !== absolute
+  ) {
+    throw new Error(`Successor core output topology is unsafe: ${path}.`);
+  }
+  const bytes = readFileSync(absolute);
+  const after = lstatSync(absolute, { bigint: true });
+  const parentAfter = lstatSync(parentAbsolute, { bigint: true });
+  if (
+    after.dev !== before.dev ||
+    after.ino !== before.ino ||
+    after.size !== before.size ||
+    after.mtimeNs !== before.mtimeNs ||
+    after.ctimeNs !== before.ctimeNs ||
+    parentAfter.dev !== parentBefore.dev ||
+    parentAfter.ino !== parentBefore.ino ||
+    parentAfter.mtimeNs !== parentBefore.mtimeNs ||
+    parentAfter.ctimeNs !== parentBefore.ctimeNs ||
+    !after.isFile() ||
+    after.isSymbolicLink() ||
+    !parentAfter.isDirectory() ||
+    parentAfter.isSymbolicLink() ||
+    realpathSync(absolute) !== absolute ||
+    realpathSync(parentAbsolute) !== parentAbsolute
+  ) {
+    throw new Error(`Successor core output changed while being captured: ${path}.`);
+  }
+  return {
+    record: {
+      path,
+      sha256: digestBytes(bytes),
+      sizeBytes: bytes.byteLength,
+      gitMode: (after.mode & 0o111n) !== 0n ? "100755" : "100644",
+    },
+    rootReal,
+    absolute,
+    dev: after.dev,
+    ino: after.ino,
+    size: after.size,
+    mtimeNs: after.mtimeNs,
+    ctimeNs: after.ctimeNs,
+    parentAbsolute,
+    parentDev: parentAfter.dev,
+    parentIno: parentAfter.ino,
+    parentMtimeNs: parentAfter.mtimeNs,
+    parentCtimeNs: parentAfter.ctimeNs,
+  };
+}
+
+function assertSuccessorCoreOutputSnapshotGroupCurrent(
+  root: string,
+  snapshots: readonly SuccessorLockStableFileSnapshot[],
+): void {
+  if (
+    snapshots.length !== SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.length ||
+    realpathSync(root) !== snapshots[0]?.rootReal
+  ) {
+    throw new Error("Successor core-output snapshot root or cardinality changed.");
+  }
+  for (const [index, snapshot] of snapshots.entries()) {
+    if (snapshot.record.path !== SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS[index]) {
+      throw new Error("Successor core-output snapshot order changed.");
+    }
+    const current = lstatSync(snapshot.absolute, { bigint: true });
+    const parent = lstatSync(snapshot.parentAbsolute, { bigint: true });
+    if (
+      current.dev !== snapshot.dev ||
+      current.ino !== snapshot.ino ||
+      current.size !== snapshot.size ||
+      current.mtimeNs !== snapshot.mtimeNs ||
+      current.ctimeNs !== snapshot.ctimeNs ||
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      parent.dev !== snapshot.parentDev ||
+      parent.ino !== snapshot.parentIno ||
+      parent.mtimeNs !== snapshot.parentMtimeNs ||
+      parent.ctimeNs !== snapshot.parentCtimeNs ||
+      !parent.isDirectory() ||
+      parent.isSymbolicLink() ||
+      realpathSync(snapshot.absolute) !== snapshot.absolute ||
+      realpathSync(snapshot.parentAbsolute) !== snapshot.parentAbsolute
+    ) {
+      throw new Error(
+        `Successor core output or its parent topology changed after capture: ${snapshot.record.path}.`,
+      );
+    }
+  }
+}
+
+function assertSuccessorFileRecord(
+  record: SuccessorLockFileRecord,
+  expectedPath: string,
+  label: string,
+): void {
+  assertExactSuccessorObjectKeys(record, ["path", "sha256", "sizeBytes"]);
+  if (
+    record.path !== expectedPath ||
+    !isSha256(record.sha256) ||
+    !Number.isSafeInteger(record.sizeBytes) ||
+    record.sizeBytes < 0
+  ) {
+    throw new Error(`Successor lock ${label} record is invalid.`);
+  }
+}
+
+function assertSuccessorCoreOutputRecord(record: SuccessorLockCoreOutputRecord): void {
+  assertExactSuccessorObjectKeys(record, ["path", "sha256", "sizeBytes", "gitMode"]);
+  if (
+    !isSha256(record.sha256) ||
+    !Number.isSafeInteger(record.sizeBytes) ||
+    record.sizeBytes < 0 ||
+    (record.gitMode !== "100644" && record.gitMode !== "100755")
+  ) {
+    throw new Error(`Successor lock core-output record is invalid: ${record.path}.`);
+  }
+}
+
+function successorReplayCandidateManifest(
+  records: readonly SuccessorLockCoreOutputRecord[],
+): string {
+  const hash = createHash("sha256");
+  for (const record of records) {
     hash
-      .update(file.slice(prefix.length))
+      .update(record.path)
       .update("\0")
-      .update(createHash("sha256").update(bytes).digest("hex"))
+      .update(record.sha256.replace(/^sha256:/u, ""))
       .update("\0")
-      .update(String(bytes.byteLength))
+      .update(record.gitMode)
       .update("\0");
   }
-  return hash.digest("hex");
+  return `sha256:${hash.digest("hex")}`;
+}
+
+function assertExactSuccessorObjectKeys(value: object, expected: readonly string[]): void {
+  const actual = Object.keys(value).toSorted();
+  const sortedExpected = [...expected].toSorted();
+  if (JSON.stringify(actual) !== JSON.stringify(sortedExpected)) {
+    throw new Error(
+      `Successor lock authority topology mismatch: expected=${JSON.stringify(sortedExpected)} actual=${JSON.stringify(actual)}.`,
+    );
+  }
+}
+
+function isSha256(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/u.test(value);
+}
+
+function successorDomainDigest(domain: string, value: unknown): string {
+  return `sha256:${createHash("sha256")
+    .update(domain)
+    .update("\0")
+    .update(JSON.stringify(value))
+    .digest("hex")}`;
 }
 
 export function platformMigrationInputs(root: string): string[] {

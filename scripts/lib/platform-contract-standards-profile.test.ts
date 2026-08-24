@@ -1,0 +1,133 @@
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  assertContractStandardsProfileCurrent,
+  assertContractStandardsProfileV1Immutable,
+  CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE,
+  CONTRACT_STANDARDS_PROFILE_V1_PATH,
+  CONTRACT_STANDARDS_PROFILE_V2_PATH,
+  contractStandardsCorpusInputs,
+  readContractStandardsProfile,
+  validateContractStandardsProfile,
+} from "./platform-contract-standards-profile";
+
+type JsonObject = Record<string, unknown>;
+
+const repositoryRoot = resolve(import.meta.dirname, "../..");
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) rmSync(root, { force: true, recursive: true });
+});
+
+function temporaryCurrentRoot(): string {
+  const root = mkdtempSync(resolve(tmpdir(), "platform-contract-standards-v2-"));
+  temporaryRoots.push(root);
+  for (const path of ["contracts", "tools/contract-standards/vendor/json-schema-test-suite"]) {
+    cpSync(resolve(repositoryRoot, path), resolve(root, path), { recursive: true });
+  }
+  for (const path of [
+    CONTRACT_STANDARDS_PROFILE_V1_PATH,
+    CONTRACT_STANDARDS_PROFILE_V2_PATH,
+    "tools/contract-standards/pyproject.toml",
+    "tools/contract-standards/uv.lock",
+  ]) {
+    const target = resolve(root, path);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(resolve(repositoryRoot, path), target);
+  }
+
+  return root;
+}
+
+describe("versioned contract-standards profile", () => {
+  it("keeps v1 bytes immutable while selecting a current v2 authority", () => {
+    expect(
+      readFileSync(resolve(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V1_PATH)).byteLength,
+    ).toBe(CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE.sizeBytes);
+    expect(() => assertContractStandardsProfileV1Immutable(repositoryRoot)).not.toThrow();
+
+    const v1 = readContractStandardsProfile(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V1_PATH);
+    expect(v1.formatVersion).toBe("cloud-agents-contract-standards-profile/v1");
+    expect(v1.currentContracts).toMatchObject({ schemaFiles: 58, fixtureCases: 77 });
+
+    const root = temporaryCurrentRoot();
+    const v2 = assertContractStandardsProfileCurrent(root);
+    expect(v2.formatVersion).toBe("cloud-agents-contract-standards-profile/v2");
+    expect(v2.predecessor).toEqual({
+      ...CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE,
+      mutation: "forbidden",
+    });
+    expect(v2.currentContracts).toMatchObject({
+      schemaFiles: 60,
+      fixtureManifests: 2,
+      fixtureCases: 79,
+      sourceContractManifestSha256:
+        "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
+    });
+  });
+
+  it("fails closed on predecessor, topology, count, and boundary drift", () => {
+    const profile = JSON.parse(
+      readFileSync(resolve(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V2_PATH), "utf8"),
+    ) as JsonObject;
+
+    for (const mutate of [
+      (candidate: JsonObject): void => {
+        (candidate.predecessor as JsonObject).sizeBytes = 1;
+      },
+      (candidate: JsonObject): void => {
+        candidate.unexpected = true;
+      },
+      (candidate: JsonObject): void => {
+        (candidate.currentContracts as JsonObject).fixtureCases = 77;
+      },
+      (candidate: JsonObject): void => {
+        (candidate.currentContracts as JsonObject).sourceContractManifestSha256 =
+          `sha256:${"0".repeat(64)}`;
+      },
+      (candidate: JsonObject): void => {
+        (candidate.implementationBoundary as JsonObject).gateStatus = "CLOSED";
+      },
+    ]) {
+      const candidate = structuredClone(profile);
+      mutate(candidate);
+      expect(() => validateContractStandardsProfile(candidate)).toThrow();
+    }
+  });
+
+  it("rejects v1 byte mutation and symlink substitution", () => {
+    const root = temporaryCurrentRoot();
+    const path = resolve(root, CONTRACT_STANDARDS_PROFILE_V1_PATH);
+    writeFileSync(path, "{}\n");
+    expect(() => assertContractStandardsProfileV1Immutable(root)).toThrow(/immutable/u);
+
+    unlinkSync(path);
+    symlinkSync(resolve(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V1_PATH), path);
+    expect(() => assertContractStandardsProfileV1Immutable(root)).toThrow(/regular file/u);
+  });
+
+  it("binds the exact corpus topology without including projection outputs", () => {
+    const inputs = contractStandardsCorpusInputs(repositoryRoot);
+    expect(inputs).toHaveLength(126);
+    expect(inputs).toEqual(inputs.toSorted());
+    expect(new Set(inputs).size).toBe(inputs.length);
+    expect(inputs).toContain(
+      "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
+    );
+    expect(inputs).not.toContain("contracts/generation.lock.json");
+  });
+});

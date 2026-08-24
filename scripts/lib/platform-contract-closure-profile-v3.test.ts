@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   cpSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,9 +21,11 @@ import {
   assertContractClosureV3RegistrySemantics,
   assertContractClosureProfileV3Current,
   assertContractClosureProfileV3CurrentMutationForTest,
+  assertContractClosureProfileV3SourceCurrent,
   assertContractClosureV3V2DependencyABAMutationForTest,
   assertContractClosureV3RepositoryLineageCurrent,
   buildContractClosureProfileV3Registry,
+  buildContractClosureProfileV3Source,
   buildContractClosureProfileV3TestSource,
   CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
   CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_SCHEMA_PATH,
@@ -34,8 +39,11 @@ import {
   ContractClosureProfileV3Error,
   deriveContractClosureV3Missing,
   serializeContractClosureProfileV3Registry,
+  serializeContractClosureProfileV3Source,
   type ContractClosureV3Source,
   validateContractClosureProfileV3Source,
+  writeContractClosureProfileV3,
+  writeContractClosureProfileV3Source,
 } from "./platform-contract-closure-profile-v3";
 import {
   CONTRACT_CLOSURE_V1_IMMUTABLE_FILES,
@@ -117,6 +125,14 @@ function writeJson(root: string, path: string, value: unknown): void {
 }
 
 describe("contract closure profile v3 Slice A authority", () => {
+  it("promotes the deterministic test builder to the canonical production source serializer", () => {
+    const source = buildContractClosureProfileV3Source(repositoryRoot);
+    expect(source).toEqual(buildContractClosureProfileV3TestSource(repositoryRoot));
+    expect(serializeContractClosureProfileV3Source(source)).toBe(
+      serializeContractClosureProfileV3Registry(source),
+    );
+  });
+
   it("builds a deterministic strict non-Gate registry with exactly one derived missing item", () => {
     const source = buildContractClosureProfileV3TestSource(repositoryRoot);
     expect(() => validateContractClosureProfileV3Source(repositoryRoot, source)).not.toThrow();
@@ -307,6 +323,96 @@ describe("contract closure profile v3 Slice A authority", () => {
       buildContractClosureProfileV3Registry(root, current.source).sourceDigest,
     );
     expect(() => current.assertCurrent()).not.toThrow();
+  });
+
+  it("rejects source or output formatting drift even when parsed semantics are unchanged", () => {
+    for (const path of [
+      CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+      CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+    ]) {
+      const root = createCurrentRoot();
+      writeFileSync(
+        resolve(root, path),
+        Buffer.concat([readFileSync(resolve(root, path)), Buffer.from(" ")]),
+      );
+      expect(() => assertContractClosureProfileV3Current(root)).toThrowError(
+        expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
+          code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+          path: "/source-output",
+        }),
+      );
+    }
+  });
+
+  it("rejects source or output key-order drift instead of reserializing captured order", () => {
+    for (const path of [
+      CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+      CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+    ]) {
+      const root = createCurrentRoot();
+      const document = JSON.parse(readFileSync(resolve(root, path), "utf8")) as MutableRecord;
+      const reordered = Object.fromEntries(Object.entries(document).reverse());
+      writeFileSync(resolve(root, path), serializeContractClosureProfileV3Registry(reordered));
+      expect(() => assertContractClosureProfileV3Current(root)).toThrowError(
+        expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
+          code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+          path: "/source-output",
+        }),
+      );
+    }
+  });
+
+  it("writes the source explicitly, then replay-writes only the output without Git metadata", () => {
+    const root = createCurrentRoot();
+    const v1v2 = [...CONTRACT_CLOSURE_V1_IMMUTABLE_FILES, ...CONTRACT_CLOSURE_V2_IMMUTABLE_FILES];
+    const before = new Map(
+      v1v2.map(({ path }) => [path, readFileSync(resolve(root, path)).toString("hex")]),
+    );
+    rmSync(resolve(root, CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH));
+    rmSync(resolve(root, CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH));
+
+    writeContractClosureProfileV3Source(root);
+    const sourcePath = resolve(root, CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH);
+    const sourceBeforeReplay = readFileSync(sourcePath);
+    chmodSync(sourcePath, 0o444);
+    try {
+      writeContractClosureProfileV3(root);
+    } finally {
+      chmodSync(sourcePath, 0o644);
+    }
+
+    expect(() => assertContractClosureProfileV3Current(root)).not.toThrow();
+    expect(assertContractClosureProfileV3SourceCurrent(root)).toEqual(
+      buildContractClosureProfileV3Source(root),
+    );
+    expect(readFileSync(sourcePath)).toEqual(sourceBeforeReplay);
+    expect(existsSync(resolve(root, ".git"))).toBe(false);
+    for (const { path } of v1v2) {
+      expect(readFileSync(resolve(root, path)).toString("hex")).toBe(before.get(path));
+    }
+  });
+
+  it("rejects source/output symlink destinations before touching their targets", () => {
+    for (const [path, write] of [
+      [CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH, writeContractClosureProfileV3Source],
+      [CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH, writeContractClosureProfileV3],
+    ] as const) {
+      const root = createCurrentRoot();
+      const externalRoot = mkdtempSync(resolve(tmpdir(), "contract-closure-v3-external-"));
+      temporaryRoots.push(externalRoot);
+      const sentinel = resolve(externalRoot, "sentinel.json");
+      writeFileSync(sentinel, "outside\n");
+      rmSync(resolve(root, path));
+      symlinkSync(sentinel, resolve(root, path));
+
+      expect(() => write(root)).toThrowError(
+        expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
+          code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+          path: `/${path}`,
+        }),
+      );
+      expect(readFileSync(sentinel, "utf8")).toBe("outside\n");
+    }
   });
 
   it("fails closed when the source changes after the source/output capture", () => {

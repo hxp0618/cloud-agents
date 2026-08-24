@@ -8,6 +8,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  writeFileSync,
 } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -207,10 +208,13 @@ export class ContractClosureProfileV3Error extends Error {
   }
 }
 
-export function buildContractClosureProfileV3TestSource(root: string): ContractClosureV3Source {
+export function buildContractClosureProfileV3Source(root: string): ContractClosureV3Source {
   assertContractClosureV2Immutable(root);
   return buildContractClosureProfileV3TestSourceWithoutEvidence(readV2Registry(root));
 }
+
+/** @deprecated Use buildContractClosureProfileV3Source for canonical production generation. */
+export const buildContractClosureProfileV3TestSource = buildContractClosureProfileV3Source;
 
 export function validateContractClosureProfileV3Source(
   root: string,
@@ -243,6 +247,30 @@ export function assertContractClosureProfileV3Current(
   root: string,
 ): ContractClosureProfileV3Current {
   return assertContractClosureProfileV3CurrentInternal(root);
+}
+
+export function assertContractClosureProfileV3SourceCurrent(root: string): ContractClosureV3Source {
+  const rootReal = realpathSync(root);
+  const snapshot = readStableContainedRegularFileSnapshot(
+    root,
+    CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+    rootReal,
+  );
+  const source = parseV3Object<ContractClosureV3Source>(snapshot);
+  validateContractClosureProfileV3Source(root, source);
+  const expected = buildContractClosureProfileV3Source(root);
+  if (
+    !Buffer.from(canonicalizeJson(source)).equals(Buffer.from(canonicalizeJson(expected))) ||
+    snapshot.bytes.toString("utf8") !== serializeContractClosureProfileV3Source(expected)
+  ) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+      `/${CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH}`,
+      "Contract closure v3 source is not the exact canonical pre-replay authority.",
+    );
+  }
+  assertContractClosureV3SnapshotsCurrent(root, [snapshot]);
+  return source;
 }
 
 export function assertContractClosureProfileV3CurrentMutationForTest(
@@ -287,14 +315,18 @@ function assertContractClosureProfileV3CurrentInternal(
   const assertCurrent = (): void => {
     validateContractClosureProfileV3Source(root, source);
     assertContractClosureV3RegistrySemantics(root, registry);
+    const expectedSource = buildContractClosureProfileV3Source(root);
+    const expectedRegistry = buildContractClosureProfileV3Registry(root, expectedSource);
     if (
-      registry.sourceDigest !==
-      domainDigest("cloud-agents/contract-closure-profile/source/v3", source)
+      sourceSnapshot.bytes.toString("utf8") !==
+        serializeContractClosureProfileV3Source(expectedSource) ||
+      outputSnapshot.bytes.toString("utf8") !==
+        serializeContractClosureProfileV3Registry(expectedRegistry)
     ) {
       throw v3Error(
-        "CONTRACT_CLOSURE_V3_DIGEST_MISMATCH",
-        "/sourceDigest",
-        "Contract closure v3 output must bind the exact source object captured in the same snapshot.",
+        "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        "/source-output",
+        "Contract closure v3 source/output must be exact canonical bytes bound in one snapshot.",
       );
     }
     assertContractClosureV3SnapshotsCurrent(root, snapshots);
@@ -504,7 +536,32 @@ export function deriveContractClosureV3Missing(profile: ContractClosureV3Profile
 }
 
 export function serializeContractClosureProfileV3Registry(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
+  return `${formatContractClosureProfileV3Json(value, 0, 0)}\n`;
+}
+
+export function serializeContractClosureProfileV3Source(value: unknown): string {
+  return `${formatContractClosureProfileV3Json(value, 0, 0)}\n`;
+}
+
+export function writeContractClosureProfileV3Source(root: string): void {
+  const source = buildContractClosureProfileV3Source(root);
+  writeContainedRegularFile(
+    root,
+    CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+    serializeContractClosureProfileV3Source(source),
+  );
+  assertContractClosureProfileV3SourceCurrent(root);
+}
+
+export function writeContractClosureProfileV3(root: string): void {
+  const source = assertContractClosureProfileV3SourceCurrent(root);
+  const registry = buildContractClosureProfileV3Registry(root, source);
+  writeContainedRegularFile(
+    root,
+    CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+    serializeContractClosureProfileV3Registry(registry),
+  );
+  assertContractClosureProfileV3Current(root);
 }
 
 function assertProfileSemantics(root: string, profile: ContractClosureV3Profile): void {
@@ -839,6 +896,80 @@ function readStableContainedRegularFile(root: string, path: string): Buffer {
   return readStableContainedRegularFileSnapshot(root, path).bytes;
 }
 
+function writeContainedRegularFile(root: string, path: string, contents: string): void {
+  const rootReal = realpathSync(root);
+  if (
+    path.length === 0 ||
+    isAbsolute(path) ||
+    path.includes("\\") ||
+    path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..")
+  ) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+      `/${path}`,
+      "Contract closure v3 write path must be canonical and repository-relative.",
+    );
+  }
+  const absolute = resolve(rootReal, ...path.split("/"));
+  const relation = relative(rootReal, absolute);
+  if (
+    relation === "" ||
+    relation === ".." ||
+    relation.startsWith(`..${sep}`) ||
+    isAbsolute(relation)
+  ) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+      `/${path}`,
+      "Contract closure v3 write path escapes its repository root.",
+    );
+  }
+
+  let current = rootReal;
+  const segments = path.split("/");
+  for (const [index, segment] of segments.entries()) {
+    current = resolve(current, segment);
+    const final = index === segments.length - 1;
+    try {
+      const stat = lstatSync(current);
+      if (
+        stat.isSymbolicLink() ||
+        (!final && !stat.isDirectory()) ||
+        (final && !stat.isFile()) ||
+        realpathSync(current) !== current
+      ) {
+        throw new Error("path topology is not a contained regular destination");
+      }
+    } catch (error) {
+      if (final && error instanceof Error && "code" in error && error.code === "ENOENT") break;
+      throw v3Error(
+        "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        `/${path}`,
+        `Contract closure v3 write destination is unsafe: ${String(error)}.`,
+      );
+    }
+  }
+
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(
+      absolute,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      0o644,
+    );
+    writeFileSync(descriptor, contents, { encoding: "utf8" });
+  } catch (error) {
+    if (error instanceof ContractClosureProfileV3Error) throw error;
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+      `/${path}`,
+      `Contract closure v3 write destination could not be opened safely: ${String(error)}.`,
+    );
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 function readStableContainedRegularFileSnapshot(
   root: string,
   path: string,
@@ -1073,6 +1204,49 @@ function domainDigest(domain: string, value: unknown): string {
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function formatContractClosureProfileV3Json(
+  value: unknown,
+  indent: number,
+  prefixLength: number,
+): string {
+  if (value === null || typeof value !== "object") {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) {
+      throw v3Error(
+        "CONTRACT_CLOSURE_V3_SCHEMA_INVALID",
+        "/",
+        "Contract closure v3 serialization accepts JSON values only.",
+      );
+    }
+    return encoded;
+  }
+  const padding = " ".repeat(indent);
+  const childPadding = " ".repeat(indent + 2);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    if (value.every((entry) => entry === null || typeof entry !== "object")) {
+      const inline = `[${value.map((entry) => JSON.stringify(entry)).join(", ")}]`;
+      if (indent + prefixLength + inline.length <= 100) return inline;
+    }
+    return `[\n${value
+      .map((entry) => `${childPadding}${formatContractClosureProfileV3Json(entry, indent + 2, 0)}`)
+      .join(",\n")}\n${padding}]`;
+  }
+  const entries = Object.entries(value);
+  if (entries.length === 0) return "{}";
+  return `{\n${entries
+    .map(([key, entry]) => {
+      const encodedKey = JSON.stringify(key);
+      const prefix = `${childPadding}${encodedKey}: `;
+      return `${prefix}${formatContractClosureProfileV3Json(
+        entry,
+        indent + 2,
+        encodedKey.length + 2,
+      )}`;
+    })
+    .join(",\n")}\n${padding}}`;
 }
 
 function isRecord(value: unknown): value is JsonRecord {

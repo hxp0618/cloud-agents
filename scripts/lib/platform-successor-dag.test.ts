@@ -6,11 +6,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertExactSuccessorProjectionExclusions,
+  assertSuccessorCoreGeneratorOutputAuthority,
+  assertSuccessorCoreGeneratorOutputsCurrent,
   assertSuccessorDagAuthority,
   inspectSuccessorLateBoundTopology,
   SUCCESSOR_ASSEMBLED_REVIEW_PATHS,
   SUCCESSOR_ASSEMBLY_PATHS,
   SUCCESSOR_BINDING_LATE_PATHS,
+  SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
   SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
@@ -64,6 +67,37 @@ describe("successor DAG authority", () => {
       "tools/generator-supply/v1/evidence-manifest.json",
     );
     expect(SUCCESSOR_PROJECTION_EXCLUSIONS).not.toContain("tools/generator-supply/v1/profile.json");
+  });
+
+  it("fixes one sorted unique 49-path core generator output authority", () => {
+    expect(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS).toHaveLength(49);
+    expect(new Set(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS).size).toBe(49);
+    expect([...SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS].toSorted()).toEqual(
+      SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS,
+    );
+    expect(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS).toContain(
+      "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+    );
+    for (const path of [
+      "contracts/generation.lock.json",
+      ...SUCCESSOR_ASSEMBLY_PATHS,
+      ...SUCCESSOR_REPLAY_RECEIPT_PATHS,
+      SUCCESSOR_BINDING_LATE_PATHS[1],
+    ]) {
+      expect(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS).not.toContain(path);
+    }
+    expect(() =>
+      assertSuccessorCoreGeneratorOutputAuthority(SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS),
+    ).not.toThrow();
+    expect(() =>
+      assertSuccessorCoreGeneratorOutputsCurrent(resolve(import.meta.dirname, "../..")),
+    ).not.toThrow();
+    expect(() =>
+      assertSuccessorCoreGeneratorOutputAuthority([
+        ...SUCCESSOR_CORE_GENERATOR_OUTPUT_PATHS.slice(0, -1),
+        "tools/generator-supply/v2/profile.json",
+      ]),
+    ).toThrowError(expect.objectContaining({ code: "SUCCESSOR_DAG_INVALID" }));
   });
 
   it("rejects wildcard, extra, reordered, and pre-replay exclusions", () => {

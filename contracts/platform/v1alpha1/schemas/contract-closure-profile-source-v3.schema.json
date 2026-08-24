@@ -57,6 +57,7 @@
                 { "$ref": "#/$defs/immutableFile" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "path": {
                       "const": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json"
@@ -74,6 +75,7 @@
                 { "$ref": "#/$defs/immutableFile" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "path": {
                       "const": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json"
@@ -91,6 +93,7 @@
                 { "$ref": "#/$defs/immutableFile" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "path": {
                       "const": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json"
@@ -108,6 +111,7 @@
                 { "$ref": "#/$defs/immutableFile" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "path": {
                       "const": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json"
@@ -168,6 +172,7 @@
                 { "$ref": "#/$defs/immutableFile" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "path": { "const": "services/control-plane/go.mod" },
                     "sha256": {
@@ -183,6 +188,7 @@
                 { "$ref": "#/$defs/immutableFile" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "path": { "const": "services/control-plane/go.sum" },
                     "sha256": {
@@ -200,6 +206,7 @@
             { "$ref": "#/$defs/review" },
             {
               "type": "object",
+              "additionalProperties": false,
               "required": ["commit", "tree", "parent"],
               "properties": {
                 "path": {
@@ -208,6 +215,7 @@
                 "sha256": {
                   "const": "sha256:d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2"
                 },
+                "verdict": {},
                 "commit": { "const": "fe59f0d4059632a102171d9c1eb77a4c147ae65e" },
                 "tree": { "const": "7d6f7a65f36c89fadbe02e7e75e3b395bcca97f3" },
                 "parent": { "const": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e" }
@@ -425,17 +433,41 @@
         {
           "if": {
             "type": "object",
-            "properties": { "status": { "const": "SATISFIED_CANDIDATE" } }
+            "additionalProperties": false,
+            "properties": {
+              "id": {},
+              "status": { "const": "SATISFIED_CANDIDATE" },
+              "authorityPaths": {},
+              "evidencePaths": {},
+              "review": {},
+              "reason": {}
+            }
           },
           "then": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["review"],
-            "properties": { "review": {}, "reason": false }
+            "properties": {
+              "id": {},
+              "status": {},
+              "authorityPaths": {},
+              "evidencePaths": {},
+              "review": {},
+              "reason": false
+            }
           },
           "else": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["reason"],
-            "properties": { "reason": {}, "review": false }
+            "properties": {
+              "id": {},
+              "status": {},
+              "authorityPaths": {},
+              "evidencePaths": {},
+              "review": false,
+              "reason": {}
+            }
           }
         }
       ]
@@ -477,9 +509,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "json-schema-2020-12-official-test-suite" },
-                    "status": { "const": "SATISFIED_CANDIDATE" }
+                    "status": { "const": "SATISFIED_CANDIDATE" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]
@@ -489,9 +526,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "openapi-3.1-semantic-validation" },
-                    "status": { "const": "SATISFIED_CANDIDATE" }
+                    "status": { "const": "SATISFIED_CANDIDATE" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]
@@ -501,9 +543,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "generated-sdk-replay" },
-                    "status": { "const": "SATISFIED_CANDIDATE" }
+                    "status": { "const": "SATISFIED_CANDIDATE" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]
@@ -513,9 +560,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "n-minus-one-compatibility" },
-                    "status": { "const": "SATISFIED_CANDIDATE" }
+                    "status": { "const": "SATISFIED_CANDIDATE" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]
@@ -525,9 +577,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "response-watch-unknown-field-preservation" },
-                    "status": { "const": "SATISFIED_CANDIDATE" }
+                    "status": { "const": "SATISFIED_CANDIDATE" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]
@@ -537,9 +594,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "runtime-server-path-and-tenant-authority-enforcement" },
-                    "status": { "const": "SATISFIED_CANDIDATE" }
+                    "status": { "const": "SATISFIED_CANDIDATE" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]
@@ -549,9 +611,14 @@
                 { "$ref": "#/$defs/criterion" },
                 {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "id": { "const": "remaining-generator-supply-chain-review" },
-                    "status": { "const": "REVIEW_PENDING" }
+                    "status": { "const": "REVIEW_PENDING" },
+                    "authorityPaths": {},
+                    "evidencePaths": {},
+                    "review": {},
+                    "reason": {}
                   }
                 }
               ]

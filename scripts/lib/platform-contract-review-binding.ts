@@ -201,6 +201,7 @@ export class ContractReviewBindingError extends Error {
   constructor(
     readonly code:
       | "CONTRACT_REVIEW_BINDING_SOURCE_REQUIRED"
+      | "CONTRACT_REVIEW_BINDING_SOURCE_DRIFT"
       | "CONTRACT_REVIEW_BINDING_SCHEMA_INVALID"
       | "CONTRACT_REVIEW_BINDING_IDENTITY_MISMATCH"
       | "CONTRACT_REVIEW_BINDING_DIGEST_MISMATCH"
@@ -247,6 +248,69 @@ export function inspectContractReviewBindingState(root: string): ContractReviewB
     );
   }
   return { kind: "COMPLETE_TUPLE_OUTPUT_CURRENT", source, tuple, registry };
+}
+
+export function assertContractReviewBindingSourceCurrent(
+  root: string,
+): ContractReviewBindingSource {
+  const source = readAndValidateSource(root);
+  const expected = buildContractReviewBindingSource();
+  const actualBytes = readStableContainedRegularFile(root, CONTRACT_REVIEW_BINDING_SOURCE_PATH);
+  const expectedBytes = serializeContractReviewBinding(expected);
+  if (!canonicalEqual(source, expected) || actualBytes.toString("utf8") !== expectedBytes) {
+    throw bindingError(
+      "CONTRACT_REVIEW_BINDING_SOURCE_DRIFT",
+      "/source",
+      "Detached review-binding authority source is not the exact canonical declaration.",
+    );
+  }
+  return source;
+}
+
+export function writeContractReviewBindingSource(root: string): void {
+  if (pathExists(root, CONTRACT_REVIEW_BINDING_SOURCE_PATH)) {
+    assertContractReviewBindingSourceCurrent(root);
+    return;
+  }
+  if (
+    pathExists(root, CONTRACT_REVIEW_TUPLE_PATH) ||
+    pathExists(root, CONTRACT_REVIEW_BINDING_OUTPUT_PATH)
+  ) {
+    throw bindingError(
+      "CONTRACT_REVIEW_BINDING_PARTIAL_STATE",
+      "/state",
+      "Detached review-binding tuple or output cannot precede its authority source.",
+    );
+  }
+
+  const output = resolveContainedPath(root, CONTRACT_REVIEW_BINDING_SOURCE_PATH, true);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(
+      output,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    writeFileSync(descriptor, serializeContractReviewBinding(buildContractReviewBindingSource()), {
+      encoding: "utf8",
+    });
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    fsyncDirectory(dirname(output));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+      throw bindingError(
+        "CONTRACT_REVIEW_BINDING_PARTIAL_STATE",
+        "/source",
+        "Detached review-binding authority source appeared during exclusive creation.",
+      );
+    }
+    throw error;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+  assertContractReviewBindingSourceCurrent(root);
 }
 
 export function writeContractReviewBinding(root: string): void {
@@ -475,7 +539,7 @@ export function contractReviewBindingAuthorityInputs(): string[] {
   ].toSorted();
 }
 
-export function buildContractReviewBindingTestSource(): ContractReviewBindingSource {
+export function buildContractReviewBindingSource(): ContractReviewBindingSource {
   return {
     formatVersion: "cloud-agents-contract-review-binding-source/v1",
     registryId: REGISTRY_ID,
@@ -520,6 +584,8 @@ export function buildContractReviewBindingTestSource(): ContractReviewBindingSou
     },
   };
 }
+
+export const buildContractReviewBindingTestSource = buildContractReviewBindingSource;
 
 export function buildContractReviewBindingTestTuple(
   root: string,

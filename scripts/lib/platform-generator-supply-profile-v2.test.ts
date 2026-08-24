@@ -20,7 +20,9 @@ import {
   assertGeneratorSupplyV2CurrentSnapshotMutationForTest,
   assertGeneratorSupplyV2RegistryCurrent,
   assertGeneratorSupplyV2RegistrySemantics,
+  assertGeneratorSupplyV2SourceCurrent,
   assertStableGeneratorSupplyV2ReadMutationForTest,
+  buildGeneratorSupplyV2Source,
   buildGeneratorSupplyV2TestSource,
   GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
   GENERATOR_SUPPLY_V2_OUTPUT_PATH,
@@ -29,7 +31,9 @@ import {
   GENERATOR_SUPPLY_V2_SOURCE_PATH,
   GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
   inspectGeneratorSupplyV2AuthorityState,
+  serializeGeneratorSupplyV2Source,
   validateGeneratorSupplyV2Source,
+  writeGeneratorSupplyV2Source,
   type GeneratorSupplyV2Registry,
   type GeneratorSupplyV2Source,
 } from "./platform-generator-supply-profile-v2";
@@ -255,6 +259,20 @@ describe("generator-supply v2 typed pre-replay authority", () => {
     expect(() => validateGeneratorSupplyV2Source(fixture.root, fixture.source)).not.toThrow();
   });
 
+  it("writes only the canonical v2 source before replay and refuses a later rewrite", () => {
+    const fixture = createRoot({ predecessor: true });
+    writeGeneratorSupplyV2Source(fixture.root);
+    expect(assertGeneratorSupplyV2SourceCurrent(fixture.root)).toBe("DECLARED_PRE_REPLAY");
+    expect(readFileSync(resolve(fixture.root, GENERATOR_SUPPLY_V2_SOURCE_PATH), "utf8")).toBe(
+      serializeGeneratorSupplyV2Source(buildGeneratorSupplyV2Source()),
+    );
+    writeJson(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[0], {});
+    expectCode(
+      () => writeGeneratorSupplyV2Source(fixture.root),
+      "GENERATOR_SUPPLY_V2_PARTIAL_STATE",
+    );
+  });
+
   it("rejects source predecessor, inheritance, status, and boundary drift", () => {
     const fixture = createRoot({ predecessor: true });
     for (const [mutate, expectedCode] of [
@@ -385,6 +403,12 @@ describe("generator-supply v2 typed pre-replay authority", () => {
     expect(current.fileSha256).toBe(
       fileRecord(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_PATH).sha256,
     );
+    const replayRun = JSON.parse(
+      readFileSync(resolve(fixture.root, SUCCESSOR_REPLAY_RECEIPT_PATHS[1]), "utf8"),
+    ) as { candidateManifestSha256: string; outputFiles: number };
+    expect(current.candidateManifestSha256).toBe(replayRun.candidateManifestSha256);
+    expect(current.outputFiles).toBe(49);
+    expect(current.outputFiles).toBe(replayRun.outputFiles);
     expect(inspectGeneratorSupplyV2AuthorityState(fixture.root)).toBe("ASSEMBLED_PROFILE_CURRENT");
   });
 

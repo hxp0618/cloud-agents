@@ -121,15 +121,15 @@ review 的 verdict 如何，`G-CONTRACT` 与 `G-SUPPLY-CHAIN` 都保持 `IN PROG
 
 D-052/ADR-0029 的 [Slice A implementation](../p1/g-contract-successor-supply-rebind-slice-a-implementation-20260824.md)
 固定 immutable predecessors、closure-v3/supply-v2 strict contract、16-path late-bound DAG 与 detached binding state
-machine。首个固定候选 `1504465` 的独立审查返回 `REQUEST_CHANGES, P0=0/P1=2/P2=0`；当前追加修复 supply-v1
-review closed pair、supply-v2 exact-8 replay semantic graph、完整 v1/20-path replay/v2 outer currentness fences 后形成的
-`ea4b4a4` 又因 detached authority mixed snapshot 返回 `REQUEST_CHANGES, P0=0/P1=1/P2=0`；追加
-closure-v3/supply-v2 same-read registry+byte SHA、terminal current wrapper 与 Git blob 内嵌 digest 后形成的 `c9f9e6a`，
-又因 closure-v2 fence/derived read 与完整 v1 fence/derived snapshot 可交替 ABA，返回
-`REQUEST_CHANGES, P0=0/P1=2/P2=0`。当前继续追加 closure-v2 derived same-read 固定哈希，以及 supply-v1 固定
-manifest/source/七项 derived read 逐项哈希，须另行固定并取得新 `APPROVE`。它不生成 successor
-source/profile/receipt/lock，不移除 canonical `missing`，不进入 Slice B，也不改变 `G-CONTRACT`、`G-SUPPLY-CHAIN`
-或任何 aggregate Gate 的 `IN PROGRESS` / OPEN 状态。
+machine。前三个固定候选 `1504465`、`ea4b4a4`、`c9f9e6a` 的审查证据均保留；最终 additive candidate
+`d7f7a180` 已由 [Slice A fixed-object review](../p1/g-contract-successor-supply-rebind-slice-a-independent-review-20260825.md)
+返回 `APPROVE, P0=0/P1=0/P2=0`。随后
+[Slice B pre-replay implementation](../p1/g-contract-successor-supply-rebind-slice-b-implementation-20260825.md) 生成
+canonical closure-v3 source/output、standards-v2 60/2/79 authority、supply-v2/binding source，并将 core replay output
+closure 固定为 exact 49 paths；post-assembly successor lock derivation保持 dormant。当前 canonical `missing` 仍只有
+`remaining-generator-supply-chain-review`，supply-v2 为 `DECLARED_PRE_REPLAY`，binding 为 `PRE_REVIEW_ABSENT`；legacy
+generation lock 未修改且其余 15 个 late-bound artifacts 全 absent。Slice B fixed candidate 与独立 review 仍待完成，
+因此未进入 Slice C，也不改变 `G-CONTRACT`、`G-SUPPLY-CHAIN` 或任何 aggregate Gate 的 `IN PROGRESS` / OPEN 状态。
 
 ### 3.1 Immutable record history
 
