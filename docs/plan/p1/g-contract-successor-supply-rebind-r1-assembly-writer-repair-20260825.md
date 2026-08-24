@@ -6,8 +6,8 @@ This record is the R1 repair after the fixed Slice B pre-replay candidate and
 the diagnostic Slice C/D run. It is limited to the missing production
 consumer/summary/manifest/profile and append-only assembly-writer authority
 required before a formal projection can be admitted. It does not replace the
-Slice B fixed-object review or itself constitute the separate R1 fixed-object
-review.
+Slice B fixed-object review. Its superseding fixed candidate is now bound by
+the separate [R1 independent review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-independent-review-20260825.md).
 
 The Slice B predecessor is fixed candidate `a2f4ec986ce8ff5d6e707254ce475673eda9d3ff`,
 with its bounded independent review already returning
@@ -24,13 +24,22 @@ builder, or append-only writer. Adding those authorities changes non-excluded
 projection inputs, so the diagnostic projection and replay are stale and
 non-admissible for Slice E. No diagnostic receipt is installed or copied into
 the repository. Formal Slice C projection authority and formal Slice D replay
-have not started.
+have not started. The approved R1 fixed object permits the review record and
+index updates to be fixed as a clean review-child commit and fast-forwarded
+into `codex/cloud-agents-platform-p0`. Formal Slice C may start only from that
+final clean review-child `HEAD`/tree; candidate `c547f04` remains its reviewed
+implementation ancestor. After that child commit/tree is fixed, all
+non-exact16 tracked bytes are frozen throughout formal Slice C, formal Slice D,
+and Slice E materialization; only the predeclared exact 16 changes are
+permitted, and C/D status or attestation must not be written into non-excluded
+README/tracker bytes. This does not permit Slice D or E to start early.
 
 No production database write, HTTP/P2/provider effect, deployment,
 publication, release, main merge, history rewrite, or Gate transition is part
 of this repair. `G-CONTRACT`, `G-SUPPLY-CHAIN`, and every aggregate Gate remain
-`IN PROGRESS`/OPEN. Slice E remains unauthorized until a repaired candidate is
-fixed, independently reviewed, reprojected, and replayed.
+`IN PROGRESS`/OPEN. Slice E remains unauthorized until the final review-child
+P0 lineage is formally projected and replayed in the ordered slices and those
+authorities receive their required reviews.
 
 ## R1 contract
 
@@ -119,7 +128,7 @@ proof gap. The conservative progression control verdict is therefore
 `REQUEST_CHANGES`; the disagreement is retained rather than presented as
 consensus.
 
-## Candidate-ready working-byte repair
+## Superseding fixed candidate and approval
 
 The repair addresses the fixed-object finding without changing the historical
 `96d72c9` verdict. The writer now
@@ -142,6 +151,16 @@ full-index SHA-256
 These verdicts approve only the working bytes; they do not by themselves
 satisfy the fixed-object review prerequisite.
 
+The repaired bytes were then fixed as candidate
+`c547f04f15b86a6b33f73ea633837fd8db6cc00b` (tree
+`339962e5d000560caab3e004e66f7f3c2d362f18`; parent
+`720fb6086940b5f08fb309eb6e4a31df723b5151`; parent-to-candidate full-index
+binary diff SHA-256
+`ac3a4d319554e495a6632706cfb62a55b9b694e1c2573dd115fb7c52d847cede`).
+Its fresh [fixed-object review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-independent-review-20260825.md)
+returned `APPROVE, P0=0/P1=0/P2=0`. This closes the R1 fixed-object prerequisite
+without changing the historical `96d72c9` rejection.
+
 ## Expected state machine
 
 The repaired state transition is:
@@ -152,7 +171,7 @@ DECLARED_PRE_REPLAY
   -> canonical derived replay summary prepared
   -> ordered eight receipts prepared
   -> exact ten-file assembly published/resumed
-  -> ASSEMBLED_PROFILE_CURRENT (repair candidate-ready; fixed-object review pending)
+  -> ASSEMBLED_PROFILE_CURRENT (fixed R1 candidate independently approved)
 ```
 
 The assembly state is not a review verdict. It cannot create a detached review
@@ -180,9 +199,9 @@ formal lineage. The two review layers are intentionally recorded separately.
 
 ## Verification and review status
 
-The following evidence belongs to the candidate-ready working-byte repair. It
-does not become admissible fixed-object evidence until a commit fixes the
-identity and a fresh independent review approves that exact object.
+The following evidence is bound to fixed candidate
+`c547f04f15b86a6b33f73ea633837fd8db6cc00b` by its separate independent
+review.
 
 | Check                                                               | Current status                                                                                                                          |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -197,14 +216,22 @@ identity and a fresh independent review approves that exact object.
 | Root dependency topology                                            | repository-root `node_modules` absent                                                                                                   |
 | Out-of-scope legacy v1 supply-profile diagnostic run                | `18/28 PASS`; 10 failures are known Slice B immutable-v1 replay/wheelhouse binding mismatches and are excluded, not a broad failure     |
 | Two independent read-only working-byte reviews                      | both `APPROVE, P0=0/P1=0/P2=0`; not fixed-object reviews                                                                                |
-| Superseding fixed candidate                                         | `READY_TO_COMMIT`; exact identity will be bound by the separate review record                                                           |
+| Superseding fixed candidate                                         | `c547f04f15b86a6b33f73ea633837fd8db6cc00b`; exact five paths                                                                            |
+| Fresh fixed-object review                                           | `APPROVE, P0=0/P1=0/P2=0`                                                                                                               |
 | Historical fixed-object candidate `96d72c9`                         | `REQUEST_CHANGES, P0=0/P1=1/P2=0`                                                                                                       |
 | Formal Slice C projection                                           | `NOT_STARTED`                                                                                                                           |
 | Formal Slice D Darwin/Linux native replay                           | `NOT_STARTED`                                                                                                                           |
 | Slice E successor-lock/evidence assembly                            | `NOT_AUTHORIZED`                                                                                                                        |
 
-The next admissible order is: create a superseding fixed candidate from the
-repaired bytes; obtain a fresh independent fixed-object review; rebuild the
-projection from that reviewed candidate; rerun Darwin/Linux A/B replay; then
-continue only according to ADR-0029's ordered Slices C-H. The v1 profile and
-all v1 writer paths remain unchanged.
+The next admissible lineage action is to commit the review record and index
+updates, then fast-forward that clean review-child commit into
+`codex/cloud-agents-platform-p0`. Formal Slice C remains `NOT_STARTED` and may
+be built only from that final clean review-child `HEAD`/tree; `c547f04` is its
+reviewed implementation ancestor. Once the child commit/tree is fixed, all
+non-exact16 tracked bytes remain frozen throughout formal Slice C, formal
+Slice D, and Slice E materialization; only the predeclared exact 16 changes are
+permitted, and C/D status or attestation may not be written into non-excluded
+README/tracker bytes. The fixed projection must precede formal Slice D
+Darwin/Linux A/B replay. Slice E remains unauthorized until those ordered
+authorities and reviews complete. The v1 profile and all v1 writer paths remain
+unchanged.
