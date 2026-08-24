@@ -1,0 +1,182 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-entry-success-writer-source/v1",
+  "registryId": "cloud-agents/platform/runner-ledger-entry-success-writer",
+  "profile": {
+    "profileId": "runner-ledger-entry-success-writer/v1",
+    "stateMachineId": "runner-ledger-entry-success-writer/v1",
+    "canonicalization": {
+      "profile": "cloud-agents-runner-ledger-entry-success-writer/v1-rfc8785-sha256",
+      "algorithm": "RFC8785",
+      "digest": "SHA-256",
+      "comparison": "exact_string_no_rewrite"
+    },
+    "identityBindings": {
+      "executionAdmissionProfile": "exact_runner_ledger_entry_execution_admission_v1_generated_identity",
+      "consumedExecutionPermit": "exact_registry_backed_noncopyable_one_shot_same_session_authority",
+      "currentEvidenceBoundary": "exact_generation_journal_cursor_and_each_returned_successor",
+      "selectedEntry": "exact_one_ordered_entry_index_id_ledger_row_and_digest",
+      "planClosure": "exact_nonempty_ordered_entry_plan_count_ranges_digests_and_classifications",
+      "statementChain": "exact_intent_execute_intermediate_for_every_signed_statement",
+      "databaseSession": "same_fresh_locked_session_from_consumed_execution_permit",
+      "databaseTransaction": "one_serializable_read_write_transaction_for_exact_entry",
+      "ledgerPrefix": "exact_predecessor_then_signed_row_insert_and_readback",
+      "catalogProjection": "exact_before_after_and_final_preledger_same_transaction",
+      "commitOutcome": "commit_once_known_committed_before_terminal_append"
+    },
+    "errorPrecedence": {
+      "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_WRITER_ACTION",
+      "contextOrOperationalFailure": "STABLE_CONTEXT_OR_OPERATIONAL_FAILURE_INVALIDATES_CURRENT_AUTHORITY",
+      "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_NO_SQL_OR_COMMIT_REEXECUTION",
+      "preMutationFailure": "ZERO_MUTATION_CLOSED_FAILURE",
+      "unknownOutcome": "MUTATION_ATTEMPT_UNKNOWN_REOPEN_NO_RETRY",
+      "cleanupUnknown": "CLEANUP_FAILURE_PRESERVES_IRREVERSIBLE_OUTCOME_AND_REQUIRES_REOPEN",
+      "oneShotConsumption": "OLD_SUCCESSOR_AND_SECOND_TRANSITION_FAIL_CLOSED"
+    },
+    "writerAction": {
+      "executionAction": "prepare_entry_execution",
+      "action": "execute_one_entry_known_success"
+    }
+  },
+  "stateMachine": {
+    "id": "runner-ledger-entry-success-writer/v1",
+    "initialState": "unclassified",
+    "states": [
+      "closed_failure",
+      "commit_intent_durable",
+      "commit_known_committed",
+      "entry_committed_complete",
+      "entry_committed_next_entry",
+      "execution_ready",
+      "final_intermediate_durable",
+      "intent_durable",
+      "intermediate_durable",
+      "ledger_readback_ready",
+      "recovery_required_closed",
+      "statement_executed",
+      "statement_ready",
+      "terminal_durable",
+      "transaction_ready",
+      "unclassified",
+      "unknown_rejected"
+    ],
+    "terminalStates": [
+      "closed_failure",
+      "entry_committed_complete",
+      "entry_committed_next_entry",
+      "recovery_required_closed",
+      "unknown_rejected"
+    ],
+    "transitions": [
+      { "from": "unclassified", "event": "consume_execution_permit", "to": "execution_ready" },
+      { "from": "unclassified", "event": "select_unknown", "to": "unknown_rejected" },
+      { "from": "execution_ready", "event": "begin_transaction", "to": "transaction_ready" },
+      { "from": "execution_ready", "event": "fail_before_mutation", "to": "closed_failure" },
+      { "from": "transaction_ready", "event": "prepare_statement", "to": "statement_ready" },
+      { "from": "transaction_ready", "event": "fail_before_mutation", "to": "closed_failure" },
+      { "from": "statement_ready", "event": "append_intent_durable", "to": "intent_durable" },
+      { "from": "statement_ready", "event": "fail_before_mutation", "to": "closed_failure" },
+      { "from": "intent_durable", "event": "execute_exact_statement", "to": "statement_executed" },
+      { "from": "intent_durable", "event": "fail_after_intent", "to": "recovery_required_closed" },
+      {
+        "from": "statement_executed",
+        "event": "append_intermediate_nonfinal",
+        "to": "intermediate_durable"
+      },
+      {
+        "from": "statement_executed",
+        "event": "append_intermediate_final",
+        "to": "final_intermediate_durable"
+      },
+      {
+        "from": "statement_executed",
+        "event": "mutation_outcome_unknown",
+        "to": "recovery_required_closed"
+      },
+      { "from": "intermediate_durable", "event": "advance_statement", "to": "statement_ready" },
+      {
+        "from": "intermediate_durable",
+        "event": "fail_after_intermediate",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "final_intermediate_durable",
+        "event": "insert_and_readback_ledger",
+        "to": "ledger_readback_ready"
+      },
+      {
+        "from": "final_intermediate_durable",
+        "event": "fail_after_intermediate",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "ledger_readback_ready",
+        "event": "append_commit_intent",
+        "to": "commit_intent_durable"
+      },
+      {
+        "from": "ledger_readback_ready",
+        "event": "mutation_outcome_unknown",
+        "to": "recovery_required_closed"
+      },
+      { "from": "commit_intent_durable", "event": "commit_known", "to": "commit_known_committed" },
+      {
+        "from": "commit_intent_durable",
+        "event": "commit_rejected_or_unknown",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "commit_known_committed",
+        "event": "append_terminal_durable",
+        "to": "terminal_durable"
+      },
+      {
+        "from": "commit_known_committed",
+        "event": "terminal_append_failed_or_unknown",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "terminal_durable",
+        "event": "classify_bundle_complete",
+        "to": "entry_committed_complete"
+      },
+      {
+        "from": "terminal_durable",
+        "event": "classify_next_entry",
+        "to": "entry_committed_next_entry"
+      }
+    ]
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "executionAdmissionProfileSelection": "exact_runner_ledger_entry_execution_admission_v1_generated_identity",
+    "callerProvidedProfile": "forbidden",
+    "callerProvidedAction": "forbidden",
+    "ordinaryFactAsPermit": "forbidden",
+    "closeOnlyPermitAsExecutionPermit": "forbidden",
+    "writerSource": "consumed_exact_execution_permit_only"
+  },
+  "implementationBoundary": {
+    "productionConsumer": "none_in_slice_a",
+    "existingBrandNewWriter": "separate_existing_authority_chain",
+    "successWriter": "one_entry_multi_statement_known_success_only_after_fixed_review",
+    "bundleLoop": "separate_typed_caller_after_kernel_review",
+    "retryWriter": "not_implemented",
+    "abortWriter": "not_implemented",
+    "reconcileWriter": "not_implemented",
+    "failureWriter": "not_implemented",
+    "databaseSession": "exact_consumed_execution_permit_session",
+    "databaseTransaction": "one_serializable_read_write_transaction_per_entry",
+    "sqlExecution": "exact_signed_statement_extended_protocol_once",
+    "ledgerMutation": "exact_signed_row_same_transaction_only",
+    "evidenceMutation": "exact_success_record_chain_only",
+    "entryBoundary": "fresh_preflight_and_execution_admission_for_each_next_entry",
+    "httpSurface": "not_implemented",
+    "p2Surface": "not_implemented",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized",
+    "gateStatus": "all_gates_open"
+  }
+}

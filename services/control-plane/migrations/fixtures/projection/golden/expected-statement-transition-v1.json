@@ -1,0 +1,41 @@
+{
+  "profile": "cloud-agents-platform-statement-transition/v1",
+  "catalog_before": {
+    "scope": {
+      "scope_kind": "predecessor",
+      "schema_head": null,
+      "migration_id": "000001",
+      "through_statement_index": null,
+      "declared_objects": []
+    },
+    "state_kind": "schema_absent",
+    "digest": "sha256:b0d5f0014ec6eaf8a8a86931c7abb6422229ee7908d1ff9387b3f6c707010cba"
+  },
+  "catalog_after": {
+    "scope": {
+      "scope_kind": "statement_prefix",
+      "schema_head": null,
+      "migration_id": "000001",
+      "through_statement_index": 0,
+      "declared_objects": [
+        {
+          "kind": "schema",
+          "name": "cloud_agents"
+        }
+      ]
+    },
+    "state_kind": "schema_present",
+    "digest": "sha256:829bba5b52c08f9c4aad6d528c063482e0444874ad0c733f06aaae2cd728dac3"
+  },
+  "authority_relation": "unchanged_relative_to_verified_binding",
+  "control_plane_delta": [
+    {
+      "change_kind": "create",
+      "object": {
+        "kind": "schema",
+        "name": "cloud_agents"
+      },
+      "grantee": null
+    }
+  ]
+}

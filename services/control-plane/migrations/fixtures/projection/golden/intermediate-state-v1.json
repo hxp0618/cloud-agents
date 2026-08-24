@@ -1,0 +1,34 @@
+{
+  "schema_bundle_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "catalog_contract_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "authority_profile_digest": "sha256:3a7b685a8758d47caedc671f4dff06a3cb5e4e1a988c8f090af7c07eba15d7a7",
+  "authority_binding_digest": "sha256:9ca73f072b26b6eab026b83deae475a8bf8fc295316bddf95b8bb73ac7df99d3",
+  "migration_id": "000001",
+  "attempt_index": 1,
+  "statement_index": 0,
+  "statement_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "previous_attempt_terminal_digest": null,
+  "previous_intermediate_state_digest": null,
+  "control_plane_states": {
+    "tx_status": "T",
+    "session_user": "cloud_agents_migration_login_fixture",
+    "current_user": "cloud_agents_migration_owner",
+    "migration_role": "cloud_agents_migration_owner",
+    "advisory_lock": {
+      "domain": "cloud-agents-platform:migrations:v1",
+      "key_int64_decimal": "-1047838957622507638",
+      "held": true
+    },
+    "verified_authority_decision_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "schema_owner": "cloud_agents_migration_owner",
+    "schema_explicit_acl_digest": "sha256:3a6cc57320646658df059fc6faee25a5d34937b18fe869982c665c9883c803b7",
+    "schema_effective_acl_digest": "sha256:bc8d19756cbb4ff3b4d10f785f0587c934132a29ef92e0a3f319244feb1d4fee",
+    "default_acl_digest": "sha256:0cf04ebdef5c29a1b3cdc976418adc35b3c2f14f251d4b02cebe1da1b8ea0166",
+    "expected_transition_digest": "sha256:663fdf8e6a539914db05e893d31ab5cab7b8c4eb9842d60f9217058cf454091a"
+  },
+  "authority_before_digest": "sha256:0712576934800b058019d946513b0fb0a8dd27a282549ed35cbf5bf7dd50683d",
+  "authority_after_digest": "sha256:0712576934800b058019d946513b0fb0a8dd27a282549ed35cbf5bf7dd50683d",
+  "catalog_before_digest": "sha256:b0d5f0014ec6eaf8a8a86931c7abb6422229ee7908d1ff9387b3f6c707010cba",
+  "catalog_after_digest": "sha256:829bba5b52c08f9c4aad6d528c063482e0444874ad0c733f06aaae2cd728dac3",
+  "intermediate_state_digest": "sha256:cf9e80acabd216f904e7f9851bd89db453f2fcba39c482e854772c7c40978edd"
+}

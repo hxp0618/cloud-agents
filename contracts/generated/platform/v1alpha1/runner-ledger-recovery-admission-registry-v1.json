@@ -1,0 +1,253 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-recovery-registry/v1",
+  "suiteId": "cloud-agents/platform/runner-ledger-recovery",
+  "family": "recovery_admission",
+  "registryId": "cloud-agents/platform/runner-ledger-recovery-admission",
+  "sourceDigest": "sha256:e6564cad4f071c760624a1afda8906600120f8f5c84d13f45253261bb4ed5f6c",
+  "suiteSourceDigest": "sha256:ac63bce8b701a3dff1452eeeae4309d2d3c9151e0026dd913720d3ce3f41802c",
+  "stateMachineDigest": "sha256:2996ba9e075b8849b5338a6cd42bf4e024b772b57bfa06c68eb19b11a5fe1f74",
+  "policyDigest": "sha256:e6ec3c3446b9301012a805f8b9f9cef504d014e02409196c69bafb5bf9be2c70",
+  "predecessorBinding": {
+    "registryId": "cloud-agents/platform/runner-ledger-consumer",
+    "registryDigest": "sha256:f1248220aa18f6f7c85792e4b168fcc18a172ddeca65778686d033535617ed43",
+    "stateMachineDigest": "sha256:eb94b6399fb2d509aea69cbc7bfb6ed2942460af61d5cf2c57271024f37a0547",
+    "policyDigest": "sha256:b011e6869de84c17fa351802630327a36ab92595ada9089cc6068cebda0c4481",
+    "profileId": "runner-ledger-consumer/v1",
+    "profileDigest": "sha256:11015e7d78a3edb5adc0e666c2898ca4cc3aaeae097537c867b25aaf0d22f732"
+  },
+  "historicalBindings": [
+    {
+      "registryId": "cloud-agents/platform/runner-ledger-preflight",
+      "registryDigest": "sha256:a17a7333d1455d3ed5a0e2d70c2a3b2ea9ee1e323a5ac935d4d9a12a2db30661",
+      "stateMachineDigest": "sha256:fe00c5de375865350798e6a79de22b4272fb70949bbd5d3c0a11745bb3dd11ae",
+      "policyDigest": "sha256:1fb99617210b7d92e7c51d2241f98674c67818c85c82cf13edd2ebe33b34388b",
+      "profileId": "runner-ledger-preflight/v1",
+      "profileDigest": "sha256:beefc1e996e56e88fbcde2afe35a2f823a3846f03e5f6b8f47d4e819a1e1bfe9"
+    },
+    {
+      "registryId": "cloud-agents/platform/runner-ledger-consumer",
+      "registryDigest": "sha256:f1248220aa18f6f7c85792e4b168fcc18a172ddeca65778686d033535617ed43",
+      "stateMachineDigest": "sha256:eb94b6399fb2d509aea69cbc7bfb6ed2942460af61d5cf2c57271024f37a0547",
+      "policyDigest": "sha256:b011e6869de84c17fa351802630327a36ab92595ada9089cc6068cebda0c4481",
+      "profileId": "runner-ledger-consumer/v1",
+      "profileDigest": "sha256:11015e7d78a3edb5adc0e666c2898ca4cc3aaeae097537c867b25aaf0d22f732"
+    },
+    {
+      "registryId": "cloud-agents/platform/runner-ledger-entry-admission",
+      "registryDigest": "sha256:fb7621405bbe62e47ce99ff00239c0e0d3fc12465e475f468b3fb07887bb886a",
+      "stateMachineDigest": "sha256:94baeab96aaa0da096b6de2c48fc646723d9ad003b68fd1135edf4adcc141189",
+      "policyDigest": "sha256:9869fae48b30e4077f346b1d7c4309056a2129fb5974e73762d897e2925dc26a",
+      "profileId": "runner-ledger-entry-admission/v1",
+      "profileDigest": "sha256:bee8d42d328984f929fafa1e9dd2d4b18c94814e9375a1e1a1199ad8cb0ab551"
+    },
+    {
+      "registryId": "cloud-agents/platform/runner-ledger-entry-execution-admission",
+      "registryDigest": "sha256:d686c10104929aec568b0b373ed7ef70eea9287594079cf2e9e34ab14510ea18",
+      "stateMachineDigest": "sha256:a47fa0212181625221a5df01379c0df72a7a438b223478428cdb040c07b26ad0",
+      "policyDigest": "sha256:5f9b9799752d13e145f26214f7e9305a24f714f1ac205a6e246d1bb7200d9ef1",
+      "profileId": "runner-ledger-entry-execution-admission/v1",
+      "profileDigest": "sha256:0799f9485d302b7470e59829a117da9c7b524f546a83a651d81f45b7f236fc68"
+    },
+    {
+      "registryId": "cloud-agents/platform/runner-ledger-entry-success-writer",
+      "registryDigest": "sha256:4af77ed62908c45b0202daa8ef458179b68ae7fc369705a41328330ed19fcbc2",
+      "stateMachineDigest": "sha256:bdb81651d67531abb8a03e8f0c63401feec3d76ac54d854eff38d81f51ffb0dc",
+      "policyDigest": "sha256:c31945cdb709489c6b80d9deeb6aa7480cb68631c8d29c12f160a45d14553a56",
+      "profileId": "runner-ledger-entry-success-writer/v1",
+      "profileDigest": "sha256:6e83d5661d71ff6bdd030df683f70dfbc3402e7aa9ad34239d81386067b30c54"
+    }
+  ],
+  "profile": {
+    "profileDigest": "sha256:b92e6352d7bbfa0e607bcde06a7c4fe7e508adc6b954c9a048584da571014869",
+    "spec": {
+      "profileId": "runner-ledger-recovery-admission/v1",
+      "stateMachineId": "runner-ledger-recovery-admission/v1",
+      "action": "prepare_recovery_admission",
+      "canonicalization": {
+        "profile": "cloud-agents-runner-ledger-recovery-admission/v1-rfc8785-sha256",
+        "algorithm": "RFC8785",
+        "digest": "SHA-256",
+        "comparison": "exact_string_no_rewrite"
+      },
+      "identityBindings": {
+        "predecessorProfile": "exact_generated_runner-ledger-consumer/v1",
+        "consumedAuthority": "exact_registry_backed_one_shot_runner-ledger-consumer/v1",
+        "currentEvidenceBoundary": "exact_same_verifier_full_root_generation_journal_cursor_before_and_after_action",
+        "generationCursor": "exact_generation_journal_checkpoint_terminal_resolution_and_continuation",
+        "ledgerPrefix": "exact_length_head_rows_and_domain_separated_digest",
+        "catalogProjection": "exact_verified_before_after_and_cumulative_catalog",
+        "executionPolicy": "exact_ordered_migrations_statement_plans_and_max_attempts",
+        "actionReceipt": "exact_prepare_recovery_admission_closed_receipt_or_read_only_result",
+        "oneShotAuthority": "registry_backed_noncopyable_pointer_owner_bound_single_consume",
+        "crossProfileRejection": "literal_copy_stale_foreign_replaced_and_other_profile_fail_closed"
+      },
+      "errorPrecedence": {
+        "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_ACTION",
+        "contextOrOperationalFailure": "STABLE_CONTEXT_OR_OPERATIONAL_FAILURE_BEFORE_ACTION",
+        "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_UNSUPPORTED",
+        "unsupportedTransition": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+        "mutationOutcomeUnknown": "UNKNOWN_MUTATION_REVOKES_OLD_CURSOR_AND_REQUIRES_RECOVERY",
+        "cleanupUnknown": "CLEANUP_UNCERTAINTY_DOMINATES_ORDINARY_RESULT",
+        "oneShotConsumption": "OLD_PERMIT_AND_SECOND_TRANSITION_FAIL_CLOSED"
+      },
+      "pairBindings": [
+        {
+          "disposition": "empty_brand_new",
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "consumerAction": "entry_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "brand_new_inherited",
+          "action": "begin_first_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_recovery_execution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_statement_intent",
+          "action": "append_aborted_retryable",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_statement_intent",
+          "action": "append_aborted_terminal",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_intermediate",
+          "action": "append_aborted_retryable",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_intermediate",
+          "action": "append_aborted_terminal",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_abort_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "dangling_commit_intent",
+          "action": "reconcile_commit",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_commit_observation_terminal"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "ambiguous_unresolved",
+          "action": "reconcile_commit",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "append_ambiguous_resolution"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "begin_next_attempt",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "prepare_retry_handoff"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "divergent",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        }
+      ],
+      "permitFromProfileId": null
+    }
+  },
+  "stateMachine": {
+    "id": "runner-ledger-recovery-admission/v1",
+    "initialState": "unclassified",
+    "states": [
+      "admission_closed",
+      "action_permit_ready",
+      "recovery_required_closed",
+      "replay_revalidating",
+      "unclassified",
+      "unknown_rejected"
+    ],
+    "terminalStates": ["admission_closed", "recovery_required_closed", "unknown_rejected"],
+    "transitions": [
+      {
+        "from": "unclassified",
+        "event": "select_supported_pair",
+        "to": "replay_revalidating"
+      },
+      {
+        "from": "unclassified",
+        "event": "select_unknown",
+        "to": "unknown_rejected"
+      },
+      {
+        "from": "replay_revalidating",
+        "event": "revalidate_exact_boundary",
+        "to": "action_permit_ready"
+      },
+      {
+        "from": "replay_revalidating",
+        "event": "revalidate_failed",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "action_permit_ready",
+        "event": "close_without_mutation",
+        "to": "admission_closed"
+      }
+    ]
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "predecessorProfileSelection": "exact_runner-ledger-consumer/v1",
+    "callerProvidedProfile": "forbidden",
+    "callerProvidedAction": "forbidden",
+    "ordinaryFactAsPermit": "forbidden",
+    "crossProfilePermit": "forbidden",
+    "permitSource": "consumed_same_verifier_runner_consumer_claim_only"
+  },
+  "implementationBoundary": {
+    "sliceA": "generated_contract_and_ordinary_profile_only",
+    "productionConsumer": "none_in_slice_a",
+    "claim": "not_implemented_in_slice_a",
+    "databaseSession": "not_opened_in_slice_a",
+    "databaseTransaction": "forbidden_in_slice_a",
+    "sqlExecution": "forbidden_in_slice_a",
+    "ledgerMutation": "forbidden_in_slice_a",
+    "evidenceMutation": "forbidden_in_slice_a",
+    "lineageMutation": "forbidden_in_slice_a",
+    "writerAction": "prepare_recovery_admission_not_implemented_in_slice_a",
+    "caller": "not_implemented_in_slice_a",
+    "httpSurface": "not_implemented",
+    "p2Surface": "not_implemented",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized",
+    "gateStatus": "all_gates_open"
+  },
+  "registryDigest": "sha256:593c0199a8f4e59a6b29cb0b9f49894eef2911cb9fe9bf69b70eb15ef79d658a"
+}

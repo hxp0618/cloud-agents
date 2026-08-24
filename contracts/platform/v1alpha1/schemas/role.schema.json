@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/role.schema.json",
+  "title": "Role",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "Role"
+    },
+    "metadata": {
+      "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "permissions", "state"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "platform.admin",
+            "tenant.admin",
+            "organization.admin",
+            "project.admin",
+            "project.operator",
+            "project.developer",
+            "project.viewer"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "permission.schema.json"
+          }
+        },
+        "state": {
+          "type": "string",
+          "enum": ["active", "deprecated", "revoked"]
+        }
+      }
+    }
+  }
+}

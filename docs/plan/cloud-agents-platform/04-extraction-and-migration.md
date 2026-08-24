@@ -77,11 +77,36 @@ Inventory seed（最终以逐文件 manifest 为准）：
 - provider catalog/capability/release/attestation、admission/fairness/quota/backpressure；
 - service account/workload identity、OIDC/local auth、rate limit 与 audit/usage facts。
 
-公共 migration 使用全新 lineage，不复制 Synara migration 编号；baseline 分域至少覆盖：tenant/org/project/
+P1 的数据与传输 foundation 按 [ADR-0007](../adr/0007-p1-contract-data-toolchain-foundation.md) 冻结：
+
+- Postgres CI compatibility matrix 固定覆盖 major `15`、`16`、`17`；每个 job 必须进一步固定 patch version
+  与 OCI image digest，closure record 同时记录 server version、image digest 和 client/toolchain version，禁止仅使用
+  `postgres:15` 等可漂移 tag 作为证据；
+- Go persistence 固定使用 `pgx/v5`、`pgxpool` 与显式手写 SQL；禁止 GORM、ORM schema generation、
+  `AutoMigrate`，也禁止沿用 Synara migration 编号或把 legacy migration 作为公共 schema authority；
+- management/agent/host JSON API 以 JSON Schema 数据模型和 OpenAPI 路由映射为 authority；Worker/Platform
+  Adapter wire 以 Proto + Connect/gRPC mapping 为 authority。两条传输面各自从唯一 authority 生成
+  golden/negative fixtures；仅对显式共享语义类型增加跨面 mapping fixture，不允许 SDK 或 server 手写出第二套
+  wire model；
+- 数据隔离采用 composite tenant foreign key 加 `ENABLE ROW LEVEL SECURITY` / `FORCE ROW LEVEL SECURITY`。
+  runtime role 必须是非表 owner、没有 `BYPASSRLS`，每个事务通过 `SET LOCAL` 写入并验证 tenant context；
+  migration owner 与 runtime role 分离，只有经 ADR 与测试批准的 global table allowlist 可以不带 tenant RLS；
+- live-instance compatibility 不能依赖临时进程列表：实例版本、schema range、最后 heartbeat 和 drain 状态进入
+  durable registry。contract migration 前必须证明所有 live instances 位于 N/N-1 支持窗口；unknown、
+  stale-but-not-expired，以及 expired 但尚无同 incarnation/generation fencing + termination + revoke +
+  claim/leader release durable retirement receipt 的实例一律 fail closed。只有完整 retirement receipt 才能把过期
+  registration 从 live set 排除。
+
+公共 migration 使用全新 `expand -> backfill -> contract` lineage，不复制 Synara migration 编号；baseline 分域至少覆盖：tenant/org/project/
 membership、idempotency/outbox/leader/operation receipt、managed-agent session/turn/execution/event/interaction、
 worker identity/generation/release/attestation、workspace/materialization/checkpoint/cleanup、artifact、credential/
 broker、target/quota/usage、managed-host lease/workload/volume/endpoint、adapter registry/finalizer、platform
 manifest/compatibility。
+
+每个 lineage entry 必须固定 migration ID、前置 migration、内容 checksum、阶段、最小/最大兼容 binary、重入语义
+和 rollback 边界；执行器先取得 Postgres advisory lock，再核对数据库 ledger checksum，checksum 漂移、未知 migration
+或越过未完成阶段均 fail closed。backfill 必须使用 durable cursor、固定 batch boundary 和 reconciliation report，
+不能把一次性脚本或 CI 成功当成完成状态。
 
 ### P2：Managed Agent Plane
 
@@ -183,10 +208,22 @@ P4 Standalone 默认包含 Managed Agent 与 reference Managed Host；真实 T3 
 ### 4.2 数据库迁移与 rollback
 
 - 只采用 forward-only `expand -> resumable backfill -> code cutover -> contract`；
-- 每个 migration 有 checksum、全局 lock、schema compatibility range 和重复执行语义；
+- 每个 migration 有 immutable checksum、Postgres advisory lock、schema compatibility range 和重复执行语义；
 - backfill 按 durable cursor/batch 可暂停恢复，并有 mismatch/reconciliation report；
+- tenant-owned tables 使用 composite tenant FK，并同时启用 `ENABLE ROW LEVEL SECURITY` 与
+  `FORCE ROW LEVEL SECURITY`；runtime role 非 owner 且无 `BYPASSRLS`，事务必须以 `SET LOCAL` 设置 tenant
+  context，缺失、非法或跨 tenant context 时 fail closed；
+- migration owner 与 runtime role 分离；不受 tenant RLS 的 global tables 必须进入固定 allowlist，并有逐表 authority
+  与隔离测试；
+- durable live-instance registry 记录 binary、contract、schema range、heartbeat 与 drain state；contract preflight 要求
+  所有 live instance 满足 N/N-1 compatibility；unknown、stale-but-not-expired，以及 expired 但没有同
+  incarnation/generation retirement receipt 的实例阻止迁移。retirement receipt 必须证明 fencing/termination、
+  endpoint/credential revoke 与 claim/leader release；
 - Release manifest 固定最低可回滚 binary/schema 版本；contract 前验证旧 binary 已退出支持窗口；
-- irreversible migration 必须有 freeze/批准、PITR restore point 和 restore drill；
+- irreversible migration 必须有 freeze/批准、PITR restore point 和 restore drill；P1 只验收本地 logical
+  backup/restore、checksum/advisory-lock 行为与 N/N-1 compatibility，部署级 PITR restore point、PITR drill、HA
+  和故障切换到 P4 才能关闭；P1 仍须实现 fail-closed preflight contract，使部署执行在没有匹配 release/schema
+  digest 的 restore point 与有效 restore-drill record 时拒绝进入 irreversible/contract 阶段；
 - rollback 通常回滚 binary/traffic 并保留 expanded schema，不假装存在安全 down migration。
 
 ## 5. 迁移到公共仓后的删除规则

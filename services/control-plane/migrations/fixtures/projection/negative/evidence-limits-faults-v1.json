@@ -1,0 +1,123 @@
+{
+  "format_version": "cloud-agents-platform-evidence-limits-faults/v1",
+  "boundaries": [
+    {
+      "name": "stable_failure_major",
+      "validator": "stable_failure",
+      "exact_max": 65535,
+      "max_plus_one": 65536
+    },
+    {
+      "name": "terminal_attempt_index",
+      "validator": "attempt_terminal",
+      "exact_max": 4294967295,
+      "max_plus_one": 4294967296
+    },
+    {
+      "name": "journal_outer_artifact_size",
+      "validator": "journal_header",
+      "exact_max": 9007199254740991,
+      "max_plus_one": "9007199254740992"
+    },
+    {
+      "name": "quota_reserved_records",
+      "validator": "generation_reserved",
+      "exact_max": 65536,
+      "max_plus_one": 65537
+    },
+    {
+      "name": "quota_reserved_bytes",
+      "validator": "generation_reserved",
+      "exact_max": 268435456,
+      "max_plus_one": 268435457
+    },
+    {
+      "name": "evidence_intermediate_framed_bytes",
+      "validator": "evidence_frame_profile",
+      "exact_max": 262144,
+      "max_plus_one": 262145
+    },
+    {
+      "name": "evidence_segment_bytes",
+      "validator": "evidence_segment_usage",
+      "exact_max": 16777216,
+      "max_plus_one": 16777217
+    },
+    {
+      "name": "evidence_segment_records",
+      "validator": "evidence_segment_usage",
+      "exact_max": 4096,
+      "max_plus_one": 4097
+    },
+    {
+      "name": "journal_reserved_segments",
+      "validator": "journal_header",
+      "exact_max": 16,
+      "max_plus_one": 17
+    },
+    {
+      "name": "lineage_checkpoint_framed_bytes",
+      "validator": "lineage_frame_profile",
+      "exact_max": 16384,
+      "max_plus_one": 16385
+    },
+    {
+      "name": "lineage_superseded_framed_bytes",
+      "validator": "lineage_frame_profile",
+      "exact_max": 131072,
+      "max_plus_one": 131073
+    },
+    {
+      "name": "lineage_index_bytes",
+      "validator": "lineage_index_usage",
+      "exact_max": 16777216,
+      "max_plus_one": 16777217
+    },
+    {
+      "name": "lineage_index_records",
+      "validator": "lineage_index_usage",
+      "exact_max": 16384,
+      "max_plus_one": 16385
+    },
+    {
+      "name": "decision_recovery_identity_bytes",
+      "validator": "decision_recovery_inputs",
+      "exact_max": 1024,
+      "max_plus_one": 1025
+    },
+    {
+      "name": "decision_recovery_encoded_bytes",
+      "validator": "decision_recovery_inputs",
+      "exact_max": 1048576,
+      "max_plus_one": 1048577
+    },
+    {
+      "name": "decision_recovery_input_count",
+      "validator": "decision_recovery_inputs",
+      "exact_max": 4099,
+      "max_plus_one": 4100
+    }
+  ],
+  "invalid_cases": [
+    {
+      "name": "negative_usage",
+      "validator": "evidence_segment_usage",
+      "value": "-1"
+    },
+    {
+      "name": "fractional_usage",
+      "validator": "lineage_index_usage",
+      "value": "1.5"
+    },
+    {
+      "name": "non_nfc_identity",
+      "validator": "decision_recovery_inputs",
+      "value": "é"
+    },
+    {
+      "name": "invalid_policy_expiry",
+      "validator": "recovery_policy",
+      "value": "not-rfc3339"
+    }
+  ]
+}

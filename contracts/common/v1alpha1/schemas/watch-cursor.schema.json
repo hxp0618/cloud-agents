@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/watch-cursor.schema.json",
+  "title": "WatchCursor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cursor", "resourceVersion", "expiresAt"],
+  "properties": {
+    "cursor": {
+      "$ref": "watch-cursor-token.schema.json"
+    },
+    "resourceVersion": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)$",
+      "maxLength": 20
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 64
+    }
+  }
+}

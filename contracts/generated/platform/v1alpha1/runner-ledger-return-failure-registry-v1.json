@@ -1,0 +1,142 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-recovery-registry/v1",
+  "suiteId": "cloud-agents/platform/runner-ledger-recovery",
+  "family": "return_failure",
+  "registryId": "cloud-agents/platform/runner-ledger-return-failure",
+  "sourceDigest": "sha256:f5764f38a24f929f0a6b4899d826dcedbf18a0923e01cf1198d10f6be2b9f6ba",
+  "suiteSourceDigest": "sha256:ac63bce8b701a3dff1452eeeae4309d2d3c9151e0026dd913720d3ce3f41802c",
+  "stateMachineDigest": "sha256:34fc4be381617a3f39d1a3b773c639c31d9a89a5a502ed58f37de48faa45bea3",
+  "policyDigest": "sha256:2db9de579e621e60ed71941ced63942f95db5a655bdc6e26ff985d5a6a27ca67",
+  "predecessorBinding": {
+    "registryId": "cloud-agents/platform/runner-ledger-recovery-admission",
+    "registryDigest": "sha256:593c0199a8f4e59a6b29cb0b9f49894eef2911cb9fe9bf69b70eb15ef79d658a",
+    "stateMachineDigest": "sha256:2996ba9e075b8849b5338a6cd42bf4e024b772b57bfa06c68eb19b11a5fe1f74",
+    "policyDigest": "sha256:e6ec3c3446b9301012a805f8b9f9cef504d014e02409196c69bafb5bf9be2c70",
+    "profileId": "runner-ledger-recovery-admission/v1",
+    "profileDigest": "sha256:b92e6352d7bbfa0e607bcde06a7c4fe7e508adc6b954c9a048584da571014869"
+  },
+  "historicalBindings": [],
+  "profile": {
+    "profileDigest": "sha256:b7b80f60b702bc64c5e1c5e26771f00db5687c0ff96c721cccdc088de587d4fe",
+    "spec": {
+      "profileId": "runner-ledger-return-failure/v1",
+      "stateMachineId": "runner-ledger-return-failure/v1",
+      "action": "return_typed_failure",
+      "canonicalization": {
+        "profile": "cloud-agents-runner-ledger-return-failure/v1-rfc8785-sha256",
+        "algorithm": "RFC8785",
+        "digest": "SHA-256",
+        "comparison": "exact_string_no_rewrite"
+      },
+      "identityBindings": {
+        "predecessorProfile": "exact_generated_runner-ledger-recovery-admission/v1",
+        "consumedAuthority": "exact_registry_backed_one_shot_runner-ledger-recovery-admission/v1",
+        "currentEvidenceBoundary": "exact_same_verifier_full_root_generation_journal_cursor_before_and_after_action",
+        "generationCursor": "exact_generation_journal_checkpoint_terminal_resolution_and_continuation",
+        "ledgerPrefix": "exact_length_head_rows_and_domain_separated_digest",
+        "catalogProjection": "exact_verified_before_after_and_cumulative_catalog",
+        "executionPolicy": "exact_ordered_migrations_statement_plans_and_max_attempts",
+        "actionReceipt": "exact_return_typed_failure_closed_receipt_or_read_only_result",
+        "oneShotAuthority": "registry_backed_noncopyable_pointer_owner_bound_single_consume",
+        "crossProfileRejection": "literal_copy_stale_foreign_replaced_and_other_profile_fail_closed"
+      },
+      "errorPrecedence": {
+        "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_ACTION",
+        "contextOrOperationalFailure": "STABLE_CONTEXT_OR_OPERATIONAL_FAILURE_BEFORE_ACTION",
+        "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_UNSUPPORTED",
+        "unsupportedTransition": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+        "mutationOutcomeUnknown": "UNKNOWN_MUTATION_REVOKES_OLD_CURSOR_AND_REQUIRES_RECOVERY",
+        "cleanupUnknown": "CLEANUP_UNCERTAINTY_DOMINATES_ORDINARY_RESULT",
+        "oneShotConsumption": "OLD_PERMIT_AND_SECOND_TRANSITION_FAIL_CLOSED"
+      },
+      "pairBindings": [
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "terminal",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        },
+        {
+          "disposition": "partial_retry_or_recovery",
+          "state": "divergent",
+          "action": "return_failure",
+          "consumerAction": "recovery_not_implemented",
+          "profileAction": "return_typed_failure"
+        }
+      ],
+      "permitFromProfileId": "runner-ledger-recovery-admission/v1"
+    }
+  },
+  "stateMachine": {
+    "id": "runner-ledger-return-failure/v1",
+    "initialState": "unclassified",
+    "states": [
+      "failure_returned",
+      "recovery_required_closed",
+      "result_ready",
+      "result_revalidating",
+      "unclassified",
+      "unknown_rejected"
+    ],
+    "terminalStates": ["failure_returned", "recovery_required_closed", "unknown_rejected"],
+    "transitions": [
+      {
+        "from": "unclassified",
+        "event": "consume_return_failure_permit",
+        "to": "result_revalidating"
+      },
+      {
+        "from": "unclassified",
+        "event": "select_unknown",
+        "to": "unknown_rejected"
+      },
+      {
+        "from": "result_revalidating",
+        "event": "revalidate_exact_boundary",
+        "to": "result_ready"
+      },
+      {
+        "from": "result_revalidating",
+        "event": "revalidate_failed",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "result_ready",
+        "event": "return_exact_typed_failure",
+        "to": "failure_returned"
+      }
+    ]
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "predecessorProfileSelection": "exact_runner-ledger-recovery-admission/v1",
+    "callerProvidedProfile": "forbidden",
+    "callerProvidedAction": "forbidden",
+    "ordinaryFactAsPermit": "forbidden",
+    "crossProfilePermit": "forbidden",
+    "permitSource": "consumed_exact_one_shot_permit_from_runner-ledger-recovery-admission/v1"
+  },
+  "implementationBoundary": {
+    "sliceA": "generated_contract_and_ordinary_profile_only",
+    "productionConsumer": "none_in_slice_a",
+    "claim": "not_implemented_in_slice_a",
+    "databaseSession": "not_opened_in_slice_a",
+    "databaseTransaction": "forbidden_in_slice_a",
+    "sqlExecution": "forbidden_in_slice_a",
+    "ledgerMutation": "forbidden_in_slice_a",
+    "evidenceMutation": "forbidden_in_slice_a",
+    "lineageMutation": "forbidden_in_slice_a",
+    "writerAction": "return_typed_failure_not_implemented_in_slice_a",
+    "caller": "not_implemented_in_slice_a",
+    "httpSurface": "not_implemented",
+    "p2Surface": "not_implemented",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized",
+    "gateStatus": "all_gates_open"
+  },
+  "registryDigest": "sha256:bd6bd2b5c0534a25a1fa6c1f76808a6691154ae7bcf795298bfd6ed0c6b07f13"
+}

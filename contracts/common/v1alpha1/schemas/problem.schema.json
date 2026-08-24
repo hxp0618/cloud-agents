@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/problem.schema.json",
+  "title": "Problem",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "title", "status", "error", "requestId"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 512
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 400,
+      "maximum": 599
+    },
+    "error": {
+      "$ref": "stable-error.schema.json"
+    },
+    "requestId": {
+      "$ref": "identifier.schema.json"
+    }
+  },
+  "x-cloud-agents-security": {
+    "forbiddenContent": [
+      "secret material",
+      "credential material",
+      "pairing material",
+      "authorization headers",
+      "internal SQL",
+      "cross-tenant identifiers"
+    ]
+  }
+}

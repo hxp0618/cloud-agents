@@ -1,0 +1,85 @@
+{
+  "state": "schema_present",
+  "scope": {
+    "scope_kind": "predecessor",
+    "schema_head": null,
+    "migration_id": "000001",
+    "through_statement_index": null,
+    "declared_objects": []
+  },
+  "body": {
+    "schema": {
+      "name": "cloud_agents",
+      "owner": "cloud_agents_migration_owner",
+      "explicit_acl": { "catalog_value": "null", "entries": [] },
+      "effective_acl": [
+        {
+          "grantor": "cloud_agents_migration_owner",
+          "grantee": "cloud_agents_migration_owner",
+          "privileges": ["CREATE", "USAGE"],
+          "grantable": ["CREATE", "USAGE"],
+          "origin": "owner_implicit"
+        }
+      ],
+      "comment": null,
+      "security_labels": []
+    },
+    "default_acl": [
+      {
+        "owner": "cloud_agents_migration_owner",
+        "schema": null,
+        "object_kind": "table",
+        "acl": {
+          "catalog_value": "explicit",
+          "entries": [
+            {
+              "grantor": "cloud_agents_migration_owner",
+              "grantee": "cag_migration",
+              "privileges": ["SELECT"],
+              "grantable": [],
+              "origin": "default_acl_catalog"
+            },
+            {
+              "grantor": "cloud_agents_migration_owner",
+              "grantee": "cloud_agents_migration_owner",
+              "privileges": [
+                "DELETE",
+                "INSERT",
+                "REFERENCES",
+                "SELECT",
+                "TRIGGER",
+                "TRUNCATE",
+                "UPDATE"
+              ],
+              "grantable": [],
+              "origin": "default_acl_catalog"
+            }
+          ]
+        }
+      },
+      {
+        "owner": "cloud_agents_migration_owner",
+        "schema": "cloud_agents",
+        "object_kind": "table",
+        "acl": {
+          "catalog_value": "explicit",
+          "entries": [
+            {
+              "grantor": "cloud_agents_migration_owner",
+              "grantee": "cag_migration",
+              "privileges": ["INSERT"],
+              "grantable": [],
+              "origin": "default_acl_catalog"
+            }
+          ]
+        }
+      }
+    ],
+    "relations": [],
+    "functions": [],
+    "dependencies": [],
+    "object_count": 0,
+    "declared_objects": [],
+    "denied_objects": []
+  }
+}

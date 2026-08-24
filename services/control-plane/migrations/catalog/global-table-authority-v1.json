@@ -1,0 +1,24 @@
+{
+  "format_version": "cloud-agents-platform-global-table-authority/v1",
+  "contract_kind": "global_table_writer_authority",
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "tables": [
+    {
+      "name": "schema_migrations",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "workload_database_principals",
+      "writers": ["audited_bootstrap_function"]
+    },
+    {
+      "name": "builtin_roles",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "builtin_role_permissions",
+      "writers": ["cloud_agents_migration_owner"]
+    }
+  ]
+}

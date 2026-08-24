@@ -1,0 +1,178 @@
+package v1alpha1
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
+)
+
+func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
+	requestBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
+	projectBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project.json")
+	responses := map[string]Response{
+		"GET /v1/tenants/tenant-alpha":                                               responseFixture(t, "platform-tenant", 200),
+		"GET /v1/tenants/tenant-alpha/organizations/organization-alpha":              responseFixture(t, "organization", 200),
+		"GET /v1/tenants/tenant-alpha/projects/project-alpha":                        responseFixture(t, "project", 200),
+		"GET /v1/tenants/tenant-alpha/memberships/membership-alpha":                  responseFixture(t, "membership", 200),
+		"GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1":                  responseFixture(t, "role", 200),
+		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":              responseFixture(t, "role-binding", 200),
+		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":           responseFixture(t, "project", 200),
+		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha": responseFixture(t, "role-binding", 200),
+		"POST /v1/tenants/tenant-alpha/projects":                                     {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
+	}
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(ctx context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		return responses[request.Method+" "+request.Path], nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.GetPlatformTenant(ctx, "tenant-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetOrganization(ctx, "tenant-alpha", "organization-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetProject(ctx, "tenant-alpha", "project-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetMembership(ctx, "tenant-alpha", "membership-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetRole(ctx, "tenant-alpha", "role-project-viewer-v1", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetRoleBinding(ctx, "tenant-alpha", "role-binding-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetProjectContext(ctx, "tenant-alpha", "project-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetManagedHostRoleBinding(ctx, "tenant-alpha", "role-binding-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := platform.DecodeProjectCreateRequestJSON(requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CreateProject(ctx, "tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 9 {
+		t.Fatalf("transport calls = %d, want 9", len(seen))
+	}
+	for _, request := range seen {
+		if request.Headers[HeaderRequestID] != "req-alpha" {
+			t.Fatalf("request headers = %#v", request.Headers)
+		}
+	}
+	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[len(seen)-1].Body)
+	if seen[len(seen)-1].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
+		t.Fatalf("create request = %#v", seen[len(seen)-1])
+	}
+}
+
+func TestGeneratedOpenAPIClientErrorAndCancellationBoundaries(t *testing.T) {
+	problem := readOpenAPIFixture(t, "common/v1alpha1/fixtures/golden/problem.json")
+	transportCalls := 0
+	client, err := NewClient(TransportFunc(func(context.Context, Request) (Response, error) {
+		transportCalls++
+		return Response{Status: 404, Body: problem}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.GetProject(context.Background(), "tenant-alpha", "project-alpha", "req-alpha")
+	var clientErr *ClientError
+	if !errors.As(err, &clientErr) || clientErr.Problem == nil || clientErr.Problem.Status != 404 {
+		t.Fatalf("problem error = %#v", err)
+	}
+	statusMismatchClient, _ := NewClient(TransportFunc(func(context.Context, Request) (Response, error) {
+		return Response{Status: 500, Body: problem}, nil
+	}))
+	_, err = statusMismatchClient.GetProject(context.Background(), "tenant-alpha", "project-alpha", "req-alpha")
+	if !errors.As(err, &clientErr) || clientErr.Cause == nil || !strings.Contains(clientErr.Cause.Error(), "PROBLEM_STATUS_MISMATCH") {
+		t.Fatalf("status mismatch = %#v", err)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = client.GetProject(cancelled, "tenant-alpha", "project-alpha", "req-alpha")
+	if !errors.Is(err, context.Canceled) || transportCalls != 1 {
+		t.Fatalf("cancel = %v, transport calls = %d", err, transportCalls)
+	}
+	expired, expiredCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer expiredCancel()
+	_, err = client.GetProject(expired, "tenant-alpha", "project-alpha", "req-alpha")
+	if !errors.Is(err, context.DeadlineExceeded) || transportCalls != 1 {
+		t.Fatalf("deadline = %v, transport calls = %d", err, transportCalls)
+	}
+	if _, err := client.GetProject(context.Background(), "tenant-alpha", "wrong/id", "req-alpha"); err == nil {
+		t.Fatal("invalid path identifier accepted")
+	}
+	if transportCalls != 1 {
+		t.Fatalf("invalid path identifier reached transport: calls = %d", transportCalls)
+	}
+}
+
+func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
+	body := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
+	input, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body)
+	if err != nil || input.Body.Name != "project-alpha" {
+		t.Fatalf("server input = %#v / %v", input, err)
+	}
+	if _, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "short", body); err == nil {
+		t.Fatal("short idempotency key accepted")
+	}
+	unicode := []byte(`{"name":"project-alpha","organizationRef":{"namespace":"cloud-agents","kind":"organization","id":"organization-café"},"displayName":"Project Alpha"}`)
+	if _, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", unicode); err == nil {
+		t.Fatal("Unicode organization identifier accepted by server seam")
+	}
+	if _, err := ValidateGetServerRequest("tenant-alpha", "project-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidateGetServerRequest("tenant-alpha", "project/alpha", "req-alpha"); err == nil {
+		t.Fatal("path separator accepted")
+	}
+}
+
+func responseFixture(t *testing.T, name string, status int) Response {
+	t.Helper()
+	return Response{
+		Status:  status,
+		Headers: map[string]string{HeaderResourceVersion: fixtureResourceVersion(t, name)},
+		Body:    readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/"+name+".json"),
+	}
+}
+
+func fixtureResourceVersion(t *testing.T, name string) string {
+	t.Helper()
+	var value struct {
+		Metadata struct {
+			ResourceVersion string `json:"resourceVersion"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/"+name+".json"), &value); err != nil {
+		t.Fatal(err)
+	}
+	return value.Metadata.ResourceVersion
+}
+
+func readOpenAPIFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "..", "..", "contracts", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
+}

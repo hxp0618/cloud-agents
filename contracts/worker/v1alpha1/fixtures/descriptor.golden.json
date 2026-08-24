@@ -1,0 +1,73 @@
+{
+  "fixtureVersion": 1,
+  "authority": "proto3",
+  "generationStatus": "GENERATED_NON_GATE_EVIDENCE",
+  "descriptorSet": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+  "descriptorSha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+  "breakingBaseline": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+  "protocolCompatibility": ["connect", "grpc"],
+  "package": "cloudagents.worker.v1alpha1",
+  "sources": [
+    "contracts/worker/v1alpha1/kernel.proto",
+    "contracts/worker/v1alpha1/worker_supervisor.proto"
+  ],
+  "imports": ["google/protobuf/timestamp.proto"],
+  "services": {
+    "WorkerExecutionService": [
+      {
+        "name": "Negotiate",
+        "input": "cloudagents.worker.v1alpha1.NegotiationRequest",
+        "output": "cloudagents.worker.v1alpha1.NegotiationResponse",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "CheckHealth",
+        "input": "cloudagents.worker.v1alpha1.HealthRequest",
+        "output": "cloudagents.worker.v1alpha1.HealthResponse",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "ExecuteOperation",
+        "input": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+        "output": "cloudagents.worker.v1alpha1.DurableReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      },
+      {
+        "name": "GetOperationReceipt",
+        "input": "cloudagents.worker.v1alpha1.ReceiptRequest",
+        "output": "cloudagents.worker.v1alpha1.DurableReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      }
+    ]
+  },
+  "requiredMessages": [
+    "NamespaceRef",
+    "ProtocolVersion",
+    "ProtocolDescriptor",
+    "NegotiationBinding",
+    "WorkloadIdentity",
+    "OperationEnvelope",
+    "OperationAttemptEnvelope",
+    "FencingProof",
+    "FencingStamp",
+    "FinalizerSpec",
+    "FinalizerReceipt",
+    "DurableReceipt",
+    "ReceiptRequest"
+  ],
+  "invariants": [
+    "Worker execution service is Worker-hosted and authenticates Supervisor clients",
+    "unknown protocol major is rejected",
+    "unknown required capability is rejected",
+    "mTLS-authenticated identity is checked independently of generation",
+    "every post-negotiation request binds protocol version, negotiation id, expiry, and both mTLS identities",
+    "operation_id, idempotency_key, canonical request digest, deadline, and current generation are required",
+    "raw fencing proof never enters DurableReceipt",
+    "durable receipts have no arbitrary secret-bearing payload field",
+    "wire messages, strings, repeated fields, extension payload, and receipt summary are bounded"
+  ]
+}

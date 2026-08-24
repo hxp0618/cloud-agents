@@ -1,0 +1,9 @@
+{
+  "instance": {
+    "kind": "user",
+    "issuer": "https://Issuer.Example/%7Etenant",
+    "subject": "José/用户"
+  },
+  "canonicalUtf8": "{\"issuer\":\"https://Issuer.Example/%7Etenant\",\"kind\":\"user\",\"subject\":\"José/用户\"}",
+  "digest": "sha256:786823d37b824386b5c7d306a185132f4f8e99601b7915314138c65956deebe1"
+}

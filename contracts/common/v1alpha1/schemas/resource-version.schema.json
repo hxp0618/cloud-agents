@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/resource-version.schema.json",
+  "title": "ResourceVersion",
+  "type": "string",
+  "pattern": "^(?:0|[1-9][0-9]*)$",
+  "maxLength": 20
+}

@@ -1,0 +1,44 @@
+{
+  "format_version": "cloud-agents-platform-global-table-authority/v3",
+  "contract_kind": "global_table_writer_authority",
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "tables": [
+    {
+      "name": "schema_migrations",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "workload_database_principals",
+      "writers": ["audited_bootstrap_function"]
+    },
+    {
+      "name": "builtin_roles",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "builtin_role_permissions",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "leader_leases",
+      "writers": ["typed_control_plane_coordination_function"]
+    },
+    {
+      "name": "migration_backfills",
+      "writers": ["migration_backfill_job"]
+    },
+    {
+      "name": "schema_restore_evidence",
+      "writers": ["audited_migration_admin_job"]
+    },
+    {
+      "name": "live_instances",
+      "writers": ["typed_live_instance_registration_function"]
+    },
+    {
+      "name": "instance_retirement_receipts",
+      "writers": ["typed_instance_reconciler_function"]
+    }
+  ]
+}

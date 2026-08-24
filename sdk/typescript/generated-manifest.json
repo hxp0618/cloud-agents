@@ -1,0 +1,65 @@
+{
+  "formatVersion": "cloud-agents-generated-sdk-manifest/v1",
+  "profile": "cloud-agents-common-identity/v1alpha1",
+  "status": "GENERATED_NON_GATE_EVIDENCE",
+  "notGateClosure": true,
+  "contract": {
+    "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+    "manifestSha256": "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
+    "inputManifestSha256": "sha256:2253e5baab41fb44d276214b0007b58ed92b5736ef29ab0481628038e8912cbf",
+    "inputs": [
+      "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
+      "contracts/common/v1alpha1/fixtures/golden/namespace-ref-nfc.json",
+      "contracts/common/v1alpha1/fixtures/golden/subject-ref-canonical.json",
+      "contracts/common/v1alpha1/fixtures/golden/subject-ref.json",
+      "contracts/common/v1alpha1/fixtures/manifest.json",
+      "contracts/common/v1alpha1/fixtures/negative/namespace-ref-canonical-escape.json",
+      "contracts/common/v1alpha1/fixtures/negative/namespace-ref-canonical-trailing-whitespace.json",
+      "contracts/common/v1alpha1/fixtures/negative/namespace-ref-decomposed.json",
+      "contracts/common/v1alpha1/fixtures/negative/namespace-ref-extra-field.json",
+      "contracts/common/v1alpha1/fixtures/negative/namespace-ref-lone-surrogate.json",
+      "contracts/common/v1alpha1/fixtures/negative/namespace-ref-uppercase.json",
+      "contracts/common/v1alpha1/fixtures/negative/subject-ref-canonical-escape.json",
+      "contracts/common/v1alpha1/fixtures/negative/subject-ref-digest-mismatch.json",
+      "contracts/common/v1alpha1/fixtures/negative/subject-ref-extra-field.json",
+      "contracts/common/v1alpha1/schemas/namespace-ref.schema.json",
+      "contracts/common/v1alpha1/schemas/subject-ref.schema.json",
+      "docs/plan/p1/sdk-identity-closure-entry-20260820.md"
+    ]
+  },
+  "generator": {
+    "id": "platform-common-identity-sdk-generator",
+    "version": "v1",
+    "entrypoint": "scripts/generate-platform-identity-sdks.ts",
+    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
+    "sourceManifestSha256": "sha256:80f78cf57dc661499bd443542d672afd87c3682cbd8c2b2f30cba707e076fc1b",
+    "sources": [
+      "scripts/generate-platform-identity-sdks.ts",
+      "scripts/lib/platform-identity-sdk.test.ts",
+      "scripts/lib/platform-identity-sdk.ts",
+      "scripts/templates/platform-identity-sdk-go.tmpl",
+      "scripts/templates/platform-identity-sdk-typescript.tmpl"
+    ],
+    "configDigest": "sha256:28e47b77b878187f02f6acc3f875baa85aa13321c65b56c4d71136b3f96f9d75"
+  },
+  "implementationBoundary": {
+    "gateClosure": false,
+    "httpSurface": "NOT_IMPLEMENTED",
+    "p2Surface": "NOT_IMPLEMENTED",
+    "providerSideEffects": "FORBIDDEN",
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED"
+  },
+  "language": "typescript",
+  "packageIdentity": "@synara/cloud-agent-platform-sdk",
+  "runtimeDependencies": [],
+  "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
+  "outputTreeSha256": "sha256:3f6ef3fba04ab741a48bef1249093fb2c63714ed8aa4af13066c029233f4c99a",
+  "outputs": [
+    {
+      "path": "sdk/typescript/src/index.ts",
+      "sha256": "sha256:a22fa6519e6a145a979328b4074491ca9548e67458426673f29cba256636d889",
+      "sizeBytes": 12982
+    }
+  ]
+}

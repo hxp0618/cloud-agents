@@ -1,0 +1,49 @@
+{
+  "format_version": "cloud-agents-platform-authority-contract/v1",
+  "contract_kind": "database_role_authority",
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "database": {
+    "encoding": "UTF8",
+    "locale_provider": "libc",
+    "datcollate": "C",
+    "datctype": "C",
+    "icu_locale": null,
+    "icu_rules": null,
+    "collation_version": null
+  },
+  "group_roles": [
+    "cloud_agents_migration_owner",
+    "cloud_agents_runtime",
+    "cloud_agents_bootstrap_admin"
+  ],
+  "required_projection_fields": [
+    "phase",
+    "session_user",
+    "current_user",
+    "database_name",
+    "database_owner",
+    "database_encoding",
+    "locale_provider",
+    "datcollate",
+    "datctype",
+    "icu_locale",
+    "icu_rules",
+    "collation_version",
+    "database_acl",
+    "roles",
+    "direct_memberships",
+    "membership_reachability",
+    "database_role_settings",
+    "effective_create",
+    "effective_temporary"
+  ],
+  "required_binding_fields": [
+    "authority_profile_digest",
+    "deployment_id",
+    "issued_at",
+    "expires_at",
+    "security_epoch",
+    "expected_projections"
+  ]
+}

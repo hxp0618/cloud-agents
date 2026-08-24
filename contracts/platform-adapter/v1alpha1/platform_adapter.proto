@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: MIT
+
+syntax = "proto3";
+
+package cloudagents.platformadapter.v1alpha1;
+
+import "contracts/worker/v1alpha1/kernel.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/platformadapter/v1alpha1;platformadapterv1alpha1";
+
+message AdapterRegistrationRequest {
+  cloudagents.worker.v1alpha1.NegotiationBinding negotiation = 1;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 2;
+  // At most 64 entries and a subset of the negotiated capability set.
+  repeated cloudagents.worker.v1alpha1.Capability capabilities = 3;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_server_identity = 4;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_client_identity = 5;
+  string registration_idempotency_key = 6;
+  google.protobuf.Timestamp deadline = 7;
+  AdapterEndpoint endpoint = 8;
+  // Raw 32-byte SHA-256 of the canonical registration projection defined in
+  // README.md. The registry recomputes it before mutating registration state.
+  bytes canonical_registration_sha256 = 9;
+}
+
+// AdapterEndpoint is a non-secret callback descriptor for the adapter-hosted
+// execution service. connect_uri MUST be https, contain no user-info, query or
+// fragment, and be authorized for adapter_instance before it is persisted.
+message AdapterEndpoint {
+  string connect_uri = 1;
+  cloudagents.worker.v1alpha1.WorkloadIdentity server_identity = 2;
+}
+
+message AdapterRegistrationReceipt {
+  string registration_id = 1;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 2;
+  // Effective registered set; it MUST be a subset of both the offered and
+  // negotiated capability sets.
+  repeated cloudagents.worker.v1alpha1.Capability accepted_capabilities = 3;
+  // The identity observed on the authenticated mTLS transport. It MUST match
+  // expected_client_identity; lease generation can never substitute for it.
+  cloudagents.worker.v1alpha1.WorkloadIdentity authenticated_client_identity = 4;
+  google.protobuf.Timestamp registered_at = 5;
+  // Echoes the lookup key bound to this durable registration result.
+  string registration_idempotency_key = 6;
+  // Raw 32-byte digest of the accepted canonical registration projection.
+  bytes canonical_registration_sha256 = 7;
+}
+
+// AdapterRegistrationReceiptRequest recovers an already committed registration
+// after a response is lost. The registry MUST bind the key+digest lookup to the
+// authoritative adapter instance, negotiated capability and current mTLS
+// identities. It never replays a secret.
+message AdapterRegistrationReceiptRequest {
+  cloudagents.worker.v1alpha1.NegotiationBinding negotiation = 1;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 2;
+  string registration_idempotency_key = 3;
+  bytes canonical_registration_sha256 = 4;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_server_identity = 5;
+  cloudagents.worker.v1alpha1.Capability required_capability = 6;
+  google.protobuf.Timestamp deadline = 7;
+}
+
+message AdapterCapabilitiesRequest {
+  cloudagents.worker.v1alpha1.NegotiationBinding negotiation = 1;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 2;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_server_identity = 3;
+  repeated cloudagents.worker.v1alpha1.Capability required_capabilities = 4;
+}
+
+message AdapterCapabilitiesResponse {
+  // Endpoint-wide limits and capabilities.
+  cloudagents.worker.v1alpha1.ProtocolDescriptor protocol = 1;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 2;
+  // Instance-effective capabilities. They MUST be a subset of
+  // protocol.capabilities; disagreement fails closed.
+  repeated cloudagents.worker.v1alpha1.Capability capabilities = 3;
+}
+
+message AdapterHealthRequest {
+  cloudagents.worker.v1alpha1.NegotiationBinding negotiation = 1;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 2;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_server_identity = 3;
+  repeated cloudagents.worker.v1alpha1.Capability required_capabilities = 4;
+}
+
+message AdapterHealthResponse {
+  cloudagents.worker.v1alpha1.HealthState state = 1;
+  cloudagents.worker.v1alpha1.ProtocolDescriptor protocol = 2;
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 3;
+  google.protobuf.Timestamp observed_at = 4;
+}
+
+message AdapterOperationRequest {
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 1;
+  cloudagents.worker.v1alpha1.OperationAttemptEnvelope attempt = 2;
+}
+
+message AdapterReceiptRequest {
+  cloudagents.worker.v1alpha1.NamespaceRef adapter_instance = 1;
+  cloudagents.worker.v1alpha1.ReceiptRequest receipt = 2;
+}
+
+// PlatformAdapterRegistryService is hosted by the Supervisor/Control Plane.
+// The adapter is the mTLS-authenticated client. Registration never grants an
+// execution capability solely from request-carried identity or endpoint data.
+service PlatformAdapterRegistryService {
+  rpc Negotiate(cloudagents.worker.v1alpha1.NegotiationRequest)
+      returns (cloudagents.worker.v1alpha1.NegotiationResponse);
+  rpc RegisterAdapter(AdapterRegistrationRequest) returns (AdapterRegistrationReceipt);
+  rpc GetAdapterRegistrationReceipt(AdapterRegistrationReceiptRequest)
+      returns (AdapterRegistrationReceipt);
+}
+
+// PlatformAdapterExecutionService is hosted by the adapter. The Supervisor or
+// Control Plane is the mTLS-authenticated client and MUST verify the adapter
+// server identity independently from generation/fencing. Implementations MUST
+// enforce negotiation, capability, scope, operation, deadline, idempotency and
+// fencing before side effects. P1-A performs no side effect.
+service PlatformAdapterExecutionService {
+  rpc Negotiate(cloudagents.worker.v1alpha1.NegotiationRequest)
+      returns (cloudagents.worker.v1alpha1.NegotiationResponse);
+  rpc GetCapabilities(AdapterCapabilitiesRequest) returns (AdapterCapabilitiesResponse);
+  rpc CheckHealth(AdapterHealthRequest) returns (AdapterHealthResponse);
+  rpc ExecuteOperation(AdapterOperationRequest)
+      returns (cloudagents.worker.v1alpha1.DurableReceipt);
+  rpc GetOperationReceipt(AdapterReceiptRequest)
+      returns (cloudagents.worker.v1alpha1.DurableReceipt);
+}

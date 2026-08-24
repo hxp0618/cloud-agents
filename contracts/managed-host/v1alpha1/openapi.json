@@ -1,0 +1,169 @@
+{
+  "openapi": "3.1.1",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Cloud Agents Managed Host Foundation API",
+    "version": "v1alpha1"
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/managed-host/tenants/{tenantId}/projects/{projectId}": {
+      "get": {
+        "operationId": "managedHostGetProjectContext",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/managed-host/tenants/{tenantId}/role-bindings/{roleBindingId}": {
+      "get": {
+        "operationId": "managedHostGetRoleBinding",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RoleBindingId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role-binding.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "TenantId": {
+        "name": "tenantId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "ProjectId": {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "RoleBindingId": {
+        "name": "roleBindingId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "RequestId": {
+        "name": "X-Request-Id",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      }
+    },
+    "headers": {
+      "ResourceVersion": {
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/resource-version.schema.json"
+        }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "Problem",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "../../common/v1alpha1/schemas/problem.schema.json"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-model-authority": "JSON Schema 2020-12 external refs only"
+}

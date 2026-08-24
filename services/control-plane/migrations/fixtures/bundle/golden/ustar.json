@@ -1,0 +1,19 @@
+{
+  "profile": "deterministic-posix-ustar-v1",
+  "entries": [
+    {
+      "path": "services/control-plane/migrations/b.sql",
+      "utf8": "b\n"
+    },
+    {
+      "path": "services/control-plane/migrations/a.sql",
+      "utf8": "a\n"
+    }
+  ],
+  "canonical_path_order": [
+    "services/control-plane/migrations/a.sql",
+    "services/control-plane/migrations/b.sql"
+  ],
+  "size_bytes": 3072,
+  "sha256": "sha256:f368ddf7902767b86261240a76b06c9f153c7ea9232a98cc802f4a2bbe9bb0dd"
+}

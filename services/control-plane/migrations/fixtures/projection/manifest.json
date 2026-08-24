@@ -1,0 +1,138 @@
+{
+  "format_version": "cloud-agents-platform-projection-fixtures/v1",
+  "runtime_authority": false,
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "files": [
+    {
+      "path": "golden/attempt-terminal-state-v1.json",
+      "size_bytes": 858,
+      "sha256": "sha256:0b5bdd36603fc8ba1954500f917740249637ac20ec4b09659b2b47871d9fb7f5"
+    },
+    {
+      "path": "golden/authority-binding-v1.json",
+      "size_bytes": 27797,
+      "sha256": "sha256:02550b2ad4da6a57fe98be1e9ecbea3924f2fd34f9ad99cebf3e674deae81468"
+    },
+    {
+      "path": "golden/catalog-projection-body-v1.json",
+      "size_bytes": 7035,
+      "sha256": "sha256:c49bd90b870775930fe76566aaff951309558deb04a85a22a401ef9c0ea0e05d"
+    },
+    {
+      "path": "golden/catalog-state-schema-absent-v1.json",
+      "size_bytes": 229,
+      "sha256": "sha256:1860716de1fe843958619df836ad16de40fd42028f5128ccbdc001ed61354724"
+    },
+    {
+      "path": "golden/catalog-state-schema-present-v1.json",
+      "size_bytes": 909,
+      "sha256": "sha256:5c2547711d2f320bbee68d2f49fab52dabe095835fd0bb930d170d540432fe1b"
+    },
+    {
+      "path": "golden/decision-recovery-inputs-v1.json",
+      "size_bytes": 1811,
+      "sha256": "sha256:5f02d647fa2c68f91997c76dbcf4a9c7d88fa581d73e3afc9f9317660ee4209d"
+    },
+    {
+      "path": "golden/default-acl-scope-v1.json",
+      "size_bytes": 5403,
+      "sha256": "sha256:27f88fa60cc9e929a88d58b436b52c1e14c955425a1bb5cc4022f53268afd122"
+    },
+    {
+      "path": "golden/evidence-ambiguous-chain-v1.json",
+      "size_bytes": 28534,
+      "sha256": "sha256:64d5f36ecb3a4597bdaff78b924f5a7eca342dfc9a7fc9a0abdf09f70c7e6b30"
+    },
+    {
+      "path": "golden/evidence-frame-segments-v1.json",
+      "size_bytes": 2215,
+      "sha256": "sha256:db79bdbd3b89298366e15e11c8a7ad8903da25acde70f04eeed827ccc2519d1d"
+    },
+    {
+      "path": "golden/evidence-record-chain-v1.json",
+      "size_bytes": 44738,
+      "sha256": "sha256:60ba95908877b7b1422497f0b3093b1508274a1d9b92248ac14b86a3aaccc2ee"
+    },
+    {
+      "path": "golden/evidence-retry-chains-v1.json",
+      "size_bytes": 104917,
+      "sha256": "sha256:91ed721c58d7a52dab6e2b77746f6fbd3c30976a724db8ea226c77e3432e8bf4"
+    },
+    {
+      "path": "golden/expected-statement-transition-v1.json",
+      "size_bytes": 1070,
+      "sha256": "sha256:0199b4f67db3e5f305b0671410cfb8fbce9467dc0f3e6318d067e6c3b05484e5"
+    },
+    {
+      "path": "golden/intermediate-state-v1.json",
+      "size_bytes": 2168,
+      "sha256": "sha256:08c67370a31d5f60f156d0645254d8abc3bb7635f49f8480a1a32aaa25eac7c3"
+    },
+    {
+      "path": "golden/lineage-index-chain-v1.json",
+      "size_bytes": 34811,
+      "sha256": "sha256:b78c5da7727aa18eadd9c9ba6e523831988ce5dd84809f3d2d0afa837589f886"
+    },
+    {
+      "path": "golden/numeric-v1.json",
+      "size_bytes": 3069,
+      "sha256": "sha256:bc3c7fb2b551e6c99d3975139a99c165a5f20f07e5515bf29c6a851784ebe1f5"
+    },
+    {
+      "path": "golden/recovery-policy-chain-v1.json",
+      "size_bytes": 28763,
+      "sha256": "sha256:c18cc53a31c98cf9ae8eb55b57a5474206f806f813a87816cc58dc6b1150d610"
+    },
+    {
+      "path": "golden/supersession-outcomes-v1.json",
+      "size_bytes": 24249,
+      "sha256": "sha256:2e44d8d43c1e45150decff094b99ec903c3d9acba9b300d24d895d42761a6159"
+    },
+    {
+      "path": "golden/terminal-outcomes-v1.json",
+      "size_bytes": 11242,
+      "sha256": "sha256:821908d1380c9dbc0ac7a352159f16ec218f14569ee51a622b335c270c804980"
+    },
+    {
+      "path": "negative/authority-binding-duplicate.raw",
+      "size_bytes": 27863,
+      "sha256": "sha256:a103f4062adb6296abc5ad57260eb9184793583991d768ca80ba092c5a4376f1"
+    },
+    {
+      "path": "negative/evidence-frame-duplicate.raw",
+      "size_bytes": 1806,
+      "sha256": "sha256:41ccdae08856e9b08543fc2795b65f41c384be32276dfdf74f1e6adf199aeb07"
+    },
+    {
+      "path": "negative/evidence-framing-faults-v1.json",
+      "size_bytes": 22622,
+      "sha256": "sha256:bb3bc6d540a45bda0669b1a732afcd1d3cec33888ade8b37b0b84d9f27caa1b2"
+    },
+    {
+      "path": "negative/evidence-limits-faults-v1.json",
+      "size_bytes": 3077,
+      "sha256": "sha256:4da79acb248d4bcbdd42507407ce439419d5089465949c79288ab7cb9d202463"
+    },
+    {
+      "path": "negative/evidence-nested-record-duplicate.raw",
+      "size_bytes": 1880,
+      "sha256": "sha256:aaf1410f56599d0d0de414101dfc42c0347488baf7abd63031d9f9ac7dc75c8c"
+    },
+    {
+      "path": "negative/evidence-semantic-faults-v1.json",
+      "size_bytes": 8913,
+      "sha256": "sha256:d829364e5535067c7ac3bf651bc8ed5453e7ba96d0b4f08c3a7eb25868ad5551"
+    },
+    {
+      "path": "negative/faults-v1.json",
+      "size_bytes": 7816,
+      "sha256": "sha256:eba376621de282cb9b0db154f2941859dfe3d37e1ac135e078aee41d60db1248"
+    },
+    {
+      "path": "negative/lineage-frame-duplicate.raw",
+      "size_bytes": 642,
+      "sha256": "sha256:f1cde06d2cc13eca0610ebb01e6890473895a9f62180819977a5849fd5824dbf"
+    }
+  ]
+}

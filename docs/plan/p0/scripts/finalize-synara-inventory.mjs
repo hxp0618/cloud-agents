@@ -648,17 +648,28 @@ function controlPlaneCoreTarget(path, classification) {
 function moveTarget(path) {
   const pkg = packageName(path);
   const roots = {
-    databasetime: "platformtime",
-    fairqueue: "fairqueue",
-    gitpolicy: "gitpolicy",
-    problem: "problem",
-    secretguard: "secretguard",
-    validation: "validation",
-    workertiming: "workertiming",
+    databasetime: "services/control-plane/internal/store/databasetime",
+    fairqueue: "services/control-plane/internal/scheduler/fairqueue",
+    gitpolicy: "services/worker/internal/workspace/gitpolicy",
+    problem: "services/control-plane/internal/api/problem",
+    secretguard: "services/worker/internal/credential/secretguard",
+    validation: "services/control-plane/internal/api/validation",
+    workertiming: "services/worker/internal/controlplane/workertiming",
   };
   const root = roots[pkg];
   if (!root) throw new Error(`move seed has no low-dependency target: ${path}`);
-  return `sdk/go/${root}/${basename(path)}`;
+  return `${root}/${basename(path)}`;
+}
+
+function legacyContractOracleTarget(path) {
+  const file = basename(path);
+  if (/provider-host|runtime-event/.test(file)) {
+    return `conformance/runtime/legacy-oracles/${file}`;
+  }
+  if (/worker|agentd|cgroup/.test(file)) {
+    return `conformance/worker/legacy-oracles/${file}`;
+  }
+  return `conformance/control-plane/legacy-oracles/managed-agent/${file}`;
 }
 
 function contractDecision(row) {
@@ -699,8 +710,8 @@ function contractDecision(row) {
     return publicDecision(
       "rewrite-public",
       "public-core",
-      `contracts/managed-agent/v1alpha1/legacy-${file}`,
-      "This mixed document defines durable authority/state-machine behavior plus environment-specific mechanics. Rewrite the authority as a public core contract and split provider-specific effects into a separate adapter annex.",
+      legacyContractOracleTarget(path),
+      "This mixed legacy document remains a Control Plane or Worker conformance oracle only. Author the new public authority contract independently, and split provider-specific effects into a separate adapter annex.",
     );
   }
   if (row.classificationSeed === "adapter") {
@@ -711,18 +722,11 @@ function contractDecision(row) {
       "The legacy document is an adapter behavior oracle; rewrite it into the versioned public Platform Adapter contract and conformance fixtures.",
     );
   }
-  const domain = /provider-host|runtime-event/.test(file)
-    ? "runtime/v2"
-    : /worker|agentd|cgroup/.test(file)
-      ? "worker/v1alpha1"
-      : /session|execution|artifact|workspace|credential|memory|provider/.test(file)
-        ? "managed-agent/v1alpha1"
-        : "managed-agent/v1alpha1/platform";
   return publicDecision(
     "rewrite-public",
     "public-core",
-    `contracts/${domain}/legacy-${file}`,
-    "Rewrite this Synara contract as a product-neutral, versioned public schema/golden fixture; prose or Stage naming cannot remain wire authority.",
+    legacyContractOracleTarget(path),
+    "Retain this Synara prose/schema only as a product-neutral legacy conformance oracle. The versioned public contract must be authored independently rather than copied from this file.",
   );
 }
 
@@ -1106,8 +1110,8 @@ function seededDecision(row) {
     return publicDecision(
       "move",
       "public-core",
-      `sdk/go/providercatalog/${basename(path)}`,
-      "Provider catalog validation is low-dependency public SDK logic; move it while replacing the orphaned Synara generator input with the public contract catalog.",
+      `services/control-plane/internal/provider/catalog/${basename(path)}`,
+      "The legacy provider catalog implementation remains a low-dependency move candidate inside the Control Plane, not public SDK ABI; generate the new catalog from the independently authored public contract.",
     );
   }
   return publicDecision(
@@ -1485,6 +1489,29 @@ if (synaraKubernetesAdapterViolations.length !== 0) {
     `Synara product deployment is still classified as adapter: ${synaraKubernetesAdapterViolations.map((item) => item.path).join(", ")}`,
   );
 }
+const legacyControlPlaneHelperSdkViolations = decisions.filter(
+  (decision) =>
+    decision.path.startsWith("services/control-plane/internal/") &&
+    decision.target.startsWith("sdk/go/"),
+);
+if (legacyControlPlaneHelperSdkViolations.length !== 0) {
+  throw new Error(
+    `legacy Control Plane helper targets public Go SDK ABI: ${legacyControlPlaneHelperSdkViolations
+      .map((item) => item.path)
+      .join(", ")}`,
+  );
+}
+const legacyContractAuthorityViolations = decisions.filter(
+  (decision) =>
+    decision.path.startsWith("docs/contracts/") && decision.target.startsWith("contracts/"),
+);
+if (legacyContractAuthorityViolations.length !== 0) {
+  throw new Error(
+    `legacy contract prose/schema targets formal contract authority: ${legacyContractAuthorityViolations
+      .map((item) => item.path)
+      .join(", ")}`,
+  );
+}
 const decisionTargets = new Set(decisions.map((decision) => decision.target));
 if (decisionTargets.size !== expectedInventoryRows) {
   const targetCounts = new Map();
@@ -1586,10 +1613,10 @@ ${markdownTable(countBy(decisions, "finalCapability"), "Capability")}
 
 1. \`internal/agentd\` 没有整包搬迁：Worker authority、workspace、checkpoint、credential、Provider Host、process/containment 分入 \`services/worker/internal/*\`；Cocoon、gVisor、Kubernetes、SSH 分入内置 adapter。
 2. \`cmd/api -> agentd\` 的现有耦合不作为公共边界继承；agentd client/daemon 必须改写为只依赖 generated Worker SDK/wire，Control Plane 和 Worker 不互相 import \`internal\`。
-3. Provider catalog 三文件全部标记 \`rewrite-public\`：旧 \`catalog_gen.go\` 是 orphaned output，旧 generator 指向缺失的 Synara JSON；公共实现以 \`contracts/managed-agent/v1alpha1/provider-capability-catalog.json\` 为 source-of-truth 后重新生成。
+3. Provider catalog 的旧 \`catalog.go\`/测试只是 Control Plane internal 的低依赖 move 候选，不进入公开 Go SDK ABI；旧 \`catalog_gen.go\` 是 orphaned output，旧 generator 指向缺失的 Synara JSON，公共实现必须从独立定义的新 catalog contract 重新生成。
 4. Synara desktop/mac、Polaris SDK、Stage 6 产品治理和私有运维脚本留在 Synara。公共 Worker 生命周期、隔离、manifest/registry/supply-chain/security conformance 有独立公共目标，Vault oracle 延后到外部 adapter extension。
 5. Synara 根 \`package.json\`/\`bun.lock\` 只作为旧镜像 provenance 留在 Synara；根 Dockerfile 不能复制，必须重写为最小、digest-pinned 的 \`deploy/images/worker/Dockerfile\`。
-6. 每条 provenance 同时固定 \`source ref:path\`、Git blob OID 和内容 SHA-256；生成器会对 source HEAD/tree/dirty、inventory SHA/行数、blob、重复、缺项和空/unknown 决策 fail closed。
+6. 每条 provenance 同时固定 \`source ref:path\`、Git blob OID 和内容 SHA-256；生成器会对 source HEAD/tree/dirty、inventory SHA/行数、blob、重复、缺项和空/unknown 决策 fail closed；任何旧 Control Plane internal helper 指向 \`sdk/go/*\`、任何 \`docs/contracts/*\` 指向正式 \`contracts/*\` 也会直接失败。
 7. Adapter 不得拥有 migration、durable model、routing/KMS lifecycle、HTTP authority 或 receipt truth；混合文件先标 \`rewrite-public\` 并要求 core/port 拆分，直接 Docker/filesystem/webhook/live-cluster effects 单独标 adapter。
 8. 旧根 Dockerfile 使用 \`COPY . .\`，所以 inventory 冻结全部 ${decisions.length.toLocaleString("en-US")} 个 tracked blob；不在批准 extraction surface 的 ${decisions.filter((item) => item.scope === "legacy-build-context").length.toLocaleString("en-US")} 项统一 default-deny 留在 Synara，不能进入新的 public image context。
 
@@ -1597,7 +1624,7 @@ ${markdownTable(countBy(decisions, "finalCapability"), "Capability")}
 
 - Deploy：117 条全部进入 final manifest；Synara Admin/Developer Docs/Stage 6 组合留在宿主，公共 CP/Worker Helm 重写，gVisor/Cocoon/Kubernetes actuator 独立 adapter，personal/remote -> public Compose rewrite，Vault production policy -> deferred extension。
 - Scripts：235 条全部进入 final manifest；公共 conformance/release 工具与 Synara desktop/Stage 6/Polaris/product release 工具分开 owner/target。
-- Contracts：62 条按 Runtime/Worker/Managed Agent/Platform Adapter、Synara product 或 deferred enterprise extension 分域，不把旧 prose 当新 wire authority。
+- Contracts：62 条按 Runtime/Worker/Control Plane legacy oracle、Platform Adapter、Synara product 或 deferred enterprise extension 分域；旧 prose/schema 不进入正式 \`contracts/*\`，新 wire authority 独立定义。
 - Go/SQL：Control Plane/Worker/adapter/Synara/deferred/retire 逐文件写入 target；167 个旧 migration 只映射到新 lineage 的 semantic target 或保留面，不继承编号/table identity。
 - Root supply chain：21 条显式 root/workspace inputs 与全部 tracked build context 均进入 final manifest；candidate lock/schema 映射公共 release contract/tooling，Dockerfile 重写，Synara root manifests/patches/config 留在宿主。
 - CI：10 条全部标记 Synara-owned；公共仓 workflow 必须在 P1 重新设计，不能复制 Synara 权限和发布语义。

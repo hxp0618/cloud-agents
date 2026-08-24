@@ -2,5 +2,12 @@
   "printWidth": 100,
   "singleQuote": false,
   "trailingComma": "all",
-  "ignorePatterns": ["candidate/**", "packages/*/dist/**"]
+  "ignorePatterns": [
+    "candidate/**",
+    "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
+    "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+    "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+    "contracts/generation.lock.json",
+    "packages/*/dist/**"
+  ]
 }

@@ -1,0 +1,658 @@
+{
+  "fixtureVersion": 1,
+  "wireAuthority": "contracts/platform-adapter/v1alpha1/platform_adapter.proto",
+  "sharedNegativeCases": "contracts/worker/v1alpha1/fixtures/negative.json",
+  "cases": [
+    {
+      "id": "adapter-registration-without-mtls",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-without-mtls",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "kLSH3XTK2aukzO8nYGKdennkFw12tIPnIX0TMPIYnmE="
+      },
+      "transportEvidence": { "tls": "plaintext-h2c", "authenticatedClientSpiffeId": null },
+      "expected": { "decision": "REJECT", "code": "mtls_identity_required" }
+    },
+    {
+      "id": "adapter-registration-identity-mismatch",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-identity-mismatch",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "kLSH3XTK2aukzO8nYGKdennkFw12tIPnIX0TMPIYnmE="
+      },
+      "transportEvidence": {
+        "tls": "mTLS",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/adapter/attacker",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "mtls_identity_mismatch" }
+    },
+    {
+      "id": "adapter-registration-missing-negotiation",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-missing-negotiation",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "kLSH3XTK2aukzO8nYGKdennkFw12tIPnIX0TMPIYnmE="
+      },
+      "expected": { "decision": "REJECT", "code": "negotiation_required" }
+    },
+    {
+      "id": "adapter-registration-expired-negotiation",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-expired",
+          "expiresAt": "2026-08-10T07:59:59Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-expired-negotiation",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "kLSH3XTK2aukzO8nYGKdennkFw12tIPnIX0TMPIYnmE="
+      },
+      "admissionState": { "now": "2026-08-10T08:00:00Z" },
+      "expected": { "decision": "REJECT", "code": "negotiation_expired" }
+    },
+    {
+      "id": "adapter-capability-wrong-negotiated-version",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterCapabilitiesRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 1 },
+          "negotiationId": "neg-adapter-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "requiredCapabilities": ["CAPABILITY_HEALTH"]
+      },
+      "admissionState": { "selectedVersion": { "major": 1, "minor": 0 } },
+      "expected": { "decision": "REJECT", "code": "negotiated_version_mismatch" }
+    },
+    {
+      "id": "adapter-health-capability-not-negotiated",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterHealthRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-adapter-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "requiredCapabilities": ["CAPABILITY_FINALIZERS"]
+      },
+      "admissionState": { "negotiatedCapabilities": ["CAPABILITY_HEALTH"] },
+      "expected": { "decision": "REJECT", "code": "capability_not_negotiated" }
+    },
+    {
+      "id": "adapter-generation-cannot-replace-identity",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterOperationRequest",
+      "protoJson": {
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "attempt": {
+          "operation": {
+            "operationId": "adapter-operation-generation-only",
+            "idempotencyKey": "adapter-idem-generation-only",
+            "scope": {
+              "namespace": "cloud-agents",
+              "kind": "project",
+              "id": "project-123"
+            },
+            "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+            "deadline": "2026-08-10T08:00:30Z",
+            "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+            "command": { "probe": { "probeName": "must-not-run" } },
+            "canonicalRequestSha256": "EGneBL74OutUBXnI3KvYf/sDNzA0hHDQgubtACkKONY="
+          },
+          "attemptId": "adapter-attempt-generation-only",
+          "attemptNumber": 1,
+          "expectedExecutorIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          },
+          "negotiation": {
+            "protocolVersion": { "major": 1, "minor": 0 },
+            "negotiationId": "neg-adapter-001",
+            "expiresAt": "2026-08-10T08:01:00Z"
+          }
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "authenticatedClientSpiffeId": null,
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+        "fencingTokenValid": true
+      },
+      "expected": { "decision": "REJECT", "code": "mtls_identity_required", "sideEffect": false }
+    },
+    {
+      "id": "adapter-operation-wrong-negotiated-version",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterOperationRequest",
+      "syntheticProtoValue": {
+        "attempt": {
+          "negotiation": {
+            "protocolVersion": { "major": 1, "minor": 1 },
+            "negotiationId": "neg-adapter-001",
+            "expiresAt": "2026-08-10T08:01:00Z"
+          }
+        }
+      },
+      "admissionState": {
+        "selectedVersion": { "major": 1, "minor": 0 },
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1"
+      },
+      "expected": {
+        "decision": "REJECT",
+        "code": "negotiated_version_mismatch",
+        "sideEffect": false
+      }
+    },
+    {
+      "id": "adapter-operation-authenticated-client-mismatch",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterOperationRequest",
+      "syntheticProtoValue": {
+        "negotiationId": "neg-adapter-001",
+        "generation": "42",
+        "expectedAuthenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1"
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/attacker",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+        "fencingTokenValid": true
+      },
+      "expected": { "decision": "REJECT", "code": "mtls_identity_mismatch", "sideEffect": false }
+    },
+    {
+      "id": "adapter-unknown-capability",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": [32767],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-unknown-capability",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        }
+      },
+      "transportEvidence": {
+        "tls": "mTLS",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "unknown_required_capability" }
+    },
+    {
+      "id": "adapter-stale-generation",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterOperationRequest",
+      "protoJson": {
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "attempt": {
+          "operation": {
+            "operationId": "adapter-operation-stale",
+            "idempotencyKey": "adapter-idem-stale",
+            "scope": {
+              "namespace": "cloud-agents",
+              "kind": "project",
+              "id": "project-123"
+            },
+            "fencing": { "leaseId": "lease-001", "generation": "41", "token": "c3RhbGU=" },
+            "deadline": "2026-08-10T08:00:30Z",
+            "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+            "command": { "probe": { "probeName": "must-not-run" } },
+            "canonicalRequestSha256": "JSp7nOG7ACxpRJEL62ptGTAtPNTf1T7qZzsOC/a9DOo="
+          },
+          "attemptId": "adapter-attempt-stale",
+          "attemptNumber": 1,
+          "expectedExecutorIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          },
+          "negotiation": {
+            "protocolVersion": { "major": 1, "minor": 0 },
+            "negotiationId": "neg-adapter-001",
+            "expiresAt": "2026-08-10T08:01:00Z"
+          }
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1"
+      },
+      "expected": { "decision": "REJECT", "code": "stale_generation", "sideEffect": false }
+    },
+    {
+      "id": "adapter-capability-response-disagrees-with-protocol-descriptor",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterCapabilitiesResponse",
+      "protoJson": {
+        "protocol": {
+          "currentVersion": { "major": 1, "minor": 0 },
+          "minimumCompatibleVersion": { "major": 1, "minor": 0 },
+          "capabilities": ["CAPABILITY_HEALTH"],
+          "maxPayloadBytes": 65536,
+          "maxDeadlineSeconds": 30,
+          "maxWireMessageBytes": 1048576,
+          "maxRepeatedItems": 64,
+          "maxStringBytes": 1024
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_OPERATION_DISPATCH"]
+      },
+      "expected": { "decision": "REJECT", "code": "capability_descriptor_mismatch" }
+    },
+    {
+      "id": "adapter-receipt-missing-negotiation",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterReceiptRequest",
+      "protoJson": {
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "receipt": {
+          "operationId": "adapter-operation-001",
+          "receiptId": "adapter-receipt-001",
+          "fencing": { "leaseId": "lease-001", "generation": "42", "token": "dmFsaWQ=" },
+          "expectedServerIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          },
+          "requiredCapability": "CAPABILITY_DURABLE_RECEIPTS"
+        }
+      },
+      "expected": { "decision": "REJECT", "code": "negotiation_required" }
+    },
+    {
+      "id": "adapter-registration-same-key-different-endpoint",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-retry-endpoint",
+          "expiresAt": "2026-08-10T08:02:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": [
+          "CAPABILITY_ADAPTER_REGISTRATION",
+          "CAPABILITY_HEALTH",
+          "CAPABILITY_OPERATION_DISPATCH",
+          "CAPABILITY_DURABLE_RECEIPTS"
+        ],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-reference-local-1",
+        "deadline": "2026-08-10T08:01:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-2.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "cdXibnrVSsq9b51t1QeWn9HsfeFlQj+4BaNqv63mc2Q="
+      },
+      "admissionState": {
+        "registrationIdempotencyKey": "register-reference-local-1",
+        "storedCanonicalRegistrationDigest": "sha256:9ba101a51c037305a00dd15387682be3eee3641f87e7e3f821185c1b7b68c752"
+      },
+      "expected": {
+        "decision": "REJECT",
+        "code": "registration_idempotency_conflict",
+        "sideEffect": false
+      }
+    },
+    {
+      "id": "adapter-registration-same-key-different-capabilities",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-retry-capabilities",
+          "expiresAt": "2026-08-10T08:02:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": [
+          "CAPABILITY_ADAPTER_REGISTRATION",
+          "CAPABILITY_HEALTH",
+          "CAPABILITY_HEALTH"
+        ],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-reference-local-1",
+        "deadline": "2026-08-10T08:01:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "v6ZeI7ndBkUpGuBQdckYN1xhQV8k+wyrmo40pIWuln8="
+      },
+      "admissionState": {
+        "registrationIdempotencyKey": "register-reference-local-1",
+        "storedCanonicalRegistrationDigest": "sha256:9ba101a51c037305a00dd15387682be3eee3641f87e7e3f821185c1b7b68c752"
+      },
+      "expected": {
+        "decision": "REJECT",
+        "code": "registration_idempotency_conflict",
+        "sideEffect": false
+      }
+    },
+    {
+      "id": "adapter-registration-canonical-digest-missing",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-digest-missing",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-digest-missing",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        }
+      },
+      "expected": {
+        "decision": "REJECT",
+        "code": "canonical_registration_digest_required",
+        "sideEffect": false
+      }
+    },
+    {
+      "id": "adapter-registration-canonical-digest-mismatch",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-mismatch",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-digest-mismatch",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        },
+        "canonicalRegistrationSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      },
+      "expected": {
+        "decision": "REJECT",
+        "code": "canonical_registration_digest_mismatch",
+        "sideEffect": false
+      }
+    },
+    {
+      "id": "adapter-registration-receipt-lookup-digest-mismatch",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationReceiptRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-recovery-002",
+          "expiresAt": "2026-08-10T08:02:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "registrationIdempotencyKey": "register-reference-local-1",
+        "canonicalRegistrationSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "requiredCapability": "CAPABILITY_ADAPTER_REGISTRATION",
+        "deadline": "2026-08-10T08:01:30Z"
+      },
+      "admissionState": {
+        "registrationRecord": "PRESENT_WITH_DIFFERENT_DIGEST",
+        "registrationIdempotencyKey": "register-reference-local-1",
+        "storedCanonicalRegistrationDigest": "sha256:9ba101a51c037305a00dd15387682be3eee3641f87e7e3f821185c1b7b68c752",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1"
+      },
+      "expected": {
+        "decision": "REJECT",
+        "code": "registration_receipt_digest_mismatch",
+        "sideEffect": false
+      }
+    },
+    {
+      "id": "adapter-registration-endpoint-contains-secret-bearing-userinfo",
+      "contractMessage": "cloudagents.platformadapter.v1alpha1.AdapterRegistrationRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-registry-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "adapterInstance": {
+          "namespace": "cloud-agents",
+          "kind": "adapter",
+          "id": "reference-local-1"
+        },
+        "capabilities": ["CAPABILITY_ADAPTER_REGISTRATION"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "expectedClientIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "registrationIdempotencyKey": "register-secret-endpoint",
+        "deadline": "2026-08-10T08:00:30Z",
+        "endpoint": {
+          "connectUri": "https://user:secret@reference-local-1.adapters.cloud-agents.test",
+          "serverIdentity": {
+            "spiffeId": "spiffe://cloud-agents.test/adapter/reference-local-1",
+            "trustDomain": "cloud-agents.test"
+          }
+        }
+      },
+      "expected": { "decision": "REJECT", "code": "invalid_adapter_endpoint" }
+    }
+  ]
+}

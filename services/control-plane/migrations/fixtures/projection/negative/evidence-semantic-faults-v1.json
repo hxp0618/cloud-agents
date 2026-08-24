@@ -1,0 +1,309 @@
+{
+  "format_version": "cloud-agents-platform-evidence-semantic-faults/v1",
+  "cases": [
+    {
+      "name": "unknown_member",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "unknown_member"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "missing_member",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "missing_member"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "digest_mutation",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "digest_mutation"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "duplicate_statement_intent",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "duplicate_statement_intent"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "committed_without_commit_intent",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "committed_without_commit_intent"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "stable_failure_tuple",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "stable_failure_tuple"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "retry_proof_predecessor",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "retry_proof_predecessor"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "duplicate_segment0_header",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "duplicate_segment0_header"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "second_terminal_same_attempt",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "second_terminal_same_attempt"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "post_terminal_intermediate_same_attempt",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "post_terminal_intermediate_same_attempt"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "second_lineage_header",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "second_lineage_header"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "activation_schema_mismatch",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "activation_schema_mismatch"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "duplicate_generation_activation",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "duplicate_generation_activation"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "checkpoint_after_superseded",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "checkpoint_after_superseded"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "duplicate_generation_superseded",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "duplicate_generation_superseded"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "old_handle_still_usable",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "old_handle_still_usable"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "retry_receipt_cross_lineage",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "retry_receipt_cross_lineage"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "connection_lifecycle_same",
+      "body": {
+        "target_fixture": "golden/evidence-retry-chains-v1.json",
+        "mutation": "connection_lifecycle_same"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "connection_lifecycle_reversed",
+      "body": {
+        "target_fixture": "golden/evidence-retry-chains-v1.json",
+        "mutation": "connection_lifecycle_reversed"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "rollback_not_succeeded",
+      "body": {
+        "target_fixture": "golden/evidence-retry-chains-v1.json",
+        "mutation": "rollback_not_succeeded"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "other_error_missing_ready_for_query",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "other_error_missing_ready_for_query"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "checkpoint_tail",
+      "body": {
+        "target_fixture": "golden/lineage-index-chain-v1.json",
+        "mutation": "checkpoint_tail"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "segment0_wrong_format",
+      "body": {
+        "target_fixture": "golden/evidence-record-chain-v1.json",
+        "mutation": "segment0_wrong_format"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "forged_commit_rejected_without_commit_intent",
+      "body": {
+        "target_fixture": "golden/evidence-retry-chains-v1.json",
+        "mutation": "forged_commit_rejected_without_commit_intent"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_artifact_a_missing",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_artifact_a_missing"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_artifact_b_missing",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_artifact_b_missing"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "current_policy_authorizes_only_a",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "current_policy_authorizes_only_a"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_authority_rebuild_mismatch",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_authority_rebuild_mismatch"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_authority_policy_digest_mismatch_transition_0",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_authority_policy_digest_mismatch_transition_0"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_authority_policy_digest_mismatch_transition_1",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_authority_policy_digest_mismatch_transition_1"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_planned_body_mismatch",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_planned_body_mismatch"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_execution_current_decision_mismatch",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_execution_current_decision_mismatch"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_execution_old_journal_mismatch",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_execution_old_journal_mismatch"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_artifact_receipt_mismatch",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_artifact_receipt_mismatch"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_policy_disallows_observed_outcome",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_policy_disallows_observed_outcome"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_policy_wrong_constraint",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_policy_wrong_constraint"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_policy_closed_matrix",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_policy_closed_matrix"
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "historical_exact_identity_mismatch",
+      "body": {
+        "target_fixture": "golden/recovery-policy-chain-v1.json",
+        "mutation": "historical_exact_identity_mismatch"
+      },
+      "expected": "reject"
+    }
+  ]
+}

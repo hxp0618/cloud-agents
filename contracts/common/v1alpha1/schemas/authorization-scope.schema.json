@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/authorization-scope.schema.json",
+  "title": "AuthorizationScope",
+  "oneOf": [
+    { "$ref": "platform-authorization-scope.schema.json" },
+    { "$ref": "tenant-authorization-scope.schema.json" },
+    { "$ref": "organization-authorization-scope.schema.json" },
+    { "$ref": "project-authorization-scope.schema.json" }
+  ]
+}

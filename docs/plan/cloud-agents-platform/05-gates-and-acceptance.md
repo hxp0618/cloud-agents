@@ -6,8 +6,8 @@
 | -------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `G-INVENTORY`        | P0                  | frozen ref 的全量 code/SQL/schema/build/deploy/generated manifest、分类、source/tree hash、authority、license/secret provenance 完整 |
 | `G-BASELINE`         | P0/M1 phase records | P0 characterization 与 M1 真实 Provider baseline 分别关闭；aggregate 只在两个 record 同时有效时关闭                                  |
-| `G-CONTRACT`         | P1                  | OpenAPI/JSON Schema、TS/Go SDK、server validator、API reliability、golden/negative fixture 同源                                      |
-| `G-DATA`             | P1                  | Postgres expand/contract、idempotency、outbox、leader、backup/restore、N/N-1                                                         |
+| `G-CONTRACT`         | P1                  | JSON Schema/OpenAPI 与 Proto/Connect/gRPC authority、TS/Go SDK、server validator、mapping/golden/negative fixtures 同源              |
+| `G-DATA`             | P1                  | PG15–17 fixed-patch/digest matrix、forward migration、tenant RLS、idempotency/outbox/leader、本地 logical backup/restore、N/N-1      |
 | `G-AUTHORITY`        | P1–P6 phase records | 三种模式 owner 唯一；无 Session/Turn/Lease/Workspace 双写                                                                            |
 | `G-MANAGED-AGENT`    | P2                  | Session/Turn/Execution/Worker/Workspace/Artifact/Credential real E2E                                                                 |
 | `G-WORKER-FENCING`   | P2/P3 phase records | stale generation 无法 heartbeat/ready/取密/发 endpoint/提交终态；revoke/reap 证据完整                                                |
@@ -46,6 +46,10 @@ characterization，以及 greenfield Managed Host 的 immutable spec/negative/re
 happy/auth/rate-limit/unavailable/resume、SendTurn/workspace/checkpoint/reconnect 的同输入基线。P0 Exit 只依赖
 `G-BASELINE-P0`；M1/Platform RC 才要求 aggregate `G-BASELINE`。
 
+P1 的 contract、data、authority 与 security 边界以
+[ADR-0007](../adr/0007-p1-contract-data-toolchain-foundation.md) 为决策 authority；ADR digest 或其中冻结的 wire、
+schema、database、tenant isolation、identity 边界变化时，四个 P1 record 一并失效并重新复核。
+
 失效规则至少为：contract/core/store 改动使 P1–P6 record 失效；Worker/adapter 改动使相关 P2–P6 record
 失效；Standalone/security/ops 改动使 P4–P6 record 失效；Synara adapter/cutover 改动使 P5–P6 record
 失效；T3 descriptor/proof/connection 改动使 P6 record 失效；任何重打包或 digest 变化使 same-bits record、
@@ -55,6 +59,66 @@ happy/auth/rate-limit/unavailable/resume、SendTurn/workspace/checkpoint/reconne
 超过 24 小时、signer/trust root/release identity 撤销、base image EOL/revoke，都会把
 `G-SUPPLY-CHAIN` 与引用它的 `G-PLATFORM-RELEASE` 标为 `INVALIDATED`，暂停未批准 exposure，并要求按新
 数据库/信任根重扫、重新签署与重跑受影响 same-bits Gate。不得因 artifact digest 未变沿用旧安全结论。
+
+## 1.2 P1 精确退出标准
+
+### `G-CONTRACT`
+
+- JSON Schema 是 management/agent/host JSON 数据模型的唯一 authority；OpenAPI 只定义 route、status、header
+  与 schema ref，OpenAPI bundle 不包含漂移的内联副本；
+- Worker/Platform Adapter 的 wire model 以 versioned Proto 为唯一 authority，并生成 Connect/gRPC server/client
+  mapping；descriptor set、OpenAPI bundle、JSON Schema bundle 与 SDK digest 均进入 closure record；
+- TS SDK、Go SDK、Go server validator 和映射层通过同一套 golden、negative、N/N-1 compatibility fixtures；至少覆盖
+  unknown field、enum/version downgrade、stable error、watch cursor、idempotency key、deadline/cancellation 和
+  显式共享语义类型的 Proto↔domain↔JSON mapping round-trip；不要求或允许为所有 Proto RPC 另建 JSON wire；
+- 从全新外部 consumer 安装 exact-pinned SDK 后可编译并调用 fixture server；仓库外不得依赖 workspace/file/git
+  dependency，生成后 diff 必须为零；
+- 任一 schema、Proto、OpenAPI、generated SDK 或 mapping fixture digest 改变都会使该 record 失效。
+
+### `G-DATA`
+
+- Postgres `15`、`16`、`17` compatibility matrix 全部通过；每个 major 固定 patch version 与 OCI image digest，
+  closure record 保存实际 `server_version` 和 digest；
+- persistence 仅使用 `pgx/v5`、`pgxpool` 和手写 SQL；自动检查证明没有 GORM、`AutoMigrate`、ORM schema
+  generation、Synara migration 编号或 legacy schema authority；
+- 新 migration ledger 完成 `expand -> resumable backfill -> code cutover -> contract`，逐项验证 immutable
+  checksum、Postgres advisory lock、重入、并发执行、crash/resume、checksum drift/unknown migration fail closed；
+- 所有 tenant-owned table 具有 composite tenant FK、`ENABLE/FORCE RLS`；runtime role 非 owner、无
+  `BYPASSRLS`，事务使用 `SET LOCAL` tenant context。缺失 context、伪造 tenant、跨 tenant join/insert/update/
+  delete 和 connection-pool context 泄漏测试均拒绝；global table 仅限固定 allowlist；
+- durable live-instance registry 的 heartbeat、schema compatibility range 和 drain state 可阻断 contract；N/N-1
+  rolling matrix 通过。unknown、stale-but-not-expired，以及 expired 但没有同时证明同 incarnation/generation
+  process termination + fencing + endpoint/credential revoke + claim/leader release 的 durable retirement receipt
+  的实例均 fail closed；只有完整 retirement receipt 才能从 live set 排除；
+- P1 在本地固定输入完成 logical backup/restore、migration replay、outbox/idempotency/leader 恢复并核对数据 digest。
+  P1 还须验证 preflight 会在缺少匹配 release/schema digest 的 PITR restore point 或有效 restore-drill record 时
+  fail closed；部署级 PITR restore point/drill、HA 与 failover 实证明确保留给 P4，不能用 P1 record 冒充
+  `G-OPS`。
+
+### `G-AUTHORITY-P1`
+
+- Tenant/Organization/Project/Membership/basic RBAC、provider catalog、contract、migration、idempotency/outbox/
+  leader/operation receipt 各自只有一个声明 writer 与一个持久化 authority；legacy Synara 只作为行为 oracle，
+  不作为公共 write path 或 schema authority；
+- JSON Schema/OpenAPI、Proto/Connect/gRPC、SDK/generated code 与数据库 migration 的 authority/derived-from 关系
+  可机读并固定 digest，禁止手写双 authority 或 server/SDK 双写；
+- tenant transaction context、migration owner/runtime role、global-table allowlist 和 durable live-instance registry
+  的 owner 明确；故障、重试和回滚测试证明不会切换活动 aggregate writer；
+- `G-AUTHORITY-P1` 仅覆盖 P1 foundation；Session/Turn/Worker claim、Lease/workload/pairing/T3 session 等后续
+  writer 不在本阶段被提前声明为已验证。
+
+### `G-SECURITY-P1`
+
+- composite tenant FK 与 FORCE RLS 的正反向隔离矩阵通过，runtime role 非 owner、无 `BYPASSRLS`，migration
+  owner credential 不进入 runtime 配置、日志、fixture 或制品；连接池复用不会泄漏 `SET LOCAL` tenant context；
+- management、service account 与 workload identity 的 issuer/audience/subject/scope/tenant/project/version/expiry
+  validation fail closed；签名 key rotation、unknown `kid`/algorithm、revoke 与 clock-skew negative fixtures 通过；
+- secret、credential、token、pairing material 不进入 durable receipt、outbox、audit、log、trace、fixture、backup 或
+  generated SDK；错误响应、watch cursor 和 stable error 不泄漏跨 tenant 标识或内部 SQL；
+- SQL parameterization、request/body/decompression limit、rate limit、deadline/cancellation、watch backpressure、
+  dependency/license/secret scan 通过；waiver 必须有 owner、范围和到期时间；
+- P1 record 只证明 contract/data/auth foundation，不冒充 P2 Worker secret access、P3 Managed Host pairing、P4
+  deployment hardening 或 P5/P6 host cutover/proof-session 安全结论。
 
 ## 2. Managed Agent 必测
 

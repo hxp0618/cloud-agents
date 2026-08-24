@@ -1,0 +1,42 @@
+{
+  "request": {
+    "operationId": "managedAgentCreateProject",
+    "path": {
+      "tenantId": "Tenant-A"
+    },
+    "headers": {
+      "idempotencyKey": "idem-create-project-001",
+      "requestId": "request-create-project-001"
+    },
+    "body": {
+      "name": "project-alpha",
+      "organizationRef": {
+        "namespace": "cloud-agents",
+        "kind": "organization",
+        "id": "organization-cafe"
+      },
+      "displayName": "项目 Café"
+    }
+  },
+  "authority": {
+    "resolvedOrganizationTenantId": "Tenant-A"
+  },
+  "projection": {
+    "operationId": "managedAgentCreateProject",
+    "path": {
+      "tenantId": "Tenant-A"
+    },
+    "body": {
+      "name": "project-alpha",
+      "organizationRef": {
+        "namespace": "cloud-agents",
+        "kind": "organization",
+        "id": "organization-cafe"
+      },
+      "displayName": "项目 Café"
+    }
+  },
+  "canonicalUtf8": "{\"body\":{\"displayName\":\"项目 Café\",\"name\":\"project-alpha\",\"organizationRef\":{\"id\":\"organization-cafe\",\"kind\":\"organization\",\"namespace\":\"cloud-agents\"}},\"operationId\":\"managedAgentCreateProject\",\"path\":{\"tenantId\":\"Tenant-A\"}}",
+  "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
+}

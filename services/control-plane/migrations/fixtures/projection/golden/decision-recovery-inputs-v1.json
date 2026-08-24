@@ -1,0 +1,39 @@
+{
+  "format_version": "cloud-agents-platform-decision-recovery-inputs-fixture/v1",
+  "verifier_owned_content_abi_not_evidence_record": true,
+  "same_bits_input": {
+    "format_version": "cloud-agents-platform-decision-recovery-artifact/v1",
+    "profile_digest": "sha256:3f3f8f82796d2cf33128ddafaab49e7f565ee8ca1807ee02a91f22e780fe36ae",
+    "old_runner_projection_decision_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "repository_identity": "github.com/hxp0618/cloud-agents",
+    "release_identity": "fixture_release",
+    "candidate_subject_base64url_no_padding": "Zml4dHVyZQ",
+    "candidate_detached_envelope_base64url_no_padding": "c2lnbmF0dXJl",
+    "projection_subject_inputs": [
+      {
+        "kind": "release",
+        "subject_digest": "sha256:a4d451ec23463726f72c43d64c710968f6b602cd653b4de8adee1b556240a829",
+        "subject_base64url_no_padding": "cmVsZWFzZQ",
+        "detached_envelope_base64url_no_padding": "c2ln"
+      },
+      {
+        "kind": "authority_profile",
+        "subject_digest": "sha256:809c8895200b6d27bae733c0fdb23b6f8730f2e3946b00016006889aa36a673f",
+        "subject_base64url_no_padding": "YXV0aG9yaXR5LXByb2ZpbGU",
+        "detached_envelope_base64url_no_padding": "c2ln"
+      },
+      {
+        "kind": "authority_binding",
+        "subject_digest": "sha256:31fb4681f04b30f37d3855aa03d4324a77a743c3c431dd27db2d944e5511e963",
+        "subject_base64url_no_padding": "YXV0aG9yaXR5LWJpbmRpbmc",
+        "detached_envelope_base64url_no_padding": "c2ln"
+      },
+      {
+        "kind": "catalog",
+        "subject_digest": "sha256:652f55016243bf1b9f1bbea46d5749ef892dbe394e46de9d66ab1aacf0b4af57",
+        "subject_base64url_no_padding": "Y2F0YWxvZw",
+        "detached_envelope_base64url_no_padding": "c2ln"
+      }
+    ]
+  }
+}

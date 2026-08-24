@@ -1,0 +1,40 @@
+{
+  "instance": {
+    "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+    "kind": "Project",
+    "metadata": {
+      "uid": "project-cross-tenant",
+      "name": "project-cross-tenant",
+      "tenantRef": {
+        "namespace": "cloud-agents",
+        "kind": "tenant",
+        "id": "tenant-alpha"
+      },
+      "resourceVersion": "7",
+      "createdAt": "2026-08-10T10:06:00Z"
+    },
+    "spec": {
+      "tenantRef": {
+        "namespace": "cloud-agents",
+        "kind": "tenant",
+        "id": "tenant-alpha"
+      },
+      "organizationRef": {
+        "namespace": "cloud-agents",
+        "kind": "organization",
+        "id": "organization-beta"
+      },
+      "displayName": "Cross Tenant Project",
+      "state": "active"
+    }
+  },
+  "resolvedReferences": {
+    "organization-beta": {
+      "tenantRef": {
+        "namespace": "cloud-agents",
+        "kind": "tenant",
+        "id": "tenant-beta"
+      }
+    }
+  }
+}

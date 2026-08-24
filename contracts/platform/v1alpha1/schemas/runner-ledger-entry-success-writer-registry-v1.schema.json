@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-entry-success-writer-registry-v1.schema.json",
+  "title": "RunnerLedgerEntrySuccessWriterRegistryV1",
+  "description": "Generated one-entry, multi-statement, known-success writer registry bound to execution admission v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "sourceDigest",
+    "stateMachineDigest",
+    "policyDigest",
+    "executionAdmissionBinding",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-entry-success-writer-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/runner-ledger-entry-success-writer" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "stateMachineDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "executionAdmissionBinding": { "$ref": "#/$defs/executionAdmissionBinding" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": {
+          "$ref": "runner-ledger-entry-success-writer-registry-source-v1.schema.json#/$defs/profile"
+        }
+      }
+    },
+    "stateMachine": {
+      "$ref": "runner-ledger-entry-success-writer-registry-source-v1.schema.json#/$defs/stateMachine"
+    },
+    "selector": {
+      "$ref": "runner-ledger-entry-success-writer-registry-source-v1.schema.json#/$defs/selector"
+    },
+    "implementationBoundary": {
+      "$ref": "runner-ledger-entry-success-writer-registry-source-v1.schema.json#/$defs/implementationBoundary"
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "executionAdmissionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryId",
+        "registryDigest",
+        "stateMachineDigest",
+        "policyDigest",
+        "profileId",
+        "profileDigest"
+      ],
+      "properties": {
+        "registryId": {
+          "const": "cloud-agents/platform/runner-ledger-entry-execution-admission"
+        },
+        "registryDigest": { "$ref": "#/$defs/digest" },
+        "stateMachineDigest": { "$ref": "#/$defs/digest" },
+        "policyDigest": { "$ref": "#/$defs/digest" },
+        "profileId": { "const": "runner-ledger-entry-execution-admission/v1" },
+        "profileDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "selection": "exact profileId plus profileDigest",
+    "executionAdmission": "exact generated v1 identity",
+    "runtimeConsumer": "none_in_slice_a"
+  }
+}

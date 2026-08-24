@@ -1,0 +1,132 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-entry-admission-source/v1",
+  "registryId": "cloud-agents/platform/runner-ledger-entry-admission",
+  "profile": {
+    "profileId": "runner-ledger-entry-admission/v1",
+    "stateMachineId": "runner-ledger-entry-admission/v1",
+    "canonicalization": {
+      "profile": "cloud-agents-runner-ledger-entry-admission/v1-rfc8785-sha256",
+      "algorithm": "RFC8785",
+      "digest": "SHA-256",
+      "comparison": "exact_string_no_rewrite"
+    },
+    "identityBindings": {
+      "consumerProfile": "exact_runner_ledger_consumer_v1_generated_identity",
+      "consumedConsumerFact": "exact_entry_action_same_verifier_consumed_subject",
+      "currentEvidenceBoundary": "exact_candidate_generation_journal_recovery_and_projection_before_and_after_database_read",
+      "selectedEntry": "exact_ordered_next_entry_index_id_and_digest",
+      "planClosure": "exact_entry_plan_count_and_domain_separated_digest",
+      "databaseSession": "exact_connected_and_migration_role_same_session_identity",
+      "ledgerPrefix": "exact_length_head_rows_and_digest_before_and_after_catalog_projection",
+      "catalogProjection": "exact_initial_or_cumulative_verified_projection_subject_and_result",
+      "advisoryLock": "exact_signed_key_held_until_permit_close"
+    },
+    "errorPrecedence": {
+      "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED",
+      "contextOrOperationalFailure": "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED",
+      "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
+      "unsupportedTransition": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+      "closeOrUnlockUnknown": "CLEANUP_FAILURE_INVALIDATES_PERMIT_AND_DOMINATES_NOT_IMPLEMENTED",
+      "oneShotConsumption": "SECOND_TRANSITION_FAILS_CLOSED",
+      "unknownOutcome": "FAIL_CLOSED_NO_RETRY_FROM_ORDINARY_FACT"
+    },
+    "transitionMatrix": {
+      "empty_brand_new": [
+        {
+          "state": "brand_new",
+          "action": "begin_first_attempt",
+          "admissionAction": "prepare_entry_admission"
+        },
+        {
+          "state": "brand_new_inherited",
+          "action": "begin_first_attempt",
+          "admissionAction": "prepare_entry_admission"
+        },
+        {
+          "state": "brand_new_inherited",
+          "action": "begin_next_attempt",
+          "admissionAction": "prepare_entry_admission"
+        }
+      ],
+      "partial_next_entry": [
+        {
+          "state": "brand_new_inherited",
+          "action": "begin_first_attempt_next_entry",
+          "admissionAction": "prepare_entry_admission"
+        },
+        {
+          "state": "terminal",
+          "action": "begin_first_attempt_next_entry",
+          "admissionAction": "prepare_entry_admission"
+        }
+      ]
+    }
+  },
+  "stateMachine": {
+    "id": "runner-ledger-entry-admission/v1",
+    "initialState": "unclassified",
+    "states": [
+      "admission_closed",
+      "admission_ready",
+      "session_revalidating",
+      "unclassified",
+      "unknown_rejected"
+    ],
+    "terminalStates": ["admission_closed", "unknown_rejected"],
+    "transitions": [
+      {
+        "from": "unclassified",
+        "event": "select_entry",
+        "to": "session_revalidating"
+      },
+      {
+        "from": "unclassified",
+        "event": "select_unknown",
+        "to": "unknown_rejected"
+      },
+      {
+        "from": "session_revalidating",
+        "event": "revalidate_exact_boundary",
+        "to": "admission_ready"
+      },
+      {
+        "from": "session_revalidating",
+        "event": "revalidate_failed",
+        "to": "admission_closed"
+      },
+      {
+        "from": "admission_ready",
+        "event": "close_without_mutation",
+        "to": "admission_closed"
+      }
+    ]
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "consumerProfileSelection": "exact_runner_ledger_consumer_v1_generated_identity",
+    "callerProvidedProfile": "forbidden",
+    "callerProvidedDispatch": "forbidden",
+    "ordinaryFactAsPermit": "forbidden",
+    "admissionSource": "consumed_same_verifier_entry_consumer_fact_only"
+  },
+  "implementationBoundary": {
+    "runnerConsumer": "entry_read_only_admission_only",
+    "existingBrandNewWriter": "separate_existing_authority_chain",
+    "entryWriter": "not_implemented",
+    "recoveryWriter": "not_implemented",
+    "databaseSession": "fresh_dedicated_locked_read_only_until_exact_close",
+    "databaseTransaction": "migration_and_read_write_forbidden",
+    "beginMigration": "forbidden",
+    "ledgerMutation": "forbidden",
+    "evidenceMutation": "forbidden",
+    "permitConsumer": "none",
+    "httpSurface": "not_implemented",
+    "p2Surface": "not_implemented",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized",
+    "gateStatus": "all_gates_open"
+  }
+}

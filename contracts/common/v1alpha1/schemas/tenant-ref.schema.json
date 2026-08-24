@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/tenant-ref.schema.json",
+  "title": "TenantRef",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["namespace", "kind", "id"],
+  "properties": {
+    "namespace": { "const": "cloud-agents" },
+    "kind": { "const": "tenant" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "x-cloud-agents-normalization": "NFC"
+    }
+  }
+}

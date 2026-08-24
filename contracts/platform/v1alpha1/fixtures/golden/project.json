@@ -1,0 +1,29 @@
+{
+  "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+  "kind": "Project",
+  "metadata": {
+    "uid": "project-alpha",
+    "name": "project-alpha",
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "resourceVersion": "3",
+    "createdAt": "2026-08-10T10:02:00Z"
+  },
+  "spec": {
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "organizationRef": {
+      "namespace": "cloud-agents",
+      "kind": "organization",
+      "id": "organization-alpha"
+    },
+    "displayName": "Project Alpha",
+    "state": "active"
+  }
+}

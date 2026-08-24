@@ -1,0 +1,207 @@
+{
+  "fixtureVersion": 1,
+  "wireAuthority": "contracts/worker/v1alpha1/*.proto",
+  "transport": "connect-grpc-http2-mtls",
+  "cases": [
+    {
+      "id": "namespace-ref-shared-semantics",
+      "contractMessage": "cloudagents.worker.v1alpha1.NamespaceRef",
+      "protoJson": {
+        "namespace": "cloud-agents",
+        "kind": "project",
+        "id": "project-123"
+      },
+      "expected": {
+        "decision": "ACCEPT",
+        "canonicalUtf8": "{\"id\":\"project-123\",\"kind\":\"project\",\"namespace\":\"cloud-agents\"}",
+        "digest": "sha256:21b5e2e56dc41c1ae521580a8a6e6c61f19b1d776d85241c5ee0684117aae5ab",
+        "urn": "urn:cloud-agents:ref:sha256:21b5e2e56dc41c1ae521580a8a6e6c61f19b1d776d85241c5ee0684117aae5ab"
+      }
+    },
+    {
+      "id": "namespace-ref-id-nfc-normalization",
+      "contractMessage": "cloudagents.worker.v1alpha1.NamespaceRef",
+      "semanticInput": {
+        "namespace": "cloud-agents",
+        "kind": "project",
+        "id": "Cafe\u0301"
+      },
+      "expected": {
+        "decision": "ACCEPT",
+        "normalizedProtoJson": {
+          "namespace": "cloud-agents",
+          "kind": "project",
+          "id": "Café"
+        },
+        "canonicalUtf8": "{\"id\":\"Café\",\"kind\":\"project\",\"namespace\":\"cloud-agents\"}",
+        "digest": "sha256:a22d33bdbe383fc563b8460760deb130d5e2cf8d62f341bc29fa16a396a72773",
+        "urn": "urn:cloud-agents:ref:sha256:a22d33bdbe383fc563b8460760deb130d5e2cf8d62f341bc29fa16a396a72773"
+      }
+    },
+    {
+      "id": "negotiate-known-version-and-capabilities",
+      "contractMessage": "cloudagents.worker.v1alpha1.NegotiationRequest",
+      "protoJson": {
+        "supportedVersions": [{ "major": 1, "minor": 0 }],
+        "requiredCapabilities": [
+          "CAPABILITY_NEGOTIATION",
+          "CAPABILITY_HEALTH",
+          "CAPABILITY_DURABLE_RECEIPTS"
+        ],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        }
+      },
+      "transportEvidence": {
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1",
+        "tls": "mTLS"
+      },
+      "expected": {
+        "decision": "ACCEPT",
+        "selectedVersion": "1.0",
+        "negotiationId": "neg-worker-001",
+        "expiresAt": "2026-08-10T08:01:00Z"
+      }
+    },
+    {
+      "id": "health-bound-to-negotiation-and-mtls-identities",
+      "contractMessage": "cloudagents.worker.v1alpha1.HealthRequest",
+      "protoJson": {
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "requiredCapabilities": ["CAPABILITY_HEALTH"],
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        }
+      },
+      "transportEvidence": {
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1",
+        "tls": "mTLS"
+      },
+      "expected": { "decision": "ACCEPT" }
+    },
+    {
+      "id": "generation-fenced-operation-accepted",
+      "contractMessage": "cloudagents.worker.v1alpha1.OperationAttemptEnvelope",
+      "protoJson": {
+        "operation": {
+          "operationId": "operation-001",
+          "idempotencyKey": "idem-operation-001",
+          "scope": {
+            "namespace": "cloud-agents",
+            "kind": "project",
+            "id": "project-123"
+          },
+          "fencing": {
+            "leaseId": "lease-001",
+            "generation": "42",
+            "token": "cDEtZml4dHVyZS1mZW5jaW5nLXRva2Vu"
+          },
+          "deadline": "2026-08-10T08:00:30Z",
+          "requiredCapability": "CAPABILITY_OPERATION_DISPATCH",
+          "command": { "probe": { "probeName": "contract-only" } },
+          "finalizers": [
+            { "name": "cloud-agents.release", "idempotencyKey": "finalize-operation-001" }
+          ],
+          "canonicalRequestSha256": "G5NJMKGlBuqx/0BsYUySoKosfvsgbt7r9C55MpqfqLg="
+        },
+        "attemptId": "attempt-001",
+        "attemptNumber": 1,
+        "expectedExecutorIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        }
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "now": "2026-08-10T08:00:00Z",
+        "idempotencyRecord": "ABSENT",
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1",
+        "negotiatedCapabilities": ["CAPABILITY_OPERATION_DISPATCH"]
+      },
+      "expected": {
+        "decision": "ACCEPT",
+        "sideEffect": false,
+        "canonicalRequestUtf8": "{\"command\":{\"probe\":{\"probeName\":\"contract-only\"}},\"deadline\":\"2026-08-10T08:00:30Z\",\"fencing\":{\"generation\":\"42\",\"leaseId\":\"lease-001\"},\"finalizers\":[{\"idempotencyKey\":\"finalize-operation-001\",\"name\":\"cloud-agents.release\"}],\"idempotencyKey\":\"idem-operation-001\",\"operationId\":\"operation-001\",\"requiredCapability\":\"CAPABILITY_OPERATION_DISPATCH\",\"scope\":{\"id\":\"project-123\",\"kind\":\"project\",\"namespace\":\"cloud-agents\"}}",
+        "canonicalRequestDigest": "sha256:1b934930a1a506eab1ff406c614c92a0aa2c7efb206edeebf42e79329a9fa8b8"
+      }
+    },
+    {
+      "id": "receipt-read-bound-to-negotiation-fencing-and-mtls",
+      "contractMessage": "cloudagents.worker.v1alpha1.ReceiptRequest",
+      "protoJson": {
+        "operationId": "operation-001",
+        "receiptId": "receipt-001",
+        "fencing": {
+          "leaseId": "lease-001",
+          "generation": "42",
+          "token": "cDEtZml4dHVyZS1mZW5jaW5nLXRva2Vu"
+        },
+        "expectedServerIdentity": {
+          "spiffeId": "spiffe://cloud-agents.test/worker/local-1",
+          "trustDomain": "cloud-agents.test"
+        },
+        "negotiation": {
+          "protocolVersion": { "major": 1, "minor": 0 },
+          "negotiationId": "neg-worker-001",
+          "expiresAt": "2026-08-10T08:01:00Z"
+        },
+        "requiredCapability": "CAPABILITY_DURABLE_RECEIPTS"
+      },
+      "transportEvidence": {
+        "authenticatedClientSpiffeId": "spiffe://cloud-agents.test/supervisor/local-1",
+        "authenticatedServerSpiffeId": "spiffe://cloud-agents.test/worker/local-1",
+        "tls": "mTLS"
+      },
+      "admissionState": {
+        "currentGeneration": "42",
+        "negotiatedCapabilities": ["CAPABILITY_DURABLE_RECEIPTS"]
+      },
+      "expected": { "decision": "ACCEPT" }
+    },
+    {
+      "id": "durable-receipt-redacted-and-fenced",
+      "contractMessage": "cloudagents.worker.v1alpha1.DurableReceipt",
+      "protoJson": {
+        "receiptId": "receipt-001",
+        "operationId": "operation-001",
+        "attemptId": "attempt-001",
+        "idempotencyKey": "idem-operation-001",
+        "sequence": "1",
+        "fencing": {
+          "leaseId": "lease-001",
+          "generation": "42",
+          "tokenSha256": "qt+wMCKl+X13Xm9F+Aa9SifPIIg5m1K15VwnkSHOTHE="
+        },
+        "outcome": "OPERATION_OUTCOME_ACCEPTED",
+        "observedAt": "2026-08-10T08:00:01Z",
+        "finalizers": [
+          {
+            "name": "cloud-agents.release",
+            "idempotencyKey": "finalize-operation-001",
+            "state": "FINALIZER_STATE_PENDING"
+          }
+        ],
+        "redactedSummary": "operation admitted; no side effect executed"
+      },
+      "expected": {
+        "decision": "ACCEPT",
+        "containsRawFencingToken": false,
+        "containsSecret": false
+      }
+    }
+  ]
+}

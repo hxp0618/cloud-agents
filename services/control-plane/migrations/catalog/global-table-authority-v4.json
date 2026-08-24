@@ -1,0 +1,68 @@
+{
+  "format_version": "cloud-agents-platform-global-table-authority/v4",
+  "contract_kind": "global_table_writer_authority",
+  "publication_status": "UNPUBLISHED_BOOTSTRAP_MUTABLE",
+  "runtime_introspection_status": "NOT_IMPLEMENTED",
+  "tables": [
+    {
+      "name": "schema_migrations",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "workload_database_principals",
+      "writers": ["historical_v1_no_writer"]
+    },
+    {
+      "name": "builtin_roles",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "builtin_role_permissions",
+      "writers": ["cloud_agents_migration_owner"]
+    },
+    {
+      "name": "leader_leases",
+      "writers": ["typed_control_plane_coordination_function"]
+    },
+    {
+      "name": "migration_backfills",
+      "writers": ["historical_v1_no_writer"]
+    },
+    {
+      "name": "schema_restore_evidence",
+      "writers": ["historical_v1_no_writer"]
+    },
+    {
+      "name": "live_instances",
+      "writers": ["historical_v1_no_writer"]
+    },
+    {
+      "name": "instance_retirement_receipts",
+      "writers": ["historical_v1_no_writer"]
+    },
+    {
+      "name": "compatibility_recovery_workload_principals_v2",
+      "writers": ["typed_bootstrap_workload_principal_function"]
+    },
+    {
+      "name": "compatibility_recovery_backfills_v2",
+      "writers": ["typed_migration_backfill_function"]
+    },
+    {
+      "name": "compatibility_recovery_restore_evidence_v2",
+      "writers": ["typed_migration_restore_evidence_function"]
+    },
+    {
+      "name": "compatibility_recovery_live_instances_v2",
+      "writers": ["typed_runtime_live_instance_function"]
+    },
+    {
+      "name": "compatibility_recovery_retirement_receipts_v2",
+      "writers": ["typed_runtime_retirement_receipt_function"]
+    },
+    {
+      "name": "compatibility_recovery_transition_facts_v2",
+      "writers": ["typed_compatibility_recovery_function"]
+    }
+  ]
+}

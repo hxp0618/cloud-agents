@@ -1,0 +1,49 @@
+{
+  "request": {
+    "operationId": "managedAgentCreateProject",
+    "path": {
+      "tenantId": "Tenant-A"
+    },
+    "headers": {
+      "idempotencyKey": "a-different-idempotency-key",
+      "requestId": "a-different-request-id",
+      "Authorization": "test-placeholder-not-a-credential",
+      "Content-Type": "application/json; charset=utf-8",
+      "traceparent": "00-00000000000000000000000000000001-0000000000000001-01",
+      "x-test-trace-metadata": {
+        "sampled": true,
+        "source": "fixture"
+      }
+    },
+    "body": {
+      "name": "project-alpha",
+      "organizationRef": {
+        "namespace": "cloud-agents",
+        "kind": "organization",
+        "id": "organization-cafe"
+      },
+      "displayName": "项目 Café"
+    }
+  },
+  "authority": {
+    "resolvedOrganizationTenantId": "Tenant-A"
+  },
+  "projection": {
+    "operationId": "managedAgentCreateProject",
+    "path": {
+      "tenantId": "Tenant-A"
+    },
+    "body": {
+      "name": "project-alpha",
+      "organizationRef": {
+        "namespace": "cloud-agents",
+        "kind": "organization",
+        "id": "organization-cafe"
+      },
+      "displayName": "项目 Café"
+    }
+  },
+  "canonicalUtf8": "{\"body\":{\"displayName\":\"项目 Café\",\"name\":\"project-alpha\",\"organizationRef\":{\"id\":\"organization-cafe\",\"kind\":\"organization\",\"namespace\":\"cloud-agents\"}},\"operationId\":\"managedAgentCreateProject\",\"path\":{\"tenantId\":\"Tenant-A\"}}",
+  "digest": "sha256:9e6ff0d726c44d07fc37097e8b85893a64033efb094a5514de5b400ff4963e20",
+  "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
+}

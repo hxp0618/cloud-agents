@@ -1,0 +1,290 @@
+{
+  "format_version": "cloud-agents-platform-recovery-policy-chain-fixture/v1",
+  "current_decision": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "current_signed_policy_subject": {
+    "input": {
+      "issuer_key_identity_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "expires_at": "2030-01-01T00:00:00Z",
+      "security_epoch": 3,
+      "minimum_old_security_epoch": 1,
+      "old_revocation_policy_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "old_decision_authorizations": [
+        {
+          "old_runner_projection_decision_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "allow_expired": true,
+          "allow_revoked": false,
+          "allow_compromised": false
+        },
+        {
+          "old_runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "allow_expired": true,
+          "allow_revoked": false,
+          "allow_compromised": false
+        }
+      ]
+    },
+    "canonical_rfc8785_utf8": "{\"expires_at\":\"2030-01-01T00:00:00Z\",\"issuer_key_identity_digest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"minimum_old_security_epoch\":1,\"old_decision_authorizations\":[{\"allow_compromised\":false,\"allow_expired\":true,\"allow_revoked\":false,\"old_runner_projection_decision_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},{\"allow_compromised\":false,\"allow_expired\":true,\"allow_revoked\":false,\"old_runner_projection_decision_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"old_revocation_policy_digest\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"security_epoch\":3}",
+    "digest": "sha256:5f999f86ac1506417ca1927006fa13410e6403ae81a4c3c233735fbf039cf6e7"
+  },
+  "durable_artifact_receipts": [
+    {
+      "decision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "runtime_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "runtime_size_bytes": 65536,
+      "recovery_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "recovery_size_bytes": 4096
+    },
+    {
+      "decision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "runtime_sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "runtime_size_bytes": 65536,
+      "recovery_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "recovery_size_bytes": 4096
+    },
+    {
+      "decision": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "runtime_sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "runtime_size_bytes": 65536,
+      "recovery_sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "recovery_size_bytes": 4096
+    }
+  ],
+  "transitions": [
+    {
+      "old_decision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "successor_decision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "historical_policy": {
+        "input": {
+          "recovery_policy_subject_digest": "sha256:5f999f86ac1506417ca1927006fa13410e6403ae81a4c3c233735fbf039cf6e7",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "old_journal_identity_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "old_runner_projection_decision_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "old_schema_bundle_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "old_decision_recovery_artifact_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "old_decision_recovery_artifact_size_bytes": 4096,
+          "successor_runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "successor_schema_bundle_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "allowed_outcomes": ["activated_no_migration_progress"],
+          "outcome_constraints": [
+            {
+              "outcome": "activated_no_migration_progress",
+              "continuation": {
+                "kind": "exact_carry_old_generation"
+              }
+            }
+          ]
+        },
+        "canonical_rfc8785_utf8": "{\"allowed_outcomes\":[\"activated_no_migration_progress\"],\"execution_lineage_digest\":\"sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af\",\"old_decision_recovery_artifact_sha256\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"old_decision_recovery_artifact_size_bytes\":4096,\"old_journal_identity_digest\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"old_runner_projection_decision_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"old_schema_bundle_digest\":\"sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"outcome_constraints\":[{\"continuation\":{\"kind\":\"exact_carry_old_generation\"},\"outcome\":\"activated_no_migration_progress\"}],\"recovery_policy_subject_digest\":\"sha256:5f999f86ac1506417ca1927006fa13410e6403ae81a4c3c233735fbf039cf6e7\",\"successor_runner_projection_decision_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"successor_schema_bundle_digest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\"}",
+        "digest": "sha256:678cf7bc4f0883253a7b060afe44b7eed271fc99b39c2b1f2ecf30eb7b30f0f8"
+      },
+      "recovery_execution_bindings": {
+        "input": {
+          "historical_recovery_policy_digest": "sha256:678cf7bc4f0883253a7b060afe44b7eed271fc99b39c2b1f2ecf30eb7b30f0f8",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "current_runner_projection_decision_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "old_runner_projection_decision_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "old_journal_identity_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "old_schema_bundle_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "old_decision_recovery_artifact_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "old_decision_recovery_artifact_size_bytes": 4096,
+          "old_journal_replay_tail_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "old_recovery_state": "brand_new_inherited",
+          "actions_profile": "cloud-agents-platform-old-attempt-exact-recovery/v1"
+        },
+        "canonical_rfc8785_utf8": "{\"actions_profile\":\"cloud-agents-platform-old-attempt-exact-recovery/v1\",\"current_runner_projection_decision_digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"execution_lineage_digest\":\"sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af\",\"historical_recovery_policy_digest\":\"sha256:678cf7bc4f0883253a7b060afe44b7eed271fc99b39c2b1f2ecf30eb7b30f0f8\",\"old_decision_recovery_artifact_sha256\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"old_decision_recovery_artifact_size_bytes\":4096,\"old_journal_identity_digest\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"old_journal_replay_tail_digest\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"old_recovery_state\":\"brand_new_inherited\",\"old_runner_projection_decision_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"old_schema_bundle_digest\":\"sha256:7777777777777777777777777777777777777777777777777777777777777777\"}",
+        "digest": "sha256:460b26d4623c448e3e8f082cd66a3e8004c8cfae1be434421d6ab0a632b8380f"
+      },
+      "supersession_authority": {
+        "input": {
+          "historical_recovery_policy_digest": "sha256:678cf7bc4f0883253a7b060afe44b7eed271fc99b39c2b1f2ecf30eb7b30f0f8",
+          "recovery_execution_bindings_digest": "sha256:460b26d4623c448e3e8f082cd66a3e8004c8cfae1be434421d6ab0a632b8380f",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "old_journal_identity_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "old_runner_projection_decision_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "old_schema_bundle_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "old_checkpoint_record_digest": null,
+          "old_activation_record_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "old_initial_journal_tail_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "old_terminal_digest": null,
+          "old_resolution_digest": null,
+          "observed_outcome": "activated_no_migration_progress",
+          "successor_runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "successor_schema_bundle_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "continuation": {
+            "start_action": "begin_next_attempt",
+            "migration_id": "000001",
+            "attempt_index": 2,
+            "previous_attempt_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_journal_identity_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_checkpoint_record_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "canonical_rfc8785_utf8": "{\"continuation\":{\"attempt_index\":2,\"migration_id\":\"000001\",\"previous_attempt_terminal_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"source_checkpoint_record_digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"source_journal_identity_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_terminal_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"start_action\":\"begin_next_attempt\"},\"execution_lineage_digest\":\"sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af\",\"historical_recovery_policy_digest\":\"sha256:678cf7bc4f0883253a7b060afe44b7eed271fc99b39c2b1f2ecf30eb7b30f0f8\",\"observed_outcome\":\"activated_no_migration_progress\",\"old_activation_record_digest\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"old_checkpoint_record_digest\":null,\"old_initial_journal_tail_digest\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"old_journal_identity_digest\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"old_resolution_digest\":null,\"old_runner_projection_decision_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"old_schema_bundle_digest\":\"sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"old_terminal_digest\":null,\"recovery_execution_bindings_digest\":\"sha256:460b26d4623c448e3e8f082cd66a3e8004c8cfae1be434421d6ab0a632b8380f\",\"successor_runner_projection_decision_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"successor_schema_bundle_digest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\"}",
+        "digest": "sha256:6ec6e945e4730bb6750d89f6b096bd83a9cd8f3575464939a5cce89ae27c4886"
+      },
+      "planned_generation_reserved": {
+        "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+        "journal_identity_digest": "sha256:763536aae210fa97828fe1133f6907eba6d62d6d427d5d026be3afc57c9ffc37",
+        "runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "schema_bundle_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "quota_reservation_digest": "sha256:5f65022b35cd84d3d5a5af14605d6ede6eb2dc45d2c3cbbf0d3d7952d5b40cb0",
+        "reserved_records": 64,
+        "reserved_bytes": 1048576,
+        "reserved_segments": 1,
+        "planned_segment0_header": {
+          "format_version": "cloud-agents-platform-evidence-journal/v1",
+          "journal_identity_digest": "sha256:763536aae210fa97828fe1133f6907eba6d62d6d427d5d026be3afc57c9ffc37",
+          "release_trust_decision_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "outer_artifact_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "outer_artifact_size_bytes": 65536,
+          "decision_recovery_artifact_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "decision_recovery_artifact_size_bytes": 4096,
+          "manifest_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runner_release_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "schema_bundle_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "segment_index": 0,
+          "previous_segment_record_digest": null,
+          "limits_profile": "cloud-agents-platform-evidence-journal-limits/v1",
+          "quota_reservation_digest": "sha256:5f65022b35cd84d3d5a5af14605d6ede6eb2dc45d2c3cbbf0d3d7952d5b40cb0",
+          "reserved_records": 64,
+          "reserved_bytes": 1048576,
+          "reserved_segments": 1
+        },
+        "expected_segment0_header_digest": "sha256:cbc57c63eafbb21bc9d9ff8c23a9b88afdefbb85dcd82a964388cb0a815aee85",
+        "continuation": {
+          "start_action": "begin_next_attempt",
+          "migration_id": "000001",
+          "attempt_index": 2,
+          "previous_attempt_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source_journal_identity_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_checkpoint_record_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "planned_generation_reserved_digest": "sha256:f88e5aca8680a531bbf2daafaa2acee3872d5603e83186ac95e7bcaa8628273e"
+    },
+    {
+      "old_decision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "successor_decision": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "historical_policy": {
+        "input": {
+          "recovery_policy_subject_digest": "sha256:5f999f86ac1506417ca1927006fa13410e6403ae81a4c3c233735fbf039cf6e7",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "old_journal_identity_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "old_runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "old_schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "old_decision_recovery_artifact_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "old_decision_recovery_artifact_size_bytes": 4096,
+          "successor_runner_projection_decision_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "successor_schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "allowed_outcomes": ["activated_no_migration_progress"],
+          "outcome_constraints": [
+            {
+              "outcome": "activated_no_migration_progress",
+              "continuation": {
+                "kind": "exact_carry_old_generation"
+              }
+            }
+          ]
+        },
+        "canonical_rfc8785_utf8": "{\"allowed_outcomes\":[\"activated_no_migration_progress\"],\"execution_lineage_digest\":\"sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af\",\"old_decision_recovery_artifact_sha256\":\"sha256:6666666666666666666666666666666666666666666666666666666666666666\",\"old_decision_recovery_artifact_size_bytes\":4096,\"old_journal_identity_digest\":\"sha256:6666666666666666666666666666666666666666666666666666666666666666\",\"old_runner_projection_decision_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"old_schema_bundle_digest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\",\"outcome_constraints\":[{\"continuation\":{\"kind\":\"exact_carry_old_generation\"},\"outcome\":\"activated_no_migration_progress\"}],\"recovery_policy_subject_digest\":\"sha256:5f999f86ac1506417ca1927006fa13410e6403ae81a4c3c233735fbf039cf6e7\",\"successor_runner_projection_decision_digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"successor_schema_bundle_digest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\"}",
+        "digest": "sha256:834933afd084840c2a79bb27e05f838f12b86ebc725681d6e88b3fa06fbf5824"
+      },
+      "recovery_execution_bindings": {
+        "input": {
+          "historical_recovery_policy_digest": "sha256:834933afd084840c2a79bb27e05f838f12b86ebc725681d6e88b3fa06fbf5824",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "current_runner_projection_decision_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "old_runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "old_journal_identity_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "old_schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "old_decision_recovery_artifact_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "old_decision_recovery_artifact_size_bytes": 4096,
+          "old_journal_replay_tail_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "old_recovery_state": "brand_new_inherited",
+          "actions_profile": "cloud-agents-platform-old-attempt-exact-recovery/v1"
+        },
+        "canonical_rfc8785_utf8": "{\"actions_profile\":\"cloud-agents-platform-old-attempt-exact-recovery/v1\",\"current_runner_projection_decision_digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"execution_lineage_digest\":\"sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af\",\"historical_recovery_policy_digest\":\"sha256:834933afd084840c2a79bb27e05f838f12b86ebc725681d6e88b3fa06fbf5824\",\"old_decision_recovery_artifact_sha256\":\"sha256:6666666666666666666666666666666666666666666666666666666666666666\",\"old_decision_recovery_artifact_size_bytes\":4096,\"old_journal_identity_digest\":\"sha256:6666666666666666666666666666666666666666666666666666666666666666\",\"old_journal_replay_tail_digest\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"old_recovery_state\":\"brand_new_inherited\",\"old_runner_projection_decision_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"old_schema_bundle_digest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\"}",
+        "digest": "sha256:7a0c6eb77956412a1e084e5708747f91078fd22232def80d87834acd98d2654c"
+      },
+      "supersession_authority": {
+        "input": {
+          "historical_recovery_policy_digest": "sha256:834933afd084840c2a79bb27e05f838f12b86ebc725681d6e88b3fa06fbf5824",
+          "recovery_execution_bindings_digest": "sha256:7a0c6eb77956412a1e084e5708747f91078fd22232def80d87834acd98d2654c",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "old_journal_identity_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "old_runner_projection_decision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "old_schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "old_checkpoint_record_digest": null,
+          "old_activation_record_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "old_initial_journal_tail_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "old_terminal_digest": null,
+          "old_resolution_digest": null,
+          "observed_outcome": "activated_no_migration_progress",
+          "successor_runner_projection_decision_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "successor_schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "continuation": {
+            "start_action": "begin_next_attempt",
+            "migration_id": "000001",
+            "attempt_index": 2,
+            "previous_attempt_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_journal_identity_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_checkpoint_record_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "canonical_rfc8785_utf8": "{\"continuation\":{\"attempt_index\":2,\"migration_id\":\"000001\",\"previous_attempt_terminal_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"source_checkpoint_record_digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"source_journal_identity_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"source_terminal_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"start_action\":\"begin_next_attempt\"},\"execution_lineage_digest\":\"sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af\",\"historical_recovery_policy_digest\":\"sha256:834933afd084840c2a79bb27e05f838f12b86ebc725681d6e88b3fa06fbf5824\",\"observed_outcome\":\"activated_no_migration_progress\",\"old_activation_record_digest\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"old_checkpoint_record_digest\":null,\"old_initial_journal_tail_digest\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"old_journal_identity_digest\":\"sha256:6666666666666666666666666666666666666666666666666666666666666666\",\"old_resolution_digest\":null,\"old_runner_projection_decision_digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"old_schema_bundle_digest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\",\"old_terminal_digest\":null,\"recovery_execution_bindings_digest\":\"sha256:7a0c6eb77956412a1e084e5708747f91078fd22232def80d87834acd98d2654c\",\"successor_runner_projection_decision_digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"successor_schema_bundle_digest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\"}",
+        "digest": "sha256:9131cb64a8cec5992ee1dbeb4b14540e53acdd2141d0da1efd4521be0c07b7cd"
+      },
+      "planned_generation_reserved": {
+        "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+        "journal_identity_digest": "sha256:5d0edfb15973212f6385dbc11e60d8a83202fd425a9ce446458f20c048c932e5",
+        "runner_projection_decision_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "quota_reservation_digest": "sha256:811966dd42c99ab14a829fc52bb0d537e6e33d168b1046ddd20e49e9fb431e91",
+        "reserved_records": 64,
+        "reserved_bytes": 1048576,
+        "reserved_segments": 1,
+        "planned_segment0_header": {
+          "format_version": "cloud-agents-platform-evidence-journal/v1",
+          "journal_identity_digest": "sha256:5d0edfb15973212f6385dbc11e60d8a83202fd425a9ce446458f20c048c932e5",
+          "release_trust_decision_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "runner_projection_decision_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "execution_lineage_digest": "sha256:b5d2ca0da02b64858944a854269974559ad4a3cee6d4d6a63e3b3b23548de2af",
+          "outer_artifact_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "outer_artifact_size_bytes": 65536,
+          "decision_recovery_artifact_sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "decision_recovery_artifact_size_bytes": 4096,
+          "manifest_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runner_release_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "schema_bundle_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "authority_profile_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "authority_binding_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "segment_index": 0,
+          "previous_segment_record_digest": null,
+          "limits_profile": "cloud-agents-platform-evidence-journal-limits/v1",
+          "quota_reservation_digest": "sha256:811966dd42c99ab14a829fc52bb0d537e6e33d168b1046ddd20e49e9fb431e91",
+          "reserved_records": 64,
+          "reserved_bytes": 1048576,
+          "reserved_segments": 1
+        },
+        "expected_segment0_header_digest": "sha256:97fb7b51a640f8fff5d81eb5463f2a957fdbb434ced4fc2dea16110c3b235b4e",
+        "continuation": {
+          "start_action": "begin_next_attempt",
+          "migration_id": "000001",
+          "attempt_index": 2,
+          "previous_attempt_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source_journal_identity_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_checkpoint_record_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_terminal_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "planned_generation_reserved_digest": "sha256:cd71e73704b2612240bee6654cdeed8485a308bd073ba72f505b84c24caef491"
+    }
+  ]
+}

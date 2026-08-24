@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/idempotency.schema.json",
+  "title": "Idempotency",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "requestDigest"],
+  "properties": {
+    "key": {
+      "$ref": "idempotency-key.schema.json"
+    },
+    "requestDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,0 +1,712 @@
+#!/bin/sh
+
+set -eu
+
+work_dir=${EVIDENCEFS_POWERLOSS_WORK_DIR:-/work}
+test_binary=${EVIDENCEFS_POWERLOSS_TEST_BINARY:-/inputs/evidencefs.test}
+guest_init=${EVIDENCEFS_POWERLOSS_GUEST_INIT:-/inputs/evidencefs-powerloss-guest-init.sh}
+apk_repository=${EVIDENCEFS_POWERLOSS_APK_REPOSITORY:-https://dl-cdn.alpinelinux.org/alpine}
+matrix_scope=${EVIDENCEFS_POWERLOSS_MATRIX_SCOPE:-full}
+
+case "$apk_repository" in
+  https://dl-cdn.alpinelinux.org/alpine | https://mirrors.tuna.tsinghua.edu.cn/alpine) ;;
+  *)
+    echo "unsupported evidencefs power-loss APK repository" >&2
+    exit 1
+    ;;
+esac
+case "$matrix_scope" in
+  full | generation-header | generation-repair) ;;
+  *)
+    echo "unsupported evidencefs power-loss matrix scope" >&2
+    exit 1
+    ;;
+esac
+sed -i "s#https://dl-cdn.alpinelinux.org/alpine#$apk_repository#g" /etc/apk/repositories
+repositories_sha256=$(sha256sum /etc/apk/repositories | cut -d ' ' -f 1)
+echo "EVIDENCEFS_QEMU_APK repository=$apk_repository repositories_sha256=$repositories_sha256"
+
+if [ ! -d "$work_dir" ] || [ ! -x "$test_binary" ] || [ ! -f "$guest_init" ]; then
+  echo "power-loss container inputs are incomplete" >&2
+  exit 1
+fi
+
+apk add --no-cache \
+  alpine-base=3.22.5-r0 \
+  e2fsprogs=1.47.2-r2 \
+  linux-virt=6.12.103-r0 \
+  qemu-img=10.0.0-r1 \
+  qemu-system-aarch64=10.0.0-r1 \
+  xfsprogs=6.14.0-r0 >/dev/null
+
+root_image="$work_dir/guest-root.img"
+root_mount="$work_dir/guest-root"
+kernel=/boot/vmlinuz-virt
+initramfs=/boot/initramfs-virt
+root_loop=""
+root_mounted=0
+qemu_pid=""
+
+cleanup() {
+  if [ -n "$qemu_pid" ] && kill -0 "$qemu_pid" 2>/dev/null; then
+    kill -KILL "$qemu_pid" 2>/dev/null || true
+    wait "$qemu_pid" 2>/dev/null || true
+  fi
+  qemu_pid=""
+  if [ "$root_mounted" = 1 ]; then
+    umount "$root_mount" 2>/dev/null || true
+  fi
+  root_mounted=0
+  if [ -n "$root_loop" ]; then
+    losetup -d "$root_loop" 2>/dev/null || true
+  fi
+  root_loop=""
+}
+
+trap cleanup EXIT INT TERM
+
+truncate -s 1G "$root_image"
+root_loop=$(losetup -f)
+losetup "$root_loop" "$root_image"
+mkfs.ext4 -q -F -L evidence-rootfs "$root_loop"
+mkdir -p "$root_mount"
+mount -t ext4 "$root_loop" "$root_mount"
+root_mounted=1
+
+apk --root "$root_mount" --arch aarch64 --initdb --no-cache \
+  --repositories-file /etc/apk/repositories \
+  --keys-dir /etc/apk/keys \
+  add \
+  alpine-base=3.22.5-r0 \
+  e2fsprogs=1.47.2-r2 \
+  xfsprogs=6.14.0-r0 >/dev/null
+
+guest_package_manifest=$(apk --root "$root_mount" manifest alpine-base e2fsprogs xfsprogs | LC_ALL=C sort | sha256sum | cut -d ' ' -f 1)
+
+mkdir -p "$root_mount/lib" "$root_mount/mnt/evidence" "$root_mount/sbin" "$root_mount/usr/local/bin"
+cp -a /lib/modules "$root_mount/lib/"
+cp "$guest_init" "$root_mount/sbin/evidencefs-powerloss-init"
+cp "$test_binary" "$root_mount/usr/local/bin/evidencefs.test"
+chmod 0755 "$root_mount/sbin/evidencefs-powerloss-init" "$root_mount/usr/local/bin/evidencefs.test"
+sync
+umount "$root_mount"
+root_mounted=0
+blockdev --flushbufs "$root_loop"
+losetup -d "$root_loop"
+root_loop=""
+set +e
+e2fsck -pf "$root_image" >"$work_dir/guest-root-fsck.log" 2>&1
+root_check_status=$?
+set -e
+case "$root_check_status" in
+  0 | 1) ;;
+  *)
+    sed -n '1,120p' "$work_dir/guest-root-fsck.log" >&2
+    echo "QEMU guest root filesystem did not pass post-build fsck: $root_check_status" >&2
+    exit 1
+    ;;
+esac
+sync
+
+package_manifest=$(apk manifest linux-virt qemu-img qemu-system-aarch64 e2fsprogs xfsprogs | LC_ALL=C sort | sha256sum | cut -d ' ' -f 1)
+echo "EVIDENCEFS_QEMU_ENV kernel_package=linux-virt-6.12.103-r0 qemu=qemu-system-aarch64-10.0.0-r1 package_manifest_sha256=$package_manifest guest_package_manifest_sha256=$guest_package_manifest"
+
+wait_for_marker() {
+  log_file=$1
+  marker=$2
+  attempts=0
+  while ! grep -F "$marker" "$log_file" >/dev/null 2>&1; do
+    if ! kill -0 "$qemu_pid" 2>/dev/null; then
+      wait "$qemu_pid" 2>/dev/null || true
+      qemu_pid=""
+      echo "QEMU exited before marker: $marker" >&2
+      sed -n '1,240p' "$log_file" >&2
+      return 1
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 1800 ]; then
+      echo "QEMU marker timeout: $marker" >&2
+      sed -n '1,240p' "$log_file" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+}
+
+start_guest() {
+  filesystem=$1
+  mode=$2
+  data_image=$3
+  log_file=$4
+  barrier=$5
+  barrier_argument=""
+  if [ -n "$barrier" ]; then
+    barrier_argument=" evidencefs_barrier=$barrier"
+  fi
+  : >"$log_file"
+  qemu-system-aarch64 \
+    -machine virt,accel=tcg,gic-version=3 \
+    -cpu cortex-a72 \
+    -smp 2 \
+    -m 768 \
+    -nodefaults \
+    -no-user-config \
+    -no-reboot \
+    -display none \
+    -monitor none \
+    -serial stdio \
+    -kernel "$kernel" \
+    -initrd "$initramfs" \
+    -append "console=ttyAMA0 root=/dev/vda rootfstype=ext4 ro init=/sbin/evidencefs-powerloss-init evidencefs_fs=$filesystem evidencefs_mode=$mode$barrier_argument" \
+    -object rng-random,filename=/dev/urandom,id=rng0 \
+    -device virtio-rng-pci,rng=rng0,addr=0x3 \
+    -drive "if=none,file=$root_image,format=raw,readonly=on,id=root" \
+    -device virtio-blk-pci,drive=root,addr=0x1 \
+    -drive "if=none,file=$data_image,format=raw,cache=none,aio=threads,id=data" \
+    -device virtio-blk-pci,drive=data,addr=0x2 \
+    >"$log_file" 2>&1 &
+  qemu_pid=$!
+}
+
+kill_guest_after_marker() {
+  filesystem=$1
+  mode=$2
+  data_image=$3
+  marker=$4
+  log_file="$work_dir/$filesystem-$mode.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" ""
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU power-loss target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_POWER_LOSS filesystem=$filesystem mode=$mode marker=$marker result=KILLED"
+}
+
+verify_guest() {
+  filesystem=$1
+  mode=$2
+  data_image=$3
+  marker=$4
+  log_file="$work_dir/$filesystem-$mode.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" ""
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU verifier failed after marker: $marker" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_RESTART filesystem=$filesystem mode=$mode marker=$marker result=PASS"
+}
+
+kill_object_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-object-$barrier-crash.log"
+  start_guest "$filesystem" crash-object "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU object barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_OBJECT_BARRIER filesystem=$filesystem barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_object_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_QEMU_CLASSIFY_OBJECT_PASS filesystem=$filesystem barrier=$barrier"
+  log_file="$work_dir/$filesystem-object-$barrier-classify.log"
+  start_guest "$filesystem" classify-object "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU object barrier classifier failed: $barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_OBJECT_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "object barrier classifier omitted recovery facts: $barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_OBJECT_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+kill_generation_append_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-append-$barrier-crash.log"
+  start_guest "$filesystem" crash-generation-append "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation append barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_APPEND_BARRIER filesystem=$filesystem barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_append_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_APPEND_PASS filesystem=$filesystem barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-append-$barrier-classify.log"
+  start_guest "$filesystem" classify-generation-append "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation append barrier classifier failed: $barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_APPEND_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation append barrier classifier omitted recovery facts: $barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_APPEND_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+kill_generation_rotation_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-rotation-$barrier-crash.log"
+  start_guest "$filesystem" crash-generation-rotation "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation rotation barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_ROTATION_BARRIER filesystem=$filesystem barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_rotation_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_ROTATION_PASS filesystem=$filesystem barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-rotation-$barrier-classify.log"
+  start_guest "$filesystem" classify-generation-rotation "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation rotation barrier classifier failed: $barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_ROTATION_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation rotation barrier classifier omitted recovery facts: $barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_ROTATION_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+kill_generation_activation_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-activation-$barrier-crash.log"
+  start_guest "$filesystem" crash-generation-activation "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation activation barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_ACTIVATION_BARRIER filesystem=$filesystem barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_activation_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_ACTIVATION_PASS filesystem=$filesystem barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-activation-$barrier-classify.log"
+  start_guest "$filesystem" classify-generation-activation "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation activation barrier classifier failed: $barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_ACTIVATION_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation activation barrier classifier omitted recovery facts: $barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_ACTIVATION_BARRIER filesystem=$filesystem barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+kill_target_registration_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=crash-target-registration
+  if [ "$scenario" = recovery ]; then
+    mode=crash-target-registration-recovery
+  fi
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-target-registration-$scenario-$barrier-crash.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU target registration barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_target_registration_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=classify-target-registration
+  marker="EVIDENCEFS_QEMU_CLASSIFY_TARGET_REGISTRATION_PASS filesystem=$filesystem barrier=$barrier"
+  if [ "$scenario" = recovery ]; then
+    mode=classify-target-registration-recovery
+    marker="EVIDENCEFS_QEMU_CLASSIFY_TARGET_REGISTRATION_RECOVERY_PASS filesystem=$filesystem barrier=$barrier"
+  fi
+  log_file="$work_dir/$filesystem-target-registration-$scenario-$barrier-classify.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU target registration classifier failed: scenario=$scenario barrier=$barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_TARGET_REGISTRATION_CRASH_RECOVERY barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "target registration classifier omitted recovery facts: scenario=$scenario barrier=$barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+kill_generation_header_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=crash-generation-header
+  if [ "$scenario" = recovery ]; then
+    mode=crash-generation-header-recovery
+  fi
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-header-$scenario-$barrier-crash.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation header barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_header_barrier_guest() {
+  filesystem=$1
+  barrier=$2
+  data_image=$3
+  scenario=$4
+  mode=classify-generation-header
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_HEADER_PASS filesystem=$filesystem barrier=$barrier"
+  if [ "$scenario" = recovery ]; then
+    mode=classify-generation-header-recovery
+    marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_HEADER_RECOVERY_PASS filesystem=$filesystem barrier=$barrier"
+  fi
+  log_file="$work_dir/$filesystem-generation-header-$scenario-$barrier-classify.log"
+  start_guest "$filesystem" "$mode" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation header classifier failed: scenario=$scenario barrier=$barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_HEADER_CRASH_RECOVERY scenario=$scenario barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation header classifier omitted recovery facts: scenario=$scenario barrier=$barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+kill_generation_repair_barrier_guest() {
+  filesystem=$1
+  scenario=$2
+  barrier=$3
+  data_image=$4
+  marker="EVIDENCEFS_INTEGRATION_CRASH_BARRIER barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-repair-$scenario-$barrier-crash.log"
+  start_guest "$filesystem" "crash-generation-$scenario" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  kill -KILL "$qemu_pid"
+  if wait "$qemu_pid" 2>/dev/null; then
+    echo "QEMU generation repair barrier target exited cleanly" >&2
+    return 1
+  fi
+  qemu_pid=""
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=crash result=KILLED"
+}
+
+classify_generation_repair_barrier_guest() {
+  filesystem=$1
+  scenario=$2
+  barrier=$3
+  data_image=$4
+  marker="EVIDENCEFS_QEMU_CLASSIFY_GENERATION_REPAIR_PASS filesystem=$filesystem scenario=$scenario barrier=$barrier"
+  log_file="$work_dir/$filesystem-generation-repair-$scenario-$barrier-classify.log"
+  start_guest "$filesystem" "classify-generation-$scenario" "$data_image" "$log_file" "$barrier"
+  wait_for_marker "$log_file" "$marker"
+  if ! wait "$qemu_pid"; then
+    qemu_pid=""
+    echo "QEMU generation repair classifier failed: scenario=$scenario barrier=$barrier" >&2
+    sed -n '1,240p' "$log_file" >&2
+    return 1
+  fi
+  qemu_pid=""
+  recovery=$(grep -F "EVIDENCEFS_INTEGRATION_GENERATION_REPAIR_CRASH_RECOVERY scenario=$scenario barrier=$barrier " "$log_file" | tail -1 | tr -d '\r')
+  if [ -z "$recovery" ]; then
+    echo "generation repair classifier omitted recovery facts: scenario=$scenario barrier=$barrier" >&2
+    return 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_BARRIER filesystem=$filesystem scenario=$scenario barrier=$barrier phase=reopen result=PASS recovery=[$recovery]"
+}
+
+run_generation_repair_scenario() {
+  filesystem=$1
+  scenario=$2
+  barriers=$3
+  expected=$4
+  barrier_count=0
+  for barrier in $barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-repair-$scenario-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_repair_barrier_guest "$filesystem" "$scenario" "$barrier" "$barrier_image"
+    classify_generation_repair_barrier_guest "$filesystem" "$scenario" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne "$expected" ]; then
+    echo "unexpected generation repair crash barrier count: scenario=$scenario count=$barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_SCENARIO filesystem=$filesystem scenario=$scenario barriers=$barrier_count result=PASS"
+}
+
+run_generation_repair_matrix() {
+  filesystem=$1
+  run_generation_repair_scenario "$filesystem" resync "$generation_resync_barriers" 4
+  run_generation_repair_scenario "$filesystem" truncate "$generation_truncate_barriers" 8
+  run_generation_repair_scenario "$filesystem" checkpoint "$generation_checkpoint_barriers" 5
+  run_generation_repair_scenario "$filesystem" discard "$generation_discard_barriers" 4
+  echo "EVIDENCEFS_QEMU_GENERATION_REPAIR_MATRIX filesystem=$filesystem barriers=21 result=PASS"
+}
+
+create_evidence_image() {
+  filesystem=$1
+  data_image=$2
+  rm -f "$data_image"
+  if [ "$filesystem" = ext4 ]; then
+    truncate -s 192M "$data_image"
+  else
+    truncate -s 512M "$data_image"
+  fi
+}
+
+object_barriers="before-temp-write after-short-temp-write after-temp-write before-temp-fdatasync after-temp-fdatasync before-rename after-rename before-final-fdatasync after-final-fdatasync before-directory-fsync after-directory-fsync"
+target_registration_barriers="before-target-lineages-create after-target-lineages-create before-target-lineages-parent-fsync after-target-lineages-parent-fsync before-target-directory-create after-target-directory-create before-target-directory-parent-fsync after-target-directory-parent-fsync before-target-lock-create after-target-lock-create before-target-lock-fdatasync after-target-lock-fdatasync before-target-lock-directory-fsync after-target-lock-directory-fsync before-target-lock-flock after-target-lock-flock before-target-index-create after-target-index-create before-target-index-write after-short-target-index-write after-target-index-write before-target-index-fdatasync after-target-index-fdatasync before-target-index-directory-fsync after-target-index-directory-fsync"
+target_registration_recovery_barriers="before-recovery-parent-fsync after-recovery-parent-fsync before-recovery-lock-fdatasync after-recovery-lock-fdatasync before-recovery-lock-directory-fsync after-recovery-lock-directory-fsync before-recovery-lock-flock after-recovery-lock-flock before-recovery-index-open after-recovery-index-open before-recovery-index-truncate after-recovery-index-truncate before-recovery-truncate-fdatasync after-recovery-truncate-fdatasync before-recovery-index-write after-short-recovery-index-write after-recovery-index-write before-recovery-index-fdatasync after-recovery-index-fdatasync before-recovery-index-directory-fsync after-recovery-index-directory-fsync"
+generation_header_barriers="generation-header-before-directory-create generation-header-after-directory-create generation-header-before-parent-fsync generation-header-after-parent-fsync generation-header-before-lock-create generation-header-after-lock-create generation-header-before-lock-fdatasync generation-header-after-lock-fdatasync generation-header-before-lock-directory-fsync generation-header-after-lock-directory-fsync generation-header-before-lock-flock generation-header-after-lock-flock generation-header-before-segment-create generation-header-after-segment-create generation-header-before-segment-write generation-header-after-short-segment-write generation-header-after-segment-write generation-header-before-segment-fdatasync generation-header-after-segment-fdatasync generation-header-before-segment-directory-fsync generation-header-after-segment-directory-fsync"
+generation_header_recovery_barriers="generation-header-recovery-before-parent-fsync generation-header-recovery-after-parent-fsync generation-header-recovery-before-lock-open generation-header-recovery-after-lock-open generation-header-recovery-before-lock-fdatasync generation-header-recovery-after-lock-fdatasync generation-header-recovery-before-lock-directory-fsync generation-header-recovery-after-lock-directory-fsync generation-header-recovery-before-lock-flock generation-header-recovery-after-lock-flock generation-header-recovery-before-segment-open generation-header-recovery-after-segment-open generation-header-recovery-before-segment-truncate generation-header-recovery-after-segment-truncate generation-header-recovery-before-truncate-fdatasync generation-header-recovery-after-truncate-fdatasync generation-header-recovery-before-segment-write generation-header-recovery-after-short-segment-write generation-header-recovery-after-segment-write generation-header-recovery-before-segment-fdatasync generation-header-recovery-after-segment-fdatasync generation-header-recovery-before-segment-directory-fsync generation-header-recovery-after-segment-directory-fsync"
+generation_append_barriers="before-journal-write after-short-journal-write after-journal-write before-journal-fdatasync after-journal-fdatasync before-index-write after-short-index-write after-index-write before-index-fdatasync after-index-fdatasync"
+generation_rotation_barriers="before-segment-create after-segment-create before-empty-fdatasync after-empty-fdatasync before-segment-directory-fsync after-segment-directory-fsync before-header-write after-short-header-write after-header-write before-header-fdatasync after-header-fdatasync before-header-checkpoint-write after-short-header-checkpoint-write after-header-checkpoint-write before-header-checkpoint-fdatasync after-header-checkpoint-fdatasync before-caller-write after-short-caller-write after-caller-write before-caller-fdatasync after-caller-fdatasync before-caller-checkpoint-write after-short-caller-checkpoint-write after-caller-checkpoint-write before-caller-checkpoint-fdatasync after-caller-checkpoint-fdatasync"
+generation_activation_barriers="before-activation-write after-short-activation-write after-activation-write before-activation-fdatasync after-activation-fdatasync"
+generation_resync_barriers="before-resync-segment-fdatasync after-resync-segment-fdatasync before-resync-index-fdatasync after-resync-index-fdatasync"
+generation_truncate_barriers="before-truncate-segment after-truncate-segment before-truncate-segment-fdatasync after-truncate-segment-fdatasync before-truncate-index after-truncate-index before-truncate-index-fdatasync after-truncate-index-fdatasync"
+generation_checkpoint_barriers="before-checkpoint-write after-short-checkpoint-write after-checkpoint-write before-checkpoint-fdatasync after-checkpoint-fdatasync"
+generation_discard_barriers="before-discard-unlink after-discard-unlink before-discard-directory-fsync after-discard-directory-fsync"
+
+for filesystem in ext4 xfs; do
+  if [ "$matrix_scope" = generation-repair ]; then
+    run_generation_repair_matrix "$filesystem"
+    continue
+  fi
+  if [ "$matrix_scope" = full ]; then
+  data_image="$work_dir/$filesystem-evidence.img"
+  create_evidence_image "$filesystem" "$data_image"
+  kill_guest_after_marker "$filesystem" create-object "$data_image" EVIDENCEFS_INTEGRATION_OBJECT_PUBLISHED_AND_ROOT_LOCKED
+  verify_guest "$filesystem" verify-object "$data_image" "EVIDENCEFS_QEMU_VERIFY_OBJECT_PASS filesystem=$filesystem"
+  kill_guest_after_marker "$filesystem" create-generation "$data_image" EVIDENCEFS_INTEGRATION_GENERATION_DURABLE_AND_LOCKED
+  verify_guest "$filesystem" verify-all "$data_image" "EVIDENCEFS_QEMU_VERIFY_ALL_PASS filesystem=$filesystem"
+  echo "EVIDENCEFS_QEMU_MATRIX filesystem=$filesystem result=PASS"
+  rm -f "$data_image"
+  barrier_count=0
+  for barrier in $object_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-object-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_object_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    classify_object_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 11 ]; then
+    echo "unexpected object crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_OBJECT_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $target_registration_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-target-registration-create-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    classify_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 25 ]; then
+    echo "unexpected target registration create crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_CREATE_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $target_registration_recovery_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-target-registration-recovery-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    classify_target_registration_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 21 ]; then
+    echo "unexpected target registration recovery crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_TARGET_REGISTRATION_RECOVERY_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+  fi
+
+  barrier_count=0
+  for barrier in $generation_header_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-header-create-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    classify_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" create
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 21 ]; then
+    echo "unexpected generation header create crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_CREATE_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $generation_header_recovery_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-header-recovery-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    classify_generation_header_barrier_guest "$filesystem" "$barrier" "$barrier_image" recovery
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 23 ]; then
+    echo "unexpected generation header recovery crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_HEADER_RECOVERY_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  if [ "$matrix_scope" = generation-header ]; then
+    echo "EVIDENCEFS_QEMU_GENERATION_HEADER_SCOPE filesystem=$filesystem result=PASS"
+    continue
+  fi
+
+  barrier_count=0
+  for barrier in $generation_append_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-append-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_append_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    classify_generation_append_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 10 ]; then
+    echo "unexpected generation append crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_APPEND_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $generation_rotation_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-rotation-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_rotation_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    classify_generation_rotation_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 26 ]; then
+    echo "unexpected generation rotation crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_ROTATION_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+
+  barrier_count=0
+  for barrier in $generation_activation_barriers; do
+    barrier_count=$((barrier_count + 1))
+    barrier_image="$work_dir/$filesystem-generation-activation-barrier.img"
+    create_evidence_image "$filesystem" "$barrier_image"
+    kill_generation_activation_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    classify_generation_activation_barrier_guest "$filesystem" "$barrier" "$barrier_image"
+    rm -f "$barrier_image"
+  done
+  if [ "$barrier_count" -ne 5 ]; then
+    echo "unexpected generation activation crash barrier count: $barrier_count" >&2
+    exit 1
+  fi
+  echo "EVIDENCEFS_QEMU_GENERATION_ACTIVATION_BARRIER_MATRIX filesystem=$filesystem barriers=$barrier_count result=PASS"
+  run_generation_repair_matrix "$filesystem"
+done
+
+trap - EXIT INT TERM
+cleanup
+case "$matrix_scope" in
+  full) echo "Evidencefs Linux ext4/xfs QEMU power-loss matrix: PASS" ;;
+  generation-header) echo "Evidencefs Linux ext4/xfs QEMU generation-header power-loss matrix: PASS" ;;
+  generation-repair) echo "Evidencefs Linux ext4/xfs QEMU generation-repair power-loss matrix: PASS" ;;
+esac

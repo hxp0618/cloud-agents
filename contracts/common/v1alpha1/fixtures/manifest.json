@@ -1,0 +1,161 @@
+{
+  "version": "v1alpha1",
+  "cases": [
+    {
+      "name": "namespace-ref-canonical",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "document": "golden/namespace-ref-canonical.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "namespace-ref-nfc",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "instance": "golden/namespace-ref-nfc.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "namespace-ref-extra-field",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "instance": "negative/namespace-ref-extra-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "namespace-ref-uppercase",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "instance": "negative/namespace-ref-uppercase.json",
+      "expectedSchemaValid": false,
+      "expectedError": "INVALID_NAMESPACE_REF_GRAMMAR"
+    },
+    {
+      "name": "namespace-ref-decomposed",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "instance": "negative/namespace-ref-decomposed.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "NON_NFC_NAMESPACE_REF_ID"
+    },
+    {
+      "name": "namespace-ref-canonical-trailing-whitespace",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "document": "negative/namespace-ref-canonical-trailing-whitespace.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_NAMESPACE_REF_MISMATCH"
+    },
+    {
+      "name": "namespace-ref-canonical-escape",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "document": "negative/namespace-ref-canonical-escape.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_NAMESPACE_REF_MISMATCH"
+    },
+    {
+      "name": "namespace-ref-lone-surrogate",
+      "schema": "../schemas/namespace-ref.schema.json",
+      "document": "negative/namespace-ref-lone-surrogate.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "INVALID_UNICODE_SCALAR"
+    },
+    {
+      "name": "problem",
+      "schema": "../schemas/problem.schema.json",
+      "instance": "golden/problem.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "problem-secret-field",
+      "schema": "../schemas/problem.schema.json",
+      "instance": "negative/problem-secret-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "PROBLEM_SECRET_FIELD_FORBIDDEN"
+    },
+    {
+      "name": "idempotency",
+      "schema": "../schemas/idempotency.schema.json",
+      "instance": "golden/idempotency.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "idempotency-short-key",
+      "schema": "../schemas/idempotency.schema.json",
+      "instance": "negative/idempotency-short-key.json",
+      "expectedSchemaValid": false,
+      "expectedError": "INVALID_IDEMPOTENCY_KEY"
+    },
+    {
+      "name": "watch-cursor",
+      "schema": "../schemas/watch-cursor.schema.json",
+      "instance": "golden/watch-cursor.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "watch-cursor-extra-field",
+      "schema": "../schemas/watch-cursor.schema.json",
+      "instance": "negative/watch-cursor-extra-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "subject-ref",
+      "schema": "../schemas/subject-ref.schema.json",
+      "instance": "golden/subject-ref.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "subject-ref-canonical",
+      "schema": "../schemas/subject-ref.schema.json",
+      "document": "golden/subject-ref-canonical.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "subject-ref-canonical-escape",
+      "schema": "../schemas/subject-ref.schema.json",
+      "document": "negative/subject-ref-canonical-escape.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_SUBJECT_REF_MISMATCH"
+    },
+    {
+      "name": "subject-ref-digest-mismatch",
+      "schema": "../schemas/subject-ref.schema.json",
+      "document": "negative/subject-ref-digest-mismatch.json",
+      "instancePointer": "/instance",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": false,
+      "expectedError": "CANONICAL_SUBJECT_REF_DIGEST_MISMATCH"
+    },
+    {
+      "name": "subject-ref-extra-field",
+      "schema": "../schemas/subject-ref.schema.json",
+      "instance": "negative/subject-ref-extra-field.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "authorization-scope",
+      "schema": "../schemas/authorization-scope.schema.json",
+      "instance": "golden/authorization-scope.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "authorization-scope-kind-mismatch",
+      "schema": "../schemas/authorization-scope.schema.json",
+      "instance": "negative/authorization-scope-kind-mismatch.json",
+      "expectedSchemaValid": false,
+      "expectedSemanticValid": false,
+      "expectedError": "SCOPE_KIND_MISMATCH"
+    }
+  ]
+}

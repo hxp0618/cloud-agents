@@ -1,0 +1,8 @@
+{
+  "instance": {
+    "namespace": "cloud-agents",
+    "kind": "project",
+    "id": "café"
+  },
+  "candidateCanonicalUtf8": "{\"id\":\"café\",\"kind\":\"project\",\"namespace\":\"cloud-agents\"}\n"
+}

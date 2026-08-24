@@ -1,0 +1,12 @@
+{
+  "migration_id": "000001",
+  "statement_index": 0,
+  "start": 0,
+  "end": 1049,
+  "sha256": "sha256:4cce367246af1fe1e08191df7d48bf8b9dad7ee2696b754f6c2df9f66c559281",
+  "classification": {
+    "profile": "postgresql-ddl-v1",
+    "command": "DO",
+    "object_kind": "SCHEMA_BOOTSTRAP"
+  }
+}

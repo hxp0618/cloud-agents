@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
+  "title": "ContractClosureProfileSourceV2",
+  "description": "Strict editable authority for the generated non-Gate G-CONTRACT closure profile v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "registryId", "predecessor", "officialSuiteEvidence", "profile"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-closure-profile-source/v2" },
+    "registryId": { "const": "cloud-agents/platform/contract-closure-profile" },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "predecessorMutation",
+        "sourceSha256",
+        "sourceSchemaSha256",
+        "outputSchemaSha256",
+        "generatedRegistrySha256"
+      ],
+      "properties": {
+        "profileId": { "const": "contract-closure-profile/v1" },
+        "predecessorMutation": { "const": "forbidden" },
+        "sourceSha256": { "$ref": "#/$defs/digest" },
+        "sourceSchemaSha256": { "$ref": "#/$defs/digest" },
+        "outputSchemaSha256": { "$ref": "#/$defs/digest" },
+        "generatedRegistrySha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "officialSuiteEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "criterionMeaning",
+        "independentOracle",
+        "productionAjvAudit",
+        "currentContractParity"
+      ],
+      "properties": {
+        "criterionMeaning": { "const": "fixed_corpus_and_authority_evidence_complete" },
+        "independentOracle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validator",
+            "files",
+            "cases",
+            "assertions",
+            "passedAssertions",
+            "remotes",
+            "failures"
+          ],
+          "properties": {
+            "validator": { "const": "jsonschema-rs 0.50.1" },
+            "files": { "const": 46 },
+            "cases": { "const": 383 },
+            "assertions": { "const": 1299 },
+            "passedAssertions": { "const": 1299 },
+            "remotes": { "const": 79 },
+            "failures": { "const": 0 }
+          }
+        },
+        "productionAjvAudit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validator",
+            "status",
+            "conformanceClaim",
+            "assertions",
+            "passedAssertions",
+            "nonPassingAssertions",
+            "normalReplay",
+            "requireConformance"
+          ],
+          "properties": {
+            "validator": { "const": "Ajv 8.20.0" },
+            "status": { "const": "EXECUTED_NONCONFORMANT" },
+            "conformanceClaim": { "const": false },
+            "assertions": { "const": 1299 },
+            "passedAssertions": { "const": 1241 },
+            "nonPassingAssertions": { "const": 58 },
+            "normalReplay": { "const": "exact" },
+            "requireConformance": { "const": "nonzero" }
+          }
+        },
+        "currentContractParity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaFiles",
+            "fixtureManifests",
+            "fixtureCases",
+            "productionValidator",
+            "independentValidator",
+            "crossEngineExactFixtureResults"
+          ],
+          "properties": {
+            "schemaFiles": { "const": 58 },
+            "fixtureManifests": { "const": 2 },
+            "fixtureCases": { "const": 77 },
+            "productionValidator": { "const": "Ajv 8.20.0 plus in-repo semantics" },
+            "independentValidator": { "const": "jsonschema-rs 0.50.1" },
+            "crossEngineExactFixtureResults": { "const": true }
+          }
+        }
+      }
+    },
+    "profile": { "$ref": "#/$defs/profile" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "verdict"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "verdict": { "const": "APPROVE_P0_0_P1_0_P2_0" }
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "authorityPaths", "evidencePaths"],
+      "properties": {
+        "id": {
+          "enum": [
+            "json-schema-2020-12-official-test-suite",
+            "openapi-3.1-semantic-validation",
+            "generated-sdk-replay",
+            "n-minus-one-compatibility",
+            "response-watch-unknown-field-preservation",
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "status": { "enum": ["SATISFIED_CANDIDATE", "PARTIAL", "MISSING"] },
+        "authorityPaths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "evidencePaths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "review": { "$ref": "#/$defs/review" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "SATISFIED_CANDIDATE" } } },
+          "then": { "required": ["review"], "properties": { "review": {}, "reason": false } },
+          "else": { "required": ["reason"], "properties": { "reason": {}, "review": false } }
+        }
+      ]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "status",
+        "notGateClosure",
+        "derivation",
+        "criteria",
+        "implementationBoundary"
+      ],
+      "properties": {
+        "profileId": { "const": "contract-closure-profile/v2" },
+        "status": { "const": "BOOTSTRAP_VALIDATED" },
+        "notGateClosure": { "const": true },
+        "derivation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lockMissing", "manualRemoval"],
+          "properties": {
+            "lockMissing": { "const": "criteria_status_not_satisfied_candidate" },
+            "manualRemoval": { "const": "forbidden" }
+          }
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/criterion" }
+        },
+        "implementationBoundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "officialAjvSuiteAudit",
+            "ajvGenericConformanceClaim",
+            "runtimeTrustAndHttp",
+            "supplyScanner",
+            "productionDatabaseWrites",
+            "deployment",
+            "publication",
+            "gateStatus"
+          ],
+          "properties": {
+            "officialAjvSuiteAudit": { "const": "executed_nonconformant" },
+            "ajvGenericConformanceClaim": { "const": false },
+            "runtimeTrustAndHttp": { "const": "not_implemented" },
+            "supplyScanner": { "const": "not_implemented" },
+            "productionDatabaseWrites": { "const": "not_authorized" },
+            "deployment": { "const": "not_authorized" },
+            "publication": { "const": "not_authorized" },
+            "gateStatus": { "const": "all_gates_open" }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "predecessorMutation": "forbidden",
+    "ajvConformanceClaim": false,
+    "manualMissingRemoval": "forbidden",
+    "gateAuthority": "none"
+  }
+}

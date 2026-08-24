@@ -1,0 +1,36 @@
+{
+  "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+  "kind": "Membership",
+  "metadata": {
+    "uid": "membership-alpha",
+    "name": "membership-alpha",
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "resourceVersion": "4",
+    "createdAt": "2026-08-10T10:03:00Z"
+  },
+  "spec": {
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "subject": {
+      "kind": "user",
+      "issuer": "https://identity.example.test/",
+      "subject": "user-alpha"
+    },
+    "scope": {
+      "level": "project",
+      "ref": {
+        "namespace": "cloud-agents",
+        "kind": "project",
+        "id": "project-alpha"
+      }
+    },
+    "state": "active"
+  }
+}

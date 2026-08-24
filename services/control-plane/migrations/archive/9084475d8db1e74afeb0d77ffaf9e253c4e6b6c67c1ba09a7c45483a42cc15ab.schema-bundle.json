@@ -1,0 +1,359 @@
+{
+  "format_version": "cloud-agents-platform-schema-bundle/v1",
+  "schema_bundle": {
+    "lineage": "cloud-agents-platform",
+    "schema_head": "000008",
+    "advisory_lock": {
+      "domain": "cloud-agents-platform:migrations:v1",
+      "derivation": "sha256-first-8-bytes-signed-big-endian-int64",
+      "key_int64_decimal": "-1047838957622507638"
+    },
+    "global_table_authority": {
+      "path": "services/control-plane/migrations/catalog/global-table-authority-v2.json",
+      "mode": "100644",
+      "size_bytes": 765,
+      "sha256": "sha256:774fca639d56b984432cca1d0a013f2dee063bb7acaa53a09c3c57251f8f0d3b"
+    },
+    "projection_scope_authority": {
+      "default_acl_owners": ["cloud_agents_migration_owner"],
+      "object_creator_closure": ["cloud_agents_migration_owner"]
+    },
+    "predecessor_schema_bundle": {
+      "schema_bundle_digest": "sha256:8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c",
+      "path": "services/control-plane/migrations/archive/8592d8f96dfeffea9379b1588dddd78909cd558db50b0d40157b7b780581544c.schema-bundle.json",
+      "mode": "100644",
+      "size_bytes": 13374,
+      "sha256": "sha256:3a2e4ef3cab7227a527831e03f7a85a9bcdbf2963e076c6bb764fe15e1fb194d"
+    },
+    "migrations": [
+      {
+        "id": "000001",
+        "name": "expand_migration_kernel",
+        "predecessor_id": null,
+        "phase": "expand",
+        "schema_from": "absent",
+        "schema_to": "000001",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+          "mode": "100644",
+          "size_bytes": 5161,
+          "sha256": "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "accepted_states": [
+            {
+              "state": "schema_absent",
+              "scope": {
+                "scope_kind": "predecessor",
+                "schema_head": null,
+                "migration_id": "000001",
+                "through_statement_index": null,
+                "declared_objects": []
+              },
+              "schema": "cloud_agents"
+            },
+            {
+              "state": "schema_present",
+              "scope": {
+                "scope_kind": "predecessor",
+                "schema_head": null,
+                "migration_id": "000001",
+                "through_statement_index": null,
+                "declared_objects": []
+              },
+              "body": {
+                "schema": {
+                  "name": "cloud_agents",
+                  "owner": "cloud_agents_migration_owner",
+                  "explicit_acl": {
+                    "catalog_value": "null",
+                    "entries": []
+                  },
+                  "effective_acl": [
+                    {
+                      "grantor": "cloud_agents_migration_owner",
+                      "grantee": "cloud_agents_migration_owner",
+                      "privileges": ["CREATE", "USAGE"],
+                      "grantable": ["CREATE", "USAGE"],
+                      "origin": "owner_implicit"
+                    }
+                  ],
+                  "comment": null,
+                  "security_labels": []
+                },
+                "default_acl": [],
+                "relations": [],
+                "functions": [],
+                "dependencies": [],
+                "object_count": 0,
+                "declared_objects": [],
+                "denied_objects": []
+              }
+            }
+          ]
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000001.json",
+          "mode": "100644",
+          "size_bytes": 12074,
+          "sha256": "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f"
+        }
+      },
+      {
+        "id": "000002",
+        "name": "expand_tenancy",
+        "predecessor_id": "000001",
+        "phase": "expand",
+        "schema_from": "000001",
+        "schema_to": "000002",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000002_expand_tenancy.sql",
+          "mode": "100644",
+          "size_bytes": 30896,
+          "sha256": "sha256:d084f003928c1122da7bb88727c12a3e298548514f5da19cb3da14a3a754827a"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000001.json",
+          "mode": "100644",
+          "size_bytes": 12074,
+          "sha256": "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000002.json",
+          "mode": "100644",
+          "size_bytes": 54747,
+          "sha256": "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9"
+        }
+      },
+      {
+        "id": "000003",
+        "name": "expand_membership_rbac",
+        "predecessor_id": "000002",
+        "phase": "expand",
+        "schema_from": "000002",
+        "schema_to": "000003",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000003_expand_membership_rbac.sql",
+          "mode": "100644",
+          "size_bytes": 22193,
+          "sha256": "sha256:89178a9eeb81acc4863d98e9cb9388c2f50379d78f28f5f2570acec551901cd2"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000002.json",
+          "mode": "100644",
+          "size_bytes": 54747,
+          "sha256": "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000003.json",
+          "mode": "100644",
+          "size_bytes": 82654,
+          "sha256": "sha256:dccdcd5b6d0349b5b1bf7c6b6f211f96fabd1eb291baae18b11cca36a5a0189d"
+        }
+      },
+      {
+        "id": "000004",
+        "name": "expand_membership_rbac_mutations",
+        "predecessor_id": "000003",
+        "phase": "expand",
+        "schema_from": "000003",
+        "schema_to": "000004",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
+          "mode": "100644",
+          "size_bytes": 30107,
+          "sha256": "sha256:7664c8e67e8ee5f561395bd58f7156ac437ba0ac20547216dedbcc89dbc3cba7"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000003.json",
+          "mode": "100644",
+          "size_bytes": 82654,
+          "sha256": "sha256:dccdcd5b6d0349b5b1bf7c6b6f211f96fabd1eb291baae18b11cca36a5a0189d"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000004.json",
+          "mode": "100644",
+          "size_bytes": 100937,
+          "sha256": "sha256:0b9246f8d2ceded8d26cdf401841d2078cf9ccce96d6946269f5f805769dc043"
+        }
+      },
+      {
+        "id": "000005",
+        "name": "close_membership_binding_authority",
+        "predecessor_id": "000004",
+        "phase": "expand",
+        "schema_from": "000004",
+        "schema_to": "000005",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
+          "mode": "100644",
+          "size_bytes": 6550,
+          "sha256": "sha256:9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000004.json",
+          "mode": "100644",
+          "size_bytes": 100937,
+          "sha256": "sha256:0b9246f8d2ceded8d26cdf401841d2078cf9ccce96d6946269f5f805769dc043"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000005.json",
+          "mode": "100644",
+          "size_bytes": 101801,
+          "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
+        }
+      },
+      {
+        "id": "000006",
+        "name": "close_subject_issuer_validation",
+        "predecessor_id": "000005",
+        "phase": "expand",
+        "schema_from": "000005",
+        "schema_to": "000006",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+          "mode": "100644",
+          "size_bytes": 3061,
+          "sha256": "sha256:5b24e8462c90b7d430717ac746e00f999b21f21eae0fb855444379807c0b47e5"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000005.json",
+          "mode": "100644",
+          "size_bytes": 101801,
+          "sha256": "sha256:a601975275586307c9b051f7493be70f7130fee956649096f8a2759a849bbbf4"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000006.json",
+          "mode": "100644",
+          "size_bytes": 102509,
+          "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449"
+        }
+      },
+      {
+        "id": "000007",
+        "name": "expand_durable_coordination_kernel",
+        "predecessor_id": "000006",
+        "phase": "expand",
+        "schema_from": "000006",
+        "schema_to": "000007",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+          "mode": "100644",
+          "size_bytes": 41875,
+          "sha256": "sha256:f6f542f9f1df906217e76bff6f57af44441873dc654216a83bbb9a7af0ba0385"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000006.json",
+          "mode": "100644",
+          "size_bytes": 102509,
+          "sha256": "sha256:a254485d6905075331c4625e94f04483f11208149c77d7124e2e7212aa548449"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000007.json",
+          "mode": "100644",
+          "size_bytes": 160268,
+          "sha256": "sha256:97bea5dcd8b8584da838d73d6e1f360bf8b3b2135060036140bdbab5c274088b"
+        }
+      },
+      {
+        "id": "000008",
+        "name": "add_durable_coordination_service",
+        "predecessor_id": "000007",
+        "phase": "expand",
+        "schema_from": "000007",
+        "schema_to": "000008",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+          "mode": "100644",
+          "size_bytes": 37413,
+          "sha256": "sha256:c64e92c778318571169f0b949abcd342efcd2c3b429c68969c143d413a82a43c"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000007.json",
+          "mode": "100644",
+          "size_bytes": 160268,
+          "sha256": "sha256:97bea5dcd8b8584da838d73d6e1f360bf8b3b2135060036140bdbab5c274088b"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000008.json",
+          "mode": "100644",
+          "size_bytes": 192231,
+          "sha256": "sha256:ab0d5b034b20392a609d55fafe693881cfcea4085f76519a95bed1e6837ebaca"
+        }
+      }
+    ]
+  },
+  "schema_bundle_digest": "sha256:9084475d8db1e74afeb0d77ffaf9e253c4e6b6c67c1ba09a7c45483a42cc15ab"
+}

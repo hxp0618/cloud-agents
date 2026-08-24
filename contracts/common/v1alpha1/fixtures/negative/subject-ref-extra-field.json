@@ -1,0 +1,6 @@
+{
+  "kind": "user",
+  "issuer": "https://Issuer.Example/%7Etenant",
+  "subject": "José/用户",
+  "displayName": "must-not-enter-authority"
+}

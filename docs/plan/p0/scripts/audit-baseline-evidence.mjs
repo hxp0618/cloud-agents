@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDirectory, "../../../..");
 const baselineDirectory = resolve(scriptDirectory, "../baseline");
+const baselineReadmePath = join(baselineDirectory, "README.md");
 
 const synara = readJson(join(baselineDirectory, "synara-legacy.json"));
 const t3 = readJson(join(baselineDirectory, "t3-embedded.json"));
@@ -16,6 +17,7 @@ const referenceHost = readJson(join(baselineDirectory, "reference-host-negative.
 const synaraLinux = readJson(join(baselineDirectory, "synara-linux-amd64-execution.json"));
 const t3Linux = readJson(join(baselineDirectory, "t3-linux-amd64-execution.json"));
 const runtimeLinux = readJson(join(baselineDirectory, "runtime-linux-amd64-execution.json"));
+auditBaselineReadme(baselineReadmePath);
 const requiredProfileCoverage = {
   "synara-legacy-managed-agent": [
     "provider-host-protocol-2.2/2.3-history",
@@ -187,6 +189,27 @@ process.stdout.write(
     2,
   )}\n`,
 );
+
+function auditBaselineReadme(path) {
+  const text = readFileSync(path, "utf8");
+  const required = [
+    "platformP0CharacterizationClosure=true/status=COMPLETE",
+    "platformP0CharacterizationClosure.complete=true/status=COMPLETE",
+    "platformP0CharacterizationClosure.doesNotDecideAggregateGate=true",
+    "m1BehaviorClosure.complete=false/status=NOT_RUN",
+    "aggregateGateDecision=NOT_CLAIMED",
+  ];
+  for (const marker of required) {
+    if (!text.includes(marker)) fail(`baseline README omitted current marker ${marker}`);
+  }
+  const stale = [
+    "platformP0CharacterizationClosure=false",
+    "platformP0CharacterizationClosure.complete=false/status=INCOMPLETE",
+  ];
+  for (const marker of stale) {
+    if (text.includes(marker)) fail(`baseline README retained stale marker ${marker}`);
+  }
+}
 
 function auditExecutionBinding(manifest, execution) {
   const binding = manifest.linuxExecutionEvidence;

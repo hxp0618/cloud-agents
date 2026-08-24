@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/permission.schema.json",
+  "title": "Permission",
+  "type": "string",
+  "minLength": 5,
+  "maxLength": 128,
+  "pattern": "^[a-z][a-z0-9-]*\\.(?:create|get|list|watch|update|delete|act|bind)$"
+}

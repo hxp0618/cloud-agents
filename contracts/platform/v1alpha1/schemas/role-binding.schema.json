@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/role-binding.schema.json",
+  "title": "RoleBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "RoleBinding"
+    },
+    "metadata": {
+      "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantRef", "subject", "roleName", "roleVersion", "scope", "state"],
+      "properties": {
+        "tenantRef": {
+          "$ref": "../../../common/v1alpha1/schemas/tenant-ref.schema.json"
+        },
+        "subject": {
+          "$ref": "../../../common/v1alpha1/schemas/subject-ref.schema.json"
+        },
+        "roleName": {
+          "type": "string",
+          "enum": [
+            "platform.admin",
+            "tenant.admin",
+            "organization.admin",
+            "project.admin",
+            "project.operator",
+            "project.developer",
+            "project.viewer"
+          ]
+        },
+        "roleVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scope": {
+          "$ref": "../../../common/v1alpha1/schemas/authorization-scope.schema.json"
+        },
+        "state": {
+          "type": "string",
+          "enum": ["active", "revoked"]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "roleName": { "const": "platform.admin" } },
+            "required": ["roleName"]
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "$ref": "../../../common/v1alpha1/schemas/platform-authorization-scope.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "roleName": { "const": "tenant.admin" } },
+            "required": ["roleName"]
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "$ref": "../../../common/v1alpha1/schemas/tenant-authorization-scope.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "roleName": { "const": "organization.admin" } },
+            "required": ["roleName"]
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "$ref": "../../../common/v1alpha1/schemas/organization-authorization-scope.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "roleName": {
+                "enum": ["project.admin", "project.operator", "project.developer", "project.viewer"]
+              }
+            },
+            "required": ["roleName"]
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "$ref": "../../../common/v1alpha1/schemas/project-authorization-scope.schema.json"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata.tenantRef == spec.tenantRef",
+    "spec.scope.ref belongs to spec.tenantRef when scope level is not platform",
+    "roleName and roleVersion resolve to an active explicit permission set",
+    "unknown roles and wildcard permissions fail closed"
+  ]
+}

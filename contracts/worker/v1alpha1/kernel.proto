@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: MIT
+//
+// Proto3 is the only editable wire authority for Worker/Supervisor and
+// Platform Adapter RPCs. JSON fixtures beside this file are conformance
+// vectors, not an alternate JSON transport.
+
+syntax = "proto3";
+
+package cloudagents.worker.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1;workerv1alpha1";
+
+// NamespaceRef is the explicit Proto mapping of the cross-contract reference.
+//
+// Validators MUST enforce the following shared semantic rules:
+//   * namespace and kind are 1..63 ASCII characters matching
+//     ^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$;
+//   * id is 1..256 Unicode code points after the shared normalization API
+//     converts valid UTF-8 to NFC, without trimming, lowercasing, path cleaning,
+//     or percent decoding;
+//   * canonical bytes are RFC 8785 JSON of {namespace, kind, id};
+//   * the digest is SHA-256 of those bytes and the derived identifier is
+//     urn:cloud-agents:ref:sha256:<64 lowercase hex>.
+//
+// A consumer MUST reject invalid namespace/kind/UTF-8/length. Only the shared
+// normalization API may convert id to NFC; authorization, signatures, storage,
+// and canonicalization must consume its normalized output.
+message NamespaceRef {
+  string namespace = 1;
+  string kind = 2;
+  string id = 3;
+}
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+// Unknown numeric capability values are preserved by Proto3 but MUST be
+// rejected during negotiation and operation admission.
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_NEGOTIATION = 1;
+  CAPABILITY_HEALTH = 2;
+  CAPABILITY_OPERATION_DISPATCH = 3;
+  CAPABILITY_DURABLE_RECEIPTS = 4;
+  CAPABILITY_FINALIZERS = 5;
+  CAPABILITY_ADAPTER_REGISTRATION = 6;
+}
+
+message ProtocolDescriptor {
+  ProtocolVersion current_version = 1;
+  ProtocolVersion minimum_compatible_version = 2;
+  repeated Capability capabilities = 3;
+  // Maximum serialized extension_payload size accepted by this endpoint.
+  uint32 max_payload_bytes = 4;
+  // Maximum operation deadline horizon accepted by this endpoint.
+  uint32 max_deadline_seconds = 5;
+  // Maximum serialized request or response accepted before protobuf decode.
+  uint32 max_wire_message_bytes = 6;
+  // Maximum item count accepted for any repeated field unless a field has a
+  // smaller documented limit.
+  uint32 max_repeated_items = 7;
+  // Maximum UTF-8 bytes accepted for a string unless a field has a smaller
+  // documented limit.
+  uint32 max_string_bytes = 8;
+}
+
+// WorkloadIdentity is derived from, or matched against, the identity
+// authenticated by the mTLS transport. A request-carried value is only an
+// expected-peer constraint, never caller authentication. Generation and
+// fencing checks cannot establish or replace mTLS identity.
+message WorkloadIdentity {
+  string spiffe_id = 1;
+  string trust_domain = 2;
+  // Raw 32-byte SHA-256 digest of the expected leaf certificate, when pinned.
+  bytes leaf_certificate_sha256 = 3;
+}
+
+message NegotiationRequest {
+  // At most 8 entries.
+  repeated ProtocolVersion supported_versions = 1;
+  // At most 64 entries; unknown numeric values fail closed.
+  repeated Capability required_capabilities = 2;
+  WorkloadIdentity expected_server_identity = 3;
+}
+
+message NegotiationResponse {
+  ProtocolVersion selected_version = 1;
+  // At most 64 entries and a subset of server.capabilities.
+  repeated Capability accepted_capabilities = 2;
+  ProtocolDescriptor server = 3;
+  // Derived from the authenticated transport, not copied from request data.
+  WorkloadIdentity authenticated_server_identity = 4;
+  // Server-issued opaque identifier. It is not a bearer credential and MUST
+  // be bound to both authenticated workload identities and selected_version.
+  string negotiation_id = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// NegotiationBinding is echoed on every post-negotiation request. The server
+// MUST compare all three fields with authoritative, unexpired negotiation
+// state bound to the current mTLS client/server identities. A request-carried
+// expiry can never extend server state or authenticate either workload.
+message NegotiationBinding {
+  ProtocolVersion protocol_version = 1;
+  string negotiation_id = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+enum HealthState {
+  HEALTH_STATE_UNSPECIFIED = 0;
+  HEALTH_STATE_SERVING = 1;
+  HEALTH_STATE_DEGRADED = 2;
+  HEALTH_STATE_NOT_SERVING = 3;
+}
+
+message HealthRequest {
+  NegotiationBinding negotiation = 1;
+  repeated Capability required_capabilities = 2;
+  WorkloadIdentity expected_server_identity = 3;
+}
+
+message HealthResponse {
+  HealthState state = 1;
+  ProtocolDescriptor protocol = 2;
+  google.protobuf.Timestamp observed_at = 3;
+}
+
+// FencingProof is request-only. Its raw token MUST NOT be logged, persisted,
+// copied into a DurableReceipt, or interpreted as workload identity.
+message FencingProof {
+  string lease_id = 1;
+  uint64 generation = 2;
+  bytes token = 3;
+}
+
+// FencingStamp is safe for durable facts because it carries only a digest.
+message FencingStamp {
+  string lease_id = 1;
+  uint64 generation = 2;
+  // Raw 32-byte SHA-256 digest of the request fencing token.
+  bytes token_sha256 = 3;
+}
+
+// BoundedPayload is an extension seam inside the Proto wire. It is not a JSON
+// DTO. Admission MUST reject a payload whose bytes exceed the negotiated cap,
+// whose declared size differs from data length, or whose digest is invalid.
+message BoundedPayload {
+  string media_type = 1;
+  bytes data = 2;
+  uint32 declared_size_bytes = 3;
+  // Raw 32-byte SHA-256 digest of data.
+  bytes sha256 = 4;
+}
+
+message ProbeOperation {
+  string probe_name = 1;
+}
+
+message ValidateBindingOperation {
+  NamespaceRef binding = 1;
+}
+
+message OperationCommand {
+  oneof command {
+    ProbeOperation probe = 1;
+    ValidateBindingOperation validate_binding = 2;
+  }
+  // Reserved extension bytes are bounded by ProtocolDescriptor and cannot
+  // contain credentials, pairing URLs, broker grants, or fencing tokens.
+  BoundedPayload extension_payload = 15;
+}
+
+message FinalizerSpec {
+  // Stable lowercase dotted name, unique within an operation.
+  string name = 1;
+  string idempotency_key = 2;
+}
+
+// OperationEnvelope is immutable for one operation_id. Reuse of an
+// idempotency_key with different canonical content MUST fail closed.
+// canonical_request_sha256 is SHA-256 of the RFC 8785 JSON projection defined
+// in README.md. The projection excludes the raw fencing token and this digest,
+// but includes lease/generation, deadline, command and ordered finalizers.
+message OperationEnvelope {
+  string operation_id = 1;
+  string idempotency_key = 2;
+  NamespaceRef scope = 3;
+  FencingProof fencing = 4;
+  google.protobuf.Timestamp deadline = 5;
+  Capability required_capability = 6;
+  OperationCommand command = 7;
+  // At most 64 entries with unique name and idempotency_key values.
+  repeated FinalizerSpec finalizers = 8;
+  // Raw 32-byte digest recomputed by the receiver before any side effect.
+  bytes canonical_request_sha256 = 9;
+}
+
+message OperationAttemptEnvelope {
+  OperationEnvelope operation = 1;
+  string attempt_id = 2;
+  // Starts at one and increases monotonically for a given operation_id.
+  uint32 attempt_number = 3;
+  WorkloadIdentity expected_executor_identity = 4;
+  NegotiationBinding negotiation = 5;
+}
+
+enum OperationOutcome {
+  OPERATION_OUTCOME_UNSPECIFIED = 0;
+  OPERATION_OUTCOME_ACCEPTED = 1;
+  OPERATION_OUTCOME_RUNNING = 2;
+  OPERATION_OUTCOME_SUCCEEDED = 3;
+  OPERATION_OUTCOME_FAILED = 4;
+  OPERATION_OUTCOME_CANCELLED = 5;
+  OPERATION_OUTCOME_DEADLINE_EXCEEDED = 6;
+  OPERATION_OUTCOME_FENCED = 7;
+}
+
+enum FinalizerState {
+  FINALIZER_STATE_UNSPECIFIED = 0;
+  FINALIZER_STATE_PENDING = 1;
+  FINALIZER_STATE_RUNNING = 2;
+  FINALIZER_STATE_COMPLETED = 3;
+  FINALIZER_STATE_FAILED = 4;
+}
+
+message FinalizerReceipt {
+  string name = 1;
+  string idempotency_key = 2;
+  FinalizerState state = 3;
+}
+
+message ResultReference {
+  NamespaceRef resource = 1;
+  // Lowercase hex SHA-256 of the immutable result object.
+  string sha256 = 2;
+}
+
+// DurableReceipt deliberately has no arbitrary metadata, secret, token, URL,
+// or payload field. redacted_summary is bounded to 512 UTF-8 bytes and MUST be
+// rejected when a secret classifier reports a credential-bearing value.
+message DurableReceipt {
+  string receipt_id = 1;
+  string operation_id = 2;
+  string attempt_id = 3;
+  string idempotency_key = 4;
+  uint64 sequence = 5;
+  FencingStamp fencing = 6;
+  OperationOutcome outcome = 7;
+  google.protobuf.Timestamp observed_at = 8;
+  // At most 64 entries.
+  repeated FinalizerReceipt finalizers = 9;
+  // At most 64 entries.
+  repeated ResultReference results = 10;
+  string stable_error_code = 11;
+  string redacted_summary = 12;
+}
+
+message ReceiptRequest {
+  string operation_id = 1;
+  string receipt_id = 2;
+  FencingProof fencing = 3;
+  WorkloadIdentity expected_server_identity = 4;
+  NegotiationBinding negotiation = 5;
+  Capability required_capability = 6;
+}

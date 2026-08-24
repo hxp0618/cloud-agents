@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-preflight-registry-v1.schema.json",
+  "title": "RunnerLedgerPreflightRegistryV1",
+  "description": "Generated, digest-bound contract-only runner ledger preflight registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "sourceDigest",
+    "stateMachineDigest",
+    "policyDigest",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-preflight-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/runner-ledger-preflight" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "stateMachineDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": {
+          "$ref": "runner-ledger-preflight-registry-source-v1.schema.json#/$defs/profile"
+        }
+      }
+    },
+    "stateMachine": {
+      "$ref": "runner-ledger-preflight-registry-source-v1.schema.json#/$defs/stateMachine"
+    },
+    "selector": {
+      "$ref": "runner-ledger-preflight-registry-source-v1.schema.json#/$defs/selector"
+    },
+    "implementationBoundary": {
+      "$ref": "runner-ledger-preflight-registry-source-v1.schema.json#/$defs/implementationBoundary"
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "consumerLookup": "exact profileId plus profileDigest",
+    "databaseHandle": "forbidden",
+    "writerAuthority": "none"
+  }
+}

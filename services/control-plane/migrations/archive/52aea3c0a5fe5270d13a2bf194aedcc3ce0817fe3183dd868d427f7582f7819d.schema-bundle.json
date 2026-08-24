@@ -1,0 +1,143 @@
+{
+  "format_version": "cloud-agents-platform-schema-bundle/v1",
+  "schema_bundle": {
+    "lineage": "cloud-agents-platform",
+    "schema_head": "000002",
+    "advisory_lock": {
+      "domain": "cloud-agents-platform:migrations:v1",
+      "derivation": "sha256-first-8-bytes-signed-big-endian-int64",
+      "key_int64_decimal": "-1047838957622507638"
+    },
+    "global_table_authority": {
+      "path": "services/control-plane/migrations/catalog/global-table-authority-v1.json",
+      "mode": "100644",
+      "size_bytes": 658,
+      "sha256": "sha256:d8330d06ead9a1cbc68c89e1741dcb3dc43d88d3e843590fea1ca56e242cb53d"
+    },
+    "projection_scope_authority": {
+      "default_acl_owners": ["cloud_agents_migration_owner"],
+      "object_creator_closure": ["cloud_agents_migration_owner"]
+    },
+    "predecessor_schema_bundle": null,
+    "migrations": [
+      {
+        "id": "000001",
+        "name": "expand_migration_kernel",
+        "predecessor_id": null,
+        "phase": "expand",
+        "schema_from": "absent",
+        "schema_to": "000001",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+          "mode": "100644",
+          "size_bytes": 5161,
+          "sha256": "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "accepted_states": [
+            {
+              "state": "schema_absent",
+              "scope": {
+                "scope_kind": "predecessor",
+                "schema_head": null,
+                "migration_id": "000001",
+                "through_statement_index": null,
+                "declared_objects": []
+              },
+              "schema": "cloud_agents"
+            },
+            {
+              "state": "schema_present",
+              "scope": {
+                "scope_kind": "predecessor",
+                "schema_head": null,
+                "migration_id": "000001",
+                "through_statement_index": null,
+                "declared_objects": []
+              },
+              "body": {
+                "schema": {
+                  "name": "cloud_agents",
+                  "owner": "cloud_agents_migration_owner",
+                  "explicit_acl": {
+                    "catalog_value": "null",
+                    "entries": []
+                  },
+                  "effective_acl": [
+                    {
+                      "grantor": "cloud_agents_migration_owner",
+                      "grantee": "cloud_agents_migration_owner",
+                      "privileges": ["CREATE", "USAGE"],
+                      "grantable": ["CREATE", "USAGE"],
+                      "origin": "owner_implicit"
+                    }
+                  ],
+                  "comment": null,
+                  "security_labels": []
+                },
+                "default_acl": [],
+                "relations": [],
+                "functions": [],
+                "dependencies": [],
+                "object_count": 0,
+                "declared_objects": [],
+                "denied_objects": []
+              }
+            }
+          ]
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000001.json",
+          "mode": "100644",
+          "size_bytes": 12074,
+          "sha256": "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f"
+        }
+      },
+      {
+        "id": "000002",
+        "name": "expand_tenancy",
+        "predecessor_id": "000001",
+        "phase": "expand",
+        "schema_from": "000001",
+        "schema_to": "000002",
+        "compatible_control_plane_min": "0.1.0-alpha.1",
+        "compatible_control_plane_max": "0.2.0-0",
+        "compatible_worker_min": "0.1.0-alpha.1",
+        "compatible_worker_max": "0.2.0-0",
+        "sql_artifact": {
+          "path": "services/control-plane/migrations/000002_expand_tenancy.sql",
+          "mode": "100644",
+          "size_bytes": 30896,
+          "sha256": "sha256:d084f003928c1122da7bb88727c12a3e298548514f5da19cb3da14a3a754827a"
+        },
+        "transaction_mode": "transactional",
+        "reentrancy": "ledger_guarded",
+        "rollback_boundary": "retain_expanded_schema",
+        "requires_live_instance_preflight": false,
+        "requires_pitr_preflight": false,
+        "predecessor_catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000001.json",
+          "mode": "100644",
+          "size_bytes": 12074,
+          "sha256": "sha256:d9a6e5accb1b6b5765c3f602f7b54781f611a3d8ae83395cb177599c441e946f"
+        },
+        "catalog_contract": {
+          "path": "services/control-plane/migrations/catalog/schema-000002.json",
+          "mode": "100644",
+          "size_bytes": 54747,
+          "sha256": "sha256:c242d90cb3dfa1a8f7f1782bad557bfcd18257c4432a114e8413c9407c860bd9"
+        }
+      }
+    ]
+  },
+  "schema_bundle_digest": "sha256:52aea3c0a5fe5270d13a2bf194aedcc3ce0817fe3183dd868d427f7582f7819d"
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/organization-authorization-scope.schema.json",
+  "title": "OrganizationAuthorizationScope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["level", "ref"],
+  "properties": {
+    "level": { "const": "organization" },
+    "ref": { "$ref": "organization-ref.schema.json" }
+  }
+}

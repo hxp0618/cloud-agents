@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-idempotency-projection.schema.json",
+  "title": "ManagedAgentCreateProjectIdempotencyProjection",
+  "description": "Canonical request intent for the managedAgentCreateProject idempotency digest. Transport idempotency and request IDs are deliberately excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operationId", "path", "body"],
+  "properties": {
+    "operationId": {
+      "const": "managedAgentCreateProject"
+    },
+    "path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId"],
+      "properties": {
+        "tenantId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      }
+    },
+    "body": {
+      "$ref": "project-create-request.schema.json"
+    }
+  },
+  "x-cloud-agents-canonicalization": {
+    "profile": "cloud-agents-http-idempotency/managedAgentCreateProject/v1alpha1",
+    "projection": ["operationId", "path.tenantId", "body"],
+    "excluded": ["all transport header names and values"],
+    "requiredButExcluded": ["Idempotency-Key", "X-Request-Id"],
+    "pathAuthority": "path.tenantId",
+    "algorithm": "RFC8785",
+    "digest": "SHA-256",
+    "digestText": "sha256:<64-lowercase-hex>",
+    "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "resolved organization tenant equals path.tenantId before digest admission",
+    "body is strict ProjectCreateRequest and cannot carry tenantId",
+    "Idempotency-Key and X-Request-ID never enter the projection"
+  ]
+}

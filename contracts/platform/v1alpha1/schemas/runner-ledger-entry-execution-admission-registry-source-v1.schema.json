@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-entry-execution-admission-registry-source-v1.schema.json",
+  "title": "RunnerLedgerEntryExecutionAdmissionRegistrySourceV1",
+  "description": "Editable source for the separately versioned first-attempt execution-admission contract. It does not reinterpret the historical close-only permit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-runner-ledger-entry-execution-admission-source/v1"
+    },
+    "registryId": {
+      "const": "cloud-agents/platform/runner-ledger-entry-execution-admission"
+    },
+    "profile": { "$ref": "#/$defs/profile" },
+    "stateMachine": { "$ref": "#/$defs/stateMachine" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "stateMachineId",
+        "canonicalization",
+        "identityBindings",
+        "errorPrecedence",
+        "transitionMatrix"
+      ],
+      "properties": {
+        "profileId": { "const": "runner-ledger-entry-execution-admission/v1" },
+        "stateMachineId": { "const": "runner-ledger-entry-execution-admission/v1" },
+        "canonicalization": {
+          "const": {
+            "profile": "cloud-agents-runner-ledger-entry-execution-admission/v1-rfc8785-sha256",
+            "algorithm": "RFC8785",
+            "digest": "SHA-256",
+            "comparison": "exact_string_no_rewrite"
+          }
+        },
+        "identityBindings": {
+          "const": {
+            "entryAdmissionProfile": "exact_immutable_runner_ledger_entry_admission_v1_generated_identity",
+            "consumedConsumerClaim": "exact_entry_action_same_verifier_one_shot_claim",
+            "currentEvidenceBoundary": "exact_candidate_generation_journal_recovery_projection_and_cursor_before_and_after_database_read",
+            "selectedEntry": "exact_ordered_next_entry_index_id_ledger_row_and_digest",
+            "planClosure": "exact_nonempty_ordered_entry_plan_count_and_domain_separated_digest",
+            "databaseSession": "exact_connected_role_settings_and_migration_role_same_session_identity",
+            "ledgerPrefix": "exact_length_head_rows_and_digest_before_and_after_catalog_projection",
+            "catalogProjection": "exact_initial_or_cumulative_verified_projection_subject_and_result",
+            "advisoryLock": "exact_signed_key_held_until_success_writer_or_exact_close",
+            "executionPermit": "registry_backed_noncopyable_one_shot_same_session_authority"
+          }
+        },
+        "errorPrecedence": {
+          "const": {
+            "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_NOT_IMPLEMENTED",
+            "contextOrOperationalFailure": "STABLE_CONTEXT_OR_JOURNAL_FAILED_BEFORE_NOT_IMPLEMENTED",
+            "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_NOT_IMPLEMENTED",
+            "unsupportedTransition": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+            "closeOrUnlockUnknown": "CLEANUP_FAILURE_INVALIDATES_EXECUTION_PERMIT_AND_DOMINATES_NOT_IMPLEMENTED",
+            "oneShotConsumption": "SECOND_TRANSITION_FAILS_CLOSED",
+            "unknownOutcome": "FAIL_CLOSED_NO_RETRY_FROM_ORDINARY_FACT_OR_CLOSE_ONLY_PERMIT"
+          }
+        },
+        "transitionMatrix": {
+          "const": {
+            "empty_brand_new": [
+              {
+                "state": "brand_new",
+                "action": "begin_first_attempt",
+                "executionAction": "prepare_entry_execution"
+              },
+              {
+                "state": "brand_new_inherited",
+                "action": "begin_first_attempt",
+                "executionAction": "prepare_entry_execution"
+              }
+            ],
+            "partial_next_entry": [
+              {
+                "state": "brand_new_inherited",
+                "action": "begin_first_attempt_next_entry",
+                "executionAction": "prepare_entry_execution"
+              },
+              {
+                "state": "terminal",
+                "action": "begin_first_attempt_next_entry",
+                "executionAction": "prepare_entry_execution"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "stateMachine": {
+      "const": {
+        "id": "runner-ledger-entry-execution-admission/v1",
+        "initialState": "unclassified",
+        "states": [
+          "execution_admission_closed",
+          "execution_admission_ready",
+          "session_revalidating",
+          "unclassified",
+          "unknown_rejected"
+        ],
+        "terminalStates": ["execution_admission_closed", "unknown_rejected"],
+        "transitions": [
+          {
+            "from": "unclassified",
+            "event": "select_first_attempt_entry",
+            "to": "session_revalidating"
+          },
+          { "from": "unclassified", "event": "select_unknown", "to": "unknown_rejected" },
+          {
+            "from": "session_revalidating",
+            "event": "revalidate_exact_boundary",
+            "to": "execution_admission_ready"
+          },
+          {
+            "from": "session_revalidating",
+            "event": "revalidate_failed",
+            "to": "execution_admission_closed"
+          },
+          {
+            "from": "execution_admission_ready",
+            "event": "close_without_mutation",
+            "to": "execution_admission_closed"
+          }
+        ]
+      }
+    },
+    "selector": {
+      "const": {
+        "mode": "generated_registry_only",
+        "profileSelection": "exact_profile_id_and_digest",
+        "entryAdmissionProfileSelection": "exact_immutable_runner_ledger_entry_admission_v1_generated_identity",
+        "callerProvidedProfile": "forbidden",
+        "callerProvidedDispatch": "forbidden",
+        "closeOnlyPermitAsExecutionPermit": "forbidden",
+        "ordinaryFactAsPermit": "forbidden",
+        "admissionSource": "consumed_same_verifier_entry_consumer_claim_only"
+      }
+    },
+    "implementationBoundary": {
+      "const": {
+        "runnerConsumer": "entry_execution_contract_only",
+        "entryAdmissionV1": "immutable_close_only_no_consumer",
+        "existingBrandNewWriter": "separate_existing_authority_chain",
+        "executionPermit": "exact_success_writer_v1_after_fixed_review",
+        "entryWriter": "separate_generated_success_writer_only",
+        "recoveryWriter": "not_implemented",
+        "databaseSession": "fresh_dedicated_locked_until_success_writer_or_exact_close",
+        "databaseTransaction": "not_opened_by_admission",
+        "beginMigration": "forbidden_in_admission",
+        "sqlExecution": "forbidden_in_admission",
+        "ledgerMutation": "forbidden_in_admission",
+        "evidenceMutation": "forbidden_in_admission",
+        "httpSurface": "not_implemented",
+        "p2Surface": "not_implemented",
+        "providerSideEffects": "forbidden",
+        "productionDatabaseWrites": "not_authorized",
+        "deployment": "not_authorized",
+        "publication": "not_authorized",
+        "gateStatus": "all_gates_open"
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "authority": "contract_only_ordinary_profile",
+    "historicalCloseOnlyPermit": "forbidden_as_execution_authority",
+    "ordinaryFactAsPermit": "forbidden"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "format_version": "cloud-agents-platform-migration-fixtures/v1",
+  "cases": [
+    {
+      "name": "rfc8785",
+      "kind": "golden_json",
+      "path": "golden/rfc8785.json",
+      "expected": "accept"
+    },
+    {
+      "name": "signed-int64",
+      "kind": "golden_json",
+      "path": "golden/signed-int64.json",
+      "expected": "accept"
+    },
+    {
+      "name": "sql-split",
+      "kind": "golden_sql_descriptor",
+      "path": "golden/sql-split.json",
+      "expected": "accept"
+    },
+    {
+      "name": "ustar",
+      "kind": "golden_ustar_descriptor",
+      "path": "golden/ustar.json",
+      "expected": "accept"
+    },
+    {
+      "name": "ancestor-ledger",
+      "kind": "golden_lineage",
+      "path": "golden/ancestor-ledger.json",
+      "expected": "accept"
+    },
+    {
+      "name": "duplicate-key",
+      "kind": "negative_raw_json",
+      "path": "negative/duplicate-key.case.json",
+      "expected": "reject",
+      "expected_error": "DUPLICATE_JSON_KEY"
+    },
+    {
+      "name": "escaped-equivalent-key",
+      "kind": "negative_raw_json",
+      "path": "negative/escaped-equivalent-key.case.json",
+      "expected": "reject",
+      "expected_error": "DUPLICATE_JSON_KEY"
+    },
+    {
+      "name": "unicode-whitespace",
+      "kind": "negative_raw_json",
+      "path": "negative/unicode-whitespace.case.json",
+      "expected": "reject",
+      "expected_error": "INVALID_JSON"
+    },
+    {
+      "name": "ancestor-cycle",
+      "kind": "negative_lineage",
+      "path": "negative/ancestor-cycle.json",
+      "expected": "reject",
+      "expected_error": "ANCESTOR_CYCLE"
+    },
+    {
+      "name": "ancestor-descriptor-cases",
+      "kind": "negative_ancestor_descriptors",
+      "path": "negative/ancestor-descriptor-cases.json",
+      "expected": "reject",
+      "expected_error": "ANCESTOR_DESCRIPTOR"
+    },
+    {
+      "name": "ledger-rollback",
+      "kind": "negative_ledger",
+      "path": "negative/ledger-rollback.json",
+      "expected": "reject",
+      "expected_error": "LEDGER_BUNDLE_ROLLBACK"
+    }
+  ]
+}

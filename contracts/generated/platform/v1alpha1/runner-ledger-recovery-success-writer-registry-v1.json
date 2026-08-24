@@ -1,0 +1,244 @@
+{
+  "formatVersion": "cloud-agents-runner-ledger-recovery-registry/v1",
+  "suiteId": "cloud-agents/platform/runner-ledger-recovery",
+  "family": "recovery_success_writer",
+  "registryId": "cloud-agents/platform/runner-ledger-recovery-success-writer",
+  "sourceDigest": "sha256:50fd4a9590e1a64a7f83471d185ca91725dca88683d9e4f1b8366cc63088ff66",
+  "suiteSourceDigest": "sha256:ac63bce8b701a3dff1452eeeae4309d2d3c9151e0026dd913720d3ce3f41802c",
+  "stateMachineDigest": "sha256:cfa74311ea0ad8a28a1e5b712d9148d555d49b09828a1362729c90fa57fff57e",
+  "policyDigest": "sha256:9e7e7605fc33ae0959599d2cc0f3d8e373d9efa5a7d948e49b47e198dbd7bf28",
+  "predecessorBinding": {
+    "registryId": "cloud-agents/platform/runner-ledger-recovery-execution-admission",
+    "registryDigest": "sha256:32a68d940653a010f52c45d22c58d1e7ab6c7441bdf1bcd1375b89f411742143",
+    "stateMachineDigest": "sha256:d390beaab5c3476874702734fa08c52bbb6e930a03063cfa68fbe4b35e971ab4",
+    "policyDigest": "sha256:91d7e7839add44120e87cdcd8d45452caa6605f6c54ec5fa7aadc3e4d26a36ba",
+    "profileId": "runner-ledger-recovery-execution-admission/v1",
+    "profileDigest": "sha256:469f0362803911717f68f379214a149fab554589b94a8877578c0cd9c74ee86d"
+  },
+  "historicalBindings": [],
+  "profile": {
+    "profileDigest": "sha256:64bf873dcc1e68b57d9ec15719e4da9b5d9c3e9e0059dd2231d4f32bef6a300d",
+    "spec": {
+      "profileId": "runner-ledger-recovery-success-writer/v1",
+      "stateMachineId": "runner-ledger-recovery-success-writer/v1",
+      "action": "execute_one_recovery_attempt",
+      "canonicalization": {
+        "profile": "cloud-agents-runner-ledger-recovery-success-writer/v1-rfc8785-sha256",
+        "algorithm": "RFC8785",
+        "digest": "SHA-256",
+        "comparison": "exact_string_no_rewrite"
+      },
+      "identityBindings": {
+        "predecessorProfile": "exact_generated_runner-ledger-recovery-execution-admission/v1",
+        "consumedAuthority": "exact_registry_backed_one_shot_runner-ledger-recovery-execution-admission/v1",
+        "currentEvidenceBoundary": "exact_same_verifier_full_root_generation_journal_cursor_before_and_after_action",
+        "generationCursor": "exact_generation_journal_checkpoint_terminal_resolution_and_continuation",
+        "ledgerPrefix": "exact_length_head_rows_and_domain_separated_digest",
+        "catalogProjection": "exact_verified_before_after_and_cumulative_catalog",
+        "executionPolicy": "exact_ordered_migrations_statement_plans_and_max_attempts",
+        "actionReceipt": "exact_execute_one_recovery_attempt_closed_receipt_or_read_only_result",
+        "oneShotAuthority": "registry_backed_noncopyable_pointer_owner_bound_single_consume",
+        "crossProfileRejection": "literal_copy_stale_foreign_replaced_and_other_profile_fail_closed"
+      },
+      "errorPrecedence": {
+        "storedContradiction": "MIGRATION_EVIDENCE_JOURNAL_CORRUPT_BEFORE_ACTION",
+        "contextOrOperationalFailure": "STABLE_CONTEXT_OR_OPERATIONAL_FAILURE_BEFORE_ACTION",
+        "recoveryRequired": "MIGRATION_EVIDENCE_RECOVERY_REQUIRED_BEFORE_UNSUPPORTED",
+        "unsupportedTransition": "MIGRATION_PROJECTION_NOT_IMPLEMENTED",
+        "mutationOutcomeUnknown": "UNKNOWN_MUTATION_REVOKES_OLD_CURSOR_AND_REQUIRES_RECOVERY",
+        "cleanupUnknown": "CLEANUP_UNCERTAINTY_DOMINATES_ORDINARY_RESULT",
+        "oneShotConsumption": "OLD_PERMIT_AND_SECOND_TRANSITION_FAIL_CLOSED"
+      },
+      "pairBindings": [],
+      "permitFromProfileId": "runner-ledger-recovery-execution-admission/v1"
+    }
+  },
+  "stateMachine": {
+    "id": "runner-ledger-recovery-success-writer/v1",
+    "initialState": "unclassified",
+    "states": [
+      "closed_failure",
+      "commit_intent_durable",
+      "commit_known_committed",
+      "entry_committed_complete",
+      "entry_committed_next_entry",
+      "execution_ready",
+      "final_intermediate_durable",
+      "intent_durable",
+      "intermediate_durable",
+      "ledger_readback_ready",
+      "recovery_required_closed",
+      "statement_executed",
+      "statement_ready",
+      "terminal_durable",
+      "transaction_ready",
+      "unclassified",
+      "unknown_rejected"
+    ],
+    "terminalStates": [
+      "closed_failure",
+      "entry_committed_complete",
+      "entry_committed_next_entry",
+      "recovery_required_closed",
+      "unknown_rejected"
+    ],
+    "transitions": [
+      {
+        "from": "unclassified",
+        "event": "consume_recovery_execution_permit",
+        "to": "execution_ready"
+      },
+      {
+        "from": "unclassified",
+        "event": "select_unknown",
+        "to": "unknown_rejected"
+      },
+      {
+        "from": "execution_ready",
+        "event": "begin_transaction",
+        "to": "transaction_ready"
+      },
+      {
+        "from": "execution_ready",
+        "event": "fail_before_mutation",
+        "to": "closed_failure"
+      },
+      {
+        "from": "transaction_ready",
+        "event": "prepare_statement",
+        "to": "statement_ready"
+      },
+      {
+        "from": "transaction_ready",
+        "event": "fail_before_mutation",
+        "to": "closed_failure"
+      },
+      {
+        "from": "statement_ready",
+        "event": "append_intent_durable",
+        "to": "intent_durable"
+      },
+      {
+        "from": "statement_ready",
+        "event": "fail_before_mutation",
+        "to": "closed_failure"
+      },
+      {
+        "from": "intent_durable",
+        "event": "execute_exact_statement",
+        "to": "statement_executed"
+      },
+      {
+        "from": "intent_durable",
+        "event": "fail_after_intent",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "statement_executed",
+        "event": "append_intermediate_nonfinal",
+        "to": "intermediate_durable"
+      },
+      {
+        "from": "statement_executed",
+        "event": "append_intermediate_final",
+        "to": "final_intermediate_durable"
+      },
+      {
+        "from": "statement_executed",
+        "event": "mutation_outcome_unknown",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "intermediate_durable",
+        "event": "advance_statement",
+        "to": "statement_ready"
+      },
+      {
+        "from": "intermediate_durable",
+        "event": "fail_after_intermediate",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "final_intermediate_durable",
+        "event": "insert_and_readback_ledger",
+        "to": "ledger_readback_ready"
+      },
+      {
+        "from": "final_intermediate_durable",
+        "event": "fail_after_intermediate",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "ledger_readback_ready",
+        "event": "append_commit_intent",
+        "to": "commit_intent_durable"
+      },
+      {
+        "from": "ledger_readback_ready",
+        "event": "mutation_outcome_unknown",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "commit_intent_durable",
+        "event": "commit_known",
+        "to": "commit_known_committed"
+      },
+      {
+        "from": "commit_intent_durable",
+        "event": "commit_rejected_or_unknown",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "commit_known_committed",
+        "event": "append_terminal_durable",
+        "to": "terminal_durable"
+      },
+      {
+        "from": "commit_known_committed",
+        "event": "terminal_append_failed_or_unknown",
+        "to": "recovery_required_closed"
+      },
+      {
+        "from": "terminal_durable",
+        "event": "classify_bundle_complete",
+        "to": "entry_committed_complete"
+      },
+      {
+        "from": "terminal_durable",
+        "event": "classify_next_entry",
+        "to": "entry_committed_next_entry"
+      }
+    ]
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "predecessorProfileSelection": "exact_runner-ledger-recovery-execution-admission/v1",
+    "callerProvidedProfile": "forbidden",
+    "callerProvidedAction": "forbidden",
+    "ordinaryFactAsPermit": "forbidden",
+    "crossProfilePermit": "forbidden",
+    "permitSource": "consumed_exact_one_shot_permit_from_runner-ledger-recovery-execution-admission/v1"
+  },
+  "implementationBoundary": {
+    "sliceA": "generated_contract_and_ordinary_profile_only",
+    "productionConsumer": "none_in_slice_a",
+    "claim": "not_implemented_in_slice_a",
+    "databaseSession": "not_opened_in_slice_a",
+    "databaseTransaction": "forbidden_in_slice_a",
+    "sqlExecution": "forbidden_in_slice_a",
+    "ledgerMutation": "forbidden_in_slice_a",
+    "evidenceMutation": "forbidden_in_slice_a",
+    "lineageMutation": "forbidden_in_slice_a",
+    "writerAction": "execute_one_recovery_attempt_not_implemented_in_slice_a",
+    "caller": "not_implemented_in_slice_a",
+    "httpSurface": "not_implemented",
+    "p2Surface": "not_implemented",
+    "providerSideEffects": "forbidden",
+    "productionDatabaseWrites": "not_authorized",
+    "deployment": "not_authorized",
+    "publication": "not_authorized",
+    "gateStatus": "all_gates_open"
+  },
+  "registryDigest": "sha256:f8126fe29dc3b51d5dae9fcf22ee6af553d91e829e8578857232949a152b3b4b"
+}

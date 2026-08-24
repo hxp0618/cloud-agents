@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-recovery-registry-v1.schema.json",
+  "title": "RunnerLedgerRecoveryRegistryV1",
+  "description": "Generated registry for one distinct ADR-0023 recovery profile. The registry is ordinary data and grants no Slice A runtime authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "suiteId",
+    "family",
+    "registryId",
+    "sourceDigest",
+    "suiteSourceDigest",
+    "stateMachineDigest",
+    "policyDigest",
+    "predecessorBinding",
+    "historicalBindings",
+    "profile",
+    "stateMachine",
+    "selector",
+    "implementationBoundary",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-runner-ledger-recovery-registry/v1" },
+    "suiteId": { "const": "cloud-agents/platform/runner-ledger-recovery" },
+    "family": {
+      "$ref": "runner-ledger-recovery-registry-suite-source-v1.schema.json#/$defs/family"
+    },
+    "registryId": {
+      "type": "string",
+      "pattern": "^cloud-agents/platform/runner-ledger-[a-z-]+$"
+    },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "suiteSourceDigest": { "$ref": "#/$defs/digest" },
+    "stateMachineDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "predecessorBinding": { "$ref": "#/$defs/registryBinding" },
+    "historicalBindings": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/registryBinding" }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": { "$ref": "#/$defs/profile" }
+      }
+    },
+    "stateMachine": { "$ref": "#/$defs/stateMachine" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "registryBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryId",
+        "registryDigest",
+        "stateMachineDigest",
+        "policyDigest",
+        "profileId",
+        "profileDigest"
+      ],
+      "properties": {
+        "registryId": { "type": "string", "minLength": 1 },
+        "registryDigest": { "$ref": "#/$defs/digest" },
+        "stateMachineDigest": { "$ref": "#/$defs/digest" },
+        "policyDigest": { "$ref": "#/$defs/digest" },
+        "profileId": { "type": "string", "minLength": 1 },
+        "profileDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "stateMachineId",
+        "action",
+        "canonicalization",
+        "identityBindings",
+        "errorPrecedence",
+        "pairBindings",
+        "permitFromProfileId"
+      ],
+      "properties": {
+        "profileId": {
+          "type": "string",
+          "pattern": "^runner-ledger-[a-z-]+/v1$"
+        },
+        "stateMachineId": {
+          "type": "string",
+          "pattern": "^runner-ledger-[a-z-]+/v1$"
+        },
+        "action": {
+          "$ref": "runner-ledger-recovery-registry-suite-source-v1.schema.json#/$defs/profileAction"
+        },
+        "canonicalization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "algorithm", "digest", "comparison"],
+          "properties": {
+            "profile": { "type": "string", "minLength": 1 },
+            "algorithm": { "const": "RFC8785" },
+            "digest": { "const": "SHA-256" },
+            "comparison": { "const": "exact_string_no_rewrite" }
+          }
+        },
+        "identityBindings": { "$ref": "#/$defs/identityBindings" },
+        "errorPrecedence": { "$ref": "#/$defs/errorPrecedence" },
+        "pairBindings": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "runner-ledger-recovery-registry-suite-source-v1.schema.json#/$defs/pairBinding"
+          }
+        },
+        "permitFromProfileId": {
+          "type": ["string", "null"],
+          "pattern": "^runner-ledger-[a-z-]+/v1$"
+        }
+      }
+    },
+    "identityBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predecessorProfile",
+        "consumedAuthority",
+        "currentEvidenceBoundary",
+        "generationCursor",
+        "ledgerPrefix",
+        "catalogProjection",
+        "executionPolicy",
+        "actionReceipt",
+        "oneShotAuthority",
+        "crossProfileRejection"
+      ],
+      "properties": {
+        "predecessorProfile": { "type": "string", "minLength": 1 },
+        "consumedAuthority": { "type": "string", "minLength": 1 },
+        "currentEvidenceBoundary": { "type": "string", "minLength": 1 },
+        "generationCursor": { "type": "string", "minLength": 1 },
+        "ledgerPrefix": { "type": "string", "minLength": 1 },
+        "catalogProjection": { "type": "string", "minLength": 1 },
+        "executionPolicy": { "type": "string", "minLength": 1 },
+        "actionReceipt": { "type": "string", "minLength": 1 },
+        "oneShotAuthority": { "type": "string", "minLength": 1 },
+        "crossProfileRejection": { "type": "string", "minLength": 1 }
+      }
+    },
+    "errorPrecedence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storedContradiction",
+        "contextOrOperationalFailure",
+        "recoveryRequired",
+        "unsupportedTransition",
+        "mutationOutcomeUnknown",
+        "cleanupUnknown",
+        "oneShotConsumption"
+      ],
+      "properties": {
+        "storedContradiction": { "type": "string", "minLength": 1 },
+        "contextOrOperationalFailure": { "type": "string", "minLength": 1 },
+        "recoveryRequired": { "type": "string", "minLength": 1 },
+        "unsupportedTransition": { "type": "string", "minLength": 1 },
+        "mutationOutcomeUnknown": { "type": "string", "minLength": 1 },
+        "cleanupUnknown": { "type": "string", "minLength": 1 },
+        "oneShotConsumption": { "type": "string", "minLength": 1 }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initialState", "states", "terminalStates", "transitions"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "initialState": { "const": "unclassified" },
+        "states": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "terminalStates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "event", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1 },
+              "event": { "type": "string", "minLength": 1 },
+              "to": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "profileSelection",
+        "predecessorProfileSelection",
+        "callerProvidedProfile",
+        "callerProvidedAction",
+        "ordinaryFactAsPermit",
+        "crossProfilePermit",
+        "permitSource"
+      ],
+      "properties": {
+        "mode": { "const": "generated_registry_only" },
+        "profileSelection": { "const": "exact_profile_id_and_digest" },
+        "predecessorProfileSelection": { "type": "string", "minLength": 1 },
+        "callerProvidedProfile": { "const": "forbidden" },
+        "callerProvidedAction": { "const": "forbidden" },
+        "ordinaryFactAsPermit": { "const": "forbidden" },
+        "crossProfilePermit": { "const": "forbidden" },
+        "permitSource": { "type": "string", "minLength": 1 }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sliceA",
+        "productionConsumer",
+        "claim",
+        "databaseSession",
+        "databaseTransaction",
+        "sqlExecution",
+        "ledgerMutation",
+        "evidenceMutation",
+        "lineageMutation",
+        "writerAction",
+        "caller",
+        "httpSurface",
+        "p2Surface",
+        "providerSideEffects",
+        "productionDatabaseWrites",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "sliceA": { "const": "generated_contract_and_ordinary_profile_only" },
+        "productionConsumer": { "const": "none_in_slice_a" },
+        "claim": { "const": "not_implemented_in_slice_a" },
+        "databaseSession": { "const": "not_opened_in_slice_a" },
+        "databaseTransaction": { "const": "forbidden_in_slice_a" },
+        "sqlExecution": { "const": "forbidden_in_slice_a" },
+        "ledgerMutation": { "const": "forbidden_in_slice_a" },
+        "evidenceMutation": { "const": "forbidden_in_slice_a" },
+        "lineageMutation": { "const": "forbidden_in_slice_a" },
+        "writerAction": { "type": "string", "pattern": "^[a-z_]+_not_implemented_in_slice_a$" },
+        "caller": { "const": "not_implemented_in_slice_a" },
+        "httpSurface": { "const": "not_implemented" },
+        "p2Surface": { "const": "not_implemented" },
+        "providerSideEffects": { "const": "forbidden" },
+        "productionDatabaseWrites": { "const": "not_authorized" },
+        "deployment": { "const": "not_authorized" },
+        "publication": { "const": "not_authorized" },
+        "gateStatus": { "const": "all_gates_open" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "selection": "exact profileId plus profileDigest",
+    "authority": "ordinary_generated_contract_only",
+    "runtimeConsumer": "none_in_slice_a",
+    "unionWriter": "forbidden",
+    "gateStatus": "all_gates_open"
+  }
+}

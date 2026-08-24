@@ -5,7 +5,7 @@
 - 状态：**PASS**
 - 固定 source：`2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0` / tree `ba41fc168ea65978b1f17fdb8abc5afbc22ca9cc`
 - 全量 inventory：8625 rows，固定 SHA-256 bee237da890f4f3d62fd524fd11142a6b6c883e82790e5d455c415461ae7b4e5
-- 决策表：8625 rows，运行时计算 SHA-256 4e8e92cfb48a2d272c4b025c815a8afb9f85ec7ab6be65a160f4893c85fc429d
+- 决策表：8625 rows，运行时计算 SHA-256 24a7f918636b7f0baafaa6c99ff1c04c9b8ad10163cbb568fd311718bb9342ee
 - Source license provenance：完整
 - Secret provenance：完整
 

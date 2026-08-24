@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/runner-ledger-recovery-registry-suite-source-v1.schema.json",
+  "title": "RunnerLedgerRecoveryRegistrySuiteSourceV1",
+  "description": "Editable closed source mapping for the eight distinct ADR-0023 recovery profiles. It is ordinary contract data, not a permit or writer authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "suiteId", "profiles"],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-runner-ledger-recovery-registry-suite-source/v1"
+    },
+    "suiteId": { "const": "cloud-agents/platform/runner-ledger-recovery" },
+    "profiles": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/sourceProfile" }
+    }
+  },
+  "$defs": {
+    "sourceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "registryId",
+        "profileId",
+        "action",
+        "predecessorProfileId",
+        "permitFromProfileId",
+        "pairBindings"
+      ],
+      "properties": {
+        "family": { "$ref": "#/$defs/family" },
+        "registryId": {
+          "type": "string",
+          "pattern": "^cloud-agents/platform/runner-ledger-[a-z-]+$"
+        },
+        "profileId": {
+          "type": "string",
+          "pattern": "^runner-ledger-[a-z-]+/v1$"
+        },
+        "action": { "$ref": "#/$defs/profileAction" },
+        "predecessorProfileId": {
+          "type": "string",
+          "pattern": "^runner-ledger-[a-z-]+/v1$"
+        },
+        "permitFromProfileId": {
+          "type": ["string", "null"],
+          "pattern": "^runner-ledger-[a-z-]+/v1$"
+        },
+        "pairBindings": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/pairBinding" }
+        }
+      }
+    },
+    "pairBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition", "state", "action", "consumerAction", "profileAction"],
+      "properties": {
+        "disposition": {
+          "enum": ["empty_brand_new", "partial_retry_or_recovery"]
+        },
+        "state": {
+          "enum": [
+            "ambiguous_unresolved",
+            "brand_new_inherited",
+            "dangling_commit_intent",
+            "dangling_intermediate",
+            "dangling_statement_intent",
+            "divergent",
+            "terminal"
+          ]
+        },
+        "action": {
+          "enum": [
+            "append_aborted_retryable",
+            "append_aborted_terminal",
+            "begin_first_attempt",
+            "begin_next_attempt",
+            "reconcile_commit",
+            "return_failure"
+          ]
+        },
+        "consumerAction": {
+          "enum": ["entry_not_implemented", "recovery_not_implemented"]
+        },
+        "profileAction": { "$ref": "#/$defs/profileAction" }
+      }
+    },
+    "family": {
+      "enum": [
+        "recovery_admission",
+        "abort_terminal_writer",
+        "commit_observation_writer",
+        "ambiguous_resolution_writer",
+        "retry_handoff",
+        "recovery_execution_admission",
+        "recovery_success_writer",
+        "return_failure"
+      ]
+    },
+    "profileAction": {
+      "enum": [
+        "prepare_recovery_admission",
+        "append_abort_terminal",
+        "append_commit_observation_terminal",
+        "append_ambiguous_resolution",
+        "prepare_retry_handoff",
+        "prepare_recovery_execution",
+        "execute_one_recovery_attempt",
+        "return_typed_failure"
+      ]
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "authority": "contract_only_ordinary_profile_suite",
+    "callerSelectedProfile": "forbidden",
+    "ordinaryFactAsPermit": "forbidden",
+    "unionWriter": "forbidden"
+  }
+}

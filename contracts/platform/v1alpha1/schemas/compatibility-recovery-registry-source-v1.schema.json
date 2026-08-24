@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
+  "title": "CompatibilityRecoveryRegistrySourceV1",
+  "description": "Editable A2.4 contract/state-machine source. It describes durable compatibility and recovery evidence only; it is not a SQL or runtime implementation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "schemaRange",
+    "profiles",
+    "stateMachines",
+    "policies",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-compatibility-recovery-source/v1" },
+    "registryId": { "const": "cloud-agents/platform/compatibility-recovery" },
+    "schemaRange": { "$ref": "#/$defs/schemaRange" },
+    "profiles": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "stateMachines": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/stateMachine" }
+    },
+    "policies": { "$ref": "#/$defs/policies" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "schemaId": {
+      "type": "string",
+      "pattern": "^[0-9]{6}$"
+    },
+    "schemaRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minInclusive", "maxInclusive", "comparison"],
+      "properties": {
+        "minInclusive": { "$ref": "#/$defs/schemaId" },
+        "maxInclusive": { "$ref": "#/$defs/schemaId" },
+        "comparison": { "const": "zero-padded-migration-id-inclusive" }
+      }
+    },
+    "profileId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*/v[1-9][0-9]*$"
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "kind",
+        "stateMachineId",
+        "persistedFields",
+        "requiredEvidence",
+        "rules"
+      ],
+      "properties": {
+        "profileId": { "$ref": "#/$defs/profileId" },
+        "kind": {
+          "enum": [
+            "backfill",
+            "live_instance",
+            "migration_preflight",
+            "restore_evidence",
+            "retirement_receipt"
+          ]
+        },
+        "stateMachineId": { "$ref": "#/$defs/profileId" },
+        "persistedFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        },
+        "requiredEvidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 3, "maxLength": 192 }
+        }
+      }
+    },
+    "stateName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "event", "to"],
+      "properties": {
+        "from": { "$ref": "#/$defs/stateName" },
+        "event": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        },
+        "to": { "$ref": "#/$defs/stateName" }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initialState", "states", "terminalStates", "transitions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/profileId" },
+        "initialState": { "$ref": "#/$defs/stateName" },
+        "states": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stateName" }
+        },
+        "terminalStates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stateName" }
+        },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transition" }
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bootstrap", "preflight", "expiredRegistration", "restore", "failureMode"],
+      "properties": {
+        "bootstrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["emptyRegistry", "existingLedger", "unavailableRegistry"],
+          "properties": {
+            "emptyRegistry": { "const": "new_database_explicit_bootstrap_only" },
+            "existingLedger": { "const": "bootstrap_exception_forbidden" },
+            "unavailableRegistry": { "const": "reject" }
+          }
+        },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredEvidence", "writerRule", "oldWriterRule", "approvalRule"],
+          "properties": {
+            "requiredEvidence": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 16,
+              "items": { "type": "string" }
+            },
+            "writerRule": { "const": "current_writer_must_read_and_write_target_schema" },
+            "oldWriterRule": { "const": "unknown_or_disjoint_or_stale_or_undrained_reject" },
+            "approvalRule": {
+              "const": "irreversible_contract_requires_separate_approval_and_matching_restore_drill"
+            }
+          }
+        },
+        "expiredRegistration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["identityFields", "requiredReceiptFacts", "exclusionRule"],
+          "properties": {
+            "identityFields": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": { "type": "string" }
+            },
+            "requiredReceiptFacts": {
+              "type": "array",
+              "minItems": 6,
+              "maxItems": 6,
+              "items": { "type": "string" }
+            },
+            "exclusionRule": { "const": "same_instance_incarnation_generation_receipt_only" }
+          }
+        },
+        "restore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope", "pitrHa", "evidenceRule"],
+          "properties": {
+            "scope": { "const": "local_logical_backup_restore_and_preflight" },
+            "pitrHa": { "const": "p4_not_implemented" },
+            "evidenceRule": { "const": "target_bundle_phase_restore_point_and_drill_must_match" }
+          }
+        },
+        "failureMode": { "const": "fail_closed" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sqlMigration",
+        "goConsumer",
+        "httpSurface",
+        "externalSideEffects",
+        "gateStatus"
+      ],
+      "properties": {
+        "sqlMigration": { "const": "not_implemented_no_000010" },
+        "goConsumer": { "const": "not_implemented" },
+        "httpSurface": { "const": "not_implemented" },
+        "externalSideEffects": { "const": "forbidden" },
+        "gateStatus": { "const": "non_gate_evidence_only" }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "consumerRule": "future consumers accept only generated registry digest",
+    "callerProvidedRegistry": "forbidden"
+  }
+}

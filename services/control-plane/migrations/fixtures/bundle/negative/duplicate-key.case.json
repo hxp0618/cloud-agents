@@ -1,0 +1,6 @@
+{
+  "payload": "duplicate-key.raw",
+  "raw_sha256": "sha256:d8e3ca834eb476cf1c6b23a2da362bc58d053e0c4e96edf8db122b5ae5814009",
+  "expected": "reject",
+  "expected_error": "DUPLICATE_JSON_KEY"
+}

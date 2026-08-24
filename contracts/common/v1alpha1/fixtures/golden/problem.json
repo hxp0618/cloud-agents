@@ -1,0 +1,10 @@
+{
+  "type": "https://problems.cloud-agents.dev/not-found",
+  "title": "Resource not found",
+  "status": 404,
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "retryable": false
+  },
+  "requestId": "req-01JZ4X7PGQFHZ2YJR37QRYZ9R2"
+}

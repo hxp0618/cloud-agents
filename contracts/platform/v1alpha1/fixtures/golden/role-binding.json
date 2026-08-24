@@ -1,0 +1,38 @@
+{
+  "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+  "kind": "RoleBinding",
+  "metadata": {
+    "uid": "role-binding-alpha",
+    "name": "role-binding-alpha",
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "resourceVersion": "6",
+    "createdAt": "2026-08-10T10:05:00Z"
+  },
+  "spec": {
+    "tenantRef": {
+      "namespace": "cloud-agents",
+      "kind": "tenant",
+      "id": "tenant-alpha"
+    },
+    "subject": {
+      "kind": "user",
+      "issuer": "https://identity.example.test/",
+      "subject": "user-alpha"
+    },
+    "roleName": "project.viewer",
+    "roleVersion": 1,
+    "scope": {
+      "level": "project",
+      "ref": {
+        "namespace": "cloud-agents",
+        "kind": "project",
+        "id": "project-alpha"
+      }
+    },
+    "state": "active"
+  }
+}

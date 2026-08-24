@@ -1,0 +1,149 @@
+{
+  "formatVersion": "cloud-agents-contract-closure-profile-registry/v1",
+  "registryId": "cloud-agents/platform/contract-closure-profile",
+  "sourceDigest": "sha256:6e0d54c096aa5dc5c85b40b6eb996fe42a0fe17170fb49766128297f55384a94",
+  "profile": {
+    "profileDigest": "sha256:08746a7986a583c550eecb5ef5d7ab15f08511fe934a4c176d2f087bc449a715",
+    "spec": {
+      "profileId": "contract-closure-profile/v1",
+      "status": "BOOTSTRAP_VALIDATED",
+      "notGateClosure": true,
+      "derivation": {
+        "lockMissing": "criteria_status_not_satisfied_candidate",
+        "manualRemoval": "forbidden"
+      },
+      "criteria": [
+        {
+          "id": "json-schema-2020-12-official-test-suite",
+          "status": "MISSING",
+          "authorityPaths": [
+            "tools/contract-standards/profile.json",
+            "tools/contract-standards/vendor/json-schema-test-suite"
+          ],
+          "evidencePaths": [
+            "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md"
+          ],
+          "reason": "The vendored suite is replayed by an independent engine, but the production Ajv 8.20.0 official-suite runner/result remains NOT_RUN_NOT_CLAIMED."
+        },
+        {
+          "id": "openapi-3.1-semantic-validation",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "contracts/managed-agent/v1alpha1/openapi.json",
+            "contracts/managed-host/v1alpha1/openapi.json",
+            "tools/contract-standards/check_contract_standards.py"
+          ],
+          "evidencePaths": [
+            "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md"
+          ],
+          "review": {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+            "sha256": "sha256:f0d5b12f1f6e0f2936783868331d4d74d7a3ee0fc49b3e370894b95884458f61",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "generated-sdk-replay",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "contracts/proto-generation.profile.json",
+            "scripts/generate-platform-identity-sdks.ts",
+            "scripts/generate-platform-json-sdks.ts",
+            "scripts/generate-platform-proto-sdks.ts"
+          ],
+          "evidencePaths": [
+            "scripts/test-platform-sdk-consumers.ts",
+            "docs/plan/p1/sdk-proto-consumer-closure-20260821.md"
+          ],
+          "review": {
+            "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+            "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "n-minus-one-compatibility",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "scripts/lib/platform-json-sdk.ts",
+            "scripts/lib/platform-json-sdk.test.ts",
+            "scripts/lib/platform-proto-sdk.ts",
+            "scripts/lib/platform-proto-sdk.test.ts",
+            "contracts/proto-generation.profile.json"
+          ],
+          "evidencePaths": [
+            "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
+            "sdk/typescript/src/platform.test.ts",
+            "sdk/go/proto_conformance_test.go",
+            "sdk/typescript/src/proto.test.ts"
+          ],
+          "review": {
+            "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+            "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "response-watch-unknown-field-preservation",
+          "status": "SATISFIED_CANDIDATE",
+          "authorityPaths": [
+            "scripts/lib/platform-json-sdk.ts",
+            "scripts/lib/platform-proto-sdk.ts"
+          ],
+          "evidencePaths": [
+            "sdk/go/gen/common/v1alpha1/json_generated_test.go",
+            "sdk/typescript/src/platform.test.ts",
+            "sdk/go/proto_conformance_test.go",
+            "sdk/typescript/src/proto.test.ts"
+          ],
+          "review": {
+            "path": "docs/plan/p1/sdk-identity-closure-independent-review-20260821.md",
+            "sha256": "sha256:cd39fac1f39039479c0b1e182959d26ee40d76718f39b27c22ca49da159c1fe5",
+            "verdict": "APPROVE_P0_0_P1_0_P2_0"
+          }
+        },
+        {
+          "id": "runtime-server-path-and-tenant-authority-enforcement",
+          "status": "MISSING",
+          "authorityPaths": [
+            "docs/plan/adr/0007-p1-contract-data-toolchain-foundation.md",
+            "services/control-plane/internal/authn/verifier.go"
+          ],
+          "evidencePaths": [
+            "docs/plan/p1/identity-verifier-authz-binder-independent-review-20260824.md"
+          ],
+          "reason": "Offline verifier and typed binder evidence does not implement production trust provisioning or HTTP/server path enforcement."
+        },
+        {
+          "id": "remaining-generator-supply-chain-review",
+          "status": "MISSING",
+          "authorityPaths": [
+            "package.json",
+            "bun.lock",
+            "tools/contract-standards/uv.lock",
+            "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md"
+          ],
+          "evidencePaths": [
+            "docs/plan/p1/dependency-reviews/contract-standards-toolchain-20260823.md"
+          ],
+          "reason": "No current vulnerability scan, all-platform executable and wheel closure, or immutable generator supply-chain signature exists."
+        }
+      ],
+      "implementationBoundary": {
+        "officialAjvSuiteRunner": "not_implemented",
+        "runtimeTrustAndHttp": "not_implemented",
+        "supplyScanner": "not_implemented",
+        "productionDatabaseWrites": "not_authorized",
+        "deployment": "not_authorized",
+        "publication": "not_authorized",
+        "gateStatus": "all_gates_open"
+      }
+    }
+  },
+  "missing": [
+    "json-schema-2020-12-official-test-suite",
+    "runtime-server-path-and-tenant-authority-enforcement",
+    "remaining-generator-supply-chain-review"
+  ],
+  "registryDigest": "sha256:c01ef40f826bbec63ede5f43b49dd3e2c4bd5d4c1cd2744d03cf28784a6cf5bd"
+}

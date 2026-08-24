@@ -1,0 +1,152 @@
+{
+  "format_version": "cloud-agents-platform-projection-numeric-fixtures/v1",
+  "signed_integer": [
+    {
+      "bits": 16,
+      "input": "-32768",
+      "expected": "-32768",
+      "expected_error": null
+    },
+    {
+      "bits": 16,
+      "input": "32767",
+      "expected": "32767",
+      "expected_error": null
+    },
+    {
+      "bits": 32,
+      "input": "-2147483648",
+      "expected": "-2147483648",
+      "expected_error": null
+    },
+    {
+      "bits": 32,
+      "input": "2147483647",
+      "expected": "2147483647",
+      "expected_error": null
+    },
+    {
+      "bits": 64,
+      "input": "-9223372036854775808",
+      "expected": "-9223372036854775808",
+      "expected_error": null
+    },
+    {
+      "bits": 64,
+      "input": "0",
+      "expected": "0",
+      "expected_error": null
+    },
+    {
+      "bits": 64,
+      "input": "9223372036854775807",
+      "expected": "9223372036854775807",
+      "expected_error": null
+    },
+    {
+      "bits": 64,
+      "input": "9223372036854775808",
+      "expected_error": "SIGNED_INT64_OUT_OF_RANGE",
+      "expected": null
+    },
+    {
+      "bits": 64,
+      "input": "-0",
+      "expected_error": "INVALID_SIGNED_INT64",
+      "expected": null
+    }
+  ],
+  "exact_numeric": [
+    {
+      "input": "0",
+      "expected": "0",
+      "expected_error": null
+    },
+    {
+      "input": "0.0",
+      "expected": "0",
+      "expected_error": null
+    },
+    {
+      "input": "123.4500",
+      "expected": "123.45",
+      "expected_error": null
+    },
+    {
+      "input": "-19.125",
+      "expected": "-19.125",
+      "expected_error": null
+    },
+    {
+      "input": "-0.125",
+      "expected": "-0.125",
+      "expected_error": null
+    },
+    {
+      "input": "1e3",
+      "expected_error": "NUMERIC_FORMAT",
+      "expected": null
+    },
+    {
+      "input": "-0.0",
+      "expected_error": "NUMERIC_NEGATIVE_ZERO",
+      "expected": null
+    }
+  ],
+  "float": [
+    {
+      "kind": "float4",
+      "input": "0",
+      "expected": "0",
+      "expected_error": null
+    },
+    {
+      "kind": "float4",
+      "input": "0.1",
+      "expected": "0.1",
+      "expected_error": null
+    },
+    {
+      "kind": "float4",
+      "input": "1.1754944e-38",
+      "expected": "1.1754944e-38",
+      "expected_error": null
+    },
+    {
+      "kind": "float8",
+      "input": "5e-324",
+      "expected": "5e-324",
+      "expected_error": null
+    },
+    {
+      "kind": "float8",
+      "input": "1.0000000000000002",
+      "expected": "1.0000000000000002",
+      "expected_error": null
+    },
+    {
+      "kind": "float8",
+      "input": "1.7976931348623157e308",
+      "expected": "1.7976931348623157e308",
+      "expected_error": null
+    },
+    {
+      "kind": "float8",
+      "input": "1e+21",
+      "expected_error": "FLOAT_FORMAT",
+      "expected": null
+    },
+    {
+      "kind": "float8",
+      "input": "-0",
+      "expected_error": "FLOAT_VALUE",
+      "expected": null
+    },
+    {
+      "kind": "float8",
+      "input": "NaN",
+      "expected_error": "FLOAT_FORMAT",
+      "expected": null
+    }
+  ]
+}

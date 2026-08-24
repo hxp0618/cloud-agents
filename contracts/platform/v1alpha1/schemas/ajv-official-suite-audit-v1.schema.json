@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/ajv-official-suite-audit-v1.schema.json",
+  "title": "AjvOfficialSuiteAuditV1",
+  "description": "Generated deterministic non-Gate Ajv 8.20.0 official mandatory-suite audit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "auditId",
+    "sourceDigest",
+    "status",
+    "conformanceClaim",
+    "notGateClosure",
+    "validator",
+    "execution",
+    "corpus",
+    "summary",
+    "categories",
+    "discrepancies",
+    "implementationBoundary",
+    "auditDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-ajv-official-suite-audit/v1" },
+    "auditId": { "const": "cloud-agents/platform/ajv-official-suite-audit" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "status": { "const": "EXECUTED_NONCONFORMANT" },
+    "conformanceClaim": { "const": false },
+    "notGateClosure": { "const": true },
+    "validator": { "$ref": "ajv-official-suite-audit-source-v1.schema.json#/$defs/validator" },
+    "execution": { "$ref": "ajv-official-suite-audit-source-v1.schema.json#/$defs/execution" },
+    "corpus": { "$ref": "ajv-official-suite-audit-source-v1.schema.json#/$defs/corpus" },
+    "summary": { "$ref": "ajv-official-suite-audit-source-v1.schema.json#/$defs/summary" },
+    "categories": { "$ref": "ajv-official-suite-audit-source-v1.schema.json#/$defs/categories" },
+    "discrepancies": {
+      "type": "array",
+      "minItems": 45,
+      "maxItems": 45,
+      "items": { "$ref": "#/$defs/discrepancy" }
+    },
+    "implementationBoundary": {
+      "$ref": "ajv-official-suite-audit-source-v1.schema.json#/$defs/implementationBoundary"
+    },
+    "auditDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "discrepancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "file",
+        "caseIndex",
+        "caseDescription",
+        "kind",
+        "explanationClass"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "category": {
+          "enum": [
+            "dynamicRef",
+            "enum",
+            "properties",
+            "ref",
+            "unevaluatedItems",
+            "unevaluatedProperties",
+            "vocabulary"
+          ]
+        },
+        "file": { "type": "string", "pattern": "^[A-Za-z0-9._-]+\\.json$" },
+        "caseIndex": { "type": "integer", "minimum": 0 },
+        "caseDescription": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["COMPILE_FAILURE", "RUNTIME_ERROR", "VALIDITY_MISMATCH"] },
+        "testIndex": { "type": "integer", "minimum": 0 },
+        "testDescription": { "type": "string", "minLength": 1 },
+        "expected": { "type": "boolean" },
+        "actual": { "type": "boolean" },
+        "message": { "type": "string", "minLength": 1 },
+        "explanationClass": {
+          "enum": ["DOCUMENTED_AJV_BOUNDARY", "OBSERVED_DIFFERENCE"]
+        },
+        "boundary": {
+          "enum": [
+            "EMPTY_ENUM_REJECTED",
+            "NON_HASH_DYNAMIC_REF_REJECTED",
+            "DUNDER_PROTO_PROPERTY_FILTERED",
+            "VOCABULARY_REGISTRATION_BEHAVIOR"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "COMPILE_FAILURE" } } },
+          "then": {
+            "required": ["message"],
+            "properties": {
+              "message": {},
+              "testIndex": false,
+              "testDescription": false,
+              "expected": false,
+              "actual": false
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "RUNTIME_ERROR" } } },
+          "then": {
+            "required": ["testIndex", "testDescription", "expected", "message"],
+            "properties": {
+              "testIndex": {},
+              "testDescription": {},
+              "expected": {},
+              "message": {},
+              "actual": false
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "VALIDITY_MISMATCH" } } },
+          "then": {
+            "required": ["testIndex", "testDescription", "expected", "actual"],
+            "properties": {
+              "testIndex": {},
+              "testDescription": {},
+              "expected": {},
+              "actual": {},
+              "message": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "explanationClass": { "const": "DOCUMENTED_AJV_BOUNDARY" } }
+          },
+          "then": { "required": ["boundary"], "properties": { "boundary": {} } },
+          "else": { "properties": { "boundary": false } }
+        }
+      ]
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "status": "EXECUTED_NONCONFORMANT",
+    "conformanceClaim": false,
+    "notGateClosure": true,
+    "gateStatus": "all_gates_open"
+  }
+}
