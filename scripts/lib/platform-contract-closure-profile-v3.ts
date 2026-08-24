@@ -171,6 +171,25 @@ export type ContractClosureV3Registry = JsonRecord & {
   readonly registryDigest: string;
 };
 
+export type ContractClosureProfileV3Current = Readonly<{
+  source: ContractClosureV3Source;
+  registry: ContractClosureV3Registry;
+  fileSha256: string;
+  assertCurrent: () => void;
+}>;
+
+type ContractClosureV3FileSnapshot = Readonly<{
+  rootReal: string;
+  path: string;
+  absolute: string;
+  bytes: Buffer;
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}>;
+
 export class ContractClosureProfileV3Error extends Error {
   constructor(
     readonly code:
@@ -218,6 +237,62 @@ export function validateContractClosureProfileV3Source(
     "Generator-supply v1 predecessor, 39-member policy, lineage, review, or identities drifted.",
   );
   assertProfileSemantics(root, source.profile);
+}
+
+export function assertContractClosureProfileV3Current(
+  root: string,
+): ContractClosureProfileV3Current {
+  return assertContractClosureProfileV3CurrentInternal(root);
+}
+
+export function assertContractClosureProfileV3CurrentMutationForTest(
+  root: string,
+  mutateAfterCapture: () => void,
+): void {
+  assertContractClosureProfileV3CurrentInternal(root, mutateAfterCapture);
+}
+
+function assertContractClosureProfileV3CurrentInternal(
+  root: string,
+  mutateAfterCapture?: () => void,
+): ContractClosureProfileV3Current {
+  const rootReal = realpathSync(root);
+  const sourceSnapshot = readStableContainedRegularFileSnapshot(
+    root,
+    CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+    rootReal,
+  );
+  const outputSnapshot = readStableContainedRegularFileSnapshot(
+    root,
+    CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+    rootReal,
+  );
+  const source = parseV3Object<ContractClosureV3Source>(sourceSnapshot);
+  const registry = parseV3Object<ContractClosureV3Registry>(outputSnapshot);
+  const snapshots = [sourceSnapshot, outputSnapshot] as const;
+  const assertCurrent = (): void => {
+    validateContractClosureProfileV3Source(root, source);
+    assertContractClosureV3RegistrySemantics(root, registry);
+    if (
+      registry.sourceDigest !==
+      domainDigest("cloud-agents/contract-closure-profile/source/v3", source)
+    ) {
+      throw v3Error(
+        "CONTRACT_CLOSURE_V3_DIGEST_MISMATCH",
+        "/sourceDigest",
+        "Contract closure v3 output must bind the exact source object captured in the same snapshot.",
+      );
+    }
+    assertContractClosureV3SnapshotsCurrent(root, snapshots);
+  };
+  mutateAfterCapture?.();
+  assertCurrent();
+  return {
+    source,
+    registry,
+    fileSha256: `sha256:${sha256(outputSnapshot.bytes)}`,
+    assertCurrent,
+  };
 }
 
 export function assertContractClosureV3RuntimeGitLineageCurrent(root: string): void {
@@ -734,7 +809,22 @@ function assertCanonicalEqual(
 }
 
 function readStableContainedRegularFile(root: string, path: string): Buffer {
+  return readStableContainedRegularFileSnapshot(root, path).bytes;
+}
+
+function readStableContainedRegularFileSnapshot(
+  root: string,
+  path: string,
+  expectedRootReal?: string,
+): ContractClosureV3FileSnapshot {
   const rootReal = realpathSync(root);
+  if (expectedRootReal !== undefined && rootReal !== expectedRootReal) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+      `/${path}`,
+      "Contract closure v3 repository root changed during source/output capture.",
+    );
+  }
   if (
     path.length === 0 ||
     isAbsolute(path) ||
@@ -809,7 +899,17 @@ function readStableContainedRegularFile(root: string, path: string): Buffer {
           "Contract closure v3 evidence changed while it was being read.",
         );
       }
-      return bytes;
+      return {
+        rootReal,
+        path,
+        absolute,
+        bytes,
+        dev: descriptorAfter.dev,
+        ino: descriptorAfter.ino,
+        size: descriptorAfter.size,
+        mtimeNs: descriptorAfter.mtimeNs,
+        ctimeNs: descriptorAfter.ctimeNs,
+      };
     } finally {
       closeSync(descriptor);
     }
@@ -820,6 +920,98 @@ function readStableContainedRegularFile(root: string, path: string): Buffer {
       `/${path}`,
       `Contract closure v3 evidence is missing or unreadable: ${String(error)}.`,
     );
+  }
+}
+
+function parseV3Object<T extends JsonRecord>(snapshot: ContractClosureV3FileSnapshot): T {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(snapshot.bytes.toString("utf8"));
+  } catch (error) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_SCHEMA_INVALID",
+      `/${snapshot.path}`,
+      `Contract closure v3 file is not valid JSON: ${String(error)}.`,
+    );
+  }
+  if (!isRecord(parsed)) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_SCHEMA_INVALID",
+      `/${snapshot.path}`,
+      "Contract closure v3 file must contain a JSON object.",
+    );
+  }
+  return parsed as T;
+}
+
+function assertContractClosureV3SnapshotsCurrent(
+  root: string,
+  snapshots: readonly ContractClosureV3FileSnapshot[],
+): void {
+  let rootReal: string;
+  try {
+    rootReal = realpathSync(root);
+  } catch (error) {
+    throw v3Error(
+      "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+      "/",
+      `Contract closure v3 repository root is unavailable: ${String(error)}.`,
+    );
+  }
+  for (const snapshot of snapshots) {
+    if (rootReal !== snapshot.rootReal) {
+      throw v3Error(
+        "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        `/${snapshot.path}`,
+        "Contract closure v3 repository root changed after capture.",
+      );
+    }
+    try {
+      let current = rootReal;
+      const segments = snapshot.path.split("/");
+      for (const [index, segment] of segments.entries()) {
+        current = resolve(current, segment);
+        const stat = lstatSync(current, { bigint: true });
+        if (
+          stat.isSymbolicLink() ||
+          (index < segments.length - 1 ? !stat.isDirectory() : !stat.isFile())
+        ) {
+          throw v3Error(
+            "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+            `/${snapshot.path}`,
+            "Contract closure v3 source/output topology changed after capture.",
+          );
+        }
+      }
+      if (current !== snapshot.absolute || realpathSync(current) !== snapshot.absolute) {
+        throw v3Error(
+          "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+          `/${snapshot.path}`,
+          "Contract closure v3 source/output resolved location changed after capture.",
+        );
+      }
+      const after = lstatSync(current, { bigint: true });
+      if (
+        after.dev !== snapshot.dev ||
+        after.ino !== snapshot.ino ||
+        after.size !== snapshot.size ||
+        after.mtimeNs !== snapshot.mtimeNs ||
+        after.ctimeNs !== snapshot.ctimeNs
+      ) {
+        throw v3Error(
+          "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+          `/${snapshot.path}`,
+          "Contract closure v3 source/output changed after capture.",
+        );
+      }
+    } catch (error) {
+      if (error instanceof ContractClosureProfileV3Error) throw error;
+      throw v3Error(
+        "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        `/${snapshot.path}`,
+        `Contract closure v3 source/output is unavailable after capture: ${String(error)}.`,
+      );
+    }
   }
 }
 

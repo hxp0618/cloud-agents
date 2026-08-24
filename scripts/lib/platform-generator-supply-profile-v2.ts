@@ -157,6 +157,7 @@ export type GeneratorSupplyV2AuthorityState =
 
 export type GeneratorSupplyV2CurrentValidation = Readonly<{
   registry: GeneratorSupplyV2Registry;
+  fileSha256: string;
   assertCurrent: () => void;
 }>;
 
@@ -302,11 +303,8 @@ function assertGeneratorSupplyV2RegistryCurrentInternal(
     GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
     identities,
   ) as EvidenceManifest;
-  const registry = readJsonFile(
-    root,
-    GENERATOR_SUPPLY_V2_OUTPUT_PATH,
-    identities,
-  ) as GeneratorSupplyV2Registry;
+  const outputSnapshot = readJsonFileSnapshot(root, GENERATOR_SUPPLY_V2_OUTPUT_PATH, identities);
+  const registry = outputSnapshot.value as GeneratorSupplyV2Registry;
   if (suppliedDocument !== undefined && !canonicalEqual(suppliedDocument, registry)) {
     throw v2Error(
       "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
@@ -335,7 +333,7 @@ function assertGeneratorSupplyV2RegistryCurrentInternal(
     assertReplaySnapshotCurrent();
   };
   assertCurrent();
-  return { registry, assertCurrent };
+  return { registry, fileSha256: outputSnapshot.fileSha256, assertCurrent };
 }
 
 function assertGeneratorSupplyV2RegistrySemanticsInternal(
@@ -635,12 +633,22 @@ function readJsonFile(
   path: string,
   identities?: GeneratorSupplyV2StableFileIdentity[],
 ): JsonRecord {
+  return readJsonFileSnapshot(root, path, identities).value;
+}
+
+function readJsonFileSnapshot(
+  root: string,
+  path: string,
+  identities?: GeneratorSupplyV2StableFileIdentity[],
+): Readonly<{ value: JsonRecord; fileSha256: string }> {
   try {
-    const parsed: unknown = JSON.parse(
-      readContainedRegularFile(root, path, undefined, identities).toString("utf8"),
-    );
+    const bytes = readContainedRegularFile(root, path, undefined, identities);
+    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!isRecord(parsed)) throw new Error("expected an object");
-    return parsed;
+    return {
+      value: parsed,
+      fileSha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    };
   } catch (error) {
     if (error instanceof GeneratorSupplyV2Error) throw error;
     throw v2Error(

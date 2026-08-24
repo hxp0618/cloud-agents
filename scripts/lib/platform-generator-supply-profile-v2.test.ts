@@ -18,6 +18,7 @@ import { canonicalizeJson } from "./platform-json-semantics";
 import { buildGeneratorSupplyReplayV2TestFixture } from "./platform-generator-supply-replay-v2";
 import {
   assertGeneratorSupplyV2CurrentSnapshotMutationForTest,
+  assertGeneratorSupplyV2RegistryCurrent,
   assertGeneratorSupplyV2RegistrySemantics,
   assertStableGeneratorSupplyV2ReadMutationForTest,
   buildGeneratorSupplyV2TestSource,
@@ -380,6 +381,10 @@ describe("generator-supply v2 typed pre-replay authority", () => {
     const registry = assembleTestRegistry(fixture.root, fixture.source);
     writeJson(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_PATH, registry);
     expect(() => assertGeneratorSupplyV2RegistrySemantics(fixture.root, registry)).not.toThrow();
+    const current = assertGeneratorSupplyV2RegistryCurrent(fixture.root, registry);
+    expect(current.fileSha256).toBe(
+      fileRecord(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_PATH).sha256,
+    );
     expect(inspectGeneratorSupplyV2AuthorityState(fixture.root)).toBe("ASSEMBLED_PROFILE_CURRENT");
   });
 

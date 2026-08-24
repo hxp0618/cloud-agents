@@ -1,25 +1,55 @@
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertContractClosureV3RegistrySemantics,
+  assertContractClosureProfileV3Current,
+  assertContractClosureProfileV3CurrentMutationForTest,
   assertContractClosureV3RepositoryLineageCurrent,
   buildContractClosureProfileV3Registry,
   buildContractClosureProfileV3TestSource,
+  CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH,
+  CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_SCHEMA_PATH,
+  CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
+  CONTRACT_CLOSURE_PROFILE_V3_SOURCE_SCHEMA_PATH,
   CONTRACT_CLOSURE_V3_CRITERIA,
   CONTRACT_CLOSURE_V3_MISSING,
   CONTRACT_CLOSURE_V3_RUNTIME_GIT_LINEAGE,
+  CONTRACT_CLOSURE_V3_RUNTIME_FILES,
+  CONTRACT_CLOSURE_V3_RUNTIME_REVIEW_FILE,
   ContractClosureProfileV3Error,
   deriveContractClosureV3Missing,
   serializeContractClosureProfileV3Registry,
   type ContractClosureV3Source,
   validateContractClosureProfileV3Source,
 } from "./platform-contract-closure-profile-v3";
+import {
+  CONTRACT_CLOSURE_V1_IMMUTABLE_FILES,
+  CONTRACT_CLOSURE_V2_IMMUTABLE_FILES,
+  GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST,
+  GENERATOR_SUPPLY_V1_IMMUTABLE_FILES,
+} from "./platform-successor-predecessor";
 
 type MutableRecord = Record<string, unknown>;
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) rmSync(root, { force: true, recursive: true });
+});
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -43,6 +73,45 @@ function expectSourceFailure(
   } else {
     expect(execute).toThrow(ContractClosureProfileV3Error);
   }
+}
+
+function createCurrentRoot(): string {
+  const root = mkdtempSync(resolve(tmpdir(), "contract-closure-v3-current-"));
+  temporaryRoots.push(root);
+  const manifest = JSON.parse(
+    readFileSync(
+      resolve(repositoryRoot, GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestPath),
+      "utf8",
+    ),
+  ) as { files: Array<{ path: string }> };
+  const paths = new Set([
+    ...CONTRACT_CLOSURE_V1_IMMUTABLE_FILES.map(({ path }) => path),
+    ...CONTRACT_CLOSURE_V2_IMMUTABLE_FILES.map(({ path }) => path),
+    ...GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.map(({ path }) => path),
+    ...manifest.files.map(({ path }) => path),
+    ...CONTRACT_CLOSURE_V3_RUNTIME_FILES.map(({ path }) => path),
+    CONTRACT_CLOSURE_V3_RUNTIME_REVIEW_FILE.path,
+    CONTRACT_CLOSURE_PROFILE_V3_SOURCE_SCHEMA_PATH,
+    CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_SCHEMA_PATH,
+  ]);
+  for (const path of paths) copy(root, path);
+  const source = buildContractClosureProfileV3TestSource(root);
+  const registry = buildContractClosureProfileV3Registry(root, source);
+  writeJson(root, CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH, source);
+  writeJson(root, CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH, registry);
+  return root;
+}
+
+function copy(root: string, path: string): void {
+  const target = resolve(root, path);
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(resolve(repositoryRoot, path), target);
+}
+
+function writeJson(root: string, path: string, value: unknown): void {
+  const target = resolve(root, path);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, serializeContractClosureProfileV3Registry(value));
 }
 
 describe("contract closure profile v3 Slice A authority", () => {
@@ -221,6 +290,51 @@ describe("contract closure profile v3 Slice A authority", () => {
       expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
         code: "CONTRACT_CLOSURE_V3_DIGEST_MISMATCH",
         path: "/sourceDigest",
+      }),
+    );
+  });
+
+  it("captures a current source/output pair and returns the exact output-file digest", () => {
+    const root = createCurrentRoot();
+    const current = assertContractClosureProfileV3Current(root);
+    const outputBytes = readFileSync(resolve(root, CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH));
+    expect(current.fileSha256).toBe(
+      `sha256:${createHash("sha256").update(outputBytes).digest("hex")}`,
+    );
+    expect(current.registry.sourceDigest).toBe(
+      buildContractClosureProfileV3Registry(root, current.source).sourceDigest,
+    );
+    expect(() => current.assertCurrent()).not.toThrow();
+  });
+
+  it("fails closed when the source changes after the source/output capture", () => {
+    const root = createCurrentRoot();
+    expect(() =>
+      assertContractClosureProfileV3CurrentMutationForTest(root, () => {
+        const source = resolve(root, CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH);
+        writeFileSync(source, Buffer.concat([readFileSync(source), Buffer.from(" ")]));
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
+        code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        path: `/${CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH}`,
+      }),
+    );
+  });
+
+  it("fails closed when the output is atomically replaced after capture", () => {
+    const root = createCurrentRoot();
+    expect(() =>
+      assertContractClosureProfileV3CurrentMutationForTest(root, () => {
+        const output = resolve(root, CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH);
+        const replacement = resolve(dirname(output), ".contract-closure-v3-output-replacement");
+        writeFileSync(replacement, readFileSync(output));
+        renameSync(replacement, output);
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
+        code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        path: `/${CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH}`,
       }),
     );
   });

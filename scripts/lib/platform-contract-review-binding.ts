@@ -18,10 +18,8 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import {
-  assertContractClosureV3RegistrySemantics,
+  assertContractClosureProfileV3Current,
   CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
-  type ContractClosureV3Source,
-  validateContractClosureProfileV3Source,
 } from "./platform-contract-closure-profile-v3";
 import {
   assertGeneratorSupplyV2RegistryCurrent,
@@ -275,6 +273,15 @@ export function publishContractReviewBindingExclusiveForTest(
   beforePublish: () => void = () => {},
 ): void {
   publishContractReviewBindingExclusive(root, serialized, beforePublish);
+}
+
+export function bindContractReviewAuthoritySnapshotForTest(
+  root: string,
+  authority: ReviewBindingAuthority,
+  beforeDigestBinding: () => void,
+  afterDigestBinding: () => void,
+): BoundReviewBindingAuthority {
+  return bindAuthority(root, authority, { beforeDigestBinding, afterDigestBinding });
 }
 
 function publishContractReviewBindingExclusive(
@@ -667,21 +674,27 @@ function readAndValidateTuple(
 function bindAuthority(
   root: string,
   authority: ReviewBindingAuthority,
+  hooks?: Readonly<{
+    beforeDigestBinding: () => void;
+    afterDigestBinding: () => void;
+  }>,
 ): BoundReviewBindingAuthority {
-  const document = readJsonFile(root, authority.path, "CONTRACT_REVIEW_BINDING_DIGEST_MISMATCH");
   const closure = authority.kind === "canonical_contract_closure";
-  let generatorSupplyCurrent: GeneratorSupplyV2CurrentValidation | undefined;
+  let document: JsonRecord;
+  let authorityFileSha256: string;
+  let assertAuthorityCurrent: () => void;
   try {
     if (closure) {
-      const source = readJsonFile(
-        root,
-        CONTRACT_CLOSURE_PROFILE_V3_SOURCE_PATH,
-        "CONTRACT_REVIEW_BINDING_DIGEST_MISMATCH",
-      ) as ContractClosureV3Source;
-      validateContractClosureProfileV3Source(root, source);
-      assertContractClosureV3RegistrySemantics(root, document);
+      const current = assertContractClosureProfileV3Current(root);
+      document = current.registry;
+      authorityFileSha256 = current.fileSha256;
+      assertAuthorityCurrent = current.assertCurrent;
     } else {
-      generatorSupplyCurrent = assertGeneratorSupplyV2RegistryCurrent(root, document);
+      const current: GeneratorSupplyV2CurrentValidation =
+        assertGeneratorSupplyV2RegistryCurrent(root);
+      document = current.registry;
+      authorityFileSha256 = current.fileSha256;
+      assertAuthorityCurrent = current.assertCurrent;
     }
   } catch (error) {
     if (error instanceof ContractReviewBindingError) throw error;
@@ -711,14 +724,20 @@ function bindAuthority(
       `Bound authority ${authority.path} has the wrong format, registry, profile, digest, or non-Gate identity.`,
     );
   }
-  const bound = {
-    ...authority,
-    fileSha256: fileSha256(root, authority.path),
-    profileDigest: requiredDigest(profile.profileDigest, `${authority.path} profileDigest`),
-    registryDigest: requiredDigest(document.registryDigest, `${authority.path} registryDigest`),
-  };
+  hooks?.beforeDigestBinding();
+  let bound: BoundReviewBindingAuthority;
   try {
-    generatorSupplyCurrent?.assertCurrent();
+    bound = {
+      ...authority,
+      fileSha256: authorityFileSha256,
+      profileDigest: requiredDigest(profile.profileDigest, `${authority.path} profileDigest`),
+      registryDigest: requiredDigest(document.registryDigest, `${authority.path} registryDigest`),
+    };
+  } finally {
+    hooks?.afterDigestBinding();
+  }
+  try {
+    assertAuthorityCurrent();
   } catch (error) {
     throw bindingError(
       "CONTRACT_REVIEW_BINDING_IDENTITY_MISMATCH",
@@ -809,6 +828,15 @@ function validateReviewGitLineage(
       "blob",
       binding.candidate.commit + ":" + authority.path,
     ]);
+    const authorityDocument: unknown = JSON.parse(authorityBytes.toString("utf8"));
+    const authorityRecord = requiredRecord(
+      authorityDocument,
+      `${authority.path} candidate authority`,
+    );
+    const authorityProfile = requiredRecord(
+      authorityRecord.profile,
+      `${authority.path} candidate authority profile`,
+    );
     const reviewPathBefore = gitText(repositoryRoot, [
       "ls-tree",
       "-r",
@@ -829,6 +857,8 @@ function validateReviewGitLineage(
       candidateDiff !== binding.candidate.diffSha256 ||
       fileDigest(reviewBytes) !== binding.review.sha256 ||
       fileDigest(authorityBytes) !== authority.fileSha256 ||
+      authorityProfile.profileDigest !== authority.profileDigest ||
+      authorityRecord.registryDigest !== authority.registryDigest ||
       reviewPathBefore !== ""
     ) {
       throw bindingError(

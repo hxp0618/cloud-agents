@@ -56,6 +56,19 @@ review object type, unique parent, distinct commit and late review-path
 absence, and adds adversarial tests for each relationship. The rejected commit
 was not amended or force-pushed.
 
+The next additive candidate `ea4b4a40ca1df66145c88b92df4da2410042385d`
+was also preserved and rejected by fixed-object review with
+`REQUEST_CHANGES, P0=0/P1=1/P2=0`. Although its semantic currentness fences
+were complete, the detached binder parsed authority document A and later
+reopened the path for `fileSha256`, so an ancestor-directory ABA could mix the
+reviewed bytes of B with A's profile/registry digests. The final additive repair
+returns parsed registry and exact byte SHA from one stable read for both
+closure-v3 and supply-v2, forbids the binder from reopening either authority,
+terminally rechecks both current wrappers and closure semantic dependencies,
+and requires the Git candidate blob's embedded profile/registry digests to
+equal the tuple fields. Closure shift/dependency-drift and supply
+parent-directory ABA restore tests exercise the rejected sequence.
+
 ## Exact successor DAG
 
 The projection authority fixes these 16 ordered future exclusions without a
@@ -107,7 +120,9 @@ domain/registry digest validation. The complete v1 outer/39-member/semantic
 inheritance set has its own shared terminal fence. A current assembled profile
 also captures and terminally rechecks its v2 source, standalone evidence
 manifest and output; the detached consumer uses that current wrapper rather
-than document-only semantics.
+than document-only semantics. Both authority current wrappers return the exact
+output byte digest from the same read as their parsed registry; detached digest
+binding performs no second authority read.
 It requires a projection tree distinct from the immutable v1 predecessor,
 strict projection safety counters, exact Darwin/Linux A/B platform and
 run-specific claims, per-platform same-bits, cross-platform projection/output
@@ -155,9 +170,9 @@ contracts:
 | exact successor DAG            |   6/6 PASS |
 | replay receipt semantics v2    | 10/10 PASS |
 | generator-supply v2            | 12/12 PASS |
-| contract-closure v3            |   5/5 PASS |
-| detached review binding        | 13/13 PASS |
-| total focused Vitest           | 61/61 PASS |
+| contract-closure v3            |   8/8 PASS |
+| detached review binding        | 16/16 PASS |
+| total focused Vitest           | 67/67 PASS |
 
 All 20 implementation/schema/test files pass `oxfmt`; all seven new JSON
 schemas parse successfully; the cumulative 23-path Slice A candidate passes
@@ -167,9 +182,9 @@ replay, production database, HTTP, provider, deployment or publication command
 was run.
 
 The original module-level reviews covered the pre-repair working byte set. The
-fixed review of `1504465` supersedes those findings for candidate acceptance
-and remains `REQUEST_CHANGES`. The additive repair requires a new fixed-commit
-review; no earlier approval is carried forward.
+fixed reviews of `1504465` and `ea4b4a4` both remain `REQUEST_CHANGES`. The
+additive repair requires a new fixed-commit review; no earlier approval is
+carried forward.
 
 ## Gate and next-slice status
 

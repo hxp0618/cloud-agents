@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -19,6 +27,7 @@ import {
 } from "./platform-contract-closure-profile-v3";
 import {
   assertContractReviewBindingCurrentOrAbsent,
+  bindContractReviewAuthoritySnapshotForTest,
   buildContractReviewBindingTestSource,
   buildContractReviewBindingTestTuple,
   contractReviewBindingAuthorityInputs,
@@ -407,6 +416,82 @@ describe("detached contract review-binding state machine", () => {
     expectCode(
       () => inspectContractReviewBindingState(authorityFixture.root),
       "CONTRACT_REVIEW_BINDING_DIGEST_MISMATCH",
+    );
+  });
+
+  it("keeps closure semantic digests and file SHA on one snapshot across an ABA shift", () => {
+    const fixture = createFixture();
+    const authority = fixture.source.canonicalClosureAuthority;
+    const live = dirname(resolve(fixture.root, authority.path));
+    const parked = `${live}.original`;
+    const alternate = `${live}.alternate`;
+    cpSync(live, alternate, { recursive: true });
+    const alternateOutput = resolve(alternate, "contract-closure-profile-v3.json");
+    writeFileSync(
+      alternateOutput,
+      Buffer.concat([readFileSync(alternateOutput), Buffer.from(" ")]),
+    );
+    const expected = fileRecord(fixture.root, authority.path).sha256;
+    const bound = bindContractReviewAuthoritySnapshotForTest(
+      fixture.root,
+      authority,
+      () => {
+        renameSync(live, parked);
+        renameSync(alternate, live);
+      },
+      () => {
+        renameSync(live, alternate);
+        renameSync(parked, live);
+      },
+    );
+    expect(bound.fileSha256).toBe(expected);
+  });
+
+  it("keeps supply semantic digests and file SHA on one snapshot across parent-directory ABA", () => {
+    const fixture = createFixture();
+    const authority = fixture.source.supplyProfileAuthority;
+    const live = dirname(resolve(fixture.root, authority.path));
+    const parked = `${live}.original`;
+    const alternate = `${live}.alternate`;
+    cpSync(live, alternate, { recursive: true });
+    const alternateOutput = resolve(alternate, "profile.json");
+    writeFileSync(
+      alternateOutput,
+      Buffer.concat([readFileSync(alternateOutput), Buffer.from(" ")]),
+    );
+    const expected = fileRecord(fixture.root, authority.path).sha256;
+    const bound = bindContractReviewAuthoritySnapshotForTest(
+      fixture.root,
+      authority,
+      () => {
+        renameSync(live, parked);
+        renameSync(alternate, live);
+      },
+      () => {
+        renameSync(live, alternate);
+        renameSync(parked, live);
+      },
+    );
+    expect(bound.fileSha256).toBe(expected);
+  });
+
+  it("rejects closure dependency drift during detached digest binding", () => {
+    const fixture = createFixture();
+    const dependency = CONTRACT_CLOSURE_V2_IMMUTABLE_FILES.at(-1)!.path;
+    expect(() =>
+      bindContractReviewAuthoritySnapshotForTest(
+        fixture.root,
+        fixture.source.canonicalClosureAuthority,
+        () => {
+          const path = resolve(fixture.root, dependency);
+          writeFileSync(path, Buffer.concat([readFileSync(path), Buffer.from(" ")]));
+        },
+        () => {},
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "CONTRACT_REVIEW_BINDING_IDENTITY_MISMATCH",
+      }),
     );
   });
 
