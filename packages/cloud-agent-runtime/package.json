@@ -70,6 +70,6 @@
     "@synara/cloud-agent-provider-api": "0.1.0-rc.1"
   },
   "engines": {
-    "node": ">=24.13.1 <25"
+    "node": ">=24.18.1 <25"
   }
 }

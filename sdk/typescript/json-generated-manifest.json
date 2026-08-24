@@ -114,11 +114,13 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:852e4ddd14f2053d5cefc7cbb47ff364bcbf47f159506936ca629b1d3d19bc90",
+    "sourceManifestSha256": "sha256:41bdc36584f3310c1bbb248c3002ab1ad1f9fdf1617876d72752937e5dca160a",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
       "scripts/lib/platform-json-sdk.ts",
+      "scripts/lib/platform-oxfmt.test.ts",
+      "scripts/lib/platform-oxfmt.ts",
       "scripts/templates/platform-json-sdk-go-common.tmpl",
       "scripts/templates/platform-json-sdk-go-openapi.tmpl",
       "scripts/templates/platform-json-sdk-go-platform.tmpl",
@@ -143,11 +145,11 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:4f8fb17e8a03cfde9ccfee848532c47332e68d1a9141e64ccf284e4f1c9999d6",
+  "outputTreeSha256": "sha256:c523c2bfdea851c1c523fd854477422f700686a49333713d345036574c346597",
   "outputs": [
     {
       "path": "sdk/typescript/src/platform.ts",
-      "sha256": "sha256:dbe6e35e9ee164aef41262062f47b4427607814df9db5c98d4b93eadb6da526d",
+      "sha256": "sha256:2fa017e4ffe0b28560b088be0c1b301a2c55ad634d64605fbae5bdfadb6fdd26",
       "sizeBytes": 44209
     }
   ]

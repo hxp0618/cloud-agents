@@ -1,0 +1,32 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-replay-summary/v1",
+  "status": "DUAL_PLATFORM_TWO_ARCHIVES_EXACT_REPLAY_VERIFIED",
+  "wrapperPolicy": "VERSIONED_ISOLATION_WRAPPER_V1",
+  "wrapperSha256": "sha256:f85ab149a6a2daf36b3eb1a06a00f0258829ff71a3aae2dc6cec9f3d0601b250",
+  "authoritativeReplayScope": "CORE_GENERATORS_ONLY_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY",
+  "projectionTreeSha": "e8e1442bf7cc98043885ce43f23b5e48ac022412",
+  "projectionArchiveSha256": "sha256:798ccf4ca98f7ed8da90cde041195f6bc28f7e4b23c532792cb6139211dbf2ed",
+  "projectionArchiveSizeBytes": 45752320,
+  "projectionArchiveMemberManifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+  "projectionArchiveMemberManifestSha256": "sha256:624f6da842774e80b1931e1684b417902f81e6a8dd576c3baced9da52e4d55ca",
+  "projectionArchiveMembers": 1478,
+  "inputTreeManifestAlgorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+  "inputTreeManifestSha256": "sha256:1a6f9fbb8af3eeabf358d660345262d3d9fd41159524ac1a507d6dd51cb4633b",
+  "inputTreeFiles": 1297,
+  "candidateManifestSha256": "sha256:dd8c54f5786947f879fbb41c112d686d7abaeeef2f3e505fc0ea73bd31882696",
+  "darwinNetworkIsolation": "SANDBOX_EXEC_DENY_NETWORK_WITH_NEGATIVE_PROBES",
+  "linuxNetworkIsolation": "UNSHARE_NETWORK_MOUNT_PID_PINNED_UBUNTU_READ_ONLY_ROOTFS",
+  "candidateOutputsEqual": true,
+  "nonAllowlistedChanges": 0,
+  "runReportSha256": {
+    "darwin-a": "5e78c58b4268ae814440aa08b94038ac22bbbaf9e97d46ba10a4c6ae37d475fd",
+    "darwin-b": "ca7fa1552e6c2160ebb5a1f4a4c249f6d1e08631d766d11bc14665d898437983",
+    "linux-a": "e92e73573ffbfffb8f83278e4b48d1dcbe7198917673828179cb02573a82e195",
+    "linux-b": "a6f21ba4c2d2e2a92b52ce4ead432efd1d8c14ae6b8d80e347ed33c8e4e53fb5"
+  },
+  "darwinIsolationSha256": "a73357f5109c33b4f42ad0a7d502847caf8715bc11315882c6196de99edacecf",
+  "linuxIsolationSha256": "3b51ed94055ab67ef74ebce16750d5d13387ea90c81305c62275e0b37451073a",
+  "projectionReceiptSha256": "9a55c117dc31568641f93851247237adb91881bc6c890b64e8537c3c98a9c346",
+  "rejectedExecutorSha256": "ea80b2c8281811599ef78d017cddab2cf2275b4a0928811dbc58a78660550a19",
+  "notGateClosure": true
+}

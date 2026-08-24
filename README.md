@@ -8,7 +8,7 @@ The seven packages keep their `@synara/cloud-agent-*` names for first-RC wire an
 
 ## Runtime baseline
 
-- Node.js `24.13.1`
+- Node.js `24.18.1`
 - Bun `1.3.14`
 - Provider Host Protocol `2.2` and `2.3`; Runtime Event `2`
 - ordinary JavaScript/TypeScript values, `Promise`, `AsyncIterable`, `AbortSignal`, NDJSON, and JSON Schema

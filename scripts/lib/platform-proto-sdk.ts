@@ -19,6 +19,11 @@ import { fromBinary } from "@bufbuild/protobuf";
 import { FileDescriptorSetSchema } from "@bufbuild/protobuf/wkt";
 
 import { validatePlatformContractTree } from "./platform-contracts";
+import {
+  formatWithOxfmt,
+  PLATFORM_OXFMT_LIBRARY_PATH,
+  PLATFORM_OXFMT_TEST_PATH,
+} from "./platform-oxfmt";
 
 export const PLATFORM_PROTO_PROFILE_PATH = "contracts/proto-generation.profile.json";
 const ENTRY_PATH = "docs/plan/p1/sdk-identity-closure-entry-20260820.md";
@@ -98,6 +103,8 @@ export function platformProtoGeneratorSources(): string[] {
     PLATFORM_PROTO_GENERATOR_PATH,
     PLATFORM_PROTO_LIBRARY_PATH,
     PLATFORM_PROTO_TEST_PATH,
+    PLATFORM_OXFMT_LIBRARY_PATH,
+    PLATFORM_OXFMT_TEST_PATH,
   ].toSorted();
 }
 
@@ -398,7 +405,7 @@ function ensureToolchain(root: string, profile: ProtoGenerationProfile): Toolcha
   );
 
   const node = process.env.CLOUD_AGENTS_NODE ?? "node";
-  assertVersion(node, ["--version"], "v24.13.1", "Node.js");
+  assertVersion(node, ["--version"], "v24.18.1", "Node.js");
   const protocGenES = resolve(root, "node_modules/.bin/protoc-gen-es");
   assertVersion(
     protocGenES,
@@ -570,17 +577,7 @@ function run(
 }
 
 function formatGeneratedText(root: string, path: string, source: string): string {
-  const formatter = resolve(root, "node_modules/.bin/oxfmt");
-  const result = spawnSync(formatter, ["--stdin-filepath", path], {
-    cwd: root,
-    encoding: "utf8",
-    input: source,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  if (result.status !== 0) {
-    throw new Error(`Formatter failed for generated ${path}: ${result.stderr.trim()}`);
-  }
-  return result.stdout;
+  return formatWithOxfmt(root, path, source);
 }
 
 function assertGeneratedTree(root: string, expected: ReadonlyArray<string>): void {

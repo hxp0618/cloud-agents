@@ -2,7 +2,7 @@
 
 - Canonical root：`hxp0618/cloud-agents/docs/plan`
 - Plan status：APPROVED
-- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。ADR-0024/D-048 又接受无同步 bare-metal 软件崩溃作为物理硬断电的 P1/RC 替代边界，但不把 clean `poweroff` 当崩溃证据，也不声称任何物理断电结果；ADR-0025/D-049 的 offline JWT access-token verifier ordered Slices A–C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review commit `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`，五个 RBAC 与三个 JWT-user durable 路径只接受 callback-scoped `*VerifiedPrincipal`；production trust provisioning 与 HTTP/OIDC/JWKS 仍未实现，`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 仍因 current-source phase records 与剩余退出标准未全部闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
+- Execution status：Platform P0 VERIFIED；P1 IN PROGRESS（A2.2 remediation、A2.3、A2.4 与 A3 的固定 implementation/review package 已批准；runner ledger/catalog preflight、versioned read-only consumer 与 fresh-session close-only entry admission 均已完成固定实现/独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。ADR-0024/D-048 接受软件关机/崩溃机制替代物理硬断电，并按 2026-08-24 owner 口径将普通 `poweroff`/`reboot` 计为项目“掉电恢复”；记录仍须如实标为 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 SSD/controller cache-loss；ADR-0025/D-049 的 offline JWT access-token verifier ordered Slices A–C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review commit `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`，五个 RBAC 与三个 JWT-user durable 路径只接受 callback-scoped `*VerifiedPrincipal`；ADR-0028/D-051 接受 bounded local generator-supply profile implementation/review，不改变任何 Gate；production trust provisioning 与 HTTP/OIDC/JWKS 仍未实现，`G-CONTRACT`、`G-DATA`、`G-AUTHORITY-P1`、`G-SECURITY-P1` 与 `G-SUPPLY-CHAIN` 仍因 current-source phase records 与剩余退出标准未全部闭合而保持 `IN PROGRESS`）；M1/P2–P6 PAUSED
 - Approved by user：2026-08-10
 - Migration source：`hxp0618/synara@2c50b1eb54ed3228719bb55cc8bdcd1b0babc8e0`
 - Source plan commit：`4433ebfcff882458822e90d9d79edb076c7ccc91`
@@ -25,12 +25,15 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
    [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)；
 5. 已接受、仅授权 offline identity-verifier ordered local Slices A-C 的
    [`ADR-0025`](adr/0025-p1-offline-jwt-access-token-verifier-contract.md)；
+6. 已接受、限定 fixed-corpus evidence semantics 的
    [`ADR-0026`](adr/0026-p1-json-schema-official-suite-evidence-closure.md)；
-6. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
-7. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
-8. `legacy/` 历史计划；
-9. `references/` 冻结参考合同；
-10. 代码现状。
+7. 已接受、限定 bounded local generator-supply profile implementation/review 的
+   [`ADR-0028`](adr/0028-p1-generator-supply-profile.md)；
+8. [`cloud-agents-platform/01`–`06`](cloud-agents-platform/README.md)；
+9. [`Synara × T3 总架构`](synara-t3-cloud-agent-integration-architecture.md)；
+10. `legacy/` 历史计划；
+11. `references/` 冻结参考合同；
+12. 代码现状。
 
 ## 当前计划
 
@@ -68,6 +71,7 @@ Gate evidence 的唯一计划根。后续不再以 Synara 私有仓中的计划�
 | [`ADR-0024`](adr/0024-p1-software-crash-durability-acceptance.md)                                        | P1 software-crash durability acceptance 边界     |
 | [`ADR-0025`](adr/0025-p1-offline-jwt-access-token-verifier-contract.md)                                  | P1 offline JWT access-token verifier 边界        |
 | [`ADR-0026`](adr/0026-p1-json-schema-official-suite-evidence-closure.md)                                 | P1 JSON Schema official-suite evidence closure   |
+| [`ADR-0028`](adr/0028-p1-generator-supply-profile.md)                                                    | P1 bounded generator-supply profile 边界         |
 
 ## 历史与参考
 
@@ -128,8 +132,10 @@ evidence 与当时缺口分开：D-047/ADR-0023 仍须 owner 显式决定，phys
 DUT/storage/out-of-band controller 阻塞，最终 current-source immutable phase records 尚未形成。固定候选
 `6274ad0` 的 [`d03d62b` independent review](p1/p1-aggregate-gate-gap-audit-independent-review-20260822.md)
 返回 `APPROVE, P0=0/P1=0/P2=0`；审计与复核均未改变 Gate。后续 D-048/ADR-0024 只把物理硬断电从当前
-P1/RC 必需证据改为可选 hardening，并要求无同步 bare-metal 软件崩溃、既有 ext4/XFS/QEMU matrices、重启后
-精确核验、current-source record 与独立 Gate review 的组合；其
+P1/RC 必需证据改为可选 hardening；2026-08-24 owner 又明确普通 `poweroff`/`reboot` 可计为项目“掉电恢复”，
+但必须记录其 exact mechanism 为 clean shutdown/restart，不能声称 abrupt crash、BMC hard-off、物理拔电或
+SSD/controller cache-loss。closure 仍须结合既有 ext4/XFS/QEMU matrices、重启后精确核验、current-source
+record 与独立 Gate review；原
 [`independent review`](p1/software-crash-durability-acceptance-independent-review-20260823.md) 返回
 `APPROVE, P0=0/P1=0/P2=0`，旧 gap audit 仍是固定 source 的准确历史记录。
 其后 runner ledger consumer 已在 `dcb4b3a` 固定 complete-ledger `return_success` read-only no-op，并由

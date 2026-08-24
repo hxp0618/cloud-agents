@@ -1,0 +1,12 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-ubuntu-image-binding/v1",
+  "status": "EXACT_PINNED_UBUNTU_ROOTFS_BOUND",
+  "registryIndexDigest": "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+  "platformManifestDigest": "sha256:fd225d3a1c5cecb1374f0d09c37a127d1f6f70e665941d6dab888c38b36c2131",
+  "configImageId": "sha256:a6f81fb630d51837271b89f8193810a5fc493fa4f30a55d7ebcdb3a66f3cc63a",
+  "rootfsLayerDigest": "sha256:b9a65b3c65ab22d490085bd0bf5490e2409da8748b406870f2463bdc41cd6795",
+  "exportTarSha256": "25ecc117cd77a289cc25006605dcf4ec8b137fec326db766d0abcd4147f6093e",
+  "architecture": "amd64",
+  "os": "linux",
+  "ubuntu": "24.04.4 LTS"
+}

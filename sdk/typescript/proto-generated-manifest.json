@@ -24,9 +24,11 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-proto-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:44e84c011efadf703461a823a54f9d34500fabd9365a626992219c8aff1e1d01",
+    "sourceManifestSha256": "sha256:ab5bf2f5142ffb2e4df8bf37da53e9dc73661c8840909c8ca58e13412105c88d",
     "sources": [
       "scripts/generate-platform-proto-sdks.ts",
+      "scripts/lib/platform-oxfmt.test.ts",
+      "scripts/lib/platform-oxfmt.ts",
       "scripts/lib/platform-proto-sdk.test.ts",
       "scripts/lib/platform-proto-sdk.ts"
     ],
@@ -119,7 +121,7 @@
   "dependencyFiles": {
     "package": {
       "path": "sdk/typescript/package.json",
-      "sha256": "sha256:3bc29ed0caa744c366b94cdde2fa196f4e00c168e9610ffa287fd2c14bce861c"
+      "sha256": "sha256:803badc33a76e6bedfc82d357539f318aff18599e2a8eabf6385d00f489297b9"
     },
     "bunLock": {
       "path": "bun.lock",

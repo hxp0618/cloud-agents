@@ -1,0 +1,258 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-profile-source/v1",
+  "profile": {
+    "profileId": "cloud-agents/generator-supply-profile/v1",
+    "status": "REPLAY_VERIFIED_REVIEW_PENDING",
+    "notGateClosure": true,
+    "platforms": [
+      {
+        "id": "darwin-arm64",
+        "status": "NATIVE_REPLAY_VERIFIED",
+        "nativeExecution": true,
+        "npmInstalledPackages": 16
+      },
+      {
+        "id": "linux-amd64",
+        "status": "NATIVE_REPLAY_VERIFIED",
+        "nativeExecution": true,
+        "npmInstalledPackages": 17
+      },
+      {
+        "id": "linux-arm64",
+        "status": "NOT_CLAIMED",
+        "nativeExecution": false,
+        "npmInstalledPackages": null
+      }
+    ],
+    "runtimes": {
+      "node": "24.18.1",
+      "npm": "11.8.0",
+      "bun": "1.3.14",
+      "go": "1.26.6",
+      "gofmt": "1.26.6-sibling",
+      "python": "3.14.7",
+      "pythonBuild": "astral-20260814",
+      "uv": "0.12.5",
+      "protoc": "35.1",
+      "protocGenGo": "1.36.12",
+      "protocGenConnectGo": "1.20.0",
+      "protocGenES": "2.14.0",
+      "oxfmt": "0.62.0"
+    },
+    "officialArtifacts": [
+      {
+        "id": "node-darwin-arm64",
+        "filename": "node-v24.18.1-darwin-arm64.tar.xz",
+        "source": "https://nodejs.org/download/release/v24.18.1/node-v24.18.1-darwin-arm64.tar.xz",
+        "sha256": "1d60b703fe5d7e7072489be8187f430f1a095a658c31e5e1e281331a5873fac3",
+        "sizeBytes": 27028232,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "node-linux-amd64",
+        "filename": "node-v24.18.1-linux-x64.tar.xz",
+        "source": "https://nodejs.org/download/release/v24.18.1/node-v24.18.1-linux-x64.tar.xz",
+        "sha256": "d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0",
+        "sizeBytes": 31525884,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "bun-darwin-arm64",
+        "filename": "bun-darwin-aarch64.zip",
+        "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-darwin-aarch64.zip",
+        "sha256": "d8b96221828ad6f97ac7ac0ab7e95872341af763001e8803e8267652c2652620",
+        "sizeBytes": 23586433,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "bun-linux-amd64",
+        "filename": "bun-linux-x64-baseline.zip",
+        "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64-baseline.zip",
+        "sha256": "a063908ae08b7852ca10939bbdc6ceed3ddabce8fb9402dce83d65d73b36e6c7",
+        "sizeBytes": 35595658,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "go-darwin-arm64",
+        "filename": "go1.26.6.darwin-arm64.tar.gz",
+        "source": "https://go.dev/dl/go1.26.6.darwin-arm64.tar.gz",
+        "sha256": "2dc95ce4675829f2df0e86b28bcef3283635902062a5f0580ca659bf570f3204",
+        "sizeBytes": 64772321,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "go-linux-amd64",
+        "filename": "go1.26.6.linux-amd64.tar.gz",
+        "source": "https://go.dev/dl/go1.26.6.linux-amd64.tar.gz",
+        "sha256": "708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89",
+        "sizeBytes": 66890545,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "python-darwin-arm64",
+        "filename": "cpython-3.14.7+20260814-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.14.7%2B20260814-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "423717c485b9ee7822590b9d973c1b5fb2cda0fe43448ab82a3d44f823bd329c",
+        "sizeBytes": 26507457,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "python-linux-amd64",
+        "filename": "cpython-3.14.7+20260814-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.14.7%2B20260814-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "cefba034445d2875408d1fd4d5700ae6731563aeb54dcb39fd8164ab5c457533",
+        "sizeBytes": 35857286,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "uv-darwin-arm64",
+        "filename": "uv-aarch64-apple-darwin.tar.gz",
+        "source": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "5bb0e5fe008a773c3dbcb97ff79cd89e1241464fe9d2f986d52ad8f1b037bd62",
+        "sizeBytes": 18518284,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "uv-linux-amd64",
+        "filename": "uv-x86_64-unknown-linux-gnu.tar.gz",
+        "source": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
+        "sizeBytes": 23015306,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "protoc-darwin-arm64",
+        "filename": "protoc-35.1-osx-aarch_64.zip",
+        "source": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-osx-aarch_64.zip",
+        "sha256": "193289af0470c6a1aada357d4fba0bbf8d78bfaac8b5e42ca30af2ef75583de2",
+        "sizeBytes": 2585575,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "protoc-linux-amd64",
+        "filename": "protoc-35.1-linux-x86_64.zip",
+        "source": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-x86_64.zip",
+        "sha256": "6930ebf62bd4ea607b98fff052596c6ee564b9835b4ce172c75a3f53ae9d91b7",
+        "sizeBytes": 3633928,
+        "use": "GENERATOR_RUNTIME"
+      },
+      {
+        "id": "syft-darwin-arm64",
+        "filename": "syft_1.51.0_darwin_arm64.tar.gz",
+        "source": "https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_darwin_arm64.tar.gz",
+        "sha256": "4f37f4c7fefce0a68e4cf71ba3f5f9829a99e65d89b29f7ee41b8c2c10ea8c59",
+        "sizeBytes": 27498100,
+        "use": "EVIDENCE_ONLY"
+      },
+      {
+        "id": "grype-darwin-arm64",
+        "filename": "grype_0.117.0_darwin_arm64.tar.gz",
+        "source": "https://github.com/anchore/grype/releases/download/v0.117.0/grype_0.117.0_darwin_arm64.tar.gz",
+        "sha256": "bfcefa3f3b1690d9c77d847841b32ebd6106ab0e0e32f810924707e704d53584",
+        "sizeBytes": 28625409,
+        "use": "EVIDENCE_ONLY"
+      },
+      {
+        "id": "osv-scanner-darwin-arm64",
+        "filename": "osv-scanner_2.5.1_darwin_arm64",
+        "source": "https://github.com/google/osv-scanner/releases/download/v2.5.1/osv-scanner_darwin_arm64",
+        "sha256": "75c44d6332f892a1e56286f4105a98ed751ae28d215ca0a8b65cc00d84103054",
+        "sizeBytes": 55484002,
+        "use": "EVIDENCE_ONLY"
+      }
+    ],
+    "dependencyAuthority": {
+      "npm": "STERILE_NPM_11_8_0_OFFICIAL_REGISTRY_EXACT_LOCK",
+      "go": "ISOLATED_GO_MOD_SUM_EXACT_MODULES",
+      "python": "UV_OFFLINE_21_WHEELS_PER_PLATFORM",
+      "rootBunLock": "LEGACY_NPMMIRROR_CONTEXT_NOT_EXECUTION_AUTHORITY"
+    },
+    "replayAuthority": {
+      "wrapperPolicy": "VERSIONED_ISOLATION_WRAPPER_V1",
+      "wrapperPath": "scripts/replay-platform-generators-isolated.sh",
+      "wrapperSha256": "f85ab149a6a2daf36b3eb1a06a00f0258829ff71a3aae2dc6cec9f3d0601b250",
+      "runnerPath": "scripts/replay-platform-generators.ts",
+      "runnerSha256": "2e07df97c7ca646b365a9090ee0d98af2ede386d56c6647c450c778f4147f58f",
+      "pathAuthorityPath": "scripts/lib/generator-replay-path-authority.ts",
+      "pathAuthoritySha256": "4cde1599b7e909ef0070b81090d40c2e2c7c1c43af64cebd3c53391489a6fccf",
+      "replayArchiveInspectorPath": "scripts/lib/inspect-generator-replay-archive.py",
+      "replayArchiveInspectorSha256": "db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31",
+      "projectionPolicy": "ACYCLIC_CORE_PROJECTION_V1",
+      "projectionArchiveFormat": "GIT_ARCHIVE_TAR_FIXED_MTIME_1970",
+      "projectionArchiveByteBinding": "SHA256_AND_SIZE_BYTES_EXACT",
+      "projectionArchiveMemberManifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+      "inputTreeManifestAlgorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+      "nodeModulesManifestAlgorithm": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+      "authoritativeReplayScope": "CORE_GENERATORS_ONLY_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY",
+      "isolationEvidenceAuthority": "VERSIONED_WRAPPER_SAME_BOUNDARY_RECEIPT"
+    },
+    "evidence": {
+      "material": [
+        "tools/generator-supply/v1/evidence/artifacts.json",
+        "tools/generator-supply/v1/evidence/go-plugins.json",
+        "tools/generator-supply/v1/evidence/npm.json",
+        "tools/generator-supply/v1/evidence/wheelhouse-repair-lineage.json",
+        "tools/generator-supply/v1/evidence/wheels.json"
+      ],
+      "replay": [
+        "tools/generator-supply/v1/evidence/replay.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-a.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-b.json",
+        "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
+        "tools/generator-supply/v1/evidence/replay/linux-a.json",
+        "tools/generator-supply/v1/evidence/replay/linux-b.json",
+        "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
+        "tools/generator-supply/v1/evidence/replay/projection.json",
+        "tools/generator-supply/v1/evidence/replay/rejected-executor.json"
+      ],
+      "sbom": [
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/darwin-bundle.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/linux-bundle.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-darwin.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-linux.syft.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.cdx.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.spdx.json",
+        "tools/generator-supply/v1/evidence/sbom/ubuntu-image.syft.json",
+        "tools/generator-supply/v1/evidence/sbom-summary.json",
+        "tools/generator-supply/v1/evidence/ubuntu-image-binding.json"
+      ],
+      "notice": [
+        "tools/generator-supply/v1/evidence/THIRD_PARTY_NOTICES.md",
+        "tools/generator-supply/v1/evidence/notice-summary.json"
+      ],
+      "vulnerability": [
+        "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-db-status.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-linux.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-darwin.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-linux.json",
+        "tools/generator-supply/v1/evidence/vulnerability/grype-ubuntu.json",
+        "tools/generator-supply/v1/evidence/vulnerability/osv.json",
+        "tools/generator-supply/v1/evidence/vulnerability/osv-scanner-receipt.json",
+        "tools/generator-supply/v1/evidence/security-repair.json",
+        "tools/generator-supply/v1/evidence/vulnerability/summary.json"
+      ]
+    },
+    "attestation": {
+      "semantics": "DETACHED_DIGEST_BOUND_INDEPENDENT_REVIEW",
+      "cryptographicSignature": "NOT_PRODUCED_NOT_AUTHORIZED",
+      "signerIdentityAuthentication": "NOT_CLAIMED",
+      "publication": "NOT_AUTHORIZED"
+    },
+    "boundaries": {
+      "criterion": "REVIEW_PENDING_NOT_CLOSED",
+      "gate": "ALL_GATES_OPEN",
+      "productionDatabase": "NOT_AUTHORIZED",
+      "http": "NOT_IMPLEMENTED",
+      "p2": "NOT_IMPLEMENTED",
+      "provider": "NOT_AUTHORIZED",
+      "deployment": "NOT_AUTHORIZED",
+      "release": "NOT_AUTHORIZED",
+      "legalApproval": "NOT_CLAIMED"
+    }
+  }
+}

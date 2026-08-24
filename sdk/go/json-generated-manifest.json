@@ -114,11 +114,13 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:852e4ddd14f2053d5cefc7cbb47ff364bcbf47f159506936ca629b1d3d19bc90",
+    "sourceManifestSha256": "sha256:41bdc36584f3310c1bbb248c3002ab1ad1f9fdf1617876d72752937e5dca160a",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
       "scripts/lib/platform-json-sdk.ts",
+      "scripts/lib/platform-oxfmt.test.ts",
+      "scripts/lib/platform-oxfmt.ts",
       "scripts/templates/platform-json-sdk-go-common.tmpl",
       "scripts/templates/platform-json-sdk-go-openapi.tmpl",
       "scripts/templates/platform-json-sdk-go-platform.tmpl",
@@ -143,21 +145,21 @@
   "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:891342c83c40d7b5c56a659f77c27b8d76a5ddaf961e7f2ce62a65bc4bb2576c",
+  "outputTreeSha256": "sha256:1cea73a96c9f88bc76aee90e36702511c1c9a6f00fc3613d6df188611d144640",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-      "sha256": "sha256:f1e24a46861aec86b6d04df35c2cad2cecc0b304f33a34d2996ed949c6296bf1",
+      "sha256": "sha256:301694b57704faf8253aa8c5b4b313a5f8384e84f95de8194a5afe02784546bc",
       "sizeBytes": 28791
     },
     {
       "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-      "sha256": "sha256:707f36e329c8126f199e3e04503ae0fd8725ea6ef991be0ef548f4c5a328a394",
+      "sha256": "sha256:ff1c5149738ec4f5a6d05a505c74b25a96cfc02706110b9708f1790c35d82b52",
       "sizeBytes": 24032
     },
     {
       "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-      "sha256": "sha256:e4caab318920a7d1970facdef3779437ffe4f939586583dc248136f93d993a77",
+      "sha256": "sha256:49135a495af50a1e2082f20d1a4cbf0b41b0d80a4dc8cfc95a4e3ad15880de1d",
       "sizeBytes": 11624
     }
   ]

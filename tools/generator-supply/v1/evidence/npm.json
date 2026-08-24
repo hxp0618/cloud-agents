@@ -1,0 +1,382 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-npm/v1",
+  "status": "STERILE_OFFICIAL_REGISTRY_LOCK_AND_NATIVE_LOAD_VERIFIED",
+  "npm": "11.8.0",
+  "npmRuntime": {
+    "package": {
+      "sha256": "90ebfe535e8e6d3551964290f26f1a2ba5bc0b86ec2b6656b54c092206946f1e",
+      "sizeBytes": 6620
+    },
+    "cli": {
+      "sha256": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7",
+      "sizeBytes": 54
+    }
+  },
+  "lockPackageRecordsIncludingRoot": 35,
+  "officialResolvedDependencyRecords": 34,
+  "nonOfficialResolvedRecords": 0,
+  "directExactDependencies": 5,
+  "packageLock": {
+    "path": "tools/generator-supply/npm/package-lock.json",
+    "sha256": "651ff65d757c87b4207498564f6628ba167ef9e871ebd8c1c78e33e2d9cdc53a",
+    "sizeBytes": 18242
+  },
+  "darwinInstalledPackages": 16,
+  "linuxInstalledPackages": 17,
+  "darwinLoadedBinding": "@oxfmt/binding-darwin-arm64",
+  "linuxInstalledBindings": [
+    "@oxfmt/binding-linux-x64-gnu",
+    "@oxfmt/binding-linux-x64-musl"
+  ],
+  "linuxLoadedBinding": "@oxfmt/binding-linux-x64-gnu",
+  "rootBunLockAuthority": "LEGACY_CONTEXT_ONLY",
+  "rootBunLock": {
+    "path": "bun.lock",
+    "sha256": "cbd9d3dc8976c2dcbc340fb69f4dad250e788687bb252428dcd611b256fc884a",
+    "registryContext": "registry.npmmirror.com",
+    "generatorExecutionAuthority": false
+  },
+  "installed": [
+    {
+      "platform": "darwin-arm64",
+      "installedPackageCount": 16,
+      "hiddenLock": {
+        "sha256": "824b60b5207c9ede1f96f689760354480eb48d2f4b05288c5bc4c28a8ad76676",
+        "sizeBytes": 8551
+      },
+      "nodeModules": {
+        "algorithm": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+        "sha256": "1add1b3ccfee82d4c18849ce21ab07b2f2221bb98cec019ccd6bcdda87ea134f",
+        "files": 1186,
+        "symlinks": [
+          {
+            "path": ".bin/oxfmt",
+            "target": "../oxfmt/bin/oxfmt"
+          },
+          {
+            "path": ".bin/protoc-gen-es",
+            "target": "../@bufbuild/protoc-gen-es/bin/protoc-gen-es"
+          },
+          {
+            "path": ".bin/tsc",
+            "target": "../typescript/bin/tsc"
+          },
+          {
+            "path": ".bin/tsserver",
+            "target": "../typescript/bin/tsserver"
+          }
+        ],
+        "topLevelEntries": [
+          ".bin",
+          ".package-lock.json",
+          "@bufbuild",
+          "@oxfmt",
+          "@typescript",
+          "ajv",
+          "ajv-formats",
+          "debug",
+          "fast-deep-equal",
+          "fast-uri",
+          "json-schema-traverse",
+          "ms",
+          "oxfmt",
+          "require-from-string",
+          "tinypool",
+          "typescript"
+        ],
+        "declaredPackageRoots": [
+          "@bufbuild/protobuf",
+          "@bufbuild/protoc-gen-es",
+          "@bufbuild/protoplugin",
+          "@oxfmt/binding-darwin-arm64",
+          "@typescript/vfs",
+          "ajv",
+          "ajv-formats",
+          "debug",
+          "fast-deep-equal",
+          "fast-uri",
+          "json-schema-traverse",
+          "ms",
+          "oxfmt",
+          "require-from-string",
+          "tinypool",
+          "typescript"
+        ],
+        "undeclaredEntries": 0,
+        "cacheEntries": 0
+      },
+      "packages": [
+        {
+          "path": "node_modules/@bufbuild/protobuf",
+          "version": "2.14.0",
+          "integrity": "sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w==",
+          "resolved": "https://registry.npmjs.org/@bufbuild/protobuf/-/protobuf-2.14.0.tgz"
+        },
+        {
+          "path": "node_modules/@bufbuild/protoc-gen-es",
+          "version": "2.14.0",
+          "integrity": "sha512-/Rrui0BJWSRONiKGYzqWq9ivGN3+cYkmc47QWITufr7K6yDb8HfssuJUSQZeptyg/rHbHrfDzCUjzoJ2pwuafg==",
+          "resolved": "https://registry.npmjs.org/@bufbuild/protoc-gen-es/-/protoc-gen-es-2.14.0.tgz"
+        },
+        {
+          "path": "node_modules/@bufbuild/protoplugin",
+          "version": "2.14.0",
+          "integrity": "sha512-S0TvZhVtTEkZQRj2JsXBCXiib/b0+bLQtJCcn+hj9O/usgbcgxHn4D+ii22Ao3qj0/kKxVYeo7BtAI2dMk+iig==",
+          "resolved": "https://registry.npmjs.org/@bufbuild/protoplugin/-/protoplugin-2.14.0.tgz"
+        },
+        {
+          "path": "node_modules/@oxfmt/binding-darwin-arm64",
+          "version": "0.62.0",
+          "integrity": "sha512-GM8Yf3LjjaR1I8PD0SfeoIlwhsh9GvSF+cQ8sf624Yxnjsyumn95aFzYfKJVefblfDIiOAnZ7QVm2sa21Er/0Q==",
+          "resolved": "https://registry.npmjs.org/@oxfmt/binding-darwin-arm64/-/binding-darwin-arm64-0.62.0.tgz"
+        },
+        {
+          "path": "node_modules/@typescript/vfs",
+          "version": "1.6.4",
+          "integrity": "sha512-PJFXFS4ZJKiJ9Qiuix6Dz/OwEIqHD7Dme1UwZhTK11vR+5dqW2ACbdndWQexBzCx+CPuMe5WBYQWCsFyGlQLlQ==",
+          "resolved": "https://registry.npmjs.org/@typescript/vfs/-/vfs-1.6.4.tgz"
+        },
+        {
+          "path": "node_modules/ajv",
+          "version": "8.20.0",
+          "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+          "resolved": "https://registry.npmjs.org/ajv/-/ajv-8.20.0.tgz"
+        },
+        {
+          "path": "node_modules/ajv-formats",
+          "version": "3.0.1",
+          "integrity": "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==",
+          "resolved": "https://registry.npmjs.org/ajv-formats/-/ajv-formats-3.0.1.tgz"
+        },
+        {
+          "path": "node_modules/debug",
+          "version": "4.4.3",
+          "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+          "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz"
+        },
+        {
+          "path": "node_modules/fast-deep-equal",
+          "version": "3.1.3",
+          "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+          "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz"
+        },
+        {
+          "path": "node_modules/fast-uri",
+          "version": "3.1.6",
+          "integrity": "sha512-7Ical1vFEMr0onbVzEDIreM22I4khW+fzyQPwvAFWBp1iwdshSZRsL4jjRvPG9JP1uiqMHRto+YU6R2/CzDz5Q==",
+          "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.6.tgz"
+        },
+        {
+          "path": "node_modules/json-schema-traverse",
+          "version": "1.0.0",
+          "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
+          "resolved": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz"
+        },
+        {
+          "path": "node_modules/ms",
+          "version": "2.1.3",
+          "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+          "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz"
+        },
+        {
+          "path": "node_modules/oxfmt",
+          "version": "0.62.0",
+          "integrity": "sha512-vxgGHTmnDU9j4CX7dDBLzxgmHxfda/yPcgJkGCMUSCwRmz+euo/V08xXLNgXTeqAB9Fhf3Pe2nO1RNKLCVgphQ==",
+          "resolved": "https://registry.npmjs.org/oxfmt/-/oxfmt-0.62.0.tgz"
+        },
+        {
+          "path": "node_modules/require-from-string",
+          "version": "2.0.2",
+          "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==",
+          "resolved": "https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz"
+        },
+        {
+          "path": "node_modules/tinypool",
+          "version": "2.1.0",
+          "integrity": "sha512-Pugqs6M0m7Lv1I7FtxN4aoyToKg1C4tu+/381vH35y8oENM/Ai7f7C4StcoK4/+BSw9ebcS8jRiVrORFKCALLw==",
+          "resolved": "https://registry.npmjs.org/tinypool/-/tinypool-2.1.0.tgz"
+        },
+        {
+          "path": "node_modules/typescript",
+          "version": "5.4.5",
+          "integrity": "sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ==",
+          "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.4.5.tgz"
+        }
+      ]
+    },
+    {
+      "platform": "linux-amd64",
+      "installedPackageCount": 17,
+      "hiddenLock": {
+        "sha256": "3194a4b93f86d5ad1dd1343caab3134ae62ecd40f92cedc200ff7c672c6bd39f",
+        "sizeBytes": 9061
+      },
+      "nodeModules": {
+        "algorithm": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+        "sha256": "f8ea39be84ac76fd016f6a652c6ff4a9f81a94631469b329d523c1ee91253c88",
+        "files": 1189,
+        "symlinks": [
+          {
+            "path": ".bin/oxfmt",
+            "target": "../oxfmt/bin/oxfmt"
+          },
+          {
+            "path": ".bin/protoc-gen-es",
+            "target": "../@bufbuild/protoc-gen-es/bin/protoc-gen-es"
+          },
+          {
+            "path": ".bin/tsc",
+            "target": "../typescript/bin/tsc"
+          },
+          {
+            "path": ".bin/tsserver",
+            "target": "../typescript/bin/tsserver"
+          }
+        ],
+        "topLevelEntries": [
+          ".bin",
+          ".package-lock.json",
+          "@bufbuild",
+          "@oxfmt",
+          "@typescript",
+          "ajv",
+          "ajv-formats",
+          "debug",
+          "fast-deep-equal",
+          "fast-uri",
+          "json-schema-traverse",
+          "ms",
+          "oxfmt",
+          "require-from-string",
+          "tinypool",
+          "typescript"
+        ],
+        "declaredPackageRoots": [
+          "@bufbuild/protobuf",
+          "@bufbuild/protoc-gen-es",
+          "@bufbuild/protoplugin",
+          "@oxfmt/binding-linux-x64-gnu",
+          "@oxfmt/binding-linux-x64-musl",
+          "@typescript/vfs",
+          "ajv",
+          "ajv-formats",
+          "debug",
+          "fast-deep-equal",
+          "fast-uri",
+          "json-schema-traverse",
+          "ms",
+          "oxfmt",
+          "require-from-string",
+          "tinypool",
+          "typescript"
+        ],
+        "undeclaredEntries": 0,
+        "cacheEntries": 0
+      },
+      "packages": [
+        {
+          "path": "node_modules/@bufbuild/protobuf",
+          "version": "2.14.0",
+          "integrity": "sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w==",
+          "resolved": "https://registry.npmjs.org/@bufbuild/protobuf/-/protobuf-2.14.0.tgz"
+        },
+        {
+          "path": "node_modules/@bufbuild/protoc-gen-es",
+          "version": "2.14.0",
+          "integrity": "sha512-/Rrui0BJWSRONiKGYzqWq9ivGN3+cYkmc47QWITufr7K6yDb8HfssuJUSQZeptyg/rHbHrfDzCUjzoJ2pwuafg==",
+          "resolved": "https://registry.npmjs.org/@bufbuild/protoc-gen-es/-/protoc-gen-es-2.14.0.tgz"
+        },
+        {
+          "path": "node_modules/@bufbuild/protoplugin",
+          "version": "2.14.0",
+          "integrity": "sha512-S0TvZhVtTEkZQRj2JsXBCXiib/b0+bLQtJCcn+hj9O/usgbcgxHn4D+ii22Ao3qj0/kKxVYeo7BtAI2dMk+iig==",
+          "resolved": "https://registry.npmjs.org/@bufbuild/protoplugin/-/protoplugin-2.14.0.tgz"
+        },
+        {
+          "path": "node_modules/@oxfmt/binding-linux-x64-gnu",
+          "version": "0.62.0",
+          "integrity": "sha512-1iYMP0leytWazFubD/WnINJuIrzRPuoL1aWEJdlGezEzDbTxcd29R4r8IUzP2oWeKst5V02uMJgR2NILlPlG6w==",
+          "resolved": "https://registry.npmjs.org/@oxfmt/binding-linux-x64-gnu/-/binding-linux-x64-gnu-0.62.0.tgz"
+        },
+        {
+          "path": "node_modules/@oxfmt/binding-linux-x64-musl",
+          "version": "0.62.0",
+          "integrity": "sha512-4rA/URtJSTVNVAQz6Q8wf7SaRvOXVy+TizriT9hs/Y1XhLR/R+92uWKRQG8yFWRAIEBbFHJ6WevQcl/G9SXEfw==",
+          "resolved": "https://registry.npmjs.org/@oxfmt/binding-linux-x64-musl/-/binding-linux-x64-musl-0.62.0.tgz"
+        },
+        {
+          "path": "node_modules/@typescript/vfs",
+          "version": "1.6.4",
+          "integrity": "sha512-PJFXFS4ZJKiJ9Qiuix6Dz/OwEIqHD7Dme1UwZhTK11vR+5dqW2ACbdndWQexBzCx+CPuMe5WBYQWCsFyGlQLlQ==",
+          "resolved": "https://registry.npmjs.org/@typescript/vfs/-/vfs-1.6.4.tgz"
+        },
+        {
+          "path": "node_modules/ajv",
+          "version": "8.20.0",
+          "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+          "resolved": "https://registry.npmjs.org/ajv/-/ajv-8.20.0.tgz"
+        },
+        {
+          "path": "node_modules/ajv-formats",
+          "version": "3.0.1",
+          "integrity": "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==",
+          "resolved": "https://registry.npmjs.org/ajv-formats/-/ajv-formats-3.0.1.tgz"
+        },
+        {
+          "path": "node_modules/debug",
+          "version": "4.4.3",
+          "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+          "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz"
+        },
+        {
+          "path": "node_modules/fast-deep-equal",
+          "version": "3.1.3",
+          "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+          "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz"
+        },
+        {
+          "path": "node_modules/fast-uri",
+          "version": "3.1.6",
+          "integrity": "sha512-7Ical1vFEMr0onbVzEDIreM22I4khW+fzyQPwvAFWBp1iwdshSZRsL4jjRvPG9JP1uiqMHRto+YU6R2/CzDz5Q==",
+          "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.6.tgz"
+        },
+        {
+          "path": "node_modules/json-schema-traverse",
+          "version": "1.0.0",
+          "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
+          "resolved": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz"
+        },
+        {
+          "path": "node_modules/ms",
+          "version": "2.1.3",
+          "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+          "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz"
+        },
+        {
+          "path": "node_modules/oxfmt",
+          "version": "0.62.0",
+          "integrity": "sha512-vxgGHTmnDU9j4CX7dDBLzxgmHxfda/yPcgJkGCMUSCwRmz+euo/V08xXLNgXTeqAB9Fhf3Pe2nO1RNKLCVgphQ==",
+          "resolved": "https://registry.npmjs.org/oxfmt/-/oxfmt-0.62.0.tgz"
+        },
+        {
+          "path": "node_modules/require-from-string",
+          "version": "2.0.2",
+          "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==",
+          "resolved": "https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz"
+        },
+        {
+          "path": "node_modules/tinypool",
+          "version": "2.1.0",
+          "integrity": "sha512-Pugqs6M0m7Lv1I7FtxN4aoyToKg1C4tu+/381vH35y8oENM/Ai7f7C4StcoK4/+BSw9ebcS8jRiVrORFKCALLw==",
+          "resolved": "https://registry.npmjs.org/tinypool/-/tinypool-2.1.0.tgz"
+        },
+        {
+          "path": "node_modules/typescript",
+          "version": "5.4.5",
+          "integrity": "sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ==",
+          "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.4.5.tgz"
+        }
+      ]
+    }
+  ]
+}

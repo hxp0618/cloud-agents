@@ -114,8 +114,15 @@ import {
 } from "./platform-proto-sdk";
 import { PLATFORM_GO_TOOLCHAIN } from "./platform-go-modules";
 import { validateCheckedInMigrationBundle } from "./platform-migration-bundle";
+import {
+  assertGeneratorSupplyProfileCurrent,
+  buildGeneratorSupplyProfile,
+  GENERATOR_SUPPLY_EVIDENCE_MANIFEST_PATH,
+  generatorSupplyProfileInputs,
+  GENERATOR_SUPPLY_OUTPUT_PATH,
+} from "./platform-generator-supply-profile";
 
-const NODE_VERSION = "24.13.1";
+const NODE_VERSION = "24.18.1";
 const BUN_VERSION = "1.3.14";
 const PYTHON_VERSION = "3.14.7";
 const UV_VERSION = "0.12.5";
@@ -689,6 +696,7 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
   assertPlatformProtoSDKCurrent(root);
+  assertGeneratorSupplyProfileCurrent(root);
   const durableCoordinationInputs = durableCoordinationRegistryInputs(root);
   const compatibilityRecoveryInputs = compatibilityRecoveryRegistryInputs(root);
   const compatibilityRecoveryV2Inputs = compatibilityRecoveryRegistryV2Inputs(root);
@@ -757,6 +765,21 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     ...protoGeneratorInputs,
     ...PROTO_TYPESCRIPT_ENVELOPE_INPUTS,
   ].toSorted();
+  const generatorSupplyInputs = generatorSupplyProfileInputs(root);
+  const generatorSupplyProfile = buildGeneratorSupplyProfile(root) as unknown as {
+    readonly registryDigest: string;
+    readonly sourceDigest: string;
+    readonly artifactSetDigest: string;
+    readonly evidenceManifestDigest: string;
+    readonly profile: {
+      readonly profileDigest: string;
+      readonly spec: {
+        readonly profileId: string;
+        readonly status: string;
+        readonly notGateClosure: boolean;
+      };
+    };
+  };
   const compatibilityRecoveryGoInputs = [
     ...COMPATIBILITY_RECOVERY_GO_GENERATOR_SOURCES,
     COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH,
@@ -906,6 +929,15 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         license: "MIT",
       })),
       {
+        id: "platform-generator-supply-profile-generator",
+        kind: "in-repo-typescript-deterministic-versioned-generator-supply-profile",
+        entrypoint: "scripts/generate-platform-generator-supply-profile.ts",
+        sourceManifestSha256: normalizedSourceManifestDigest(root, generatorSupplyInputs),
+        sources: generatorSupplyInputs,
+        license: "MIT",
+        status: generatorSupplyProfile.profile.spec.status,
+      },
+      {
         id: "platform-ajv-official-suite-auditor",
         kind: "in-repo-typescript-deterministic-offline-ajv-audit",
         entrypoint: "scripts/check-platform-ajv-official-suite.ts",
@@ -989,6 +1021,37 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
       },
     ],
     pipelines: [
+      {
+        id: "generator-supply-profile-generation",
+        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
+        inputManifestSha256: normalizedSourceManifestDigest(root, generatorSupplyInputs),
+        inputs: generatorSupplyInputs,
+        outputStatus: generatorSupplyProfile.profile.spec.status,
+        notGateClosure: true,
+        generatedOutputs: [
+          {
+            path: GENERATOR_SUPPLY_EVIDENCE_MANIFEST_PATH,
+            sha256: fileSha256(root, GENERATOR_SUPPLY_EVIDENCE_MANIFEST_PATH),
+            sizeBytes: readFileSync(resolve(root, GENERATOR_SUPPLY_EVIDENCE_MANIFEST_PATH))
+              .byteLength,
+          },
+          {
+            path: GENERATOR_SUPPLY_OUTPUT_PATH,
+            sha256: fileSha256(root, GENERATOR_SUPPLY_OUTPUT_PATH),
+            sizeBytes: readFileSync(resolve(root, GENERATOR_SUPPLY_OUTPUT_PATH)).byteLength,
+          },
+        ],
+        outputSummary: {
+          profileId: generatorSupplyProfile.profile.spec.profileId,
+          profileDigest: generatorSupplyProfile.profile.profileDigest,
+          registryDigest: generatorSupplyProfile.registryDigest,
+          sourceDigest: generatorSupplyProfile.sourceDigest,
+          artifactSetDigest: generatorSupplyProfile.artifactSetDigest,
+          evidenceManifestDigest: generatorSupplyProfile.evidenceManifestDigest,
+          independentReview: "PENDING",
+          gateStatus: "ALL_GATES_OPEN",
+        },
+      },
       {
         id: "ajv-official-suite-audit-generation",
         inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,

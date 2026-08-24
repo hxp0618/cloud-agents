@@ -1,0 +1,14 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-wheelhouse-repair-lineage/v1",
+  "status": "APPROVE_P0_0_P1_0_P2_0",
+  "implementationCommit": "51ce2d6b9faa71a5e89ccf709864f4d570454a38",
+  "implementationTree": "4f414c088258b09850f7dd440ac0eafcacb938c1",
+  "implementationParent": "73ba42cb8d5d17833dd96532b2a527f9ed7250f9",
+  "implementationDocumentSha256": "095cd53974416223b1164b14692bcd0f5ab54589c8d8e282830490cf5af9f927",
+  "reviewCommit": "2a8600b5694b45e39b0c209ae97cbe8f03561339",
+  "reviewTree": "d5af4cd12d19aca505d55292765466cc5461a4f1",
+  "reviewParent": "51ce2d6b9faa71a5e89ccf709864f4d570454a38",
+  "reviewDocumentSha256": "2c71a7e0c0da88f939fd74c0c77d700f340e0f1b9133985de6c461d49aaea1ff",
+  "currentRunnerPath": "scripts/check-platform-contract-standards.ts",
+  "currentRunnerSha256": "66c8e4afa39343b065c9a3c50e47cd8d9c2e2aff926a20acc2cc52942055d208"
+}

@@ -5,6 +5,11 @@ import { dirname, relative, resolve, sep } from "node:path";
 
 import { validatePlatformContractTree } from "./platform-contracts";
 import { canonicalizeJson } from "./platform-json-semantics";
+import {
+  formatWithOxfmt,
+  PLATFORM_OXFMT_LIBRARY_PATH,
+  PLATFORM_OXFMT_TEST_PATH,
+} from "./platform-oxfmt";
 
 export const GO_COMMON_JSON_OUTPUT_PATH = "sdk/go/gen/common/v1alpha1/json_generated.go";
 export const GO_PLATFORM_JSON_OUTPUT_PATH = "sdk/go/gen/platform/v1alpha1/json_generated.go";
@@ -127,6 +132,8 @@ export function platformJSONSDKGeneratorSources(): string[] {
     GENERATOR_PATH,
     LIBRARY_PATH,
     TEST_PATH,
+    PLATFORM_OXFMT_LIBRARY_PATH,
+    PLATFORM_OXFMT_TEST_PATH,
     GO_COMMON_TEMPLATE_PATH,
     GO_PLATFORM_TEMPLATE_PATH,
     GO_OPENAPI_TEMPLATE_PATH,
@@ -375,9 +382,8 @@ function renderTemplate(
 }
 
 function formatOutput(root: string, path: string, source: string): string {
-  const command = path.endsWith(".go") ? "gofmt" : resolve(root, "node_modules/.bin/oxfmt");
-  const arguments_ = path.endsWith(".go") ? [] : ["--stdin-filepath", path];
-  const result = spawnSync(command, arguments_, { input: source, encoding: "utf8", cwd: root });
+  if (!path.endsWith(".go")) return formatWithOxfmt(root, path, source);
+  const result = spawnSync("gofmt", [], { input: source, encoding: "utf8", cwd: root });
   if (result.status !== 0) {
     throw new Error(`Formatter failed for ${path}: ${result.stderr.trim()}`);
   }

@@ -1,0 +1,92 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-go-plugins/v1",
+  "status": "EXACT_MODULE_SUM_AND_BUILD_RECEIPT_VERIFIED",
+  "platforms": 2,
+  "binaries": 4,
+  "moduleAuthority": {
+    "path": "tools/generator-supply/go/go.mod",
+    "sha256": "64c93ad35772418907e66021339ec788a7babebd1fbbbfe775e3e4f266b96294",
+    "sumPath": "tools/generator-supply/go/go.sum",
+    "sumSha256": "06460b69ca68451bcdca541e381789cdc877eafa546bd4ab70fc8583b17613db"
+  },
+  "plugins": [
+    {
+      "platform": "darwin-arm64",
+      "name": "protoc-gen-go",
+      "sha256": "2812f5f5cc1f08dff81fdbeb66b6c1ce642da13587c05801900cfca5f4230939",
+      "sizeBytes": 7528018,
+      "buildReceipt": [
+        "generator-supply://darwin-arm64/protoc-gen-go: go1.26.6",
+        "path\tgoogle.golang.org/protobuf/cmd/protoc-gen-go",
+        "mod\tgoogle.golang.org/protobuf\tv1.36.12\th1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
+        "build\t-buildmode=exe",
+        "build\t-compiler=gc",
+        "build\t-trimpath=true",
+        "build\tDefaultGODEBUG=containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,httpcookiemaxnum=0,multipathtcp=0,randseednop=0,rsa1024min=0,tlsmlkem=0,tlssecpmlkem=0,tlssha1=1,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,x509rsacrt=0,x509sha256skid=0,x509usepolicies=0",
+        "build\tCGO_ENABLED=0",
+        "build\tGOARCH=arm64",
+        "build\tGOOS=darwin",
+        "build\tGOARM64=v8.0"
+      ]
+    },
+    {
+      "platform": "darwin-arm64",
+      "name": "protoc-gen-connect-go",
+      "sha256": "0de128625c8350e1489e85e8483fe68af098ea53682f7ae567571159c00a0642",
+      "sizeBytes": 12944706,
+      "buildReceipt": [
+        "generator-supply://darwin-arm64/protoc-gen-connect-go: go1.26.6",
+        "path\tconnectrpc.com/connect/cmd/protoc-gen-connect-go",
+        "mod\tconnectrpc.com/connect\tv1.20.0\th1:6TNDAB+WeNd2uolWNlYczB5E0KNNaVMNUEx8JEUsPmQ=",
+        "dep\tgoogle.golang.org/protobuf\tv1.36.11\th1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=",
+        "build\t-buildmode=exe",
+        "build\t-compiler=gc",
+        "build\t-trimpath=true",
+        "build\tDefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0",
+        "build\tCGO_ENABLED=0",
+        "build\tGOARCH=arm64",
+        "build\tGOOS=darwin",
+        "build\tGOARM64=v8.0"
+      ]
+    },
+    {
+      "platform": "linux-amd64",
+      "name": "protoc-gen-go",
+      "sha256": "72e151a7861ff00dc1e229c084efa1db3d52f8349b8d6249f3f232879ddb3f57",
+      "sizeBytes": 7700525,
+      "buildReceipt": [
+        "generator-supply://linux-amd64/protoc-gen-go: go1.26.6",
+        "path\tgoogle.golang.org/protobuf/cmd/protoc-gen-go",
+        "mod\tgoogle.golang.org/protobuf\tv1.36.12\th1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
+        "build\t-buildmode=exe",
+        "build\t-compiler=gc",
+        "build\t-trimpath=true",
+        "build\tDefaultGODEBUG=containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,httpcookiemaxnum=0,multipathtcp=0,randseednop=0,rsa1024min=0,tlsmlkem=0,tlssecpmlkem=0,tlssha1=1,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,x509rsacrt=0,x509sha256skid=0,x509usepolicies=0",
+        "build\tCGO_ENABLED=0",
+        "build\tGOARCH=amd64",
+        "build\tGOOS=linux",
+        "build\tGOAMD64=v1"
+      ]
+    },
+    {
+      "platform": "linux-amd64",
+      "name": "protoc-gen-connect-go",
+      "sha256": "70ae4ff2362596582685c0cb41905c525ed8b5d13ab48ad24987394ced22995b",
+      "sizeBytes": 13359247,
+      "buildReceipt": [
+        "generator-supply://linux-amd64/protoc-gen-connect-go: go1.26.6",
+        "path\tconnectrpc.com/connect/cmd/protoc-gen-connect-go",
+        "mod\tconnectrpc.com/connect\tv1.20.0\th1:6TNDAB+WeNd2uolWNlYczB5E0KNNaVMNUEx8JEUsPmQ=",
+        "dep\tgoogle.golang.org/protobuf\tv1.36.11\th1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=",
+        "build\t-buildmode=exe",
+        "build\t-compiler=gc",
+        "build\t-trimpath=true",
+        "build\tDefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0",
+        "build\tCGO_ENABLED=0",
+        "build\tGOARCH=amd64",
+        "build\tGOOS=linux",
+        "build\tGOAMD64=v1"
+      ]
+    }
+  ]
+}

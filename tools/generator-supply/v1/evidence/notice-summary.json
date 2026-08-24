@@ -1,0 +1,12 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-notice-summary/v1",
+  "status": "INVENTORY_AND_TEXT_COMPLETE",
+  "legalApproval": "NOT_CLAIMED",
+  "inventoryRecords": 1271,
+  "uniqueInventoryRecords": 1257,
+  "inventoryManifestSha256": "7a4f5c2688adb47423eedc4c9cd120b218074982e2cd2c88af1c7df429b82240",
+  "includedTextSections": 19,
+  "noticeSha256": "136e857e300bf21c2b5ca734fc47b4388dfeb8fdafcaa40070bebdca5f52d327",
+  "noAssertionPreserved": true,
+  "legalConclusion": "NOT_PRODUCED_NOT_AUTHORIZED"
+}

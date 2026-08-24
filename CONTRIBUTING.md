@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js `24.13.1` and Bun `1.3.14`; `.mise.toml` is the executable toolchain declaration. Install with `bun install --frozen-lockfile --ignore-scripts` after the lockfile exists.
+Use Node.js `24.18.1` and Bun `1.3.14`; `.mise.toml` is the executable toolchain declaration. Install with `bun install --frozen-lockfile --ignore-scripts` after the lockfile exists.
 
 Before submitting a change, run `bun run fmt:check`, `bun run lint`, `bun run typecheck`, `bun run test`, and `bun run build`. The test command is intentionally `bun run test`; do not substitute `bun test`, because package Vitest configuration and process-level suites are part of the gate.
 

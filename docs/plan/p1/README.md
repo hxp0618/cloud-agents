@@ -25,6 +25,8 @@
   [`ADR-0025`](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md)
 - Accepted G-CONTRACT official-suite evidence boundary（candidate only；不声称 Ajv generic conformance）：
   [`ADR-0026`](../adr/0026-p1-json-schema-official-suite-evidence-closure.md)
+- Accepted bounded generator-supply profile boundary（仅授权 local implementation/review；Gate effect none）：
+  [`ADR-0028`](../adr/0028-p1-generator-supply-profile.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；
@@ -243,6 +245,12 @@
   [independent review](../cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)
   返回 `APPROVE, P0=0/P1=0/P2=0`。R4 状态仍为 `IN PROGRESS`，formal `missing` 未移除，remaining generator
   supply review 与 immutable Gate signature 仍未完成。
+- `G-CONTRACT` bounded generator-supply remediation：[`ADR-0028`](../adr/0028-p1-generator-supply-profile.md) 与
+  [implementation record](g-contract-generator-supply-profile-implementation-20260824.md) 固定独立 npm/Go/wheelhouse
+  supply authority、Darwin arm64/Linux amd64 native A/B replay、exact-output isolation 与 acyclic late-bound evidence
+  assembly；[planned late-bound independent review](g-contract-generator-supply-profile-independent-review-20260824.md)
+  将单独绑定最终 candidate/projection/replay/profile bytes。该 package 只处理 generator-supply profile evidence，不改写 R4 的 7 个
+  formal `missing`，不关闭 `G-CONTRACT` 或 `G-SUPPLY-CHAIN`，也不授权生产数据库、HTTP/P2/provider、部署、发布或合并。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见
@@ -421,7 +429,9 @@ Platform RC、Beta 或 GA。
   [`d03d62b` independent review](p1-aggregate-gate-gap-audit-independent-review-20260822.md) 返回
   `APPROVE, P0=0/P1=0/P2=0`。该记录不重跑 full migration、不扩权且不关闭 Gate。后续
   [`ADR-0024`](../adr/0024-p1-software-crash-durability-acceptance.md) 仅 supersede 其中“必须取得物理硬断电”这项
-  current acceptance prerequisite；历史审计仍保持 byte/history 边界，其
+  current acceptance prerequisite；2026-08-24 owner 又明确普通 `poweroff`/`reboot` 可计为项目“掉电恢复”，
+  但只能如实表述为 clean shutdown/restart，不能外推为 abrupt crash、BMC hard-off、物理拔电或
+  SSD/controller cache-loss。历史审计仍保持 byte/history 边界，其
   [independent review](software-crash-durability-acceptance-independent-review-20260823.md) 返回
   `APPROVE, P0=0/P1=0/P2=0`
 
@@ -528,8 +538,9 @@ Platform RC、Beta 或 GA。
   在固定 source `2023f73` 上完成 owner-authorized bare-metal SysRq `b` 软件崩溃烟测：ext4
   `after-directory-fsync` object barrier 经独立控制机观测 `UP → DOWN → UP`，fresh mount 显示 journal recovery，
   classifier 返回 exact `final`/44-byte/no-temp，卸载后 `e2fsck -fn` status 0。该单场景不包含物理断电、SSD cache
-  loss、独立测试盘、XFS 或完整 barrier matrix；它是 ADR-0024 所需 bare-metal abrupt-software-crash 的一个
-  candidate，不单独关闭 filesystem Done 或任何 Gate。普通 clean `poweroff` 仍只算 lifecycle smoke。
+  loss、独立测试盘、XFS 或完整 barrier matrix；它是 ADR-0024 recovery 项的一个 stronger no-sync candidate，
+  不单独关闭 filesystem Done 或任何 Gate。普通 clean `poweroff`/`reboot` 也可计为项目“掉电恢复”，但其
+  exact mechanism 只能记录为 clean shutdown/restart，不能外推为 abrupt crash 或物理/cache-loss evidence。
 - [`go-toolchain-1.26.6-security-refresh-20260816.md`](go-toolchain-1.26.6-security-refresh-20260816.md) 固定 source
   `77d92c5`，记录 Go 1.26.5 reachable stdlib finding → 1.26.6 remediation、穷尽 race 分片、三平台 compile、
   ext4/XFS clean-restart、42-barrier QEMU repair 与 fresh vulnerability scan；同时保留 `x/mod v0.37.0` OSV blocker。

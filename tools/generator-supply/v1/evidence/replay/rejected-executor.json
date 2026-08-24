@@ -1,0 +1,11 @@
+{
+  "formatVersion": "cloud-agents-generator-replay-rejected-executor/v1",
+  "executor": "initial_linux_executor_configuration",
+  "status": "REJECTED_EMPTY_DEV_ISOLATION_MISCONFIGURATION",
+  "failureStage": "BUN_EXECUTABLE_START",
+  "failureSignal": "SIGILL",
+  "countedAsReplay": false,
+  "replacementExecutor": "authorized_linux_executor_with_tmpfs_device_tree",
+  "correctiveEvidence": "SAME_BOUND_BUN_AND_NODE_PASS_AFTER_TMPFS_DEVICE_TREE",
+  "cpuIncompatibility": "NOT_CLAIMED"
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tooling/generator-supply/v1/generator-supply-profile-v1.schema.json",
+  "title": "Cloud Agents generated generator supply profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "registryId", "sourceDigest", "artifactSetDigest", "evidenceManifestDigest", "profile", "registryDigest"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-generator-supply-profile-registry/v1" },
+    "registryId": { "const": "cloud-agents/generator-supply-profile" },
+    "sourceDigest": { "$ref": "#/$defs/prefixedDigest" },
+    "artifactSetDigest": { "$ref": "#/$defs/prefixedDigest" },
+    "evidenceManifestDigest": { "$ref": "#/$defs/prefixedDigest" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec", "evidenceManifest"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/prefixedDigest" },
+        "spec": { "$ref": "generator-supply-profile-source-v1.schema.json#/$defs/profile" },
+        "evidenceManifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "files"],
+          "properties": {
+            "algorithm": { "const": "sorted-path-nul-sha256-nul-size-v1" },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "sha256", "sizeBytes"],
+                "properties": {
+                  "path": { "type": "string" },
+                  "sha256": { "$ref": "#/$defs/prefixedDigest" },
+                  "sizeBytes": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "registryDigest": { "$ref": "#/$defs/prefixedDigest" }
+  },
+  "$defs": {
+    "prefixedDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

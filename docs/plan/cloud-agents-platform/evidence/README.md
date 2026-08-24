@@ -36,6 +36,10 @@ aggregate closure。phase record 被新 bits 失效后保留并标记 `INVALIDAT
 `G-BASELINE-M1`，所有 P1-P6 aggregate/phase Gate 仍保持 open、in progress 或 not started。不得用 P0、M1
 Runtime 历史证据或本地候选替代后续 immutable closure。
 
+2026-08-21 与 2026-08-23 的 live remote-ref 只读复核由
+[`P0 provenance summary`](../../p0/provenance-summary.md) 索引；这些 monitoring receipts 只补充 observation
+time 与 remote identity，不 supersede 固定 Gate 输入，也不改变 Gate、发布或部署状态。
+
 ## Current candidates
 
 - [`CAG-G-BASELINE-P0-20260823-R4`](G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md)：current verified P0
@@ -54,6 +58,11 @@ Runtime 历史证据或本地候选替代后续 immutable closure。
   candidate；固定 Inventory R3、Baseline R4、当前 27-pipeline generation lock、fresh generated SDK consumer 与
   migration `000012` bundle replay。[Independent review](G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md)
   返回 `APPROVE, P0=0/P1=0/P2=0`；状态仍为 `IN PROGRESS`、7 个 formal `missing` 保持不变，Gate effect 为 none。
+- [`ADR-0028`](../../adr/0028-p1-generator-supply-profile.md) bounded generator-supply remediation：
+  [implementation](../../p1/g-contract-generator-supply-profile-implementation-20260824.md) 固定 native replay/isolation 与
+  acyclic evidence assembly；[planned late-bound independent review](../../p1/g-contract-generator-supply-profile-independent-review-20260824.md)
+  将单独绑定最终 late-bound bytes。它不是新的 Gate candidate record，不改写 R4 的 7 个 formal `missing`，且 Gate effect
+  为 none。
 
 - [`CAG-G-DATA-P1-20260823-R1`](G-DATA/CAG-G-DATA-P1-20260823-R1.md)：first current-source G-DATA
   candidate；固定 Baseline R4、reviewed G-CONTRACT R4、当前十二条 migration，并只继承 exact retirement

@@ -1,0 +1,200 @@
+{
+  "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+  "files": [
+    {
+      "path": "tools/generator-supply/v1/evidence/THIRD_PARTY_NOTICES.md",
+      "sha256": "sha256:136e857e300bf21c2b5ca734fc47b4388dfeb8fdafcaa40070bebdca5f52d327",
+      "sizeBytes": 357486
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/artifacts.json",
+      "sha256": "sha256:bff664b6dcc9d6db5710aa5b1a8592ea59f52891b1740916962db7396e5b144f",
+      "sizeBytes": 35196
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/go-plugins.json",
+      "sha256": "sha256:86e72add10b0cc56caee3ea25cc849d5fba72f5357d1d59d33e1500e5a3bb6bc",
+      "sizeBytes": 4189
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/notice-summary.json",
+      "sha256": "sha256:e0fe43f215a64c5b9db1177fb1bf4c38a74a8d52466d58d3be393af6ced359fc",
+      "sizeBytes": 509
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/npm.json",
+      "sha256": "sha256:6df4da38701e31c29a0fea45c88958dc9f56aa9fa3d919240343378af450f5e7",
+      "sizeBytes": 15487
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay.json",
+      "sha256": "sha256:281c9bf35eb6e649432b78de0097acb6e9bbe7d0969828dc753d453c8dd56105",
+      "sizeBytes": 2174
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/darwin-a.json",
+      "sha256": "sha256:5e78c58b4268ae814440aa08b94038ac22bbbaf9e97d46ba10a4c6ae37d475fd",
+      "sizeBytes": 3054
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/darwin-b.json",
+      "sha256": "sha256:ca7fa1552e6c2160ebb5a1f4a4c249f6d1e08631d766d11bc14665d898437983",
+      "sizeBytes": 3054
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/darwin-isolation.json",
+      "sha256": "sha256:a73357f5109c33b4f42ad0a7d502847caf8715bc11315882c6196de99edacecf",
+      "sizeBytes": 7697
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/linux-a.json",
+      "sha256": "sha256:e92e73573ffbfffb8f83278e4b48d1dcbe7198917673828179cb02573a82e195",
+      "sizeBytes": 3055
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/linux-b.json",
+      "sha256": "sha256:a6f21ba4c2d2e2a92b52ce4ead432efd1d8c14ae6b8d80e347ed33c8e4e53fb5",
+      "sizeBytes": 3055
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
+      "sha256": "sha256:3b51ed94055ab67ef74ebce16750d5d13387ea90c81305c62275e0b37451073a",
+      "sizeBytes": 11459
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/projection.json",
+      "sha256": "sha256:9a55c117dc31568641f93851247237adb91881bc6c890b64e8537c3c98a9c346",
+      "sizeBytes": 1708
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/replay/rejected-executor.json",
+      "sha256": "sha256:ea80b2c8281811599ef78d017cddab2cf2275b4a0928811dbc58a78660550a19",
+      "sizeBytes": 486
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom-summary.json",
+      "sha256": "sha256:ae867eeaa1efe222ba67c64d944cb6531bf12dc60d95fe5bea673c245266b81d",
+      "sizeBytes": 3311
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/darwin-bundle.cdx.json",
+      "sha256": "sha256:7f36c3677443b3c6ddf10ece31e4ec08cfef855da93f4c347d4d7cc672510201",
+      "sizeBytes": 680874
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/darwin-bundle.spdx.json",
+      "sha256": "sha256:c46a6967363f68d8613303204222b82b447da38f2fb114103416250f5db73c06",
+      "sizeBytes": 1376722
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/darwin-bundle.syft.json",
+      "sha256": "sha256:409842436521b3a9d201a665f52418a6b4273f17a119e84d9e38b3831ca3c0ec",
+      "sizeBytes": 848942
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/linux-bundle.cdx.json",
+      "sha256": "sha256:56d128f71be55511919073cd3365f130a6995796700d9f048a07d3f7eba6df19",
+      "sizeBytes": 695972
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/linux-bundle.spdx.json",
+      "sha256": "sha256:9b72dedb6782641dbdd7c4d0c15d234e8efd7aa0fda50e20d525c4aa19c5d681",
+      "sizeBytes": 1409123
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/linux-bundle.syft.json",
+      "sha256": "sha256:4c1c5b63a43c3671e1691e86b16591ea00e434940756b75f86cc9cf0a72eb4a9",
+      "sizeBytes": 868312
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-darwin.syft.json",
+      "sha256": "sha256:1ad2de591a41552be54264ea960844ae496835d773deaa1e5a792e2bc0096d9f",
+      "sizeBytes": 849320
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/node-24.13.1-rejected-linux.syft.json",
+      "sha256": "sha256:e9939e7bea480ed9af355201e0e1f31ab12f3f0ddd09d2859524884e43b9de8e",
+      "sizeBytes": 868703
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/ubuntu-image.cdx.json",
+      "sha256": "sha256:d0ea747e3993236d0396addf6e2899331f0457c2800ab287ac8b0d69edf5db23",
+      "sizeBytes": 832023
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/ubuntu-image.spdx.json",
+      "sha256": "sha256:14a68101ae3086e82d0363293a1d4eedbd65387bcbeb5526c8bfa99cc5415a98",
+      "sizeBytes": 1902603
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/sbom/ubuntu-image.syft.json",
+      "sha256": "sha256:b71a8279a60e14f7684a7f6ef090e2567a23a5cc13fcfece2140f96684be7068",
+      "sizeBytes": 2294527
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/security-repair.json",
+      "sha256": "sha256:20e72bb9a10645a2dac7bc6b5ceee321df8425ae79be99fd79132733a32122f7",
+      "sizeBytes": 2252
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/ubuntu-image-binding.json",
+      "sha256": "sha256:3df64180002821e2d4819a2f4d5b71b9c4e348077d9b5c66f7d4b1b2659801a8",
+      "sizeBytes": 682
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/grype-darwin.json",
+      "sha256": "sha256:091f9b3d3244e20991fb394a1c31d8fdfc1245d0f3f410a270697140d4f2303b",
+      "sizeBytes": 16544
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/grype-db-status.json",
+      "sha256": "sha256:e5bf849a83d11d8c8934767fca1dd5c5fbbbbe0a252ec0ae563b2f003d21a0fa",
+      "sizeBytes": 322
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/grype-linux.json",
+      "sha256": "sha256:e16ff1ce8280c6ed49e4088a2251fe752863e43e21ccc6306504ad2ab23d1e23",
+      "sizeBytes": 16542
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-darwin.json",
+      "sha256": "sha256:e0bf4465b732e8d89519ab87fd5dab12ece46dd72f710c4fde1e2989eac7cef7",
+      "sizeBytes": 64255
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/grype-node-24.13.1-rejected-linux.json",
+      "sha256": "sha256:dc5dc4d9333e8f526c2702bfb5d049351af5bdf772a29b0271e9fd6902f6aa55",
+      "sizeBytes": 64253
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/grype-ubuntu.json",
+      "sha256": "sha256:7f7d6abc4ce2e0fa3544ac7c0bec471c94f8d6cc5d9f2fea2e828a1badb7de10",
+      "sizeBytes": 330664
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/osv-scanner-receipt.json",
+      "sha256": "sha256:4303b463dbe2992e03e108e8e0ca7e8f6548ce6786f61d84092fb727e75fadec",
+      "sizeBytes": 1344
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/osv.json",
+      "sha256": "sha256:d3275d391304b97ea38dbae78426d66f831d76c3f0d518aeaf499572a5cc4f0e",
+      "sizeBytes": 5601
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/vulnerability/summary.json",
+      "sha256": "sha256:9d79a605ef77f6fc749407cdd1e622fa0c471d2b42da7f6706600af403107fb1",
+      "sizeBytes": 2073
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/wheelhouse-repair-lineage.json",
+      "sha256": "sha256:f46d219578d8f373fc6c9a3c903db4e48e28569e8e8180b0e7ea21284cc903ee",
+      "sizeBytes": 874
+    },
+    {
+      "path": "tools/generator-supply/v1/evidence/wheels.json",
+      "sha256": "sha256:4ee36744ab4b478be8220394bf53afeaea2e861cc26ce4e7d7fd3cc68eceb5fa",
+      "sizeBytes": 13476
+    }
+  ]
+}

@@ -82,3 +82,11 @@ claimed by this review.
 `0d64d9b4d31655f4d36fc6c2b6662e343ef61532` only. The decision may be used as the current P1/RC engineering
 acceptance rule under existing owner approval, but it supplies no missing durability execution record and grants no
 production or Gate authority.
+
+## Superseding owner decision — 2026-08-24
+
+This review verdict remains the historical verdict for its fixed candidate and is not rewritten. A later explicit
+owner decision supersedes only item 3 of the reviewed decision semantics: for current project acceptance, ordinary
+`poweroff`/`reboot` counts as “掉电恢复”. Any resulting record must still name the exact mechanism as clean
+shutdown/restart and must not claim abrupt crash, BMC hard-off, physical power removal, SSD/controller cache loss, or
+no-sync behavior. The later decision does not close a filesystem slice, Platform RC, or any Gate.

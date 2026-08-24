@@ -1,0 +1,881 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-artifacts/v1",
+  "status": "OFFICIAL_DIGEST_AND_EXECUTABLE_BYTES_VERIFIED",
+  "officialArtifacts": 15,
+  "darwinExecutables": 9,
+  "linuxExecutables": 9,
+  "evidenceExecutables": 3,
+  "archives": [
+    {
+      "id": "node-darwin-arm64",
+      "filename": "node-v24.18.1-darwin-arm64.tar.xz",
+      "source": "https://nodejs.org/download/release/v24.18.1/node-v24.18.1-darwin-arm64.tar.xz",
+      "sha256": "1d60b703fe5d7e7072489be8187f430f1a095a658c31e5e1e281331a5873fac3",
+      "sizeBytes": 27028232,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "1d60b703fe5d7e7072489be8187f430f1a095a658c31e5e1e281331a5873fac3",
+      "verifiedSizeBytes": 27028232,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 1068,
+        "duplicateEntries": 0,
+        "entries": 5774,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "318c66a6258ec4e77e79437559f3246157ba7251f2068534f7dad5485b667f26",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 4703,
+        "selectedMembers": [
+          {
+            "path": "node-v24.18.1-darwin-arm64/bin/node",
+            "sha256": "f480e325ee0ca9cb9eef00b5ca6057a2a104807a1b073f1bc373a55c67facff5",
+            "sizeBytes": 120957760
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 3,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "node",
+          "platform": "darwin-arm64",
+          "memberPath": "node-v24.18.1-darwin-arm64/bin/node",
+          "effectivePath": "toolchains/darwin-arm64/node/bin/node",
+          "memberSha256": "f480e325ee0ca9cb9eef00b5ca6057a2a104807a1b073f1bc373a55c67facff5",
+          "memberSizeBytes": 120957760,
+          "effectiveSha256": "f480e325ee0ca9cb9eef00b5ca6057a2a104807a1b073f1bc373a55c67facff5",
+          "effectiveSizeBytes": 120957760,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "node-linux-amd64",
+      "filename": "node-v24.18.1-linux-x64.tar.xz",
+      "source": "https://nodejs.org/download/release/v24.18.1/node-v24.18.1-linux-x64.tar.xz",
+      "sha256": "d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0",
+      "sizeBytes": 31525884,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0",
+      "verifiedSizeBytes": 31525884,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 1068,
+        "duplicateEntries": 0,
+        "entries": 5774,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "557763da3438fe00943f0cc42dd772541428b1fd51186b694963ad2ef33bbada",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 4703,
+        "selectedMembers": [
+          {
+            "path": "node-v24.18.1-linux-x64/bin/node",
+            "sha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+            "sizeBytes": 123656816
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 3,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "node",
+          "platform": "linux-amd64",
+          "memberPath": "node-v24.18.1-linux-x64/bin/node",
+          "effectivePath": "toolchains/linux-amd64/node/bin/node",
+          "memberSha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+          "memberSizeBytes": 123656816,
+          "effectiveSha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+          "effectiveSizeBytes": 123656816,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "bun-darwin-arm64",
+      "filename": "bun-darwin-aarch64.zip",
+      "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-darwin-aarch64.zip",
+      "sha256": "d8b96221828ad6f97ac7ac0ab7e95872341af763001e8803e8267652c2652620",
+      "sizeBytes": 23586433,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "d8b96221828ad6f97ac7ac0ab7e95872341af763001e8803e8267652c2652620",
+      "verifiedSizeBytes": 23586433,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "zip",
+        "directories": 1,
+        "duplicateEntries": 0,
+        "entries": 2,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "ab2ff866d49df89ca934872cee0b54ec13d1b8873a3bab8ac5d5e29fa5016042",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 1,
+        "selectedMembers": [
+          {
+            "path": "bun-darwin-aarch64/bun",
+            "sha256": "e0c90ec15d33363e6b70713d56bc3b2c7585c17f40a0fe0f8fd9305901d4e233",
+            "sizeBytes": 63096576
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "bun",
+          "platform": "darwin-arm64",
+          "memberPath": "bun-darwin-aarch64/bun",
+          "effectivePath": "toolchains/darwin-arm64/bun/bun-darwin-aarch64/bun",
+          "memberSha256": "e0c90ec15d33363e6b70713d56bc3b2c7585c17f40a0fe0f8fd9305901d4e233",
+          "memberSizeBytes": 63096576,
+          "effectiveSha256": "e0c90ec15d33363e6b70713d56bc3b2c7585c17f40a0fe0f8fd9305901d4e233",
+          "effectiveSizeBytes": 63096576,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "bun-linux-amd64",
+      "filename": "bun-linux-x64-baseline.zip",
+      "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64-baseline.zip",
+      "sha256": "a063908ae08b7852ca10939bbdc6ceed3ddabce8fb9402dce83d65d73b36e6c7",
+      "sizeBytes": 35595658,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "a063908ae08b7852ca10939bbdc6ceed3ddabce8fb9402dce83d65d73b36e6c7",
+      "verifiedSizeBytes": 35595658,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "zip",
+        "directories": 1,
+        "duplicateEntries": 0,
+        "entries": 2,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "2cdc04833506a65ef1c0526de3335e8a28142fce5826d76980f4f97d9d9334ea",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 1,
+        "selectedMembers": [
+          {
+            "path": "bun-linux-x64-baseline/bun",
+            "sha256": "a8f9ebd1770ddc8e55dab7a68d4ec1ec1eebf374bb97cc65cf2c3cb373fc6791",
+            "sizeBytes": 91802480
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "bun",
+          "platform": "linux-amd64",
+          "memberPath": "bun-linux-x64-baseline/bun",
+          "effectivePath": "toolchains/linux-amd64/bun/bun-linux-x64-baseline/bun",
+          "memberSha256": "a8f9ebd1770ddc8e55dab7a68d4ec1ec1eebf374bb97cc65cf2c3cb373fc6791",
+          "memberSizeBytes": 91802480,
+          "effectiveSha256": "a8f9ebd1770ddc8e55dab7a68d4ec1ec1eebf374bb97cc65cf2c3cb373fc6791",
+          "effectiveSizeBytes": 91802480,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "go-darwin-arm64",
+      "filename": "go1.26.6.darwin-arm64.tar.gz",
+      "source": "https://go.dev/dl/go1.26.6.darwin-arm64.tar.gz",
+      "sha256": "2dc95ce4675829f2df0e86b28bcef3283635902062a5f0580ca659bf570f3204",
+      "sizeBytes": 64772321,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "2dc95ce4675829f2df0e86b28bcef3283635902062a5f0580ca659bf570f3204",
+      "verifiedSizeBytes": 64772321,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 1667,
+        "duplicateEntries": 0,
+        "entries": 16701,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "b1fe4034a2ee8f000dee85b1c3ae65d0ed772dc668e0a3a06cf669e4b42e8076",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 15034,
+        "selectedMembers": [
+          {
+            "path": "go/bin/go",
+            "sha256": "a1c83801d1756c3eca78366c6b585f2c21c20694fb1c7eb92c446a0580420412",
+            "sizeBytes": 14516816
+          },
+          {
+            "path": "go/bin/gofmt",
+            "sha256": "350abb0daa1b58fa1fc7a48dcd482f75ebccfc9b7252f1113ef7585ad6245911",
+            "sizeBytes": 2970400
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "go",
+          "platform": "darwin-arm64",
+          "memberPath": "go/bin/go",
+          "effectivePath": "toolchains/darwin-arm64/go/bin/go",
+          "memberSha256": "a1c83801d1756c3eca78366c6b585f2c21c20694fb1c7eb92c446a0580420412",
+          "memberSizeBytes": 14516816,
+          "effectiveSha256": "a1c83801d1756c3eca78366c6b585f2c21c20694fb1c7eb92c446a0580420412",
+          "effectiveSizeBytes": 14516816,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        },
+        {
+          "id": "gofmt",
+          "platform": "darwin-arm64",
+          "memberPath": "go/bin/gofmt",
+          "effectivePath": "toolchains/darwin-arm64/go/bin/gofmt",
+          "memberSha256": "350abb0daa1b58fa1fc7a48dcd482f75ebccfc9b7252f1113ef7585ad6245911",
+          "memberSizeBytes": 2970400,
+          "effectiveSha256": "350abb0daa1b58fa1fc7a48dcd482f75ebccfc9b7252f1113ef7585ad6245911",
+          "effectiveSizeBytes": 2970400,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "go-linux-amd64",
+      "filename": "go1.26.6.linux-amd64.tar.gz",
+      "source": "https://go.dev/dl/go1.26.6.linux-amd64.tar.gz",
+      "sha256": "708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89",
+      "sizeBytes": 66890545,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89",
+      "verifiedSizeBytes": 66890545,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 1667,
+        "duplicateEntries": 0,
+        "entries": 16701,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "5916ee00bfb427d8684b309f0cfc26fcc7e3c406c17a42250f9ca5d85dc0fff8",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 15034,
+        "selectedMembers": [
+          {
+            "path": "go/bin/go",
+            "sha256": "29e6e0b8be61beb1489ceae62b304343566de8a1dc700af74bde7aeb9c80ad45",
+            "sizeBytes": 15434687
+          },
+          {
+            "path": "go/bin/gofmt",
+            "sha256": "0ef6fe2d15c972d15b8ecb75dcb9c861e042ac94a0e48baf0202a840648b0fdc",
+            "sizeBytes": 3110743
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "go",
+          "platform": "linux-amd64",
+          "memberPath": "go/bin/go",
+          "effectivePath": "toolchains/linux-amd64/go/bin/go",
+          "memberSha256": "29e6e0b8be61beb1489ceae62b304343566de8a1dc700af74bde7aeb9c80ad45",
+          "memberSizeBytes": 15434687,
+          "effectiveSha256": "29e6e0b8be61beb1489ceae62b304343566de8a1dc700af74bde7aeb9c80ad45",
+          "effectiveSizeBytes": 15434687,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        },
+        {
+          "id": "gofmt",
+          "platform": "linux-amd64",
+          "memberPath": "go/bin/gofmt",
+          "effectivePath": "toolchains/linux-amd64/go/bin/gofmt",
+          "memberSha256": "0ef6fe2d15c972d15b8ecb75dcb9c861e042ac94a0e48baf0202a840648b0fdc",
+          "memberSizeBytes": 3110743,
+          "effectiveSha256": "0ef6fe2d15c972d15b8ecb75dcb9c861e042ac94a0e48baf0202a840648b0fdc",
+          "effectiveSizeBytes": 3110743,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "python-darwin-arm64",
+      "filename": "cpython-3.14.7+20260814-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.14.7%2B20260814-aarch64-apple-darwin-install_only_stripped.tar.gz",
+      "sha256": "423717c485b9ee7822590b9d973c1b5fb2cda0fe43448ab82a3d44f823bd329c",
+      "sizeBytes": 26507457,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "423717c485b9ee7822590b9d973c1b5fb2cda0fe43448ab82a3d44f823bd329c",
+      "verifiedSizeBytes": 26507457,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 0,
+        "duplicateEntries": 0,
+        "entries": 1697,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "6b10db78594dcc9db0eb95d9120ff51095d8d0ad5696370313fbaae8c6f9dcff",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 1689,
+        "selectedMembers": [
+          {
+            "path": "python/bin/python3.14",
+            "sha256": "c8a41706db062af069cf32b388a29eb2879b810d2d8dd4a5fd5bda3d163132ac",
+            "sizeBytes": 18800624
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 8,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "python",
+          "platform": "darwin-arm64",
+          "memberPath": "python/bin/python3.14",
+          "effectivePath": "toolchains/darwin-arm64/python/bin/python3.14",
+          "memberSha256": "c8a41706db062af069cf32b388a29eb2879b810d2d8dd4a5fd5bda3d163132ac",
+          "memberSizeBytes": 18800624,
+          "effectiveSha256": "c8a41706db062af069cf32b388a29eb2879b810d2d8dd4a5fd5bda3d163132ac",
+          "effectiveSizeBytes": 18800624,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "python-linux-amd64",
+      "filename": "cpython-3.14.7+20260814-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.14.7%2B20260814-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "cefba034445d2875408d1fd4d5700ae6731563aeb54dcb39fd8164ab5c457533",
+      "sizeBytes": 35857286,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "cefba034445d2875408d1fd4d5700ae6731563aeb54dcb39fd8164ab5c457533",
+      "verifiedSizeBytes": 35857286,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 0,
+        "duplicateEntries": 0,
+        "entries": 4568,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "992acabe78dec2163e788bc7b8451836872d4ec3c2e44fe9b09f58bd6ad9f8d4",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 3521,
+        "selectedMembers": [
+          {
+            "path": "python/bin/python3.14",
+            "sha256": "4f43b25b39a5db0144b949fef5587aac333be2f4ae5f793a479ccb424cf7c22f",
+            "sizeBytes": 32062496
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 1047,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "python",
+          "platform": "linux-amd64",
+          "memberPath": "python/bin/python3.14",
+          "effectivePath": "toolchains/linux-amd64/python/bin/python3.14",
+          "memberSha256": "4f43b25b39a5db0144b949fef5587aac333be2f4ae5f793a479ccb424cf7c22f",
+          "memberSizeBytes": 32062496,
+          "effectiveSha256": "4f43b25b39a5db0144b949fef5587aac333be2f4ae5f793a479ccb424cf7c22f",
+          "effectiveSizeBytes": 32062496,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "uv-darwin-arm64",
+      "filename": "uv-aarch64-apple-darwin.tar.gz",
+      "source": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-aarch64-apple-darwin.tar.gz",
+      "sha256": "5bb0e5fe008a773c3dbcb97ff79cd89e1241464fe9d2f986d52ad8f1b037bd62",
+      "sizeBytes": 18518284,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "5bb0e5fe008a773c3dbcb97ff79cd89e1241464fe9d2f986d52ad8f1b037bd62",
+      "verifiedSizeBytes": 18518284,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 1,
+        "duplicateEntries": 0,
+        "entries": 3,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "23eff04ff35f89778509be017159c03a93d3db01931ed9c71ebfc598aa84e3a9",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 2,
+        "selectedMembers": [
+          {
+            "path": "uv-aarch64-apple-darwin/uv",
+            "sha256": "ad3564874e19defa0debefcf48e8381ac1d087c584190c1323c247bd351dd25f",
+            "sizeBytes": 42201264
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "uv",
+          "platform": "darwin-arm64",
+          "memberPath": "uv-aarch64-apple-darwin/uv",
+          "effectivePath": "toolchains/darwin-arm64/uv/uv",
+          "memberSha256": "ad3564874e19defa0debefcf48e8381ac1d087c584190c1323c247bd351dd25f",
+          "memberSizeBytes": 42201264,
+          "effectiveSha256": "ad3564874e19defa0debefcf48e8381ac1d087c584190c1323c247bd351dd25f",
+          "effectiveSizeBytes": 42201264,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "uv-linux-amd64",
+      "filename": "uv-x86_64-unknown-linux-gnu.tar.gz",
+      "source": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
+      "sizeBytes": 23015306,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
+      "verifiedSizeBytes": 23015306,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 1,
+        "duplicateEntries": 0,
+        "entries": 3,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "b0296f47d5f341dcf994ab4477dfe2fdb2a24fec8f69425b4e0e407007184803",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 2,
+        "selectedMembers": [
+          {
+            "path": "uv-x86_64-unknown-linux-gnu/uv",
+            "sha256": "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46",
+            "sizeBytes": 59019440
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "uv",
+          "platform": "linux-amd64",
+          "memberPath": "uv-x86_64-unknown-linux-gnu/uv",
+          "effectivePath": "toolchains/linux-amd64/uv/uv",
+          "memberSha256": "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46",
+          "memberSizeBytes": 59019440,
+          "effectiveSha256": "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46",
+          "effectiveSizeBytes": 59019440,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "protoc-darwin-arm64",
+      "filename": "protoc-35.1-osx-aarch_64.zip",
+      "source": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-osx-aarch_64.zip",
+      "sha256": "193289af0470c6a1aada357d4fba0bbf8d78bfaac8b5e42ca30af2ef75583de2",
+      "sizeBytes": 2585575,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "193289af0470c6a1aada357d4fba0bbf8d78bfaac8b5e42ca30af2ef75583de2",
+      "verifiedSizeBytes": 2585575,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "zip",
+        "directories": 5,
+        "duplicateEntries": 0,
+        "entries": 23,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "fb6f8f825a98044751e58aa7cc067967857de38ea4592e24bb2d138241aafa45",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 18,
+        "selectedMembers": [
+          {
+            "path": "bin/protoc",
+            "sha256": "d81c6d9240f7eb8d18d41c6abc9cd6ca7896e370c7b575adfcf2fa1d600727de",
+            "sizeBytes": 9575824
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "protoc",
+          "platform": "darwin-arm64",
+          "memberPath": "bin/protoc",
+          "effectivePath": "toolchains/darwin-arm64/protoc/bin/protoc",
+          "memberSha256": "d81c6d9240f7eb8d18d41c6abc9cd6ca7896e370c7b575adfcf2fa1d600727de",
+          "memberSizeBytes": 9575824,
+          "effectiveSha256": "d81c6d9240f7eb8d18d41c6abc9cd6ca7896e370c7b575adfcf2fa1d600727de",
+          "effectiveSizeBytes": 9575824,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "protoc-linux-amd64",
+      "filename": "protoc-35.1-linux-x86_64.zip",
+      "source": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-x86_64.zip",
+      "sha256": "6930ebf62bd4ea607b98fff052596c6ee564b9835b4ce172c75a3f53ae9d91b7",
+      "sizeBytes": 3633928,
+      "use": "GENERATOR_RUNTIME",
+      "verifiedSha256": "6930ebf62bd4ea607b98fff052596c6ee564b9835b4ce172c75a3f53ae9d91b7",
+      "verifiedSizeBytes": 3633928,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "zip",
+        "directories": 5,
+        "duplicateEntries": 0,
+        "entries": 23,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "fb6f8f825a98044751e58aa7cc067967857de38ea4592e24bb2d138241aafa45",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 18,
+        "selectedMembers": [
+          {
+            "path": "bin/protoc",
+            "sha256": "d2c65c3ea5eeb59427f684ed3e0a0cd458386122fc9f1b98de946a7242b53d31",
+            "sizeBytes": 10488040
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "protoc",
+          "platform": "linux-amd64",
+          "memberPath": "bin/protoc",
+          "effectivePath": "toolchains/linux-amd64/protoc/bin/protoc",
+          "memberSha256": "d2c65c3ea5eeb59427f684ed3e0a0cd458386122fc9f1b98de946a7242b53d31",
+          "memberSizeBytes": 10488040,
+          "effectiveSha256": "d2c65c3ea5eeb59427f684ed3e0a0cd458386122fc9f1b98de946a7242b53d31",
+          "effectiveSizeBytes": 10488040,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "syft-darwin-arm64",
+      "filename": "syft_1.51.0_darwin_arm64.tar.gz",
+      "source": "https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_darwin_arm64.tar.gz",
+      "sha256": "4f37f4c7fefce0a68e4cf71ba3f5f9829a99e65d89b29f7ee41b8c2c10ea8c59",
+      "sizeBytes": 27498100,
+      "use": "EVIDENCE_ONLY",
+      "verifiedSha256": "4f37f4c7fefce0a68e4cf71ba3f5f9829a99e65d89b29f7ee41b8c2c10ea8c59",
+      "verifiedSizeBytes": 27498100,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 0,
+        "duplicateEntries": 0,
+        "entries": 4,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "b16e80e7d244917139e1d33940a664f4fd1cfc34ef020fa1341dce8cbf19acfe",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 4,
+        "selectedMembers": [
+          {
+            "path": "syft",
+            "sha256": "b1147cee2d7f49d6ea58d9c95b24734985a4cc208fdd3f0f0f1ff950622f0252",
+            "sizeBytes": 83645830
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "syft",
+          "platform": "evidence-darwin-arm64",
+          "memberPath": "syft",
+          "effectivePath": "scanners/bin/syft",
+          "memberSha256": "b1147cee2d7f49d6ea58d9c95b24734985a4cc208fdd3f0f0f1ff950622f0252",
+          "memberSizeBytes": 83645830,
+          "effectiveSha256": "b1147cee2d7f49d6ea58d9c95b24734985a4cc208fdd3f0f0f1ff950622f0252",
+          "effectiveSizeBytes": 83645830,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "grype-darwin-arm64",
+      "filename": "grype_0.117.0_darwin_arm64.tar.gz",
+      "source": "https://github.com/anchore/grype/releases/download/v0.117.0/grype_0.117.0_darwin_arm64.tar.gz",
+      "sha256": "bfcefa3f3b1690d9c77d847841b32ebd6106ab0e0e32f810924707e704d53584",
+      "sizeBytes": 28625409,
+      "use": "EVIDENCE_ONLY",
+      "verifiedSha256": "bfcefa3f3b1690d9c77d847841b32ebd6106ab0e0e32f810924707e704d53584",
+      "verifiedSizeBytes": 28625409,
+      "distribution": "ARCHIVE",
+      "extractionAudit": {
+        "archiveFormat": "tar",
+        "directories": 0,
+        "duplicateEntries": 0,
+        "entries": 4,
+        "formatVersion": "cloud-agents-generator-supply-archive-inspection/v1",
+        "hardlinks": 0,
+        "inventoryAlgorithm": "sorted-path-nul-type-nul-link-target-nul-v1",
+        "inventorySha256": "71bcc4e74c7be8ba30757e2c6f7750dfde9f72e9d42de6a9026f7c4938df8d4b",
+        "linkCycles": 0,
+        "linkPrefixDescendants": 0,
+        "linkTargetsResolveToRegularFiles": true,
+        "regularFiles": 4,
+        "selectedMembers": [
+          {
+            "path": "grype",
+            "sha256": "34938b3387d4f79b92effe5d5018286d5a7113cd8722fb0fd2b3b2457233eead",
+            "sizeBytes": 86659148
+          }
+        ],
+        "specialEntries": 0,
+        "symlinks": 0,
+        "unsafeEntries": 0
+      },
+      "effectiveExecutables": [
+        {
+          "id": "grype",
+          "platform": "evidence-darwin-arm64",
+          "memberPath": "grype",
+          "effectivePath": "scanners/bin/grype",
+          "memberSha256": "34938b3387d4f79b92effe5d5018286d5a7113cd8722fb0fd2b3b2457233eead",
+          "memberSizeBytes": 86659148,
+          "effectiveSha256": "34938b3387d4f79b92effe5d5018286d5a7113cd8722fb0fd2b3b2457233eead",
+          "effectiveSizeBytes": 86659148,
+          "provenance": "SAFE_ARCHIVE_REGULAR_MEMBER_BYTES_EXACT"
+        }
+      ]
+    },
+    {
+      "id": "osv-scanner-darwin-arm64",
+      "filename": "osv-scanner_2.5.1_darwin_arm64",
+      "source": "https://github.com/google/osv-scanner/releases/download/v2.5.1/osv-scanner_darwin_arm64",
+      "sha256": "75c44d6332f892a1e56286f4105a98ed751ae28d215ca0a8b65cc00d84103054",
+      "sizeBytes": 55484002,
+      "use": "EVIDENCE_ONLY",
+      "verifiedSha256": "75c44d6332f892a1e56286f4105a98ed751ae28d215ca0a8b65cc00d84103054",
+      "verifiedSizeBytes": 55484002,
+      "distribution": "BARE_OFFICIAL_BINARY",
+      "extractionAudit": "NOT_APPLICABLE_BARE_BINARY",
+      "effectiveExecutables": [
+        {
+          "id": "osv-scanner",
+          "platform": "evidence-darwin-arm64",
+          "memberPath": null,
+          "effectivePath": "scanners/bin/osv-scanner",
+          "memberSha256": "75c44d6332f892a1e56286f4105a98ed751ae28d215ca0a8b65cc00d84103054",
+          "memberSizeBytes": 55484002,
+          "effectiveSha256": "75c44d6332f892a1e56286f4105a98ed751ae28d215ca0a8b65cc00d84103054",
+          "effectiveSizeBytes": 55484002,
+          "provenance": "OFFICIAL_BARE_BINARY_BYTES_EXACT"
+        }
+      ]
+    }
+  ],
+  "executables": {
+    "darwin-arm64": [
+      {
+        "id": "node",
+        "path": "toolchains/darwin-arm64/node/bin/node",
+        "sha256": "f480e325ee0ca9cb9eef00b5ca6057a2a104807a1b073f1bc373a55c67facff5",
+        "sizeBytes": 120957760
+      },
+      {
+        "id": "bun",
+        "path": "toolchains/darwin-arm64/bun/bun-darwin-aarch64/bun",
+        "sha256": "e0c90ec15d33363e6b70713d56bc3b2c7585c17f40a0fe0f8fd9305901d4e233",
+        "sizeBytes": 63096576
+      },
+      {
+        "id": "go",
+        "path": "toolchains/darwin-arm64/go/bin/go",
+        "sha256": "a1c83801d1756c3eca78366c6b585f2c21c20694fb1c7eb92c446a0580420412",
+        "sizeBytes": 14516816
+      },
+      {
+        "id": "gofmt",
+        "path": "toolchains/darwin-arm64/go/bin/gofmt",
+        "sha256": "350abb0daa1b58fa1fc7a48dcd482f75ebccfc9b7252f1113ef7585ad6245911",
+        "sizeBytes": 2970400
+      },
+      {
+        "id": "python",
+        "path": "toolchains/darwin-arm64/python/bin/python3.14",
+        "sha256": "c8a41706db062af069cf32b388a29eb2879b810d2d8dd4a5fd5bda3d163132ac",
+        "sizeBytes": 18800624
+      },
+      {
+        "id": "uv",
+        "path": "toolchains/darwin-arm64/uv/uv",
+        "sha256": "ad3564874e19defa0debefcf48e8381ac1d087c584190c1323c247bd351dd25f",
+        "sizeBytes": 42201264
+      },
+      {
+        "id": "protoc",
+        "path": "toolchains/darwin-arm64/protoc/bin/protoc",
+        "sha256": "d81c6d9240f7eb8d18d41c6abc9cd6ca7896e370c7b575adfcf2fa1d600727de",
+        "sizeBytes": 9575824
+      },
+      {
+        "id": "protoc-gen-go",
+        "path": "plugins/darwin-arm64/protoc-gen-go",
+        "sha256": "2812f5f5cc1f08dff81fdbeb66b6c1ce642da13587c05801900cfca5f4230939",
+        "sizeBytes": 7528018
+      },
+      {
+        "id": "protoc-gen-connect-go",
+        "path": "plugins/darwin-arm64/protoc-gen-connect-go",
+        "sha256": "0de128625c8350e1489e85e8483fe68af098ea53682f7ae567571159c00a0642",
+        "sizeBytes": 12944706
+      }
+    ],
+    "linux-amd64": [
+      {
+        "id": "node",
+        "path": "toolchains/linux-amd64/node/bin/node",
+        "sha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+        "sizeBytes": 123656816
+      },
+      {
+        "id": "bun",
+        "path": "toolchains/linux-amd64/bun/bun-linux-x64-baseline/bun",
+        "sha256": "a8f9ebd1770ddc8e55dab7a68d4ec1ec1eebf374bb97cc65cf2c3cb373fc6791",
+        "sizeBytes": 91802480
+      },
+      {
+        "id": "go",
+        "path": "toolchains/linux-amd64/go/bin/go",
+        "sha256": "29e6e0b8be61beb1489ceae62b304343566de8a1dc700af74bde7aeb9c80ad45",
+        "sizeBytes": 15434687
+      },
+      {
+        "id": "gofmt",
+        "path": "toolchains/linux-amd64/go/bin/gofmt",
+        "sha256": "0ef6fe2d15c972d15b8ecb75dcb9c861e042ac94a0e48baf0202a840648b0fdc",
+        "sizeBytes": 3110743
+      },
+      {
+        "id": "python",
+        "path": "toolchains/linux-amd64/python/bin/python3.14",
+        "sha256": "4f43b25b39a5db0144b949fef5587aac333be2f4ae5f793a479ccb424cf7c22f",
+        "sizeBytes": 32062496
+      },
+      {
+        "id": "uv",
+        "path": "toolchains/linux-amd64/uv/uv",
+        "sha256": "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46",
+        "sizeBytes": 59019440
+      },
+      {
+        "id": "protoc",
+        "path": "toolchains/linux-amd64/protoc/bin/protoc",
+        "sha256": "d2c65c3ea5eeb59427f684ed3e0a0cd458386122fc9f1b98de946a7242b53d31",
+        "sizeBytes": 10488040
+      },
+      {
+        "id": "protoc-gen-go",
+        "path": "plugins/linux-amd64/protoc-gen-go",
+        "sha256": "72e151a7861ff00dc1e229c084efa1db3d52f8349b8d6249f3f232879ddb3f57",
+        "sizeBytes": 7700525
+      },
+      {
+        "id": "protoc-gen-connect-go",
+        "path": "plugins/linux-amd64/protoc-gen-connect-go",
+        "sha256": "70ae4ff2362596582685c0cb41905c525ed8b5d13ab48ad24987394ced22995b",
+        "sizeBytes": 13359247
+      }
+    ]
+  },
+  "scanners": [
+    {
+      "id": "syft",
+      "version": "1.51.0",
+      "path": "scanners/bin/syft",
+      "sha256": "b1147cee2d7f49d6ea58d9c95b24734985a4cc208fdd3f0f0f1ff950622f0252",
+      "sizeBytes": 83645830
+    },
+    {
+      "id": "grype",
+      "version": "0.117.0",
+      "path": "scanners/bin/grype",
+      "sha256": "34938b3387d4f79b92effe5d5018286d5a7113cd8722fb0fd2b3b2457233eead",
+      "sizeBytes": 86659148
+    },
+    {
+      "id": "osv-scanner",
+      "version": "2.5.1",
+      "path": "scanners/bin/osv-scanner",
+      "sha256": "75c44d6332f892a1e56286f4105a98ed751ae28d215ca0a8b65cc00d84103054",
+      "sizeBytes": 55484002
+    }
+  ],
+  "officialVerification": {
+    "node": "SHASUMS256.txt",
+    "go": "go.dev downloads JSON",
+    "githubAssets": "release asset digest and size"
+  }
+}

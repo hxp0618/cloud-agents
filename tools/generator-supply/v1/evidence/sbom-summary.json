@@ -1,0 +1,62 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-sbom-summary/v1",
+  "status": "SYFT_1_51_0_DUAL_FORMAT_EFFECTIVE_BUNDLES_AND_IMAGE",
+  "syft": "1.51.0",
+  "cyclonedx": "1.6",
+  "spdx": "2.3",
+  "formattedDocuments": 6,
+  "rawDocuments": 3,
+  "documents": 9,
+  "platforms": {
+    "darwin-arm64": {
+      "packages": 583,
+      "node": "24.18.1",
+      "syftSha256": "409842436521b3a9d201a665f52418a6b4273f17a119e84d9e38b3831ca3c0ec",
+      "cyclonedxSha256": "7f36c3677443b3c6ddf10ece31e4ec08cfef855da93f4c347d4d7cc672510201",
+      "spdxSha256": "c46a6967363f68d8613303204222b82b447da38f2fb114103416250f5db73c06",
+      "rawPurlCount": 583,
+      "rawUniquePurlCount": 576,
+      "rawPurlMultisetSha256": "777090483353b40bfb5ffd030ef224fbf97fcd22b7099c407412e47aefa5b44f",
+      "cyclonedxPurlMultisetSha256": "777090483353b40bfb5ffd030ef224fbf97fcd22b7099c407412e47aefa5b44f",
+      "spdxPurlCount": 583,
+      "spdxPurlMultisetSha256": "777090483353b40bfb5ffd030ef224fbf97fcd22b7099c407412e47aefa5b44f",
+      "spdxAdditionalImageIdentityPurls": []
+    },
+    "linux-amd64": {
+      "packages": 596,
+      "node": "24.18.1",
+      "syftSha256": "4c1c5b63a43c3671e1691e86b16591ea00e434940756b75f86cc9cf0a72eb4a9",
+      "cyclonedxSha256": "56d128f71be55511919073cd3365f130a6995796700d9f048a07d3f7eba6df19",
+      "spdxSha256": "9b72dedb6782641dbdd7c4d0c15d234e8efd7aa0fda50e20d525c4aa19c5d681",
+      "rawPurlCount": 596,
+      "rawUniquePurlCount": 589,
+      "rawPurlMultisetSha256": "0f55c4e7fc0517b2466eca9810b4055a00bbf4c75803e58c17da3c1a1b2970dd",
+      "cyclonedxPurlMultisetSha256": "0f55c4e7fc0517b2466eca9810b4055a00bbf4c75803e58c17da3c1a1b2970dd",
+      "spdxPurlCount": 596,
+      "spdxPurlMultisetSha256": "0f55c4e7fc0517b2466eca9810b4055a00bbf4c75803e58c17da3c1a1b2970dd",
+      "spdxAdditionalImageIdentityPurls": []
+    },
+    "ubuntu-amd64": {
+      "packages": 92,
+      "syftSha256": "b71a8279a60e14f7684a7f6ef090e2567a23a5cc13fcfece2140f96684be7068",
+      "cyclonedxSha256": "d0ea747e3993236d0396addf6e2899331f0457c2800ab287ac8b0d69edf5db23",
+      "spdxSha256": "14a68101ae3086e82d0363293a1d4eedbd65387bcbeb5526c8bfa99cc5415a98",
+      "rawPurlCount": 92,
+      "rawUniquePurlCount": 92,
+      "rawPurlMultisetSha256": "55b1fc817a35afb6fa040b7e58d584b66dfc77984989474ec2f8ea2056051bca",
+      "cyclonedxPurlMultisetSha256": "55b1fc817a35afb6fa040b7e58d584b66dfc77984989474ec2f8ea2056051bca",
+      "spdxPurlCount": 93,
+      "spdxPurlMultisetSha256": "7c7a6aa1d814eda39a9e49956b9bab40d3a0f7965ea0464725deebdf6ad67bd3",
+      "spdxAdditionalImageIdentityPurls": [
+        "pkg:oci/sha256@sha256%3Afd225d3a1c5cecb1374f0d09c37a127d1f6f70e665941d6dab888c38b36c2131?arch=amd64&tag=a6f81fb630d51837271b89f8193810a5fc493fa4f30a55d7ebcdb3a66f3cc63a"
+      ]
+    }
+  },
+  "ubuntuImage": {
+    "registryIndexDigest": "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+    "platformManifestDigest": "sha256:fd225d3a1c5cecb1374f0d09c37a127d1f6f70e665941d6dab888c38b36c2131",
+    "localConfigImageId": "sha256:a6f81fb630d51837271b89f8193810a5fc493fa4f30a55d7ebcdb3a66f3cc63a",
+    "rootfsLayerDigest": "sha256:b9a65b3c65ab22d490085bd0bf5490e2409da8748b406870f2463bdc41cd6795",
+    "exportTarSha256": "25ecc117cd77a289cc25006605dcf4ec8b137fec326db766d0abcd4147f6093e"
+  }
+}
