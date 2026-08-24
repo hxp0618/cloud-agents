@@ -15,6 +15,10 @@ import {
   SUCCESSOR_PROJECTION_EXCLUSIONS,
   SUCCESSOR_REPLAY_RECEIPT_PATHS,
 } from "./platform-successor-dag";
+import {
+  GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST,
+  GENERATOR_SUPPLY_V1_IMMUTABLE_FILES,
+} from "./platform-successor-predecessor";
 
 type Platform = "darwin-arm64" | "linux-amd64";
 type Run = "A" | "B";
@@ -138,6 +142,19 @@ type StableFileIdentity = Readonly<{
   mtimeNs: bigint;
   ctimeNs: bigint;
 }>;
+
+type GeneratorSupplyV1DerivedFileRecord = Readonly<{
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+}>;
+
+type GeneratorSupplyV1DerivedReadMutation = {
+  readonly path: string;
+  readonly beforeDerivedRead: () => void;
+  readonly afterDerivedRead: () => void;
+  fired: boolean;
+};
 
 type ReadReceipt = Readonly<{
   path: string;
@@ -1080,38 +1097,54 @@ export function buildGeneratorSupplyReplayV2ExpectedFromImmutableV1(
   return buildGeneratorSupplyReplayV2ExpectedFromImmutableV1Internal(root, replayContract);
 }
 
+export function assertGeneratorSupplyReplayV2V1DerivedABAMutationForTest(
+  root: string,
+  replayContract: GeneratorSupplyReplayV2Contract,
+  path: string,
+  beforeDerivedRead: () => void,
+  afterDerivedRead: () => void,
+): void {
+  buildGeneratorSupplyReplayV2ExpectedFromImmutableV1Internal(root, replayContract, undefined, {
+    path,
+    beforeDerivedRead,
+    afterDerivedRead,
+    fired: false,
+  });
+}
+
 function buildGeneratorSupplyReplayV2ExpectedFromImmutableV1Internal(
   root: string,
   replayContract: GeneratorSupplyReplayV2Contract,
   identities?: StableFileIdentity[],
+  mutation?: GeneratorSupplyV1DerivedReadMutation,
 ): GeneratorSupplyReplayV2Expected {
-  const source = parseStableJson(root, "tools/generator-supply/v1/source.json", identities);
-  const npm = parseStableJson(root, "tools/generator-supply/v1/evidence/npm.json", identities);
-  const artifacts = parseStableJson(
-    root,
-    "tools/generator-supply/v1/evidence/artifacts.json",
-    identities,
-  );
-  const wheels = parseStableJson(
-    root,
-    "tools/generator-supply/v1/evidence/wheels.json",
-    identities,
-  );
-  const ubuntu = parseStableJson(
-    root,
-    "tools/generator-supply/v1/evidence/ubuntu-image-binding.json",
-    identities,
-  );
-  const linuxIsolation = parseStableJson(
-    root,
+  const fixedRecords = readGeneratorSupplyV1DerivedFileRecords(root, identities);
+  const readDerived = (path: string): JsonRecord => {
+    const record = fixedRecords.get(path);
+    if (record === undefined)
+      fail(`/${path}`, "Immutable v1 derived material is absent from fixed authority.");
+    if (mutation?.path === path && !mutation.fired) {
+      mutation.fired = true;
+      mutation.beforeDerivedRead();
+      try {
+        return parseStableJson(root, path, identities, record);
+      } finally {
+        mutation.afterDerivedRead();
+      }
+    }
+    return parseStableJson(root, path, identities, record);
+  };
+  const source = readDerived("tools/generator-supply/v1/source.json");
+  const npm = readDerived("tools/generator-supply/v1/evidence/npm.json");
+  const artifacts = readDerived("tools/generator-supply/v1/evidence/artifacts.json");
+  const wheels = readDerived("tools/generator-supply/v1/evidence/wheels.json");
+  const ubuntu = readDerived("tools/generator-supply/v1/evidence/ubuntu-image-binding.json");
+  const linuxIsolation = readDerived(
     "tools/generator-supply/v1/evidence/replay/linux-isolation.json",
-    identities,
   );
-  const v1Projection = parseStableJson(
-    root,
-    "tools/generator-supply/v1/evidence/replay/projection.json",
-    identities,
-  );
+  const v1Projection = readDerived("tools/generator-supply/v1/evidence/replay/projection.json");
+  if (mutation !== undefined && !mutation.fired)
+    fail(`/${mutation.path}`, "V1 derived-read mutation test path was not captured.");
   const profile = object(source.profile, "/v1/source/profile");
   const runtimes = object(profile.runtimes, "/v1/source/profile/runtimes");
   const installed = arrayOfObjects(npm.installed, "/v1/npm/installed");
@@ -1435,17 +1468,91 @@ function parseStableJson(
   root: string,
   path: string,
   identities?: StableFileIdentity[],
+  authority?: GeneratorSupplyV1DerivedFileRecord,
 ): JsonRecord {
   let parsed: unknown;
   try {
     const snapshot = readContainedRegularFileSnapshot(root, path);
     identities?.push(snapshot.identity);
+    const actualSha256 = `sha256:${createHash("sha256").update(snapshot.bytes).digest("hex")}`;
+    if (
+      authority !== undefined &&
+      (authority.path !== path ||
+        snapshot.bytes.byteLength !== authority.sizeBytes ||
+        actualSha256 !== authority.sha256)
+    ) {
+      fail(`/${path}`, "Immutable v1 derived-read bytes do not match fixed authority.");
+    }
     parsed = JSON.parse(snapshot.bytes.toString("utf8"));
   } catch (error) {
     if (error instanceof GeneratorSupplyReplayV2Error) throw error;
     fail(`/${path}`, `Immutable v1 material is missing or invalid: ${String(error)}.`);
   }
   return object(parsed, `/${path}`);
+}
+
+function readGeneratorSupplyV1DerivedFileRecords(
+  root: string,
+  identities?: StableFileIdentity[],
+): ReadonlyMap<string, GeneratorSupplyV1DerivedFileRecord> {
+  const manifestPath = GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestPath;
+  let snapshot: Readonly<{ bytes: Buffer; identity: StableFileIdentity }>;
+  let manifest: JsonRecord;
+  try {
+    snapshot = readContainedRegularFileSnapshot(root, manifestPath);
+    identities?.push(snapshot.identity);
+    const actualSha256 = createHash("sha256").update(snapshot.bytes).digest("hex");
+    if (
+      snapshot.bytes.byteLength !== GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestSizeBytes ||
+      actualSha256 !== GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestSha256
+    ) {
+      fail(`/${manifestPath}`, "Immutable v1 evidence manifest does not match fixed authority.");
+    }
+    manifest = object(JSON.parse(snapshot.bytes.toString("utf8")), `/${manifestPath}`);
+  } catch (error) {
+    if (error instanceof GeneratorSupplyReplayV2Error) throw error;
+    fail(
+      `/${manifestPath}`,
+      `Immutable v1 evidence manifest is missing or invalid: ${String(error)}.`,
+    );
+  }
+  exactKeys(manifest, `/${manifestPath}`, ["algorithm", "files"]);
+  if (manifest.algorithm !== GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.algorithm)
+    fail(`/${manifestPath}/algorithm`, "Immutable v1 evidence manifest algorithm drifted.");
+  const files = arrayOfObjects(manifest.files, `/${manifestPath}/files`);
+  if (files.length !== GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.memberCount)
+    fail(`/${manifestPath}/files`, "Immutable v1 evidence manifest member count drifted.");
+  const records = new Map<string, GeneratorSupplyV1DerivedFileRecord>();
+  for (const [index, value] of files.entries()) {
+    const recordPath = `/${manifestPath}/files/${index}`;
+    exactKeys(value, recordPath, ["path", "sha256", "sizeBytes"]);
+    if (
+      typeof value.path !== "string" ||
+      !value.path.startsWith(GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.memberPathPrefix)
+    ) {
+      fail(`${recordPath}/path`, "Immutable v1 evidence member path is outside fixed prefix.");
+    }
+    digest(value.sha256, `${recordPath}/sha256`);
+    positiveInteger(value.sizeBytes, `${recordPath}/sizeBytes`);
+    if (records.has(value.path))
+      fail(`${recordPath}/path`, "Immutable v1 evidence manifest contains a duplicate path.");
+    records.set(value.path, {
+      path: value.path,
+      sha256: String(value.sha256),
+      sizeBytes: Number(value.sizeBytes),
+    });
+  }
+  const sourcePath = "tools/generator-supply/v1/source.json";
+  const sourceAuthority = GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.find(
+    (record) => record.path === sourcePath,
+  );
+  if (sourceAuthority === undefined)
+    fail(`/${sourcePath}`, "Immutable v1 source is absent from fixed outer authority.");
+  records.set(sourcePath, {
+    ...sourceAuthority,
+    sha256: `sha256:${sourceAuthority.sha256}`,
+  });
+  return records;
 }
 
 function readContainedRegularFileSnapshot(

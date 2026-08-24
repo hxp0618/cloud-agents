@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  cpSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -17,6 +18,7 @@ import {
   assertContractClosureV3RegistrySemantics,
   assertContractClosureProfileV3Current,
   assertContractClosureProfileV3CurrentMutationForTest,
+  assertContractClosureV3V2DependencyABAMutationForTest,
   assertContractClosureV3RepositoryLineageCurrent,
   buildContractClosureProfileV3Registry,
   buildContractClosureProfileV3TestSource,
@@ -335,6 +337,38 @@ describe("contract closure profile v3 Slice A authority", () => {
       expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
         code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
         path: `/${CONTRACT_CLOSURE_PROFILE_V3_OUTPUT_PATH}`,
+      }),
+    );
+  });
+
+  it("rejects a closure-v2 parent-directory ABA between immutable and derived reads", () => {
+    const root = createCurrentRoot();
+    const v2Path = CONTRACT_CLOSURE_V2_IMMUTABLE_FILES.at(-1)!.path;
+    const live = dirname(resolve(root, v2Path));
+    const parked = `${live}.original`;
+    const alternate = `${live}.alternate`;
+    cpSync(live, alternate, { recursive: true });
+    const alternateOutput = resolve(alternate, v2Path.split("/").at(-1)!);
+    writeFileSync(
+      alternateOutput,
+      Buffer.concat([readFileSync(alternateOutput), Buffer.from(" ")]),
+    );
+    expect(() =>
+      assertContractClosureV3V2DependencyABAMutationForTest(
+        root,
+        () => {
+          renameSync(live, parked);
+          renameSync(alternate, live);
+        },
+        () => {
+          renameSync(live, alternate);
+          renameSync(parked, live);
+        },
+      ),
+    ).toThrowError(
+      expect.objectContaining<Partial<ContractClosureProfileV3Error>>({
+        code: "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        path: `/${v2Path}`,
       }),
     );
   });

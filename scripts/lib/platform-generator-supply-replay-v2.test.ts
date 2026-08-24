@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  cpSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -17,6 +18,7 @@ import {
   assertGeneratorSupplyReplayV2InputSnapshotMutationForTest,
   assertGeneratorSupplyReplayV2Receipts,
   assertGeneratorSupplyReplayV2SnapshotMutationForTest,
+  assertGeneratorSupplyReplayV2V1DerivedABAMutationForTest,
   buildGeneratorSupplyReplayV2SummaryForTest,
   buildGeneratorSupplyReplayV2TestFixture,
   type GeneratorSupplyReplayV2Contract,
@@ -38,6 +40,7 @@ const authorityPaths = {
 } as const;
 const immutableFixturePaths = [
   "tools/generator-supply/v1/source.json",
+  "tools/generator-supply/v1/evidence-manifest.json",
   "tools/generator-supply/v1/evidence/npm.json",
   "tools/generator-supply/v1/evidence/artifacts.json",
   "tools/generator-supply/v1/evidence/wheels.json",
@@ -312,7 +315,7 @@ describe("generator-supply v2 exact receipt semantics", () => {
     );
   });
 
-  it("rejects early v1 source and npm inputs changed after the seven-file snapshot", () => {
+  it("rejects early v1 source and npm inputs changed after manifest-plus-seven snapshot", () => {
     for (const path of [
       "tools/generator-supply/v1/source.json",
       "tools/generator-supply/v1/evidence/npm.json",
@@ -332,6 +335,35 @@ describe("generator-supply v2 exact receipt semantics", () => {
         path,
       );
     }
+  });
+
+  it("rejects a v1 parent-directory ABA between fixed manifest and derived reads", () => {
+    const fixture = createFixture();
+    const path = "tools/generator-supply/v1/evidence/npm.json";
+    const live = resolve(fixture.root, "tools/generator-supply/v1");
+    const parked = `${live}.original`;
+    const alternate = `${live}.alternate`;
+    cpSync(live, alternate, { recursive: true });
+    const alternateNpm = resolve(alternate, "evidence/npm.json");
+    writeFileSync(alternateNpm, Buffer.concat([readFileSync(alternateNpm), Buffer.from(" ")]));
+
+    expectInvalid(
+      () =>
+        assertGeneratorSupplyReplayV2V1DerivedABAMutationForTest(
+          fixture.root,
+          fixture.expected.replayContract,
+          path,
+          () => {
+            renameSync(live, parked);
+            renameSync(alternate, live);
+          },
+          () => {
+            renameSync(live, alternate);
+            renameSync(parked, live);
+          },
+        ),
+      path,
+    );
   });
 
   it("rejects a receipt changed after the eight-file snapshot was captured", () => {

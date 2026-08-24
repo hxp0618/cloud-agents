@@ -61,13 +61,27 @@ was also preserved and rejected by fixed-object review with
 `REQUEST_CHANGES, P0=0/P1=1/P2=0`. Although its semantic currentness fences
 were complete, the detached binder parsed authority document A and later
 reopened the path for `fileSha256`, so an ancestor-directory ABA could mix the
-reviewed bytes of B with A's profile/registry digests. The final additive repair
+reviewed bytes of B with A's profile/registry digests. The following additive repair
 returns parsed registry and exact byte SHA from one stable read for both
 closure-v3 and supply-v2, forbids the binder from reopening either authority,
 terminally rechecks both current wrappers and closure semantic dependencies,
 and requires the Git candidate blob's embedded profile/registry digests to
 equal the tuple fields. Closure shift/dependency-drift and supply
 parent-directory ABA restore tests exercise the rejected sequence.
+
+That following candidate `c9f9e6a6b009557f8258a79a2f704a13330724b2`
+was likewise preserved and rejected by fixed-object review with
+`REQUEST_CHANGES, P0=0/P1=2/P2=0`. It closed the detached authority mixed-read
+window, but closure-v3 still reopened closure-v2 output after its immutable
+fence without proving that the derived-read bytes were the fixed predecessor,
+and supply-v2 could alternate the complete v1 fence with a different directory
+for its seven derived reads. The current additive repair verifies the exact
+fixed closure-v2 output size/SHA on every same-read `readV2Registry` byte set;
+for supply-v2 it same-read verifies the fixed evidence manifest, obtains the
+source record from the fixed outer map, and checks fixed path/SHA/size on each
+of the seven derived inputs before parsing. Dedicated parent-directory ABA
+restore tests cover both rejected sequences. No rejected commit was amended or
+force-pushed.
 
 ## Exact successor DAG
 
@@ -114,8 +128,8 @@ manifest algorithms; exact ordered 16-path exclusions; receipt formats and
 non-Gate scope. A dedicated semantic validator stable-reads every receipt once
 and returns the same path/SHA/size snapshot to the outer registry validator.
 The superseding repair retains one root/path/dev/inode/size/mtime/ctime
-currentness set across the four replay authorities, seven actually parsed v1
-inputs and exact eight receipts, then rechecks it after outer manifest and
+currentness set across the four replay authorities, the fixed evidence
+manifest plus seven actually parsed v1 inputs, and exact eight receipts, then rechecks it after outer manifest and
 domain/registry digest validation. The complete v1 outer/39-member/semantic
 inheritance set has its own shared terminal fence. A current assembled profile
 also captures and terminally rechecks its v2 source, standalone evidence
@@ -168,11 +182,11 @@ contracts:
 | ------------------------------ | ---------: |
 | immutable predecessor verifier | 15/15 PASS |
 | exact successor DAG            |   6/6 PASS |
-| replay receipt semantics v2    | 10/10 PASS |
+| replay receipt semantics v2    | 11/11 PASS |
 | generator-supply v2            | 12/12 PASS |
-| contract-closure v3            |   8/8 PASS |
+| contract-closure v3            |   9/9 PASS |
 | detached review binding        | 16/16 PASS |
-| total focused Vitest           | 67/67 PASS |
+| total focused Vitest           | 69/69 PASS |
 
 All 20 implementation/schema/test files pass `oxfmt`; all seven new JSON
 schemas parse successfully; the cumulative 23-path Slice A candidate passes
@@ -182,9 +196,9 @@ replay, production database, HTTP, provider, deployment or publication command
 was run.
 
 The original module-level reviews covered the pre-repair working byte set. The
-fixed reviews of `1504465` and `ea4b4a4` both remain `REQUEST_CHANGES`. The
-additive repair requires a new fixed-commit review; no earlier approval is
-carried forward.
+fixed reviews of `1504465`, `ea4b4a4` and `c9f9e6a` all remain
+`REQUEST_CHANGES`. The additive repair requires a new fixed-commit review; no
+earlier approval is carried forward.
 
 ## Gate and next-slice status
 

@@ -252,6 +252,20 @@ export function assertContractClosureProfileV3CurrentMutationForTest(
   assertContractClosureProfileV3CurrentInternal(root, mutateAfterCapture);
 }
 
+export function assertContractClosureV3V2DependencyABAMutationForTest(
+  root: string,
+  beforeDerivedRead: () => void,
+  afterDerivedRead: () => void,
+): void {
+  assertContractClosureV2Immutable(root);
+  beforeDerivedRead();
+  try {
+    readV2Registry(root);
+  } finally {
+    afterDerivedRead();
+  }
+}
+
 function assertContractClosureProfileV3CurrentInternal(
   root: string,
   mutateAfterCapture?: () => void,
@@ -758,9 +772,22 @@ type V2Registry = {
 
 function readV2Registry(root: string): V2Registry {
   try {
-    return JSON.parse(
-      readStableContainedRegularFile(root, V2_OUTPUT_PATH).toString("utf8"),
-    ) as V2Registry;
+    const bytes = readStableContainedRegularFile(root, V2_OUTPUT_PATH);
+    const authority = CONTRACT_CLOSURE_V2_IMMUTABLE_FILES.find(
+      (record) => record.path === V2_OUTPUT_PATH,
+    );
+    if (
+      authority === undefined ||
+      bytes.byteLength !== authority.sizeBytes ||
+      sha256(bytes) !== authority.sha256
+    ) {
+      throw v3Error(
+        "CONTRACT_CLOSURE_V3_EVIDENCE_MISMATCH",
+        `/${V2_OUTPUT_PATH}`,
+        "Contract closure v2 derived-read bytes do not match the fixed immutable output authority.",
+      );
+    }
+    return JSON.parse(bytes.toString("utf8")) as V2Registry;
   } catch (error) {
     if (error instanceof ContractClosureProfileV3Error) throw error;
     throw v3Error(
