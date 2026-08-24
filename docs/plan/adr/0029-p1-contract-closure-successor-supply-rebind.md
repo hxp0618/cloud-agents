@@ -1,6 +1,7 @@
 # ADR-0029: P1 contract-closure successor and generator-supply rebind
 
-- Status: Proposed
+- Status: Accepted under the continuing Platform goal execution authority on
+  2026-08-24
 - Date: 2026-08-24
 - Decision ID: D-052
 - Depends on: ADR-0026, ADR-0027, ADR-0028,
@@ -236,9 +237,13 @@ Rejected because it would weaken the reviewed staged-tree projection semantics.
 - `G-CONTRACT`, `G-SUPPLY-CHAIN`, production operation, release, and every
   aggregate Gate remain open.
 
-## Approval required
+## Decision status
 
-The owner must approve or reject the Proposed decision, immutable predecessor
-set, exact late-bound discipline, and ordered Slices A-H. Until approval, no
-successor code, generated profile, generation lock, replay, remote execution,
-status transition, or Gate action is authorized by this ADR.
+The continuing Platform goal explicitly authorizes automatic progression
+without another per-slice approval. D-052 therefore accepts the immutable
+predecessor set, exact late-bound discipline, and ordered Slices A-H.
+
+This acceptance authorizes only the versioned non-Gate implementation and
+focused/local/native evidence described above. It does not authorize production
+database writes, HTTP/P2/provider effects, deployment, publication, release,
+status transition, or any Gate action.

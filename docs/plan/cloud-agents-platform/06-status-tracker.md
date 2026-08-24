@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-24
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 接受 bounded local generator-supply profile implementation/review，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 接受 closure-v3 + supply-v2 + detached binding registry ordered Slices A-H，一次 successor native replay，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
 
 ## 1. 决策表
 
@@ -59,6 +59,7 @@
 | D-049 | Offline JWT verifier profile + ordered Slices A-C                                                                           | APPROVED | A-C 均已独立批准；C `d6ae9c7` / review `aa83e37`；Gate OPEN                                               |
 | D-050 | JSON Schema official-suite criterion 表示固定 corpus/authority evidence completeness；不声称 Ajv generic conformance        | APPROVED | ADR-0026；v2 candidate only；Ajv 1241/1299、58 non-passing；所有 Gate OPEN                                |
 | D-051 | Versioned generated generator-supply profile binds native replay, exact isolation, and late-bound evidence assembly         | APPROVED | ADR-0028；standing P1 execution approval；local implementation/review only；所有 Gate OPEN                |
+| D-052 | Closure-v3 + generator-supply-v2 + detached review-binding registry use one acyclic successor replay and Slices A-H         | APPROVED | ADR-0029；continuing Platform goal authority；non-Gate implementation/review；所有 Gate OPEN              |
 
 ## 2. 阶段追踪
 

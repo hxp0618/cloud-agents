@@ -27,6 +27,8 @@
   [`ADR-0026`](../adr/0026-p1-json-schema-official-suite-evidence-closure.md)
 - Accepted bounded generator-supply profile boundary（仅授权 local implementation/review；Gate effect none）：
   [`ADR-0028`](../adr/0028-p1-generator-supply-profile.md)
+- Accepted closure/supply successor boundary（ordered Slices A-H；one native replay；Gate effect none）：
+  [`ADR-0029`](../adr/0029-p1-contract-closure-successor-supply-rebind.md)
 - Completed slices：P1-A1 Contract Kernel bootstrap (`e0562b280dbbc29604ea1faad9095103ce4548f4`)；SubjectRef/
   HTTP idempotency authority follow-up (`eeb22f26765d99eefcbe316af3ea63991bb5950b`)；SQL/bootstrap authority
   (`4f39b14`)；tenant-scoped pgx read helper (`4af2a66`)；strict migration bundle bootstrap (`363627e`)；

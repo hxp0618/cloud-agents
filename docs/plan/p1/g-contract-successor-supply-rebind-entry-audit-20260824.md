@@ -4,7 +4,7 @@ Date: 2026-08-24
 
 ## Result
 
-`OWNER DECISION REQUIRED`
+`ENTRY DECISION ACCEPTED`
 
 The next implementation cannot safely be a direct edit of
 `contract-closure-profile/v2`, `generator-supply-profile/v1`, the generated
@@ -13,7 +13,8 @@ new versioned successor design with one acyclic replay boundary. Every Gate
 remains open.
 
 This audit is read-only with respect to runtime, databases, providers, remote
-hosts, deployment, and publication. It authorizes no implementation by itself.
+hosts, deployment, and publication. D-052 subsequently accepts its recommended
+non-Gate successor ordering under the continuing Platform goal authority.
 
 ## Fixed entry identity
 
@@ -219,8 +220,8 @@ Not authorized:
 
 ## Entry verdict
 
-The repository is ready for an owner decision on the successor DAG, not for
-direct implementation. The proposed decision is recorded in ADR-0029. Until it
-is accepted, the reviewed v1 evidence remains fixed-candidate support, closure
-v2 remains unchanged, both formal criteria remain `MISSING`, and every Gate
-remains open.
+The repository entered D-052 implementation after the continuing Platform goal
+accepted ADR-0029. At entry, the reviewed v1 evidence remains fixed-candidate
+support, closure v2 remains unchanged, both formal criteria remain `MISSING`,
+and every Gate remains open. Slice A must establish the successor contracts and
+fences before any native replay.
