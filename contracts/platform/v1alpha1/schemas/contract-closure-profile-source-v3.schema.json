@@ -1,0 +1,601 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/contract-closure-profile-source-v3.schema.json",
+  "title": "ContractClosureProfileSourceV3",
+  "description": "Strict editable authority for the generated non-Gate G-CONTRACT closure profile v3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "predecessor",
+    "runtimeReviewedCandidate",
+    "generatorSupplyV1Predecessor",
+    "profile"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-closure-profile-source/v3" },
+    "registryId": { "const": "cloud-agents/platform/contract-closure-profile" },
+    "predecessor": { "$ref": "#/$defs/predecessor" },
+    "runtimeReviewedCandidate": { "$ref": "#/$defs/runtimeReviewedCandidate" },
+    "generatorSupplyV1Predecessor": { "$ref": "#/$defs/generatorSupplyV1Predecessor" },
+    "profile": { "$ref": "#/$defs/profile" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "hexDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitOid": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "immutableFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/hexDigest" },
+        "sizeBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "predecessorMutation", "files"],
+      "properties": {
+        "profileId": { "const": "contract-closure-profile/v2" },
+        "predecessorMutation": { "const": "forbidden" },
+        "files": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "allOf": [
+                { "$ref": "#/$defs/immutableFile" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json"
+                    },
+                    "sha256": {
+                      "const": "cb0c2f9efe9f54ef5ed2eb0868ff604d8fe06b8f40bd4fdc01be07c0cb160032"
+                    },
+                    "sizeBytes": { "const": 7932 }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/immutableFile" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json"
+                    },
+                    "sha256": {
+                      "const": "2bba53f094b1b01eabc3becb769ce00bfaee140f90ced21e21a22f352eb192ad"
+                    },
+                    "sizeBytes": { "const": 8122 }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/immutableFile" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json"
+                    },
+                    "sha256": {
+                      "const": "7e6e9f35c000e0620d8719a31102f6b4fd1cd7450892be0b815e5b7c25307146"
+                    },
+                    "sizeBytes": { "const": 1833 }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/immutableFile" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "const": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json"
+                    },
+                    "sha256": {
+                      "const": "5069f0f1bdca9b7b7c161cb36870c00be254acb315cafab45adcc944b19e33fe"
+                    },
+                    "sizeBytes": { "const": 8690 }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "verdict"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "verdict": { "const": "APPROVE_P0_0_P1_0_P2_0" },
+        "commit": { "$ref": "#/$defs/gitOid" },
+        "tree": { "$ref": "#/$defs/gitOid" },
+        "parent": { "$ref": "#/$defs/gitOid" }
+      }
+    },
+    "runtimeReviewedCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterionId", "candidate", "moduleFiles", "review", "implementationBoundary"],
+      "properties": {
+        "criterionId": {
+          "const": "runtime-server-path-and-tenant-authority-enforcement"
+        },
+        "candidate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "tree", "parent", "diffSha256"],
+          "properties": {
+            "commit": { "const": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e" },
+            "tree": { "const": "2165fd70efd097e7e1decb109cee31e9f6af8ee5" },
+            "parent": { "const": "9fe7338d3c424731e0b9946f5252e3f61d5326a9" },
+            "diffSha256": {
+              "const": "sha256:d4e6e96595d9d1554356e30878ce4d57143efb579d5a369ebf97c085f3f67562"
+            }
+          }
+        },
+        "moduleFiles": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "allOf": [
+                { "$ref": "#/$defs/immutableFile" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": { "const": "services/control-plane/go.mod" },
+                    "sha256": {
+                      "const": "1664dce4a62ceca72a721690b80aa77d069372229b42aebade535c140499f4ad"
+                    },
+                    "sizeBytes": { "const": 519 }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/immutableFile" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": { "const": "services/control-plane/go.sum" },
+                    "sha256": {
+                      "const": "f85e74742ea1cbbe7622488afabfa567445f2ad45bf75173840d699ef275dc65"
+                    },
+                    "sizeBytes": { "const": 2858 }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "review": {
+          "allOf": [
+            { "$ref": "#/$defs/review" },
+            {
+              "type": "object",
+              "required": ["commit", "tree", "parent"],
+              "properties": {
+                "path": {
+                  "const": "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md"
+                },
+                "sha256": {
+                  "const": "sha256:d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2"
+                },
+                "commit": { "const": "fe59f0d4059632a102171d9c1eb77a4c147ae65e" },
+                "tree": { "const": "7d6f7a65f36c89fadbe02e7e75e3b395bcca97f3" },
+                "parent": { "const": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e" }
+              }
+            }
+          ]
+        },
+        "implementationBoundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "transport",
+            "http",
+            "oidc",
+            "jwks",
+            "projectWriter",
+            "provider",
+            "externalEffects"
+          ],
+          "properties": {
+            "transport": { "const": "TRANSPORT_NEUTRAL_CLAIM_ONLY" },
+            "http": { "const": "NOT_IMPLEMENTED" },
+            "oidc": { "const": "NOT_IMPLEMENTED" },
+            "jwks": { "const": "NOT_IMPLEMENTED" },
+            "projectWriter": { "const": "NOT_IMPLEMENTED" },
+            "provider": { "const": "NOT_IMPLEMENTED" },
+            "externalEffects": { "const": "NOT_IMPLEMENTED" }
+          }
+        }
+      }
+    },
+    "generatorSupplyV1Predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "predecessorMutation",
+        "outerFiles",
+        "evidenceManifest",
+        "candidate",
+        "identities",
+        "projection",
+        "futureSuccessor"
+      ],
+      "properties": {
+        "profileId": { "const": "cloud-agents/generator-supply-profile/v1" },
+        "predecessorMutation": { "const": "forbidden" },
+        "outerFiles": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/immutableFile" }
+        },
+        "evidenceManifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "sizeBytes",
+            "algorithm",
+            "memberCount",
+            "memberPathPrefix",
+            "memberVerification"
+          ],
+          "properties": {
+            "path": { "const": "tools/generator-supply/v1/evidence-manifest.json" },
+            "sha256": {
+              "const": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7"
+            },
+            "sizeBytes": { "const": 8186 },
+            "algorithm": { "const": "sorted-path-nul-sha256-nul-size-v1" },
+            "memberCount": { "const": 39 },
+            "memberPathPrefix": { "const": "tools/generator-supply/v1/evidence/" },
+            "memberVerification": { "const": "EXACT_PATH_SHA256_SIZE_REQUIRED" }
+          }
+        },
+        "candidate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit",
+            "tree",
+            "parent",
+            "diffSha256",
+            "reviewCommit",
+            "reviewTree",
+            "reviewParent",
+            "reviewPath",
+            "reviewSha256",
+            "reviewVerdict"
+          ],
+          "properties": {
+            "commit": { "const": "e5f981c8197cea7527a57c391e7198570f61b92c" },
+            "tree": { "const": "7fb98abf71066e8009581c658b41a299ae1a5c2c" },
+            "parent": { "const": "0a331fde18a909d37b64f11efe879df7bbc09d25" },
+            "diffSha256": {
+              "const": "sha256:d012683bf1a13dda79a8393afdf44ff20088711b9ccce1c608cd74db5843587e"
+            },
+            "reviewCommit": { "const": "129e9bc128de971b9f9623e82832e80830331126" },
+            "reviewTree": { "const": "b30835163d757e236781af8c16c61736e1d452da" },
+            "reviewParent": { "const": "e5f981c8197cea7527a57c391e7198570f61b92c" },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md"
+            },
+            "reviewSha256": {
+              "const": "sha256:86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47"
+            },
+            "reviewVerdict": { "const": "APPROVE_P0_0_P1_0_P2_0" }
+          }
+        },
+        "identities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sourceDigest",
+            "artifactSetDigest",
+            "evidenceManifestDigest",
+            "profileDigest",
+            "registryDigest"
+          ],
+          "properties": {
+            "sourceDigest": {
+              "const": "sha256:8c2f462e30baefdf420179b66399461a22a0de71efcefca99e1ff3134bd62b3c"
+            },
+            "artifactSetDigest": {
+              "const": "sha256:f307e4c73f56e62c5d38b928acff5db284cd5a1706bb76fa7ba55b1437faa0c5"
+            },
+            "evidenceManifestDigest": {
+              "const": "sha256:59e7dfe0d85d7fd2cb9ad069037019c484a4c8039c897e5d5cabf45f517f64ab"
+            },
+            "profileDigest": {
+              "const": "sha256:b1201cd3d22398fa808a05190ef4ce49422db665277e8cf8c936938cb5cd741c"
+            },
+            "registryDigest": {
+              "const": "sha256:86452d655cd05a73211e52c28107e93d38a244026648e28a8369cefd4e4eed9c"
+            }
+          }
+        },
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "treeSha",
+            "archiveSha256",
+            "archiveSizeBytes",
+            "receiptPath",
+            "receiptSha256",
+            "receiptSizeBytes"
+          ],
+          "properties": {
+            "treeSha": { "const": "4a70fb8b1e18801f4f02a753668ffe91b63b6275" },
+            "archiveSha256": {
+              "const": "36070cced3f7b7088f990b46a60b67fcabf742733782533bdfcbd46317950478"
+            },
+            "archiveSizeBytes": { "const": 46008320 },
+            "receiptPath": {
+              "const": "tools/generator-supply/v1/evidence/replay/projection.json"
+            },
+            "receiptSha256": {
+              "const": "1587c7715157aaab99c2276b1adbe85fe070aeeb238c054b479edfd1ae1b5cf4"
+            },
+            "receiptSizeBytes": { "const": 1708 }
+          }
+        },
+        "futureSuccessor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profileId", "path", "reviewPath", "reviewStatus", "canonicalBuildRead"],
+          "properties": {
+            "profileId": { "const": "cloud-agents/generator-supply-profile/v2" },
+            "path": { "const": "tools/generator-supply/v2/profile.json" },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md"
+            },
+            "reviewStatus": { "const": "REVIEW_PENDING" },
+            "canonicalBuildRead": { "const": "FORBIDDEN" }
+          }
+        }
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "authorityPaths", "evidencePaths"],
+      "properties": {
+        "id": {
+          "enum": [
+            "json-schema-2020-12-official-test-suite",
+            "openapi-3.1-semantic-validation",
+            "generated-sdk-replay",
+            "n-minus-one-compatibility",
+            "response-watch-unknown-field-preservation",
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "status": { "enum": ["SATISFIED_CANDIDATE", "REVIEW_PENDING"] },
+        "authorityPaths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "evidencePaths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "review": { "$ref": "#/$defs/review" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": { "status": { "const": "SATISFIED_CANDIDATE" } }
+          },
+          "then": {
+            "type": "object",
+            "required": ["review"],
+            "properties": { "review": {}, "reason": false }
+          },
+          "else": {
+            "type": "object",
+            "required": ["reason"],
+            "properties": { "reason": {}, "review": false }
+          }
+        }
+      ]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "status",
+        "notGateClosure",
+        "gateStatus",
+        "derivation",
+        "criteria",
+        "implementationBoundary"
+      ],
+      "properties": {
+        "profileId": { "const": "contract-closure-profile/v3" },
+        "status": { "const": "BOOTSTRAP_VALIDATED" },
+        "notGateClosure": { "const": true },
+        "gateStatus": { "const": "ALL_GATES_OPEN" },
+        "derivation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["missing", "manualRemoval", "lateReviewConsumer"],
+          "properties": {
+            "missing": { "const": "criteria_status_not_satisfied_candidate" },
+            "manualRemoval": { "const": "forbidden" },
+            "lateReviewConsumer": { "const": "detached_non_bootstrap_registry_only" }
+          }
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "prefixItems": [
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "json-schema-2020-12-official-test-suite" },
+                    "status": { "const": "SATISFIED_CANDIDATE" }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "openapi-3.1-semantic-validation" },
+                    "status": { "const": "SATISFIED_CANDIDATE" }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "generated-sdk-replay" },
+                    "status": { "const": "SATISFIED_CANDIDATE" }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "n-minus-one-compatibility" },
+                    "status": { "const": "SATISFIED_CANDIDATE" }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "response-watch-unknown-field-preservation" },
+                    "status": { "const": "SATISFIED_CANDIDATE" }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "runtime-server-path-and-tenant-authority-enforcement" },
+                    "status": { "const": "SATISFIED_CANDIDATE" }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                { "$ref": "#/$defs/criterion" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": { "const": "remaining-generator-supply-chain-review" },
+                    "status": { "const": "REVIEW_PENDING" }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "implementationBoundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runtimeCriterion",
+            "supplyCriterion",
+            "http",
+            "oidc",
+            "jwks",
+            "projectWriter",
+            "provider",
+            "productionDatabaseWrites",
+            "deployment",
+            "publication",
+            "gateStatus"
+          ],
+          "properties": {
+            "runtimeCriterion": { "const": "SATISFIED_CANDIDATE_BOUNDED_TRANSPORT_NEUTRAL" },
+            "supplyCriterion": { "const": "REVIEW_PENDING" },
+            "http": { "const": "NOT_IMPLEMENTED" },
+            "oidc": { "const": "NOT_IMPLEMENTED" },
+            "jwks": { "const": "NOT_IMPLEMENTED" },
+            "projectWriter": { "const": "NOT_IMPLEMENTED" },
+            "provider": { "const": "NOT_IMPLEMENTED" },
+            "productionDatabaseWrites": { "const": "NOT_AUTHORIZED" },
+            "deployment": { "const": "NOT_AUTHORIZED" },
+            "publication": { "const": "NOT_AUTHORIZED" },
+            "gateStatus": { "const": "ALL_GATES_OPEN" }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "editable": true,
+    "predecessorMutation": "forbidden",
+    "futureSupplyRead": "forbidden",
+    "manualMissingRemoval": "forbidden",
+    "gateAuthority": "none"
+  }
+}

@@ -119,6 +119,12 @@ D-051/ADR-0028 的 [bounded generator-supply implementation](../p1/g-contract-ge
 构成 R4 之后的 current remediation support，不是新的 Gate candidate record。它不改写 R4 的 7 个 formal `missing`；无论该 bounded
 review 的 verdict 如何，`G-CONTRACT` 与 `G-SUPPLY-CHAIN` 都保持 `IN PROGRESS`，Gate effect 为 none。
 
+D-052/ADR-0029 的 [Slice A implementation](../p1/g-contract-successor-supply-rebind-slice-a-implementation-20260824.md)
+固定 immutable predecessors、closure-v3/supply-v2 strict contract、16-path late-bound DAG 与 detached binding state
+machine；当前仅为待固定提交复核的 pre-replay implementation candidate。它不生成 successor source/profile/receipt/lock，
+不移除 canonical `missing`，不进入 Slice B，也不改变 `G-CONTRACT`、`G-SUPPLY-CHAIN` 或任何 aggregate Gate 的
+`IN PROGRESS` / OPEN 状态。
+
 ### 3.1 Immutable record history
 
 | Record ID                      | Gate / phase  | Status      | Fixed input digest                                                    | Evidence                                                         | Supersedes                     | Last reviewed |

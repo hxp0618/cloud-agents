@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/contract-review-binding/v1/review-tuple-v1.schema.json",
+  "title": "ContractReviewTupleV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "bindingId",
+    "sourceDigest",
+    "canonicalClosureAuthority",
+    "supplyProfileAuthority",
+    "reviews",
+    "notGateClosure",
+    "gateStatus",
+    "tupleDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-review-tuple/v1" },
+    "registryId": { "const": "cloud-agents/platform/contract-review-binding" },
+    "bindingId": { "const": "g-contract-current-source-review-binding/v1" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "canonicalClosureAuthority": {
+      "$ref": "#/$defs/boundAuthority",
+      "type": "object",
+      "properties": {
+        "kind": { "const": "canonical_contract_closure" },
+        "path": {
+          "const": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json"
+        },
+        "profileId": { "const": "contract-closure-profile/v3" }
+      }
+    },
+    "supplyProfileAuthority": {
+      "$ref": "#/$defs/boundAuthority",
+      "type": "object",
+      "properties": {
+        "kind": { "const": "generator_supply_profile" },
+        "path": { "const": "tools/generator-supply/v2/profile.json" },
+        "profileId": { "const": "cloud-agents/generator-supply-profile/v2" }
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/reviewBinding",
+          "type": "object",
+          "properties": {
+            "criterionId": {
+              "const": "runtime-server-path-and-tenant-authority-enforcement"
+            },
+            "subject": { "const": "canonical_contract_closure" }
+          }
+        },
+        {
+          "$ref": "#/$defs/reviewBinding",
+          "type": "object",
+          "properties": {
+            "criterionId": { "const": "remaining-generator-supply-chain-review" },
+            "subject": { "const": "generator_supply_profile" }
+          }
+        }
+      ],
+      "items": false
+    },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" },
+    "tupleDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "gitObject": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "boundAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "profileId", "fileSha256", "profileDigest", "registryDigest"],
+      "properties": {
+        "kind": { "enum": ["canonical_contract_closure", "generator_supply_profile"] },
+        "path": { "$ref": "#/$defs/path" },
+        "profileId": { "type": "string", "minLength": 1 },
+        "fileSha256": { "$ref": "#/$defs/digest" },
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "registryDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent", "diffSha256"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/gitObject" },
+        "tree": { "$ref": "#/$defs/gitObject" },
+        "parent": { "$ref": "#/$defs/gitObject" },
+        "diffSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent", "path", "sha256", "verdict", "findings"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/gitObject" },
+        "tree": { "$ref": "#/$defs/gitObject" },
+        "parent": { "$ref": "#/$defs/gitObject" },
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "verdict": { "const": "APPROVE_P0_0_P1_0_P2_0" },
+        "findings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p0", "p1", "p2"],
+          "properties": {
+            "p0": { "const": 0 },
+            "p1": { "const": 0 },
+            "p2": { "const": 0 }
+          }
+        }
+      }
+    },
+    "reviewBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterionId", "subject", "candidate", "review"],
+      "properties": {
+        "criterionId": {
+          "enum": [
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "subject": { "enum": ["canonical_contract_closure", "generator_supply_profile"] },
+        "candidate": { "$ref": "#/$defs/candidate" },
+        "review": { "$ref": "#/$defs/review" }
+      }
+    }
+  }
+}

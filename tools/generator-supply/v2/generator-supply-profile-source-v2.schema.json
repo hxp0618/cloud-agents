@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tooling/generator-supply/v2/generator-supply-profile-source-v2.schema.json",
+  "title": "Cloud Agents generator supply profile source v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "predecessor",
+    "inheritance",
+    "declaredProfile",
+    "replayEvidence"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-generator-supply-profile-source/v2" },
+    "registryId": { "const": "cloud-agents/generator-supply-profile" },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "predecessorMutation",
+        "outerFiles",
+        "evidenceManifestPolicy",
+        "profileIdentities",
+        "fixedLineage",
+        "projection"
+      ],
+      "properties": {
+        "profileId": { "const": "cloud-agents/generator-supply-profile/v1" },
+        "predecessorMutation": { "const": "forbidden" },
+        "outerFiles": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/fileRecord" }
+        },
+        "evidenceManifestPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "manifestPath",
+            "manifestSha256",
+            "manifestSizeBytes",
+            "algorithm",
+            "memberCount",
+            "memberPathPrefix"
+          ],
+          "properties": {
+            "manifestPath": { "const": "tools/generator-supply/v1/evidence-manifest.json" },
+            "manifestSha256": { "$ref": "#/$defs/bareDigest" },
+            "manifestSizeBytes": { "type": "integer", "minimum": 1 },
+            "algorithm": { "const": "sorted-path-nul-sha256-nul-size-v1" },
+            "memberCount": { "const": 39 },
+            "memberPathPrefix": { "const": "tools/generator-supply/v1/evidence/" }
+          }
+        },
+        "profileIdentities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sourceDigest",
+            "artifactSetDigest",
+            "evidenceManifestDigest",
+            "profileDigest",
+            "registryDigest"
+          ],
+          "properties": {
+            "sourceDigest": { "$ref": "#/$defs/prefixedDigest" },
+            "artifactSetDigest": { "$ref": "#/$defs/prefixedDigest" },
+            "evidenceManifestDigest": { "$ref": "#/$defs/prefixedDigest" },
+            "profileDigest": { "$ref": "#/$defs/prefixedDigest" },
+            "registryDigest": { "$ref": "#/$defs/prefixedDigest" }
+          }
+        },
+        "fixedLineage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidateCommit",
+            "candidateTree",
+            "candidateParent",
+            "candidateDiffSha256",
+            "reviewCommit",
+            "reviewTree",
+            "reviewParent",
+            "reviewPath",
+            "reviewSha256",
+            "verdict"
+          ],
+          "properties": {
+            "candidateCommit": { "$ref": "#/$defs/gitObject" },
+            "candidateTree": { "$ref": "#/$defs/gitObject" },
+            "candidateParent": { "$ref": "#/$defs/gitObject" },
+            "candidateDiffSha256": { "$ref": "#/$defs/bareDigest" },
+            "reviewCommit": { "$ref": "#/$defs/gitObject" },
+            "reviewTree": { "$ref": "#/$defs/gitObject" },
+            "reviewParent": { "$ref": "#/$defs/gitObject" },
+            "reviewPath": { "$ref": "#/$defs/path" },
+            "reviewSha256": { "$ref": "#/$defs/bareDigest" },
+            "verdict": { "const": "APPROVE_P0_0_P1_0_P2_0" }
+          }
+        },
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "treeSha",
+            "archiveSha256",
+            "archiveSizeBytes",
+            "receiptPath",
+            "receiptSha256",
+            "receiptSizeBytes"
+          ],
+          "properties": {
+            "treeSha": { "const": "4a70fb8b1e18801f4f02a753668ffe91b63b6275" },
+            "archiveSha256": {
+              "const": "36070cced3f7b7088f990b46a60b67fcabf742733782533bdfcbd46317950478"
+            },
+            "archiveSizeBytes": { "const": 46008320 },
+            "receiptPath": {
+              "const": "tools/generator-supply/v1/evidence/replay/projection.json"
+            },
+            "receiptSha256": {
+              "const": "1587c7715157aaab99c2276b1adbe85fe070aeeb238c054b479edfd1ae1b5cf4"
+            },
+            "receiptSizeBytes": { "const": 1708 }
+          }
+        }
+      }
+    },
+    "inheritance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "material",
+        "security",
+        "mutation",
+        "freshEvidenceAuthority",
+        "legalApproval",
+        "signature"
+      ],
+      "properties": {
+        "material": { "const": "EXACT_V1_39_MEMBER_MANIFEST" },
+        "security": { "const": "EXACT_V1_TIME_BOUND_SECURITY_EVIDENCE" },
+        "mutation": { "const": "forbidden" },
+        "freshEvidenceAuthority": { "const": "V2_NATIVE_REPLAY_RECEIPTS_ONLY" },
+        "legalApproval": { "const": "NOT_CLAIMED" },
+        "signature": { "const": "NOT_PRODUCED_NOT_AUTHORIZED" }
+      }
+    },
+    "declaredProfile": { "$ref": "#/$defs/profile" },
+    "replayEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "authority", "receiptPaths"],
+      "properties": {
+        "state": { "const": "DECLARED_PRE_REPLAY" },
+        "authority": { "const": "EXTERNAL_LATE_BOUND" },
+        "receiptPaths": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/v2EvidencePath" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "bareDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "prefixedDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "gitObject": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "v2EvidencePath": {
+      "type": "string",
+      "pattern": "^tools/generator-supply/v2/evidence/replay(?:/[A-Za-z0-9._-]+\\.json|\\.json)$"
+    },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/bareDigest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "nativeExecution"],
+      "properties": {
+        "id": { "enum": ["darwin-arm64", "linux-amd64", "linux-arm64"] },
+        "status": { "enum": ["NATIVE_REPLAY_VERIFIED", "NOT_CLAIMED"] },
+        "nativeExecution": { "type": "boolean" }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "status", "notGateClosure", "platforms", "boundaries"],
+      "properties": {
+        "profileId": { "const": "cloud-agents/generator-supply-profile/v2" },
+        "status": { "const": "REPLAY_VERIFIED_REVIEW_PENDING" },
+        "notGateClosure": { "const": true },
+        "platforms": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/platform",
+              "type": "object",
+              "properties": {
+                "id": { "const": "darwin-arm64" },
+                "status": { "const": "NATIVE_REPLAY_VERIFIED" },
+                "nativeExecution": { "const": true }
+              }
+            },
+            {
+              "$ref": "#/$defs/platform",
+              "type": "object",
+              "properties": {
+                "id": { "const": "linux-amd64" },
+                "status": { "const": "NATIVE_REPLAY_VERIFIED" },
+                "nativeExecution": { "const": true }
+              }
+            },
+            {
+              "$ref": "#/$defs/platform",
+              "type": "object",
+              "properties": {
+                "id": { "const": "linux-arm64" },
+                "status": { "const": "NOT_CLAIMED" },
+                "nativeExecution": { "const": false }
+              }
+            }
+          ],
+          "items": false
+        },
+        "boundaries": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "criterion",
+            "gate",
+            "productionDatabase",
+            "http",
+            "p2",
+            "provider",
+            "deployment",
+            "release",
+            "legalApproval",
+            "signature",
+            "bootstrapDiscovery"
+          ],
+          "properties": {
+            "criterion": { "const": "REVIEW_PENDING_NOT_CLOSED" },
+            "gate": { "const": "ALL_GATES_OPEN" },
+            "productionDatabase": { "const": "NOT_AUTHORIZED" },
+            "http": { "const": "NOT_IMPLEMENTED" },
+            "p2": { "const": "NOT_IMPLEMENTED" },
+            "provider": { "const": "NOT_AUTHORIZED" },
+            "deployment": { "const": "NOT_AUTHORIZED" },
+            "release": { "const": "NOT_AUTHORIZED" },
+            "legalApproval": { "const": "NOT_CLAIMED" },
+            "signature": { "const": "NOT_PRODUCED_NOT_AUTHORIZED" },
+            "bootstrapDiscovery": { "const": "FORBIDDEN" }
+          }
+        }
+      }
+    }
+  }
+}

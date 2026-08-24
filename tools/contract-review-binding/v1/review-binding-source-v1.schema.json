@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/contract-review-binding/v1/review-binding-source-v1.schema.json",
+  "title": "ContractReviewBindingSourceV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "bindingId",
+    "canonicalClosureAuthority",
+    "supplyProfileAuthority",
+    "reviewSlots",
+    "derivation",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-review-binding-source/v1" },
+    "registryId": { "const": "cloud-agents/platform/contract-review-binding" },
+    "bindingId": { "const": "g-contract-current-source-review-binding/v1" },
+    "canonicalClosureAuthority": {
+      "$ref": "#/$defs/authority",
+      "type": "object",
+      "properties": {
+        "kind": { "const": "canonical_contract_closure" },
+        "path": {
+          "const": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json"
+        },
+        "profileId": { "const": "contract-closure-profile/v3" }
+      }
+    },
+    "supplyProfileAuthority": {
+      "$ref": "#/$defs/authority",
+      "type": "object",
+      "properties": {
+        "kind": { "const": "generator_supply_profile" },
+        "path": { "const": "tools/generator-supply/v2/profile.json" },
+        "profileId": { "const": "cloud-agents/generator-supply-profile/v2" }
+      }
+    },
+    "reviewSlots": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/reviewSlot",
+          "type": "object",
+          "properties": {
+            "criterionId": {
+              "const": "runtime-server-path-and-tenant-authority-enforcement"
+            },
+            "subject": { "const": "canonical_contract_closure" },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/reviewSlot",
+          "type": "object",
+          "properties": {
+            "criterionId": { "const": "remaining-generator-supply-chain-review" },
+            "subject": { "const": "generator_supply_profile" },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manualMissingRemoval", "reviewTuplePath", "outputPath", "finalReviewPath"],
+      "properties": {
+        "manualMissingRemoval": { "const": "forbidden" },
+        "reviewTuplePath": {
+          "const": "tools/contract-review-binding/v1/review-tuple.json"
+        },
+        "outputPath": { "const": "tools/contract-review-binding/v1/registry.json" },
+        "finalReviewPath": {
+          "const": "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md"
+        }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notGateClosure",
+        "gateStatus",
+        "bootstrapDiscovery",
+        "coreReplayOutput",
+        "selfReview",
+        "httpP2Provider",
+        "productionDatabaseWrites",
+        "deployment",
+        "publication",
+        "signing"
+      ],
+      "properties": {
+        "notGateClosure": { "const": true },
+        "gateStatus": { "const": "ALL_GATES_OPEN" },
+        "bootstrapDiscovery": { "const": "FORBIDDEN" },
+        "coreReplayOutput": { "const": "FORBIDDEN" },
+        "selfReview": { "const": "FORBIDDEN" },
+        "httpP2Provider": { "const": "NOT_AUTHORIZED" },
+        "productionDatabaseWrites": { "const": "NOT_AUTHORIZED" },
+        "deployment": { "const": "NOT_AUTHORIZED" },
+        "publication": { "const": "NOT_AUTHORIZED" },
+        "signing": { "const": "NOT_AUTHORIZED" }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "profileId"],
+      "properties": {
+        "kind": { "enum": ["canonical_contract_closure", "generator_supply_profile"] },
+        "path": { "$ref": "#/$defs/path" },
+        "profileId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "reviewSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterionId", "subject", "reviewPath", "requiredVerdict"],
+      "properties": {
+        "criterionId": {
+          "enum": [
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "subject": { "enum": ["canonical_contract_closure", "generator_supply_profile"] },
+        "reviewPath": { "$ref": "#/$defs/path" },
+        "requiredVerdict": { "const": "APPROVE_P0_0_P1_0_P2_0" }
+      }
+    }
+  }
+}

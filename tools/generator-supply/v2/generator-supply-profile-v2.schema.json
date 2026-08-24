@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tooling/generator-supply/v2/generator-supply-profile-v2.schema.json",
+  "title": "Cloud Agents generated generator supply profile v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "predecessor",
+    "sourceDigest",
+    "artifactSetDigest",
+    "evidenceManifestDigest",
+    "profile",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-generator-supply-profile-registry/v2" },
+    "registryId": { "const": "cloud-agents/generator-supply-profile" },
+    "predecessor": {
+      "$ref": "generator-supply-profile-source-v2.schema.json#/properties/predecessor"
+    },
+    "sourceDigest": { "$ref": "#/$defs/prefixedDigest" },
+    "artifactSetDigest": { "$ref": "#/$defs/prefixedDigest" },
+    "evidenceManifestDigest": { "$ref": "#/$defs/prefixedDigest" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec", "evidence"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/prefixedDigest" },
+        "spec": { "$ref": "generator-supply-profile-source-v2.schema.json#/$defs/profile" },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "inheritance", "receipts", "evidenceManifest"],
+          "properties": {
+            "state": { "const": "ASSEMBLED_LATE_BOUND" },
+            "inheritance": {
+              "$ref": "generator-supply-profile-source-v2.schema.json#/properties/inheritance"
+            },
+            "receipts": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": { "$ref": "#/$defs/fileRecord" }
+            },
+            "evidenceManifest": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["algorithm", "files"],
+              "properties": {
+                "algorithm": { "const": "sorted-path-nul-sha256-nul-size-v1" },
+                "files": {
+                  "type": "array",
+                  "minItems": 8,
+                  "maxItems": 8,
+                  "items": { "$ref": "#/$defs/fileRecord" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "registryDigest": { "$ref": "#/$defs/prefixedDigest" }
+  },
+  "$defs": {
+    "prefixedDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "pattern": "^tools/generator-supply/v2/evidence/replay(?:/[A-Za-z0-9._-]+\\.json|\\.json)$"
+    },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/prefixedDigest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

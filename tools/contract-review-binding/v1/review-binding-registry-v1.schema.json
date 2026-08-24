@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/contract-review-binding/v1/review-binding-registry-v1.schema.json",
+  "title": "ContractReviewBindingRegistryV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "bindingId",
+    "sourceDigest",
+    "tupleDigest",
+    "bindingsDigest",
+    "canonicalClosureReference",
+    "supplyProfileReference",
+    "effectiveCandidate",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-review-binding-registry/v1" },
+    "registryId": { "const": "cloud-agents/platform/contract-review-binding" },
+    "bindingId": { "const": "g-contract-current-source-review-binding/v1" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "tupleDigest": { "$ref": "#/$defs/digest" },
+    "bindingsDigest": { "$ref": "#/$defs/digest" },
+    "canonicalClosureReference": { "$ref": "#/$defs/boundAuthority" },
+    "supplyProfileReference": { "$ref": "#/$defs/boundAuthority" },
+    "effectiveCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "criteriaBindings", "missing", "notGateClosure", "gateStatus"],
+      "properties": {
+        "status": { "const": "REVIEW_BOUND_SATISFIED_CANDIDATE" },
+        "criteriaBindings": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/criterionBinding",
+              "type": "object",
+              "properties": {
+                "criterionId": {
+                  "const": "runtime-server-path-and-tenant-authority-enforcement"
+                },
+                "subject": { "const": "canonical_contract_closure" }
+              }
+            },
+            {
+              "$ref": "#/$defs/criterionBinding",
+              "type": "object",
+              "properties": {
+                "criterionId": { "const": "remaining-generator-supply-chain-review" },
+                "subject": { "const": "generator_supply_profile" }
+              }
+            }
+          ],
+          "items": false
+        },
+        "missing": { "type": "array", "maxItems": 0 },
+        "notGateClosure": { "const": true },
+        "gateStatus": { "const": "ALL_GATES_OPEN" }
+      }
+    },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "boundAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "profileId", "fileSha256", "profileDigest", "registryDigest"],
+      "properties": {
+        "kind": { "enum": ["canonical_contract_closure", "generator_supply_profile"] },
+        "path": { "$ref": "#/$defs/path" },
+        "profileId": { "type": "string", "minLength": 1 },
+        "fileSha256": { "$ref": "#/$defs/digest" },
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "registryDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "criterionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterionId", "subject", "status", "reviewSha256"],
+      "properties": {
+        "criterionId": {
+          "enum": [
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "subject": { "enum": ["canonical_contract_closure", "generator_supply_profile"] },
+        "status": { "const": "SATISFIED_CANDIDATE" },
+        "reviewSha256": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}
