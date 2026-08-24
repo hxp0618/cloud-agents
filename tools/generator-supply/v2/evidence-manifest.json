@@ -1,0 +1,45 @@
+{
+  "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+  "files": [
+    {
+      "path": "tools/generator-supply/v2/evidence/replay.json",
+      "sha256": "sha256:234cafe720cea04d0ab9bd68954f88109bad4070300e882e1563855fd4441c37",
+      "sizeBytes": 2127
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/darwin-a.json",
+      "sha256": "sha256:77f530f102f97d9e7afd09c4de224dd1c0b5f7678244db723636c8deffda62a1",
+      "sizeBytes": 3054
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/darwin-b.json",
+      "sha256": "sha256:f15584d4f95b5cebae39ef746316b3ad44c7bc47e7a6a0c4240f54e149a6c807",
+      "sizeBytes": 3054
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/darwin-isolation.json",
+      "sha256": "sha256:856a2a4ef326435a45abfba81c6345f798a34e526c6845b56fe201d05c64339c",
+      "sizeBytes": 7697
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/linux-a.json",
+      "sha256": "sha256:178d2de199eb7a6a512f84c4f0c62ef086138b03ca210cd735f52f3fade64837",
+      "sizeBytes": 3055
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/linux-b.json",
+      "sha256": "sha256:19ec5a092886ddda687e0483e0cdf06d9503661a71a7f54d5a314a7d4de3513f",
+      "sizeBytes": 3055
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/linux-isolation.json",
+      "sha256": "sha256:f71797df9d659b81291e4d6ab2928861d3b276970b9f7dd10ffff0be43842a6f",
+      "sizeBytes": 11459
+    },
+    {
+      "path": "tools/generator-supply/v2/evidence/replay/projection.json",
+      "sha256": "sha256:095c353f1f284ddcb9e396e393ba82bf2fed3956f9857f0b021283aca9bad234",
+      "sizeBytes": 1903
+    }
+  ]
+}

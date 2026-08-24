@@ -1,0 +1,260 @@
+{
+  "archiveSnapshotValidatedBeforeExtraction": true,
+  "authorityDigestsCapturedBeforeChild": true,
+  "authorityFilesReadOnlyToCandidate": true,
+  "boundaryModel": "SEPARATE_RUN_BOUNDARY_STDOUT_TRUSTED_PARENT_V1",
+  "candidateCapabilities": {
+    "ambient": "0000000000000000",
+    "bounding": "0000000000000000",
+    "effective": "0000000000000000",
+    "permitted": "0000000000000000"
+  },
+  "candidateGid": 65534,
+  "candidateReportFilesystemAccess": false,
+  "candidateSupplementaryGroups": [],
+  "candidateUid": 65534,
+  "detachedDescendantCrossBoundaryReadDenied": false,
+  "detachedDescendantResourceLeakNotClaimed": false,
+  "detachedDescendantsCrossRunReadDenied": false,
+  "executor": "authorized_linux_amd64_executor",
+  "extractionRootsInitiallyAbsent": true,
+  "finalEvidenceUnavailableWithinEachBoundary": true,
+  "formatVersion": "cloud-agents-generator-replay-isolation/v1",
+  "freshPerReplayCaches": true,
+  "independentArchiveExtractions": 2,
+  "inputReadOnly": true,
+  "inputTreeFiles": 1371,
+  "inputTreeManifestAlgorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+  "inputTreeManifestSha256": "sha256:08424e411abb88dc693a4ac07f1a6d2b04599e447601253db9cda01804da1722",
+  "mechanism": "UNSHARE_NET_MOUNT_PID_FRESH_ROOTFS_SETPRIV_V1",
+  "networkDenied": true,
+  "noNewPrivileges": true,
+  "nodeModulesBindingReadOnly": true,
+  "nodeModulesReadOnlyBind": true,
+  "notGateClosure": true,
+  "pidNamespaceKillsDescendants": true,
+  "platform": "linux-amd64",
+  "probes": {
+    "a": {
+      "archive": {
+        "command": "touch generator-supply://core-projection/archive",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/projection/core-generator-input-projection.tar': Read-only file system",
+        "stdout": ""
+      },
+      "final": {
+        "command": "read trusted-parent final evidence sentinel",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "identity": {
+        "command": "read uid gid groups capabilities and no-new-privileges",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": "Uid:\t65534\t65534\t65534\t65534\nGid:\t65534\t65534\t65534\t65534\nGroups:\t \nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t0000000000000000\nCapAmb:\t0000000000000000\nNoNewPrivs:\t1"
+      },
+      "input": {
+        "command": "touch /input/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/input/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      },
+      "node": {
+        "command": "node net.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "ENETUNREACH:connect ENETUNREACH 1.1.1.1:443 - Local (0.0.0.0:0)",
+        "stdout": ""
+      },
+      "nodeModules": {
+        "command": "unlink or write the bound node_modules authority",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/work/input/node_modules/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      },
+      "projection": {
+        "command": "touch /projection/core-generator-input-projection.tar",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/projection/core-generator-input-projection.tar': Read-only file system",
+        "stdout": ""
+      },
+      "python": {
+        "command": "python socket.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import socket; s=socket.socket(); s.settimeout(2); s.connect((\"1.1.1.1\",443))\n                                                       ~~~~~~~~~^^^^^^^^^^^^^^^^^\nOSError: [Errno 101] Network is unreachable",
+        "stdout": ""
+      },
+      "rootfs": {
+        "command": "touch /etc/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/etc/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      },
+      "route": {
+        "command": "awk default route /proc/net/route",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "sibling": {
+        "command": "test sibling replay root absent",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "stdoutChannel": {
+        "command": "read /proc/1/fd/1 trusted runner stdout channel",
+        "exitCode": 1,
+        "stderr": "/bin/cat: /proc/1/fd/1: No such file or directory",
+        "stdout": ""
+      },
+      "supply": {
+        "command": "touch generator-supply://external-supply/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/input/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      }
+    },
+    "b": {
+      "archive": {
+        "command": "touch generator-supply://core-projection/archive",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/projection/core-generator-input-projection.tar': Read-only file system",
+        "stdout": ""
+      },
+      "final": {
+        "command": "read trusted-parent final evidence sentinel",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "identity": {
+        "command": "read uid gid groups capabilities and no-new-privileges",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": "Uid:\t65534\t65534\t65534\t65534\nGid:\t65534\t65534\t65534\t65534\nGroups:\t \nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t0000000000000000\nCapAmb:\t0000000000000000\nNoNewPrivs:\t1"
+      },
+      "input": {
+        "command": "touch /input/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/input/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      },
+      "node": {
+        "command": "node net.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "ENETUNREACH:connect ENETUNREACH 1.1.1.1:443 - Local (0.0.0.0:0)",
+        "stdout": ""
+      },
+      "nodeModules": {
+        "command": "unlink or write the bound node_modules authority",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/work/input/node_modules/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      },
+      "projection": {
+        "command": "touch /projection/core-generator-input-projection.tar",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/projection/core-generator-input-projection.tar': Read-only file system",
+        "stdout": ""
+      },
+      "python": {
+        "command": "python socket.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import socket; s=socket.socket(); s.settimeout(2); s.connect((\"1.1.1.1\",443))\n                                                       ~~~~~~~~~^^^^^^^^^^^^^^^^^\nOSError: [Errno 101] Network is unreachable",
+        "stdout": ""
+      },
+      "rootfs": {
+        "command": "touch /etc/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/etc/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      },
+      "route": {
+        "command": "awk default route /proc/net/route",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "sibling": {
+        "command": "test sibling replay root absent",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "stdoutChannel": {
+        "command": "read /proc/1/fd/1 trusted runner stdout channel",
+        "exitCode": 1,
+        "stderr": "/bin/cat: /proc/1/fd/1: No such file or directory",
+        "stdout": ""
+      },
+      "supply": {
+        "command": "touch generator-supply://external-supply/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "/usr/bin/touch: cannot touch '/input/codex-generator-supply-read-only-probe': Read-only file system",
+        "stdout": ""
+      }
+    }
+  },
+  "processLifetimeClosure": "PID_NAMESPACE_KILL_CHILD",
+  "projectionArchiveMemberManifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+  "projectionArchiveMemberManifestSha256": "sha256:bf1a05fe23caa4190cdc614da44b293a10c8b4599230d5c4a5ce7519d0eb1496",
+  "projectionArchiveMembers": 1557,
+  "projectionArchiveSha256": "sha256:39e9ca8ab531b08acfbc087259d0a01a52a43f2f6c012aeedb3f6baacb3c4067",
+  "projectionArchiveSizeBytes": 46786560,
+  "projectionReadOnly": true,
+  "projectionTreeSha": "eb383707ef1a0818cbd09935cc67f417abe8b96f",
+  "replayAuthoritySha256": {
+    "archiveInspector": "sha256:db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31",
+    "pathHelper": "sha256:4cde1599b7e909ef0070b81090d40c2e2c7c1c43af64cebd3c53391489a6fccf",
+    "runner": "sha256:96bc41cd702a35b0c4febfd62c48e0e261fc0656f6f91583522eb47e96cf07a1",
+    "wrapper": "sha256:b4c0f23c45c2a3a1a391daadcc44554793fda948168f35f3ffaf4d32cedd9070"
+  },
+  "reportsEqualInputProjection": true,
+  "reportsWrittenByTrustedParent": true,
+  "rootfsFreshExtractionPerReplay": true,
+  "rootfsReadOnly": true,
+  "runAWriteRootDestroyedBeforeRunB": true,
+  "runReportSha256": {
+    "a": "sha256:178d2de199eb7a6a512f84c4f0c62ef086138b03ca210cd735f52f3fade64837",
+    "b": "sha256:19ec5a092886ddda687e0483e0cdf06d9503661a71a7f54d5a314a7d4de3513f"
+  },
+  "runnerChildStdoutRedirectedToStderr": true,
+  "runnerEnvironmentPolicy": "ENV_I_MINIMAL_V1",
+  "runnerEnvironmentSanitized": true,
+  "runnerStderrCaptureBoundBytes": 1048576,
+  "runnerStdoutFrame": "CLOUD_AGENTS_GENERATOR_REPLAY_REPORT_V1_LENGTH_PREFIXED_MAX_1M_RAW_FILE",
+  "sameBoundaryProbesAndReplay": true,
+  "sameProcessGroupEmptyAfterExit": "NOT_CLAIMED",
+  "separateNetworkMountPidNamespacePerReplay": true,
+  "siblingReplayRootAbsentWithinEachBoundary": true,
+  "tmpfsDeviceTree": true,
+  "tmpfsEphemeral": true,
+  "tmpfsTmp": true,
+  "ubuntuRootfs": {
+    "archiveInspection": {
+      "directories": 661,
+      "duplicateEntries": 0,
+      "entries": 3448,
+      "formatVersion": "cloud-agents-generator-replay-archive-inspection/v1",
+      "hardlinks": 2,
+      "linkCycles": 0,
+      "linkPrefixDescendants": 0,
+      "manifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+      "manifestSha256": "b2f581777b04657540dffa9b4f6ba98e6e0d310ea11b100cd84e6fcf19ec4af6",
+      "profile": "rootfs",
+      "regularFiles": 2587,
+      "specialEntries": 0,
+      "symlinks": 198,
+      "unsafeEntries": 0
+    },
+    "configImageId": "sha256:a6f81fb630d51837271b89f8193810a5fc493fa4f30a55d7ebcdb3a66f3cc63a",
+    "exportTarSha256": "25ecc117cd77a289cc25006605dcf4ec8b137fec326db766d0abcd4147f6093e",
+    "exportTarSizeBytes": 80669696,
+    "platformManifestDigest": "sha256:fd225d3a1c5cecb1374f0d09c37a127d1f6f70e665941d6dab888c38b36c2131",
+    "registryIndexDigest": "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+    "rootfsLayerDigest": "sha256:b9a65b3c65ab22d490085bd0bf5490e2409da8748b406870f2463bdc41cd6795"
+  },
+  "wrapperPolicy": "VERSIONED_ISOLATION_WRAPPER_V1",
+  "wrapperSha256": "sha256:b4c0f23c45c2a3a1a391daadcc44554793fda948168f35f3ffaf4d32cedd9070"
+}

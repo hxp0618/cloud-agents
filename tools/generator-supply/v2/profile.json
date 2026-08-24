@@ -1,0 +1,215 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-profile-registry/v2",
+  "registryId": "cloud-agents/generator-supply-profile",
+  "predecessor": {
+    "profileId": "cloud-agents/generator-supply-profile/v1",
+    "predecessorMutation": "forbidden",
+    "outerFiles": [
+      {
+        "path": "tools/generator-supply/v1/source.json",
+        "sha256": "a14e177c72afb699b47446232625ba638c68da2bc7731e213ab432244924a2f9",
+        "sizeBytes": 12111
+      },
+      {
+        "path": "tools/generator-supply/v1/generator-supply-profile-source-v1.schema.json",
+        "sha256": "6204f24913dccc98e80e415f00fce74e2bfa99b68df691b1669f0c00592002ab",
+        "sizeBytes": 8938
+      },
+      {
+        "path": "tools/generator-supply/v1/generator-supply-profile-v1.schema.json",
+        "sha256": "6f51389646fdbcf8633b56495d1d128b92bec1958dbc1acb96afaf2d75ea2d64",
+        "sizeBytes": 2077
+      },
+      {
+        "path": "tools/generator-supply/v1/evidence-manifest.json",
+        "sha256": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+        "sizeBytes": 8186
+      },
+      {
+        "path": "tools/generator-supply/v1/profile.json",
+        "sha256": "dcd9c9da7cd28a254dbeb419a388875b843033c0ca522fc603cd29b30295f93b",
+        "sizeBytes": 22188
+      },
+      {
+        "path": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+        "sha256": "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
+        "sizeBytes": 8426
+      }
+    ],
+    "evidenceManifestPolicy": {
+      "manifestPath": "tools/generator-supply/v1/evidence-manifest.json",
+      "manifestSha256": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+      "manifestSizeBytes": 8186,
+      "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+      "memberCount": 39,
+      "memberPathPrefix": "tools/generator-supply/v1/evidence/"
+    },
+    "profileIdentities": {
+      "sourceDigest": "sha256:8c2f462e30baefdf420179b66399461a22a0de71efcefca99e1ff3134bd62b3c",
+      "artifactSetDigest": "sha256:f307e4c73f56e62c5d38b928acff5db284cd5a1706bb76fa7ba55b1437faa0c5",
+      "evidenceManifestDigest": "sha256:59e7dfe0d85d7fd2cb9ad069037019c484a4c8039c897e5d5cabf45f517f64ab",
+      "profileDigest": "sha256:b1201cd3d22398fa808a05190ef4ce49422db665277e8cf8c936938cb5cd741c",
+      "registryDigest": "sha256:86452d655cd05a73211e52c28107e93d38a244026648e28a8369cefd4e4eed9c"
+    },
+    "fixedLineage": {
+      "candidateCommit": "e5f981c8197cea7527a57c391e7198570f61b92c",
+      "candidateTree": "7fb98abf71066e8009581c658b41a299ae1a5c2c",
+      "candidateParent": "0a331fde18a909d37b64f11efe879df7bbc09d25",
+      "candidateDiffSha256": "d012683bf1a13dda79a8393afdf44ff20088711b9ccce1c608cd74db5843587e",
+      "reviewCommit": "129e9bc128de971b9f9623e82832e80830331126",
+      "reviewTree": "b30835163d757e236781af8c16c61736e1d452da",
+      "reviewParent": "e5f981c8197cea7527a57c391e7198570f61b92c",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+      "reviewSha256": "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
+      "verdict": "APPROVE_P0_0_P1_0_P2_0"
+    },
+    "projection": {
+      "treeSha": "4a70fb8b1e18801f4f02a753668ffe91b63b6275",
+      "archiveSha256": "36070cced3f7b7088f990b46a60b67fcabf742733782533bdfcbd46317950478",
+      "archiveSizeBytes": 46008320,
+      "receiptPath": "tools/generator-supply/v1/evidence/replay/projection.json",
+      "receiptSha256": "1587c7715157aaab99c2276b1adbe85fe070aeeb238c054b479edfd1ae1b5cf4",
+      "receiptSizeBytes": 1708
+    }
+  },
+  "sourceDigest": "sha256:a7003701d148f655b0c3ee35b1a39d5e83e50e91d64e190708144bb87c0a6bd8",
+  "artifactSetDigest": "sha256:7872e719585d391914b676fdec56ac3720f660efb798c9f0c44452707bb8c1bb",
+  "evidenceManifestDigest": "sha256:d6566a20a5b758265ab003492254addd4b422d1367827ac857388c497546b289",
+  "profile": {
+    "profileDigest": "sha256:cee9bc94a9fce6dd30a21fa832ad264b6b01e2ad8dab1313f9d04d689faaba87",
+    "spec": {
+      "profileId": "cloud-agents/generator-supply-profile/v2",
+      "status": "REPLAY_VERIFIED_REVIEW_PENDING",
+      "notGateClosure": true,
+      "platforms": [
+        {
+          "id": "darwin-arm64",
+          "status": "NATIVE_REPLAY_VERIFIED",
+          "nativeExecution": true
+        },
+        {
+          "id": "linux-amd64",
+          "status": "NATIVE_REPLAY_VERIFIED",
+          "nativeExecution": true
+        },
+        {
+          "id": "linux-arm64",
+          "status": "NOT_CLAIMED",
+          "nativeExecution": false
+        }
+      ],
+      "boundaries": {
+        "criterion": "REVIEW_PENDING_NOT_CLOSED",
+        "gate": "ALL_GATES_OPEN",
+        "productionDatabase": "NOT_AUTHORIZED",
+        "http": "NOT_IMPLEMENTED",
+        "p2": "NOT_IMPLEMENTED",
+        "provider": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "release": "NOT_AUTHORIZED",
+        "legalApproval": "NOT_CLAIMED",
+        "signature": "NOT_PRODUCED_NOT_AUTHORIZED",
+        "bootstrapDiscovery": "FORBIDDEN"
+      }
+    },
+    "evidence": {
+      "state": "ASSEMBLED_LATE_BOUND",
+      "inheritance": {
+        "material": "EXACT_V1_39_MEMBER_MANIFEST",
+        "security": "EXACT_V1_TIME_BOUND_SECURITY_EVIDENCE",
+        "mutation": "forbidden",
+        "freshEvidenceAuthority": "V2_NATIVE_REPLAY_RECEIPTS_ONLY",
+        "legalApproval": "NOT_CLAIMED",
+        "signature": "NOT_PRODUCED_NOT_AUTHORIZED"
+      },
+      "receipts": [
+        {
+          "path": "tools/generator-supply/v2/evidence/replay.json",
+          "sha256": "sha256:234cafe720cea04d0ab9bd68954f88109bad4070300e882e1563855fd4441c37",
+          "sizeBytes": 2127
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/darwin-a.json",
+          "sha256": "sha256:77f530f102f97d9e7afd09c4de224dd1c0b5f7678244db723636c8deffda62a1",
+          "sizeBytes": 3054
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/darwin-b.json",
+          "sha256": "sha256:f15584d4f95b5cebae39ef746316b3ad44c7bc47e7a6a0c4240f54e149a6c807",
+          "sizeBytes": 3054
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/darwin-isolation.json",
+          "sha256": "sha256:856a2a4ef326435a45abfba81c6345f798a34e526c6845b56fe201d05c64339c",
+          "sizeBytes": 7697
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/linux-a.json",
+          "sha256": "sha256:178d2de199eb7a6a512f84c4f0c62ef086138b03ca210cd735f52f3fade64837",
+          "sizeBytes": 3055
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/linux-b.json",
+          "sha256": "sha256:19ec5a092886ddda687e0483e0cdf06d9503661a71a7f54d5a314a7d4de3513f",
+          "sizeBytes": 3055
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/linux-isolation.json",
+          "sha256": "sha256:f71797df9d659b81291e4d6ab2928861d3b276970b9f7dd10ffff0be43842a6f",
+          "sizeBytes": 11459
+        },
+        {
+          "path": "tools/generator-supply/v2/evidence/replay/projection.json",
+          "sha256": "sha256:095c353f1f284ddcb9e396e393ba82bf2fed3956f9857f0b021283aca9bad234",
+          "sizeBytes": 1903
+        }
+      ],
+      "evidenceManifest": {
+        "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+        "files": [
+          {
+            "path": "tools/generator-supply/v2/evidence/replay.json",
+            "sha256": "sha256:234cafe720cea04d0ab9bd68954f88109bad4070300e882e1563855fd4441c37",
+            "sizeBytes": 2127
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/darwin-a.json",
+            "sha256": "sha256:77f530f102f97d9e7afd09c4de224dd1c0b5f7678244db723636c8deffda62a1",
+            "sizeBytes": 3054
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/darwin-b.json",
+            "sha256": "sha256:f15584d4f95b5cebae39ef746316b3ad44c7bc47e7a6a0c4240f54e149a6c807",
+            "sizeBytes": 3054
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/darwin-isolation.json",
+            "sha256": "sha256:856a2a4ef326435a45abfba81c6345f798a34e526c6845b56fe201d05c64339c",
+            "sizeBytes": 7697
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/linux-a.json",
+            "sha256": "sha256:178d2de199eb7a6a512f84c4f0c62ef086138b03ca210cd735f52f3fade64837",
+            "sizeBytes": 3055
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/linux-b.json",
+            "sha256": "sha256:19ec5a092886ddda687e0483e0cdf06d9503661a71a7f54d5a314a7d4de3513f",
+            "sizeBytes": 3055
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/linux-isolation.json",
+            "sha256": "sha256:f71797df9d659b81291e4d6ab2928861d3b276970b9f7dd10ffff0be43842a6f",
+            "sizeBytes": 11459
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence/replay/projection.json",
+            "sha256": "sha256:095c353f1f284ddcb9e396e393ba82bf2fed3956f9857f0b021283aca9bad234",
+            "sizeBytes": 1903
+          }
+        ]
+      }
+    }
+  },
+  "registryDigest": "sha256:88b9317ea08e4a653f1403e6a334b58cd4fa8b31ecc56164916085959f1954d2"
+}
