@@ -46,6 +46,16 @@ canonical byte/semantic validators remain usable inside an already verified
 `.git`-less projection archive. Slice C must call the repository lineage
 composite before constructing that archive.
 
+The first fixed Slice A candidate
+`150446570076512c1280298b61ff1779a98f34a3` was preserved and rejected by
+independent review with `REQUEST_CHANGES, P0=0/P1=2/P2=0`. It did not prove
+that the supply-v1 review object was a unique direct child of its candidate,
+and it could promote eight arbitrary digest-bound JSON files to a current
+supply-v2 profile. The additive superseding repair fixes `reviewParent`, checks
+review object type, unique parent, distinct commit and late review-path
+absence, and adds adversarial tests for each relationship. The rejected commit
+was not amended or force-pushed.
+
 ## Exact successor DAG
 
 The projection authority fixes these 16 ordered future exclusions without a
@@ -85,6 +95,28 @@ presence alone is `REPLAY_RECEIPTS_PRESENT_UNVERIFIED`; only exact receipt
 bytes, standalone/embedded manifest equality, all digests and all boundaries
 can produce `ASSEMBLED_PROFILE_CURRENT`. There is no writer in Slice A.
 
+The superseding repair also adds a source-bound replay contract for the exact
+wrapper, runner, path helper and archive inspector bytes; the three replay
+manifest algorithms; exact ordered 16-path exclusions; receipt formats and
+non-Gate scope. A dedicated semantic validator stable-reads every receipt once
+and returns the same path/SHA/size snapshot to the outer registry validator.
+The superseding repair retains one root/path/dev/inode/size/mtime/ctime
+currentness set across the four replay authorities, seven actually parsed v1
+inputs and exact eight receipts, then rechecks it after outer manifest and
+domain/registry digest validation. The complete v1 outer/39-member/semantic
+inheritance set has its own shared terminal fence. A current assembled profile
+also captures and terminally rechecks its v2 source, standalone evidence
+manifest and output; the detached consumer uses that current wrapper rather
+than document-only semantics.
+It requires a projection tree distinct from the immutable v1 predecessor,
+strict projection safety counters, exact Darwin/Linux A/B platform and
+run-specific claims, per-platform same-bits, cross-platform projection/output
+equality, exact isolation-to-run byte hashes, same-boundary probes, Linux
+identity/rootfs isolation, and a summary exactly derived from the other seven
+receipts. Placeholder JSON remains invalid even after every outer manifest and
+domain digest is recomputed. The detached consumer reuses this full validator
+before it may derive an effective candidate view.
+
 Contract-closure v3 adds strict source/output schemas and a deterministic typed
 builder. It carries criteria 0–4 byte-semantically from v2, classifies only the
 reviewed bounded runtime criterion as `SATISFIED_CANDIDATE`, and retains the
@@ -119,30 +151,31 @@ contracts:
 
 | Scope                          |     Result |
 | ------------------------------ | ---------: |
-| immutable predecessor verifier | 10/10 PASS |
+| immutable predecessor verifier | 15/15 PASS |
 | exact successor DAG            |   6/6 PASS |
-| generator-supply v2            | 10/10 PASS |
+| replay receipt semantics v2    | 10/10 PASS |
+| generator-supply v2            | 12/12 PASS |
 | contract-closure v3            |   5/5 PASS |
 | detached review binding        | 13/13 PASS |
-| total focused Vitest           | 44/44 PASS |
+| total focused Vitest           | 61/61 PASS |
 
-All 18 implementation/schema/test files pass `oxfmt`; all seven new JSON
-schemas parse successfully; the exact 21-path staged candidate passes
+All 20 implementation/schema/test files pass `oxfmt`; all seven new JSON
+schemas parse successfully; the cumulative 23-path Slice A candidate passes
 `git diff --cached --check` and a redacted Gitleaks 8.30.1 staged scan with zero
 findings. No broad Bun suite, migration Go suite, PostgreSQL matrix, remote
 replay, production database, HTTP, provider, deployment or publication command
 was run.
 
-Independent module-level read-only reviews returned `APPROVE,
-P0=0/P1=0/P2=0` for the predecessor fence, exact DAG, supply-v2 contract,
-closure-v3 contract and detached binding state machine. These reviews cover the
-working byte set but do not replace the required fixed-commit Slice A review.
+The original module-level reviews covered the pre-repair working byte set. The
+fixed review of `1504465` supersedes those findings for candidate acceptance
+and remains `REQUEST_CHANGES`. The additive repair requires a new fixed-commit
+review; no earlier approval is carried forward.
 
 ## Gate and next-slice status
 
 Every generated/declarative boundary remains `notGateClosure=true` and
 `ALL_GATES_OPEN`. `G-CONTRACT`, `G-SUPPLY-CHAIN` and every aggregate Gate remain
 open. Slice B is not authorized by this record alone: first fix and push the
-Slice A candidate, then obtain an independent P0/P1/P2 review of that exact
-commit. No production database write, HTTP/P2/provider effect, deployment,
-release, publication, main merge or Gate transition is authorized.
+superseding Slice A candidate, then obtain an independent P0/P1/P2 review of
+that exact commit. No production database write, HTTP/P2/provider effect,
+deployment, release, publication, main merge or Gate transition is authorized.

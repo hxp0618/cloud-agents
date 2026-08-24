@@ -594,7 +594,7 @@ function expectedGeneratorSupplyV1Predecessor(): JsonRecord {
       diffSha256: `sha256:${GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateDiffSha256}`,
       reviewCommit: GENERATOR_SUPPLY_V1_GIT_LINEAGE.reviewCommit,
       reviewTree: GENERATOR_SUPPLY_V1_GIT_LINEAGE.reviewTree,
-      reviewParent: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateCommit,
+      reviewParent: GENERATOR_SUPPLY_V1_GIT_LINEAGE.reviewParent,
       reviewPath: GENERATOR_SUPPLY_V1_GIT_LINEAGE.reviewPath,
       reviewSha256: `sha256:${GENERATOR_SUPPLY_V1_GIT_LINEAGE.reviewSha256}`,
       reviewVerdict: GENERATOR_SUPPLY_V1_GIT_LINEAGE.verdict,

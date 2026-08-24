@@ -24,8 +24,9 @@ import {
   validateContractClosureProfileV3Source,
 } from "./platform-contract-closure-profile-v3";
 import {
-  assertGeneratorSupplyV2RegistrySemantics,
+  assertGeneratorSupplyV2RegistryCurrent,
   GENERATOR_SUPPLY_V2_SOURCE_PATH,
+  type GeneratorSupplyV2CurrentValidation,
 } from "./platform-generator-supply-profile-v2";
 import { canonicalizeJson, type JsonRecord } from "./platform-json-semantics";
 import {
@@ -460,6 +461,8 @@ export function contractReviewBindingAuthorityInputs(): string[] {
     "scripts/lib/platform-contract-review-binding.ts",
     "scripts/lib/platform-generator-supply-profile-v2.test.ts",
     "scripts/lib/platform-generator-supply-profile-v2.ts",
+    "scripts/lib/platform-generator-supply-replay-v2.test.ts",
+    "scripts/lib/platform-generator-supply-replay-v2.ts",
     "scripts/lib/platform-json-semantics.ts",
     "scripts/lib/platform-successor-dag.ts",
   ].toSorted();
@@ -667,6 +670,7 @@ function bindAuthority(
 ): BoundReviewBindingAuthority {
   const document = readJsonFile(root, authority.path, "CONTRACT_REVIEW_BINDING_DIGEST_MISMATCH");
   const closure = authority.kind === "canonical_contract_closure";
+  let generatorSupplyCurrent: GeneratorSupplyV2CurrentValidation | undefined;
   try {
     if (closure) {
       const source = readJsonFile(
@@ -677,7 +681,7 @@ function bindAuthority(
       validateContractClosureProfileV3Source(root, source);
       assertContractClosureV3RegistrySemantics(root, document);
     } else {
-      assertGeneratorSupplyV2RegistrySemantics(root, document);
+      generatorSupplyCurrent = assertGeneratorSupplyV2RegistryCurrent(root, document);
     }
   } catch (error) {
     if (error instanceof ContractReviewBindingError) throw error;
@@ -707,12 +711,22 @@ function bindAuthority(
       `Bound authority ${authority.path} has the wrong format, registry, profile, digest, or non-Gate identity.`,
     );
   }
-  return {
+  const bound = {
     ...authority,
     fileSha256: fileSha256(root, authority.path),
     profileDigest: requiredDigest(profile.profileDigest, `${authority.path} profileDigest`),
     registryDigest: requiredDigest(document.registryDigest, `${authority.path} registryDigest`),
   };
+  try {
+    generatorSupplyCurrent?.assertCurrent();
+  } catch (error) {
+    throw bindingError(
+      "CONTRACT_REVIEW_BINDING_IDENTITY_MISMATCH",
+      `/${authority.kind}/snapshot`,
+      `Bound authority ${authority.path} changed before its detached digest binding completed: ${String(error)}.`,
+    );
+  }
+  return bound;
 }
 
 function validateBoundAuthority(

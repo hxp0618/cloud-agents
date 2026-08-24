@@ -15,13 +15,16 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { canonicalizeJson } from "./platform-json-semantics";
+import { buildGeneratorSupplyReplayV2TestFixture } from "./platform-generator-supply-replay-v2";
 import {
+  assertGeneratorSupplyV2CurrentSnapshotMutationForTest,
   assertGeneratorSupplyV2RegistrySemantics,
   assertStableGeneratorSupplyV2ReadMutationForTest,
   buildGeneratorSupplyV2TestSource,
   GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
   GENERATOR_SUPPLY_V2_OUTPUT_PATH,
   GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
+  GENERATOR_SUPPLY_V2_REPLAY_CONTRACT,
   GENERATOR_SUPPLY_V2_SOURCE_PATH,
   GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
   inspectGeneratorSupplyV2AuthorityState,
@@ -69,6 +72,9 @@ function createRoot(options: { readonly source?: boolean; readonly predecessor?:
 
 function materializeV1Predecessor(root: string): void {
   const paths = new Set(GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.map((record) => record.path));
+  for (const authority of Object.values(GENERATOR_SUPPLY_V2_REPLAY_CONTRACT.authorityFiles)) {
+    paths.add(authority.path);
+  }
   const manifest = JSON.parse(
     readFileSync(
       resolve(repositoryRoot, GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestPath),
@@ -87,12 +93,12 @@ function copyFromRepository(root: string, path: string): void {
 }
 
 function writeReceipts(root: string): void {
-  for (const [index, path] of SUCCESSOR_REPLAY_RECEIPT_PATHS.entries()) {
-    writeJson(root, path, {
-      formatVersion: "test-generator-supply-v2-receipt/v1",
-      receiptIndex: index,
-      notGateClosure: true,
-    });
+  const fixture = buildGeneratorSupplyReplayV2TestFixture(
+    root,
+    GENERATOR_SUPPLY_V2_REPLAY_CONTRACT,
+  );
+  for (const path of SUCCESSOR_REPLAY_RECEIPT_PATHS) {
+    writeJson(root, path, fixture.receipts[path]);
   }
 }
 
@@ -207,7 +213,6 @@ describe("generator-supply v2 typed pre-replay authority", () => {
       profileIdentities: { ...GENERATOR_SUPPLY_V1_PROFILE_IDENTITIES },
       fixedLineage: {
         ...GENERATOR_SUPPLY_V1_GIT_LINEAGE,
-        reviewParent: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateCommit,
       },
       projection: {
         treeSha: "4a70fb8b1e18801f4f02a753668ffe91b63b6275",
@@ -223,6 +228,7 @@ describe("generator-supply v2 typed pre-replay authority", () => {
       authority: "EXTERNAL_LATE_BOUND",
       receiptPaths: [...SUCCESSOR_REPLAY_RECEIPT_PATHS],
     });
+    expect(source.replayContract).toEqual(GENERATOR_SUPPLY_V2_REPLAY_CONTRACT);
     expect(source.declaredProfile).toMatchObject({
       profileId: "cloud-agents/generator-supply-profile/v2",
       status: "REPLAY_VERIFIED_REVIEW_PENDING",
@@ -277,6 +283,16 @@ describe("generator-supply v2 typed pre-replay authority", () => {
       [
         (source: Record<string, any>) => (source.inheritance.security = "UNBOUND"),
         "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
+      ],
+      [
+        (source: Record<string, any>) =>
+          (source.replayContract.projectionExclusions[0] = "contracts/other.lock.json"),
+        "GENERATOR_SUPPLY_V2_SCHEMA_INVALID",
+      ],
+      [
+        (source: Record<string, any>) =>
+          (source.replayContract.authorityFiles.runner.sha256 = "0".repeat(64)),
+        "GENERATOR_SUPPLY_V2_SOURCE_MISMATCH",
       ],
       [
         (source: Record<string, any>) => (source.declaredProfile.status = "APPROVED"),
@@ -365,6 +381,44 @@ describe("generator-supply v2 typed pre-replay authority", () => {
     writeJson(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_PATH, registry);
     expect(() => assertGeneratorSupplyV2RegistrySemantics(fixture.root, registry)).not.toThrow();
     expect(inspectGeneratorSupplyV2AuthorityState(fixture.root)).toBe("ASSEMBLED_PROFILE_CURRENT");
+  });
+
+  it("rejects source, standalone manifest, and output drift after the current outer snapshot", () => {
+    for (const path of [
+      GENERATOR_SUPPLY_V2_SOURCE_PATH,
+      GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
+      GENERATOR_SUPPLY_V2_OUTPUT_PATH,
+    ]) {
+      const fixture = createRoot({ source: true, predecessor: true });
+      writeReceipts(fixture.root);
+      const registry = assembleTestRegistry(fixture.root, fixture.source);
+      writeJson(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_PATH, registry);
+      expectCode(
+        () =>
+          assertGeneratorSupplyV2CurrentSnapshotMutationForTest(fixture.root, registry, () => {
+            const absolute = resolve(fixture.root, path);
+            writeFileSync(absolute, Buffer.concat([readFileSync(absolute), Buffer.from("\n")]));
+          }),
+        "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+      );
+    }
+  });
+
+  it("rejects placeholder receipts even after all outer records and digests are recomputed", () => {
+    const fixture = createRoot({ source: true, predecessor: true });
+    for (const [index, path] of SUCCESSOR_REPLAY_RECEIPT_PATHS.entries()) {
+      writeJson(fixture.root, path, {
+        formatVersion: "placeholder-generator-supply-v2-receipt/v1",
+        receiptIndex: index,
+        notGateClosure: true,
+      });
+    }
+    const registry = assembleTestRegistry(fixture.root, fixture.source);
+    writeJson(fixture.root, GENERATOR_SUPPLY_V2_OUTPUT_PATH, registry);
+    expectCode(
+      () => assertGeneratorSupplyV2RegistrySemantics(fixture.root, registry),
+      "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+    );
   });
 
   it("rejects output evidence, predecessor, boundary, and registry digest tampering", () => {

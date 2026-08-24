@@ -26,6 +26,19 @@ export type ImmutableEvidenceManifestSpec = {
   readonly memberPathPrefix: string;
 };
 
+export type GeneratorSupplyV1GitLineage = {
+  readonly candidateCommit: string;
+  readonly candidateTree: string;
+  readonly candidateParent: string;
+  readonly candidateDiffSha256: string;
+  readonly reviewCommit: string;
+  readonly reviewTree: string;
+  readonly reviewParent: string;
+  readonly reviewPath: string;
+  readonly reviewSha256: string;
+  readonly verdict: string;
+};
+
 export class SuccessorPredecessorError extends Error {
   constructor(
     readonly code:
@@ -136,10 +149,11 @@ export const GENERATOR_SUPPLY_V1_GIT_LINEAGE = {
   candidateDiffSha256: "d012683bf1a13dda79a8393afdf44ff20088711b9ccce1c608cd74db5843587e",
   reviewCommit: "129e9bc128de971b9f9623e82832e80830331126",
   reviewTree: "b30835163d757e236781af8c16c61736e1d452da",
+  reviewParent: "e5f981c8197cea7527a57c391e7198570f61b92c",
   reviewPath: "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
   reviewSha256: "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
   verdict: "APPROVE_P0_0_P1_0_P2_0",
-} as const;
+} as const satisfies GeneratorSupplyV1GitLineage;
 
 export const GENERATOR_SUPPLY_V1_PROFILE_IDENTITIES = {
   sourceDigest: "sha256:8c2f462e30baefdf420179b66399461a22a0de71efcefca99e1ff3134bd62b3c",
@@ -155,6 +169,27 @@ type GeneratorSupplyV1ProfileIdentities = {
   readonly evidenceManifestDigest: string;
   readonly profileDigest: string;
   readonly registryDigest: string;
+};
+
+type StablePredecessorIdentity = Readonly<{
+  rootReal: string;
+  path: string;
+  absolute: string;
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}>;
+
+type PredecessorSnapshot = {
+  readonly rootReal: string;
+  readonly identities: Map<string, StablePredecessorIdentity>;
+  readonly mutationHook?: {
+    readonly afterPath: string;
+    readonly mutate: () => void;
+    fired: boolean;
+  };
 };
 
 const FIXED_GIT_ENV = {
@@ -192,13 +227,47 @@ export function assertContractClosureV2Immutable(root: string): void {
 }
 
 export function assertGeneratorSupplyV1PredecessorImmutable(root: string): void {
-  assertImmutableFileMap(root, GENERATOR_SUPPLY_V1_IMMUTABLE_FILES, "generator supply v1");
-  assertImmutableEvidenceManifest(root, GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST);
-  assertGeneratorSupplyV1SemanticBindingsForTest(
+  assertGeneratorSupplyV1PredecessorImmutableInternal(root);
+}
+
+export function assertGeneratorSupplyV1SnapshotMutationForTest(
+  root: string,
+  afterPath: string,
+  mutate: () => void,
+): void {
+  assertGeneratorSupplyV1PredecessorImmutableInternal(root, { afterPath, mutate, fired: false });
+}
+
+function assertGeneratorSupplyV1PredecessorImmutableInternal(
+  root: string,
+  mutationHook?: PredecessorSnapshot["mutationHook"],
+): void {
+  const snapshot: PredecessorSnapshot = {
+    rootReal: realpathSync(root),
+    identities: new Map(),
+    mutationHook,
+  };
+  assertImmutableFileMapInternal(
+    root,
+    GENERATOR_SUPPLY_V1_IMMUTABLE_FILES,
+    "generator supply v1",
+    snapshot,
+  );
+  assertImmutableEvidenceManifestInternal(root, GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST, snapshot);
+  assertGeneratorSupplyV1SemanticBindingsInternal(
     root,
     GENERATOR_SUPPLY_V1_PROFILE_IDENTITIES,
     GENERATOR_SUPPLY_V1_GIT_LINEAGE.verdict,
+    snapshot,
   );
+  if (mutationHook !== undefined && !mutationHook.fired) {
+    fail(
+      "PREDECESSOR_FILE_MISMATCH",
+      mutationHook.afterPath,
+      "Predecessor snapshot mutation test path was not captured.",
+    );
+  }
+  assertPredecessorSnapshotCurrent(root, snapshot);
 }
 
 export function assertSuccessorPredecessorsImmutable(root: string): void {
@@ -212,13 +281,22 @@ export function assertImmutableFileMap(
   files: readonly ImmutableFileRecord[],
   label = "immutable predecessor",
 ): void {
+  assertImmutableFileMapInternal(root, files, label);
+}
+
+function assertImmutableFileMapInternal(
+  root: string,
+  files: readonly ImmutableFileRecord[],
+  label: string,
+  snapshot?: PredecessorSnapshot,
+): void {
   const seen = new Set<string>();
   for (const file of files) {
     if (seen.has(file.path)) {
       fail("PREDECESSOR_FILE_MISMATCH", file.path, label + " file map contains a duplicate path.");
     }
     seen.add(file.path);
-    const bytes = readContainedRegularFile(root, file.path);
+    const bytes = readContainedRegularFile(root, file.path, undefined, snapshot);
     if (bytes.byteLength !== file.sizeBytes) {
       fail(
         "PREDECESSOR_FILE_MISMATCH",
@@ -251,7 +329,15 @@ export function assertImmutableEvidenceManifest(
   root: string,
   spec: ImmutableEvidenceManifestSpec,
 ): void {
-  assertImmutableFileMap(
+  assertImmutableEvidenceManifestInternal(root, spec);
+}
+
+function assertImmutableEvidenceManifestInternal(
+  root: string,
+  spec: ImmutableEvidenceManifestSpec,
+  snapshot?: PredecessorSnapshot,
+): void {
+  assertImmutableFileMapInternal(
     root,
     [
       {
@@ -261,8 +347,9 @@ export function assertImmutableEvidenceManifest(
       },
     ],
     "evidence manifest",
+    snapshot,
   );
-  const bytes = readContainedRegularFile(root, spec.manifestPath);
+  const bytes = readContainedRegularFile(root, spec.manifestPath, undefined, snapshot);
   let parsed: unknown;
   try {
     parsed = JSON.parse(bytes.toString("utf8"));
@@ -335,7 +422,7 @@ export function assertImmutableEvidenceManifest(
       );
     }
     previousPath = candidate.path;
-    const memberBytes = readContainedRegularFile(root, candidate.path);
+    const memberBytes = readContainedRegularFile(root, candidate.path, undefined, snapshot);
     if (
       memberBytes.byteLength !== candidate.sizeBytes ||
       "sha256:" + sha256(memberBytes) !== candidate.sha256
@@ -350,11 +437,25 @@ export function assertImmutableEvidenceManifest(
 }
 
 export function assertGeneratorSupplyV1GitLineageCurrent(root: string): void {
+  assertGeneratorSupplyV1GitLineage(root, GENERATOR_SUPPLY_V1_GIT_LINEAGE);
+}
+
+export function assertGeneratorSupplyV1GitLineageForTest(
+  root: string,
+  lineage: GeneratorSupplyV1GitLineage,
+): void {
+  assertGeneratorSupplyV1GitLineage(root, lineage);
+}
+
+function assertGeneratorSupplyV1GitLineage(
+  root: string,
+  lineage: GeneratorSupplyV1GitLineage,
+): void {
   const repositoryRoot = realpathSync(root);
-  const lineage = GENERATOR_SUPPLY_V1_GIT_LINEAGE;
   try {
     const topLevel = realpathSync(gitText(repositoryRoot, ["rev-parse", "--show-toplevel"]));
     const candidateType = gitText(repositoryRoot, ["cat-file", "-t", lineage.candidateCommit]);
+    const reviewType = gitText(repositoryRoot, ["cat-file", "-t", lineage.reviewCommit]);
     const candidateTree = gitText(repositoryRoot, [
       "rev-parse",
       lineage.candidateCommit + "^{tree}",
@@ -366,6 +467,20 @@ export function assertGeneratorSupplyV1GitLineageCurrent(root: string): void {
       lineage.candidateCommit,
     ]);
     const reviewTree = gitText(repositoryRoot, ["rev-parse", lineage.reviewCommit + "^{tree}"]);
+    const reviewParents = gitText(repositoryRoot, [
+      "show",
+      "-s",
+      "--format=%P",
+      lineage.reviewCommit,
+    ]);
+    const reviewPathBefore = gitText(repositoryRoot, [
+      "ls-tree",
+      "-r",
+      "--name-only",
+      lineage.candidateCommit,
+      "--",
+      lineage.reviewPath,
+    ]);
     const diff = gitBytes(repositoryRoot, [
       "diff",
       "--no-color",
@@ -384,9 +499,14 @@ export function assertGeneratorSupplyV1GitLineageCurrent(root: string): void {
     if (
       topLevel !== repositoryRoot ||
       candidateType !== "commit" ||
+      reviewType !== "commit" ||
       candidateTree !== lineage.candidateTree ||
       candidateParents !== lineage.candidateParent ||
       reviewTree !== lineage.reviewTree ||
+      reviewParents !== lineage.reviewParent ||
+      lineage.reviewParent !== lineage.candidateCommit ||
+      lineage.reviewCommit === lineage.candidateCommit ||
+      reviewPathBefore !== "" ||
       sha256(diff) !== lineage.candidateDiffSha256 ||
       sha256(reviewBytes) !== lineage.reviewSha256
     ) {
@@ -428,10 +548,24 @@ export function assertGeneratorSupplyV1SemanticBindingsForTest(
   identities: GeneratorSupplyV1ProfileIdentities,
   expectedVerdict: string,
 ): void {
+  assertGeneratorSupplyV1SemanticBindingsInternal(root, identities, expectedVerdict);
+}
+
+function assertGeneratorSupplyV1SemanticBindingsInternal(
+  root: string,
+  identities: GeneratorSupplyV1ProfileIdentities,
+  expectedVerdict: string,
+  snapshot?: PredecessorSnapshot,
+): void {
   let registry: unknown;
   try {
     registry = JSON.parse(
-      readContainedRegularFile(root, "tools/generator-supply/v1/profile.json").toString("utf8"),
+      readContainedRegularFile(
+        root,
+        "tools/generator-supply/v1/profile.json",
+        undefined,
+        snapshot,
+      ).toString("utf8"),
     );
   } catch (error) {
     if (error instanceof SuccessorPredecessorError) throw error;
@@ -467,7 +601,7 @@ export function assertGeneratorSupplyV1SemanticBindingsForTest(
     );
   }
   const reviewPath = GENERATOR_SUPPLY_V1_GIT_LINEAGE.reviewPath;
-  const review = readContainedRegularFile(root, reviewPath).toString("utf8");
+  const review = readContainedRegularFile(root, reviewPath, undefined, snapshot).toString("utf8");
   const codeQuote = String.fromCharCode(96);
   const normalizedVerdict =
     review.includes("## Verdict\n\n" + codeQuote + "APPROVE" + codeQuote) &&
@@ -497,9 +631,17 @@ function readContainedRegularFile(
   root: string,
   relativePath: string,
   mutateAfterRead?: () => void,
+  snapshot?: PredecessorSnapshot,
 ): Buffer {
   const segments = validateRelativePath(relativePath);
   const rootReal = realpathSync(root);
+  if (snapshot !== undefined && rootReal !== snapshot.rootReal) {
+    fail(
+      "PREDECESSOR_INVALID_PATH",
+      relativePath,
+      "Immutable predecessor root changed during the shared snapshot.",
+    );
+  }
   const absolute = resolve(rootReal, ...segments);
   const relation = relative(rootReal, absolute);
   if (
@@ -559,6 +701,18 @@ function readContainedRegularFile(
           "Immutable predecessor changed while it was being read.",
         );
       }
+      if (snapshot !== undefined) {
+        capturePredecessorIdentity(snapshot, {
+          rootReal,
+          path: relativePath,
+          absolute,
+          dev: descriptorAfter.dev,
+          ino: descriptorAfter.ino,
+          size: descriptorAfter.size,
+          mtimeNs: descriptorAfter.mtimeNs,
+          ctimeNs: descriptorAfter.ctimeNs,
+        });
+      }
       return bytes;
     } finally {
       closeSync(descriptor);
@@ -571,6 +725,117 @@ function readContainedRegularFile(
       "Immutable predecessor path is missing or unreadable.",
     );
   }
+}
+
+function capturePredecessorIdentity(
+  snapshot: PredecessorSnapshot,
+  identity: StablePredecessorIdentity,
+): void {
+  const existing = snapshot.identities.get(identity.path);
+  if (existing !== undefined) {
+    if (!samePredecessorIdentity(existing, identity)) {
+      fail(
+        "PREDECESSOR_FILE_MISMATCH",
+        identity.path,
+        "Repeated immutable predecessor read observed a different file identity.",
+      );
+    }
+    return;
+  }
+  snapshot.identities.set(identity.path, identity);
+  const hook = snapshot.mutationHook;
+  if (hook !== undefined && !hook.fired && hook.afterPath === identity.path) {
+    hook.fired = true;
+    hook.mutate();
+  }
+}
+
+function assertPredecessorSnapshotCurrent(root: string, snapshot: PredecessorSnapshot): void {
+  let rootReal: string;
+  try {
+    rootReal = realpathSync(root);
+  } catch {
+    fail(
+      "PREDECESSOR_INVALID_PATH",
+      root,
+      "Immutable predecessor root is unavailable at snapshot completion.",
+    );
+  }
+  if (rootReal !== snapshot.rootReal) {
+    fail(
+      "PREDECESSOR_INVALID_PATH",
+      root,
+      "Immutable predecessor root changed before snapshot completion.",
+    );
+  }
+  for (const identity of snapshot.identities.values()) {
+    try {
+      const segments = validateRelativePath(identity.path);
+      let current = rootReal;
+      for (const [index, segment] of segments.entries()) {
+        current = resolve(current, segment);
+        const stat = lstatSync(current, { bigint: true });
+        if (
+          stat.isSymbolicLink() ||
+          (index < segments.length - 1 ? !stat.isDirectory() : !stat.isFile())
+        ) {
+          fail(
+            "PREDECESSOR_INVALID_PATH",
+            identity.path,
+            "Immutable predecessor path topology changed after capture.",
+          );
+        }
+      }
+      if (current !== identity.absolute || realpathSync(current) !== identity.absolute) {
+        fail(
+          "PREDECESSOR_INVALID_PATH",
+          identity.path,
+          "Immutable predecessor path resolved to a different location after capture.",
+        );
+      }
+      const after = lstatSync(current, { bigint: true });
+      const currentIdentity: StablePredecessorIdentity = {
+        rootReal,
+        path: identity.path,
+        absolute: current,
+        dev: after.dev,
+        ino: after.ino,
+        size: after.size,
+        mtimeNs: after.mtimeNs,
+        ctimeNs: after.ctimeNs,
+      };
+      if (!samePredecessorIdentity(identity, currentIdentity)) {
+        fail(
+          "PREDECESSOR_FILE_MISMATCH",
+          identity.path,
+          "Immutable predecessor changed after its shared snapshot capture.",
+        );
+      }
+    } catch (error) {
+      if (error instanceof SuccessorPredecessorError) throw error;
+      fail(
+        "PREDECESSOR_INVALID_PATH",
+        identity.path,
+        "Immutable predecessor path is unavailable at snapshot completion.",
+      );
+    }
+  }
+}
+
+function samePredecessorIdentity(
+  left: StablePredecessorIdentity,
+  right: StablePredecessorIdentity,
+): boolean {
+  return (
+    left.rootReal === right.rootReal &&
+    left.path === right.path &&
+    left.absolute === right.absolute &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
 }
 
 function validateRelativePath(path: string): string[] {

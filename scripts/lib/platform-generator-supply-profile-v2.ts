@@ -14,6 +14,13 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { canonicalizeJson, type JsonRecord } from "./platform-json-semantics";
 import {
+  assertGeneratorSupplyReplayV2ContractCurrent,
+  assertGeneratorSupplyReplayV2Receipts,
+  buildGeneratorSupplyReplayV2ExpectedFromImmutableV1,
+  type GeneratorSupplyReplayV2Contract,
+  type GeneratorSupplyReplayV2Validation,
+} from "./platform-generator-supply-replay-v2";
+import {
   SUCCESSOR_ASSEMBLY_PATHS,
   SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS,
   SUCCESSOR_PROJECTION_EXCLUSIONS,
@@ -34,6 +41,46 @@ export const GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH =
   "tools/generator-supply/v2/generator-supply-profile-v2.schema.json";
 export const GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH = SUCCESSOR_ASSEMBLY_PATHS[0];
 export const GENERATOR_SUPPLY_V2_OUTPUT_PATH = SUCCESSOR_ASSEMBLY_PATHS[1];
+
+export const GENERATOR_SUPPLY_V2_REPLAY_CONTRACT = {
+  authorityFiles: {
+    wrapper: {
+      path: "scripts/replay-platform-generators-isolated.sh",
+      sha256: "f85ab149a6a2daf36b3eb1a06a00f0258829ff71a3aae2dc6cec9f3d0601b250",
+      sizeBytes: 83_140,
+    },
+    runner: {
+      path: "scripts/replay-platform-generators.ts",
+      sha256: "2e07df97c7ca646b365a9090ee0d98af2ede386d56c6647c450c778f4147f58f",
+      sizeBytes: 44_958,
+    },
+    pathHelper: {
+      path: "scripts/lib/generator-replay-path-authority.ts",
+      sha256: "4cde1599b7e909ef0070b81090d40c2e2c7c1c43af64cebd3c53391489a6fccf",
+      sizeBytes: 4_282,
+    },
+    archiveInspector: {
+      path: "scripts/lib/inspect-generator-replay-archive.py",
+      sha256: "db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31",
+      sizeBytes: 10_860,
+    },
+  },
+  wrapperPolicy: "VERSIONED_ISOLATION_WRAPPER_V1",
+  authoritativeReplayScope: "CORE_GENERATORS_ONLY_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY",
+  algorithms: {
+    nodeModulesManifest: "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+    projectionArchiveMemberManifest:
+      "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+    inputTreeManifest: "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+  },
+  projectionExclusions: [...SUCCESSOR_PROJECTION_EXCLUSIONS],
+  receiptFormats: {
+    summary: "cloud-agents-generator-supply-replay-summary/v2",
+    run: "cloud-agents-generator-replay-run/v1",
+    isolation: "cloud-agents-generator-replay-isolation/v1",
+    projection: "cloud-agents-core-generator-projection/v1",
+  },
+} as const;
 
 const SOURCE_SCHEMA_ID =
   "https://schemas.cloud-agents.dev/tooling/generator-supply/v2/generator-supply-profile-source-v2.schema.json";
@@ -67,6 +114,7 @@ export type GeneratorSupplyV2Source = JsonRecord & {
     readonly projection: JsonRecord;
   };
   readonly inheritance: JsonRecord;
+  readonly replayContract: GeneratorSupplyReplayV2Contract;
   readonly declaredProfile: JsonRecord & {
     readonly profileId: string;
     readonly status: string;
@@ -106,6 +154,22 @@ export type GeneratorSupplyV2AuthorityState =
   | "DECLARED_PRE_REPLAY"
   | "REPLAY_RECEIPTS_PRESENT_UNVERIFIED"
   | "ASSEMBLED_PROFILE_CURRENT";
+
+export type GeneratorSupplyV2CurrentValidation = Readonly<{
+  registry: GeneratorSupplyV2Registry;
+  assertCurrent: () => void;
+}>;
+
+type GeneratorSupplyV2StableFileIdentity = Readonly<{
+  rootReal: string;
+  path: string;
+  absolute: string;
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}>;
 
 export class GeneratorSupplyV2Error extends Error {
   constructor(
@@ -161,8 +225,7 @@ export function inspectGeneratorSupplyV2AuthorityState(
       "The v2 evidence manifest and profile must be present together.",
     );
   }
-  const document = readJsonFile(root, GENERATOR_SUPPLY_V2_OUTPUT_PATH) as GeneratorSupplyV2Registry;
-  assertGeneratorSupplyV2RegistrySemantics(root, document);
+  assertGeneratorSupplyV2RegistryCurrent(root);
   return "ASSEMBLED_PROFILE_CURRENT";
 }
 
@@ -188,6 +251,15 @@ export function validateGeneratorSupplyV2Source(
       `Generator-supply v1 predecessor verification failed: ${String(error)}.`,
     );
   }
+  try {
+    assertGeneratorSupplyReplayV2ContractCurrent(root, source.replayContract);
+  } catch (error) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_SOURCE_MISMATCH",
+      "/replayContract",
+      `Generator-supply v2 replay contract or source-bound authority drifted: ${String(error)}.`,
+    );
+  }
   assertNoV2AuthorityIsExcluded();
 }
 
@@ -196,6 +268,82 @@ export function assertGeneratorSupplyV2RegistrySemantics(
   document: unknown,
 ): asserts document is GeneratorSupplyV2Registry {
   const source = readSource(root);
+  const standaloneManifest = readJsonFile(
+    root,
+    GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
+  ) as EvidenceManifest;
+  assertGeneratorSupplyV2RegistrySemanticsInternal(root, document, source, standaloneManifest);
+}
+
+export function assertGeneratorSupplyV2RegistryCurrent(
+  root: string,
+  document?: unknown,
+): GeneratorSupplyV2CurrentValidation {
+  return assertGeneratorSupplyV2RegistryCurrentInternal(root, document);
+}
+
+export function assertGeneratorSupplyV2CurrentSnapshotMutationForTest(
+  root: string,
+  document: unknown,
+  mutateAfterOuterSnapshot: () => void,
+): void {
+  assertGeneratorSupplyV2RegistryCurrentInternal(root, document, mutateAfterOuterSnapshot);
+}
+
+function assertGeneratorSupplyV2RegistryCurrentInternal(
+  root: string,
+  suppliedDocument?: unknown,
+  mutateAfterOuterSnapshot?: () => void,
+): GeneratorSupplyV2CurrentValidation {
+  const identities: GeneratorSupplyV2StableFileIdentity[] = [];
+  const source = readSource(root, identities);
+  const standaloneManifest = readJsonFile(
+    root,
+    GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
+    identities,
+  ) as EvidenceManifest;
+  const registry = readJsonFile(
+    root,
+    GENERATOR_SUPPLY_V2_OUTPUT_PATH,
+    identities,
+  ) as GeneratorSupplyV2Registry;
+  if (suppliedDocument !== undefined && !canonicalEqual(suppliedDocument, registry)) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+      "/registry",
+      "Supplied generator-supply v2 registry does not match the current output snapshot.",
+    );
+  }
+  mutateAfterOuterSnapshot?.();
+  const assertReplaySnapshotCurrent = assertGeneratorSupplyV2RegistrySemanticsInternal(
+    root,
+    registry,
+    source,
+    standaloneManifest,
+  );
+  const assertCurrent = (): void => {
+    try {
+      assertGeneratorSupplyV1PredecessorImmutable(root);
+    } catch (error) {
+      throw v2Error(
+        "GENERATOR_SUPPLY_V2_PREDECESSOR_MISMATCH",
+        "/predecessor",
+        `Generator-supply v1 predecessor changed before the current profile could be accepted: ${String(error)}.`,
+      );
+    }
+    assertGeneratorSupplyV2OuterSnapshotCurrent(root, identities);
+    assertReplaySnapshotCurrent();
+  };
+  assertCurrent();
+  return { registry, assertCurrent };
+}
+
+function assertGeneratorSupplyV2RegistrySemanticsInternal(
+  root: string,
+  document: unknown,
+  source: GeneratorSupplyV2Source,
+  standaloneManifest: EvidenceManifest,
+): () => void {
   validateGeneratorSupplyV2Source(root, source);
   validateAgainstSchema(root, OUTPUT_SCHEMA_ID, document);
   if (!isRecord(document)) {
@@ -222,12 +370,28 @@ export function assertGeneratorSupplyV2RegistrySemantics(
   }
 
   const receipts = registry.profile.evidence.receipts;
-  assertExactReceiptRecords(root, receipts);
+  let semanticReceiptRecords: readonly {
+    readonly path: string;
+    readonly sha256: string;
+    readonly sizeBytes: number;
+  }[];
+  let semanticValidation: GeneratorSupplyReplayV2Validation;
+  try {
+    const expected = buildGeneratorSupplyReplayV2ExpectedFromImmutableV1(
+      root,
+      source.replayContract,
+    );
+    semanticValidation = assertGeneratorSupplyReplayV2Receipts(root, expected);
+    semanticReceiptRecords = semanticValidation.receiptRecords;
+  } catch (error) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+      "/profile/evidence/receipts",
+      `Generator-supply v2 replay receipt semantics failed closed: ${String(error)}.`,
+    );
+  }
+  assertExactReceiptRecords(receipts, semanticReceiptRecords);
   const embeddedManifest = registry.profile.evidence.evidenceManifest;
-  const standaloneManifest = readJsonFile(
-    root,
-    GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
-  ) as EvidenceManifest;
   if (
     embeddedManifest.algorithm !== EVIDENCE_MANIFEST_ALGORITHM ||
     !canonicalEqual(embeddedManifest.files, receipts) ||
@@ -278,6 +442,25 @@ export function assertGeneratorSupplyV2RegistrySemantics(
       "Generator-supply v2 registry digest does not bind the complete registry body.",
     );
   }
+  try {
+    assertGeneratorSupplyV1PredecessorImmutable(root);
+  } catch (error) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_PREDECESSOR_MISMATCH",
+      "/predecessor",
+      `Generator-supply v1 predecessor changed before the assembled profile could be accepted: ${String(error)}.`,
+    );
+  }
+  try {
+    semanticValidation.assertSnapshotCurrent();
+  } catch (error) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
+      "/profile/evidence/receipts",
+      `Generator-supply v2 semantic input snapshot changed before the assembled profile could be accepted: ${String(error)}.`,
+    );
+  }
+  return semanticValidation.assertSnapshotCurrent;
 }
 
 export function buildGeneratorSupplyV2TestSource(): GeneratorSupplyV2Source {
@@ -292,7 +475,6 @@ export function buildGeneratorSupplyV2TestSource(): GeneratorSupplyV2Source {
       profileIdentities: { ...GENERATOR_SUPPLY_V1_PROFILE_IDENTITIES },
       fixedLineage: {
         ...GENERATOR_SUPPLY_V1_GIT_LINEAGE,
-        reviewParent: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateCommit,
       },
       projection: {
         treeSha: "4a70fb8b1e18801f4f02a753668ffe91b63b6275",
@@ -311,6 +493,7 @@ export function buildGeneratorSupplyV2TestSource(): GeneratorSupplyV2Source {
       legalApproval: "NOT_CLAIMED",
       signature: "NOT_PRODUCED_NOT_AUTHORIZED",
     },
+    replayContract: structuredClone(GENERATOR_SUPPLY_V2_REPLAY_CONTRACT),
     declaredProfile: {
       profileId: PROFILE_ID,
       status: "REPLAY_VERIFIED_REVIEW_PENDING",
@@ -350,10 +533,19 @@ export function assertStableGeneratorSupplyV2ReadMutationForTest(
   readContainedRegularFile(root, path, mutateAfterRead);
 }
 
-function assertExactReceiptRecords(root: string, records: readonly FileRecord[]): void {
+function assertExactReceiptRecords(
+  records: readonly FileRecord[],
+  semanticRecords: readonly {
+    readonly path: string;
+    readonly sha256: string;
+    readonly sizeBytes: number;
+  }[],
+): void {
   if (
     records.length !== SUCCESSOR_REPLAY_RECEIPT_PATHS.length ||
-    records.some((record, index) => record.path !== SUCCESSOR_REPLAY_RECEIPT_PATHS[index])
+    semanticRecords.length !== SUCCESSOR_REPLAY_RECEIPT_PATHS.length ||
+    records.some((record, index) => record.path !== SUCCESSOR_REPLAY_RECEIPT_PATHS[index]) ||
+    semanticRecords.some((record, index) => record.path !== SUCCESSOR_REPLAY_RECEIPT_PATHS[index])
   ) {
     throw v2Error(
       "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
@@ -362,22 +554,21 @@ function assertExactReceiptRecords(root: string, records: readonly FileRecord[])
     );
   }
   for (const [index, record] of records.entries()) {
-    const bytes = readContainedRegularFile(root, record.path);
-    if (
-      record.sizeBytes !== bytes.byteLength ||
-      record.sha256 !== `sha256:${createHash("sha256").update(bytes).digest("hex")}`
-    ) {
+    if (!canonicalEqual(record, semanticRecords[index])) {
       throw v2Error(
         "GENERATOR_SUPPLY_V2_EVIDENCE_MISMATCH",
         `/profile/evidence/receipts/${index}`,
-        `Generator-supply v2 receipt ${record.path} digest or size drifted.`,
+        `Generator-supply v2 receipt ${record.path} does not match the one stable-read semantic snapshot.`,
       );
     }
   }
 }
 
-function readSource(root: string): GeneratorSupplyV2Source {
-  return readJsonFile(root, GENERATOR_SUPPLY_V2_SOURCE_PATH) as GeneratorSupplyV2Source;
+function readSource(
+  root: string,
+  identities?: GeneratorSupplyV2StableFileIdentity[],
+): GeneratorSupplyV2Source {
+  return readJsonFile(root, GENERATOR_SUPPLY_V2_SOURCE_PATH, identities) as GeneratorSupplyV2Source;
 }
 
 function validateAgainstSchema(root: string, schemaId: string, value: unknown): void {
@@ -439,9 +630,15 @@ function filePresence(root: string, path: string): boolean {
   }
 }
 
-function readJsonFile(root: string, path: string): JsonRecord {
+function readJsonFile(
+  root: string,
+  path: string,
+  identities?: GeneratorSupplyV2StableFileIdentity[],
+): JsonRecord {
   try {
-    const parsed: unknown = JSON.parse(readContainedRegularFile(root, path).toString("utf8"));
+    const parsed: unknown = JSON.parse(
+      readContainedRegularFile(root, path, undefined, identities).toString("utf8"),
+    );
     if (!isRecord(parsed)) throw new Error("expected an object");
     return parsed;
   } catch (error) {
@@ -458,8 +655,10 @@ function readContainedRegularFile(
   root: string,
   path: string,
   mutateAfterRead?: () => void,
+  identities?: GeneratorSupplyV2StableFileIdentity[],
 ): Buffer {
-  const absolute = resolveContainedPath(root, path);
+  const rootReal = realpathSync(root);
+  const absolute = resolveContainedPath(rootReal, path);
   try {
     const pathBefore = lstatSync(absolute, { bigint: true });
     if (
@@ -509,6 +708,16 @@ function readContainedRegularFile(
           "Generator-supply v2 input changed while it was being read.",
         );
       }
+      identities?.push({
+        rootReal,
+        path,
+        absolute,
+        dev: descriptorAfter.dev,
+        ino: descriptorAfter.ino,
+        size: descriptorAfter.size,
+        mtimeNs: descriptorAfter.mtimeNs,
+        ctimeNs: descriptorAfter.ctimeNs,
+      });
       return bytes;
     } finally {
       closeSync(descriptor);
@@ -521,6 +730,105 @@ function readContainedRegularFile(
       `Generator-supply v2 input is missing or unreadable: ${String(error)}.`,
     );
   }
+}
+
+function assertGeneratorSupplyV2OuterSnapshotCurrent(
+  root: string,
+  identities: readonly GeneratorSupplyV2StableFileIdentity[],
+): void {
+  if (identities.length !== 3) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+      "/snapshot",
+      "Generator-supply v2 current validation requires source, manifest, and output snapshots.",
+    );
+  }
+  const rootReal = identities[0]!.rootReal;
+  if (realpathSync(root) !== rootReal) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+      "/snapshot",
+      "Generator-supply v2 repository root changed after outer snapshot capture.",
+    );
+  }
+  const unique = new Map<string, GeneratorSupplyV2StableFileIdentity>();
+  for (const identity of identities) {
+    const previous = unique.get(identity.path);
+    if (previous) {
+      if (!sameGeneratorSupplyV2StableFileIdentity(previous, identity)) {
+        throw v2Error(
+          "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+          `/${identity.path}`,
+          "Generator-supply v2 outer path changed between snapshot phases.",
+        );
+      }
+      continue;
+    }
+    unique.set(identity.path, identity);
+  }
+  if (unique.size !== 3) {
+    throw v2Error(
+      "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+      "/snapshot",
+      "Generator-supply v2 outer snapshot paths must be distinct.",
+    );
+  }
+  for (const identity of unique.values()) {
+    try {
+      if (
+        identity.rootReal !== rootReal ||
+        resolve(rootReal, identity.path) !== identity.absolute
+      ) {
+        throw new Error("root or absolute path binding drifted");
+      }
+      let current = rootReal;
+      const components = identity.path.split("/");
+      for (const [index, component] of components.entries()) {
+        current = resolve(current, component);
+        const stat = lstatSync(current, { bigint: true });
+        if (
+          stat.isSymbolicLink() ||
+          (index < components.length - 1 ? !stat.isDirectory() : !stat.isFile())
+        ) {
+          throw new Error("path topology drifted");
+        }
+      }
+      const after = lstatSync(identity.absolute, { bigint: true });
+      if (
+        after.dev !== identity.dev ||
+        after.ino !== identity.ino ||
+        after.size !== identity.size ||
+        after.mtimeNs !== identity.mtimeNs ||
+        after.ctimeNs !== identity.ctimeNs ||
+        realpathSync(identity.absolute) !== identity.absolute
+      ) {
+        throw new Error("file identity drifted");
+      }
+    } catch (error) {
+      if (error instanceof GeneratorSupplyV2Error) throw error;
+      throw v2Error(
+        "GENERATOR_SUPPLY_V2_REGISTRY_MISMATCH",
+        `/${identity.path}`,
+        `Generator-supply v2 outer snapshot is no longer current: ${String(error)}.`,
+      );
+    }
+  }
+}
+
+function sameGeneratorSupplyV2StableFileIdentity(
+  left: GeneratorSupplyV2StableFileIdentity,
+  right: GeneratorSupplyV2StableFileIdentity,
+): boolean {
+  return (
+    left.rootReal === right.rootReal &&
+    left.path === right.path &&
+    left.absolute === right.absolute &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
 }
 
 function resolveContainedPath(root: string, path: string, allowMissing = false): string {

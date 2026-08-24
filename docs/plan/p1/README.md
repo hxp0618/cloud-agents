@@ -256,8 +256,10 @@
 - `G-CONTRACT` closure/supply successor Slice A：[`ADR-0029`](../adr/0029-p1-contract-closure-successor-supply-rebind.md)
   与 [implementation record](g-contract-successor-supply-rebind-slice-a-implementation-20260824.md) 固定 closure v1/v2、
   generator-supply v1 的 39-member predecessor、closure-v3/supply-v2 strict contracts、16 项 late-bound DAG 与 detached
-  review-binding state machine。Slice A 不生成 source/profile/receipt/lock/review tuple，不改变 canonical `missing`，固定候选
-  review 前不进入 Slice B；所有 Gate 保持 OPEN。
+  review-binding state machine。首个固定候选 `1504465` 的独立审查返回 `REQUEST_CHANGES, P0=0/P1=2/P2=0`；追加修复
+  supply-v1 review closed pair、supply-v2 exact-8 replay semantic graph、完整 v1/19-path replay/v2 outer currentness
+  fences 后须固定为新候选重新审查。Slice A 不生成
+  source/profile/receipt/lock/review tuple，不改变 canonical `missing`，APPROVE 前不进入 Slice B；所有 Gate 保持 OPEN。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见

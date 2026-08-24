@@ -41,11 +41,13 @@ import {
   GENERATOR_SUPPLY_V2_EVIDENCE_MANIFEST_PATH,
   GENERATOR_SUPPLY_V2_OUTPUT_PATH,
   GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
+  GENERATOR_SUPPLY_V2_REPLAY_CONTRACT,
   GENERATOR_SUPPLY_V2_SOURCE_PATH,
   GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
   type GeneratorSupplyV2Registry,
   type GeneratorSupplyV2Source,
 } from "./platform-generator-supply-profile-v2";
+import { buildGeneratorSupplyReplayV2TestFixture } from "./platform-generator-supply-replay-v2";
 import { SUCCESSOR_REPLAY_RECEIPT_PATHS } from "./platform-successor-dag";
 import {
   CONTRACT_CLOSURE_V1_IMMUTABLE_FILES,
@@ -146,12 +148,12 @@ function writeSemanticAuthorities(root: string): void {
 
   const supplySource = buildGeneratorSupplyV2TestSource();
   writeJson(root, GENERATOR_SUPPLY_V2_SOURCE_PATH, supplySource);
-  for (const [index, path] of SUCCESSOR_REPLAY_RECEIPT_PATHS.entries()) {
-    writeJson(root, path, {
-      formatVersion: "contract-review-binding-test-receipt/v1",
-      receiptIndex: index,
-      notGateClosure: true,
-    });
+  const replayFixture = buildGeneratorSupplyReplayV2TestFixture(
+    root,
+    GENERATOR_SUPPLY_V2_REPLAY_CONTRACT,
+  );
+  for (const path of SUCCESSOR_REPLAY_RECEIPT_PATHS) {
+    writeJson(root, path, replayFixture.receipts[path]);
   }
   const supplyRegistry = buildSupplyRegistry(root, supplySource);
   writeJson(root, GENERATOR_SUPPLY_V2_OUTPUT_PATH, supplyRegistry);
@@ -169,6 +171,9 @@ function materializeSemanticDependencies(root: string): void {
     GENERATOR_SUPPLY_V2_SOURCE_SCHEMA_PATH,
     GENERATOR_SUPPLY_V2_OUTPUT_SCHEMA_PATH,
   ]);
+  for (const authority of Object.values(GENERATOR_SUPPLY_V2_REPLAY_CONTRACT.authorityFiles)) {
+    paths.add(authority.path);
+  }
   const manifest = JSON.parse(
     readFileSync(
       resolve(repositoryRoot, GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestPath),
@@ -527,6 +532,8 @@ describe("detached contract review-binding state machine", () => {
     expect(inputs).toContain("scripts/lib/platform-contract-closure-profile-v3.test.ts");
     expect(inputs).toContain("scripts/lib/platform-generator-supply-profile-v2.ts");
     expect(inputs).toContain("scripts/lib/platform-generator-supply-profile-v2.test.ts");
+    expect(inputs).toContain("scripts/lib/platform-generator-supply-replay-v2.ts");
+    expect(inputs).toContain("scripts/lib/platform-generator-supply-replay-v2.test.ts");
     expect(inputs).not.toContain(CONTRACT_REVIEW_TUPLE_PATH);
     expect(inputs).not.toContain(CONTRACT_REVIEW_BINDING_OUTPUT_PATH);
     expect(inputs).not.toContain(CONTRACT_REVIEW_BINDING_FINAL_REVIEW_PATH);

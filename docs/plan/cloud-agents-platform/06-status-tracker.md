@@ -121,9 +121,11 @@ review 的 verdict 如何，`G-CONTRACT` 与 `G-SUPPLY-CHAIN` 都保持 `IN PROG
 
 D-052/ADR-0029 的 [Slice A implementation](../p1/g-contract-successor-supply-rebind-slice-a-implementation-20260824.md)
 固定 immutable predecessors、closure-v3/supply-v2 strict contract、16-path late-bound DAG 与 detached binding state
-machine；当前仅为待固定提交复核的 pre-replay implementation candidate。它不生成 successor source/profile/receipt/lock，
-不移除 canonical `missing`，不进入 Slice B，也不改变 `G-CONTRACT`、`G-SUPPLY-CHAIN` 或任何 aggregate Gate 的
-`IN PROGRESS` / OPEN 状态。
+machine。首个固定候选 `1504465` 的独立审查返回 `REQUEST_CHANGES, P0=0/P1=2/P2=0`；当前追加修复 supply-v1
+review closed pair、supply-v2 exact-8 replay semantic graph、完整 v1/19-path replay/v2 outer currentness fences，须另行
+固定并取得新 `APPROVE`。它不生成 successor
+source/profile/receipt/lock，不移除 canonical `missing`，不进入 Slice B，也不改变 `G-CONTRACT`、`G-SUPPLY-CHAIN`
+或任何 aggregate Gate 的 `IN PROGRESS` / OPEN 状态。
 
 ### 3.1 Immutable record history
 

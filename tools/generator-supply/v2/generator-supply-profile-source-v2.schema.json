@@ -9,6 +9,7 @@
     "registryId",
     "predecessor",
     "inheritance",
+    "replayContract",
     "declaredProfile",
     "replayEvidence"
   ],
@@ -148,6 +149,96 @@
         "freshEvidenceAuthority": { "const": "V2_NATIVE_REPLAY_RECEIPTS_ONLY" },
         "legalApproval": { "const": "NOT_CLAIMED" },
         "signature": { "const": "NOT_PRODUCED_NOT_AUTHORIZED" }
+      }
+    },
+    "replayContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorityFiles",
+        "wrapperPolicy",
+        "authoritativeReplayScope",
+        "algorithms",
+        "projectionExclusions",
+        "receiptFormats"
+      ],
+      "properties": {
+        "authorityFiles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wrapper", "runner", "pathHelper", "archiveInspector"],
+          "properties": {
+            "wrapper": { "$ref": "#/$defs/fileRecord" },
+            "runner": { "$ref": "#/$defs/fileRecord" },
+            "pathHelper": { "$ref": "#/$defs/fileRecord" },
+            "archiveInspector": { "$ref": "#/$defs/fileRecord" }
+          }
+        },
+        "wrapperPolicy": { "const": "VERSIONED_ISOLATION_WRAPPER_V1" },
+        "authoritativeReplayScope": {
+          "const": "CORE_GENERATORS_ONLY_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY"
+        },
+        "algorithms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "nodeModulesManifest",
+            "projectionArchiveMemberManifest",
+            "inputTreeManifest"
+          ],
+          "properties": {
+            "nodeModulesManifest": {
+              "const": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1"
+            },
+            "projectionArchiveMemberManifest": {
+              "const": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1"
+            },
+            "inputTreeManifest": {
+              "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1"
+            }
+          }
+        },
+        "projectionExclusions": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 16,
+          "prefixItems": [
+            { "const": "contracts/generation.lock.json" },
+            { "const": "tools/generator-supply/v2/evidence-manifest.json" },
+            { "const": "tools/generator-supply/v2/profile.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/darwin-a.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/darwin-b.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/darwin-isolation.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/linux-a.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/linux-b.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/linux-isolation.json" },
+            { "const": "tools/generator-supply/v2/evidence/replay/projection.json" },
+            {
+              "const": "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md"
+            },
+            {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md"
+            },
+            { "const": "tools/contract-review-binding/v1/review-tuple.json" },
+            { "const": "tools/contract-review-binding/v1/registry.json" },
+            {
+              "const": "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md"
+            }
+          ],
+          "items": false
+        },
+        "receiptFormats": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summary", "run", "isolation", "projection"],
+          "properties": {
+            "summary": { "const": "cloud-agents-generator-supply-replay-summary/v2" },
+            "run": { "const": "cloud-agents-generator-replay-run/v1" },
+            "isolation": { "const": "cloud-agents-generator-replay-isolation/v1" },
+            "projection": { "const": "cloud-agents-core-generator-projection/v1" }
+          }
+        }
       }
     },
     "declaredProfile": { "$ref": "#/$defs/profile" },

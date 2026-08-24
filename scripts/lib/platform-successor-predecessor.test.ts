@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -16,6 +17,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertGeneratorSupplyV1GitLineageCurrent,
+  assertGeneratorSupplyV1GitLineageForTest,
+  assertGeneratorSupplyV1SnapshotMutationForTest,
   assertGeneratorSupplyV1SemanticBindingsForTest,
   assertImmutableEvidenceManifest,
   assertImmutableFileMap,
@@ -86,6 +89,24 @@ function writeManifest(
   };
 }
 
+function materializeGeneratorSupplyV1(root: string): { readonly memberPaths: readonly string[] } {
+  const manifest = JSON.parse(
+    readFileSync(
+      resolve(repositoryRoot, GENERATOR_SUPPLY_V1_EVIDENCE_MANIFEST.manifestPath),
+      "utf8",
+    ),
+  ) as { files: Array<{ path: string }> };
+  const paths = new Set([
+    ...GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.map(({ path }) => path),
+    ...manifest.files.map(({ path }) => path),
+  ]);
+  for (const path of paths) {
+    mkdirSync(dirname(resolve(root, path)), { recursive: true });
+    cpSync(resolve(repositoryRoot, path), resolve(root, path));
+  }
+  return { memberPaths: manifest.files.map(({ path }) => path) };
+}
+
 describe("successor immutable predecessor authority", () => {
   it("verifies closure v1/v2, supply v1 outer bytes, all 39 evidence members, and Git lineage", () => {
     expect(() => assertSuccessorPredecessorsImmutable(repositoryRoot)).not.toThrow();
@@ -141,6 +162,54 @@ describe("successor immutable predecessor authority", () => {
       if (priorExternalDiff === undefined) delete process.env.GIT_EXTERNAL_DIFF;
       else process.env.GIT_EXTERNAL_DIFF = priorExternalDiff;
     }
+  });
+
+  it("fails closed when the fixed review is not the candidate's unique child", () => {
+    expect(() =>
+      assertGeneratorSupplyV1GitLineageForTest(repositoryRoot, {
+        ...GENERATOR_SUPPLY_V1_GIT_LINEAGE,
+        reviewParent: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateParent,
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<SuccessorPredecessorError>>({
+        code: "PREDECESSOR_GIT_MISMATCH",
+        path: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateCommit,
+      }),
+    );
+  });
+
+  it("fails closed when the review path already existed in the fixed candidate", () => {
+    const predecessorSource = GENERATOR_SUPPLY_V1_IMMUTABLE_FILES.find(
+      ({ path }) => path === "tools/generator-supply/v1/source.json",
+    );
+    expect(predecessorSource).toBeDefined();
+    expect(() =>
+      assertGeneratorSupplyV1GitLineageForTest(repositoryRoot, {
+        ...GENERATOR_SUPPLY_V1_GIT_LINEAGE,
+        reviewPath: predecessorSource!.path,
+        reviewSha256: predecessorSource!.sha256,
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<SuccessorPredecessorError>>({
+        code: "PREDECESSOR_GIT_MISMATCH",
+        path: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateCommit,
+      }),
+    );
+  });
+
+  it("rejects a non-commit object as the fixed review", () => {
+    expect(() =>
+      assertGeneratorSupplyV1GitLineageForTest(repositoryRoot, {
+        ...GENERATOR_SUPPLY_V1_GIT_LINEAGE,
+        reviewCommit: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateTree,
+        reviewTree: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateTree,
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<SuccessorPredecessorError>>({
+        code: "PREDECESSOR_GIT_MISMATCH",
+        path: GENERATOR_SUPPLY_V1_GIT_LINEAGE.candidateCommit,
+      }),
+    );
   });
 
   it("binds exported profile identities and normalized review verdict to immutable bytes", () => {
@@ -252,6 +321,42 @@ describe("successor immutable predecessor authority", () => {
       expect.objectContaining<Partial<SuccessorPredecessorError>>({
         code: "PREDECESSOR_FILE_MISMATCH",
         path: "authority/fixed.txt",
+      }),
+    );
+  });
+
+  it("fails closed when the early v1 source changes after its shared snapshot capture", () => {
+    const root = createRoot("successor-predecessor-shared-source-race-");
+    materializeGeneratorSupplyV1(root);
+    const sourcePath = GENERATOR_SUPPLY_V1_IMMUTABLE_FILES[0].path;
+    expect(() =>
+      assertGeneratorSupplyV1SnapshotMutationForTest(root, sourcePath, () => {
+        const target = resolve(root, sourcePath);
+        writeFileSync(target, Buffer.concat([readFileSync(target), Buffer.from(" ")]));
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<SuccessorPredecessorError>>({
+        code: "PREDECESSOR_FILE_MISMATCH",
+        path: sourcePath,
+      }),
+    );
+  });
+
+  it("fails closed when an early manifest member is atomically replaced after capture", () => {
+    const root = createRoot("successor-predecessor-shared-member-race-");
+    const { memberPaths } = materializeGeneratorSupplyV1(root);
+    const memberPath = memberPaths[0]!;
+    expect(() =>
+      assertGeneratorSupplyV1SnapshotMutationForTest(root, memberPath, () => {
+        const target = resolve(root, memberPath);
+        const replacement = resolve(dirname(target), ".predecessor-atomic-replacement");
+        writeFileSync(replacement, readFileSync(target));
+        renameSync(replacement, target);
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<SuccessorPredecessorError>>({
+        code: "PREDECESSOR_FILE_MISMATCH",
+        path: memberPath,
       }),
     );
   });

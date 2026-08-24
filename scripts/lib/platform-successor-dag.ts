@@ -58,6 +58,8 @@ export const SUCCESSOR_PRE_REPLAY_AUTHORITY_PATHS = [
   "scripts/lib/platform-contract-closure-profile-v3.test.ts",
   "scripts/lib/platform-generator-supply-profile-v2.ts",
   "scripts/lib/platform-generator-supply-profile-v2.test.ts",
+  "scripts/lib/platform-generator-supply-replay-v2.ts",
+  "scripts/lib/platform-generator-supply-replay-v2.test.ts",
   "scripts/lib/platform-json-semantics.ts",
   "scripts/lib/platform-successor-dag.ts",
   "scripts/lib/platform-successor-predecessor.ts",
