@@ -307,6 +307,9 @@ Platform RC、Beta 或 GA。
 - [`control-plane-supply-refresh-20260817.md`](control-plane-supply-refresh-20260817.md)：固定 source `6e58e06` 的
   generation lock、dependency lock、CycloneDX 1.6 SBOM 与 fresh govulncheck/OSV refresh；module graph、production
   closure 和 NOTICE same-bits，`G-SUPPLY-CHAIN` 仍为 `IN PROGRESS`
+- [`control-plane-supply-refresh-20260821.md`](control-plane-supply-refresh-20260821.md)：固定 source `a5df1cb` 的
+  dependency lock 与 CycloneDX 1.6 root identity；module graph、Linux/Darwin production closure、NOTICE 和 current
+  generation lock same-bits，current-source vulnerability scan `NOT_CLAIMED`，`G-SUPPLY-CHAIN` 保持 `IN PROGRESS`
 - [`postgres-catalog-independent-review-20260817.md`](postgres-catalog-independent-review-20260817.md)：固定
   `bbb0bf2 → 6e58e06 → 401206a` 的 A2.1b-impl-3 independent implementation review；P0/P1/P2=`0/0/0`，不构成
   immutable Gate signature
