@@ -1,0 +1,668 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-record-source-v1.schema.json",
+  "title": "GContractP1PhaseRecordSourceV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "authorityId",
+    "gateId",
+    "phase",
+    "record",
+    "criteriaAuthority",
+    "currentCandidateAuthority",
+    "prerequisites",
+    "historicalRecords",
+    "currentSourceInputPaths",
+    "dynamicAuthorities",
+    "reviewSlots",
+    "binding",
+    "exactLateBoundPaths",
+    "stateMachine",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-phase-record-source/v1"
+    },
+    "authorityId": {
+      "const": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1"
+    },
+    "gateId": {
+      "const": "G-CONTRACT"
+    },
+    "phase": {
+      "const": "P1"
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "recordType",
+        "path",
+        "supersedes",
+        "status",
+        "independentReviewer",
+        "date",
+        "timezone",
+        "gateEffect",
+        "closureDecision"
+      ],
+      "properties": {
+        "evidenceId": {
+          "const": "CAG-G-CONTRACT-P1-20260825-R5"
+        },
+        "recordType": {
+          "const": "PHASE"
+        },
+        "path": {
+          "const": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md"
+        },
+        "supersedes": {
+          "const": "CAG-G-CONTRACT-P1-20260823-R4"
+        },
+        "status": {
+          "const": "IN_PROGRESS"
+        },
+        "independentReviewer": {
+          "const": "PENDING"
+        },
+        "date": {
+          "const": "2026-08-25"
+        },
+        "timezone": {
+          "const": "Asia/Shanghai"
+        },
+        "gateEffect": {
+          "const": "NONE"
+        },
+        "closureDecision": {
+          "const": "NONE"
+        }
+      }
+    },
+    "criteriaAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "criteria"
+      ],
+      "properties": {
+        "path": {
+          "const": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md"
+        },
+        "sha256": {
+          "const": "sha256:4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994"
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/criterion",
+              "properties": {
+                "id": {
+                  "const": "json-schema-authority-and-openapi-refs"
+                },
+                "formalCriteria": {
+                  "const": [
+                    "json-schema-2020-12-official-test-suite",
+                    "openapi-3.1-semantic-validation"
+                  ]
+                },
+                "missingStatus": {
+                  "const": "OPEN_NOT_CLAIMED"
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/criterion",
+              "properties": {
+                "id": {
+                  "const": "proto-authority-and-generated-connect-grpc-mapping"
+                },
+                "formalCriteria": {
+                  "const": [
+                    "generated-sdk-replay",
+                    "response-watch-unknown-field-preservation"
+                  ]
+                },
+                "missingStatus": {
+                  "const": "OPEN_NOT_CLAIMED"
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/criterion",
+              "properties": {
+                "id": {
+                  "const": "shared-golden-negative-and-n-minus-one-fixtures"
+                },
+                "formalCriteria": {
+                  "const": [
+                    "n-minus-one-compatibility",
+                    "response-watch-unknown-field-preservation"
+                  ]
+                },
+                "missingStatus": {
+                  "const": "OPEN_NOT_CLAIMED"
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/criterion",
+              "properties": {
+                "id": {
+                  "const": "exact-pinned-external-consumer"
+                },
+                "formalCriteria": {
+                  "const": [
+                    "generated-sdk-replay"
+                  ]
+                },
+                "missingStatus": {
+                  "const": "OPEN_NOT_CLAIMED"
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/criterion",
+              "properties": {
+                "id": {
+                  "const": "digest-change-invalidation"
+                },
+                "formalCriteria": {
+                  "const": [
+                    "json-schema-2020-12-official-test-suite",
+                    "openapi-3.1-semantic-validation",
+                    "generated-sdk-replay",
+                    "n-minus-one-compatibility",
+                    "response-watch-unknown-field-preservation",
+                    "runtime-server-path-and-tenant-authority-enforcement",
+                    "remaining-generator-supply-chain-review"
+                  ]
+                },
+                "missingStatus": {
+                  "const": "REVIEW_PENDING"
+                }
+              }
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "currentCandidateAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "formatVersion",
+        "registryId",
+        "bindingId",
+        "effectiveStatus",
+        "formalCriteria",
+        "missing",
+        "notGateClosure",
+        "gateStatus"
+      ],
+      "properties": {
+        "path": {
+          "const": "tools/contract-review-binding/v1/registry.json"
+        },
+        "sha256": {
+          "const": "sha256:e5e5a6abc573fcdcce9d0f1338dad033f5155fe76b555e1fca3a9efc19f14dde"
+        },
+        "formatVersion": {
+          "const": "cloud-agents-contract-review-binding-registry/v1"
+        },
+        "registryId": {
+          "const": "cloud-agents/platform/contract-review-binding"
+        },
+        "bindingId": {
+          "const": "g-contract-current-source-review-binding/v1"
+        },
+        "effectiveStatus": {
+          "const": "REVIEW_BOUND_SATISFIED_CANDIDATE"
+        },
+        "formalCriteria": {
+          "const": [
+            "json-schema-2020-12-official-test-suite",
+            "openapi-3.1-semantic-validation",
+            "generated-sdk-replay",
+            "n-minus-one-compatibility",
+            "response-watch-unknown-field-preservation",
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "missing": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "notGateClosure": {
+          "const": true
+        },
+        "gateStatus": {
+          "const": "ALL_GATES_OPEN"
+        }
+      }
+    },
+    "prerequisites": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/prerequisite",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-INVENTORY-P0-20260810-R3"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/prerequisite",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-BASELINE-P0-20260823-R4"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "historicalRecords": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/historical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R1"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/historical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R2"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/historical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R3"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/historical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R4"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/historical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R4-INDEPENDENT-REVIEW"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "currentSourceInputPaths": {
+      "const": [
+        "package.json",
+        "bun.lock",
+        "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+        "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+        "contracts/generated/proto/manifest.json",
+        "sdk/go/go.mod",
+        "sdk/typescript/package.json"
+      ]
+    },
+    "dynamicAuthorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectionReceiptPath",
+        "supplyManifestPath",
+        "supplyProfilePath",
+        "supplyReviewPath",
+        "assembledLockPath"
+      ],
+      "properties": {
+        "projectionReceiptPath": {
+          "const": "tools/generator-supply/v3/evidence/replay/projection.json"
+        },
+        "supplyManifestPath": {
+          "const": "tools/generator-supply/v3/evidence-manifest.json"
+        },
+        "supplyProfilePath": {
+          "const": "tools/generator-supply/v3/profile.json"
+        },
+        "supplyReviewPath": {
+          "const": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md"
+        },
+        "assembledLockPath": {
+          "const": "contracts/generation.lock.json"
+        }
+      }
+    },
+    "reviewSlots": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/reviewSlot",
+          "properties": {
+            "subject": {
+              "const": "generator_supply_v3"
+            },
+            "candidateSubjectPath": {
+              "const": "tools/generator-supply/v3/profile.json"
+            },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md"
+            },
+            "candidateDiffDomain": {
+              "const": "cloud-agents/g-contract-phase/supply-v3-candidate-diff/v1"
+            },
+            "reviewDiffDomain": {
+              "const": "cloud-agents/g-contract-phase/supply-v3-review-diff/v1"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/reviewSlot",
+          "properties": {
+            "subject": {
+              "const": "g_contract_r5"
+            },
+            "candidateSubjectPath": {
+              "const": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md"
+            },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md"
+            },
+            "candidateDiffDomain": {
+              "const": "cloud-agents/g-contract-phase/r5-candidate-diff/v1"
+            },
+            "reviewDiffDomain": {
+              "const": "cloud-agents/g-contract-phase/r5-review-diff/v1"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tuplePath",
+        "registryPath",
+        "registryState",
+        "finalReviewPath",
+        "terminalState"
+      ],
+      "properties": {
+        "tuplePath": {
+          "const": "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json"
+        },
+        "registryPath": {
+          "const": "tools/gate-phase-record/g-contract-p1/v1/registry.json"
+        },
+        "registryState": {
+          "const": "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT"
+        },
+        "finalReviewPath": {
+          "const": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md"
+        },
+        "terminalState": {
+          "const": "REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE"
+        }
+      }
+    },
+    "exactLateBoundPaths": {
+      "$ref": "#/$defs/exact17"
+    },
+    "stateMachine": {
+      "const": [
+        "PRE_CANDIDATE_ABSENT",
+        "R5_CURRENT_REVIEW_ABSENT",
+        "R5_REVIEW_CURRENT_BINDING_ABSENT",
+        "COMPLETE_TUPLE_READY_TO_WRITE",
+        "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT",
+        "REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE"
+      ]
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notGateClosure",
+        "gateStatus",
+        "bootstrapDiscovery",
+        "coreReplayOutput",
+        "arbitraryGateWriter",
+        "trackerAuthority",
+        "selfReview",
+        "terminalTrackedOutput",
+        "httpP2Provider",
+        "productionDatabaseWrites",
+        "deployment",
+        "publication",
+        "signing"
+      ],
+      "properties": {
+        "notGateClosure": {
+          "const": true
+        },
+        "gateStatus": {
+          "const": "ALL_GATES_OPEN"
+        },
+        "bootstrapDiscovery": {
+          "const": "FORBIDDEN"
+        },
+        "coreReplayOutput": {
+          "const": "FORBIDDEN"
+        },
+        "arbitraryGateWriter": {
+          "const": "FORBIDDEN"
+        },
+        "trackerAuthority": {
+          "const": "FORBIDDEN"
+        },
+        "selfReview": {
+          "const": "FORBIDDEN"
+        },
+        "terminalTrackedOutput": {
+          "const": "FORBIDDEN"
+        },
+        "httpP2Provider": {
+          "const": "NOT_AUTHORIZED"
+        },
+        "productionDatabaseWrites": {
+          "const": "NOT_AUTHORIZED"
+        },
+        "deployment": {
+          "const": "NOT_AUTHORIZED"
+        },
+        "publication": {
+          "const": "NOT_AUTHORIZED"
+        },
+        "signing": {
+          "const": "NOT_AUTHORIZED"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "statement",
+        "formalCriteria",
+        "missingStatus"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "formalCriteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "missingStatus": {
+          "enum": [
+            "OPEN_NOT_CLAIMED",
+            "REVIEW_PENDING"
+          ]
+        }
+      }
+    },
+    "prerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "path",
+        "sha256",
+        "status"
+      ],
+      "properties": {
+        "evidenceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "status": {
+          "const": "VERIFIED"
+        }
+      }
+    },
+    "historical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "evidenceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "reviewSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "candidateSubjectPath",
+        "reviewPath",
+        "candidateDiffDomain",
+        "reviewDiffDomain",
+        "requiredVerdict"
+      ],
+      "properties": {
+        "subject": {
+          "enum": [
+            "generator_supply_v3",
+            "g_contract_r5"
+          ]
+        },
+        "candidateSubjectPath": {
+          "$ref": "#/$defs/path"
+        },
+        "reviewPath": {
+          "$ref": "#/$defs/path"
+        },
+        "candidateDiffDomain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewDiffDomain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredVerdict": {
+          "const": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      }
+    },
+    "exact17": {
+      "const": [
+        "contracts/generation.lock.json",
+        "tools/generator-supply/v3/evidence-manifest.json",
+        "tools/generator-supply/v3/profile.json",
+        "tools/generator-supply/v3/evidence/replay.json",
+        "tools/generator-supply/v3/evidence/replay/darwin-a.json",
+        "tools/generator-supply/v3/evidence/replay/darwin-b.json",
+        "tools/generator-supply/v3/evidence/replay/darwin-isolation.json",
+        "tools/generator-supply/v3/evidence/replay/linux-a.json",
+        "tools/generator-supply/v3/evidence/replay/linux-b.json",
+        "tools/generator-supply/v3/evidence/replay/linux-isolation.json",
+        "tools/generator-supply/v3/evidence/replay/projection.json",
+        "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+        "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+        "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+        "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json",
+        "tools/gate-phase-record/g-contract-p1/v1/registry.json",
+        "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md"
+      ]
+    }
+  }
+}

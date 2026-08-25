@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-review-tuple-v1.schema.json",
+  "title": "GContractP1PhaseReviewTupleV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "authorityId",
+    "sourceDigest",
+    "reviews",
+    "notGateClosure",
+    "gateStatus",
+    "closureDecision",
+    "tupleDigest"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-phase-review-tuple/v1"
+    },
+    "authorityId": {
+      "const": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1"
+    },
+    "sourceDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "reviews": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/reviewBinding",
+          "properties": {
+            "subject": {
+              "const": "generator_supply_v3"
+            },
+            "candidateSubjectPath": {
+              "const": "tools/generator-supply/v3/profile.json"
+            },
+            "review": {
+              "$ref": "#/$defs/review",
+              "properties": {
+                "path": {
+                  "const": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md"
+                }
+              }
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/reviewBinding",
+          "properties": {
+            "subject": {
+              "const": "g_contract_r5"
+            },
+            "candidateSubjectPath": {
+              "const": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md"
+            },
+            "review": {
+              "$ref": "#/$defs/review",
+              "properties": {
+                "path": {
+                  "const": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "notGateClosure": {
+      "const": true
+    },
+    "gateStatus": {
+      "const": "ALL_GATES_OPEN"
+    },
+    "closureDecision": {
+      "const": "NONE"
+    },
+    "tupleDigest": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "gitObject": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actorId",
+        "commit",
+        "tree",
+        "parent",
+        "diffSha256"
+      ],
+      "properties": {
+        "actorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "parent": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "diffSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewerId",
+        "commit",
+        "tree",
+        "parent",
+        "path",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode",
+        "diffSha256",
+        "verdict",
+        "findings"
+      ],
+      "properties": {
+        "reviewerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "parent": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        },
+        "diffSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "verdict": {
+          "const": "APPROVE_P0_0_P1_0_P2_0"
+        },
+        "findings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p0",
+            "p1",
+            "p2"
+          ],
+          "properties": {
+            "p0": {
+              "const": 0
+            },
+            "p1": {
+              "const": 0
+            },
+            "p2": {
+              "const": 0
+            }
+          }
+        }
+      }
+    },
+    "reviewBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "candidateSubjectPath",
+        "candidate",
+        "review"
+      ],
+      "properties": {
+        "subject": {
+          "enum": [
+            "generator_supply_v3",
+            "g_contract_r5"
+          ]
+        },
+        "candidateSubjectPath": {
+          "$ref": "#/$defs/path"
+        },
+        "candidate": {
+          "$ref": "#/$defs/candidate"
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,734 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-record-model-v1.schema.json",
+  "title": "GContractP1PhaseRecordModelV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "authorityId",
+    "sourceDigest",
+    "evidenceId",
+    "recordType",
+    "gateId",
+    "phase",
+    "supersedes",
+    "status",
+    "independentReviewer",
+    "date",
+    "timezone",
+    "gateEffect",
+    "closureDecision",
+    "prerequisites",
+    "historicalRecords",
+    "projection",
+    "supply",
+    "currentSourceInputs",
+    "assembledLock",
+    "criteriaAuthority",
+    "currentCandidateAuthority",
+    "criteria",
+    "missing",
+    "invalidationRules",
+    "nonClaims",
+    "notGateClosure",
+    "gateStatus",
+    "modelDigest"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-phase-record-model/v1"
+    },
+    "authorityId": {
+      "const": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1"
+    },
+    "sourceDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "evidenceId": {
+      "const": "CAG-G-CONTRACT-P1-20260825-R5"
+    },
+    "recordType": {
+      "const": "PHASE"
+    },
+    "gateId": {
+      "const": "G-CONTRACT"
+    },
+    "phase": {
+      "const": "P1"
+    },
+    "supersedes": {
+      "const": "CAG-G-CONTRACT-P1-20260823-R4"
+    },
+    "status": {
+      "const": "IN_PROGRESS"
+    },
+    "independentReviewer": {
+      "const": "PENDING"
+    },
+    "date": {
+      "const": "2026-08-25"
+    },
+    "timezone": {
+      "const": "Asia/Shanghai"
+    },
+    "gateEffect": {
+      "const": "NONE"
+    },
+    "closureDecision": {
+      "const": "NONE"
+    },
+    "prerequisites": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/boundEvidence",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-INVENTORY-P0-20260810-R3"
+            },
+            "status": {
+              "const": "VERIFIED"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/boundEvidence",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-BASELINE-P0-20260823-R4"
+            },
+            "status": {
+              "const": "VERIFIED"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "historicalRecords": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/boundHistorical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R1"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/boundHistorical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R2"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/boundHistorical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R3"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/boundHistorical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R4"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/boundHistorical",
+          "properties": {
+            "evidenceId": {
+              "const": "CAG-G-CONTRACT-P1-20260823-R4-INDEPENDENT-REVIEW"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "tree",
+        "archiveSha256",
+        "receipt"
+      ],
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "archiveSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "receipt": {
+          "$ref": "#/$defs/fileBinding"
+        }
+      }
+    },
+    "supply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate",
+        "manifest",
+        "profile",
+        "review"
+      ],
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/candidate"
+        },
+        "manifest": {
+          "$ref": "#/$defs/fileBinding"
+        },
+        "profile": {
+          "$ref": "#/$defs/fileBinding"
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        }
+      }
+    },
+    "currentSourceInputs": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "package.json"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "bun.lock"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "contracts/generated/proto/cloud-agents-v1alpha1.binpb"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "contracts/generated/proto/manifest.json"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "sdk/go/go.mod"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/fileBinding",
+          "properties": {
+            "path": {
+              "const": "sdk/typescript/package.json"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "assembledLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "state",
+        "formatVersion",
+        "candidateCommit",
+        "candidateTree",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode"
+      ],
+      "properties": {
+        "path": {
+          "const": "contracts/generation.lock.json"
+        },
+        "state": {
+          "const": "ASSEMBLED"
+        },
+        "formatVersion": {
+          "const": "cloud-agents-platform-contract-generation-lock/v3"
+        },
+        "candidateCommit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "candidateTree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        }
+      }
+    },
+    "criteriaAuthority": {
+      "$ref": "#/$defs/fileBinding",
+      "properties": {
+        "path": {
+          "const": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md"
+        }
+      }
+    },
+    "currentCandidateAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode",
+        "formatVersion",
+        "registryId",
+        "bindingId",
+        "effectiveStatus",
+        "formalCriteria",
+        "missing",
+        "notGateClosure",
+        "gateStatus"
+      ],
+      "properties": {
+        "path": {
+          "const": "tools/contract-review-binding/v1/registry.json"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "const": "sha256:e5e5a6abc573fcdcce9d0f1338dad033f5155fe76b555e1fca3a9efc19f14dde"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        },
+        "formatVersion": {
+          "const": "cloud-agents-contract-review-binding-registry/v1"
+        },
+        "registryId": {
+          "const": "cloud-agents/platform/contract-review-binding"
+        },
+        "bindingId": {
+          "const": "g-contract-current-source-review-binding/v1"
+        },
+        "effectiveStatus": {
+          "const": "REVIEW_BOUND_SATISFIED_CANDIDATE"
+        },
+        "formalCriteria": {
+          "const": [
+            "json-schema-2020-12-official-test-suite",
+            "openapi-3.1-semantic-validation",
+            "generated-sdk-replay",
+            "n-minus-one-compatibility",
+            "response-watch-unknown-field-preservation",
+            "runtime-server-path-and-tenant-authority-enforcement",
+            "remaining-generator-supply-chain-review"
+          ]
+        },
+        "missing": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "notGateClosure": {
+          "const": true
+        },
+        "gateStatus": {
+          "const": "ALL_GATES_OPEN"
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/criterion",
+          "properties": {
+            "id": {
+              "const": "json-schema-authority-and-openapi-refs"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/criterion",
+          "properties": {
+            "id": {
+              "const": "proto-authority-and-generated-connect-grpc-mapping"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/criterion",
+          "properties": {
+            "id": {
+              "const": "shared-golden-negative-and-n-minus-one-fixtures"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/criterion",
+          "properties": {
+            "id": {
+              "const": "exact-pinned-external-consumer"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/criterion",
+          "properties": {
+            "id": {
+              "const": "digest-change-invalidation"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "missing": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "invalidationRules": {
+      "const": [
+        "Any prerequisite, historical record, Gate-criteria authority, reviewed current-candidate authority, projection, supply-v3 assembly or review, current source input, or assembled-lock identity drift invalidates R5.",
+        "Any schema, Proto, OpenAPI, generated SDK, or mapping-fixture digest drift invalidates R5.",
+        "The sole authorized ASSEMBLED-to-PHASE_BOUND lock successor does not invalidate the immutable assembled snapshot; every other lock transition does.",
+        "R5 and every review remain append-only historical evidence after invalidation and must be superseded rather than overwritten."
+      ]
+    },
+    "nonClaims": {
+      "const": [
+        "G-CONTRACT closure",
+        "G-SUPPLY-CHAIN closure",
+        "production database or migration execution",
+        "HTTP, OIDC, JWKS, P2, provider, workload, credential, or trust effects",
+        "deployment, publication, external signing, release, Beta, or GA",
+        "Linux arm64 replay"
+      ]
+    },
+    "notGateClosure": {
+      "const": true
+    },
+    "gateStatus": {
+      "const": "ALL_GATES_OPEN"
+    },
+    "modelDigest": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "gitObject": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "fileBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        }
+      }
+    },
+    "boundEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "status",
+        "path",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode"
+      ],
+      "properties": {
+        "evidenceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "VERIFIED"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        }
+      }
+    },
+    "boundHistorical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "path",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode"
+      ],
+      "properties": {
+        "evidenceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actorId",
+        "commit",
+        "tree",
+        "parent",
+        "diffSha256"
+      ],
+      "properties": {
+        "actorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "parent": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "diffSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewerId",
+        "commit",
+        "tree",
+        "parent",
+        "path",
+        "gitBlob",
+        "sha256",
+        "sizeBytes",
+        "mode",
+        "diffSha256",
+        "verdict",
+        "findings"
+      ],
+      "properties": {
+        "reviewerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "parent": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "100644"
+        },
+        "diffSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "verdict": {
+          "const": "APPROVE_P0_0_P1_0_P2_0"
+        },
+        "findings": {
+          "$ref": "#/$defs/zeroFindings"
+        }
+      }
+    },
+    "zeroFindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p0",
+        "p1",
+        "p2"
+      ],
+      "properties": {
+        "p0": {
+          "const": 0
+        },
+        "p1": {
+          "const": 0
+        },
+        "p2": {
+          "const": 0
+        }
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "statement",
+        "formalCriteria"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "SATISFIED_CANDIDATE",
+            "REVIEW_PENDING",
+            "OPEN_NOT_CLAIMED",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "formalCriteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
