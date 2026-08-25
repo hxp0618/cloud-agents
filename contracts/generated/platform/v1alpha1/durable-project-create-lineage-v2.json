@@ -1,0 +1,337 @@
+{
+  "formatVersion": "cloud-agents-durable-project-create-lineage/v2",
+  "lineageId": "cloud-agents/platform/durable-project-create-lineage",
+  "sourceDigest": "sha256:8095c96cba12f6be067216c70ed4b3f4a3e1cc29b962f076e8cddc8fed992653",
+  "predecessor": {
+    "generationLock": {
+      "path": "contracts/generation.lock.json",
+      "formatVersion": "cloud-agents-platform-contract-generation-lock/v2",
+      "status": "SUCCESSOR_ASSEMBLED_REVIEW_BOUND",
+      "commitSha1": "16275f6cbf390c343a9ac00f9193e75eaad0094e",
+      "treeSha1": "ca595b8e1258a8b78c4da3a545b2a31d8f62b531",
+      "gitBlobSha1": "39ee20e035d8770340d46a8663633c6519830de1",
+      "sha256": "sha256:de62a85390e58736a5fef8272878b821415b4180948437e54edb8628e005ff53",
+      "sizeBytes": 17377,
+      "mode": "100644"
+    },
+    "durableRegistryV1": {
+      "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+      "sha256": "sha256:2dbce40aac86d2d1709c4aa07d683d916fbba3a992e7f8699843e470c0876dc6",
+      "sizeBytes": 16603,
+      "mode": "100644",
+      "gitBlobSha1": "e8fa8855a830852fad1d413a2aef00cd3947290f"
+    },
+    "durableProfileV1": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-v1alpha1.json",
+      "sha256": "sha256:feaf6ed693916b9468a934cba7c36fd69c192ed794bd02fb6c7f7fd45c8468cd",
+      "sizeBytes": 2072,
+      "mode": "100644",
+      "gitBlobSha1": "94c751a5943cf9a225eb0ee02bf14a8573ca3287"
+    },
+    "durableSourceV1": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v1.json",
+      "sha256": "sha256:933fbe82642a351c18c0d1ff45d8603b9dbe9235d4c58b82d40f4c7c63d03695",
+      "sizeBytes": 11524,
+      "mode": "100644",
+      "gitBlobSha1": "d736e4e18014603af3fd7d0fd90ad0c9f78367ca"
+    },
+    "migrationsV1": [
+      {
+        "path": "services/control-plane/migrations/000001_expand_migration_kernel.sql",
+        "sha256": "sha256:8f9eb57df5fea699c4cfcf39171079d0c88c01f74ddb4bf2e38261dc0cd451b4",
+        "sizeBytes": 5161,
+        "mode": "100644",
+        "gitBlobSha1": "b7b4b920ba3c3f93e406850c5a1675c2a172e7a5"
+      },
+      {
+        "path": "services/control-plane/migrations/000002_expand_tenancy.sql",
+        "sha256": "sha256:d084f003928c1122da7bb88727c12a3e298548514f5da19cb3da14a3a754827a",
+        "sizeBytes": 30896,
+        "mode": "100644",
+        "gitBlobSha1": "1ab163285ddf3a011f71fabcc8ed8d3b3ebd6586"
+      },
+      {
+        "path": "services/control-plane/migrations/000003_expand_membership_rbac.sql",
+        "sha256": "sha256:89178a9eeb81acc4863d98e9cb9388c2f50379d78f28f5f2570acec551901cd2",
+        "sizeBytes": 22193,
+        "mode": "100644",
+        "gitBlobSha1": "1e31ef1c6daf7febfdc9cc9d0e8baecea2cea01b"
+      },
+      {
+        "path": "services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql",
+        "sha256": "sha256:7664c8e67e8ee5f561395bd58f7156ac437ba0ac20547216dedbcc89dbc3cba7",
+        "sizeBytes": 30107,
+        "mode": "100644",
+        "gitBlobSha1": "cc1ea7b9445021e363a3f589983cfebf2a10491c"
+      },
+      {
+        "path": "services/control-plane/migrations/000005_close_membership_binding_authority.sql",
+        "sha256": "sha256:9256cf2fe9684e9fa4e92519cf16af7c26a3713930171e6bba7013b0a748a69b",
+        "sizeBytes": 6550,
+        "mode": "100644",
+        "gitBlobSha1": "1e96289a2b98a6ce9d7b02a4686af5f11e5c01e4"
+      },
+      {
+        "path": "services/control-plane/migrations/000006_close_subject_issuer_validation.sql",
+        "sha256": "sha256:5b24e8462c90b7d430717ac746e00f999b21f21eae0fb855444379807c0b47e5",
+        "sizeBytes": 3061,
+        "mode": "100644",
+        "gitBlobSha1": "6e4d0be8a27114dbe34804f575499ae9787c82be"
+      },
+      {
+        "path": "services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql",
+        "sha256": "sha256:f6f542f9f1df906217e76bff6f57af44441873dc654216a83bbb9a7af0ba0385",
+        "sizeBytes": 41875,
+        "mode": "100644",
+        "gitBlobSha1": "e14710c880b0c06136b7d7b545da6190c277d4c9"
+      },
+      {
+        "path": "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
+        "sha256": "sha256:c64e92c778318571169f0b949abcd342efcd2c3b429c68969c143d413a82a43c",
+        "sizeBytes": 37413,
+        "mode": "100644",
+        "gitBlobSha1": "ef3468454ebda99391f2c1809ff9aaa2f1dc07cb"
+      },
+      {
+        "path": "services/control-plane/migrations/000009_redact_coordination_conflicts.sql",
+        "sha256": "sha256:b4c544a1a1a0236fa485f55bcfce8e03d759b977290f7c22b5f598e4e657cc90",
+        "sizeBytes": 31303,
+        "mode": "100644",
+        "gitBlobSha1": "4970c941dc6412e5847a8dc8c79da16eef085897"
+      },
+      {
+        "path": "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
+        "sha256": "sha256:ab758a08c07ffb95b9e9a612c90079fcaf54d06407d0cfe4a0368db570f621e6",
+        "sizeBytes": 17959,
+        "mode": "100644",
+        "gitBlobSha1": "3f95b2a82417839800d39134cf6bb33ddfe84118"
+      },
+      {
+        "path": "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
+        "sha256": "sha256:67811ee604d01732d5ed19e4c0c108013f2acd95a0f9eefc716fd6b1072a2b61",
+        "sizeBytes": 154253,
+        "mode": "100644",
+        "gitBlobSha1": "4d36252801f748d68eb9aa657e6f0990cdd00c84"
+      },
+      {
+        "path": "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
+        "sha256": "sha256:15577c7c1071b0369c1b528241c149ce3679ca8e11cc424382b0917cd2cda730",
+        "sizeBytes": 8991,
+        "mode": "100644",
+        "gitBlobSha1": "82ac64b4dc430c5c9c67b23a958a2a63c76f43ca"
+      }
+    ]
+  },
+  "fixtureManifest": {
+    "path": "contracts/platform/v1alpha1/fixtures/manifest-v2.json",
+    "sha256": "sha256:75afbc4822e8bdd76aa73beb77b5c402628bd9b51115edebb9d50779ab81756a",
+    "sizeBytes": 1951,
+    "mode": "100644",
+    "caseCount": 6,
+    "caseNames": [
+      "durable-coordination-profile-managed-agent-create-project-durable-v1alpha1",
+      "durable-coordination-registry-source-v2",
+      "durable-coordination-registry-v2",
+      "durable-project-create-route-v2",
+      "durable-project-create-route-authority-v2",
+      "durable-project-create-idempotency-projection"
+    ]
+  },
+  "durableAuthority": {
+    "source": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v2.json",
+      "sha256": "sha256:2465357cf89d5d1dc403ca3ec0c7c639719e785cb2124aa732cf63c8c9e53a78",
+      "sizeBytes": 1196,
+      "mode": "100644"
+    },
+    "profile": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-durable-v1alpha1.json",
+      "sha256": "sha256:e3b1b079eb78f246bb77d60fe8f6393768fba84266306f73febc7d184acb0027",
+      "sizeBytes": 2119,
+      "mode": "100644"
+    },
+    "legacyRoute": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-route-v2.json",
+      "sha256": "sha256:bba50d6116ed6029ae8449b47867d76dfa73254c177b5206753670dcc9ab788e",
+      "sizeBytes": 305,
+      "mode": "100644"
+    },
+    "routeAuthority": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-route-authority-v2.json",
+      "sha256": "sha256:1de94f87ebadd8af0fccc57992b820421df17f34ea587ec9378919d5a0887c13",
+      "sizeBytes": 687,
+      "mode": "100644"
+    },
+    "projectionFixture": {
+      "path": "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-idempotency-projection.json",
+      "sha256": "sha256:548d7c08ced91bdd7630731f64a888d800b0cfe9b782a8df6e0aec7b71d3fc56",
+      "sizeBytes": 311,
+      "mode": "100644"
+    },
+    "schemas": [
+      {
+        "path": "contracts/platform/v1alpha1/schemas/durable-coordination-profile-v2.schema.json",
+        "sha256": "sha256:d3a9f07979ef0f2835dfd584c22481ba53a1393559dc861510cdbf7f65194a0d",
+        "sizeBytes": 4934,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v2.schema.json",
+        "sha256": "sha256:d52a63d7e84ca5f79668df39c8020525d9fc751df5995f772b88f0e385e2f78b",
+        "sizeBytes": 2686,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v2.schema.json",
+        "sha256": "sha256:3fbe26313cb388ac54d09c99056c40194541fa32b54cd85500f609affd52b18c",
+        "sizeBytes": 2115,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json",
+        "sha256": "sha256:f365efe4fa3ad9b2110e85095d2bd203f048fcdd1cdd1331509882891387b77e",
+        "sizeBytes": 1099,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/project.schema.json",
+        "sha256": "sha256:17760091c690f30237d9f9d1bf0e81797a947567e9d618746ea0c923d2c0c49c",
+        "sizeBytes": 1530,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+        "sha256": "sha256:aeaba3a1fdfbc27fdbcea2f8e85a9f57d87544524b1fbd903f2a8473c68a0b50",
+        "sizeBytes": 770,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/durable-project-create-route-authority-v2.schema.json",
+        "sha256": "sha256:a05c643d6a6955f97fae78c0fb7d96e002ec645ea5b30df77c6edcaf33bc8b8c",
+        "sizeBytes": 1738,
+        "mode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/durable-project-create-route-legacy-v1.schema.json",
+        "sha256": "sha256:8ab3ee393ecfb9eef03221d01d7404ffc16dae39c4f6a7637fc94a86ff4794cb",
+        "sizeBytes": 985,
+        "mode": "100644"
+      }
+    ],
+    "generators": [
+      {
+        "path": "scripts/generate-platform-durable-coordination-registry-v2.ts",
+        "sha256": "sha256:2677dbeed86a5a48c5a66ae0fad1bf7f5c3f561cce6db6341f86055b03835373",
+        "sizeBytes": 1448,
+        "mode": "100644"
+      },
+      {
+        "path": "scripts/generate-platform-durable-coordination-go-v2.ts",
+        "sha256": "sha256:8676f1fbf815da55f6fe39ed0f1e5ba32f25873161bef7853deac6456da94106",
+        "sizeBytes": 980,
+        "mode": "100644"
+      },
+      {
+        "path": "scripts/lib/platform-durable-coordination-go-v2.ts",
+        "sha256": "sha256:8d011a12818f3184709c7d522fc43d5c5b0b377ab3e8737c9361467f42fdde66",
+        "sizeBytes": 3171,
+        "mode": "100644"
+      },
+      {
+        "path": "scripts/lib/platform-durable-coordination-registry.ts",
+        "sha256": "sha256:5ecf0f69feea864468d5c26ef4dc653385f12c6d1fbbcafafaf8bf7bfad40fd5",
+        "sizeBytes": 40533,
+        "mode": "100644"
+      },
+      {
+        "path": "scripts/generate-platform-durable-project-create-lineage-v2.ts",
+        "sha256": "sha256:edc6a0857c280d679fd922347f52092903bdb15034af2a9a4a8a0e15bae27846",
+        "sizeBytes": 1227,
+        "mode": "100644"
+      },
+      {
+        "path": "scripts/lib/platform-durable-project-create-lineage-v2.ts",
+        "sha256": "sha256:e65803f0f4c5a5c7f92d90afa056b1f42b99b2b1c8c5b8a7b87f4a3218a62aba",
+        "sizeBytes": 27183,
+        "mode": "100644"
+      },
+      {
+        "path": "scripts/lib/platform-durable-project-create-lineage-v2.test.ts",
+        "sha256": "sha256:017e26b4c4de5dc15f5eeb9c71baa6ab3b7221fbb815ec508ab13f504a26c4a1",
+        "sizeBytes": 4493,
+        "mode": "100644"
+      }
+    ],
+    "output": {
+      "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry-v2.json",
+      "sha256": "sha256:333fa4b35d3bcd3b71bce3097c871e49fbc0475928ceb5f4a1078aa73b92f7e1",
+      "sizeBytes": 17549,
+      "mode": "100644"
+    },
+    "goOutput": {
+      "path": "services/control-plane/internal/coordination/registry_v2_generated.go",
+      "sha256": "sha256:0edefcc2655be7045c3e4d756d32bbcf3317842c27d2595f67035bdc751af4c7",
+      "sizeBytes": 1774,
+      "mode": "100644"
+    },
+    "priorRegistry": {
+      "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+      "sha256": "sha256:2dbce40aac86d2d1709c4aa07d683d916fbba3a992e7f8699843e470c0876dc6",
+      "sizeBytes": 16603,
+      "mode": "100644",
+      "gitBlobSha1": "e8fa8855a830852fad1d413a2aef00cd3947290f"
+    }
+  },
+  "migration": {
+    "id": "000013",
+    "sql": {
+      "path": "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
+      "mode": "100644",
+      "sizeBytes": 18820,
+      "sha256": "sha256:d8c3687e300767f7e27f673c6a9fc3de098fbec1b8911dc018c47d32de33dffa"
+    },
+    "predecessorCatalog": {
+      "path": "services/control-plane/migrations/catalog/schema-000012.json",
+      "mode": "100644",
+      "sizeBytes": 383306,
+      "sha256": "sha256:c424e9a62180c8e3de4cb444d95812c2606c6355065f4fa7e5655fcd733dab48"
+    },
+    "catalog": {
+      "path": "services/control-plane/migrations/catalog/schema-000013.json",
+      "mode": "100644",
+      "sizeBytes": 395465,
+      "sha256": "sha256:f53a0d32ae7bb01d81ddce1eeb8ab6c07167cd8e4c8e846502f206c09d5e595f"
+    },
+    "manifest": {
+      "path": "services/control-plane/migrations/manifest.json",
+      "mode": "100644",
+      "sizeBytes": 33976,
+      "sha256": "sha256:95a584a9e517d68e9a904fadfc76f84dcdbd8b532a24d8716468d0ff53d59d6b",
+      "manifestDigest": "sha256:56af03a65461e2009cf73c16ac2b1d74d856f68e3efc8b363ab84c537660c4d1"
+    },
+    "schemaBundle": {
+      "path": "services/control-plane/migrations/schema-bundle.json",
+      "mode": "100644",
+      "sizeBytes": 22443,
+      "sha256": "sha256:d5ce27597e2218240a276dbbec01431e4fe26774e195b70445078d8662a3826d",
+      "schemaBundleDigest": "sha256:c7e08e81b463d04dd267438ac636811200586d5d84d8cb2e8d18799bd2c5faca"
+    },
+    "predecessorArchive": {
+      "path": "services/control-plane/migrations/archive/54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907.schema-bundle.json",
+      "mode": "100644",
+      "sizeBytes": 20932,
+      "sha256": "sha256:948e504b77c409065d2160056f45356d84d136d2512f35a4c4fe9e16e575aaaf",
+      "schemaBundleDigest": "sha256:54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907"
+    }
+  },
+  "implementationBoundary": {
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "httpSurface": "NOT_IMPLEMENTED",
+    "p2Surface": "NOT_IMPLEMENTED",
+    "providerSideEffects": "FORBIDDEN",
+    "deployment": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED",
+    "gateStatus": "ALL_GATES_OPEN"
+  },
+  "lineageDigest": "sha256:f2e8754e169fa196f9e3f2bf67d37b629af6c04a1873bc77ebd7a3c2ca058c2c"
+}

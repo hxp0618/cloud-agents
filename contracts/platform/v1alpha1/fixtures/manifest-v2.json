@@ -1,0 +1,47 @@
+{
+  "version": "v1alpha1",
+  "cases": [
+    {
+      "name": "durable-coordination-profile-managed-agent-create-project-durable-v1alpha1",
+      "schema": "../schemas/durable-coordination-profile-v2.schema.json",
+      "instance": "golden/durable-coordination-profile-managed-agent-create-project-durable-v1alpha1.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-coordination-registry-source-v2",
+      "schema": "../schemas/durable-coordination-registry-source-v2.schema.json",
+      "instance": "golden/durable-coordination-registry-source-v2.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-coordination-registry-v2",
+      "schema": "../schemas/durable-coordination-registry-v2.schema.json",
+      "instance": "../../../generated/platform/v1alpha1/durable-coordination-registry-v2.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-project-create-route-v2",
+      "schema": "../../../generated/platform/v1alpha1/durable-project-create-route-legacy-v1.schema.json",
+      "instance": "golden/durable-project-create-route-v2.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-project-create-route-authority-v2",
+      "schema": "../../../generated/platform/v1alpha1/durable-project-create-route-authority-v2.schema.json",
+      "instance": "golden/durable-project-create-route-authority-v2.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
+      "name": "durable-project-create-idempotency-projection",
+      "schema": "../schemas/durable-project-create-idempotency-projection.schema.json",
+      "instance": "golden/durable-project-create-idempotency-projection.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    }
+  ]
+}

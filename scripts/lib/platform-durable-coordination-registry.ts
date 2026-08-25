@@ -17,6 +17,23 @@ export const DURABLE_COORDINATION_SOURCE_PATH =
 export const DURABLE_COORDINATION_OUTPUT_PATH =
   "contracts/generated/platform/v1alpha1/durable-coordination-registry.json";
 
+// Versioned successor authority.  These inputs intentionally live beside the
+// historical v1 helper, but are never folded into the v1 source/output path.
+export const DURABLE_COORDINATION_V2_SOURCE_PATH =
+  "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v2.json";
+export const DURABLE_COORDINATION_V2_OUTPUT_PATH =
+  "contracts/generated/platform/v1alpha1/durable-coordination-registry-v2.json";
+export const DURABLE_COORDINATION_V2_ROUTE_PATH =
+  "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-route-v2.json";
+export const DURABLE_COORDINATION_V2_ROUTE_AUTHORITY_PATH =
+  "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-route-authority-v2.json";
+export const DURABLE_COORDINATION_V2_PROFILE_PATH =
+  "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-durable-v1alpha1.json";
+export const DURABLE_COORDINATION_V2_GO_OUTPUT_PATH =
+  "services/control-plane/internal/coordination/registry_v2_generated.go";
+export const DURABLE_COORDINATION_V2_PRIOR_REGISTRY_DIGEST =
+  "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a";
+
 const PROFILE_SCHEMA_PATH =
   "contracts/platform/v1alpha1/schemas/durable-coordination-profile-v1.schema.json";
 const SOURCE_SCHEMA_PATH =
@@ -33,6 +50,27 @@ const GENERATOR_PATH = "scripts/generate-platform-durable-coordination-registry.
 const LIBRARY_PATH = "scripts/lib/platform-durable-coordination-registry.ts";
 const LIBRARY_TEST_PATH = "scripts/lib/platform-durable-coordination-registry.test.ts";
 const JSON_SEMANTICS_PATH = "scripts/lib/platform-json-semantics.ts";
+
+const DURABLE_COORDINATION_V2_SOURCE_SCHEMA_PATH =
+  "contracts/platform/v1alpha1/schemas/durable-coordination-registry-source-v2.schema.json";
+const DURABLE_COORDINATION_V2_OUTPUT_SCHEMA_PATH =
+  "contracts/platform/v1alpha1/schemas/durable-coordination-registry-v2.schema.json";
+const DURABLE_COORDINATION_V2_PROFILE_SCHEMA_PATH =
+  "contracts/platform/v1alpha1/schemas/durable-coordination-profile-v2.schema.json";
+const DURABLE_COORDINATION_V2_ROUTE_SCHEMA_PATH =
+  "contracts/generated/platform/v1alpha1/durable-project-create-route-authority-v2.schema.json";
+const DURABLE_COORDINATION_V2_LEGACY_ROUTE_SCHEMA_PATH =
+  "contracts/generated/platform/v1alpha1/durable-project-create-route-legacy-v1.schema.json";
+const DURABLE_COORDINATION_V2_PROJECTION_SCHEMA_PATH =
+  "contracts/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json";
+const DURABLE_COORDINATION_V2_RESULT_SCHEMA_PATH =
+  "contracts/platform/v1alpha1/schemas/project.schema.json";
+const DURABLE_COORDINATION_V2_SCOPE_SCHEMA_PATH =
+  "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json";
+const DURABLE_COORDINATION_V2_GENERATOR_PATH =
+  "scripts/generate-platform-durable-coordination-registry-v2.ts";
+const DURABLE_COORDINATION_V2_GO_GENERATOR_PATH =
+  "scripts/generate-platform-durable-coordination-go-v2.ts";
 
 const PROFILE_FORMAT = "cloud-agents-durable-coordination-profile/v1";
 const SOURCE_FORMAT = "cloud-agents-durable-coordination-source/v1";
@@ -209,6 +247,181 @@ export function durableCoordinationRegistryInputs(root: string): string[] {
   const uniqueInputs = [...new Set(inputs)].toSorted();
   for (const path of uniqueInputs) requireRegularRepositoryFile(root, path);
   return uniqueInputs;
+}
+
+/**
+ * Build the versioned durable Project-create successor from the exact v1
+ * predecessor plus the local route/profile/schema authority.  The v1 builder
+ * above is deliberately called (and byte-checked) rather than reimplemented;
+ * this keeps the historical generated registry a hard predecessor fence.
+ */
+export function buildDurableCoordinationRegistryV2(root: string): JsonRecord {
+  const source = readV2Json(root, DURABLE_COORDINATION_V2_SOURCE_PATH);
+  const route = readV2Json(root, DURABLE_COORDINATION_V2_ROUTE_PATH);
+  const routeAuthority = readV2Json(root, DURABLE_COORDINATION_V2_ROUTE_AUTHORITY_PATH);
+  const profile = readV2Json(root, DURABLE_COORDINATION_V2_PROFILE_PATH);
+  assertV2Schema(root, DURABLE_COORDINATION_V2_SOURCE_SCHEMA_PATH, source, false);
+  assertV2Schema(root, DURABLE_COORDINATION_V2_LEGACY_ROUTE_SCHEMA_PATH, route);
+  assertV2Schema(root, DURABLE_COORDINATION_V2_ROUTE_SCHEMA_PATH, routeAuthority);
+  assertV2Schema(root, DURABLE_COORDINATION_V2_PROFILE_SCHEMA_PATH, profile, false);
+  assertDurableCoordinationRegistryCurrent(root);
+  const prior = readV2Json(root, DURABLE_COORDINATION_OUTPUT_PATH);
+  if (prior.registryDigest !== DURABLE_COORDINATION_V2_PRIOR_REGISTRY_DIGEST) {
+    throw coordinationError(
+      "COORDINATION_REGISTRY_DIGEST_MISMATCH",
+      "/historicalCompatibility/priorRegistryDigest",
+      "Durable coordination v2 must bind the exact historical v1 registry digest.",
+    );
+  }
+  if (
+    source.historicalCompatibility?.priorRegistryDigest !==
+    DURABLE_COORDINATION_V2_PRIOR_REGISTRY_DIGEST
+  ) {
+    throw coordinationError(
+      "COORDINATION_REGISTRY_DIGEST_MISMATCH",
+      "/historicalCompatibility/priorRegistryDigest",
+      "Durable coordination v2 source does not bind the exact v1 registry digest.",
+    );
+  }
+  if (source.routeDescriptor !== "golden/durable-project-create-route-v2.json") {
+    throw coordinationError(
+      "COORDINATION_REGISTRY_BINDING_MISMATCH",
+      "/routeDescriptor",
+      "Durable coordination v2 route descriptor binding drifted.",
+    );
+  }
+  if (
+    profile.profileId !== "managedAgentCreateProjectDurable/v1alpha1" ||
+    profile.operationId !== routeAuthority.operationId ||
+    profile.http?.method !== routeAuthority.method ||
+    profile.http?.path !== routeAuthority.path ||
+    profile.http?.idempotencyHeader !== routeAuthority.idempotencyHeader ||
+    route.operationId !== routeAuthority.operationId ||
+    route.method !== routeAuthority.method ||
+    route.path !== routeAuthority.path ||
+    route.idempotencyHeader !== routeAuthority.idempotencyHeader ||
+    route.boundary !== routeAuthority.boundary ||
+    route.externalEffects !== routeAuthority.externalEffects ||
+    routeAuthority.requestIdHeader !== "X-Request-ID" ||
+    routeAuthority.requestProjectionSchema !==
+      "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json" ||
+    routeAuthority.responseProjectionSchema !==
+      "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project.schema.json" ||
+    routeAuthority.legacyRouteDescriptor !== "golden/durable-project-create-route-v2.json" ||
+    routeAuthority.boundary !== "localdev_loopback_only" ||
+    routeAuthority.externalEffects !== "forbidden"
+  ) {
+    throw coordinationError(
+      "COORDINATION_PROFILE_BINDING_MISMATCH",
+      "/http",
+      "Durable coordination v2 profile and local route authority drifted.",
+    );
+  }
+  if (
+    profile.coordination?.createsPlatformOperation !== true ||
+    profile.coordination?.externalSideEffect !== "forbidden" ||
+    profile.coordination?.outboxEventClass !== "operation_effect" ||
+    JSON.stringify(profile.coordination?.requiredFinalizers) !== JSON.stringify(["project-create"])
+  ) {
+    throw coordinationError(
+      "COORDINATION_PROFILE_BINDING_MISMATCH",
+      "/coordination",
+      "Durable coordination v2 profile coordination boundary drifted.",
+    );
+  }
+  const stateMachineDigest = requireString(prior.stateMachineDigest, "/stateMachineDigest");
+  const policyDigest = requireString(prior.policyDigest, "/policyDigest");
+  const body: JsonRecord = {
+    formatVersion: "cloud-agents-durable-coordination-registry/v2",
+    registryId: requireString(source.registryId, "/registryId"),
+    sourceDigest: domainDigest("cloud-agents/durable-coordination/source/v2", source),
+    stateMachineDigest,
+    policyDigest,
+    historicalCompatibility: source.historicalCompatibility,
+    selector: source.selector,
+    profiles: [
+      {
+        profileDigest: domainDigest("cloud-agents/durable-coordination/profile/v2", {
+          registryId: source.registryId,
+          stateMachineDigest,
+          policyDigest,
+          profile,
+        }),
+        spec: profile,
+      },
+    ],
+    stateMachines: prior.stateMachines,
+    policies: prior.policies,
+    implementationBoundary: source.implementationBoundary,
+  };
+  const generated = {
+    ...body,
+    registryDigest: domainDigest("cloud-agents/durable-coordination/registry/v2", body),
+  };
+  assertV2Schema(root, DURABLE_COORDINATION_V2_OUTPUT_SCHEMA_PATH, generated, false);
+  return generated;
+}
+
+export function serializeDurableCoordinationRegistryV2(registry: JsonRecord): string {
+  return `${JSON.stringify(registry, null, 2)}\n`;
+}
+
+export function assertDurableCoordinationRegistryV2Current(root: string): void {
+  const expected = serializeDurableCoordinationRegistryV2(buildDurableCoordinationRegistryV2(root));
+  const actual = readFileSync(resolve(root, DURABLE_COORDINATION_V2_OUTPUT_PATH), "utf8");
+  if (actual !== expected) {
+    throw new Error(
+      `${DURABLE_COORDINATION_V2_OUTPUT_PATH} is stale; run bun ${DURABLE_COORDINATION_V2_GENERATOR_PATH} --write.`,
+    );
+  }
+}
+
+/** Exact source closure for the versioned registry generator. */
+export function durableCoordinationRegistryV2Inputs(root: string): string[] {
+  const inputs = [
+    ADR_PATH,
+    DURABLE_COORDINATION_SOURCE_PATH,
+    DURABLE_COORDINATION_OUTPUT_PATH,
+    DURABLE_COORDINATION_V2_SOURCE_PATH,
+    DURABLE_COORDINATION_V2_ROUTE_PATH,
+    DURABLE_COORDINATION_V2_ROUTE_AUTHORITY_PATH,
+    DURABLE_COORDINATION_V2_PROFILE_PATH,
+    DURABLE_COORDINATION_V2_SOURCE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_OUTPUT_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_PROFILE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_ROUTE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_LEGACY_ROUTE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_PROJECTION_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_RESULT_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_SCOPE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_GENERATOR_PATH,
+    DURABLE_COORDINATION_V2_GO_GENERATOR_PATH,
+    "scripts/lib/platform-durable-coordination-go-v2.ts",
+    JSON_SEMANTICS_PATH,
+    LIBRARY_PATH,
+    LIBRARY_TEST_PATH,
+  ].toSorted();
+  for (const path of inputs) requireRegularRepositoryFile(root, path);
+  if (new Set(inputs).size !== inputs.length) {
+    throw new Error("Durable coordination v2 inputs must be unique.");
+  }
+  return inputs;
+}
+
+export function durableCoordinationGoV2Inputs(root: string): string[] {
+  const inputs = [
+    DURABLE_COORDINATION_V2_GO_GENERATOR_PATH,
+    DURABLE_COORDINATION_V2_OUTPUT_PATH,
+    DURABLE_COORDINATION_V2_GENERATOR_PATH,
+    "scripts/lib/platform-durable-coordination-go-v2.ts",
+    LIBRARY_PATH,
+    JSON_SEMANTICS_PATH,
+  ].toSorted();
+  for (const path of inputs) requireRegularRepositoryFile(root, path);
+  if (new Set(inputs).size !== inputs.length) {
+    throw new Error("Durable coordination v2 Go inputs must be unique.");
+  }
+  return inputs;
 }
 
 export function validateDurableCoordinationFixture(
@@ -635,8 +848,13 @@ function schemaRepositoryPath(schemaId: unknown): string {
   return `contracts/platform/v1alpha1/schemas/${name}`;
 }
 
-function validateAgainstSchema(root: string, schemaId: string, value: unknown): void {
-  const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: true });
+function validateAgainstSchema(
+  root: string,
+  schemaId: string,
+  value: unknown,
+  strict = true,
+): void {
+  const ajv = new Ajv2020({ allErrors: true, strict, validateFormats: true });
   addFormats(ajv, { formats: ["date-time", "uri"] });
   for (const keyword of [
     "x-cloud-agents-canonicalization",
@@ -651,6 +869,14 @@ function validateAgainstSchema(root: string, schemaId: string, value: unknown): 
     PROFILE_SCHEMA_PATH,
     SOURCE_SCHEMA_PATH,
     OUTPUT_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_PROFILE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_SOURCE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_OUTPUT_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_ROUTE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_LEGACY_ROUTE_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_PROJECTION_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_RESULT_SCHEMA_PATH,
+    DURABLE_COORDINATION_V2_SCOPE_SCHEMA_PATH,
   ]) {
     ajv.addSchema(parseJsonFile(resolve(root, path)));
   }
@@ -662,6 +888,16 @@ function validateAgainstSchema(root: string, schemaId: string, value: unknown): 
       `Durable coordination document violates ${schemaId}: ${ajv.errorsText(validate?.errors)}.`,
     );
   }
+}
+
+function readV2Json(root: string, repositoryPath: string): JsonRecord {
+  requireRegularRepositoryFile(root, repositoryPath);
+  return parseJsonFile(resolve(root, repositoryPath));
+}
+
+function assertV2Schema(root: string, schemaPath: string, value: unknown, strict = true): void {
+  const schema = readV2Json(root, schemaPath);
+  validateAgainstSchema(root, requireString(schema.$id, `${schemaPath} $id`), value, strict);
 }
 
 function domainDigest(domain: string, value: unknown): string {

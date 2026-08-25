@@ -1,0 +1,13 @@
+{
+  "formatVersion": "cloud-agents-localdev-route-authority/v2",
+  "operationId": "managedAgentCreateProjectDurable",
+  "method": "POST",
+  "path": "/v1alpha1/tenants/{tenantId}/project-creations",
+  "requestIdHeader": "X-Request-ID",
+  "idempotencyHeader": "Idempotency-Key",
+  "requestProjectionSchema": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json",
+  "responseProjectionSchema": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project.schema.json",
+  "legacyRouteDescriptor": "golden/durable-project-create-route-v2.json",
+  "boundary": "localdev_loopback_only",
+  "externalEffects": "forbidden"
+}

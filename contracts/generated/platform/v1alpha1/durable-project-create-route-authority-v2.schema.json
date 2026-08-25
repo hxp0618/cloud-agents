@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-route-authority-v2.schema.json",
+  "title": "DurableProjectCreateRouteAuthorityV2",
+  "description": "Versioned localdev-only route authority for the durable project create successor. It does not expose a public HTTP surface.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "operationId",
+    "method",
+    "path",
+    "requestIdHeader",
+    "idempotencyHeader",
+    "requestProjectionSchema",
+    "responseProjectionSchema",
+    "legacyRouteDescriptor",
+    "boundary",
+    "externalEffects"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-localdev-route-authority/v2" },
+    "operationId": { "const": "managedAgentCreateProjectDurable" },
+    "method": { "const": "POST" },
+    "path": { "const": "/v1alpha1/tenants/{tenantId}/project-creations" },
+    "requestIdHeader": { "const": "X-Request-ID" },
+    "idempotencyHeader": { "const": "Idempotency-Key" },
+    "requestProjectionSchema": {
+      "const": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json"
+    },
+    "responseProjectionSchema": {
+      "const": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project.schema.json"
+    },
+    "legacyRouteDescriptor": { "const": "golden/durable-project-create-route-v2.json" },
+    "boundary": { "const": "localdev_loopback_only" },
+    "externalEffects": { "const": "forbidden" }
+  },
+  "x-cloud-agents-security": {
+    "transport": "localdev_loopback_only",
+    "publicHttp": "forbidden",
+    "providerEffects": "forbidden"
+  }
+}

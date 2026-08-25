@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/generated/durable-project-create-lineage-v2.schema.json",
+  "title": "DurableProjectCreateLineageV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "lineageId",
+    "sourceDigest",
+    "predecessor",
+    "fixtureManifest",
+    "durableAuthority",
+    "migration",
+    "implementationBoundary",
+    "lineageDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-project-create-lineage/v2" },
+    "lineageId": { "const": "cloud-agents/platform/durable-project-create-lineage" },
+    "sourceDigest": { "$ref": "#/$defs/sha256" },
+    "predecessor": { "$ref": "#/$defs/predecessor" },
+    "fixtureManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode", "caseCount", "caseNames"],
+      "properties": {
+        "path": { "const": "contracts/platform/v1alpha1/fixtures/manifest-v2.json" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "const": "100644" },
+        "caseCount": { "const": 6 },
+        "caseNames": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+        }
+      }
+    },
+    "durableAuthority": { "$ref": "#/$defs/durableAuthority" },
+    "migration": { "$ref": "#/$defs/migration" },
+    "implementationBoundary": { "$ref": "#/$defs/boundary" },
+    "lineageDigest": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "enum": ["100644", "100755"] }
+      }
+    },
+    "artifactWithManifestDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode", "manifestDigest"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "enum": ["100644", "100755"] },
+        "manifestDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "artifactWithSchemaBundleDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode", "schemaBundleDigest"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "enum": ["100644", "100755"] },
+        "schemaBundleDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "predecessorArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode", "gitBlobSha1"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "const": "100644" },
+        "gitBlobSha1": { "$ref": "#/$defs/sha1" }
+      }
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generationLock",
+        "durableRegistryV1",
+        "durableProfileV1",
+        "durableSourceV1",
+        "migrationsV1"
+      ],
+      "properties": {
+        "generationLock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "formatVersion",
+            "status",
+            "commitSha1",
+            "treeSha1",
+            "gitBlobSha1",
+            "sha256",
+            "sizeBytes",
+            "mode"
+          ],
+          "properties": {
+            "path": { "const": "contracts/generation.lock.json" },
+            "formatVersion": { "const": "cloud-agents-platform-contract-generation-lock/v2" },
+            "status": { "const": "SUCCESSOR_ASSEMBLED_REVIEW_BOUND" },
+            "commitSha1": { "$ref": "#/$defs/sha1" },
+            "treeSha1": { "$ref": "#/$defs/sha1" },
+            "gitBlobSha1": { "$ref": "#/$defs/sha1" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "sizeBytes": { "type": "integer", "minimum": 0 },
+            "mode": { "const": "100644" }
+          }
+        },
+        "durableRegistryV1": { "$ref": "#/$defs/predecessorArtifact" },
+        "durableProfileV1": { "$ref": "#/$defs/predecessorArtifact" },
+        "durableSourceV1": { "$ref": "#/$defs/predecessorArtifact" },
+        "migrationsV1": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/predecessorArtifact" }
+        }
+      }
+    },
+    "durableAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "profile",
+        "legacyRoute",
+        "routeAuthority",
+        "projectionFixture",
+        "schemas",
+        "generators",
+        "output",
+        "goOutput",
+        "priorRegistry"
+      ],
+      "properties": {
+        "source": { "$ref": "#/$defs/artifact" },
+        "profile": { "$ref": "#/$defs/artifact" },
+        "legacyRoute": { "$ref": "#/$defs/artifact" },
+        "routeAuthority": { "$ref": "#/$defs/artifact" },
+        "projectionFixture": { "$ref": "#/$defs/artifact" },
+        "schemas": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/artifact" }
+        },
+        "generators": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/artifact" }
+        },
+        "output": { "$ref": "#/$defs/artifact" },
+        "goOutput": { "$ref": "#/$defs/artifact" },
+        "priorRegistry": { "$ref": "#/$defs/predecessorArtifact" }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sql",
+        "predecessorCatalog",
+        "catalog",
+        "manifest",
+        "schemaBundle",
+        "predecessorArchive"
+      ],
+      "properties": {
+        "id": { "const": "000013" },
+        "sql": { "$ref": "#/$defs/artifact" },
+        "predecessorCatalog": { "$ref": "#/$defs/artifact" },
+        "catalog": { "$ref": "#/$defs/artifact" },
+        "manifest": { "$ref": "#/$defs/artifactWithManifestDigest" },
+        "schemaBundle": { "$ref": "#/$defs/artifactWithSchemaBundleDigest" },
+        "predecessorArchive": { "$ref": "#/$defs/artifactWithSchemaBundleDigest" }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionDatabaseWrites",
+        "httpSurface",
+        "p2Surface",
+        "providerSideEffects",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "productionDatabaseWrites": { "const": "NOT_AUTHORIZED" },
+        "httpSurface": { "const": "NOT_IMPLEMENTED" },
+        "p2Surface": { "const": "NOT_IMPLEMENTED" },
+        "providerSideEffects": { "const": "FORBIDDEN" },
+        "deployment": { "const": "NOT_AUTHORIZED" },
+        "publication": { "const": "NOT_AUTHORIZED" },
+        "gateStatus": { "const": "ALL_GATES_OPEN" }
+      }
+    }
+  }
+}

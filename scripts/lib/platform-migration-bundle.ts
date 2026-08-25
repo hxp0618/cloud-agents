@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 
 import {
   canonicalizeMigrationJson,
@@ -65,6 +65,28 @@ export type SchemaAncestorArtifact = {
   readonly path: string;
   readonly bytes: Uint8Array;
 };
+
+/**
+ * Exact checked-in artifact identity used by the durable Project-create
+ * successor closure.  This deliberately carries only digest/size metadata;
+ * it is an observation, not a writer or a lock authority.
+ */
+export type DurableProjectCreateMigrationArtifact = Readonly<{
+  path: string;
+  mode: "100644";
+  sizeBytes: number;
+  sha256: string;
+}>;
+
+export type DurableProjectCreateMigrationClosure = Readonly<{
+  migrationId: "000013";
+  sql: DurableProjectCreateMigrationArtifact;
+  predecessorCatalog: DurableProjectCreateMigrationArtifact;
+  catalog: DurableProjectCreateMigrationArtifact;
+  manifest: DurableProjectCreateMigrationArtifact & { manifestDigest: string };
+  schemaBundle: DurableProjectCreateMigrationArtifact & { schemaBundleDigest: string };
+  predecessorArchive: DurableProjectCreateMigrationArtifact & { schemaBundleDigest: string };
+}>;
 
 const ROOT = "services/control-plane/migrations";
 const MANIFEST_PATH = `${ROOT}/manifest.json`;
@@ -823,6 +845,206 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
     throw new MigrationValidationError("USTAR_SIZE", String(expected.runtimeTar.length));
   }
   return expected;
+}
+
+/**
+ * Return the exact file identities that close migration 000013's durable
+ * Project-create lineage.  The helper re-reads the checked-in manifest and
+ * generated schema bundle, verifies their self-digests, and compares every
+ * referenced artifact with its on-disk bytes.  It is intentionally read-only
+ * and does not inspect or write the generation lock.
+ */
+export function durableProjectCreateMigrationClosure(
+  root: string,
+): DurableProjectCreateMigrationClosure {
+  const manifestPath = MANIFEST_PATH;
+  const manifest = requiredObject(parseStrictMigrationJson(readClosureFile(root, manifestPath)));
+  validateManifestShape(manifest);
+  const manifestDigest = requiredString(manifest.manifest_digest, "manifest digest");
+  const manifestBody = { ...manifest };
+  delete manifestBody.manifest_digest;
+  if (migrationDigest(manifestBody) !== manifestDigest) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_MANIFEST_DIGEST", manifestPath);
+  }
+
+  const schemaBundlePath = SCHEMA_BUNDLE_PATH;
+  const schemaBundleFile = requiredObject(
+    parseStrictMigrationJson(readClosureFile(root, schemaBundlePath)),
+  );
+  assertKeys(schemaBundleFile, ["format_version", "schema_bundle", "schema_bundle_digest"]);
+  if (schemaBundleFile.format_version !== "cloud-agents-platform-schema-bundle/v1") {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_SCHEMA_BUNDLE_VERSION", schemaBundlePath);
+  }
+  const schemaBundleDigest = requiredString(
+    schemaBundleFile.schema_bundle_digest,
+    "schema bundle digest",
+  );
+  const schemaBundleBody = requiredObject(schemaBundleFile.schema_bundle);
+  if (
+    migrationDigest({
+      domain: "cloud-agents-platform-schema-bundle/v1",
+      schema_bundle: schemaBundleBody,
+    }) !== schemaBundleDigest
+  ) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_SCHEMA_BUNDLE_DIGEST", schemaBundlePath);
+  }
+  if (requiredString(schemaBundleBody.schema_head, "schema bundle head") !== "000013") {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_SCHEMA_HEAD", schemaBundlePath);
+  }
+
+  const migration = requiredArray(schemaBundleBody.migrations)
+    .map(requiredObject)
+    .find((entry) => entry.id === "000013");
+  if (!migration) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_MISSING_ENTRY", "000013");
+  }
+
+  const manifestSchemaBundle = requiredObject(manifest.schema_bundle);
+  if (requiredString(manifestSchemaBundle.schema_head, "manifest schema head") !== "000013") {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_MANIFEST_HEAD", manifestPath);
+  }
+  if (
+    requiredString(manifest.schema_bundle_digest, "manifest schema bundle digest") !==
+    schemaBundleDigest
+  ) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_MANIFEST_SCHEMA_DIGEST", manifestPath);
+  }
+  const manifestMigration = requiredArray(manifestSchemaBundle.migrations)
+    .map(requiredObject)
+    .find((entry) => entry.id === "000013");
+  if (!manifestMigration || canonicalText(manifestMigration) !== canonicalText(migration)) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_MANIFEST_ENTRY", "000013");
+  }
+
+  const artifactFromManifest = (
+    value: unknown,
+    label: string,
+    allowSchemaBundleDigest = false,
+  ): DurableProjectCreateMigrationArtifact => {
+    const sourceRecord = requiredObject(value);
+    const record =
+      allowSchemaBundleDigest && Object.hasOwn(sourceRecord, "schema_bundle_digest")
+        ? Object.fromEntries(
+            Object.entries(sourceRecord).filter(([key]) => key !== "schema_bundle_digest"),
+          )
+        : sourceRecord;
+    validateArtifactShape(record);
+    const path = requiredString(record.path, `${label} path`);
+    const mode = record.mode;
+    if (mode !== "100644") {
+      throw new MigrationValidationError("MIGRATION_CLOSURE_ARTIFACT_MODE", path);
+    }
+    const expectedSize = record.size_bytes;
+    if (
+      typeof expectedSize !== "number" ||
+      !Number.isSafeInteger(expectedSize) ||
+      expectedSize < 0
+    ) {
+      throw new MigrationValidationError("MIGRATION_CLOSURE_ARTIFACT_SIZE", path);
+    }
+    const expectedSha = requiredString(record.sha256, `${label} digest`);
+    if (!DIGEST.test(expectedSha)) {
+      throw new MigrationValidationError("MIGRATION_CLOSURE_ARTIFACT_DIGEST", path);
+    }
+    const actual = artifactRecord(path, readClosureFile(root, path));
+    if (
+      actual.path !== path ||
+      actual.mode !== mode ||
+      actual.size_bytes !== expectedSize ||
+      actual.sha256 !== expectedSha
+    ) {
+      throw new MigrationValidationError("MIGRATION_CLOSURE_ARTIFACT_DRIFT", path);
+    }
+    return { path, mode: "100644", sizeBytes: expectedSize, sha256: expectedSha };
+  };
+
+  const sql = artifactFromManifest(migration.sql_artifact, "000013 SQL artifact");
+  const predecessorCatalog = artifactFromManifest(
+    migration.predecessor_catalog_contract,
+    "000013 predecessor catalog",
+  );
+  const catalog = artifactFromManifest(migration.catalog_contract, "000013 catalog");
+
+  const runtimeArtifacts = requiredArray(manifest.runtime_artifacts).map(requiredObject);
+  const runtimeArtifactByPath = new Map(
+    runtimeArtifacts.map((record) => [
+      requiredString(record.path, "runtime artifact path"),
+      record,
+    ]),
+  );
+  const compareRuntimeArtifact = (artifact: DurableProjectCreateMigrationArtifact): void => {
+    const record = runtimeArtifactByPath.get(artifact.path);
+    if (
+      !record ||
+      canonicalText(record) !==
+        canonicalText({
+          path: artifact.path,
+          mode: artifact.mode,
+          size_bytes: artifact.sizeBytes,
+          sha256: artifact.sha256,
+        })
+    ) {
+      throw new MigrationValidationError("MIGRATION_CLOSURE_RUNTIME_ARTIFACT", artifact.path);
+    }
+  };
+  compareRuntimeArtifact(sql);
+  compareRuntimeArtifact(predecessorCatalog);
+  compareRuntimeArtifact(catalog);
+  compareRuntimeArtifact({
+    path: schemaBundlePath,
+    mode: "100644",
+    sizeBytes: readClosureFile(root, schemaBundlePath).length,
+    sha256: digestBytes(readClosureFile(root, schemaBundlePath)),
+  });
+
+  const schemaBundleArtifact: DurableProjectCreateMigrationArtifact = {
+    path: schemaBundlePath,
+    mode: "100644",
+    sizeBytes: readClosureFile(root, schemaBundlePath).length,
+    sha256: digestBytes(readClosureFile(root, schemaBundlePath)),
+  };
+  const predecessorDescriptor = requiredObject(schemaBundleBody.predecessor_schema_bundle);
+  const predecessorArchive = artifactFromManifest(
+    predecessorDescriptor,
+    "schema bundle predecessor archive",
+    true,
+  );
+  const predecessorArchiveFile = requiredObject(
+    parseStrictMigrationJson(readClosureFile(root, predecessorArchive.path)),
+  );
+  const predecessorArchiveDigest = requiredString(
+    predecessorDescriptor.schema_bundle_digest,
+    "predecessor schema bundle digest",
+  );
+  if (
+    requiredString(predecessorArchiveFile.schema_bundle_digest, "archive schema bundle digest") !==
+    predecessorArchiveDigest
+  ) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_ARCHIVE_DIGEST", predecessorArchive.path);
+  }
+  compareRuntimeArtifact(predecessorArchive);
+
+  const manifestArtifact = artifactFromManifest(
+    {
+      path: manifestPath,
+      mode: "100644",
+      size_bytes: readClosureFile(root, manifestPath).length,
+      sha256: digestBytes(readClosureFile(root, manifestPath)),
+    },
+    "migration manifest",
+  );
+  return {
+    migrationId: "000013",
+    sql,
+    predecessorCatalog,
+    catalog,
+    manifest: { ...manifestArtifact, manifestDigest },
+    schemaBundle: { ...schemaBundleArtifact, schemaBundleDigest },
+    predecessorArchive: {
+      ...predecessorArchive,
+      schemaBundleDigest: predecessorArchiveDigest,
+    },
+  };
 }
 
 export function validateCatalogStatementBindings(
@@ -3957,6 +4179,15 @@ function readExactFile(root: string, path: string): Uint8Array {
   if (!stat?.isFile() || stat.isSymbolicLink() || (stat.mode & 0o111) !== 0)
     throw new MigrationValidationError("ARTIFACT_FILE", path);
   return readFileSync(absolute);
+}
+
+function readClosureFile(root: string, path: string): Uint8Array {
+  const absolute = resolve(root, path);
+  const candidate = relative(root, absolute);
+  if (candidate === ".." || candidate.startsWith(`..${sep}`) || candidate.startsWith(sep)) {
+    throw new MigrationValidationError("MIGRATION_CLOSURE_PATH", path);
+  }
+  return readExactFile(root, path);
 }
 
 function digestBytes(bytes: Uint8Array): string {

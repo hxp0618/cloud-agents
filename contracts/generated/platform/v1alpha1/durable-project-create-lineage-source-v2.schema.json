@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/generated/durable-project-create-lineage-source-v2.schema.json",
+  "title": "DurableProjectCreateLineageSourceV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "lineageId",
+    "predecessor",
+    "fixtureManifestPath",
+    "durableAuthority",
+    "migration",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-project-create-lineage-source/v2" },
+    "lineageId": { "const": "cloud-agents/platform/durable-project-create-lineage" },
+    "predecessor": { "$ref": "#/$defs/predecessor" },
+    "fixtureManifestPath": { "const": "contracts/platform/v1alpha1/fixtures/manifest-v2.json" },
+    "durableAuthority": { "$ref": "#/$defs/durableAuthority" },
+    "migration": { "$ref": "#/$defs/migration" },
+    "implementationBoundary": { "$ref": "#/$defs/boundary" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "enum": ["100644", "100755"] }
+      }
+    },
+    "predecessorArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode", "gitBlobSha1"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mode": { "const": "100644" },
+        "gitBlobSha1": { "$ref": "#/$defs/sha1" }
+      }
+    },
+    "predecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generationLock",
+        "durableRegistryV1",
+        "durableProfileV1",
+        "durableSourceV1",
+        "migrationsV1"
+      ],
+      "properties": {
+        "generationLock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "formatVersion",
+            "status",
+            "commitSha1",
+            "treeSha1",
+            "gitBlobSha1",
+            "sha256",
+            "sizeBytes",
+            "mode"
+          ],
+          "properties": {
+            "path": { "const": "contracts/generation.lock.json" },
+            "formatVersion": { "const": "cloud-agents-platform-contract-generation-lock/v2" },
+            "status": { "const": "SUCCESSOR_ASSEMBLED_REVIEW_BOUND" },
+            "commitSha1": { "$ref": "#/$defs/sha1" },
+            "treeSha1": { "$ref": "#/$defs/sha1" },
+            "gitBlobSha1": { "$ref": "#/$defs/sha1" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "sizeBytes": { "type": "integer", "minimum": 0 },
+            "mode": { "const": "100644" }
+          }
+        },
+        "durableRegistryV1": { "$ref": "#/$defs/predecessorArtifact" },
+        "durableProfileV1": { "$ref": "#/$defs/predecessorArtifact" },
+        "durableSourceV1": { "$ref": "#/$defs/predecessorArtifact" },
+        "migrationsV1": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/predecessorArtifact" }
+        }
+      }
+    },
+    "durableAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourcePath",
+        "profilePath",
+        "legacyRoutePath",
+        "routeAuthorityPath",
+        "projectionFixturePath",
+        "schemaPaths",
+        "generatorPaths",
+        "outputPath",
+        "goOutputPath"
+      ],
+      "properties": {
+        "sourcePath": {
+          "const": "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v2.json"
+        },
+        "profilePath": {
+          "const": "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-profile-managed-agent-create-project-durable-v1alpha1.json"
+        },
+        "legacyRoutePath": {
+          "const": "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-route-v2.json"
+        },
+        "routeAuthorityPath": {
+          "const": "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-route-authority-v2.json"
+        },
+        "projectionFixturePath": {
+          "const": "contracts/platform/v1alpha1/fixtures/golden/durable-project-create-idempotency-projection.json"
+        },
+        "schemaPaths": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "generatorPaths": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "outputPath": {
+          "const": "contracts/generated/platform/v1alpha1/durable-coordination-registry-v2.json"
+        },
+        "goOutputPath": {
+          "const": "services/control-plane/internal/coordination/registry_v2_generated.go"
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sqlPath",
+        "manifestPath",
+        "schemaBundlePath",
+        "catalogPath",
+        "archivePath"
+      ],
+      "properties": {
+        "id": { "const": "000013" },
+        "sqlPath": {
+          "const": "services/control-plane/migrations/000013_add_durable_project_create_writer.sql"
+        },
+        "manifestPath": { "const": "services/control-plane/migrations/manifest.json" },
+        "schemaBundlePath": { "const": "services/control-plane/migrations/schema-bundle.json" },
+        "catalogPath": { "const": "services/control-plane/migrations/catalog/schema-000013.json" },
+        "archivePath": {
+          "const": "services/control-plane/migrations/archive/54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907.schema-bundle.json"
+        }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionDatabaseWrites",
+        "httpSurface",
+        "p2Surface",
+        "providerSideEffects",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "productionDatabaseWrites": { "const": "NOT_AUTHORIZED" },
+        "httpSurface": { "const": "NOT_IMPLEMENTED" },
+        "p2Surface": { "const": "NOT_IMPLEMENTED" },
+        "providerSideEffects": { "const": "FORBIDDEN" },
+        "deployment": { "const": "NOT_AUTHORIZED" },
+        "publication": { "const": "NOT_AUTHORIZED" },
+        "gateStatus": { "const": "ALL_GATES_OPEN" }
+      }
+    }
+  }
+}

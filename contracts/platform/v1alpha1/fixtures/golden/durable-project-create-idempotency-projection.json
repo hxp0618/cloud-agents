@@ -1,0 +1,15 @@
+{
+  "operationId": "managedAgentCreateProjectDurable",
+  "path": {
+    "tenantId": "Tenant-A"
+  },
+  "body": {
+    "name": "project-alpha",
+    "organizationRef": {
+      "namespace": "cloud-agents",
+      "kind": "organization",
+      "id": "organization-alpha"
+    },
+    "displayName": "Project Alpha"
+  }
+}

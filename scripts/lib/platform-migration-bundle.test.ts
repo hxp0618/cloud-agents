@@ -1,10 +1,12 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import {
   buildMigrationBundle,
+  durableProjectCreateMigrationClosure,
   durableCoordinationHistoricalRegistrySnapshot,
   migrationLedgerProjection,
   migrationStatementSourceDescriptors,
@@ -42,6 +44,59 @@ describe("migration bundle bootstrap", () => {
         bundle.files.get("services/control-plane/migrations/catalog/schema-000012.json"),
       ),
     ).toContain('"runtime_introspection_status": "NOT_IMPLEMENTED"');
+  });
+
+  it("returns the exact 000013 closure and rejects artifact drift or absence", () => {
+    const closure = durableProjectCreateMigrationClosure(root);
+    expect(closure.migrationId).toBe("000013");
+    expect(closure.sql.path).toContain("000013_add_durable_project_create_writer.sql");
+    expect(closure.catalog.path).toContain("catalog/schema-000013.json");
+    expect(closure.manifest.manifestDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(closure.schemaBundle.schemaBundleDigest).toBe(
+      "sha256:c7e08e81b463d04dd267438ac636811200586d5d84d8cb2e8d18799bd2c5faca",
+    );
+    expect(closure.predecessorArchive.path).toContain(
+      "archive/54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907.schema-bundle.json",
+    );
+
+    const temporaryRoot = mkdtempSync(`${tmpdir()}/migration-closure-`);
+    const copied = [
+      "services/control-plane/migrations/manifest.json",
+      "services/control-plane/migrations/schema-bundle.json",
+      "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
+      "services/control-plane/migrations/catalog/schema-000012.json",
+      "services/control-plane/migrations/catalog/schema-000013.json",
+      "services/control-plane/migrations/archive/54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907.schema-bundle.json",
+    ];
+    for (const relative of copied) {
+      const destination = resolve(temporaryRoot, relative);
+      mkdirSync(dirname(destination), { recursive: true });
+      cpSync(resolve(root, relative), destination);
+    }
+    try {
+      const sqlPath = resolve(
+        temporaryRoot,
+        "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
+      );
+      expect(() => durableProjectCreateMigrationClosure(temporaryRoot)).not.toThrow();
+
+      writeFileSync(sqlPath, `${readFileSync(sqlPath, "utf8")}\n`);
+      expect(() => durableProjectCreateMigrationClosure(temporaryRoot)).toThrow(
+        /MIGRATION_CLOSURE_ARTIFACT_DRIFT/u,
+      );
+
+      cpSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
+        ),
+        sqlPath,
+      );
+      rmSync(sqlPath);
+      expect(() => durableProjectCreateMigrationClosure(temporaryRoot)).toThrow(/ARTIFACT_FILE/u);
+    } finally {
+      rmSync(temporaryRoot, { recursive: true, force: true });
+    }
   });
 
   it("detects generated source drift", () => {

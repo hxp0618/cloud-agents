@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-route-legacy-v1.schema.json",
+  "title": "DurableProjectCreateLegacyRouteV1",
+  "description": "Frozen route descriptor consumed by the v2 registry generator; it is not a public route authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "operationId",
+    "method",
+    "path",
+    "idempotencyHeader",
+    "boundary",
+    "externalEffects"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-localdev-route/v1" },
+    "operationId": { "const": "managedAgentCreateProjectDurable" },
+    "method": { "const": "POST" },
+    "path": { "const": "/v1alpha1/tenants/{tenantId}/project-creations" },
+    "idempotencyHeader": { "const": "Idempotency-Key" },
+    "boundary": { "const": "localdev_loopback_only" },
+    "externalEffects": { "const": "forbidden" }
+  }
+}
