@@ -1,0 +1,39 @@
+{
+  "config": {
+    "web_search": "disabled",
+    "features": {
+      "apps": false,
+      "enable_mcp_apps": false,
+      "executor_capability_discovery": false,
+      "external_agent_memory_import": false,
+      "hooks": true,
+      "in_app_browser": false,
+      "plugin_sharing": false,
+      "plugins": false,
+      "remote_plugin": false,
+      "shell_snapshot": false,
+      "skill_mcp_dependency_install": false,
+      "unified_exec": false,
+      "browser_use": false,
+      "browser_use_external": false,
+      "browser_use_full_cdp_access": false,
+      "code_mode": false,
+      "code_mode_buffered_exec": false,
+      "code_mode_host": false,
+      "code_mode_only": false,
+      "computer_use": false,
+      "standalone_web_search": false,
+      "web_search_cached": false,
+      "web_search_request": false
+    },
+    "mcp_servers": {},
+    "shell_environment_policy": {
+      "inherit": null,
+      "ignore_default_excludes": null,
+      "exclude": null,
+      "set": null,
+      "include_only": null,
+      "experimental_use_profile": null
+    }
+  }
+}
