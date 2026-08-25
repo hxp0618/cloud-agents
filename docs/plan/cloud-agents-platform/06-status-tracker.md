@@ -555,6 +555,12 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       重复写入检查均已通过既有 focused evidence 与一次本地 PostgreSQL smoke；v1 claim-only profile、历史 generated
       authority bytes、provider/P2/生产数据库/部署/发布边界均保持不变。详见
       [`milestone record`](../p1/durable-project-create-vertical-slice-20260825.md)。
+- [x] 上述固定树 `a6142a0` 的
+      [bounded independent review](../p1/durable-project-create-vertical-slice-independent-review-20260825.md)
+      返回 `REQUEST_CHANGES, P0=0/P1=2/P2=1`：v2 profile/route/generator/output 尚未进入 canonical
+      fixture/generation-lock authority，且 `000013` 尚未进入 contract-lock 的 exact SQL source closure；MD5
+      identifier namespace 另记为 P2。候选、历史 evidence 与实现均未修改；下一最小里程碑仅修复 versioned successor
+      lineage/lock closure，再做 fresh review。所有 aggregate Gate 保持 OPEN。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
