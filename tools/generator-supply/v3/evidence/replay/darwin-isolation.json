@@ -1,0 +1,185 @@
+{
+  "archiveSnapshotValidatedBeforeExtraction": true,
+  "authorityDigestsCapturedBeforeChild": true,
+  "authorityFilesReadOnlyToCandidate": true,
+  "boundaryModel": "SEPARATE_RUN_BOUNDARY_STDOUT_TRUSTED_PARENT_V1",
+  "candidateReportFilesystemAccess": false,
+  "denyDefaultSandbox": true,
+  "detachedDescendantCrossBoundaryReadDenied": true,
+  "detachedDescendantResourceLeakNotClaimed": true,
+  "detachedDescendantsCrossRunReadDenied": false,
+  "executor": "authorized_darwin_arm64_executor",
+  "externalSupplyReadOnly": true,
+  "extractionRootsInitiallyAbsent": true,
+  "finalEvidenceUnavailableWithinEachBoundary": true,
+  "formatVersion": "cloud-agents-generator-replay-isolation/v1",
+  "freshPerReplayCaches": true,
+  "independentArchiveExtractions": 2,
+  "inputTreeFiles": 1484,
+  "inputTreeManifestAlgorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+  "inputTreeManifestSha256": "sha256:957dd7fd85168d4cffcfb12911db087d10ba8f49ad3b8bab6ea61ccefec849e2",
+  "mechanism": "SANDBOX_EXEC_DENY_DEFAULT_PER_RUN_BOUNDARY_V1",
+  "networkDenied": true,
+  "nodeModulesBindingReadOnly": true,
+  "notGateClosure": true,
+  "platform": "darwin-arm64",
+  "probes": {
+    "a": {
+      "archive": {
+        "command": "touch generator-supply://core-projection/archive",
+        "exitCode": 1,
+        "stderr": "touch: core-generator-input-projection.tar: Operation not permitted",
+        "stdout": ""
+      },
+      "detachedDescendant": {
+        "command": "fork setsid fork then read trusted-parent sentinel",
+        "exitCode": 0,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "final": {
+        "command": "read trusted-parent final evidence sentinel",
+        "exitCode": 1,
+        "stderr": "cat: generator-supply:\\/\\/trusted-parent\\/final-evidence-sentinel: Operation not permitted",
+        "stdout": ""
+      },
+      "node": {
+        "command": "node net.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "EPERM:connect EPERM 1.1.1.1:443 - Local (0.0.0.0:0)",
+        "stdout": ""
+      },
+      "nodeModules": {
+        "command": "unlink or write the bound node_modules authority",
+        "exitCode": 1,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "nodeModulesRelink": {
+        "command": "replace the bound node_modules symlink",
+        "exitCode": 1,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "posixSpawnDetached": {
+        "command": "posix_spawn setsid child then read trusted-parent sentinel",
+        "exitCode": 0,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "python": {
+        "command": "python socket.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import socket; s=socket.socket(); s.settimeout(2); s.connect((\"1.1.1.1\",443))\n                                                       ~~~~~~~~~^^^^^^^^^^^^^^^^^\nPermissionError: [Errno 1] Operation not permitted",
+        "stdout": ""
+      },
+      "sibling": {
+        "command": "test sibling replay root absent",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "supply": {
+        "command": "touch generator-supply://external-supply/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "touch: codex-generator-supply-read-only-probe: Operation not permitted",
+        "stdout": ""
+      }
+    },
+    "b": {
+      "archive": {
+        "command": "touch generator-supply://core-projection/archive",
+        "exitCode": 1,
+        "stderr": "touch: core-generator-input-projection.tar: Operation not permitted",
+        "stdout": ""
+      },
+      "detachedDescendant": {
+        "command": "fork setsid fork then read trusted-parent sentinel",
+        "exitCode": 0,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "final": {
+        "command": "read trusted-parent final evidence sentinel",
+        "exitCode": 1,
+        "stderr": "cat: generator-supply:\\/\\/trusted-parent\\/final-evidence-sentinel: Operation not permitted",
+        "stdout": ""
+      },
+      "node": {
+        "command": "node net.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "EPERM:connect EPERM 1.1.1.1:443 - Local (0.0.0.0:0)",
+        "stdout": ""
+      },
+      "nodeModules": {
+        "command": "unlink or write the bound node_modules authority",
+        "exitCode": 1,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "nodeModulesRelink": {
+        "command": "replace the bound node_modules symlink",
+        "exitCode": 1,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "posixSpawnDetached": {
+        "command": "posix_spawn setsid child then read trusted-parent sentinel",
+        "exitCode": 0,
+        "stderr": "errno=1",
+        "stdout": ""
+      },
+      "python": {
+        "command": "python socket.connect 1.1.1.1:443",
+        "exitCode": 1,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import socket; s=socket.socket(); s.settimeout(2); s.connect((\"1.1.1.1\",443))\n                                                       ~~~~~~~~~^^^^^^^^^^^^^^^^^\nPermissionError: [Errno 1] Operation not permitted",
+        "stdout": ""
+      },
+      "sibling": {
+        "command": "test sibling replay root absent",
+        "exitCode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "supply": {
+        "command": "touch generator-supply://external-supply/codex-generator-supply-read-only-probe",
+        "exitCode": 1,
+        "stderr": "touch: codex-generator-supply-read-only-probe: Operation not permitted",
+        "stdout": ""
+      }
+    }
+  },
+  "processLifetimeClosure": "NOT_CLAIMED_RESOURCE_ONLY_RESIDUAL",
+  "projectionArchiveMemberManifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+  "projectionArchiveMemberManifestSha256": "sha256:96d796cc654086c2e2fa32d461f8a103ebf4aaab479fa8364452468cf1b69997",
+  "projectionArchiveMembers": 1680,
+  "projectionArchiveReadOnly": true,
+  "projectionArchiveSha256": "sha256:7c3b7ad79b74c350177a4af517156e7ddfb5bc8497f2571f3f4efd66fcf05145",
+  "projectionArchiveSizeBytes": 48486400,
+  "projectionTreeSha": "57f87217ed39eb295b629595fd99da7a9bb075ce",
+  "replayAuthoritySha256": {
+    "archiveInspector": "sha256:db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31",
+    "pathHelper": "sha256:4cde1599b7e909ef0070b81090d40c2e2c7c1c43af64cebd3c53391489a6fccf",
+    "runner": "sha256:759c3b6578d3ec5c818c9ce5bc92b2d560727363e32c833494823a296ef555fd",
+    "wrapper": "sha256:9acfc4163fead4dace517c069b8b0e74aaacc859e8cdd2dee17b84182d0be990"
+  },
+  "reportsEqualInputProjection": true,
+  "reportsWrittenByTrustedParent": true,
+  "runAWriteRootDestroyedBeforeRunB": true,
+  "runReportSha256": {
+    "a": "sha256:ff7ab022ca4cfee9bc71a3f6ae0a0caba3031c1cad3affdf458b1a7aefe5aac8",
+    "b": "sha256:9d082fb4b8af707243407f49dc9edfc7cafbde368782b7c5896894ee9e2e35b4"
+  },
+  "runnerChildStdoutRedirectedToStderr": true,
+  "runnerEnvironmentPolicy": "ENV_I_MINIMAL_V1",
+  "runnerEnvironmentSanitized": true,
+  "runnerStderrCaptureBoundBytes": 1048576,
+  "runnerStdoutFrame": "CLOUD_AGENTS_GENERATOR_REPLAY_REPORT_V1_LENGTH_PREFIXED_MAX_1M_RAW_FILE",
+  "sameBoundaryProbesAndReplay": true,
+  "sameProcessGroupEmptyAfterExit": "NOT_CLAIMED",
+  "separateProcessGroupPerReplay": true,
+  "siblingReplayRootAbsentWithinEachBoundary": true,
+  "wrapperPolicy": "VERSIONED_ISOLATION_WRAPPER_V3",
+  "wrapperSha256": "sha256:9acfc4163fead4dace517c069b8b0e74aaacc859e8cdd2dee17b84182d0be990",
+  "writeAuthorityLimitedToDisposableRunRoot": true
+}
