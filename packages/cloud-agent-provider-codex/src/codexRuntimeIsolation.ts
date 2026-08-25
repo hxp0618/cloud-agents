@@ -145,22 +145,35 @@ export function isCodexRuntimeIsolationConfigAttested(
       return false;
   }
   const policy = asRecord(config?.shell_environment_policy);
-  if (!policy) return expectedExcluded.length === 0;
+  return isShellEnvironmentPolicyAttested(policy, expectedExcluded);
+}
+function isShellEnvironmentPolicyAttested(
+  policy: Record<string, unknown> | undefined,
+  expectedExcluded: ReadonlyArray<string>,
+): boolean {
+  const normalizedExpected = expectedExcluded.map((name) => name.toUpperCase());
+  if (
+    new Set(normalizedExpected).size !== normalizedExpected.length ||
+    expectedExcluded.some((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
+  )
+    return false;
+  if (!policy) return normalizedExpected.length === 0;
   if (
     policy.inherit != null ||
     policy.set != null ||
     policy.include_only != null ||
     policy.experimental_use_profile != null ||
-    (policy.ignore_default_excludes != null && policy.ignore_default_excludes !== false) ||
-    !Array.isArray(policy.exclude)
+    (policy.ignore_default_excludes != null && policy.ignore_default_excludes !== false)
   )
     return false;
-  const actualExclusions = new Set(
-    (policy.exclude as unknown[])
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.toUpperCase()),
-  );
-  return expectedExcluded.every((name) => actualExclusions.has(name.toUpperCase()));
+  if (policy.exclude == null) return normalizedExpected.length === 0;
+  if (
+    !Array.isArray(policy.exclude) ||
+    !policy.exclude.every((value): value is string => typeof value === "string")
+  )
+    return false;
+  const actualExclusions = new Set(policy.exclude.map((value) => value.toUpperCase()));
+  return normalizedExpected.every((name) => actualExclusions.has(name));
 }
 function isLoopbackMcpUrl(value: string): boolean {
   try {

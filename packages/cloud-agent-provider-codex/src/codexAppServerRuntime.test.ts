@@ -1379,7 +1379,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     send({ id: message.id, result: { data: [{ cwd: process.cwd(), hooks: [hook("preToolUse")], warnings: [], errors: [] }] } });
   } else if (message.method === "config/read") {
     if ((scenario !== "credential-environment" && scenario !== "ambient-hook") || !configuredHookCommand) process.exit(99);
-    send({ id: message.id, result: { config: { web_search: "disabled", features: runtimeIsolationFeatures, mcp_servers: {} } } });
+    send({ id: message.id, result: { config: { web_search: "disabled", features: runtimeIsolationFeatures, mcp_servers: {}, shell_environment_policy: { inherit: null, ignore_default_excludes: null, exclude: null, set: null, include_only: null, experimental_use_profile: null } } } });
   } else if (message.method === "thread/resume") {
     if ((scenario === "credential-environment" || scenario === "ambient-hook") && message.params?.config?.bypass_hook_trust !== true) process.exit(98);
     if (scenario === "compact-rebuild") {
