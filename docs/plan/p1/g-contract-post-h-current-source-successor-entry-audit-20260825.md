@@ -4,7 +4,7 @@ Date: 2026-08-25 Asia/Shanghai
 
 ## Result
 
-`PROCEED TO FIXED DESIGN REVIEW ONLY`
+`SUPERSEDING FIXED DESIGN REVIEW REQUIRED`
 
 The fixed post-H baseline is internally consistent, but it is not a current
 `G-CONTRACT` phase record and it does not authorize a Gate transition. The
@@ -13,10 +13,12 @@ replays the complete post-H source, assembles generator-supply v3, obtains an
 independent supply review, and only then generates a current-source R5 phase
 candidate for its own detached review and binding.
 
-This audit does not authorize Slice A implementation until the exact ADR-0030
-candidate has received an independent fixed-object review. It performs no
-runtime, database, HTTP, provider, deployment, publication, signing, release,
-or Gate action.
+The first ADR-0030 candidate `78ac538...` received `REJECT, P0=0 / P1=3 /
+P2=0` at review commit `11513d8...`. This superseding audit/ADR pair repairs
+the lock-transition, terminal-review timing, and review-only-child findings.
+It still does not authorize Slice A until the repaired fixed object receives an
+independent approval. It performs no runtime, database, HTTP, provider,
+deployment, publication, signing, release, or Gate action.
 
 ## Fixed entry identity
 
@@ -32,6 +34,17 @@ or Gate action.
   `de62a85390e58736a5fef8272878b821415b4180948437e54edb8628e005ff53`;
 - current Gate-criteria SHA-256:
   `4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994`.
+
+The rejected design lineage is preserved:
+
+- candidate:
+  `78ac538725b6bb000d0963021119b852df784248`;
+- candidate tree:
+  `0d3a744390a63792de002d33c989977aa6c84c09`;
+- rejection review commit:
+  `11513d8e6ae87d2c3352e73b0a471d2834a5af19`;
+- review document SHA-256:
+  `05b4b0032accbe121eb155ffe9eea9cb1b9ea2ade0c1ba631506e8b94c340f14`.
 
 The audited P0 worktree was clean and its remote branch was exact when the
 post-H fixed-object review was completed. The unrelated dirty portable-runtime
@@ -105,8 +118,10 @@ The renderer validates a strict typed phase-record object before producing the
 Markdown bytes. The checker rebuilds the object from fixed inputs and compares
 the complete rendered bytes. No companion candidate JSON is persisted: the
 versioned semantic source is the machine-readable input authority, while the
-post-review binding registry is the machine-readable effective-state authority.
-This avoids creating JSON/Markdown dual authority.
+post-review binding registry is the machine-readable pre-terminal binding
+authority. A separate versioned read-only checker consumes the later terminal
+review and emits the terminal candidate state only to stdout. This avoids both
+JSON/Markdown dual authority and a tracked post-review recursion.
 
 ## Required effective-state rule
 
@@ -117,8 +132,9 @@ state must be computed by a versioned, read-only checker:
 effective candidate state = verify(
   frozen source and projection,
   immutable supply-v3 assembly and review,
+  immutable ASSEMBLED lock snapshot,
   immutable R5 record and review,
-  detached binding tuple and registry,
+  detached binding tuple, registry, and authorized PHASE_BOUND lock successor,
   terminal final review,
   current invalidation inputs
 )
@@ -128,10 +144,22 @@ The terminal state authorized by this successor is
 `REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE`. It is not `VERIFIED`, is not a Gate
 signature, and does not change `G-CONTRACT` from `IN PROGRESS`.
 
+The Slice J review document reviews only the fixed Slice I candidate; it cannot
+claim a terminal state that depends on its own future commit. After the
+single-path review child exists, the read-only checker verifies its exact
+parent/path/blob/SHA/verdict/diff and may emit the terminal result. It writes no
+tracked output.
+
 The checker must fail closed for orphan review, partial tuple/output, wrong Git
-parentage, reordered slots, unknown fields, path aliases, symlinks, self-review,
-review verdict drift, stale projection/profile/lock, tracker promotion, or any
-unrecognized topology.
+parentage, merge parent, reordered slots, unknown fields, path aliases,
+symlinks, self-review, extra review-child paths, rename/copy/mode drift, review
+verdict drift, stale projection/profile, an unauthorized lock transition,
+tracker promotion, or any unrecognized topology.
+
+R5 binds the immutable Slice E `ASSEMBLED` lock commit/tree/blob/SHA/size/state.
+The Slice I `PHASE_BOUND` lock binds that snapshot plus the R5 review and
+tuple/registry bytes. This one exact transition is an authorized successor, not
+R5 invalidation. Every other lock mutation remains invalidating drift.
 
 ## Exact successor late-bound set
 
@@ -199,6 +227,7 @@ design review
   -> independent R5 review
   -> detached tuple/registry and phase-bound lock
   -> terminal independent binding review
+  -> read-only terminal state verification with no tracked output
 ```
 
 Fresh Darwin arm64 and Linux amd64 A/B replay is required. Linux arm64 remains
@@ -230,8 +259,10 @@ shutdown/restart mechanism accurately.
 
 ## Entry verdict
 
-Proceed to a fixed-object independent review of ADR-0030. If and only if that
-review returns `APPROVE, P0=0 / P1=0 / P2=0`, the continuing Platform goal
-authority permits the ordered local/native implementation without another
-per-slice approval. That authority ends at the terminal binding review and
-does not extend to a Gate transition or any external side effect.
+Preserve the rejected `78ac538... -> 11513d8...` lineage and review this
+append-only superseding ADR-0030 object. If and only if the repaired review
+returns `APPROVE, P0=0 / P1=0 / P2=0`, the continuing Platform goal authority
+permits the ordered local/native implementation without another per-slice
+approval. That authority ends after the terminal review-only child and its
+read-only state check; it does not extend to a Gate transition or any external
+side effect.

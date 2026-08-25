@@ -1,12 +1,16 @@
 # ADR-0030: P1 G-CONTRACT current-source phase successor
 
 - Status: Accepted under the continuing Platform goal execution authority on
-  2026-08-25; Slice A entry requires an approving fixed-object design review
+  2026-08-25; candidate `78ac538...` was rejected with three P1 findings and
+  Slice A entry requires an approving review of this superseding fixed object
 - Date: 2026-08-25
 - Decision ID: D-053
 - Depends on: ADR-0029/D-052,
   `g-contract-detached-review-binding-independent-review-20260824.md`, and
   `g-contract-post-h-current-source-successor-entry-audit-20260825.md`
+- Preserves rejected candidate/review:
+  `78ac538725b6bb000d0963021119b852df784248` /
+  `g-contract-current-source-phase-successor-design-independent-review-20260825.md`
 - Decision owner: hxp0618
 - Proposed implementation executor: Codex
 - Gate effect: none; `G-CONTRACT`, `G-SUPPLY-CHAIN`, and every phase and
@@ -56,9 +60,12 @@ an immutable candidate, after which a detached tuple/registry binds the supply
 and R5 review lineages. A final independent review terminates the chain. No
 tracked output consumes that final review.
 
-The highest derived state authorized by D-053 is
-`REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE`. It is not `VERIFIED`, is not a Gate
-closure signature, and is not authority to edit the tracker to a closed state.
+The Slice I registry may report only
+`PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT`. After the Slice J review-only child
+exists, a versioned read-only verifier may emit
+`REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE` to stdout. It is not `VERIFIED`, is not
+a Gate closure signature, and is not authority to edit the tracker to a closed
+state.
 
 ## Fixed baseline
 
@@ -126,6 +133,11 @@ builder/checker. Its CLI is
 `scripts/generate-platform-g-contract-phase-record.ts`. A generic arbitrary-Gate
 writer is forbidden.
 
+The same pre-replay authority includes
+`scripts/lib/platform-g-contract-phase-state.ts`, its focused tests, and the
+read-only CLI `scripts/check-platform-g-contract-phase-state.ts`. The state
+checker has no write mode and no tracked output path.
+
 The builder constructs and schema-validates one typed phase-record object, then
 deterministically renders the canonical Markdown record:
 
@@ -135,8 +147,8 @@ docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R
 
 The record is the sole persisted R5 candidate. There is no companion candidate
 JSON. The versioned source is the machine-readable semantic input, and the
-later binding registry is the machine-readable effective-state output. The
-checker rebuilds the typed object from fixed inputs and compares the entire
+later binding registry is the machine-readable pre-terminal binding output.
+The checker rebuilds the typed object from fixed inputs and compares the entire
 Markdown byte sequence, so it never treats hand-edited prose as authority.
 
 The candidate writer must be explicit, exclusive-create, deterministic, and
@@ -153,7 +165,9 @@ R5 must bind:
 - the assembled supply-v3 candidate commit/tree/diff;
 - exact supply-v3 manifest/profile bytes;
 - supply-v3 review commit/tree/parent/path/SHA/verdict;
-- the current contract/SDK/toolchain/descriptor/generation-lock inputs;
+- the current contract/SDK/toolchain/descriptor inputs;
+- the immutable Slice E `ASSEMBLED` generation-lock commit, tree, blob,
+  SHA-256, size, format, and state;
 - every `G-CONTRACT` exit row from
   `05-gates-and-acceptance.md` and its exact criteria-file SHA-256;
 - explicit invalidation rules for every bound input.
@@ -186,17 +200,30 @@ The tuple has two ordered, domain-separated review slots:
 2. G-CONTRACT R5 candidate -> R5 review.
 
 For each slot it binds candidate commit/tree/parent/fixed diff, exact review
-child commit/tree/parent/path/blob/SHA-256, structured verdict and P0/P1/P2
-counts, candidate-path absence in the reviewed parent, and reviewer separation.
+child commit/tree/parent/path/blob/SHA-256, a domain-separated review diff
+SHA-256, structured verdict and P0/P1/P2 counts, exact review-path absence in
+the candidate tree, and reviewer separation. Each review commit must have one
+parent and change exactly one path: an added regular non-symlink `100644` blob
+at that review path. Merge parents, rename/copy, mode drift, deletion,
+modification of an existing path, or any additional path fail closed.
 
-The registry derives a machine-readable effective candidate view without
-modifying R5. It must not identify itself as a canonical contract profile,
-phase record, Gate signature, or release approval. It is excluded from
-bootstrap, contract/SDK discovery, core outputs, and its own review authority.
+The registry derives a machine-readable pre-terminal binding view without
+modifying R5. Its state is exactly
+`PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT`; it cannot claim the later terminal
+review is present or verified. It must not identify itself as a canonical
+contract profile, phase record, Gate signature, or release approval. It is
+excluded from bootstrap, contract/SDK discovery, core outputs, and its own
+review authority.
 
-The final binding review is terminal. A read-only verifier may consume it to
-report `REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE`, but neither the tuple, registry,
-lock, R5, nor tracker is regenerated afterward.
+The final binding review is terminal. The Slice J reviewer reviews only the
+fixed Slice I candidate and must not claim a terminal result that depends on
+the review's own future commit. After that direct review-only child is fixed,
+`scripts/check-platform-g-contract-phase-state.ts` validates its exact
+commit/parent/tree, single added path, blob/SHA-256, review diff, structured
+verdict, and current invalidation inputs before emitting
+`REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE` to stdout. It writes no file. Neither
+the tuple, registry, lock, R5, tracker, nor any receipt is regenerated
+afterward.
 
 ### Generation-lock v3
 
@@ -218,6 +245,14 @@ and rename safely, return success without output for exact current bytes, and
 fail closed for stale, reordered, partial, candidate-only, review-only, or
 tuple-ready/output-absent states. Historical assembled lock bytes remain fixed
 in their Git commit when the later phase-bound lock advances the live path.
+
+The `PHASE_BOUND` document must bind the exact historical `ASSEMBLED`
+commit/tree/blob/SHA-256/size/state plus the R5 candidate/review and
+tuple/registry bytes. The read-only effective-state verifier recognizes only
+this exact `ASSEMBLED -> PHASE_BOUND` successor relation as a valid lock
+advance. It does not compare R5's assembled snapshot to the live path as if
+they had to remain byte-identical. Any skipped state, alternate predecessor,
+unexpected byte, or later lock mutation is invalidating drift.
 
 ## Immutable predecessor fence
 
@@ -300,15 +335,26 @@ PRE_CANDIDATE_ABSENT
 
 Only the exact next transition may write. Output without input, review without
 candidate, registry without tuple, incomplete/reordered slots, wrong review
-parent, self-review, candidate path present in the reviewed parent, stale
-output, final-review path present before its fixed parent, symlink, unknown
-field, or any unrecognized combination is a hard error.
+parent, self-review, review path present in the candidate parent, stale output,
+final-review path present before its fixed parent, symlink, unknown field, or
+any unrecognized combination is a hard error.
+
+Every supply, R5, and terminal review child must have exactly one parent and
+exactly one change: addition of its predeclared `100644` regular review file.
+The R5 candidate child must add exactly the predeclared R5 record. Slice I must
+change exactly three paths: add tuple, add registry, and modify the live lock
+from the fixed `ASSEMBLED` blob to its one authorized `PHASE_BOUND` successor.
+Exact operations, modes, paths, blobs, and domain-separated diff digests are
+verified; merge parents, rename/copy, extra paths, and mode drift fail closed.
 
 The terminal review never causes another tracked transition. If any source,
 projection, profile, review, security timestamp/database, trust root, waiver,
-lock, schema, contract, SDK, migration, manifest, or Git-lineage input changes,
-the old effective result becomes `INVALIDATED`; it is retained and superseded,
-not overwritten.
+schema, contract, SDK, migration, manifest, or Git-lineage input changes, the
+old effective result becomes `INVALIDATED`; it is retained and superseded, not
+overwritten. Lock invalidation has one narrow exception: R5 binds the fixed
+Slice E `ASSEMBLED` snapshot and the verifier accepts the exact Slice I
+`PHASE_BOUND` successor described above. Any other lock transition or drift is
+invalidating.
 
 Tracker drift is a checker failure, not a change in authority. The tracker may
 route readers to the versioned checker and predeclared R5 path, but it must
@@ -348,29 +394,38 @@ The dependency order is mandatory:
 6. **Slice F - independent supply-v3 review**
    - independently reproduce projection, replay/profile, archive safety, and
      declared security boundaries;
-   - add only the predeclared supply review in a direct review child;
+   - add only the predeclared supply review as a new `100644` regular file in a
+     single-parent direct review child; prove the exact one-path review diff;
    - return an explicit P0/P1/P2 verdict without changing the candidate.
 7. **Slice G - generated R5 candidate**
    - run the explicit candidate writer from the fixed Slice F child;
    - bind the projection, assembled candidate, profile, and supply review;
    - enumerate every current `G-CONTRACT` criterion and preserve all open rows;
-   - run no-output current checks and fix one R5 candidate commit/tree/diff.
+   - run no-output current checks and fix one single-parent candidate that adds
+     only the predeclared R5 record.
 8. **Slice H - independent R5 review**
    - independently reproduce the rendered record and every bound input;
    - verify criteria completeness, non-claims, invalidation, and current-source
      lineage;
-   - add only the predeclared R5 review in a direct review child with an
-     explicit P0/P1/P2 verdict.
+   - add only the predeclared R5 review as a new `100644` regular file in a
+     single-parent direct child; prove the exact one-path diff and explicit
+     P0/P1/P2 verdict.
 9. **Slice I - detached phase binding**
    - generate the exact two-slot review tuple and binding registry;
    - advance the lock to `PHASE_BOUND`;
    - run final no-output current checks;
-   - fix a distinct three-path candidate commit/tree/diff.
+   - fix a distinct candidate whose exact changed set is add tuple, add
+     registry, and advance lock from the fixed assembled blob to its sole
+     authorized phase-bound successor.
 10. **Slice J - terminal binding review**
     - independently review the actual Slice I tuple, registry, and lock bytes;
-    - reproduce both candidate/review Git lineages and effective-state result;
-    - add only the terminal review with an explicit P0/P1/P2 verdict;
-    - do not regenerate any tracked output afterward.
+    - reproduce both candidate/review Git lineages and the pre-terminal
+      `PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT` state;
+    - add only the terminal review as a new `100644` regular file in a
+      single-parent direct child with an explicit P0/P1/P2 verdict;
+    - only after that child is fixed, run the read-only state checker and
+      require stdout `REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE`;
+    - do not regenerate any tracked output or receipt afterward.
 
 Automatic progression authority, after the ADR fixed-object review approves,
 ends at Slice J. A later Gate transition requires a separate current criteria
@@ -389,6 +444,10 @@ Required focused checks include:
 - R5 Gate ID/phase/prerequisite/source/toolchain/criteria/invalidation binding;
 - review tuple candidate/review lineage, path absence, structured verdict, and
   reviewer separation;
+- exact single-parent review-only diffs, R5-only add, and Slice I exact
+  three-path operation set, including rename/copy/mode/merge rejection;
+- immutable assembled-lock snapshot and sole authorized phase-bound successor;
+- terminal review absent/present-unverified/verified read-only state handling;
 - exclusive/no-op/next-state lock and binding writers;
 - mutation cases for unknown fields, reorder, extra Gate, self-review, symlink,
   ABA, status promotion, omitted waiver expiry, review drift, and tracker drift;
@@ -446,7 +505,9 @@ would be another review-pending precursor, not current-source R5.
 Rejected because the strict semantic source plus deterministic typed renderer
 already provides machine validation. A companion candidate file would add a
 second persisted representation and require a new dual-authority equivalence
-contract. The binding registry is the sole machine-readable effective view.
+contract. The binding registry is the sole machine-readable pre-terminal
+binding view; the terminal state is computed by the versioned read-only
+checker without a tracked output.
 
 ### Use tracker status as phase authority
 
@@ -491,7 +552,10 @@ The continuing Platform goal authorizes the recommended versioned continuation
 without per-slice approval. D-053 accepts the exact17 topology, immutable
 predecessor fence, current-source R5 ordering, and ordered Slices A-J.
 
-Execution begins only if an independent review of the fixed ADR-0030 candidate
-returns `APPROVE, P0=0 / P1=0 / P2=0`. A rejection or any nonzero P0/P1 finding
-requires an append-only superseding design candidate and new review. Acceptance
-does not authorize a Gate transition or any production/external effect.
+The first fixed candidate `78ac538...` is preserved with its
+`REJECT, P0=0 / P1=3 / P2=0` review at `11513d8...`. This append-only
+superseding candidate repairs all three findings. Execution begins only if its
+new independent review returns `APPROVE, P0=0 / P1=0 / P2=0`. Another rejection
+or any nonzero P0/P1 finding requires a further superseding design candidate
+and review. Acceptance does not authorize a Gate transition or any
+production/external effect.
