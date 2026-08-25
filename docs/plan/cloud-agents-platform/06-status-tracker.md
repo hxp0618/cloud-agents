@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-26
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 接受 closure-v3 + supply-v2 + detached binding registry ordered Slices A-H，一次 successor native replay，历史 R1 candidate `96d72c9` 的 fixed-object review 为 `REQUEST_CHANGES, P0=0/P1=1/P2=0`；schema-capture repair fixed candidate `c547f04f15b86a6b33f73ea633837fd8db6cc00b` 的 fresh review 返回 `APPROVE, P0=0/P1=0/P2=0`；当前 fixed candidate `e45ef4e` 已完成正式 Slice C projection 与 Slice D Darwin/Linux A/B native replay，独立 review `4a087e27` 返回 `APPROVE, P0=0/P1=0/P2=0`；v3 仍为 `REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；Slice E 仍未授权，Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 仍作为 v2 predecessor 历史保留；ADR-0030/D-053 current-source successor 的 fixed candidate `e45ef4e` 已完成 Slice C projection 与 Slice D Darwin/Linux A/B native replay，scope-corrected review 返回 `APPROVE, P0=0/P1=0/P2=0`；formal Slice E assembled lock 与 Slice F predeclared supply review 尚未开始，v3 仍为 `REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
 - 2026-08-25 bounded milestone：P1 durable Project create vertical slice 已由 `a76b475` 实现并以 merge commit `05fa736` 集成到 `codex/cloud-agents-platform-p0`；仅新增 versioned localdev/loopback route 与 append-only `000013` transaction，v1 claim-only predecessor 保持不变。首次创建、同 key replay、冲突 key、tenant isolation、失败回滚和关键表无重复已由既有 focused tests 与一次 disposable local PostgreSQL smoke 证明；该记录不改变任何 Gate 或运行授权，详见 [`durable Project create vertical slice`](../p1/durable-project-create-vertical-slice-20260825.md)。
 - 2026-08-26 successor replay milestone：Slice C projection 与 Slice D Darwin/Linux A/B native replay 已固定并独立批准（见下方 immutable implementation/review record）；v3 仍为 review-pending/non-Gate，所有 aggregate Gate 保持 OPEN。
 
@@ -153,10 +153,11 @@ working-byte review 均返回 `APPROVE, P0=0/P1=0/P2=0`；fixed candidate
 返回 `APPROVE, P0=0/P1=0/P2=0`，关闭 R1 implementation fixed-object prerequisite 且保留历史 `96d72c9` 拒绝。正式
 Slice C 仍 `NOT_STARTED`；须先将 review record 与索引更新固定为 clean review-child commit 并 fast-forward 进入
 `codex/cloud-agents-platform-p0`，再从 final clean review-child `HEAD`/tree 构造 projection，`c547f04` 仅作为已审
-implementation ancestor。随后 fixed candidate `e45ef4e` 已完成正式 Slice C projection 与 Slice D Darwin/Linux A/B native
-replay，并由独立 review `4a087e27` 返回 `APPROVE, P0=0/P1=0/P2=0`；其 v3 profile 仍为
-`REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`，因此 Slice E 仍 `NOT_AUTHORIZED`，diagnostic C/D 继续
-stale/non-admissible；`G-CONTRACT`、`G-SUPPLY-CHAIN` 与任何 aggregate Gate 继续保持 `IN PROGRESS` / OPEN。
+implementation ancestor。随后 ADR-0030/D-053 fixed candidate `e45ef4e` 完成 Slice C projection 与 Slice D
+Darwin/Linux A/B native replay；scope-corrected review 返回 `APPROVE, P0=0/P1=0/P2=0`。其 v3 profile 仍为
+`REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；formal Slice E assembled lock 与 Slice F predeclared
+supply review 仍未开始，且历史 D-052-named review 仅作保留证据，不作 D-053 F binding。`G-CONTRACT`、
+`G-SUPPLY-CHAIN` 与任何 aggregate Gate 继续保持 `IN PROGRESS` / OPEN。
 
 ### 3.1 Immutable record history
 
@@ -585,16 +586,17 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       发布或 Gate 关闭。见
       [`implementation repair`](../p1/g-contract-current-source-contract-standards-profile-repair-20260826.md) 与
       [`independent review`](../p1/g-contract-current-source-contract-standards-profile-independent-review-20260826.md)。
-- [x] ADR-0029/D-052 successor/supply-rebind Slice C projection 与 Slice D native replay 已在固定候选
+- [x] ADR-0030/D-053 current-source phase successor Slice C projection 与 Slice D native replay 已在固定候选
       `e45ef4e3c5014bec97c7cbe73661559c3d6eced2`（tree
       `f53b8bfcc524518fb4e7f2ba06fab85ad4c42fdc`）完成；fresh projection tree 为
       `513ac8d8`，archive 为 `sha256:edcf3764…` / `48,465,920` bytes / `1,677` members，Darwin arm64 与
       Linux amd64 A/B 均绑定 exact `49` outputs、`candidateOutputsEqual=true`、`nonAllowlistedChanges=0`。
-      生成 v3 evidence/profile 的独立只读 review child `4a087e27aa24f49f8e34b3f6a849ae58c1115f82` 返回
-      `APPROVE, P0=0/P1=0/P2=0`；v1/v2 predecessor、Linux arm64 `NOT_CLAIMED`、v3
-      `REPLAY_VERIFIED_REVIEW_PENDING` 与 `notGateClosure=true` 保持不变。该项仅固定 projection/replay
-      evidence，不授权 successor lock/binding、生产数据库、HTTP/P2/provider、部署、发布或任何 Gate 关闭；详见
-      [`Slice D independent review`](../p1/g-contract-successor-supply-rebind-slice-d-native-replay-independent-review-20260826.md)。
+      生成 v3 evidence/profile 的 scope-corrected independent review 返回 `APPROVE, P0=0/P1=0/P2=0`；v1/v2
+      predecessor、Linux arm64 `NOT_CLAIMED`、v3 `REPLAY_VERIFIED_REVIEW_PENDING` 与 `notGateClosure=true`
+      保持不变。旧 D-052-named review 记录保留但不作为 D-053 Slice F binding；formal Slice E assembled lock
+      与 predeclared Slice F review 尚未开始。该项仅固定 projection/replay evidence，不授权 successor lock/binding、
+      生产数据库、HTTP/P2/provider、部署、发布或任何 Gate 关闭；详见
+      [`D-053 Slice D scope-corrected review`](../p1/g-contract-current-source-phase-successor-slice-d-native-replay-independent-review-20260826.md)。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
