@@ -561,6 +561,15 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       fixture/generation-lock authority，且 `000013` 尚未进入 contract-lock 的 exact SQL source closure；MD5
       identifier namespace 另记为 P2。候选、历史 evidence 与实现均未修改；下一最小里程碑仅修复 versioned successor
       lineage/lock closure，再做 fresh review。所有 aggregate Gate 保持 OPEN。
+- [x] 上述历史候选之后的 versioned successor lineage repair 已在固定候选
+      `a3d2b1e6f5241383d16785828d41b365566deb40`（tree
+      `87408b2e1df9598b25c468023ddf63c2d2cd774d`）完成，并由
+      [fresh independent review R2](../p1/durable-project-create-lineage-repair-independent-review-r2-20260825.md)
+      `6a13d219de33d8cbb4a8a258f4a034cf18c52fd8` 返回 `APPROVE, P0=0/P1=0/P2=0`。该修复绑定 exact
+      versioned v2 authority、predecessor fence、migration `000013` SQL/source closure（含
+      `schema-000012.json`），保持 v1、历史 lock 和 migrations `000001`–`000012` 不变；
+      `BOOTSTRAP_VALIDATED` 仍为 `notGateClosure=true`，所有 aggregate Gate 继续 OPEN。按既有批准，下一
+      最小实现方向可进入 ADR-0023 的 successor Slice C；本条不授权生产数据库、HTTP/P2/provider、部署、发布或 Gate 关闭。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record

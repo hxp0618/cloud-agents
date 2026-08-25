@@ -2,7 +2,7 @@
 
 ## Status
 
-`IMPLEMENTATION CANDIDATE — FRESH INDEPENDENT REVIEW PENDING`.
+`APPROVED SUCCESSOR LINEAGE REPAIR — GATES OPEN`.
 
 This bounded repair adds a versioned durable Project-create lineage/profile
 authority. It does not rewrite the historical v2 generation lock, the
@@ -79,9 +79,12 @@ SSH operation, broad migration suite, or physical/remote durability test was
 run for this repair. The existing P2 MD5 namespace observation remains
 unchanged and is not part of this candidate.
 
-## Next review boundary
+## Review result and next boundary
 
-Freeze the candidate commit, then perform one independent read-only review of
-that exact commit/tree. The review may create a separate review record, but it
-must not modify the candidate or close any Gate. A fresh `APPROVE` is required
-before proceeding to the already-approved successor Slice C direction.
+The fresh independent read-only review is recorded in
+[`durable-project-create-lineage-repair-independent-review-r2-20260825.md`](./durable-project-create-lineage-repair-independent-review-r2-20260825.md)
+and approves the exact candidate/tree above with `P0=0/P1=0/P2=0`. The review
+does not modify the candidate, advance the generation lock, close any Gate, or
+authorize production database, HTTP/P2/provider, deployment, publication, SSH,
+or release activity. The next approved implementation boundary is ADR-0023's
+successor Slice C.
