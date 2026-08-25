@@ -568,8 +568,9 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       `6a13d219de33d8cbb4a8a258f4a034cf18c52fd8` 返回 `APPROVE, P0=0/P1=0/P2=0`。该修复绑定 exact
       versioned v2 authority、predecessor fence、migration `000013` SQL/source closure（含
       `schema-000012.json`），保持 v1、历史 lock 和 migrations `000001`–`000012` 不变；
-      `BOOTSTRAP_VALIDATED` 仍为 `notGateClosure=true`，所有 aggregate Gate 继续 OPEN。按既有批准，下一
-      最小实现方向可进入 ADR-0023 的 successor Slice C；本条不授权生产数据库、HTTP/P2/provider、部署、发布或 Gate 关闭。
+      `BOOTSTRAP_VALIDATED` 仍为 `notGateClosure=true`，所有 aggregate Gate 继续 OPEN。按当前 tracker 与
+      ADR-0029 的顺序约束，下一最小实现方向为已批准但尚未开始的 formal Slice C projection；本条不授权生产数据库、
+      HTTP/P2/provider、部署、发布或 Gate 关闭。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record

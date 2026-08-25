@@ -86,5 +86,5 @@ The fresh independent read-only review is recorded in
 and approves the exact candidate/tree above with `P0=0/P1=0/P2=0`. The review
 does not modify the candidate, advance the generation lock, close any Gate, or
 authorize production database, HTTP/P2/provider, deployment, publication, SSH,
-or release activity. The next approved implementation boundary is ADR-0023's
-successor Slice C.
+or release activity. The next approved implementation boundary is the formal
+ADR-0029 Slice C projection, which remains `NOT_STARTED` in the status tracker.
