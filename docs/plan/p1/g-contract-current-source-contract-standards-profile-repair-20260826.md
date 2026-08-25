@@ -60,3 +60,29 @@ This record does not authorize production database writes, HTTP/OIDC/JWKS,
 P2/provider effects, deployment, publication, release, or any Gate transition.
 All Gates remain `IN PROGRESS`/`OPEN` and the v3 profile remains
 `notGateClosure=true`.
+
+## Append-only Slice E writer repair
+
+The first bounded Slice E preflight on the fixed replay candidate failed before
+the exclusive lock transition. The v3 generated profile intentionally exposes
+only its typed registry/profile/evidence-manifest fields; it does not duplicate
+the replay run's `candidateManifestSha256` or `outputFiles`. The lock writer's
+old recursive profile lookup therefore rejected the valid replay candidate with
+`v3 profile does not expose the exact 49-output assembled authority.` No lock
+bytes were written and the fixed v2 predecessor remained unchanged.
+
+The repair keeps the v3 schema and generated profile immutable in shape. A
+versioned profile helper now fences the source/predecessor and consumes the
+canonical replay-v3 semantic graph, whose validation returns both output
+identity fields. The writer binds those receipt-verified values, requires the
+exact 49 core outputs, and rechecks the captured replay snapshot immediately
+before the exclusive write. The v1/v2 authorities, all entry/recovery writer
+paths, production database/HTTP/P2/provider effects, deployment, publication,
+and Gate state remain unchanged and unauthorized.
+
+A subsequent preflight exposed a separate newline-handling defect in the same
+consumer: its Git text helper trimmed the terminal newline before comparing a
+tracked generated artifact, so a valid newline-terminated manifest was falsely
+classified as dirty. The bounded repair compares the observed bytes' Git blob
+SHA directly with the tracked `100644` blob identity. The lock transition was
+again not reached and the fixed v2 predecessor remained byte-identical.
