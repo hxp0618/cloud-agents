@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-coordination-registry-source-v2.schema.json",
+  "title": "DurableCoordinationRegistrySourceV2",
+  "description": "Independent successor source for the localdev durable project writer. The v1 registry remains historical and non-authoritative for this profile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "registryId", "historicalCompatibility", "selector", "routeDescriptor", "profileDocuments", "implementationBoundary"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-coordination-source/v2" },
+    "registryId": { "const": "cloud-agents/platform/durable-coordination" },
+    "historicalCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["priorFormatVersion", "priorRegistryDigest", "mode"],
+      "properties": {
+        "priorFormatVersion": { "const": "cloud-agents-durable-coordination-source/v1" },
+        "priorRegistryDigest": { "pattern": "^sha256:[0-9a-f]{64}$" },
+        "mode": { "const": "historical_schema_only_non_authority" }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "profileSelection", "callerProvidedProfile", "storedRowSelection", "schemaBinding"],
+      "properties": {
+        "mode": { "const": "generated_registry_only" },
+        "profileSelection": { "const": "exact_profile_id_and_digest" },
+        "callerProvidedProfile": { "const": "forbidden" },
+        "storedRowSelection": { "const": "forbidden" },
+        "schemaBinding": { "const": "exact_profile_and_registry_digest" }
+      }
+    },
+    "routeDescriptor": { "pattern": "^golden/durable-project-create-route-v2[.]json$" },
+    "profileDocuments": {
+      "const": ["golden/durable-coordination-profile-managed-agent-create-project-durable-v1alpha1.json"]
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "providerEffects", "managedAgentEffects", "databaseWrites", "localOperationCompletion", "outboxEffect"],
+      "properties": {
+        "transport": { "const": "localdev_loopback_only" },
+        "providerEffects": { "const": "forbidden" },
+        "managedAgentEffects": { "const": "forbidden" },
+        "databaseWrites": { "const": "typed_security_definer_transaction_only" },
+        "localOperationCompletion": { "const": "operation_attempt_receipt_and_required_finalizer_succeeded" },
+        "outboxEffect": { "const": "operation_effect_pending" }
+      }
+    }
+  }
+}

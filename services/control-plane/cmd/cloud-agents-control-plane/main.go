@@ -2,7 +2,8 @@
 
 // cloud-agents-control-plane is an explicitly localdev-only HTTP entry point.
 // It binds to loopback, uses an ephemeral in-memory authn trust snapshot, and
-// exposes only the versioned claim-only route. It is not a production server.
+// exposes only the localdev claim-only and durable-project-create routes. It is
+// not a production server.
 package main
 
 import (
@@ -259,6 +260,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("claim server is unavailable")
 	}
+	durableProjectCreateServer, err := server.NewDurableProjectCreateServer(coordinationService)
+	if err != nil {
+		return errors.New("durable project create server is unavailable")
+	}
 	verifier, err := authn.NewLocalVerifier(authn.LocalVerifierConfig{})
 	if err != nil {
 		return errors.New("local verifier is unavailable")
@@ -272,13 +277,20 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(config.localTokenFile) }()
-	handler, err := server.NewLocalProjectClaimHTTPServer(verifier, claimServer)
+	claimHTTPServer, err := server.NewLocalProjectClaimHTTPServer(verifier, claimServer)
 	if err != nil {
 		return errors.New("local HTTP server is unavailable")
 	}
+	durableProjectHTTPServer, err := server.NewLocalDurableProjectCreateHTTPServer(verifier, durableProjectCreateServer)
+	if err != nil {
+		return errors.New("local durable project HTTP server is unavailable")
+	}
+	mux := http.NewServeMux()
+	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)
+	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	httpServer := &http.Server{
 		Addr:              config.listen,
-		Handler:           handler,
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

@@ -1,0 +1,669 @@
+{
+  "formatVersion": "cloud-agents-durable-coordination-registry/v2",
+  "registryId": "cloud-agents/platform/durable-coordination",
+  "sourceDigest": "sha256:0014fd65b74dc050cc189c91a5f356659d72dab8877386990799cdc456fca04f",
+  "stateMachineDigest": "sha256:5c4fa5c0cfac253b45a41c2e49ee7e863b9efbe124e5d743e041f5e01f5c6f15",
+  "policyDigest": "sha256:95023973eb007a958a3c5aea3ac61b6caa7cd8955b9a24fcef3ad269230c64e8",
+  "historicalCompatibility": {
+    "priorFormatVersion": "cloud-agents-durable-coordination-source/v1",
+    "priorRegistryDigest": "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a",
+    "mode": "historical_schema_only_non_authority"
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "callerProvidedProfile": "forbidden",
+    "storedRowSelection": "forbidden",
+    "schemaBinding": "exact_profile_and_registry_digest"
+  },
+  "profiles": [
+    {
+      "profileDigest": "sha256:48d3afc5e78e7e7c537e528f74a510b91d08cffa4415eed3f6d651bd78deb81f",
+      "spec": {
+        "formatVersion": "cloud-agents-durable-coordination-profile/v2",
+        "profileId": "managedAgentCreateProjectDurable/v1alpha1",
+        "operationId": "managedAgentCreateProjectDurable",
+        "http": {
+          "method": "POST",
+          "path": "/v1alpha1/tenants/{tenantId}/project-creations",
+          "idempotencyHeader": "Idempotency-Key"
+        },
+        "subjectIdentity": {
+          "schemaId": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/subject-ref.schema.json",
+          "digestProfile": "cloud-agents-subject-ref/v1alpha1-rfc8785-sha256",
+          "comparison": "exact_string_no_rewrite"
+        },
+        "projection": {
+          "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json",
+          "canonicalizationProfile": "cloud-agents-http-idempotency/managedAgentCreateProjectDurable/v1alpha1",
+          "canonicalizationAlgorithm": "RFC8785",
+          "digestAlgorithm": "SHA-256",
+          "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
+        },
+        "authorization": {
+          "tenantSource": "path.tenantId",
+          "scopeSource": "body.organizationRef",
+          "scopeIdentity": {
+            "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+            "identifierProfile": "cloud-agents-authorization-scope-identifier/ascii-v1",
+            "comparison": "exact_string_no_rewrite"
+          },
+          "requiredPermission": "projects.create"
+        },
+        "coordination": {
+          "class": "operation_effect",
+          "createsPlatformOperation": true,
+          "externalSideEffect": "forbidden",
+          "outboxEventClass": "operation_effect",
+          "requiredFinalizers": [
+            "project-create"
+          ]
+        },
+        "idempotency": {
+          "replayTtlSeconds": 86400,
+          "pendingReplay": "in_progress_reference",
+          "terminalReplay": "redacted_terminal_envelope",
+          "conflict": "same_key_different_request_digest"
+        },
+        "result": {
+          "kind": "resource_reference",
+          "resourceKind": "project",
+          "schemaId": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project.schema.json",
+          "allowedFields": [
+            "resourceId",
+            "resourceKind",
+            "resourceVersion",
+            "stableErrorCode"
+          ]
+        }
+      }
+    }
+  ],
+  "stateMachines": [
+    {
+      "id": "cleanup/v1",
+      "initialState": "none",
+      "states": [
+        "blocked",
+        "complete",
+        "draining",
+        "none",
+        "pending",
+        "reaping",
+        "revoking"
+      ],
+      "terminalStates": [
+        "complete"
+      ],
+      "transitions": [
+        {
+          "from": "blocked",
+          "event": "manual_recovery",
+          "to": "pending"
+        },
+        {
+          "from": "draining",
+          "event": "block",
+          "to": "blocked"
+        },
+        {
+          "from": "draining",
+          "event": "finish_drain",
+          "to": "reaping"
+        },
+        {
+          "from": "none",
+          "event": "request_cleanup",
+          "to": "pending"
+        },
+        {
+          "from": "pending",
+          "event": "begin_drain",
+          "to": "draining"
+        },
+        {
+          "from": "pending",
+          "event": "begin_reap",
+          "to": "reaping"
+        },
+        {
+          "from": "pending",
+          "event": "begin_revoke",
+          "to": "revoking"
+        },
+        {
+          "from": "pending",
+          "event": "block",
+          "to": "blocked"
+        },
+        {
+          "from": "reaping",
+          "event": "block",
+          "to": "blocked"
+        },
+        {
+          "from": "reaping",
+          "event": "required_finalizers_succeeded",
+          "to": "complete"
+        },
+        {
+          "from": "revoking",
+          "event": "block",
+          "to": "blocked"
+        },
+        {
+          "from": "revoking",
+          "event": "finish_revoke_to_drain",
+          "to": "draining"
+        },
+        {
+          "from": "revoking",
+          "event": "finish_revoke_to_reap",
+          "to": "reaping"
+        }
+      ]
+    },
+    {
+      "id": "finalizer/v1",
+      "initialState": "pending",
+      "states": [
+        "claimed",
+        "dead_letter",
+        "pending",
+        "retry_wait",
+        "succeeded",
+        "unknown"
+      ],
+      "terminalStates": [
+        "dead_letter",
+        "succeeded"
+      ],
+      "transitions": [
+        {
+          "from": "claimed",
+          "event": "claim_outcome_unknown",
+          "to": "unknown"
+        },
+        {
+          "from": "claimed",
+          "event": "fail_retryable",
+          "to": "retry_wait"
+        },
+        {
+          "from": "claimed",
+          "event": "fail_terminal",
+          "to": "dead_letter"
+        },
+        {
+          "from": "claimed",
+          "event": "succeed",
+          "to": "succeeded"
+        },
+        {
+          "from": "pending",
+          "event": "claim",
+          "to": "claimed"
+        },
+        {
+          "from": "retry_wait",
+          "event": "claim",
+          "to": "claimed"
+        },
+        {
+          "from": "unknown",
+          "event": "reconcile_failure_retryable",
+          "to": "retry_wait"
+        },
+        {
+          "from": "unknown",
+          "event": "reconcile_failure_terminal",
+          "to": "dead_letter"
+        },
+        {
+          "from": "unknown",
+          "event": "reconcile_success",
+          "to": "succeeded"
+        }
+      ]
+    },
+    {
+      "id": "idempotency/v1",
+      "initialState": "pending",
+      "states": [
+        "failed",
+        "pending",
+        "succeeded"
+      ],
+      "terminalStates": [
+        "failed",
+        "succeeded"
+      ],
+      "transitions": [
+        {
+          "from": "pending",
+          "event": "record_failure",
+          "to": "failed"
+        },
+        {
+          "from": "pending",
+          "event": "record_success",
+          "to": "succeeded"
+        }
+      ]
+    },
+    {
+      "id": "operation_attempt/v1",
+      "initialState": "ready",
+      "states": [
+        "claimed",
+        "failed",
+        "ready",
+        "succeeded",
+        "unknown"
+      ],
+      "terminalStates": [
+        "failed",
+        "succeeded"
+      ],
+      "transitions": [
+        {
+          "from": "claimed",
+          "event": "claim_outcome_unknown",
+          "to": "unknown"
+        },
+        {
+          "from": "claimed",
+          "event": "persist_failed_receipt",
+          "to": "failed"
+        },
+        {
+          "from": "claimed",
+          "event": "persist_succeeded_receipt",
+          "to": "succeeded"
+        },
+        {
+          "from": "ready",
+          "event": "claim",
+          "to": "claimed"
+        },
+        {
+          "from": "unknown",
+          "event": "reconcile_failed",
+          "to": "failed"
+        },
+        {
+          "from": "unknown",
+          "event": "reconcile_succeeded",
+          "to": "succeeded"
+        }
+      ]
+    },
+    {
+      "id": "outbox/v1",
+      "initialState": "pending",
+      "states": [
+        "claimed",
+        "dead_letter",
+        "delivered",
+        "pending",
+        "retry_wait"
+      ],
+      "terminalStates": [
+        "dead_letter",
+        "delivered"
+      ],
+      "transitions": [
+        {
+          "from": "claimed",
+          "event": "delivery_failed_retryable",
+          "to": "retry_wait"
+        },
+        {
+          "from": "claimed",
+          "event": "delivery_failed_terminal",
+          "to": "dead_letter"
+        },
+        {
+          "from": "claimed",
+          "event": "delivery_succeeded",
+          "to": "delivered"
+        },
+        {
+          "from": "claimed",
+          "event": "lease_expired_retryable",
+          "to": "pending"
+        },
+        {
+          "from": "claimed",
+          "event": "lease_expired_terminal",
+          "to": "dead_letter"
+        },
+        {
+          "from": "pending",
+          "event": "claim",
+          "to": "claimed"
+        },
+        {
+          "from": "retry_wait",
+          "event": "claim",
+          "to": "claimed"
+        }
+      ]
+    },
+    {
+      "id": "platform_operation/v1",
+      "initialState": "pending",
+      "states": [
+        "canceled",
+        "failed",
+        "pending",
+        "reconciling",
+        "running",
+        "succeeded"
+      ],
+      "terminalStates": [
+        "canceled",
+        "failed",
+        "succeeded"
+      ],
+      "transitions": [
+        {
+          "from": "pending",
+          "event": "cancel_before_attempt",
+          "to": "canceled"
+        },
+        {
+          "from": "pending",
+          "event": "start_attempt",
+          "to": "running"
+        },
+        {
+          "from": "reconciling",
+          "event": "reconcile_failed_terminal",
+          "to": "failed"
+        },
+        {
+          "from": "reconciling",
+          "event": "reconcile_retryable",
+          "to": "pending"
+        },
+        {
+          "from": "reconciling",
+          "event": "reconcile_succeeded",
+          "to": "succeeded"
+        },
+        {
+          "from": "running",
+          "event": "attempt_failed_retryable",
+          "to": "pending"
+        },
+        {
+          "from": "running",
+          "event": "attempt_failed_terminal",
+          "to": "failed"
+        },
+        {
+          "from": "running",
+          "event": "attempt_outcome_unknown",
+          "to": "reconciling"
+        },
+        {
+          "from": "running",
+          "event": "attempt_succeeded",
+          "to": "succeeded"
+        }
+      ]
+    },
+    {
+      "id": "terminal_receipt/v1",
+      "initialState": "absent",
+      "states": [
+        "absent",
+        "persisted"
+      ],
+      "terminalStates": [
+        "persisted"
+      ],
+      "transitions": [
+        {
+          "from": "absent",
+          "event": "persist_terminal_receipt",
+          "to": "persisted"
+        }
+      ]
+    }
+  ],
+  "policies": {
+    "audit": {
+      "allowedFields": [
+        "attempt_id",
+        "database_timestamp",
+        "fencing_token",
+        "generation",
+        "operation_id",
+        "outcome",
+        "profile_digest",
+        "profile_id",
+        "resource_id",
+        "resource_kind",
+        "resource_version",
+        "stable_error_code",
+        "subject_digest",
+        "tenant_id",
+        "transition"
+      ],
+      "forbiddenFields": [
+        "authorization",
+        "cookie",
+        "credential",
+        "pairing_token",
+        "pairing_url",
+        "private_key",
+        "provider_payload",
+        "raw_request",
+        "raw_response",
+        "refresh_token",
+        "secret",
+        "token_hash"
+      ]
+    },
+    "cleanup": {
+      "completeRule": "all_required_finalizers_succeeded",
+      "manualRecoveryRule": "audited_manual_recovery_increment_recovery_generation",
+      "stateMachineId": "cleanup/v1"
+    },
+    "finalizer": {
+      "claimTuple": [
+        "claim_holder_id",
+        "claim_incarnation",
+        "claim_token",
+        "claim_expires_at"
+      ],
+      "identityFields": [
+        "tenant_id",
+        "operation_id",
+        "operation_generation",
+        "finalizer_name"
+      ],
+      "requiredDeadLetterRule": "block_cleanup",
+      "stateMachineId": "finalizer/v1",
+      "unknownRule": "reconciliation_required_no_direct_retry"
+    },
+    "idempotency": {
+      "authorityFields": [
+        "tenant_id",
+        "subject_digest",
+        "profile_id",
+        "profile_digest",
+        "idempotency_key"
+      ],
+      "clock": "database_transaction_timestamp",
+      "deleteRule": "terminal_and_expired_and_unreferenced",
+      "sameKeyDifferentDigest": "conflict_before_side_effect",
+      "sameKeySameDigestPending": "return_in_progress_reference",
+      "sameKeySameDigestTerminal": "return_redacted_terminal_envelope",
+      "stateMachineId": "idempotency/v1",
+      "storedPayload": "digest_and_redacted_typed_envelope_only"
+    },
+    "leader": {
+      "clock": "database_transaction_timestamp",
+      "identityFields": [
+        "leader_name",
+        "holder_id",
+        "holder_incarnation"
+      ],
+      "leaseFields": [
+        "fencing_token",
+        "lease_expires_at"
+      ],
+      "maxLeaseSeconds": 60,
+      "minLeaseSeconds": 1,
+      "protectedWriteRule": "lock_leader_and_match_identity_incarnation_token_and_expiry_in_same_transaction",
+      "takeoverRule": "expired_only_increment_monotonic_fencing_token"
+    },
+    "operation": {
+      "cancelRule": "pending_before_attempt_only",
+      "generationRule": "positive_monotonic_per_operation_identity",
+      "identityFields": [
+        "tenant_id",
+        "operation_id",
+        "operation_generation"
+      ],
+      "retryRule": "create_new_attempt_identity_only_after_proved_retry",
+      "stateMachineId": "platform_operation/v1",
+      "unknownRule": "reconciliation_required_no_direct_retry"
+    },
+    "operationAttempt": {
+      "claimTuple": [
+        "claim_holder_id",
+        "claim_incarnation",
+        "claim_token",
+        "claim_expires_at"
+      ],
+      "identityFields": [
+        "tenant_id",
+        "operation_id",
+        "operation_generation",
+        "attempt_number"
+      ],
+      "stateMachineId": "operation_attempt/v1",
+      "terminalTransitionRule": "persist_immutable_terminal_receipt_in_same_transaction",
+      "unknownRule": "reconciliation_required_no_direct_retry"
+    },
+    "outbox": {
+      "claimTuple": [
+        "claim_holder_id",
+        "claim_incarnation",
+        "claim_token",
+        "claim_expires_at"
+      ],
+      "classRules": [
+        {
+          "class": "operation_effect",
+          "requiredFields": [
+            "aggregate_id",
+            "aggregate_kind",
+            "aggregate_sequence",
+            "event_id",
+            "generation",
+            "operation_id",
+            "tenant_id"
+          ],
+          "positiveFields": [
+            "aggregate_sequence",
+            "generation"
+          ],
+          "zeroFields": [],
+          "nullFields": [],
+          "equalFields": [],
+          "uniqueKeys": [
+            [
+              "tenant_id",
+              "event_id"
+            ],
+            [
+              "tenant_id",
+              "aggregate_kind",
+              "aggregate_id",
+              "generation",
+              "aggregate_sequence"
+            ]
+          ]
+        },
+        {
+          "class": "resource_change",
+          "requiredFields": [
+            "aggregate_id",
+            "aggregate_kind",
+            "aggregate_sequence",
+            "event_id",
+            "generation",
+            "resource_version",
+            "tenant_id"
+          ],
+          "positiveFields": [
+            "resource_version"
+          ],
+          "zeroFields": [
+            "generation"
+          ],
+          "nullFields": [
+            "operation_id"
+          ],
+          "equalFields": [
+            [
+              "aggregate_sequence",
+              "resource_version"
+            ]
+          ],
+          "uniqueKeys": [
+            [
+              "tenant_id",
+              "event_id"
+            ]
+          ]
+        }
+      ],
+      "clock": "database_transaction_timestamp",
+      "deliverySemantics": "at_least_once_event_id_dedup_required",
+      "maxDeliveryAttempts": 8,
+      "retryBackoffSeconds": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128
+      ],
+      "stateMachineId": "outbox/v1"
+    },
+    "terminalReceipt": {
+      "appendOnly": true,
+      "identityFields": [
+        "tenant_id",
+        "operation_id",
+        "operation_generation",
+        "attempt_number",
+        "receipt_id"
+      ],
+      "outcomes": [
+        "canceled",
+        "failed",
+        "succeeded"
+      ],
+      "stateMachineId": "terminal_receipt/v1",
+      "unknownAttemptRule": "forbidden"
+    }
+  },
+  "implementationBoundary": {
+    "transport": "localdev_loopback_only",
+    "providerEffects": "forbidden",
+    "managedAgentEffects": "forbidden",
+    "databaseWrites": "typed_security_definer_transaction_only",
+    "localOperationCompletion": "operation_attempt_receipt_and_required_finalizer_succeeded",
+    "outboxEffect": "operation_effect_pending"
+  },
+  "registryDigest": "sha256:8c973a9460b659eb601fb5db547eb9fd85b25bf74d050c56a76f003710118ec8"
+}

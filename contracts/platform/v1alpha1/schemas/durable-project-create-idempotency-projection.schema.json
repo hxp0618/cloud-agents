@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json",
+  "title": "DurableProjectCreateIdempotencyProjectionV1",
+  "description": "Canonical request intent for the localdev-only durable project writer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operationId", "path", "body"],
+  "properties": {
+    "operationId": { "const": "managedAgentCreateProjectDurable" },
+    "path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId"],
+      "properties": {
+        "tenantId": {
+          "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      }
+    },
+    "body": {
+      "$ref": "project-create-request.schema.json"
+    }
+  },
+  "x-cloud-agents-canonicalization": {
+    "profile": "cloud-agents-http-idempotency/managedAgentCreateProjectDurable/v1alpha1",
+    "algorithm": "RFC8785",
+    "digest": "SHA-256",
+    "numberHandling": "NOT_APPLICABLE_NO_NUMBER_FIELDS"
+  }
+}

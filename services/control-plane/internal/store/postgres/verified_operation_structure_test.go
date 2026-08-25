@@ -288,10 +288,12 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		result     string
 		kernel     string
 		settlement string
+		profile    string
 	}{
-		"ClaimIdempotency":           {"IdempotencyClaimInput", "IdempotencyClaimResult", "claimIdempotencyTransaction", "settleIdempotencyClaim"},
-		"CompleteIdempotencySuccess": {"IdempotencySuccessInput", "IdempotencySuccessResult", "completeIdempotencySuccessTransaction", "settleIdempotencySuccess"},
-		"CompleteIdempotencyFailure": {"IdempotencyFailureInput", "IdempotencyFailureResult", "completeIdempotencyFailureTransaction", "settleIdempotencyFailure"},
+		"ClaimIdempotency":           {"IdempotencyClaimInput", "IdempotencyClaimResult", "claimIdempotencyTransaction", "settleIdempotencyClaim", "bindProfile"},
+		"CompleteIdempotencySuccess": {"IdempotencySuccessInput", "IdempotencySuccessResult", "completeIdempotencySuccessTransaction", "settleIdempotencySuccess", "bindProfile"},
+		"CompleteIdempotencyFailure": {"IdempotencyFailureInput", "IdempotencyFailureResult", "completeIdempotencyFailureTransaction", "settleIdempotencyFailure", "bindProfile"},
+		"CreateProjectDurable":       {"DurableProjectCreateInput", "DurableProjectCreateResult", "createDurableProjectTransaction", "settleDurableProjectCreate", "bindDurableProjectCreateProfile"},
 	}
 	for name, contract := range contracts {
 		method := tree.functions["*DurableCoordinationService."+name]
@@ -300,7 +302,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		}, []string{contract.result, "error"})
 		outer := requireOneCall(t, method.Body, "WithVerifiedOperation")
 		outerCallback := requireCallbackArgument(t, outer, 1)
-		profile := requireOneCall(t, outerCallback.Body, "bindProfile")
+		profile := requireOneCall(t, outerCallback.Body, contract.profile)
 		bind := requireOneCall(t, outerCallback.Body, "Bind")
 		actor := requireOneCall(t, outerCallback.Body, "Actor")
 		transaction := requireOneCall(t, outerCallback.Body, "withTenantMutation")
@@ -320,6 +322,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ClaimIdempotency",
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
 		"*DurableCoordinationService.CompleteIdempotencySuccess",
+		"*DurableCoordinationService.CreateProjectDurable",
 		"*RBACMutationService.BindRole",
 		"*RBACMutationService.CreateMembership",
 		"*RBACMutationService.RevokeRoleBinding",
@@ -329,6 +332,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ClaimIdempotency",
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
 		"*DurableCoordinationService.CompleteIdempotencySuccess",
+		"*DurableCoordinationService.CreateProjectDurable",
 		"*RBACMutationService.withKnownScopeMutation",
 		"*RBACMutationService.withStoredScopeMutation",
 	)
@@ -412,6 +416,7 @@ func TestProtectedTransactionKernelProductionCallerSetIsExact(t *testing.T) {
 		"claimIdempotencyTransaction":           {"*DurableCoordinationService.ClaimIdempotency"},
 		"completeIdempotencySuccessTransaction": {"*DurableCoordinationService.CompleteIdempotencySuccess"},
 		"completeIdempotencyFailureTransaction": {"*DurableCoordinationService.CompleteIdempotencyFailure"},
+		"createDurableProjectTransaction":       {"*DurableCoordinationService.CreateProjectDurable"},
 		"createMembershipInTransaction":         {"*RBACMutationService.CreateMembership"},
 		"transitionMembershipInTransaction":     {"*RBACMutationService.transitionMembership"},
 		"bindRoleInTransaction":                 {"*RBACMutationService.BindRole"},

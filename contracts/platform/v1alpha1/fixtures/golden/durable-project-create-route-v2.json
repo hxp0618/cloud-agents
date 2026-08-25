@@ -1,0 +1,9 @@
+{
+  "formatVersion": "cloud-agents-localdev-route/v1",
+  "operationId": "managedAgentCreateProjectDurable",
+  "method": "POST",
+  "path": "/v1alpha1/tenants/{tenantId}/project-creations",
+  "idempotencyHeader": "Idempotency-Key",
+  "boundary": "localdev_loopback_only",
+  "externalEffects": "forbidden"
+}

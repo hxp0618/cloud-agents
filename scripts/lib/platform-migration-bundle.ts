@@ -82,6 +82,7 @@ const SQL_PATHS = [
   `${ROOT}/000010_expand_compatibility_recovery_kernel.sql`,
   `${ROOT}/000011_add_compatibility_recovery_writer.sql`,
   `${ROOT}/000012_fix_compatibility_recovery_preflight.sql`,
+  `${ROOT}/000013_add_durable_project_create_writer.sql`,
 ] as const;
 const BOOTSTRAP_PATHS = [`${ROOT}/bootstrap/database.sql`, `${ROOT}/bootstrap/roles.sql`] as const;
 const CATALOG_PATHS = [
@@ -99,17 +100,23 @@ const CATALOG_PATHS = [
   `${ROOT}/catalog/schema-000010.json`,
   `${ROOT}/catalog/schema-000011.json`,
   `${ROOT}/catalog/schema-000012.json`,
+  `${ROOT}/catalog/schema-000013.json`,
 ] as const;
 const GLOBAL_TABLE_AUTHORITY_V2_PATH = `${ROOT}/catalog/global-table-authority-v2.json`;
 const GLOBAL_TABLE_AUTHORITY_V3_PATH = `${ROOT}/catalog/global-table-authority-v3.json`;
 const GLOBAL_TABLE_AUTHORITY_V4_PATH = `${ROOT}/catalog/global-table-authority-v4.json`;
 const PREDECESSOR_SCHEMA_BUNDLE_DIGEST =
-  "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110";
+  "sha256:54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907";
 const PREDECESSOR_SCHEMA_BUNDLE_PATH = `${ROOT}/archive/${PREDECESSOR_SCHEMA_BUNDLE_DIGEST.slice("sha256:".length)}.schema-bundle.json`;
-const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 19416;
+const PREDECESSOR_SCHEMA_BUNDLE_SIZE = 20932;
 const PREDECESSOR_SCHEMA_BUNDLE_SHA256 =
-  "sha256:a01a22e09c7301aeafc87eb1f09b67cb844e5ac5bc5b3c6dd1e66827e348b90f";
+  "sha256:948e504b77c409065d2160056f45356d84d136d2512f35a4c4fe9e16e575aaaf";
 const ANCESTOR_SCHEMA_BUNDLES = [
+  {
+    digest: "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110",
+    size: 19416,
+    sha256: "sha256:a01a22e09c7301aeafc87eb1f09b67cb844e5ac5bc5b3c6dd1e66827e348b90f",
+  },
   {
     digest: "sha256:a1673fcdf71fd49439ec9cefde2d02c627029799a700913653ed1f1f6fca7f09",
     size: 17904,
@@ -452,6 +459,11 @@ const DECLARED_IDENTITIES_000011 = [
   "policy:unquoted:cloud_agents/unquoted:compatibility_recovery_transition_facts_v2_tenant",
 ] as const;
 const DECLARED_IDENTITIES_000012 = [...DECLARED_IDENTITIES_000011] as const;
+const DECLARED_IDENTITIES_000013 = [
+  ...DECLARED_IDENTITIES_000012,
+  "function:unquoted:cloud_agents/unquoted:coordination_project_create_registry_digest()",
+  "function:unquoted:cloud_agents/unquoted:create_managed_agent_project_durable_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+] as const;
 
 export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   const files = new Map<string, Uint8Array>();
@@ -539,7 +551,7 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
   );
   const schemaBundle: JsonObject = {
     lineage: "cloud-agents-platform",
-    schema_head: "000012",
+    schema_head: "000013",
     advisory_lock: {
       domain: "cloud-agents-platform:migrations:v1",
       derivation: "sha256-first-8-bytes-signed-big-endian-int64",
@@ -662,6 +674,15 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
         sql: sqlArtifacts.get(SQL_PATHS[11])!,
         predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[12])!,
         catalog: catalogArtifacts.get(CATALOG_PATHS[13])!,
+      }),
+      migrationEntry({
+        id: "000013",
+        name: "add_durable_project_create_writer",
+        predecessor: "000012",
+        schemaFrom: "000012",
+        sql: sqlArtifacts.get(SQL_PATHS[12])!,
+        predecessorCatalog: catalogArtifacts.get(CATALOG_PATHS[13])!,
+        catalog: catalogArtifacts.get(CATALOG_PATHS[14])!,
       }),
     ],
   };
@@ -823,6 +844,7 @@ export function validateCatalogStatementBindings(
     ["000010", generatedCatalogs.get(CATALOG_PATHS[11])!.source_descriptors!],
     ["000011", generatedCatalogs.get(CATALOG_PATHS[12])!.source_descriptors!],
     ["000012", generatedCatalogs.get(CATALOG_PATHS[13])!.source_descriptors!],
+    ["000013", generatedCatalogs.get(CATALOG_PATHS[14])!.source_descriptors!],
   ]);
   const declaredByHead = new Map<string, ReadonlyArray<string>>([
     ["000001", DECLARED_IDENTITIES_000001],
@@ -837,6 +859,7 @@ export function validateCatalogStatementBindings(
     ["000010", DECLARED_IDENTITIES_000010],
     ["000011", DECLARED_IDENTITIES_000011],
     ["000012", DECLARED_IDENTITIES_000012],
+    ["000013", DECLARED_IDENTITIES_000013],
   ]);
   const expectedSources = expectedSourcesByHead.get(head);
   const expectedDeclared = declaredByHead.get(head);
@@ -2576,6 +2599,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const declared000010 = typedIdentities(DECLARED_IDENTITIES_000010);
   const declared000011 = typedIdentities(DECLARED_IDENTITIES_000011);
   const declared000012 = typedIdentities(DECLARED_IDENTITIES_000012);
+  const declared000013 = typedIdentities(DECLARED_IDENTITIES_000013);
   const initialAbsent = initialCatalogState("schema_absent");
   const initialPresent = initialCatalogState("schema_present");
   const namespaceBody = namespaceProjectionBody([
@@ -2633,7 +2657,8 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
   const schema000009 = contract("000009", rawSources.slice(0, 9), declared000009);
   const schema000010 = contract("000010", rawSources.slice(0, 10), declared000010);
   const schema000011 = contract("000011", rawSources.slice(0, 11), declared000011);
-  const schema000012 = contract("000012", rawSources, declared000012);
+  const schema000012 = contract("000012", rawSources.slice(0, 12), declared000012);
+  const schema000013 = contract("000013", rawSources, declared000013);
   validateAuthorityProfile(authority);
   validateAuthorityBinding(binding);
 
@@ -2694,6 +2719,7 @@ function buildProjectionDocuments(sqlBytes: ReadonlyMap<string, Uint8Array>): Pr
     [CATALOG_PATHS[11], schema000010],
     [CATALOG_PATHS[12], schema000011],
     [CATALOG_PATHS[13], schema000012],
+    [CATALOG_PATHS[14], schema000013],
   ]);
   return { catalogDocuments, fixtureDocuments, rawFixtureFiles };
 }

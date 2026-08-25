@@ -30,17 +30,28 @@ type operationProfile struct {
 }
 
 func profileForOperation(operationID string) (operationProfile, error) {
-	if operationID != managedAgentCreateProjectProfile.operationID {
+	switch operationID {
+	case managedAgentCreateProjectProfile.operationID:
+		return managedAgentCreateProjectProfile, nil
+	case managedAgentCreateProjectDurableProfile.operationID:
+		return managedAgentCreateProjectDurableProfile, nil
+	default:
 		return operationProfile{}, ErrUnknownOperation
 	}
-	return managedAgentCreateProjectProfile, nil
 }
 
-// ManagedAgentCreateProject returns the only current generated profile as an
-// opaque value for the PostgreSQL coordination service. No public HTTP route
-// or external side effect is attached to this capability.
+// ManagedAgentCreateProject returns the frozen v1 claim-only generated profile
+// as an opaque value for the PostgreSQL coordination service. No public HTTP
+// route or external side effect is attached to this capability.
 func ManagedAgentCreateProject() Profile {
 	return Profile{profile: managedAgentCreateProjectProfile}
+}
+
+// ManagedAgentCreateProjectDurable returns the versioned, localdev-only
+// project writer capability. It is intentionally a distinct generated profile
+// from ManagedAgentCreateProject, whose claim-only semantics remain frozen.
+func ManagedAgentCreateProjectDurable() Profile {
+	return Profile{profile: managedAgentCreateProjectDurableProfile}
 }
 
 // Profile deliberately exposes no fields. Only this package can unwrap it.
@@ -49,9 +60,10 @@ type Profile struct{ profile operationProfile }
 // Valid reports whether the value is the exact generated profile capability.
 // It is used by package-internal consumers before opening a transaction.
 func (profile Profile) Valid() bool {
-	return profile.profile == managedAgentCreateProjectProfile &&
+	return (profile.profile == managedAgentCreateProjectProfile ||
+		profile.profile == managedAgentCreateProjectDurableProfile) &&
 		profile.profile.profileID != "" && profile.profile.profileDigest != "" &&
-		!profile.profile.createsPlatformOperation && !profile.profile.externalSideEffectAllowed
+		!profile.profile.externalSideEffectAllowed
 }
 
 func (profile Profile) ProfileID() string     { return profile.profile.profileID }

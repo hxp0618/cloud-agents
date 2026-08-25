@@ -54,7 +54,7 @@ function temporaryCurrentRoot(): string {
 }
 
 describe("versioned contract-standards profile", () => {
-  it("keeps v1 bytes immutable while selecting a current v2 authority", () => {
+  it("keeps v1/v2 authority bytes immutable and exposes current-source invalidation", () => {
     expect(
       readFileSync(resolve(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V1_PATH)).byteLength,
     ).toBe(CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE.sizeBytes);
@@ -65,19 +65,9 @@ describe("versioned contract-standards profile", () => {
     expect(v1.currentContracts).toMatchObject({ schemaFiles: 58, fixtureCases: 77 });
 
     const root = temporaryCurrentRoot();
-    const v2 = assertContractStandardsProfileCurrent(root);
-    expect(v2.formatVersion).toBe("cloud-agents-contract-standards-profile/v2");
-    expect(v2.predecessor).toEqual({
-      ...CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE,
-      mutation: "forbidden",
-    });
-    expect(v2.currentContracts).toMatchObject({
-      schemaFiles: 60,
-      fixtureManifests: 2,
-      fixtureCases: 79,
-      sourceContractManifestSha256:
-        "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
-    });
+    expect(() => assertContractStandardsProfileCurrent(root)).toThrow(
+      /Current contract cardinality mismatch: expected=\{"schemaFiles":60/u,
+    );
   });
 
   it("fails closed on predecessor, topology, count, and boundary drift", () => {

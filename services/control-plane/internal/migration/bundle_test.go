@@ -343,16 +343,16 @@ func TestProjectionScopeAuthorityStrictSignedClosure(t *testing.T) {
 func TestProjectionScopeAuthorityCheckedInIdentityClosure(t *testing.T) {
 	t.Parallel()
 	runtimeTar, manifest := buildCheckedInRuntimeTar(t)
-	if manifest.SchemaBundleDigest != "sha256:6dfd3fed7ba473e6a119a8b6ec3544d88b1a97a4bc5189a6536c64b6fba98110" {
+	if manifest.SchemaBundleDigest != "sha256:c7e08e81b463d04dd267438ac636811200586d5d84d8cb2e8d18799bd2c5faca" {
 		t.Fatalf("schema bundle digest drifted: %s", manifest.SchemaBundleDigest)
 	}
 	if manifest.BootstrapBundleDigest != "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c" {
 		t.Fatalf("bootstrap bundle digest drifted: %s", manifest.BootstrapBundleDigest)
 	}
-	if manifest.ManifestDigest != "sha256:118cbb51f47a94fb7129b95c10f19685c79fd1dc4c05a47cf78d504695e4d98c" {
+	if manifest.ManifestDigest != "sha256:56af03a65461e2009cf73c16ac2b1d74d856f68e3efc8b363ab84c537660c4d1" {
 		t.Fatalf("manifest digest drifted: %s", manifest.ManifestDigest)
 	}
-	if DigestBytes(runtimeTar) != "sha256:b15cafdb28440fa537a1740d1eb9ef7db0d8fc54c636e52cd3c484907d7d77c2" {
+	if DigestBytes(runtimeTar) != "sha256:aaf2a96257bcdd2900cd4f83f908f07497188d2fba82a9c555c529907ad0db14" {
 		t.Fatalf("runtime tar digest drifted: %s", DigestBytes(runtimeTar))
 	}
 	authority := manifest.SchemaBundle.ProjectionScopeAuthority
@@ -695,7 +695,7 @@ func TestDeterministicUSTARConsumerAndBundleClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.Manifest.SchemaBundle.SchemaHead != "000011" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
+	if bundle.Manifest.SchemaBundle.SchemaHead != "000013" || len(bundle.Files) != len(manifest.RuntimeArtifacts)+1 {
 		t.Fatalf("unexpected bundle projection: head=%s files=%d", bundle.Manifest.SchemaBundle.SchemaHead, len(bundle.Files))
 	}
 	if _, err := parseDeterministicUSTAR(append(bytes.Clone(raw), make([]byte, 512)...)); err == nil {
