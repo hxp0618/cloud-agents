@@ -571,6 +571,18 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       `BOOTSTRAP_VALIDATED` 仍为 `notGateClosure=true`，所有 aggregate Gate 继续 OPEN。按当前 tracker 与
       ADR-0029 的顺序约束，下一最小实现方向为已批准但尚未开始的 formal Slice C projection；本条不授权生产数据库、
       HTTP/P2/provider、部署、发布或 Gate 关闭。
+- [x] D-053 current-source contract-standards successor repair 已在固定候选
+      `f1e6a085db2a4c7d5405b30a4e853846eb01e4ba` 完成，并由独立只读审查
+      `d1a77b9` 返回 `APPROVE, P0=0/P1=0/P2=0`；以 merge commit `28e80ba` 集成到
+      `codex/cloud-agents-platform-p0`。v1/v2 profile bytes 保持 immutable，v3 明确 independent
+      `68/2/79` 与 bootstrap `64/2/79` 两个发现域，source digest 为 `f2b1…`，并将
+      `contractStandards` 绑定到 v3 lock/DAG。受影响 TypeScript `48/48`、Python `14/14`、bootstrap、
+      source/lock state checks 均通过；完整 standards orchestration 未作 pass claim（本机 Bun `1.4.0`，profile
+      固定 `1.3.14`）。该项只解除 deterministic standards mismatch，fresh projection/native replay、supply
+      assembly/review 与所有 aggregate Gate 仍 OPEN/IN PROGRESS；不授权生产数据库、HTTP/P2/provider、部署、
+      发布或 Gate 关闭。见
+      [`implementation repair`](../p1/g-contract-current-source-contract-standards-profile-repair-20260826.md) 与
+      [`independent review`](../p1/g-contract-current-source-contract-standards-profile-independent-review-20260826.md)。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
