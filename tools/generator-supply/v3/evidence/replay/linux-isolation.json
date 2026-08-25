@@ -25,7 +25,7 @@
   "inputReadOnly": true,
   "inputTreeFiles": 1481,
   "inputTreeManifestAlgorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
-  "inputTreeManifestSha256": "sha256:a3c97c676d97762719f64382e0eef1c1bcc99eea60d5c05d4794bc0928111906",
+  "inputTreeManifestSha256": "sha256:3c6fd0f7507138759e5ce5018d53c7516315f15330e65b9f056f7420e380956a",
   "mechanism": "UNSHARE_NET_MOUNT_PID_FRESH_ROOTFS_SETPRIV_V1",
   "networkDenied": true,
   "noNewPrivileges": true,
@@ -198,12 +198,12 @@
   },
   "processLifetimeClosure": "PID_NAMESPACE_KILL_CHILD",
   "projectionArchiveMemberManifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
-  "projectionArchiveMemberManifestSha256": "sha256:8827a3bc54e51cfaa201580367a06dd614de47bb6aa1ac121fe24f8d19da3aea",
+  "projectionArchiveMemberManifestSha256": "sha256:fec650e3bd9956a2e67772997175635d887d67b775825c6bde4a3f5c97452838",
   "projectionArchiveMembers": 1677,
-  "projectionArchiveSha256": "sha256:59b4d5e6f339c0d2fe238ab86f5961cd812d252d1e62b4df23d987ee19fd3f16",
+  "projectionArchiveSha256": "sha256:f3b066fc78a04e3596d6ba0afbcc999183c499d2004633d8fa92906a94139cd8",
   "projectionArchiveSizeBytes": 48465920,
   "projectionReadOnly": true,
-  "projectionTreeSha": "0af86df8112feb881a80bb1ee0c69179a6363afe",
+  "projectionTreeSha": "2c5ad6529691b9bd1cc506bc678e304f1940565a",
   "replayAuthoritySha256": {
     "archiveInspector": "sha256:db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31",
     "pathHelper": "sha256:4cde1599b7e909ef0070b81090d40c2e2c7c1c43af64cebd3c53391489a6fccf",
@@ -216,8 +216,8 @@
   "rootfsReadOnly": true,
   "runAWriteRootDestroyedBeforeRunB": true,
   "runReportSha256": {
-    "a": "sha256:edac71f2d012d5cda3acea7b2225a946f2451abb5e05be896a3ecc93a6cf65ea",
-    "b": "sha256:ba5737b7fbd9fe7e6ad8a5c1e1cddfcba454ef4f070277c6707e68115303d2b8"
+    "a": "sha256:ff452b2209afefe3edf607ec2d6bb7ca12ab1f314390651b04ac3254fe31873e",
+    "b": "sha256:650193beab6f48338083df2a90ed67b5e157cfa0a08df3b2354b1119e256e62d"
   },
   "runnerChildStdoutRedirectedToStderr": true,
   "runnerEnvironmentPolicy": "ENV_I_MINIMAL_V1",
