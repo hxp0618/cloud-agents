@@ -79,3 +79,10 @@ exact 49 core outputs, and rechecks the captured replay snapshot immediately
 before the exclusive write. The v1/v2 authorities, all entry/recovery writer
 paths, production database/HTTP/P2/provider effects, deployment, publication,
 and Gate state remain unchanged and unauthorized.
+
+A subsequent preflight exposed a separate newline-handling defect in the same
+consumer: its Git text helper trimmed the terminal newline before comparing a
+tracked generated artifact, so a valid newline-terminated manifest was falsely
+classified as dirty. The bounded repair compares the observed bytes' Git blob
+SHA directly with the tracked `100644` blob identity. The lock transition was
+again not reached and the fixed v2 predecessor remained byte-identical.

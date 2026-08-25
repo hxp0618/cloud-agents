@@ -197,7 +197,7 @@ function artifact(path: string): PlatformContractLockV3ArtifactIdentity {
   const entry = git(["ls-tree", "HEAD", "--", path]);
   const match = /^100644 blob ([0-9a-f]{40})\t(.+)$/u.exec(entry);
   if (!match || match[2] !== path) throw new Error(`${path} is not a tracked 100644 file at HEAD.`);
-  if (git(["cat-file", "blob", `HEAD:${path}`]) !== observation.bytes.toString("utf8")) {
+  if (gitBlob(observation.bytes) !== match[1]) {
     throw new Error(`${path} has dirty bytes; lock authority requires the fixed HEAD blob.`);
   }
   return {
