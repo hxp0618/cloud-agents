@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -97,6 +98,15 @@ describe("successor v3 immutable predecessor fence", () => {
       "tools/generator-supply/v3/source.json",
       readFileSync(resolve(repositoryRoot, "tools/generator-supply/v3/source.json"), "utf8"),
     );
+    for (const path of [
+      "scripts/replay-platform-generators-isolated-v3.sh",
+      "scripts/replay-platform-generators-v3.ts",
+      "scripts/lib/generator-replay-path-authority.ts",
+      "scripts/lib/inspect-generator-replay-archive.py",
+    ]) {
+      mkdirSync(dirname(resolve(root, path)), { recursive: true });
+      copyFileSync(resolve(repositoryRoot, path), resolve(root, path));
+    }
     for (const state of ["ASSEMBLED", "PHASE_BOUND"]) {
       write(
         root,

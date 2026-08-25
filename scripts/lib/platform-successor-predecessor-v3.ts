@@ -16,6 +16,7 @@ import {
   assertSuccessorV3CoreGeneratorOutputAuthority,
   SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS,
   SUCCESSOR_V3_PROJECTION_EXCLUSIONS,
+  SUCCESSOR_V3_REPLAY_AUTHORITY_FILES,
 } from "./platform-successor-dag-v3";
 
 export const SUCCESSOR_V3_SOURCE_PATH = "tools/generator-supply/v3/source.json";
@@ -75,6 +76,16 @@ export type SuccessorV3Source = Readonly<{
     gitChain: readonly SuccessorV3GitStep[];
   }>;
   replayContract: Readonly<{
+    authorityFiles: Readonly<
+      Record<
+        keyof typeof SUCCESSOR_V3_REPLAY_AUTHORITY_FILES,
+        Readonly<{
+          path: string;
+          sha256: string;
+          sizeBytes: number;
+        }>
+      >
+    >;
     coreGeneratorOutputs: readonly SuccessorV3FileRecord[];
     projectionExclusions: readonly string[];
     preReplayExclusionPolicy: string;
@@ -402,6 +413,7 @@ function captureSnapshot(
   const source = parseAndAssertSource(sourceBytes);
 
   assertGitTopLevelAndBaseline(root);
+  verifyReplayAuthorityFiles(root, source.replayContract.authorityFiles, snapshot);
   for (const group of source.predecessorClosure.groups) {
     for (const record of group.files) {
       if (group.id === HISTORICAL_GENERATION_LOCK_V2.groupId) {
@@ -553,6 +565,7 @@ function assertSource(value: unknown): asserts value is SuccessorV3Source {
   exactKeys(
     replay,
     [
+      "authorityFiles",
       "coreGeneratorOutputs",
       "projectionExclusions",
       "preReplayExclusionPolicy",
@@ -563,6 +576,7 @@ function assertSource(value: unknown): asserts value is SuccessorV3Source {
     ],
     "/replayContract",
   );
+  assertReplayAuthoritySource(replay.authorityFiles);
   if (!Array.isArray(replay.coreGeneratorOutputs)) {
     fail(
       "SUCCESSOR_V3_SOURCE_INVALID",
@@ -734,6 +748,52 @@ function assertFileRecord(value: unknown, pointer: string): SuccessorV3FileRecor
   }
   validatePath(record.path);
   return record as SuccessorV3FileRecord;
+}
+
+type SuccessorV3ReplayAuthorityRecord = Readonly<{
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+}>;
+
+function assertReplayAuthoritySource(value: unknown): void {
+  const authority = requireRecord(value, "/replayContract/authorityFiles");
+  const names = Object.keys(SUCCESSOR_V3_REPLAY_AUTHORITY_FILES) as Array<
+    keyof typeof SUCCESSOR_V3_REPLAY_AUTHORITY_FILES
+  >;
+  exactKeys(authority, names, "/replayContract/authorityFiles");
+  for (const name of names) {
+    const pointer = `/replayContract/authorityFiles/${name}`;
+    const record = requireRecord(authority[name], pointer);
+    exactKeys(record, ["path", "sha256", "sizeBytes"], pointer);
+    if (
+      record.path !== SUCCESSOR_V3_REPLAY_AUTHORITY_FILES[name] ||
+      typeof record.sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/u.test(record.sha256) ||
+      typeof record.sizeBytes !== "number" ||
+      !Number.isSafeInteger(record.sizeBytes) ||
+      record.sizeBytes < 1
+    ) {
+      fail("SUCCESSOR_V3_SOURCE_INVALID", pointer, "Replay authority record drifted.");
+    }
+    validatePath(record.path);
+  }
+}
+
+function verifyReplayAuthorityFiles(
+  root: string,
+  value: Readonly<Record<string, SuccessorV3ReplayAuthorityRecord>>,
+  snapshot: Snapshot,
+): void {
+  for (const name of Object.keys(SUCCESSOR_V3_REPLAY_AUTHORITY_FILES) as Array<
+    keyof typeof SUCCESSOR_V3_REPLAY_AUTHORITY_FILES
+  >) {
+    const record = value[name];
+    const bytes = readStableFile(root, record.path, snapshot);
+    if (bytes.byteLength !== record.sizeBytes || digest(bytes) !== record.sha256) {
+      fail("SUCCESSOR_V3_FILE_MISMATCH", record.path, "Replay authority bytes drifted.");
+    }
+  }
 }
 
 function assertGitChainSource(value: unknown): void {

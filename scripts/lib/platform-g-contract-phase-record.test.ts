@@ -94,10 +94,20 @@ describe("G-CONTRACT-P1 phase-record authority", () => {
     expect(first).toContain("- Independent reviewer: `PENDING`");
     expect(first).toContain("`notGateClosure=true`; `gateStatus=ALL_GATES_OPEN`");
     expect(first).toContain("`REVIEW_BOUND_SATISFIED_CANDIDATE` / `0`");
-    expect(model.criteria.map(({ status }) => status)).toEqual(
-      Array.from({ length: 5 }, () => "SATISFIED_CANDIDATE"),
-    );
-    expect(model.missing).toEqual([]);
+    expect(model.criteria.map(({ status }) => status)).toEqual([
+      "OPEN_NOT_CLAIMED",
+      "OPEN_NOT_CLAIMED",
+      "OPEN_NOT_CLAIMED",
+      "OPEN_NOT_CLAIMED",
+      "REVIEW_PENDING",
+    ]);
+    expect(model.missing).toEqual([
+      "json-schema-authority-and-openapi-refs",
+      "proto-authority-and-generated-connect-grpc-mapping",
+      "shared-golden-negative-and-n-minus-one-fixtures",
+      "exact-pinned-external-consumer",
+      "digest-change-invalidation",
+    ]);
     expect(model.notGateClosure).toBe(true);
     expect(model.gateStatus).toBe("ALL_GATES_OPEN");
   });

@@ -41,6 +41,18 @@ export const SUCCESSOR_V3_FINAL_REVIEW_PATH =
   "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md";
 
 /**
+ * The four executable/inspection inputs are versioned v3 authorities.  They
+ * are deliberately kept outside the late-bound projection so a replay can
+ * never silently fall back to the historical v1 wrapper or runner.
+ */
+export const SUCCESSOR_V3_REPLAY_AUTHORITY_FILES = {
+  wrapper: "scripts/replay-platform-generators-isolated-v3.sh",
+  runner: "scripts/replay-platform-generators-v3.ts",
+  pathHelper: "scripts/lib/generator-replay-path-authority.ts",
+  archiveInspector: "scripts/lib/inspect-generator-replay-archive.py",
+} as const;
+
+/**
  * D-053 exact17 is deliberately ordered by the state machine rather than by
  * path. It is the only authorized projection exclusion set.
  */
@@ -78,10 +90,21 @@ export const SUCCESSOR_V3_PRE_REPLAY_AUTHORITY_PATHS = [
   "scripts/lib/platform-generator-supply-profile-v3.ts",
   "scripts/lib/platform-generator-supply-profile-v3.test.ts",
   "scripts/generate-platform-generator-supply-profile-v3.ts",
-  "scripts/replay-platform-generators-isolated-v3.sh",
+  SUCCESSOR_V3_REPLAY_AUTHORITY_FILES.runner,
+  SUCCESSOR_V3_REPLAY_AUTHORITY_FILES.wrapper,
+  SUCCESSOR_V3_REPLAY_AUTHORITY_FILES.pathHelper,
+  SUCCESSOR_V3_REPLAY_AUTHORITY_FILES.archiveInspector,
+  "scripts/lib/platform-generator-supply-v3-wrapper.test.ts",
   "scripts/lib/platform-contract-lock-v3.ts",
   "scripts/lib/platform-contract-lock-v3.test.ts",
   "scripts/generate-platform-contract-lock-v3.ts",
+  "tools/gate-phase-record/g-contract-p1/v1/source.json",
+  "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-record-source-v1.schema.json",
+  "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-record-model-v1.schema.json",
+  "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-review-tuple-v1.schema.json",
+  "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-binding-registry-v1.schema.json",
+  "scripts/lib/platform-g-contract-phase-record.ts",
+  "scripts/lib/platform-g-contract-phase-record.test.ts",
   "scripts/lib/platform-g-contract-phase-state.ts",
   "scripts/lib/platform-g-contract-phase-state.test.ts",
   "scripts/check-platform-g-contract-phase-state.ts",

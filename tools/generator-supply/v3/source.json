@@ -492,6 +492,28 @@
     ]
   },
   "replayContract": {
+    "authorityFiles": {
+      "wrapper": {
+        "path": "scripts/replay-platform-generators-isolated-v3.sh",
+        "sha256": "9acfc4163fead4dace517c069b8b0e74aaacc859e8cdd2dee17b84182d0be990",
+        "sizeBytes": 84116
+      },
+      "runner": {
+        "path": "scripts/replay-platform-generators-v3.ts",
+        "sha256": "759c3b6578d3ec5c818c9ce5bc92b2d560727363e32c833494823a296ef555fd",
+        "sizeBytes": 41535
+      },
+      "pathHelper": {
+        "path": "scripts/lib/generator-replay-path-authority.ts",
+        "sha256": "4cde1599b7e909ef0070b81090d40c2e2c7c1c43af64cebd3c53391489a6fccf",
+        "sizeBytes": 4282
+      },
+      "archiveInspector": {
+        "path": "scripts/lib/inspect-generator-replay-archive.py",
+        "sha256": "db932a113dda469367f25c71b56ff28ee8f2245821fceb840c49340ef6c10f31",
+        "sizeBytes": 10860
+      }
+    },
     "coreGeneratorOutputs": [
       {
         "path": "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",

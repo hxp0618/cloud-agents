@@ -412,7 +412,10 @@ export function buildGContractPhaseRecordModel(
     source.dynamicAuthorities.assembledLockPath,
     assembledLock,
   );
-  const criteria = deriveGateCriteria(source, currentCandidateAuthority.missing);
+  // The reviewed current-candidate registry's `missing=[]` describes only
+  // that predecessor binding.  R5 must independently preserve every open or
+  // review-pending row declared by the current Gate-criteria authority.
+  const criteria = deriveGateCriteria(source);
   const missing = deriveGateMissing(criteria);
   const body: JsonRecord = {
     formatVersion: "cloud-agents-g-contract-phase-record-model/v1",
@@ -503,8 +506,8 @@ export function validateGContractPhaseRecordModel(
     );
   }
   const authority = model.currentCandidateAuthority as JsonRecord;
-  const authorityMissing = requiredStringArray(authority.missing, "authority missing");
-  const expectedCriteria = deriveGateCriteria(source, authorityMissing);
+  requiredStringArray(authority.missing, "authority missing");
+  const expectedCriteria = deriveGateCriteria(source);
   if (!canonicalEqual(model.criteria, expectedCriteria)) {
     throw phaseError(
       "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
@@ -1071,29 +1074,10 @@ function parseLockAtCommit(
   return parsed;
 }
 
-function deriveGateCriteria(
-  source: GContractPhaseRecordSource,
-  formalMissing: readonly string[],
-): JsonRecord[] {
-  const knownFormal = source.currentCandidateAuthority.formalCriteria;
-  if (
-    formalMissing.some((criterion) => !knownFormal.includes(criterion)) ||
-    new Set(formalMissing).size !== formalMissing.length
-  ) {
-    throw phaseError(
-      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
-      "/currentCandidateAuthority/missing",
-      "Formal missing set contains an unknown or duplicate criterion.",
-    );
-  }
+function deriveGateCriteria(source: GContractPhaseRecordSource): JsonRecord[] {
   return source.criteriaAuthority.criteria.map((criterion) => {
-    const unresolved = criterion.formalCriteria.filter((item) => formalMissing.includes(item));
     const status: CriterionStatus =
-      criterion.formalCriteria.length === 0
-        ? "NOT_APPLICABLE"
-        : unresolved.length === 0
-          ? "SATISFIED_CANDIDATE"
-          : criterion.missingStatus;
+      criterion.formalCriteria.length === 0 ? "NOT_APPLICABLE" : criterion.missingStatus;
     return {
       id: criterion.id,
       status,
