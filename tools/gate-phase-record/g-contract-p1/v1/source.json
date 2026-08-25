@@ -1,0 +1,217 @@
+{
+  "formatVersion": "cloud-agents-g-contract-phase-record-source/v1",
+  "authorityId": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1",
+  "gateId": "G-CONTRACT",
+  "phase": "P1",
+  "record": {
+    "evidenceId": "CAG-G-CONTRACT-P1-20260825-R5",
+    "recordType": "PHASE",
+    "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+    "supersedes": "CAG-G-CONTRACT-P1-20260823-R4",
+    "status": "IN_PROGRESS",
+    "independentReviewer": "PENDING",
+    "date": "2026-08-25",
+    "timezone": "Asia/Shanghai",
+    "gateEffect": "NONE",
+    "closureDecision": "NONE"
+  },
+  "criteriaAuthority": {
+    "path": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+    "sha256": "sha256:4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994",
+    "criteria": [
+      {
+        "id": "json-schema-authority-and-openapi-refs",
+        "statement": "JSON Schema is the sole management, agent, and host JSON-model authority; OpenAPI contains route, status, header, and schema references without drifting inline copies.",
+        "formalCriteria": [
+          "json-schema-2020-12-official-test-suite",
+          "openapi-3.1-semantic-validation"
+        ],
+        "missingStatus": "OPEN_NOT_CLAIMED"
+      },
+      {
+        "id": "proto-authority-and-generated-connect-grpc-mapping",
+        "statement": "Versioned Proto is the sole Worker and Platform Adapter wire-model authority and generates Connect or gRPC client, server, and mapping artifacts whose digests enter the record.",
+        "formalCriteria": [
+          "generated-sdk-replay",
+          "response-watch-unknown-field-preservation"
+        ],
+        "missingStatus": "OPEN_NOT_CLAIMED"
+      },
+      {
+        "id": "shared-golden-negative-and-n-minus-one-fixtures",
+        "statement": "TypeScript SDK, Go SDK, Go server validator, and mappings share golden, negative, and N or N-minus-one fixtures covering every required compatibility and round-trip case.",
+        "formalCriteria": [
+          "n-minus-one-compatibility",
+          "response-watch-unknown-field-preservation"
+        ],
+        "missingStatus": "OPEN_NOT_CLAIMED"
+      },
+      {
+        "id": "exact-pinned-external-consumer",
+        "statement": "A fresh external consumer installs exact digest-pinned SDK artifacts, compiles, and calls the fixture server without workspace, file, Git, or cross-repository dependencies.",
+        "formalCriteria": [
+          "generated-sdk-replay"
+        ],
+        "missingStatus": "OPEN_NOT_CLAIMED"
+      },
+      {
+        "id": "digest-change-invalidation",
+        "statement": "Any schema, Proto, OpenAPI, generated SDK, or mapping-fixture digest change invalidates this record.",
+        "formalCriteria": [
+          "json-schema-2020-12-official-test-suite",
+          "openapi-3.1-semantic-validation",
+          "generated-sdk-replay",
+          "n-minus-one-compatibility",
+          "response-watch-unknown-field-preservation",
+          "runtime-server-path-and-tenant-authority-enforcement",
+          "remaining-generator-supply-chain-review"
+        ],
+        "missingStatus": "REVIEW_PENDING"
+      }
+    ]
+  },
+  "currentCandidateAuthority": {
+    "path": "tools/contract-review-binding/v1/registry.json",
+    "sha256": "sha256:e5e5a6abc573fcdcce9d0f1338dad033f5155fe76b555e1fca3a9efc19f14dde",
+    "formatVersion": "cloud-agents-contract-review-binding-registry/v1",
+    "registryId": "cloud-agents/platform/contract-review-binding",
+    "bindingId": "g-contract-current-source-review-binding/v1",
+    "effectiveStatus": "REVIEW_BOUND_SATISFIED_CANDIDATE",
+    "formalCriteria": [
+      "json-schema-2020-12-official-test-suite",
+      "openapi-3.1-semantic-validation",
+      "generated-sdk-replay",
+      "n-minus-one-compatibility",
+      "response-watch-unknown-field-preservation",
+      "runtime-server-path-and-tenant-authority-enforcement",
+      "remaining-generator-supply-chain-review"
+    ],
+    "missing": [],
+    "notGateClosure": true,
+    "gateStatus": "ALL_GATES_OPEN"
+  },
+  "prerequisites": [
+    {
+      "evidenceId": "CAG-G-INVENTORY-P0-20260810-R3",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-INVENTORY/CAG-G-INVENTORY-P0-20260810-R3.md",
+      "sha256": "sha256:d865bb9fd1195342a7251bd6822130437753f5be4af8312d9d5c5ee4d5b71400",
+      "status": "VERIFIED"
+    },
+    {
+      "evidenceId": "CAG-G-BASELINE-P0-20260823-R4",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-BASELINE/CAG-G-BASELINE-P0-20260823-R4.md",
+      "sha256": "sha256:57429377291d1b6a41ff886cde2a6692afd63b5c15adf0677767d59e87b03dd9",
+      "status": "VERIFIED"
+    }
+  ],
+  "historicalRecords": [
+    {
+      "evidenceId": "CAG-G-CONTRACT-P1-20260823-R1",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md",
+      "sha256": "sha256:ebac580f39a7c3c397c1000a3b04abb7281732e45ade3f8aa75474c231334189"
+    },
+    {
+      "evidenceId": "CAG-G-CONTRACT-P1-20260823-R2",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md",
+      "sha256": "sha256:ca9754117bdaded4a4d8ea107933725b517934ffc6c5da52607f80d0eeed9909"
+    },
+    {
+      "evidenceId": "CAG-G-CONTRACT-P1-20260823-R3",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R3.md",
+      "sha256": "sha256:67268e58174f9c845d2599bac20e99aa2010d52d557c78b3982c13deae5aae85"
+    },
+    {
+      "evidenceId": "CAG-G-CONTRACT-P1-20260823-R4",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md",
+      "sha256": "sha256:0982261244e7315c2798db4a4f0913f7f93037c251140c8f14ed2cbc3bcd7152"
+    },
+    {
+      "evidenceId": "CAG-G-CONTRACT-P1-20260823-R4-INDEPENDENT-REVIEW",
+      "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+      "sha256": "sha256:f0d5b12f1f6e0f2936783868331d4d74d7a3ee0fc49b3e370894b95884458f61"
+    }
+  ],
+  "currentSourceInputPaths": [
+    "package.json",
+    "bun.lock",
+    "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+    "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+    "contracts/generated/proto/manifest.json",
+    "sdk/go/go.mod",
+    "sdk/typescript/package.json"
+  ],
+  "dynamicAuthorities": {
+    "projectionReceiptPath": "tools/generator-supply/v3/evidence/replay/projection.json",
+    "supplyManifestPath": "tools/generator-supply/v3/evidence-manifest.json",
+    "supplyProfilePath": "tools/generator-supply/v3/profile.json",
+    "supplyReviewPath": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+    "assembledLockPath": "contracts/generation.lock.json"
+  },
+  "reviewSlots": [
+    {
+      "subject": "generator_supply_v3",
+      "candidateSubjectPath": "tools/generator-supply/v3/profile.json",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+      "candidateDiffDomain": "cloud-agents/g-contract-phase/supply-v3-candidate-diff/v1",
+      "reviewDiffDomain": "cloud-agents/g-contract-phase/supply-v3-review-diff/v1",
+      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0"
+    },
+    {
+      "subject": "g_contract_r5",
+      "candidateSubjectPath": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+      "reviewPath": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+      "candidateDiffDomain": "cloud-agents/g-contract-phase/r5-candidate-diff/v1",
+      "reviewDiffDomain": "cloud-agents/g-contract-phase/r5-review-diff/v1",
+      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0"
+    }
+  ],
+  "binding": {
+    "tuplePath": "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json",
+    "registryPath": "tools/gate-phase-record/g-contract-p1/v1/registry.json",
+    "registryState": "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT",
+    "finalReviewPath": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md",
+    "terminalState": "REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE"
+  },
+  "exactLateBoundPaths": [
+    "contracts/generation.lock.json",
+    "tools/generator-supply/v3/evidence-manifest.json",
+    "tools/generator-supply/v3/profile.json",
+    "tools/generator-supply/v3/evidence/replay.json",
+    "tools/generator-supply/v3/evidence/replay/darwin-a.json",
+    "tools/generator-supply/v3/evidence/replay/darwin-b.json",
+    "tools/generator-supply/v3/evidence/replay/darwin-isolation.json",
+    "tools/generator-supply/v3/evidence/replay/linux-a.json",
+    "tools/generator-supply/v3/evidence/replay/linux-b.json",
+    "tools/generator-supply/v3/evidence/replay/linux-isolation.json",
+    "tools/generator-supply/v3/evidence/replay/projection.json",
+    "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+    "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+    "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+    "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json",
+    "tools/gate-phase-record/g-contract-p1/v1/registry.json",
+    "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md"
+  ],
+  "stateMachine": [
+    "PRE_CANDIDATE_ABSENT",
+    "R5_CURRENT_REVIEW_ABSENT",
+    "R5_REVIEW_CURRENT_BINDING_ABSENT",
+    "COMPLETE_TUPLE_READY_TO_WRITE",
+    "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT",
+    "REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE"
+  ],
+  "implementationBoundary": {
+    "notGateClosure": true,
+    "gateStatus": "ALL_GATES_OPEN",
+    "bootstrapDiscovery": "FORBIDDEN",
+    "coreReplayOutput": "FORBIDDEN",
+    "arbitraryGateWriter": "FORBIDDEN",
+    "trackerAuthority": "FORBIDDEN",
+    "selfReview": "FORBIDDEN",
+    "terminalTrackedOutput": "FORBIDDEN",
+    "httpP2Provider": "NOT_AUTHORIZED",
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "deployment": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED",
+    "signing": "NOT_AUTHORIZED"
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-binding-registry-v1.schema.json",
+  "title": "GContractP1PhaseBindingRegistryV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "authorityId",
+    "sourceDigest",
+    "tupleDigest",
+    "bindingsDigest",
+    "bindings",
+    "state",
+    "terminalReview",
+    "notGateClosure",
+    "gateStatus",
+    "closureDecision",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-phase-binding-registry/v1"
+    },
+    "authorityId": {
+      "const": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1"
+    },
+    "sourceDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "tupleDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "bindingsDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "bindings": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/binding",
+          "properties": {
+            "subject": {
+              "const": "generator_supply_v3"
+            },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/binding",
+          "properties": {
+            "subject": {
+              "const": "g_contract_r5"
+            },
+            "reviewPath": {
+              "const": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "state": {
+      "const": "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT"
+    },
+    "terminalReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "state"
+      ],
+      "properties": {
+        "path": {
+          "const": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md"
+        },
+        "state": {
+          "const": "ABSENT"
+        }
+      }
+    },
+    "notGateClosure": {
+      "const": true
+    },
+    "gateStatus": {
+      "const": "ALL_GATES_OPEN"
+    },
+    "closureDecision": {
+      "const": "NONE"
+    },
+    "registryDigest": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "gitObject": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "candidateCommit",
+        "candidateTree",
+        "reviewCommit",
+        "reviewTree",
+        "reviewPath",
+        "reviewSha256",
+        "reviewDiffSha256",
+        "verdict"
+      ],
+      "properties": {
+        "subject": {
+          "enum": [
+            "generator_supply_v3",
+            "g_contract_r5"
+          ]
+        },
+        "candidateCommit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "candidateTree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "reviewCommit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "reviewTree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "reviewPath": {
+          "$ref": "#/$defs/path"
+        },
+        "reviewSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "reviewDiffSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "verdict": {
+          "const": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      }
+    }
+  }
+}

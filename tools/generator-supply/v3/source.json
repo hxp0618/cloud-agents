@@ -1,0 +1,925 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-profile-source/v3",
+  "registryId": "cloud-agents/generator-supply-profile",
+  "decisionId": "D-053",
+  "baseline": {
+    "commit": "16275f6cbf390c343a9ac00f9193e75eaad0094e",
+    "tree": "ca595b8e1258a8b78c4da3a545b2a31d8f62b531",
+    "gateCriteria": {
+      "path": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+      "sha256": "4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994"
+    },
+    "mutation": "forbidden"
+  },
+  "predecessorClosure": {
+    "groups": [
+      {
+        "id": "contract-closure-v1",
+        "files": [
+          {
+            "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v1.json",
+            "mode": "100644",
+            "gitBlob": "fc91d328e0005f4df2e37e4d13b0a86a8c297139",
+            "sha256": "823e9356342511b611538fb669e8af99962555b153324d09c7208f3f00b51e68",
+            "sizeBytes": 6364
+          },
+          {
+            "path": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
+            "mode": "100644",
+            "gitBlob": "a79c6955bb5e8b22e833766cf6fde6fabfdcc146",
+            "sha256": "411e4b649c5b812339817b5836c25a6a2f27c9aa0e24497b7aa65da8fe2baa49",
+            "sizeBytes": 5589
+          },
+          {
+            "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "6699759b019b513f7e6b8bce4556b78279d3b1c7",
+            "sha256": "8b87a0e24e42db87987a1dc1b4931b7ff2b8edef6bef6ccd184e0586a7bdc4af",
+            "sizeBytes": 4711
+          },
+          {
+            "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "0a630565a0d641e5bcf6103c4f012286634924a6",
+            "sha256": "107dbc21f240cd912f567ef1e0a6bfaf78d2e6171f0f4189ca9812c225630bc0",
+            "sizeBytes": 1548
+          }
+        ]
+      },
+      {
+        "id": "contract-closure-v2",
+        "files": [
+          {
+            "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+            "mode": "100644",
+            "gitBlob": "9a608b9e8b25c82d5842e2eec6aef84f858e06b6",
+            "sha256": "5069f0f1bdca9b7b7c161cb36870c00be254acb315cafab45adcc944b19e33fe",
+            "sizeBytes": 8690
+          },
+          {
+            "path": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json",
+            "mode": "100644",
+            "gitBlob": "654d584f2c12fb6df71b258d62e118c2eab828e3",
+            "sha256": "cb0c2f9efe9f54ef5ed2eb0868ff604d8fe06b8f40bd4fdc01be07c0cb160032",
+            "sizeBytes": 7932
+          },
+          {
+            "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
+            "mode": "100644",
+            "gitBlob": "f1e5ee3a601e190d909444a30325eb036ca97569",
+            "sha256": "2bba53f094b1b01eabc3becb769ce00bfaee140f90ced21e21a22f352eb192ad",
+            "sizeBytes": 8122
+          },
+          {
+            "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
+            "mode": "100644",
+            "gitBlob": "3c91a0daf91e0ea18de44b675718c60a291b6295",
+            "sha256": "7e6e9f35c000e0620d8719a31102f6b4fd1cd7450892be0b815e5b7c25307146",
+            "sizeBytes": 1833
+          }
+        ]
+      },
+      {
+        "id": "contract-closure-v3",
+        "files": [
+          {
+            "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+            "mode": "100644",
+            "gitBlob": "d714424ac6b42a44ee775a6edde6327d87f2d7c3",
+            "sha256": "e8384fb25f3828dfafeecf0040110df3a51cd64ce5877e966ecec12769099bf4",
+            "sizeBytes": 14215
+          },
+          {
+            "path": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v3.json",
+            "mode": "100644",
+            "gitBlob": "58f651367aea31c5662423b602bf293d085a8afa",
+            "sha256": "face6b9f01732255d4f3ae3aebb040d0af19efae416bad074a2f84510e385862",
+            "sizeBytes": 13451
+          },
+          {
+            "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v3.schema.json",
+            "mode": "100644",
+            "gitBlob": "eb2c46f916ac52b13a6d225685bf48064cf35836",
+            "sha256": "3fbc85313f2195860b6211f8c31fc185d825469146f703b7e442c34b0612ed25",
+            "sizeBytes": 23642
+          },
+          {
+            "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v3.schema.json",
+            "mode": "100644",
+            "gitBlob": "ccdef422ab3ef6a61cb2be8ff1e071572cd99374",
+            "sha256": "3a98b5558cf7d359e4854a46ab95a1a14fb3cc1298a304954d4033a092f8fcb2",
+            "sizeBytes": 2080
+          },
+          {
+            "path": "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md",
+            "mode": "100644",
+            "gitBlob": "95cd52d4074852f1792620bcac8cf6bf6ffc0853",
+            "sha256": "83975f780dbcaed587988155f680c33e3b1a42ee10776af2a3077a5482d13001",
+            "sizeBytes": 10102
+          }
+        ]
+      },
+      {
+        "id": "generator-supply-v1",
+        "files": [
+          {
+            "path": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+            "mode": "100644",
+            "gitBlob": "b4d262d369213ba3253aba319771dc2439aec204",
+            "sha256": "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
+            "sizeBytes": 8426
+          },
+          {
+            "path": "tools/generator-supply/v1/evidence-manifest.json",
+            "mode": "100644",
+            "gitBlob": "a6e2380a27d10df5c60a6be113a61bfa82b72c91",
+            "sha256": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+            "sizeBytes": 8186
+          },
+          {
+            "path": "tools/generator-supply/v1/generator-supply-profile-source-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "deec7736fa90978f0162f5d3dccae8ab20f11763",
+            "sha256": "6204f24913dccc98e80e415f00fce74e2bfa99b68df691b1669f0c00592002ab",
+            "sizeBytes": 8938
+          },
+          {
+            "path": "tools/generator-supply/v1/generator-supply-profile-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "74b7dfda47cf8214327e0e54facba4003cd3bff3",
+            "sha256": "6f51389646fdbcf8633b56495d1d128b92bec1958dbc1acb96afaf2d75ea2d64",
+            "sizeBytes": 2077
+          },
+          {
+            "path": "tools/generator-supply/v1/profile.json",
+            "mode": "100644",
+            "gitBlob": "4e1d61d0c16236a047822914244dd5b372d73077",
+            "sha256": "dcd9c9da7cd28a254dbeb419a388875b843033c0ca522fc603cd29b30295f93b",
+            "sizeBytes": 22188
+          },
+          {
+            "path": "tools/generator-supply/v1/source.json",
+            "mode": "100644",
+            "gitBlob": "8737a72d1a00ea21517b0b8f7058e36d9a674189",
+            "sha256": "a14e177c72afb699b47446232625ba638c68da2bc7731e213ab432244924a2f9",
+            "sizeBytes": 12111
+          }
+        ]
+      },
+      {
+        "id": "generator-supply-v2",
+        "files": [
+          {
+            "path": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md",
+            "mode": "100644",
+            "gitBlob": "5bf8274155b6a5613112583a31a4b3b56a31d3e3",
+            "sha256": "3607d4cdf9e4a9680c2af91f860385727b90ad52e17288ffc2ff40d6d04e0cec",
+            "sizeBytes": 12963
+          },
+          {
+            "path": "tools/generator-supply/v2/evidence-manifest.json",
+            "mode": "100644",
+            "gitBlob": "547a1bdc2609c4cc6204100a05798e5523c5e7e4",
+            "sha256": "da539baf6ab644d49f782d26b3f9ad8e2a12cdab048c3fcf34b756192cd933ba",
+            "sizeBytes": 1688
+          },
+          {
+            "path": "tools/generator-supply/v2/generator-supply-profile-source-v2.schema.json",
+            "mode": "100644",
+            "gitBlob": "576a05d8af81d1242ebe154bd2067fc0b3d69e4d",
+            "sha256": "0a34e94e8cd549092aae01961c1b8704cf9b4e115596de08776bb4ada0a24702",
+            "sizeBytes": 13608
+          },
+          {
+            "path": "tools/generator-supply/v2/generator-supply-profile-v2.schema.json",
+            "mode": "100644",
+            "gitBlob": "f673f343fda54c0f2d1dd18ae59c513a9a13cc25",
+            "sha256": "e8b368fd0f6b1a4dc0614d97361348970ce29518f68412aee394543225d4b324",
+            "sizeBytes": 3033
+          },
+          {
+            "path": "tools/generator-supply/v2/profile.json",
+            "mode": "100644",
+            "gitBlob": "383fd1760954bc923b71f6b9318eca57cd55207e",
+            "sha256": "e52a6e24e2903ee403abb5b7252f6472437d8cddcb78bcaf8e2699c5ab393252",
+            "sizeBytes": 9362
+          },
+          {
+            "path": "tools/generator-supply/v2/source.json",
+            "mode": "100644",
+            "gitBlob": "b58d91dccf5ebd7c3d3abb2bc432c67db7cef4f8",
+            "sha256": "31d33cfde3f24df0e2b18b70e445232399c75f3a283df8fc1fc6bd945db99305",
+            "sizeBytes": 8280
+          }
+        ]
+      },
+      {
+        "id": "contract-review-binding-v1",
+        "files": [
+          {
+            "path": "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md",
+            "mode": "100644",
+            "gitBlob": "f3c816a790d5d59e76acb366b3ab3fae7bfbc2e4",
+            "sha256": "bdbc8b530ccabd1f79be78e380455bac5ef7123a957879c34225855adcbbc18f",
+            "sizeBytes": 10973
+          },
+          {
+            "path": "tools/contract-review-binding/v1/registry.json",
+            "mode": "100644",
+            "gitBlob": "a049975f8bec71a645515d58d7ba6df8eda07c47",
+            "sha256": "e5e5a6abc573fcdcce9d0f1338dad033f5155fe76b555e1fca3a9efc19f14dde",
+            "sizeBytes": 2298
+          },
+          {
+            "path": "tools/contract-review-binding/v1/review-binding-registry-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "dadea84267fd2559f7293a048aa9293414d3bffb",
+            "sha256": "5bc977e50551456412c5b4e95e57beb505ad25b54c642cd32368b372575bc376",
+            "sizeBytes": 3808
+          },
+          {
+            "path": "tools/contract-review-binding/v1/review-binding-source-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "c968e11151c653ee9fec21b2696a7c95d5984cfe",
+            "sha256": "a627ee7a367ee8ca7e3aeb26125fe825fca53495c1af74ecee20452177eba472",
+            "sizeBytes": 5136
+          },
+          {
+            "path": "tools/contract-review-binding/v1/review-tuple-v1.schema.json",
+            "mode": "100644",
+            "gitBlob": "0d2a041f863004a00b53531a9bcd5bee069666da",
+            "sha256": "b54e31b61b24f238ff47fa90f9d7e1c72a23af2b1299a0eef206a751fb0851d5",
+            "sizeBytes": 4992
+          },
+          {
+            "path": "tools/contract-review-binding/v1/review-tuple.json",
+            "mode": "100644",
+            "gitBlob": "57d608ad05b1465beae32c73a441283beead5909",
+            "sha256": "b98d519207cf91544b2120642df1714217fb5b70a1414cc505f3969765479c50",
+            "sizeBytes": 3374
+          },
+          {
+            "path": "tools/contract-review-binding/v1/source.json",
+            "mode": "100644",
+            "gitBlob": "a3d68fee205a1244350bf7a0c643961a99a42abe",
+            "sha256": "99b688b39c2819a02e6d974675c72317285a7545b073bd1cb071a081fcff2f45",
+            "sizeBytes": 1900
+          }
+        ]
+      },
+      {
+        "id": "g-contract-r1-r4-history",
+        "files": [
+          {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R1.md",
+            "mode": "100644",
+            "gitBlob": "42110c3a09bb8ea754d265883f8f28defb1246d0",
+            "sha256": "ebac580f39a7c3c397c1000a3b04abb7281732e45ade3f8aa75474c231334189",
+            "sizeBytes": 14126
+          },
+          {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R2.md",
+            "mode": "100644",
+            "gitBlob": "0097f60cf7d67c132c1c901ed025fc3813f38b5f",
+            "sha256": "ca9754117bdaded4a4d8ea107933725b517934ffc6c5da52607f80d0eeed9909",
+            "sizeBytes": 11152
+          },
+          {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R3.md",
+            "mode": "100644",
+            "gitBlob": "f4281554c0813db90e328aff3e7e0a648f4e8e1f",
+            "sha256": "67268e58174f9c845d2599bac20e99aa2010d52d557c78b3982c13deae5aae85",
+            "sizeBytes": 9044
+          },
+          {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4-independent-review.md",
+            "mode": "100644",
+            "gitBlob": "81bb598d19f05ba396f3522b934f2ed97199ae93",
+            "sha256": "f0d5b12f1f6e0f2936783868331d4d74d7a3ee0fc49b3e370894b95884458f61",
+            "sizeBytes": 6529
+          },
+          {
+            "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260823-R4.md",
+            "mode": "100644",
+            "gitBlob": "d2b46bcd287481d3aebe616cae532aa4b5e776da",
+            "sha256": "0982261244e7315c2798db4a4f0913f7f93037c251140c8f14ed2cbc3bcd7152",
+            "sizeBytes": 13036
+          },
+          {
+            "path": "docs/plan/p1/g-contract-standards-independent-review-r3-20260823.md",
+            "mode": "100644",
+            "gitBlob": "43588c7aecd0ae6837f29d9e6d438380fde3f517",
+            "sha256": "fd9ece874ff3a69bac875d963d0f823201c23b419ba42156cbae990023979b7b",
+            "sizeBytes": 5132
+          }
+        ]
+      },
+      {
+        "id": "generation-lock-v2",
+        "files": [
+          {
+            "path": "contracts/generation.lock.json",
+            "mode": "100644",
+            "gitBlob": "39ee20e035d8770340d46a8663633c6519830de1",
+            "sha256": "de62a85390e58736a5fef8272878b821415b4180948437e54edb8628e005ff53",
+            "sizeBytes": 17377
+          }
+        ]
+      }
+    ],
+    "evidenceManifests": [
+      {
+        "id": "generator-supply-v1",
+        "manifest": {
+          "path": "tools/generator-supply/v1/evidence-manifest.json",
+          "mode": "100644",
+          "gitBlob": "a6e2380a27d10df5c60a6be113a61bfa82b72c91",
+          "sha256": "4e6ec3c1b89a40c6dd9ee989997c7ec28d44730eac8387e065d8cc524b973bc7",
+          "sizeBytes": 8186
+        },
+        "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+        "memberCount": 39,
+        "memberPathPrefix": "tools/generator-supply/v1/evidence/"
+      },
+      {
+        "id": "generator-supply-v2",
+        "manifest": {
+          "path": "tools/generator-supply/v2/evidence-manifest.json",
+          "mode": "100644",
+          "gitBlob": "547a1bdc2609c4cc6204100a05798e5523c5e7e4",
+          "sha256": "da539baf6ab644d49f782d26b3f9ad8e2a12cdab048c3fcf34b756192cd933ba",
+          "sizeBytes": 1688
+        },
+        "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+        "memberCount": 8,
+        "memberPathPrefix": "tools/generator-supply/v2/evidence/"
+      }
+    ],
+    "legacySupplyV1Lineage": {
+      "candidateCommit": "e5f981c8197cea7527a57c391e7198570f61b92c",
+      "candidateTree": "7fb98abf71066e8009581c658b41a299ae1a5c2c",
+      "candidateParent": "0a331fde18a909d37b64f11efe879df7bbc09d25",
+      "candidateDiffSha256": "d012683bf1a13dda79a8393afdf44ff20088711b9ccce1c608cd74db5843587e",
+      "reviewCommit": "129e9bc128de971b9f9623e82832e80830331126",
+      "reviewTree": "b30835163d757e236781af8c16c61736e1d452da",
+      "reviewParent": "e5f981c8197cea7527a57c391e7198570f61b92c",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md",
+      "reviewSha256": "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47",
+      "verdict": "APPROVE_P0_0_P1_0_P2_0"
+    },
+    "gitChain": [
+      {
+        "role": "GENERATOR_SUPPLY_V2_ASSEMBLED",
+        "commit": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
+        "tree": "5a73a8edd4aee56a38aeb37c37b8009e481dfeae",
+        "parent": "5def3ad5deb157264429dc5178f57ec916c66dc7",
+        "diffSha256": "c5d11be264e6b9bc1e0a5c16c5b320c2d987a26b12ab2f7b4fc16efb594c92e2",
+        "changes": [
+          {
+            "operation": "M",
+            "mode": "100644",
+            "path": "contracts/generation.lock.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence-manifest.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/darwin-a.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/darwin-b.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/darwin-isolation.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/linux-a.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/linux-b.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/linux-isolation.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/evidence/replay/projection.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/generator-supply/v2/profile.json"
+          }
+        ]
+      },
+      {
+        "role": "CLOSURE_V3_AND_SUPPLY_V2_REVIEWED",
+        "commit": "d7c7468a72facc091b8a42be54d5af5c6a5785c4",
+        "tree": "92d44592cc39b513ffcbd47088a6560ff87c67ec",
+        "parent": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
+        "diffSha256": "fc8c57e55fc213bfa31b4b009023506b522edd19f987841a142a7df3a5ffac3e",
+        "changes": [
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "docs/plan/p1/g-contract-generator-supply-profile-v2-independent-review-20260824.md"
+          }
+        ]
+      },
+      {
+        "role": "DETACHED_REVIEW_BINDING_ASSEMBLED",
+        "commit": "a595bd93ceee9d352645b9be66db92517fffb092",
+        "tree": "9249e43bae506acef702fe70cdde798b37bd5148",
+        "parent": "d7c7468a72facc091b8a42be54d5af5c6a5785c4",
+        "diffSha256": "2807c531a949afad97252f8bb5dfd738885f34e7d4ad93484c9411b146a846ef",
+        "changes": [
+          {
+            "operation": "M",
+            "mode": "100644",
+            "path": "contracts/generation.lock.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/contract-review-binding/v1/registry.json"
+          },
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "tools/contract-review-binding/v1/review-tuple.json"
+          }
+        ]
+      },
+      {
+        "role": "DETACHED_REVIEW_BINDING_FINAL_REVIEW",
+        "commit": "16275f6cbf390c343a9ac00f9193e75eaad0094e",
+        "tree": "ca595b8e1258a8b78c4da3a545b2a31d8f62b531",
+        "parent": "a595bd93ceee9d352645b9be66db92517fffb092",
+        "diffSha256": "6bab51ddaa07bacb1fe13f3e572f6ff31ba28903065cc9257269c9b67960b475",
+        "changes": [
+          {
+            "operation": "A",
+            "mode": "100644",
+            "path": "docs/plan/p1/g-contract-detached-review-binding-independent-review-20260824.md"
+          }
+        ]
+      }
+    ]
+  },
+  "replayContract": {
+    "coreGeneratorOutputs": [
+      {
+        "path": "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
+        "mode": "100644",
+        "gitBlob": "75b99d91e8131230302deb7dbb7b5effb7fd12df",
+        "sha256": "01d70162427262b628362722262422dbf139c9ad852a59a017c61c86342e4b12",
+        "sizeBytes": 25097
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+        "mode": "100644",
+        "gitBlob": "939d02d1f32f97723e1fab59b7dac4c0639d03c7",
+        "sha256": "837e9a7f3b9e00dc5971cafb2bb37695b4fd5553db7e3003214f327be05e850e",
+        "sizeBytes": 25198
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
+        "mode": "100644",
+        "gitBlob": "ae00f90806d1dc2530876bfc5f946522ec04dd5f",
+        "sha256": "f8a0ff0ebc91bab93b1bacf5ec6241f44c8639ae8a11dc0712b485f88156e812",
+        "sizeBytes": 11306
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+        "mode": "100644",
+        "gitBlob": "9a608b9e8b25c82d5842e2eec6aef84f858e06b6",
+        "sha256": "5069f0f1bdca9b7b7c161cb36870c00be254acb315cafab45adcc944b19e33fe",
+        "sizeBytes": 8690
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+        "mode": "100644",
+        "gitBlob": "d714424ac6b42a44ee775a6edde6327d87f2d7c3",
+        "sha256": "e8384fb25f3828dfafeecf0040110df3a51cd64ce5877e966ecec12769099bf4",
+        "sizeBytes": 14215
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+        "mode": "100644",
+        "gitBlob": "e8fa8855a830852fad1d413a2aef00cd3947290f",
+        "sha256": "2dbce40aac86d2d1709c4aa07d683d916fbba3a992e7f8699843e470c0876dc6",
+        "sizeBytes": 16603
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "2e15b438d7c72413e2b12a772aed95ce20b86e07",
+        "sha256": "48d580679c4dcf8ec2dac3fefa5d9f2c56f58d53fdbcb2f6fa3155eb1db1918c",
+        "sizeBytes": 7135
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "c5fcdcdb84ee8dde6215878779e8e4e65968c8b3",
+        "sha256": "15d1fece1b98ffa6d224c1ae03a1f6d6cc856e99ad0878d3bc5628f12e643537",
+        "sizeBytes": 6382
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "80b9438637c829a1efb94e5ef94086f7c2162c3c",
+        "sha256": "eda98b19d442f1025d3fc5c560f113417b105f11f82fb3fc68a4e70847919fb5",
+        "sizeBytes": 6392
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "e13710d3c09f5b36ac8ae67bd3d2a9cf74ab661e",
+        "sha256": "fa7082803ea97d06eefa83eec3de784f7199fc0b47f0ca2d0f8203b8b7e96852",
+        "sizeBytes": 7679
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "efd712fed8408f0cc8b306491a48b5db5c59321e",
+        "sha256": "2dc0210f1aad1dd6cff1183324837ab7e88cc5491e9046ae07302b25a1f9e372",
+        "sizeBytes": 6144
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "1e6cf72f490a4777b2efb1396dac5b2da551a485",
+        "sha256": "9ef15ce291207580d7bc0426d22d7e4e5a43260a89ea5375c5f8e10e08c0dc96",
+        "sizeBytes": 6627
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "e895c40cb43fdbacf1eb3a7619694a3ea31d7ab1",
+        "sha256": "0025cb5a4f38644848bf5317f37b8b849fc5861f56872ff6c2bd860bd841a5e6",
+        "sizeBytes": 9244
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "1dd57eb2c2b512538a34badfee26b50e58d48cc3",
+        "sha256": "2a04f67f9b06f25bc13211934d8cb914dcbe3f92d42053f636ec66b4f28ac11c",
+        "sizeBytes": 6011
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "2af63fd3ddcfbd7c7e2b962de86e2d384961412a",
+        "sha256": "c9ba44911eca4e5130e8ab45ea942602c93515e6f504d6daa9b730b045f59f68",
+        "sizeBytes": 11721
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-execution-admission-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "0183f71031c99d91f646a44bd26665d04418b9aa",
+        "sha256": "3bb2e583a992a6ddc639d364d1592b46e2a453035d9fbc5baa892bbdda0122d1",
+        "sizeBytes": 6864
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-success-writer-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "39858196709e05322746ccb11e6d3b6b68d658e2",
+        "sha256": "60af98c818427bb7ba6d73a09e37e6f80d22eba2828c5dc41dcae642fffc5754",
+        "sizeBytes": 9155
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "0e660fb3b76d1fd8e3ec591567ea575beaef9cef",
+        "sha256": "939b6a2b178cb93b4ec3234e52d55991b70ea8233b82d602c366feed7edfe231",
+        "sizeBytes": 6312
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
+        "mode": "100644",
+        "gitBlob": "b40346792c41fcbba516757fa2002339d0780860",
+        "sha256": "33c6dc3b19080801335d2eb0fd135a5e67ab680c810e7173df6d2a41bea471b6",
+        "sizeBytes": 6365
+      },
+      {
+        "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+        "mode": "100644",
+        "gitBlob": "08f526f6b09a8306518c59f87d2400bc53ce8c60",
+        "sha256": "cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+        "sizeBytes": 12730
+      },
+      {
+        "path": "contracts/generated/proto/manifest.json",
+        "mode": "100644",
+        "gitBlob": "e83d4856c948a1cafd78016e02a0dedc0f48d4d3",
+        "sha256": "f824eb14edfb1ca8de9d8ee0d338f98a885c2b197c7b1108a71d47240e620aea",
+        "sizeBytes": 5222
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
+        "mode": "100644",
+        "gitBlob": "f742cce9d0450f4065cebbc498f4e6360bc062fd",
+        "sha256": "a31f2aeb625eeda25ae8e86f907dde305bed773d8d45e07aac57901c8f1880d6",
+        "sizeBytes": 46944
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
+        "mode": "100644",
+        "gitBlob": "80ef3fec1488acccd6766308a0c0dce12d2a84c4",
+        "sha256": "48ddafd7845c4f976f772d7b2e67aca862d4eaa8210a6d170554f5872e942dd1",
+        "sizeBytes": 24709
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+        "mode": "100644",
+        "gitBlob": "6329ad6e91c9d3cb8180d8bc8f162541f332315c",
+        "sha256": "0c10b0525f1c672a2a61935b5c1a834d07c0e6337ea4fe8ae4fc77e2a42d4a95",
+        "sizeBytes": 77653
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+        "mode": "100644",
+        "gitBlob": "879c6b9731bc5c204ebdfbf39d3f56bda93ce27b",
+        "sha256": "5d7096fe82fd8c92491551d20fc3d859d4993f605e714794650ede5afb6c6269",
+        "sizeBytes": 4800
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+        "mode": "100644",
+        "gitBlob": "99cedfdd7251393e221fdee0f2cc5836625e8032",
+        "sha256": "3f47692be04424314d710e4eba626dfd5addfae348f6d162f54c9f8aa3379e9f",
+        "sizeBytes": 11575
+      },
+      {
+        "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
+        "mode": "100644",
+        "gitBlob": "ff6d061fd70542e2b77ca311d125f3f9a792868d",
+        "sha256": "1e7e755d0bd378ced0c1c925b7222497564048d0a0d00c13e9bf49706e8e5311",
+        "sizeBytes": 13530
+      },
+      {
+        "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
+        "mode": "100644",
+        "gitBlob": "ac4452590b91e6d655ae691d4a25cca5e26f17f1",
+        "sha256": "25bd6d5db8a7fec63aaf015910764c54ff460eecf0321305af330f38730604be",
+        "sizeBytes": 28791
+      },
+      {
+        "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
+        "mode": "100644",
+        "gitBlob": "d7ba3a8a677966e106d152b2ee6c96f71ad2098b",
+        "sha256": "cbd9cc7dec2b2c6265294a29cfa321aac4b33a42b3b88a0ccc631d97d944a52f",
+        "sizeBytes": 11624
+      },
+      {
+        "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
+        "mode": "100644",
+        "gitBlob": "cbab698499535989397b31e7ba254a0f891129e5",
+        "sha256": "0d50c1aa0023782e3e2f213056f4136ceac6ea03f88ea76bb11cef7031f49e07",
+        "sizeBytes": 24032
+      },
+      {
+        "path": "sdk/go/generated-manifest.json",
+        "mode": "100644",
+        "gitBlob": "6e4e77bb807dda476ea021c938396c0e7513d538",
+        "sha256": "00db8964d76062d5ec0dacf7d38c84088c9c59906f88ffa187272a8bcfca8b45",
+        "sizeBytes": 3740
+      },
+      {
+        "path": "sdk/go/json-generated-manifest.json",
+        "mode": "100644",
+        "gitBlob": "f1ff875917b1827090a6e352010bb765eabfd252",
+        "sha256": "4dad32d50cb0a09b88c2fcc18cd299679e1d304532c759135ada857d867b1814",
+        "sizeBytes": 9885
+      },
+      {
+        "path": "sdk/go/proto-generated-manifest.json",
+        "mode": "100644",
+        "gitBlob": "4c2f414188984738194c3b03f95261f869d4d68a",
+        "sha256": "412cd7922431a853ebbdfc69520556f98a91bff94acfece370c0bcf36b4efbac",
+        "sizeBytes": 7995
+      },
+      {
+        "path": "sdk/typescript/generated-manifest.json",
+        "mode": "100644",
+        "gitBlob": "4f238209a4a688bef9e02b2a6e6a5ef0fc0bba63",
+        "sha256": "dfc3f332ff7af5f6c331c2943cd783dfaa7fa504a205982f045b72cf04dd7f92",
+        "sizeBytes": 3278
+      },
+      {
+        "path": "sdk/typescript/json-generated-manifest.json",
+        "mode": "100644",
+        "gitBlob": "1588b3331a9f3b4305a8dd6973367b75e41eba6d",
+        "sha256": "f071948295f388e5c10d22ecb7d94d0d1747d961f78880f7922e770d163f9343",
+        "sizeBytes": 9495
+      },
+      {
+        "path": "sdk/typescript/proto-generated-manifest.json",
+        "mode": "100644",
+        "gitBlob": "b466b2e39acb97cdce239ec6b905d93196b64cca",
+        "sha256": "9254f4cf04253f529bc08d297b98fe643b9709ef4270bb87383549fc5f022114",
+        "sizeBytes": 6996
+      },
+      {
+        "path": "sdk/typescript/src/gen/contracts/platform-adapter/v1alpha1/platform_adapter_pb.ts",
+        "mode": "100644",
+        "gitBlob": "05301a3e584752531bd992f125c9e2a0e9a085fa",
+        "sha256": "81ede237cbe70be1935f551e3008f1e87a15af0b107b4486ee87592bb512946e",
+        "sizeBytes": 24144
+      },
+      {
+        "path": "sdk/typescript/src/gen/contracts/worker/v1alpha1/kernel_pb.ts",
+        "mode": "100644",
+        "gitBlob": "1b88f866c29c6e2d0bb8387e3e289e3193338aa5",
+        "sha256": "f939f0f23274668063a721fba2888a9857cd9f21ad76fcfe162fd279aac2e17c",
+        "sizeBytes": 36515
+      },
+      {
+        "path": "sdk/typescript/src/gen/contracts/worker/v1alpha1/worker_supervisor_pb.ts",
+        "mode": "100644",
+        "gitBlob": "7358630e1e4b82c96d4ca9dbddcde7e9c7b12ae7",
+        "sha256": "4d5ff4bfae60b3f712c8d87457e822acba5bba085164d237923a5f11ef8aa500",
+        "sizeBytes": 3288
+      },
+      {
+        "path": "sdk/typescript/src/index.ts",
+        "mode": "100644",
+        "gitBlob": "15140bcb869afe799572090fc3a73d80fd9c9b84",
+        "sha256": "ed30749cb557453366aa34829efa838bd9aca629994f746f5d786c4e0d4997bb",
+        "sizeBytes": 12982
+      },
+      {
+        "path": "sdk/typescript/src/platform.ts",
+        "mode": "100644",
+        "gitBlob": "8c60f03872b69f294c630f756fb33ac03594619b",
+        "sha256": "1f096821c36bcd3a07f332b432b38a291336c22917d4a5efc1176e862e610d25",
+        "sizeBytes": 44209
+      },
+      {
+        "path": "sdk/typescript/src/proto.ts",
+        "mode": "100644",
+        "gitBlob": "d854f3e9e8ab013942763f616e13108ceab03c87",
+        "sha256": "db9f403f4ea942518dd37f1f01cf52262182c1c390b65e96444b61a8d6210d45",
+        "sizeBytes": 293
+      },
+      {
+        "path": "services/control-plane/internal/compatibility/registry_generated.go",
+        "mode": "100644",
+        "gitBlob": "474dca871a25d6493c9e3937e7992ae4e63a5a52",
+        "sha256": "976ad31264546818a00c369fda7ee6552fe9cae1614d106d52f8e9b2e006f6b0",
+        "sizeBytes": 18368
+      },
+      {
+        "path": "services/control-plane/internal/coordination/registry_generated.go",
+        "mode": "100644",
+        "gitBlob": "32ef7047f3c4ad706bcc37b7f66e1704873cade1",
+        "sha256": "a5f186ff9625451a9a15b7b600f9d6e2bcd3f78adb3ae92ac1785ea84ca36b92",
+        "sizeBytes": 1689
+      },
+      {
+        "path": "services/control-plane/internal/migration/runner_ledger_consumer_profile_generated.go",
+        "mode": "100644",
+        "gitBlob": "b42da5f76098966100397b2a9a06b01db90dc57d",
+        "sha256": "afc77e723b7a4439c47043376cb79f5cb6416ce22d54ab1dcffbfe49686ce928",
+        "sizeBytes": 6882
+      },
+      {
+        "path": "services/control-plane/internal/migration/runner_ledger_entry_admission_profile_generated.go",
+        "mode": "100644",
+        "gitBlob": "4dc999d8b8e762d339c3d98d24abb201f68c7bcf",
+        "sha256": "c95850d99a5cbc9d82480d2c63befd6a39ffaeeb2f2c2f1374ce21091ff806c6",
+        "sizeBytes": 6007
+      },
+      {
+        "path": "services/control-plane/internal/migration/runner_ledger_entry_writer_profile_generated.go",
+        "mode": "100644",
+        "gitBlob": "e60b1c3d6e2472eee9cb5710711f48580dcdef0b",
+        "sha256": "63b2e2ac4aec2f02ba9bfc5e90ef716d3659decbbb2ffe716cfe50f189b77c5d",
+        "sizeBytes": 12020
+      },
+      {
+        "path": "services/control-plane/internal/migration/runner_ledger_preflight_profile_generated.go",
+        "mode": "100644",
+        "gitBlob": "96b5a3c55fda5ce95895f8acc688fced5f622004",
+        "sha256": "599b78537a3f1dd5d70c1b50aa5e7bc54e1b65ee463876ee3f111709a5ab2112",
+        "sizeBytes": 4990
+      },
+      {
+        "path": "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go",
+        "mode": "100644",
+        "gitBlob": "a567e57dcbf040a8a1e8afc5c03f06087a13ab2c",
+        "sha256": "8489567993aec3edbaa4bfbb4ee82ea5640ca389bd8700f5fc648931bf470c3b",
+        "sizeBytes": 47920
+      }
+    ],
+    "projectionExclusions": [
+      "contracts/generation.lock.json",
+      "tools/generator-supply/v3/evidence-manifest.json",
+      "tools/generator-supply/v3/profile.json",
+      "tools/generator-supply/v3/evidence/replay.json",
+      "tools/generator-supply/v3/evidence/replay/darwin-a.json",
+      "tools/generator-supply/v3/evidence/replay/darwin-b.json",
+      "tools/generator-supply/v3/evidence/replay/darwin-isolation.json",
+      "tools/generator-supply/v3/evidence/replay/linux-a.json",
+      "tools/generator-supply/v3/evidence/replay/linux-b.json",
+      "tools/generator-supply/v3/evidence/replay/linux-isolation.json",
+      "tools/generator-supply/v3/evidence/replay/projection.json",
+      "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+      "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+      "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+      "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json",
+      "tools/gate-phase-record/g-contract-p1/v1/registry.json",
+      "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md"
+    ],
+    "preReplayExclusionPolicy": "EXACT17_ONLY_NO_WILDCARD_ALL_OTHER_TRACKED_BYTES_INCLUDED",
+    "authoritativeReplayScope": "EXACT49_CORE_OUTPUTS_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY",
+    "wrapperPolicy": "VERSIONED_ISOLATION_WRAPPER_V3",
+    "algorithms": {
+      "nodeModulesManifest": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+      "projectionArchiveMemberManifest": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+      "inputTreeManifest": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1"
+    },
+    "receiptFormats": {
+      "summary": "cloud-agents-generator-supply-replay-summary/v3",
+      "run": "cloud-agents-generator-replay-run/v1",
+      "isolation": "cloud-agents-generator-replay-isolation/v1",
+      "projection": "cloud-agents-core-generator-projection/v1"
+    }
+  },
+  "declaredProfile": {
+    "profileId": "cloud-agents/generator-supply-profile/v3",
+    "status": "REPLAY_VERIFIED_REVIEW_PENDING",
+    "notGateClosure": true,
+    "platforms": [
+      {
+        "id": "darwin-arm64",
+        "status": "NATIVE_REPLAY_VERIFIED",
+        "nativeExecution": true
+      },
+      {
+        "id": "linux-amd64",
+        "status": "NATIVE_REPLAY_VERIFIED",
+        "nativeExecution": true
+      },
+      {
+        "id": "linux-arm64",
+        "status": "NOT_CLAIMED",
+        "nativeExecution": false
+      }
+    ],
+    "boundaries": {
+      "gate": "ALL_GATES_OPEN",
+      "productionDatabase": "NOT_AUTHORIZED",
+      "http": "NOT_IMPLEMENTED",
+      "p2": "NOT_IMPLEMENTED",
+      "provider": "NOT_AUTHORIZED",
+      "deployment": "NOT_AUTHORIZED",
+      "publication": "NOT_AUTHORIZED",
+      "release": "NOT_AUTHORIZED",
+      "legalApproval": "NOT_CLAIMED",
+      "currentVulnerabilityClosure": "NOT_CLAIMED",
+      "externalSignatureTrust": "NOT_PRODUCED_NOT_AUTHORIZED",
+      "fullDistributionCoverage": "NOT_CLAIMED",
+      "bootstrapDiscovery": "FORBIDDEN"
+    }
+  },
+  "replayEvidence": {
+    "state": "DECLARED_PRE_REPLAY",
+    "authority": "EXTERNAL_LATE_BOUND",
+    "receiptPaths": [
+      "tools/generator-supply/v3/evidence/replay.json",
+      "tools/generator-supply/v3/evidence/replay/darwin-a.json",
+      "tools/generator-supply/v3/evidence/replay/darwin-b.json",
+      "tools/generator-supply/v3/evidence/replay/darwin-isolation.json",
+      "tools/generator-supply/v3/evidence/replay/linux-a.json",
+      "tools/generator-supply/v3/evidence/replay/linux-b.json",
+      "tools/generator-supply/v3/evidence/replay/linux-isolation.json",
+      "tools/generator-supply/v3/evidence/replay/projection.json"
+    ]
+  }
+}

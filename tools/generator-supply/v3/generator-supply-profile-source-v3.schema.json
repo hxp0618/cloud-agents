@@ -1,0 +1,851 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tooling/generator-supply/v3/generator-supply-profile-source-v3.schema.json",
+  "title": "Cloud Agents generator supply profile source v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "decisionId",
+    "baseline",
+    "predecessorClosure",
+    "replayContract",
+    "declaredProfile",
+    "replayEvidence"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-generator-supply-profile-source/v3"
+    },
+    "registryId": {
+      "const": "cloud-agents/generator-supply-profile"
+    },
+    "decisionId": {
+      "const": "D-053"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "tree",
+        "gateCriteria",
+        "mutation"
+      ],
+      "properties": {
+        "commit": {
+          "const": "16275f6cbf390c343a9ac00f9193e75eaad0094e"
+        },
+        "tree": {
+          "const": "ca595b8e1258a8b78c4da3a545b2a31d8f62b531"
+        },
+        "gateCriteria": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md"
+            },
+            "sha256": {
+              "const": "4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994"
+            }
+          }
+        },
+        "mutation": {
+          "const": "forbidden"
+        }
+      }
+    },
+    "predecessorClosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groups",
+        "evidenceManifests",
+        "legacySupplyV1Lineage",
+        "gitChain"
+      ],
+      "properties": {
+        "groups": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "contract-closure-v1"
+                },
+                "files": {
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "contract-closure-v2"
+                },
+                "files": {
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "contract-closure-v3"
+                },
+                "files": {
+                  "minItems": 5,
+                  "maxItems": 5
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "generator-supply-v1"
+                },
+                "files": {
+                  "minItems": 6,
+                  "maxItems": 6
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "generator-supply-v2"
+                },
+                "files": {
+                  "minItems": 6,
+                  "maxItems": 6
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "contract-review-binding-v1"
+                },
+                "files": {
+                  "minItems": 7,
+                  "maxItems": 7
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "g-contract-r1-r4-history"
+                },
+                "files": {
+                  "minItems": 6,
+                  "maxItems": 6
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/group",
+              "properties": {
+                "id": {
+                  "const": "generation-lock-v2"
+                },
+                "files": {
+                  "minItems": 1,
+                  "maxItems": 1
+                }
+              }
+            }
+          ],
+          "items": false
+        },
+        "evidenceManifests": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/evidenceManifest",
+              "properties": {
+                "id": {
+                  "const": "generator-supply-v1"
+                },
+                "memberCount": {
+                  "const": 39
+                },
+                "memberPathPrefix": {
+                  "const": "tools/generator-supply/v1/evidence/"
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/evidenceManifest",
+              "properties": {
+                "id": {
+                  "const": "generator-supply-v2"
+                },
+                "memberCount": {
+                  "const": 8
+                },
+                "memberPathPrefix": {
+                  "const": "tools/generator-supply/v2/evidence/"
+                }
+              }
+            }
+          ],
+          "items": false
+        },
+        "legacySupplyV1Lineage": {
+          "$ref": "#/$defs/legacyLineage"
+        },
+        "gitChain": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/gitStep",
+              "properties": {
+                "role": {
+                  "const": "GENERATOR_SUPPLY_V2_ASSEMBLED"
+                },
+                "commit": {
+                  "const": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0"
+                },
+                "parent": {
+                  "const": "5def3ad5deb157264429dc5178f57ec916c66dc7"
+                },
+                "changes": {
+                  "minItems": 11,
+                  "maxItems": 11
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/gitStep",
+              "properties": {
+                "role": {
+                  "const": "CLOSURE_V3_AND_SUPPLY_V2_REVIEWED"
+                },
+                "commit": {
+                  "const": "d7c7468a72facc091b8a42be54d5af5c6a5785c4"
+                },
+                "parent": {
+                  "const": "1ba7eda5ad6241ad8a065408d787e73cd7013ce0"
+                },
+                "changes": {
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/gitStep",
+              "properties": {
+                "role": {
+                  "const": "DETACHED_REVIEW_BINDING_ASSEMBLED"
+                },
+                "commit": {
+                  "const": "a595bd93ceee9d352645b9be66db92517fffb092"
+                },
+                "parent": {
+                  "const": "d7c7468a72facc091b8a42be54d5af5c6a5785c4"
+                },
+                "changes": {
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/gitStep",
+              "properties": {
+                "role": {
+                  "const": "DETACHED_REVIEW_BINDING_FINAL_REVIEW"
+                },
+                "commit": {
+                  "const": "16275f6cbf390c343a9ac00f9193e75eaad0094e"
+                },
+                "parent": {
+                  "const": "a595bd93ceee9d352645b9be66db92517fffb092"
+                },
+                "changes": {
+                  "minItems": 1,
+                  "maxItems": 1
+                }
+              }
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "replayContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coreGeneratorOutputs",
+        "projectionExclusions",
+        "preReplayExclusionPolicy",
+        "authoritativeReplayScope",
+        "wrapperPolicy",
+        "algorithms",
+        "receiptFormats"
+      ],
+      "properties": {
+        "coreGeneratorOutputs": {
+          "type": "array",
+          "minItems": 49,
+          "maxItems": 49,
+          "items": {
+            "$ref": "#/$defs/fileRecord"
+          }
+        },
+        "projectionExclusions": {
+          "type": "array",
+          "minItems": 17,
+          "maxItems": 17,
+          "prefixItems": [
+            {
+              "const": "contracts/generation.lock.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence-manifest.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/profile.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/darwin-a.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/darwin-b.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/darwin-isolation.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/linux-a.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/linux-b.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/linux-isolation.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/projection.json"
+            },
+            {
+              "const": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md"
+            },
+            {
+              "const": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md"
+            },
+            {
+              "const": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md"
+            },
+            {
+              "const": "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json"
+            },
+            {
+              "const": "tools/gate-phase-record/g-contract-p1/v1/registry.json"
+            },
+            {
+              "const": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md"
+            }
+          ],
+          "items": false
+        },
+        "preReplayExclusionPolicy": {
+          "const": "EXACT17_ONLY_NO_WILDCARD_ALL_OTHER_TRACKED_BYTES_INCLUDED"
+        },
+        "authoritativeReplayScope": {
+          "const": "EXACT49_CORE_OUTPUTS_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY"
+        },
+        "wrapperPolicy": {
+          "const": "VERSIONED_ISOLATION_WRAPPER_V3"
+        },
+        "algorithms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "nodeModulesManifest",
+            "projectionArchiveMemberManifest",
+            "inputTreeManifest"
+          ],
+          "properties": {
+            "nodeModulesManifest": {
+              "const": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1"
+            },
+            "projectionArchiveMemberManifest": {
+              "const": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1"
+            },
+            "inputTreeManifest": {
+              "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1"
+            }
+          }
+        },
+        "receiptFormats": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary",
+            "run",
+            "isolation",
+            "projection"
+          ],
+          "properties": {
+            "summary": {
+              "const": "cloud-agents-generator-supply-replay-summary/v3"
+            },
+            "run": {
+              "const": "cloud-agents-generator-replay-run/v1"
+            },
+            "isolation": {
+              "const": "cloud-agents-generator-replay-isolation/v1"
+            },
+            "projection": {
+              "const": "cloud-agents-core-generator-projection/v1"
+            }
+          }
+        }
+      }
+    },
+    "declaredProfile": {
+      "$ref": "#/$defs/profile"
+    },
+    "replayEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "authority",
+        "receiptPaths"
+      ],
+      "properties": {
+        "state": {
+          "const": "DECLARED_PRE_REPLAY"
+        },
+        "authority": {
+          "const": "EXTERNAL_LATE_BOUND"
+        },
+        "receiptPaths": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "prefixItems": [
+            {
+              "const": "tools/generator-supply/v3/evidence/replay.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/darwin-a.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/darwin-b.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/darwin-isolation.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/linux-a.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/linux-b.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/linux-isolation.json"
+            },
+            {
+              "const": "tools/generator-supply/v3/evidence/replay/projection.json"
+            }
+          ],
+          "items": false
+        }
+      }
+    }
+  },
+  "$defs": {
+    "bareDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prefixedDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "gitObject": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+$"
+    },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "mode",
+        "gitBlob",
+        "sha256",
+        "sizeBytes"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "mode": {
+          "const": "100644"
+        },
+        "gitBlob": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "sha256": {
+          "$ref": "#/$defs/bareDigest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "files"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fileRecord"
+          }
+        }
+      }
+    },
+    "evidenceManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "manifest",
+        "algorithm",
+        "memberCount",
+        "memberPathPrefix"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest": {
+          "$ref": "#/$defs/fileRecord"
+        },
+        "algorithm": {
+          "const": "sorted-path-nul-sha256-nul-size-v1"
+        },
+        "memberCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memberPathPrefix": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "legacyLineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateCommit",
+        "candidateTree",
+        "candidateParent",
+        "candidateDiffSha256",
+        "reviewCommit",
+        "reviewTree",
+        "reviewParent",
+        "reviewPath",
+        "reviewSha256",
+        "verdict"
+      ],
+      "properties": {
+        "candidateCommit": {
+          "const": "e5f981c8197cea7527a57c391e7198570f61b92c"
+        },
+        "candidateTree": {
+          "const": "7fb98abf71066e8009581c658b41a299ae1a5c2c"
+        },
+        "candidateParent": {
+          "const": "0a331fde18a909d37b64f11efe879df7bbc09d25"
+        },
+        "candidateDiffSha256": {
+          "const": "d012683bf1a13dda79a8393afdf44ff20088711b9ccce1c608cd74db5843587e"
+        },
+        "reviewCommit": {
+          "const": "129e9bc128de971b9f9623e82832e80830331126"
+        },
+        "reviewTree": {
+          "const": "b30835163d757e236781af8c16c61736e1d452da"
+        },
+        "reviewParent": {
+          "const": "e5f981c8197cea7527a57c391e7198570f61b92c"
+        },
+        "reviewPath": {
+          "const": "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md"
+        },
+        "reviewSha256": {
+          "const": "86ec054debf15de71481d6f9ab965ca5c8f24a4f5a98f9e5e155e24df261cd47"
+        },
+        "verdict": {
+          "const": "APPROVE_P0_0_P1_0_P2_0"
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "mode",
+        "path"
+      ],
+      "properties": {
+        "operation": {
+          "enum": [
+            "A",
+            "M"
+          ]
+        },
+        "mode": {
+          "const": "100644"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "gitStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "commit",
+        "tree",
+        "parent",
+        "diffSha256",
+        "changes"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "parent": {
+          "$ref": "#/$defs/gitObject"
+        },
+        "diffSha256": {
+          "$ref": "#/$defs/bareDigest"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/change"
+          }
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "status",
+        "notGateClosure",
+        "platforms",
+        "boundaries"
+      ],
+      "properties": {
+        "profileId": {
+          "const": "cloud-agents/generator-supply-profile/v3"
+        },
+        "status": {
+          "const": "REPLAY_VERIFIED_REVIEW_PENDING"
+        },
+        "notGateClosure": {
+          "const": true
+        },
+        "platforms": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/platform",
+              "properties": {
+                "id": {
+                  "const": "darwin-arm64"
+                },
+                "status": {
+                  "const": "NATIVE_REPLAY_VERIFIED"
+                },
+                "nativeExecution": {
+                  "const": true
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/platform",
+              "properties": {
+                "id": {
+                  "const": "linux-amd64"
+                },
+                "status": {
+                  "const": "NATIVE_REPLAY_VERIFIED"
+                },
+                "nativeExecution": {
+                  "const": true
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/platform",
+              "properties": {
+                "id": {
+                  "const": "linux-arm64"
+                },
+                "status": {
+                  "const": "NOT_CLAIMED"
+                },
+                "nativeExecution": {
+                  "const": false
+                }
+              }
+            }
+          ],
+          "items": false
+        },
+        "boundaries": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gate",
+            "productionDatabase",
+            "http",
+            "p2",
+            "provider",
+            "deployment",
+            "publication",
+            "release",
+            "legalApproval",
+            "currentVulnerabilityClosure",
+            "externalSignatureTrust",
+            "fullDistributionCoverage",
+            "bootstrapDiscovery"
+          ],
+          "properties": {
+            "gate": {
+              "const": "ALL_GATES_OPEN"
+            },
+            "productionDatabase": {
+              "const": "NOT_AUTHORIZED"
+            },
+            "http": {
+              "const": "NOT_IMPLEMENTED"
+            },
+            "p2": {
+              "const": "NOT_IMPLEMENTED"
+            },
+            "provider": {
+              "const": "NOT_AUTHORIZED"
+            },
+            "deployment": {
+              "const": "NOT_AUTHORIZED"
+            },
+            "publication": {
+              "const": "NOT_AUTHORIZED"
+            },
+            "release": {
+              "const": "NOT_AUTHORIZED"
+            },
+            "legalApproval": {
+              "const": "NOT_CLAIMED"
+            },
+            "currentVulnerabilityClosure": {
+              "const": "NOT_CLAIMED"
+            },
+            "externalSignatureTrust": {
+              "const": "NOT_PRODUCED_NOT_AUTHORIZED"
+            },
+            "fullDistributionCoverage": {
+              "const": "NOT_CLAIMED"
+            },
+            "bootstrapDiscovery": {
+              "const": "FORBIDDEN"
+            }
+          }
+        }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "nativeExecution"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "darwin-arm64",
+            "linux-amd64",
+            "linux-arm64"
+          ]
+        },
+        "status": {
+          "enum": [
+            "NATIVE_REPLAY_VERIFIED",
+            "NOT_CLAIMED"
+          ]
+        },
+        "nativeExecution": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
