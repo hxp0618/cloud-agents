@@ -20,7 +20,9 @@ import {
   renderGContractPhaseRecord,
   serializeGContractPhaseJson,
   validateGContractPhaseReviewTuple,
+  type CandidateGitBinding,
   type GContractPhaseReviewTuple,
+  type ReviewGitBinding,
   type ReviewBinding,
 } from "./platform-g-contract-phase-record";
 import { captureGContractPhaseReviewBinding } from "./platform-g-contract-phase-state";
@@ -169,6 +171,19 @@ describe("G-CONTRACT-P1 phase-record authority", () => {
     expectCode(() => buildFixtureModel(phaseBound), "G_CONTRACT_PHASE_IDENTITY_MISMATCH");
   });
 
+  it.each([
+    ["extra-path", "extra-path"],
+    ["existing-path", "existing-path"],
+    ["reject-verdict", "reject-verdict"],
+    ["ambiguous-verdict", "ambiguous-verdict"],
+  ] as const)("independently rejects a mutated supply review child (%s)", (_label, mode) => {
+    const fixture = modelFixture();
+    expectCode(
+      () => buildBoundaryMutationModel(fixture, mode),
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+    );
+  });
+
   it("keeps the two lineages ordered, rejects self-review, and derives only a pre-terminal registry", () => {
     const supply = fakeBinding("generator_supply_v3", "1", "2");
     const r5 = fakeBinding("g_contract_r5", "3", "4");
@@ -306,6 +321,50 @@ function buildFixtureModel(fixture: ModelFixture) {
     projectionArchiveSha256: sha("a"),
     supplyCandidate: supply.candidate,
     supplyReview: supply.review,
+  });
+}
+
+type BoundaryMutation = "extra-path" | "existing-path" | "reject-verdict" | "ambiguous-verdict";
+
+function buildBoundaryMutationModel(fixture: ModelFixture, mutation: BoundaryMutation) {
+  const source = readGContractPhaseRecordSource(fixture.root);
+  const captured = captureGContractPhaseReviewBinding(
+    fixture.root,
+    "generator_supply_v3",
+    fixture.supplyCandidate,
+    fixture.supplyReview,
+    "slice-e-assembler",
+    "independent-supply-reviewer",
+  );
+  git(fixture.root, ["checkout", "-q", "--detach", fixture.supplyCandidate]);
+  let candidate: CandidateGitBinding = captured.candidate;
+  let review: ReviewGitBinding = captured.review;
+  const reviewPath = source.dynamicAuthorities.supplyReviewPath;
+  if (mutation === "existing-path") {
+    writeText(fixture.root, reviewPath, "draft review\n");
+    const mutatedCandidate = commitAll(fixture.root, "mutated candidate review path");
+    writeText(fixture.root, reviewPath, reviewText());
+    const mutatedReview = commitAll(fixture.root, "mutated review child");
+    candidate = { ...candidate, commit: mutatedCandidate };
+    review = { ...review, commit: mutatedReview };
+  } else {
+    const bytes =
+      mutation === "reject-verdict"
+        ? "# Supply v3 independent review\n\n## Verdict\n\n`REQUEST_CHANGES - P0=0 / P1=1 / P2=0`\n"
+        : mutation === "ambiguous-verdict"
+          ? "# Supply v3 independent review\n\n## Verdict\n\n`APPROVE - P0=0 / P1=0 / P2=0`\n\n## Verdict\n\n`APPROVE - P0=0 / P1=0 / P2=0`\n"
+          : reviewText();
+    writeText(fixture.root, reviewPath, bytes);
+    if (mutation === "extra-path") writeText(fixture.root, "unexpected-review-extra.txt", "x\n");
+    const mutatedReview = commitAll(fixture.root, `mutated ${mutation}`);
+    review = { ...review, commit: mutatedReview };
+  }
+  return buildGContractPhaseRecordModel(fixture.root, {
+    projectionCommit: fixture.base,
+    projectionTree: git(fixture.root, ["rev-parse", `${fixture.base}^{tree}`]),
+    projectionArchiveSha256: sha("a"),
+    supplyCandidate: candidate,
+    supplyReview: review,
   });
 }
 

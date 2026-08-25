@@ -864,6 +864,18 @@ function assertFreshSupplyV3Review(
     " ",
   );
   const slot = source.reviewSlots[0]!;
+  // The typed ReviewGitBinding is caller input, so the model-construction
+  // boundary must independently verify the child topology and bytes.  This
+  // deliberately mirrors the state-layer review-only verifier without
+  // importing that module (which would introduce a circular dependency).
+  assertSupplyReviewChildShape(
+    root,
+    candidate.commit,
+    review.commit,
+    slot.reviewPath,
+    slot.reviewDiffDomain,
+    review.diffSha256,
+  );
   const candidateDiff = domainSeparatedGitDiffDigest(
     slot.candidateDiffDomain,
     gitDiffBytes(root, candidate.parent, candidate.commit),
@@ -921,6 +933,89 @@ function assertFreshSupplyV3Review(
       "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
       "/supply/review",
       "R5 requires the exact direct-child, independent, zero-finding APPROVE supply-v3 review.",
+    );
+  }
+}
+
+function assertSupplyReviewChildShape(
+  root: string,
+  candidateCommit: string,
+  reviewCommit: string,
+  reviewPath: string,
+  reviewDiffDomain: string,
+  expectedDiffSha256: Digest,
+): void {
+  // The review path must not exist in the candidate parent and the child must
+  // add exactly one regular file at that path.  --no-renames plus NUL framing
+  // makes the check unambiguous even for unusual path bytes.
+  if (gitText(root, ["ls-tree", "-r", "--name-only", candidateCommit, "--", reviewPath]) !== "") {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/supply/review/${reviewPath}`,
+      "Supply review path must be absent from its candidate parent tree.",
+    );
+  }
+  const fields = gitBytes(root, [
+    "diff",
+    "--name-status",
+    "-z",
+    "--no-renames",
+    candidateCommit,
+    reviewCommit,
+  ])
+    .toString("utf8")
+    .split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  if (fields.length !== 2 || fields[0] !== "A" || fields[1] !== reviewPath) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      "/supply/review",
+      "Supply review child must add exactly one path with status A.",
+    );
+  }
+  const treeEntry = gitText(root, ["ls-tree", reviewCommit, "--", reviewPath]);
+  const treeEntryMatch = /^100644 blob ([0-9a-f]{40})\t(.+)$/u.exec(treeEntry);
+  if (!treeEntryMatch || treeEntryMatch[2] !== reviewPath) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_FILE_INVALID",
+      `/${reviewPath}`,
+      "Supply review must be an exact regular non-symlink 100644 Git blob.",
+    );
+  }
+  const reviewBytes = gitBytes(root, ["cat-file", "blob", `${reviewCommit}:${reviewPath}`]);
+  const reviewText = reviewBytes.toString("utf8");
+  const headings = [...reviewText.matchAll(/^## Verdict[ \t]*$/gmu)];
+  if (headings.length !== 1) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${reviewPath}`,
+      "Supply review must contain exactly one level-two Verdict section.",
+    );
+  }
+  const verdictLine = reviewText
+    .slice(headings[0]!.index! + headings[0]![0].length)
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (
+    verdictLine === undefined ||
+    !/^`?APPROVE\s*(?:-|—)\s*P0=0\s*\/\s*P1=0\s*\/\s*P2=0`?$/u.test(verdictLine)
+  ) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${reviewPath}`,
+      "Supply review Verdict must begin with APPROVE - P0=0 / P1=0 / P2=0.",
+    );
+  }
+  const observedDiffSha256 = domainSeparatedGitDiffDigest(
+    reviewDiffDomain,
+    gitDiffBytes(root, candidateCommit, reviewCommit),
+  );
+  if (observedDiffSha256 !== expectedDiffSha256) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      "/supply/review/diffSha256",
+      "Domain-separated supply review child diff digest drifted.",
     );
   }
 }
