@@ -13,6 +13,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export const CONTRACT_STANDARDS_PROFILE_V1_PATH = "tools/contract-standards/profile.json";
 export const CONTRACT_STANDARDS_PROFILE_V2_PATH = "tools/contract-standards/profile-v2.json";
+export const CONTRACT_STANDARDS_PROFILE_V3_PATH = "tools/contract-standards/profile-v3.json";
 export const CONTRACT_STANDARDS_CORPUS_PATH =
   "tools/contract-standards/vendor/json-schema-test-suite";
 
@@ -21,12 +22,18 @@ export const CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE = {
   sha256: "dfb79ae54631d9f61f53846c91ac74bebb5b213fac023af2527c3ce352873a11",
   sizeBytes: 3_218,
 } as const;
+export const CONTRACT_STANDARDS_PROFILE_V2_IMMUTABLE = {
+  path: CONTRACT_STANDARDS_PROFILE_V2_PATH,
+  sha256: "9457d4bdc12f16b366d9c56a25a107103f5b2b64650de20f509f3ef96d0d4d01",
+  sizeBytes: 3_539,
+} as const;
 
 const FORMAT_V1 = "cloud-agents-contract-standards-profile/v1";
 const FORMAT_V2 = "cloud-agents-contract-standards-profile/v2";
+const FORMAT_V3 = "cloud-agents-contract-standards-profile/v3";
 const CORPUS_ALGORITHM = "sorted-path-nul-sha256-nul-size-v1";
 const CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256 =
-  "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c";
+  "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37";
 const EXPECTED_OPENAPI_DOCUMENTS = [
   "contracts/managed-agent/v1alpha1/openapi.json",
   "contracts/managed-host/v1alpha1/openapi.json",
@@ -91,6 +98,12 @@ export type ContractStandardsProfile = {
     readonly fixtureManifests: number;
     readonly fixtureCases: number;
     readonly sourceContractManifestSha256?: string;
+    readonly bootstrapContracts?: {
+      readonly schemaFiles: number;
+      readonly fixtureManifests: number;
+      readonly fixtureCases: number;
+      readonly sourceContractManifestSha256: string;
+    };
     readonly productionValidator: string;
     readonly independentValidator: string;
     readonly crossEngineExactFixtureResults: boolean;
@@ -136,6 +149,21 @@ export function assertContractStandardsProfileV1Immutable(root: string): void {
   }
 }
 
+export function assertContractStandardsProfileV2Immutable(root: string): void {
+  const bytes = readContainedRegularFile(root, CONTRACT_STANDARDS_PROFILE_V2_PATH);
+  const digest = sha256(bytes);
+  if (
+    bytes.byteLength !== CONTRACT_STANDARDS_PROFILE_V2_IMMUTABLE.sizeBytes ||
+    digest !== CONTRACT_STANDARDS_PROFILE_V2_IMMUTABLE.sha256
+  ) {
+    throw profileError(
+      "CONTRACT_STANDARDS_PREDECESSOR_MISMATCH",
+      `/${CONTRACT_STANDARDS_PROFILE_V2_PATH}`,
+      "The contract-standards v2 predecessor bytes are not immutable.",
+    );
+  }
+}
+
 export function readContractStandardsProfile(root: string, path: string): ContractStandardsProfile {
   let parsed: unknown;
   try {
@@ -158,11 +186,12 @@ export function validateContractStandardsProfile(
   const profile = object(value, "/");
   const format = string(profile.formatVersion, "/formatVersion");
   const v2 = format === FORMAT_V2;
-  if (!v2 && format !== FORMAT_V1) {
+  const v3 = format === FORMAT_V3;
+  if (!v3 && !v2 && format !== FORMAT_V1) {
     throw profileError(
       "CONTRACT_STANDARDS_PROFILE_INVALID",
       "/formatVersion",
-      "Only contract-standards profile v1 and v2 are supported.",
+      "Only contract-standards profile v1, v2, and v3 are supported.",
     );
   }
   exactKeys(
@@ -171,7 +200,7 @@ export function validateContractStandardsProfile(
       "formatVersion",
       "status",
       "notGateClosure",
-      ...(v2 ? ["predecessor"] : []),
+      ...(v2 || v3 ? ["predecessor"] : []),
       "toolchain",
       "packages",
       "jsonSchemaOfficialSuite",
@@ -188,23 +217,24 @@ export function validateContractStandardsProfile(
       "Contract-standards profiles must remain generated non-Gate evidence.",
     );
   }
-  if (v2) validatePredecessor(profile.predecessor);
+  if (v2 || v3) validatePredecessor(profile.predecessor, v3);
   validateToolchain(profile.toolchain);
   validatePackages(profile.packages);
   validateOfficialSuite(profile.jsonSchemaOfficialSuite);
-  validateCurrentContracts(profile.currentContracts, v2);
+  validateCurrentContracts(profile.currentContracts, v2, v3);
   validateOpenApi(profile.openapi);
   exactObject(profile.implementationBoundary, EXPECTED_BOUNDARY, "/implementationBoundary");
 }
 
 export function assertContractStandardsProfileCurrent(root: string): ContractStandardsProfile {
   assertContractStandardsProfileV1Immutable(root);
-  const profile = readContractStandardsProfile(root, CONTRACT_STANDARDS_PROFILE_V2_PATH);
-  if (profile.formatVersion !== FORMAT_V2) {
+  assertContractStandardsProfileV2Immutable(root);
+  const profile = readContractStandardsProfile(root, CONTRACT_STANDARDS_PROFILE_V3_PATH);
+  if (profile.formatVersion !== FORMAT_V3) {
     throw profileError(
       "CONTRACT_STANDARDS_PROFILE_INVALID",
       "/formatVersion",
-      "The current contract-standards authority must explicitly select v2.",
+      "The current contract-standards authority must explicitly select v3.",
     );
   }
   assertFileBinding(root, profile.toolchain.pyproject, "/toolchain/pyproject");
@@ -220,19 +250,22 @@ export function contractStandardsCorpusInputs(root: string): string[] {
   return listContainedRegularFiles(root, CONTRACT_STANDARDS_CORPUS_PATH).toSorted();
 }
 
-function validatePredecessor(value: unknown): void {
+function validatePredecessor(value: unknown, v3: boolean): void {
   const predecessor = object(value, "/predecessor");
   exactKeys(predecessor, ["path", "sha256", "sizeBytes", "mutation"], "/predecessor");
+  const expected = v3
+    ? CONTRACT_STANDARDS_PROFILE_V2_IMMUTABLE
+    : CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE;
   if (
-    predecessor.path !== CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE.path ||
-    predecessor.sha256 !== CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE.sha256 ||
-    predecessor.sizeBytes !== CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE.sizeBytes ||
+    predecessor.path !== expected.path ||
+    predecessor.sha256 !== expected.sha256 ||
+    predecessor.sizeBytes !== expected.sizeBytes ||
     predecessor.mutation !== "forbidden"
   ) {
     throw profileError(
       "CONTRACT_STANDARDS_PREDECESSOR_MISMATCH",
       "/predecessor",
-      "Contract-standards v2 must retain the exact v1 path, SHA-256, size, and mutation fence.",
+      `Contract-standards ${v3 ? "v3" : "v2"} predecessor must retain the exact ${v3 ? "v2" : "v1"} path, SHA-256, size, and mutation fence.`,
     );
   }
 }
@@ -338,7 +371,7 @@ function validateOfficialSuite(value: unknown): void {
   }
 }
 
-function validateCurrentContracts(value: unknown, v2: boolean): void {
+function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): void {
   const current = object(value, "/currentContracts");
   exactKeys(
     current,
@@ -346,21 +379,28 @@ function validateCurrentContracts(value: unknown, v2: boolean): void {
       "schemaFiles",
       "fixtureManifests",
       "fixtureCases",
-      ...(v2 ? ["sourceContractManifestSha256"] : []),
+      ...(v2 || v3 ? ["sourceContractManifestSha256"] : []),
+      ...(v3 ? ["bootstrapContracts"] : []),
       "productionValidator",
       "independentValidator",
       "crossEngineExactFixtureResults",
     ],
     "/currentContracts",
   );
-  const expected = v2
-    ? { schemaFiles: 60, fixtureManifests: 2, fixtureCases: 79 }
-    : { schemaFiles: 58, fixtureManifests: 2, fixtureCases: 77 };
+  const expected = v3
+    ? { schemaFiles: 68, fixtureManifests: 2, fixtureCases: 79 }
+    : v2
+      ? { schemaFiles: 60, fixtureManifests: 2, fixtureCases: 79 }
+      : { schemaFiles: 58, fixtureManifests: 2, fixtureCases: 77 };
   if (
     current.schemaFiles !== expected.schemaFiles ||
     current.fixtureManifests !== expected.fixtureManifests ||
     current.fixtureCases !== expected.fixtureCases ||
-    (v2 && current.sourceContractManifestSha256 !== CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256) ||
+    ((v2 || v3) &&
+      current.sourceContractManifestSha256 !==
+        (v3
+          ? CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
+          : "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c")) ||
     current.crossEngineExactFixtureResults !== true
   ) {
     throw profileError(
@@ -368,6 +408,26 @@ function validateCurrentContracts(value: unknown, v2: boolean): void {
       "/currentContracts",
       "Contract-standards profile cardinalities or cross-engine boundary drifted.",
     );
+  }
+  if (v3) {
+    const bootstrap = object(current.bootstrapContracts, "/currentContracts/bootstrapContracts");
+    exactKeys(
+      bootstrap,
+      ["schemaFiles", "fixtureManifests", "fixtureCases", "sourceContractManifestSha256"],
+      "/currentContracts/bootstrapContracts",
+    );
+    if (
+      bootstrap.schemaFiles !== 64 ||
+      bootstrap.fixtureManifests !== 2 ||
+      bootstrap.fixtureCases !== 79 ||
+      bootstrap.sourceContractManifestSha256 !== CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
+    ) {
+      throw profileError(
+        "CONTRACT_STANDARDS_PROFILE_INVALID",
+        "/currentContracts/bootstrapContracts",
+        "Contract-standards bootstrap discovery cardinalities or manifest drifted.",
+      );
+    }
   }
 }
 
@@ -510,6 +570,34 @@ function assertCurrentContractCounts(root: string, profile: ContractStandardsPro
       "/currentContracts/sourceContractManifestSha256",
       `Current source contract manifest mismatch: expected=${String(profile.currentContracts.sourceContractManifestSha256)} actual=${sourceDigest}.`,
     );
+  }
+  const bootstrap = profile.currentContracts.bootstrapContracts;
+  if (bootstrap !== undefined) {
+    const bootstrapActual = {
+      schemaFiles: sourceFiles.filter((path) => path.endsWith(".schema.json")).length,
+      fixtureManifests: sourceFiles.filter((path) => path.endsWith("/fixtures/manifest.json"))
+        .length,
+      fixtureCases,
+    };
+    const bootstrapExpected = {
+      schemaFiles: bootstrap.schemaFiles,
+      fixtureManifests: bootstrap.fixtureManifests,
+      fixtureCases: bootstrap.fixtureCases,
+    };
+    if (JSON.stringify(bootstrapActual) !== JSON.stringify(bootstrapExpected)) {
+      throw profileError(
+        "CONTRACT_STANDARDS_BINDING_MISMATCH",
+        "/currentContracts/bootstrapContracts",
+        `Bootstrap contract cardinality mismatch: expected=${JSON.stringify(bootstrapExpected)} actual=${JSON.stringify(bootstrapActual)}.`,
+      );
+    }
+    if (bootstrap.sourceContractManifestSha256 !== sourceDigest) {
+      throw profileError(
+        "CONTRACT_STANDARDS_BINDING_MISMATCH",
+        "/currentContracts/bootstrapContracts/sourceContractManifestSha256",
+        `Bootstrap source contract manifest mismatch: expected=${bootstrap.sourceContractManifestSha256} actual=${sourceDigest}.`,
+      );
+    }
   }
 }
 

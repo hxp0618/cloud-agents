@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import {
   assertContractStandardsProfileCurrent,
-  CONTRACT_STANDARDS_PROFILE_V2_PATH,
+  CONTRACT_STANDARDS_PROFILE_V3_PATH,
 } from "./lib/platform-contract-standards-profile";
 
 const PYTHON_VERSION = "3.14.7";
@@ -81,7 +81,7 @@ export function buildContractStandardsPythonArguments(): readonly string[] {
     "--root",
     ".",
     "--profile",
-    CONTRACT_STANDARDS_PROFILE_V2_PATH,
+    CONTRACT_STANDARDS_PROFILE_V3_PATH,
   ];
 }
 

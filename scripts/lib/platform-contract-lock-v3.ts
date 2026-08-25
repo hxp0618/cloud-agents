@@ -43,8 +43,10 @@ const GENERATOR_SUPPLY_V3_EVIDENCE_MANIFEST_PATH =
 const GENERATOR_SUPPLY_V3_PROFILE_PATH = "tools/generator-supply/v3/profile.json";
 const GENERATOR_SUPPLY_V3_PROJECTION_PATH =
   "tools/generator-supply/v3/evidence/replay/projection.json";
+const CONTRACT_STANDARDS_V3_PROFILE_PATH = "tools/contract-standards/profile-v3.json";
+const CONTRACT_STANDARDS_V2_PROFILE_PATH = "tools/contract-standards/profile-v2.json";
 
-const ASSEMBLED_AUTHORITY_KEYS = ["generatorSupply", "projection"] as const;
+const ASSEMBLED_AUTHORITY_KEYS = ["generatorSupply", "projection", "contractStandards"] as const;
 const GENERATOR_SUPPLY_KEYS = [
   "formatVersion",
   "profileId",
@@ -56,6 +58,7 @@ const GENERATOR_SUPPLY_KEYS = [
   "profile",
 ] as const;
 const PROJECTION_KEYS = ["algorithm", "exclusionCount", "exclusionsDigest", "receipt"] as const;
+const CONTRACT_STANDARDS_KEYS = ["formatVersion", "profile", "predecessor"] as const;
 const ARTIFACT_KEYS = [
   "path",
   "fileType",
@@ -122,6 +125,11 @@ export type PlatformContractLockV3AssembledAuthority = Readonly<{
     exclusionCount: 17;
     exclusionsDigest: string;
     receipt: PlatformContractLockV3ArtifactIdentity;
+  }>;
+  contractStandards: Readonly<{
+    formatVersion: "cloud-agents-contract-standards-profile/v3";
+    profile: PlatformContractLockV3ArtifactIdentity;
+    predecessor: PlatformContractLockV3ArtifactIdentity;
   }>;
 }>;
 
@@ -410,6 +418,34 @@ function assertAssembledAuthority(
     GENERATOR_SUPPLY_V3_PROJECTION_PATH,
     "projection receipt",
   );
+
+  assertRecord(value.contractStandards, "contract-standards v3 authority");
+  assertExactOrderedKeys(
+    value.contractStandards,
+    CONTRACT_STANDARDS_KEYS,
+    "contract-standards v3 authority",
+  );
+  if (value.contractStandards.formatVersion !== "cloud-agents-contract-standards-profile/v3") {
+    throw new Error("Generation-lock v3 requires the generated contract-standards profile v3.");
+  }
+  assertArtifact(
+    value.contractStandards.profile,
+    CONTRACT_STANDARDS_V3_PROFILE_PATH,
+    "contract-standards v3 profile",
+  );
+  assertArtifact(
+    value.contractStandards.predecessor,
+    CONTRACT_STANDARDS_V2_PROFILE_PATH,
+    "contract-standards v2 predecessor",
+  );
+  if (
+    value.contractStandards.predecessor.sha256 !==
+      "sha256:9457d4bdc12f16b366d9c56a25a107103f5b2b64650de20f509f3ef96d0d4d01" ||
+    value.contractStandards.predecessor.sizeBytes !== 3539 ||
+    value.contractStandards.predecessor.gitBlobSha1 !== "0c73cdf771ddcf0d46c43d52abf5b622507e8e1b"
+  ) {
+    throw new Error("Generation-lock v3 contract-standards v2 predecessor drifted.");
+  }
 }
 
 function assertPhaseBinding(value: unknown): asserts value is PlatformContractLockV3PhaseBinding {
@@ -608,6 +644,11 @@ function cloneAssembledAuthority(
     projection: {
       ...value.projection,
       receipt: { ...value.projection.receipt },
+    },
+    contractStandards: {
+      ...value.contractStandards,
+      profile: { ...value.contractStandards.profile },
+      predecessor: { ...value.contractStandards.predecessor },
     },
   };
 }

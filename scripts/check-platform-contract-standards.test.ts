@@ -6,14 +6,14 @@ import {
 } from "./check-platform-contract-standards";
 
 describe("contract standards uv pip sync arguments", () => {
-  it("explicitly selects the current versioned v2 profile", () => {
+  it("explicitly selects the current versioned v3 profile", () => {
     expect(buildContractStandardsPythonArguments()).toEqual([
       "-B",
       "tools/contract-standards/check_contract_standards.py",
       "--root",
       ".",
       "--profile",
-      "tools/contract-standards/profile-v2.json",
+      "tools/contract-standards/profile-v3.json",
     ]);
   });
 
