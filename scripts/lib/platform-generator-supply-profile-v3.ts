@@ -113,7 +113,14 @@ export function inspectGeneratorSupplyV3AuthorityState(
 ): GeneratorSupplyV3AuthorityState {
   schemaValidator(root);
   const source = filePresence(root, GENERATOR_SUPPLY_V3_SOURCE_PATH);
-  const receipts = groupPresence(root, SUCCESSOR_V3_REPLAY_RECEIPT_PATHS, "/replayEvidence");
+  // Slice C left a projection receipt behind before native Slice D replay
+  // began. It is a late-bound output, but by itself it is not evidence that
+  // replay has started. Treat that historical singleton as pre-replay while
+  // still requiring all eight receipts once any native receipt appears.
+  const projectionPath = SUCCESSOR_V3_REPLAY_RECEIPT_PATHS.at(-1)!;
+  const nativeReceiptPaths = SUCCESSOR_V3_REPLAY_RECEIPT_PATHS.slice(0, -1);
+  const receipts = groupPresence(root, nativeReceiptPaths, "/replayEvidence");
+  const projectionPresent = filePresence(root, projectionPath);
   const assembly = groupPresence(root, SUCCESSOR_V3_ASSEMBLY_PATHS, "/assembly");
   if (!source) {
     if (receipts !== "NONE" || assembly !== "NONE") {
@@ -127,11 +134,11 @@ export function inspectGeneratorSupplyV3AuthorityState(
   }
   validateGeneratorSupplyV3Source(root, readSource(root));
   if (receipts === "NONE" && assembly === "NONE") return "DECLARED_PRE_REPLAY";
-  if (receipts !== "ALL") {
+  if (receipts !== "ALL" || !projectionPresent) {
     throw v3Error(
       "GENERATOR_SUPPLY_V3_PARTIAL_STATE",
       "/replayEvidence",
-      "All eight v3 receipts are required together.",
+      "All eight v3 receipts are required together once native replay begins.",
     );
   }
   if (assembly === "NONE") return "REPLAY_RECEIPTS_PRESENT_UNVERIFIED";

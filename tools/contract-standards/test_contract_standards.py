@@ -25,14 +25,15 @@ from check_contract_standards import (
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE_V1_PATH = ROOT / "tools" / "contract-standards" / "profile.json"
 PROFILE_V2_PATH = ROOT / "tools" / "contract-standards" / "profile-v2.json"
+PROFILE_V3_PATH = ROOT / "tools" / "contract-standards" / "profile-v3.json"
 
 
 class ContractStandardsTest(unittest.TestCase):
     def test_checked_in_profile_and_contracts(self) -> None:
-        result = run(ROOT, PROFILE_V2_PATH)
+        result = run(ROOT, PROFILE_V3_PATH)
         self.assertEqual(result["status"], "INDEPENDENT_CONTRACT_STANDARDS_VALIDATED")
         self.assertEqual(result["jsonSchemaOfficialSuite"]["assertions"], 1299)
-        self.assertEqual(result["currentJsonSchema"]["schemas"], 60)
+        self.assertEqual(result["currentJsonSchema"]["schemas"], 68)
         self.assertEqual(result["currentJsonSchema"]["cases"], 79)
         self.assertEqual(result["openapi31"]["operations"], 9)
         self.assertTrue(result["notGateClosure"])
@@ -49,19 +50,19 @@ class ContractStandardsTest(unittest.TestCase):
         self.assertEqual(profile["formatVersion"], "cloud-agents-contract-standards-profile/v1")
 
     def test_runtime_rejects_lock_digest_drift(self) -> None:
-        profile = copy.deepcopy(load_json(PROFILE_V2_PATH))
+        profile = copy.deepcopy(load_json(PROFILE_V3_PATH))
         profile["toolchain"]["lock"]["sha256"] = "0" * 64
         with self.assertRaisesRegex(ContractStandardsError, "lock SHA-256 mismatch"):
             validate_runtime(profile, ROOT)
 
     def test_boundary_cannot_claim_gate_closure(self) -> None:
-        profile = copy.deepcopy(load_json(PROFILE_V2_PATH))
+        profile = copy.deepcopy(load_json(PROFILE_V3_PATH))
         profile["implementationBoundary"]["gateStatus"] = "CLOSED"
         with self.assertRaisesRegex(ContractStandardsError, "implementation boundary mismatch"):
             validate_profile(profile, ROOT)
 
     def test_production_ajv_official_suite_cannot_be_claimed_after_nonconformant_audit(self) -> None:
-        profile = copy.deepcopy(load_json(PROFILE_V2_PATH))
+        profile = copy.deepcopy(load_json(PROFILE_V3_PATH))
         profile["jsonSchemaOfficialSuite"]["productionAjvOfficialSuiteAudit"]["status"] = "PASS"
         with self.assertRaisesRegex(ContractStandardsError, "must remain EXECUTED_NONCONFORMANT"):
             validate_profile(profile, ROOT)
@@ -76,6 +77,16 @@ class ContractStandardsTest(unittest.TestCase):
         profile = copy.deepcopy(load_json(PROFILE_V2_PATH))
         profile["currentContracts"]["sourceContractManifestSha256"] = "sha256:" + "0" * 64
         with self.assertRaisesRegex(ContractStandardsError, "source contract manifest mismatch"):
+            validate_profile(profile, ROOT)
+
+    def test_v3_rejects_predecessor_hash_or_bootstrap_count_drift(self) -> None:
+        profile = copy.deepcopy(load_json(PROFILE_V3_PATH))
+        profile["predecessor"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(ContractStandardsError, "predecessor path/hash/size fence"):
+            validate_profile(profile, ROOT)
+        profile = copy.deepcopy(load_json(PROFILE_V3_PATH))
+        profile["currentContracts"]["bootstrapContracts"]["schemaFiles"] = 60
+        with self.assertRaisesRegex(ContractStandardsError, "bootstrap contract profile"):
             validate_profile(profile, ROOT)
 
     def test_source_tree_has_no_python_bytecode(self) -> None:

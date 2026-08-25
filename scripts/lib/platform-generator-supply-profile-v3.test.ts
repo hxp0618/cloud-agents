@@ -110,6 +110,16 @@ describe("generator-supply profile v3 authority", () => {
     );
   });
 
+  it("keeps the Slice C projection singleton non-replay and requires native receipts as a set", () => {
+    const root = createRoot();
+    writeGeneratorSupplyV3Source(root);
+    copyFromRepository(root, SUCCESSOR_V3_REPLAY_RECEIPT_PATHS.at(-1)!);
+    expect(assertGeneratorSupplyV3SourceCurrent(root)).toBe("DECLARED_PRE_REPLAY");
+
+    writeJson(root, SUCCESSOR_V3_REPLAY_RECEIPT_PATHS[0], { partial: true });
+    expect(() => inspectGeneratorSupplyV3AuthorityState(root)).toThrow(/partial|eight/i);
+  });
+
   it("rejects source drift and partial late-bound receipt groups", () => {
     const root = createRoot();
     writeGeneratorSupplyV3Source(root);

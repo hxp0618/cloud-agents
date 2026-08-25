@@ -50,6 +50,16 @@ function authority(): PlatformContractLockV3AssembledAuthority {
       exclusionsDigest: sha256("6"),
       receipt: artifact("tools/generator-supply/v3/evidence/replay/projection.json", "7"),
     },
+    contractStandards: {
+      formatVersion: "cloud-agents-contract-standards-profile/v3",
+      profile: artifact("tools/contract-standards/profile-v3.json", "8"),
+      predecessor: {
+        ...artifact("tools/contract-standards/profile-v2.json", "9"),
+        gitBlobSha1: "0c73cdf771ddcf0d46c43d52abf5b622507e8e1b",
+        sha256: "sha256:9457d4bdc12f16b366d9c56a25a107103f5b2b64650de20f509f3ef96d0d4d01",
+        sizeBytes: 3539,
+      },
+    },
   };
 }
 
@@ -110,6 +120,10 @@ describe("platform contract generation lock v3", () => {
       assembledAuthority: {
         generatorSupply: { outputFiles: 49 },
         projection: { exclusionCount: 17 },
+        contractStandards: {
+          formatVersion: "cloud-agents-contract-standards-profile/v3",
+          predecessor: { sizeBytes: 3539 },
+        },
       },
     });
     expect(first.predecessorV2).not.toHaveProperty("state");

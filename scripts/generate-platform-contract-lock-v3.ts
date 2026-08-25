@@ -39,6 +39,7 @@ import {
 } from "./lib/platform-g-contract-phase-record";
 import { classifyGContractPhaseTopology } from "./lib/platform-g-contract-phase-state";
 import { assertGeneratorSupplyV3RegistryCurrent } from "./lib/platform-generator-supply-profile-v3";
+import { assertContractStandardsProfileCurrent } from "./lib/platform-contract-standards-profile";
 import { SUCCESSOR_V3_PROJECTION_EXCLUSIONS } from "./lib/platform-successor-dag-v3";
 import { canonicalizeJson } from "./lib/platform-json-semantics";
 
@@ -244,6 +245,12 @@ function buildAuthority(): PlatformContractLockV3AssembledAuthority {
   const projectionPath = "tools/generator-supply/v3/evidence/replay/projection.json";
   const profile = json(profilePath);
   const projection = json(projectionPath);
+  const contractStandards = assertContractStandardsProfileCurrent(root);
+  if (contractStandards.formatVersion !== "cloud-agents-contract-standards-profile/v3") {
+    throw new Error(
+      "Current contract-standards authority must be profile v3 before lock assembly.",
+    );
+  }
   const excluded = projection.excluded;
   if (
     !Array.isArray(excluded) ||
@@ -287,6 +294,11 @@ function buildAuthority(): PlatformContractLockV3AssembledAuthority {
       exclusionCount: 17,
       exclusionsDigest,
       receipt: artifact(projectionPath),
+    },
+    contractStandards: {
+      formatVersion: "cloud-agents-contract-standards-profile/v3",
+      profile: artifact("tools/contract-standards/profile-v3.json"),
+      predecessor: artifact("tools/contract-standards/profile-v2.json"),
     },
   };
 }

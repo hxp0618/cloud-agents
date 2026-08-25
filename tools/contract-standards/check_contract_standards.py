@@ -23,6 +23,7 @@ class ContractStandardsError(RuntimeError):
 
 PROFILE_V1 = "cloud-agents-contract-standards-profile/v1"
 PROFILE_V2 = "cloud-agents-contract-standards-profile/v2"
+PROFILE_V3 = "cloud-agents-contract-standards-profile/v3"
 PROFILE_V1_PREDECESSOR = {
     "path": "tools/contract-standards/profile.json",
     "sha256": "dfb79ae54631d9f61f53846c91ac74bebb5b213fac023af2527c3ce352873a11",
@@ -30,8 +31,14 @@ PROFILE_V1_PREDECESSOR = {
     "mutation": "forbidden",
 }
 CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256 = (
-    "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c"
+    "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37"
 )
+PROFILE_V2_PREDECESSOR = {
+    "path": "tools/contract-standards/profile-v2.json",
+    "sha256": "9457d4bdc12f16b366d9c56a25a107103f5b2b64650de20f509f3ef96d0d4d01",
+    "sizeBytes": 3539,
+    "mutation": "forbidden",
+}
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -472,8 +479,10 @@ def run_openapi_validation(profile: dict[str, Any], root: Path) -> dict[str, int
 
 def validate_profile(profile: dict[str, Any], root: Path) -> None:
     format_version = profile.get("formatVersion")
-    if format_version not in {PROFILE_V1, PROFILE_V2}:
+    if format_version not in {PROFILE_V1, PROFILE_V2, PROFILE_V3}:
         raise ContractStandardsError("unsupported contract standards profile")
+    versioned = format_version in {PROFILE_V2, PROFILE_V3}
+    v3 = format_version == PROFILE_V3
     exact_keys(
         profile,
         {
@@ -487,17 +496,18 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             "openapi",
             "implementationBoundary",
         }
-        | ({"predecessor"} if format_version == PROFILE_V2 else set()),
+        | ({"predecessor"} if versioned else set()),
         "contract standards profile",
     )
     if profile.get("status") != "GENERATED_NON_GATE_EVIDENCE" or profile.get("notGateClosure") is not True:
         raise ContractStandardsError("contract standards profile must remain non-Gate evidence")
-    if format_version == PROFILE_V2:
+    if versioned:
         predecessor = required_object(profile.get("predecessor"), "contract standards predecessor")
-        exact_keys(predecessor, set(PROFILE_V1_PREDECESSOR), "contract standards predecessor")
-        if predecessor != PROFILE_V1_PREDECESSOR:
+        expected_predecessor = PROFILE_V2_PREDECESSOR if v3 else PROFILE_V1_PREDECESSOR
+        exact_keys(predecessor, set(expected_predecessor), "contract standards predecessor")
+        if predecessor != expected_predecessor:
             raise ContractStandardsError(
-                "contract standards v2 predecessor path/hash/size fence mismatch"
+                f"contract standards {'v3' if v3 else 'v2'} predecessor path/hash/size fence mismatch"
             )
         predecessor_raw_path = required_string(
             predecessor.get("path"), "contract standards predecessor path"
@@ -515,12 +525,9 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             raise ContractStandardsError("contract standards predecessor became a symlink")
         actual_size = len(predecessor_bytes)
         actual_sha256 = hashlib.sha256(predecessor_bytes).hexdigest()
-        if (
-            actual_size != predecessor["sizeBytes"]
-            or actual_sha256 != predecessor["sha256"]
-        ):
+        if actual_size != predecessor["sizeBytes"] or actual_sha256 != predecessor["sha256"]:
             raise ContractStandardsError(
-                "contract standards v1 predecessor changed: "
+                f"contract standards {'v2' if v3 else 'v1'} predecessor changed: "
                 f"expected_size={predecessor['sizeBytes']} actual_size={actual_size} "
                 f"expected_sha={predecessor['sha256']} actual_sha={actual_sha256}"
             )
@@ -535,13 +542,16 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             "independentValidator",
             "crossEngineExactFixtureResults",
         }
-        | ({"sourceContractManifestSha256"} if format_version == PROFILE_V2 else set()),
+        | ({"sourceContractManifestSha256"} if versioned else set())
+        | ({"bootstrapContracts"} if v3 else set()),
         "current contract profile",
     )
     if current.get("crossEngineExactFixtureResults") is not True:
         raise ContractStandardsError("cross-engine fixture comparison must remain enabled")
     expected_current = (
-        {"schemaFiles": 60, "fixtureManifests": 2, "fixtureCases": 79}
+        {"schemaFiles": 68, "fixtureManifests": 2, "fixtureCases": 79}
+        if v3
+        else {"schemaFiles": 60, "fixtureManifests": 2, "fixtureCases": 79}
         if format_version == PROFILE_V2
         else {"schemaFiles": 58, "fixtureManifests": 2, "fixtureCases": 77}
     )
@@ -551,20 +561,80 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             f"contract standards current counts mismatch: expected={expected_current} "
             f"actual={actual_current}"
         )
-    if format_version == PROFILE_V2:
+    if versioned:
         expected_manifest = required_string(
             current.get("sourceContractManifestSha256"),
             "current source contract manifest SHA-256",
         )
         actual_manifest = source_contract_manifest_sha256(root)
-        if (
-            expected_manifest != CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
-            or actual_manifest != expected_manifest
-        ):
+        expected_source_manifest = (
+            CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
+            if v3
+            else "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c"
+        )
+        if expected_manifest != expected_source_manifest or actual_manifest != expected_manifest:
             raise ContractStandardsError(
                 "current source contract manifest mismatch: "
                 f"expected={expected_manifest} actual={actual_manifest}"
             )
+    if v3:
+        bootstrap = required_object(
+            current.get("bootstrapContracts"), "bootstrap contract profile"
+        )
+        exact_keys(
+            bootstrap,
+            {"schemaFiles", "fixtureManifests", "fixtureCases", "sourceContractManifestSha256"},
+            "bootstrap contract profile",
+        )
+        expected_bootstrap = {"schemaFiles": 64, "fixtureManifests": 2, "fixtureCases": 79}
+        declared_bootstrap = {
+            key: bootstrap.get(key)
+            for key in expected_bootstrap
+        }
+        if declared_bootstrap != expected_bootstrap:
+            raise ContractStandardsError(
+                f"bootstrap contract profile counts mismatch: expected={expected_bootstrap} "
+                f"actual={declared_bootstrap}"
+            )
+        if bootstrap.get("sourceContractManifestSha256") != CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256:
+            raise ContractStandardsError(
+                "bootstrap contract profile source contract manifest mismatch"
+            )
+        actual_bootstrap = {
+            "schemaFiles": len(
+                [
+                    path
+                    for path in regular_files(root / "contracts")
+                    if path.relative_to(root / "contracts").as_posix() != "generation.lock.json"
+                    and not path.relative_to(root / "contracts")
+                    .as_posix()
+                    .startswith("generated/")
+                    and path.name.endswith(".schema.json")
+                ]
+            ),
+            "fixtureManifests": len(
+                [
+                    path
+                    for path in regular_files(root / "contracts")
+                    if path.relative_to(root / "contracts").as_posix() != "generation.lock.json"
+                    and not path.relative_to(root / "contracts")
+                    .as_posix()
+                    .startswith("generated/")
+                    and path.as_posix().endswith("/fixtures/manifest.json")
+                ]
+            ),
+            "fixtureCases": sum(
+                len(required_array(load_json(path).get("cases"), f"fixture cases {path}"))
+                for path in regular_files(root / "contracts")
+                if path.as_posix().endswith("/fixtures/manifest.json")
+            ),
+        }
+        if actual_bootstrap != expected_bootstrap:
+            raise ContractStandardsError(
+                f"bootstrap contract counts mismatch: expected={expected_bootstrap} actual={actual_bootstrap}"
+            )
+        if bootstrap.get("sourceContractManifestSha256") != CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256:
+            raise ContractStandardsError("bootstrap source contract manifest mismatch")
     suite = required_object(profile.get("jsonSchemaOfficialSuite"), "official suite profile")
     production_ajv_audit = required_object(
         suite.get("productionAjvOfficialSuiteAudit"), "production Ajv official-suite audit"
@@ -628,7 +698,7 @@ def main() -> int:
     parser.add_argument(
         "--profile",
         type=Path,
-        default=Path("tools/contract-standards/profile-v2.json"),
+        default=Path("tools/contract-standards/profile-v3.json"),
     )
     arguments = parser.parse_args()
     root = arguments.root.resolve()
