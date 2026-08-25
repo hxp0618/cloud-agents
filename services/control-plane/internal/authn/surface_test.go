@@ -37,6 +37,12 @@ func TestProductionSurfaceAndDependencyClosure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if name == "localdev.go" {
+			if !strings.HasPrefix(string(source), "//go:build localdev\n\n") {
+				t.Fatal("localdev.go lost its exact localdev build constraint")
+			}
+			continue
+		}
 		file, err := parser.ParseFile(token.NewFileSet(), name, source, 0)
 		if err != nil {
 			t.Fatal(err)
