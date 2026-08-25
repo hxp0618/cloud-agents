@@ -67,6 +67,17 @@ describe("successor v3 DAG", () => {
       "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md",
     ]);
     expect(() => assertSuccessorV3DagAuthority()).not.toThrow();
+    expect(SUCCESSOR_V3_PRE_REPLAY_AUTHORITY_PATHS).toEqual(
+      expect.arrayContaining([
+        "tools/gate-phase-record/g-contract-p1/v1/source.json",
+        "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-record-source-v1.schema.json",
+        "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-record-model-v1.schema.json",
+        "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-review-tuple-v1.schema.json",
+        "tools/gate-phase-record/g-contract-p1/v1/g-contract-phase-binding-registry-v1.schema.json",
+        "scripts/lib/platform-g-contract-phase-record.ts",
+        "scripts/lib/platform-g-contract-phase-record.test.ts",
+      ]),
+    );
     for (const repositoryPath of SUCCESSOR_V3_PRE_REPLAY_AUTHORITY_PATHS) {
       expect(SUCCESSOR_V3_PROJECTION_EXCLUSIONS).not.toContain(repositoryPath);
     }

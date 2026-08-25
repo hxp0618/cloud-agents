@@ -159,12 +159,7 @@
     "projection": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "commit",
-        "tree",
-        "archiveSha256",
-        "receipt"
-      ],
+      "required": ["commit", "tree", "archiveSha256", "receipt"],
       "properties": {
         "commit": {
           "$ref": "#/$defs/gitObject"
@@ -183,12 +178,7 @@
     "supply": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "candidate",
-        "manifest",
-        "profile",
-        "review"
-      ],
+      "required": ["candidate", "manifest", "profile", "review"],
       "properties": {
         "candidate": {
           "$ref": "#/$defs/candidate"
@@ -441,7 +431,26 @@
     },
     "missing": {
       "type": "array",
-      "maxItems": 0
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "const": "json-schema-authority-and-openapi-refs"
+        },
+        {
+          "const": "proto-authority-and-generated-connect-grpc-mapping"
+        },
+        {
+          "const": "shared-golden-negative-and-n-minus-one-fixtures"
+        },
+        {
+          "const": "exact-pinned-external-consumer"
+        },
+        {
+          "const": "digest-change-invalidation"
+        }
+      ],
+      "items": false
     },
     "invalidationRules": {
       "const": [
@@ -488,13 +497,7 @@
     "fileBinding": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "path",
-        "gitBlob",
-        "sha256",
-        "sizeBytes",
-        "mode"
-      ],
+      "required": ["path", "gitBlob", "sha256", "sizeBytes", "mode"],
       "properties": {
         "path": {
           "$ref": "#/$defs/path"
@@ -517,15 +520,7 @@
     "boundEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "evidenceId",
-        "status",
-        "path",
-        "gitBlob",
-        "sha256",
-        "sizeBytes",
-        "mode"
-      ],
+      "required": ["evidenceId", "status", "path", "gitBlob", "sha256", "sizeBytes", "mode"],
       "properties": {
         "evidenceId": {
           "type": "string",
@@ -555,14 +550,7 @@
     "boundHistorical": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "evidenceId",
-        "path",
-        "gitBlob",
-        "sha256",
-        "sizeBytes",
-        "mode"
-      ],
+      "required": ["evidenceId", "path", "gitBlob", "sha256", "sizeBytes", "mode"],
       "properties": {
         "evidenceId": {
           "type": "string",
@@ -589,13 +577,7 @@
     "candidate": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "actorId",
-        "commit",
-        "tree",
-        "parent",
-        "diffSha256"
-      ],
+      "required": ["actorId", "commit", "tree", "parent", "diffSha256"],
       "properties": {
         "actorId": {
           "type": "string",
@@ -676,11 +658,7 @@
     "zeroFindings": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "p0",
-        "p1",
-        "p2"
-      ],
+      "required": ["p0", "p1", "p2"],
       "properties": {
         "p0": {
           "const": 0
@@ -696,24 +674,14 @@
     "criterion": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "status",
-        "statement",
-        "formalCriteria"
-      ],
+      "required": ["id", "status", "statement", "formalCriteria"],
       "properties": {
         "id": {
           "type": "string",
           "minLength": 1
         },
         "status": {
-          "enum": [
-            "SATISFIED_CANDIDATE",
-            "REVIEW_PENDING",
-            "OPEN_NOT_CLAIMED",
-            "NOT_APPLICABLE"
-          ]
+          "enum": ["SATISFIED_CANDIDATE", "REVIEW_PENDING", "OPEN_NOT_CLAIMED", "NOT_APPLICABLE"]
         },
         "statement": {
           "type": "string",
