@@ -41,6 +41,13 @@ missing, mode, path, digest, or runtime-artifact drift. The generated lineage
 document records `ALL_GATES_OPEN`, `NOT_AUTHORIZED` production/deployment/
 publication boundaries, and no HTTP/P2/provider side effect.
 
+After the first candidate's bounded review record was written, a final local
+closure audit added one narrow fence: source migration paths must equal the
+paths returned by the checked-in `000013` closure, including predecessor
+catalog `schema-000012.json`; that predecessor catalog is now also present in
+the lineage input set. This produces a successor candidate for fresh review
+and does not alter any SQL or historical authority bytes.
+
 The separate `feat/portable-runtime` worktree is not part of this candidate.
 All other existing P1 branch tips inspected for the merge are already
 ancestors of the P0 branch; no unrelated branch was merged.

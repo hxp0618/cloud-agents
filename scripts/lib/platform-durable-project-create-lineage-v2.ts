@@ -169,6 +169,7 @@ export function buildDurableProjectCreateLineageV2(root: string): JsonRecord {
   assertDurableCoordinationGoV2Current(root);
   const fixtureManifest = validateVersionedFixtureManifest(root);
   const migration = durableProjectCreateMigrationClosure(root);
+  assertMigrationClosurePaths(source.migration, migration);
 
   const durableAuthority = source.durableAuthority;
   assertExactPathList(
@@ -281,6 +282,7 @@ export function durableProjectCreateLineageV2Inputs(root: string): string[] {
     EXPECTED_PREDECESSOR_MIGRATION_PATHS,
     "/predecessor/migrationsV1",
   );
+  const migrationClosure = durableProjectCreateMigrationClosure(root);
   const paths = [
     DURABLE_PROJECT_CREATE_LINEAGE_SOURCE_PATH,
     DURABLE_PROJECT_CREATE_LINEAGE_SOURCE_SCHEMA_PATH,
@@ -304,6 +306,12 @@ export function durableProjectCreateLineageV2Inputs(root: string): string[] {
     requireString(migration.schemaBundlePath, "/migration/schemaBundlePath"),
     requireString(migration.catalogPath, "/migration/catalogPath"),
     requireString(migration.archivePath, "/migration/archivePath"),
+    migrationClosure.sql.path,
+    migrationClosure.predecessorCatalog.path,
+    migrationClosure.catalog.path,
+    migrationClosure.manifest.path,
+    migrationClosure.schemaBundle.path,
+    migrationClosure.predecessorArchive.path,
     ...migrations.map((entry, index) =>
       requireString(requiredObject(entry).path, `/predecessor/migrationsV1/${index}/path`),
     ),
@@ -457,6 +465,31 @@ function migrationOutput(closure: DurableProjectCreateMigrationClosure): JsonRec
       schemaBundleDigest: closure.predecessorArchive.schemaBundleDigest,
     },
   };
+}
+
+function assertMigrationClosurePaths(
+  sourceMigration: JsonRecord,
+  closure: DurableProjectCreateMigrationClosure,
+): void {
+  const expected = {
+    sql: requireString(sourceMigration.sqlPath, "/migration/sqlPath"),
+    manifest: requireString(sourceMigration.manifestPath, "/migration/manifestPath"),
+    schemaBundle: requireString(sourceMigration.schemaBundlePath, "/migration/schemaBundlePath"),
+    catalog: requireString(sourceMigration.catalogPath, "/migration/catalogPath"),
+    predecessorArchive: requireString(sourceMigration.archivePath, "/migration/archivePath"),
+    predecessorCatalog: "services/control-plane/migrations/catalog/schema-000012.json",
+  } as const;
+  const actual = {
+    sql: closure.sql.path,
+    manifest: closure.manifest.path,
+    schemaBundle: closure.schemaBundle.path,
+    catalog: closure.catalog.path,
+    predecessorArchive: closure.predecessorArchive.path,
+    predecessorCatalog: closure.predecessorCatalog.path,
+  } as const;
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error("Durable Project-create migration closure path binding drifted.");
+  }
 }
 
 export function assertDurableProjectCreateLineagePredecessor(

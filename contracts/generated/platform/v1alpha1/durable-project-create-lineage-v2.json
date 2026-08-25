@@ -251,14 +251,14 @@
       },
       {
         "path": "scripts/lib/platform-durable-project-create-lineage-v2.ts",
-        "sha256": "sha256:e65803f0f4c5a5c7f92d90afa056b1f42b99b2b1c8c5b8a7b87f4a3218a62aba",
-        "sizeBytes": 27183,
+        "sha256": "sha256:2019eba00895bbf02265e34d544930b35e98c77da6bc27cefb53abc5deee20ae",
+        "sizeBytes": 28677,
         "mode": "100644"
       },
       {
         "path": "scripts/lib/platform-durable-project-create-lineage-v2.test.ts",
-        "sha256": "sha256:017e26b4c4de5dc15f5eeb9c71baa6ab3b7221fbb815ec508ab13f504a26c4a1",
-        "sizeBytes": 4493,
+        "sha256": "sha256:b14a66b18f02c8549dca17ab6209e1460b69488f2d52b5e441c03540bc515c11",
+        "sizeBytes": 4866,
         "mode": "100644"
       }
     ],
@@ -333,5 +333,5 @@
     "publication": "NOT_AUTHORIZED",
     "gateStatus": "ALL_GATES_OPEN"
   },
-  "lineageDigest": "sha256:f2e8754e169fa196f9e3f2bf67d37b629af6c04a1873bc77ebd7a3c2ca058c2c"
+  "lineageDigest": "sha256:4e446a895f3378b11a0094119d73be3e6287232cb5ad4c05ea93956606a12be0"
 }

@@ -44,7 +44,14 @@ describe("durable Project-create lineage v2", () => {
     expect(inputs).toContain(
       "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
     );
+    expect(inputs).toContain("services/control-plane/migrations/catalog/schema-000012.json");
     expect(inputs).toContain("contracts/generation.lock.json");
+    const lineage = buildDurableProjectCreateLineageV2(repositoryRoot) as {
+      migration: { predecessorCatalog: { path: string } };
+    };
+    expect(lineage.migration.predecessorCatalog.path).toBe(
+      "services/control-plane/migrations/catalog/schema-000012.json",
+    );
     const manifest = validateVersionedFixtureManifest(repositoryRoot);
     expect(manifest.caseNames).toHaveLength(6);
     expect(manifest.sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
