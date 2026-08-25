@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertSuccessorV3PredecessorsCurrent,
+  assertSuccessorV3HistoricalCoreGeneratorOutputFenceForTest,
   assertSuccessorV3HistoricalGenerationLockV2ForTest,
   assertSuccessorV3SourceForTest,
   assertSuccessorV3StableFileMapForTest,
@@ -70,6 +71,19 @@ describe("successor v3 immutable predecessor fence", () => {
       source.predecessorClosure.evidenceManifests.map(({ memberCount }) => memberCount),
     ).toEqual([39, 8]);
     expect(source.replayContract.coreGeneratorOutputs).toHaveLength(49);
+    const historicalLock = JSON.parse(
+      execFileSync("/usr/bin/git", [
+        "show",
+        "16275f6cbf390c343a9ac00f9193e75eaad0094e:contracts/generation.lock.json",
+      ]).toString("utf8"),
+    ) as { coreGeneratorOutputs: { files: Array<{ path: string; sha256: string }> } };
+    const historicalByPath = new Map(
+      historicalLock.coreGeneratorOutputs.files.map((record) => [record.path, record.sha256]),
+    );
+    const refreshedPaths = source.replayContract.coreGeneratorOutputs.filter(
+      (record) => record.sha256 !== historicalByPath.get(record.path)?.slice("sha256:".length),
+    );
+    expect(refreshedPaths).toHaveLength(13);
     expect(source.replayContract.projectionExclusions).toHaveLength(17);
     expect(source.predecessorClosure.gitChain.map(({ commit }) => commit)).toEqual([
       "1ba7eda5ad6241ad8a065408d787e73cd7013ce0",
@@ -78,6 +92,52 @@ describe("successor v3 immutable predecessor fence", () => {
       "16275f6cbf390c343a9ac00f9193e75eaad0094e",
     ]);
     expect(() => assertSuccessorV3PredecessorsCurrent(repositoryRoot)).not.toThrow();
+  });
+
+  it("fails closed when the historical v2 core-output map is missing, reordered, or drifted", () => {
+    const lock = JSON.parse(
+      execFileSync("/usr/bin/git", [
+        "show",
+        "16275f6cbf390c343a9ac00f9193e75eaad0094e:contracts/generation.lock.json",
+      ]).toString("utf8"),
+    ) as Record<string, any>;
+    const mutations = [
+      () => {
+        const candidate = structuredClone(lock);
+        delete candidate.coreGeneratorOutputs;
+        return candidate;
+      },
+      () => {
+        const candidate = structuredClone(lock);
+        candidate.coreGeneratorOutputs.files.reverse();
+        return candidate;
+      },
+      () => {
+        const candidate = structuredClone(lock);
+        candidate.coreGeneratorOutputs.files[0].sha256 = `sha256:${"f".repeat(64)}`;
+        return candidate;
+      },
+      () => {
+        const candidate = structuredClone(lock);
+        candidate.coreGeneratorOutputs.files[0].sizeBytes += 1;
+        return candidate;
+      },
+      () => {
+        const candidate = structuredClone(lock);
+        candidate.coreGeneratorOutputs.files[0].gitMode = "100755";
+        return candidate;
+      },
+      () => {
+        const candidate = structuredClone(lock);
+        candidate.coreGeneratorOutputs.replayCandidateManifestSha256 = `sha256:${"f".repeat(64)}`;
+        return candidate;
+      },
+    ];
+    for (const mutate of mutations) {
+      expect(() =>
+        assertSuccessorV3HistoricalCoreGeneratorOutputFenceForTest(repositoryRoot, mutate()),
+      ).toThrow();
+    }
   });
 
   it("keeps the fixed post-H v2 lock valid after the live path becomes ASSEMBLED or PHASE_BOUND", () => {
@@ -107,6 +167,10 @@ describe("successor v3 immutable predecessor fence", () => {
       mkdirSync(dirname(resolve(root, path)), { recursive: true });
       copyFileSync(resolve(repositoryRoot, path), resolve(root, path));
     }
+    for (const { path } of cloneSource().replayContract.coreGeneratorOutputs) {
+      mkdirSync(dirname(resolve(root, path)), { recursive: true });
+      copyFileSync(resolve(repositoryRoot, path), resolve(root, path));
+    }
     for (const state of ["ASSEMBLED", "PHASE_BOUND"]) {
       write(
         root,
@@ -120,7 +184,7 @@ describe("successor v3 immutable predecessor fence", () => {
       );
       expect(() => assertSuccessorV3PredecessorsCurrent(root)).not.toThrow();
     }
-  });
+  }, 30_000);
 
   it("fails closed when the historical v2 blob, status, or digest drifts", () => {
     const source = cloneSource();
