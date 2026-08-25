@@ -2,7 +2,7 @@
 
 - 最后更新：2026-08-26
 - Plan status：APPROVED
-- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 仍作为 v2 predecessor 历史保留；ADR-0030/D-053 current-source successor 的 fixed candidate `e45ef4e` 已完成 Slice C projection 与 Slice D Darwin/Linux A/B native replay，scope-corrected review 返回 `APPROVE, P0=0/P1=0/P2=0`；formal Slice E assembled lock 与 Slice F predeclared supply review 尚未开始，v3 仍为 `REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
+- Implementation status：P0 VERIFIED；P1 IN PROGRESS（A2.1b/A2.2、A2.3、A2.4 与 A3 的固定 implementation/review 记录保持有效；runner ledger/catalog preflight、versioned complete-ledger read-only consumer 与 ADR-0021 fresh-session close-only entry admission 已依序固定并独立复核；ADR-0022/D-046 Slice A–D 与 ADR-0023/D-047 ordered Slices A–G 均已独立批准。D-048/ADR-0024 接受软件关机/崩溃机制替代物理硬断电；按 2026-08-24 owner 口径，普通 clean `poweroff`/`reboot` 计为项目“掉电恢复”，但只能声称 clean shutdown/restart，不声称 abrupt crash、BMC hard-off、物理拔电或 controller/cache-loss；D-049/ADR-0025 ordered Slices A-C 均已固定并独立批准，Slice C fixed candidate `d6ae9c7` 的 review `aa83e37` 返回 `APPROVE, P0=0/P1=0/P2=0`；D-051/ADR-0028 generator-supply v1 fixed candidate/review 已完成；D-052/ADR-0029 仍作为 v2 predecessor 历史保留；ADR-0030/D-053 current-source successor 的 fixed candidate `e45ef4e` 已完成 Slice C projection 与 Slice D Darwin/Linux A/B native replay，scope-corrected review 返回 `APPROVE, P0=0/P1=0/P2=0`；formal Slice E lock assembly preflight hit a deterministic P1 writer/profile contract mismatch before any write，Slice F predeclared supply review remains pending，v3 仍为 `REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；Gate effect none；production trust provisioning、HTTP/OIDC/JWKS、P2/provider external side effect、生产数据库、部署发布合并与所有 Gate closure 均未授权；M1/P2–P6 PAUSED）
 - 2026-08-25 bounded milestone：P1 durable Project create vertical slice 已由 `a76b475` 实现并以 merge commit `05fa736` 集成到 `codex/cloud-agents-platform-p0`；仅新增 versioned localdev/loopback route 与 append-only `000013` transaction，v1 claim-only predecessor 保持不变。首次创建、同 key replay、冲突 key、tenant isolation、失败回滚和关键表无重复已由既有 focused tests 与一次 disposable local PostgreSQL smoke 证明；该记录不改变任何 Gate 或运行授权，详见 [`durable Project create vertical slice`](../p1/durable-project-create-vertical-slice-20260825.md)。
 - 2026-08-26 successor replay milestone：Slice C projection 与 Slice D Darwin/Linux A/B native replay 已固定并独立批准（见下方 immutable implementation/review record）；v3 仍为 review-pending/non-Gate，所有 aggregate Gate 保持 OPEN。
 
@@ -597,6 +597,14 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       与 predeclared Slice F review 尚未开始。该项仅固定 projection/replay evidence，不授权 successor lock/binding、
       生产数据库、HTTP/P2/provider、部署、发布或任何 Gate 关闭；详见
       [`D-053 Slice D scope-corrected review`](../p1/g-contract-current-source-phase-successor-slice-d-native-replay-independent-review-20260826.md)。
+- [ ] D-053 formal Slice E lock assembly preflight was attempted once from the clean replay candidate
+      `e45ef4e` and failed before the exclusive write: `buildAuthority` requires recursive
+      `candidateManifestSha256/outputFiles` fields that the canonical checked-in v3 profile does not expose.
+      The live lock remains the exact v2 predecessor (`PRE_REPLAY_LEGACY_LOCK_ONLY`); no `ASSEMBLED` lock,
+      Slice F review, database/HTTP/P2/provider effect, deployment, publication, release, or Gate transition was
+      performed. This is a deterministic P1 source/consumer mismatch requiring a new pre-replay repair candidate
+      and fresh projection/native replay; see
+      [`Slice E lock assembly blocker`](../p1/g-contract-current-source-phase-successor-slice-e-lock-assembly-blocker-20260826.md)。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
