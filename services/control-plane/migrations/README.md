@@ -51,7 +51,7 @@ silently alter this schema.
 3. A dedicated migration `LOGIN`, after the ADR-0008 attribute and direct
    membership preflight and an explicit
    `SET ROLE cloud_agents_migration_owner`, runs the strict manifest runner. It applies
-   `000001` through `000012`, under the migration advisory lock. Each
+   `000001` through `000013`, under the migration advisory lock. Each
    migration is a separate short transaction. `000001` accepts an absent schema or an
    existing empty schema already owned by the migration owner; it rejects a
    wrong-owner or nonempty schema before creating migration objects.
@@ -141,6 +141,12 @@ silently alter this schema.
     receipt matching tenant, service, instance, incarnation, rollout generation,
     writer epoch, all six revoke/release flags, and a non-null receipt digest. It
     creates no table, role, grant, writer, or external side effect.
+16. `000013` registers the independent generated v2 durable Project-create
+    profile and adds one typed SECURITY DEFINER transaction. It preserves the
+    v1 claim-only registry/profile and all earlier migration bytes, records the
+    Project, operation, attempt, receipt, required finalizer, audit, and pending
+    `operation_effect` outbox rows atomically, and exposes no provider, HTTP/P2,
+    deployment, or production-side effect.
 
 The database bootstrap is a psql script rather than a schema migration. Invoke
 it without embedding credentials in the command line, for example:
@@ -275,6 +281,18 @@ This focused matrix uses only run-labelled local containers, refuses implicit
 image pulls, removes each owned container before publishing PASS, and does not
 run the older broad writer/service matrices. It is local implementation evidence,
 not a production database write, deployment, publication, or Gate closure.
+
+Migration `000013_add_durable_project_create_writer.sql` is the append-only
+successor for the versioned durable Project-create profile. It preserves every
+prior migration and the v1 claim-only profile byte-for-byte, registers only the
+generated successor profile, and exposes the SECURITY DEFINER transaction
+function to the localdev writer slice. The function is tenant-authority and
+idempotency guarded and records the Project, operation, receipt, finalizer, and
+outbox rows in one recoverable transaction; it does not deliver HTTP, provider,
+or other external effects. The generated catalog, schema bundle, manifest,
+ancestor archive, and deterministic runtime tar are produced by
+`scripts/generate-platform-migration-bundle.ts` and must be regenerated together
+after any SQL/profile digest change.
 
 ## Immutable boundary
 

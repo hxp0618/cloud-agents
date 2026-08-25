@@ -94,12 +94,12 @@ func Run(ctx context.Context, config Config, connector Connector) (result Result
 		return Result{}, fmt.Errorf("read migration ledger: %w", err)
 	}
 	entries := bundle.manifest.SchemaBundle.Migrations
-	if len(entries) != 12 || bundle.manifest.SchemaBundle.SchemaHead != "000012" {
-		return Result{}, errors.New("localdev runner requires manifest schema head 000012")
+	if len(entries) != 13 || bundle.manifest.SchemaBundle.SchemaHead != "000013" {
+		return Result{}, errors.New("localdev runner requires manifest schema head 000013")
 	}
 	for index, entry := range entries {
 		if entry.ID != fmt.Sprintf("%06d", index+1) {
-			return Result{}, errors.New("localdev runner requires contiguous migrations 000001 through 000012")
+			return Result{}, errors.New("localdev runner requires contiguous migrations 000001 through 000013")
 		}
 	}
 	switch {

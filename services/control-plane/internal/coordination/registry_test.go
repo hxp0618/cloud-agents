@@ -60,7 +60,7 @@ func TestOnlyGeneratedSourceConstructsOperationProfiles(t *testing.T) {
 			}
 			switch identifier.Name {
 			case "operationProfile":
-				if name != "registry_generated.go" && !(name == "registry.go" && len(literal.Elts) == 0) {
+				if name != "registry_generated.go" && name != "registry_v2_generated.go" && !(name == "registry.go" && len(literal.Elts) == 0) {
 					t.Errorf("hand-written operationProfile construction in %s", name)
 				}
 			case "Profile":

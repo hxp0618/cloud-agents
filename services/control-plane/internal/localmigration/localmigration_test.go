@@ -57,7 +57,7 @@ func TestRunFreshAppliesManifestOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.NoOp || result.Applied != 12 || result.SchemaHead != "000012" {
+	if result.NoOp || result.Applied != 13 || result.SchemaHead != "000013" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	for index, id := range session.apply {

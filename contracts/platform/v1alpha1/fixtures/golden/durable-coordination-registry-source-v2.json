@@ -1,0 +1,28 @@
+{
+  "formatVersion": "cloud-agents-durable-coordination-source/v2",
+  "registryId": "cloud-agents/platform/durable-coordination",
+  "historicalCompatibility": {
+    "priorFormatVersion": "cloud-agents-durable-coordination-source/v1",
+    "priorRegistryDigest": "sha256:ca5703cbbc68f7501e6fb4da0a0f09bc9fdd6e52bc48f080627bec64fd1b635a",
+    "mode": "historical_schema_only_non_authority"
+  },
+  "selector": {
+    "mode": "generated_registry_only",
+    "profileSelection": "exact_profile_id_and_digest",
+    "callerProvidedProfile": "forbidden",
+    "storedRowSelection": "forbidden",
+    "schemaBinding": "exact_profile_and_registry_digest"
+  },
+  "routeDescriptor": "golden/durable-project-create-route-v2.json",
+  "profileDocuments": [
+    "golden/durable-coordination-profile-managed-agent-create-project-durable-v1alpha1.json"
+  ],
+  "implementationBoundary": {
+    "transport": "localdev_loopback_only",
+    "providerEffects": "forbidden",
+    "managedAgentEffects": "forbidden",
+    "databaseWrites": "typed_security_definer_transaction_only",
+    "localOperationCompletion": "operation_attempt_receipt_and_required_finalizer_succeeded",
+    "outboxEffect": "operation_effect_pending"
+  }
+}

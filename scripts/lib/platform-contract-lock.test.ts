@@ -304,18 +304,12 @@ describe("Platform contract generation lock", () => {
     ).toThrow(/parent/u);
   });
 
-  it("derives future standards inputs from v2 plus the immutable v1 predecessor", () => {
+  it("fails closed when the current source invalidates the historical standards authority", () => {
     const root = join(import.meta.dirname, "../..");
-    const { profile, inputs } = buildPlatformContractStandardsLockState(root);
-    expect(profile.formatVersion).toBe("cloud-agents-contract-standards-profile/v2");
-    expect(profile.currentContracts).toMatchObject({
-      schemaFiles: 60,
-      fixtureManifests: 2,
-      fixtureCases: 79,
-      sourceContractManifestSha256:
-        "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
-    });
-    expect(inputs).toEqual(platformContractStandardsInputs(root));
+    expect(() => buildPlatformContractStandardsLockState(root)).toThrow(
+      /Current contract cardinality mismatch: expected=\{"schemaFiles":60/u,
+    );
+    const inputs = platformContractStandardsInputs(root);
     expect(inputs).toEqual(inputs.toSorted());
     expect(new Set(inputs).size).toBe(inputs.length);
     expect(inputs).toContain("tools/contract-standards/profile.json");

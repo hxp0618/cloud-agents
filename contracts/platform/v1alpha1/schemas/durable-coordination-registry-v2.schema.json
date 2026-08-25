@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-coordination-registry-v2.schema.json",
+  "title": "DurableCoordinationRegistryV2",
+  "description": "Generated successor registry for the localdev durable project writer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "registryId", "sourceDigest", "stateMachineDigest", "policyDigest", "historicalCompatibility", "selector", "profiles", "stateMachines", "policies", "implementationBoundary", "registryDigest"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-coordination-registry/v2" },
+    "registryId": { "const": "cloud-agents/platform/durable-coordination" },
+    "sourceDigest": { "pattern": "^sha256:[0-9a-f]{64}$" },
+    "stateMachineDigest": { "pattern": "^sha256:[0-9a-f]{64}$" },
+    "policyDigest": { "pattern": "^sha256:[0-9a-f]{64}$" },
+    "historicalCompatibility": { "$ref": "durable-coordination-registry-source-v2.schema.json#/properties/historicalCompatibility" },
+    "selector": { "$ref": "durable-coordination-registry-source-v2.schema.json#/properties/selector" },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["profileDigest", "spec"],
+        "properties": {
+          "profileDigest": { "pattern": "^sha256:[0-9a-f]{64}$" },
+          "spec": { "$ref": "durable-coordination-profile-v2.schema.json" }
+        }
+      }
+    },
+    "stateMachines": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "$ref": "durable-coordination-registry-source-v1.schema.json#/$defs/stateMachine"
+      }
+    },
+    "policies": {
+      "$ref": "durable-coordination-registry-source-v1.schema.json#/$defs/policies"
+    },
+    "implementationBoundary": { "$ref": "durable-coordination-registry-source-v2.schema.json#/properties/implementationBoundary" },
+    "registryDigest": { "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

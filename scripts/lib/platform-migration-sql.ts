@@ -210,7 +210,7 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set(["000005", "000006", "000009", "000012"]).has(migrationId) ||
+      (!new Set(["000005", "000006", "000009", "000012", "000013"]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
@@ -303,6 +303,17 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:compatibility_recovery_migration_preflight_evaluate_v2(unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:boolean,unquoted:text)",
           ],
         ],
+        [
+          "000013",
+          [
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_profile_is_registered(unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_registry_digest_for_profile(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_is_registered(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:coordination_profile_replay_ttl_seconds(unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -336,7 +347,7 @@ export function classifyMigrationStatement(
           ["DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"].join("\0"),
         ]).has(subcommand.join("\0"));
       const dropCoordinationRegistryConstraint =
-        migrationId === "000009" &&
+        (migrationId === "000009" || migrationId === "000013") &&
         new Map([
           [
             "table:unquoted:cloud_agents/unquoted:platform_operations",

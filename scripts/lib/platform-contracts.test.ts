@@ -17,7 +17,7 @@ describe("Platform contract bootstrap checks", () => {
   it("discovers the canonical closure v3 source/output with the active one-item missing set", () => {
     const root = resolve(import.meta.dirname, "../..");
     const summary = validatePlatformContractTree(root);
-    expect(summary.schemaFiles).toBe(60);
+    expect(summary.schemaFiles).toBe(64);
     expect(summary.fixtureCases).toBe(79);
     expect(summary.missing).toEqual(["remaining-generator-supply-chain-review"]);
   }, 30_000);

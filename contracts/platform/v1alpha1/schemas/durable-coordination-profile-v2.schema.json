@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-coordination-profile-v2.schema.json",
+  "title": "DurableCoordinationProfileV2",
+  "description": "Generated-profile source for the localdev-only durable project writer successor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "profileId", "operationId", "http", "subjectIdentity", "projection", "authorization", "coordination", "idempotency", "result"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-durable-coordination-profile/v2" },
+    "profileId": { "const": "managedAgentCreateProjectDurable/v1alpha1" },
+    "operationId": { "const": "managedAgentCreateProjectDurable" },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path", "idempotencyHeader"],
+      "properties": {
+        "method": { "const": "POST" },
+        "path": { "const": "/v1alpha1/tenants/{tenantId}/project-creations" },
+        "idempotencyHeader": { "const": "Idempotency-Key" }
+      }
+    },
+    "subjectIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaId", "digestProfile", "comparison"],
+      "properties": {
+        "schemaId": { "const": "https://schemas.cloud-agents.dev/common/v1alpha1/schemas/subject-ref.schema.json" },
+        "digestProfile": { "const": "cloud-agents-subject-ref/v1alpha1-rfc8785-sha256" },
+        "comparison": { "const": "exact_string_no_rewrite" }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaId", "canonicalizationProfile", "canonicalizationAlgorithm", "digestAlgorithm", "numberHandling"],
+      "properties": {
+        "schemaId": { "const": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/durable-project-create-idempotency-projection.schema.json" },
+        "canonicalizationProfile": { "const": "cloud-agents-http-idempotency/managedAgentCreateProjectDurable/v1alpha1" },
+        "canonicalizationAlgorithm": { "const": "RFC8785" },
+        "digestAlgorithm": { "const": "SHA-256" },
+        "numberHandling": { "const": "NOT_APPLICABLE_NO_NUMBER_FIELDS" }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantSource", "scopeSource", "scopeIdentity", "requiredPermission"],
+      "properties": {
+        "tenantSource": { "const": "path.tenantId" },
+        "scopeSource": { "const": "body.organizationRef" },
+        "scopeIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaId", "identifierProfile", "comparison"],
+          "properties": {
+            "schemaId": { "const": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json" },
+            "identifierProfile": { "const": "cloud-agents-authorization-scope-identifier/ascii-v1" },
+            "comparison": { "const": "exact_string_no_rewrite" }
+          }
+        },
+        "requiredPermission": { "const": "projects.create" }
+      }
+    },
+    "coordination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "createsPlatformOperation", "externalSideEffect", "outboxEventClass", "requiredFinalizers"],
+      "properties": {
+        "class": { "const": "operation_effect" },
+        "createsPlatformOperation": { "const": true },
+        "externalSideEffect": { "const": "forbidden" },
+        "outboxEventClass": { "const": "operation_effect" },
+        "requiredFinalizers": { "const": ["project-create"] }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replayTtlSeconds", "pendingReplay", "terminalReplay", "conflict"],
+      "properties": {
+        "replayTtlSeconds": { "const": 86400 },
+        "pendingReplay": { "const": "in_progress_reference" },
+        "terminalReplay": { "const": "redacted_terminal_envelope" },
+        "conflict": { "const": "same_key_different_request_digest" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "resourceKind", "schemaId", "allowedFields"],
+      "properties": {
+        "kind": { "const": "resource_reference" },
+        "resourceKind": { "const": "project" },
+        "schemaId": { "const": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/project.schema.json" },
+        "allowedFields": { "const": ["resourceId", "resourceKind", "resourceVersion", "stableErrorCode"] }
+      }
+    }
+  },
+  "x-cloud-agents-security": {
+    "runtimeAuthority": "generated profileId plus profileDigest only",
+    "transport": "localdev_loopback_only",
+    "callerProvidedProfile": "forbidden",
+    "externalSideEffect": "forbidden"
+  }
+}
