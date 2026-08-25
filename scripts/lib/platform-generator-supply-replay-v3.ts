@@ -122,6 +122,7 @@ export type GeneratorSupplyReplayV3Validation = Readonly<{
   receiptRecords: readonly Readonly<{ path: string; sha256: string; sizeBytes: number }>[];
   projection: GeneratorSupplyReplayV3Projection;
   candidateManifestSha256: string;
+  outputFiles: number;
   assertSnapshotCurrent: () => void;
 }>;
 
@@ -427,6 +428,7 @@ function assertGeneratorSupplyReplayV3ReceiptsInternal(
     })),
     projection: graph.projection,
     candidateManifestSha256: graph.output.candidateManifestSha256,
+    outputFiles: graph.output.outputFiles,
     assertSnapshotCurrent,
   };
 }

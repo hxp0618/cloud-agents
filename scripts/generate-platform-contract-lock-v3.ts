@@ -38,9 +38,16 @@ import {
   type GContractPhaseReviewTuple,
 } from "./lib/platform-g-contract-phase-record";
 import { classifyGContractPhaseTopology } from "./lib/platform-g-contract-phase-state";
-import { assertGeneratorSupplyV3RegistryCurrent } from "./lib/platform-generator-supply-profile-v3";
+import {
+  assertGeneratorSupplyV3RegistryCurrent,
+  assertGeneratorSupplyV3ReplayAuthorityCurrent,
+} from "./lib/platform-generator-supply-profile-v3";
+import type { GeneratorSupplyReplayV3Validation } from "./lib/platform-generator-supply-replay-v3";
 import { assertContractStandardsProfileCurrent } from "./lib/platform-contract-standards-profile";
-import { SUCCESSOR_V3_PROJECTION_EXCLUSIONS } from "./lib/platform-successor-dag-v3";
+import {
+  SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS,
+  SUCCESSOR_V3_PROJECTION_EXCLUSIONS,
+} from "./lib/platform-successor-dag-v3";
 import { canonicalizeJson } from "./lib/platform-json-semantics";
 
 const root = resolve(import.meta.dirname, "..");
@@ -225,21 +232,9 @@ function findString(value: unknown, key: string): string | undefined {
   return undefined;
 }
 
-function findNumber(value: unknown, key: string): number | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  if (!Array.isArray(value) && typeof (value as Record<string, unknown>)[key] === "number") {
-    return (value as Record<string, unknown>)[key] as number;
-  }
-  for (const child of Array.isArray(value)
-    ? value
-    : Object.values(value as Record<string, unknown>)) {
-    const found = findNumber(child, key);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function buildAuthority(): PlatformContractLockV3AssembledAuthority {
+function buildAuthority(
+  replayValidation: GeneratorSupplyReplayV3Validation,
+): PlatformContractLockV3AssembledAuthority {
   const profilePath = "tools/generator-supply/v3/profile.json";
   const manifestPath = "tools/generator-supply/v3/evidence-manifest.json";
   const projectionPath = "tools/generator-supply/v3/evidence/replay/projection.json";
@@ -268,15 +263,15 @@ function buildAuthority(): PlatformContractLockV3AssembledAuthority {
   }
   const profileDigest = findString(profile, "profileDigest");
   const registryDigest = profile.registryDigest;
-  const candidateManifestSha256 = findString(profile, "candidateManifestSha256");
-  const outputFiles = findNumber(profile, "outputFiles");
+  const candidateManifestSha256 = replayValidation.candidateManifestSha256;
+  const outputFiles = replayValidation.outputFiles;
   if (
     typeof profileDigest !== "string" ||
     typeof registryDigest !== "string" ||
     typeof candidateManifestSha256 !== "string" ||
-    outputFiles !== 49
+    outputFiles !== SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.length
   ) {
-    throw new Error("v3 profile does not expose the exact 49-output assembled authority.");
+    throw new Error("v3 replay receipts do not expose the exact 49-output assembled authority.");
   }
   return {
     generatorSupply: {
@@ -285,7 +280,7 @@ function buildAuthority(): PlatformContractLockV3AssembledAuthority {
       profileDigest,
       registryDigest,
       candidateManifestSha256,
-      outputFiles: 49,
+      outputFiles: SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.length,
       evidenceManifest: artifact(manifestPath),
       profile: artifact(profilePath),
     },
@@ -471,7 +466,9 @@ function writeAssembled(): void {
   const live = readStableRegularFile(PLATFORM_CONTRACT_LOCK_V3_PATH).bytes;
   assertExactPostHPredecessor(live);
   assertGeneratorSupplyV3RegistryCurrent(root);
-  const document = buildPlatformContractLockV3Assembled(buildAuthority());
+  const replayValidation = assertGeneratorSupplyV3ReplayAuthorityCurrent(root);
+  const document = buildPlatformContractLockV3Assembled(buildAuthority(replayValidation));
+  replayValidation.assertSnapshotCurrent();
   const result = writeLock(
     serializePlatformContractLockV3(document),
     true,

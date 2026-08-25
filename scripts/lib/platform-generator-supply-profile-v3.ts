@@ -18,10 +18,13 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { canonicalizeJson, type JsonRecord } from "./platform-json-semantics";
 import {
+  assertGeneratorSupplyReplayV3Receipts,
   assertGeneratorSupplyReplayV3ContractCurrent,
+  buildGeneratorSupplyReplayV3ExpectedFromImmutableV2,
   buildGeneratorSupplyReplayV3PreparedReceipts,
   type GeneratorSupplyReplayV3Contract,
   type GeneratorSupplyReplayV3PreparedReceipts,
+  type GeneratorSupplyReplayV3Validation,
 } from "./platform-generator-supply-replay-v3";
 import {
   SUCCESSOR_V3_ASSEMBLY_PATHS,
@@ -166,6 +169,21 @@ export function assertGeneratorSupplyV3SourceCurrent(
   }
   if (existsSync(resolve(root, ".git"))) assertSuccessorV3PredecessorsCurrent(root);
   return state;
+}
+
+/**
+ * Validates the late-bound replay graph from the same immutable v2 inputs
+ * used by the v3 source contract.  The generated profile intentionally does
+ * not duplicate replay output fields; lock writers must consume this
+ * receipt-verified authority instead of guessing from profile JSON.
+ */
+export function assertGeneratorSupplyV3ReplayAuthorityCurrent(
+  root: string,
+): GeneratorSupplyReplayV3Validation {
+  assertGeneratorSupplyV3SourceCurrent(root);
+  const source = readSource(root);
+  const expected = buildGeneratorSupplyReplayV3ExpectedFromImmutableV2(root, source.replayContract);
+  return assertGeneratorSupplyReplayV3Receipts(root, expected);
 }
 
 export function writeGeneratorSupplyV3Source(root: string): void {

@@ -367,6 +367,10 @@ describe("generator-supply v3 exact receipt semantics", () => {
     expect(result.projection.projectionTreeSha).not.toBe(
       fixture.expected.predecessorProjectionTreeSha,
     );
+    expect(result.candidateManifestSha256).toBe(
+      fixture.receipts[SUCCESSOR_V3_REPLAY_RECEIPT_PATHS[1]]!.candidateManifestSha256,
+    );
+    expect(result.outputFiles).toBe(SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.length);
     expect(Object.keys(result.receiptSha256)).toEqual([...SUCCESSOR_V3_REPLAY_RECEIPT_PATHS]);
   });
 
@@ -386,6 +390,26 @@ describe("generator-supply v3 exact receipt semantics", () => {
     expectInvalid(
       () => assertGeneratorSupplyReplayV3Receipts(fixture.root, fixture.expected),
       "runnerEnvironmentSanitized",
+    );
+  });
+
+  it("rejects forged output cardinality and summary candidate identity", () => {
+    const outputFixture = createFixture();
+    outputFixture.receipts[SUCCESSOR_V3_REPLAY_RECEIPT_PATHS[1]]!.outputFiles =
+      SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.length - 1;
+    refreshRunBindingsAndSummary(outputFixture);
+    expectInvalid(
+      () => assertGeneratorSupplyReplayV3Receipts(outputFixture.root, outputFixture.expected),
+      "darwin-arm64",
+    );
+
+    const summaryFixture = createFixture();
+    const summary = summaryFixture.receipts[SUCCESSOR_V3_REPLAY_RECEIPT_PATHS[0]]!;
+    summary.candidateManifestSha256 = `sha256:${"f".repeat(64)}`;
+    writeReceipts(summaryFixture);
+    expectInvalid(
+      () => assertGeneratorSupplyReplayV3Receipts(summaryFixture.root, summaryFixture.expected),
+      "replay.json",
     );
   });
 
