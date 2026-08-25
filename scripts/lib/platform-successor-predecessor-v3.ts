@@ -31,6 +31,13 @@ export type SuccessorV3FileRecord = Readonly<{
   sizeBytes: number;
 }>;
 
+type HistoricalCoreGeneratorOutput = Readonly<{
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+  gitMode: "100644";
+}>;
+
 type SuccessorV3Group = Readonly<{
   id: string;
   files: readonly SuccessorV3FileRecord[];
@@ -118,6 +125,7 @@ type StableIdentity = Readonly<{
   absolute: string;
   dev: bigint;
   ino: bigint;
+  mode: bigint;
   size: bigint;
   mtimeNs: bigint;
   ctimeNs: bigint;
@@ -242,6 +250,8 @@ const HISTORICAL_GENERATION_LOCK_V2 = Object.freeze({
   status: "SUCCESSOR_ASSEMBLED_REVIEW_BOUND",
   lockDigest: "sha256:b0d08160c2c7cf35f91940fc4b644160d715acd3d6c5796ea456b2c005dcfa4f",
   digestDomain: "cloud-agents/platform-contract-generation-lock/document/v2",
+  coreOutputManifestSha256:
+    "sha256:d0136124f1f760ae60c34e3b0e47161cb528fa3222f3330a440338f6a47da50e",
 } as const);
 
 const LEGACY_SUPPLY_V1_LINEAGE = {
@@ -400,6 +410,15 @@ export function assertSuccessorV3HistoricalGenerationLockV2ForTest(
   assertHistoricalGenerationLockV2(record, entry, Buffer.from(bytes));
 }
 
+/** Test-only parser for the immutable v2 core-output map. */
+export function assertSuccessorV3HistoricalCoreGeneratorOutputFenceForTest(
+  root: string,
+  value: unknown,
+): void {
+  const records = assertHistoricalCoreGeneratorOutputFenceDocument(value);
+  verifyHistoricalCoreGeneratorOutputFenceRecords(root, records);
+}
+
 function captureSnapshot(
   root: string,
   mutationHook?: Snapshot["mutationHook"],
@@ -423,11 +442,12 @@ function captureSnapshot(
       }
     }
   }
+  verifyHistoricalCoreGeneratorOutputFence(root);
   for (const manifest of source.predecessorClosure.evidenceManifests) {
     verifyEvidenceManifest(root, manifest, snapshot);
   }
   for (const record of source.replayContract.coreGeneratorOutputs) {
-    verifyFixedFile(root, record, snapshot);
+    verifyCurrentCoreGeneratorOutput(root, record, snapshot);
   }
   verifyGateCriteria(root, source, snapshot);
   verifyClosedDirectoryTrees(root, source);
@@ -858,6 +878,159 @@ function verifyFixedFile(root: string, record: SuccessorV3FileRecord, snapshot: 
   }
 }
 
+function verifyCurrentCoreGeneratorOutput(
+  root: string,
+  record: SuccessorV3FileRecord,
+  snapshot: Snapshot,
+): void {
+  const bytes = readStableFile(root, record.path, snapshot, { requireNonExecutable: true });
+  if (bytes.byteLength !== record.sizeBytes || digest(bytes) !== record.sha256) {
+    fail("SUCCESSOR_V3_FILE_MISMATCH", record.path, "Current core output bytes drifted.");
+  }
+  if (gitBlobObjectId(bytes) !== record.gitBlob) {
+    fail(
+      "SUCCESSOR_V3_GIT_MISMATCH",
+      record.path,
+      "Current core output record does not bind its current Git blob.",
+    );
+  }
+}
+
+function verifyHistoricalCoreGeneratorOutputFence(root: string): void {
+  let bytes: Buffer;
+  try {
+    bytes = gitBytes(root, [
+      "cat-file",
+      "blob",
+      `${SUCCESSOR_V3_BASELINE_COMMIT}:${HISTORICAL_GENERATION_LOCK_V2.path}`,
+    ]);
+  } catch {
+    fail(
+      "SUCCESSOR_V3_GIT_MISMATCH",
+      `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs`,
+      "Historical generation-lock v2 core-output map is unavailable.",
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    fail(
+      "SUCCESSOR_V3_GIT_MISMATCH",
+      `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs`,
+      "Historical generation-lock v2 core-output map is not valid JSON.",
+    );
+  }
+  const records = assertHistoricalCoreGeneratorOutputFenceDocument(parsed);
+  verifyHistoricalCoreGeneratorOutputFenceRecords(root, records);
+}
+
+function verifyHistoricalCoreGeneratorOutputFenceRecords(
+  root: string,
+  records: readonly HistoricalCoreGeneratorOutput[],
+): void {
+  for (const record of records) {
+    const entry = gitTreeEntry(root, SUCCESSOR_V3_BASELINE_COMMIT, record.path);
+    if (entry.mode !== record.gitMode || entry.type !== "blob") {
+      fail(
+        "SUCCESSOR_V3_GIT_MISMATCH",
+        record.path,
+        "Historical core output mode or object type drifted.",
+      );
+    }
+    let output: Buffer;
+    try {
+      output = gitBytes(root, [
+        "cat-file",
+        "blob",
+        `${SUCCESSOR_V3_BASELINE_COMMIT}:${record.path}`,
+      ]);
+    } catch {
+      fail("SUCCESSOR_V3_GIT_MISMATCH", record.path, "Historical core output blob is unavailable.");
+    }
+    if (
+      output.byteLength !== record.sizeBytes ||
+      `sha256:${digest(output)}` !== record.sha256 ||
+      gitBlobObjectId(output) !== entry.object
+    ) {
+      fail(
+        "SUCCESSOR_V3_FILE_MISMATCH",
+        record.path,
+        "Historical core output bytes or Git blob drifted.",
+      );
+    }
+  }
+}
+
+function assertHistoricalCoreGeneratorOutputFenceDocument(
+  value: unknown,
+): readonly HistoricalCoreGeneratorOutput[] {
+  const lock = requireRecord(
+    value,
+    `${HISTORICAL_GENERATION_LOCK_V2.path}`,
+    "SUCCESSOR_V3_GIT_MISMATCH",
+  );
+  const core = requireRecord(
+    lock.coreGeneratorOutputs,
+    `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs`,
+    "SUCCESSOR_V3_GIT_MISMATCH",
+  );
+  exactKeys(
+    core,
+    ["algorithm", "count", "replayCandidateManifestSha256", "files"],
+    `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs`,
+    "SUCCESSOR_V3_GIT_MISMATCH",
+  );
+  if (
+    core.algorithm !== "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1" ||
+    core.count !== SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.length ||
+    core.replayCandidateManifestSha256 !== HISTORICAL_GENERATION_LOCK_V2.coreOutputManifestSha256 ||
+    !Array.isArray(core.files)
+  ) {
+    fail(
+      "SUCCESSOR_V3_GIT_MISMATCH",
+      `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs`,
+      "Historical core-output map metadata drifted.",
+    );
+  }
+  if (core.files.length !== SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.length) {
+    fail(
+      "SUCCESSOR_V3_GIT_MISMATCH",
+      `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs/files`,
+      "Historical core-output map cardinality drifted.",
+    );
+  }
+  const records: HistoricalCoreGeneratorOutput[] = [];
+  for (const [index, expectedPath] of SUCCESSOR_V3_CORE_GENERATOR_OUTPUT_PATHS.entries()) {
+    const pointer = `${HISTORICAL_GENERATION_LOCK_V2.path}#/coreGeneratorOutputs/files/${index}`;
+    const record = requireRecord(core.files[index], pointer, "SUCCESSOR_V3_GIT_MISMATCH");
+    exactKeys(
+      record,
+      ["path", "sha256", "sizeBytes", "gitMode"],
+      pointer,
+      "SUCCESSOR_V3_GIT_MISMATCH",
+    );
+    if (
+      record.path !== expectedPath ||
+      record.gitMode !== "100644" ||
+      typeof record.sha256 !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(record.sha256) ||
+      typeof record.sizeBytes !== "number" ||
+      !Number.isSafeInteger(record.sizeBytes) ||
+      record.sizeBytes < 1
+    ) {
+      fail(
+        "SUCCESSOR_V3_GIT_MISMATCH",
+        pointer,
+        "Historical core-output path, mode, digest, or size drifted.",
+      );
+    }
+    records.push(record as HistoricalCoreGeneratorOutput);
+  }
+  return records;
+}
+
 function verifyHistoricalGenerationLockV2(root: string, record: SuccessorV3FileRecord): void {
   const entry = gitTreeEntry(root, SUCCESSOR_V3_BASELINE_COMMIT, record.path);
   let bytes: Buffer;
@@ -1216,7 +1389,12 @@ function gitTreeEntry(
   return { mode: match[1]!, type: match[2]!, object: match[3]! };
 }
 
-function readStableFile(root: string, repositoryPath: string, snapshot: Snapshot): Buffer {
+function readStableFile(
+  root: string,
+  repositoryPath: string,
+  snapshot: Snapshot,
+  options: Readonly<{ requireNonExecutable?: boolean }> = {},
+): Buffer {
   const rootReal = realpathSync(root);
   if (rootReal !== snapshot.rootReal) {
     fail("SUCCESSOR_V3_PATH_INVALID", repositoryPath, "Snapshot root changed.");
@@ -1245,6 +1423,13 @@ function readStableFile(root: string, repositoryPath: string, snapshot: Snapshot
         "Path must be a contained regular non-symlink file.",
       );
     }
+    if (options.requireNonExecutable === true && (pathBefore.mode & 0o111n) !== 0n) {
+      fail(
+        "SUCCESSOR_V3_PATH_INVALID",
+        repositoryPath,
+        "Current core output must be a non-executable regular file.",
+      );
+    }
     const descriptor = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const descriptorBefore = fstatSync(descriptor, { bigint: true });
@@ -1261,6 +1446,7 @@ function readStableFile(root: string, repositoryPath: string, snapshot: Snapshot
       if (
         descriptorAfter.dev !== descriptorBefore.dev ||
         descriptorAfter.ino !== descriptorBefore.ino ||
+        descriptorAfter.mode !== descriptorBefore.mode ||
         descriptorAfter.size !== descriptorBefore.size ||
         descriptorAfter.mtimeNs !== descriptorBefore.mtimeNs ||
         descriptorAfter.ctimeNs !== descriptorBefore.ctimeNs ||
@@ -1268,7 +1454,8 @@ function readStableFile(root: string, repositoryPath: string, snapshot: Snapshot
         pathAfter.ino !== descriptorAfter.ino ||
         !pathAfter.isFile() ||
         pathAfter.isSymbolicLink() ||
-        realpathSync(absolute) !== absolute
+        realpathSync(absolute) !== absolute ||
+        (options.requireNonExecutable === true && (pathAfter.mode & 0o111n) !== 0n)
       ) {
         fail("SUCCESSOR_V3_FILE_MISMATCH", repositoryPath, "Path changed during stable read.");
       }
@@ -1276,6 +1463,7 @@ function readStableFile(root: string, repositoryPath: string, snapshot: Snapshot
         absolute,
         dev: descriptorAfter.dev,
         ino: descriptorAfter.ino,
+        mode: descriptorAfter.mode,
         size: descriptorAfter.size,
         mtimeNs: descriptorAfter.mtimeNs,
         ctimeNs: descriptorAfter.ctimeNs,
@@ -1324,6 +1512,7 @@ function assertSnapshotCurrent(root: string, snapshot: Snapshot): void {
         absolute,
         dev: metadata.dev,
         ino: metadata.ino,
+        mode: metadata.mode,
         size: metadata.size,
         mtimeNs: metadata.mtimeNs,
         ctimeNs: metadata.ctimeNs,
@@ -1352,6 +1541,7 @@ function sameIdentity(left: StableIdentity, right: StableIdentity): boolean {
     left.absolute === right.absolute &&
     left.dev === right.dev &&
     left.ino === right.ino &&
+    left.mode === right.mode &&
     left.size === right.size &&
     left.mtimeNs === right.mtimeNs &&
     left.ctimeNs === right.ctimeNs

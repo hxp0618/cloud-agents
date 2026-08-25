@@ -658,8 +658,8 @@
       {
         "path": "contracts/generated/proto/manifest.json",
         "mode": "100644",
-        "gitBlob": "e83d4856c948a1cafd78016e02a0dedc0f48d4d3",
-        "sha256": "f824eb14edfb1ca8de9d8ee0d338f98a885c2b197c7b1108a71d47240e620aea",
+        "gitBlob": "4ab7e61420b31b58352bfa58b87cc175d0f07e48",
+        "sha256": "906b7c6672913beb497bd21917dcfe5e5273732a97026351797f311537cbbcb1",
         "sizeBytes": 5222
       },
       {
@@ -700,71 +700,71 @@
       {
         "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
         "mode": "100644",
-        "gitBlob": "ff6d061fd70542e2b77ca311d125f3f9a792868d",
-        "sha256": "1e7e755d0bd378ced0c1c925b7222497564048d0a0d00c13e9bf49706e8e5311",
+        "gitBlob": "001f8ad29008b2c36417180da1e40daa6ee15980",
+        "sha256": "f5dc88a4c2a439ea304641109df963c0ef4aa09def4046dee609b77ea922cc53",
         "sizeBytes": 13530
       },
       {
         "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
         "mode": "100644",
-        "gitBlob": "ac4452590b91e6d655ae691d4a25cca5e26f17f1",
-        "sha256": "25bd6d5db8a7fec63aaf015910764c54ff460eecf0321305af330f38730604be",
+        "gitBlob": "83c3ca6c82f1127027bf94a94f7bd7b9e09a71e5",
+        "sha256": "135cb3bbdd26b0540591e1bb619a88b0a4cc36700d1ad7c1c1bd145dee429f47",
         "sizeBytes": 28791
       },
       {
         "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
         "mode": "100644",
-        "gitBlob": "d7ba3a8a677966e106d152b2ee6c96f71ad2098b",
-        "sha256": "cbd9cc7dec2b2c6265294a29cfa321aac4b33a42b3b88a0ccc631d97d944a52f",
+        "gitBlob": "2d5c4cad6c741272cb86a38a1bae2186f4c88a1c",
+        "sha256": "e06de41c0031629737fdfab13e1ef636c5d3a8f8d3cbf5c0fe9b0417961a6457",
         "sizeBytes": 11624
       },
       {
         "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
         "mode": "100644",
-        "gitBlob": "cbab698499535989397b31e7ba254a0f891129e5",
-        "sha256": "0d50c1aa0023782e3e2f213056f4136ceac6ea03f88ea76bb11cef7031f49e07",
+        "gitBlob": "cd36a34cef8004271a0742bdb4b426a18f72c3a4",
+        "sha256": "38ef1394cc6d5aef0c1c6167d309a927ab41759abc18fcb00a44cb5dc8f829c4",
         "sizeBytes": 24032
       },
       {
         "path": "sdk/go/generated-manifest.json",
         "mode": "100644",
-        "gitBlob": "6e4e77bb807dda476ea021c938396c0e7513d538",
-        "sha256": "00db8964d76062d5ec0dacf7d38c84088c9c59906f88ffa187272a8bcfca8b45",
+        "gitBlob": "13ff906db05ac4f7dd11389347c21765128566c0",
+        "sha256": "842af35b702287280b3f6cd91c09f13ce4692d457f2d6b30b124ba30a9716fcd",
         "sizeBytes": 3740
       },
       {
         "path": "sdk/go/json-generated-manifest.json",
         "mode": "100644",
-        "gitBlob": "f1ff875917b1827090a6e352010bb765eabfd252",
-        "sha256": "4dad32d50cb0a09b88c2fcc18cd299679e1d304532c759135ada857d867b1814",
+        "gitBlob": "54ad12e05926f9c17d0a375c79d498b0accb6a94",
+        "sha256": "15cfa875e667206fedcddcf9c78222836ee3747220c9d799a199672d51bde605",
         "sizeBytes": 9885
       },
       {
         "path": "sdk/go/proto-generated-manifest.json",
         "mode": "100644",
-        "gitBlob": "4c2f414188984738194c3b03f95261f869d4d68a",
-        "sha256": "412cd7922431a853ebbdfc69520556f98a91bff94acfece370c0bcf36b4efbac",
+        "gitBlob": "6118a195e096b83018f93c8e5d58c48da3223cf2",
+        "sha256": "320bcab0cb607ba594eabee5cdf45f556c7c359c330d8922b48ea5729a7aeeb0",
         "sizeBytes": 7995
       },
       {
         "path": "sdk/typescript/generated-manifest.json",
         "mode": "100644",
-        "gitBlob": "4f238209a4a688bef9e02b2a6e6a5ef0fc0bba63",
-        "sha256": "dfc3f332ff7af5f6c331c2943cd783dfaa7fa504a205982f045b72cf04dd7f92",
+        "gitBlob": "d9e0fd2e1a9dbe5d095612c4250ddd76442bbddd",
+        "sha256": "106e75fde06b2186b62f1ff88217ff12404e9ea856bd4d950661622eb46b3df4",
         "sizeBytes": 3278
       },
       {
         "path": "sdk/typescript/json-generated-manifest.json",
         "mode": "100644",
-        "gitBlob": "1588b3331a9f3b4305a8dd6973367b75e41eba6d",
-        "sha256": "f071948295f388e5c10d22ecb7d94d0d1747d961f78880f7922e770d163f9343",
+        "gitBlob": "4fa006366db770421d58d63dba61b275585becb4",
+        "sha256": "67a709997229708341cb3bc694f9035a927b9c1bd75c8feb7aff3fbe736f6267",
         "sizeBytes": 9495
       },
       {
         "path": "sdk/typescript/proto-generated-manifest.json",
         "mode": "100644",
-        "gitBlob": "b466b2e39acb97cdce239ec6b905d93196b64cca",
-        "sha256": "9254f4cf04253f529bc08d297b98fe643b9709ef4270bb87383549fc5f022114",
+        "gitBlob": "acace626bee50acddfacdb8f57b947791a013ddb",
+        "sha256": "2a8e160eb2a476dad278a9febd6db56877ee6f3657de50999482ca4142bff89c",
         "sizeBytes": 6996
       },
       {
@@ -791,15 +791,15 @@
       {
         "path": "sdk/typescript/src/index.ts",
         "mode": "100644",
-        "gitBlob": "15140bcb869afe799572090fc3a73d80fd9c9b84",
-        "sha256": "ed30749cb557453366aa34829efa838bd9aca629994f746f5d786c4e0d4997bb",
+        "gitBlob": "1a3f16be0f4f7c5fc4c5120494c85b69e8519bf7",
+        "sha256": "6875abac7be07405f6b139d35889ceac41f0cff6e8e8084cfcb5aa8e2efc6ddf",
         "sizeBytes": 12982
       },
       {
         "path": "sdk/typescript/src/platform.ts",
         "mode": "100644",
-        "gitBlob": "8c60f03872b69f294c630f756fb33ac03594619b",
-        "sha256": "1f096821c36bcd3a07f332b432b38a291336c22917d4a5efc1176e862e610d25",
+        "gitBlob": "87c4eda00a8565b013b756b2240872e395da06b5",
+        "sha256": "699e424af2fb30adce6ecab21f66fe6230abe5d6e4a39b259bb5e8a32651c160",
         "sizeBytes": 44209
       },
       {

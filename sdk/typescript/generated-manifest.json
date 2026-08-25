@@ -5,7 +5,7 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
+    "manifestSha256": "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37",
     "inputManifestSha256": "sha256:2253e5baab41fb44d276214b0007b58ed92b5736ef29ab0481628038e8912cbf",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
@@ -54,11 +54,11 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:9d7701a46cdc2db07996227e0152fbe74da8f9624c88602d8b4e091da0d593ed",
+  "outputTreeSha256": "sha256:2813d9584d9fc3a5f680f666ad1ff8bc47c05e9187cf75b2011673ca07b10f02",
   "outputs": [
     {
       "path": "sdk/typescript/src/index.ts",
-      "sha256": "sha256:ed30749cb557453366aa34829efa838bd9aca629994f746f5d786c4e0d4997bb",
+      "sha256": "sha256:6875abac7be07405f6b139d35889ceac41f0cff6e8e8084cfcb5aa8e2efc6ddf",
       "sizeBytes": 12982
     }
   ]
