@@ -402,7 +402,15 @@
           "const": "http://127.0.0.1:<ephemeral-port>/typescript-pack/synara-cloud-agent-platform-sdk-0.0.0-a3.2.tgz"
         },
         "lockIntegrity": { "type": "string", "pattern": "^sha512-[A-Za-z0-9+/]{86}==$" },
-        "dependencies": { "type": "object", "additionalProperties": { "type": "string" } },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["@bufbuild/protobuf", "@connectrpc/connect"],
+          "properties": {
+            "@bufbuild/protobuf": { "const": "2.14.0" },
+            "@connectrpc/connect": { "const": "2.1.2" }
+          }
+        },
         "dependencyArtifacts": {
           "type": "object",
           "additionalProperties": false,
@@ -507,8 +515,8 @@
         },
         "moduleZipSha256": { "$ref": "#/$defs/digest" },
         "goModSha256": { "$ref": "#/$defs/digest" },
-        "moduleSum": { "type": "string", "minLength": 1 },
-        "goModSum": { "type": "string", "minLength": 1 },
+        "moduleSum": { "type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$" },
+        "goModSum": { "type": "string", "pattern": "^h1:[A-Za-z0-9+/]{43}=$" },
         "goSumSha256": { "$ref": "#/$defs/digest" },
         "goFlags": { "const": "-mod=readonly" },
         "goWork": { "const": "off" },

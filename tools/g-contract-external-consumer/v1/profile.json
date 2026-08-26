@@ -121,8 +121,8 @@
     },
     {
       "path": "tools/g-contract-external-consumer/v1/profile.schema.json",
-      "sha256": "sha256:a86e0e724fb9bc49ab9fe4f8ec4e3bbf59aff4ace6c0b06704c1c0bfe49e3213",
-      "sizeBytes": 16624,
+      "sha256": "sha256:8aab7afa284a5640038de58dee7d97d1e9d63521fe64b5641737f19ad826a82a",
+      "sizeBytes": 16902,
       "mode": "100644"
     },
     {
@@ -310,6 +310,6 @@
     "historyRewrite": false
   },
   "sourceDigest": "sha256:c494cbd284fcd47eae9b772ea9aca0f091a0a16e37fddded9c2b744d15e2824d",
-  "profileDigest": "sha256:c0c5e3237f1490d9799121be2d349d8018e9e5e5cb97b0b820152a44ea80e003",
-  "registryDigest": "sha256:8c3b7edf67404b59f11ee61b958cc3782f93297089b0ab0fa86e87f5e192d67d"
+  "profileDigest": "sha256:f747d2405d2973e895929e7a8c54f13c19af4489bdcd0001b4fe52b43ca64f8c",
+  "registryDigest": "sha256:77c602b2108689eb2401067b6ccc9e9e6e92f79eae758982e4991efee94899be"
 }
