@@ -23,7 +23,7 @@
     "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-independent-review/v2" },
     "decisionId": { "const": "D-053-EC-2" },
     "profileId": { "const": "g-contract-external-consumer/v2" },
-    "authorityRevision": { "const": "D-053-EC-2.r1" },
+    "authorityRevision": { "const": "D-053-EC-2.r2" },
     "reviewKind": { "enum": ["AUTHORITY", "FINAL_REPLAY_PROFILE"] },
     "candidate": { "$ref": "#/$defs/commitTuple" },
     "topology": {

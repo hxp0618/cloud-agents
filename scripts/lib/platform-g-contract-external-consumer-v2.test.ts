@@ -16,11 +16,11 @@ const root = resolve(import.meta.dirname, "../..");
 describe("D-053-EC-2 versioned authority", () => {
   it("checks the committed source and keeps the authority-only state pending", () => {
     const result = checkExternalConsumerV2Source(root);
-    expect(result.source.authorityRevision).toBe("D-053-EC-2.r1");
+    expect(result.source.authorityRevision).toBe("D-053-EC-2.r2");
     expect(result.source.supersedesCandidate).toEqual({
-      commit: "74f5ad620f5061adde2da14adce5b2032d4399bb",
-      tree: "322332a93e712dc400e6e2bc4616c3430dce8c4c",
-      parent: "8ffc2c86df6d0d6a02677bec0790b30de233a71a",
+      commit: "45b021b7b608f7567117a28f6b5eac1305a5724b",
+      tree: "0d18a502a4f07b5c48fe1a0b83bed8cec807212b",
+      parent: "932faeedcf9f02c340dfbffb9369fdedd18ada70",
     });
     expect(result.source.candidateBinding.diff).toEqual([
       {

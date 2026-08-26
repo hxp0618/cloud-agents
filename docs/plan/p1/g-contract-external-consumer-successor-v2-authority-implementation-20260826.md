@@ -1,6 +1,6 @@
 # D-053-EC-2 authority implementation record
 
-Revision: `D-053-EC-2.r1` (2026-08-27)
+Revision: `D-053-EC-2.r2` (2026-08-27)
 
 This record freezes a versioned generated-registry authority and its future
 evidence interfaces. It is an authority-only slice: it does not execute a
@@ -16,22 +16,23 @@ The original v2 source candidate remains immutable:
 - source candidate `74f5ad620f5061adde2da14adce5b2032d4399bb`, tree
   `322332a93e712dc400e6e2bc4616c3430dce8c4c`, parent `8ffc2c86df6d0d6a02677bec0790b30de233a71a`.
 
-Because that candidate exposed a byte-format and topology-check defect, r1 is
-an append-only repair chain, never an in-place repair:
+Because that candidate exposed byte-format, topology-check, and path-type
+defects, r1 and r2 are append-only repair chains, never in-place repairs:
 
-1. a repair authority base is a direct child of the original source candidate
-   and changes exactly these five regular files: the checker, source schema,
-   review schema, focused test, and this record;
-2. the r1 source candidate is a direct child of that repair authority base and
-   changes only `tools/g-contract-external-consumer/v2/source.json` with Git
-   status `M` and mode `100644`;
-3. the independent authority review is a direct child of the r1 source
+1. r1 has a repair authority base as a direct child of the original source
+   candidate, then an r1 source candidate that changes only
+   `tools/g-contract-external-consumer/v2/source.json` with Git status `M`;
+2. r2 has a second repair authority base as a direct child of the r1 source
+   candidate and changes exactly the same five regular files (checker, source
+   schema, review schema, focused test, and this record), then an r2 source
+   candidate that changes only `source.json` with status `M`;
+3. the independent authority review is a direct child of the r2 source
    candidate and adds only the predeclared `100644` review document.
 
-The source records `authorityRevision: D-053-EC-2.r1` and the exact superseded
-candidate tuple. The checker verifies both tuples, their trees/parents, and the
-exact repair diff. No amend, rebase, squash, merge, force-push, or history
-rewrite is part of this authority.
+The source records `authorityRevision: D-053-EC-2.r2` and the exact superseded
+r1 candidate tuple. The checker verifies the complete C→r1→r2 tuple chain,
+their trees/parents, and each exact repair diff. No amend, rebase, squash,
+merge, force-push, or history rewrite is part of this authority.
 
 ## Frozen source and schemas
 

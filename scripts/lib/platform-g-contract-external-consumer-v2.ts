@@ -25,7 +25,7 @@ const EC2_SOURCE_FORMAT = "cloud-agents-g-contract-external-consumer-source/v2";
 const EC2_REGISTRY_ID = "cloud-agents/g-contract-external-consumer";
 const EC2_PROFILE_ID = "g-contract-external-consumer/v2";
 const EC2_DECISION_ID = "D-053-EC-2";
-const EC2_AUTHORITY_REVISION = "D-053-EC-2.r1";
+const EC2_AUTHORITY_REVISION = "D-053-EC-2.r2";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SHA1 = /^[0-9a-f]{40}$/u;
 
@@ -97,7 +97,7 @@ export const EC2_AUTHORITY_FILE_PATHS = [
   "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
 ] as const;
 
-/** The first source candidate is retained as immutable evidence and superseded by r1. */
+/** Each repair tip is retained as immutable evidence and superseded append-only. */
 const EC2_INITIAL_AUTHORITY_COMMIT = "8ffc2c86df6d0d6a02677bec0790b30de233a71a";
 const EC2_INITIAL_AUTHORITY_TREE = "29520d4c93e547c18c1e6b01641d0b3c90c18c72";
 const EC2_INITIAL_CANDIDATE = {
@@ -105,13 +105,21 @@ const EC2_INITIAL_CANDIDATE = {
   tree: "322332a93e712dc400e6e2bc4616c3430dce8c4c",
   parent: EC2_INITIAL_AUTHORITY_COMMIT,
 } as const;
-const EC2_REPAIR_AUTHORITY_PATHS = [
+const EC2_R1_AUTHORITY_COMMIT = "932faeedcf9f02c340dfbffb9369fdedd18ada70";
+const EC2_R1_AUTHORITY_TREE = "e1fe875f26208d991e46abc598e85e9f37d5ad84";
+const EC2_R1_CANDIDATE = {
+  commit: "45b021b7b608f7567117a28f6b5eac1305a5724b",
+  tree: "0d18a502a4f07b5c48fe1a0b83bed8cec807212b",
+  parent: EC2_R1_AUTHORITY_COMMIT,
+} as const;
+const EC2_R1_REPAIR_AUTHORITY_PATHS = [
   "scripts/lib/platform-g-contract-external-consumer-v2.ts",
   "tools/g-contract-external-consumer/v2/source.schema.json",
   "tools/g-contract-external-consumer/v2/review.schema.json",
   "scripts/lib/platform-g-contract-external-consumer-v2.test.ts",
   "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
 ] as const;
+const EC2_R2_REPAIR_AUTHORITY_PATHS = EC2_R1_REPAIR_AUTHORITY_PATHS;
 
 const EC2_PREDECESSOR_CANDIDATE = {
   commit: "f8d44568b0f64b31f466dbc47e0a17b15b96e659",
@@ -218,11 +226,11 @@ export function checkExternalConsumerV2Source(root: string): Ec2CheckResult {
       "Authority parent topology drifted.",
     );
   }
-  if (authorityParentParent !== EC2_INITIAL_CANDIDATE.commit) {
+  if (authorityParentParent !== EC2_R1_CANDIDATE.commit) {
     throw error(
       "EC2_AUTHORITY_PARENT_DRIFT",
       "/authorityParent/parent",
-      "Revision r1 authority base must be a direct child of the superseded source candidate.",
+      "Revision r2 authority base must be a direct child of the superseded r1 source candidate.",
     );
   }
 
@@ -363,21 +371,25 @@ function assertAuthorityRevision(root: string, source: Record<string, unknown>):
     throw error(
       "EC2_AUTHORITY_REVISION_DRIFT",
       "/authorityRevision",
-      "D-053-EC-2 must identify the explicitly versioned r1 authority successor.",
+      "D-053-EC-2 must identify the explicitly versioned r2 authority successor.",
     );
   }
   const supersedes = record(source.supersedesCandidate, "/supersedesCandidate");
-  assertExactObject(supersedes, EC2_INITIAL_CANDIDATE, "/supersedesCandidate");
+  assertExactObject(supersedes, EC2_R1_CANDIDATE, "/supersedesCandidate");
   if (
     gitTree(root, EC2_INITIAL_CANDIDATE.commit) !== EC2_INITIAL_CANDIDATE.tree ||
     gitParents(root, EC2_INITIAL_CANDIDATE.commit) !== EC2_INITIAL_CANDIDATE.parent ||
     gitTree(root, EC2_INITIAL_AUTHORITY_COMMIT) !== EC2_INITIAL_AUTHORITY_TREE ||
-    gitParents(root, EC2_INITIAL_AUTHORITY_COMMIT) !== AUTHORIZATION_COMMIT
+    gitParents(root, EC2_INITIAL_AUTHORITY_COMMIT) !== AUTHORIZATION_COMMIT ||
+    gitTree(root, EC2_R1_AUTHORITY_COMMIT) !== EC2_R1_AUTHORITY_TREE ||
+    gitParents(root, EC2_R1_AUTHORITY_COMMIT) !== EC2_INITIAL_CANDIDATE.commit ||
+    gitTree(root, EC2_R1_CANDIDATE.commit) !== EC2_R1_CANDIDATE.tree ||
+    gitParents(root, EC2_R1_CANDIDATE.commit) !== EC2_R1_CANDIDATE.parent
   ) {
     throw error(
       "EC2_AUTHORITY_REVISION_DRIFT",
       "/supersedesCandidate",
-      "The superseded authority/candidate topology is not immutable.",
+      "The superseded r1 authority/candidate topology is not immutable.",
     );
   }
 }
@@ -482,7 +494,7 @@ function assertProjectionContract(source: Record<string, unknown>): void {
   }
   const exclusions = record(source.exclusions, "/exclusions");
   const paths = arrayField(exclusions, "paths", "/exclusions/paths");
-  assertPathOrder(paths, [...EC2_EXCLUSION_PATHS], "/exclusions/paths");
+  assertStringPathOrder(paths, [...EC2_EXCLUSION_PATHS], "/exclusions/paths");
   if (
     !Array.isArray(exclusions.patterns) ||
     exclusions.patterns.length !== 0 ||
@@ -710,8 +722,10 @@ function assertAuthorityBaseDiff(root: string, parent: string, authorityBase: st
             ),
         )
       : parent === EC2_INITIAL_CANDIDATE.commit
-        ? EC2_REPAIR_AUTHORITY_PATHS
-        : undefined;
+        ? EC2_R1_REPAIR_AUTHORITY_PATHS
+        : parent === EC2_R1_CANDIDATE.commit
+          ? EC2_R2_REPAIR_AUTHORITY_PATHS
+          : undefined;
   if (!expected)
     throw error(
       "EC2_AUTHORITY_TOPOLOGY_DRIFT",
@@ -1088,6 +1102,19 @@ function assertPathOrder(values: unknown[], expected: readonly string[], path: s
   const actual = values.map((value, index) =>
     stringField(record(value, `${path}/${index}`), "path", `${path}/${index}`),
   );
+  if (JSON.stringify(actual) !== JSON.stringify(expected))
+    throw error("EC2_INVENTORY_DRIFT", path, "Ordered path inventory drifted.");
+}
+
+function assertStringPathOrder(values: unknown[], expected: readonly string[], path: string): void {
+  if (values.length !== expected.length)
+    throw error("EC2_INVENTORY_DRIFT", path, `Expected exactly ${expected.length} entries.`);
+  const actual = values.map((value, index) => {
+    if (typeof value !== "string")
+      throw error("EC2_SHAPE_INVALID", `${path}/${index}`, "Expected a path string.");
+    assertCanonicalPath(value);
+    return value;
+  });
   if (JSON.stringify(actual) !== JSON.stringify(expected))
     throw error("EC2_INVENTORY_DRIFT", path, "Ordered path inventory drifted.");
 }
