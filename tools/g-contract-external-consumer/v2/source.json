@@ -1,9 +1,15 @@
 {
   "$schema": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/source.schema.json",
   "formatVersion": "cloud-agents-g-contract-external-consumer-source/v2",
-  "registryId": "cloud-agents/g-contract-external-consumer",
+  "registryId": "cloud-agents/g-contract-external-consumer-replay/v2",
   "profileId": "g-contract-external-consumer/v2",
   "decisionId": "D-053-EC-2",
+  "authorityRevision": "D-053-EC-2.r3",
+  "supersedesCandidate": {
+    "commit": "eb0e2c2d7d71ad62ca668e6fcc6b18ff0396b1da",
+    "tree": "8a5d53c8f6572275171a9af5e22dd587a193bbfe",
+    "parent": "bda551c3c49a1010346a3fac835ac9e1cdb7e917"
+  },
   "status": "AUTHORITY_FROZEN_REVIEW_PENDING",
   "authorization": {
     "path": "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization-20260826.md",
@@ -13,9 +19,9 @@
     "mode": "100644"
   },
   "authorityParent": {
-    "commit": "bda551c3c49a1010346a3fac835ac9e1cdb7e917",
-    "tree": "d0ba89759ae4bd8e82a542afee01a8f1a09cf3c6",
-    "parent": "45b021b7b608f7567117a28f6b5eac1305a5724b"
+    "commit": "8f75200ef61c5ab7ccdf097188de35a48ace4a95",
+    "tree": "c951c9098a96c5a2a6f9f66db2814eab4a8a1715",
+    "parent": "eb0e2c2d7d71ad62ca668e6fcc6b18ff0396b1da"
   },
   "authorityFiles": [
     {
@@ -28,17 +34,17 @@
     },
     {
       "path": "tools/g-contract-external-consumer/v2/source.schema.json",
-      "gitBlob": "6949841aab9515c9a26bed6c638388b39bc29110",
-      "sha256": "sha256:def502fa5130060437a0779206f2780ea4d2dc5819a091d856b437c0c52e707a",
-      "sizeBytes": 32444,
+      "gitBlob": "feca1ca52c85b08755f115602860c33fa6ce6a83",
+      "sha256": "sha256:18bf1b663217633ecd26785ea3baaeca6b43363a25d74eef8d33a292dd65513d",
+      "sizeBytes": 32454,
       "mode": "100644",
       "role": "source-schema"
     },
     {
       "path": "tools/g-contract-external-consumer/v2/profile.schema.json",
-      "gitBlob": "a4bb0547e8eaa27f0cb88cc51170d9c516599b8f",
-      "sha256": "sha256:9774c0db29f5e20af83c676f917c9dc0a3b2b02c2de8b1e06f50989364e07f66",
-      "sizeBytes": 5568,
+      "gitBlob": "698c8934b28bb1ff58ff768afe5d5e15e6666937",
+      "sha256": "sha256:411cf03364335002b3ca23001a8a37bfa3a749bcb28a2e5948494f04df072888",
+      "sizeBytes": 10615,
       "mode": "100644",
       "role": "profile-schema"
     },
@@ -68,17 +74,17 @@
     },
     {
       "path": "tools/g-contract-external-consumer/v2/review.schema.json",
-      "gitBlob": "33bd5181b0514c9a15b7dc219378f38f19abdad6",
-      "sha256": "sha256:c1a2b9df276c95b97c69c760de783457a0e7ad9c52993a6ce3e25dcd5fac0df9",
-      "sizeBytes": 8202,
+      "gitBlob": "62b27a285378c479af593af9e022b11648c30707",
+      "sha256": "sha256:8800112ecc96b01ca63b4ed6fb993c53523bc0445ada845fcb7982472ef48b83",
+      "sizeBytes": 9079,
       "mode": "100644",
       "role": "review-schema"
     },
     {
       "path": "scripts/lib/platform-g-contract-external-consumer-v2.ts",
-      "gitBlob": "f81cb2379488bedd0946d9dc7a494dd33888ecff",
-      "sha256": "sha256:b0212e12b4bcd016e509eaabe1d56b953501bc5d8740daab97de521b61984a08",
-      "sizeBytes": 44308,
+      "gitBlob": "296e42696b436adc6b263668aeb452835ac14e85",
+      "sha256": "sha256:f52a61d9cca285750059a4e6d87cf24b2f53241081ec09ecdbcb4c5383b4cf40",
+      "sizeBytes": 45726,
       "mode": "100644",
       "role": "checker"
     },
@@ -92,17 +98,17 @@
     },
     {
       "path": "scripts/lib/platform-g-contract-external-consumer-v2.test.ts",
-      "gitBlob": "31df8790c3d40a696637726a2f1d92ea666e86d1",
-      "sha256": "sha256:21c5175799614cd5a2381bd4f5f4df1f7235938ac18f1bc8a05cc3771d70a50f",
-      "sizeBytes": 4518,
+      "gitBlob": "9786d911275edf4f578b301cf7813e66072fa06c",
+      "sha256": "sha256:e3da4e3e8edf07e1922d53fdc6fc3a17dc7d7b2e9205161afb8a1cf42a43f1b0",
+      "sizeBytes": 4616,
       "mode": "100644",
       "role": "focused-test"
     },
     {
       "path": "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
-      "gitBlob": "67111c95ebdafea88146a0a581a82e684ad1a025",
-      "sha256": "sha256:5ed3540064c230140f9fc6f1ff128af87c5dd760ac11b9598c2529e15a39407f",
-      "sizeBytes": 7060,
+      "gitBlob": "a1f3ceabc85313bca00fee43cb04cb4a4780c5be",
+      "sha256": "sha256:53021284eda0aa31baa8c63ff8a9ba63a8f0afa33a975d958bb7ac3e9122fa35",
+      "sizeBytes": 8312,
       "mode": "100644",
       "role": "implementation-record"
     }
@@ -630,11 +636,5 @@
     "profileGeneration": false,
     "receiptGeneration": false,
     "loopbackFixtureAllowed": true
-  },
-  "authorityRevision": "D-053-EC-2.r2",
-  "supersedesCandidate": {
-    "commit": "45b021b7b608f7567117a28f6b5eac1305a5724b",
-    "tree": "0d18a502a4f07b5c48fe1a0b83bed8cec807212b",
-    "parent": "932faeedcf9f02c340dfbffb9369fdedd18ada70"
   }
 }
