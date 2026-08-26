@@ -113,7 +113,11 @@ describe("generator-supply profile v3 authority", () => {
   it("keeps the Slice C projection singleton non-replay and requires native receipts as a set", () => {
     const root = createRoot();
     writeGeneratorSupplyV3Source(root);
-    copyFromRepository(root, SUCCESSOR_V3_REPLAY_RECEIPT_PATHS.at(-1)!);
+    // The checked-in repository is intentionally pre-replay and therefore has
+    // no projection receipt.  A singleton projection is a topology fixture,
+    // not semantic evidence, so keep this test independent of old late-bound
+    // bytes by materializing a temporary sentinel.
+    writeJson(root, SUCCESSOR_V3_REPLAY_RECEIPT_PATHS.at(-1)!, { fixture: "projection" });
     expect(assertGeneratorSupplyV3SourceCurrent(root)).toBe("DECLARED_PRE_REPLAY");
 
     writeJson(root, SUCCESSOR_V3_REPLAY_RECEIPT_PATHS[0], { partial: true });
