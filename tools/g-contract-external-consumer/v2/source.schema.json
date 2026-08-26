@@ -9,6 +9,8 @@
     "registryId",
     "profileId",
     "decisionId",
+    "authorityRevision",
+    "supersedesCandidate",
     "status",
     "authorization",
     "authorityParent",
@@ -38,6 +40,14 @@
     "registryId": { "const": "cloud-agents/g-contract-external-consumer" },
     "profileId": { "const": "g-contract-external-consumer/v2" },
     "decisionId": { "const": "D-053-EC-2" },
+    "authorityRevision": { "const": "D-053-EC-2.r1" },
+    "supersedesCandidate": {
+      "const": {
+        "commit": "74f5ad620f5061adde2da14adce5b2032d4399bb",
+        "tree": "322332a93e712dc400e6e2bc4616c3430dce8c4c",
+        "parent": "8ffc2c86df6d0d6a02677bec0790b30de233a71a"
+      }
+    },
     "status": { "const": "AUTHORITY_FROZEN_REVIEW_PENDING" },
     "authorization": {
       "const": {
@@ -209,7 +219,7 @@
         "diff": {
           "const": [
             {
-              "status": "A",
+              "status": "M",
               "path": "tools/g-contract-external-consumer/v2/source.json",
               "mode": "100644"
             }
@@ -839,6 +849,7 @@
         "authorityReviewInput": "FROZEN_SOURCE_SCHEMA_AUTHORITY_BYTES_ONLY",
         "finalReviewInput": "FROZEN_SOURCE_PROFILE_RECEIPTS_ONLY",
         "authorityRequiredStages": [
+          "authority_revision_fence",
           "source_schema_check",
           "authority_file_fence",
           "lineage_fence",

@@ -17,6 +17,7 @@ export const EC2_SOURCE_PATH = "tools/g-contract-external-consumer/v2/source.jso
 export const EC2_SOURCE_SCHEMA_PATH = "tools/g-contract-external-consumer/v2/source.schema.json";
 export const EC2_PROFILE_PATH = "tools/g-contract-external-consumer/v2/profile.json";
 export const EC2_PROFILE_SCHEMA_PATH = "tools/g-contract-external-consumer/v2/profile.schema.json";
+export const EC2_REVIEW_SCHEMA_PATH = "tools/g-contract-external-consumer/v2/review.schema.json";
 export const EC2_REVIEW_PATH =
   "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md";
 
@@ -24,6 +25,7 @@ const EC2_SOURCE_FORMAT = "cloud-agents-g-contract-external-consumer-source/v2";
 const EC2_REGISTRY_ID = "cloud-agents/g-contract-external-consumer";
 const EC2_PROFILE_ID = "g-contract-external-consumer/v2";
 const EC2_DECISION_ID = "D-053-EC-2";
+const EC2_AUTHORITY_REVISION = "D-053-EC-2.r1";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SHA1 = /^[0-9a-f]{40}$/u;
 
@@ -66,6 +68,20 @@ export const EC2_EXCLUSION_PATHS = [
   "docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md",
 ] as const;
 
+const EC2_RECEIPT_PATHS = [
+  "tools/g-contract-external-consumer/v2/evidence/replay/projection.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-a.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-b.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-isolation.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-a.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-b.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-isolation.json",
+  "tools/g-contract-external-consumer/v2/evidence/replay/replay.json",
+  EC2_PROFILE_PATH,
+  EC2_REVIEW_PATH,
+  "docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md",
+] as const;
+
 /** Files in the authority base. source.json is deliberately added by C. */
 export const EC2_AUTHORITY_FILE_PATHS = [
   "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization-20260826.md",
@@ -77,6 +93,22 @@ export const EC2_AUTHORITY_FILE_PATHS = [
   "tools/g-contract-external-consumer/v2/review.schema.json",
   "scripts/lib/platform-g-contract-external-consumer-v2.ts",
   "scripts/generate-platform-g-contract-external-consumer-v2.ts",
+  "scripts/lib/platform-g-contract-external-consumer-v2.test.ts",
+  "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
+] as const;
+
+/** The first source candidate is retained as immutable evidence and superseded by r1. */
+const EC2_INITIAL_AUTHORITY_COMMIT = "8ffc2c86df6d0d6a02677bec0790b30de233a71a";
+const EC2_INITIAL_AUTHORITY_TREE = "29520d4c93e547c18c1e6b01641d0b3c90c18c72";
+const EC2_INITIAL_CANDIDATE = {
+  commit: "74f5ad620f5061adde2da14adce5b2032d4399bb",
+  tree: "322332a93e712dc400e6e2bc4616c3430dce8c4c",
+  parent: EC2_INITIAL_AUTHORITY_COMMIT,
+} as const;
+const EC2_REPAIR_AUTHORITY_PATHS = [
+  "scripts/lib/platform-g-contract-external-consumer-v2.ts",
+  "tools/g-contract-external-consumer/v2/source.schema.json",
+  "tools/g-contract-external-consumer/v2/review.schema.json",
   "scripts/lib/platform-g-contract-external-consumer-v2.test.ts",
   "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
 ] as const;
@@ -133,6 +165,15 @@ export type Ec2CheckResult = Readonly<{
   sourceSha256: string;
 }>;
 
+export type Ec2ReviewCheckResult = Readonly<{
+  candidateCommit: string;
+  candidateTree: string;
+  reviewCommit: string;
+  reviewTree: string;
+  decision: string;
+  findings: Record<string, unknown>;
+}>;
+
 export class ExternalConsumerV2Error extends Error {
   constructor(
     readonly code: string,
@@ -150,10 +191,11 @@ export function checkExternalConsumerV2Source(root: string): Ec2CheckResult {
   assertGitRoot(repositoryRoot);
   const sourceAbsolute = resolveContained(repositoryRoot, EC2_SOURCE_PATH);
   const sourceBytes = readStableFile(sourceAbsolute);
-  assertCanonicalJson(sourceBytes, EC2_SOURCE_PATH);
+  assertStableJsonText(sourceBytes, EC2_SOURCE_PATH);
   const source = parseJson(sourceBytes, EC2_SOURCE_PATH);
   validateSchema(repositoryRoot, source, EC2_SOURCE_SCHEMA_PATH);
   assertSourceIdentity(source);
+  assertAuthorityRevision(repositoryRoot, source);
 
   const authorityParent = record(source.authorityParent, "/authorityParent");
   const authorityParentCommit = stringField(authorityParent, "commit", "/authorityParent");
@@ -176,16 +218,16 @@ export function checkExternalConsumerV2Source(root: string): Ec2CheckResult {
       "Authority parent topology drifted.",
     );
   }
-  if (authorityParentParent !== AUTHORIZATION_COMMIT) {
+  if (authorityParentParent !== EC2_INITIAL_CANDIDATE.commit) {
     throw error(
       "EC2_AUTHORITY_PARENT_DRIFT",
       "/authorityParent/parent",
-      "Authority base must be a direct child of the approved v2 authorization.",
+      "Revision r1 authority base must be a direct child of the superseded source candidate.",
     );
   }
 
   const candidate = discoverCandidate(repositoryRoot, authorityParentCommit);
-  assertAuthorityBaseDiff(repositoryRoot, authorityParentCommit, candidate.commit);
+  assertAuthorityBaseDiff(repositoryRoot, authorityParentParent, authorityParentCommit);
   assertCandidateDiff(repositoryRoot, authorityParentCommit, candidate.commit);
   assertSourceBlob(repositoryRoot, sourceBytes, candidate.commit);
 
@@ -233,6 +275,71 @@ export function assertExternalConsumerV2ProfileAbsent(root: string): void {
   );
 }
 
+/** Independently validates the authority review child and its embedded record. */
+export function checkExternalConsumerV2IndependentReview(root: string): Ec2ReviewCheckResult {
+  const repositoryRoot = realpathSync(resolve(root));
+  const sourceResult = checkExternalConsumerV2Source(repositoryRoot);
+  const reviewCommit = gitText(repositoryRoot, ["log", "-1", "--format=%H", "--", EC2_REVIEW_PATH]);
+  if (!SHA1.test(reviewCommit))
+    throw error(
+      "EC2_REVIEW_NOT_COMMITTED",
+      `/${EC2_REVIEW_PATH}`,
+      "Independent review must be committed before it is accepted.",
+    );
+  if (gitParents(repositoryRoot, reviewCommit) !== sourceResult.candidateCommit)
+    throw error(
+      "EC2_REVIEW_TOPOLOGY_DRIFT",
+      "/reviewTip/parent",
+      "Independent review must be a direct child of the reviewed candidate.",
+    );
+  assertSingleAddedPath(
+    repositoryRoot,
+    sourceResult.candidateCommit,
+    reviewCommit,
+    EC2_REVIEW_PATH,
+  );
+  const reviewBytes = readStableFile(resolveContained(repositoryRoot, EC2_REVIEW_PATH));
+  assertStableText(reviewBytes, EC2_REVIEW_PATH);
+  assertFileRecord(
+    repositoryRoot,
+    {
+      path: EC2_REVIEW_PATH,
+      gitBlob: gitBlobSha1(reviewBytes),
+      sha256: sha256(reviewBytes),
+      sizeBytes: reviewBytes.byteLength,
+      mode: "100644",
+    },
+    reviewCommit,
+  );
+  const review = parseReviewRecord(reviewBytes, EC2_REVIEW_PATH);
+  validateSchema(repositoryRoot, review, EC2_REVIEW_SCHEMA_PATH);
+  assertExactObject(
+    record(review.candidate, "/candidate"),
+    {
+      commit: sourceResult.candidateCommit,
+      tree: sourceResult.candidateTree,
+      parent: sourceResult.candidateParent,
+    },
+    "/candidate",
+  );
+  if (review.reviewKind !== "AUTHORITY" || review.authorityRevision !== EC2_AUTHORITY_REVISION)
+    throw error(
+      "EC2_REVIEW_SCOPE_DRIFT",
+      "/reviewKind",
+      "Independent review must cover the frozen authority revision only.",
+    );
+  const findings = record(review.findings, "/findings");
+  const decision = stringField(review, "decision", "/decision");
+  return {
+    candidateCommit: sourceResult.candidateCommit,
+    candidateTree: sourceResult.candidateTree,
+    reviewCommit,
+    reviewTree: gitTree(repositoryRoot, reviewCommit),
+    decision,
+    findings,
+  };
+}
+
 function assertSourceIdentity(source: Record<string, unknown>): void {
   if (
     source.$schema !==
@@ -247,6 +354,30 @@ function assertSourceIdentity(source: Record<string, unknown>): void {
       "EC2_SOURCE_IDENTITY_DRIFT",
       "/",
       "D-053-EC-2 source identity or initial state drifted.",
+    );
+  }
+}
+
+function assertAuthorityRevision(root: string, source: Record<string, unknown>): void {
+  if (source.authorityRevision !== EC2_AUTHORITY_REVISION) {
+    throw error(
+      "EC2_AUTHORITY_REVISION_DRIFT",
+      "/authorityRevision",
+      "D-053-EC-2 must identify the explicitly versioned r1 authority successor.",
+    );
+  }
+  const supersedes = record(source.supersedesCandidate, "/supersedesCandidate");
+  assertExactObject(supersedes, EC2_INITIAL_CANDIDATE, "/supersedesCandidate");
+  if (
+    gitTree(root, EC2_INITIAL_CANDIDATE.commit) !== EC2_INITIAL_CANDIDATE.tree ||
+    gitParents(root, EC2_INITIAL_CANDIDATE.commit) !== EC2_INITIAL_CANDIDATE.parent ||
+    gitTree(root, EC2_INITIAL_AUTHORITY_COMMIT) !== EC2_INITIAL_AUTHORITY_TREE ||
+    gitParents(root, EC2_INITIAL_AUTHORITY_COMMIT) !== AUTHORIZATION_COMMIT
+  ) {
+    throw error(
+      "EC2_AUTHORITY_REVISION_DRIFT",
+      "/supersedesCandidate",
+      "The superseded authority/candidate topology is not immutable.",
     );
   }
 }
@@ -378,6 +509,9 @@ function assertProjectionContract(source: Record<string, unknown>): void {
   const projection = record(source.projection, "/projection");
   if (
     projection.mode !== "VERSIONED_BOUNDED_PROJECTION" ||
+    projection.outputDirectory !== "tools/g-contract-external-consumer/v2/evidence/replay" ||
+    projection.archivePath !==
+      "tools/g-contract-external-consumer/v2/evidence/replay/projection.tar" ||
     projection.archiveFormat !== "ustar" ||
     projection.compression !== "none" ||
     projection.pathOrdering !== "UTF8_BYTE_LEXICOGRAPHIC" ||
@@ -390,6 +524,10 @@ function assertProjectionContract(source: Record<string, unknown>): void {
     projection.submodules !== "forbidden" ||
     projection.specialFiles !== "forbidden" ||
     projection.manifestFraming !== "NUL_RECORDS" ||
+    projection.receiptPath !==
+      "tools/g-contract-external-consumer/v2/evidence/replay/projection.json" ||
+    projection.memberManifestPath !==
+      "tools/g-contract-external-consumer/v2/evidence/replay/projection.member-manifest.json" ||
     JSON.stringify(projection.manifestRecordFields) !==
       JSON.stringify(["path", "type", "mode", "sizeBytes", "sha256", "linkTarget"])
   ) {
@@ -419,7 +557,9 @@ function assertReceiptContract(source: Record<string, unknown>): void {
     runner.receiptWriter !== false ||
     runner.timeoutSeconds !== 1800 ||
     runner.entrypoint !==
-      "bun scripts/generate-platform-g-contract-external-consumer-v2.ts --check-source"
+      "bun scripts/generate-platform-g-contract-external-consumer-v2.ts --check-source" ||
+    runner.sideEffects !== "NONE" ||
+    runner.network !== "DENY"
   ) {
     throw error("EC2_RUNNER_DRIFT", "/runner", "Authority runner contract drifted.");
   }
@@ -452,6 +592,16 @@ function assertReceiptContract(source: Record<string, unknown>): void {
   if (paths.length !== 11)
     throw error("EC2_RECEIPT_PATH_DRIFT", "/receiptPaths", "Receipt path count drifted.");
   const seen = new Set<string>();
+  const pathOrder = paths.map((value, index) =>
+    stringField(record(value, `/receiptPaths/${index}`), "path", `/receiptPaths/${index}`),
+  );
+  if (JSON.stringify(pathOrder) !== JSON.stringify(EC2_RECEIPT_PATHS)) {
+    throw error(
+      "EC2_RECEIPT_PATH_DRIFT",
+      "/receiptPaths",
+      "Receipt paths must match the declared ordered late-bound receipt slice.",
+    );
+  }
   for (const [index, value] of paths.entries()) {
     const item = record(value, `/receiptPaths/${index}`);
     const path = stringField(item, "path", `/receiptPaths/${index}`);
@@ -548,24 +698,43 @@ function assertTrackedTreeSafe(
   }
 }
 
-function assertAuthorityBaseDiff(root: string, parent: string, candidate: string): void {
-  const paths = gitDiffPaths(root, parent, candidate);
-  const expected = EC2_AUTHORITY_FILE_PATHS.filter(
-    (path) =>
-      !path.startsWith(
-        "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization",
-      ),
-  );
+function assertAuthorityBaseDiff(root: string, parent: string, authorityBase: string): void {
+  const records = gitDiffRecords(root, parent, authorityBase);
+  const paths = records.map((record) => record.path);
+  const expected =
+    parent === AUTHORIZATION_COMMIT
+      ? EC2_AUTHORITY_FILE_PATHS.filter(
+          (path) =>
+            !path.startsWith(
+              "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization",
+            ),
+        )
+      : parent === EC2_INITIAL_CANDIDATE.commit
+        ? EC2_REPAIR_AUTHORITY_PATHS
+        : undefined;
+  if (!expected)
+    throw error(
+      "EC2_AUTHORITY_TOPOLOGY_DRIFT",
+      "/authorityParent",
+      "Authority base parent is not an approved versioned predecessor.",
+    );
   if (JSON.stringify(paths) !== JSON.stringify([...expected].sort(compareUtf8)))
     throw error(
       "EC2_AUTHORITY_TOPOLOGY_DRIFT",
       "/authorityParent",
       "Authority base does not add exactly the declared base files.",
     );
+  const expectedStatus = parent === AUTHORIZATION_COMMIT ? "A" : "M";
+  if (records.some((record) => record.status !== expectedStatus))
+    throw error(
+      "EC2_AUTHORITY_TOPOLOGY_DRIFT",
+      "/authorityParent",
+      `Authority base changes must use status ${expectedStatus}.`,
+    );
 }
 
 function assertCandidateDiff(root: string, parent: string, candidate: string): void {
-  assertSingleAddedPath(root, parent, candidate, EC2_SOURCE_PATH);
+  assertSingleChangedPath(root, parent, candidate, EC2_SOURCE_PATH, "M");
 }
 
 function discoverCandidate(
@@ -594,12 +763,29 @@ function assertSingleAddedPath(
   commit: string,
   expectedPath: string,
 ): void {
-  const paths = gitDiffPaths(root, parent, commit);
+  assertSingleChangedPath(root, parent, commit, expectedPath, "A");
+}
+
+function assertSingleChangedPath(
+  root: string,
+  parent: string,
+  commit: string,
+  expectedPath: string,
+  expectedStatus: "A" | "M",
+): void {
+  const records = gitDiffRecords(root, parent, commit);
+  const paths = records.map((record) => record.path);
   if (paths.length !== 1 || paths[0] !== expectedPath)
     throw error(
       "EC2_REVIEW_TOPOLOGY_DRIFT",
       `/${expectedPath}`,
-      "Append-only child must add exactly one declared path.",
+      "Append-only child must change exactly one declared path.",
+    );
+  if (records.length !== 1 || records[0]?.status !== expectedStatus)
+    throw error(
+      "EC2_REVIEW_TOPOLOGY_DRIFT",
+      `/${expectedPath}`,
+      `Declared child path must have status ${expectedStatus}.`,
     );
   const entry = gitTreeEntry(root, commit, expectedPath);
   if (!entry || entry.type !== "blob" || entry.mode !== "100644")
@@ -681,7 +867,11 @@ function gitBlobAtCommit(root: string, commit: string, path: string): string {
   return entry?.type === "blob" ? entry.object : "";
 }
 
-function gitDiffPaths(root: string, parent: string, commit: string): string[] {
+function gitDiffRecords(
+  root: string,
+  parent: string,
+  commit: string,
+): Array<{ status: string; path: string }> {
   const output = gitText(root, [
     "diff",
     "--no-ext-diff",
@@ -699,9 +889,9 @@ function gitDiffPaths(root: string, parent: string, commit: string): string[] {
       const status = line.slice(0, tab);
       if (status !== "A" && status !== "M")
         throw error("EC2_GIT_DIFF_INVALID", "/", "Only add/modify statuses are allowed.");
-      return line.slice(tab + 1);
+      return { status, path: line.slice(tab + 1) };
     })
-    .sort(compareUtf8);
+    .sort((left, right) => compareUtf8(left.path, right.path));
 }
 
 function assertNoUntrackedNonignoredFiles(root: string): void {
@@ -801,14 +991,29 @@ function readStableFile(path: string): Buffer {
   }
 }
 
-function assertCanonicalJson(bytes: Buffer, path: string): void {
-  const parsed = parseJson(bytes, path);
-  const canonical = `${JSON.stringify(parsed, null, 2)}\n`;
-  if (Buffer.compare(bytes, Buffer.from(canonical, "utf8")) !== 0)
+function assertStableJsonText(bytes: Buffer, path: string): void {
+  parseJson(bytes, path);
+  assertStableText(bytes, path);
+}
+
+function assertStableText(bytes: Buffer, path: string): void {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (cause) {
+    throw error("EC2_JSON_ENCODING", `/${path}`, String(cause));
+  }
+  if (
+    bytes.length === 0 ||
+    bytes[0] === 0xef ||
+    !text.endsWith("\n") ||
+    text.endsWith("\n\n") ||
+    text.includes("\r")
+  )
     throw error(
-      "EC2_JSON_CANONICAL",
+      "EC2_JSON_TEXT",
       `/${path}`,
-      "JSON must use canonical two-space formatting and one trailing newline.",
+      "JSON must be valid UTF-8 with exactly one LF-terminated trailing newline and no BOM/CR.",
     );
 }
 
@@ -821,6 +1026,25 @@ function parseJson(bytes: Buffer, path: string): Record<string, unknown> {
   } catch (cause) {
     throw error("EC2_JSON_INVALID", `/${path}`, String(cause));
   }
+}
+
+function parseReviewRecord(bytes: Buffer, path: string): Record<string, unknown> {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (cause) {
+    throw error("EC2_REVIEW_ENCODING", `/${path}`, String(cause));
+  }
+  const opening = "```json\n";
+  const start = text.indexOf(opening);
+  const end = start < 0 ? -1 : text.indexOf("\n```", start + opening.length);
+  if (start < 0 || end < 0 || text.indexOf(opening, start + opening.length) >= 0)
+    throw error(
+      "EC2_REVIEW_RECORD_INVALID",
+      `/${path}`,
+      "Review document must contain exactly one fenced JSON record.",
+    );
+  return parseJson(Buffer.from(text.slice(start + opening.length, end), "utf8"), `${path}#record`);
 }
 
 function validateSchema(root: string, value: unknown, schemaPath: string): void {

@@ -7,25 +7,34 @@
     "formatVersion",
     "decisionId",
     "profileId",
+    "authorityRevision",
     "reviewKind",
     "candidate",
-    "reviewTip",
+    "topology",
     "changedPaths",
     "reviewInput",
     "checks",
     "findings",
     "decision",
-    "gateEffect"
+    "gateEffect",
+    "notGateClosure"
   ],
   "properties": {
     "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-independent-review/v2" },
     "decisionId": { "const": "D-053-EC-2" },
     "profileId": { "const": "g-contract-external-consumer/v2" },
+    "authorityRevision": { "const": "D-053-EC-2.r1" },
     "reviewKind": { "enum": ["AUTHORITY", "FINAL_REPLAY_PROFILE"] },
     "candidate": { "$ref": "#/$defs/commitTuple" },
-    "reviewTip": { "$ref": "#/$defs/commitTuple" },
+    "topology": {
+      "const": "DIRECT_SINGLE_PARENT_CHILD_ADDS_EXACTLY_ONE_PREDECLARED_100644_FILE"
+    },
     "changedPaths": {
-      "const": ["docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md"]
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
     },
     "reviewInput": {
       "enum": ["FROZEN_SOURCE_SCHEMA_AUTHORITY_BYTES_ONLY", "FROZEN_SOURCE_PROFILE_RECEIPTS_ONLY"]
@@ -33,16 +42,7 @@
     "checks": {
       "type": "array",
       "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "status"],
-        "properties": {
-          "id": { "type": "string", "minLength": 1 },
-          "status": { "const": "PASS" },
-          "evidence": { "type": "string" }
-        }
-      }
+      "items": { "$ref": "#/$defs/check" }
     },
     "findings": {
       "type": "object",
@@ -58,7 +58,198 @@
     "gateEffect": { "const": "NO_GATE_CLOSURE" },
     "notGateClosure": { "const": true }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["reviewKind"],
+        "properties": { "reviewKind": { "const": "AUTHORITY" } }
+      },
+      "then": {
+        "properties": {
+          "changedPaths": {
+            "const": ["docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md"]
+          },
+          "reviewInput": { "const": "FROZEN_SOURCE_SCHEMA_AUTHORITY_BYTES_ONLY" },
+          "checks": {
+            "type": "array",
+            "minItems": 10,
+            "maxItems": 10,
+            "prefixItems": [
+              { "$ref": "#/$defs/authorityRevisionCheck" },
+              { "$ref": "#/$defs/sourceSchemaCheck" },
+              { "$ref": "#/$defs/authorityFileCheck" },
+              { "$ref": "#/$defs/lineageCheck" },
+              { "$ref": "#/$defs/semanticInputCheck" },
+              { "$ref": "#/$defs/projectionCheck" },
+              { "$ref": "#/$defs/runnerCheck" },
+              { "$ref": "#/$defs/receiptCheck" },
+              { "$ref": "#/$defs/candidateTopologyCheck" },
+              { "$ref": "#/$defs/independentReviewCheck" }
+            ],
+            "items": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["reviewKind"],
+        "properties": { "reviewKind": { "const": "FINAL_REPLAY_PROFILE" } }
+      },
+      "then": {
+        "properties": {
+          "changedPaths": {
+            "const": ["docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md"]
+          },
+          "reviewInput": { "const": "FROZEN_SOURCE_PROFILE_RECEIPTS_ONLY" },
+          "checks": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "prefixItems": [
+              { "$ref": "#/$defs/projectionReceiptCheck" },
+              { "$ref": "#/$defs/nativeReplayReceiptCheck" },
+              { "$ref": "#/$defs/profileCheck" },
+              { "$ref": "#/$defs/finalReviewCheck" }
+            ],
+            "items": false
+          }
+        }
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "decision": { "const": "APPROVE" },
+            "findings": { "const": { "P0": 0, "P1": 0, "P2": 0 } }
+          }
+        },
+        {
+          "properties": {
+            "decision": { "const": "REQUEST_CHANGES" },
+            "findings": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": ["P0"],
+                  "properties": { "P0": { "type": "integer", "minimum": 1 } }
+                },
+                {
+                  "type": "object",
+                  "required": ["P1"],
+                  "properties": { "P1": { "type": "integer", "minimum": 1 } }
+                },
+                {
+                  "type": "object",
+                  "required": ["P2"],
+                  "properties": { "P2": { "type": "integer", "minimum": 1 } }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
   "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "const": "PASS" },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "authorityRevisionCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "authority_revision_fence" } } }
+      ]
+    },
+    "sourceSchemaCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "source_schema_check" } } }
+      ]
+    },
+    "authorityFileCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "authority_file_fence" } } }
+      ]
+    },
+    "lineageCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "lineage_fence" } } }
+      ]
+    },
+    "semanticInputCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "semantic_input_check" } } }
+      ]
+    },
+    "projectionCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "projection_algorithm_check" } } }
+      ]
+    },
+    "runnerCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        {
+          "type": "object",
+          "properties": { "id": { "const": "runner_toolchain_platform_check" } }
+        }
+      ]
+    },
+    "receiptCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "receipt_path_state_check" } } }
+      ]
+    },
+    "candidateTopologyCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "candidate_topology_check" } } }
+      ]
+    },
+    "independentReviewCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "independent_review" } } }
+      ]
+    },
+    "projectionReceiptCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "projection_receipt" } } }
+      ]
+    },
+    "nativeReplayReceiptCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "native_replay_receipts" } } }
+      ]
+    },
+    "profileCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "profile_check" } } }
+      ]
+    },
+    "finalReviewCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "type": "object", "properties": { "id": { "const": "final_replay_review" } } }
+      ]
+    },
     "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "commitTuple": {
       "type": "object",
