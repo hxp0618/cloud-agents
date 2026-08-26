@@ -307,11 +307,7 @@ function modelFixture(
     writeJson(root, source.dynamicAuthorities.assembledLockPath, phaseBound);
     supplyCandidate = commitAll(root, "phase-bound supply lock candidate");
   }
-  writeText(
-    root,
-    source.dynamicAuthorities.supplyReviewPath,
-    "# Supply v3 independent review\n\n## Verdict\n\n`APPROVE - P0=0 / P1=0 / P2=0`\n",
-  );
+  writeText(root, source.dynamicAuthorities.supplyReviewPath, supplyReviewText());
   const supplyReview = commitAll(root, "supply review");
   return { root, base, supplyCandidate, supplyReview };
 }
@@ -353,7 +349,7 @@ function buildBoundaryMutationModel(fixture: ModelFixture, mutation: BoundaryMut
   if (mutation === "existing-path") {
     writeText(fixture.root, reviewPath, "draft review\n");
     const mutatedCandidate = commitAll(fixture.root, "mutated candidate review path");
-    writeText(fixture.root, reviewPath, reviewText());
+    writeText(fixture.root, reviewPath, supplyReviewText());
     const mutatedReview = commitAll(fixture.root, "mutated review child");
     candidate = { ...candidate, commit: mutatedCandidate };
     review = { ...review, commit: mutatedReview };
@@ -380,6 +376,10 @@ function buildBoundaryMutationModel(fixture: ModelFixture, mutation: BoundaryMut
 
 function reviewText(): string {
   return "# Supply v3 independent review\n\n## Verdict\n\n`APPROVE - P0=0 / P1=0 / P2=0`\n";
+}
+
+function supplyReviewText(): string {
+  return "# Supply v3 independent review\n\n## Verdict\n\n`APPROVE`\n\n| Severity | Findings |\n| -------- | -------: |\n| P0       |        0 |\n| P1       |        0 |\n| P2       |        0 |\n";
 }
 
 function lockAuthority() {

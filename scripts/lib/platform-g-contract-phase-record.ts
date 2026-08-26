@@ -84,6 +84,12 @@ const AUTHORITY_ID = "cloud-agents/platform/gate-phase-record/g-contract-p1/v1";
 const REQUIRED_VERDICT = "APPROVE_P0_0_P1_0_P2_0";
 const CURRENT_CANDIDATE_AUTHORITY_STATUS = "REVIEW_BOUND_SATISFIED_CANDIDATE";
 
+export const LEGACY_SUPPLY_REVIEW_VERDICT_MODE = "LEGACY_APPROVE_SEVERITY_TABLE_V1" as const;
+export const CANONICAL_REVIEW_VERDICT_MODE = "CANONICAL_APPROVE_P0_P1_P2_V1" as const;
+export type ReviewVerdictMode =
+  | typeof LEGACY_SUPPLY_REVIEW_VERDICT_MODE
+  | typeof CANONICAL_REVIEW_VERDICT_MODE;
+
 const FIXED_GIT_ENV = {
   PATH: "/usr/bin:/bin",
   LANG: "C",
@@ -211,6 +217,7 @@ export type GContractPhaseRecordSource = JsonRecord & {
     readonly candidateDiffDomain: string;
     readonly reviewDiffDomain: string;
     readonly requiredVerdict: typeof REQUIRED_VERDICT;
+    readonly verdictMode: ReviewVerdictMode;
   })[];
   readonly binding: JsonRecord & {
     readonly tuplePath: string;
@@ -357,6 +364,16 @@ export function readGContractPhaseRecordSource(root: string): GContractPhaseReco
       "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
       "/source",
       "Source drifted from the G-CONTRACT-P1, non-Gate, pre-terminal authority.",
+    );
+  }
+  if (
+    source.reviewSlots[0]?.verdictMode !== LEGACY_SUPPLY_REVIEW_VERDICT_MODE ||
+    source.reviewSlots[1]?.verdictMode !== CANONICAL_REVIEW_VERDICT_MODE
+  ) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      "/reviewSlots/verdictMode",
+      "The fixed supply slot must use the versioned legacy table parser; new reviews must use the canonical verdict parser.",
     );
   }
   return source;
@@ -878,6 +895,7 @@ function assertFreshSupplyV3Review(
     slot.reviewPath,
     slot.reviewDiffDomain,
     review.diffSha256,
+    slot.verdictMode,
   );
   const candidateDiff = domainSeparatedGitDiffDigest(
     slot.candidateDiffDomain,
@@ -947,6 +965,7 @@ function assertSupplyReviewChildShape(
   reviewPath: string,
   reviewDiffDomain: string,
   expectedDiffSha256: Digest,
+  verdictMode: ReviewVerdictMode,
 ): void {
   // The review path must not exist in the candidate parent and the child must
   // add exactly one regular file at that path.  --no-renames plus NUL framing
@@ -986,30 +1005,7 @@ function assertSupplyReviewChildShape(
     );
   }
   const reviewBytes = gitBytes(root, ["cat-file", "blob", `${reviewCommit}:${reviewPath}`]);
-  const reviewText = reviewBytes.toString("utf8");
-  const headings = [...reviewText.matchAll(/^## Verdict[ \t]*$/gmu)];
-  if (headings.length !== 1) {
-    throw phaseError(
-      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
-      `/${reviewPath}`,
-      "Supply review must contain exactly one level-two Verdict section.",
-    );
-  }
-  const verdictLine = reviewText
-    .slice(headings[0]!.index! + headings[0]![0].length)
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  if (
-    verdictLine === undefined ||
-    !/^`?APPROVE\s*(?:-|—)\s*P0=0\s*\/\s*P1=0\s*\/\s*P2=0`?$/u.test(verdictLine)
-  ) {
-    throw phaseError(
-      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
-      `/${reviewPath}`,
-      "Supply review Verdict must begin with APPROVE - P0=0 / P1=0 / P2=0.",
-    );
-  }
+  assertGContractPhaseReviewVerdict(reviewBytes, reviewPath, verdictMode);
   const observedDiffSha256 = domainSeparatedGitDiffDigest(
     reviewDiffDomain,
     gitDiffBytes(root, candidateCommit, reviewCommit),
@@ -1019,6 +1015,110 @@ function assertSupplyReviewChildShape(
       "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
       "/supply/review/diffSha256",
       "Domain-separated supply review child diff digest drifted.",
+    );
+  }
+}
+
+/**
+ * Validate the review text format selected by the immutable source slot.
+ * The legacy mode is deliberately narrow: it is only accepted for the fixed
+ * supply review slot. It accepts the historical `APPROVE` line only when it
+ * is followed by one complete zero-valued severity table, and also accepts the
+ * canonical line for a newly generated superseding supply review. New review
+ * slots use the canonical line only.
+ */
+export function assertGContractPhaseReviewVerdict(
+  bytes: Buffer,
+  path: string,
+  mode: ReviewVerdictMode,
+): void {
+  const text = bytes.toString("utf8");
+  const headings = [...text.matchAll(/^## Verdict[ \t]*$/gmu)];
+  if (headings.length !== 1) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Review must contain exactly one level-two Verdict section.",
+    );
+  }
+  const afterHeading = text.slice(headings[0]!.index! + headings[0]![0].length);
+  const verdictLine = afterHeading
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  const canonical =
+    verdictLine !== undefined &&
+    /^`?APPROVE\s*(?:-|—)\s*P0=0\s*\/\s*P1=0\s*\/\s*P2=0`?$/u.test(verdictLine);
+  if (mode === CANONICAL_REVIEW_VERDICT_MODE) {
+    if (!canonical) {
+      throw phaseError(
+        "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+        `/${path}`,
+        "The Verdict section must begin with the exact APPROVE P0=0/P1=0/P2=0 value.",
+      );
+    }
+    return;
+  }
+  if (mode !== LEGACY_SUPPLY_REVIEW_VERDICT_MODE) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Unknown review Verdict mode.",
+    );
+  }
+  if (path !== G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Legacy supply Verdict mode is reserved for the fixed supply review slot.",
+    );
+  }
+  if (canonical) return;
+  if (verdictLine !== "`APPROVE`") {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Legacy supply Verdict must begin with the exact `APPROVE` value.",
+    );
+  }
+  const lines = text.split(/\r?\n/u);
+  const severityHeader = /^\|\s*Severity\s*\|\s*Findings\s*\|\s*$/u;
+  const headerIndexes = lines.flatMap((line, index) => (severityHeader.test(line) ? [index] : []));
+  if (headerIndexes.length !== 1) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Legacy supply review must contain exactly one severity table.",
+    );
+  }
+  const tableIndex = headerIndexes[0]!;
+  const separator = lines[tableIndex + 1] ?? "";
+  if (!/^\|\s*-+\s*\|\s*-+:?\s*\|\s*$/u.test(separator)) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Legacy supply severity table header is malformed.",
+    );
+  }
+  for (const severity of ["P0", "P1", "P2"] as const) {
+    const row = lines[tableIndex + 1 + Number(severity.slice(1)) + 1] ?? "";
+    if (!new RegExp(`^\\|\\s*${severity}\\s*\\|\\s*0\\s*\\|\\s*$`, "u").test(row)) {
+      throw phaseError(
+        "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+        `/${path}`,
+        "Legacy supply severity table must contain exactly zero P0/P1/P2 findings.",
+      );
+    }
+  }
+  const rowCounts = ["P0", "P1", "P2"].map(
+    (severity) =>
+      lines.filter((line) => new RegExp(`^\\|\\s*${severity}\\s*\\|`, "u").test(line)).length,
+  );
+  if (rowCounts.some((count) => count !== 1)) {
+    throw phaseError(
+      "G_CONTRACT_PHASE_IDENTITY_MISMATCH",
+      `/${path}`,
+      "Legacy supply severity table must contain one row for each severity.",
     );
   }
 }

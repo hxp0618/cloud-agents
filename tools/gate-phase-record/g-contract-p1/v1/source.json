@@ -154,7 +154,8 @@
       "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
       "candidateDiffDomain": "cloud-agents/g-contract-phase/supply-v3-candidate-diff/v1",
       "reviewDiffDomain": "cloud-agents/g-contract-phase/supply-v3-review-diff/v1",
-      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0"
+      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0",
+      "verdictMode": "LEGACY_APPROVE_SEVERITY_TABLE_V1"
     },
     {
       "subject": "g_contract_r5",
@@ -162,7 +163,8 @@
       "reviewPath": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
       "candidateDiffDomain": "cloud-agents/g-contract-phase/r5-candidate-diff/v1",
       "reviewDiffDomain": "cloud-agents/g-contract-phase/r5-review-diff/v1",
-      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0"
+      "requiredVerdict": "APPROVE_P0_0_P1_0_P2_0",
+      "verdictMode": "CANONICAL_APPROVE_P0_P1_P2_V1"
     }
   ],
   "binding": {

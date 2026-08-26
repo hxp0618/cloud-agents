@@ -387,6 +387,9 @@
             },
             "reviewDiffDomain": {
               "const": "cloud-agents/g-contract-phase/supply-v3-review-diff/v1"
+            },
+            "verdictMode": {
+              "const": "LEGACY_APPROVE_SEVERITY_TABLE_V1"
             }
           }
         },
@@ -407,6 +410,9 @@
             },
             "reviewDiffDomain": {
               "const": "cloud-agents/g-contract-phase/r5-review-diff/v1"
+            },
+            "verdictMode": {
+              "const": "CANONICAL_APPROVE_P0_P1_P2_V1"
             }
           }
         }
@@ -615,7 +621,8 @@
         "reviewPath",
         "candidateDiffDomain",
         "reviewDiffDomain",
-        "requiredVerdict"
+        "requiredVerdict",
+        "verdictMode"
       ],
       "properties": {
         "subject": {
@@ -640,6 +647,12 @@
         },
         "requiredVerdict": {
           "const": "APPROVE_P0_0_P1_0_P2_0"
+        },
+        "verdictMode": {
+          "enum": [
+            "LEGACY_APPROVE_SEVERITY_TABLE_V1",
+            "CANONICAL_APPROVE_P0_P1_P2_V1"
+          ]
         }
       }
     },

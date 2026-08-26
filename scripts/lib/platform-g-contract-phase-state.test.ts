@@ -19,11 +19,14 @@ import {
   buildGContractPhaseRecordModel,
   buildGContractPhaseBindingRegistry,
   buildGContractPhaseReviewTuple,
+  assertGContractPhaseReviewVerdict,
+  LEGACY_SUPPLY_REVIEW_VERDICT_MODE,
   G_CONTRACT_PHASE_BINDING_REGISTRY_SCHEMA_PATH,
   G_CONTRACT_PHASE_MODEL_SCHEMA_PATH,
   G_CONTRACT_PHASE_REVIEW_TUPLE_SCHEMA_PATH,
   G_CONTRACT_PHASE_SOURCE_PATH,
   G_CONTRACT_PHASE_SOURCE_SCHEMA_PATH,
+  G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH,
   readGContractPhaseRecordSource,
   renderGContractPhaseRecord,
   serializeGContractPhaseJson,
@@ -58,6 +61,39 @@ afterEach(() => {
 });
 
 describe("G-CONTRACT-P1 read-only phase state", () => {
+  it("accepts only the fixed supply legacy zero-finding severity table", () => {
+    expect(() =>
+      assertGContractPhaseReviewVerdict(
+        Buffer.from(supplyReviewText()),
+        G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH,
+        LEGACY_SUPPLY_REVIEW_VERDICT_MODE,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertGContractPhaseReviewVerdict(
+        Buffer.from(`${supplyReviewText()}\n| P0 | 0 |\n`),
+        G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH,
+        LEGACY_SUPPLY_REVIEW_VERDICT_MODE,
+      ),
+    ).toThrow();
+    expect(() =>
+      assertGContractPhaseReviewVerdict(
+        Buffer.from(
+          supplyReviewText().replace("| P1       |        0 |", "| P1       |        1 |"),
+        ),
+        G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH,
+        LEGACY_SUPPLY_REVIEW_VERDICT_MODE,
+      ),
+    ).toThrow();
+    expect(() =>
+      assertGContractPhaseReviewVerdict(
+        Buffer.from(reviewText()),
+        G_CONTRACT_PHASE_SUPPLY_REVIEW_PATH,
+        LEGACY_SUPPLY_REVIEW_VERDICT_MODE,
+      ),
+    ).not.toThrow();
+  });
+
   it("classifies the absent state without writing and fails closed on orphan topology", () => {
     const root = sourceFixture();
     const before = listFiles(root);
@@ -310,7 +346,7 @@ function reviewFixture(
     mkdirSync(dirname(absolute), { recursive: true });
     symlinkSync("../../../../base.txt", absolute);
   } else {
-    writeText(root, source.reviewSlots[0]!.reviewPath, options.reviewBody ?? reviewText());
+    writeText(root, source.reviewSlots[0]!.reviewPath, options.reviewBody ?? supplyReviewText());
   }
   if (options.extraReviewPath) writeText(root, "extra-review-byte.txt", "extra\n");
   const review = commitAll(root, "supply review");
@@ -360,6 +396,10 @@ function reviewText(): string {
   return "# Independent review\n\n## Verdict\n\n`APPROVE - P0=0 / P1=0 / P2=0`\n";
 }
 
+function supplyReviewText(): string {
+  return "# Supply v3 independent review\n\n## Verdict\n\n`APPROVE`\n\n| Severity | Findings |\n| -------- | -------: |\n| P0       |        0 |\n| P1       |        0 |\n| P2       |        0 |\n";
+}
+
 function terminalFixture(options: { invalidPhaseBound?: boolean } = {}): {
   root: string;
   recordBuildInput: GContractPhaseRecordBuildInput;
@@ -389,7 +429,7 @@ function terminalFixture(options: { invalidPhaseBound?: boolean } = {}): {
     serializePlatformContractLockV3(assembled),
   );
   const supplyCandidate = commitAll(root, "supply candidate");
-  writeText(root, source.reviewSlots[0]!.reviewPath, reviewText());
+  writeText(root, source.reviewSlots[0]!.reviewPath, supplyReviewText());
   const supplyReview = commitAll(root, "supply review");
   const supplyBinding = captureGContractPhaseReviewBinding(
     root,

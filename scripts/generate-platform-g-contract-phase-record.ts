@@ -15,6 +15,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
@@ -35,7 +36,10 @@ import {
   type GContractPhaseReviewTuple,
   type ReviewBinding,
 } from "./lib/platform-g-contract-phase-record";
-import { classifyGContractPhaseTopology } from "./lib/platform-g-contract-phase-state";
+import {
+  assertGContractPhaseReviewLineages,
+  classifyGContractPhaseTopology,
+} from "./lib/platform-g-contract-phase-state";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -236,16 +240,40 @@ function writeBinding(inputPath: string): void {
   const source = readGContractPhaseRecordSource(root);
   const tuple = tupleFromFile(inputPath);
   validateGContractPhaseReviewTuple(root, tuple);
+  // The JSON input is caller supplied.  Validate every candidate/review Git
+  // object and the live review bytes before either detached output is created.
+  // The schema/digest check above is intentionally not sufficient authority.
+  assertGContractPhaseReviewLineages(root, tuple);
   const registry = buildGContractPhaseBindingRegistry(root, tuple);
-  const tupleResult = writeExclusiveOrNoop(
-    G_CONTRACT_PHASE_REVIEW_TUPLE_PATH,
-    serializeGContractPhaseJson(tuple),
-  );
-  const registryResult = writeExclusiveOrNoop(
-    G_CONTRACT_PHASE_BINDING_REGISTRY_PATH,
-    serializeGContractPhaseJson(registry),
-  );
-  validateGContractPhaseBindingRegistry(root, tuple, registry);
+  const tupleBytes = serializeGContractPhaseJson(tuple);
+  const registryBytes = serializeGContractPhaseJson(registry);
+  // Preflight both destinations before the first write.  This makes a stale
+  // sibling fail without leaving a newly-created half-pair behind.
+  preflightExclusiveOrNoop(G_CONTRACT_PHASE_REVIEW_TUPLE_PATH, tupleBytes);
+  preflightExclusiveOrNoop(G_CONTRACT_PHASE_BINDING_REGISTRY_PATH, registryBytes);
+
+  let tupleResult: "written" | "current" | undefined;
+  let registryResult: "written" | "current" | undefined;
+  try {
+    tupleResult = writeExclusiveOrNoop(G_CONTRACT_PHASE_REVIEW_TUPLE_PATH, tupleBytes);
+    registryResult = writeExclusiveOrNoop(G_CONTRACT_PHASE_BINDING_REGISTRY_PATH, registryBytes);
+    validateGContractPhaseBindingRegistry(root, tuple, registry);
+  } catch (error) {
+    // A second-file failure can only occur after the first file was newly
+    // created (or after an external race).  Remove only bytes we created and
+    // only while the destination still contains those exact bytes.
+    if (tupleResult === "written" && registryResult !== "written")
+      removeExactCreatedFile(G_CONTRACT_PHASE_REVIEW_TUPLE_PATH, tupleBytes);
+    if (registryResult === "written" && tupleResult !== "written")
+      removeExactCreatedFile(G_CONTRACT_PHASE_BINDING_REGISTRY_PATH, registryBytes);
+    if (tupleResult === "written" && registryResult === "written") {
+      // Validation after publication should be unreachable for stable inputs,
+      // but clean both newly-created outputs if an input changed mid-flight.
+      removeExactCreatedFile(G_CONTRACT_PHASE_REVIEW_TUPLE_PATH, tupleBytes);
+      removeExactCreatedFile(G_CONTRACT_PHASE_BINDING_REGISTRY_PATH, registryBytes);
+    }
+    throw error;
+  }
   // Keep the source read in this command so a source mutation cannot be
   // mistaken for a successful detached write.
   if (source.binding.registryPath !== G_CONTRACT_PHASE_BINDING_REGISTRY_PATH) {
@@ -254,6 +282,27 @@ function writeBinding(inputPath: string): void {
   process.stdout.write(
     `g-contract-phase-binding: tuple=${tupleResult} registry=${registryResult} ${G_CONTRACT_PHASE_BINDING_REGISTRY_PATH}\n`,
   );
+}
+
+function preflightExclusiveOrNoop(path: string, bytes: string): void {
+  const output = ensureContainedRegularDestination(path);
+  try {
+    const current = readStableRegularFile(output, path).toString("utf8");
+    if (current !== bytes)
+      throw new Error(`Divergent existing bytes at ${path}; refusing pair write.`);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+}
+
+function removeExactCreatedFile(path: string, bytes: string): void {
+  const output = safeRepositoryPath(path);
+  try {
+    if (readStableRegularFile(output, path).toString("utf8") === bytes) unlinkSync(output);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
 }
 
 function checkBinding(): void {

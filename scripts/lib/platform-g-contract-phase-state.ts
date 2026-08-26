@@ -15,6 +15,8 @@ import {
   buildGContractPhaseRecordModel,
   buildGContractPhaseBindingRegistry,
   domainSeparatedGitDiffDigest,
+  assertGContractPhaseReviewVerdict,
+  CANONICAL_REVIEW_VERDICT_MODE,
   G_CONTRACT_PHASE_BINDING_REGISTRY_PATH,
   G_CONTRACT_PHASE_FINAL_REVIEW_PATH,
   G_CONTRACT_PHASE_R5_REVIEW_PATH,
@@ -48,8 +50,6 @@ import { canonicalizeJson } from "./platform-json-semantics";
 const PHASE_LOCK_PATH = "contracts/generation.lock.json";
 const REQUIRED_VERDICT = "APPROVE_P0_0_P1_0_P2_0" as const;
 const TERMINAL_REVIEW_DIFF_DOMAIN = "cloud-agents/g-contract-phase/terminal-binding-review-diff/v1";
-const VERDICT_HEADING = /^## Verdict[ \t]*$/gmu;
-const APPROVE_VERDICT_LINE = /^`?APPROVE\s*(?:-|—)\s*P0=0\s*\/\s*P1=0\s*\/\s*P2=0`?$/u;
 
 const FIXED_GIT_ENV = {
   PATH: "/usr/bin:/bin",
@@ -335,6 +335,8 @@ export function assertReviewOnlyCommit(
   assertReviewVerdict(
     gitBytes(root, ["cat-file", "blob", `${reviewCommit}:${reviewPath}`]),
     reviewPath,
+    readGContractPhaseRecordSource(root).reviewSlots.find((slot) => slot.reviewPath === reviewPath)
+      ?.verdictMode ?? CANONICAL_REVIEW_VERDICT_MODE,
   );
 }
 
@@ -672,27 +674,18 @@ function assertExactChangedOperations(
   }
 }
 
-function assertReviewVerdict(bytes: Buffer, path: string): void {
-  const text = bytes.toString("utf8");
-  const headings = [...text.matchAll(VERDICT_HEADING)];
-  if (headings.length !== 1) {
-    throw stateError(
-      "G_CONTRACT_PHASE_REVIEW_VERDICT_INVALID",
-      `/${path}`,
-      "Review must contain exactly one level-two Verdict section.",
-    );
-  }
-  const afterHeading = text.slice(headings[0]!.index! + headings[0]![0].length);
-  const verdictLine = afterHeading
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  if (verdictLine === undefined || !APPROVE_VERDICT_LINE.test(verdictLine)) {
-    throw stateError(
-      "G_CONTRACT_PHASE_REVIEW_VERDICT_INVALID",
-      `/${path}`,
-      "The Verdict section must begin with the exact APPROVE P0=0/P1=0/P2=0 value.",
-    );
+function assertReviewVerdict(
+  bytes: Buffer,
+  path: string,
+  mode: Parameters<typeof assertGContractPhaseReviewVerdict>[2],
+): void {
+  try {
+    assertGContractPhaseReviewVerdict(bytes, path, mode);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw stateError("G_CONTRACT_PHASE_REVIEW_VERDICT_INVALID", `/${path}`, error.message);
+    }
+    throw error;
   }
 }
 

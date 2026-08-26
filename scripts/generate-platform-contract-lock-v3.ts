@@ -192,11 +192,34 @@ function sameStableFileObservation(
   );
 }
 
-function artifact(path: string): PlatformContractLockV3ArtifactIdentity {
-  const observation = readStableRegularFile(path);
+function artifact(
+  path: string,
+  options: Readonly<{ allowUntrackedLateBound?: boolean }> = {},
+): PlatformContractLockV3ArtifactIdentity {
   const entry = git(["ls-tree", "HEAD", "--", path]);
   const match = /^100644 blob ([0-9a-f]{40})\t(.+)$/u.exec(entry);
-  if (!match || match[2] !== path) throw new Error(`${path} is not a tracked 100644 file at HEAD.`);
+  if (!match || match[2] !== path) {
+    if (
+      !options.allowUntrackedLateBound ||
+      git(["ls-tree", "-r", "--name-only", "HEAD", "--", path])
+    )
+      throw new Error(`${path} is not a tracked 100644 file at HEAD.`);
+    const observation = readStableRegularFile(path);
+    // Slice I deliberately creates the tuple and registry in the same
+    // candidate commit as the lock.  They are therefore absent from the
+    // fixed R5-review HEAD while the lock writer runs.  Their stable live
+    // bytes are the exact future 100644 Git blobs; the exact three-path
+    // candidate checker verifies those bytes again after commit.
+    return {
+      path,
+      fileType: "REGULAR_FILE",
+      gitMode: "100644",
+      gitBlobSha1: gitBlob(observation.bytes),
+      sha256: sha256(observation.bytes),
+      sizeBytes: observation.bytes.byteLength,
+    };
+  }
+  const observation = readStableRegularFile(path);
   if (gitBlob(observation.bytes) !== match[1]) {
     throw new Error(`${path} has dirty bytes; lock authority requires the fixed HEAD blob.`);
   }
@@ -510,7 +533,11 @@ function writePhaseBound(assembledCommit = git(["rev-parse", "HEAD"])): void {
     state: "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT" as const,
     artifacts: PLATFORM_CONTRACT_LOCK_V3_PHASE_ARTIFACTS.map((entry) => ({
       role: entry.role,
-      artifact: artifact(entry.path),
+      artifact: artifact(entry.path, {
+        allowUntrackedLateBound:
+          entry.path === G_CONTRACT_PHASE_REVIEW_TUPLE_PATH ||
+          entry.path === G_CONTRACT_PHASE_BINDING_REGISTRY_PATH,
+      }),
     })),
   };
   const next = buildPlatformContractLockV3PhaseBound(assembled, snapshot, phaseBinding);

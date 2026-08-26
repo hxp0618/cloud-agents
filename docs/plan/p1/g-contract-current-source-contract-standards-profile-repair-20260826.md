@@ -86,3 +86,38 @@ tracked generated artifact, so a valid newline-terminated manifest was falsely
 classified as dirty. The bounded repair compares the observed bytes' Git blob
 SHA directly with the tracked `100644` blob identity. The lock transition was
 again not reached and the fixed v2 predecessor remained byte-identical.
+
+## Append-only phase-writer and review-authority repair
+
+The superseding D-053 repair also closes three deterministic pre-G/J authority
+gaps without touching the fixed Slice F object. The fixed supply review has a
+historical `## Verdict` section whose first line is exactly `` `APPROVE` `` and
+whose following severity table records zero P0/P1/P2 findings. The phase
+source now selects an explicit, versioned legacy-table parser for that one
+immutable slot; it requires one Verdict heading, one complete severity table,
+one row for each severity, and zero values. New R5 and terminal reviews retain
+the canonical `APPROVE - P0=0 / P1=0 / P2=0` parser. No predecessor review byte
+is rewritten or re-added.
+
+The detached binding writer now validates every candidate/review Git lineage,
+review-only diff, live blob, mode, verdict, and reviewer separation before any
+tuple or registry publication. It preflights both destinations and removes
+only exact bytes created by the current invocation if a later pair step fails;
+an existing divergent sibling is never overwritten. The phase-bound lock
+writer accepts the tuple and registry as explicitly late-bound regular files
+that are absent from the fixed R5-review `HEAD`, computes their future Git blob
+identity from stable live bytes, and leaves the exact three-path
+Slice-I checker as the final topology authority.
+
+The read-only terminal checker now accepts a contained JSON identity input for
+the binding actor and complete terminal-review binding, passes both to the
+state machine, and can therefore emit
+`REVIEW_BOUND_CURRENT_SOURCE_CANDIDATE` only after the terminal review child is
+fixed. It still has no write mode and emits no tracked output.
+
+These changes remain evidence-only and non-Gate. They do not authorize
+production database writes, HTTP/P2/provider effects, deployment, publication,
+release, or any Gate transition. Because the phase source, schema, writers, and
+checker are pre-replay authority, this repair invalidates the prior v3
+projection/native receipts; a new repair candidate and fresh C--F evidence are
+required before G--J can continue.
