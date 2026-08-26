@@ -1,0 +1,141 @@
+{
+  "$schema": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v1/source.schema.json",
+  "formatVersion": "cloud-agents-g-contract-external-consumer-source/v1",
+  "registryId": "cloud-agents/g-contract-external-consumer",
+  "profileId": "g-contract-external-consumer/v1",
+  "status": "FRESH_CONSUMER_EVIDENCE_CURRENT_REPLAY_PENDING",
+  "decisionId": "D-053-EC-1",
+  "authorization": {
+    "path": "docs/plan/p1/g-contract-current-source-external-consumer-successor-authorization-20260826.md",
+    "gitBlob": "686f6db15e0e795b1e751972cc519ca2d6a60372",
+    "sha256": "sha256:960964f784c383bda1dcda67452c8c844888f091e91cf2d2e0de71acba29fb55",
+    "sizeBytes": 4688,
+    "mode": "100644"
+  },
+  "predecessorFence": {
+    "decisionId": "D-053",
+    "terminalCommit": "4f71e38205fc25b3b164a24f13141644bd378cf7",
+    "terminalTree": "13e999863a1c60538b6601b67c6d75822a9f8384",
+    "mutation": "forbidden",
+    "supersedesMode": "VERSIONED_SUCCESSOR_ONLY",
+    "files": [
+      {
+        "path": "contracts/generation.lock.json",
+        "gitBlob": "243a55c6462c6ab2b341abc8dd98703f05e0c4ba",
+        "sha256": "sha256:efe5ae588655739377d019bd9883f1f40254f1f37e1b0162288264f80dafc2f5",
+        "sizeBytes": 5979,
+        "mode": "100644"
+      },
+      {
+        "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+        "gitBlob": "d2f36405146bb555c58dab4b70f87df82c3854be",
+        "sha256": "sha256:8f19e7ca49c075a475caa4af1a70bc3cfb31e88a8135301071089f9aff4d1c0a",
+        "sizeBytes": 8318,
+        "mode": "100644"
+      },
+      {
+        "path": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md",
+        "gitBlob": "62751d47e1af23ed44cbb13ad69554b0f4974b7d",
+        "sha256": "sha256:e4d3b421c20a86eae2d8eda45fd9e0318a40a343f5531bb54f285cefb6cdefc7",
+        "sizeBytes": 3100,
+        "mode": "100644"
+      },
+      {
+        "path": "docs/plan/p1/g-contract-current-source-superseding-repair-authorization-20260826.md",
+        "gitBlob": "cd2bfbe3b351e4339cd5f18a9aa6faeb21368bf9",
+        "sha256": "sha256:5bd49bab97ac3e838a126e8351e9f5b68d3e959e1416936a35d486a68a800754",
+        "sizeBytes": 3787,
+        "mode": "100644"
+      }
+    ]
+  },
+  "gateCriteria": {
+    "path": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+    "sha256": "sha256:4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994"
+  },
+  "harness": {
+    "path": "scripts/test-platform-sdk-consumers.ts",
+    "mode": "100644",
+    "digestBinding": "LIVE_WORKTREE_SHA256"
+  },
+  "toolchain": {
+    "bun": "1.4.0",
+    "go": "go version go1.27.0 darwin/arm64",
+    "typescript": "5.7.3",
+    "goFlags": "-mod=readonly",
+    "goWork": "off"
+  },
+  "inputBindings": [
+    "package.json",
+    "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+    "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+    "contracts/generated/proto/manifest.json",
+    "contracts/proto-generation.profile.json",
+    "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+    "scripts/generate-platform-g-contract-external-consumer.ts",
+    "scripts/lib/platform-g-contract-external-consumer.ts",
+    "scripts/lib/platform-g-contract-external-consumer.test.ts",
+    "tools/g-contract-external-consumer/v1/source.schema.json",
+    "tools/g-contract-external-consumer/v1/profile.schema.json",
+    "sdk/typescript/package.json",
+    "sdk/typescript/generated-manifest.json",
+    "sdk/typescript/proto-generated-manifest.json",
+    "sdk/go/go.mod",
+    "sdk/go/go.sum",
+    "sdk/go/generated-manifest.json",
+    "sdk/go/proto-generated-manifest.json"
+  ],
+  "criteria": ["exact-pinned-external-consumer", "digest-change-invalidation"],
+  "evidenceContract": {
+    "input": "JSON_ONLY",
+    "formatVersion": "cloud-agents-platform-sdk-consumer-evidence/v1",
+    "path": "tools/g-contract-external-consumer/v1/evidence/consumer.json",
+    "requiredCallCount": 1,
+    "artifactIntegrity": "SHA256_AND_SRI_OR_GO_SUM",
+    "toolchain": "EXACT_REPORTED_VERSIONS",
+    "forbiddenDependencySchemes": ["file:", "workspace:", "git:", "github:", "local-path"],
+    "loopbackUrlPattern": "^http://127\\.0\\.0\\.1:<ephemeral-port>/"
+  },
+  "fixturePolicy": {
+    "transport": "connect",
+    "method": "POST",
+    "path": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+    "requestContentType": "application/proto",
+    "responseContentType": "application/proto",
+    "loopbackOnly": true,
+    "requiredCallCount": 1
+  },
+  "freshEvidenceProcess": {
+    "version": "v1",
+    "orderedStages": [
+      "repair",
+      "focused_checks",
+      "fresh_consumer_evidence",
+      "freeze_source_and_inputs",
+      "fresh_projection",
+      "fresh_native_replay",
+      "generated_profile",
+      "independent_review"
+    ],
+    "currentStatus": "CONSUMER_EVIDENCE_CURRENT_REPLAY_PENDING",
+    "projectionStatus": "PENDING",
+    "nativeReplay": {
+      "darwin-arm64": "PENDING",
+      "linux-amd64": "PENDING"
+    },
+    "profileStatus": "CURRENT",
+    "independentReviewStatus": "PENDING",
+    "syntheticReceipts": "FORBIDDEN",
+    "successorOnDrift": "REQUIRED"
+  },
+  "implementationBoundary": {
+    "notGateClosure": true,
+    "gateStatus": "ALL_GATES_OPEN",
+    "productionDatabaseWrites": false,
+    "httpP2ProviderExternalEffects": false,
+    "loopbackFixtureAllowed": true,
+    "deployment": false,
+    "publication": false,
+    "historyRewrite": false
+  }
+}

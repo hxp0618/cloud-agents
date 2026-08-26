@@ -1,0 +1,315 @@
+{
+  "$schema": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v1/profile.schema.json",
+  "formatVersion": "cloud-agents-g-contract-external-consumer-registry/v1",
+  "registryId": "cloud-agents/g-contract-external-consumer",
+  "profileId": "g-contract-external-consumer/v1",
+  "status": "FRESH_CONSUMER_EVIDENCE_CURRENT_REPLAY_PENDING",
+  "authorization": {
+    "path": "docs/plan/p1/g-contract-current-source-external-consumer-successor-authorization-20260826.md",
+    "gitBlob": "686f6db15e0e795b1e751972cc519ca2d6a60372",
+    "sha256": "sha256:960964f784c383bda1dcda67452c8c844888f091e91cf2d2e0de71acba29fb55",
+    "sizeBytes": 4688,
+    "mode": "100644"
+  },
+  "predecessorFence": {
+    "decisionId": "D-053",
+    "terminalCommit": "4f71e38205fc25b3b164a24f13141644bd378cf7",
+    "terminalTree": "13e999863a1c60538b6601b67c6d75822a9f8384",
+    "mutation": "forbidden",
+    "supersedesMode": "VERSIONED_SUCCESSOR_ONLY",
+    "files": [
+      {
+        "path": "contracts/generation.lock.json",
+        "gitBlob": "243a55c6462c6ab2b341abc8dd98703f05e0c4ba",
+        "sha256": "sha256:efe5ae588655739377d019bd9883f1f40254f1f37e1b0162288264f80dafc2f5",
+        "sizeBytes": 5979,
+        "mode": "100644"
+      },
+      {
+        "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+        "gitBlob": "d2f36405146bb555c58dab4b70f87df82c3854be",
+        "sha256": "sha256:8f19e7ca49c075a475caa4af1a70bc3cfb31e88a8135301071089f9aff4d1c0a",
+        "sizeBytes": 8318,
+        "mode": "100644"
+      },
+      {
+        "path": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md",
+        "gitBlob": "62751d47e1af23ed44cbb13ad69554b0f4974b7d",
+        "sha256": "sha256:e4d3b421c20a86eae2d8eda45fd9e0318a40a343f5531bb54f285cefb6cdefc7",
+        "sizeBytes": 3100,
+        "mode": "100644"
+      },
+      {
+        "path": "docs/plan/p1/g-contract-current-source-superseding-repair-authorization-20260826.md",
+        "gitBlob": "cd2bfbe3b351e4339cd5f18a9aa6faeb21368bf9",
+        "sha256": "sha256:5bd49bab97ac3e838a126e8351e9f5b68d3e959e1416936a35d486a68a800754",
+        "sizeBytes": 3787,
+        "mode": "100644"
+      }
+    ]
+  },
+  "gateCriteria": {
+    "path": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+    "sha256": "sha256:4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994"
+  },
+  "harness": {
+    "path": "scripts/test-platform-sdk-consumers.ts",
+    "sha256": "sha256:f337bb8d905e6a4eb3c6ce9a64d83cb82e21a6cf9aaca1da30ca7f1fd101a86a",
+    "sizeBytes": 33289,
+    "mode": "100644"
+  },
+  "inputBindings": [
+    {
+      "path": "package.json",
+      "sha256": "sha256:dab3565713b3caa303f6748e3fcdad744bba2f64fc2e084ab696db24de50f323",
+      "sizeBytes": 6505,
+      "mode": "100644"
+    },
+    {
+      "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+      "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+      "sizeBytes": 12730,
+      "mode": "100644"
+    },
+    {
+      "path": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
+      "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+      "sizeBytes": 12730,
+      "mode": "100644"
+    },
+    {
+      "path": "contracts/generated/proto/manifest.json",
+      "sha256": "sha256:906b7c6672913beb497bd21917dcfe5e5273732a97026351797f311537cbbcb1",
+      "sizeBytes": 5222,
+      "mode": "100644"
+    },
+    {
+      "path": "contracts/proto-generation.profile.json",
+      "sha256": "sha256:41091415a46ee32d6566fcabd35a501526ced36785bdf01672d8379b2b0e1758",
+      "sizeBytes": 2910,
+      "mode": "100644"
+    },
+    {
+      "path": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
+      "sha256": "sha256:4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994",
+      "sizeBytes": 15977,
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/generate-platform-g-contract-external-consumer.ts",
+      "sha256": "sha256:7e95f0950eba95024c35b52606d648b406a0d70e7a9bac320f61f0efd3e4367c",
+      "sizeBytes": 948,
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/lib/platform-g-contract-external-consumer.ts",
+      "sha256": "sha256:6ce64ed7c22e820200e4c3fa8c64e74c6c56221484f023e2dbf35b428343cf37",
+      "sizeBytes": 31614,
+      "mode": "100644"
+    },
+    {
+      "path": "scripts/lib/platform-g-contract-external-consumer.test.ts",
+      "sha256": "sha256:dc44336eede3602fde10cc208cd8572c47b7a5b95b687a18d56dae1d6b05413d",
+      "sizeBytes": 6188,
+      "mode": "100644"
+    },
+    {
+      "path": "tools/g-contract-external-consumer/v1/source.schema.json",
+      "sha256": "sha256:b51ee015ef99c3192ec25c1cf5bcd6f7ec34be03a6063c95919887c28239bf25",
+      "sizeBytes": 9779,
+      "mode": "100644"
+    },
+    {
+      "path": "tools/g-contract-external-consumer/v1/profile.schema.json",
+      "sha256": "sha256:a86e0e724fb9bc49ab9fe4f8ec4e3bbf59aff4ace6c0b06704c1c0bfe49e3213",
+      "sizeBytes": 16624,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/typescript/package.json",
+      "sha256": "sha256:803badc33a76e6bedfc82d357539f318aff18599e2a8eabf6385d00f489297b9",
+      "sizeBytes": 1821,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/typescript/generated-manifest.json",
+      "sha256": "sha256:106e75fde06b2186b62f1ff88217ff12404e9ea856bd4d950661622eb46b3df4",
+      "sizeBytes": 3278,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/typescript/proto-generated-manifest.json",
+      "sha256": "sha256:2a8e160eb2a476dad278a9febd6db56877ee6f3657de50999482ca4142bff89c",
+      "sizeBytes": 6996,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/go/go.mod",
+      "sha256": "sha256:8b9e28f4db2db796bd69a6d1df5c93ff9f145c621209779b76d2df0a52794063",
+      "sizeBytes": 397,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/go/go.sum",
+      "sha256": "sha256:9a62d7bf49f4e7cf0a358236a8a8508a2545384e762b5699a1a0e5b44001b65b",
+      "sizeBytes": 3462,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/go/generated-manifest.json",
+      "sha256": "sha256:842af35b702287280b3f6cd91c09f13ce4692d457f2d6b30b124ba30a9716fcd",
+      "sizeBytes": 3740,
+      "mode": "100644"
+    },
+    {
+      "path": "sdk/go/proto-generated-manifest.json",
+      "sha256": "sha256:320bcab0cb607ba594eabee5cdf45f556c7c359c330d8922b48ea5729a7aeeb0",
+      "sizeBytes": 7995,
+      "mode": "100644"
+    }
+  ],
+  "evidence": {
+    "path": "tools/g-contract-external-consumer/v1/evidence/consumer.json",
+    "sha256": "sha256:6b5b5669577aee59aa4bb775c585a04f01aae631bf7384d83727ca125a0a9344",
+    "sizeBytes": 4494
+  },
+  "evidenceFormatVersion": "cloud-agents-platform-sdk-consumer-evidence/v1",
+  "toolchain": {
+    "bun": "1.4.0",
+    "go": "go version go1.27.0 darwin/arm64",
+    "typescript": "5.7.3",
+    "goFlags": "-mod=readonly",
+    "goWork": "off"
+  },
+  "fixturePolicy": {
+    "transport": "connect",
+    "method": "POST",
+    "path": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+    "requestContentType": "application/proto",
+    "responseContentType": "application/proto",
+    "loopbackOnly": true,
+    "requiredCallCount": 1
+  },
+  "freshEvidenceProcess": {
+    "version": "v1",
+    "orderedStages": [
+      "repair",
+      "focused_checks",
+      "fresh_consumer_evidence",
+      "freeze_source_and_inputs",
+      "fresh_projection",
+      "fresh_native_replay",
+      "generated_profile",
+      "independent_review"
+    ],
+    "currentStatus": "CONSUMER_EVIDENCE_CURRENT_REPLAY_PENDING",
+    "projectionStatus": "PENDING",
+    "nativeReplay": {
+      "darwin-arm64": "PENDING",
+      "linux-amd64": "PENDING"
+    },
+    "profileStatus": "CURRENT",
+    "independentReviewStatus": "PENDING",
+    "syntheticReceipts": "FORBIDDEN",
+    "successorOnDrift": "REQUIRED"
+  },
+  "consumers": {
+    "typescript": {
+      "package": "@synara/cloud-agent-platform-sdk",
+      "version": "0.0.0-a3.2",
+      "toolchain": "bun@1.4.0;typescript@5.7.3",
+      "artifactPath": "typescript-pack/synara-cloud-agent-platform-sdk-0.0.0-a3.2.tgz",
+      "artifactSha256": "sha256:8266b703c4691f41e558aeefd4b2e765e072c18d5a663b358fdddb0f1a5b65bc",
+      "integrity": "sha512-caQ0/HRjDawA5Re/IrimB5cziC9VX5soPOikx77vFSgZk9jcQUoCZ1/Oawg3ZgubCuf5vgt0XWD53+9m7t8KyA==",
+      "dependencies": {
+        "@bufbuild/protobuf": "2.14.0",
+        "@connectrpc/connect": "2.1.2"
+      },
+      "dependencyArtifacts": {
+        "@bufbuild/protobuf": {
+          "version": "2.14.0",
+          "artifactPath": "npm-registry-tar/@bufbuild/protobuf/bufbuild-protobuf-2.14.0.tgz",
+          "sha256": "sha256:1bc7e367adfeea4eab25450feb6169ce04ac0c766637d0cb923006c64fc1ec07",
+          "integrity": "sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w=="
+        },
+        "@connectrpc/connect": {
+          "version": "2.1.2",
+          "artifactPath": "npm-registry-tar/@connectrpc/connect/connectrpc-connect-2.1.2.tgz",
+          "sha256": "sha256:94a5943c300533207465abe3883de6089949b8e3ce1eb1fa92f4e3ea8cefe7cc",
+          "integrity": "sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA=="
+        },
+        "@types/node": {
+          "version": "24.10.13",
+          "artifactPath": "npm-registry-tar/@types/node/types-node-24.10.13.tgz",
+          "sha256": "sha256:77cd4450194b91ad30bd3414bc543c623dceafa4627900f8dd3733cdcde9b794",
+          "integrity": "sha512-bgD7mMX+5ZYdEcC+RakRCmgGPhsKwRNjL71Qhu7YLJv8y1S9JtjJBSS3QOmMTVqIKogf7WhPeYQm59S8hwgA+g=="
+        },
+        "undici-types": {
+          "version": "7.16.0",
+          "artifactPath": "npm-registry-tar/undici-types/undici-types-7.16.0.tgz",
+          "sha256": "sha256:53b5e2fa12a4118a4838e80b1cc6e1d8cd30d6f7e5bea69640e5386f6eb3f8af",
+          "integrity": "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="
+        },
+        "typescript": {
+          "version": "5.7.3",
+          "artifactPath": "npm-registry-tar/typescript/typescript-5.7.3.tgz",
+          "sha256": "sha256:80cfca1254bab8e81d639178e42d6406d856fba6e34cad60d1ab50ee6e5f7ebb",
+          "integrity": "sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw=="
+        }
+      },
+      "lockArtifactUrl": "http://127.0.0.1:<ephemeral-port>/typescript-pack/synara-cloud-agent-platform-sdk-0.0.0-a3.2.tgz",
+      "lockIntegrity": "sha512-caQ0/HRjDawA5Re/IrimB5cziC9VX5soPOikx77vFSgZk9jcQUoCZ1/Oawg3ZgubCuf5vgt0XWD53+9m7t8KyA==",
+      "fixture": {
+        "transport": "connect",
+        "method": "POST",
+        "path": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+        "requestContentType": "application/proto",
+        "responseContentType": "application/proto",
+        "loopback": true,
+        "callCount": 1
+      },
+      "loopbackCallCount": 1
+    },
+    "go": {
+      "module": "github.com/hxp0618/cloud-agents/sdk/go",
+      "version": "v0.0.0-a3.2",
+      "toolchain": "go1.27.0",
+      "moduleProxyPath": "go-proxy/github.com/hxp0618/cloud-agents/sdk/go/@v/v0.0.0-a3.2.zip",
+      "moduleZipSha256": "sha256:d249960e73bdef5386510a9ad9200a2d8457f8d296baca5e0c4247f02539acff",
+      "goModSha256": "sha256:8b9e28f4db2db796bd69a6d1df5c93ff9f145c621209779b76d2df0a52794063",
+      "moduleSum": "h1:He7K3jKwL1e7UrI3mYt0y0sG4ywd8nKPX7/i4PtC88k=",
+      "goModSum": "h1:qLQE6Q2bV2hZM0c7CZDZUx78EuODm+Vzl90AII5zYJs=",
+      "goSumSha256": "sha256:e70ce83b86cd09a35cb78da54e074af63dab6b5287fb44caf71961cd34a27a44",
+      "goFlags": "-mod=readonly",
+      "goWork": "off",
+      "goproxy": "http://127.0.0.1:<ephemeral-port>/go-proxy",
+      "fixture": {
+        "transport": "connect",
+        "method": "POST",
+        "path": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+        "requestContentType": "application/proto",
+        "responseContentType": "application/proto",
+        "loopback": true,
+        "callCount": 1
+      },
+      "loopbackCallCount": 1
+    }
+  },
+  "criteria": [
+    "exact-pinned-external-consumer",
+    "digest-change-invalidation"
+  ],
+  "implementationBoundary": {
+    "notGateClosure": true,
+    "gateStatus": "ALL_GATES_OPEN",
+    "productionDatabaseWrites": false,
+    "httpP2ProviderExternalEffects": false,
+    "loopbackFixtureAllowed": true,
+    "deployment": false,
+    "publication": false,
+    "historyRewrite": false
+  },
+  "sourceDigest": "sha256:c494cbd284fcd47eae9b772ea9aca0f091a0a16e37fddded9c2b744d15e2824d",
+  "profileDigest": "sha256:c0c5e3237f1490d9799121be2d349d8018e9e5e5cb97b0b820152a44ea80e003",
+  "registryDigest": "sha256:8c3b7edf67404b59f11ee61b958cc3782f93297089b0ab0fa86e87f5e192d67d"
+}

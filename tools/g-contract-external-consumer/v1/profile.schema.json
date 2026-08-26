@@ -1,0 +1,521 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v1/profile.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "registryId",
+    "profileId",
+    "status",
+    "authorization",
+    "predecessorFence",
+    "gateCriteria",
+    "harness",
+    "inputBindings",
+    "evidence",
+    "evidenceFormatVersion",
+    "toolchain",
+    "fixturePolicy",
+    "freshEvidenceProcess",
+    "consumers",
+    "criteria",
+    "implementationBoundary",
+    "sourceDigest",
+    "profileDigest",
+    "registryDigest"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v1/profile.schema.json"
+    },
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-registry/v1" },
+    "registryId": { "const": "cloud-agents/g-contract-external-consumer" },
+    "profileId": { "const": "g-contract-external-consumer/v1" },
+    "status": { "const": "FRESH_CONSUMER_EVIDENCE_CURRENT_REPLAY_PENDING" },
+    "authorization": { "$ref": "source.schema.json#/properties/authorization" },
+    "predecessorFence": { "$ref": "source.schema.json#/properties/predecessorFence" },
+    "gateCriteria": { "$ref": "source.schema.json#/properties/gateCriteria" },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode"],
+      "properties": {
+        "path": { "const": "scripts/test-platform-sdk-consumers.ts" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "mode": { "const": "100644" }
+      }
+    },
+    "inputBindings": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            { "type": "object", "properties": { "path": { "const": "package.json" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "contracts/generated/proto/cloud-agents-v1alpha1.binpb" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "contracts/generated/proto/manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "contracts/proto-generation.profile.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/generate-platform-g-contract-external-consumer.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer.test.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v1/source.schema.json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v1/profile.schema.json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/package.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/proto-generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            { "type": "object", "properties": { "path": { "const": "sdk/go/go.mod" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            { "type": "object", "properties": { "path": { "const": "sdk/go/go.sum" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/go/generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/fileRecord" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/go/proto-generated-manifest.json" } }
+            }
+          ]
+        }
+      ],
+      "items": { "$ref": "#/$defs/fileRecord" }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "const": "tools/g-contract-external-consumer/v1/evidence/consumer.json" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "evidenceFormatVersion": { "const": "cloud-agents-platform-sdk-consumer-evidence/v1" },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bun", "go", "typescript", "goFlags", "goWork"],
+      "properties": {
+        "bun": { "const": "1.4.0" },
+        "go": { "const": "go version go1.27.0 darwin/arm64" },
+        "typescript": { "const": "5.7.3" },
+        "goFlags": { "const": "-mod=readonly" },
+        "goWork": { "const": "off" }
+      }
+    },
+    "fixturePolicy": { "$ref": "source.schema.json#/properties/fixturePolicy" },
+    "freshEvidenceProcess": { "$ref": "source.schema.json#/properties/freshEvidenceProcess" },
+    "consumers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["typescript", "go"],
+      "properties": {
+        "typescript": { "$ref": "#/$defs/typescript" },
+        "go": { "$ref": "#/$defs/go" }
+      }
+    },
+    "criteria": { "const": ["exact-pinned-external-consumer", "digest-change-invalidation"] },
+    "implementationBoundary": { "$ref": "source.schema.json#/$defs/boundary" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "profileDigest": { "$ref": "#/$defs/digest" },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "mode"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?:package\\.json|(?:sdk|contracts|docs|scripts|tools)/[A-Za-z0-9._/-]+)$"
+        },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "mode": { "const": "100644" }
+      }
+    },
+    "npmDependencyArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "artifactPath", "sha256", "integrity"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "artifactPath": {
+          "type": "string",
+          "pattern": "^npm-registry-tar/(?:@[A-Za-z0-9._-]+/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)/[A-Za-z0-9._-]+\\.tgz$"
+        },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "integrity": { "type": "string", "pattern": "^sha512-[A-Za-z0-9+/]{86}==$" }
+      }
+    },
+    "npmDependencyArtifacts": {
+      "type": "object",
+      "properties": {
+        "bufbuild": {
+          "allOf": [
+            { "$ref": "#/$defs/npmDependencyArtifact" },
+            {
+              "type": "object",
+              "properties": {
+                "version": { "const": "2.14.0" },
+                "artifactPath": {
+                  "const": "npm-registry-tar/@bufbuild/protobuf/bufbuild-protobuf-2.14.0.tgz"
+                }
+              }
+            }
+          ]
+        },
+        "connect": {
+          "allOf": [
+            { "$ref": "#/$defs/npmDependencyArtifact" },
+            {
+              "type": "object",
+              "properties": {
+                "version": { "const": "2.1.2" },
+                "artifactPath": {
+                  "const": "npm-registry-tar/@connectrpc/connect/connectrpc-connect-2.1.2.tgz"
+                }
+              }
+            }
+          ]
+        },
+        "node": {
+          "allOf": [
+            { "$ref": "#/$defs/npmDependencyArtifact" },
+            {
+              "type": "object",
+              "properties": {
+                "version": { "const": "24.10.13" },
+                "artifactPath": {
+                  "const": "npm-registry-tar/@types/node/types-node-24.10.13.tgz"
+                }
+              }
+            }
+          ]
+        },
+        "undici": {
+          "allOf": [
+            { "$ref": "#/$defs/npmDependencyArtifact" },
+            {
+              "type": "object",
+              "properties": {
+                "version": { "const": "7.16.0" },
+                "artifactPath": {
+                  "const": "npm-registry-tar/undici-types/undici-types-7.16.0.tgz"
+                }
+              }
+            }
+          ]
+        },
+        "typescript": {
+          "allOf": [
+            { "$ref": "#/$defs/npmDependencyArtifact" },
+            {
+              "type": "object",
+              "properties": {
+                "version": { "const": "5.7.3" },
+                "artifactPath": {
+                  "const": "npm-registry-tar/typescript/typescript-5.7.3.tgz"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "typescript": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "version",
+        "toolchain",
+        "artifactPath",
+        "artifactSha256",
+        "integrity",
+        "lockArtifactUrl",
+        "lockIntegrity",
+        "dependencies",
+        "dependencyArtifacts",
+        "fixture",
+        "loopbackCallCount"
+      ],
+      "properties": {
+        "package": { "const": "@synara/cloud-agent-platform-sdk" },
+        "version": { "const": "0.0.0-a3.2" },
+        "toolchain": { "const": "bun@1.4.0;typescript@5.7.3" },
+        "artifactPath": {
+          "const": "typescript-pack/synara-cloud-agent-platform-sdk-0.0.0-a3.2.tgz"
+        },
+        "artifactSha256": { "$ref": "#/$defs/digest" },
+        "integrity": { "type": "string", "pattern": "^sha512-[A-Za-z0-9+/]{86}==$" },
+        "lockArtifactUrl": {
+          "const": "http://127.0.0.1:<ephemeral-port>/typescript-pack/synara-cloud-agent-platform-sdk-0.0.0-a3.2.tgz"
+        },
+        "lockIntegrity": { "type": "string", "pattern": "^sha512-[A-Za-z0-9+/]{86}==$" },
+        "dependencies": { "type": "object", "additionalProperties": { "type": "string" } },
+        "dependencyArtifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "@bufbuild/protobuf",
+            "@connectrpc/connect",
+            "@types/node",
+            "undici-types",
+            "typescript"
+          ],
+          "properties": {
+            "@bufbuild/protobuf": {
+              "$ref": "#/$defs/npmDependencyArtifacts/properties/bufbuild"
+            },
+            "@connectrpc/connect": {
+              "$ref": "#/$defs/npmDependencyArtifacts/properties/connect"
+            },
+            "@types/node": { "$ref": "#/$defs/npmDependencyArtifacts/properties/node" },
+            "undici-types": { "$ref": "#/$defs/npmDependencyArtifacts/properties/undici" },
+            "typescript": {
+              "$ref": "#/$defs/npmDependencyArtifacts/properties/typescript"
+            }
+          }
+        },
+        "fixture": { "$ref": "#/$defs/typescriptFixture" },
+        "loopbackCallCount": { "const": 1 }
+      }
+    },
+    "loopbackUrl": {
+      "type": "string",
+      "pattern": "^http://127\\.0\\.0\\.1:<ephemeral-port>(?:/.*)?$"
+    },
+    "typescriptFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "method",
+        "path",
+        "requestContentType",
+        "responseContentType",
+        "loopback",
+        "callCount"
+      ],
+      "properties": {
+        "transport": { "const": "connect" },
+        "method": { "const": "POST" },
+        "path": { "const": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate" },
+        "requestContentType": { "const": "application/proto" },
+        "responseContentType": { "const": "application/proto" },
+        "loopback": { "const": true },
+        "callCount": { "const": 1 }
+      }
+    },
+    "goFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "method",
+        "path",
+        "requestContentType",
+        "responseContentType",
+        "loopback",
+        "callCount"
+      ],
+      "properties": {
+        "transport": { "const": "connect" },
+        "method": { "const": "POST" },
+        "path": { "const": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate" },
+        "requestContentType": { "const": "application/proto" },
+        "responseContentType": { "const": "application/proto" },
+        "loopback": { "const": true },
+        "callCount": { "const": 1 }
+      }
+    },
+    "go": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module",
+        "version",
+        "toolchain",
+        "moduleProxyPath",
+        "moduleZipSha256",
+        "goModSha256",
+        "moduleSum",
+        "goModSum",
+        "goSumSha256",
+        "goFlags",
+        "goWork",
+        "goproxy",
+        "fixture",
+        "loopbackCallCount"
+      ],
+      "properties": {
+        "module": { "const": "github.com/hxp0618/cloud-agents/sdk/go" },
+        "version": { "const": "v0.0.0-a3.2" },
+        "toolchain": { "const": "go1.27.0" },
+        "moduleProxyPath": {
+          "const": "go-proxy/github.com/hxp0618/cloud-agents/sdk/go/@v/v0.0.0-a3.2.zip"
+        },
+        "moduleZipSha256": { "$ref": "#/$defs/digest" },
+        "goModSha256": { "$ref": "#/$defs/digest" },
+        "moduleSum": { "type": "string", "minLength": 1 },
+        "goModSum": { "type": "string", "minLength": 1 },
+        "goSumSha256": { "$ref": "#/$defs/digest" },
+        "goFlags": { "const": "-mod=readonly" },
+        "goWork": { "const": "off" },
+        "goproxy": { "$ref": "#/$defs/loopbackUrl" },
+        "fixture": { "$ref": "#/$defs/goFixture" },
+        "loopbackCallCount": { "const": 1 }
+      }
+    }
+  }
+}

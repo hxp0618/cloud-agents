@@ -1,36 +1,192 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const toolchainRoot = process.env.CLOUD_AGENTS_A24_TOOLCHAIN;
 const bun = toolchainRoot ? join(toolchainRoot, "bun") : "bun";
 const go = toolchainRoot ? join(toolchainRoot, "go") : "go";
-const version = "v0.0.0-a3.2";
+const packageVersion = "0.0.0-a3.2";
+const version = `v${packageVersion}`;
 const modulePath = "github.com/hxp0618/cloud-agents/sdk/go";
 const sdkPackage = "@synara/cloud-agent-platform-sdk";
+const npmPackages = [
+  {
+    name: "@bufbuild/protobuf",
+    version: "2.14.0",
+    packageRoot: resolve(repositoryRoot, "node_modules/@bufbuild/protobuf"),
+    filename: "bufbuild-protobuf-2.14.0.tgz",
+  },
+  {
+    name: "@connectrpc/connect",
+    version: "2.1.2",
+    packageRoot: findBunPackage("@connectrpc+connect@2.1.2", "@connectrpc/connect"),
+    filename: "connectrpc-connect-2.1.2.tgz",
+  },
+  {
+    name: "@types/node",
+    version: "24.10.13",
+    packageRoot: resolve(repositoryRoot, "node_modules/@types/node"),
+    filename: "types-node-24.10.13.tgz",
+  },
+  {
+    name: "undici-types",
+    version: "7.16.0",
+    packageRoot: findBunPackage("undici-types@7.16.0", "undici-types"),
+    filename: "undici-types-7.16.0.tgz",
+  },
+  {
+    name: "typescript",
+    version: "5.7.3",
+    packageRoot: resolve(
+      repositoryRoot,
+      "node_modules/.bun/typescript@5.7.3/node_modules/typescript",
+    ),
+    filename: "typescript-5.7.3.tgz",
+  },
+] as const;
 
-const temporaryRoot = mkdtempSync(join(tmpdir(), "cloud-agents-a24-sdk-consumer-"));
-try {
-  const typescriptTarball = packTypeScriptSDK(temporaryRoot);
-  runFreshTypeScriptConsumer(temporaryRoot, typescriptTarball);
-  const goProxy = buildGoModuleProxy(temporaryRoot);
-  runFreshGoConsumer(temporaryRoot, goProxy);
-  process.stdout.write("platform-sdk-consumers: fresh TypeScript and Go consumers passed\n");
-} finally {
-  rmSync(temporaryRoot, { recursive: true, force: true });
+type Artifact = Readonly<{
+  path: string;
+  sha256: string;
+  integrity: string;
+}>;
+
+type ModuleProxy = Readonly<{
+  zip: Artifact;
+  goModSha256: string;
+}>;
+
+type NpmDependencyArtifact = Readonly<{
+  version: string;
+  artifactPath: string;
+  sha256: string;
+  integrity: string;
+}>;
+type NpmRegistry = Readonly<Record<string, NpmDependencyArtifact>>;
+
+type ConsumerEvidence = Readonly<{
+  formatVersion: "cloud-agents-platform-sdk-consumer-evidence/v1";
+  harness: Readonly<{
+    path: string;
+    sha256: string;
+    sizeBytes: number;
+    mode: "100644";
+  }>;
+  toolchain: Readonly<{
+    bun: string;
+    go: string;
+    typescript: string;
+    goFlags: "-mod=readonly";
+    goWork: "off";
+  }>;
+  typescript: Readonly<Record<string, unknown>>;
+  go: Readonly<Record<string, unknown>>;
+}>;
+
+type FixtureServer = Readonly<{
+  baseUrl: string;
+  requestLogPath: string;
+  stop: () => Promise<void>;
+}>;
+
+async function main(): Promise<void> {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "cloud-agents-a24-sdk-consumer-"));
+  let fixtureServer: FixtureServer | undefined;
+  try {
+    const typescriptArtifact = packTypeScriptSDK(temporaryRoot);
+    const npmRegistry = prepareNpmRegistry(temporaryRoot);
+    const goProxy = buildGoModuleProxy(temporaryRoot);
+    fixtureServer = await startArtifactServer(temporaryRoot);
+    const typescript = runFreshTypeScriptConsumer(
+      temporaryRoot,
+      typescriptArtifact,
+      npmRegistry,
+      fixtureServer.baseUrl,
+      fixtureServer.requestLogPath,
+    );
+    const goEvidence = runFreshGoConsumer(
+      temporaryRoot,
+      goProxy,
+      fixtureServer.baseUrl,
+      fixtureServer.requestLogPath,
+    );
+    const evidence: ConsumerEvidence = {
+      formatVersion: "cloud-agents-platform-sdk-consumer-evidence/v1",
+      harness: {
+        path: "scripts/test-platform-sdk-consumers.ts",
+        sha256: sha256File(resolve(import.meta.dirname, "test-platform-sdk-consumers.ts")),
+        sizeBytes: readFileSync(resolve(import.meta.dirname, "test-platform-sdk-consumers.ts"))
+          .byteLength,
+        mode: "100644",
+      },
+      toolchain: {
+        bun: run(bun, ["--version"], repositoryRoot).trim(),
+        go: run(go, ["version"], repositoryRoot).trim(),
+        typescript: "5.7.3",
+        goFlags: "-mod=readonly",
+        goWork: "off",
+      },
+      typescript,
+      go: goEvidence,
+    };
+    const evidenceOutput = process.env.CLOUD_AGENTS_SDK_CONSUMER_EVIDENCE;
+    if (evidenceOutput) writeEvidence(evidenceOutput, evidence);
+    process.stdout.write("platform-sdk-consumers: fresh TypeScript and Go consumers passed\n");
+    process.stdout.write(
+      `platform-sdk-consumers: typescriptArtifactSha256=${typescriptArtifact.sha256}\n`,
+    );
+    process.stdout.write(
+      `platform-sdk-consumers: typescriptArtifactIntegrity=${typescriptArtifact.integrity}\n`,
+    );
+    process.stdout.write(`platform-sdk-consumers: goModuleZipSha256=${goProxy.zip.sha256}\n`);
+    process.stdout.write(`platform-sdk-consumers: goModuleGoModSha256=${goProxy.goModSha256}\n`);
+    process.stdout.write(`platform-sdk-consumers: goSumSha256=${goEvidence.goSumSha256}\n`);
+  } finally {
+    await fixtureServer?.stop();
+    try {
+      makeWritableForCleanup(temporaryRoot);
+      rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      process.stderr.write(
+        `platform-sdk-consumers: temporary cleanup deferred: ${String(error)}\n`,
+      );
+    }
+  }
 }
 
-function packTypeScriptSDK(root: string): string {
+function makeWritableForCleanup(path: string): void {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return;
+  chmodSync(path, stat.isDirectory() ? 0o700 : 0o600);
+  if (stat.isDirectory()) {
+    for (const child of readdirSync(path)) makeWritableForCleanup(join(path, child));
+  }
+}
+
+void main().catch((error: unknown) => {
+  process.stderr.write(
+    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
+  process.exitCode = 1;
+});
+
+function packTypeScriptSDK(root: string): Artifact {
   run(bun, ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
   const output = join(root, "typescript-pack");
   mkdirSync(output, { recursive: true });
@@ -47,14 +203,92 @@ function packTypeScriptSDK(root: string): string {
   if (typeof filename !== "string" || filename.length === 0) {
     throw new Error("TypeScript SDK pack omitted its filename.");
   }
-  const tarball = join(output, filename);
-  if (!existsSync(tarball)) throw new Error(`TypeScript SDK tarball is missing: ${tarball}`);
-  return tarball;
+  const path = join(output, filename);
+  if (!existsSync(path)) throw new Error(`TypeScript SDK tarball is missing: ${path}`);
+  return artifact(path);
 }
 
-function runFreshTypeScriptConsumer(root: string, tarball: string): void {
+function prepareNpmRegistry(root: string): NpmRegistry {
+  const registry = join(root, "npm-registry");
+  mkdirSync(registry, { recursive: true });
+  const artifacts: Record<string, NpmDependencyArtifact> = {};
+  for (const { name, version, packageRoot, filename: expectedFilename } of npmPackages) {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    if (manifest.name !== name || manifest.version !== version)
+      throw new Error(`Offline npm dependency drifted before packing: ${name}`);
+    const output = join(registry, `${name.replace("/", "__")}.pack`);
+    mkdirSync(output, { recursive: true });
+    const packed = JSON.parse(
+      run(
+        "npm",
+        ["pack", "--ignore-scripts", "--json", "--pack-destination", output, packageRoot],
+        repositoryRoot,
+      ),
+    ) as Array<Record<string, unknown>>;
+    const filename = packed[0]?.filename;
+    if (filename !== expectedFilename)
+      throw new Error(`Offline npm dependency filename drifted: ${name}`);
+    const packedArtifact = artifact(join(output, filename));
+    artifacts[name] = {
+      version,
+      artifactPath: `npm-registry-tar/${name}/${filename}`,
+      sha256: packedArtifact.sha256,
+      integrity: packedArtifact.integrity,
+    };
+    writeFileSync(
+      join(registry, `${name.replace("/", "__")}.json`),
+      JSON.stringify(
+        {
+          name,
+          version,
+          filename,
+          integrity: packedArtifact.integrity,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+  return artifacts;
+}
+
+function findBunPackage(prefix: string, relativePackage: string): string {
+  const entry = readdirSync(resolve(repositoryRoot, "node_modules/.bun")).find((name) =>
+    name.startsWith(prefix),
+  );
+  if (!entry) throw new Error(`Bun cache package not found: ${prefix}`);
+  return resolve(repositoryRoot, "node_modules/.bun", entry, "node_modules", relativePackage);
+}
+
+function npmTarballUrl(root: string, baseUrl: string, name: string): string {
+  const metadata = JSON.parse(
+    readFileSync(join(root, "npm-registry", `${name.replace("/", "__")}.json`), "utf8"),
+  ) as { filename: string };
+  return `${baseUrl}/npm-registry-tar/${name}/${metadata.filename}`;
+}
+
+function npmTarballPath(root: string, name: string): string {
+  const metadata = JSON.parse(
+    readFileSync(join(root, "npm-registry", `${name.replace("/", "__")}.json`), "utf8"),
+  ) as { filename: string };
+  return `/npm-registry-tar/${name}/${metadata.filename}`;
+}
+
+function runFreshTypeScriptConsumer(
+  root: string,
+  sdk: Artifact,
+  npmRegistry: NpmRegistry,
+  baseUrl: string,
+  requestLogPath: string,
+): Readonly<Record<string, unknown>> {
   const consumer = join(root, "typescript-consumer");
   mkdirSync(consumer, { recursive: true });
+  const filename = sdk.path.split("/").pop();
+  if (!filename) throw new Error("TypeScript artifact filename is empty.");
+  const tarballUrl = `${baseUrl}/typescript-pack/${encodeURIComponent(filename)}`;
   writeFileSync(
     join(consumer, "package.json"),
     `${JSON.stringify(
@@ -64,10 +298,15 @@ function runFreshTypeScriptConsumer(root: string, tarball: string): void {
         type: "module",
         scripts: { check: "tsc --noEmit" },
         dependencies: {
-          "@connectrpc/connect": "2.1.2",
-          [sdkPackage]: `file:${tarball}`,
+          "@bufbuild/protobuf": npmTarballUrl(root, baseUrl, "@bufbuild/protobuf"),
+          "@connectrpc/connect": npmTarballUrl(root, baseUrl, "@connectrpc/connect"),
+          [sdkPackage]: tarballUrl,
         },
-        devDependencies: { typescript: "5.7.3" },
+        devDependencies: {
+          "@types/node": npmTarballUrl(root, baseUrl, "@types/node"),
+          "undici-types": npmTarballUrl(root, baseUrl, "undici-types"),
+          typescript: npmTarballUrl(root, baseUrl, "typescript"),
+        },
       },
       null,
       2,
@@ -75,47 +314,60 @@ function runFreshTypeScriptConsumer(root: string, tarball: string): void {
   );
   writeFileSync(
     join(consumer, "main.ts"),
-    `import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import { WorkerExecutionService } from "${sdkPackage}/proto";
+    `import { createServer } from "node:http";
+import { createClient } from "@connectrpc/connect";
+import { createFetchClient } from "@connectrpc/connect/protocol";
+import { createTransport } from "@connectrpc/connect/protocol-connect";
+import { create, toBinary } from "@bufbuild/protobuf";
+import { NegotiationResponseSchema, WorkerExecutionService } from "${sdkPackage}/proto";
 
-const controller = new AbortController();
-controller.abort();
-let transportCalls = 0;
-const transport = {
-  unary() {
-    transportCalls += 1;
-    return Promise.reject(new ConnectError("fixture cancellation", Code.Canceled));
-  },
-  stream() {
-    throw new Error("fresh consumer attempted a streaming side effect");
-  },
-};
-const client = createClient(WorkerExecutionService, transport);
+let requests = 0;
+const fixture = createServer(async (request, response) => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  if (
+    request.method !== "POST" ||
+    request.url !== "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate" ||
+    request.headers["content-type"] !== "application/proto"
+  ) {
+    response.statusCode = 404;
+    response.end();
+    return;
+  }
+  if (Buffer.concat(chunks).byteLength !== 0) throw new Error("fixture received a non-empty negotiation request");
+  requests += 1;
+  response.statusCode = 200;
+  response.setHeader("Content-Type", "application/proto");
+  response.end(Buffer.from(toBinary(NegotiationResponseSchema, create(NegotiationResponseSchema))));
+});
+
+await new Promise<void>((resolve, reject) => {
+  fixture.once("error", reject);
+  fixture.listen(0, "127.0.0.1", () => resolve());
+});
 try {
-  await client.negotiate({}, { signal: controller.signal });
-  throw new Error("aborted generated call unexpectedly succeeded");
-} catch (error) {
-  if (!(error instanceof ConnectError) || error.code !== Code.Canceled) throw error;
+  const address = fixture.address();
+  if (!address || typeof address === "string") throw new Error("fixture did not bind a loopback port");
+  const transport = createTransport({
+    baseUrl: "http://127.0.0.1:" + address.port,
+    httpClient: createFetchClient(fetch),
+    useBinaryFormat: true,
+    interceptors: [],
+    acceptCompression: [],
+    sendCompression: null,
+    compressMinBytes: 1024,
+    readMaxBytes: 1024 * 1024,
+    writeMaxBytes: 1024 * 1024,
+  });
+  const client = createClient(WorkerExecutionService, transport);
+  await client.negotiate({});
+  if (requests !== 1) throw new Error("fresh TypeScript consumer made " + requests + " loopback calls");
+  console.log("fresh-typescript-consumer-ok");
+} finally {
+  await new Promise<void>((resolve) => fixture.close(() => resolve()));
 }
-if (transportCalls !== 1) throw new Error("fresh consumer did not exercise the generated transport exactly once");
-console.log("fresh-typescript-consumer-ok");
 `,
   );
-  run(bun, ["install", "--no-progress"], consumer);
-  const installedManifest = join(consumer, "node_modules", sdkPackage, "package.json");
-  const manifest = JSON.parse(readFileSync(installedManifest, "utf8")) as Record<string, unknown>;
-  if (manifest.name !== sdkPackage || manifest.version !== "0.0.0-a3.2") {
-    throw new Error("Fresh TypeScript consumer did not install the exact SDK package.");
-  }
-  for (const section of ["dependencies", "devDependencies", "peerDependencies"] as const) {
-    const values = manifest[section];
-    if (!values || typeof values !== "object") continue;
-    for (const [name, specifier] of Object.entries(values)) {
-      if (typeof specifier === "string" && /^(?:workspace:|file:|git(?:\+|$))/u.test(specifier)) {
-        throw new Error(`Packed TypeScript SDK contains a local dependency: ${name}=${specifier}`);
-      }
-    }
-  }
   writeFileSync(
     join(consumer, "tsconfig.json"),
     `${JSON.stringify(
@@ -134,32 +386,186 @@ console.log("fresh-typescript-consumer-ok");
       2,
     )}\n`,
   );
+  const bunCache = join(root, "bun-cache");
+  mkdirSync(bunCache, { recursive: true });
+  try {
+    run(
+      bun,
+      [
+        "install",
+        "--no-progress",
+        "--ignore-scripts",
+        `--cache-dir=${bunCache}`,
+        `--registry=${baseUrl}/npm-registry/`,
+      ],
+      consumer,
+      undefined,
+      {
+        npm_config_registry: `${baseUrl}/npm-registry/`,
+        BUN_CONFIG_REGISTRY: `${baseUrl}/npm-registry/`,
+        NO_PROXY: "127.0.0.1,localhost",
+        no_proxy: "127.0.0.1,localhost",
+      },
+    );
+  } catch (cause) {
+    throw new Error(
+      `${String(cause)}\nfixture request log:\n${readFileSync(requestLogPath, "utf8")}`,
+    );
+  }
+  const installedManifest = join(consumer, "node_modules", sdkPackage, "package.json");
+  const manifest = JSON.parse(readFileSync(installedManifest, "utf8")) as Record<string, unknown>;
+  if (manifest.name !== sdkPackage || manifest.version !== "0.0.0-a3.2") {
+    throw new Error("Fresh TypeScript consumer did not install the exact SDK package.");
+  }
+  assertExactDependency(manifest, "@bufbuild/protobuf", "2.14.0");
+  assertExactDependency(manifest, "@connectrpc/connect", "2.1.2");
+  assertNoLocalDependency(manifest, "packed TypeScript SDK");
+  const lockPath = join(consumer, "bun.lock");
+  const lockText = readFileSync(lockPath, "utf8");
+  if (!lockText.includes(tarballUrl) || !lockText.includes(sdk.integrity)) {
+    throw new Error("Fresh TypeScript lock did not bind the exact HTTP artifact and integrity.");
+  }
+  assertNoLocalDependencyText(lockText, "TypeScript consumer lock");
+  const lockUrls = lockText.match(/https?:\/\/[^\s",)]+/gu) ?? [];
+  if (lockUrls.some((url) => !url.startsWith("http://127.0.0.1:"))) {
+    throw new Error("TypeScript consumer lock contains a non-loopback URL.");
+  }
+  for (const [name, dependency] of Object.entries(npmRegistry)) {
+    const installedManifest = join(consumer, "node_modules", ...name.split("/"), "package.json");
+    const installed = JSON.parse(readFileSync(installedManifest, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    if (installed.name !== name || installed.version !== dependency.version) {
+      throw new Error(`Fresh TypeScript dependency drifted: ${name}`);
+    }
+    const url = `${baseUrl}/${dependency.artifactPath}`;
+    if (!lockText.includes(url) || !lockText.includes(dependency.integrity)) {
+      throw new Error(`Fresh TypeScript lock did not bind ${name} artifact and integrity.`);
+    }
+  }
+  assertRequestLogged(requestLogPath, `/typescript-pack/${encodeURIComponent(filename)}`);
+  for (const dependency of [
+    "@bufbuild/protobuf",
+    "@connectrpc/connect",
+    "@types/node",
+    "undici-types",
+    "typescript",
+  ])
+    assertRequestLogged(requestLogPath, npmTarballPath(root, dependency));
   run(bun, ["run", "check"], consumer);
   run(bun, ["run", "main.ts"], consumer);
+  return {
+    package: sdkPackage,
+    version: packageVersion,
+    toolchain: "bun@1.4.0;typescript@5.7.3",
+    artifactPath: `typescript-pack/${filename}`,
+    artifactSha256: sdk.sha256,
+    integrity: sdk.integrity,
+    dependencies: {
+      "@bufbuild/protobuf": "2.14.0",
+      "@connectrpc/connect": "2.1.2",
+    },
+    dependencyArtifacts: npmRegistry,
+    lockArtifactUrl: `http://127.0.0.1:<ephemeral-port>/typescript-pack/${encodeURIComponent(filename)}`,
+    lockIntegrity: sdk.integrity,
+    fixture: {
+      transport: "connect",
+      method: "POST",
+      path: "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+      requestContentType: "application/proto",
+      responseContentType: "application/proto",
+      loopback: true,
+      callCount: 1,
+    },
+    loopbackCallCount: 1,
+  };
 }
 
-function buildGoModuleProxy(root: string): string {
+function buildGoModuleProxy(root: string): ModuleProxy {
   const staging = join(root, "go-stage");
   const proxy = join(root, "go-proxy");
   const moduleRoot = join(staging, `${modulePath}@${version}`);
   mkdirSync(staging, { recursive: true });
   cpSync(resolve(repositoryRoot, "sdk/go"), moduleRoot, { recursive: true });
+  normalizeArchiveTimestamps(moduleRoot);
   const moduleVersionRoot = join(proxy, modulePath, "@v");
   mkdirSync(moduleVersionRoot, { recursive: true });
-  const zip = join(moduleVersionRoot, `${version}.zip`);
-  run("zip", ["-q", "-r", zip, `${modulePath}@${version}`], staging);
-  writeFileSync(
-    join(moduleVersionRoot, `${version}.mod`),
-    readFileSync(join(moduleRoot, "go.mod")),
-  );
+  const zipPath = join(moduleVersionRoot, `${version}.zip`);
+  run("zip", ["-X", "-q", "-r", zipPath, `${modulePath}@${version}`], staging);
+  const modPath = join(moduleVersionRoot, `${version}.mod`);
+  writeFileSync(modPath, readFileSync(join(moduleRoot, "go.mod")));
   writeFileSync(
     join(moduleVersionRoot, `${version}.info`),
     `${JSON.stringify({ Version: version, Time: "2026-08-21T00:00:00Z" })}\n`,
   );
-  return proxy;
+  populateGoProxyDependencies(proxy, resolve(repositoryRoot, "sdk/go/go.sum"));
+  return {
+    zip: artifact(zipPath),
+    goModSha256: sha256File(modPath),
+  };
 }
 
-function runFreshGoConsumer(root: string, proxy: string): void {
+function populateGoProxyDependencies(proxy: string, goSumPath: string): void {
+  const moduleCache = join(
+    run(go, ["env", "GOMODCACHE"], repositoryRoot, undefined, {
+      GOWORK: "off",
+      GOTOOLCHAIN: "local",
+    }).trim(),
+    "cache",
+    "download",
+  );
+  const entries = new Set<string>();
+  for (const line of readFileSync(goSumPath, "utf8").split("\n")) {
+    const fields = line.trim().split(/\s+/u);
+    if (fields.length < 2 || !fields[1].startsWith("v")) continue;
+    entries.add(`${fields[0]}@${fields[1].replace(/\/go\.mod$/u, "")}`);
+  }
+  for (const entry of [...entries].sort()) {
+    const separator = entry.lastIndexOf("@");
+    if (separator <= 0) continue;
+    const module = entry.slice(0, separator);
+    const version = entry.slice(separator + 1);
+    if (module === modulePath) continue;
+    const sourceBase = join(moduleCache, escapeModulePath(module), "@v", version);
+    const destinationBase = join(proxy, module, "@v", version);
+    mkdirSync(join(proxy, module, "@v"), { recursive: true });
+    let copied = false;
+    for (const suffix of [".info", ".mod", ".zip"] as const) {
+      const source = `${sourceBase}${suffix}`;
+      if (!existsSync(source)) continue;
+      copyFileSync(source, `${destinationBase}${suffix}`);
+      copied = true;
+    }
+    if (!copied) {
+      throw new Error(`Go module cache is missing a proxy artifact for ${module}@${version}`);
+    }
+  }
+}
+
+function escapeModulePath(value: string): string {
+  return value
+    .replaceAll("!", "!!")
+    .replace(/[A-Z]/gu, (character) => `!${character.toLowerCase()}`);
+}
+
+function normalizeArchiveTimestamps(path: string): void {
+  const fixed = new Date("2000-01-01T00:00:00Z");
+  const stat = lstatSync(path);
+  if (stat.isDirectory()) {
+    for (const child of [...readdirSync(path)].sort()) {
+      normalizeArchiveTimestamps(join(path, child));
+    }
+  }
+  utimesSync(path, fixed, fixed);
+}
+
+function runFreshGoConsumer(
+  root: string,
+  module: ModuleProxy,
+  baseUrl: string,
+  requestLogPath: string,
+): Readonly<Record<string, unknown>> {
   const consumer = join(root, "go-consumer");
   mkdirSync(consumer, { recursive: true });
   run(go, ["mod", "init", "example.com/fresh-cloud-agents-sdk-consumer"], consumer);
@@ -172,39 +578,278 @@ import (
   "context"
   "fmt"
   "net/http"
+  "net/http/httptest"
+  "sync/atomic"
 
   connect "connectrpc.com/connect"
   workerv1alpha1 "${modulePath}/gen/cloudagents/worker/v1alpha1"
   workerv1alpha1connect "${modulePath}/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 )
 
+type fixtureService struct {
+  workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
+  calls atomic.Int32
+}
+
+func (f *fixtureService) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+  if request.Header().Get("Content-Type") != "application/proto" {
+    panic(fmt.Sprintf("unexpected Go request content type: %s", request.Header().Get("Content-Type")))
+  }
+  f.calls.Add(1)
+  response := connect.NewResponse(&workerv1alpha1.NegotiationResponse{})
+  response.Header().Set("Content-Type", "application/proto")
+  return response, nil
+}
+
 func main() {
-  ctx, cancel := context.WithCancel(context.Background())
-  cancel()
-  client := workerv1alpha1connect.NewWorkerExecutionServiceClient(http.DefaultClient, "https://fixture.invalid")
-  _, err := client.Negotiate(ctx, connect.NewRequest(&workerv1alpha1.NegotiationRequest{}))
-  if connect.CodeOf(err) != connect.CodeCanceled {
-    panic(fmt.Sprintf("generated Go consumer cancellation code = %v, err = %v", connect.CodeOf(err), err))
+  service := &fixtureService{}
+  path, handler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(service)
+  mux := http.NewServeMux()
+  mux.Handle(path, handler)
+  fixture := httptest.NewServer(mux)
+  defer fixture.Close()
+  client := workerv1alpha1connect.NewWorkerExecutionServiceClient(http.DefaultClient, fixture.URL)
+  response, err := client.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{}))
+  if err != nil {
+    panic(fmt.Sprintf("generated Go consumer loopback call failed: %v", err))
+  }
+  if response.Header().Get("Content-Type") != "application/proto" {
+    panic(fmt.Sprintf("unexpected Go response content type: %s", response.Header().Get("Content-Type")))
+  }
+  if got := service.calls.Load(); got != 1 {
+    panic(fmt.Sprintf("generated Go consumer made %d loopback calls", got))
   }
   fmt.Println("fresh-go-consumer-ok")
 }
 `,
   );
+  const goModuleCache = join(root, "go-mod-cache");
+  mkdirSync(goModuleCache, { recursive: true });
   const env = {
-    GOPROXY: `file://${proxy},https://proxy.golang.org`,
+    GOPROXY: `${baseUrl}/go-proxy`,
     GOSUMDB: "off",
+    GONOSUMDB: "*",
     GOWORK: "off",
     GOTOOLCHAIN: "local",
-    GOFLAGS: "-mod=mod",
+    GOMODCACHE: goModuleCache,
   };
-  run(go, ["run", "."], consumer, undefined, env);
+  run(go, ["mod", "download", "all"], consumer, undefined, {
+    ...env,
+    GOFLAGS: "-mod=mod",
+  });
+  run(go, ["mod", "tidy"], consumer, undefined, {
+    ...env,
+    GOFLAGS: "-mod=mod",
+  });
+  run(go, ["run", "."], consumer, undefined, {
+    ...env,
+    GOFLAGS: "-mod=readonly",
+  });
   const consumerModule = readFileSync(join(consumer, "go.mod"), "utf8");
-  if (/^replace\s/mu.test(consumerModule) || /(?:file:|git\+)/u.test(consumerModule)) {
-    throw new Error("Fresh Go consumer contains a replace, file, or git dependency.");
+  if (
+    /^replace\s/mu.test(consumerModule) ||
+    /(?:file:|git(?:\+|$)|workspace:)/u.test(consumerModule)
+  ) {
+    throw new Error("Fresh Go consumer contains a replace, file, git, or workspace dependency.");
   }
   if (!consumerModule.includes(`${modulePath} ${version}`)) {
     throw new Error("Fresh Go consumer did not resolve the exact packed SDK module version.");
   }
+  const download = JSON.parse(
+    run(go, ["mod", "download", "-json", `${modulePath}@${version}`], consumer, undefined, {
+      ...env,
+      GOFLAGS: "-mod=readonly",
+    }),
+  ) as Record<string, unknown>;
+  if (typeof download.Zip !== "string" || typeof download.GoMod !== "string") {
+    throw new Error("Fresh Go consumer module download omitted module paths.");
+  }
+  if (typeof download.GoMod !== "string" || sha256File(download.GoMod) !== module.goModSha256) {
+    throw new Error("Fresh Go consumer downloaded go.mod bytes differ from the served artifact.");
+  }
+  const proxyPrefix = `/go-proxy/${modulePath}/@v/${version}`;
+  for (const suffix of [".info", ".mod", ".zip"] as const) {
+    assertRequestLogged(requestLogPath, `${proxyPrefix}${suffix}`);
+  }
+  if (typeof download.Sum !== "string" || typeof download.GoModSum !== "string") {
+    throw new Error("Fresh Go consumer module download omitted exact checksums.");
+  }
+  const consumerSums = readFileSync(join(consumer, "go.sum"), "utf8");
+  if (
+    !consumerSums.includes(`${modulePath} ${version} ${download.Sum}`) ||
+    !consumerSums.includes(`${modulePath} ${version}/go.mod ${download.GoModSum}`)
+  ) {
+    throw new Error("Fresh Go consumer go.sum did not bind the exact module and go.mod checksums.");
+  }
+  return {
+    module: modulePath,
+    version,
+    toolchain: "go1.27.0",
+    moduleProxyPath: `go-proxy/${modulePath}/@v/${version}.zip`,
+    moduleZipSha256: module.zip.sha256,
+    goModSha256: module.goModSha256,
+    moduleSum: download.Sum,
+    goModSum: download.GoModSum,
+    goSumSha256: sha256File(join(consumer, "go.sum")),
+    goFlags: "-mod=readonly",
+    goWork: "off",
+    goproxy: "http://127.0.0.1:<ephemeral-port>/go-proxy",
+    fixture: {
+      transport: "connect",
+      method: "POST",
+      path: "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+      requestContentType: "application/proto",
+      responseContentType: "application/proto",
+      loopback: true,
+      callCount: 1,
+    },
+    loopbackCallCount: 1,
+  };
+}
+
+function startArtifactServer(root: string): Promise<FixtureServer> {
+  const serverScript = join(root, "artifact-server.mjs");
+  const requestLogPath = join(root, "artifact-requests.log");
+  writeFileSync(requestLogPath, "");
+  writeFileSync(
+    serverScript,
+    `import { appendFileSync, createReadStream, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { createServer } from "node:http";
+import { resolve, sep } from "node:path";
+
+const root = realpathSync(resolve(process.env.FIXTURE_ROOT));
+const requestLog = process.env.REQUEST_LOG;
+function loopbackPort() {
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("artifact fixture is not listening");
+  return address.port;
+}
+function safeFile(path) {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("fixture path is not a regular file");
+  const real = realpathSync(path);
+  if (real !== root && !real.startsWith(root + sep)) throw new Error("fixture path escapes root");
+  return stat;
+}
+function validPackageName(name) {
+  return /^(?:@[A-Za-z0-9._-]+\\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)$/.test(name);
+}
+const server = createServer((request, response) => {
+  try {
+    const pathname = decodeURIComponent(new URL(request.url ?? "/", "http://127.0.0.1").pathname);
+    if (requestLog) appendFileSync(requestLog, pathname + "\\n");
+    if (request.method !== "GET") {
+      response.statusCode = 405;
+      response.end();
+      return;
+    }
+    if (pathname.startsWith("/npm-registry/")) {
+      const packageName = pathname.slice("/npm-registry/".length);
+      if (!validPackageName(packageName)) throw new Error("invalid npm package name");
+      const metadataPath = resolve(root, "npm-registry", packageName.replace("/", "__") + ".json");
+      const metadata = JSON.parse(readFileSync(metadataPath, "utf8"));
+      const packagePath = "/npm-registry-tar/" + packageName + "/" + metadata.filename;
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ name: metadata.name, "dist-tags": { latest: metadata.version }, versions: { [metadata.version]: { name: metadata.name, version: metadata.version, dist: { tarball: "http://127.0.0.1:" + loopbackPort() + packagePath, integrity: metadata.integrity } } } }));
+      return;
+    }
+    if (pathname.startsWith("/npm-registry-tar/")) {
+      const rest = pathname.slice("/npm-registry-tar/".length);
+      const split = rest.lastIndexOf("/");
+      const packageName = rest.slice(0, split);
+      const filename = rest.slice(split + 1);
+      if (split <= 0 || !validPackageName(packageName) || !/^[A-Za-z0-9._-]+\\.tgz$/.test(filename)) throw new Error("invalid npm tarball path");
+      const path = resolve(root, "npm-registry", packageName.replace("/", "__") + ".pack", filename);
+      const stat = safeFile(path);
+      response.statusCode = 200;
+      response.setHeader("Content-Length", stat.size);
+      createReadStream(path).pipe(response);
+      return;
+    }
+    const path = resolve(root, "." + pathname);
+    if (path !== root && !path.startsWith(root + sep)) {
+      response.statusCode = 403;
+      response.end();
+      return;
+    }
+    const stat = safeFile(path);
+    response.statusCode = 200;
+    response.setHeader("Content-Length", stat.size);
+    createReadStream(path).pipe(response);
+  } catch (error) {
+    if (requestLog) appendFileSync(requestLog, "ERROR " + String(error) + "\\n");
+    response.statusCode = 404;
+    response.end();
+  }
+});
+server.listen(0, "127.0.0.1", () => {
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("artifact fixture did not bind");
+  process.stdout.write("READY " + address.port + "\\n");
+});
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`,
+  );
+  const child = spawn(bun, [serverScript], {
+    cwd: repositoryRoot,
+    env: { ...process.env, FIXTURE_ROOT: root, REQUEST_LOG: requestLogPath },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return new Promise<FixtureServer>((resolveServer, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let ready = false;
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+      const match = stdout.match(/(?:^|\n)READY (\d+)\n?/u);
+      if (!match || ready) return;
+      ready = true;
+      const port = Number(match[1]);
+      resolveServer({
+        baseUrl: `http://127.0.0.1:${port}`,
+        requestLogPath,
+        stop: () =>
+          new Promise<void>((resolveStop) => {
+            child.once("exit", () => resolveStop());
+            child.kill("SIGTERM");
+          }),
+      });
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.once("error", (error) => {
+      if (!ready) reject(error);
+    });
+    child.once("exit", (code) => {
+      if (!ready)
+        reject(new Error(`artifact fixture exited before ready (${String(code)}): ${stderr}`));
+    });
+  });
+}
+
+function assertRequestLogged(logPath: string, path: string): void {
+  const requests = readFileSync(logPath, "utf8").split("\n");
+  if (!requests.includes(path)) {
+    throw new Error(`artifact request was not served from the loopback fixture: ${path}`);
+  }
+}
+
+function writeEvidence(path: string, evidence: ConsumerEvidence): void {
+  const repository = resolve(repositoryRoot);
+  const target = resolve(repository, path);
+  if (target !== repository && !target.startsWith(`${repository}/`)) {
+    throw new Error("Evidence output must remain contained by the repository root.");
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  const bytes = `${JSON.stringify(evidence, null, 2)}\n`;
+  if (existsSync(target)) {
+    if (readFileSync(target, "utf8") !== bytes) {
+      throw new Error(`Refusing to overwrite divergent evidence output: ${path}`);
+    }
+    return;
+  }
+  writeFileSync(target, bytes, { flag: "wx" });
 }
 
 function run(
@@ -227,6 +872,56 @@ function run(
     );
   }
   return result.stdout;
+}
+
+function artifact(path: string): Artifact {
+  return {
+    path,
+    sha256: sha256File(path),
+    integrity: `sha512-${createHash("sha512").update(readFileSync(path)).digest("base64")}`,
+  };
+}
+
+function sha256File(path: string): string {
+  return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+}
+
+function assertExactDependency(
+  manifest: Record<string, unknown>,
+  name: string,
+  expectedVersion: string,
+): void {
+  const dependencies = manifest.dependencies;
+  if (!isRecord(dependencies) || dependencies[name] !== expectedVersion) {
+    throw new Error(`Packed TypeScript SDK dependency drifted: ${name}`);
+  }
+}
+
+function assertNoLocalDependency(value: Record<string, unknown>, label: string): void {
+  const dependencyFields = [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+    "bundledDependencies",
+    "packages",
+    "snapshots",
+  ];
+  const candidates: unknown[] = [];
+  for (const field of dependencyFields) {
+    const candidate = value[field];
+    if (candidate !== undefined) candidates.push(candidate);
+  }
+  const text = JSON.stringify(candidates);
+  if (/(?:workspace:|file:|git(?:\+|:|$)|github:)/u.test(text)) {
+    throw new Error(`${label} contains a workspace, file, git, or GitHub dependency.`);
+  }
+}
+
+function assertNoLocalDependencyText(value: string, label: string): void {
+  if (/(?:workspace:|file:|git(?:\+|:|$)|github:)/u.test(value)) {
+    throw new Error(`${label} contains a workspace, file, git, or GitHub dependency.`);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
