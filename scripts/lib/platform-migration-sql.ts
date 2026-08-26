@@ -210,7 +210,7 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set(["000005", "000006", "000009", "000012", "000013"]).has(migrationId) ||
+      (!new Set(["000005", "000006", "000009", "000012", "000013", "000014"]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
@@ -312,6 +312,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:coordination_profile_creates_operation(unquoted:text,unquoted:text)",
             "function:unquoted:cloud_agents/unquoted:coordination_profile_outbox_class(unquoted:text,unquoted:text)",
             "function:unquoted:cloud_agents/unquoted:coordination_profile_replay_ttl_seconds(unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000014",
+          [
+            "function:unquoted:cloud_agents/unquoted:create_managed_agent_project_durable_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
       ]).get(migrationId);
