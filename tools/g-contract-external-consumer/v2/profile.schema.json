@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/profile.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "registryId",
+    "profileId",
+    "decisionId",
+    "status",
+    "sourceBinding",
+    "sourceDigest",
+    "authorityCandidate",
+    "inputBindings",
+    "projection",
+    "platformMatrix",
+    "receiptPaths",
+    "stateMachine",
+    "notGateClosure"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/profile.schema.json"
+    },
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-registry/v2" },
+    "registryId": { "const": "cloud-agents/g-contract-external-consumer" },
+    "profileId": { "const": "g-contract-external-consumer/v2" },
+    "decisionId": { "const": "D-053-EC-2" },
+    "status": {
+      "enum": [
+        "AUTHORITY_APPROVED_REPLAY_PENDING",
+        "PROJECTION_CURRENT_NATIVE_REPLAY_PENDING",
+        "NATIVE_REPLAY_CURRENT_PROFILE_PENDING",
+        "PROFILE_CURRENT_FINAL_REVIEW_PENDING",
+        "APPROVED_NON_GATE"
+      ]
+    },
+    "sourceBinding": { "$ref": "#/$defs/file" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "authorityCandidate": { "$ref": "#/$defs/commitTuple" },
+    "inputBindings": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "items": { "$ref": "#/$defs/file" }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tree",
+        "archivePath",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "memberManifestPath",
+        "memberManifestSha256",
+        "memberManifestAlgorithm",
+        "inputManifestAlgorithm"
+      ],
+      "properties": {
+        "tree": { "$ref": "#/$defs/sha1" },
+        "archivePath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.tar"
+        },
+        "archiveSha256": { "$ref": "#/$defs/digest" },
+        "archiveSizeBytes": { "type": "integer", "minimum": 1 },
+        "memberManifestPath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.member-manifest.json"
+        },
+        "memberManifestSha256": { "$ref": "#/$defs/digest" },
+        "memberManifestAlgorithm": {
+          "const": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1"
+        },
+        "inputManifestAlgorithm": { "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1" }
+      }
+    },
+    "platformMatrix": {
+      "const": [
+        {
+          "id": "darwin-arm64",
+          "os": "darwin",
+          "arch": "arm64",
+          "status": "REQUIRED_PENDING",
+          "runs": ["A", "B"]
+        },
+        {
+          "id": "linux-amd64",
+          "os": "linux",
+          "arch": "amd64",
+          "status": "REQUIRED_PENDING",
+          "runs": ["A", "B"]
+        },
+        { "id": "linux-arm64", "os": "linux", "arch": "arm64", "status": "NOT_CLAIMED", "runs": [] }
+      ]
+    },
+    "receiptPaths": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/$defs/receiptPath" }
+    },
+    "stateMachine": {
+      "type": "object",
+      "required": ["current", "appendOnly"],
+      "properties": { "current": { "type": "string" }, "appendOnly": { "const": true } },
+      "additionalProperties": false
+    },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" },
+    "implementationBoundary": { "$ref": "#/$defs/boundary" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "gitBlob", "sha256", "sizeBytes", "mode"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "gitBlob": { "$ref": "#/$defs/sha1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "mode": { "enum": ["100644", "100755"] }
+      }
+    },
+    "commitTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/sha1" },
+        "tree": { "$ref": "#/$defs/sha1" },
+        "parent": { "$ref": "#/$defs/sha1" }
+      }
+    },
+    "receiptPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "schema", "stage"],
+      "properties": {
+        "kind": { "type": "string" },
+        "path": { "type": "string" },
+        "schema": { "type": "string" },
+        "stage": { "type": "string" }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notGateClosure",
+        "gateStatus",
+        "productionDatabaseWrites",
+        "httpP2ProviderExternalEffects",
+        "deployment",
+        "publication",
+        "historyRewrite"
+      ],
+      "properties": {
+        "notGateClosure": { "const": true },
+        "gateStatus": { "const": "ALL_GATES_OPEN" },
+        "productionDatabaseWrites": { "const": false },
+        "httpP2ProviderExternalEffects": { "const": false },
+        "deployment": { "const": false },
+        "publication": { "const": false },
+        "historyRewrite": { "const": false }
+      }
+    }
+  }
+}

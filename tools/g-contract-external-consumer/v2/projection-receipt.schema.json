@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/projection-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "decisionId",
+    "profileId",
+    "status",
+    "candidate",
+    "projection",
+    "inputManifest",
+    "runner",
+    "notGateClosure",
+    "gateStatus"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-projection-receipt/v2" },
+    "decisionId": { "const": "D-053-EC-2" },
+    "profileId": { "const": "g-contract-external-consumer/v2" },
+    "status": { "enum": ["CURRENT", "INVALID"] },
+    "candidate": { "$ref": "#/$defs/commitTuple" },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archivePath",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "memberManifestPath",
+        "memberManifestSha256",
+        "memberCount",
+        "memberManifestAlgorithm",
+        "inputManifestAlgorithm",
+        "pathOrdering",
+        "archiveFormat",
+        "compression",
+        "tar"
+      ],
+      "properties": {
+        "archivePath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.tar"
+        },
+        "archiveSha256": { "$ref": "#/$defs/digest" },
+        "archiveSizeBytes": { "type": "integer", "minimum": 1 },
+        "memberManifestPath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.member-manifest.json"
+        },
+        "memberManifestSha256": { "$ref": "#/$defs/digest" },
+        "memberCount": { "type": "integer", "minimum": 1 },
+        "memberManifestAlgorithm": {
+          "const": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1"
+        },
+        "inputManifestAlgorithm": { "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1" },
+        "pathOrdering": { "const": "UTF8_BYTE_LEXICOGRAPHIC" },
+        "archiveFormat": { "const": "ustar" },
+        "compression": { "const": "none" },
+        "tar": {
+          "const": {
+            "mtimeEpochSeconds": 0,
+            "uid": 0,
+            "gid": 0,
+            "uname": "",
+            "gname": "",
+            "paxHeaders": "forbidden",
+            "duplicateEntries": "forbidden"
+          }
+        }
+      }
+    },
+    "inputManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "sha256", "memberCount"],
+      "properties": {
+        "algorithm": { "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "memberCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "gitBlob", "sha256", "entrypoint", "toolchain"],
+      "properties": {
+        "path": { "const": "scripts/generate-platform-g-contract-external-consumer-v2.ts" },
+        "gitBlob": { "$ref": "#/$defs/sha1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "entrypoint": {
+          "const": "bun scripts/generate-platform-g-contract-external-consumer-v2.ts --check-source"
+        },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bun", "typescript", "go", "goFlags", "goWork"],
+          "properties": {
+            "bun": { "const": "1.4.0" },
+            "typescript": { "const": "5.7.3" },
+            "go": { "const": "go version go1.27.0 darwin/arm64" },
+            "goFlags": { "const": "-mod=readonly" },
+            "goWork": { "const": "off" }
+          }
+        }
+      }
+    },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "commitTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/sha1" },
+        "tree": { "$ref": "#/$defs/sha1" },
+        "parent": { "$ref": "#/$defs/sha1" }
+      }
+    }
+  }
+}

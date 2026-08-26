@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/replay-summary-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "decisionId",
+    "profileId",
+    "status",
+    "candidate",
+    "projection",
+    "platformRuns",
+    "equality",
+    "runner",
+    "notGateClosure",
+    "gateStatus"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-external-consumer-replay-summary-receipt/v2"
+    },
+    "decisionId": { "const": "D-053-EC-2" },
+    "profileId": { "const": "g-contract-external-consumer/v2" },
+    "status": { "enum": ["CURRENT", "INVALID"] },
+    "candidate": { "$ref": "#/$defs/commitTuple" },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tree",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "memberManifestSha256",
+        "inputManifestSha256"
+      ],
+      "properties": {
+        "tree": { "$ref": "#/$defs/sha1" },
+        "archiveSha256": { "$ref": "#/$defs/digest" },
+        "archiveSizeBytes": { "type": "integer", "minimum": 1 },
+        "memberManifestSha256": { "$ref": "#/$defs/digest" },
+        "inputManifestSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "platformRuns": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["platform", "runId", "receiptPath", "receiptSha256", "status"],
+        "properties": {
+          "platform": { "enum": ["darwin-arm64", "linux-amd64"] },
+          "runId": { "enum": ["A", "B"] },
+          "receiptPath": { "type": "string" },
+          "receiptSha256": { "$ref": "#/$defs/digest" },
+          "status": { "const": "CURRENT" }
+        }
+      }
+    },
+    "equality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archive", "memberManifest", "inputManifest", "consumerOutputs"],
+      "properties": {
+        "archive": { "const": "ALL_FOUR_RUNS_EQUAL" },
+        "memberManifest": { "const": "ALL_FOUR_RUNS_EQUAL" },
+        "inputManifest": { "const": "ALL_FOUR_RUNS_EQUAL" },
+        "consumerOutputs": { "const": "A_EQUALS_B_PER_PLATFORM_AND_CROSS_PLATFORM" }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "gitBlob", "sha256"],
+      "properties": {
+        "path": { "const": "scripts/generate-platform-g-contract-external-consumer-v2.ts" },
+        "gitBlob": { "$ref": "#/$defs/sha1" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "commitTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/sha1" },
+        "tree": { "$ref": "#/$defs/sha1" },
+        "parent": { "$ref": "#/$defs/sha1" }
+      }
+    }
+  }
+}

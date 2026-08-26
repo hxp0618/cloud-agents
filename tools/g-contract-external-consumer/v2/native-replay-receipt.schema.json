@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "decisionId",
+    "profileId",
+    "platform",
+    "runId",
+    "status",
+    "candidate",
+    "projectionBinding",
+    "inputManifestBinding",
+    "runner",
+    "consumers",
+    "isolation",
+    "notGateClosure",
+    "gateStatus"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-external-consumer-native-replay-receipt/v2"
+    },
+    "decisionId": { "const": "D-053-EC-2" },
+    "profileId": { "const": "g-contract-external-consumer/v2" },
+    "platform": { "enum": ["darwin-arm64", "linux-amd64"] },
+    "runId": { "enum": ["A", "B"] },
+    "status": { "enum": ["CURRENT", "INVALID"] },
+    "candidate": { "$ref": "#/$defs/commitTuple" },
+    "projectionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tree",
+        "archivePath",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "memberManifestSha256"
+      ],
+      "properties": {
+        "tree": { "$ref": "#/$defs/sha1" },
+        "archivePath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.tar"
+        },
+        "archiveSha256": { "$ref": "#/$defs/digest" },
+        "archiveSizeBytes": { "type": "integer", "minimum": 1 },
+        "memberManifestSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "inputManifestBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "sha256", "memberCount"],
+      "properties": {
+        "algorithm": { "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "memberCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "gitBlob", "sha256", "entrypoint", "toolchain"],
+      "properties": {
+        "path": { "const": "scripts/generate-platform-g-contract-external-consumer-v2.ts" },
+        "gitBlob": { "$ref": "#/$defs/sha1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "entrypoint": {
+          "const": "bun scripts/generate-platform-g-contract-external-consumer-v2.ts --check-source"
+        },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bun", "typescript", "go", "goFlags", "goWork"],
+          "properties": {
+            "bun": { "const": "1.4.0" },
+            "typescript": { "const": "5.7.3" },
+            "go": { "const": "go version go1.27.0 darwin/arm64" },
+            "goFlags": { "const": "-mod=readonly" },
+            "goWork": { "const": "off" }
+          }
+        }
+      }
+    },
+    "consumers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["typescript", "go"],
+      "properties": {
+        "typescript": { "$ref": "#/$defs/consumer" },
+        "go": { "$ref": "#/$defs/consumer" }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptPath", "network", "filesystem", "ambientNodeModules"],
+      "properties": {
+        "receiptPath": { "type": "string" },
+        "network": { "const": "LOOPBACK_ONLY" },
+        "filesystem": { "const": "DISPOSABLE_ROOT_ONLY" },
+        "ambientNodeModules": { "const": false }
+      }
+    },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "commitTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/sha1" },
+        "tree": { "$ref": "#/$defs/sha1" },
+        "parent": { "$ref": "#/$defs/sha1" }
+      }
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredCallCount",
+        "observedCallCount",
+        "requestContentType",
+        "responseContentType",
+        "url"
+      ],
+      "properties": {
+        "requiredCallCount": { "const": 1 },
+        "observedCallCount": { "const": 1 },
+        "requestContentType": { "const": "application/proto" },
+        "responseContentType": { "const": "application/proto" },
+        "url": { "type": "string", "pattern": "^http://127\\.0\\.0\\.1:<ephemeral-port>/" }
+      }
+    }
+  }
+}

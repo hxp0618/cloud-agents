@@ -1,0 +1,939 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/source.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "registryId",
+    "profileId",
+    "decisionId",
+    "status",
+    "authorization",
+    "authorityParent",
+    "authorityFiles",
+    "candidateBinding",
+    "lineageFence",
+    "semanticInputs",
+    "inputManifest",
+    "projectionScope",
+    "exclusions",
+    "projection",
+    "runner",
+    "toolchain",
+    "platformMatrix",
+    "fixturePolicy",
+    "receiptPaths",
+    "receiptState",
+    "stateMachine",
+    "reviewRules",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/source.schema.json"
+    },
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-source/v2" },
+    "registryId": { "const": "cloud-agents/g-contract-external-consumer" },
+    "profileId": { "const": "g-contract-external-consumer/v2" },
+    "decisionId": { "const": "D-053-EC-2" },
+    "status": { "const": "AUTHORITY_FROZEN_REVIEW_PENDING" },
+    "authorization": {
+      "const": {
+        "path": "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization-20260826.md",
+        "gitBlob": "93e0b916c9a95b700ed08d30ef83e5c8c871d58b",
+        "sha256": "sha256:4d1e842a19183e78392e190281c3f7627f21abf30645810af5dc77f95705a552",
+        "sizeBytes": 5367,
+        "mode": "100644"
+      }
+    },
+    "authorityParent": { "$ref": "#/$defs/commitTuple" },
+    "authorityFiles": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization-20260826.md"
+                },
+                "role": { "const": "authorization" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v2/source.schema.json" },
+                "role": { "const": "source-schema" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v2/profile.schema.json" },
+                "role": { "const": "profile-schema" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "tools/g-contract-external-consumer/v2/projection-receipt.schema.json"
+                },
+                "role": { "const": "projection-receipt-schema" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json"
+                },
+                "role": { "const": "native-replay-receipt-schema" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "tools/g-contract-external-consumer/v2/replay-summary-receipt.schema.json"
+                },
+                "role": { "const": "replay-summary-receipt-schema" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v2/review.schema.json" },
+                "role": { "const": "review-schema" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer-v2.ts" },
+                "role": { "const": "checker" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/generate-platform-g-contract-external-consumer-v2.ts" },
+                "role": { "const": "runner" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer-v2.test.ts" },
+                "role": { "const": "focused-test" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/authorityFile" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md"
+                },
+                "role": { "const": "implementation-record" }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "candidateBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePath", "parentMustEqualAuthorityParent", "diff", "selfBinding"],
+      "properties": {
+        "sourcePath": { "const": "tools/g-contract-external-consumer/v2/source.json" },
+        "parentMustEqualAuthorityParent": { "const": true },
+        "diff": {
+          "const": [
+            {
+              "status": "A",
+              "path": "tools/g-contract-external-consumer/v2/source.json",
+              "mode": "100644"
+            }
+          ]
+        },
+        "selfBinding": {
+          "const": "CANDIDATE_COMMIT_TREE_AND_INDEPENDENT_REVIEW;SOURCE_EXCLUDED_FROM_AUTHORITY_FILE_HASH_LIST"
+        }
+      }
+    },
+    "lineageFence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predecessorDecisionId",
+        "predecessorProfileId",
+        "predecessorCandidate",
+        "predecessorReview",
+        "immutableFiles"
+      ],
+      "properties": {
+        "predecessorDecisionId": { "const": "D-053-EC-1" },
+        "predecessorProfileId": { "const": "g-contract-external-consumer/v1" },
+        "predecessorCandidate": {
+          "const": {
+            "commit": "f8d44568b0f64b31f466dbc47e0a17b15b96e659",
+            "tree": "50662a40d175aa18f3d5eaf6f1c60d0a58c816db",
+            "parent": "f3a058291ba6fbae53bc8dc96c695944426b2fb4"
+          }
+        },
+        "predecessorReview": {
+          "const": {
+            "commit": "9f9815e72cf108972a6fd12627cdeaad8cb71449",
+            "tree": "77bdf44bdb1c6e1ee2893ca13d54eb8d90967342",
+            "parent": "f8d44568b0f64b31f466dbc47e0a17b15b96e659",
+            "path": "docs/plan/p1/g-contract-external-consumer-successor-independent-review-20260826.md",
+            "gitBlob": "69d7c4e2566dfcc79b70b5b10d971516ea7d785a",
+            "sha256": "sha256:585c175bdeedb1d396ffef52a58c17b88a344a103622029a5e83defe6b9d66b5",
+            "sizeBytes": 3724,
+            "mode": "100644"
+          }
+        },
+        "immutableFiles": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "prefixItems": [
+            {
+              "const": {
+                "path": "tools/g-contract-external-consumer/v1/source.json",
+                "gitBlob": "b71902085dfa3ca61291e6630252bf7d847b0587",
+                "sha256": "sha256:a80896a1563e34407aff6aa718c0db8d31853dafacabde673bd568cd12d8a366",
+                "sizeBytes": 5468,
+                "mode": "100644"
+              }
+            },
+            {
+              "const": {
+                "path": "tools/g-contract-external-consumer/v1/profile.json",
+                "gitBlob": "ed1b80a4d2d7ba699084825300f5f91b9bfae809",
+                "sha256": "sha256:68be26b61d562243979d72e903206222e9d3e169c98360b6fd83c8263c9834e6",
+                "sizeBytes": 12746,
+                "mode": "100644"
+              }
+            },
+            {
+              "const": {
+                "path": "tools/g-contract-external-consumer/v1/evidence/consumer.json",
+                "gitBlob": "6a8dacafc869957faeb95c4ec759a6d742157833",
+                "sha256": "sha256:6b5b5669577aee59aa4bb775c585a04f01aae631bf7384d83727ca125a0a9344",
+                "sizeBytes": 4494,
+                "mode": "100644"
+              }
+            },
+            {
+              "const": {
+                "path": "tools/g-contract-external-consumer/v1/source.schema.json",
+                "gitBlob": "4e3184f9f72e9d2896b722d349b5597137aa3e4e",
+                "sha256": "sha256:b51ee015ef99c3192ec25c1cf5bcd6f7ec34be03a6063c95919887c28239bf25",
+                "sizeBytes": 9779,
+                "mode": "100644"
+              }
+            },
+            {
+              "const": {
+                "path": "tools/g-contract-external-consumer/v1/profile.schema.json",
+                "gitBlob": "062fc24dd6399f0415f49f5568f27f1763127b85",
+                "sha256": "sha256:8aab7afa284a5640038de58dee7d97d1e9d63521fe64b5641737f19ad826a82a",
+                "sizeBytes": 16902,
+                "mode": "100644"
+              }
+            },
+            {
+              "const": {
+                "path": "docs/plan/p1/g-contract-external-consumer-successor-independent-review-20260826.md",
+                "gitBlob": "69d7c4e2566dfcc79b70b5b10d971516ea7d785a",
+                "sha256": "sha256:585c175bdeedb1d396ffef52a58c17b88a344a103622029a5e83defe6b9d66b5",
+                "sizeBytes": 3724,
+                "mode": "100644"
+              }
+            },
+            {
+              "const": {
+                "path": "docs/plan/p1/g-contract-current-source-external-consumer-successor-v2-authorization-20260826.md",
+                "gitBlob": "93e0b916c9a95b700ed08d30ef83e5c8c871d58b",
+                "sha256": "sha256:4d1e842a19183e78392e190281c3f7627f21abf30645810af5dc77f95705a552",
+                "sizeBytes": 5367,
+                "mode": "100644"
+              }
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "semanticInputs": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            { "type": "object", "properties": { "path": { "const": "package.json" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "contracts/generated/proto/cloud-agents-v1alpha1.binpb" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "contracts/generated/proto/manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "contracts/proto-generation.profile.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/generate-platform-g-contract-external-consumer.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer.test.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v1/source.schema.json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v1/profile.schema.json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/package.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/proto-generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            { "type": "object", "properties": { "path": { "const": "sdk/go/go.mod" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            { "type": "object", "properties": { "path": { "const": "sdk/go/go.sum" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/go/generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/go/proto-generated-manifest.json" } }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "inputManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bindingCommit",
+        "algorithm",
+        "ordering",
+        "declarationOrder",
+        "fields",
+        "framing",
+        "duplicatePaths"
+      ],
+      "properties": {
+        "bindingCommit": { "const": "f8d44568b0f64b31f466dbc47e0a17b15b96e659" },
+        "algorithm": { "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1" },
+        "ordering": { "const": "UTF8_BYTE_LEXICOGRAPHIC" },
+        "declarationOrder": { "const": "FROZEN" },
+        "fields": { "const": ["path", "mode", "sizeBytes", "sha256"] },
+        "framing": { "const": "NUL" },
+        "duplicatePaths": { "const": "FORBIDDEN" }
+      }
+    },
+    "projectionScope": { "const": "FULL_TRACKED_CANDIDATE_TREE_MINUS_EXACT_EXCLUSIONS" },
+    "exclusions": {
+      "const": {
+        "pathMatching": "EXACT_UTF8_BYTE_PATH",
+        "paths": [
+          "tools/g-contract-external-consumer/v2/evidence/replay/projection.tar",
+          "tools/g-contract-external-consumer/v2/evidence/replay/projection.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/projection.member-manifest.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-a.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-b.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-isolation.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-a.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-b.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-isolation.json",
+          "tools/g-contract-external-consumer/v2/evidence/replay/replay.json",
+          "tools/g-contract-external-consumer/v2/profile.json",
+          "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md",
+          "docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md"
+        ],
+        "patterns": [],
+        "rejectIfPresent": [
+          ".git",
+          "node_modules",
+          ".idea",
+          "migration.test",
+          "untracked",
+          "special",
+          "symlink",
+          "submodule"
+        ],
+        "duplicatePaths": "FORBIDDEN"
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "selection",
+        "outputDirectory",
+        "archivePath",
+        "archiveFormat",
+        "compression",
+        "pathOrdering",
+        "memberManifestAlgorithm",
+        "regularFileManifestAlgorithm",
+        "manifestRecordFields",
+        "manifestFraming",
+        "tar",
+        "symlinks",
+        "submodules",
+        "specialFiles",
+        "receiptPath",
+        "memberManifestPath"
+      ],
+      "properties": {
+        "mode": { "const": "VERSIONED_BOUNDED_PROJECTION" },
+        "selection": { "const": "GIT_TRACKED_CANDIDATE_TREE_REGULAR_FILES_AND_DIRECTORIES" },
+        "outputDirectory": { "const": "tools/g-contract-external-consumer/v2/evidence/replay" },
+        "archivePath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.tar"
+        },
+        "archiveFormat": { "const": "ustar" },
+        "compression": { "const": "none" },
+        "pathOrdering": { "const": "UTF8_BYTE_LEXICOGRAPHIC" },
+        "memberManifestAlgorithm": {
+          "const": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1"
+        },
+        "regularFileManifestAlgorithm": {
+          "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1"
+        },
+        "manifestRecordFields": {
+          "const": ["path", "type", "mode", "sizeBytes", "sha256", "linkTarget"]
+        },
+        "manifestFraming": { "const": "NUL_RECORDS" },
+        "tar": {
+          "const": {
+            "mtimeEpochSeconds": 0,
+            "uid": 0,
+            "gid": 0,
+            "uname": "",
+            "gname": "",
+            "paxHeaders": "forbidden",
+            "duplicateEntries": "forbidden"
+          }
+        },
+        "symlinks": { "const": "forbidden" },
+        "submodules": { "const": "forbidden" },
+        "specialFiles": { "const": "forbidden" },
+        "receiptPath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.json"
+        },
+        "memberManifestPath": {
+          "const": "tools/g-contract-external-consumer/v2/evidence/replay/projection.member-manifest.json"
+        }
+      }
+    },
+    "runner": {
+      "const": {
+        "path": "scripts/generate-platform-g-contract-external-consumer-v2.ts",
+        "entrypoint": "bun scripts/generate-platform-g-contract-external-consumer-v2.ts --check-source",
+        "mode": "AUTHORITY_CHECK_ONLY",
+        "timeoutSeconds": 1800,
+        "replay": false,
+        "profileWriter": false,
+        "receiptWriter": false,
+        "sideEffects": "NONE",
+        "network": "DENY"
+      }
+    },
+    "toolchain": {
+      "const": {
+        "bun": "1.4.0",
+        "typescript": "5.7.3",
+        "go": "go version go1.27.0 darwin/arm64",
+        "goFlags": "-mod=readonly",
+        "goWork": "off",
+        "environment": {
+          "LANG": "C",
+          "LC_ALL": "C",
+          "TZ": "UTC",
+          "GOWORK": "off",
+          "GOFLAGS": "-mod=readonly",
+          "GIT_CONFIG_NOSYSTEM": "1",
+          "GIT_CONFIG_GLOBAL": "/dev/null",
+          "GIT_NO_REPLACE_OBJECTS": "1",
+          "GIT_OPTIONAL_LOCKS": "0"
+        }
+      }
+    },
+    "platformMatrix": {
+      "const": [
+        {
+          "id": "darwin-arm64",
+          "os": "darwin",
+          "arch": "arm64",
+          "status": "REQUIRED_PENDING",
+          "runs": ["A", "B"]
+        },
+        {
+          "id": "linux-amd64",
+          "os": "linux",
+          "arch": "amd64",
+          "status": "REQUIRED_PENDING",
+          "runs": ["A", "B"]
+        },
+        { "id": "linux-arm64", "os": "linux", "arch": "arm64", "status": "NOT_CLAIMED", "runs": [] }
+      ]
+    },
+    "fixturePolicy": {
+      "const": {
+        "transport": "connect",
+        "method": "POST",
+        "path": "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+        "requestContentType": "application/proto",
+        "responseContentType": "application/proto",
+        "url": "http://127.0.0.1:<ephemeral-port>/",
+        "loopbackOnly": true,
+        "externalEgress": "DENY",
+        "requiredCallCountPerConsumer": 1,
+        "consumers": ["typescript", "go"]
+      }
+    },
+    "receiptPaths": {
+      "const": [
+        {
+          "kind": "projection",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/projection.json",
+          "schema": "tools/g-contract-external-consumer/v2/projection-receipt.schema.json",
+          "stage": "projection",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "darwin-arm64-a",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-a.json",
+          "schema": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+          "stage": "native-replay",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "darwin-arm64-b",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-b.json",
+          "schema": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+          "stage": "native-replay",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "darwin-arm64-isolation",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/darwin-arm64-isolation.json",
+          "schema": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+          "stage": "isolation",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "linux-amd64-a",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-a.json",
+          "schema": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+          "stage": "native-replay",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "linux-amd64-b",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-b.json",
+          "schema": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+          "stage": "native-replay",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "linux-amd64-isolation",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/linux-amd64-isolation.json",
+          "schema": "tools/g-contract-external-consumer/v2/native-replay-receipt.schema.json",
+          "stage": "isolation",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "replay-summary",
+          "path": "tools/g-contract-external-consumer/v2/evidence/replay/replay.json",
+          "schema": "tools/g-contract-external-consumer/v2/replay-summary-receipt.schema.json",
+          "stage": "replay-summary",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "generated-profile",
+          "path": "tools/g-contract-external-consumer/v2/profile.json",
+          "schema": "tools/g-contract-external-consumer/v2/profile.schema.json",
+          "stage": "generated-profile",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "authority-review",
+          "path": "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md",
+          "schema": "tools/g-contract-external-consumer/v2/review.schema.json",
+          "stage": "independent-review",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        },
+        {
+          "kind": "final-replay-review",
+          "path": "docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md",
+          "schema": "tools/g-contract-external-consumer/v2/review.schema.json",
+          "stage": "final-review",
+          "state": "ABSENT_PENDING",
+          "writeMode": "CREATE_ONCE_APPEND_ONLY"
+        }
+      ]
+    },
+    "receiptState": {
+      "const": {
+        "projection": "ABSENT_PENDING",
+        "darwin-arm64-a": "ABSENT_PENDING",
+        "darwin-arm64-b": "ABSENT_PENDING",
+        "darwin-arm64-isolation": "ABSENT_PENDING",
+        "linux-amd64-a": "ABSENT_PENDING",
+        "linux-amd64-b": "ABSENT_PENDING",
+        "linux-amd64-isolation": "ABSENT_PENDING",
+        "replaySummary": "ABSENT_PENDING",
+        "generatedProfile": "ABSENT_PENDING",
+        "authorityReview": "ABSENT_PENDING",
+        "finalReplayReview": "ABSENT_PENDING",
+        "syntheticReceipts": "FORBIDDEN"
+      }
+    },
+    "stateMachine": {
+      "const": {
+        "initial": "AUTHORITY_FROZEN_REVIEW_PENDING",
+        "appendOnly": true,
+        "successorOnDrift": "REQUIRED",
+        "transitions": [
+          {
+            "from": "AUTHORITY_FROZEN_REVIEW_PENDING",
+            "event": "authority_review_approve",
+            "to": "AUTHORITY_APPROVED_REPLAY_PENDING"
+          },
+          {
+            "from": "AUTHORITY_APPROVED_REPLAY_PENDING",
+            "event": "projection_current",
+            "to": "PROJECTION_CURRENT_NATIVE_REPLAY_PENDING"
+          },
+          {
+            "from": "PROJECTION_CURRENT_NATIVE_REPLAY_PENDING",
+            "event": "native_replay_current",
+            "to": "NATIVE_REPLAY_CURRENT_PROFILE_PENDING"
+          },
+          {
+            "from": "NATIVE_REPLAY_CURRENT_PROFILE_PENDING",
+            "event": "profile_current",
+            "to": "PROFILE_CURRENT_FINAL_REVIEW_PENDING"
+          },
+          {
+            "from": "PROFILE_CURRENT_FINAL_REVIEW_PENDING",
+            "event": "final_review_approve",
+            "to": "APPROVED_NON_GATE"
+          }
+        ],
+        "invalid": ["partial", "reordered", "divergent", "overwritten", "self-referential"]
+      }
+    },
+    "reviewRules": {
+      "const": {
+        "authorityReviewPath": "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md",
+        "finalReplayReviewPath": "docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md",
+        "authorityReviewInput": "FROZEN_SOURCE_SCHEMA_AUTHORITY_BYTES_ONLY",
+        "finalReviewInput": "FROZEN_SOURCE_PROFILE_RECEIPTS_ONLY",
+        "authorityRequiredStages": [
+          "source_schema_check",
+          "authority_file_fence",
+          "lineage_fence",
+          "semantic_input_check",
+          "projection_algorithm_check",
+          "runner_toolchain_platform_check",
+          "receipt_path_state_check",
+          "candidate_topology_check",
+          "independent_review"
+        ],
+        "finalRequiredStages": [
+          "projection_receipt",
+          "native_replay_receipts",
+          "profile_check",
+          "final_replay_review"
+        ],
+        "decision": ["APPROVE", "REQUEST_CHANGES"],
+        "severityCounts": ["P0", "P1", "P2"],
+        "approveIf": "P0=0 AND P1=0 AND P2=0",
+        "reviewTopology": "SINGLE_PARENT_DIRECT_CHILD_ADDS_EXACTLY_ONE_PREDECLARED_100644_FILE",
+        "gateEffect": "NO_GATE_CLOSURE"
+      }
+    },
+    "implementationBoundary": {
+      "const": {
+        "notGateClosure": true,
+        "gateStatus": "ALL_GATES_OPEN",
+        "productionDatabaseWrites": false,
+        "httpP2ProviderExternalEffects": false,
+        "oidcJwks": false,
+        "ssh": false,
+        "hardware": false,
+        "deployment": false,
+        "publication": false,
+        "releaseOrSigning": false,
+        "historyRewrite": false,
+        "replay": false,
+        "profileGeneration": false,
+        "receiptGeneration": false,
+        "loopbackFixtureAllowed": true
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": { "type": "string", "minLength": 1, "pattern": "^[^\\\\\\u0000]+$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "gitBlob", "sha256", "sizeBytes", "mode"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "gitBlob": { "$ref": "#/$defs/sha1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "mode": { "const": "100644" }
+      }
+    },
+    "authorityFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "gitBlob", "sha256", "sizeBytes", "mode", "role"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "gitBlob": { "$ref": "#/$defs/sha1" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "mode": { "const": "100644" },
+        "role": {
+          "enum": [
+            "authorization",
+            "source-schema",
+            "profile-schema",
+            "projection-receipt-schema",
+            "native-replay-receipt-schema",
+            "replay-summary-receipt-schema",
+            "review-schema",
+            "checker",
+            "runner",
+            "focused-test",
+            "implementation-record"
+          ]
+        }
+      }
+    },
+    "commitTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "parent"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/sha1" },
+        "tree": { "$ref": "#/$defs/sha1" },
+        "parent": { "$ref": "#/$defs/sha1" }
+      }
+    }
+  }
+}
