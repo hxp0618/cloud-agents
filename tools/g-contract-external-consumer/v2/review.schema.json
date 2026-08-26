@@ -10,6 +10,7 @@
     "authorityRevision",
     "reviewKind",
     "candidate",
+    "reviewParent",
     "topology",
     "changedPaths",
     "reviewInput",
@@ -23,9 +24,20 @@
     "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-independent-review/v2" },
     "decisionId": { "const": "D-053-EC-2" },
     "profileId": { "const": "g-contract-external-consumer/v2" },
-    "authorityRevision": { "const": "D-053-EC-2.r2" },
+    "authorityRevision": { "const": "D-053-EC-2.r3" },
     "reviewKind": { "enum": ["AUTHORITY", "FINAL_REPLAY_PROFILE"] },
     "candidate": { "$ref": "#/$defs/commitTuple" },
+    "reviewParent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "path", "status", "mode"],
+      "properties": {
+        "commit": { "$ref": "#/$defs/sha1" },
+        "path": { "type": "string", "minLength": 1 },
+        "status": { "const": "A" },
+        "mode": { "const": "100644" }
+      }
+    },
     "topology": {
       "const": "DIRECT_SINGLE_PARENT_CHILD_ADDS_EXACTLY_ONE_PREDECLARED_100644_FILE"
     },
@@ -69,6 +81,14 @@
           "changedPaths": {
             "const": ["docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md"]
           },
+          "reviewParent": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md"
+              }
+            }
+          },
           "reviewInput": { "const": "FROZEN_SOURCE_SCHEMA_AUTHORITY_BYTES_ONLY" },
           "checks": {
             "type": "array",
@@ -100,6 +120,14 @@
         "properties": {
           "changedPaths": {
             "const": ["docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md"]
+          },
+          "reviewParent": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "const": "docs/plan/p1/g-contract-external-consumer-v2-replay-review-20260826.md"
+              }
+            }
           },
           "reviewInput": { "const": "FROZEN_SOURCE_PROFILE_RECEIPTS_ONLY" },
           "checks": {

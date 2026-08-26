@@ -1,6 +1,6 @@
 # D-053-EC-2 authority implementation record
 
-Revision: `D-053-EC-2.r2` (2026-08-27)
+Revision: `D-053-EC-2.r3` (2026-08-27)
 
 This record freezes a versioned generated-registry authority and its future
 evidence interfaces. It is an authority-only slice: it does not execute a
@@ -17,7 +17,7 @@ The original v2 source candidate remains immutable:
   `322332a93e712dc400e6e2bc4616c3430dce8c4c`, parent `8ffc2c86df6d0d6a02677bec0790b30de233a71a`.
 
 Because that candidate exposed byte-format, topology-check, and path-type
-defects, r1 and r2 are append-only repair chains, never in-place repairs:
+defects, r1, r2, and r3 are append-only repair chains, never in-place repairs:
 
 1. r1 has a repair authority base as a direct child of the original source
    candidate, then an r1 source candidate that changes only
@@ -26,13 +26,24 @@ defects, r1 and r2 are append-only repair chains, never in-place repairs:
    candidate and changes exactly the same five regular files (checker, source
    schema, review schema, focused test, and this record), then an r2 source
    candidate that changes only `source.json` with status `M`;
-3. the independent authority review is a direct child of the r2 source
+3. the r2 independent read-only audit returned `REQUEST_CHANGES` for one P1:
+   the authorization's authority identifier did not match the source/profile
+   registry identity. r3 is the append-only identity repair: its authority
+   base is a direct child of the r2 source candidate and changes exactly six
+   regular files (checker, source schema, profile schema, review schema,
+   focused test, and this record); it aligns the machine-bound identity to
+   `cloud-agents/g-contract-external-consumer-replay/v2`. The r3 source
+   candidate changes only `source.json` with status `M`;
+4. the independent authority review is a direct child of the r3 source
    candidate and adds only the predeclared `100644` review document.
 
-The source records `authorityRevision: D-053-EC-2.r2` and the exact superseded
-r1 candidate tuple. The checker verifies the complete C→r1→r2 tuple chain,
-their trees/parents, and each exact repair diff. No amend, rebase, squash,
-merge, force-push, or history rewrite is part of this authority.
+The source records `authorityRevision: D-053-EC-2.r3` and the exact superseded
+r2 candidate tuple. `registryId` is the authorized authority identifier
+`cloud-agents/g-contract-external-consumer-replay/v2`; the profile identifier
+remains `g-contract-external-consumer/v2`. The checker verifies the complete
+C→r1→r2→r3 tuple chain, their trees/parents, and each exact repair diff. No
+amend, rebase, squash, merge, force-push, or history rewrite is part of this
+authority.
 
 ## Frozen source and schemas
 
@@ -43,6 +54,11 @@ file is frozen by repository-relative path, Git blob SHA-1, SHA-256, byte size,
 and `100644` mode at the repair authority-base commit. Source bytes are bound
 to the source candidate Git blob; source formatting is valid UTF-8 JSON with
 exactly one LF terminator (whitespace is not silently canonicalized).
+
+The v2 authority identity is bound consistently in the authorization record,
+source schema, profile schema, source checker, and source record as
+`cloud-agents/g-contract-external-consumer-replay/v2`; the immutable v1
+registry remains `cloud-agents/g-contract-external-consumer`.
 
 The authority-file order is fixed and complete:
 
@@ -131,10 +147,13 @@ transitions are invalid.
 The independent review record is a single fenced JSON object validated by the
 bound review schema. `AUTHORITY` reviews bind the source/schema authority
 bytes and the authority-review path; final replay reviews bind only the future
-profile/receipt set and their final-review path. The checker validates the
-review child as a single-parent child of the candidate that adds exactly the
-declared regular file, then validates the record. `APPROVE` is valid only when
-P0, P1, and P2 are all zero; otherwise the verdict is `REQUEST_CHANGES`.
+profile/receipt set and their final-review path. The record's non-recursive
+`reviewParent` names the reviewed candidate and added path. The review commit
+and tree themselves are intentionally not embedded (that would be a
+self-referential Git hash); the checker binds them externally by requiring a
+single-parent child of the candidate that adds exactly the declared regular
+file, then validates the record. `APPROVE` is valid only when P0, P1, and P2
+are all zero; otherwise the verdict is `REQUEST_CHANGES`.
 `notGateClosure=true`, `gateEffect=NO_GATE_CLOSURE`, and
 `gateStatus=ALL_GATES_OPEN` are mandatory.
 

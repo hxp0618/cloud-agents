@@ -22,10 +22,10 @@ export const EC2_REVIEW_PATH =
   "docs/plan/p1/g-contract-external-consumer-v2-independent-review-20260826.md";
 
 const EC2_SOURCE_FORMAT = "cloud-agents-g-contract-external-consumer-source/v2";
-const EC2_REGISTRY_ID = "cloud-agents/g-contract-external-consumer";
+const EC2_REGISTRY_ID = "cloud-agents/g-contract-external-consumer-replay/v2";
 const EC2_PROFILE_ID = "g-contract-external-consumer/v2";
 const EC2_DECISION_ID = "D-053-EC-2";
-const EC2_AUTHORITY_REVISION = "D-053-EC-2.r2";
+const EC2_AUTHORITY_REVISION = "D-053-EC-2.r3";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SHA1 = /^[0-9a-f]{40}$/u;
 
@@ -112,6 +112,13 @@ const EC2_R1_CANDIDATE = {
   tree: "0d18a502a4f07b5c48fe1a0b83bed8cec807212b",
   parent: EC2_R1_AUTHORITY_COMMIT,
 } as const;
+const EC2_R2_AUTHORITY_COMMIT = "bda551c3c49a1010346a3fac835ac9e1cdb7e917";
+const EC2_R2_AUTHORITY_TREE = "d0ba89759ae4bd8e82a542afee01a8f1a09cf3c6";
+const EC2_R2_CANDIDATE = {
+  commit: "eb0e2c2d7d71ad62ca668e6fcc6b18ff0396b1da",
+  tree: "8a5d53c8f6572275171a9af5e22dd587a193bbfe",
+  parent: EC2_R2_AUTHORITY_COMMIT,
+} as const;
 const EC2_R1_REPAIR_AUTHORITY_PATHS = [
   "scripts/lib/platform-g-contract-external-consumer-v2.ts",
   "tools/g-contract-external-consumer/v2/source.schema.json",
@@ -120,6 +127,14 @@ const EC2_R1_REPAIR_AUTHORITY_PATHS = [
   "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
 ] as const;
 const EC2_R2_REPAIR_AUTHORITY_PATHS = EC2_R1_REPAIR_AUTHORITY_PATHS;
+const EC2_R3_REPAIR_AUTHORITY_PATHS = [
+  "scripts/lib/platform-g-contract-external-consumer-v2.ts",
+  "tools/g-contract-external-consumer/v2/source.schema.json",
+  "tools/g-contract-external-consumer/v2/profile.schema.json",
+  "tools/g-contract-external-consumer/v2/review.schema.json",
+  "scripts/lib/platform-g-contract-external-consumer-v2.test.ts",
+  "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
+] as const;
 
 const EC2_PREDECESSOR_CANDIDATE = {
   commit: "f8d44568b0f64b31f466dbc47e0a17b15b96e659",
@@ -226,11 +241,11 @@ export function checkExternalConsumerV2Source(root: string): Ec2CheckResult {
       "Authority parent topology drifted.",
     );
   }
-  if (authorityParentParent !== EC2_R1_CANDIDATE.commit) {
+  if (authorityParentParent !== EC2_R2_CANDIDATE.commit) {
     throw error(
       "EC2_AUTHORITY_PARENT_DRIFT",
       "/authorityParent/parent",
-      "Revision r2 authority base must be a direct child of the superseded r1 source candidate.",
+      "Revision r3 authority base must be a direct child of the superseded r2 source candidate.",
     );
   }
 
@@ -330,6 +345,16 @@ export function checkExternalConsumerV2IndependentReview(root: string): Ec2Revie
     },
     "/candidate",
   );
+  assertExactObject(
+    record(review.reviewParent, "/reviewParent"),
+    {
+      commit: sourceResult.candidateCommit,
+      path: EC2_REVIEW_PATH,
+      status: "A",
+      mode: "100644",
+    },
+    "/reviewParent",
+  );
   if (review.reviewKind !== "AUTHORITY" || review.authorityRevision !== EC2_AUTHORITY_REVISION)
     throw error(
       "EC2_REVIEW_SCOPE_DRIFT",
@@ -371,11 +396,11 @@ function assertAuthorityRevision(root: string, source: Record<string, unknown>):
     throw error(
       "EC2_AUTHORITY_REVISION_DRIFT",
       "/authorityRevision",
-      "D-053-EC-2 must identify the explicitly versioned r2 authority successor.",
+      "D-053-EC-2 must identify the explicitly versioned r3 authority successor.",
     );
   }
   const supersedes = record(source.supersedesCandidate, "/supersedesCandidate");
-  assertExactObject(supersedes, EC2_R1_CANDIDATE, "/supersedesCandidate");
+  assertExactObject(supersedes, EC2_R2_CANDIDATE, "/supersedesCandidate");
   if (
     gitTree(root, EC2_INITIAL_CANDIDATE.commit) !== EC2_INITIAL_CANDIDATE.tree ||
     gitParents(root, EC2_INITIAL_CANDIDATE.commit) !== EC2_INITIAL_CANDIDATE.parent ||
@@ -384,12 +409,16 @@ function assertAuthorityRevision(root: string, source: Record<string, unknown>):
     gitTree(root, EC2_R1_AUTHORITY_COMMIT) !== EC2_R1_AUTHORITY_TREE ||
     gitParents(root, EC2_R1_AUTHORITY_COMMIT) !== EC2_INITIAL_CANDIDATE.commit ||
     gitTree(root, EC2_R1_CANDIDATE.commit) !== EC2_R1_CANDIDATE.tree ||
-    gitParents(root, EC2_R1_CANDIDATE.commit) !== EC2_R1_CANDIDATE.parent
+    gitParents(root, EC2_R1_CANDIDATE.commit) !== EC2_R1_CANDIDATE.parent ||
+    gitTree(root, EC2_R2_AUTHORITY_COMMIT) !== EC2_R2_AUTHORITY_TREE ||
+    gitParents(root, EC2_R2_AUTHORITY_COMMIT) !== EC2_R1_CANDIDATE.commit ||
+    gitTree(root, EC2_R2_CANDIDATE.commit) !== EC2_R2_CANDIDATE.tree ||
+    gitParents(root, EC2_R2_CANDIDATE.commit) !== EC2_R2_CANDIDATE.parent
   ) {
     throw error(
       "EC2_AUTHORITY_REVISION_DRIFT",
       "/supersedesCandidate",
-      "The superseded r1 authority/candidate topology is not immutable.",
+      "The superseded r2 authority/candidate topology is not immutable.",
     );
   }
 }
@@ -725,7 +754,9 @@ function assertAuthorityBaseDiff(root: string, parent: string, authorityBase: st
         ? EC2_R1_REPAIR_AUTHORITY_PATHS
         : parent === EC2_R1_CANDIDATE.commit
           ? EC2_R2_REPAIR_AUTHORITY_PATHS
-          : undefined;
+          : parent === EC2_R2_CANDIDATE.commit
+            ? EC2_R3_REPAIR_AUTHORITY_PATHS
+            : undefined;
   if (!expected)
     throw error(
       "EC2_AUTHORITY_TOPOLOGY_DRIFT",

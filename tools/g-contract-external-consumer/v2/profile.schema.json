@@ -9,6 +9,7 @@
     "registryId",
     "profileId",
     "decisionId",
+    "authorityRevision",
     "status",
     "sourceBinding",
     "sourceDigest",
@@ -18,16 +19,19 @@
     "platformMatrix",
     "receiptPaths",
     "stateMachine",
-    "notGateClosure"
+    "notGateClosure",
+    "gateStatus",
+    "implementationBoundary"
   ],
   "properties": {
     "$schema": {
       "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v2/profile.schema.json"
     },
     "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-registry/v2" },
-    "registryId": { "const": "cloud-agents/g-contract-external-consumer" },
+    "registryId": { "const": "cloud-agents/g-contract-external-consumer-replay/v2" },
     "profileId": { "const": "g-contract-external-consumer/v2" },
     "decisionId": { "const": "D-053-EC-2" },
+    "authorityRevision": { "const": "D-053-EC-2.r3" },
     "status": {
       "enum": [
         "AUTHORITY_APPROVED_REPLAY_PENDING",
@@ -37,14 +41,197 @@
         "APPROVED_NON_GATE"
       ]
     },
-    "sourceBinding": { "$ref": "#/$defs/file" },
+    "sourceBinding": {
+      "allOf": [
+        { "$ref": "#/$defs/file" },
+        {
+          "type": "object",
+          "properties": {
+            "path": { "const": "tools/g-contract-external-consumer/v2/source.json" }
+          }
+        }
+      ]
+    },
     "sourceDigest": { "$ref": "#/$defs/digest" },
     "authorityCandidate": { "$ref": "#/$defs/commitTuple" },
     "inputBindings": {
       "type": "array",
       "minItems": 18,
       "maxItems": 18,
-      "items": { "$ref": "#/$defs/file" }
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            { "type": "object", "properties": { "path": { "const": "package.json" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "contracts/generated/proto/cloud-agents-v1alpha1.binpb" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "const": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "contracts/generated/proto/manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "contracts/proto-generation.profile.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/generate-platform-g-contract-external-consumer.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "scripts/lib/platform-g-contract-external-consumer.test.ts" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v1/source.schema.json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": {
+                "path": { "const": "tools/g-contract-external-consumer/v1/profile.schema.json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/package.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/typescript/proto-generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            { "type": "object", "properties": { "path": { "const": "sdk/go/go.mod" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            { "type": "object", "properties": { "path": { "const": "sdk/go/go.sum" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/go/generated-manifest.json" } }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/file" },
+            {
+              "type": "object",
+              "properties": { "path": { "const": "sdk/go/proto-generated-manifest.json" } }
+            }
+          ]
+        }
+      ],
+      "items": false
     },
     "projection": {
       "type": "object",

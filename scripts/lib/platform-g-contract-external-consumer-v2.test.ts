@@ -16,11 +16,12 @@ const root = resolve(import.meta.dirname, "../..");
 describe("D-053-EC-2 versioned authority", () => {
   it("checks the committed source and keeps the authority-only state pending", () => {
     const result = checkExternalConsumerV2Source(root);
-    expect(result.source.authorityRevision).toBe("D-053-EC-2.r2");
+    expect(result.source.authorityRevision).toBe("D-053-EC-2.r3");
+    expect(result.source.registryId).toBe("cloud-agents/g-contract-external-consumer-replay/v2");
     expect(result.source.supersedesCandidate).toEqual({
-      commit: "45b021b7b608f7567117a28f6b5eac1305a5724b",
-      tree: "0d18a502a4f07b5c48fe1a0b83bed8cec807212b",
-      parent: "932faeedcf9f02c340dfbffb9369fdedd18ada70",
+      commit: "eb0e2c2d7d71ad62ca668e6fcc6b18ff0396b1da",
+      tree: "8a5d53c8f6572275171a9af5e22dd587a193bbfe",
+      parent: "bda551c3c49a1010346a3fac835ac9e1cdb7e917",
     });
     expect(result.source.candidateBinding.diff).toEqual([
       {
