@@ -13,9 +13,9 @@
     "mode": "100644"
   },
   "authorityParent": {
-    "commit": "932faeedcf9f02c340dfbffb9369fdedd18ada70",
-    "tree": "e1fe875f26208d991e46abc598e85e9f37d5ad84",
-    "parent": "74f5ad620f5061adde2da14adce5b2032d4399bb"
+    "commit": "bda551c3c49a1010346a3fac835ac9e1cdb7e917",
+    "tree": "d0ba89759ae4bd8e82a542afee01a8f1a09cf3c6",
+    "parent": "45b021b7b608f7567117a28f6b5eac1305a5724b"
   },
   "authorityFiles": [
     {
@@ -28,8 +28,8 @@
     },
     {
       "path": "tools/g-contract-external-consumer/v2/source.schema.json",
-      "gitBlob": "b6295a2a1093ade488c3e073dec2040fc4358974",
-      "sha256": "sha256:fe9a04b6f7cac14dfdbef79dfaf69f9d44eb14be877b4a31546b59f4b97dc721",
+      "gitBlob": "6949841aab9515c9a26bed6c638388b39bc29110",
+      "sha256": "sha256:def502fa5130060437a0779206f2780ea4d2dc5819a091d856b437c0c52e707a",
       "sizeBytes": 32444,
       "mode": "100644",
       "role": "source-schema"
@@ -68,17 +68,17 @@
     },
     {
       "path": "tools/g-contract-external-consumer/v2/review.schema.json",
-      "gitBlob": "b91190a1c2ddeecf04ae820b8bd2a8da5b1cf8c2",
-      "sha256": "sha256:7dc05b1c1b55497f02393a8c90c51caa4fb0f8cf7a291824304534b93f41716d",
+      "gitBlob": "33bd5181b0514c9a15b7dc219378f38f19abdad6",
+      "sha256": "sha256:c1a2b9df276c95b97c69c760de783457a0e7ad9c52993a6ce3e25dcd5fac0df9",
       "sizeBytes": 8202,
       "mode": "100644",
       "role": "review-schema"
     },
     {
       "path": "scripts/lib/platform-g-contract-external-consumer-v2.ts",
-      "gitBlob": "d4ee0eb9f628893020d64ccd7b1b65f55339f172",
-      "sha256": "sha256:4b66543dd4cbab7cb621099dd15d8211bd901b08f4c2c33af6adb7a3cc529e4d",
-      "sizeBytes": 42909,
+      "gitBlob": "f81cb2379488bedd0946d9dc7a494dd33888ecff",
+      "sha256": "sha256:b0212e12b4bcd016e509eaabe1d56b953501bc5d8740daab97de521b61984a08",
+      "sizeBytes": 44308,
       "mode": "100644",
       "role": "checker"
     },
@@ -92,17 +92,17 @@
     },
     {
       "path": "scripts/lib/platform-g-contract-external-consumer-v2.test.ts",
-      "gitBlob": "15199cd72b0439b938e15e2b1ca990123eefbe01",
-      "sha256": "sha256:be8fafa844f79f4c8c3b18ea211ff985b3cb4c618b6864c2f44b2b059cf30758",
+      "gitBlob": "31df8790c3d40a696637726a2f1d92ea666e86d1",
+      "sha256": "sha256:21c5175799614cd5a2381bd4f5f4df1f7235938ac18f1bc8a05cc3771d70a50f",
       "sizeBytes": 4518,
       "mode": "100644",
       "role": "focused-test"
     },
     {
       "path": "docs/plan/p1/g-contract-external-consumer-successor-v2-authority-implementation-20260826.md",
-      "gitBlob": "6e85c529411d0a74963e0df0d8d7acce6350d0c3",
-      "sha256": "sha256:5108f531d4d20e2860cc4fb7aa60dfb30f74053d0cd2d2ecd811632690369e41",
-      "sizeBytes": 6906,
+      "gitBlob": "67111c95ebdafea88146a0a581a82e684ad1a025",
+      "sha256": "sha256:5ed3540064c230140f9fc6f1ff128af87c5dd760ac11b9598c2529e15a39407f",
+      "sizeBytes": 7060,
       "mode": "100644",
       "role": "implementation-record"
     }
@@ -631,10 +631,10 @@
     "receiptGeneration": false,
     "loopbackFixtureAllowed": true
   },
-  "authorityRevision": "D-053-EC-2.r1",
+  "authorityRevision": "D-053-EC-2.r2",
   "supersedesCandidate": {
-    "commit": "74f5ad620f5061adde2da14adce5b2032d4399bb",
-    "tree": "322332a93e712dc400e6e2bc4616c3430dce8c4c",
-    "parent": "8ffc2c86df6d0d6a02677bec0790b30de233a71a"
+    "commit": "45b021b7b608f7567117a28f6b5eac1305a5724b",
+    "tree": "0d18a502a4f07b5c48fe1a0b83bed8cec807212b",
+    "parent": "932faeedcf9f02c340dfbffb9369fdedd18ada70"
   }
 }
