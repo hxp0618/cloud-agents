@@ -1,0 +1,69 @@
+{
+  "formatVersion": "cloud-agents-g-contract-phase-review-tuple/v1",
+  "authorityId": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1",
+  "sourceDigest": "sha256:3715914aebba7b74437e9694dac8427bf94ebcfea5b50505d45641dffb9df34c",
+  "reviews": [
+    {
+      "subject": "generator_supply_v3",
+      "candidateSubjectPath": "tools/generator-supply/v3/profile.json",
+      "candidate": {
+        "actorId": "slice-e-assembler",
+        "commit": "89458237b5dbb3e8f446d49302b6d2f4c7c68154",
+        "tree": "b4cae7e48a26f25ce016e452f40b90b77bfad413",
+        "parent": "44b7378775d47624a010f7718a0510736e34cefe",
+        "diffSha256": "sha256:aeccc45ba4dca7a083fbb85ecaa1cbf84520a065897eecae436b8e263d53b96f"
+      },
+      "review": {
+        "reviewerId": "independent-supply-reviewer",
+        "commit": "eb18690dc626c3950921aff8005fee68c37657e4",
+        "tree": "586c0990da3d17c1aea6559ce442853bef4f3525",
+        "parent": "89458237b5dbb3e8f446d49302b6d2f4c7c68154",
+        "path": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+        "gitBlob": "5301cb0bfc43b823ed31cbb09e0cfac0754e1e11",
+        "sha256": "sha256:5a3c275bf72b27a82d5939b58a0dc826bcc5bc45fa09abd69e7dfc6a3ee91d0a",
+        "sizeBytes": 7931,
+        "mode": "100644",
+        "diffSha256": "sha256:075a70be55a6729c4e8142ba1c03da195888401340c3dd126fdfc6a7c29928c0",
+        "verdict": "APPROVE_P0_0_P1_0_P2_0",
+        "findings": {
+          "p0": 0,
+          "p1": 0,
+          "p2": 0
+        }
+      }
+    },
+    {
+      "subject": "g_contract_r5",
+      "candidateSubjectPath": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+      "candidate": {
+        "actorId": "slice-g-r5-generator",
+        "commit": "3c38a88ca6f8355ff37ccc46ae8db68e0dabed09",
+        "tree": "2463122da6de4d5dbf9113062b19ee9ebd0325cc",
+        "parent": "eb18690dc626c3950921aff8005fee68c37657e4",
+        "diffSha256": "sha256:9cb221b2f0534834fbb0ca404be5977ad1d0f040d6f1f1426fdbb3758efb3386"
+      },
+      "review": {
+        "reviewerId": "independent-r5-reviewer",
+        "commit": "5d7ac52c5bf81d017bcbc3fdcd64b3153d24a7dd",
+        "tree": "804ceadbe1244878f6cd4cb3ba959f9e9f88ab74",
+        "parent": "3c38a88ca6f8355ff37ccc46ae8db68e0dabed09",
+        "path": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+        "gitBlob": "2af52dde85f22d04f49f02d65be502484698a72a",
+        "sha256": "sha256:73e997f9afd7a6bcb3c3c91f2d303bacd281912af48eb571b6b097cbb848b2d0",
+        "sizeBytes": 5509,
+        "mode": "100644",
+        "diffSha256": "sha256:e3edb47bef677ae3aebb4de01fb68355346f819319456cb671afb028ba75390a",
+        "verdict": "APPROVE_P0_0_P1_0_P2_0",
+        "findings": {
+          "p0": 0,
+          "p1": 0,
+          "p2": 0
+        }
+      }
+    }
+  ],
+  "notGateClosure": true,
+  "gateStatus": "ALL_GATES_OPEN",
+  "closureDecision": "NONE",
+  "tupleDigest": "sha256:0761b303637344f870c7896220a196afd326143c8a2dfcbdabfe23ef4b209a18"
+}
