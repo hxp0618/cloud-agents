@@ -213,6 +213,8 @@ const FIXED_GIT_CONFIG_ARGS = [
   "-c",
   "core.attributesFile=/dev/null",
   "-c",
+  "core.abbrev=7",
+  "-c",
   "diff.external=",
   "-c",
   "diff.mnemonicPrefix=false",
