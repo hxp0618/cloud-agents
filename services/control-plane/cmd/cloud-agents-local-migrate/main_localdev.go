@@ -14,16 +14,18 @@ import (
 )
 
 func main() {
-	var databaseURL, repositoryRoot, manifestPath string
+	var databaseURL, repositoryRoot, manifestPath, manifestSelector string
 	flag.StringVar(&databaseURL, "database-url", "", "local PostgreSQL database URL")
 	flag.StringVar(&repositoryRoot, "repository-root", "", "repository root containing the manifest and SQL artifacts")
 	flag.StringVar(&manifestPath, "manifest", "services/control-plane/migrations/manifest.json", "manifest path relative to repository root")
+	flag.StringVar(&manifestSelector, "selector", "", "generated runner-binding selector (canonical-000013 or successor-000014)")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	result, err := localmigration.Run(ctx, localmigration.Config{
 		DatabaseURL: databaseURL, RepositoryRoot: repositoryRoot, ManifestPath: manifestPath,
+		ManifestSelector: manifestSelector,
 	}, localmigration.PGXConnector{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

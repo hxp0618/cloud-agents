@@ -91,6 +91,7 @@ func TestRunCompleteLedgerIsDeterministicNoOp(t *testing.T) {
 
 func TestLoadAndVerifyVersionedSuccessorManifest(t *testing.T) {
 	config := testConfig(t)
+	config.ManifestSelector = "successor-000014"
 	config.ManifestPath = "services/control-plane/migrations/successor/000014/manifest.json"
 	bundle, err := loadAndVerify(config)
 	if err != nil {
@@ -103,6 +104,7 @@ func TestLoadAndVerifyVersionedSuccessorManifest(t *testing.T) {
 
 func TestRunVersionedSuccessorCompleteLedgerIsNoOp(t *testing.T) {
 	config := testConfig(t)
+	config.ManifestSelector = "successor-000014"
 	config.ManifestPath = "services/control-plane/migrations/successor/000014/manifest.json"
 	bundle, err := loadAndVerify(config)
 	if err != nil {
