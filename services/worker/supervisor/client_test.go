@@ -113,6 +113,58 @@ func TestBindUsesFixedProfileAndCopiesState(t *testing.T) {
 	}
 }
 
+func TestBindOperationAdmissionUsesSeparateFixedProfile(t *testing.T) {
+	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
+	expected := testWorkerIdentity()
+	response := validNegotiationResponse(expected, now.Add(time.Minute), "binding-operation-admission")
+	response.Msg.AcceptedCapabilities = operationAdmissionCapabilities()
+	response.Msg.Server = descriptorWithCapabilities(operationAdmissionCapabilities())
+	fake := &fakeWorkerClient{
+		negotiateFn: func(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+			if !exactCapabilities(request.Msg.GetRequiredCapabilities(), operationAdmissionCapabilities()) {
+				t.Fatalf("operation admission request capabilities = %#v", request.Msg.GetRequiredCapabilities())
+			}
+			return response, nil
+		},
+		healthFn: func(_ context.Context, request *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
+			if !exactCapabilities(request.Msg.GetRequiredCapabilities(), operationAdmissionCapabilities()) {
+				t.Fatalf("operation admission health capabilities = %#v", request.Msg.GetRequiredCapabilities())
+			}
+			return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: descriptorWithCapabilities(operationAdmissionCapabilities()), ObservedAt: timestamppb.New(now)}), nil
+		},
+	}
+	supervisor, err := New(Config{Client: fake, ExpectedWorkerIdentity: expected, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := supervisor.BindOperationAdmission(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ProfileID != OperationAdmissionProfileID || !exactCapabilities(snapshot.AcceptedCapabilities, operationAdmissionCapabilities()) {
+		t.Fatalf("operation admission snapshot = %#v", snapshot)
+	}
+	if _, err := supervisor.CheckHealth(context.Background()); err != nil {
+		t.Fatalf("operation admission health = %v", err)
+	}
+}
+
+func TestBindOperationAdmissionRejectsHealthOnlyWorker(t *testing.T) {
+	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
+	expected := testWorkerIdentity()
+	fake := &fakeWorkerClient{negotiateFn: func(_ context.Context, _ *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+		return validNegotiationResponse(expected, now.Add(time.Minute), "binding-health-only"), nil
+	}}
+	supervisor, err := New(Config{Client: fake, ExpectedWorkerIdentity: expected, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = supervisor.BindOperationAdmission(context.Background())
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "negotiated_capabilities_invalid") {
+		t.Fatalf("health-only operation binding err = %v", err)
+	}
+}
+
 func TestBindCanonicalizesCapabilityOrder(t *testing.T) {
 	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
 	expected := testWorkerIdentity()
@@ -525,4 +577,10 @@ func testDescriptor() *workerv1alpha1.ProtocolDescriptor {
 		MaxRepeatedItems:         workerkernel.MaxRepeatedItems,
 		MaxStringBytes:           workerkernel.MaxStringBytes,
 	}
+}
+
+func descriptorWithCapabilities(capabilities []workerv1alpha1.Capability) *workerv1alpha1.ProtocolDescriptor {
+	descriptor := testDescriptor()
+	descriptor.Capabilities = append([]workerv1alpha1.Capability(nil), capabilities...)
+	return descriptor
 }

@@ -32,6 +32,8 @@ explicitly declares `ExternalSideEffects=false`.
 - `services/worker/README.md`
 - `services/worker/doc.go`
 - `services/worker/supervisor/README.md`
+- `services/worker/supervisor/client.go`
+- `services/worker/supervisor/client_test.go`
 - `services/worker/go.mod`
 - `services/worker/go.sum`
 
@@ -49,6 +51,12 @@ idempotency conflicts. It performs no database, network, provider,
 workspace, credential, artifact, receipt, deployment, or release operation.
 `ExecuteOperation` and `GetOperationReceipt` remain stable
 `NOT_IMPLEMENTED`/`Unimplemented` no-ops.
+
+The existing Supervisor `Bind` profile remains health-only. The fixed
+`BindOperationAdmission` method is the only way this slice negotiates the
+operation-dispatch capability; it is a separate, named profile and still does
+not dispatch operations. Health checks echo the capabilities of whichever
+fixed profile was bound.
 
 ## Verification contract
 
