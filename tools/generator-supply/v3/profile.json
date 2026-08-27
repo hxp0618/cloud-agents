@@ -1,0 +1,143 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-profile-registry/v3",
+  "registryId": "cloud-agents/generator-supply-profile",
+  "predecessor": {
+    "baselineCommit": "16275f6cbf390c343a9ac00f9193e75eaad0094e",
+    "baselineTree": "ca595b8e1258a8b78c4da3a545b2a31d8f62b531",
+    "predecessorClosureDigest": "sha256:bd853d753caf00c0eb274e901237a441eefd4506c594f3b83f1641f97d34ed5f"
+  },
+  "sourceDigest": "sha256:77070adf213107b72012202cf44c55f93f49df96f4b6bd1a1cc2b28b295dbba3",
+  "artifactSetDigest": "sha256:348de3ac24d73a1ceef7433e590449dfd617e17e5fc7e1e46c745a829210b92d",
+  "evidenceManifestDigest": "sha256:d383daaa1257ef16239fab8d88b854162531562bbadac844b625b8ddae22b60f",
+  "profile": {
+    "profileDigest": "sha256:998e8873a66139235ebb111ec27628412dd41dbba956fcefb9fd0fe8918c2b7d",
+    "spec": {
+      "profileId": "cloud-agents/generator-supply-profile/v3",
+      "status": "REPLAY_VERIFIED_REVIEW_PENDING",
+      "notGateClosure": true,
+      "platforms": [
+        {
+          "id": "darwin-arm64",
+          "status": "NATIVE_REPLAY_VERIFIED",
+          "nativeExecution": true
+        },
+        {
+          "id": "linux-amd64",
+          "status": "NATIVE_REPLAY_VERIFIED",
+          "nativeExecution": true
+        },
+        {
+          "id": "linux-arm64",
+          "status": "NOT_CLAIMED",
+          "nativeExecution": false
+        }
+      ],
+      "boundaries": {
+        "gate": "ALL_GATES_OPEN",
+        "productionDatabase": "NOT_AUTHORIZED",
+        "http": "NOT_IMPLEMENTED",
+        "p2": "NOT_IMPLEMENTED",
+        "provider": "NOT_AUTHORIZED",
+        "deployment": "NOT_AUTHORIZED",
+        "publication": "NOT_AUTHORIZED",
+        "release": "NOT_AUTHORIZED",
+        "legalApproval": "NOT_CLAIMED",
+        "currentVulnerabilityClosure": "NOT_CLAIMED",
+        "externalSignatureTrust": "NOT_PRODUCED_NOT_AUTHORIZED",
+        "fullDistributionCoverage": "NOT_CLAIMED",
+        "bootstrapDiscovery": "FORBIDDEN"
+      }
+    },
+    "evidence": {
+      "state": "ASSEMBLED_LATE_BOUND",
+      "receipts": [
+        {
+          "path": "tools/generator-supply/v3/evidence/replay.json",
+          "sha256": "sha256:b108e4e58f345eb12b5322cd109964d98aabe80ab54c98564d30673a0d0a70db",
+          "sizeBytes": 2127
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/darwin-a.json",
+          "sha256": "sha256:97bd491413d777012f435a85ae0b4b829dcb88a4af9051b65786cd0b50c60611",
+          "sizeBytes": 3054
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/darwin-b.json",
+          "sha256": "sha256:7a88412f9f012aa027f05e1217ed5eca08328d813d5e2fea0d6fa72ff2a71283",
+          "sizeBytes": 3054
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/darwin-isolation.json",
+          "sha256": "sha256:4937e597b09aa6c7a04f12881fc2db2434362581cad5b7fd91e6c486a8a3db01",
+          "sizeBytes": 7697
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/linux-a.json",
+          "sha256": "sha256:132c22f8f29831e2f62541cf64117a94bacfe683c0a862364b3c76ece5805b56",
+          "sizeBytes": 3055
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/linux-b.json",
+          "sha256": "sha256:dc0116d8dd44aad7d6d49c6b1ae2a32fb7bb33ecc5d55975beba9294ce72c313",
+          "sizeBytes": 3055
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/linux-isolation.json",
+          "sha256": "sha256:2983f98f929f8d99c7f3aed28a14a971f08ac839c22528cc1b448b58ec45bc95",
+          "sizeBytes": 11459
+        },
+        {
+          "path": "tools/generator-supply/v3/evidence/replay/projection.json",
+          "sha256": "sha256:0d53dcfa2efbc0bc6f44bf35a3f7819bcde28099be79836e2b7c03cde5f01841",
+          "sizeBytes": 1999
+        }
+      ],
+      "evidenceManifest": {
+        "algorithm": "sorted-path-nul-sha256-nul-size-v1",
+        "files": [
+          {
+            "path": "tools/generator-supply/v3/evidence/replay.json",
+            "sha256": "sha256:b108e4e58f345eb12b5322cd109964d98aabe80ab54c98564d30673a0d0a70db",
+            "sizeBytes": 2127
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/darwin-a.json",
+            "sha256": "sha256:97bd491413d777012f435a85ae0b4b829dcb88a4af9051b65786cd0b50c60611",
+            "sizeBytes": 3054
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/darwin-b.json",
+            "sha256": "sha256:7a88412f9f012aa027f05e1217ed5eca08328d813d5e2fea0d6fa72ff2a71283",
+            "sizeBytes": 3054
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/darwin-isolation.json",
+            "sha256": "sha256:4937e597b09aa6c7a04f12881fc2db2434362581cad5b7fd91e6c486a8a3db01",
+            "sizeBytes": 7697
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/linux-a.json",
+            "sha256": "sha256:132c22f8f29831e2f62541cf64117a94bacfe683c0a862364b3c76ece5805b56",
+            "sizeBytes": 3055
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/linux-b.json",
+            "sha256": "sha256:dc0116d8dd44aad7d6d49c6b1ae2a32fb7bb33ecc5d55975beba9294ce72c313",
+            "sizeBytes": 3055
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/linux-isolation.json",
+            "sha256": "sha256:2983f98f929f8d99c7f3aed28a14a971f08ac839c22528cc1b448b58ec45bc95",
+            "sizeBytes": 11459
+          },
+          {
+            "path": "tools/generator-supply/v3/evidence/replay/projection.json",
+            "sha256": "sha256:0d53dcfa2efbc0bc6f44bf35a3f7819bcde28099be79836e2b7c03cde5f01841",
+            "sizeBytes": 1999
+          }
+        ]
+      }
+    }
+  },
+  "registryDigest": "sha256:f9b3e97b2d7d23b53984c41324fba18284f23c067c7858de3b26c02fc6133c77"
+}
