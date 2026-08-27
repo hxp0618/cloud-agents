@@ -13,9 +13,11 @@ configured Worker identity, the authenticated client and server-issued
 negotiation binding, the operation-dispatch capability, a fixed lease and
 generation authority, a normalized namespace reference, a bounded deadline,
 supported command shape, unique finalizers, and a recomputed canonical SHA-256
-request digest. Exact retries return a detached replay claim; conflicting
-operation/idempotency/digest/fencing identities fail closed. Admission state is
-bounded and process-local.
+request digest. Exact retries return a detached replay claim; later attempts
+for one immutable operation must use a strictly greater attempt number while
+retaining operation intent and lease generation. Conflicting
+operation/idempotency/digest/fencing identities fail closed. Admission state
+is bounded and process-local.
 
 The claim contains only normalized references, timestamps, and digests. The
 raw fencing token, command payload, and request protobuf are not retained. The

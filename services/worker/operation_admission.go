@@ -187,8 +187,10 @@ type admissionRecord struct {
 
 // AdmitOperation validates and records one in-memory operation admission. It
 // performs no execution, receipt write, workspace/credential access, network
-// call, or provider invocation. A repeated exact request returns a detached
-// replay claim; a changed operation or idempotency identity fails closed.
+// call, or provider invocation. A repeated exact attempt returns a detached
+// replay claim; later attempts for the same immutable operation must retain
+// its idempotency/canonical/lease identity and use a strictly greater attempt
+// number. Any changed operation or idempotency identity fails closed.
 func (s *Service) AdmitOperation(ctx context.Context, req *connectv1alpha1.OperationAttemptEnvelope) (*AdmissionClaim, error) {
 	if s == nil || s.identity == nil || s.now == nil {
 		return nil, admissionFailure("admission_unavailable", "operation admission authority is not configured", connect.CodeFailedPrecondition)
@@ -340,28 +342,51 @@ func (s *Service) AdmitOperation(ctx context.Context, req *connectv1alpha1.Opera
 	if s.admissions == nil {
 		s.admissions = make(map[string]admissionRecord)
 	}
-	if existing, exists := s.admissions[base.operationID]; exists {
-		if existing.idempotencyKey != operation.GetIdempotencyKey() ||
-			existing.claim.attemptID != base.attemptID ||
-			existing.claim.attemptNumber != base.attemptNumber ||
-			existing.claim.canonicalDigest != base.canonicalDigest ||
-			existing.claim.fencingDigest != base.fencingDigest {
-			return nil, admissionFailure("idempotency_conflict", "operation identity conflicts with an existing admission", connect.CodeAlreadyExists)
+	recordKey := admissionRecordKey(base.operationID, base.attemptID)
+	var operationSeen bool
+	var highestAttempt uint32
+	for key, existing := range s.admissions {
+		// Test-only or legacy records with an empty claim cannot establish an
+		// operation identity, but still count toward the bounded capacity.
+		if existing.claim.operationID == base.operationID {
+			operationSeen = true
+			if existing.idempotencyKey != operation.GetIdempotencyKey() ||
+				existing.claim.canonicalDigest != base.canonicalDigest ||
+				existing.claim.leaseID != base.leaseID ||
+				existing.claim.generation != base.generation {
+				return nil, admissionFailure("idempotency_conflict", "operation identity conflicts with an existing admission", connect.CodeAlreadyExists)
+			}
+			if key == recordKey {
+				if existing.claim.attemptNumber != base.attemptNumber || existing.claim.fencingDigest != base.fencingDigest {
+					return nil, admissionFailure("idempotency_conflict", "attempt identity conflicts with an existing admission", connect.CodeAlreadyExists)
+				}
+				replay := cloneAdmissionClaim(existing.claim)
+				replay.replayed = true
+				return replay, nil
+			}
+			if existing.claim.attemptNumber >= highestAttempt {
+				highestAttempt = existing.claim.attemptNumber
+			}
 		}
-		replay := cloneAdmissionClaim(existing.claim)
-		replay.replayed = true
-		return replay, nil
-	}
-	for _, existing := range s.admissions {
-		if existing.idempotencyKey == operation.GetIdempotencyKey() {
+		if existing.idempotencyKey == operation.GetIdempotencyKey() && existing.claim.operationID != "" && existing.claim.operationID != base.operationID {
 			return nil, admissionFailure("idempotency_conflict", "idempotency key conflicts with an existing admission", connect.CodeAlreadyExists)
 		}
+	}
+	if operationSeen && base.attemptNumber <= highestAttempt {
+		return nil, admissionFailure("attempt_number_not_monotonic", "attempt number must increase for an existing operation", connect.CodeFailedPrecondition)
 	}
 	if len(s.admissions) >= maxAdmissionRecords {
 		return nil, admissionFailure("admission_capacity_exceeded", "in-memory admission capacity is exhausted", connect.CodeResourceExhausted)
 	}
-	s.admissions[base.operationID] = admissionRecord{claim: base, idempotencyKey: operation.GetIdempotencyKey()}
+	s.admissions[recordKey] = admissionRecord{claim: base, idempotencyKey: operation.GetIdempotencyKey()}
 	return cloneAdmissionClaim(base), nil
+}
+
+func admissionRecordKey(operationID, attemptID string) string {
+	// Identifiers reject control characters, so a NUL separator cannot collide
+	// with either component and keeps the composite key allocation-free beyond
+	// the concatenated identifiers.
+	return operationID + "\x00" + attemptID
 }
 
 func cloneAdmissionClaim(source AdmissionClaim) *AdmissionClaim {

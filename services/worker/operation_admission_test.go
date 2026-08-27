@@ -283,6 +283,35 @@ func TestOperationAdmissionReplayConflictsAndNestedUnknowns(t *testing.T) {
 	assertAdmissionError(t, err, connect.CodeInvalidArgument, "unknown_fields")
 }
 
+func TestOperationAdmissionAllowsStrictlyIncreasingAttempts(t *testing.T) {
+	f := newAdmissionFixture(t, true)
+	first, err := f.s.AdmitOperation(context.Background(), f.req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := proto.Clone(f.req).(*workerv1alpha1.OperationAttemptEnvelope)
+	second.AttemptId = "attempt-002"
+	second.AttemptNumber = 2
+	second.Operation.Fencing.Token = []byte("rotated-fencing-token")
+	// The raw token is excluded from canonical JSON, so a new attempt may use
+	// a renewed proof while retaining the same operation intent.
+	secondClaim, err := f.s.AdmitOperation(context.Background(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondClaim.Replayed() || secondClaim.AttemptID() != "attempt-002" || secondClaim.AttemptNumber() != 2 || secondClaim.CanonicalRequestDigest() != first.CanonicalRequestDigest() {
+		t.Fatalf("second attempt claim = %+v", secondClaim)
+	}
+	if got := len(f.s.admissions); got != 2 {
+		t.Fatalf("admission records = %d, want 2", got)
+	}
+	older := proto.Clone(f.req).(*workerv1alpha1.OperationAttemptEnvelope)
+	older.AttemptId = "attempt-003"
+	older.AttemptNumber = 1
+	_, err = f.s.AdmitOperation(context.Background(), older)
+	assertAdmissionError(t, err, connect.CodeFailedPrecondition, "attempt_number_not_monotonic")
+}
+
 func TestOperationAdmissionAuthorityAttemptAndScopeNormalization(t *testing.T) {
 	f := newAdmissionFixture(t, true)
 	f.s.admissionLeaseID = ""
