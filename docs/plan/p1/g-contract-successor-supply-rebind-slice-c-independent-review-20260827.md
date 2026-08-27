@@ -30,6 +30,8 @@ adding this record.
 ## Projection reconstruction
 
 The versioned wrapper was run twice from fresh canonical external leaves:
+the invocations occurred while the checkout was exactly at the candidate
+commit, before this review record was added.
 
 ```text
 scripts/replay-platform-generators-isolated.sh build-projection \
