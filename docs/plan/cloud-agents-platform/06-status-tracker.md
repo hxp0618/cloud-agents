@@ -609,6 +609,13 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       performed. This is a deterministic P1 source/consumer mismatch requiring a new pre-replay repair candidate
       and fresh projection/native replay; see
       [`Slice E lock assembly blocker`](../p1/g-contract-current-source-phase-successor-slice-e-lock-assembly-blocker-20260826.md)。
+- [ ] D-053 fresh evidence revision `D-053-FRESH-20260827-A` resets the live lock to the fixed post-H v2
+      predecessor and removes only the 16 historical v3/R5/tuple/registry late-bound outputs; the old v3
+      evidence remains recoverable Git history but is stale for the current tree. Fresh C→D→E projection,
+      native A/B replay, and independent P0/P1/P2 review are pending under the new reset/tree fence. This
+      authority remains local, non-Gate, `notGateClosure=true`, `ALL_GATES_OPEN`; no assembled lock write,
+      production database, HTTP/P2/provider effect, deployment, publication, release, or Gate transition is
+      authorized. See [`fresh evidence authority`](../p1/g-contract-current-source-fresh-evidence-authority-20260827.md)。
 - [x] Durable Project-create `000014` successor authority
       `D-053-MIG-000014.r1` 已在固定候选 `1325dc1773ef9bad2d809fedee9b392e3cdbf959`（tree
       `49e53f2462af20201231c2428eb56cce543403a2`）完成 generated source/schema/profile、完整
