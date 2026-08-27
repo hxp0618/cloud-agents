@@ -1,0 +1,31 @@
+{
+  "formatVersion": "cloud-agents-generator-supply-replay-summary/v3",
+  "status": "DUAL_PLATFORM_TWO_ARCHIVES_EXACT_REPLAY_VERIFIED",
+  "wrapperPolicy": "VERSIONED_ISOLATION_WRAPPER_V3",
+  "wrapperSha256": "sha256:9acfc4163fead4dace517c069b8b0e74aaacc859e8cdd2dee17b84182d0be990",
+  "authoritativeReplayScope": "EXACT49_CORE_OUTPUTS_SUPPLY_PROFILE_AND_LOCK_POST_ASSEMBLY",
+  "projectionTreeSha": "d91447364745af16314f348d550b358f995fad0b",
+  "projectionArchiveSha256": "sha256:395f64058dbdae27ba0897861c39264ca3da36deca342ec1f98f5173c67b777b",
+  "projectionArchiveSizeBytes": 50083840,
+  "projectionArchiveMemberManifestAlgorithm": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1",
+  "projectionArchiveMemberManifestSha256": "sha256:e3cf10c9aa536a004425fe23f4e6e1c7977737067cf67afdba6421f02f70ff9a",
+  "projectionArchiveMembers": 1775,
+  "inputTreeManifestAlgorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+  "inputTreeManifestSha256": "sha256:1eb15cefa31f917efe2e5d0c4b345829bffbc414214c8ae08c88ac2416ecddd8",
+  "inputTreeFiles": 1569,
+  "candidateManifestSha256": "sha256:bedb5d26301f627393a107afda9863899dae0909793ae7df8d0ad06018a282e9",
+  "darwinNetworkIsolation": "SANDBOX_EXEC_DENY_NETWORK_WITH_NEGATIVE_PROBES",
+  "linuxNetworkIsolation": "UNSHARE_NETWORK_MOUNT_PID_PINNED_UBUNTU_READ_ONLY_ROOTFS",
+  "candidateOutputsEqual": true,
+  "nonAllowlistedChanges": 0,
+  "runReportSha256": {
+    "darwin-a": "sha256:97bd491413d777012f435a85ae0b4b829dcb88a4af9051b65786cd0b50c60611",
+    "darwin-b": "sha256:7a88412f9f012aa027f05e1217ed5eca08328d813d5e2fea0d6fa72ff2a71283",
+    "linux-a": "sha256:132c22f8f29831e2f62541cf64117a94bacfe683c0a862364b3c76ece5805b56",
+    "linux-b": "sha256:dc0116d8dd44aad7d6d49c6b1ae2a32fb7bb33ecc5d55975beba9294ce72c313"
+  },
+  "darwinIsolationSha256": "sha256:4937e597b09aa6c7a04f12881fc2db2434362581cad5b7fd91e6c486a8a3db01",
+  "linuxIsolationSha256": "sha256:2983f98f929f8d99c7f3aed28a14a971f08ac839c22528cc1b448b58ec45bc95",
+  "projectionReceiptSha256": "sha256:0d53dcfa2efbc0bc6f44bf35a3f7819bcde28099be79836e2b7c03cde5f01841",
+  "notGateClosure": true
+}
