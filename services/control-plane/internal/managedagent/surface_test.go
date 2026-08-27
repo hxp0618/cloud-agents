@@ -9,7 +9,7 @@ import (
 )
 
 func TestLifecycleKernelHasNoActuatorOrTransportImports(t *testing.T) {
-	for _, name := range []string{"lifecycle.go", "profile.go"} {
+	for _, name := range []string{"lifecycle.go", "profile.go", "events.go"} {
 		path := filepath.Join(".", name)
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 		if err != nil {

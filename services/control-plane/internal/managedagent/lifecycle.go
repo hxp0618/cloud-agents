@@ -281,12 +281,14 @@ type Clock func() time.Time
 // has no PostgreSQL, HTTP, Worker, Provider, Workspace, Credential, or
 // deployment dependency.
 type Store struct {
-	mu         sync.RWMutex
-	clock      Clock
-	sessions   map[sessionKey]sessionRecord
-	turns      map[turnKey]turnRecord
-	executions map[executionKey]executionRecord
-	mutations  map[mutationKey]mutationRecord
+	mu                sync.RWMutex
+	clock             Clock
+	sessions          map[sessionKey]sessionRecord
+	turns             map[turnKey]turnRecord
+	executions        map[executionKey]executionRecord
+	mutations         map[mutationKey]mutationRecord
+	events            []LifecycleEvent
+	nextEventSequence uint64
 }
 
 func (store *Store) ready() bool {
@@ -309,6 +311,7 @@ func NewStore(clock Clock) (*Store, error) {
 		turns:      make(map[turnKey]turnRecord),
 		executions: make(map[executionKey]executionRecord),
 		mutations:  make(map[mutationKey]mutationRecord),
+		events:     make([]LifecycleEvent, 0),
 	}, nil
 }
 
@@ -818,6 +821,9 @@ func (store *Store) mutate(
 	if !ManagedAgentLifecycleProfile().Valid() {
 		return mutationRecord{}, ErrContractDrift
 	}
+	if !ManagedAgentLifecycleEventProfile().Valid() || !lifecycleEventOperationKnown(operation) {
+		return mutationRecord{}, ErrContractDrift
+	}
 	key := mutationKey{scope: scope, operation: operation, idempotencyKey: mutation.IdempotencyKey}
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -839,6 +845,8 @@ func (store *Store) mutate(
 		return mutationRecord{}, err
 	}
 	record.digest = digest
+	store.nextEventSequence++
+	store.events = append(store.events, buildLifecycleEvent(scope, operation, digest, record, store.nextEventSequence, now))
 	store.mutations[key] = record
 	return record, nil
 }
