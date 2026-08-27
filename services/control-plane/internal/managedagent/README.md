@@ -26,3 +26,18 @@ Gate closure.
 
 The profile ID is `cloud-agents/managed-agent-lifecycle/v1alpha1`. Its checked-in
 state-machine digest is verified at construction and each mutation boundary.
+
+## Local event projection
+
+Successful lifecycle mutations also append a detached, in-memory
+`LifecycleEvent` projection under the versioned profile
+`cloud-agents/managed-agent-events/v1alpha1`. A single monotonic sequence is
+filtered by the tenant/project scope; returned cursors bind the exact event ID,
+scope, profile ID, and profile digest. Idempotent mutation replay returns the
+original result without appending a second event, and event records contain
+only typed resource IDs, state edges, timestamps, and digests—not raw input or
+secrets.
+
+This is a local read seam for ordering and cursor negative tests. It is not a
+durable event log, HTTP watch endpoint, PostgreSQL writer, worker dispatch,
+provider call, deployment, release, or Gate evidence.
