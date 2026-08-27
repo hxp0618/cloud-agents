@@ -1,12 +1,12 @@
 # G-CONTRACT R5 current-source independent review
 
-Date: 2026-08-28 Asia/Shanghai  
-Authority: `D-053 / ADR-0030 Slice H`  
+Date: 2026-08-28 Asia/Shanghai
+Authority: `D-053 / ADR-0030 Slice H`
 Review type: fixed-object, independent, read-only
 
 ## Verdict
 
-`APPROVE_P0_0_P1_0_P2_0`
+`APPROVE - P0=0 / P1=0 / P2=0`
 
 This review covers only the R5 current-source phase record at the fixed
 candidate below. It does not close `G-CONTRACT` or any other Gate, and it
@@ -34,10 +34,10 @@ candidate; `git diff --check` is clean.
 ## R5 record and fixed authorities
 
 The R5 Markdown is the typed renderer output, not a hand-edited projection.
-Its fixed semantic authority is
-`cloud-agents/platform/gate-phase-record/g-contract-p1/v1`; the record binds
-the current source, model, criteria authority, and review-binding registry by
-their exact digests. The criteria authority SHA-256 is
+The renderer check reproduced the committed bytes exactly. Its fixed semantic
+authority is `cloud-agents/platform/gate-phase-record/g-contract-p1/v1`; the
+record binds the current source, model, criteria authority, and review-binding
+registry by exact digests. The criteria authority SHA-256 is
 `sha256:4a3d0b3c184e9673944411adbc5c8ea933883c855d5aada67862dad8e4dcc994`;
 the current review-binding registry SHA-256 is
 `sha256:e5e5a6abc573fcdcce9d0f1338dad033f5155fe76b555e1fca3a9efc19f14dde`.
@@ -75,18 +75,19 @@ The assembled supply candidate is commit
 `052d5d1a994349c42766bf9dafc292088add1a90`, parent
 `25b3a47a185db2151ca4ba6e1916811cba6e155e`; its independent supply review is
 the direct child `58e8f98a8b57760721306b3636a06dc3f10283b2`, with verdict
-`APPROVE_P0_0_P1_0_P2_0`. The assembled v3 lock is bound at that candidate to
-Git blob `86ab61bc060d8a0ad7878fb43b29a54997e40c2b`, file SHA-256
-`sha256:61267f5123004c108c9bcd79a8004da35af45d7ab7beb83d7b898da57a4d81ba`,
+`APPROVE - P0=0 / P1=0 / P2=0`. The assembled v3 lock is bound at that
+candidate to Git blob `86ab61bc060d8a0ad7878fb43b29a54997e40c2b`, file
+SHA-256 `sha256:61267f5123004c108c9bcd79a8004da35af45d7ab7beb83d7b898da57a4d81ba`,
 and state `ASSEMBLED`; its lock digest remains the immutable v3 assembled
 snapshot digest. Profile, evidence-manifest, replay, projection, and lock
-files are regular `100644` bytes and their exact SHA-256 values match the
-R5 record's assembled bindings.
+files are regular `100644` bytes and their exact SHA-256 values match the R5
+record's assembled bindings.
 
 ## Focused checks observed
 
 - `bunx vitest run scripts/lib/platform-g-contract-phase-record.test.ts scripts/lib/platform-g-contract-phase-state.test.ts scripts/lib/platform-generator-supply-profile-v3.test.ts scripts/lib/platform-contract-lock-v3.test.ts --reporter=dot` — 4 files, 31 tests passed.
-- `bun scripts/check-platform-g-contract-phase-state.ts --check` — `R5_CURRENT_REVIEW_ABSENT`.
+- `bun scripts/generate-platform-g-contract-phase-record.ts --check <ephemeral fixed binding input>` — `g-contract-phase-record: current` (typed renderer bytes exact; the input was not added to the candidate).
+- `bun scripts/check-platform-g-contract-phase-state.ts --check` — `R5_REVIEW_CURRENT_BINDING_ABSENT` (the expected pre-binding state after this review file is present).
 - `bun scripts/generate-platform-generator-supply-profile-v3.ts --check-source` and `--check-assembly` — `ASSEMBLED_PROFILE_CURRENT`.
 - `bun scripts/generate-platform-contract-lock-v3.ts --check` — `ASSEMBLED`; `--check-assembled` — `ASSEMBLED current`.
 - Exact candidate, parent, tree, mode, blob, and SHA-256 checks above; `git diff --check` passed.
