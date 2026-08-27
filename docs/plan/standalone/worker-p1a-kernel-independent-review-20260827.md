@@ -11,6 +11,14 @@
 - Review mode: independent, read-only candidate review. This commit adds only
   this review record; the candidate implementation is not modified.
 
+The first pass reviewed `0b90039b53b97f43f62d3455415a35cd86972ab1` and
+recorded P1-1 below. That finding was repaired within the same slice. This
+record was then rerun against fixed candidate
+`2a8987bf52822dc18916b0225fdc59e5930c5067` (tree
+`9cc44d9b4a3aed5d49c410ed228f4324b5c558d7`; binary diff SHA-256 against the
+P0 parent:
+`4895c9c9206c21b14c05b2adfd08ea4e5ba05a886db25d88515239a618399114`).
+
 ## Scope and authority check
 
 The candidate changes exactly six paths under `services/worker`: `README.md`,
@@ -73,13 +81,22 @@ HTTP/TLS listener, or external side effect was run or authorized. This review
 does not close any Gate, does not alter the standalone scope, and keeps
 Synara/T3 deferred. It does not extend or supersede any D-053 authority.
 
-## Verdict
+## Second-pass disposition and verdict
 
-**REJECT pending P1-1 repair and one re-review of the same candidate scope.**
+The fixed candidate validates generated and inbound negotiation IDs for valid
+UTF-8, control-character exclusion, and the 256-byte identifier cap before
+state insertion or map lookup. Focused negative tests cover empty, overlong,
+and control-character IDs and verify that rejected lookups do not invalidate a
+valid binding. The original P1-1 is closed; no new P0/P1 issue was found in
+the same implementation scope.
+
+**APPROVE** for this standalone P1-A kernel slice.
 
 - P0: 0
-- P1: 1
+- P1: 0 (P1-1 repaired and re-reviewed)
 - P2: 0
 
-After the bounded-ID repair is supplied as a new candidate commit, this review
-must be rerun against that fixed SHA; no r3/r4 scope is implied.
+This approval is limited to the fixed candidate SHA above. It does not authorize
+operation dispatch, durable receipts, production HTTP/TLS, database/provider/
+workspace/credential/artifact side effects, deployment, release, or Gate
+closure; no r3/r4 scope is implied.
