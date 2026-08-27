@@ -4,7 +4,8 @@ This module provides a transport-neutral, in-memory implementation of the
 generated `WorkerExecutionService` contract. It supports strict v1.0
 negotiation, capability admission, identity-bound negotiation bindings, and
 health checks. Negotiation identifiers are opaque, random by default, and
-expire from in-memory state.
+expire from in-memory state. Their identifier-specific limit is 256 UTF-8
+bytes (stricter than the general 1 KiB string ceiling).
 
 `ExecuteOperation` and `GetOperationReceipt` deliberately return
 `Unimplemented`; they do not dispatch work, persist receipts, or perform any
