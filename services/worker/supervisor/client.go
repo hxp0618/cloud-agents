@@ -1,8 +1,10 @@
 // Package supervisor contains the Supervisor-side admission client for the
 // generated Worker contract.
 //
-// It owns only the v1.0 negotiate/health binding. It does not start a
-// listener, configure TLS, persist a lease, invoke a provider, or write an
+// It owns only the v1.0 negotiate/health bindings. The default Bind method is
+// the original health-only profile; BindOperationAdmission is an explicit
+// local admission profile and still does not dispatch work. It does not start
+// a listener, configure TLS, persist a lease, invoke a provider, or write an
 // operation/receipt. The caller supplies an already configured generated
 // Connect client; transport identity remains the transport's authority.
 package supervisor
@@ -28,12 +30,21 @@ import (
 
 var errInvalidConfig = errors.New("worker_supervisor/invalid_config")
 
+const (
+	// NegotiationHealthProfileID is the original health-only supervisor
+	// binding and remains the default for compatibility.
+	NegotiationHealthProfileID = "cloud-agents/worker-supervisor-negotiation-health/v1"
+	// OperationAdmissionProfileID names the explicit local Worker admission
+	// binding. It does not imply operation execution or receipt support.
+	OperationAdmissionProfileID = workerkernel.OperationAdmissionProfileID
+)
+
 // Clock is injectable for deterministic expiry checks.
 type Clock func() time.Time
 
 // Config intentionally has no endpoint URL, protocol selector, or mutable
-// capability list. The P1-A supervisor profile is fixed to v1.0 negotiation
-// plus health; a future profile must be introduced as a versioned contract.
+// capability list. Bind and BindOperationAdmission select fixed, versioned
+// profiles in code; callers cannot supply arbitrary capabilities.
 type Config struct {
 	Client                 workerv1alpha1connect.WorkerExecutionServiceClient
 	ExpectedWorkerIdentity *workerv1alpha1.WorkloadIdentity
@@ -54,6 +65,7 @@ type Supervisor struct {
 }
 
 type bindingState struct {
+	profileID     string
 	negotiationID string
 	expiresAt     time.Time
 	accepted      []workerv1alpha1.Capability
@@ -63,6 +75,7 @@ type bindingState struct {
 
 // BindingSnapshot is a detached copy of the negotiated binding.
 type BindingSnapshot struct {
+	ProfileID            string
 	NegotiationID        string
 	ExpiresAt            time.Time
 	AcceptedCapabilities []workerv1alpha1.Capability
@@ -106,6 +119,18 @@ func New(config Config) (*Supervisor, error) {
 // health capability pair. No binding state is committed until the response
 // is fully validated.
 func (s *Supervisor) Bind(ctx context.Context) (BindingSnapshot, error) {
+	return s.bindWithProfile(ctx, requiredCapabilities(), NegotiationHealthProfileID)
+}
+
+// BindOperationAdmission negotiates the explicit local operation-admission
+// profile. It is separate from Bind so a Worker advertising the operation
+// capability never silently changes the original health-only contract.
+// Dispatch and durable receipt methods remain unimplemented.
+func (s *Supervisor) BindOperationAdmission(ctx context.Context) (BindingSnapshot, error) {
+	return s.bindWithProfile(ctx, operationAdmissionCapabilities(), OperationAdmissionProfileID)
+}
+
+func (s *Supervisor) bindWithProfile(ctx context.Context, capabilities []workerv1alpha1.Capability, profileID string) (BindingSnapshot, error) {
 	if s == nil || !clientAvailable(s.client) || !validIdentity(s.workerIdentity) || s.now == nil {
 		return BindingSnapshot{}, errInvalidConfig
 	}
@@ -120,11 +145,8 @@ func (s *Supervisor) Bind(ctx context.Context) (BindingSnapshot, error) {
 		return BindingSnapshot{}, err
 	}
 	response, err := s.client.Negotiate(ctx, connect.NewRequest(&workerv1alpha1.NegotiationRequest{
-		SupportedVersions: []*workerv1alpha1.ProtocolVersion{{Major: workerkernel.ProtocolMajor, Minor: workerkernel.ProtocolMinor}},
-		RequiredCapabilities: []workerv1alpha1.Capability{
-			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
-			workerv1alpha1.Capability_CAPABILITY_HEALTH,
-		},
+		SupportedVersions:      []*workerv1alpha1.ProtocolVersion{{Major: workerkernel.ProtocolMajor, Minor: workerkernel.ProtocolMinor}},
+		RequiredCapabilities:   append([]workerv1alpha1.Capability(nil), capabilities...),
 		ExpectedServerIdentity: cloneIdentity(s.workerIdentity),
 	}))
 	if err != nil {
@@ -137,10 +159,11 @@ func (s *Supervisor) Bind(ctx context.Context) (BindingSnapshot, error) {
 	if !ok {
 		return BindingSnapshot{}, errInvalidConfig
 	}
-	state, err := validateNegotiationResponse(response, s.workerIdentity, now)
+	state, err := validateNegotiationResponse(response, s.workerIdentity, now, capabilities)
 	if err != nil {
 		return BindingSnapshot{}, err
 	}
+	state.profileID = profileID
 	s.mu.Lock()
 	s.binding = state
 	s.mu.Unlock()
@@ -194,9 +217,10 @@ func (s *Supervisor) CheckHealth(ctx context.Context) (HealthSnapshot, error) {
 		s.clearBindingIf(state)
 		return HealthSnapshot{}, fail(connect.CodeDeadlineExceeded, "binding_expired")
 	}
+	required := append([]workerv1alpha1.Capability(nil), state.accepted...)
 	response, err := s.client.CheckHealth(ctx, connect.NewRequest(&workerv1alpha1.HealthRequest{
 		Negotiation:            state.negotiationBinding(),
-		RequiredCapabilities:   requiredCapabilities(),
+		RequiredCapabilities:   required,
 		ExpectedServerIdentity: cloneIdentity(s.workerIdentity),
 	}))
 	if err != nil {
@@ -241,7 +265,15 @@ func requiredCapabilities() []workerv1alpha1.Capability {
 	}
 }
 
-func validateNegotiationResponse(response *connect.Response[workerv1alpha1.NegotiationResponse], expected *workerv1alpha1.WorkloadIdentity, now time.Time) (*bindingState, error) {
+func operationAdmissionCapabilities() []workerv1alpha1.Capability {
+	return []workerv1alpha1.Capability{
+		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+		workerv1alpha1.Capability_CAPABILITY_HEALTH,
+		workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+	}
+}
+
+func validateNegotiationResponse(response *connect.Response[workerv1alpha1.NegotiationResponse], expected *workerv1alpha1.WorkloadIdentity, now time.Time, required []workerv1alpha1.Capability) (*bindingState, error) {
 	if response == nil || response.Msg == nil {
 		return nil, fail(connect.CodeInternal, "negotiation_response_missing")
 	}
@@ -249,14 +281,14 @@ func validateNegotiationResponse(response *connect.Response[workerv1alpha1.Negot
 	if !isProtocolVersion(message.GetSelectedVersion()) {
 		return nil, fail(connect.CodeFailedPrecondition, "negotiated_version_invalid")
 	}
-	if !exactCapabilities(message.GetAcceptedCapabilities(), requiredCapabilities()) {
+	if !exactCapabilities(message.GetAcceptedCapabilities(), required) {
 		return nil, fail(connect.CodeFailedPrecondition, "negotiated_capabilities_invalid")
 	}
 	descriptor, err := validateDescriptor(message.GetServer())
 	if err != nil {
 		return nil, err
 	}
-	if !exactCapabilities(descriptor.GetCapabilities(), requiredCapabilities()) {
+	if !exactCapabilities(descriptor.GetCapabilities(), required) {
 		return nil, fail(connect.CodeFailedPrecondition, "protocol_descriptor_capabilities_invalid")
 	}
 	if !sameIdentity(message.GetAuthenticatedServerIdentity(), expected) {
@@ -278,9 +310,10 @@ func validateNegotiationResponse(response *connect.Response[workerv1alpha1.Negot
 		}
 	}
 	return &bindingState{
+		profileID:     "",
 		negotiationID: message.GetNegotiationId(),
 		expiresAt:     expiresAt,
-		accepted:      append([]workerv1alpha1.Capability(nil), requiredCapabilities()...),
+		accepted:      append([]workerv1alpha1.Capability(nil), required...),
 		identity:      cloneIdentity(message.GetAuthenticatedServerIdentity()),
 		descriptor:    cloneDescriptor(descriptor),
 	}, nil
@@ -453,6 +486,7 @@ func (state *bindingState) snapshot() BindingSnapshot {
 		return BindingSnapshot{}
 	}
 	return BindingSnapshot{
+		ProfileID:            state.profileID,
 		NegotiationID:        state.negotiationID,
 		ExpiresAt:            state.expiresAt,
 		AcceptedCapabilities: append([]workerv1alpha1.Capability(nil), state.accepted...),
@@ -474,6 +508,7 @@ func cloneBindingState(state *bindingState) *bindingState {
 		return nil
 	}
 	return &bindingState{
+		profileID:     state.profileID,
 		negotiationID: state.negotiationID,
 		expiresAt:     state.expiresAt,
 		accepted:      append([]workerv1alpha1.Capability(nil), state.accepted...),

@@ -62,26 +62,34 @@ type IDGenerator func() (string, error)
 type Clock func() time.Time
 
 type Config struct {
-	WorkerIdentity   *workerv1alpha1.WorkloadIdentity
-	Capabilities     []workerv1alpha1.Capability
-	NegotiationTTL   time.Duration
-	IdentityProvider IdentityProvider
-	IDGenerator      IDGenerator
-	Clock            Clock
+	WorkerIdentity *workerv1alpha1.WorkloadIdentity
+	Capabilities   []workerv1alpha1.Capability
+	NegotiationTTL time.Duration
+	// AdmissionLeaseID and AdmissionGeneration bind the local, in-memory
+	// operation-admission seam to one externally supplied fencing authority.
+	// They do not authorize dispatch, durable receipts, or any external write.
+	AdmissionLeaseID    string
+	AdmissionGeneration uint64
+	IdentityProvider    IdentityProvider
+	IDGenerator         IDGenerator
+	Clock               Clock
 }
 
 // Service is an in-memory, transport-neutral WorkerExecutionService kernel.
 // Negotiation state is ephemeral and bound to client/server identities.
 type Service struct {
 	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
-	workerIdentity *workerv1alpha1.WorkloadIdentity
-	capabilities   map[workerv1alpha1.Capability]struct{}
-	ttl            time.Duration
-	identity       IdentityProvider
-	newID          IDGenerator
-	now            Clock
-	mu             sync.RWMutex
-	bindings       map[string]binding
+	workerIdentity      *workerv1alpha1.WorkloadIdentity
+	capabilities        map[workerv1alpha1.Capability]struct{}
+	ttl                 time.Duration
+	identity            IdentityProvider
+	newID               IDGenerator
+	now                 Clock
+	mu                  sync.RWMutex
+	bindings            map[string]binding
+	admissionLeaseID    string
+	admissionGeneration uint64
+	admissions          map[string]admissionRecord
 }
 
 type binding struct {
@@ -121,7 +129,7 @@ func NewService(cfg Config) (*Service, error) {
 		if !knownCapability(c) {
 			return nil, fmt.Errorf("worker/invalid_config: unknown capability %d", c)
 		}
-		if c != workerv1alpha1.Capability_CAPABILITY_NEGOTIATION && c != workerv1alpha1.Capability_CAPABILITY_HEALTH {
+		if c != workerv1alpha1.Capability_CAPABILITY_NEGOTIATION && c != workerv1alpha1.Capability_CAPABILITY_HEALTH && c != workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH {
 			return nil, fmt.Errorf("worker/invalid_config: capability %s is not implemented", c.String())
 		}
 		if _, duplicate := set[c]; duplicate {
@@ -130,7 +138,9 @@ func NewService(cfg Config) (*Service, error) {
 		set[c] = struct{}{}
 	}
 	return &Service{workerIdentity: cloneIdentity(cfg.WorkerIdentity), capabilities: set, ttl: cfg.NegotiationTTL,
-		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding)}, nil
+		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
+		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
+		admissions: make(map[string]admissionRecord)}, nil
 }
 
 func (s *Service) ProtocolDescriptor() *workerv1alpha1.ProtocolDescriptor {
