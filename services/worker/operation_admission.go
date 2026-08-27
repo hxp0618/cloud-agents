@@ -183,6 +183,7 @@ func (claim *AdmissionClaim) Replayed() bool {
 type admissionRecord struct {
 	claim          AdmissionClaim
 	idempotencyKey string
+	client         *connectv1alpha1.WorkloadIdentity
 }
 
 // AdmitOperation validates and records one in-memory operation admission. It
@@ -350,6 +351,9 @@ func (s *Service) AdmitOperation(ctx context.Context, req *connectv1alpha1.Opera
 		// operation identity, but still count toward the bounded capacity.
 		if existing.claim.operationID == base.operationID {
 			operationSeen = true
+			if existing.client != nil && !sameIdentity(existing.client, client) {
+				return nil, admissionFailure("client_identity_mismatch", "authenticated client identity does not match existing admission", connect.CodePermissionDenied)
+			}
 			if existing.idempotencyKey != operation.GetIdempotencyKey() ||
 				existing.claim.canonicalDigest != base.canonicalDigest ||
 				existing.claim.leaseID != base.leaseID ||
@@ -378,7 +382,7 @@ func (s *Service) AdmitOperation(ctx context.Context, req *connectv1alpha1.Opera
 	if len(s.admissions) >= maxAdmissionRecords {
 		return nil, admissionFailure("admission_capacity_exceeded", "in-memory admission capacity is exhausted", connect.CodeResourceExhausted)
 	}
-	s.admissions[recordKey] = admissionRecord{claim: base, idempotencyKey: operation.GetIdempotencyKey()}
+	s.admissions[recordKey] = admissionRecord{claim: base, idempotencyKey: operation.GetIdempotencyKey(), client: cloneIdentity(client)}
 	return cloneAdmissionClaim(base), nil
 }
 

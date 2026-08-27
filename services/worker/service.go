@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -73,6 +75,10 @@ type Config struct {
 	IdentityProvider    IdentityProvider
 	IDGenerator         IDGenerator
 	Clock               Clock
+	// Executor is an optional process-local operation executor. It is invoked
+	// only after strict admission and must not perform external side effects.
+	// A nil executor keeps operation dispatch explicitly unavailable.
+	Executor OperationExecutor
 }
 
 // Service is an in-memory, transport-neutral WorkerExecutionService kernel.
@@ -86,10 +92,15 @@ type Service struct {
 	newID               IDGenerator
 	now                 Clock
 	mu                  sync.RWMutex
+	executionMu         sync.Mutex
 	bindings            map[string]binding
 	admissionLeaseID    string
 	admissionGeneration uint64
 	admissions          map[string]admissionRecord
+	executor            OperationExecutor
+	receipts            map[string]receiptRecord
+	receiptsByAttempt   map[string]string
+	receiptSequence     uint64
 }
 
 type binding struct {
@@ -140,7 +151,8 @@ func NewService(cfg Config) (*Service, error) {
 	return &Service{workerIdentity: cloneIdentity(cfg.WorkerIdentity), capabilities: set, ttl: cfg.NegotiationTTL,
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
-		admissions: make(map[string]admissionRecord)}, nil
+		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
+		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil
 }
 
 func (s *Service) ProtocolDescriptor() *workerv1alpha1.ProtocolDescriptor {
@@ -257,17 +269,174 @@ func (s *Service) CheckHealth(ctx context.Context, req *connect.Request[workerv1
 	return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: s.ProtocolDescriptor(), ObservedAt: timestamppb.New(s.now().UTC())}), nil
 }
 
-func (s *Service) ExecuteOperation(ctx context.Context, _ *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+func (s *Service) ExecuteOperation(ctx context.Context, req *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
-	return nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented", "operation dispatch is not implemented")
+	if !executorAvailable(s.executor) {
+		return nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented", "operation dispatch is not configured")
+	}
+	// Serialize the local executor and receipt commit so an exact replay of an
+	// attempt cannot invoke the executor twice. This is process-local only.
+	s.executionMu.Lock()
+	defer s.executionMu.Unlock()
+	if req == nil || req.Msg == nil {
+		return nil, fail(connect.CodeInvalidArgument, "invalid_request", "operation attempt is required")
+	}
+	// Clone before admission and execution so caller mutation cannot alter the
+	// canonical input after it has been admitted.
+	attempt, ok := proto.Clone(req.Msg).(*workerv1alpha1.OperationAttemptEnvelope)
+	if !ok || attempt == nil {
+		return nil, fail(connect.CodeInvalidArgument, "invalid_request", "operation attempt is invalid")
+	}
+	claim, err := s.AdmitOperation(ctx, attempt)
+	if err != nil {
+		return nil, err
+	}
+	client, err := s.identity.ClientIdentity(ctx)
+	if err != nil || client == nil || validateIdentity(client) != nil {
+		return nil, fail(connect.CodeUnauthenticated, "transport_identity_missing", "authenticated client identity is required")
+	}
+	key := admissionRecordKey(claim.OperationID(), claim.AttemptID())
+	s.mu.RLock()
+	if receiptID := s.receiptsByAttempt[key]; receiptID != "" {
+		if existing, found := s.receipts[receiptID]; found {
+			if existing.client != nil && !sameIdentity(existing.client, client) {
+				s.mu.RUnlock()
+				return nil, fail(connect.CodePermissionDenied, "client_identity_mismatch", "authenticated client identity does not match receipt")
+			}
+			receipt := proto.Clone(existing.receipt).(*workerv1alpha1.DurableReceipt)
+			s.mu.RUnlock()
+			return connect.NewResponse(receipt), nil
+		}
+	}
+	s.mu.RUnlock()
+	scope, _, err := normalizeNamespaceRef(attempt.Operation.GetScope())
+	if err != nil {
+		return nil, err
+	}
+	command, err := normalizeOperationCommand(attempt.Operation.GetCommand())
+	if err != nil {
+		return nil, err
+	}
+	input := OperationExecutionInput{Claim: cloneAdmissionClaim(*claim), Scope: scope, Command: command, Deadline: attempt.Operation.GetDeadline().AsTime().UTC()}
+	result, execErr := s.executor.Execute(ctx, input)
+	if execErr != nil {
+		result = OperationExecutionResult{Outcome: workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_FAILED, StableErrorCode: "execution_failed", RedactedSummary: "local executor failed"}
+	}
+	if err := validateExecutionResult(result); err != nil {
+		return nil, err
+	}
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	tokenDigest, err := fencingDigestBytes(claim.FencingTokenDigest())
+	if err != nil {
+		return nil, fail(connect.CodeInternal, "receipt_fencing_invalid", "admission fencing digest is invalid")
+	}
+	s.mu.Lock()
+	if receiptID := s.receiptsByAttempt[key]; receiptID != "" {
+		if existing, found := s.receipts[receiptID]; found {
+			if existing.client != nil && !sameIdentity(existing.client, client) {
+				s.mu.Unlock()
+				return nil, fail(connect.CodePermissionDenied, "client_identity_mismatch", "authenticated client identity does not match receipt")
+			}
+			receipt := proto.Clone(existing.receipt).(*workerv1alpha1.DurableReceipt)
+			s.mu.Unlock()
+			return connect.NewResponse(receipt), nil
+		}
+	}
+	if len(s.receipts) >= maxReceiptRecords {
+		s.mu.Unlock()
+		return nil, fail(connect.CodeResourceExhausted, "receipt_capacity_exceeded", "in-memory receipt capacity is exhausted")
+	}
+	receiptID, idErr := s.newID()
+	if idErr != nil || receiptID == "" {
+		s.mu.Unlock()
+		return nil, fail(connect.CodeInternal, "receipt_id_generation_failed", "receipt id generation failed")
+	}
+	if _, collision := s.receipts[receiptID]; collision {
+		s.mu.Unlock()
+		return nil, fail(connect.CodeInternal, "receipt_id_collision", "receipt id already exists")
+	}
+	if s.receiptSequence == ^uint64(0) {
+		s.mu.Unlock()
+		return nil, fail(connect.CodeResourceExhausted, "receipt_sequence_exhausted", "receipt sequence is exhausted")
+	}
+	s.receiptSequence++
+	receipt := &workerv1alpha1.DurableReceipt{ReceiptId: receiptID, OperationId: claim.OperationID(), AttemptId: claim.AttemptID(), IdempotencyKey: attempt.Operation.GetIdempotencyKey(), Sequence: s.receiptSequence, Fencing: &workerv1alpha1.FencingStamp{LeaseId: claim.LeaseID(), Generation: claim.Generation(), TokenSha256: tokenDigest}, Outcome: result.Outcome, ObservedAt: timestamppb.New(now), Finalizers: cloneFinalizerReceipts(result.Finalizers), Results: cloneResultReferences(result.Results), StableErrorCode: result.StableErrorCode, RedactedSummary: result.RedactedSummary}
+	s.receipts[receiptID] = receiptRecord{receipt: receipt, claim: *claim, client: cloneIdentity(client)}
+	s.receiptsByAttempt[key] = receiptID
+	s.mu.Unlock()
+	return connect.NewResponse(proto.Clone(receipt).(*workerv1alpha1.DurableReceipt)), nil
 }
-func (s *Service) GetOperationReceipt(ctx context.Context, _ *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+func (s *Service) GetOperationReceipt(ctx context.Context, req *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
-	return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented", "durable receipt retrieval is not implemented")
+	if !executorAvailable(s.executor) {
+		return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented", "detached receipt retrieval is not configured")
+	}
+	if req == nil || req.Msg == nil {
+		return nil, fail(connect.CodeInvalidArgument, "invalid_request", "receipt request is required")
+	}
+	m := req.Msg
+	if err := rejectUnknownFields(m); err != nil {
+		return nil, err
+	}
+	if proto.Size(m) > int(MaxWireMessageBytes) {
+		return nil, fail(connect.CodeInvalidArgument, "wire_message_too_large", "receipt request exceeds the hard wire limit")
+	}
+	if m.GetOperationId() == "" || m.GetReceiptId() == "" {
+		return nil, fail(connect.CodeInvalidArgument, "receipt_identity_required", "operation_id and receipt_id are required")
+	}
+	if err := validateIdentifier(m.GetOperationId(), "operation_id"); err != nil {
+		return nil, fail(connect.CodeInvalidArgument, "operation_id_invalid", "operation id is invalid")
+	}
+	if err := validateIdentifier(m.GetReceiptId(), "receipt_id"); err != nil {
+		return nil, fail(connect.CodeInvalidArgument, "receipt_id_invalid", "receipt id is invalid")
+	}
+	if m.GetRequiredCapability() != workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH {
+		return nil, fail(connect.CodeFailedPrecondition, "required_capability_invalid", "operation dispatch capability is required")
+	}
+	client, err := s.identity.ClientIdentity(ctx)
+	if err != nil || client == nil {
+		return nil, fail(connect.CodeUnauthenticated, "transport_identity_missing", "authenticated client identity is required")
+	}
+	if err := validateIdentity(client); err != nil {
+		return nil, fail(connect.CodeUnauthenticated, "invalid_transport_identity", "authenticated client identity is invalid")
+	}
+	if err := validateExpectedIdentity(m.GetExpectedServerIdentity(), s.workerIdentity); err != nil {
+		return nil, err
+	}
+	b, err := s.validateBinding(m.GetNegotiation(), client)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := b.caps[workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH]; !ok {
+		return nil, fail(connect.CodeFailedPrecondition, "capability_not_negotiated", "operation dispatch capability was not negotiated")
+	}
+	if m.GetFencing() == nil || m.GetFencing().GetLeaseId() == "" || m.GetFencing().GetGeneration() == 0 || len(m.GetFencing().GetToken()) == 0 || len(m.GetFencing().GetToken()) > maxOperationTokenBytes {
+		return nil, fail(connect.CodeInvalidArgument, "fencing_required", "fencing proof is required")
+	}
+	if err := validateIdentifier(m.GetFencing().GetLeaseId(), "lease_id"); err != nil {
+		return nil, fail(connect.CodeInvalidArgument, "lease_id_invalid", "lease id is invalid")
+	}
+	fencingSum := sha256.Sum256(m.GetFencing().GetToken())
+	s.mu.RLock()
+	record, found := s.receipts[m.GetReceiptId()]
+	s.mu.RUnlock()
+	if !found || record.receipt.GetOperationId() != m.GetOperationId() {
+		return nil, fail(connect.CodeNotFound, "receipt_not_found", "receipt is not available in this process")
+	}
+	if record.claim.LeaseID() != m.GetFencing().GetLeaseId() || record.claim.Generation() != m.GetFencing().GetGeneration() || record.claim.FencingTokenDigest() != "sha256:"+hex.EncodeToString(fencingSum[:]) {
+		return nil, fail(connect.CodePermissionDenied, "fencing_mismatch", "receipt fencing proof does not match admission")
+	}
+	if record.client != nil && !sameIdentity(record.client, client) {
+		return nil, fail(connect.CodePermissionDenied, "client_identity_mismatch", "authenticated client identity does not match receipt")
+	}
+	return connect.NewResponse(proto.Clone(record.receipt).(*workerv1alpha1.DurableReceipt)), nil
 }
 
 func (s *Service) validateBinding(got *workerv1alpha1.NegotiationBinding, client *workerv1alpha1.WorkloadIdentity) (binding, error) {

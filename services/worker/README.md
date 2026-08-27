@@ -17,11 +17,18 @@ are not retained. The profile is
 side effects. Admission state is bounded and ephemeral; it is not a durable
 receipt, execution lease, or authorization to run a provider.
 
-`ExecuteOperation` and `GetOperationReceipt` deliberately return
-`Unimplemented`; they do not dispatch work, persist receipts, or perform any
-other side effect. The operation capability is therefore an admission-only
-capability in this slice. No PostgreSQL, provider, workspace, credential,
-artifact, production dispatch, deployment, or release operation is included.
+The local execution profile is
+`cloud-agents/worker-operation-execution/localdev-v1alpha1`. When an explicit
+`OperationExecutor` is injected, `ExecuteOperation` performs strict admission
+and invokes that process-local, side-effect-free executor for the existing
+Probe and ValidateBinding commands. It returns a detached terminal receipt
+held only in bounded in-memory state; `GetOperationReceipt` retrieves that
+detached receipt only after rechecking identity, negotiation, capability, and
+fencing proof. These are ephemeral receipts, not durable receipts or a
+production dispatch lease. A nil executor keeps both methods explicitly
+unavailable. No PostgreSQL, provider, workspace, credential, artifact,
+production Runner, deployment, or release operation is included, and the
+Supervisor client remains unchanged in this slice.
 
 `NewHandler` exposes the generated Connect HTTP handler with 1 MiB read/send
 limits. It is a decoded handler seam for in-process integration only: this
