@@ -17,8 +17,9 @@ The sole reviewed candidate is commit
 `eccd737fecedd12e770faa77dd8020a97dcbf0ae`, tree
 `788cbd1ead590d44e3c39bc5e11083c9973d64c2`, with sole parent
 `57b1795da3d6a7f9cd147cd2ed56fc5c851e45d5`. Its exact Slice I domain diff is
-SHA-256 `sha256:c43a0fe703ce95d00d0bb4840d0db2ee240aa8c5e490a050f042837a48047390`
-and has exactly the required M/A/A topology:
+Raw `git diff --no-ext-diff` SHA-256 is
+`sha256:c43a0fe703ce95d00d0bb4840d0db2ee240aa8c5e490a050f042837a48047390`;
+it has exactly the required M/A/A topology:
 
 | status | path |
 | --- | --- |
