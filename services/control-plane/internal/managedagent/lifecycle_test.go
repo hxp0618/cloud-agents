@@ -38,6 +38,21 @@ func TestLifecycleProfileIsFrozenAndDetached(t *testing.T) {
 	}
 }
 
+func TestLifecycleInterruptAndCancelKeepDistinctExecutionEdges(t *testing.T) {
+	if !transitionAllowed(ResourceTurn, string(TurnRunning), "interrupt", string(TurnInterrupted)) {
+		t.Fatal("interrupt turn edge is missing")
+	}
+	if !transitionAllowed(ResourceExecution, string(ExecutionRunning), "interrupt", string(ExecutionCancelled)) {
+		t.Fatal("interrupt execution edge is missing")
+	}
+	if !transitionAllowed(ResourceTurn, string(TurnRunning), "cancel", string(TurnCancelled)) {
+		t.Fatal("cancel turn edge is missing")
+	}
+	if !transitionAllowed(ResourceExecution, string(ExecutionRunning), "cancel", string(ExecutionCancelled)) {
+		t.Fatal("cancel execution edge is missing")
+	}
+}
+
 func TestLifecycleHappyPathAndIdempotentReplay(t *testing.T) {
 	clock := newTestClock()
 	store := newTestStore(t, clock)

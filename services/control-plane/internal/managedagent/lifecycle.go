@@ -672,7 +672,7 @@ func (store *Store) InterruptTurn(ctx context.Context, input InterruptTurnInput)
 		if turn.snapshot.ExecutionID != input.TargetExecutionID || execution.snapshot.Generation != input.Generation ||
 			turn.snapshot.State != TurnRunning || execution.snapshot.State != ExecutionRunning ||
 			!transitionAllowed(ResourceTurn, string(TurnRunning), "interrupt", string(TurnInterrupted)) ||
-			!transitionAllowed(ResourceExecution, string(ExecutionRunning), "cancel", string(ExecutionCancelled)) {
+			!transitionAllowed(ResourceExecution, string(ExecutionRunning), "interrupt", string(ExecutionCancelled)) {
 			return mutationRecord{}, ErrInvalidTransition
 		}
 		turn.snapshot.State = TurnInterrupted
@@ -718,7 +718,7 @@ func (store *Store) CancelTurn(ctx context.Context, input CancelTurnInput) (Exec
 		if turn.snapshot.ExecutionID != input.TargetExecutionID || execution.snapshot.Generation != input.Generation ||
 			turn.snapshot.State != TurnRunning || execution.snapshot.State != ExecutionRunning ||
 			!transitionAllowed(ResourceTurn, string(TurnRunning), "cancel", string(TurnCancelled)) ||
-			!transitionAllowed(ResourceExecution, string(ExecutionRunning), "interrupt", string(ExecutionCancelled)) {
+			!transitionAllowed(ResourceExecution, string(ExecutionRunning), "cancel", string(ExecutionCancelled)) {
 			return mutationRecord{}, ErrInvalidTransition
 		}
 		turn.snapshot.State = TurnCancelled
