@@ -26,12 +26,15 @@ The fixed source baseline is the clean P0 parent:
 | source schema | `tools/generator-supply/v3/generator-supply-profile-source-v3.schema.json`, `100644`, 24,929 bytes, Git blob `2e12dc8464325d7a48caa5fbb9d8cf33c33f7d4d`, SHA-256 `sha256:13c11ffd9c6c8628d59f046ac678b6341f5ea5e694d9a8eefff3f9cd48211464` |
 | output schema | `tools/generator-supply/v3/generator-supply-profile-v3.schema.json`, `100644`, 3,772 bytes, Git blob `e19c46819c1898b96345ff50bb327ee0a6b71217`, SHA-256 `sha256:0b500db662990bc80e3cbaef2063ae9c1e72030f0111957803d8315959eb7e57` |
 
-The next reset child may change only the predeclared late-bound D-053 paths
-below. It must preserve every r1/r2 migration object, `D-053-EC-2.r3`, all
+The reset child for this revision is commit
+`5d7cf34108e76287dfeaaf2364285d96d02f9b8a` (tree
+`915a5ff3caf0a39e6a8c8c86c42b1c2189eddea3`), whose sole parent is the fixed P0
+baseline above. It changes only the predeclared late-bound D-053 paths and
+adds this authority record. It must preserve every r1/r2 migration object, `D-053-EC-2.r3`, all
 v1/v2 predecessor source/schema/profile/manifest/archive/review bytes, and all
 non-D-053 current source files byte-for-byte. The reset child identity is
-bound by the independent review; this authority deliberately does not
-self-reference that future commit.
+bound by the independent review; the authority does not bind any future
+projection, replay, assembly, or review bytes.
 
 ## Exact late-bound reset and projection
 
