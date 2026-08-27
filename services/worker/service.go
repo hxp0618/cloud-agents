@@ -25,6 +25,8 @@ const (
 	MaxStringBytes      uint32 = 1024
 	MaxPayloadBytes     uint32 = 64 << 10
 	MaxDeadlineSeconds  uint32 = 300
+	// Negotiation identifiers use the contract's stricter 256-byte identifier cap.
+	MaxIdentifierBytes uint32 = 256
 )
 
 // IdentityProvider supplies the caller identity established by the transport.
@@ -197,8 +199,11 @@ func (s *Service) Negotiate(ctx context.Context, req *connect.Request[workerv1al
 	now := s.now().UTC()
 	expires := now.Add(s.ttl)
 	id, err := s.newID()
-	if err != nil || id == "" {
+	if err != nil {
 		return nil, fail(connect.CodeInternal, "negotiation_id_generation_failed", "negotiation id generation failed")
+	}
+	if err := validateNegotiationID(id); err != nil {
+		return nil, fail(connect.CodeInternal, "negotiation_id_invalid", "generated negotiation id is invalid")
 	}
 	s.mu.Lock()
 	if _, exists := s.bindings[id]; exists {
@@ -258,6 +263,9 @@ func (s *Service) GetOperationReceipt(ctx context.Context, _ *connect.Request[wo
 func (s *Service) validateBinding(got *workerv1alpha1.NegotiationBinding, client *workerv1alpha1.WorkloadIdentity) (binding, error) {
 	if got == nil || got.GetNegotiationId() == "" {
 		return binding{}, fail(connect.CodeFailedPrecondition, "negotiation_required", "negotiation binding is required")
+	}
+	if err := validateNegotiationID(got.GetNegotiationId()); err != nil {
+		return binding{}, fail(connect.CodeInvalidArgument, "negotiation_id_invalid", "negotiation id is invalid")
 	}
 	s.mu.Lock()
 	b, ok := s.bindings[got.GetNegotiationId()]
@@ -384,4 +392,16 @@ func randomID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func validateNegotiationID(id string) error {
+	if id == "" || !utf8.ValidString(id) || len(id) > int(MaxIdentifierBytes) {
+		return errors.New("negotiation id is empty, invalid UTF-8, or overlong")
+	}
+	for _, r := range id {
+		if r < 0x20 || r == 0x7f {
+			return errors.New("negotiation id contains control characters")
+		}
+	}
+	return nil
 }

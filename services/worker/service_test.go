@@ -112,6 +112,41 @@ func TestBindingFailClosedAndExpiry(t *testing.T) {
 	}
 }
 
+func TestBindingRejectsOverlongOrInvalidNegotiationIDBeforeLookup(t *testing.T) {
+	s, server, _ := testService(t)
+	r := negotiate(t, s, server)
+	bad := bindingFrom(r)
+	bad.NegotiationId = strings.Repeat("x", int(MaxIdentifierBytes)+1)
+	_, err := s.CheckHealth(context.Background(), connect.NewRequest(&workerv1alpha1.HealthRequest{Negotiation: bad, ExpectedServerIdentity: cloneIdentity(server)}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "negotiation_id_invalid") {
+		t.Fatalf("overlong id err=%v", err)
+	}
+	bad.NegotiationId = "bad\x00id"
+	_, err = s.CheckHealth(context.Background(), connect.NewRequest(&workerv1alpha1.HealthRequest{Negotiation: bad, ExpectedServerIdentity: cloneIdentity(server)}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "negotiation_id_invalid") {
+		t.Fatalf("control id err=%v", err)
+	}
+	// The malformed lookups must not mutate or invalidate the original binding.
+	if _, err = s.CheckHealth(context.Background(), connect.NewRequest(&workerv1alpha1.HealthRequest{Negotiation: bindingFrom(r), ExpectedServerIdentity: cloneIdentity(server)})); err != nil {
+		t.Fatalf("valid binding after rejected ids: %v", err)
+	}
+}
+
+func TestGeneratedNegotiationIDBoundsFailClosed(t *testing.T) {
+	server := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker/test", TrustDomain: "cloud-agents.test"}
+	client := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor/test", TrustDomain: "cloud-agents.test"}
+	for _, id := range []string{"", strings.Repeat("x", int(MaxIdentifierBytes)+1), "bad\x00id"} {
+		s, err := NewService(Config{WorkerIdentity: server, IdentityProvider: StaticIdentityProvider{Identity: client}, IDGenerator: func() (string, error) { return id, nil }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{SupportedVersions: []*workerv1alpha1.ProtocolVersion{{Major: 1, Minor: 0}}, ExpectedServerIdentity: cloneIdentity(server)}))
+		if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "negotiation_id_invalid") {
+			t.Fatalf("id %q err=%v", id, err)
+		}
+	}
+}
+
 func TestUnsupportedOperationsAndCancellationHaveNoEffects(t *testing.T) {
 	s, _, _ := testService(t)
 	_, err := s.ExecuteOperation(context.Background(), connect.NewRequest(&workerv1alpha1.OperationAttemptEnvelope{}))
