@@ -155,9 +155,8 @@ working-byte review 均返回 `APPROVE, P0=0/P1=0/P2=0`；fixed candidate
 `c547f04f15b86a6b33f73ea633837fd8db6cc00b` 的
 [fresh fixed-object review](../p1/g-contract-successor-supply-rebind-r1-assembly-writer-repair-independent-review-20260825.md)
 返回 `APPROVE, P0=0/P1=0/P2=0`，关闭 R1 implementation fixed-object prerequisite 且保留历史 `96d72c9` 拒绝。正式
-Slice C 仍 `NOT_STARTED`；须先将 review record 与索引更新固定为 clean review-child commit 并 fast-forward 进入
-`codex/cloud-agents-platform-p0`，再从 final clean review-child `HEAD`/tree 构造 projection，`c547f04` 仅作为已审
-implementation ancestor。随后 ADR-0030/D-053 fixed candidate `e45ef4e` 完成 Slice C projection 与 Slice D
+Slice C 已按 [`Slice C projection implementation`](../p1/g-contract-successor-supply-rebind-slice-c-implementation-20260827.md) 将 review record 与索引更新固定为 clean review-child，并从 final clean review-child `HEAD`/tree 构造 projection；`c547f04` 仅作为已审
+implementation ancestor。该 Slice C 只覆盖 deterministic write/check、exact 16 exclusions 与 Git tree/archive reconstruction。随后 ADR-0030/D-053 fixed candidate `e45ef4e` 完成 Slice C projection 与 Slice D
 Darwin/Linux A/B native replay；scope-corrected review 返回 `APPROVE, P0=0/P1=0/P2=0`。其 v3 profile 仍为
 `REPLAY_VERIFIED_REVIEW_PENDING`、`notGateClosure=true`；formal Slice E assembled lock 与 Slice F predeclared
 supply review 仍未开始，且历史 D-052-named review 仅作保留证据，不作 D-053 F binding。`G-CONTRACT`、

@@ -285,10 +285,10 @@
   candidate `c547f04f15b86a6b33f73ea633837fd8db6cc00b` 已由
   [fresh fixed-object review](g-contract-successor-supply-rebind-r1-assembly-writer-repair-independent-review-20260825.md)
   返回 `APPROVE, P0=0/P1=0/P2=0`，关闭 R1 implementation fixed-object prerequisite，且不改变历史 `96d72c9` 拒绝。
-  正式 Slice C 仍为 `NOT_STARTED`；须先将该 review record 与索引更新固定为 clean review-child commit 并 fast-forward
-  进入 `codex/cloud-agents-platform-p0`，再从 final clean review-child `HEAD`/tree 构造 projection，`c547f04` 仅作为已审
-  implementation ancestor。该 child commit/tree 固定后到 Slice C build 前不得改变任何 non-exact16 tracked bytes；Slice D
-  不得提前，Slice E 仍 `NOT_AUTHORIZED`，诊断 C/D 继续 stale/non-admissible；不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
+  已将该 review record 与索引更新固定为 clean review-child，并从该 child `HEAD`/tree 构造正式 Slice C projection；具体边界与
+  focused preflight 见 [`Slice C projection implementation`](g-contract-successor-supply-rebind-slice-c-implementation-20260827.md)。
+  Slice C 仅证明 deterministic write/check、exact 16 exclusions 与 Git tree/archive reconstruction；Slice D native replay、Slice E
+  assembly/lock 与 detached binding 仍 pending/not authorized，诊断 C/D 不复用；不改变任何 Gate 的 OPEN / `IN PROGRESS` 状态。
 - `G-DATA` local logical recovery：固定实现 `298879c` 新增 strict current-manifest ledger/apply validator 与 label-owned
   PostgreSQL 17 logical backup/restore runner。真实本地演练已取得 source/restored full-data digest exact，并完成
   idempotency、outbox 与 leader recovery；详见
