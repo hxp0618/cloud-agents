@@ -9,3 +9,5 @@ require (
 	github.com/hxp0618/cloud-agents/sdk/go v0.0.0-20260823210219-5599f9d20e76
 	google.golang.org/protobuf v1.36.12
 )
+
+require golang.org/x/text v0.39.0 // indirect

@@ -15,8 +15,11 @@ v1.0 admission slice:
 The caller supplies an already configured generated Connect client. This
 package does not construct an endpoint, listener, TLS/mTLS configuration,
 database lease, provider call, workspace/credential/artifact writer, or
-receipt. The transport remains the authority for the authenticated client
-identity. No production HTTP or external side effect is implied.
+receipt. The Worker operation capability, when advertised by a separate
+versioned profile, is still admission-only in the current Worker slice; this
+Supervisor profile does not dispatch it. The transport remains the authority
+for the authenticated client identity. No production HTTP or external side
+effect is implied.
 
 The limits are shared with `services/worker` P1-A (`1 MiB` wire,
 `64 KiB` payload, `64` repeated items, `1 KiB` strings, `256`-byte negotiation
