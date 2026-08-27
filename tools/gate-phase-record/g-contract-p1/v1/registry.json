@@ -1,0 +1,40 @@
+{
+  "formatVersion": "cloud-agents-g-contract-phase-binding-registry/v1",
+  "authorityId": "cloud-agents/platform/gate-phase-record/g-contract-p1/v1",
+  "sourceDigest": "sha256:3715914aebba7b74437e9694dac8427bf94ebcfea5b50505d45641dffb9df34c",
+  "tupleDigest": "sha256:d73574bd5ffdfdb65e822edebc422819e777ee9dc0000f456bb018c28ce4496d",
+  "bindingsDigest": "sha256:f7ae672d0a867cd14c3bcfad4c3c421fdafd97440a10dcaf4a129acbc3676361",
+  "bindings": [
+    {
+      "subject": "generator_supply_v3",
+      "candidateCommit": "94cbb23127a6a6c1ca31398d731d99b54cac80f9",
+      "candidateTree": "052d5d1a994349c42766bf9dafc292088add1a90",
+      "reviewCommit": "58e8f98a8b57760721306b3636a06dc3f10283b2",
+      "reviewTree": "fee863c98148f4494c0985cbf7e7784c5cf23196",
+      "reviewPath": "docs/plan/p1/g-contract-generator-supply-profile-v3-independent-review-20260825.md",
+      "reviewSha256": "sha256:c7f2bf258c0dc2f06bb43940ef323aa77f01e351b9fedf92c344d3000b423cbb",
+      "reviewDiffSha256": "sha256:a0b8d4016e8af31688fb3692fa05fcc5f9e84abbf76e42d9a6f6338a9b1658cb",
+      "verdict": "APPROVE_P0_0_P1_0_P2_0"
+    },
+    {
+      "subject": "g_contract_r5",
+      "candidateCommit": "f1d66a4d57f1241ca3ac364a77524c2520476c6c",
+      "candidateTree": "b66631c3e27c7b9713c3eb67539fbaced598980d",
+      "reviewCommit": "57b1795da3d6a7f9cd147cd2ed56fc5c851e45d5",
+      "reviewTree": "fa40732f1ce0d3fbaebe219ac79d66d2bafb1c53",
+      "reviewPath": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+      "reviewSha256": "sha256:2046666a570481512178fa721c374a11661014bb1bcd5d97fb0a24b3b9f7c3c9",
+      "reviewDiffSha256": "sha256:d714a98a4d225a09290f124171b5b114ac224aa4cc77c4e490941cf5f09f3157",
+      "verdict": "APPROVE_P0_0_P1_0_P2_0"
+    }
+  ],
+  "state": "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT",
+  "terminalReview": {
+    "path": "docs/plan/p1/g-contract-r5-review-binding-independent-review-20260825.md",
+    "state": "ABSENT"
+  },
+  "notGateClosure": true,
+  "gateStatus": "ALL_GATES_OPEN",
+  "closureDecision": "NONE",
+  "registryDigest": "sha256:f36cedc97a1c2d7b6c4270d72ede02a825dd80a69e9d418c135a4b72d4545097"
+}

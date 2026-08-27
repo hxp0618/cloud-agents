@@ -1,7 +1,7 @@
 {
   "formatVersion": "cloud-agents-platform-contract-generation-lock/v3",
   "lockVersion": 3,
-  "state": "ASSEMBLED",
+  "state": "PHASE_BOUND",
   "notGateClosure": true,
   "gateStatus": "ALL_GATES_OPEN",
   "predecessorV2": {
@@ -74,6 +74,66 @@
       }
     }
   },
+  "assembledSnapshot": {
+    "state": "ASSEMBLED",
+    "commitSha1": "94cbb23127a6a6c1ca31398d731d99b54cac80f9",
+    "treeSha1": "052d5d1a994349c42766bf9dafc292088add1a90",
+    "path": "contracts/generation.lock.json",
+    "fileType": "REGULAR_FILE",
+    "gitMode": "100644",
+    "gitBlobSha1": "86ab61bc060d8a0ad7878fb43b29a54997e40c2b",
+    "sha256": "sha256:61267f5123004c108c9bcd79a8004da35af45d7ab7beb83d7b898da57a4d81ba",
+    "sizeBytes": 3690
+  },
+  "phaseBinding": {
+    "state": "PHASE_BINDING_CURRENT_FINAL_REVIEW_ABSENT",
+    "artifacts": [
+      {
+        "role": "R5_CANDIDATE",
+        "artifact": {
+          "path": "docs/plan/cloud-agents-platform/evidence/G-CONTRACT/CAG-G-CONTRACT-P1-20260825-R5.md",
+          "fileType": "REGULAR_FILE",
+          "gitMode": "100644",
+          "gitBlobSha1": "41ad944fd3b06840010245f3f76f00fc1986b52d",
+          "sha256": "sha256:7e17fb12a8e78870a1cbcf1b17809cb019cc5fe18cb68a0202311ee614875492",
+          "sizeBytes": 8318
+        }
+      },
+      {
+        "role": "R5_REVIEW",
+        "artifact": {
+          "path": "docs/plan/p1/g-contract-r5-current-source-independent-review-20260825.md",
+          "fileType": "REGULAR_FILE",
+          "gitMode": "100644",
+          "gitBlobSha1": "e2c8b82329d34fc6e6cf191be47dc759fc8b07bf",
+          "sha256": "sha256:2046666a570481512178fa721c374a11661014bb1bcd5d97fb0a24b3b9f7c3c9",
+          "sizeBytes": 5722
+        }
+      },
+      {
+        "role": "REVIEW_TUPLE",
+        "artifact": {
+          "path": "tools/gate-phase-record/g-contract-p1/v1/review-tuple.json",
+          "fileType": "REGULAR_FILE",
+          "gitMode": "100644",
+          "gitBlobSha1": "172973ba0bf311d3b52e6d6d0ddaeceb55c05ce9",
+          "sha256": "sha256:be8f6a351684a51fa2ddfb513d020905dbe9d5a6352df32e39b4f149c8360569",
+          "sizeBytes": 3025
+        }
+      },
+      {
+        "role": "BINDING_REGISTRY",
+        "artifact": {
+          "path": "tools/gate-phase-record/g-contract-p1/v1/registry.json",
+          "fileType": "REGULAR_FILE",
+          "gitMode": "100644",
+          "gitBlobSha1": "5338bcfd60269e8db4d944697004735ebd70bfb3",
+          "sha256": "sha256:3785cde9869520207bb41a834969367614c48f6a09a93e3d2f1f53822743a5dd",
+          "sizeBytes": 2143
+        }
+      }
+    ]
+  },
   "implementationBoundary": {
     "productionDatabaseWrites": "NOT_AUTHORIZED",
     "httpSurface": "NOT_IMPLEMENTED",
@@ -83,5 +143,5 @@
     "publication": "NOT_AUTHORIZED",
     "gateStatus": "ALL_GATES_OPEN"
   },
-  "lockDigest": "sha256:2429a379bdd7cfb2f5cadf27ba40db3af081475184246418ea6c7e7176d6cba0"
+  "lockDigest": "sha256:a0296856a53425eba38d1900dac6e84ead9846f256cb94f55ff6853d3c236d5c"
 }
