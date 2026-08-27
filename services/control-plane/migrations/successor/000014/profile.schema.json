@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/migrations/successor/000014/profile.schema.json",
+  "title": "Durable Project create migration successor profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "authorityId",
+    "revision",
+    "successorId",
+    "inputScope",
+    "source",
+    "sourceDescriptor",
+    "profileDescriptor",
+    "predecessor",
+    "successor",
+    "runtime",
+    "receiptPaths",
+    "receiptState",
+    "runner",
+    "toolchain",
+    "platforms",
+    "lineageFence",
+    "reviewRules",
+    "implementationBoundary",
+    "profileDigest"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://schemas.cloud-agents.dev/platform/migrations/successor/000014/profile.schema.json"
+    },
+    "formatVersion": { "const": "cloud-agents-platform-migration-successor/v1" },
+    "authorityId": { "type": "string", "pattern": "^D-[0-9]{3}(?:-[A-Z0-9]+)+$" },
+    "revision": { "type": "string", "pattern": "^D-[0-9]{3}(?:-[A-Z0-9]+)+\\.r[0-9]+$" },
+    "successorId": { "type": "string", "minLength": 1 },
+    "inputScope": { "const": "generator-and-focused-verification-closure/v1" },
+    "source": { "$ref": "#/$defs/artifact" },
+    "sourceDescriptor": { "$ref": "#/$defs/artifact" },
+    "profileDescriptor": { "$ref": "#/$defs/artifact" },
+    "predecessor": { "$ref": "#/$defs/profilePredecessor" },
+    "successor": { "$ref": "#/$defs/profileSuccessor" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "receiptPaths": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/receiptPath" },
+      "uniqueItems": true
+    },
+    "receiptState": { "$ref": "#/$defs/receiptState" },
+    "runner": { "$ref": "#/$defs/runner" },
+    "toolchain": { "$ref": "#/$defs/toolchain" },
+    "platforms": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)+$" },
+      "uniqueItems": true
+    },
+    "lineageFence": { "$ref": "#/$defs/lineageFence" },
+    "reviewRules": { "$ref": "#/$defs/reviewRules" },
+    "implementationBoundary": { "$ref": "#/$defs/implementationBoundary" },
+    "profileDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?($|/))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "mode", "sizeBytes", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "mode": { "const": "100644" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "profileArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "mode", "sizeBytes", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "mode": { "const": "100644" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "profilePredecessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest",
+        "manifestDigest",
+        "schemaBundle",
+        "schemaBundleDigest",
+        "schemaHead"
+      ],
+      "properties": {
+        "manifest": { "$ref": "#/$defs/profileArtifact" },
+        "manifestDigest": { "$ref": "#/$defs/digest" },
+        "schemaBundle": { "$ref": "#/$defs/profileArtifact" },
+        "schemaBundleDigest": { "$ref": "#/$defs/digest" },
+        "schemaHead": { "type": "string", "pattern": "^[0-9]{6}$" }
+      }
+    },
+    "profileSuccessor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["migrationId", "sql", "catalog", "archive", "manifest", "schemaBundle"],
+      "properties": {
+        "migrationId": { "type": "string", "pattern": "^[0-9]{6}$" },
+        "sql": { "$ref": "#/$defs/profileArtifact" },
+        "catalog": { "$ref": "#/$defs/profileArtifact" },
+        "archive": { "$ref": "#/$defs/profileArtifact" },
+        "manifest": { "$ref": "#/$defs/profileArtifact" },
+        "schemaBundle": { "$ref": "#/$defs/profileArtifact" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestPath",
+        "schemaBundlePath",
+        "memberCount",
+        "memberPaths",
+        "sizeBytes",
+        "sha256",
+        "compression",
+        "memberAlgorithm"
+      ],
+      "properties": {
+        "manifestPath": { "$ref": "#/$defs/path" },
+        "schemaBundlePath": { "$ref": "#/$defs/path" },
+        "memberCount": { "type": "integer", "minimum": 1 },
+        "memberPaths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/path" },
+          "uniqueItems": true
+        },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "compression": { "const": "none" },
+        "memberAlgorithm": { "const": "deterministic-ustar-v1" },
+        "memberManifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "state",
+            "formatVersion",
+            "algorithm",
+            "order",
+            "recordCount",
+            "sizeBytes",
+            "sha256",
+            "records"
+          ],
+          "properties": {
+            "path": { "$ref": "#/$defs/path" },
+            "state": { "const": "ABSENT_PENDING" },
+            "formatVersion": {
+              "const": "cloud-agents-platform-runtime-member-manifest/v1"
+            },
+            "sha256": { "$ref": "#/$defs/digest" },
+            "algorithm": { "const": "deterministic-ustar-v1" },
+            "order": { "const": "ASCII-byte-path" },
+            "recordCount": { "type": "integer", "minimum": 1 },
+            "sizeBytes": { "type": "integer", "minimum": 1 },
+            "records": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/artifact" },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "receiptPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "stage", "state", "writeMode"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "path": { "$ref": "#/$defs/path" },
+        "schema": { "$ref": "#/$defs/path" },
+        "stage": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["ABSENT_PENDING", "PRESENT", "FORBIDDEN", "NOT_APPLICABLE"] },
+        "writeMode": { "enum": ["CREATE_ONCE_APPEND_ONLY", "NO_WRITE"] }
+      }
+    },
+    "receiptState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "appendOnly"],
+      "properties": {
+        "current": { "type": "string", "minLength": 1 },
+        "appendOnly": { "const": true }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entrypoint",
+        "productionEntrypoint",
+        "mode",
+        "logicalManifestPath",
+        "logicalSchemaBundlePath",
+        "completeLedger",
+        "entryWriter",
+        "recoveryWriter",
+        "externalEffects"
+      ],
+      "properties": {
+        "entrypoint": { "$ref": "#/$defs/path" },
+        "productionEntrypoint": { "$ref": "#/$defs/path" },
+        "mode": { "type": "string", "minLength": 1 },
+        "logicalManifestPath": { "$ref": "#/$defs/path" },
+        "logicalSchemaBundlePath": { "$ref": "#/$defs/path" },
+        "completeLedger": { "const": "no-op" },
+        "entryWriter": { "const": "NOT_IMPLEMENTED" },
+        "recoveryWriter": { "const": "NOT_IMPLEMENTED" },
+        "externalEffects": { "const": "forbidden" }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["go", "node", "bun"],
+      "properties": {
+        "go": { "type": "string", "minLength": 1 },
+        "node": { "type": "string", "minLength": 1 },
+        "bun": { "type": "string", "minLength": 1 }
+      }
+    },
+    "lineageFence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "predecessorHead", "successorHead", "reviewRule", "historicalEvidence"],
+      "properties": {
+        "kind": { "const": "single-predecessor-append-only" },
+        "predecessorHead": { "type": "string", "pattern": "^[0-9]{6}$" },
+        "successorHead": { "type": "string", "pattern": "^[0-9]{6}$" },
+        "reviewRule": { "type": "string", "minLength": 1 },
+        "historicalEvidence": { "const": "retain-and-never-rewrite" }
+      }
+    },
+    "reviewRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["independentReadOnly", "verdicts", "candidateMutation", "gateTransition"],
+      "properties": {
+        "independentReadOnly": { "const": true },
+        "verdicts": { "const": ["APPROVE", "REQUEST_CHANGES"] },
+        "candidateMutation": { "const": "forbidden" },
+        "gateTransition": { "const": "forbidden" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "databaseWrites",
+        "http",
+        "p2",
+        "provider",
+        "deployment",
+        "publication",
+        "gateTransition"
+      ],
+      "properties": {
+        "databaseWrites": { "const": "not_authorized" },
+        "http": { "const": "forbidden" },
+        "p2": { "const": "forbidden" },
+        "provider": { "const": "forbidden" },
+        "deployment": { "const": "forbidden" },
+        "publication": { "const": "forbidden" },
+        "gateTransition": { "const": "forbidden" }
+      }
+    }
+  }
+}

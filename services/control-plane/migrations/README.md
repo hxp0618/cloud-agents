@@ -294,6 +294,17 @@ ancestor archive, and deterministic runtime tar are produced by
 `scripts/generate-platform-migration-bundle.ts` and must be regenerated together
 after any SQL/profile digest change.
 
+The identifier-hardening migration `000014_harden_durable_project_create_identifiers.sql`
+is intentionally published through the versioned successor authority under
+`successor/000014/`. Its generated manifest/schema bundle and profile consume
+the exact `000013` bundle as a single predecessor and add only the SHA-256
+identifier replacement. The canonical `manifest.json` and `schema-bundle.json`
+remain at head `000013`; use
+`scripts/generate-platform-migration-bundle-successor.ts` to build or check the
+read-only successor runtime projection. A complete ledger is a no-op and entry
+or recovery writers remain `NOT_IMPLEMENTED`; this successor is not a
+production installation or release artifact.
+
 ## Immutable boundary
 
 Applied SQL is immutable exact-byte input (UTF-8, LF, no BOM, Git mode

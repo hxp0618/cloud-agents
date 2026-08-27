@@ -94,12 +94,13 @@ func Run(ctx context.Context, config Config, connector Connector) (result Result
 		return Result{}, fmt.Errorf("read migration ledger: %w", err)
 	}
 	entries := bundle.manifest.SchemaBundle.Migrations
-	if len(entries) != 13 || bundle.manifest.SchemaBundle.SchemaHead != "000013" {
-		return Result{}, errors.New("localdev runner requires manifest schema head 000013")
+	expectedLength, supportedHead := supportedManifestLength(bundle.manifest.SchemaBundle.SchemaHead)
+	if !supportedHead || len(entries) != expectedLength || len(entries) == 0 || bundle.manifest.SchemaBundle.SchemaHead != entries[len(entries)-1].ID {
+		return Result{}, errors.New("localdev runner requires a supported closed manifest schema head")
 	}
 	for index, entry := range entries {
 		if entry.ID != fmt.Sprintf("%06d", index+1) {
-			return Result{}, errors.New("localdev runner requires contiguous migrations 000001 through 000013")
+			return Result{}, errors.New("localdev runner requires contiguous supported migrations from 000001")
 		}
 	}
 	switch {
@@ -121,6 +122,17 @@ func Run(ctx context.Context, config Config, connector Connector) (result Result
 		}
 		result.NoOp = true
 		return result, nil
+	}
+}
+
+func supportedManifestLength(schemaHead string) (int, bool) {
+	switch schemaHead {
+	case "000013":
+		return 13, true
+	case "000014":
+		return 14, true
+	default:
+		return 0, false
 	}
 }
 

@@ -89,6 +89,56 @@ func TestRunCompleteLedgerIsDeterministicNoOp(t *testing.T) {
 	}
 }
 
+func TestLoadAndVerifyVersionedSuccessorManifest(t *testing.T) {
+	config := testConfig(t)
+	config.ManifestPath = "services/control-plane/migrations/successor/000014/manifest.json"
+	bundle, err := loadAndVerify(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.manifest.SchemaBundle.SchemaHead != "000014" || len(bundle.manifest.SchemaBundle.Migrations) != 14 {
+		t.Fatalf("unexpected successor manifest: head=%s migrations=%d", bundle.manifest.SchemaBundle.SchemaHead, len(bundle.manifest.SchemaBundle.Migrations))
+	}
+}
+
+func TestRunVersionedSuccessorCompleteLedgerIsNoOp(t *testing.T) {
+	config := testConfig(t)
+	config.ManifestPath = "services/control-plane/migrations/successor/000014/manifest.json"
+	bundle, err := loadAndVerify(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeSession{}
+	for _, entry := range bundle.manifest.SchemaBundle.Migrations {
+		session.rows = append(session.rows, ledgerRow(entry, bundle.manifest.SchemaBundleDigest, "localdev"))
+	}
+	result, err := Run(context.Background(), config, &fakeConnector{session: session})
+	if err != nil || !result.NoOp || result.Applied != 0 || result.SchemaHead != "000014" {
+		t.Fatalf("unexpected successor complete ledger result: %+v err=%v", result, err)
+	}
+	if len(session.apply) != 0 {
+		t.Fatalf("successor no-op applied migrations: %v", session.apply)
+	}
+}
+
+func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
+	for _, test := range []struct {
+		head   string
+		length int
+	}{
+		{head: "000013", length: 13},
+		{head: "000014", length: 14},
+	} {
+		length, ok := supportedManifestLength(test.head)
+		if !ok || length != test.length {
+			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
+		}
+	}
+	if length, ok := supportedManifestLength("000015"); ok || length != 0 {
+		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
+	}
+}
+
 func TestRunRejectsPartialAndDivergentLedgers(t *testing.T) {
 	bundle, err := loadAndVerify(testConfig(t))
 	if err != nil {

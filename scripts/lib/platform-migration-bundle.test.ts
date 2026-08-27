@@ -105,16 +105,16 @@ describe("migration bundle bootstrap", () => {
     expect(Buffer.from(first.runtimeTar).equals(Buffer.from(second.runtimeTar))).toBe(true);
     expect(Buffer.from(first.bootstrapTar).equals(Buffer.from(second.bootstrapTar))).toBe(true);
     expect(first.manifest.schema_bundle_digest).toBe(
-      "sha256:54bd987183d6e2d8a7e3ba58a5fa5ee0666015a101193f363f671be294bb2907",
+      "sha256:c7e08e81b463d04dd267438ac636811200586d5d84d8cb2e8d18799bd2c5faca",
     );
     expect(first.manifest.bootstrap_bundle_digest).toBe(
       "sha256:db95649924f259cfa320e897bd5e0934c35fcc9009d8492a69ec5dc71132081c",
     );
     expect(first.manifest.manifest_digest).toBe(
-      "sha256:454345322827369258f8496cce2c1e7f4d4b3e5b8b5f841f20c9fc84f53b3ddc",
+      "sha256:56af03a65461e2009cf73c16ac2b1d74d856f68e3efc8b363ab84c537660c4d1",
     );
     expect(sha256(first.runtimeTar)).toBe(
-      "sha256:5e5c34b6c6cda7467c4b1fb2527dd03695b6204ac9b26ffc42628e9bcd8e4c12",
+      "sha256:aaf2a96257bcdd2900cd4f83f908f07497188d2fba82a9c555c529907ad0db14",
     );
     expect(sha256(first.bootstrapTar)).toBe(
       "sha256:6654946d58f707d48c71740a41407674c34b5fbeced2e38eeb6c8d1bb08ae175",
@@ -523,6 +523,7 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
         "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
         "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
+        "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
       ].map((path) => [path, readFileSync(resolve(root, path))] as const),
     );
     expect(() => validateCatalogStatementBindings(catalog, sql)).not.toThrow();
@@ -557,6 +558,7 @@ describe("migration bundle bootstrap", () => {
       "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
       "services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql",
       "services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql",
+      "services/control-plane/migrations/000013_add_durable_project_create_writer.sql",
     ] as const;
     const original = new Map(paths.map((path) => [path, readFileSync(resolve(root, path))]));
     const faults = [
