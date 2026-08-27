@@ -106,7 +106,7 @@ func New(config Config) (*Supervisor, error) {
 // health capability pair. No binding state is committed until the response
 // is fully validated.
 func (s *Supervisor) Bind(ctx context.Context) (BindingSnapshot, error) {
-	if s == nil || !clientAvailable(s.client) || !validIdentity(s.workerIdentity) {
+	if s == nil || !clientAvailable(s.client) || !validIdentity(s.workerIdentity) || s.now == nil {
 		return BindingSnapshot{}, errInvalidConfig
 	}
 	if err := contextErr(ctx); err != nil {
@@ -130,7 +130,14 @@ func (s *Supervisor) Bind(ctx context.Context) (BindingSnapshot, error) {
 	if err != nil {
 		return BindingSnapshot{}, rpcFailure("negotiate", err)
 	}
-	state, err := validateNegotiationResponse(response, s.workerIdentity, s.now().UTC())
+	if err := contextErr(ctx); err != nil {
+		return BindingSnapshot{}, err
+	}
+	now, ok := s.nowUTC()
+	if !ok {
+		return BindingSnapshot{}, errInvalidConfig
+	}
+	state, err := validateNegotiationResponse(response, s.workerIdentity, now)
 	if err != nil {
 		return BindingSnapshot{}, err
 	}
@@ -151,23 +158,23 @@ func (s *Supervisor) CurrentBinding() (BindingSnapshot, bool) {
 	if state == nil {
 		return BindingSnapshot{}, false
 	}
-	if s.now == nil || s.now().UTC().Before(state.expiresAt) {
+	now, ok := s.nowUTC()
+	if !ok {
+		return BindingSnapshot{}, false
+	}
+	if now.Before(state.expiresAt) {
 		return state.snapshot(), true
 	}
 	// Do not leave an expired binding observable as current. The identity and
 	// expiry comparison prevents a concurrent rebind from being cleared.
-	s.mu.Lock()
-	if s.binding != nil && s.binding.negotiationID == state.negotiationID && s.binding.expiresAt.Equal(state.expiresAt) {
-		s.binding = nil
-	}
-	s.mu.Unlock()
+	s.clearBindingIf(state)
 	return BindingSnapshot{}, false
 }
 
 // CheckHealth validates expiry locally before making the RPC and rejects any
 // protocol descriptor drift from the negotiated descriptor.
 func (s *Supervisor) CheckHealth(ctx context.Context) (HealthSnapshot, error) {
-	if s == nil || !clientAvailable(s.client) || !validIdentity(s.workerIdentity) {
+	if s == nil || !clientAvailable(s.client) || !validIdentity(s.workerIdentity) || s.now == nil {
 		return HealthSnapshot{}, errInvalidConfig
 	}
 	if err := contextErr(ctx); err != nil {
@@ -179,13 +186,12 @@ func (s *Supervisor) CheckHealth(ctx context.Context) (HealthSnapshot, error) {
 	if state == nil {
 		return HealthSnapshot{}, fail(connect.CodeFailedPrecondition, "binding_required")
 	}
-	now := s.now().UTC()
+	now, ok := s.nowUTC()
+	if !ok {
+		return HealthSnapshot{}, errInvalidConfig
+	}
 	if !now.Before(state.expiresAt) {
-		s.mu.Lock()
-		if s.binding != nil && s.binding.negotiationID == state.negotiationID {
-			s.binding = nil
-		}
-		s.mu.Unlock()
+		s.clearBindingIf(state)
 		return HealthSnapshot{}, fail(connect.CodeDeadlineExceeded, "binding_expired")
 	}
 	response, err := s.client.CheckHealth(ctx, connect.NewRequest(&workerv1alpha1.HealthRequest{
@@ -195,6 +201,17 @@ func (s *Supervisor) CheckHealth(ctx context.Context) (HealthSnapshot, error) {
 	}))
 	if err != nil {
 		return HealthSnapshot{}, rpcFailure("health", err)
+	}
+	if err := contextErr(ctx); err != nil {
+		return HealthSnapshot{}, err
+	}
+	now, ok = s.nowUTC()
+	if !ok {
+		return HealthSnapshot{}, errInvalidConfig
+	}
+	if !now.Before(state.expiresAt) {
+		s.clearBindingIf(state)
+		return HealthSnapshot{}, fail(connect.CodeDeadlineExceeded, "binding_expired")
 	}
 	return validateHealthResponse(response, state)
 }
@@ -382,6 +399,24 @@ func clientAvailable(client workerv1alpha1connect.WorkerExecutionServiceClient) 
 	default:
 		return true
 	}
+}
+
+func (s *Supervisor) nowUTC() (time.Time, bool) {
+	if s == nil || s.now == nil {
+		return time.Time{}, false
+	}
+	return s.now().UTC(), true
+}
+
+func (s *Supervisor) clearBindingIf(state *bindingState) {
+	if s == nil || state == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.binding != nil && s.binding.negotiationID == state.negotiationID && s.binding.expiresAt.Equal(state.expiresAt) {
+		s.binding = nil
+	}
+	s.mu.Unlock()
 }
 
 func validIdentity(identity *workerv1alpha1.WorkloadIdentity) bool {

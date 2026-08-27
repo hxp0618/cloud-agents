@@ -178,6 +178,26 @@ func TestGeneratedConnectClientBindsWorkerServiceInProcess(t *testing.T) {
 	}
 }
 
+func TestBindDoesNotCommitAfterContextCancellation(t *testing.T) {
+	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
+	expected := testWorkerIdentity()
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &fakeWorkerClient{negotiateFn: func(context.Context, *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+		cancel()
+		return validNegotiationResponse(expected, now.Add(time.Minute), "binding-canceled"), nil
+	}}
+	supervisor, err := New(Config{Client: fake, ExpectedWorkerIdentity: expected, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Bind(ctx); connect.CodeOf(err) != connect.CodeCanceled {
+		t.Fatalf("canceled bind error = %v", err)
+	}
+	if _, ok := supervisor.CurrentBinding(); ok {
+		t.Fatal("canceled bind committed state")
+	}
+}
+
 func TestBindRejectsUnknownCapabilityAndInconsistentDescriptor(t *testing.T) {
 	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
 	expected := testWorkerIdentity()
@@ -351,6 +371,65 @@ func TestCheckHealthExpiryPreventsRPC(t *testing.T) {
 	_, err = supervisor.CheckHealth(context.Background())
 	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "binding_expired") || fake.healthCalls != 0 {
 		t.Fatalf("expiry = %v, health calls = %d", err, fake.healthCalls)
+	}
+}
+
+func TestCheckHealthRechecksExpiryAfterRPC(t *testing.T) {
+	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
+	expected := testWorkerIdentity()
+	clock := now
+	negotiation := validNegotiationResponse(expected, now.Add(time.Second), "binding-health-expiry")
+	fake := &fakeWorkerClient{
+		negotiateFn: func(context.Context, *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+			return negotiation, nil
+		},
+		healthFn: func(context.Context, *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
+			clock = now.Add(2 * time.Second)
+			return connect.NewResponse(&workerv1alpha1.HealthResponse{
+				State:      workerv1alpha1.HealthState_HEALTH_STATE_SERVING,
+				Protocol:   testDescriptor(),
+				ObservedAt: timestamppb.New(now),
+			}), nil
+		},
+	}
+	supervisor, err := New(Config{Client: fake, ExpectedWorkerIdentity: expected, Clock: func() time.Time { return clock }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Bind(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.CheckHealth(context.Background()); connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "binding_expired") {
+		t.Fatalf("post-RPC expiry error = %v", err)
+	}
+	if fake.healthCalls != 1 {
+		t.Fatalf("health calls = %d", fake.healthCalls)
+	}
+}
+
+func TestCheckHealthDoesNotReturnSuccessAfterContextCancellation(t *testing.T) {
+	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
+	expected := testWorkerIdentity()
+	negotiation := validNegotiationResponse(expected, now.Add(time.Minute), "binding-health-canceled")
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &fakeWorkerClient{
+		negotiateFn: func(context.Context, *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+			return negotiation, nil
+		},
+		healthFn: func(context.Context, *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
+			cancel()
+			return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: testDescriptor(), ObservedAt: timestamppb.New(now)}), nil
+		},
+	}
+	supervisor, err := New(Config{Client: fake, ExpectedWorkerIdentity: expected, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Bind(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.CheckHealth(ctx); connect.CodeOf(err) != connect.CodeCanceled {
+		t.Fatalf("canceled health error = %v", err)
 	}
 }
 
