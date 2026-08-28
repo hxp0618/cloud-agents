@@ -163,7 +163,7 @@ func (verifier *LocalVerifier) Verify(token string, request LocalVerificationReq
 	if verifier.invalidated || verifier.lineage == nil || verifier.clock == nil {
 		return nil, verifierError(errorInternalFailure)
 	}
-	level, ok := localResourceLevel(request.ResourceLevel)
+	level, ok := targetResourceLevelForString(request.ResourceLevel)
 	if !ok {
 		return nil, verifierError(errorInternalFailure)
 	}
@@ -192,19 +192,6 @@ func (verifier *LocalVerifier) Invalidate() {
 	verifier.privateKey = nil
 	if verifier.lineage != nil {
 		verifier.lineage.invalidate()
-	}
-}
-
-func localResourceLevel(value string) (targetResourceLevel, bool) {
-	switch value {
-	case "tenant":
-		return targetTenant, true
-	case "organization":
-		return targetOrganization, true
-	case "project":
-		return targetProject, true
-	default:
-		return "", false
 	}
 }
 
