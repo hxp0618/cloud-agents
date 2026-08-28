@@ -1,0 +1,808 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/local-execution/v1/profile.schema.json",
+  "title": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001 profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "authorityId",
+    "revision",
+    "decision",
+    "profileId",
+    "mode",
+    "transport",
+    "scopeProjection",
+    "parentProfiles",
+    "commands",
+    "inputPaths",
+    "exclusionPaths",
+    "generatedPaths",
+    "inputSetAlgorithm",
+    "inputManifestDigest",
+    "archive",
+    "memberManifest",
+    "runner",
+    "receipt",
+    "lineageFence",
+    "reviewRules",
+    "selector",
+    "stateMachine",
+    "limits",
+    "externalSideEffects",
+    "implementationBoundary",
+    "sourceAuthority",
+    "profileDigest"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://schemas.cloud-agents.dev/managed-agent/local-execution/v1/profile.schema.json"
+    },
+    "formatVersion": {
+      "const": "cloud-agents-managed-agent-worker-coordination-profile/v1"
+    },
+    "authorityId": {
+      "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001"
+    },
+    "revision": {
+      "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
+    },
+    "decision": {
+      "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
+    },
+    "profileId": {
+      "const": "cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1"
+    },
+    "mode": {
+      "const": "localdev_only"
+    },
+    "transport": {
+      "const": "in_process"
+    },
+    "scopeProjection": {
+      "const": "sha256-length-prefixed-tenant-project-v1"
+    },
+    "parentProfiles": {
+      "type": "array",
+      "const": [
+        "cloud-agents/managed-agent-lifecycle/v1alpha1",
+        "cloud-agents/managed-agent-events/v1alpha1",
+        "cloud-agents/worker-supervisor-operation-dispatch/localdev-v1alpha1",
+        "cloud-agents/worker-operation-admission/v1alpha1",
+        "cloud-agents/worker-operation-execution/localdev-v1alpha1"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "const": [
+        "Probe",
+        "ValidateBinding"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "inputPaths": {
+      "type": "array",
+      "const": [
+        ".mise.toml",
+        "bun.lock",
+        "bunfig.toml",
+        "contracts/worker/v1alpha1/README.md",
+        "contracts/worker/v1alpha1/kernel.proto",
+        "contracts/worker/v1alpha1/worker_supervisor.proto",
+        "go.work",
+        "package.json",
+        "scripts/generate-managed-agent-local-execution-profile.ts",
+        "scripts/lib/managed-agent-local-execution-profile.test.ts",
+        "scripts/lib/managed-agent-local-execution-profile.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+        "sdk/go/gen/common/v1alpha1/identity_generated.go",
+        "sdk/go/go.mod",
+        "sdk/go/go.sum",
+        "services/control-plane/go.mod",
+        "services/control-plane/go.sum",
+        "services/control-plane/internal/managedagent/events.go",
+        "services/control-plane/internal/managedagent/lifecycle.go",
+        "services/control-plane/internal/managedagent/local_execution.go",
+        "services/control-plane/internal/managedagent/local_execution_test.go",
+        "services/control-plane/internal/managedagent/profile.go",
+        "services/worker/execution.go",
+        "services/worker/execution_test.go",
+        "services/worker/go.mod",
+        "services/worker/go.sum",
+        "services/worker/local_dispatch_handle.go",
+        "services/worker/operation_admission.go",
+        "services/worker/operation_admission_test.go",
+        "services/worker/operation_builder.go",
+        "services/worker/operation_builder_test.go",
+        "services/worker/service.go",
+        "services/worker/service_test.go",
+        "services/worker/supervisor/client.go",
+        "services/worker/supervisor/dispatch-profile/v1/authority-source.json",
+        "services/worker/supervisor/dispatch-profile/v1/profile.json",
+        "services/worker/supervisor/dispatch_profile_generated.go",
+        "services/worker/supervisor/local_dispatch.go",
+        "services/worker/supervisor/local_dispatch_test.go",
+        "tsconfig.base.json"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "exclusionPaths": {
+      "type": "array",
+      "const": [
+        ".idea",
+        "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/platform/v1alpha1",
+        "deploy",
+        "helm",
+        "packages/cloud-agent-provider-api",
+        "release",
+        "services/control-plane/internal/migration",
+        "services/control-plane/internal/server",
+        "services/control-plane/internal/store/postgres",
+        "services/control-plane/migrations",
+        "services/worker/cmd",
+        "tools/g-contract-external-consumer"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "generatedPaths": {
+      "type": "array",
+      "const": [
+        "services/control-plane/internal/managedagent/local-execution-profile/v1/authority-source.json",
+        "services/control-plane/internal/managedagent/local-execution-profile/v1/authority-source.schema.json",
+        "services/control-plane/internal/managedagent/local-execution-profile/v1/profile.json",
+        "services/control-plane/internal/managedagent/local-execution-profile/v1/profile.schema.json",
+        "services/control-plane/internal/managedagent/local_execution_profile_generated.go"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "inputSetAlgorithm": {
+      "const": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1"
+    },
+    "inputManifestDigest": {
+      "const": "sha256:bcb335668343b2682539f9ea20e9db0f4875f83636d5898fdde26a88e81d51de"
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "emission",
+        "compression",
+        "ordering",
+        "metadata",
+        "duplicatePolicy",
+        "symlinkPolicy"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "deterministic-ustar-v1"
+        },
+        "emission": {
+          "const": "forbidden"
+        },
+        "compression": {
+          "const": "none"
+        },
+        "ordering": {
+          "const": "utf8-bytewise-sorted-path"
+        },
+        "metadata": {
+          "const": "mode=100644,uid=0,gid=0,mtime=0"
+        },
+        "duplicatePolicy": {
+          "const": "reject"
+        },
+        "symlinkPolicy": {
+          "const": "reject"
+        }
+      }
+    },
+    "memberManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "emission",
+        "path",
+        "fields",
+        "regularFileOnly",
+        "duplicatePolicy"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1"
+        },
+        "emission": {
+          "const": "forbidden"
+        },
+        "path": {
+          "const": "<not-written>"
+        },
+        "fields": {
+          "const": "path\\0mode\\0size\\0sha256\\0"
+        },
+        "regularFileOnly": {
+          "const": true
+        },
+        "duplicatePolicy": {
+          "const": "reject"
+        }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entrypoint",
+        "mode",
+        "network",
+        "database",
+        "provider",
+        "goVersion",
+        "toolchain",
+        "node",
+        "bun",
+        "platforms",
+        "timeout"
+      ],
+      "properties": {
+        "entrypoint": {
+          "const": "GOWORK=off GOFLAGS=-mod=readonly go test"
+        },
+        "mode": {
+          "const": "localdev_only"
+        },
+        "network": {
+          "const": "deny"
+        },
+        "database": {
+          "const": "deny"
+        },
+        "provider": {
+          "const": "deny"
+        },
+        "goVersion": {
+          "const": "1.26.0"
+        },
+        "toolchain": {
+          "const": "go1.26.6"
+        },
+        "node": {
+          "const": "24.18.1"
+        },
+        "bun": {
+          "const": "1.3.14"
+        },
+        "platforms": {
+          "type": "array",
+          "const": [
+            "darwin-arm64",
+            "linux-amd64"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "const": "focused-tests-only"
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimePath",
+        "persistence",
+        "state",
+        "resultDigestAlgorithm",
+        "canonicalProjection",
+        "excludedFields",
+        "stableErrorCodes",
+        "evidencePaths"
+      ],
+      "properties": {
+        "runtimePath": {
+          "const": "process-local://worker-service/receipts"
+        },
+        "persistence": {
+          "const": "no_write"
+        },
+        "state": {
+          "const": "ABSENT_PENDING"
+        },
+        "resultDigestAlgorithm": {
+          "const": "sha256:deterministic-protobuf-receipt-result-v1"
+        },
+        "canonicalProjection": {
+          "const": "proto3-deterministic-marshal-after-clearing-receipt_id-sequence-observed_at-fencing.token_sha256"
+        },
+        "excludedFields": {
+          "type": "array",
+          "const": [
+            "receipt_id",
+            "sequence",
+            "observed_at",
+            "fencing.token_sha256"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "stableErrorCodes": {
+          "type": "array",
+          "const": [
+            "execution_failed",
+            "worker_dispatch_failed",
+            "deadline_exceeded",
+            "fenced",
+            "cancelled",
+            "worker_failed"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidencePaths": {
+          "type": "array",
+          "const": [
+            "docs/plan/standalone/managed-agent-worker-local-execution-implementation-20260828.md",
+            "docs/plan/standalone/managed-agent-worker-local-execution-independent-review-20260828.md"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lineageFence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "predecessorAuthority",
+        "predecessorRevision",
+        "predecessorProfile",
+        "predecessorProfileDigest",
+        "historicalAuthorities",
+        "mutation",
+        "historicalEvidence",
+        "successorRevision"
+      ],
+      "properties": {
+        "kind": {
+          "const": "single-predecessor-append-only"
+        },
+        "predecessorAuthority": {
+          "const": "D-054-WORKER-DISPATCH-000001.r1"
+        },
+        "predecessorRevision": {
+          "const": "D-054-WORKER-DISPATCH-000001.r1"
+        },
+        "predecessorProfile": {
+          "const": "cloud-agents/worker-supervisor-operation-dispatch/localdev-v1alpha1"
+        },
+        "predecessorProfileDigest": {
+          "const": "sha256:4ed83884e50cf2f55e9799a16afe28c97cf5756969ae47cdc082a1987b5ddbc1"
+        },
+        "historicalAuthorities": {
+          "type": "array",
+          "const": [
+            "D-053-MIG-000014.r2",
+            "D-053-EC-2.r3"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "mutation": {
+          "const": "forbidden"
+        },
+        "historicalEvidence": {
+          "const": "retain-and-never-rewrite"
+        },
+        "successorRevision": {
+          "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
+        }
+      }
+    },
+    "reviewRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "independentReadOnly",
+        "reviewPath",
+        "verdicts",
+        "classification",
+        "candidateMutation",
+        "p0P1Repair",
+        "p2",
+        "gateTransition"
+      ],
+      "properties": {
+        "independentReadOnly": {
+          "const": true
+        },
+        "reviewPath": {
+          "const": "docs/plan/standalone/managed-agent-worker-local-execution-independent-review-20260828.md"
+        },
+        "verdicts": {
+          "type": "array",
+          "const": [
+            "APPROVE",
+            "REQUEST_CHANGES"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "classification": {
+          "type": "array",
+          "const": [
+            "P0",
+            "P1",
+            "P2"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "candidateMutation": {
+          "const": "forbidden"
+        },
+        "p0P1Repair": {
+          "const": "one repair and re-review within r1 candidate"
+        },
+        "p2": {
+          "const": "record-and-defer"
+        },
+        "gateTransition": {
+          "const": "forbidden"
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileSelection",
+        "callerSelectedProfile",
+        "foreignPath",
+        "foreignTransport",
+        "genericSupervisor",
+        "commands",
+        "binding"
+      ],
+      "properties": {
+        "profileSelection": {
+          "const": "exact_generated_profile_id_and_digest"
+        },
+        "callerSelectedProfile": {
+          "const": "forbidden"
+        },
+        "foreignPath": {
+          "const": "forbidden"
+        },
+        "foreignTransport": {
+          "const": "forbidden"
+        },
+        "genericSupervisor": {
+          "const": "forbidden"
+        },
+        "commands": {
+          "type": "array",
+          "const": [
+            "Probe",
+            "ValidateBinding"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "binding": {
+          "const": "BindLocalDispatch_before_database_or_external_setup"
+        }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initial",
+        "states",
+        "transitions",
+        "outcomeMapping"
+      ],
+      "properties": {
+        "initial": {
+          "const": "queued"
+        },
+        "states": {
+          "type": "array",
+          "const": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "const": [
+            {
+              "from": "queued",
+              "event": "start",
+              "to": "running"
+            },
+            {
+              "from": "running",
+              "event": "complete",
+              "to": "succeeded"
+            },
+            {
+              "from": "running",
+              "event": "fail",
+              "to": "failed"
+            },
+            {
+              "from": "running",
+              "event": "cancel",
+              "to": "cancelled"
+            }
+          ],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "event",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "event": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "outcomeMapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "DEADLINE_EXCEEDED",
+            "FENCED"
+          ],
+          "properties": {
+            "SUCCEEDED": {
+              "const": "execution.complete"
+            },
+            "FAILED": {
+              "const": "execution.fail"
+            },
+            "CANCELLED": {
+              "const": "turn.cancel"
+            },
+            "DEADLINE_EXCEEDED": {
+              "const": "execution.fail/deadline_exceeded"
+            },
+            "FENCED": {
+              "const": "execution.fail/fenced"
+            }
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxDeadlineSeconds",
+        "maxInputBytes",
+        "maxIdentifierBytes",
+        "maxReceiptSummaryBytes",
+        "maxAttemptNumber"
+      ],
+      "properties": {
+        "maxDeadlineSeconds": {
+          "const": 300
+        },
+        "maxInputBytes": {
+          "const": 1048576
+        },
+        "maxIdentifierBytes": {
+          "const": 128
+        },
+        "maxReceiptSummaryBytes": {
+          "const": 512
+        },
+        "maxAttemptNumber": {
+          "const": 1
+        }
+      }
+    },
+    "externalSideEffects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "database",
+        "durableReceipt",
+        "http",
+        "p2",
+        "provider",
+        "workspace",
+        "artifact",
+        "credential",
+        "deployment",
+        "publication",
+        "gate"
+      ],
+      "properties": {
+        "database": {
+          "const": false
+        },
+        "durableReceipt": {
+          "const": false
+        },
+        "http": {
+          "const": false
+        },
+        "p2": {
+          "const": false
+        },
+        "provider": {
+          "const": false
+        },
+        "workspace": {
+          "const": false
+        },
+        "artifact": {
+          "const": false
+        },
+        "credential": {
+          "const": false
+        },
+        "deployment": {
+          "const": false
+        },
+        "publication": {
+          "const": false
+        },
+        "gate": {
+          "const": false
+        }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lifecycle",
+        "dispatch",
+        "receipt",
+        "completeLedger",
+        "entryWriter",
+        "recoveryWriter",
+        "databaseWrites",
+        "durablePersistence",
+        "http",
+        "provider",
+        "p2",
+        "workspace",
+        "artifact",
+        "credential",
+        "productionRunner",
+        "deployment",
+        "publication",
+        "gateTransition"
+      ],
+      "properties": {
+        "lifecycle": {
+          "const": "managedagent.Store_in_memory_only"
+        },
+        "dispatch": {
+          "const": "worker.Supervisor.NewLocal_and_BindLocalDispatch_only"
+        },
+        "receipt": {
+          "const": "detached_bounded_process_local_only"
+        },
+        "completeLedger": {
+          "const": "not_applicable_no_writer"
+        },
+        "entryWriter": {
+          "const": "not_implemented"
+        },
+        "recoveryWriter": {
+          "const": "not_implemented"
+        },
+        "databaseWrites": {
+          "const": "forbidden"
+        },
+        "durablePersistence": {
+          "const": "forbidden"
+        },
+        "http": {
+          "const": "forbidden"
+        },
+        "provider": {
+          "const": "forbidden"
+        },
+        "p2": {
+          "const": "forbidden"
+        },
+        "workspace": {
+          "const": "forbidden"
+        },
+        "artifact": {
+          "const": "forbidden"
+        },
+        "credential": {
+          "const": "forbidden"
+        },
+        "productionRunner": {
+          "const": "forbidden"
+        },
+        "deployment": {
+          "const": "forbidden"
+        },
+        "publication": {
+          "const": "forbidden"
+        },
+        "gateTransition": {
+          "const": "forbidden"
+        }
+      }
+    },
+    "sourceAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorityId",
+        "revision",
+        "sourceDigest"
+      ],
+      "properties": {
+        "authorityId": {
+          "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001"
+        },
+        "revision": {
+          "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
+        },
+        "sourceDigest": {
+          "const": "sha256:e87ebf7f8de39c6addbea4ef9ade99625589b62b882f6f8960e14844c8e7364a"
+        }
+      }
+    },
+    "profileDigest": {
+      "const": "sha256:892a718cfd58e138cbb22e556da2f0088fdc8b73f43b47805b35e9c90f777e74"
+    }
+  }
+}

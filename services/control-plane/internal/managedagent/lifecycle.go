@@ -150,6 +150,10 @@ type Scope struct {
 type Mutation struct {
 	RequestID      string
 	IdempotencyKey string
+	// executionBindingDigest is an internal coordinator binding. It is never
+	// accepted from a transport caller; the local execution coordinator derives
+	// it from the complete typed Worker attempt before the first mutation.
+	executionBindingDigest string
 }
 
 type CreateSessionInput struct {
@@ -343,7 +347,7 @@ func (store *Store) CreateSession(ctx context.Context, input CreateSessionInput)
 	if err := input.Mutation.validate(); err != nil {
 		return SessionSnapshot{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "session.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, ProviderKind: input.ProviderKind,
 	})
@@ -378,7 +382,7 @@ func (store *Store) CloseSession(ctx context.Context, input CloseSessionInput) (
 	if err := input.Mutation.validate(); err != nil {
 		return SessionSnapshot{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "session.close", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID,
 	})
@@ -428,7 +432,7 @@ func (store *Store) CreateTurn(ctx context.Context, input CreateTurnInput) (Turn
 	if err := input.Mutation.validate(); err != nil {
 		return TurnSnapshot{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "turn.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, InputDigest: inputDigest,
 	})
@@ -473,7 +477,7 @@ func (store *Store) CreateExecution(ctx context.Context, input CreateExecutionIn
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionSnapshot{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
 	})
@@ -529,7 +533,7 @@ func (store *Store) StartExecution(ctx context.Context, input StartExecutionInpu
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.start", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
 	})
@@ -573,7 +577,7 @@ func (store *Store) CompleteExecution(ctx context.Context, input CompleteExecuti
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.complete", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID,
 		Generation: input.Generation, ResultDigest: input.ResultDigest,
@@ -619,7 +623,7 @@ func (store *Store) FailExecution(ctx context.Context, input FailExecutionInput)
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.fail", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID,
 		Generation: input.Generation, ErrorCode: input.ErrorCode,
@@ -662,7 +666,7 @@ func (store *Store) InterruptTurn(ctx context.Context, input InterruptTurnInput)
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "turn.interrupt", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.TargetExecutionID,
 		Generation: input.Generation, TargetExecutionID: input.TargetExecutionID,
@@ -708,7 +712,7 @@ func (store *Store) CancelTurn(ctx context.Context, input CancelTurnInput) (Exec
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
-	digest := digestMutation(mutationDigestInput{
+	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "turn.cancel", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.TargetExecutionID,
 		Generation: input.Generation, TargetExecutionID: input.TargetExecutionID,
@@ -877,7 +881,13 @@ func (mutation Mutation) validate() error {
 	if err := validateToken(mutation.RequestID, maxMutationBytes, "request id"); err != nil {
 		return err
 	}
-	return validateToken(mutation.IdempotencyKey, maxMutationBytes, "idempotency key")
+	if err := validateToken(mutation.IdempotencyKey, maxMutationBytes, "idempotency key"); err != nil {
+		return err
+	}
+	if mutation.executionBindingDigest != "" {
+		return validateDigest(mutation.executionBindingDigest, "execution binding digest")
+	}
+	return nil
 }
 
 func validateExecutionInput(scope Scope, sessionID, turnID, executionID string, generation uint64) error {
@@ -1030,22 +1040,28 @@ type mutationRecord struct {
 }
 
 type mutationDigestInput struct {
-	Operation         string `json:"operation"`
-	TenantID          string `json:"tenant_id"`
-	ProjectID         string `json:"project_id"`
-	SessionID         string `json:"session_id,omitempty"`
-	TurnID            string `json:"turn_id,omitempty"`
-	ExecutionID       string `json:"execution_id,omitempty"`
-	TargetExecutionID string `json:"target_execution_id,omitempty"`
-	ProviderKind      string `json:"provider_kind,omitempty"`
-	Generation        uint64 `json:"generation,omitempty"`
-	InputDigest       string `json:"input_digest,omitempty"`
-	ResultDigest      string `json:"result_digest,omitempty"`
-	ErrorCode         string `json:"error_code,omitempty"`
+	Operation              string `json:"operation"`
+	TenantID               string `json:"tenant_id"`
+	ProjectID              string `json:"project_id"`
+	SessionID              string `json:"session_id,omitempty"`
+	TurnID                 string `json:"turn_id,omitempty"`
+	ExecutionID            string `json:"execution_id,omitempty"`
+	TargetExecutionID      string `json:"target_execution_id,omitempty"`
+	ProviderKind           string `json:"provider_kind,omitempty"`
+	Generation             uint64 `json:"generation,omitempty"`
+	InputDigest            string `json:"input_digest,omitempty"`
+	ResultDigest           string `json:"result_digest,omitempty"`
+	ErrorCode              string `json:"error_code,omitempty"`
+	ExecutionBindingDigest string `json:"execution_binding_digest,omitempty"`
 }
 
 func digestMutation(input mutationDigestInput) string {
 	encoded, _ := json.Marshal(input)
 	hash := sha256.Sum256(append([]byte(LifecycleProfileID+"/mutation\x00"), encoded...))
 	return "sha256:" + hex.EncodeToString(hash[:])
+}
+
+func digestMutationWithBinding(mutation Mutation, input mutationDigestInput) string {
+	input.ExecutionBindingDigest = mutation.executionBindingDigest
+	return digestMutation(input)
 }
