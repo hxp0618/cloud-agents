@@ -2,7 +2,7 @@
 
 日期：2026-08-28（Asia/Shanghai）  
 Profile：`cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1`  
-状态：`CANDIDATE_REVIEW_PENDING`
+状态：`REVIEW_APPROVED_NON_GATE`
 
 ## 决策与范围
 
@@ -96,5 +96,7 @@ unit tests、race、vet、module readonly 和 negative checks。它不证明生�
 HTTP/P2/provider、PostgreSQL、部署、发布或任何 Gate 状态；这些边界由 D-055 authority
 的 `externalSideEffects=false` 和 `reviewRules.gateTransition=forbidden` 固定。
 
-后续必须对固定 candidate SHA 执行一次独立只读 review，记录 P0/P1/P2 verdict；P0/P1 只可在
-同一 r1 candidate 内修复一次并重新审查，P2 记录后延期，不创建 r2/r3。
+独立只读 review 已完成并记录于
+`docs/plan/standalone/managed-agent-worker-local-execution-independent-review-20260828.md`：
+固定 candidate `b79d01028c652d004e67a00fdcbdf204e04dc946`，verdict
+`APPROVE`（P0=0 / P1=0 / P2=0）。review child 不修改 candidate；没有创建 r2/r3。
