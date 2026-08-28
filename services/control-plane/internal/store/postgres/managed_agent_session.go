@@ -147,6 +147,47 @@ func (service *DurableCoordinationService) GetManagedAgentSession(
 	return result, err
 }
 
+// GetManagedAgentSessionForExecution reads the Session under the action
+// authority already verified for the execute endpoint. It keeps execution
+// from requiring a separate projects.get token merely to resolve provider.
+func (service *DurableCoordinationService) GetManagedAgentSessionForExecution(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	sessionID string,
+) (internalmanagedagent.SessionSnapshot, error) {
+	if service == nil || service.runner == nil {
+		return internalmanagedagent.SessionSnapshot{}, ErrNilCoordinationRunner
+	}
+	scope := internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}
+	if ctx == nil || len(scope.TenantID) == 0 || len(scope.ProjectID) == 0 || len(sessionID) == 0 {
+		return internalmanagedagent.SessionSnapshot{}, ErrCoordinationInvalidInput
+	}
+	var result internalmanagedagent.SessionSnapshot
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(scope.TenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, "projects.act")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, scope.TenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, func() error {
+				err := scanManagedAgentSession(handle.transaction.queryRow(readContext, getManagedAgentSessionSQL, scope.ProjectID, sessionID), scope, &result)
+				if errors.Is(err, pgx.ErrNoRows) {
+					return ErrManagedAgentSessionNotFound
+				}
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, err
+}
+
 func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift

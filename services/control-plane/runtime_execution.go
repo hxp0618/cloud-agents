@@ -2,16 +2,13 @@ package controlplane
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/worker/runtime"
 	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
 )
@@ -118,55 +115,29 @@ func (coordinator *RuntimeExecutionCoordinator) Execute(ctx context.Context, inp
 		return RuntimeExecutionResult{}, err
 	}
 
-	runtimeSession, err := coordinator.supervisor.OpenRuntimeSession(runCtx, input.ExecutionID, input.Generation, input.fencingProof())
-	if err != nil {
-		return coordinator.fail(ctx, input, started, "runtime_open_failed", err)
-	}
-	defer func() { _ = runtimeSession.CloseRequest(); _ = runtimeSession.CloseResponse() }()
-
-	start := runtimeCommand(input, "StartSession", input.Mutation.RequestID+":start", now, map[string]any{
-		"runnerInput": map[string]any{
-			"workspaceDirectory": input.WorkspaceDirectory,
-			"workload":           map[string]any{"provider": session.ProviderKind, "model": input.Model},
-			"execution":          map[string]any{"id": input.ExecutionID},
-		},
+	runtimeResult, err := internalmanagedagent.ExecuteRuntimeTurn(runCtx, coordinator.supervisor, internalmanagedagent.RuntimeTurnInput{
+		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: input.Generation, Fencing: input.fencingProof(),
+		WorkspaceDirectory: input.WorkspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
 	})
-	if err := runtimeSession.Send(runCtx, start); err != nil {
-		return coordinator.fail(ctx, input, started, "runtime_start_failed", err)
-	}
-	messages, err := receiveRuntimeTerminal(runtimeSession, start.CommandID)
 	if err != nil {
-		return coordinator.fail(ctx, input, started, "runtime_start_failed", err)
+		return coordinator.failWithMessages(ctx, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err)
 	}
-	if len(messages) == 0 || messages[len(messages)-1].MessageType == "Error" {
-		return coordinator.fail(ctx, input, started, "runtime_start_failed", errors.New("Runtime StartSession failed"))
-	}
-
-	turnCommand := runtimeCommand(input, "SendTurn", input.Mutation.RequestID+":turn", now, map[string]any{"inputText": input.InputText})
-	if err := runtimeSession.Send(runCtx, turnCommand); err != nil {
-		return coordinator.fail(ctx, input, started, "runtime_turn_failed", err)
-	}
-	turnMessages, terminal, err := receiveRuntimeMessages(runtimeSession, turnCommand.CommandID)
-	messages = append(messages, turnMessages...)
-	if err != nil {
-		return coordinator.failWithMessages(ctx, input, started, messages, "runtime_turn_failed", err)
-	}
-	if terminal.MessageType == "Error" {
+	if runtimeResult.Terminal.MessageType == "Error" {
 		code := "runtime_failed"
-		if terminal.Error != nil && terminal.Error.Code != "" {
-			code = terminal.Error.Code
+		if runtimeResult.Terminal.Error != nil && internalmanagedagent.ValidRuntimeErrorCode(runtimeResult.Terminal.Error.Code) {
+			code = runtimeResult.Terminal.Error.Code
 		}
-		return coordinator.failWithMessages(ctx, input, started, messages, code, errors.New(code))
+		return coordinator.failWithMessages(ctx, input, started, runtimeResult.Messages, code, errors.New(code))
 	}
-	digest, err := runtimeMessageDigest(terminal)
+	digest, err := internalmanagedagent.RuntimeMessageDigest(runtimeResult.Terminal)
 	if err != nil {
-		return coordinator.failWithMessages(ctx, input, started, messages, "runtime_result_invalid", err)
+		return coordinator.failWithMessages(ctx, input, started, runtimeResult.Messages, "runtime_result_invalid", err)
 	}
 	completed, err := coordinator.service.CompleteExecution(context.Background(), CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation, ResultDigest: digest, Mutation: input.Mutation})
 	if err != nil {
-		return RuntimeExecutionResult{Transition: started, Messages: messages}, err
+		return RuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
-	return RuntimeExecutionResult{Transition: completed, Messages: messages}, nil
+	return RuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, nil
 }
 
 func (input RuntimeExecutionInput) fencingProof() *workerv1alpha1.FencingProof {
@@ -183,39 +154,4 @@ func (coordinator *RuntimeExecutionCoordinator) failWithMessages(_ context.Conte
 		return RuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
 	}
 	return RuntimeExecutionResult{Transition: failed, Messages: messages}, cause
-}
-
-func runtimeCommand(input RuntimeExecutionInput, commandType, commandID string, now time.Time, payload map[string]any) runtime.Command {
-	return runtime.Command{RequestID: input.Mutation.RequestID + ":" + commandType, Protocol: runtime.Protocol{Major: runtime.ProtocolMajor, Minor: runtime.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: now.Format(time.RFC3339Nano), Payload: payload}
-}
-
-func receiveRuntimeTerminal(session *supervisor.RuntimeSession, commandID string) ([]runtime.Message, error) {
-	messages, _, err := receiveRuntimeMessages(session, commandID)
-	return messages, err
-}
-
-func receiveRuntimeMessages(session *supervisor.RuntimeSession, commandID string) ([]runtime.Message, runtime.Message, error) {
-	var messages []runtime.Message
-	for {
-		message, err := session.Receive()
-		if err != nil {
-			return messages, runtime.Message{}, err
-		}
-		messages = append(messages, message)
-		if message.CommandID != commandID {
-			return messages, message, fmt.Errorf("runtime response command id mismatch")
-		}
-		if message.MessageType == "Result" || message.MessageType == "Error" {
-			return messages, message, nil
-		}
-	}
-}
-
-func runtimeMessageDigest(message runtime.Message) (string, error) {
-	encoded, err := json.Marshal(message)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(encoded)
-	return "sha256:" + hex.EncodeToString(digest[:]), nil
 }

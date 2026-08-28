@@ -56,13 +56,28 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      worker:
+        condition: service_started
+    restart: unless-stopped
     environment:
       CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_RUNTIME_DATABASE_URL:?set the runtime database URL}
       CLOUD_AGENTS_PLATFORM_AUTH_CONFIG: /run/cloud-agents/auth.json
+      CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT: ${CLOUD_AGENTS_WORKER_ENDPOINT:-https://worker:8091}
+      CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID: ${CLOUD_AGENTS_WORKER_SPIFFE_ID:?set the Worker SPIFFE identity}
+      CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT: /run/cloud-agents/worker-client.crt
+      CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY: /run/cloud-agents/worker-client.key
+      CLOUD_AGENTS_PLATFORM_WORKER_CA: /run/cloud-agents/worker-ca.crt
+      CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY: ${CLOUD_AGENTS_WORKER_WORKSPACE_DIRECTORY:-/workspace}
+      CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID: ${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}
+      CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION: ${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}
+      CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN: ${CLOUD_AGENTS_ADMISSION_TOKEN:?set the Runtime admission token}
     command: ["--listen", ":8080", "--auth-config", "/run/cloud-agents/auth.json", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key"]
     volumes:
       - ${CLOUD_AGENTS_AUTH_CONFIG:?set the verifier JSON path}:/run/cloud-agents/auth.json:ro
       - ${CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR:?set the Control Plane TLS directory}:/run/cloud-agents/tls:ro
+      - ${CLOUD_AGENTS_WORKER_CLIENT_CERT:?set the Worker client certificate path}:/run/cloud-agents/worker-client.crt:ro
+      - ${CLOUD_AGENTS_WORKER_CLIENT_KEY:?set the Worker client key path}:/run/cloud-agents/worker-client.key:ro
+      - ${CLOUD_AGENTS_WORKER_CA:?set the Worker CA certificate path}:/run/cloud-agents/worker-ca.crt:ro
     ports:
       - "${CLOUD_AGENTS_CONTROL_PLANE_BIND:-127.0.0.1:8080}:8080"
 
@@ -91,8 +106,10 @@ services:
       - "${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}"
     env_file:
       - ${CLOUD_AGENTS_RUNTIME_ENV_FILE:?set the Runtime provider environment file}
+    restart: unless-stopped
     volumes:
       - ${CLOUD_AGENTS_WORKER_TLS_DIR:?set the Worker TLS directory}:/run/cloud-agents/tls:ro
+      - ${CLOUD_AGENTS_WORKSPACE_DIR:?set the Runtime workspace directory}:/workspace
     ports:
       - "${CLOUD_AGENTS_WORKER_BIND:-127.0.0.1:8091}:8091"
 

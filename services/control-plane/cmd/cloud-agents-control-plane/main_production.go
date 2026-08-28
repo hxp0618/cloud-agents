@@ -5,36 +5,62 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
+	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	productionDatabaseEnvironment   = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
-	productionAuthConfigEnvironment = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
-	maxAuthConfigBytes              = 1 << 20
+	productionDatabaseEnvironment            = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+	productionAuthConfigEnvironment          = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
+	productionWorkerEndpointEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
+	productionWorkerSPIFFEEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
+	productionWorkerClientCertEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
+	productionWorkerClientKeyEnvironment     = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
+	productionWorkerCAEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
+	productionWorkspaceEnvironment           = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	productionAdmissionLeaseEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
+	productionAdmissionGenerationEnvironment = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
+	productionAdmissionTokenEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
+	maxAuthConfigBytes                       = 1 << 20
+	maxProductionCABytes                     = 1 << 20
 )
 
 type productionConfig struct {
-	listen   string
-	database string
-	authPath string
-	tlsCert  string
-	tlsKey   string
+	listen              string
+	database            string
+	authPath            string
+	tlsCert             string
+	tlsKey              string
+	workerEndpoint      string
+	workerSPIFFE        string
+	workerClientCert    string
+	workerClientKey     string
+	workerCA            string
+	workspaceDirectory  string
+	admissionLeaseID    string
+	admissionGeneration uint64
+	admissionToken      []byte
 }
 
 type authConfigFile struct {
@@ -85,6 +111,33 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("control-plane store is unavailable")
 	}
+	workerIdentity, err := productionWorkerIdentity(config.workerSPIFFE)
+	if err != nil {
+		return errors.New("worker identity configuration is invalid")
+	}
+	workerClientCertificate, err := tls.LoadX509KeyPair(config.workerClientCert, config.workerClientKey)
+	if err != nil {
+		return errors.New("worker client certificate is invalid")
+	}
+	workerCAs, err := readProductionCAPool(config.workerCA)
+	if err != nil {
+		return errors.New("worker CA configuration is invalid")
+	}
+	workerSupervisor, err := supervisor.NewMTLS(supervisor.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
+	if err != nil {
+		return errors.New("worker transport configuration is invalid")
+	}
+	if _, err := workerSupervisor.BindRuntime(ctx); err != nil {
+		return errors.New("worker Runtime is unavailable")
+	}
+	runtimeCoordinator, err := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
+		Store: coordinationService, Supervisor: workerSupervisor, Clock: time.Now,
+		FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
+		WorkspaceDirectory: config.workspaceDirectory, MaxDuration: 5 * time.Minute,
+	})
+	if err != nil {
+		return errors.New("managed agent Runtime coordinator is unavailable")
+	}
 	projectCreator, err := server.NewDurableProjectCreateServer(coordinationService)
 	if err != nil {
 		return errors.New("project create server is unavailable")
@@ -117,6 +170,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed agent turn HTTP server is unavailable")
 	}
+	executionServer, err := server.NewManagedAgentExecutionHTTPServer(verifier, coordinationService, runtimeCoordinator)
+	if err != nil {
+		return errors.New("managed agent execution HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleRoute, roleServer)
@@ -124,6 +181,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.RoleBindingRoute, rbacServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesManagedAgentExecutionPath(request.URL.Path) {
+			executionServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesManagedAgentTurnPath(request.URL.Path) {
 			turnServer.ServeHTTP(writer, request)
 			return
@@ -184,6 +245,14 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	authPath := set.String("auth-config", "", "JSON trust configuration path")
 	tlsCert := set.String("tls-cert", "", "TLS certificate path")
 	tlsKey := set.String("tls-key", "", "TLS private key path")
+	workerEndpoint := set.String("worker-endpoint", "", "Worker HTTPS endpoint")
+	workerSPIFFE := set.String("worker-spiffe-id", "", "expected Worker SPIFFE identity")
+	workerClientCert := set.String("worker-client-cert", "", "Worker mTLS client certificate path")
+	workerClientKey := set.String("worker-client-key", "", "Worker mTLS client key path")
+	workerCA := set.String("worker-ca", "", "Worker CA certificate path")
+	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
+	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
+	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
@@ -193,10 +262,68 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	if *authPath == "" && getenv != nil {
 		*authPath = getenv(productionAuthConfigEnvironment)
 	}
-	if strings.TrimSpace(*database) != *database || *database == "" || strings.TrimSpace(*authPath) != *authPath || *authPath == "" || *tlsCert == "" || *tlsKey == "" {
-		return productionConfig{}, errors.New("database, auth config, and TLS configuration are required")
+	fill := func(value *string, name string) {
+		if *value == "" && getenv != nil {
+			*value = getenv(name)
+		}
 	}
-	return productionConfig{listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey}, nil
+	fill(workerEndpoint, productionWorkerEndpointEnvironment)
+	fill(workerSPIFFE, productionWorkerSPIFFEEnvironment)
+	fill(workerClientCert, productionWorkerClientCertEnvironment)
+	fill(workerClientKey, productionWorkerClientKeyEnvironment)
+	fill(workerCA, productionWorkerCAEnvironment)
+	fill(workspaceDirectory, productionWorkspaceEnvironment)
+	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
+	if *admissionGeneration == 0 && getenv != nil {
+		parsed, parseErr := strconv.ParseUint(getenv(productionAdmissionGenerationEnvironment), 10, 64)
+		if parseErr != nil {
+			return productionConfig{}, errors.New("invalid control-plane configuration")
+		}
+		*admissionGeneration = parsed
+	}
+	var admissionToken string
+	if getenv != nil {
+		admissionToken = getenv(productionAdmissionTokenEnvironment)
+	}
+	required := []string{*database, *authPath, *tlsCert, *tlsKey, *workerEndpoint, *workerSPIFFE, *workerClientCert, *workerClientKey, *workerCA, *workspaceDirectory, *admissionLeaseID, admissionToken}
+	for _, value := range required {
+		if value == "" || strings.TrimSpace(value) != value {
+			return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
+		}
+	}
+	if *admissionGeneration == 0 || len(admissionToken) > 1<<20 {
+		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
+	}
+	return productionConfig{
+		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
+		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
+		workspaceDirectory: *workspaceDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken),
+	}, nil
+}
+
+func productionWorkerIdentity(value string) (*workerv1alpha1.WorkloadIdentity, error) {
+	parsed, err := url.Parse(value)
+	if strings.TrimSpace(value) != value || value == "" || err != nil || parsed.Scheme != "spiffe" || parsed.Host == "" || parsed.Path == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("invalid Worker identity")
+	}
+	return &workerv1alpha1.WorkloadIdentity{SpiffeId: value, TrustDomain: parsed.Host}, nil
+}
+
+func readProductionCAPool(path string) (*x509.CertPool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	contents, err := io.ReadAll(io.LimitReader(file, maxProductionCABytes+1))
+	if err != nil || len(contents) > maxProductionCABytes {
+		return nil, errors.New("invalid CA bundle")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(contents) {
+		return nil, errors.New("invalid CA bundle")
+	}
+	return pool, nil
 }
 
 func loadConfiguredVerifier(path string) (*authn.ConfiguredVerifier, error) {
