@@ -57,6 +57,27 @@ func TestRBACFactReadersUseExactBoundedQueries(t *testing.T) {
 	}
 }
 
+func TestRBACResourceReadsStayTenantAndScopeBound(t *testing.T) {
+	for name, statement := range map[string]string{
+		"membership":   getMembershipSQL,
+		"role binding": getRoleBindingSQL,
+	} {
+		if !strings.Contains(statement, "tenant_id = cloud_agents.require_tenant_id()") ||
+			!strings.Contains(statement, "scope_level = $2") ||
+			!strings.Contains(statement, "END = $3") {
+			t.Fatalf("%s query is not tenant and stored-scope bound: %s", name, statement)
+		}
+	}
+	for name, scope := range map[string]authz.ScopeRef{
+		"platform":        {Level: authz.ScopePlatform},
+		"tenant mismatch": {Level: authz.ScopeTenant, ID: "other-tenant"},
+	} {
+		if err := validateStoredRBACRead("tenant-alpha", "resource-alpha", scope); err == nil {
+			t.Fatalf("%s scope was accepted", name)
+		}
+	}
+}
+
 func TestRBACFactReadersRejectMalformedAndOversizedJSON(t *testing.T) {
 	handle := &tenantReadHandle{active: true, tenantID: "tenant-alpha", clock: time.Now}
 	for _, test := range []struct {
