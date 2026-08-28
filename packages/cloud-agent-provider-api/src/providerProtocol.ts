@@ -12,6 +12,7 @@ import {
   CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG as PROVIDER_CAPABILITY_CATALOG,
   CLOUD_AGENT_RUNTIME_EVENT_VERSION as PROVIDER_RUNTIME_EVENT_VERSION,
   CLOUD_AGENT_TEXT_GENERATION_TASKS,
+  validateCloudAgentCommandEnvelope,
   type CloudAgentCapabilityMap as ProviderCapabilityMap,
   type CloudAgentCommandEnvelope as ProviderHostCommand,
   type CloudAgentError as ProviderHostError,
@@ -39,39 +40,8 @@ const STOP_SESSION_QUIESCE_TIMEOUT_MS = 5_000;
 const STOP_SESSION_FORCE_TIMEOUT_MS = 1_000;
 
 function decodeCommand(value: unknown): ProviderHostCommand {
-  if (!isRecord(value)) throw new Error("Command envelope must be an object.");
-  const commandType = value.commandType;
-  if (
-    typeof value.requestId !== "string" ||
-    !isRecord(value.protocolVersion) ||
-    typeof value.protocolVersion.major !== "number" ||
-    typeof value.protocolVersion.minor !== "number" ||
-    typeof value.executionId !== "string" ||
-    !Number.isSafeInteger(value.generation) ||
-    typeof commandType !== "string" ||
-    !new Set([
-      "Describe",
-      "StartSession",
-      "ResumeSession",
-      "SendTurn",
-      "SteerTurn",
-      "InterruptTurn",
-      "SuspendTurn",
-      "ResolveApproval",
-      "ResolveUserInput",
-      "CompactSession",
-      "RollbackSession",
-      "ForkSession",
-      "StartReview",
-      "GenerateText",
-      "StopSession",
-    ]).has(commandType) ||
-    typeof value.commandId !== "string" ||
-    typeof value.occurredAt !== "string" ||
-    !isRecord(value.payload)
-  ) {
-    throw new Error("Command envelope is invalid.");
-  }
+  const validation = validateCloudAgentCommandEnvelope(value);
+  if (!validation.valid) throw new Error("Command envelope is invalid.");
   return value as unknown as ProviderHostCommand;
 }
 

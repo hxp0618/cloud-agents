@@ -1351,6 +1351,36 @@ describe("Provider Host Protocol v2", () => {
     );
   });
 
+  it("rejects invalid command envelopes before provider dispatch", async () => {
+    const source = new PassThrough();
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    let described = 0;
+    const invalid = {
+      ...command("Describe", { provider: "codex" }, "invalid-generation"),
+      generation: 0,
+    };
+
+    const protocol = runProviderHostProtocolV2({
+      source,
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: (provider) => {
+        described += 1;
+        return enabledDescriptorForProvider(provider);
+      },
+    });
+    source.end(`${JSON.stringify(invalid)}\n`);
+    await protocol;
+
+    expect(described).toBe(0);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      commandId: "invalid-generation",
+      messageType: "Error",
+      error: { code: "protocol_violation" },
+    });
+  });
+
   it("flushes the output sink before the protocol run resolves", async () => {
     const source = new PassThrough();
     const emitted: ProviderHostMessageEnvelope[] = [];
