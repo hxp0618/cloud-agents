@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/contract-closure-profile-v4.schema.json",
+  "title": "ContractClosureProfileV4",
+  "description": "Generated digest-bound non-Gate G-CONTRACT closure profile registry v4.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "registryId",
+    "authorityRevision",
+    "sourceDigest",
+    "predecessor",
+    "supersededV3Predecessor",
+    "runtimeReviewedCandidate",
+    "generatorSupplyV1Predecessor",
+    "replayAuthority",
+    "profile",
+    "missing",
+    "notGateClosure",
+    "gateStatus",
+    "registryDigest"
+  ],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-contract-closure-profile-registry/v4" },
+    "registryId": { "const": "cloud-agents/platform/contract-closure-profile" },
+    "authorityRevision": { "const": "D-053-EC-2.r4" },
+    "sourceDigest": { "$ref": "#/$defs/digest" },
+    "predecessor": {
+      "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/predecessor"
+    },
+    "supersededV3Predecessor": {
+      "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/supersededV3Predecessor"
+    },
+    "runtimeReviewedCandidate": {
+      "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/runtimeReviewedCandidate"
+    },
+    "generatorSupplyV1Predecessor": {
+      "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/generatorSupplyV1Predecessor"
+    },
+    "replayAuthority": { "type": "object", "minProperties": 1 },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileDigest", "spec"],
+      "properties": {
+        "profileDigest": { "$ref": "#/$defs/digest" },
+        "spec": { "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/profile" }
+      }
+    },
+    "missing": { "const": ["remaining-generator-supply-chain-review"] },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" },
+    "registryDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "x-cloud-agents-security": {
+    "editable": false,
+    "status": "BOOTSTRAP_VALIDATED",
+    "notGateClosure": true,
+    "gateStatus": "ALL_GATES_OPEN",
+    "effectiveMissingRemoval": "detached_review_binding_only"
+  }
+}
