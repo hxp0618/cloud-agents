@@ -127,6 +127,27 @@ describe("runCloudAgentRuntimeStdio", () => {
     expect(output.text()).toBe("");
   });
 
+  it.each([
+    ["negative generation", { generation: -1 }],
+    ["zero generation", { generation: 0 }],
+    ["fractional generation", { generation: 1.5 }],
+    ["negative protocol minor", { protocolVersion: { major: 2, minor: -1 } }],
+    ["fractional protocol minor", { protocolVersion: { major: 2, minor: 2.5 } }],
+    ["empty request id", { requestId: "" }],
+    ["empty execution id", { executionId: "" }],
+    ["empty command id", { commandId: "" }],
+    ["empty timestamp", { occurredAt: "" }],
+  ])("rejects %s before dispatch", async (_name, patch) => {
+    const output = captureOutput();
+    await expect(
+      runCloudAgentRuntimeStdio(fakeRuntime(), {
+        source: Readable.from([`${JSON.stringify({ ...describeCommand, ...patch })}\n`]),
+        output: output.stream,
+      }),
+    ).rejects.toThrow("Command does not match Protocol v2.");
+    expect(output.text()).toBe("");
+  });
+
   it("propagates a rejecting event stream immediately and closes its session", async () => {
     const eventFailure = new Error("Provider event stream failed.");
     const unhandled: unknown[] = [];

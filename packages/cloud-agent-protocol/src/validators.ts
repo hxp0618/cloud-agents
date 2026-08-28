@@ -82,8 +82,8 @@ function commonEnvelopeErrors(value: unknown): string[] {
       errors.push(`${field} must be a non-empty string`);
     }
   }
-  if (!Number.isSafeInteger(record.generation) || Number(record.generation) < 0) {
-    errors.push("generation must be a non-negative safe integer");
+  if (!Number.isSafeInteger(record.generation) || Number(record.generation) < 1) {
+    errors.push("generation must be a positive safe integer");
   }
   const protocol = asRecord(record.protocolVersion);
   if (

@@ -291,12 +291,20 @@ function decodeCommand(line: string): CloudAgentCommandEnvelope {
   if (
     protocol?.major !== CLOUD_AGENT_PROTOCOL_VERSION.major ||
     typeof protocol.minor !== "number" ||
+    !Number.isSafeInteger(protocol.minor) ||
+    protocol.minor < 0 ||
     protocol.minor > CLOUD_AGENT_PROTOCOL_VERSION.minor ||
     typeof value.requestId !== "string" ||
+    !value.requestId ||
     typeof value.executionId !== "string" ||
+    !value.executionId ||
+    typeof value.generation !== "number" ||
     !Number.isSafeInteger(value.generation) ||
+    value.generation < 1 ||
     typeof value.commandId !== "string" ||
+    !value.commandId ||
     typeof value.occurredAt !== "string" ||
+    !value.occurredAt ||
     !CLOUD_AGENT_COMMAND_TYPES.includes(value.commandType as never) ||
     !isRecord(value.payload)
   ) {
