@@ -86,6 +86,23 @@ describe("createCloudAgentRuntime", () => {
     await expect(runtime.describe("codex")).rejects.toThrow(/complete capability map/u);
   });
 
+  it("rejects malformed optional descriptor fields at the runtime boundary", async () => {
+    const runtime = createCloudAgentRuntime({
+      providers: [
+        {
+          ...provider("codex"),
+          describe: async () =>
+            ({
+              ...(await provider("codex").describe()),
+              textGenerationTasks: ["unknown-task"],
+            }) as never,
+        },
+      ],
+    });
+
+    await expect(runtime.describe("codex")).rejects.toThrow(/textGenerationTasks/u);
+  });
+
   it("rejects a descriptor for a different registered provider", async () => {
     const runtime = createCloudAgentRuntime({
       providers: [

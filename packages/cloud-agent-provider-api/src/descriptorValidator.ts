@@ -1,4 +1,7 @@
-import { CLOUD_AGENT_CAPABILITY_IDS } from "@synara/cloud-agent-protocol";
+import {
+  CLOUD_AGENT_CAPABILITY_IDS,
+  CLOUD_AGENT_TEXT_GENERATION_TASKS,
+} from "@synara/cloud-agent-protocol";
 
 export type ValidatedCloudAgentProviderDescriptor = {
   readonly abiVersion: 1;
@@ -45,6 +48,14 @@ export function assertCloudAgentProviderDescriptor(
   ) {
     throw new Error("Provider descriptor runtime is invalid.");
   }
+  if (
+    (runtime.version !== undefined &&
+      (typeof runtime.version !== "string" || !runtime.version.trim())) ||
+    (range?.maximumExclusive !== undefined &&
+      (typeof range.maximumExclusive !== "string" || !range.maximumExclusive.trim()))
+  ) {
+    throw new Error("Provider descriptor runtime version range is invalid.");
+  }
   const capabilities = asRecord(descriptor.capabilities);
   if (!capabilities) throw new Error("Provider descriptor capabilities are missing.");
   const actual = Object.keys(capabilities).toSorted();
@@ -55,6 +66,25 @@ export function assertCloudAgentProviderDescriptor(
   for (const capability of CLOUD_AGENT_CAPABILITY_IDS) {
     if (!["native", "emulated", "unsupported"].includes(String(capabilities[capability]))) {
       throw new Error(`Provider descriptor has invalid support for ${capability}.`);
+    }
+  }
+  if (descriptor.configurationSchema !== undefined && !asRecord(descriptor.configurationSchema)) {
+    throw new Error("Provider descriptor configurationSchema is invalid.");
+  }
+  if (descriptor.textGenerationTasks !== undefined) {
+    if (!Array.isArray(descriptor.textGenerationTasks)) {
+      throw new Error("Provider descriptor textGenerationTasks are invalid.");
+    }
+    const seen = new Set<string>();
+    for (const task of descriptor.textGenerationTasks) {
+      if (
+        typeof task !== "string" ||
+        !CLOUD_AGENT_TEXT_GENERATION_TASKS.includes(task as never) ||
+        seen.has(task)
+      ) {
+        throw new Error("Provider descriptor textGenerationTasks are invalid.");
+      }
+      seen.add(task);
     }
   }
 }
