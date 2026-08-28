@@ -1,7 +1,7 @@
 # D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1 — local execution authority
 
 状态：`REVIEW_APPROVED_NON_GATE`（localdev、只读、非 Gate）
-日期：2026-08-28（Asia/Shanghai）  
+日期：2026-08-28（Asia/Shanghai）
 Profile：`cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1`
 
 ## 1. 决策与生成物

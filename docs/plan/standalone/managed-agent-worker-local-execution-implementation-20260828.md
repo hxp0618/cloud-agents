@@ -1,7 +1,7 @@
 # D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1 — implementation record
 
-日期：2026-08-28（Asia/Shanghai）  
-Profile：`cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1`  
+日期：2026-08-28（Asia/Shanghai）
+Profile：`cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1`
 状态：`REVIEW_APPROVED_NON_GATE`
 
 ## 决策与范围
