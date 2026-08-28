@@ -41,7 +41,7 @@
     "platform:contracts:external-consumer:profile-check": "bun scripts/generate-platform-g-contract-external-consumer.ts --check-profile tools/g-contract-external-consumer/v1/evidence/consumer.json",
     "platform:migrations:check": "bun scripts/check-platform-migration-bundle.ts && bun scripts/generate-platform-migration-bundle.ts --check",
     "platform:go:check": "bun scripts/check-platform-go-modules.ts",
-    "platform:go:test": "GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test -race ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane vet ./... && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod tidy -diff && GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod verify"
+    "platform:go:test": "GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test ./... && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test -race ./... && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane vet ./... && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod verify && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/worker mod verify && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C sdk/go mod verify"
   },
   "devDependencies": {
     "@bufbuild/protobuf": "2.14.0",
