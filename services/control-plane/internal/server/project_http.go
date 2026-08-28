@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,9 +18,11 @@ import (
 )
 
 const (
-	ProjectRoutePrefix = "/v1/tenants/"
-	ProjectRouteSuffix = "/projects/"
-	projectAPIVersion  = "platform.cloud-agents.dev/v1alpha1"
+	ProjectRoutePrefix       = "/v1/tenants/"
+	ProjectRouteSuffix       = "/projects/"
+	projectCreateRouteSuffix = "/projects"
+	projectMaximumBodyBytes  = 1 << 20
+	projectAPIVersion        = "platform.cloud-agents.dev/v1alpha1"
 )
 
 var ErrInvalidProjectHTTPServer = errors.New("project HTTP server configuration is invalid")
@@ -30,19 +34,33 @@ type AccessTokenVerifier interface {
 type ProjectHTTPServer struct {
 	verifier AccessTokenVerifier
 	reader   ManagedAgentProjectReader
+	creator  projectCreator
 }
 
-func NewProjectHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentProjectReader) (*ProjectHTTPServer, error) {
-	if verifier == nil || reader == nil {
+type projectCreator interface {
+	Create(context.Context, *authn.VerifiedPrincipal, ManagedAgentCreateProjectRequest) (postgres.DurableProjectCreateResult, error)
+}
+
+func NewProjectHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentProjectReader, creator projectCreator) (*ProjectHTTPServer, error) {
+	if verifier == nil || reader == nil || creator == nil {
 		return nil, ErrInvalidProjectHTTPServer
 	}
-	return &ProjectHTTPServer{verifier: verifier, reader: reader}, nil
+	return &ProjectHTTPServer{verifier: verifier, reader: reader, creator: creator}, nil
 }
 
 func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
-	if server == nil || server.verifier == nil || server.reader == nil || request == nil {
+	if server == nil || server.verifier == nil || server.reader == nil || server.creator == nil || request == nil {
 		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	if request.Method == http.MethodPost {
+		tenantID, ok := projectCreatePath(request.URL.Path)
+		if !ok {
+			writeProjectError(writer, http.StatusNotFound, "route_not_found")
+			return
+		}
+		server.create(writer, request, tenantID)
 		return
 	}
 	tenantID, projectID, ok := projectPath(request.URL.Path)
@@ -51,7 +69,7 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 		return
 	}
 	if request.Method != http.MethodGet {
-		writer.Header().Set("Allow", http.MethodGet)
+		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writeProjectError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
@@ -101,6 +119,81 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(body)
+}
+
+func (server *ProjectHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, requestIDOK := exactSingleHeader(request.Header, "X-Request-ID")
+	idempotencyKey, idempotencyOK := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !requestIDOK || !idempotencyOK {
+		writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, projectMaximumBodyBytes))
+	if err != nil {
+		writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateCreateProjectServerRequest(tenantID, requestID, idempotencyKey, body)
+	if err != nil {
+		writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "organization", ResourceID: validated.Body.OrganizationRef.ID, RequiredPermission: "projects.create",
+	})
+	if err != nil {
+		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	result, err := server.creator.Create(request.Context(), principal, ManagedAgentCreateProjectRequest{
+		RouteTenantID: validated.TenantID, RequestID: validated.RequestID, IdempotencyKey: validated.IdempotencyKey, Body: body,
+	})
+	if err != nil {
+		status, code := projectErrorStatus(err)
+		writeProjectError(writer, status, code)
+		return
+	}
+	if result.DatabaseOutcome == postgres.DatabaseUnknown {
+		writeProjectError(writer, http.StatusInternalServerError, "commit_outcome_unknown")
+		return
+	}
+	if result.DatabaseOutcome == postgres.DatabaseRejected || result.Disposition == "conflict" {
+		writeProjectError(writer, http.StatusConflict, "create_conflict")
+		return
+	}
+	if result.Project.UID == "" {
+		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	value := projectResource(result.Project)
+	body, err = platformv1alpha1.EncodeProjectResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.Project]{Value: value})
+	if err != nil {
+		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", validated.RequestID)
+	writer.Header().Set("X-Resource-Version", value.Metadata.ResourceVersion)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusCreated)
+	_, _ = writer.Write(body)
+}
+
+func projectCreatePath(path string) (string, bool) {
+	if !strings.HasPrefix(path, ProjectRoutePrefix) || !strings.HasSuffix(path, projectCreateRouteSuffix) {
+		return "", false
+	}
+	tenantID := strings.TrimSuffix(strings.TrimPrefix(path, ProjectRoutePrefix), projectCreateRouteSuffix)
+	return tenantID, tenantID != "" && !strings.Contains(tenantID, "/")
 }
 
 func projectPath(path string) (string, string, bool) {

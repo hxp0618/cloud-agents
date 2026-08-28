@@ -38,6 +38,7 @@ type DurableProjectCreateResult struct {
 	StableErrorCode     *string
 	OutboxEventID       *string
 	OutboxState         *string
+	Project             Project
 }
 
 // CreateProjectDurable authorizes projects.create and executes one serializable
@@ -168,6 +169,16 @@ func createDurableProjectTransaction(
 	result.StableErrorCode = stableErrorCode
 	result.OutboxEventID = outboxEventID
 	result.OutboxState = outboxState
+	if result.ResourceKind == nil || *result.ResourceKind != "project" || result.ResourceID == nil {
+		return result, nil
+	}
+	if err := handle.transaction.queryRow(ctx, getProjectSQL, *result.ResourceID).Scan(
+		&result.Project.UID, &result.Project.Name, &result.Project.OrganizationID, &result.Project.DisplayName,
+		&result.Project.State, &result.Project.ResourceVersion, &result.Project.CreatedAt, &result.Project.UpdatedAt,
+	); err != nil {
+		return DurableProjectCreateResult{}, err
+	}
+	result.Project.TenantID = tenantID
 	return result, nil
 }
 

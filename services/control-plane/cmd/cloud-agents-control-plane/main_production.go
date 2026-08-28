@@ -85,7 +85,11 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("control-plane store is unavailable")
 	}
-	projectServer, err := server.NewProjectHTTPServer(verifier, coordinationService)
+	projectCreator, err := server.NewDurableProjectCreateServer(coordinationService)
+	if err != nil {
+		return errors.New("project create server is unavailable")
+	}
+	projectServer, err := server.NewProjectHTTPServer(verifier, coordinationService, projectCreator)
 	if err != nil {
 		return errors.New("project HTTP server is unavailable")
 	}
