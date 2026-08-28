@@ -164,7 +164,10 @@ function providerFor(
   return provider;
 }
 
-function normalizedProviderKind(value: string): string {
+function normalizedProviderKind(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("Provider kind must be a non-empty portable slug.");
+  }
   const normalized = value.trim();
   if (!normalized || normalized.length > 64 || !/^[a-zA-Z][a-zA-Z0-9_-]*$/u.test(normalized)) {
     throw new Error("Provider kind must be a non-empty portable slug.");

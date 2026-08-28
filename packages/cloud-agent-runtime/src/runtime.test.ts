@@ -50,6 +50,13 @@ describe("createCloudAgentRuntime", () => {
     );
   });
 
+  it("rejects a non-string provider kind at the public runtime boundary", async () => {
+    const runtime = createCloudAgentRuntime({ providers: [provider("codex")] });
+    await expect(runtime.describe(undefined as never)).rejects.toThrow(
+      /Provider kind must be a non-empty portable slug/u,
+    );
+  });
+
   it("registers providers explicitly and deterministically", () => {
     const runtime = createCloudAgentRuntime({ providers: [provider("codex"), provider("claude")] });
     expect(runtime.providerKinds).toEqual(["claude", "codex"]);
