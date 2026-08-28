@@ -10,6 +10,7 @@ import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from "n
 import {
   CLOUD_AGENT_MAX_COMMAND_BYTES,
   CLOUD_AGENT_MAX_MESSAGE_BYTES,
+  validateCloudAgentCommandEnvelope,
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
 } from "@synara/cloud-agent-protocol";
@@ -215,6 +216,12 @@ export function createCloudAgentStdioClient(
     signal?: AbortSignal,
   ): Promise<CloudAgentMessageEnvelope> {
     if (closed) throw new Error("Cloud Agent Runtime client is closed.");
+    const validation = validateCloudAgentCommandEnvelope(command);
+    if (!validation.valid) {
+      throw new Error(
+        `Cloud Agent command envelope is invalid: ${validation.errors.join("; ")}.`,
+      );
+    }
     if (signal?.aborted) throw abortError(signal.reason);
     if (pending.has(command.commandId)) {
       throw new Error(`Cloud Agent command ${command.commandId} is already in flight.`);

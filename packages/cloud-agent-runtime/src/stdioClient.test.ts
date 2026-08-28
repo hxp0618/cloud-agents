@@ -213,6 +213,16 @@ readline.createInterface({ input: process.stdin }).once("line", (line) => {
     await client.close();
   });
 
+  it("rejects an invalid command envelope before writing it", async () => {
+    const client = createCloudAgentStdioClient({
+      command: process.execPath,
+      args: ["-e", RESPONDING_RUNTIME, "--"],
+    });
+    const invalid = { ...command("invalid-command"), generation: 0 };
+    await expect(client.execute(invalid)).rejects.toThrow("command envelope is invalid");
+    await client.close();
+  });
+
   it("fails closed when the runtime emits malformed JSON", async () => {
     const client = createCloudAgentStdioClient({
       command: process.execPath,
