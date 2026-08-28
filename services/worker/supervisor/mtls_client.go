@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
@@ -68,7 +69,12 @@ func NewMTLS(config MTLSConfig) (*Supervisor, error) {
 		},
 	}
 	client := &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidMTLSConfig }}
-	return New(Config{Client: workerv1alpha1connect.NewWorkerExecutionServiceClient(client, endpoint), ExpectedWorkerIdentity: config.ExpectedWorkerIdentity, Clock: config.Clock})
+	return New(Config{
+		Client:                 workerv1alpha1connect.NewWorkerExecutionServiceClient(client, endpoint),
+		RuntimeClient:          workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(client, endpoint),
+		ExpectedWorkerIdentity: config.ExpectedWorkerIdentity,
+		Clock:                  config.Clock,
+	})
 }
 
 func validateMTLSEndpoint(value string) (string, error) {

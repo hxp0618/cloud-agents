@@ -160,6 +160,22 @@ func TestNewMTLSRequiresHTTPSAndExplicitCredentials(t *testing.T) {
 	}
 }
 
+func TestNewMTLSConfiguresRuntimeClientOnTheSameTransport(t *testing.T) {
+	identity := testWorkerIdentity()
+	supervisor, err := NewMTLS(MTLSConfig{
+		Endpoint:               "https://worker.example:8091",
+		ExpectedWorkerIdentity: identity,
+		ClientCertificate:      tls.Certificate{Certificate: [][]byte{{1}}, PrivateKey: &rsa.PrivateKey{}},
+		RootCAs:                x509.NewCertPool(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runtimeClientAvailable(supervisor.runtimeClient) {
+		t.Fatal("mTLS Supervisor did not configure the Worker Runtime client")
+	}
+}
+
 func TestBindUsesFixedProfileAndCopiesState(t *testing.T) {
 	now := time.Date(2026, 8, 27, 14, 0, 0, 0, time.UTC)
 	expected := testWorkerIdentity()
