@@ -251,7 +251,6 @@ export function expectedArtifactCount(): number {
 }
 
 const PUBLIC_PLATFORM_CONTRACT_PATHS = [
-  "contracts/platform/v1alpha1/fixtures/manifest.json",
   "contracts/platform/v1alpha1/fixtures/golden/membership.json",
   "contracts/platform/v1alpha1/fixtures/golden/organization.json",
   "contracts/platform/v1alpha1/fixtures/golden/platform-tenant.json",

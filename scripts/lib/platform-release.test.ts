@@ -94,6 +94,7 @@ describe("platform release", () => {
     expect(paths).toContain("contracts/managed-agent/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/worker/runtime/v1alpha1/runtime.proto");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
+    expect(paths).not.toContain("contracts/platform/v1alpha1/fixtures/manifest.json");
     expect(
       paths.some((path) => path.includes("generation.lock") || path.includes("docs/plan")),
     ).toBe(false);
