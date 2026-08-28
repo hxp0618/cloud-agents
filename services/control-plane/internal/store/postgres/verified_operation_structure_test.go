@@ -323,6 +323,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
 		"*DurableCoordinationService.CompleteIdempotencySuccess",
 		"*DurableCoordinationService.CreateProjectDurable",
+		"*DurableCoordinationService.GetProject",
 		"*RBACMutationService.BindRole",
 		"*RBACMutationService.CreateMembership",
 		"*RBACMutationService.RevokeRoleBinding",
@@ -333,6 +334,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CompleteIdempotencyFailure",
 		"*DurableCoordinationService.CompleteIdempotencySuccess",
 		"*DurableCoordinationService.CreateProjectDurable",
+		"*DurableCoordinationService.GetProject",
 		"*RBACMutationService.withKnownScopeMutation",
 		"*RBACMutationService.withStoredScopeMutation",
 	)

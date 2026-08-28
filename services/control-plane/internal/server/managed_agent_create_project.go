@@ -12,6 +12,7 @@ import (
 )
 
 var ErrNilManagedAgentCreateProjectService = errors.New("managed agent create project service is nil")
+var ErrNilManagedAgentProjectReadService = errors.New("managed agent project read service is nil")
 
 // ManagedAgentCreateProjectRequest is the complete transport-neutral input to
 // the claim-only managedAgentCreateProject admission boundary.
@@ -79,4 +80,30 @@ func mapManagedAgentCreateProjectClaim(
 		IdempotencyKey: validated.IdempotencyKey,
 		AuditFactID:    validated.RequestID,
 	}
+}
+
+type ManagedAgentGetProjectRequest struct {
+	TenantID  string
+	ProjectID string
+	RequestID string
+}
+
+type ManagedAgentProjectReader interface {
+	GetProject(context.Context, string, *authn.VerifiedPrincipal, string) (postgres.Project, error)
+}
+
+func GetProject(
+	ctx context.Context,
+	reader ManagedAgentProjectReader,
+	principal *authn.VerifiedPrincipal,
+	request ManagedAgentGetProjectRequest,
+) (postgres.Project, error) {
+	if reader == nil {
+		return postgres.Project{}, ErrNilManagedAgentProjectReadService
+	}
+	validated, err := openapiv1.ValidateGetServerRequest(request.TenantID, request.ProjectID, request.RequestID)
+	if err != nil {
+		return postgres.Project{}, err
+	}
+	return reader.GetProject(ctx, validated.TenantID, principal, validated.ResourceID)
 }

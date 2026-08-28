@@ -18,7 +18,7 @@ const (
 	localAudience   = "https://local.invalid/cloud-agents/control-plane"
 	localKeyID      = "local-ephemeral-rs256"
 	localClientID   = "local-control-plane"
-	localPermission = "projects.create"
+	localPermission = "projects.create projects.get"
 	localTokenTTL   = 5 * time.Minute
 )
 
