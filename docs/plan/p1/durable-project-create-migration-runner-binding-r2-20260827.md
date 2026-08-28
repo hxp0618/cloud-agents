@@ -1,6 +1,6 @@
 # D-053-MIG-000014.r2：localdev runner-binding authority
 
-状态：`AUTHORITY_FROZEN_REVIEW_PENDING`（只读候选；不构成 Gate 关闭或生产发布）
+状态：`REVIEW_APPROVED_NON_GATE`（localdev、只读；不构成 Gate 关闭或生产发布）
 日期：2026-08-27
 批准范围：在同一个 r2 candidate 内完成 generated runner-binding、fail-closed checks、focused verification 和一次独立只读审查。P0/P1 可在该 candidate 内修复一次并重新审查；P2 记录后延期。不得创建 r3/r4。
 

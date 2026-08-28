@@ -608,7 +608,7 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       performed. This is a deterministic P1 source/consumer mismatch requiring a new pre-replay repair candidate
       and fresh projection/native replay; see
       [`Slice E lock assembly blocker`](../p1/g-contract-current-source-phase-successor-slice-e-lock-assembly-blocker-20260826.md)。
-- [x] Durable Project-create `000014` successor authority
+- [x] Durable Project-create `000014` successor authority 与 localdev runner-binding r2
       `D-053-MIG-000014.r1` 已在固定候选 `1325dc1773ef9bad2d809fedee9b392e3cdbf959`（tree
       `49e53f2462af20201231c2428eb56cce543403a2`）完成 generated source/schema/profile、完整
       `167/29/14` input/protected/exclusion 集合、前驱 archive/member-manifest 算法、runner/toolchain/platform、
@@ -619,6 +619,12 @@ helper/legacy-contract/duplicate-target 三类 fail-closed invariant。任何固
       bytes 与历史 evidence 保持 immutable。complete-ledger 仅为 local/read-only `no-op`，entry/recovery writer
       仍为 `NOT_IMPLEMENTED`；EC2 deferred evidence、生产数据库、HTTP/P2/provider、部署、发布和所有 Gate
       transition/closure 均未授权。
+      随后 `D-053-MIG-000014.r2` 在固定候选 `61a7382e952758c68bc802b3725b8f5f591eb9fe` 完成
+      generated localdev runner-binding、canonical `000013`/successor `000014` closed selectors 与
+      pre-connect fail-closed checks；独立只读审查返回 `APPROVE, P0=0/P1=0/P2=0`，r1 source/profile/schema/
+      manifest/SQL/catalog/archive/review bytes 保持 immutable。r2 仍为 local/read-only non-Gate authority，
+      complete-ledger 为 no-op、entry/recovery writer 为 `NOT_IMPLEMENTED`，不授权生产数据库、HTTP/P2/provider、
+      部署、发布或任何 Gate transition。
 - [x] [current-source exhaustive normal migration shards](../p1/current-source-migration-shard-closure-20260822.md)
       已在固定 `7f14c7f` 以一次 deterministic 8-shard run 覆盖 exact 700-entry top-level list，结果为
       `695 pass + 5 explicit external-PG skip`、零 fail、wall `550s`；不再重复运行单体 30-minute suite。该 local record
