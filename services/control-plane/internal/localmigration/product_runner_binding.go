@@ -1,5 +1,3 @@
-//go:build localdev
-
 package localmigration
 
 // productRunnerBindingSelector is the checked-in independent-product schema

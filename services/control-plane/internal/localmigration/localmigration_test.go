@@ -1,5 +1,3 @@
-//go:build localdev
-
 package localmigration
 
 import (
@@ -136,6 +134,41 @@ func TestLoadAndVerifyIndependentProductSessionManifest(t *testing.T) {
 	}
 }
 
+func TestProductManifestDoesNotRequireHistoricalRunnerProfile(t *testing.T) {
+	sourceConfig := testConfig(t)
+	sourceConfig.ManifestSelector = "product-000016"
+	sourceConfig.ManifestPath = "services/control-plane/migrations/product/000016/manifest.json"
+	bundle, err := loadAndVerify(sourceConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := t.TempDir()
+	copyArtifact := func(path string) {
+		t.Helper()
+		source := filepath.Join(sourceConfig.RepositoryRoot, filepath.FromSlash(path))
+		target := filepath.Join(temp, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	copyArtifact(sourceConfig.ManifestPath)
+	copyArtifact("services/control-plane/migrations/product/000016/schema-bundle.json")
+	for _, entry := range bundle.manifest.SchemaBundle.Migrations {
+		copyArtifact(entry.SQLArtifact.Path)
+	}
+	sourceConfig.RepositoryRoot = temp
+	if _, err := loadAndVerify(sourceConfig); err != nil {
+		t.Fatalf("product manifest still requires historical runner profile: %v", err)
+	}
+}
+
 func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 	for _, test := range []struct {
 		head   string
@@ -156,14 +189,18 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 	}
 }
 
-func TestRunRejectsPartialAndDivergentLedgers(t *testing.T) {
+func TestRunResumesPartialAndRejectsDivergentLedgers(t *testing.T) {
 	bundle, err := loadAndVerify(testConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	partial := &fakeSession{rows: []migration.LedgerRow{ledgerRow(bundle.manifest.SchemaBundle.Migrations[0], bundle.manifest.SchemaBundleDigest, "localdev")}}
-	if _, err := Run(context.Background(), testConfig(t), &fakeConnector{session: partial}); err == nil {
-		t.Fatal("partial ledger unexpectedly accepted")
+	result, err := Run(context.Background(), testConfig(t), &fakeConnector{session: partial})
+	if err != nil || result.Applied != 12 || result.SchemaHead != "000013" {
+		t.Fatalf("partial ledger result=%+v err=%v", result, err)
+	}
+	if len(partial.apply) != 12 || partial.apply[0] != "000002" || partial.apply[11] != "000013" {
+		t.Fatalf("partial ledger apply order: %v", partial.apply)
 	}
 	divergent := &fakeSession{}
 	for _, entry := range bundle.manifest.SchemaBundle.Migrations {

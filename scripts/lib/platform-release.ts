@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+import { createDeterministicUstar } from "./platform-migration-ustar";
 
 export const PLATFORM_RELEASE_TARGETS = ["linux-amd64", "linux-arm64"] as const;
 export type PlatformReleaseTarget = (typeof PLATFORM_RELEASE_TARGETS)[number];
@@ -7,11 +10,12 @@ export type PlatformReleaseTarget = (typeof PLATFORM_RELEASE_TARGETS)[number];
 export const PLATFORM_RELEASE_GO_COMMANDS = [
   "cloud-agents-control-plane",
   "cloud-agents-worker",
-  "cloud-agents-migrate",
+  "cloud-agents-product-migrate",
   "cloud-agents-evidencefs-provision",
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
+export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000016.tar";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -96,6 +100,29 @@ export function platformReleaseArtifact(
   };
 }
 
+export function buildPlatformMigrationPackage(root: string): Uint8Array {
+  const manifestPath = "services/control-plane/migrations/product/000016/manifest.json";
+  const manifest = JSON.parse(readFileSync(resolve(root, manifestPath), "utf8")) as {
+    readonly schema_bundle: {
+      readonly migrations: ReadonlyArray<{
+        readonly sql_artifact: { readonly path: string };
+        readonly catalog_contract: { readonly path: string };
+      }>;
+    };
+  };
+  const paths = new Set<string>([
+    manifestPath,
+    "services/control-plane/migrations/product/000016/schema-bundle.json",
+  ]);
+  for (const migration of manifest.schema_bundle.migrations) {
+    paths.add(migration.sql_artifact.path);
+    paths.add(migration.catalog_contract.path);
+  }
+  return createDeterministicUstar(
+    [...paths].map((path) => ({ path, data: readFileSync(resolve(root, path)) })),
+  );
+}
+
 export function validatePlatformReleaseManifest(
   manifest: unknown,
 ): asserts manifest is PlatformReleaseManifest {
@@ -155,11 +182,12 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
       PLATFORM_RELEASE_GO_COMMANDS.map((name) => ({ name, target })),
     ),
     { name: "cloud-agent-runtime", target: "portable" },
+    { name: "cloud-agents-migrations", target: "portable" },
   ];
 }
 
 export function expectedArtifactCount(): number {
-  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 1;
+  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 2;
 }
 
 function requireString(value: unknown, label: string): string {

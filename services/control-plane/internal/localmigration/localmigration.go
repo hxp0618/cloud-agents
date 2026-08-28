@@ -1,8 +1,5 @@
-//go:build localdev
-
-// Package localmigration provides a deliberately local-development-only
-// migration path for a pre-provisioned PostgreSQL database. It does not create
-// databases or roles and it has no partial-ledger recovery behavior.
+// Package localmigration applies the checked-in independent-product migration
+// bundle through a dedicated PostgreSQL migration-owner session.
 package localmigration
 
 import (
@@ -24,9 +21,8 @@ type Config struct {
 	DatabaseURL    string
 	RepositoryRoot string
 	ManifestPath   string
-	// ManifestSelector selects a checked-in canonical/successor product bundle.
-	// An empty selector selects canonical 000013; reviewed successors require
-	// their exact selector.
+	// ManifestSelector selects a checked-in canonical, successor, or product
+	// bundle. An empty selector selects canonical 000013.
 	ManifestSelector string
 }
 
@@ -125,15 +121,21 @@ func Run(ctx context.Context, config Config, connector Connector) (result Result
 			result.Applied++
 		}
 		return result, nil
-	case len(rows) != len(entries):
-		return Result{}, errors.New("partial migration ledger is not supported by localdev runner")
+	case len(rows) > len(entries):
+		return Result{}, errors.New("migration ledger is ahead of the selected manifest")
 	default:
 		for index := range rows {
 			if !ledgerRowMatches(rows[index], entries[index], bundle.manifest.SchemaBundleDigest) {
 				return Result{}, fmt.Errorf("migration ledger differs from manifest at index %d", index)
 			}
 		}
-		result.NoOp = true
+		for _, entry := range entries[len(rows):] {
+			if err := session.Apply(ctx, entry, bundle.sql[entry.ID], bundle.manifest.SchemaBundleDigest); err != nil {
+				return Result{}, fmt.Errorf("apply migration %s: %w", entry.ID, err)
+			}
+			result.Applied++
+		}
+		result.NoOp = result.Applied == 0
 		return result, nil
 	}
 }
@@ -261,6 +263,9 @@ func resolveWithin(root, candidate string) (string, error) {
 // connector call.  The generated profile blob is the authority; all runtime
 // paths are closed over the generated selector table rather than caller data.
 func bindGeneratedRunnerSelection(root string, config Config) (boundRunnerSelection, error) {
+	if strings.HasPrefix(config.ManifestSelector, "product-") {
+		return bindIndependentProductSelection(root, config)
+	}
 	if err := verifyBoundArtifact(root, generatedRunnerBindingSourceArtifact()); err != nil {
 		return boundRunnerSelection{}, fmt.Errorf("runner binding source: %w", err)
 	}
@@ -312,6 +317,31 @@ func bindGeneratedRunnerSelection(root string, config Config) (boundRunnerSelect
 	})
 	if err != nil {
 		return boundRunnerSelection{}, fmt.Errorf("selected schema bundle: %w", err)
+	}
+	if err := verifySelectedBundle(selector, manifestRaw, schemaRaw); err != nil {
+		return boundRunnerSelection{}, err
+	}
+	return boundRunnerSelection{selector: selector, manifestRaw: manifestRaw, schemaBundleRaw: schemaRaw}, nil
+}
+
+func bindIndependentProductSelection(root string, config Config) (boundRunnerSelection, error) {
+	selector, err := selectGeneratedRunnerBinding(config)
+	if err != nil {
+		return boundRunnerSelection{}, err
+	}
+	manifestRaw, err := readBoundArtifact(root, generatedRunnerBindingArtifact{
+		path: selector.manifestPath, mode: "100644", sizeBytes: selector.manifestSizeBytes,
+		rawDigest: selector.manifestRawDigest,
+	})
+	if err != nil {
+		return boundRunnerSelection{}, fmt.Errorf("selected product manifest: %w", err)
+	}
+	schemaRaw, err := readBoundArtifact(root, generatedRunnerBindingArtifact{
+		path: selector.schemaBundlePath, mode: "100644", sizeBytes: selector.schemaBundleSizeBytes,
+		rawDigest: selector.schemaBundleRawDigest,
+	})
+	if err != nil {
+		return boundRunnerSelection{}, fmt.Errorf("selected product schema bundle: %w", err)
 	}
 	if err := verifySelectedBundle(selector, manifestRaw, schemaRaw); err != nil {
 		return boundRunnerSelection{}, err

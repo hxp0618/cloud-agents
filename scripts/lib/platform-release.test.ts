@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
+import { readDeterministicUstar } from "./platform-migration-ustar";
 import {
   expectedArtifactIdentities,
+  buildPlatformMigrationPackage,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
   validatePlatformReleaseManifest,
@@ -55,5 +57,16 @@ describe("platform release", () => {
     expect(() =>
       validatePlatformReleaseManifest({ ...manifest, artifacts: artifacts.slice(1) }),
     ).toThrow(/artifacts/);
+  });
+
+  it("packages the current product migration manifest, catalog, and SQL", () => {
+    const archive = buildPlatformMigrationPackage(process.cwd());
+    const entries = readDeterministicUstar(new Uint8Array(archive));
+    expect(entries.some(({ path }) => path.endsWith("product/000016/manifest.json"))).toBe(true);
+    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(16);
+    expect(expectedArtifactIdentities()).toContainEqual({
+      name: "cloud-agents-migrations",
+      target: "portable",
+    });
   });
 });

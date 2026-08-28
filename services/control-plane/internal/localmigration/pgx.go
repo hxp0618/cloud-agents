@@ -1,5 +1,3 @@
-//go:build localdev
-
 package localmigration
 
 import (
@@ -21,6 +19,23 @@ func (PGXConnector) Connect(ctx context.Context, databaseURL string) (Session, e
 	config, err := parseLocalPGXConfig(databaseURL)
 	if err != nil {
 		return nil, err
+	}
+	connection, err := pgx.ConnectConfig(ctx, config)
+	if err != nil {
+		return nil, errors.New("cannot connect to PostgreSQL")
+	}
+	return &pgxSession{connection: connection}, nil
+}
+
+// ProductPGXConnector is the production connector. TLS and network policy
+// remain PostgreSQL DSN concerns; the runner still requires the dedicated
+// migration-owner role before it can execute any SQL.
+type ProductPGXConnector struct{}
+
+func (ProductPGXConnector) Connect(ctx context.Context, databaseURL string) (Session, error) {
+	config, err := pgx.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, errors.New("invalid PostgreSQL configuration")
 	}
 	connection, err := pgx.ConnectConfig(ctx, config)
 	if err != nil {
@@ -213,4 +228,5 @@ func (adapter execAdapter) Exec(ctx context.Context, sql string, arguments ...an
 }
 
 var _ Connector = PGXConnector{}
+var _ Connector = ProductPGXConnector{}
 var _ Session = (*pgxSession)(nil)

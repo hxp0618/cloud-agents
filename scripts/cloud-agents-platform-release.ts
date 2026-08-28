@@ -4,10 +4,12 @@ import { join, resolve } from "node:path";
 
 import {
   expectedArtifactCount,
+  buildPlatformMigrationPackage,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
   PLATFORM_RELEASE_GO_COMMANDS,
   PLATFORM_RELEASE_RUNTIME,
+  PLATFORM_RELEASE_MIGRATIONS,
   PLATFORM_RELEASE_TARGETS,
   type PlatformReleaseArtifact,
   type PlatformReleaseTarget,
@@ -54,6 +56,18 @@ artifacts.push(
     "portable",
     PLATFORM_RELEASE_RUNTIME,
     runtimeBytes,
+  ),
+);
+
+const migrationOutput = join(options.outputDirectory, PLATFORM_RELEASE_MIGRATIONS);
+const migrationBytes = buildPlatformMigrationPackage(repositoryRoot);
+writeFileSync(migrationOutput, migrationBytes, { mode: 0o444 });
+artifacts.push(
+  platformReleaseArtifact(
+    "cloud-agents-migrations",
+    "portable",
+    PLATFORM_RELEASE_MIGRATIONS,
+    migrationBytes,
   ),
 );
 
