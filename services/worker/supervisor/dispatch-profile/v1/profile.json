@@ -1,0 +1,111 @@
+{
+  "$schema": "https://schemas.cloud-agents.dev/worker/supervisor/dispatch-profile/v1/profile.schema.json",
+  "formatVersion": "cloud-agents-worker-supervisor-local-dispatch-profile/v1",
+  "authorityId": "D-054-WORKER-DISPATCH-000001",
+  "revision": "D-054-WORKER-DISPATCH-000001.r1",
+  "decision": "D-054-WORKER-DISPATCH-000001.r1",
+  "profileId": "cloud-agents/worker-supervisor-operation-dispatch/localdev-v1alpha1",
+  "mode": "localdev_only",
+  "transport": "in_process",
+  "genericClientDispatch": "forbidden",
+  "parentProfiles": [
+    "cloud-agents/worker-operation-admission/v1alpha1",
+    "cloud-agents/worker-operation-execution/localdev-v1alpha1"
+  ],
+  "capabilities": [
+    "negotiation",
+    "health",
+    "operation_dispatch"
+  ],
+  "commands": [
+    "Probe",
+    "ValidateBinding"
+  ],
+  "limits": {
+    "protocolMajor": 1,
+    "protocolMinor": 0,
+    "maxWireMessageBytes": 1048576,
+    "maxRepeatedItems": 64,
+    "maxStringBytes": 1024,
+    "maxPayloadBytes": 65536,
+    "maxDeadlineSeconds": 300,
+    "maxIdentifierBytes": 256,
+    "maxFencingTokenBytes": 65536,
+    "maxAdmissionRecords": 1024,
+    "maxReceiptRecords": 1024
+  },
+  "externalSideEffects": {
+    "database": false,
+    "durableReceipt": false,
+    "http": false,
+    "p2": false,
+    "provider": false,
+    "workspace": false,
+    "credential": false,
+    "artifact": false,
+    "deployment": false,
+    "publication": false
+  },
+  "selector": {
+    "mode": "in_process",
+    "profileSelection": "exact_profile_id_and_digest",
+    "callerSelectedProfile": "forbidden",
+    "genericClientDispatch": "forbidden",
+    "foreignTransport": "forbidden",
+    "networkListener": "forbidden"
+  },
+  "predecessor": {
+    "authorityId": "D-053-MIG-000014",
+    "revision": "D-053-MIG-000014.r2",
+    "profileId": "cloud-agents-platform-migration-runner-binding/v1",
+    "profileLogicalDigest": "sha256:7ffe830d854e5037994e2b5019da792a42d97928da456639bcdbfc4c3fa05489",
+    "mutation": "forbidden",
+    "historicalEvidence": "retain-and-never-rewrite"
+  },
+  "lineageFence": {
+    "kind": "single-predecessor-append-only",
+    "predecessorRevision": "D-053-MIG-000014.r2",
+    "successorRevision": "D-054-WORKER-DISPATCH-000001.r1",
+    "historicalEvidence": "retain-and-never-rewrite",
+    "d053Objects": "immutable-byte-and-digest-references-only"
+  },
+  "reviewRules": {
+    "independentReadOnly": true,
+    "reviewPath": "docs/plan/standalone/worker-supervisor-operation-dispatch-localdev-independent-review-20260828.md",
+    "verdicts": [
+      "APPROVE",
+      "REQUEST_CHANGES"
+    ],
+    "classification": [
+      "P0",
+      "P1",
+      "P2"
+    ],
+    "candidateMutation": "forbidden",
+    "gateTransition": "forbidden",
+    "p0P1Repair": "one repair and re-review within r1 candidate",
+    "p2": "record-and-defer"
+  },
+  "implementationBoundary": {
+    "dispatch": "in_process_only",
+    "receipt": "detached_bounded_process_local_only",
+    "databaseWrites": "not_authorized",
+    "durablePersistence": "forbidden",
+    "http": "forbidden",
+    "p2": "forbidden",
+    "provider": "forbidden",
+    "workspace": "forbidden",
+    "credential": "forbidden",
+    "artifact": "forbidden",
+    "productionRunner": "forbidden",
+    "deployment": "forbidden",
+    "publication": "forbidden",
+    "gateTransition": "forbidden"
+  },
+  "sourceAuthority": {
+    "authorityId": "D-054-WORKER-DISPATCH-000001",
+    "revision": "D-054-WORKER-DISPATCH-000001.r1",
+    "sourceDigest": "sha256:b97cb1e464e1cd01e4a42eae270834b45c8db92deddc964f7652fb68417565fa"
+  },
+  "profileDigest": "sha256:4ed83884e50cf2f55e9799a16afe28c97cf5756969ae47cdc082a1987b5ddbc1"
+}

@@ -1,12 +1,12 @@
 // Package supervisor contains the Supervisor-side admission client for the
 // generated Worker contract.
 //
-// It owns only the v1.0 negotiate/health bindings. The default Bind method is
-// the original health-only profile; BindOperationAdmission is an explicit
-// local admission profile and still does not dispatch work. It does not start
-// a listener, configure TLS, persist a lease, invoke a provider, or write an
-// operation/receipt. The caller supplies an already configured generated
-// Connect client; transport identity remains the transport's authority.
+// It owns the v1.0 negotiate/health bindings and a separately gated localdev
+// dispatch profile. The default Bind method is the original health-only
+// profile; BindOperationAdmission is an explicit local admission profile and
+// still does not dispatch work. Only NewLocal + BindLocalDispatch can invoke
+// the opaque in-process Worker handle. No method starts a listener, configures
+// TLS, persists a lease, invokes a provider, or writes a durable receipt.
 package supervisor
 
 import (
@@ -58,6 +58,12 @@ type Supervisor struct {
 	client         workerv1alpha1connect.WorkerExecutionServiceClient
 	workerIdentity *workerv1alpha1.WorkloadIdentity
 	now            Clock
+
+	// localHandle and localDispatchMarker are populated only by NewLocal. A
+	// generated Connect client (even one that happens to expose the same RPCs)
+	// can never opt into the dispatch path through New.
+	localHandle         workerkernel.LocalDispatchHandle
+	localDispatchMarker *localDispatchMarker
 
 	bindMu  sync.Mutex
 	mu      sync.RWMutex
@@ -238,24 +244,6 @@ func (s *Supervisor) CheckHealth(ctx context.Context) (HealthSnapshot, error) {
 		return HealthSnapshot{}, fail(connect.CodeDeadlineExceeded, "binding_expired")
 	}
 	return validateHealthResponse(response, state)
-}
-
-// DispatchOperation is a deliberately stable no-op until the Worker P1-A
-// operation capability is implemented.
-func (s *Supervisor) DispatchOperation(ctx context.Context, _ *workerv1alpha1.OperationAttemptEnvelope) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
-	if err := contextErr(ctx); err != nil {
-		return nil, err
-	}
-	return nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented")
-}
-
-// GetOperationReceipt is a deliberately stable no-op until durable receipts
-// are implemented.
-func (s *Supervisor) GetOperationReceipt(ctx context.Context, _ *workerv1alpha1.ReceiptRequest) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
-	if err := contextErr(ctx); err != nil {
-		return nil, err
-	}
-	return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented")
 }
 
 func requiredCapabilities() []workerv1alpha1.Capability {
