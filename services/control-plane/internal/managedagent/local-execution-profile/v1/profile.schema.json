@@ -174,7 +174,7 @@
       "const": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1"
     },
     "inputManifestDigest": {
-      "const": "sha256:298dc3fc6f250bb624c59d82f6fb4019d527972147d3630a1a3df347ee2662d0"
+      "const": "sha256:6127f8473585e283b14a3bcfaf1bba613d50d99748977633ce2148b0b18ecaf4"
     },
     "archive": {
       "type": "object",
@@ -796,12 +796,12 @@
           "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
         },
         "sourceDigest": {
-          "const": "sha256:b8ea3627cac046714af7eab1b5ba8d92fd449f2c43e4eef0050687921b2781b5"
+          "const": "sha256:368d4e852c3be9d53e2f05fe76006359bd7f2462888b15c76c5ff8b996ee880c"
         }
       }
     },
     "profileDigest": {
-      "const": "sha256:d47d7cb3c6d6a89c6b5b83d47e866cce3fb52d3dee653cd1f699b693d8065b11"
+      "const": "sha256:d260c3a774963e72f260d59b4bfc40902c8358d2d7254005db5cb0a550105a8b"
     }
   }
 }

@@ -86,7 +86,7 @@
     "services/control-plane/internal/managedagent/local_execution_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:298dc3fc6f250bb624c59d82f6fb4019d527972147d3630a1a3df347ee2662d0",
+  "inputManifestDigest": "sha256:6127f8473585e283b14a3bcfaf1bba613d50d99748977633ce2148b0b18ecaf4",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -267,5 +267,5 @@
     "publication": "forbidden",
     "gateTransition": "forbidden"
   },
-  "sourceDigest": "sha256:b8ea3627cac046714af7eab1b5ba8d92fd449f2c43e4eef0050687921b2781b5"
+  "sourceDigest": "sha256:368d4e852c3be9d53e2f05fe76006359bd7f2462888b15c76c5ff8b996ee880c"
 }

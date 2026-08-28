@@ -6,7 +6,7 @@ toolchain go1.26.6
 
 require (
 	connectrpc.com/connect v1.20.0
-	github.com/hxp0618/cloud-agents/services/worker v0.0.0-20260828020527-6af45061f7ba
+	github.com/hxp0618/cloud-agents/services/worker v0.0.0-20260828032125-0946cd51a5ac
 	github.com/jackc/pgx/v5 v5.10.0
 	golang.org/x/mod v0.40.0
 	golang.org/x/sys v0.45.0
