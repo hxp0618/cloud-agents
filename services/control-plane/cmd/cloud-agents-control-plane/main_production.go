@@ -44,6 +44,8 @@ const (
 	productionAdmissionTokenEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
 	maxAuthConfigBytes                       = 1 << 20
 	maxProductionCABytes                     = 1 << 20
+	productionRuntimeMaxDuration             = 5 * time.Minute
+	productionHTTPWriteGrace                 = 15 * time.Second
 )
 
 type productionConfig struct {
@@ -133,7 +135,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	runtimeCoordinator, err := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
 		Store: coordinationService, Supervisor: workerSupervisor, Clock: time.Now,
 		FencingLeaseID: config.admissionLeaseID, FencingGeneration: config.admissionGeneration, FencingToken: config.admissionToken,
-		WorkspaceDirectory: config.workspaceDirectory, MaxDuration: 5 * time.Minute,
+		WorkspaceDirectory: config.workspaceDirectory, MaxDuration: productionRuntimeMaxDuration,
 	})
 	if err != nil {
 		return errors.New("managed agent Runtime coordinator is unavailable")
@@ -215,7 +217,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		writer.WriteHeader(http.StatusOK)
 	})
-	httpServer := &http.Server{Addr: config.listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second}
+	httpServer := &http.Server{Addr: config.listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
 	errorChannel := make(chan error, 1)
 	go func() {
 		if config.tlsCert != "" {
