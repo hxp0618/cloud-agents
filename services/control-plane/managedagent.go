@@ -5,6 +5,7 @@ import (
 	"time"
 
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
+	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
 )
 
 // ManagedAgentService is the public, in-memory Control Plane lifecycle seam.
@@ -39,6 +40,11 @@ type (
 	TurnState                 = internalmanagedagent.TurnState
 	ExecutionState            = internalmanagedagent.ExecutionState
 	ResourceKind              = internalmanagedagent.ResourceKind
+	LocalExecutionInput       = internalmanagedagent.LocalExecutionInput
+	LocalExecutionCommand     = internalmanagedagent.LocalExecutionCommand
+	LocalExecutionResult      = internalmanagedagent.LocalExecutionResult
+	LocalExecutionCommandKind = internalmanagedagent.LocalExecutionCommandKind
+	Clock                     = internalmanagedagent.Clock
 )
 
 const (
@@ -61,18 +67,40 @@ const (
 	ResourceSession   = internalmanagedagent.ResourceSession
 	ResourceTurn      = internalmanagedagent.ResourceTurn
 	ResourceExecution = internalmanagedagent.ResourceExecution
+
+	LocalProbeCommand           = internalmanagedagent.LocalProbeCommand
+	LocalValidateBindingCommand = internalmanagedagent.LocalValidateBindingCommand
 )
 
+// LocalExecutionConfig supplies the already-authenticated local Worker
+// binding and fencing proof for the process-local Managed Agent execution
+// seam. It does not configure a listener, database, provider, or persistence.
+type LocalExecutionConfig struct {
+	Supervisor        *supervisor.Supervisor
+	Clock             Clock
+	FencingLeaseID    string
+	FencingGeneration uint64
+	FencingToken      []byte
+}
+
+// LocalExecutionCoordinator exposes the existing local lifecycle-to-Worker
+// coordinator through the public Control Plane package.
+type LocalExecutionCoordinator struct {
+	delegate *internalmanagedagent.LocalExecutionCoordinator
+}
+
 var (
-	ErrInvalidInput        = internalmanagedagent.ErrInvalidInput
-	ErrInvalidTransition   = internalmanagedagent.ErrInvalidTransition
-	ErrAlreadyExists       = internalmanagedagent.ErrAlreadyExists
-	ErrNotFound            = internalmanagedagent.ErrNotFound
-	ErrIdempotencyConflict = internalmanagedagent.ErrIdempotencyConflict
-	ErrSessionBusy         = internalmanagedagent.ErrSessionBusy
-	ErrContractDrift       = internalmanagedagent.ErrContractDrift
-	ErrInvalidClock        = internalmanagedagent.ErrInvalidClock
-	ErrNilContext          = internalmanagedagent.ErrNilContext
+	ErrInvalidInput                  = internalmanagedagent.ErrInvalidInput
+	ErrInvalidTransition             = internalmanagedagent.ErrInvalidTransition
+	ErrAlreadyExists                 = internalmanagedagent.ErrAlreadyExists
+	ErrNotFound                      = internalmanagedagent.ErrNotFound
+	ErrIdempotencyConflict           = internalmanagedagent.ErrIdempotencyConflict
+	ErrSessionBusy                   = internalmanagedagent.ErrSessionBusy
+	ErrContractDrift                 = internalmanagedagent.ErrContractDrift
+	ErrInvalidClock                  = internalmanagedagent.ErrInvalidClock
+	ErrNilContext                    = internalmanagedagent.ErrNilContext
+	ErrLocalExecutionUnavailable     = internalmanagedagent.ErrLocalExecutionUnavailable
+	ErrLocalExecutionBindingRequired = internalmanagedagent.ErrLocalExecutionBindingRequired
 )
 
 // NewManagedAgentService constructs the default in-memory lifecycle service.
@@ -83,6 +111,36 @@ func NewManagedAgentService() (*ManagedAgentService, error) {
 		return nil, err
 	}
 	return &ManagedAgentService{store: store}, nil
+}
+
+// NewLocalExecutionCoordinator binds the coordinator to this service's
+// lifecycle store. The caller must establish the exact local Worker binding
+// before executing an operation.
+func (service *ManagedAgentService) NewLocalExecutionCoordinator(config LocalExecutionConfig) (*LocalExecutionCoordinator, error) {
+	if service == nil {
+		return nil, ErrInvalidInput
+	}
+	delegate, err := internalmanagedagent.NewLocalExecutionCoordinator(internalmanagedagent.LocalExecutionCoordinatorConfig{
+		Store:             service.store,
+		Supervisor:        config.Supervisor,
+		Clock:             config.Clock,
+		FencingLeaseID:    config.FencingLeaseID,
+		FencingGeneration: config.FencingGeneration,
+		FencingToken:      config.FencingToken,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &LocalExecutionCoordinator{delegate: delegate}, nil
+}
+
+// Execute runs one local Managed Agent turn through the bound Worker and
+// returns its detached receipt and terminal lifecycle transition.
+func (coordinator *LocalExecutionCoordinator) Execute(ctx context.Context, input LocalExecutionInput) (LocalExecutionResult, error) {
+	if coordinator == nil || coordinator.delegate == nil {
+		return LocalExecutionResult{}, ErrInvalidInput
+	}
+	return coordinator.delegate.Execute(ctx, input)
 }
 
 func (service *ManagedAgentService) CreateSession(ctx context.Context, input CreateSessionInput) (SessionSnapshot, error) {
