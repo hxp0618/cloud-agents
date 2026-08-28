@@ -35,6 +35,17 @@ func (s *Supervisor) BindRuntime(ctx context.Context) (BindingSnapshot, error) {
 	return s.BindOperationAdmission(ctx)
 }
 
+// CheckRuntimeHealth refreshes an expired Runtime binding before checking the
+// Worker health endpoint. It is suitable for readiness probes that should
+// stop routing work when the Worker is unavailable.
+func (s *Supervisor) CheckRuntimeHealth(ctx context.Context) error {
+	if err := s.ensureRuntimeBinding(ctx); err != nil {
+		return err
+	}
+	_, err := s.CheckHealth(ctx)
+	return err
+}
+
 // OpenRuntimeSession starts a Worker-side Runtime process after binding the
 // current negotiation, expected Worker identity, and fencing proof.
 func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {

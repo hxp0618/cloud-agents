@@ -119,6 +119,9 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 	if !ok || secondBinding.NegotiationID == firstBinding.NegotiationID {
 		t.Fatalf("expired Runtime binding was not replaced: first=%#v second=%#v", firstBinding, secondBinding)
 	}
+	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
+		t.Fatalf("Runtime health check = %v", err)
+	}
 }
 
 func TestOpenRuntimeSessionRequiresRuntimeBindingAndFencing(t *testing.T) {

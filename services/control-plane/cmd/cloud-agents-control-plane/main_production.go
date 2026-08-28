@@ -215,6 +215,12 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
+		workerContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+		defer cancel()
+		if err := workerSupervisor.CheckRuntimeHealth(workerContext); err != nil {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		writer.WriteHeader(http.StatusOK)
 	})
 	httpServer := &http.Server{Addr: config.listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
