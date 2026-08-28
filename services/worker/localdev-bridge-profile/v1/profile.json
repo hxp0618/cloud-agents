@@ -1,0 +1,278 @@
+{
+  "$schema": "https://schemas.cloud-agents.dev/worker/localdev-bridge/v1/profile.schema.json",
+  "formatVersion": "cloud-agents-worker-localdev-bridge-profile/v1",
+  "authorityId": "D-057-WORKER-LOCALDEV-BRIDGE-000001",
+  "revision": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r1",
+  "decision": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r1",
+  "profileId": "cloud-agents/worker-supervisor-operation-dispatch/launcher-localdev-v1alpha1",
+  "mode": "localdev_only",
+  "transport": "loopback_http_connect",
+  "parentProfiles": [
+    "cloud-agents/worker-localdev-launcher/v1alpha1"
+  ],
+  "commands": [
+    "Negotiate",
+    "CheckHealth"
+  ],
+  "inputPaths": [
+    ".mise.toml",
+    "bun.lock",
+    "bunfig.toml",
+    "contracts/worker/v1alpha1/README.md",
+    "contracts/worker/v1alpha1/kernel.proto",
+    "contracts/worker/v1alpha1/worker_supervisor.proto",
+    "go.work",
+    "package.json",
+    "scripts/generate-worker-localdev-bridge-profile.ts",
+    "scripts/lib/platform-json-semantics.ts",
+    "scripts/lib/worker-localdev-bridge-profile.test.ts",
+    "scripts/lib/worker-localdev-bridge-profile.ts",
+    "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+    "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+    "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+    "sdk/go/gen/common/v1alpha1/identity_generated.go",
+    "sdk/go/go.mod",
+    "sdk/go/go.sum",
+    "services/worker/cmd/cloud-agents-worker/README.md",
+    "services/worker/cmd/cloud-agents-worker/main.go",
+    "services/worker/cmd/cloud-agents-worker/main_test.go",
+    "services/worker/doc.go",
+    "services/worker/execution.go",
+    "services/worker/execution_test.go",
+    "services/worker/go.mod",
+    "services/worker/go.sum",
+    "services/worker/local_dispatch_handle.go",
+    "services/worker/localdev-launcher-profile/v1/authority-source.json",
+    "services/worker/localdev-launcher-profile/v1/authority-source.schema.json",
+    "services/worker/localdev-launcher-profile/v1/profile.json",
+    "services/worker/localdev-launcher-profile/v1/profile.schema.json",
+    "services/worker/localdev_launcher_profile_generated.go",
+    "services/worker/operation_admission.go",
+    "services/worker/operation_admission_test.go",
+    "services/worker/operation_builder.go",
+    "services/worker/operation_builder_test.go",
+    "services/worker/service.go",
+    "services/worker/service_test.go",
+    "services/worker/supervisor/client.go",
+    "services/worker/supervisor/client_test.go",
+    "services/worker/supervisor/dispatch_profile_generated.go",
+    "services/worker/supervisor/local_dispatch.go",
+    "services/worker/supervisor/local_dispatch_test.go",
+    "services/worker/supervisor/local_launcher.go",
+    "services/worker/supervisor/local_launcher_test.go",
+    "tsconfig.base.json"
+  ],
+  "exclusionPaths": [
+    ".idea",
+    "deploy",
+    "helm",
+    "node_modules",
+    "packages/cloud-agent-provider-api",
+    "packages/cloud-agent-runtime",
+    "release",
+    "services/control-plane/internal/migration",
+    "services/control-plane/internal/store/postgres",
+    "services/control-plane/migrations",
+    "services/worker/cmd/cloud-agents-worker/provider",
+    "tmp"
+  ],
+  "generatedPaths": [
+    "services/worker/localdev-bridge-profile/v1/authority-source.json",
+    "services/worker/localdev-bridge-profile/v1/authority-source.schema.json",
+    "services/worker/localdev-bridge-profile/v1/profile.json",
+    "services/worker/localdev-bridge-profile/v1/profile.schema.json",
+    "services/worker/localdev_bridge_profile_generated.go"
+  ],
+  "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
+  "inputManifestDigest": "sha256:3a19d9e902f57605d60a4f853704ce00f1a28f28fee5a81d73f41ec394939c70",
+  "archive": {
+    "algorithm": "deterministic-ustar-v1",
+    "emission": "forbidden",
+    "compression": "none",
+    "ordering": "utf8-bytewise-sorted-path",
+    "metadata": "mode=100644,uid=0,gid=0,mtime=0",
+    "duplicatePolicy": "reject",
+    "symlinkPolicy": "reject"
+  },
+  "memberManifest": {
+    "algorithm": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1",
+    "emission": "forbidden",
+    "path": "<not-written>",
+    "fields": "path\\0mode\\0size\\0sha256\\0",
+    "regularFileOnly": true,
+    "duplicatePolicy": "reject"
+  },
+  "runner": {
+    "entrypoint": "GOWORK=off GOFLAGS=-mod=readonly go test -tags localdev ./...",
+    "launcher": "go run -tags localdev ./cmd/cloud-agents-worker",
+    "mode": "localdev_only",
+    "network": "loopback_only",
+    "database": "deny",
+    "provider": "deny",
+    "goVersion": "1.26.0",
+    "toolchain": "go1.26.6",
+    "node": "24.18.1",
+    "bun": "1.3.14",
+    "platforms": [
+      "darwin-arm64",
+      "linux-amd64"
+    ],
+    "timeout": "focused-tests-only"
+  },
+  "receipt": {
+    "runtimePath": "process-local://worker-supervisor/localdev-bridge",
+    "persistence": "no_write",
+    "state": "ABSENT_PENDING",
+    "resultDigestAlgorithm": "sha256:deterministic-protobuf-receipt-result-v1",
+    "canonicalProjection": "none_for_health_only",
+    "excludedFields": [
+      "receipt_id",
+      "sequence",
+      "observed_at",
+      "fencing.token_sha256"
+    ],
+    "stableErrorCodes": [
+      "unauthenticated",
+      "permission_denied",
+      "invalid_argument",
+      "failed_precondition",
+      "deadline_exceeded",
+      "canceled",
+      "not_found",
+      "method_not_allowed",
+      "internal",
+      "unimplemented",
+      "unavailable"
+    ],
+    "evidencePaths": [
+      "docs/plan/standalone/worker-localdev-bridge-implementation-20260828.md",
+      "docs/plan/standalone/worker-localdev-bridge-independent-review-20260828.md"
+    ]
+  },
+  "lineageFence": {
+    "kind": "single-predecessor-append-only",
+    "predecessorAuthority": "D-056-WORKER-LOCALDEV-LAUNCHER-000001",
+    "predecessorRevision": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1",
+    "predecessorProfile": "cloud-agents/worker-localdev-launcher/v1alpha1",
+    "predecessorProfileDigest": "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e",
+    "historicalAuthorities": [
+      "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1",
+      "D-054-WORKER-DISPATCH-000001.r1",
+      "D-053-MIG-000014.r2",
+      "D-053-EC-2.r3"
+    ],
+    "mutation": "forbidden",
+    "historicalEvidence": "retain-and-never-rewrite",
+    "successorRevision": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r1"
+  },
+  "reviewRules": {
+    "independentReadOnly": true,
+    "reviewPath": "docs/plan/standalone/worker-localdev-bridge-independent-review-20260828.md",
+    "verdicts": [
+      "APPROVE",
+      "REQUEST_CHANGES"
+    ],
+    "classification": [
+      "P0",
+      "P1",
+      "P2"
+    ],
+    "candidateMutation": "forbidden",
+    "p0P1Repair": "one repair and re-review within r1 candidate",
+    "p2": "record-and-defer",
+    "gateTransition": "forbidden"
+  },
+  "selector": {
+    "profileSelection": "exact_generated_profile_id_and_digest",
+    "callerSelectedProfile": "forbidden",
+    "foreignPath": "forbidden",
+    "foreignTransport": "forbidden",
+    "listenAddress": "loopback_only",
+    "endpointBase": "http://<IPv4|IPv6-loopback>:<1..65535>",
+    "endpointInput": "fixed_loopback_host_valid_port_no_userinfo_query_fragment_proxy_redirect",
+    "tokenSource": "parent_ephemeral_file_o_excl_mode_0600_regular_non_symlink_bounded_bytes_read_only",
+    "healthMetadata": "exact_before_negotiate_and_check_health",
+    "parentAuthority": "D-056-WORKER-LOCALDEV-LAUNCHER-000001",
+    "parentRevision": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1",
+    "parentProfile": "cloud-agents/worker-localdev-launcher/v1alpha1",
+    "parentProfileDigest": "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e",
+    "dispatch": "not_implemented",
+    "receipt": "not_implemented",
+    "workerIdentitySPIFFE": "spiffe://cloud-agents.local/worker/localdev",
+    "supervisorIdentitySPIFFE": "spiffe://cloud-agents.local/supervisor/localdev",
+    "leaseID": "worker-localdev-lease-000001",
+    "generation": 1,
+    "routes": [
+      "/healthz",
+      "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
+      "/cloudagents.worker.v1alpha1.WorkerExecutionService/CheckHealth"
+    ]
+  },
+  "stateMachine": {
+    "initial": "starting",
+    "states": [
+      "starting",
+      "serving",
+      "stopping",
+      "stopped"
+    ],
+    "transitions": [
+      {
+        "from": "starting",
+        "event": "listen",
+        "to": "serving"
+      },
+      {
+        "from": "serving",
+        "event": "signal",
+        "to": "stopping"
+      },
+      {
+        "from": "stopping",
+        "event": "closed",
+        "to": "stopped"
+      }
+    ]
+  },
+  "externalSideEffects": {
+    "database": false,
+    "durableReceipt": false,
+    "http": false,
+    "p2": false,
+    "provider": false,
+    "runtime": false,
+    "workspace": false,
+    "artifact": false,
+    "credential": false,
+    "deployment": false,
+    "publication": false,
+    "gate": false
+  },
+  "implementationBoundary": {
+    "transport": "local_loopback_http_connect_only",
+    "auth": "bearer_to_context_identity",
+    "identity": "fixed_generated_spiffe_pair",
+    "health": "read_only_process_local",
+    "completeLedger": "no_op",
+    "entryWriter": "not_implemented",
+    "recoveryWriter": "not_implemented",
+    "dispatchOperation": "not_implemented",
+    "getOperationReceipt": "not_implemented",
+    "databaseWrites": "forbidden",
+    "durablePersistence": "forbidden",
+    "provider": "forbidden",
+    "runtime": "forbidden",
+    "productionHTTP": "forbidden",
+    "publicHTTP": "forbidden",
+    "p2": "forbidden",
+    "deployment": "forbidden",
+    "publication": "forbidden",
+    "gateTransition": "forbidden"
+  },
+  "sourceAuthority": {
+    "authorityId": "D-057-WORKER-LOCALDEV-BRIDGE-000001",
+    "revision": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r1",
+    "sourceDigest": "sha256:a4225472b83f540a591ce483058e8429d404ee497ea5ad8af1c672056771fc1a"
+  },
+  "profileDigest": "sha256:06899bff4ca8fe12762be3c146fd1220b6eacc6da6687189846b6b62e5bb8ca3"
+}
