@@ -1,0 +1,16 @@
+{{- if not .Values.runtime.workspace.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-workspace
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteMany]
+  {{- with .Values.runtime.workspace.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.runtime.workspace.size }}
+{{- end }}

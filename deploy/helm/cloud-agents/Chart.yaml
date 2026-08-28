@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cloud-agents
+description: Independent Cloud Agents Control Plane and Worker deployment
+type: application
+version: 0.2.0
+appVersion: 0.2.0

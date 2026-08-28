@@ -73,7 +73,7 @@ describe("platform release", () => {
     });
   });
 
-  it("packages the independent Compose deployment inputs", () => {
+  it("packages the independent Compose and Helm deployment inputs", () => {
     const archive = buildPlatformDeploymentPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
     expect(entries.map(({ path }) => path)).toEqual([
@@ -85,6 +85,14 @@ describe("platform release", () => {
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
+      "deploy/helm/cloud-agents/Chart.yaml",
+      "deploy/helm/cloud-agents/templates/_helpers.tpl",
+      "deploy/helm/cloud-agents/templates/control-plane.yaml",
+      "deploy/helm/cloud-agents/templates/migrate-job.yaml",
+      "deploy/helm/cloud-agents/templates/network-policy.yaml",
+      "deploy/helm/cloud-agents/templates/worker.yaml",
+      "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
+      "deploy/helm/cloud-agents/values.yaml",
     ]);
   });
 

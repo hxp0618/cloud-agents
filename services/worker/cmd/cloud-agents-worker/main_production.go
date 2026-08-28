@@ -29,8 +29,10 @@ import (
 var errInvalidProductionWorkerConfig = errors.New("cloud-agents-worker/invalid_production_config")
 
 const (
-	defaultProductionWorkerListen = ":8091"
-	maxProductionCABytes          = 1 << 20
+	defaultProductionWorkerListen  = ":8091"
+	maxProductionCABytes           = 1 << 20
+	admissionLeaseIDEnvironment    = "CLOUD_AGENTS_ADMISSION_LEASE_ID"
+	admissionGenerationEnvironment = "CLOUD_AGENTS_ADMISSION_GENERATION"
 )
 
 type productionWorkerConfig struct {
@@ -44,7 +46,7 @@ type productionWorkerConfig struct {
 	admissionGeneration uint64
 }
 
-func parseProductionWorkerConfig(args []string) (productionWorkerConfig, error) {
+func parseProductionWorkerConfig(args []string, getenv func(string) string) (productionWorkerConfig, error) {
 	set := flag.NewFlagSet("cloud-agents-worker", flag.ContinueOnError)
 	set.SetOutput(io.Discard)
 	listen := set.String("listen", defaultProductionWorkerListen, "mTLS listen address")
@@ -57,6 +59,16 @@ func parseProductionWorkerConfig(args []string) (productionWorkerConfig, error) 
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return productionWorkerConfig{}, errInvalidProductionWorkerConfig
+	}
+	if *admissionLeaseID == "" && getenv != nil {
+		*admissionLeaseID = getenv(admissionLeaseIDEnvironment)
+	}
+	if *admissionGeneration == 0 && getenv != nil {
+		value, err := strconv.ParseUint(getenv(admissionGenerationEnvironment), 10, 64)
+		if err != nil {
+			return productionWorkerConfig{}, errInvalidProductionWorkerConfig
+		}
+		*admissionGeneration = value
 	}
 	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration}
 	if err := validateProductionWorkerConfig(cfg); err != nil {
@@ -194,7 +206,7 @@ func main() {
 }
 
 func runProductionMain(args []string, ctx context.Context) error {
-	cfg, err := parseProductionWorkerConfig(args)
+	cfg, err := parseProductionWorkerConfig(args, os.Getenv)
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-control-plane
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  type: {{ .Values.controlPlane.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: control-plane
+  ports:
+    - name: https
+      port: {{ .Values.controlPlane.service.port }}
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-control-plane
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: {{ .Values.controlPlane.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: control-plane
+  template:
+    metadata:
+      labels:
+        {{- include "cloud-agents.labels" . | nindent 8 }}
+        app.kubernetes.io/component: control-plane
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: control-plane
+          image: {{ include "cloud-agents.image" .Values.images.controlPlane | quote }}
+          imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
+          args:
+            - --listen
+            - :8080
+            - --auth-config
+            - /run/cloud-agents/auth/auth.json
+            - --tls-cert
+            - /run/cloud-agents/control-plane-tls/tls.crt
+            - --tls-key
+            - /run/cloud-agents/control-plane-tls/tls.key
+          env:
+            - name: CLOUD_AGENTS_PLATFORM_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: {{ .Values.database.runtimeURLKey }}
+            - name: CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT
+              value: https://{{ include "cloud-agents.fullname" . }}-worker:{{ .Values.worker.service.port }}
+            - name: CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID
+              value: {{ .Values.controlPlane.workerSPIFFEID | quote }}
+            - name: CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT
+              value: /run/cloud-agents/worker-client/tls.crt
+            - name: CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY
+              value: /run/cloud-agents/worker-client/tls.key
+            - name: CLOUD_AGENTS_PLATFORM_WORKER_CA
+              value: /run/cloud-agents/worker-ca/ca.crt
+            - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
+              value: /workspace
+            - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admission.secretName }}
+                  key: {{ .Values.admission.leaseIDKey }}
+            - name: CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admission.secretName }}
+                  key: {{ .Values.admission.generationKey }}
+            - name: CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admission.secretName }}
+                  key: {{ .Values.admission.tokenKey }}
+          ports:
+            - name: https
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: auth
+              mountPath: /run/cloud-agents/auth
+              readOnly: true
+            - name: control-plane-tls
+              mountPath: /run/cloud-agents/control-plane-tls
+              readOnly: true
+            - name: worker-client
+              mountPath: /run/cloud-agents/worker-client
+              readOnly: true
+            - name: worker-ca
+              mountPath: /run/cloud-agents/worker-ca
+              readOnly: true
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: auth
+          secret:
+            secretName: {{ .Values.auth.secretName }}
+            items:
+              - key: {{ .Values.auth.configKey }}
+                path: auth.json
+        - name: control-plane-tls
+          secret:
+            secretName: {{ .Values.tls.controlPlaneSecretName }}
+        - name: worker-client
+          secret:
+            secretName: {{ .Values.tls.workerClientSecretName }}
+        - name: worker-ca
+          secret:
+            secretName: {{ .Values.tls.workerSecretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: {{ include "cloud-agents.workspaceClaim" . }}

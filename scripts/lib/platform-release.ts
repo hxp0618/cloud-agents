@@ -134,6 +134,7 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/worker.Dockerfile",
+    ...readTree(root, "deploy/helm/cloud-agents"),
     "services/control-plane/migrations/bootstrap/database.sql",
     "services/control-plane/migrations/bootstrap/roles.sql",
   ];

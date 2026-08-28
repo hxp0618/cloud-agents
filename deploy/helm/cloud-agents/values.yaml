@@ -1,0 +1,57 @@
+images:
+  controlPlane:
+    repository: cloud-agents/control-plane
+    tag: 0.2.0
+    pullPolicy: IfNotPresent
+  worker:
+    repository: cloud-agents/worker
+    tag: 0.2.0
+    pullPolicy: IfNotPresent
+  migrate:
+    repository: cloud-agents/migrate
+    tag: 0.2.0
+    pullPolicy: IfNotPresent
+
+database:
+  secretName: cloud-agents-database
+  runtimeURLKey: runtime-url
+  migrationURLKey: migration-url
+
+auth:
+  secretName: cloud-agents-auth
+  configKey: auth.json
+
+tls:
+  controlPlaneSecretName: cloud-agents-control-plane-tls
+  workerSecretName: cloud-agents-worker-tls
+  workerClientSecretName: cloud-agents-worker-client-tls
+
+admission:
+  secretName: cloud-agents-admission
+  leaseIDKey: lease-id
+  generationKey: generation
+  tokenKey: token
+
+runtime:
+  environmentSecretName: cloud-agents-runtime-env
+  workspace:
+    existingClaim: ""
+    storageClassName: ""
+    size: 20Gi
+
+controlPlane:
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 8080
+  workerSPIFFEID: spiffe://cloud-agents.example/worker
+  resources: {}
+
+worker:
+  replicas: 1
+  service:
+    port: 8091
+  resources: {}
+
+networkPolicy:
+  enabled: true
