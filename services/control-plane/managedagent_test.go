@@ -68,12 +68,3 @@ func TestManagedAgentServiceNilReceiverFailsClosed(t *testing.T) {
 		t.Fatalf("nil receiver err = %v", err)
 	}
 }
-
-func TestManagedAgentProfilesAreAvailableWithoutEvidenceMetadata(t *testing.T) {
-	if profile := controlplane.ManagedAgentLifecycleProfile(); !profile.Valid() || profile.ID != controlplane.LifecycleProfileID {
-		t.Fatalf("lifecycle profile = %#v", profile)
-	}
-	if profile := controlplane.ManagedAgentLifecycleEventProfile(); !profile.Valid() || profile.ID != controlplane.LifecycleEventProfileID {
-		t.Fatalf("event profile = %#v", profile)
-	}
-}

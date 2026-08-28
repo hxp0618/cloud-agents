@@ -16,9 +16,6 @@ type ManagedAgentService struct {
 // Public lifecycle types are aliases so callers use the same validated input
 // and detached result vocabulary as the kernel without importing internal code.
 type (
-	LifecycleProfile          = internalmanagedagent.LifecycleProfile
-	LifecycleEventProfile     = internalmanagedagent.LifecycleEventProfile
-	Transition                = internalmanagedagent.Transition
 	Scope                     = internalmanagedagent.Scope
 	Mutation                  = internalmanagedagent.Mutation
 	CreateSessionInput        = internalmanagedagent.CreateSessionInput
@@ -45,9 +42,6 @@ type (
 )
 
 const (
-	LifecycleProfileID      = internalmanagedagent.LifecycleProfileID
-	LifecycleEventProfileID = internalmanagedagent.LifecycleEventProfileID
-
 	SessionActive = internalmanagedagent.SessionActive
 	SessionClosed = internalmanagedagent.SessionClosed
 
@@ -180,14 +174,4 @@ func (service *ManagedAgentService) ReadEvents(ctx context.Context, scope Scope,
 		return EventPage{}, ErrInvalidInput
 	}
 	return service.store.ReadEvents(ctx, scope, after, limit)
-}
-
-// ManagedAgentLifecycleProfile returns the frozen lifecycle state-machine profile.
-func ManagedAgentLifecycleProfile() LifecycleProfile {
-	return internalmanagedagent.ManagedAgentLifecycleProfile()
-}
-
-// ManagedAgentLifecycleEventProfile returns the frozen local event profile.
-func ManagedAgentLifecycleEventProfile() LifecycleEventProfile {
-	return internalmanagedagent.ManagedAgentLifecycleEventProfile()
 }
