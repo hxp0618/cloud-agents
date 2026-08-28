@@ -1,7 +1,8 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000017.tar` into a directory and run Compose
-from this directory with an env file copied from `.env.example`.
+Extract `cloud-agents-deployment-000017.tar` into a directory, then run Compose
+from its `deploy/compose` directory with an env file copied from `.env.example`.
+Set `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
 The deployment is intentionally fail-closed around PostgreSQL authority:
 
@@ -18,7 +19,7 @@ Runtime admission values are deployment-owned inputs and are never generated
 by this package. Keep provider credentials in the referenced runtime env file,
 outside the release and deployment archives.
 
-For Kubernetes, use `helm/cloud-agents`. The chart expects an external
+For Kubernetes, use `deploy/helm/cloud-agents` from the extracted directory. The chart expects an external
 PostgreSQL database and pre-created Secrets named by `values.yaml`: database
 URLs (`runtime-url`, `migration-url`), `auth.json`, Control Plane/Worker mTLS,
 Runtime provider environment, and Runtime admission (`lease-id`, `generation`,
@@ -26,7 +27,7 @@ Runtime provider environment, and Runtime admission (`lease-id`, `generation`,
 built from this release before installing:
 
 ```sh
-helm upgrade --install cloud-agents helm/cloud-agents \
+helm upgrade --install cloud-agents deploy/helm/cloud-agents \
   --set images.controlPlane.repository=REGISTRY/control-plane \
   --set images.worker.repository=REGISTRY/worker \
   --set images.migrate.repository=REGISTRY/migrate \
