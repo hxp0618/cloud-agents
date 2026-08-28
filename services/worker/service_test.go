@@ -164,3 +164,41 @@ func TestUnsupportedOperationsAndCancellationHaveNoEffects(t *testing.T) {
 		t.Fatalf("cancel err=%v", err)
 	}
 }
+
+func TestUninitializedServiceFailsClosed(t *testing.T) {
+	var nilService *Service
+	if descriptor := nilService.ProtocolDescriptor(); descriptor != nil {
+		t.Fatalf("nil service descriptor = %#v", descriptor)
+	}
+
+	for name, call := range map[string]func() error{
+		"negotiate": func() error {
+			_, err := nilService.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{}))
+			return err
+		},
+		"health": func() error {
+			_, err := nilService.CheckHealth(context.Background(), connect.NewRequest(&workerv1alpha1.HealthRequest{}))
+			return err
+		},
+		"execute": func() error {
+			_, err := nilService.ExecuteOperation(context.Background(), connect.NewRequest(&workerv1alpha1.OperationAttemptEnvelope{}))
+			return err
+		},
+		"receipt": func() error {
+			_, err := nilService.GetOperationReceipt(context.Background(), connect.NewRequest(&workerv1alpha1.ReceiptRequest{}))
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := call()
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "worker_unavailable") {
+				t.Fatalf("error = %v, code = %v", err, connect.CodeOf(err))
+			}
+		})
+	}
+
+	var zero Service
+	if _, err := zero.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("zero service error = %v, code = %v", err, connect.CodeOf(err))
+	}
+}

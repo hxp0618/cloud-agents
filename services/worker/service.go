@@ -156,6 +156,9 @@ func NewService(cfg Config) (*Service, error) {
 }
 
 func (s *Service) ProtocolDescriptor() *workerv1alpha1.ProtocolDescriptor {
+	if !s.ready() {
+		return nil
+	}
 	caps := make([]workerv1alpha1.Capability, 0, len(s.capabilities))
 	for c := range s.capabilities {
 		caps = append(caps, c)
@@ -171,7 +174,16 @@ func (s *Service) ProtocolDescriptor() *workerv1alpha1.ProtocolDescriptor {
 	return &workerv1alpha1.ProtocolDescriptor{CurrentVersion: &workerv1alpha1.ProtocolVersion{Major: ProtocolMajor, Minor: ProtocolMinor}, MinimumCompatibleVersion: &workerv1alpha1.ProtocolVersion{Major: ProtocolMajor, Minor: ProtocolMinor}, Capabilities: caps, MaxPayloadBytes: MaxPayloadBytes, MaxDeadlineSeconds: MaxDeadlineSeconds, MaxWireMessageBytes: MaxWireMessageBytes, MaxRepeatedItems: MaxRepeatedItems, MaxStringBytes: MaxStringBytes}
 }
 
+func (s *Service) ready() bool {
+	return s != nil && s.workerIdentity != nil && s.capabilities != nil && s.identity != nil &&
+		s.newID != nil && s.now != nil && s.bindings != nil && s.admissions != nil &&
+		s.receipts != nil && s.receiptsByAttempt != nil
+}
+
 func (s *Service) Negotiate(ctx context.Context, req *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+	if !s.ready() {
+		return nil, fail(connect.CodeFailedPrecondition, "worker_unavailable", "worker service is not initialized")
+	}
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -238,6 +250,9 @@ func (s *Service) Negotiate(ctx context.Context, req *connect.Request[workerv1al
 }
 
 func (s *Service) CheckHealth(ctx context.Context, req *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
+	if !s.ready() {
+		return nil, fail(connect.CodeFailedPrecondition, "worker_unavailable", "worker service is not initialized")
+	}
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -270,6 +285,9 @@ func (s *Service) CheckHealth(ctx context.Context, req *connect.Request[workerv1
 }
 
 func (s *Service) ExecuteOperation(ctx context.Context, req *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+	if !s.ready() {
+		return nil, fail(connect.CodeFailedPrecondition, "worker_unavailable", "worker service is not initialized")
+	}
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -372,6 +390,9 @@ func (s *Service) ExecuteOperation(ctx context.Context, req *connect.Request[wor
 	return connect.NewResponse(proto.Clone(receipt).(*workerv1alpha1.DurableReceipt)), nil
 }
 func (s *Service) GetOperationReceipt(ctx context.Context, req *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+	if !s.ready() {
+		return nil, fail(connect.CodeFailedPrecondition, "worker_unavailable", "worker service is not initialized")
+	}
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
