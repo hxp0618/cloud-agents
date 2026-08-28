@@ -118,6 +118,12 @@ const command = (commandId: string): CloudAgentCommandEnvelope => ({
 });
 
 describe("createCloudAgentStdioClient", () => {
+  it("rejects missing launch options before spawning", () => {
+    expect(() => createCloudAgentStdioClient(null as never)).toThrow(
+      /Runtime command is required/u,
+    );
+  });
+
   it("rejects execute promptly when the executable does not exist", async () => {
     const client = createCloudAgentStdioClient({
       command: join(tmpdir(), "missing-cloud-agent-runtime-executable"),

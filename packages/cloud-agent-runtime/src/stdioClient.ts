@@ -64,6 +64,9 @@ type PendingCommand = {
 export function createCloudAgentStdioClient(
   options: CloudAgentStdioClientOptions,
 ): CloudAgentStdioClient {
+  if (!isRecord(options) || typeof options.command !== "string" || !options.command.trim()) {
+    throw new Error("Cloud Agent Runtime command is required.");
+  }
   const credentialFd = validatedCredentialFd(options.credentialFd);
   const spawnProcess = options.spawnProcess ?? spawn;
   const spawnOptions: SpawnOptions = {
@@ -219,9 +222,7 @@ export function createCloudAgentStdioClient(
     if (closed) throw new Error("Cloud Agent Runtime client is closed.");
     const validation = validateCloudAgentCommandEnvelope(command);
     if (!validation.valid) {
-      throw new Error(
-        `Cloud Agent command envelope is invalid: ${validation.errors.join("; ")}.`,
-      );
+      throw new Error(`Cloud Agent command envelope is invalid: ${validation.errors.join("; ")}.`);
     }
     if (signal?.aborted) throw abortError(signal.reason);
     if (pending.has(command.commandId)) {
@@ -379,6 +380,10 @@ function validatedCredentialFd(value: number | undefined): number | undefined {
 
 function isMessageEnvelope(value: unknown): value is CloudAgentMessageEnvelope {
   return validateCloudAgentMessageEnvelope(value).valid;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function messageCorrelationIssue(
