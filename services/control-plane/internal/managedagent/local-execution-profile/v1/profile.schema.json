@@ -122,6 +122,7 @@
         "services/worker/operation_admission.go",
         "services/worker/operation_admission_test.go",
         "services/worker/operation_builder.go",
+        "services/worker/operation_builder_test.go",
         "services/worker/service.go",
         "services/worker/service_test.go",
         "services/worker/supervisor/client.go",
@@ -174,7 +175,7 @@
       "const": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1"
     },
     "inputManifestDigest": {
-      "const": "sha256:007970eb504765c76b33b29af949365f8883d11107730b938c2d65ca882350d1"
+      "const": "sha256:bcb335668343b2682539f9ea20e9db0f4875f83636d5898fdde26a88e81d51de"
     },
     "archive": {
       "type": "object",
@@ -796,12 +797,12 @@
           "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
         },
         "sourceDigest": {
-          "const": "sha256:5d71d92b815b397a5c2a0f7093629b0373d7db8754d9c2e71aaef0e5dbdfcea2"
+          "const": "sha256:e87ebf7f8de39c6addbea4ef9ade99625589b62b882f6f8960e14844c8e7364a"
         }
       }
     },
     "profileDigest": {
-      "const": "sha256:e60725fc159f5b03e6352fcb60dc91a97874a66995e3c392f2f88f31173720a0"
+      "const": "sha256:892a718cfd58e138cbb22e556da2f0088fdc8b73f43b47805b35e9c90f777e74"
     }
   }
 }

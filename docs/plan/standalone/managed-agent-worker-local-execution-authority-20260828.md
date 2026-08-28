@@ -24,13 +24,13 @@ source、strict schema、profile 和 Go profile 均由以下生成器产生；�
 
 当前生成 digest（JSON logical digest；文件 raw SHA 由审查记录另行绑定）：
 
-- source：`sha256:5d71d92b815b397a5c2a0f7093629b0373d7db8754d9c2e71aaef0e5dbdfcea2`
-- profile：`sha256:e60725fc159f5b03e6352fcb60dc91a97874a66995e3c392f2f88f31173720a0`
-- input manifest：`sha256:007970eb504765c76b33b29af949365f8883d11107730b938c2d65ca882350d1`
+- source：`sha256:e87ebf7f8de39c6addbea4ef9ade99625589b62b882f6f8960e14844c8e7364a`
+- profile：`sha256:892a718cfd58e138cbb22e556da2f0088fdc8b73f43b47805b35e9c90f777e74`
+- input manifest：`sha256:bcb335668343b2682539f9ea20e9db0f4875f83636d5898fdde26a88e81d51de`
 
 ## 2. 完整输入集合与排除集合
 
-输入集合是下列 42 个路径的完整、去重、UTF-8 bytewise 排序列表。生成器只接受 regular
+输入集合是下列 43 个路径的完整、去重、UTF-8 bytewise 排序列表。生成器只接受 regular
 file；不会扫描、追踪、解析或隐式加入其它路径。输入集合的内容绑定算法为
 `utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1`（path、mode、size、
 raw SHA-256 以 NUL 分隔后按路径排序）。
@@ -69,6 +69,7 @@ services/worker/local_dispatch_handle.go
 services/worker/operation_admission.go
 services/worker/operation_admission_test.go
 services/worker/operation_builder.go
+services/worker/operation_builder_test.go
 services/worker/service.go
 services/worker/service_test.go
 services/worker/supervisor/client.go
@@ -100,7 +101,7 @@ services/worker/cmd
 tools/g-contract-external-consumer
 ```
 
-`inputManifestDigest` 为 `sha256:007970eb504765c76b33b29af949365f8883d11107730b938c2d65ca882350d1`；它按上述
+`inputManifestDigest` 为 `sha256:bcb335668343b2682539f9ea20e9db0f4875f83636d5898fdde26a88e81d51de`；它按上述
 算法对每个输入的 path、Git mode、byte size 与 raw SHA-256 做 NUL 分隔聚合。任何输入内容、mode、
 size 或锁文件变化都会使 authority/profile 生成检查失败。上述集合不改变、替换或重算
 D-053-MIG-000014.r2、D-053-EC-2.r3 或其任何 source/profile/
@@ -139,6 +140,14 @@ foreign transport、隐式 negotiation 和 fallback 均 `forbidden`。
 允许的 command 只有 `Probe`、`ValidateBinding`；extension payload、Codex/Claude provider
 调用和任意外部执行均拒绝。fencing lease/generation/token 在 coordinator constructor 内
 绑定并复制，调用者输入必须逐字节匹配；attempt number 固定为 `1`。
+
+`stateMachine` 是本 slice 的 execution-pair projection：profile 的 `queued/running/succeeded/
+failed/cancelled` 分别对应 lifecycle 的 `TurnQueued/TurnRunning/TurnCompleted|TurnFailed/
+TurnCancelled` 与 `ExecutionQueued/ExecutionRunning/ExecutionSucceeded|ExecutionFailed/
+ExecutionCancelled`；`TurnInterrupted` 不属于本 coordinator command surface。完整 typed
+dispatch attempt、lifecycle identity、input digest、generation 与 D-055 profile digest 还会
+形成内部 dispatch-binding digest，并在第一次 lifecycle mutation 前绑定 idempotency key；
+同 key 的 command、operation/attempt identity 或 dispatch 字段漂移会 fail closed。
 
 ## 5. Lifecycle、receipt 与 lineage fence
 

@@ -39,7 +39,7 @@ describe("D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1 generated authority"
       "cloud-agents/worker-operation-execution/localdev-v1alpha1",
     ]);
     expect(profile.commands).toEqual(["Probe", "ValidateBinding"]);
-    expect(profile.inputPaths).toHaveLength(42);
+    expect(profile.inputPaths).toHaveLength(43);
     expect(profile.exclusionPaths).toHaveLength(13);
     expect(profile.inputManifestDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(profile.scopeProjection).toBe("sha256-length-prefixed-tenant-project-v1");

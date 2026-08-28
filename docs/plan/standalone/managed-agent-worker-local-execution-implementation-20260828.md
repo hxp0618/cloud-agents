@@ -14,6 +14,8 @@ provider、workspace、credential、artifact、部署、发布或 Gate 写入。
 
 实现文件：
 
+- `services/control-plane/internal/managedagent/lifecycle.go`（为 coordinator mutation
+  binding 提供内部 digest fence）
 - `services/control-plane/internal/managedagent/local_execution.go`
 - `services/control-plane/internal/managedagent/local_execution_test.go`
 - `services/worker/operation_builder.go`
@@ -51,7 +53,12 @@ CreateTurn(queued)
 
 Worker operation attempt 由 typed `BuildLocalOperationAttempt` 构造；canonical request digest
 由 builder 重算，raw fencing token 只存在于本次进程内调用，不进入 lifecycle event 或 receipt
-result digest。所有 terminal mutation 使用 Store 的 append-only event/idempotency kernel；
+result digest。coordinator 另外对完整的 typed attempt、lifecycle identity、input digest、
+generation 和 D-055 profile digest 计算内部 `dispatch-binding` SHA-256，并把它放入不可由
+transport caller 设置的 lifecycle mutation binding；因此同一 idempotency key 改动 command、
+operation/attempt identity 或其它 dispatch 字段，会在首次 `CreateTurn` 前返回
+`ErrIdempotencyConflict`，不会触发 Worker dispatch。所有 terminal mutation 使用 Store 的
+append-only event/idempotency kernel；
 重复调用复用同一 mutation/Worker attempt，Worker executor 只执行一次。终态竞争通过读取
 coupled Turn/Execution 快照并要求期望的 terminal pair 进行 reconciliation；generation、
 execution link 不匹配时 fail closed。

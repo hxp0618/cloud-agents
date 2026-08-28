@@ -10,6 +10,8 @@ import (
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
 	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type localExecutionFixture struct {
@@ -101,6 +103,35 @@ func TestLocalExecutionHappyPathAndReplay(t *testing.T) {
 	}
 }
 
+func TestLocalExecutionRejectsChangedDispatchIdentityBeforeWorker(t *testing.T) {
+	f := newLocalExecutionFixture(t, workerkernel.OperationExecutionResult{Outcome: workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_SUCCEEDED, RedactedSummary: "local probe completed"})
+	if _, err := f.coordinator.Execute(context.Background(), f.input); err != nil {
+		t.Fatal(err)
+	}
+	changedCommand := f.input
+	changedCommand.Command = LocalExecutionCommand{Kind: LocalProbeCommand, ProbeName: "different-probe"}
+	if _, err := f.coordinator.Execute(context.Background(), changedCommand); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("changed command replay error = %v", err)
+	}
+	changedAttempt := f.input
+	changedAttempt.AttemptID = "attempt-other"
+	if _, err := f.coordinator.Execute(context.Background(), changedAttempt); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("changed attempt replay error = %v", err)
+	}
+	changedOperation := f.input
+	changedOperation.OperationID = "operation-other"
+	if _, err := f.coordinator.Execute(context.Background(), changedOperation); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("changed operation replay error = %v", err)
+	}
+	if f.executor.count() != 1 {
+		t.Fatalf("changed replay invoked worker %d times", f.executor.count())
+	}
+	page, err := f.store.ReadEvents(context.Background(), f.input.Scope, EventCursor{}, 64)
+	if err != nil || len(page.Events) != 5 {
+		t.Fatalf("changed replay emitted lifecycle events: len=%d err=%v", len(page.Events), err)
+	}
+}
+
 func TestLocalExecutionValidateBindingHappyPath(t *testing.T) {
 	f := newLocalExecutionFixture(t, workerkernel.OperationExecutionResult{Outcome: workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_SUCCEEDED, RedactedSummary: "binding validated"})
 	f.input.Command = LocalExecutionCommand{Kind: LocalValidateBindingCommand, Binding: f.input.Scope}
@@ -161,6 +192,10 @@ func TestLocalExecutionRejectsUnboundAndInvalidInputsBeforeMutation(t *testing.T
 		t.Fatalf("fencing error = %v", err)
 	}
 	f.input.FencingToken = []byte("token-local")
+	f.input.Command = LocalExecutionCommand{Kind: LocalProbeCommand, ProbeName: "bad\x00probe"}
+	if _, err := f.coordinator.Execute(context.Background(), f.input); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("probe text error = %v", err)
+	}
 	f.input.Command = LocalExecutionCommand{Kind: LocalValidateBindingCommand, Binding: Scope{TenantID: "other", ProjectID: "project-alpha"}}
 	if _, err := f.coordinator.Execute(context.Background(), f.input); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("binding scope error = %v", err)
@@ -266,5 +301,26 @@ func TestLocalExecutionStableErrorCodeIsClosed(t *testing.T) {
 	}
 	if got := localStableErrorCode("receipt_missing"); got != "worker_failed" {
 		t.Fatalf("undeclared code mapped to %q", got)
+	}
+}
+
+func TestLocalExecutionReceiptDigestExcludesVolatileFields(t *testing.T) {
+	base := &workerv1alpha1.DurableReceipt{
+		ReceiptId: "receipt-a", OperationId: "operation-a", AttemptId: "attempt-a", IdempotencyKey: "idempotency-a", Sequence: 1,
+		ObservedAt: timestamppb.New(time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)), Outcome: workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_SUCCEEDED,
+		RedactedSummary: "done", Fencing: &workerv1alpha1.FencingStamp{LeaseId: "lease-a", Generation: 7, TokenSha256: []byte("token-digest-a")},
+	}
+	volatile := proto.Clone(base).(*workerv1alpha1.DurableReceipt)
+	volatile.ReceiptId = "receipt-b"
+	volatile.Sequence = 99
+	volatile.ObservedAt = timestamppb.New(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	volatile.Fencing.TokenSha256 = []byte("token-digest-b")
+	if receiptDigest(base) != receiptDigest(volatile) {
+		t.Fatal("volatile receipt fields changed result digest")
+	}
+	changed := proto.Clone(base).(*workerv1alpha1.DurableReceipt)
+	changed.RedactedSummary = "different"
+	if receiptDigest(base) == receiptDigest(changed) {
+		t.Fatal("semantic receipt field did not change result digest")
 	}
 }

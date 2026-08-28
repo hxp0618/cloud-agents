@@ -164,6 +164,13 @@ func (c *LocalExecutionCoordinator) Execute(ctx context.Context, input LocalExec
 	if err != nil {
 		return LocalExecutionResult{}, err
 	}
+	bindingDigest, err := localExecutionBindingDigest(input, attempt)
+	if err != nil {
+		return LocalExecutionResult{}, err
+	}
+	// The complete typed dispatch identity is internal to this coordinator;
+	// lifecycle idempotency records bind it before any Worker dispatch occurs.
+	input.Mutation.executionBindingDigest = bindingDigest
 	_, err = c.store.CreateTurn(ctx, CreateTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, InputText: input.InputText, Mutation: input.Mutation})
 	if err != nil {
 		return LocalExecutionResult{}, err
@@ -253,7 +260,7 @@ func workerScopeFromLifecycle(scope Scope) (commonv1alpha1.NamespaceRef, error) 
 func buildLocalCommand(input LocalExecutionCommand, scope Scope) (*connectv1alpha1.OperationCommand, error) {
 	switch input.Kind {
 	case LocalProbeCommand:
-		if input.ProbeName == "" || len(input.ProbeName) > int(workerkernel.MaxStringBytes) {
+		if !validLocalText(input.ProbeName, int(workerkernel.MaxStringBytes)) {
 			return nil, fmt.Errorf("%w: probe command", ErrInvalidInput)
 		}
 		return &connectv1alpha1.OperationCommand{Command: &connectv1alpha1.OperationCommand_Probe{Probe: &connectv1alpha1.ProbeOperation{ProbeName: input.ProbeName}}}, nil
@@ -272,6 +279,9 @@ func buildLocalCommand(input LocalExecutionCommand, scope Scope) (*connectv1alph
 }
 
 func (c *LocalExecutionCoordinator) terminalizeReceipt(input LocalExecutionInput, receipt *connectv1alpha1.DurableReceipt) (ExecutionTransitionResult, error) {
+	if receipt == nil {
+		return ExecutionTransitionResult{}, fmt.Errorf("%w: receipt", ErrInvalidInput)
+	}
 	var (
 		transition ExecutionTransitionResult
 		err        error
@@ -355,7 +365,7 @@ func (c *LocalExecutionCoordinator) reconcileTerminal(input LocalExecutionInput,
 		return ExecutionTransitionResult{}, err
 	}
 	result := ExecutionTransitionResult{Turn: turn, Execution: execution}
-	if turn.State != wantTurn || execution.State != wantExec {
+	if turn.ExecutionID != input.ExecutionID || execution.Generation != input.Generation || turn.State != wantTurn || execution.State != wantExec {
 		return result, fmt.Errorf("%w: concurrent terminal state", ErrInvalidTransition)
 	}
 	return result, nil
@@ -380,4 +390,54 @@ func receiptDigest(receipt *connectv1alpha1.DurableReceipt) string {
 	bytes, _ := proto.MarshalOptions{Deterministic: true}.Marshal(clone)
 	sum := sha256.Sum256(bytes)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func localExecutionBindingDigest(input LocalExecutionInput, attempt *connectv1alpha1.OperationAttemptEnvelope) (string, error) {
+	if attempt == nil {
+		return "", fmt.Errorf("%w: dispatch attempt", ErrInvalidInput)
+	}
+	attemptBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(attempt)
+	if err != nil {
+		return "", fmt.Errorf("%w: dispatch attempt encoding", ErrInvalidInput)
+	}
+	inputDigest, err := digestInput(input.InputText)
+	if err != nil {
+		return "", err
+	}
+	frame := make([]byte, 0, len(attemptBytes)+256)
+	frame = append(frame, []byte("cloud-agents/managed-agent-worker-coordination/dispatch-binding/v1\x00")...)
+	appendBytes := func(value []byte) {
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+		frame = append(frame, length[:]...)
+		frame = append(frame, value...)
+	}
+	appendUint64 := func(value uint64) {
+		var encoded [8]byte
+		binary.BigEndian.PutUint64(encoded[:], value)
+		frame = append(frame, encoded[:]...)
+	}
+	appendBytes([]byte(ManagedAgentLocalExecutionProfileDigest))
+	appendBytes([]byte(input.Scope.TenantID))
+	appendBytes([]byte(input.Scope.ProjectID))
+	appendBytes([]byte(input.SessionID))
+	appendBytes([]byte(input.TurnID))
+	appendBytes([]byte(input.ExecutionID))
+	appendBytes([]byte(inputDigest))
+	appendUint64(input.Generation)
+	appendBytes(attemptBytes)
+	sum := sha256.Sum256(frame)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func validLocalText(value string, maximum int) bool {
+	if value == "" || !utf8.ValidString(value) || len(value) > maximum {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }

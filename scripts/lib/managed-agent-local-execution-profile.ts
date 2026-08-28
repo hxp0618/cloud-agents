@@ -74,6 +74,7 @@ const INPUT_PATHS = [
   "services/worker/operation_admission.go",
   "services/worker/operation_admission_test.go",
   "services/worker/operation_builder.go",
+  "services/worker/operation_builder_test.go",
   "services/worker/execution.go",
   "services/worker/execution_test.go",
   "services/worker/service.go",
@@ -314,6 +315,12 @@ function inputManifestDigest(root: string): Digest {
       throw new Error(`input path must be a regular file: ${path}`);
     }
     const bytes = readFileSync(target);
+    // A second read catches an in-place same-size rewrite that inode/size/mode
+    // checks alone cannot observe. The manifest is fail-closed on any drift.
+    const reread = readFileSync(target);
+    if (!bytes.equals(reread)) {
+      throw new Error(`input path content changed while hashing: ${path}`);
+    }
     const after = lstatSync(target);
     if (
       !after.isFile() ||
