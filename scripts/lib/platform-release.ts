@@ -16,6 +16,7 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
 export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000016.tar";
+export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000016.tar";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -123,6 +124,27 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   );
 }
 
+export function buildPlatformDeploymentPackage(root: string): Uint8Array {
+  const paths = [
+    "deploy/compose/.env.example",
+    "deploy/compose/README.md",
+    "deploy/compose/docker-compose.yml",
+    "deploy/docker/control-plane.Dockerfile",
+    "deploy/docker/migrate.Dockerfile",
+    "deploy/docker/worker.Dockerfile",
+    "services/control-plane/migrations/bootstrap/database.sql",
+    "services/control-plane/migrations/bootstrap/roles.sql",
+  ];
+  return createDeterministicUstar(
+    paths.map((path) => ({
+      path: path.startsWith("services/")
+        ? path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/")
+        : path,
+      data: readFileSync(resolve(root, path)),
+    })),
+  );
+}
+
 export function validatePlatformReleaseManifest(
   manifest: unknown,
 ): asserts manifest is PlatformReleaseManifest {
@@ -183,11 +205,12 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
     ),
     { name: "cloud-agent-runtime", target: "portable" },
     { name: "cloud-agents-migrations", target: "portable" },
+    { name: "cloud-agents-deployment", target: "portable" },
   ];
 }
 
 export function expectedArtifactCount(): number {
-  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 2;
+  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 3;
 }
 
 function requireString(value: unknown, label: string): string {

@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CLOUD_AGENTS_POSTGRES_DB:?set the Cloud Agents database name}
+      POSTGRES_USER: ${CLOUD_AGENTS_POSTGRES_OWNER:?set the deployment-owned database owner}
+      POSTGRES_PASSWORD: ${CLOUD_AGENTS_POSTGRES_PASSWORD:?set the database password}
+    volumes:
+      - cloud-agents-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  bootstrap:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    profiles: [bootstrap]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL: ${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL:?set an isolated unswitched superuser URL}
+      CLOUD_AGENTS_POSTGRES_DB: ${CLOUD_AGENTS_POSTGRES_DB:?set the Cloud Agents database name}
+      CLOUD_AGENTS_POSTGRES_OWNER: ${CLOUD_AGENTS_POSTGRES_OWNER:?set the deployment-owned database owner}
+    volumes:
+      - ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/bootstrap:/bootstrap:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command: >-
+      psql "$${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL}" -v ON_ERROR_STOP=1
+      -f /bootstrap/roles.sql
+      && psql "$${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL}" -v ON_ERROR_STOP=1
+      -v cloud_agents_database="$${CLOUD_AGENTS_POSTGRES_DB}"
+      -v cloud_agents_database_owner="$${CLOUD_AGENTS_POSTGRES_OWNER}"
+      -f /bootstrap/database.sql
+
+  migrate:
+    build:
+      context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/migrate.Dockerfile
+      args:
+        TARGET: ${CLOUD_AGENTS_TARGET:-linux-amd64}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_MIGRATION_DATABASE_URL:?set the migration-owner database URL}
+
+  control-plane:
+    build:
+      context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/control-plane.Dockerfile
+      args:
+        TARGET: ${CLOUD_AGENTS_TARGET:-linux-amd64}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_RUNTIME_DATABASE_URL:?set the runtime database URL}
+      CLOUD_AGENTS_PLATFORM_AUTH_CONFIG: /run/cloud-agents/auth.json
+    command: ["--listen", ":8080", "--auth-config", "/run/cloud-agents/auth.json", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key"]
+    volumes:
+      - ${CLOUD_AGENTS_AUTH_CONFIG:?set the verifier JSON path}:/run/cloud-agents/auth.json:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR:?set the Control Plane TLS directory}:/run/cloud-agents/tls:ro
+    ports:
+      - "${CLOUD_AGENTS_CONTROL_PLANE_BIND:-127.0.0.1:8080}:8080"
+
+  worker:
+    build:
+      context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/worker.Dockerfile
+      args:
+        TARGET: ${CLOUD_AGENTS_TARGET:-linux-amd64}
+    command:
+      - "--listen"
+      - ":8091"
+      - "--tls-cert"
+      - "/run/cloud-agents/tls/server.crt"
+      - "--tls-key"
+      - "/run/cloud-agents/tls/server.key"
+      - "--client-ca"
+      - "/run/cloud-agents/tls/client-ca.crt"
+      - "--worker-spiffe-id"
+      - "${CLOUD_AGENTS_WORKER_SPIFFE_ID:?set the Worker SPIFFE identity}"
+      - "--runtime-command"
+      - "/usr/local/bin/cloud-agent-runtime"
+      - "--admission-lease-id"
+      - "${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}"
+      - "--admission-generation"
+      - "${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}"
+    env_file:
+      - ${CLOUD_AGENTS_RUNTIME_ENV_FILE:?set the Runtime provider environment file}
+    volumes:
+      - ${CLOUD_AGENTS_WORKER_TLS_DIR:?set the Worker TLS directory}:/run/cloud-agents/tls:ro
+    ports:
+      - "${CLOUD_AGENTS_WORKER_BIND:-127.0.0.1:8091}:8091"
+
+volumes:
+  cloud-agents-postgres:

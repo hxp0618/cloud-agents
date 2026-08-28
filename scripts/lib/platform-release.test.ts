@@ -5,6 +5,7 @@ import { readDeterministicUstar } from "./platform-migration-ustar";
 import {
   expectedArtifactIdentities,
   buildPlatformMigrationPackage,
+  buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
   validatePlatformReleaseManifest,
@@ -68,5 +69,20 @@ describe("platform release", () => {
       name: "cloud-agents-migrations",
       target: "portable",
     });
+  });
+
+  it("packages the independent Compose deployment inputs", () => {
+    const archive = buildPlatformDeploymentPackage(process.cwd());
+    const entries = readDeterministicUstar(new Uint8Array(archive));
+    expect(entries.map(({ path }) => path)).toEqual([
+      "deploy/bootstrap/database.sql",
+      "deploy/bootstrap/roles.sql",
+      "deploy/compose/.env.example",
+      "deploy/compose/README.md",
+      "deploy/compose/docker-compose.yml",
+      "deploy/docker/control-plane.Dockerfile",
+      "deploy/docker/migrate.Dockerfile",
+      "deploy/docker/worker.Dockerfile",
+    ]);
   });
 });

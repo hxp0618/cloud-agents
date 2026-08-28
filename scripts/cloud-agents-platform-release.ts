@@ -5,11 +5,13 @@ import { join, resolve } from "node:path";
 import {
   expectedArtifactCount,
   buildPlatformMigrationPackage,
+  buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
   PLATFORM_RELEASE_GO_COMMANDS,
   PLATFORM_RELEASE_RUNTIME,
   PLATFORM_RELEASE_MIGRATIONS,
+  PLATFORM_RELEASE_DEPLOYMENT,
   PLATFORM_RELEASE_TARGETS,
   type PlatformReleaseArtifact,
   type PlatformReleaseTarget,
@@ -56,6 +58,18 @@ artifacts.push(
     "portable",
     PLATFORM_RELEASE_RUNTIME,
     runtimeBytes,
+  ),
+);
+
+const deploymentOutput = join(options.outputDirectory, PLATFORM_RELEASE_DEPLOYMENT);
+const deploymentBytes = buildPlatformDeploymentPackage(repositoryRoot);
+writeFileSync(deploymentOutput, deploymentBytes, { mode: 0o444 });
+artifacts.push(
+  platformReleaseArtifact(
+    "cloud-agents-deployment",
+    "portable",
+    PLATFORM_RELEASE_DEPLOYMENT,
+    deploymentBytes,
   ),
 );
 
