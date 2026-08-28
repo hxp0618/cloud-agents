@@ -31,6 +31,7 @@ import {
   CONTRACT_CLOSURE_PROFILE_V4_OUTPUT_SCHEMA_PATH,
   CONTRACT_CLOSURE_PROFILE_V4_SOURCE_PATH,
   CONTRACT_CLOSURE_PROFILE_V4_SOURCE_SCHEMA_PATH,
+  CONTRACT_CLOSURE_V4_AUTHORITY_FILE,
   CONTRACT_CLOSURE_V4_CRITERIA,
   CONTRACT_CLOSURE_V4_MISSING,
   CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE,
@@ -103,6 +104,7 @@ function createCurrentRoot(): string {
     ...manifest.files.map(({ path }) => path),
     ...CONTRACT_CLOSURE_V4_RUNTIME_FILES.map(({ path }) => path),
     CONTRACT_CLOSURE_V4_RUNTIME_REVIEW_FILE.path,
+    CONTRACT_CLOSURE_V4_AUTHORITY_FILE.path,
     CONTRACT_CLOSURE_PROFILE_V4_SOURCE_SCHEMA_PATH,
     CONTRACT_CLOSURE_PROFILE_V4_OUTPUT_SCHEMA_PATH,
   ]);
@@ -212,6 +214,9 @@ describe("contract closure profile v4 Slice A authority", () => {
         projectWriter: "NOT_IMPLEMENTED",
         provider: "NOT_IMPLEMENTED",
       },
+    });
+    expect(source.authorityBinding).toEqual({
+      ...CONTRACT_CLOSURE_V4_AUTHORITY_FILE,
     });
     expect(source.generatorSupplyV1Predecessor).toMatchObject({
       profileId: "cloud-agents/generator-supply-profile/v1",
@@ -335,6 +340,11 @@ describe("contract closure profile v4 Slice A authority", () => {
       boundary.http = "IMPLEMENTED";
     });
     expectSourceFailure((source) => {
+      const candidate = (source.runtimeReviewedCandidate as MutableRecord)
+        .candidate as MutableRecord;
+      candidate.diffSha256 = `sha256:${"0".repeat(64)}`;
+    }, "CONTRACT_CLOSURE_V4_SCHEMA_INVALID");
+    expectSourceFailure((source) => {
       criteria(source)[6]!.status = "SATISFIED_CANDIDATE";
       criteria(source)[6]!.review = clone(criteria(source)[5]!.review);
       delete criteria(source)[6]!.reason;
@@ -342,6 +352,31 @@ describe("contract closure profile v4 Slice A authority", () => {
     expectSourceFailure((source) => {
       (source.profile.derivation as MutableRecord).missing = "manual";
     });
+  });
+
+  it("rejects authority markdown byte, raw digest, and Git blob drift", () => {
+    const root = createCurrentRoot();
+    const authority = resolve(root, CONTRACT_CLOSURE_V4_AUTHORITY_FILE.path);
+    const source = buildContractClosureProfileV4TestSource(root);
+    writeFileSync(authority, Buffer.concat([readFileSync(authority), Buffer.from("\n")]));
+    expect(() => validateContractClosureProfileV4Source(root, source)).toThrowError(
+      expect.objectContaining<Partial<ContractClosureProfileV4Error>>({
+        code: "CONTRACT_CLOSURE_V4_EVIDENCE_MISMATCH",
+        path: `/authorityBinding/${CONTRACT_CLOSURE_V4_AUTHORITY_FILE.path}`,
+      }),
+    );
+  });
+
+  it("keeps exported authority and runtime selectors immutable against caller replacement", () => {
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_AUTHORITY_FILE)).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE)).toBe(true);
+    expect(() => {
+      (CONTRACT_CLOSURE_V4_AUTHORITY_FILE as unknown as MutableRecord).gitBlob = "0".repeat(40);
+    }).toThrow(TypeError);
+    expect(() => {
+      (CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE as unknown as MutableRecord).candidateCommit =
+        "0".repeat(40);
+    }).toThrow(TypeError);
   });
 
   it("rejects successor and self-review references before they can affect canonical closure", () => {

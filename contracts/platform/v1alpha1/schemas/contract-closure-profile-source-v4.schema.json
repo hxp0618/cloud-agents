@@ -9,6 +9,7 @@
     "formatVersion",
     "registryId",
     "authorityRevision",
+    "authorityBinding",
     "predecessor",
     "supersededV3Predecessor",
     "runtimeReviewedCandidate",
@@ -20,6 +21,7 @@
     "formatVersion": { "const": "cloud-agents-contract-closure-profile-source/v4" },
     "registryId": { "const": "cloud-agents/platform/contract-closure-profile" },
     "authorityRevision": { "const": "D-053-EC-2.r4" },
+    "authorityBinding": { "$ref": "#/$defs/authorityBinding" },
     "predecessor": { "$ref": "#/$defs/predecessor" },
     "supersededV3Predecessor": { "$ref": "#/$defs/supersededV3Predecessor" },
     "runtimeReviewedCandidate": { "$ref": "#/$defs/runtimeReviewedCandidate" },
@@ -44,6 +46,24 @@
         "path": { "$ref": "#/$defs/path" },
         "sha256": { "$ref": "#/$defs/hexDigest" },
         "sizeBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "authorityBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "mode", "gitBlob", "sha256", "sizeBytes", "commit", "tree"],
+      "properties": {
+        "path": {
+          "const": "docs/plan/p1/g-contract-runtime-closure-profile-v4-authority-20260828.md"
+        },
+        "mode": { "const": "100644" },
+        "gitBlob": { "const": "307dfbbe6a9f2f6696ae435996b447d595c1f9ac" },
+        "sha256": {
+          "const": "0a61c6d3029d595d2ea8a573b1130d77d0756e0b1739a030d52f7f6b8eac2e9a"
+        },
+        "sizeBytes": { "const": 16991 },
+        "commit": { "const": "41ffbc665d51e29aa988de6be1d01bb29954f149" },
+        "tree": { "const": "1b00a41b907f1a7f586d8b9f65ee491aeb59c6c5" }
       }
     },
     "v3ImmutableFile": {

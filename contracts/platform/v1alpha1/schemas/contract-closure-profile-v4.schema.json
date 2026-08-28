@@ -9,6 +9,7 @@
     "formatVersion",
     "registryId",
     "authorityRevision",
+    "authorityBinding",
     "sourceDigest",
     "predecessor",
     "supersededV3Predecessor",
@@ -25,6 +26,9 @@
     "formatVersion": { "const": "cloud-agents-contract-closure-profile-registry/v4" },
     "registryId": { "const": "cloud-agents/platform/contract-closure-profile" },
     "authorityRevision": { "const": "D-053-EC-2.r4" },
+    "authorityBinding": {
+      "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/authorityBinding"
+    },
     "sourceDigest": { "$ref": "#/$defs/digest" },
     "predecessor": {
       "$ref": "contract-closure-profile-source-v4.schema.json#/$defs/predecessor"

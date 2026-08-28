@@ -57,6 +57,20 @@ const REQUIRED_VERDICT = "APPROVE_P0_0_P1_0_P2_0";
 const V4_AUTHORITY_PATH =
   "docs/plan/p1/g-contract-runtime-closure-profile-v4-authority-20260828.md";
 
+// The authority markdown is a predecessor input to the generated v4 objects.
+// Its identity is pinned to the authority-lineage commit that records the
+// complete decision and candidate binding; later commits may carry the same
+// blob but may not silently replace it.
+export const CONTRACT_CLOSURE_V4_AUTHORITY_FILE = Object.freeze({
+  path: V4_AUTHORITY_PATH,
+  mode: "100644",
+  gitBlob: "307dfbbe6a9f2f6696ae435996b447d595c1f9ac",
+  sha256: "0a61c6d3029d595d2ea8a573b1130d77d0756e0b1739a030d52f7f6b8eac2e9a",
+  sizeBytes: 16_991,
+  commit: "41ffbc665d51e29aa988de6be1d01bb29954f149",
+  tree: "1b00a41b907f1a7f586d8b9f65ee491aeb59c6c5",
+} as const);
+
 const V4_BASELINE = {
   commit: "6ff645bbea150602226dc0cb727d21579a54f0a7",
   tree: "24a0198cdf551e7834b3e1ebb924aca4249edcda",
@@ -199,7 +213,7 @@ const CONTRACT_CLOSURE_V4_V3_BASELINE = {
   tree: "ca595b8e1258a8b78c4da3a545b2a31d8f62b531",
 } as const;
 
-export const CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE = {
+export const CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE = Object.freeze({
   candidateCommit: "b79d01028c652d004e67a00fdcbdf204e04dc946",
   candidateTree: "289c7c2ff7ab39b0af1ea0bac84a902d461de8dc",
   candidateParent: "4ee0e847a7c8e6d0c7313f0f359acc7002ec9d97",
@@ -210,7 +224,7 @@ export const CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE = {
   reviewPath: RUNTIME_REVIEW_PATH,
   reviewSha256: "46bd55af8d0bb6983062cba7c104fd6432785adbf7db24b046a92e4b39b4fcd6",
   verdict: REQUIRED_VERDICT,
-} as const;
+} as const);
 
 const FIXED_GIT_ENV = {
   PATH: "/usr/bin:/bin",
@@ -298,6 +312,7 @@ export type ContractClosureV4Source = JsonRecord & {
   readonly formatVersion: "cloud-agents-contract-closure-profile-source/v4";
   readonly registryId: typeof REGISTRY_ID;
   readonly authorityRevision: "D-053-EC-2.r4";
+  readonly authorityBinding: JsonRecord;
   readonly predecessor: JsonRecord;
   readonly supersededV3Predecessor: JsonRecord;
   readonly runtimeReviewedCandidate: JsonRecord;
@@ -310,6 +325,7 @@ export type ContractClosureV4Registry = JsonRecord & {
   readonly formatVersion: "cloud-agents-contract-closure-profile-registry/v4";
   readonly registryId: typeof REGISTRY_ID;
   readonly authorityRevision: "D-053-EC-2.r4";
+  readonly authorityBinding: JsonRecord;
   readonly sourceDigest: string;
   readonly predecessor: JsonRecord;
   readonly supersededV3Predecessor: JsonRecord;
@@ -376,6 +392,12 @@ export function validateContractClosureProfileV4Source(
 ): void {
   validateAgainstSchema(root, SOURCE_SCHEMA_ID, source);
   assertPredecessorEvidence(root);
+  assertCanonicalEqual(
+    source.authorityBinding,
+    expectedAuthorityBinding(),
+    "/authorityBinding",
+    "Contract closure v4 authority markdown identity drifted.",
+  );
   assertCanonicalEqual(
     source.predecessor,
     expectedClosureV2Predecessor(),
@@ -603,6 +625,7 @@ export function buildContractClosureProfileV4Registry(
     formatVersion: "cloud-agents-contract-closure-profile-registry/v4",
     registryId: REGISTRY_ID,
     authorityRevision: "D-053-EC-2.r4",
+    authorityBinding: source.authorityBinding,
     sourceDigest,
     predecessor: source.predecessor,
     supersededV3Predecessor: source.supersededV3Predecessor,
@@ -642,6 +665,12 @@ export function assertContractClosureV4RegistrySemantics(
       "Contract closure v4 authority revision drifted.",
     );
   }
+  assertCanonicalEqual(
+    registry.authorityBinding,
+    expectedAuthorityBinding(),
+    "/authorityBinding",
+    "Generated closure v4 authority markdown identity drifted.",
+  );
   assertPredecessorEvidence(root);
   const expectedSource = buildContractClosureProfileV4TestSourceWithoutEvidence(
     readV2Registry(root),
@@ -809,6 +838,7 @@ function buildContractClosureProfileV4TestSourceWithoutEvidence(
     formatVersion: "cloud-agents-contract-closure-profile-source/v4",
     registryId: REGISTRY_ID,
     authorityRevision: "D-053-EC-2.r4",
+    authorityBinding: expectedAuthorityBinding(),
     predecessor: expectedClosureV2Predecessor(),
     supersededV3Predecessor: expectedV3Predecessor(),
     runtimeReviewedCandidate: expectedRuntimeReviewedCandidate(),
@@ -868,6 +898,19 @@ function expectedClosureV2Predecessor(): JsonRecord {
       sha256,
       sizeBytes,
     })),
+  };
+}
+
+function expectedAuthorityBinding(): JsonRecord {
+  const authority = CONTRACT_CLOSURE_V4_AUTHORITY_FILE;
+  return {
+    path: authority.path,
+    mode: authority.mode,
+    gitBlob: authority.gitBlob,
+    sha256: authority.sha256,
+    sizeBytes: authority.sizeBytes,
+    commit: authority.commit,
+    tree: authority.tree,
   };
 }
 
@@ -990,8 +1033,55 @@ function assertPredecessorEvidence(root: string): void {
   assertContractClosureV2Immutable(root);
   assertV3PredecessorEvidence(root);
   assertGeneratorSupplyV1PredecessorImmutable(root);
+  assertAuthorityEvidence(root);
   assertImmutableFileMap(root, CONTRACT_CLOSURE_V4_RUNTIME_FILES, "runtime reviewed candidate");
   assertImmutableFileMap(root, [CONTRACT_CLOSURE_V4_RUNTIME_REVIEW_FILE], "runtime review");
+}
+
+function assertAuthorityEvidence(root: string): void {
+  const authority = CONTRACT_CLOSURE_V4_AUTHORITY_FILE;
+  try {
+    const bytes = readStableContainedRegularFile(root, authority.path);
+    if (
+      bytes.byteLength !== authority.sizeBytes ||
+      sha256(bytes) !== authority.sha256 ||
+      gitBlobSha1(bytes) !== authority.gitBlob
+    ) {
+      throw v4Error(
+        "CONTRACT_CLOSURE_V4_EVIDENCE_MISMATCH",
+        `/authorityBinding/${authority.path}`,
+        "Contract closure v4 authority markdown bytes drifted.",
+      );
+    }
+    if (!existsSync(resolve(root, ".git"))) return;
+    const topLevel = realpathSync(gitText(root, ["rev-parse", "--show-toplevel"]));
+    const commitType = gitText(root, ["cat-file", "-t", authority.commit]);
+    const tree = gitText(root, ["rev-parse", `${authority.commit}^{tree}`]);
+    const blob = gitText(root, ["rev-parse", `${authority.commit}:${authority.path}`]);
+    const mode = gitText(root, ["ls-tree", authority.commit, "--", authority.path]).split(
+      /\s+/u,
+    )[0];
+    if (
+      topLevel !== realpathSync(root) ||
+      commitType !== "commit" ||
+      tree !== authority.tree ||
+      blob !== authority.gitBlob ||
+      mode !== authority.mode
+    ) {
+      throw v4Error(
+        "CONTRACT_CLOSURE_V4_GIT_MISMATCH",
+        `/authorityBinding/${authority.path}`,
+        "Contract closure v4 authority markdown Git identity drifted.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof ContractClosureProfileV4Error) throw error;
+    throw v4Error(
+      "CONTRACT_CLOSURE_V4_GIT_MISMATCH",
+      `/authorityBinding/${authority.path}`,
+      `Contract closure v4 authority markdown identity is unavailable or invalid: ${String(error)}.`,
+    );
+  }
 }
 
 function assertV3PredecessorEvidence(root: string): void {

@@ -1,7 +1,7 @@
 # G-CONTRACT current-runtime lineage rebind independent review — 2026-08-28
 
-Date: 2026-08-28 (Asia/Shanghai)
-Review type: independent, fixed-object, read-only closed-pair review
+Date: 2026-08-28 (Asia/Shanghai)  
+Review type: independent, fixed-object, read-only closed-pair review  
 Purpose: provide a versioned successor binding for the current control-plane
 module bytes consumed by the D-053 generated closure profile.
 
@@ -90,3 +90,4 @@ does not itself claim native replay success, assemble a generation lock, or
 permit any external side effect. Any later source/schema/profile or projection
 must bind this exact pair and be independently reviewed as a separate
 append-only candidate.
+
