@@ -1,0 +1,677 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/worker/localdev-launcher/v1/authority-source.schema.json",
+  "title": "D-056-WORKER-LOCALDEV-LAUNCHER-000001 source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "authorityId",
+    "revision",
+    "decision",
+    "profileId",
+    "mode",
+    "transport",
+    "parentProfiles",
+    "commands",
+    "inputPaths",
+    "exclusionPaths",
+    "generatedPaths",
+    "inputSetAlgorithm",
+    "inputManifestDigest",
+    "archive",
+    "memberManifest",
+    "runner",
+    "receipt",
+    "lineageFence",
+    "reviewRules",
+    "selector",
+    "stateMachine",
+    "externalSideEffects",
+    "implementationBoundary",
+    "sourceDigest"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://schemas.cloud-agents.dev/worker/localdev-launcher/v1/authority-source.schema.json"
+    },
+    "formatVersion": {
+      "const": "cloud-agents-worker-localdev-launcher-authority/v1"
+    },
+    "authorityId": {
+      "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001"
+    },
+    "revision": {
+      "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1"
+    },
+    "decision": {
+      "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1"
+    },
+    "profileId": {
+      "const": "cloud-agents/worker-localdev-launcher/v1alpha1"
+    },
+    "mode": {
+      "const": "localdev_only"
+    },
+    "transport": {
+      "const": "loopback_http_connect"
+    },
+    "parentProfiles": {
+      "type": "array",
+      "const": [
+        "cloud-agents/worker-supervisor-operation-dispatch/localdev-v1alpha1",
+        "cloud-agents/worker-operation-admission/v1alpha1",
+        "cloud-agents/worker-operation-execution/localdev-v1alpha1",
+        "cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1"
+      ]
+    },
+    "commands": {
+      "type": "array",
+      "const": [
+        "Probe",
+        "ValidateBinding"
+      ]
+    },
+    "inputPaths": {
+      "type": "array",
+      "const": [
+        ".mise.toml",
+        "bun.lock",
+        "bunfig.toml",
+        "contracts/worker/v1alpha1/README.md",
+        "contracts/worker/v1alpha1/kernel.proto",
+        "contracts/worker/v1alpha1/worker_supervisor.proto",
+        "go.work",
+        "package.json",
+        "scripts/generate-worker-localdev-launcher-profile.ts",
+        "scripts/lib/platform-json-semantics.ts",
+        "scripts/lib/worker-localdev-launcher-profile.test.ts",
+        "scripts/lib/worker-localdev-launcher-profile.ts",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+        "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+        "sdk/go/gen/common/v1alpha1/identity_generated.go",
+        "sdk/go/go.mod",
+        "sdk/go/go.sum",
+        "services/worker/cmd/cloud-agents-worker/README.md",
+        "services/worker/cmd/cloud-agents-worker/main.go",
+        "services/worker/cmd/cloud-agents-worker/main_test.go",
+        "services/worker/doc.go",
+        "services/worker/execution.go",
+        "services/worker/execution_test.go",
+        "services/worker/go.mod",
+        "services/worker/go.sum",
+        "services/worker/local_dispatch_handle.go",
+        "services/worker/operation_admission.go",
+        "services/worker/operation_admission_test.go",
+        "services/worker/operation_builder.go",
+        "services/worker/operation_builder_test.go",
+        "services/worker/service.go",
+        "services/worker/service_test.go",
+        "services/worker/supervisor/client.go",
+        "services/worker/supervisor/client_test.go",
+        "services/worker/supervisor/dispatch_profile_generated.go",
+        "services/worker/supervisor/local_dispatch.go",
+        "services/worker/supervisor/local_dispatch_test.go",
+        "tsconfig.base.json"
+      ]
+    },
+    "exclusionPaths": {
+      "type": "array",
+      "const": [
+        ".idea",
+        "deploy",
+        "helm",
+        "node_modules",
+        "packages/cloud-agent-provider-api",
+        "packages/cloud-agent-runtime",
+        "release",
+        "services/control-plane/internal/migration",
+        "services/control-plane/internal/store/postgres",
+        "services/control-plane/migrations",
+        "services/worker/cmd/cloud-agents-worker/provider",
+        "tmp"
+      ]
+    },
+    "generatedPaths": {
+      "type": "array",
+      "const": [
+        "services/worker/localdev-launcher-profile/v1/authority-source.json",
+        "services/worker/localdev-launcher-profile/v1/authority-source.schema.json",
+        "services/worker/localdev-launcher-profile/v1/profile.json",
+        "services/worker/localdev-launcher-profile/v1/profile.schema.json",
+        "services/worker/localdev_launcher_profile_generated.go"
+      ]
+    },
+    "inputSetAlgorithm": {
+      "const": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1"
+    },
+    "inputManifestDigest": {
+      "const": "sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea"
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "emission",
+        "compression",
+        "ordering",
+        "metadata",
+        "duplicatePolicy",
+        "symlinkPolicy"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "deterministic-ustar-v1"
+        },
+        "emission": {
+          "const": "forbidden"
+        },
+        "compression": {
+          "const": "none"
+        },
+        "ordering": {
+          "const": "utf8-bytewise-sorted-path"
+        },
+        "metadata": {
+          "const": "mode=100644,uid=0,gid=0,mtime=0"
+        },
+        "duplicatePolicy": {
+          "const": "reject"
+        },
+        "symlinkPolicy": {
+          "const": "reject"
+        }
+      }
+    },
+    "memberManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "emission",
+        "path",
+        "fields",
+        "regularFileOnly",
+        "duplicatePolicy"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1"
+        },
+        "emission": {
+          "const": "forbidden"
+        },
+        "path": {
+          "const": "<not-written>"
+        },
+        "fields": {
+          "const": "path\\0mode\\0size\\0sha256\\0"
+        },
+        "regularFileOnly": {
+          "const": true
+        },
+        "duplicatePolicy": {
+          "const": "reject"
+        }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entrypoint",
+        "launcher",
+        "mode",
+        "network",
+        "database",
+        "provider",
+        "goVersion",
+        "toolchain",
+        "node",
+        "bun",
+        "platforms",
+        "timeout"
+      ],
+      "properties": {
+        "entrypoint": {
+          "const": "GOWORK=off GOFLAGS=-mod=readonly go test -tags localdev ./..."
+        },
+        "launcher": {
+          "const": "go run -tags localdev ./cmd/cloud-agents-worker"
+        },
+        "mode": {
+          "const": "localdev_only"
+        },
+        "network": {
+          "const": "loopback_only"
+        },
+        "database": {
+          "const": "deny"
+        },
+        "provider": {
+          "const": "deny"
+        },
+        "goVersion": {
+          "const": "1.26.0"
+        },
+        "toolchain": {
+          "const": "go1.26.6"
+        },
+        "node": {
+          "const": "24.18.1"
+        },
+        "bun": {
+          "const": "1.3.14"
+        },
+        "platforms": {
+          "type": "array",
+          "const": [
+            "darwin-arm64",
+            "linux-amd64"
+          ]
+        },
+        "timeout": {
+          "const": "focused-tests-only"
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimePath",
+        "persistence",
+        "state",
+        "resultDigestAlgorithm",
+        "canonicalProjection",
+        "excludedFields",
+        "stableErrorCodes",
+        "evidencePaths"
+      ],
+      "properties": {
+        "runtimePath": {
+          "const": "process-local://worker-service/health"
+        },
+        "persistence": {
+          "const": "no_write"
+        },
+        "state": {
+          "const": "ABSENT_PENDING"
+        },
+        "resultDigestAlgorithm": {
+          "const": "sha256:deterministic-protobuf-receipt-result-v1"
+        },
+        "canonicalProjection": {
+          "const": "none_for_health_only"
+        },
+        "excludedFields": {
+          "type": "array",
+          "const": [
+            "receipt_id",
+            "sequence",
+            "observed_at",
+            "fencing.token_sha256"
+          ]
+        },
+        "stableErrorCodes": {
+          "type": "array",
+          "const": [
+            "unauthenticated",
+            "permission_denied",
+            "invalid_argument",
+            "failed_precondition",
+            "deadline_exceeded",
+            "canceled",
+            "not_found",
+            "method_not_allowed",
+            "internal",
+            "unimplemented",
+            "unavailable"
+          ]
+        },
+        "evidencePaths": {
+          "type": "array",
+          "const": [
+            "docs/plan/standalone/worker-localdev-launcher-implementation-20260828.md",
+            "docs/plan/standalone/worker-localdev-launcher-independent-review-20260828.md"
+          ]
+        }
+      }
+    },
+    "lineageFence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "predecessorAuthority",
+        "predecessorRevision",
+        "predecessorProfile",
+        "predecessorProfileDigest",
+        "historicalAuthorities",
+        "mutation",
+        "historicalEvidence",
+        "successorRevision"
+      ],
+      "properties": {
+        "kind": {
+          "const": "single-predecessor-append-only"
+        },
+        "predecessorAuthority": {
+          "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
+        },
+        "predecessorRevision": {
+          "const": "D-055-MANAGED-AGENT-WORKER-COORDINATION-000001.r1"
+        },
+        "predecessorProfile": {
+          "const": "cloud-agents/managed-agent-worker-local-execution/localdev-v1alpha1"
+        },
+        "predecessorProfileDigest": {
+          "const": "sha256:892a718cfd58e138cbb22e556da2f0088fdc8b73f43b47805b35e9c90f777e74"
+        },
+        "historicalAuthorities": {
+          "type": "array",
+          "const": [
+            "D-054-WORKER-DISPATCH-000001.r1",
+            "D-053-MIG-000014.r2",
+            "D-053-EC-2.r3"
+          ]
+        },
+        "mutation": {
+          "const": "forbidden"
+        },
+        "historicalEvidence": {
+          "const": "retain-and-never-rewrite"
+        },
+        "successorRevision": {
+          "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1"
+        }
+      }
+    },
+    "reviewRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "independentReadOnly",
+        "reviewPath",
+        "verdicts",
+        "classification",
+        "candidateMutation",
+        "p0P1Repair",
+        "p2",
+        "gateTransition"
+      ],
+      "properties": {
+        "independentReadOnly": {
+          "const": true
+        },
+        "reviewPath": {
+          "const": "docs/plan/standalone/worker-localdev-launcher-independent-review-20260828.md"
+        },
+        "verdicts": {
+          "type": "array",
+          "const": [
+            "APPROVE",
+            "REQUEST_CHANGES"
+          ]
+        },
+        "classification": {
+          "type": "array",
+          "const": [
+            "P0",
+            "P1",
+            "P2"
+          ]
+        },
+        "candidateMutation": {
+          "const": "forbidden"
+        },
+        "p0P1Repair": {
+          "const": "one repair and re-review within r1 candidate"
+        },
+        "p2": {
+          "const": "record-and-defer"
+        },
+        "gateTransition": {
+          "const": "forbidden"
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileSelection",
+        "callerSelectedProfile",
+        "foreignPath",
+        "foreignTransport",
+        "listenAddress",
+        "tokenSource",
+        "workerIdentitySPIFFE",
+        "supervisorIdentitySPIFFE",
+        "leaseID",
+        "generation",
+        "routes"
+      ],
+      "properties": {
+        "profileSelection": {
+          "const": "exact_generated_profile_id_and_digest"
+        },
+        "callerSelectedProfile": {
+          "const": "forbidden"
+        },
+        "foreignPath": {
+          "const": "forbidden"
+        },
+        "foreignTransport": {
+          "const": "forbidden"
+        },
+        "listenAddress": {
+          "const": "loopback_only"
+        },
+        "tokenSource": {
+          "const": "ephemeral_file_o_excl_mode_0600"
+        },
+        "workerIdentitySPIFFE": {
+          "const": "spiffe://cloud-agents.local/worker/localdev"
+        },
+        "supervisorIdentitySPIFFE": {
+          "const": "spiffe://cloud-agents.local/supervisor/localdev"
+        },
+        "leaseID": {
+          "const": "worker-localdev-lease-000001"
+        },
+        "generation": {
+          "const": 1
+        },
+        "routes": {
+          "type": "array",
+          "const": [
+            "/healthz",
+            "/cloudagents.worker.v1alpha1.WorkerExecutionService/"
+          ]
+        }
+      }
+    },
+    "stateMachine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initial",
+        "states",
+        "transitions"
+      ],
+      "properties": {
+        "initial": {
+          "const": "starting"
+        },
+        "states": {
+          "type": "array",
+          "const": [
+            "starting",
+            "serving",
+            "stopping",
+            "stopped"
+          ]
+        },
+        "transitions": {
+          "type": "array",
+          "const": [
+            {
+              "from": "starting",
+              "event": "listen",
+              "to": "serving"
+            },
+            {
+              "from": "serving",
+              "event": "signal",
+              "to": "stopping"
+            },
+            {
+              "from": "stopping",
+              "event": "closed",
+              "to": "stopped"
+            }
+          ]
+        }
+      }
+    },
+    "externalSideEffects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "database",
+        "durableReceipt",
+        "http",
+        "p2",
+        "provider",
+        "runtime",
+        "workspace",
+        "artifact",
+        "credential",
+        "deployment",
+        "publication",
+        "gate"
+      ],
+      "properties": {
+        "database": {
+          "const": false
+        },
+        "durableReceipt": {
+          "const": false
+        },
+        "http": {
+          "const": false
+        },
+        "p2": {
+          "const": false
+        },
+        "provider": {
+          "const": false
+        },
+        "runtime": {
+          "const": false
+        },
+        "workspace": {
+          "const": false
+        },
+        "artifact": {
+          "const": false
+        },
+        "credential": {
+          "const": false
+        },
+        "deployment": {
+          "const": false
+        },
+        "publication": {
+          "const": false
+        },
+        "gate": {
+          "const": false
+        }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "auth",
+        "identity",
+        "health",
+        "completeLedger",
+        "entryWriter",
+        "recoveryWriter",
+        "databaseWrites",
+        "durablePersistence",
+        "provider",
+        "runtime",
+        "productionHTTP",
+        "publicHTTP",
+        "p2",
+        "deployment",
+        "publication",
+        "gateTransition"
+      ],
+      "properties": {
+        "transport": {
+          "const": "local_loopback_http_connect_only"
+        },
+        "auth": {
+          "const": "bearer_to_context_identity"
+        },
+        "identity": {
+          "const": "fixed_generated_spiffe_pair"
+        },
+        "health": {
+          "const": "read_only_process_local"
+        },
+        "completeLedger": {
+          "const": "no_op"
+        },
+        "entryWriter": {
+          "const": "not_implemented"
+        },
+        "recoveryWriter": {
+          "const": "not_implemented"
+        },
+        "databaseWrites": {
+          "const": "forbidden"
+        },
+        "durablePersistence": {
+          "const": "forbidden"
+        },
+        "provider": {
+          "const": "forbidden"
+        },
+        "runtime": {
+          "const": "forbidden"
+        },
+        "productionHTTP": {
+          "const": "forbidden"
+        },
+        "publicHTTP": {
+          "const": "forbidden"
+        },
+        "p2": {
+          "const": "forbidden"
+        },
+        "deployment": {
+          "const": "forbidden"
+        },
+        "publication": {
+          "const": "forbidden"
+        },
+        "gateTransition": {
+          "const": "forbidden"
+        }
+      }
+    },
+    "sourceDigest": {
+      "const": "sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699"
+    }
+  }
+}
