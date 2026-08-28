@@ -45,7 +45,7 @@ const OUTPUT_SCHEMA_ID =
 const REGISTRY_ID = "cloud-agents/platform/contract-closure-profile";
 const V2_OUTPUT_PATH = "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json";
 const RUNTIME_REVIEW_PATH =
-  "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md";
+  "docs/plan/standalone/managed-agent-worker-local-execution-independent-review-20260828.md";
 const SUPPLY_V1_REVIEW_PATH =
   "docs/plan/p1/g-contract-generator-supply-profile-independent-review-20260824.md";
 const FUTURE_SUPPLY_V2_PROFILE_PATH = "tools/generator-supply/v2/profile.json";
@@ -54,15 +54,15 @@ const FUTURE_SUPPLY_V2_REVIEW_PATH =
 const REQUIRED_VERDICT = "APPROVE_P0_0_P1_0_P2_0";
 
 export const CONTRACT_CLOSURE_V3_RUNTIME_GIT_LINEAGE = {
-  candidateCommit: "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e",
-  candidateTree: "2165fd70efd097e7e1decb109cee31e9f6af8ee5",
-  candidateParent: "9fe7338d3c424731e0b9946f5252e3f61d5326a9",
-  candidateDiffSha256: "d4e6e96595d9d1554356e30878ce4d57143efb579d5a369ebf97c085f3f67562",
-  reviewCommit: "fe59f0d4059632a102171d9c1eb77a4c147ae65e",
-  reviewTree: "7d6f7a65f36c89fadbe02e7e75e3b395bcca97f3",
-  reviewParent: "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e",
+  candidateCommit: "b79d01028c652d004e67a00fdcbdf204e04dc946",
+  candidateTree: "289c7c2ff7ab39b0af1ea0bac84a902d461de8dc",
+  candidateParent: "4ee0e847a7c8e6d0c7313f0f359acc7002ec9d97",
+  candidateDiffSha256: "e967207e24167e8461fbffbbc98df41103e06eacc508f1bc9baca289433b639c",
+  reviewCommit: "5abcdfc519c9053aa8e1437fa15e6e498e606e28",
+  reviewTree: "78be2254bdf2145c241560382addedb34b40ad09",
+  reviewParent: "b79d01028c652d004e67a00fdcbdf204e04dc946",
   reviewPath: RUNTIME_REVIEW_PATH,
-  reviewSha256: "d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2",
+  reviewSha256: "ad7ba17696cc405b5507212bc9a228360d4418bfd46e793eb51cf6fc71f6bd3f",
   verdict: REQUIRED_VERDICT,
 } as const;
 
@@ -109,20 +109,20 @@ export const CONTRACT_CLOSURE_V3_MISSING = ["remaining-generator-supply-chain-re
 export const CONTRACT_CLOSURE_V3_RUNTIME_FILES = [
   {
     path: "services/control-plane/go.mod",
-    sha256: "1664dce4a62ceca72a721690b80aa77d069372229b42aebade535c140499f4ad",
-    sizeBytes: 519,
+    sha256: "d27871e7d4d8788d455ac2a5b9d512b0b6628903fad05213a9e227c0f0883d3d",
+    sizeBytes: 672,
   },
   {
     path: "services/control-plane/go.sum",
-    sha256: "f85e74742ea1cbbe7622488afabfa567445f2ad45bf75173840d699ef275dc65",
-    sizeBytes: 2858,
+    sha256: "4b870f580591894010f0762c8d04b83cba95a5c09eabc4ffc2631e41290abfbc",
+    sizeBytes: 3634,
   },
 ] as const satisfies readonly ImmutableFileRecord[];
 
 export const CONTRACT_CLOSURE_V3_RUNTIME_REVIEW_FILE = {
   path: RUNTIME_REVIEW_PATH,
-  sha256: "d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2",
-  sizeBytes: 8125,
+  sha256: "ad7ba17696cc405b5507212bc9a228360d4418bfd46e793eb51cf6fc71f6bd3f",
+  sizeBytes: 5737,
 } as const satisfies ImmutableFileRecord;
 
 export type ContractClosureV3Review = JsonRecord & {

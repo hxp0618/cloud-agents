@@ -190,18 +190,18 @@ describe("contract closure profile v3 Slice A authority", () => {
     });
     expect(source.runtimeReviewedCandidate).toMatchObject({
       candidate: {
-        commit: "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e",
-        tree: "2165fd70efd097e7e1decb109cee31e9f6af8ee5",
-        parent: "9fe7338d3c424731e0b9946f5252e3f61d5326a9",
-        diffSha256: "sha256:d4e6e96595d9d1554356e30878ce4d57143efb579d5a369ebf97c085f3f67562",
+        commit: "b79d01028c652d004e67a00fdcbdf204e04dc946",
+        tree: "289c7c2ff7ab39b0af1ea0bac84a902d461de8dc",
+        parent: "4ee0e847a7c8e6d0c7313f0f359acc7002ec9d97",
+        diffSha256: "sha256:e967207e24167e8461fbffbbc98df41103e06eacc508f1bc9baca289433b639c",
       },
       review: {
-        path: "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md",
-        sha256: "sha256:d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2",
+        path: "docs/plan/standalone/managed-agent-worker-local-execution-independent-review-20260828.md",
+        sha256: "sha256:ad7ba17696cc405b5507212bc9a228360d4418bfd46e793eb51cf6fc71f6bd3f",
         verdict: "APPROVE_P0_0_P1_0_P2_0",
-        commit: "fe59f0d4059632a102171d9c1eb77a4c147ae65e",
-        tree: "7d6f7a65f36c89fadbe02e7e75e3b395bcca97f3",
-        parent: "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e",
+        commit: "5abcdfc519c9053aa8e1437fa15e6e498e606e28",
+        tree: "78be2254bdf2145c241560382addedb34b40ad09",
+        parent: "b79d01028c652d004e67a00fdcbdf204e04dc946",
       },
       implementationBoundary: {
         http: "NOT_IMPLEMENTED",

@@ -154,11 +154,11 @@
           "additionalProperties": false,
           "required": ["commit", "tree", "parent", "diffSha256"],
           "properties": {
-            "commit": { "const": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e" },
-            "tree": { "const": "2165fd70efd097e7e1decb109cee31e9f6af8ee5" },
-            "parent": { "const": "9fe7338d3c424731e0b9946f5252e3f61d5326a9" },
+            "commit": { "const": "b79d01028c652d004e67a00fdcbdf204e04dc946" },
+            "tree": { "const": "289c7c2ff7ab39b0af1ea0bac84a902d461de8dc" },
+            "parent": { "const": "4ee0e847a7c8e6d0c7313f0f359acc7002ec9d97" },
             "diffSha256": {
-              "const": "sha256:d4e6e96595d9d1554356e30878ce4d57143efb579d5a369ebf97c085f3f67562"
+              "const": "sha256:e967207e24167e8461fbffbbc98df41103e06eacc508f1bc9baca289433b639c"
             }
           }
         },
@@ -176,9 +176,9 @@
                   "properties": {
                     "path": { "const": "services/control-plane/go.mod" },
                     "sha256": {
-                      "const": "1664dce4a62ceca72a721690b80aa77d069372229b42aebade535c140499f4ad"
+                      "const": "d27871e7d4d8788d455ac2a5b9d512b0b6628903fad05213a9e227c0f0883d3d"
                     },
-                    "sizeBytes": { "const": 519 }
+                    "sizeBytes": { "const": 672 }
                   }
                 }
               ]
@@ -192,9 +192,9 @@
                   "properties": {
                     "path": { "const": "services/control-plane/go.sum" },
                     "sha256": {
-                      "const": "f85e74742ea1cbbe7622488afabfa567445f2ad45bf75173840d699ef275dc65"
+                      "const": "4b870f580591894010f0762c8d04b83cba95a5c09eabc4ffc2631e41290abfbc"
                     },
-                    "sizeBytes": { "const": 2858 }
+                    "sizeBytes": { "const": 3634 }
                   }
                 }
               ]
@@ -210,15 +210,15 @@
               "required": ["commit", "tree", "parent"],
               "properties": {
                 "path": {
-                  "const": "docs/plan/p1/g-contract-runtime-current-lineage-integration-independent-review-20260824.md"
+                  "const": "docs/plan/standalone/managed-agent-worker-local-execution-independent-review-20260828.md"
                 },
                 "sha256": {
-                  "const": "sha256:d75212ba6880f91b33fa52f20011e79af962cdb99cc29a27313685211f204ad2"
+                  "const": "sha256:ad7ba17696cc405b5507212bc9a228360d4418bfd46e793eb51cf6fc71f6bd3f"
                 },
                 "verdict": {},
-                "commit": { "const": "fe59f0d4059632a102171d9c1eb77a4c147ae65e" },
-                "tree": { "const": "7d6f7a65f36c89fadbe02e7e75e3b395bcca97f3" },
-                "parent": { "const": "b3eda9e7cc97225c1e2256ee27e0c07c8dbd462e" }
+                "commit": { "const": "5abcdfc519c9053aa8e1437fa15e6e498e606e28" },
+                "tree": { "const": "78be2254bdf2145c241560382addedb34b40ad09" },
+                "parent": { "const": "b79d01028c652d004e67a00fdcbdf204e04dc946" }
               }
             }
           ]

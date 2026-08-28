@@ -33,7 +33,7 @@ const FORMAT_V2 = "cloud-agents-contract-standards-profile/v2";
 const FORMAT_V3 = "cloud-agents-contract-standards-profile/v3";
 const CORPUS_ALGORITHM = "sorted-path-nul-sha256-nul-size-v1";
 const CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256 =
-  "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37";
+  "sha256:634d4c8da4b2f861a1db6911a052c8c4a4cea9a9ae90bafd4015cc908353f419";
 const EXPECTED_OPENAPI_DOCUMENTS = [
   "contracts/managed-agent/v1alpha1/openapi.json",
   "contracts/managed-host/v1alpha1/openapi.json",
