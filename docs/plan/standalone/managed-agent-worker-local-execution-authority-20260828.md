@@ -24,29 +24,38 @@ source、strict schema、profile 和 Go profile 均由以下生成器产生；�
 
 当前生成 digest（JSON logical digest；文件 raw SHA 由审查记录另行绑定）：
 
-- source：`sha256:b7adb9138386f0ab46ba4511a2552dbb467a8ee6329e50d5c62bf9bee259cf30`
-- profile：`sha256:201d9a70baaa5aeeb885244cecfd19b09f4e9fb39a79658cba220550414da782`
+- source：`sha256:d9c42d2a98d15fb17632bf7a873465ea18db96871ec085d8f700e90f5e7ac82c`
+- profile：`sha256:59a1241a845cdc94cf1aa2776985ceb7179adf4a749a1930cbc7a581337f2304`
+- input manifest：`sha256:b2e9fcda623534bdaaaba1b19f343b801a7b5864900b7891254f34423f3b8c76`
 
 ## 2. 完整输入集合与排除集合
 
-输入集合是下列 32 个路径的完整、去重、UTF-8 bytewise 排序列表。生成器只接受 regular
+输入集合是下列 42 个路径的完整、去重、UTF-8 bytewise 排序列表。生成器只接受 regular
 file；不会扫描、追踪、解析或隐式加入其它路径。输入集合的内容绑定算法为
 `utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1`（path、mode、size、
 raw SHA-256 以 NUL 分隔后按路径排序）。
 
 ```text
+.mise.toml
+bun.lock
+bunfig.toml
 contracts/worker/v1alpha1/README.md
 contracts/worker/v1alpha1/kernel.proto
 contracts/worker/v1alpha1/worker_supervisor.proto
 go.work
+package.json
 scripts/generate-managed-agent-local-execution-profile.ts
 scripts/lib/managed-agent-local-execution-profile.test.ts
 scripts/lib/managed-agent-local-execution-profile.ts
+scripts/lib/platform-json-semantics.ts
 sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go
 sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go
 sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go
 sdk/go/gen/common/v1alpha1/identity_generated.go
+sdk/go/go.mod
+sdk/go/go.sum
 services/control-plane/go.mod
+services/control-plane/go.sum
 services/control-plane/internal/managedagent/events.go
 services/control-plane/internal/managedagent/lifecycle.go
 services/control-plane/internal/managedagent/local_execution.go
@@ -67,6 +76,7 @@ services/worker/supervisor/dispatch-profile/v1/profile.json
 services/worker/supervisor/dispatch_profile_generated.go
 services/worker/supervisor/local_dispatch.go
 services/worker/supervisor/local_dispatch_test.go
+tsconfig.base.json
 ```
 
 排除集合是下列 13 个 exact path/root；root 按递归 deny 解释。它们以及未列入输入集合的
@@ -89,7 +99,10 @@ services/worker/cmd
 tools/g-contract-external-consumer
 ```
 
-上述集合不改变、替换或重算 D-053-MIG-000014.r2、D-053-EC-2.r3 或其任何 source/profile/
+`inputManifestDigest` 为 `sha256:b2e9fcda623534bdaaaba1b19f343b801a7b5864900b7891254f34423f3b8c76`；它按上述
+算法对每个输入的 path、Git mode、byte size 与 raw SHA-256 做 NUL 分隔聚合。任何输入内容、mode、
+size 或锁文件变化都会使 authority/profile 生成检查失败。上述集合不改变、替换或重算
+D-053-MIG-000014.r2、D-053-EC-2.r3 或其任何 source/profile/
 schema/manifest/SQL/catalog/archive/review bytes。
 
 ## 3. Archive 与 member-manifest 算法
@@ -116,6 +129,11 @@ network、database、provider 均为 `deny`，超时策略为 `focused-tests-onl
 coordinator 只接受 profile ID `cloud-agents/worker-supervisor-operation-dispatch/localdev-v1alpha1`
 及其当前 generated digest。caller-selected profile、generic Supervisor、foreign path、
 foreign transport、隐式 negotiation 和 fallback 均 `forbidden`。
+
+作用域投影固定为 `sha256-length-prefixed-tenant-project-v1`：以版本域分隔符、tenant UTF-8
+字节长度+字节、project UTF-8 字节长度+字节组成 canonical frame，取 SHA-256，并以
+`scope-<64 lowercase hex>` 作为 Worker `NamespaceRef.id`。因此含 `~` 的合法生命周期 ID 仍保持
+单射，不依赖下游 idempotency 冲突来隔离租户。
 
 允许的 command 只有 `Probe`、`ValidateBinding`；extension payload、Codex/Claude provider
 调用和任意外部执行均拒绝。fencing lease/generation/token 在 coordinator constructor 内
