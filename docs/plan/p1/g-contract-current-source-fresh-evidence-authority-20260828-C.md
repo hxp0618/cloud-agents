@@ -30,13 +30,26 @@ fixed clean baseline (before this candidate's targeted reset):
 No source/schema/profile/manifest/SQL/catalog/archive/review byte outside the
 declared late-bound set may change in this candidate.
 
-## Exact reset set and fixed successor lock
+## Exact reset set and historical predecessor lock
 
 The reset performs explicit `git rm` on exactly the following ordered paths;
-the lock is then restored byte-for-byte from fixed post-H v2 blob
+the lock is then restored byte-for-byte from the fixed post-H v2 predecessor
 `39ee20e035d8770340d46a8663633c6519830de1` (SHA-256
 `sha256:de62a85390e58736a5fef8272878b821415b4180948437e54edb8628e005ff53`,
 17,377 bytes):
+
+This restored v2 lock is a historical, immutable predecessor anchor only. Its
+v2 `sourceContract` and `generatorSupply` references are not the C selector,
+do not authorize reading or writing any v2/v3 profile, and must not be treated
+as current replay evidence. The C selector is the exact current parent/tree,
+source/schema bindings, and the EXACT17 reset list below; a future C/D lock may
+be assembled only in its separately authorized late-bound step.
+
+Because the authority record is itself part of the reset child, it cannot
+embed that child's final self-referential commit/tree. The fixed projection
+candidate is therefore the single-parent child produced after the reset, and
+the independent review must record and verify its exact commit, parent, tree,
+and parent-to-candidate path diff before accepting the projection receipt.
 
 1. `contracts/generation.lock.json`
 2. `tools/generator-supply/v3/evidence-manifest.json`
