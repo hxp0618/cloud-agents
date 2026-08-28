@@ -86,13 +86,21 @@ func (s *Supervisor) BindLocalDispatch(ctx context.Context) (BindingSnapshot, er
 	return s.bindWithProfile(ctx, operationAdmissionCapabilities(), LocalDispatchProfileID)
 }
 
-// DispatchOperation validates the exact local binding and delegates to the
-// opaque Worker handle. The operation and receipt remain process-local and
-// bounded by the Worker kernel; this method does not open a listener, write a
-// database, invoke a provider, or create a durable receipt.
+// DispatchOperation validates the exact binding and dispatches through either
+// the explicit local handle or the authenticated remote Worker client. The
+// operation and receipt remain bounded by the Worker contract.
 func (s *Supervisor) DispatchOperation(ctx context.Context, req *workerv1alpha1.OperationAttemptEnvelope) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
+	}
+	if !s.localDispatchEnabled() {
+		if isLocalDispatchClient(s) {
+			return nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented")
+		}
+		if !s.bindingPresent() {
+			return nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented")
+		}
+		return s.dispatchRemoteOperation(ctx, req)
 	}
 	live, state, err := s.localDispatchBinding()
 	if err != nil {
@@ -142,7 +150,13 @@ func (s *Supervisor) GetOperationReceipt(ctx context.Context, req *workerv1alpha
 		return nil, err
 	}
 	if !s.localDispatchEnabled() {
-		return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented")
+		if isLocalDispatchClient(s) {
+			return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented")
+		}
+		if !s.bindingPresent() {
+			return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented")
+		}
+		return s.getRemoteOperationReceipt(ctx, req)
 	}
 	live, state, err := s.localDispatchBinding()
 	if err != nil {
@@ -175,6 +189,27 @@ func (s *Supervisor) GetOperationReceipt(ctx context.Context, req *workerv1alpha
 		return nil, err
 	}
 	return detachedReceiptResponse(response), nil
+}
+
+func isLocalDispatchClient(s *Supervisor) bool {
+	if s == nil {
+		return false
+	}
+	switch s.client.(type) {
+	case workerkernel.LocalDispatchHandle, *workerkernel.LocalDispatchHandle:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Supervisor) bindingPresent() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.binding != nil
 }
 
 // localDispatchBinding returns both the live pointer and its detached view.

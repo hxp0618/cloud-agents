@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -22,6 +23,8 @@ import (
 type fakeWorkerClient struct {
 	negotiateFn func(context.Context, *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error)
 	healthFn    func(context.Context, *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error)
+	executeFn   func(context.Context, *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error)
+	receiptFn   func(context.Context, *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error)
 
 	negotiateCalls int
 	healthCalls    int
@@ -47,14 +50,78 @@ func (fake *fakeWorkerClient) CheckHealth(ctx context.Context, request *connect.
 	return nil, errors.New("fake health not configured")
 }
 
-func (fake *fakeWorkerClient) ExecuteOperation(context.Context, *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+func (fake *fakeWorkerClient) ExecuteOperation(ctx context.Context, request *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
 	fake.executeCalls++
+	if fake.executeFn != nil {
+		return fake.executeFn(ctx, request)
+	}
 	return nil, errors.New("execute must not be called")
 }
 
-func (fake *fakeWorkerClient) GetOperationReceipt(context.Context, *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+func (fake *fakeWorkerClient) GetOperationReceipt(ctx context.Context, request *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
 	fake.receiptCalls++
+	if fake.receiptFn != nil {
+		return fake.receiptFn(ctx, request)
+	}
 	return nil, errors.New("receipt must not be called")
+}
+
+func TestRemoteOperationDispatchUsesThePublicSupervisorMethods(t *testing.T) {
+	fixture := newLocalDispatchFixture(t, true)
+	fake := &fakeWorkerClient{}
+	fake.negotiateFn = func(_ context.Context, _ *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
+		response := validNegotiationResponse(fixture.workerIdentity, fixture.now.Add(time.Minute), "remote-operation")
+		response.Msg.AcceptedCapabilities = operationAdmissionCapabilities()
+		response.Msg.Server = descriptorWithCapabilities(operationAdmissionCapabilities())
+		return response, nil
+	}
+	var received *workerv1alpha1.OperationAttemptEnvelope
+	tokenDigest := sha256.Sum256(fixture.token)
+	receipt := &workerv1alpha1.DurableReceipt{
+		ReceiptId: "remote-receipt", OperationId: fixture.attempt.GetOperation().GetOperationId(),
+		AttemptId: fixture.attempt.GetAttemptId(), IdempotencyKey: fixture.attempt.GetOperation().GetIdempotencyKey(), Sequence: 1,
+		Fencing: &workerv1alpha1.FencingStamp{LeaseId: "lease-local", Generation: 7, TokenSha256: tokenDigest[:]},
+		Outcome: workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_SUCCEEDED, ObservedAt: timestamppb.New(fixture.now),
+	}
+	fake.executeFn = func(_ context.Context, request *connect.Request[workerv1alpha1.OperationAttemptEnvelope]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+		received = proto.Clone(request.Msg).(*workerv1alpha1.OperationAttemptEnvelope)
+		return connect.NewResponse(proto.Clone(receipt).(*workerv1alpha1.DurableReceipt)), nil
+	}
+	fake.receiptFn = func(_ context.Context, request *connect.Request[workerv1alpha1.ReceiptRequest]) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+		if request.Msg.GetReceiptId() != receipt.GetReceiptId() {
+			t.Fatalf("receipt request = %v", request.Msg)
+		}
+		return connect.NewResponse(proto.Clone(receipt).(*workerv1alpha1.DurableReceipt)), nil
+	}
+	supervisor, err := New(Config{Client: fake, ExpectedWorkerIdentity: fixture.workerIdentity, Clock: func() time.Time { return fixture.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := supervisor.BindOperationAdmission(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := proto.Clone(fixture.attempt).(*workerv1alpha1.OperationAttemptEnvelope)
+	attempt.Negotiation = binding.Negotiation()
+	response, err := supervisor.DispatchOperation(context.Background(), attempt)
+	if err != nil || response == nil || response.Msg.GetReceiptId() != receipt.GetReceiptId() {
+		t.Fatalf("remote dispatch = %v / %v", response, err)
+	}
+	if fake.executeCalls != 1 || received == nil || received.GetNegotiation().GetNegotiationId() != binding.NegotiationID {
+		t.Fatalf("remote execute calls=%d request=%v", fake.executeCalls, received)
+	}
+	receiptRequest := &workerv1alpha1.ReceiptRequest{
+		OperationId: attempt.GetOperation().GetOperationId(), ReceiptId: receipt.GetReceiptId(),
+		Fencing:                proto.Clone(attempt.GetOperation().GetFencing()).(*workerv1alpha1.FencingProof),
+		ExpectedServerIdentity: proto.Clone(fixture.workerIdentity).(*workerv1alpha1.WorkloadIdentity),
+		Negotiation:            binding.Negotiation(), RequiredCapability: workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+	}
+	if _, err := supervisor.GetOperationReceipt(context.Background(), receiptRequest); err != nil {
+		t.Fatal(err)
+	}
+	if fake.receiptCalls != 1 {
+		t.Fatalf("remote receipt calls = %d", fake.receiptCalls)
+	}
 }
 
 func TestNewRejectsInvalidConfig(t *testing.T) {
