@@ -384,6 +384,10 @@ func validateCommand(command Command) error {
 	}
 }
 
+// ValidateCommand applies the same closed Runtime command vocabulary used by
+// the process client. It is also used by the Supervisor transport wrapper.
+func ValidateCommand(command Command) error { return validateCommand(command) }
+
 func validateMessage(message Message) error {
 	if message.Protocol.Major != ProtocolMajor || message.Protocol.Minor > ProtocolMinor ||
 		message.RequestID == "" || message.ExecutionID == "" || message.CommandID == "" ||
@@ -398,6 +402,10 @@ func validateMessage(message Message) error {
 	}
 	return nil
 }
+
+// ValidateMessage applies the Runtime message envelope checks at a transport
+// boundary before a message is exposed to a caller.
+func ValidateMessage(message Message) error { return validateMessage(message) }
 
 func messageError(message Message) error {
 	if message.MessageType != "Error" || message.Error == nil {

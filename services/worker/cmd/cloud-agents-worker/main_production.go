@@ -34,11 +34,14 @@ const (
 )
 
 type productionWorkerConfig struct {
-	listen       string
-	tlsCertFile  string
-	tlsKeyFile   string
-	clientCAFile string
-	workerSPIFFE string
+	listen              string
+	tlsCertFile         string
+	tlsKeyFile          string
+	clientCAFile        string
+	workerSPIFFE        string
+	runtimeCommand      string
+	admissionLeaseID    string
+	admissionGeneration uint64
 }
 
 func parseProductionWorkerConfig(args []string) (productionWorkerConfig, error) {
@@ -49,10 +52,13 @@ func parseProductionWorkerConfig(args []string) (productionWorkerConfig, error) 
 	tlsKey := set.String("tls-key", "", "server private key PEM file")
 	clientCA := set.String("client-ca", "", "client CA certificate PEM file")
 	workerSPIFFE := set.String("worker-spiffe-id", "", "worker SPIFFE identity")
+	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
+	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
+	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return productionWorkerConfig{}, errInvalidProductionWorkerConfig
 	}
-	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE}
+	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration}
 	if err := validateProductionWorkerConfig(cfg); err != nil {
 		return productionWorkerConfig{}, err
 	}
@@ -60,10 +66,10 @@ func parseProductionWorkerConfig(args []string) (productionWorkerConfig, error) 
 }
 
 func validateProductionWorkerConfig(cfg productionWorkerConfig) error {
-	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" {
+	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 {
 		return errInvalidProductionWorkerConfig
 	}
-	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile {
+	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
 		return errInvalidProductionWorkerConfig
 	}
 	if _, err := productionIdentity(cfg.workerSPIFFE); err != nil {
@@ -129,15 +135,20 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		return err
 	}
 	service, err := workerkernel.NewService(workerkernel.Config{
-		WorkerIdentity:   identity,
-		IdentityProvider: workerkernel.TLSIdentityProvider{},
+		WorkerIdentity:      identity,
+		IdentityProvider:    workerkernel.TLSIdentityProvider{},
+		RuntimeCommand:      []string{cfg.runtimeCommand},
+		AdmissionLeaseID:    cfg.admissionLeaseID,
+		AdmissionGeneration: cfg.admissionGeneration,
 	})
 	if err != nil {
 		return errInvalidProductionWorkerConfig
 	}
 	connectPath, connectHandler := workerkernel.NewHandler(service)
+	runtimePath, runtimeHandler := workerkernel.NewRuntimeHandler(service)
 	mux := http.NewServeMux()
 	mux.Handle(connectPath, connectHandler)
+	mux.Handle(runtimePath, runtimeHandler)
 	server := &http.Server{
 		Addr:              cfg.listen,
 		Handler:           workerkernel.NewTLSHandler(mux),

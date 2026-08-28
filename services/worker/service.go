@@ -67,6 +67,11 @@ type Config struct {
 	WorkerIdentity *workerv1alpha1.WorkloadIdentity
 	Capabilities   []workerv1alpha1.Capability
 	NegotiationTTL time.Duration
+	// RuntimeCommand starts one independent Runtime process per opened
+	// Supervisor session. An empty command leaves the Runtime route disabled.
+	RuntimeCommand     []string
+	RuntimeEnvironment []string
+	RuntimeDirectory   string
 	// AdmissionLeaseID and AdmissionGeneration bind the local, in-memory
 	// operation-admission seam to one externally supplied fencing authority.
 	// They do not authorize dispatch, durable receipts, or any external write.
@@ -96,6 +101,9 @@ type Service struct {
 	bindings            map[string]binding
 	admissionLeaseID    string
 	admissionGeneration uint64
+	runtimeCommand      []string
+	runtimeEnvironment  []string
+	runtimeDirectory    string
 	admissions          map[string]admissionRecord
 	executor            OperationExecutor
 	receipts            map[string]receiptRecord
@@ -151,6 +159,7 @@ func NewService(cfg Config) (*Service, error) {
 	return &Service{workerIdentity: cloneIdentity(cfg.WorkerIdentity), capabilities: set, ttl: cfg.NegotiationTTL,
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
+		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory,
 		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
 		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil
 }

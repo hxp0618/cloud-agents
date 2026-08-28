@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: MIT
+//
+// Runtime transport authority for the independent Cloud Agents product.
+// The JSON bytes carry the Runtime Protocol 2.3 envelope; this contract
+// carries only the authenticated Worker session and its fencing boundary.
+syntax = "proto3";
+
+package cloudagents.worker.runtime.v1alpha1;
+
+import "contracts/worker/v1alpha1/kernel.proto";
+
+option go_package = "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1;workerruntimev1alpha1";
+
+message RuntimeSessionOpen {
+  cloudagents.worker.v1alpha1.NegotiationBinding negotiation = 1;
+  cloudagents.worker.v1alpha1.FencingProof fencing = 2;
+  string execution_id = 3;
+  uint64 generation = 4;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_worker_identity = 5;
+}
+
+message RuntimeCommandFrame {
+  // One complete Runtime Protocol 2.3 command JSON object, without the
+  // trailing JSONL newline. The Worker enforces the Runtime byte ceiling.
+  bytes json = 1;
+}
+
+message RuntimeSessionRequest {
+  oneof frame {
+    RuntimeSessionOpen open = 1;
+    RuntimeCommandFrame command = 2;
+  }
+}
+
+message RuntimeSessionReady {
+  string execution_id = 1;
+  uint64 generation = 2;
+  uint32 protocol_major = 3;
+  uint32 protocol_minor = 4;
+}
+
+message RuntimeSessionError {
+  string code = 1;
+  string message = 2;
+}
+
+message RuntimeSessionResponse {
+  oneof frame {
+    RuntimeSessionReady ready = 1;
+    bytes json = 2;
+    RuntimeSessionError error = 3;
+  }
+}
+
+service WorkerRuntimeService {
+  // The first request MUST be open. Commands and Runtime messages then use
+  // the Runtime Protocol 2.3 JSON envelope without a duplicate protobuf DTO.
+  rpc OpenSession(stream RuntimeSessionRequest) returns (stream RuntimeSessionResponse);
+}

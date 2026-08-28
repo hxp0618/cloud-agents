@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
@@ -48,6 +49,7 @@ type Clock func() time.Time
 // profiles in code; callers cannot supply arbitrary capabilities.
 type Config struct {
 	Client                 workerv1alpha1connect.WorkerExecutionServiceClient
+	RuntimeClient          workerruntimev1alpha1connect.WorkerRuntimeServiceClient
 	ExpectedWorkerIdentity *workerv1alpha1.WorkloadIdentity
 	Clock                  Clock
 }
@@ -57,6 +59,7 @@ type Config struct {
 // negotiation has passed every validation.
 type Supervisor struct {
 	client         workerv1alpha1connect.WorkerExecutionServiceClient
+	runtimeClient  workerruntimev1alpha1connect.WorkerRuntimeServiceClient
 	workerIdentity *workerv1alpha1.WorkloadIdentity
 	now            Clock
 
@@ -117,6 +120,7 @@ func New(config Config) (*Supervisor, error) {
 	}
 	return &Supervisor{
 		client:         config.Client,
+		runtimeClient:  config.RuntimeClient,
 		workerIdentity: cloneIdentity(config.ExpectedWorkerIdentity),
 		now:            config.Clock,
 	}, nil
