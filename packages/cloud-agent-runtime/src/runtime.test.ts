@@ -40,6 +40,16 @@ function provider(providerKind: string): CloudAgentProviderPluginV1 {
 }
 
 describe("createCloudAgentRuntime", () => {
+  it("rejects an invalid provider registry before iterating it", () => {
+    expect(() => createCloudAgentRuntime(undefined as never)).toThrow(/registry must be an array/u);
+  });
+
+  it("rejects a malformed provider plugin before reading its identity", () => {
+    expect(() => createCloudAgentRuntime({ providers: [null as never] })).toThrow(
+      /plugin must expose describe and createSession/u,
+    );
+  });
+
   it("registers providers explicitly and deterministically", () => {
     const runtime = createCloudAgentRuntime({ providers: [provider("codex"), provider("claude")] });
     expect(runtime.providerKinds).toEqual(["claude", "codex"]);

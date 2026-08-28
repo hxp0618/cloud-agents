@@ -32,8 +32,13 @@ export interface CloudAgentRuntimeV1 {
 export function createCloudAgentRuntime(input: {
   readonly providers: ReadonlyArray<CloudAgentProviderPluginV1>;
 }): CloudAgentRuntimeV1 {
+  if (!isRecord(input) || !Array.isArray(input.providers)) {
+    throw new Error("Cloud Agent Provider registry must be an array.");
+  }
   const providers = new Map<string, CloudAgentProviderPluginV1>();
-  for (const provider of input.providers) {
+  for (const candidate of input.providers) {
+    assertProviderPlugin(candidate);
+    const provider = candidate;
     if (provider.abiVersion !== CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION) {
       throw new Error(
         `Provider ${provider.providerKind} uses unsupported ABI ${provider.abiVersion}.`,
@@ -137,6 +142,16 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function assertProviderPlugin(value: unknown): asserts value is CloudAgentProviderPluginV1 {
+  if (
+    !isRecord(value) ||
+    typeof value.describe !== "function" ||
+    typeof value.createSession !== "function"
+  ) {
+    throw new Error("Cloud Agent Provider plugin must expose describe and createSession methods.");
+  }
 }
 
 function providerFor(
