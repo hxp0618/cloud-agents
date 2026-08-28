@@ -50,7 +50,7 @@ func (service *DurableCoordinationService) GetProject(
 		if err != nil {
 			return mapVerifiedCoordinationAuthorizationError(err)
 		}
-		return service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
 			handle, ok := capability.(*tenantReadHandle)
 			if !ok {
 				return ErrTenantCapabilityClosed
@@ -66,6 +66,7 @@ func (service *DurableCoordinationService) GetProject(
 				return err
 			})
 		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, err
 }
