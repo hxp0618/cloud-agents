@@ -11,5 +11,3 @@ require (
 )
 
 require golang.org/x/text v0.39.0 // indirect
-
-replace github.com/hxp0618/cloud-agents/sdk/go => ../../sdk/go

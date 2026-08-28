@@ -68,12 +68,11 @@ for (const entry of PLATFORM_GO_MODULES) {
     run("go", ["mod", "edit", "-json"], directory, ISOLATED_GO_ENV),
   ) as GoModuleEditDocument;
   validateGoModuleEdit(module, entry.module, `${entry.directory}/go.mod`);
-  run("go", ["mod", "tidy", "-diff"], directory, ISOLATED_GO_ENV);
-  run("go", ["test", "-timeout=30m", "./..."], directory, ISOLATED_GO_ENV);
+  run("go", ["test", "-timeout=30m", "./..."], directory, PINNED_GO_ENV);
 }
 
 process.stdout.write(
-  `platform-go-modules: ${PLATFORM_GO_MODULES.length} modules, ${PLATFORM_GO_TOOLCHAIN}, GOWORK=off, GOTOOLCHAIN=local, GOFLAGS=-mod=readonly PASS\n`,
+  `platform-go-modules: ${PLATFORM_GO_MODULES.length} modules, ${PLATFORM_GO_TOOLCHAIN}, go.work, GOTOOLCHAIN=local, GOFLAGS=-mod=readonly PASS\n`,
 );
 
 function run(

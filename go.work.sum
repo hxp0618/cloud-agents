@@ -1,0 +1,2 @@
+github.com/hxp0618/cloud-agents/sdk/go v0.0.0-20260823210219-5599f9d20e76/go.mod h1:qLQE6Q2bV2hZM0c7CZDZUx78EuODm+Vzl90AII5zYJs=
+github.com/hxp0618/cloud-agents/services/worker v0.0.0-20260828032125-0946cd51a5ac/go.mod h1:WdIfBm6yNOJ4XsZuN9X0Sylm9CjOw9P/um6QvtwAZBQ=
