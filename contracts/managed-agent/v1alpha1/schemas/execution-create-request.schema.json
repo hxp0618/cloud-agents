@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/execution-create-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["turnId", "executionId", "inputText"],
+  "properties": {
+    "turnId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "executionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "inputText": { "type": "string", "minLength": 1, "maxLength": 1048576 }
+  }
+}

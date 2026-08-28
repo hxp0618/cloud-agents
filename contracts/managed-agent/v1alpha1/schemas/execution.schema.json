@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/execution.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "managed-agent.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "Execution" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "projectId", "sessionId", "turnId", "resourceVersion", "createdAt", "updatedAt"],
+      "properties": {
+        "uid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "sessionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "turnId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "resourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "state"],
+      "properties": {
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "state": { "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+        "resultDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "errorCode": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" }
+      }
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requestId", "protocolVersion", "executionId", "generation", "commandId", "occurredAt", "messageType"],
+        "properties": {
+          "requestId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+          "protocolVersion": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["major", "minor"],
+            "properties": {
+              "major": { "const": 2 },
+              "minor": { "type": "integer", "minimum": 0, "maximum": 3 }
+            }
+          },
+          "executionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+          "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+          "commandId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "messageType": { "enum": ["Error", "Event", "InteractionRequest", "ArtifactCandidate", "Checkpoint", "Result", "Progress"] },
+          "payload": { "type": ["object"], "additionalProperties": true, "description": "Runtime-defined JSON object payload." },
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message", "retryable", "requiresNewExecution", "requiresUserAction", "canReconstructFromHistory", "canMoveWorker"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "message": { "type": "string", "maxLength": 4096 },
+              "retryable": { "type": "boolean" },
+              "requiresNewExecution": { "type": "boolean" },
+              "requiresUserAction": { "type": "boolean" },
+              "canReconstructFromHistory": { "type": "boolean" },
+              "canMoveWorker": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

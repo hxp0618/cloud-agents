@@ -42,6 +42,7 @@ type RoleResult = common.ResponseEnvelope[platform.Role]
 type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentTurnResult = common.ResponseEnvelope[ManagedAgentTurn]
+type ManagedAgentExecutionResult = common.ResponseEnvelope[ManagedAgentExecution]
 
 type ManagedAgentSession struct {
 	APIVersion string `json:"apiVersion"`
@@ -86,6 +87,58 @@ type ManagedAgentTurnSpec struct {
 type ManagedAgentTurnCreateRequest struct {
 	TurnID    string `json:"turnId"`
 	InputText string `json:"inputText"`
+}
+type ManagedAgentExecutionCreateRequest struct {
+	TurnID      string `json:"turnId"`
+	ExecutionID string `json:"executionId"`
+	Model       string `json:"model,omitempty"`
+	InputText   string `json:"inputText"`
+}
+type ManagedAgentExecution struct {
+	APIVersion string                            `json:"apiVersion"`
+	Kind       string                            `json:"kind"`
+	Metadata   ManagedAgentExecutionMetadata     `json:"metadata"`
+	Spec       ManagedAgentExecutionSpec         `json:"spec"`
+	Messages   []ManagedAgentExecutionMessage    `json:"messages,omitempty"`
+}
+type ManagedAgentExecutionMetadata struct {
+	UID             string `json:"uid"`
+	ProjectID       string `json:"projectId"`
+	SessionID       string `json:"sessionId"`
+	TurnID          string `json:"turnId"`
+	ResourceVersion string `json:"resourceVersion"`
+	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt"`
+}
+type ManagedAgentExecutionSpec struct {
+	Generation   uint64 `json:"generation"`
+	State        string `json:"state"`
+	ResultDigest string `json:"resultDigest,omitempty"`
+	ErrorCode    string `json:"errorCode,omitempty"`
+}
+type ManagedAgentExecutionProtocol struct {
+	Major uint32 `json:"major"`
+	Minor uint32 `json:"minor"`
+}
+type ManagedAgentExecutionError struct {
+	Code                      string `json:"code"`
+	Message                   string `json:"message"`
+	Retryable                 bool   `json:"retryable"`
+	RequiresNewExecution      bool   `json:"requiresNewExecution"`
+	RequiresUserAction        bool   `json:"requiresUserAction"`
+	CanReconstructFromHistory bool   `json:"canReconstructFromHistory"`
+	CanMoveWorker             bool   `json:"canMoveWorker"`
+}
+type ManagedAgentExecutionMessage struct {
+	RequestID   string                         `json:"requestId"`
+	Protocol    ManagedAgentExecutionProtocol  `json:"protocolVersion"`
+	ExecutionID string                         `json:"executionId"`
+	Generation  uint64                         `json:"generation"`
+	CommandID   string                         `json:"commandId"`
+	OccurredAt  string                         `json:"occurredAt"`
+	MessageType string                         `json:"messageType"`
+	Payload     map[string]any                 `json:"payload,omitempty"`
+	Error       *ManagedAgentExecutionError    `json:"error,omitempty"`
 }
 
 func (client *Client) GetPlatformTenant(ctx context.Context, tenantID, requestID string) (TenantResult, error) {
@@ -175,6 +228,26 @@ func (client *Client) GetManagedAgentTurn(ctx context.Context, tenantID, project
 	if value.Value.Metadata.ProjectID != projectID || value.Value.Metadata.SessionID != sessionID || value.Value.Metadata.UID != turnID { return ManagedAgentTurnResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata") }
 	return value, nil
 }
+func (client *Client) ExecuteManagedAgent(ctx context.Context, tenantID, projectID, sessionID, requestID, idempotencyKey string, body ManagedAgentExecutionCreateRequest) (ManagedAgentExecutionResult, error) {
+	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, body.TurnID, body.ExecutionID); err != nil { return ManagedAgentExecutionResult{}, err }
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil { return ManagedAgentExecutionResult{}, err }
+	bodyBytes, err := encodeManagedAgentExecutionCreateRequest(body); if err != nil { return ManagedAgentExecutionResult{}, err }
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/"+tenantID+"/projects/"+projectID+"/sessions/"+sessionID+"/executions", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes}); if err != nil { return ManagedAgentExecutionResult{}, err }
+	if response.Status != 200 { return ManagedAgentExecutionResult{}, client.problemError("managedAgentExecute", response) }
+	value, err := DecodeManagedAgentExecutionResponseJSON(response.Body); if err != nil { return ManagedAgentExecutionResult{}, &ClientError{Operation: "managedAgentExecute", Status: response.Status, Cause: err} }
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil { return ManagedAgentExecutionResult{}, err }
+	if value.Value.Metadata.ProjectID != projectID || value.Value.Metadata.SessionID != sessionID || value.Value.Metadata.TurnID != body.TurnID || value.Value.Metadata.UID != body.ExecutionID { return ManagedAgentExecutionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata") }
+	return value, nil
+}
+func (client *Client) GetManagedAgentExecution(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID string) (ManagedAgentExecutionResult, error) {
+	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil { return ManagedAgentExecutionResult{}, err }
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/"+tenantID+"/projects/"+projectID+"/sessions/"+sessionID+"/turns/"+turnID+"/executions/"+executionID, Headers: map[string]string{HeaderRequestID: requestID}}); if err != nil { return ManagedAgentExecutionResult{}, err }
+	if response.Status != 200 { return ManagedAgentExecutionResult{}, client.problemError("managedAgentGetExecution", response) }
+	value, err := DecodeManagedAgentExecutionResponseJSON(response.Body); if err != nil { return ManagedAgentExecutionResult{}, &ClientError{Operation: "managedAgentGetExecution", Status: response.Status, Cause: err} }
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil { return ManagedAgentExecutionResult{}, err }
+	if value.Value.Metadata.ProjectID != projectID || value.Value.Metadata.SessionID != sessionID || value.Value.Metadata.TurnID != turnID || value.Value.Metadata.UID != executionID { return ManagedAgentExecutionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata") }
+	return value, nil
+}
 
 var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -190,8 +263,20 @@ var managedAgentTurnResponseShape = common.ObjectResponseShape(map[string]common
 })
 func DecodeManagedAgentTurnResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentTurn], error) { raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentTurnResponseShape); if err != nil { return common.ResponseEnvelope[ManagedAgentTurn]{}, err }; value, err := decodeManagedAgentTurn(raw); if err != nil { return common.ResponseEnvelope[ManagedAgentTurn]{}, err }; return common.ResponseEnvelope[ManagedAgentTurn]{Value: value, Unknown: sidecar}, nil }
 func EncodeManagedAgentTurnResponseJSON(value common.ResponseEnvelope[ManagedAgentTurn]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
+var managedAgentExecutionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
+	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
+	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "turnId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
+	"spec": common.ObjectResponseShape(map[string]common.ResponseShape{"generation": common.ScalarResponseShape(), "state": common.ScalarResponseShape(), "resultDigest": common.ScalarResponseShape(), "errorCode": common.ScalarResponseShape()}),
+	"messages": common.ArrayResponseShape(common.ObjectResponseShape(map[string]common.ResponseShape{"requestId": common.ScalarResponseShape(), "protocolVersion": common.ObjectResponseShape(map[string]common.ResponseShape{"major": common.ScalarResponseShape(), "minor": common.ScalarResponseShape()}), "executionId": common.ScalarResponseShape(), "generation": common.ScalarResponseShape(), "commandId": common.ScalarResponseShape(), "occurredAt": common.ScalarResponseShape(), "messageType": common.ScalarResponseShape(), "payload": common.ScalarResponseShape(), "error": common.ObjectResponseShape(map[string]common.ResponseShape{"code": common.ScalarResponseShape(), "message": common.ScalarResponseShape(), "retryable": common.ScalarResponseShape(), "requiresNewExecution": common.ScalarResponseShape(), "requiresUserAction": common.ScalarResponseShape(), "canReconstructFromHistory": common.ScalarResponseShape(), "canMoveWorker": common.ScalarResponseShape()})})),
+})
+func DecodeManagedAgentExecutionResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentExecution], error) { raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentExecutionResponseShape); if err != nil { return common.ResponseEnvelope[ManagedAgentExecution]{}, err }; value, err := decodeManagedAgentExecution(raw); if err != nil { return common.ResponseEnvelope[ManagedAgentExecution]{}, err }; return common.ResponseEnvelope[ManagedAgentExecution]{Value: value, Unknown: sidecar}, nil }
+func EncodeManagedAgentExecutionResponseJSON(value common.ResponseEnvelope[ManagedAgentExecution]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
+func decodeManagedAgentExecution(data []byte) (ManagedAgentExecution, error) { fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "metadata", "spec", "messages"}, []string{"apiVersion", "kind", "metadata", "spec"}); if err != nil { return ManagedAgentExecution{}, err }; var value ManagedAgentExecution; if err := json.Unmarshal(data, &value); err != nil { return ManagedAgentExecution{}, common.ContractError("INVALID_JSON", "") }; if value.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || value.Kind != "Execution" { return ManagedAgentExecution{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind") }; metadata, err := common.DecodeStrictObject(fields["metadata"], []string{"uid", "projectId", "sessionId", "turnId", "resourceVersion", "createdAt", "updatedAt"}, []string{"uid", "projectId", "sessionId", "turnId", "resourceVersion", "createdAt", "updatedAt"}); if err != nil { return ManagedAgentExecution{}, err }; if _, err := common.DecodeStrictObject(fields["spec"], []string{"generation", "state", "resultDigest", "errorCode"}, []string{"generation", "state"}); err != nil { return ManagedAgentExecution{}, err }; for _, field := range []struct{ raw json.RawMessage; path string }{{metadata["uid"], "/metadata/uid"}, {metadata["projectId"], "/metadata/projectId"}, {metadata["sessionId"], "/metadata/sessionId"}, {metadata["turnId"], "/metadata/turnId"}, {metadata["resourceVersion"], "/metadata/resourceVersion"}, {metadata["createdAt"], "/metadata/createdAt"}, {metadata["updatedAt"], "/metadata/updatedAt"}} { var text string; if err := json.Unmarshal(field.raw, &text); err != nil { return ManagedAgentExecution{}, common.ContractError("INVALID_FIELD_TYPE", field.path) }; if field.path == "/metadata/resourceVersion" { if err := common.ValidateResourceVersion(text, field.path); err != nil { return ManagedAgentExecution{}, err } } else if strings.HasSuffix(field.path, "At") { if err := common.ValidateDateTime(text, field.path); err != nil { return ManagedAgentExecution{}, err } } else if err := common.ValidateIdentifier(text, field.path); err != nil { return ManagedAgentExecution{}, err } }; if value.Spec.Generation == 0 { return ManagedAgentExecution{}, common.ContractError("INVALID_GENERATION", "/spec/generation") }; switch value.Spec.State { case "queued", "running", "succeeded", "failed", "cancelled": default: return ManagedAgentExecution{}, common.ContractError("INVALID_STATE", "/spec/state") }; if value.Spec.ResultDigest != "" && (!strings.HasPrefix(value.Spec.ResultDigest, "sha256:") || len(value.Spec.ResultDigest) != 71) { return ManagedAgentExecution{}, common.ContractError("INVALID_RESULT_DIGEST", "/spec/resultDigest") }; if value.Spec.ErrorCode != "" { if err := common.ValidateString(value.Spec.ErrorCode, 1, 64, "/spec/errorCode"); err != nil { return ManagedAgentExecution{}, err } }; for index, message := range value.Messages { path := fmt.Sprintf("/messages/%d", index); if err := validateManagedAgentExecutionMessage(message, path); err != nil { return ManagedAgentExecution{}, err } }; return value, nil }
+func validateManagedAgentExecutionMessage(value ManagedAgentExecutionMessage, path string) error { for _, field := range []struct{ value, path string }{{value.RequestID, path+"/requestId"}, {value.ExecutionID, path+"/executionId"}, {value.CommandID, path+"/commandId"}} { if err := common.ValidateIdentifier(field.value, field.path); err != nil { return err } }; if value.Protocol.Major != 2 || value.Protocol.Minor > 3 { return common.ContractError("INVALID_PROTOCOL_VERSION", path+"/protocolVersion") }; if value.Generation == 0 { return common.ContractError("INVALID_GENERATION", path+"/generation") }; if err := common.ValidateDateTime(value.OccurredAt, path+"/occurredAt"); err != nil { return err }; switch value.MessageType { case "Error", "Event", "InteractionRequest", "ArtifactCandidate", "Checkpoint", "Result", "Progress": default: return common.ContractError("INVALID_MESSAGE_TYPE", path+"/messageType") }; if value.MessageType == "Error" && value.Error == nil { return common.ContractError("MISSING_FIELD", path+"/error") }; if value.Error != nil { if err := common.ValidateString(value.Error.Code, 1, 128, path+"/error/code"); err != nil { return err }; if err := common.ValidateString(value.Error.Message, 0, 4096, path+"/error/message"); err != nil { return err } }; return nil }
+func encodeManagedAgentExecutionCreateRequest(value ManagedAgentExecutionCreateRequest) ([]byte, error) { if err := common.ValidateIdentifier(value.TurnID, "/turnId"); err != nil { return nil, err }; if err := common.ValidateIdentifier(value.ExecutionID, "/executionId"); err != nil { return nil, err }; if value.Model != "" { if err := common.ValidateString(value.Model, 1, 128, "/model"); err != nil { return nil, err } }; if err := common.ValidateString(value.InputText, 1, 1<<20, "/inputText"); err != nil { return nil, err }; return json.Marshal(value) }
 func decodeManagedAgentTurn(data []byte) (ManagedAgentTurn, error) { fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "metadata", "spec"}, []string{"apiVersion", "kind", "metadata", "spec"}); if err != nil { return ManagedAgentTurn{}, err }; var value ManagedAgentTurn; if err := json.Unmarshal(data, &value); err != nil { return ManagedAgentTurn{}, common.ContractError("INVALID_JSON", "") }; if value.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || value.Kind != "Turn" { return ManagedAgentTurn{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind") }; metadata, err := common.DecodeStrictObject(fields["metadata"], []string{"uid", "projectId", "sessionId", "resourceVersion", "createdAt", "updatedAt"}, []string{"uid", "projectId", "sessionId", "resourceVersion", "createdAt", "updatedAt"}); if err != nil { return ManagedAgentTurn{}, err }; spec, err := common.DecodeStrictObject(fields["spec"], []string{"inputDigest", "executionId", "state"}, []string{"inputDigest", "state"}); if err != nil { return ManagedAgentTurn{}, err }; for _, field := range []struct{ raw json.RawMessage; path string }{{metadata["uid"], "/metadata/uid"}, {metadata["projectId"], "/metadata/projectId"}, {metadata["sessionId"], "/metadata/sessionId"}, {metadata["resourceVersion"], "/metadata/resourceVersion"}, {metadata["createdAt"], "/metadata/createdAt"}, {metadata["updatedAt"], "/metadata/updatedAt"}, {spec["inputDigest"], "/spec/inputDigest"}, {spec["state"], "/spec/state"}} { var text string; if err := json.Unmarshal(field.raw, &text); err != nil { return ManagedAgentTurn{}, common.ContractError("INVALID_FIELD_TYPE", field.path) }; if field.path == "/metadata/resourceVersion" { if err := common.ValidateResourceVersion(text, field.path); err != nil { return ManagedAgentTurn{}, err } } else if strings.HasSuffix(field.path, "At") { if err := common.ValidateDateTime(text, field.path); err != nil { return ManagedAgentTurn{}, err } } else if field.path == "/spec/inputDigest" { if !strings.HasPrefix(text, "sha256:") || len(text) != 71 { return ManagedAgentTurn{}, common.ContractError("INVALID_REQUEST_DIGEST", field.path) } } else if err := common.ValidateIdentifier(text, field.path); err != nil { return ManagedAgentTurn{}, err } }; if raw, ok := spec["executionId"]; ok { if err := json.Unmarshal(raw, &value.Spec.ExecutionID); err != nil || value.Spec.ExecutionID == "" { return ManagedAgentTurn{}, common.ContractError("INVALID_FIELD_TYPE", "/spec/executionId") } }; switch value.Spec.State { case "queued", "running", "completed", "failed", "interrupted", "cancelled": default: return ManagedAgentTurn{}, common.ContractError("INVALID_STATE", "/spec/state") }; return value, nil }
 func validateTurnPath(tenantID, projectID, requestID, sessionID, turnID string) error { if err := validatePath(tenantID, requestID); err != nil { return err }; if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil { return err }; if err := common.ValidateIdentifier(sessionID, "/sessionId"); err != nil { return err }; return common.ValidateIdentifier(turnID, "/turnId") }
+func validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID string) error { if err := validateTurnPath(tenantID, projectID, requestID, sessionID, turnID); err != nil { return err }; return common.ValidateIdentifier(executionID, "/executionId") }
 func decodeManagedAgentSession(data []byte) (ManagedAgentSession, error) { fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "metadata", "spec"}, []string{"apiVersion", "kind", "metadata", "spec"}); if err != nil { return ManagedAgentSession{}, err }; var value ManagedAgentSession; if err := json.Unmarshal(data, &value); err != nil { return ManagedAgentSession{}, common.ContractError("INVALID_JSON", "") }; if value.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || value.Kind != "Session" { return ManagedAgentSession{}, common.ContractError("RESOURCE_KIND_MISMATCH", "/kind") }; metadata, err := common.DecodeStrictObject(fields["metadata"], []string{"uid", "projectId", "resourceVersion", "createdAt", "updatedAt"}, []string{"uid", "projectId", "resourceVersion", "createdAt", "updatedAt"}); if err != nil { return ManagedAgentSession{}, err }; spec, err := common.DecodeStrictObject(fields["spec"], []string{"providerKind", "state"}, []string{"providerKind", "state"}); if err != nil { return ManagedAgentSession{}, err }; for _, field := range []struct{ raw json.RawMessage; path string }{{metadata["uid"], "/metadata/uid"}, {metadata["projectId"], "/metadata/projectId"}, {metadata["resourceVersion"], "/metadata/resourceVersion"}, {metadata["createdAt"], "/metadata/createdAt"}, {metadata["updatedAt"], "/metadata/updatedAt"}, {spec["providerKind"], "/spec/providerKind"}, {spec["state"], "/spec/state"}} { var text string; if err := json.Unmarshal(field.raw, &text); err != nil { return ManagedAgentSession{}, common.ContractError("INVALID_FIELD_TYPE", field.path) }; if field.path == "/metadata/resourceVersion" { if err := common.ValidateResourceVersion(text, field.path); err != nil { return ManagedAgentSession{}, err } } else if strings.HasSuffix(field.path, "At") { if err := common.ValidateDateTime(text, field.path); err != nil { return ManagedAgentSession{}, err } } else if field.path == "/spec/providerKind" { if err := common.ValidateString(text, 1, 64, field.path); err != nil { return ManagedAgentSession{}, err } } else if err := common.ValidateIdentifier(text, field.path); err != nil { return ManagedAgentSession{}, err } }; if value.Spec.State != "active" && value.Spec.State != "closed" { return ManagedAgentSession{}, common.ContractError("INVALID_STATE", "/spec/state") }; return value, nil }
 func encodeManagedAgentSessionCreateRequest(value ManagedAgentSessionCreateRequest) ([]byte, error) { if err := common.ValidateIdentifier(value.SessionID, "/sessionId"); err != nil { return nil, err }; if err := common.ValidateString(value.ProviderKind, 1, 64, "/providerKind"); err != nil { return nil, err }; return json.Marshal(value) }
 func validateSessionPath(tenantID, projectID, requestID, sessionID string) error { if err := validatePath(tenantID, requestID); err != nil { return err }; if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil { return err }; return common.ValidateIdentifier(sessionID, "/sessionId") }

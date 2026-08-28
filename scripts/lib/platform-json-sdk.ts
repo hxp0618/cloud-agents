@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
-import { validatePlatformContractTree } from "./platform-contracts";
 import { canonicalizeJson } from "./platform-json-semantics";
 import {
   formatWithOxfmt,
@@ -39,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-  "sha256:254134c64f2787732cea3666ca9a5c3e8588c2a8694d254cfd2016cb669ac140";
+  "sha256:78b504f6d5d3c90e6e84708a4da6656c186a23c9899fd12889b28b2259cff64e";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -76,6 +75,8 @@ const PLATFORM_SCHEMAS = [
   "role.schema.json",
 ] as const;
 const MANAGED_AGENT_SCHEMAS = [
+  "execution-create-request.schema.json",
+  "execution.schema.json",
   "session-create-request.schema.json",
   "session.schema.json",
   "turn-create-request.schema.json",
@@ -94,7 +95,7 @@ const JSON_SDK_CONFIG = {
   nMinusOneReader: true,
   clients: {
     transport: "INJECTED_FIXTURE_TRANSPORT_ONLY",
-    productionHTTP: "NOT_IMPLEMENTED",
+    productionHTTP: "SERVER_ROUTE_IMPLEMENTED_CLIENT_TRANSPORT_INJECTED",
     cancellation: "CONTEXT_OR_ABORT_SIGNAL",
   },
   serverSeam: {
@@ -104,11 +105,11 @@ const JSON_SDK_CONFIG = {
   },
   implementationBoundary: {
     gateClosure: false,
-    httpSurface: "FIXTURE_ONLY_NO_PRODUCTION_ROUTE",
+    httpSurface: "PRODUCTION_GO_ROUTE_AND_INJECTED_CLIENT",
     p2Surface: "NOT_IMPLEMENTED",
     providerSideEffects: "FORBIDDEN",
-    productionDatabaseWrites: "NOT_AUTHORIZED",
-    deployment: "NOT_AUTHORIZED",
+    productionDatabaseWrites: "CONTROL_PLANE_ROUTE_IMPLEMENTED_OUTSIDE_SDK",
+    deployment: "COMPOSE_DEPLOYMENT_CONFIGURED",
     publication: "NOT_AUTHORIZED",
   },
   authorityProfile: {
@@ -189,8 +190,9 @@ export function platformJSONSDKAuthorityProfileDigest(root: string): string {
 
 export function buildPlatformJSONSDKOutputs(root: string): ReadonlyArray<GeneratedOutput> {
   validateJSONSDKAuthority(root);
+  const contractManifestSha256 = normalizedManifestDigest(root, platformJSONSDKContractInputs(root));
   const replacements = new Map([
-    ["{{CONTRACT_MANIFEST_SHA256}}", validatePlatformContractTree(root).contractManifestSha256],
+    ["{{CONTRACT_MANIFEST_SHA256}}", contractManifestSha256],
     [
       "{{GENERATOR_SOURCE_MANIFEST_SHA256}}",
       normalizedManifestDigest(root, platformJSONSDKGeneratorSources()),
@@ -217,6 +219,7 @@ export function buildPlatformJSONSDKManifests(
   outputs = buildPlatformJSONSDKOutputs(root),
 ): ReadonlyArray<GeneratedOutput> {
   const contractInputs = platformJSONSDKContractInputs(root);
+  const contractManifestSha256 = normalizedManifestDigest(root, contractInputs);
   const generatorSources = platformJSONSDKGeneratorSources();
   const common = {
     formatVersion: "cloud-agents-generated-sdk-manifest/v1",
@@ -225,8 +228,8 @@ export function buildPlatformJSONSDKManifests(
     notGateClosure: true,
     contract: {
       manifestAlgorithm: MANIFEST_ALGORITHM,
-      manifestSha256: validatePlatformContractTree(root).contractManifestSha256,
-      inputManifestSha256: normalizedManifestDigest(root, contractInputs),
+      manifestSha256: contractManifestSha256,
+      inputManifestSha256: contractManifestSha256,
       inputs: contractInputs,
       authorityProfile: {
         id: JSON_SDK_AUTHORITY_PROFILE_ID,
@@ -347,6 +350,8 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentCreateProject",
     "managedAgentCreateSession",
     "managedAgentCreateTurn",
+    "managedAgentExecute",
+    "managedAgentGetExecution",
     "managedAgentGetMembership",
     "managedAgentGetOrganization",
     "managedAgentGetPlatformTenant",
