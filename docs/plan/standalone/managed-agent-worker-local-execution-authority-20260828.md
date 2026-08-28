@@ -64,6 +64,7 @@ services/control-plane/internal/managedagent/profile.go
 services/worker/execution.go
 services/worker/execution_test.go
 services/worker/go.mod
+services/worker/go.sum
 services/worker/local_dispatch_handle.go
 services/worker/operation_admission.go
 services/worker/operation_admission_test.go
