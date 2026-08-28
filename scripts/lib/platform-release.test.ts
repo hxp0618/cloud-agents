@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { readDeterministicUstar } from "./platform-migration-ustar";
 import {
   expectedArtifactIdentities,
+  buildPlatformContractPackage,
+  buildPlatformGoSDKPackage,
   buildPlatformMigrationPackage,
   buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
@@ -84,5 +86,38 @@ describe("platform release", () => {
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
     ]);
+  });
+
+  it("packages public contracts without internal provenance inputs", () => {
+    const entries = readDeterministicUstar(buildPlatformContractPackage(process.cwd()));
+    const paths = entries.map(({ path }) => path);
+    expect(paths).toContain("contracts/managed-agent/v1alpha1/openapi.json");
+    expect(paths).toContain("contracts/worker/runtime/v1alpha1/runtime.proto");
+    expect(paths).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
+    expect(
+      paths.some((path) => path.includes("generation.lock") || path.includes("docs/plan")),
+    ).toBe(false);
+    expect(
+      paths.some((path) => path.includes("contract-closure") || path.includes("runner-ledger")),
+    ).toBe(false);
+    expect(paths.some((path) => path.includes("platform-adapter") || path.endsWith(".md"))).toBe(
+      false,
+    );
+  });
+
+  it("packages the independent Go SDK module", () => {
+    const entries = readDeterministicUstar(buildPlatformGoSDKPackage(process.cwd()));
+    const paths = entries.map(({ path }) => path);
+    expect(paths).toContain("go.mod");
+    expect(paths).toContain("gen/openapi/v1alpha1/client_generated.go");
+    expect(paths).toContain("gen/cloudagents/worker/runtime/v1alpha1/runtime.pb.go");
+    expect(
+      paths.some(
+        (path) =>
+          path.endsWith("_test.go") ||
+          path.includes("generated-manifest.json") ||
+          path.includes("platformadapter"),
+      ),
+    ).toBe(false);
   });
 });

@@ -4,14 +4,18 @@ import { join, resolve } from "node:path";
 
 import {
   expectedArtifactCount,
+  buildPlatformContractPackage,
+  buildPlatformGoSDKPackage,
   buildPlatformMigrationPackage,
   buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
-  PLATFORM_RELEASE_GO_COMMANDS,
-  PLATFORM_RELEASE_RUNTIME,
-  PLATFORM_RELEASE_MIGRATIONS,
+  PLATFORM_RELEASE_CONTRACTS,
   PLATFORM_RELEASE_DEPLOYMENT,
+  PLATFORM_RELEASE_GO_SDK,
+  PLATFORM_RELEASE_GO_COMMANDS,
+  PLATFORM_RELEASE_MIGRATIONS,
+  PLATFORM_RELEASE_RUNTIME,
   PLATFORM_RELEASE_TARGETS,
   type PlatformReleaseArtifact,
   type PlatformReleaseTarget,
@@ -83,6 +87,25 @@ artifacts.push(
     PLATFORM_RELEASE_MIGRATIONS,
     migrationBytes,
   ),
+);
+
+const contractOutput = join(options.outputDirectory, PLATFORM_RELEASE_CONTRACTS);
+const contractBytes = buildPlatformContractPackage(repositoryRoot);
+writeFileSync(contractOutput, contractBytes, { mode: 0o444 });
+artifacts.push(
+  platformReleaseArtifact(
+    "cloud-agents-contracts",
+    "portable",
+    PLATFORM_RELEASE_CONTRACTS,
+    contractBytes,
+  ),
+);
+
+const sdkOutput = join(options.outputDirectory, PLATFORM_RELEASE_GO_SDK);
+const sdkBytes = buildPlatformGoSDKPackage(repositoryRoot);
+writeFileSync(sdkOutput, sdkBytes, { mode: 0o444 });
+artifacts.push(
+  platformReleaseArtifact("cloud-agents-go-sdk", "portable", PLATFORM_RELEASE_GO_SDK, sdkBytes),
 );
 
 artifacts.sort((left, right) => left.filename.localeCompare(right.filename));

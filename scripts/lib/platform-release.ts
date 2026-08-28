@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { createDeterministicUstar } from "./platform-migration-ustar";
@@ -17,6 +17,8 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
 export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000017.tar";
 export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000017.tar";
+export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
+export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -145,6 +147,39 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
   );
 }
 
+export function buildPlatformContractPackage(root: string): Uint8Array {
+  const paths = [
+    ...readTree(root, "contracts/common/v1alpha1").filter((path) => !path.endsWith("README.md")),
+    ...readTree(root, "contracts/managed-agent/v1alpha1"),
+    ...readTree(root, "contracts/worker/v1alpha1").filter((path) => !path.endsWith("README.md")),
+    ...readTree(root, "contracts/worker/runtime/v1alpha1"),
+    ...PUBLIC_PLATFORM_CONTRACT_PATHS,
+    "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb",
+  ];
+  return createDeterministicUstar(
+    [...new Set(paths)].map((path) => ({ path, data: readFileSync(resolve(root, path)) })),
+  );
+}
+
+export function buildPlatformGoSDKPackage(root: string): Uint8Array {
+  const paths = [
+    "sdk/go/THIRD_PARTY_NOTICES.md",
+    "sdk/go/doc.go",
+    "sdk/go/go.mod",
+    "sdk/go/go.sum",
+    ...readTree(root, "sdk/go/gen").filter(
+      (path) =>
+        path.endsWith(".go") && !path.endsWith("_test.go") && !path.includes("/platformadapter/"),
+    ),
+  ];
+  return createDeterministicUstar(
+    paths.map((path) => ({
+      path: path.replace("sdk/go/", ""),
+      data: readFileSync(resolve(root, path)),
+    })),
+  );
+}
+
 export function validatePlatformReleaseManifest(
   manifest: unknown,
 ): asserts manifest is PlatformReleaseManifest {
@@ -206,11 +241,50 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
     { name: "cloud-agent-runtime", target: "portable" },
     { name: "cloud-agents-migrations", target: "portable" },
     { name: "cloud-agents-deployment", target: "portable" },
+    { name: "cloud-agents-contracts", target: "portable" },
+    { name: "cloud-agents-go-sdk", target: "portable" },
   ];
 }
 
 export function expectedArtifactCount(): number {
-  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 3;
+  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 5;
+}
+
+const PUBLIC_PLATFORM_CONTRACT_PATHS = [
+  "contracts/platform/v1alpha1/fixtures/manifest.json",
+  "contracts/platform/v1alpha1/fixtures/golden/membership.json",
+  "contracts/platform/v1alpha1/fixtures/golden/organization.json",
+  "contracts/platform/v1alpha1/fixtures/golden/platform-tenant.json",
+  "contracts/platform/v1alpha1/fixtures/golden/project-create-request.json",
+  "contracts/platform/v1alpha1/fixtures/golden/project.json",
+  "contracts/platform/v1alpha1/fixtures/golden/role-binding.json",
+  "contracts/platform/v1alpha1/fixtures/golden/role.json",
+  "contracts/platform/v1alpha1/fixtures/negative/cross-tenant-project.json",
+  "contracts/platform/v1alpha1/fixtures/negative/organization-tenant-ref-mismatch.json",
+  "contracts/platform/v1alpha1/fixtures/negative/project-create-server-owned-field.json",
+  "contracts/platform/v1alpha1/fixtures/negative/project-response-n-minus-one.json",
+  "contracts/platform/v1alpha1/fixtures/negative/role-binding-scope-mismatch.json",
+  "contracts/platform/v1alpha1/fixtures/negative/role-binding-unknown-role.json",
+  "contracts/platform/v1alpha1/fixtures/negative/role-wildcard-permission.json",
+  "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+  "contracts/platform/v1alpha1/schemas/membership.schema.json",
+  "contracts/platform/v1alpha1/schemas/organization.schema.json",
+  "contracts/platform/v1alpha1/schemas/permission.schema.json",
+  "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
+  "contracts/platform/v1alpha1/schemas/project-create-request.schema.json",
+  "contracts/platform/v1alpha1/schemas/project.schema.json",
+  "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+  "contracts/platform/v1alpha1/schemas/role.schema.json",
+] as const;
+
+function readTree(root: string, directory: string): string[] {
+  const absolute = resolve(root, directory);
+  return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) return readTree(root, path);
+    if (!entry.isFile()) throw new Error(`release package member is not a file: ${path}`);
+    return [path];
+  });
 }
 
 function requireString(value: unknown, label: string): string {
