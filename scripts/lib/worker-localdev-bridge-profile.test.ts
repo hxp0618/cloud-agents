@@ -26,9 +26,9 @@ describe("D-057-WORKER-LOCALDEV-BRIDGE-000001.r1", () => {
     expect((profile.externalSideEffects as any).provider).toBe(false);
     expect((profile.externalSideEffects as any).runtime).toBe(false);
     expect((profile.selector as any).listenAddress).toBe("loopback_only");
-    expect(profile.commands).toEqual(["Negotiate", "CheckHealth"]);
-    expect((profile.selector as any).dispatch).toBe("not_implemented");
-    expect((profile.implementationBoundary as any).getOperationReceipt).toBe("not_implemented");
+    expect(profile.commands).toEqual(["Negotiate", "CheckHealth", "ExecuteOperation", "GetOperationReceipt"]);
+    expect((profile.selector as any).dispatch).toBe("process_local_ephemeral");
+    expect((profile.implementationBoundary as any).getOperationReceipt).toBe("process_local_ephemeral");
     expect((profile.runner as any).entrypoint).toBe(
       "GOWORK=off GOFLAGS=-mod=readonly go test -tags localdev ./...",
     );

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
 )
 
@@ -134,7 +134,19 @@ func TestNewLocalLauncherRejectsCallerTransportHooks(t *testing.T) {
 func TestLocalLauncherBindsAfterD056HealthMetadata(t *testing.T) {
 	workerID := &workerv1alpha1.WorkloadIdentity{SpiffeId: workerkernel.WorkerLocalDevLauncherWorkerIdentitySPIFFE, TrustDomain: "cloud-agents.local"}
 	supervisorID := &workerv1alpha1.WorkloadIdentity{SpiffeId: workerkernel.WorkerLocalDevLauncherSupervisorIdentitySPIFFE, TrustDomain: "cloud-agents.local"}
-	service, err := workerkernel.NewService(workerkernel.Config{WorkerIdentity: workerID, IdentityProvider: workerkernel.StaticIdentityProvider{Identity: supervisorID}, AdmissionLeaseID: workerkernel.WorkerLocalDevLauncherLeaseID, AdmissionGeneration: workerkernel.WorkerLocalDevLauncherGeneration, Clock: time.Now})
+	service, err := workerkernel.NewService(workerkernel.Config{
+		WorkerIdentity: workerID,
+		Capabilities: []workerv1alpha1.Capability{
+			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+			workerv1alpha1.Capability_CAPABILITY_HEALTH,
+			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		},
+		IdentityProvider:    workerkernel.StaticIdentityProvider{Identity: supervisorID},
+		AdmissionLeaseID:    workerkernel.WorkerLocalDevLauncherLeaseID,
+		AdmissionGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
+		Clock:               time.Now,
+		Executor:            workerkernel.DeterministicLocalExecutor{},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,15 +178,40 @@ func TestLocalLauncherBindsAfterD056HealthMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := launcher.BindLocalLauncherDispatch(context.Background()); err != nil {
+	binding, err := launcher.BindLocalLauncherDispatch(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := launcher.DispatchOperation(context.Background(), nil); connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Fatalf("dispatch error=%v", err)
+	now := time.Now().UTC()
+	attempt, err := workerkernel.BuildLocalOperationAttempt(workerkernel.LocalOperationAttemptInput{
+		OperationID: "operation-launcher-001", IdempotencyKey: "idempotency-launcher-001",
+		Scope: workerkernelNamespaceRef("project-launcher"), FencingLeaseID: workerkernel.WorkerLocalDevLauncherLeaseID,
+		FencingGeneration: workerkernel.WorkerLocalDevLauncherGeneration, FencingToken: []byte("launcher-fencing-token"),
+		Deadline: now.Add(time.Minute), AttemptID: "attempt-launcher-001", AttemptNumber: 1,
+		ExpectedExecutorIdentity: workerID, Negotiation: binding.Negotiation(),
+		Command: &workerv1alpha1.OperationCommand{Command: &workerv1alpha1.OperationCommand_Probe{Probe: &workerv1alpha1.ProbeOperation{ProbeName: "loopback"}}}, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := launcher.GetOperationReceipt(context.Background(), nil); connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Fatalf("receipt error=%v", err)
+	response, err := launcher.DispatchOperation(context.Background(), attempt)
+	if err != nil || response == nil || response.Msg == nil || response.Msg.GetOutcome() != workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_SUCCEEDED {
+		t.Fatalf("dispatch response=%v err=%v", response, err)
 	}
+	receipt, err := launcher.GetOperationReceipt(context.Background(), &workerv1alpha1.ReceiptRequest{
+		OperationId: response.Msg.GetOperationId(), ReceiptId: response.Msg.GetReceiptId(),
+		ExpectedServerIdentity: workerID, RequiredCapability: workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		Negotiation: binding.Negotiation(), Fencing: &workerv1alpha1.FencingProof{
+			LeaseId: workerkernel.WorkerLocalDevLauncherLeaseID, Generation: workerkernel.WorkerLocalDevLauncherGeneration, Token: []byte("launcher-fencing-token"),
+		},
+	})
+	if err != nil || receipt == nil || receipt.Msg == nil || receipt.Msg.GetReceiptId() != response.Msg.GetReceiptId() {
+		t.Fatalf("receipt response=%v err=%v", receipt, err)
+	}
+}
+
+func workerkernelNamespaceRef(id string) commonv1alpha1.NamespaceRef {
+	return commonv1alpha1.NamespaceRef{Namespace: "cloud-agents", Kind: "project", ID: id}
 }
 
 func TestLocalLauncherHealthRejectsDuplicateKeysAndClosesRejectedBody(t *testing.T) {

@@ -132,11 +132,11 @@ const RUNNER = {
   timeout: "focused-tests-only",
 } as const;
 const RECEIPT = {
-  runtimePath: "process-local://worker-service/health",
+  runtimePath: "process-local://worker-service/operation",
   persistence: "no_write",
-  state: "ABSENT_PENDING",
+  state: "PRESENT_EPHEMERAL",
   resultDigestAlgorithm: "sha256:deterministic-protobuf-receipt-result-v1",
-  canonicalProjection: "none_for_health_only",
+  canonicalProjection: "deterministic_protobuf_receipt",
   excludedFields: ["receipt_id", "sequence", "observed_at", "fencing.token_sha256"],
   stableErrorCodes: [
     "unauthenticated",

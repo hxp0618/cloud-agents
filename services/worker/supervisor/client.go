@@ -130,8 +130,8 @@ func (s *Supervisor) Bind(ctx context.Context) (BindingSnapshot, error) {
 
 // BindOperationAdmission negotiates the explicit local operation-admission
 // profile. It is separate from Bind so a Worker advertising the operation
-// capability never silently changes the original health-only contract.
-// Dispatch and durable receipt methods remain unimplemented.
+// capability never silently changes the original health-only contract. The
+// loopback LocalLauncher uses this binding for its process-boundary calls.
 func (s *Supervisor) BindOperationAdmission(ctx context.Context) (BindingSnapshot, error) {
 	return s.bindWithProfile(ctx, operationAdmissionCapabilities(), OperationAdmissionProfileID)
 }

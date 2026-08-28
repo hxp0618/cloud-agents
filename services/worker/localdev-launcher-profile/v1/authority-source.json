@@ -80,7 +80,7 @@
     "services/worker/localdev_launcher_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea",
+  "inputManifestDigest": "sha256:e84694ee3559b36eefe5bec8b9b3fa419c912f8f97f0c700cace03a2d5366e60",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -116,11 +116,11 @@
     "timeout": "focused-tests-only"
   },
   "receipt": {
-    "runtimePath": "process-local://worker-service/health",
+    "runtimePath": "process-local://worker-service/operation",
     "persistence": "no_write",
-    "state": "ABSENT_PENDING",
+    "state": "PRESENT_EPHEMERAL",
     "resultDigestAlgorithm": "sha256:deterministic-protobuf-receipt-result-v1",
-    "canonicalProjection": "none_for_health_only",
+    "canonicalProjection": "deterministic_protobuf_receipt",
     "excludedFields": [
       "receipt_id",
       "sequence",
@@ -252,5 +252,5 @@
     "publication": "forbidden",
     "gateTransition": "forbidden"
   },
-  "sourceDigest": "sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699"
+  "sourceDigest": "sha256:197c3eac490ef4cf161a13df8dcd07fb15d4a0102a2f6494c3be029eeb5e2941"
 }

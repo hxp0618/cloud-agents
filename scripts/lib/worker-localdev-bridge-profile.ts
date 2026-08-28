@@ -31,7 +31,7 @@ const PROFILE_DOMAIN = "cloud-agents/worker-localdev-bridge/profile/v1";
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/u;
 
 const PARENT_PROFILES = ["cloud-agents/worker-localdev-launcher/v1alpha1"] as const;
-const COMMANDS = ["Negotiate", "CheckHealth"] as const;
+const COMMANDS = ["Negotiate", "CheckHealth", "ExecuteOperation", "GetOperationReceipt"] as const;
 const INPUT_PATHS = [
   ".mise.toml",
   "bun.lock",
@@ -73,6 +73,7 @@ const INPUT_PATHS = [
   "services/worker/supervisor/dispatch_profile_generated.go",
   "services/worker/supervisor/local_launcher.go",
   "services/worker/supervisor/local_launcher_test.go",
+  "services/worker/supervisor/remote_dispatch.go",
   "services/worker/cmd/cloud-agents-worker/main.go",
   "services/worker/cmd/cloud-agents-worker/main_test.go",
   "scripts/lib/platform-json-semantics.ts",
@@ -137,9 +138,9 @@ const RUNNER = {
 const RECEIPT = {
   runtimePath: "process-local://worker-supervisor/localdev-bridge",
   persistence: "no_write",
-  state: "ABSENT_PENDING",
+  state: "PRESENT_EPHEMERAL",
   resultDigestAlgorithm: "sha256:deterministic-protobuf-receipt-result-v1",
-  canonicalProjection: "none_for_health_only",
+  canonicalProjection: "deterministic_protobuf_receipt",
   excludedFields: ["receipt_id", "sequence", "observed_at", "fencing.token_sha256"],
   stableErrorCodes: [
     "unauthenticated",
@@ -213,9 +214,9 @@ const SELECTOR = {
   parentAuthority: "D-056-WORKER-LOCALDEV-LAUNCHER-000001",
   parentRevision: "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1",
   parentProfile: "cloud-agents/worker-localdev-launcher/v1alpha1",
-  parentProfileDigest: "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e",
-  dispatch: "not_implemented",
-  receipt: "not_implemented",
+  parentProfileDigest: "sha256:8ecdba81fd4a57eef127afae05e1fd26670201c0db4ecb92b22023a495394b0c",
+  dispatch: "process_local_ephemeral",
+  receipt: "process_local_ephemeral",
   workerIdentitySPIFFE: "spiffe://cloud-agents.local/worker/localdev",
   supervisorIdentitySPIFFE: "spiffe://cloud-agents.local/supervisor/localdev",
   leaseID: "worker-localdev-lease-000001",
@@ -224,6 +225,8 @@ const SELECTOR = {
     "/healthz",
     "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
     "/cloudagents.worker.v1alpha1.WorkerExecutionService/CheckHealth",
+    "/cloudagents.worker.v1alpha1.WorkerExecutionService/ExecuteOperation",
+    "/cloudagents.worker.v1alpha1.WorkerExecutionService/GetOperationReceipt",
   ],
 } as const;
 const STATE_MACHINE = {
@@ -243,8 +246,8 @@ const BOUNDARY = {
   completeLedger: "no_op",
   entryWriter: "not_implemented",
   recoveryWriter: "not_implemented",
-  dispatchOperation: "not_implemented",
-  getOperationReceipt: "not_implemented",
+  dispatchOperation: "process_local_ephemeral",
+  getOperationReceipt: "process_local_ephemeral",
   databaseWrites: "forbidden",
   durablePersistence: "forbidden",
   provider: "forbidden",

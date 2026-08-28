@@ -53,9 +53,8 @@ type LocalLauncherConfig struct {
 	HTTPClient *http.Client
 }
 
-// LocalLauncher is a read/health binding to the D-057 localdev process. The
-// operation RPCs remain explicitly unimplemented because the D-056 launcher
-// service has no executor and no durable receipt store.
+// LocalLauncher is a loopback process-boundary binding to the D-057 localdev
+// Worker. Its receipts remain ephemeral and process-local.
 type LocalLauncher struct {
 	supervisor *Supervisor
 	client     workerv1alpha1connect.WorkerExecutionServiceClient
@@ -163,7 +162,7 @@ func (l *LocalLauncher) BindLocalLauncherDispatch(ctx context.Context) (BindingS
 	if err := l.checkLauncherHealth(ctx); err != nil {
 		return BindingSnapshot{}, err
 	}
-	snapshot, err := l.supervisor.Bind(ctx)
+	snapshot, err := l.supervisor.BindOperationAdmission(ctx)
 	if err != nil {
 		return BindingSnapshot{}, err
 	}
@@ -173,20 +172,18 @@ func (l *LocalLauncher) BindLocalLauncherDispatch(ctx context.Context) (BindingS
 	return snapshot, nil
 }
 
-// DispatchOperation and GetOperationReceipt are deliberately not transport
-// bridges. D-056's default launcher has no executor or durable store.
-func (l *LocalLauncher) DispatchOperation(ctx context.Context, _ *workerv1alpha1.OperationAttemptEnvelope) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
-	if err := contextErr(ctx); err != nil {
-		return nil, err
+func (l *LocalLauncher) DispatchOperation(ctx context.Context, req *workerv1alpha1.OperationAttemptEnvelope) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+	if l == nil || l.supervisor == nil || l.client == nil {
+		return nil, errInvalidConfig
 	}
-	return nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented")
+	return l.supervisor.dispatchRemoteOperation(ctx, req)
 }
 
-func (l *LocalLauncher) GetOperationReceipt(ctx context.Context, _ *workerv1alpha1.ReceiptRequest) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
-	if err := contextErr(ctx); err != nil {
-		return nil, err
+func (l *LocalLauncher) GetOperationReceipt(ctx context.Context, req *workerv1alpha1.ReceiptRequest) (*connect.Response[workerv1alpha1.DurableReceipt], error) {
+	if l == nil || l.supervisor == nil || l.client == nil {
+		return nil, errInvalidConfig
 	}
-	return nil, fail(connect.CodeUnimplemented, "durable_receipts_not_implemented")
+	return l.supervisor.getRemoteOperationReceipt(ctx, req)
 }
 
 type localLauncherHealth struct {
@@ -425,7 +422,9 @@ func isLocalLauncherRoute(method, path string) bool {
 	case workerkernel.WorkerLocalDevBridgeHealthRoute:
 		return method == http.MethodGet
 	case workerv1alpha1connect.WorkerExecutionServiceNegotiateProcedure,
-		workerv1alpha1connect.WorkerExecutionServiceCheckHealthProcedure:
+		workerv1alpha1connect.WorkerExecutionServiceCheckHealthProcedure,
+		workerv1alpha1connect.WorkerExecutionServiceExecuteOperationProcedure,
+		workerv1alpha1connect.WorkerExecutionServiceGetOperationReceiptProcedure:
 		return method == http.MethodPost
 	default:
 		return false

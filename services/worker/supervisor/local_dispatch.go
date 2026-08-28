@@ -183,6 +183,14 @@ func (s *Supervisor) localDispatchBinding() (*bindingState, *bindingState, error
 	if !s.localDispatchEnabled() {
 		return nil, nil, fail(connect.CodeUnimplemented, "operation_dispatch_not_implemented")
 	}
+	return s.operationBinding(LocalDispatchProfileID)
+}
+
+func (s *Supervisor) remoteDispatchBinding() (*bindingState, *bindingState, error) {
+	return s.operationBinding(OperationAdmissionProfileID)
+}
+
+func (s *Supervisor) operationBinding(profileID string) (*bindingState, *bindingState, error) {
 	s.mu.RLock()
 	live := s.binding
 	state := cloneBindingState(live)
@@ -190,7 +198,7 @@ func (s *Supervisor) localDispatchBinding() (*bindingState, *bindingState, error
 	if live == nil || state == nil {
 		return nil, nil, fail(connect.CodeFailedPrecondition, "binding_required")
 	}
-	if state.profileID != LocalDispatchProfileID || !sameIdentity(state.identity, s.workerIdentity) || state.descriptor == nil ||
+	if state.profileID != profileID || !sameIdentity(state.identity, s.workerIdentity) || state.descriptor == nil ||
 		!exactCapabilities(state.accepted, operationAdmissionCapabilities()) ||
 		!exactCapabilities(state.descriptor.GetCapabilities(), operationAdmissionCapabilities()) {
 		return nil, nil, fail(connect.CodeFailedPrecondition, "operation_binding_required")

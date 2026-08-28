@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
 )
 
@@ -190,7 +191,7 @@ func TestGeneratedConnectClientNegotiateAndHealthAgainstLoopbackServer(t *testin
 	}
 }
 
-func TestGeneratedConnectClientDispatchAndReceiptRemainUnimplemented(t *testing.T) {
+func TestGeneratedConnectClientDispatchAndReceiptAgainstLoopbackServer(t *testing.T) {
 	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18093", token: "token-noop"})
 	if err != nil {
 		t.Fatal(err)
@@ -203,11 +204,43 @@ func TestGeneratedConnectClientDispatchAndReceiptRemainUnimplemented(t *testing.
 	ts := httptest.NewServer(server.Server.Handler)
 	defer ts.Close()
 	client := workerv1alpha1connect.NewWorkerExecutionServiceClient(&http.Client{Transport: transport}, strings.TrimSuffix(ts.URL, workerkernel.WorkerLocalDevLauncherHTTPRoutePrefix))
-	if _, err := client.ExecuteOperation(context.Background(), connect.NewRequest(&workerv1alpha1.OperationAttemptEnvelope{})); connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Fatalf("ExecuteOperation error = %v, want unimplemented", err)
+	now := time.Now().UTC()
+	workerIdentity := generatedWorkerIdentity()
+	negotiation, err := client.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
+		SupportedVersions: []*workerv1alpha1.ProtocolVersion{{Major: workerkernel.ProtocolMajor, Minor: workerkernel.ProtocolMinor}},
+		RequiredCapabilities: []workerv1alpha1.Capability{
+			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+			workerv1alpha1.Capability_CAPABILITY_HEALTH,
+			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		},
+		ExpectedServerIdentity: workerIdentity,
+	}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := client.GetOperationReceipt(context.Background(), connect.NewRequest(&workerv1alpha1.ReceiptRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Fatalf("GetOperationReceipt error = %v, want unimplemented", err)
+	binding := &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()}
+	attempt, err := workerkernel.BuildLocalOperationAttempt(workerkernel.LocalOperationAttemptInput{
+		OperationID: "operation-http-001", IdempotencyKey: "idempotency-http-001",
+		Scope:          commonv1alpha1.NamespaceRef{Namespace: "cloud-agents", Kind: "project", ID: "project-http"},
+		FencingLeaseID: workerkernel.WorkerLocalDevLauncherLeaseID, FencingGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
+		FencingToken: []byte("http-fencing-token"), Deadline: now.Add(time.Minute), AttemptID: "attempt-http-001", AttemptNumber: 1,
+		ExpectedExecutorIdentity: workerIdentity, Negotiation: binding,
+		Command: &workerv1alpha1.OperationCommand{Command: &workerv1alpha1.OperationCommand_Probe{Probe: &workerv1alpha1.ProbeOperation{ProbeName: "loopback"}}}, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.ExecuteOperation(context.Background(), connect.NewRequest(attempt))
+	if err != nil || response == nil || response.Msg == nil || response.Msg.GetOutcome() != workerv1alpha1.OperationOutcome_OPERATION_OUTCOME_SUCCEEDED {
+		t.Fatalf("ExecuteOperation response=%v error=%v", response, err)
+	}
+	receipt, err := client.GetOperationReceipt(context.Background(), connect.NewRequest(&workerv1alpha1.ReceiptRequest{
+		OperationId: response.Msg.GetOperationId(), ReceiptId: response.Msg.GetReceiptId(), ExpectedServerIdentity: workerIdentity,
+		RequiredCapability: workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH, Negotiation: binding,
+		Fencing: &workerv1alpha1.FencingProof{LeaseId: workerkernel.WorkerLocalDevLauncherLeaseID, Generation: workerkernel.WorkerLocalDevLauncherGeneration, Token: []byte("http-fencing-token")},
+	}))
+	if err != nil || receipt == nil || receipt.Msg == nil || receipt.Msg.GetReceiptId() != response.Msg.GetReceiptId() {
+		t.Fatalf("GetOperationReceipt response=%v error=%v", receipt, err)
 	}
 }
 

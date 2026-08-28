@@ -12,7 +12,9 @@
   ],
   "commands": [
     "Negotiate",
-    "CheckHealth"
+    "CheckHealth",
+    "ExecuteOperation",
+    "GetOperationReceipt"
   ],
   "inputPaths": [
     ".mise.toml",
@@ -60,6 +62,7 @@
     "services/worker/supervisor/local_dispatch_test.go",
     "services/worker/supervisor/local_launcher.go",
     "services/worker/supervisor/local_launcher_test.go",
+    "services/worker/supervisor/remote_dispatch.go",
     "tsconfig.base.json"
   ],
   "exclusionPaths": [
@@ -84,7 +87,7 @@
     "services/worker/localdev_bridge_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:f7595f033d853363812a92ecd83b702cd6a62ce7aa69de3e17324360e17124e9",
+  "inputManifestDigest": "sha256:39373d747c914382fbad73bc86b0f36c91d17ce58019f1117d71f8511b5ab9e6",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -122,9 +125,9 @@
   "receipt": {
     "runtimePath": "process-local://worker-supervisor/localdev-bridge",
     "persistence": "no_write",
-    "state": "ABSENT_PENDING",
+    "state": "PRESENT_EPHEMERAL",
     "resultDigestAlgorithm": "sha256:deterministic-protobuf-receipt-result-v1",
-    "canonicalProjection": "none_for_health_only",
+    "canonicalProjection": "deterministic_protobuf_receipt",
     "excludedFields": [
       "receipt_id",
       "sequence",
@@ -195,9 +198,9 @@
     "parentAuthority": "D-056-WORKER-LOCALDEV-LAUNCHER-000001",
     "parentRevision": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1",
     "parentProfile": "cloud-agents/worker-localdev-launcher/v1alpha1",
-    "parentProfileDigest": "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e",
-    "dispatch": "not_implemented",
-    "receipt": "not_implemented",
+    "parentProfileDigest": "sha256:8ecdba81fd4a57eef127afae05e1fd26670201c0db4ecb92b22023a495394b0c",
+    "dispatch": "process_local_ephemeral",
+    "receipt": "process_local_ephemeral",
     "workerIdentitySPIFFE": "spiffe://cloud-agents.local/worker/localdev",
     "supervisorIdentitySPIFFE": "spiffe://cloud-agents.local/supervisor/localdev",
     "leaseID": "worker-localdev-lease-000001",
@@ -205,7 +208,9 @@
     "routes": [
       "/healthz",
       "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
-      "/cloudagents.worker.v1alpha1.WorkerExecutionService/CheckHealth"
+      "/cloudagents.worker.v1alpha1.WorkerExecutionService/CheckHealth",
+      "/cloudagents.worker.v1alpha1.WorkerExecutionService/ExecuteOperation",
+      "/cloudagents.worker.v1alpha1.WorkerExecutionService/GetOperationReceipt"
     ]
   },
   "stateMachine": {
@@ -256,8 +261,8 @@
     "completeLedger": "no_op",
     "entryWriter": "not_implemented",
     "recoveryWriter": "not_implemented",
-    "dispatchOperation": "not_implemented",
-    "getOperationReceipt": "not_implemented",
+    "dispatchOperation": "process_local_ephemeral",
+    "getOperationReceipt": "process_local_ephemeral",
     "databaseWrites": "forbidden",
     "durablePersistence": "forbidden",
     "provider": "forbidden",
@@ -272,7 +277,7 @@
   "sourceAuthority": {
     "authorityId": "D-057-WORKER-LOCALDEV-BRIDGE-000001",
     "revision": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r1",
-    "sourceDigest": "sha256:25386d876955ea706406672bc5186a5680cd76e51cf13570ba69fdee6c4e1eb9"
+    "sourceDigest": "sha256:08fdb3e4dc42b115f2475d20d8da88042b2a4cd94181289c05744fafaf3325a7"
   },
-  "profileDigest": "sha256:ddb4299c44b39afec63e0346da4401c55c3fcc97bb2d826bfa375accebc8aa86"
+  "profileDigest": "sha256:41c6df041a06a501e6a0351f4301d041fbb6658ad4183d21bd7d5d54845fa23f"
 }

@@ -67,7 +67,9 @@
       "type": "array",
       "const": [
         "Negotiate",
-        "CheckHealth"
+        "CheckHealth",
+        "ExecuteOperation",
+        "GetOperationReceipt"
       ]
     },
     "inputPaths": {
@@ -118,6 +120,7 @@
         "services/worker/supervisor/local_dispatch_test.go",
         "services/worker/supervisor/local_launcher.go",
         "services/worker/supervisor/local_launcher_test.go",
+        "services/worker/supervisor/remote_dispatch.go",
         "tsconfig.base.json"
       ]
     },
@@ -152,7 +155,7 @@
       "const": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1"
     },
     "inputManifestDigest": {
-      "const": "sha256:f7595f033d853363812a92ecd83b702cd6a62ce7aa69de3e17324360e17124e9"
+      "const": "sha256:39373d747c914382fbad73bc86b0f36c91d17ce58019f1117d71f8511b5ab9e6"
     },
     "archive": {
       "type": "object",
@@ -303,13 +306,13 @@
           "const": "no_write"
         },
         "state": {
-          "const": "ABSENT_PENDING"
+          "const": "PRESENT_EPHEMERAL"
         },
         "resultDigestAlgorithm": {
           "const": "sha256:deterministic-protobuf-receipt-result-v1"
         },
         "canonicalProjection": {
-          "const": "none_for_health_only"
+          "const": "deterministic_protobuf_receipt"
         },
         "excludedFields": {
           "type": "array",
@@ -507,13 +510,13 @@
           "const": "cloud-agents/worker-localdev-launcher/v1alpha1"
         },
         "parentProfileDigest": {
-          "const": "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e"
+          "const": "sha256:8ecdba81fd4a57eef127afae05e1fd26670201c0db4ecb92b22023a495394b0c"
         },
         "dispatch": {
-          "const": "not_implemented"
+          "const": "process_local_ephemeral"
         },
         "receipt": {
-          "const": "not_implemented"
+          "const": "process_local_ephemeral"
         },
         "workerIdentitySPIFFE": {
           "const": "spiffe://cloud-agents.local/worker/localdev"
@@ -532,7 +535,9 @@
           "const": [
             "/healthz",
             "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
-            "/cloudagents.worker.v1alpha1.WorkerExecutionService/CheckHealth"
+            "/cloudagents.worker.v1alpha1.WorkerExecutionService/CheckHealth",
+            "/cloudagents.worker.v1alpha1.WorkerExecutionService/ExecuteOperation",
+            "/cloudagents.worker.v1alpha1.WorkerExecutionService/GetOperationReceipt"
           ]
         }
       }
@@ -683,10 +688,10 @@
           "const": "not_implemented"
         },
         "dispatchOperation": {
-          "const": "not_implemented"
+          "const": "process_local_ephemeral"
         },
         "getOperationReceipt": {
-          "const": "not_implemented"
+          "const": "process_local_ephemeral"
         },
         "databaseWrites": {
           "const": "forbidden"
@@ -721,7 +726,7 @@
       }
     },
     "sourceDigest": {
-      "const": "sha256:25386d876955ea706406672bc5186a5680cd76e51cf13570ba69fdee6c4e1eb9"
+      "const": "sha256:08fdb3e4dc42b115f2475d20d8da88042b2a4cd94181289c05744fafaf3325a7"
     }
   }
 }

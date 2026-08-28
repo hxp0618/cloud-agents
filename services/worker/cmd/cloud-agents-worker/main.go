@@ -224,11 +224,17 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 		clock = time.Now
 	}
 	workerService, err := workerkernel.NewService(workerkernel.Config{
-		WorkerIdentity:      workerIdentity,
+		WorkerIdentity: workerIdentity,
+		Capabilities: []workerv1alpha1.Capability{
+			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+			workerv1alpha1.Capability_CAPABILITY_HEALTH,
+			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		},
 		IdentityProvider:    contextIdentityProvider{},
 		AdmissionLeaseID:    workerkernel.WorkerLocalDevLauncherLeaseID,
 		AdmissionGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
 		Clock:               clock,
+		Executor:            workerkernel.DeterministicLocalExecutor{},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: worker service: %v", errInvalidWorkerConfig, err)
