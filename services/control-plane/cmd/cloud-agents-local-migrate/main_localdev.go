@@ -18,7 +18,7 @@ func main() {
 	flag.StringVar(&databaseURL, "database-url", "", "local PostgreSQL database URL")
 	flag.StringVar(&repositoryRoot, "repository-root", "", "repository root containing the manifest and SQL artifacts")
 	flag.StringVar(&manifestPath, "manifest", "services/control-plane/migrations/manifest.json", "manifest path relative to repository root")
-	flag.StringVar(&manifestSelector, "selector", "", "generated runner-binding selector (canonical-000013 or successor-000014)")
+	flag.StringVar(&manifestSelector, "selector", "", "migration selector (canonical-000013, successor-000014, or product-000015)")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)

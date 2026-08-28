@@ -1,0 +1,102 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
+	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
+)
+
+type managedAgentSessionStoreFake struct {
+	snapshot internalmanagedagent.SessionSnapshot
+	err      error
+	create   int
+	close    int
+	get      int
+}
+
+func (fake *managedAgentSessionStoreFake) CreateManagedAgentSession(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedagent.CreateSessionInput) (internalmanagedagent.SessionSnapshot, error) {
+	fake.create++
+	if fake.err != nil {
+		return internalmanagedagent.SessionSnapshot{}, fake.err
+	}
+	fake.snapshot.Scope = input.Scope
+	fake.snapshot.SessionID = input.SessionID
+	fake.snapshot.ProviderKind = input.ProviderKind
+	return fake.snapshot, nil
+}
+
+func (fake *managedAgentSessionStoreFake) CloseManagedAgentSession(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ internalmanagedagent.CloseSessionInput) (internalmanagedagent.SessionSnapshot, error) {
+	fake.close++
+	return fake.snapshot, fake.err
+}
+
+func (fake *managedAgentSessionStoreFake) GetManagedAgentSession(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _, _ string) (internalmanagedagent.SessionSnapshot, error) {
+	fake.get++
+	return fake.snapshot, fake.err
+}
+
+func TestManagedAgentSessionHTTPServerLifecycleRoutes(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
+	verifier := &projectHTTPVerifierFake{}
+	store := &managedAgentSessionStoreFake{snapshot: internalmanagedagent.SessionSnapshot{ProviderKind: "codex", State: internalmanagedagent.SessionActive, Version: 1, CreatedAt: now, UpdatedAt: now}}
+	handler, err := NewManagedAgentSessionHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	create := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions", strings.NewReader(`{"sessionId":"session-alpha","providerKind":"codex"}`))
+	create.Header.Set("Authorization", "Bearer access-token")
+	create.Header.Set("X-Request-ID", "request-alpha")
+	create.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2")
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated || store.create != 1 || verifier.seen.RequiredPermission != "projects.act" {
+		t.Fatalf("create status=%d calls=%d verification=%#v body=%s", created.Code, store.create, verifier.seen, created.Body.String())
+	}
+	if !strings.Contains(created.Body.String(), `"kind":"Session"`) || created.Header().Get("X-Resource-Version") != "1" {
+		t.Fatalf("create response=%s headers=%v", created.Body.String(), created.Header())
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha", nil)
+	get.Header.Set("Authorization", "Bearer access-token")
+	get.Header.Set("X-Request-ID", "request-get")
+	got := httptest.NewRecorder()
+	handler.ServeHTTP(got, get)
+	if got.Code != http.StatusOK || store.get != 1 || verifier.seen.RequiredPermission != "projects.get" {
+		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
+	}
+
+	closeRequest := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha:close", nil)
+	closeRequest.Header.Set("Authorization", "Bearer access-token")
+	closeRequest.Header.Set("X-Request-ID", "request-close")
+	closeRequest.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3")
+	closed := httptest.NewRecorder()
+	handler.ServeHTTP(closed, closeRequest)
+	if closed.Code != http.StatusOK || store.close != 1 || verifier.seen.RequiredPermission != "projects.act" {
+		t.Fatalf("close status=%d calls=%d verification=%#v body=%s", closed.Code, store.close, verifier.seen, closed.Body.String())
+	}
+}
+
+func TestManagedAgentSessionHTTPServerMapsStoreErrors(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	store := &managedAgentSessionStoreFake{err: errors.New("store failure")}
+	handler, err := NewManagedAgentSessionHTTPServer(verifier, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || store.get != 1 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, store.get, response.Body.String())
+	}
+}

@@ -890,6 +890,45 @@ func (mutation Mutation) validate() error {
 	return nil
 }
 
+// SessionCreateMutationDigest returns the canonical request digest used by
+// both the in-memory kernel and durable Session writers.
+func SessionCreateMutationDigest(input CreateSessionInput) (string, error) {
+	if err := input.Scope.validate(); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier(input.SessionID, maxIdentifierBytes, "session id"); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier(input.ProviderKind, maxProviderBytes, "provider kind"); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "session.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, ProviderKind: input.ProviderKind,
+	}), nil
+}
+
+// SessionCloseMutationDigest returns the canonical request digest used by
+// both the in-memory kernel and durable Session writers.
+func SessionCloseMutationDigest(input CloseSessionInput) (string, error) {
+	if err := input.Scope.validate(); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier(input.SessionID, maxIdentifierBytes, "session id"); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "session.close", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID,
+	}), nil
+}
+
 func validateExecutionInput(scope Scope, sessionID, turnID, executionID string, generation uint64) error {
 	if err := validateExecutionPath(scope, sessionID, turnID, executionID); err != nil {
 		return err

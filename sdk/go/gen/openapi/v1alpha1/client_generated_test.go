@@ -81,6 +81,32 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
+	sessionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Session","metadata":{"uid":"session-alpha","projectId":"project-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"providerKind":"codex","state":"active"}}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		return Response{Status: map[string]int{"POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions": 201, "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha": 200, "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha:close": 200}[request.Method+" "+request.Path], Headers: map[string]string{HeaderResourceVersion: "2"}, Body: sessionBody}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	created, err := client.CreateManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", ManagedAgentSessionCreateRequest{SessionID: "session-alpha", ProviderKind: "codex"})
+	if err != nil || created.Value.Spec.ProviderKind != "codex" {
+		t.Fatalf("create = %#v / %v", created, err)
+	}
+	if _, err := client.GetManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CloseManagedAgentSession(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3"); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 3 || string(seen[0].Body) != `{"sessionId":"session-alpha","providerKind":"codex"}` || seen[2].Body != nil {
+		t.Fatalf("session requests = %#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientErrorAndCancellationBoundaries(t *testing.T) {
 	problem := readOpenAPIFixture(t, "common/v1alpha1/fixtures/golden/problem.json")
 	transportCalls := 0

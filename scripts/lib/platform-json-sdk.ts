@@ -39,7 +39,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-  "sha256:4433d262ff189d9777d992262693f9edeac91a7c757bff4336888a7894782661";
+  "sha256:c5ae35f4a91aa7adbf7ca874d3cb6e9d0c7b485539d7cf492177fe5cce51791f";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -75,6 +75,7 @@ const PLATFORM_SCHEMAS = [
   "role-binding.schema.json",
   "role.schema.json",
 ] as const;
+const MANAGED_AGENT_SCHEMAS = ["session-create-request.schema.json", "session.schema.json"] as const;
 
 const SELECTED_COMMON_SCHEMA_REFS = new Set(COMMON_SCHEMAS.map((name) => `../schemas/${name}`));
 const SELECTED_PLATFORM_SCHEMA_REFS = new Set(PLATFORM_SCHEMAS.map((name) => `../schemas/${name}`));
@@ -154,6 +155,7 @@ export function platformJSONSDKContractInputs(root: string): string[] {
     MANAGED_HOST_OPENAPI_PATH,
     ...COMMON_SCHEMAS.map((name) => `contracts/common/v1alpha1/schemas/${name}`),
     ...PLATFORM_SCHEMAS.map((name) => `contracts/platform/v1alpha1/schemas/${name}`),
+    ...MANAGED_AGENT_SCHEMAS.map((name) => `contracts/managed-agent/v1alpha1/schemas/${name}`),
     ...selectedFixtures(root, COMMON_MANIFEST_PATH, SELECTED_COMMON_SCHEMA_REFS),
     ...selectedFixtures(root, PLATFORM_MANIFEST_PATH, SELECTED_PLATFORM_SCHEMA_REFS),
   ].toSorted();
@@ -172,6 +174,7 @@ export function platformJSONSDKAuthorityProfileInputs(): string[] {
     MANAGED_HOST_OPENAPI_PATH,
     ...COMMON_SCHEMAS.map((name) => `contracts/common/v1alpha1/schemas/${name}`),
     ...PLATFORM_SCHEMAS.map((name) => `contracts/platform/v1alpha1/schemas/${name}`),
+    ...MANAGED_AGENT_SCHEMAS.map((name) => `contracts/managed-agent/v1alpha1/schemas/${name}`),
   ].toSorted();
 }
 
@@ -335,13 +338,16 @@ function validateJSONSDKAuthority(root: string): void {
   }
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
   const expected = [
+    "managedAgentCloseSession",
     "managedAgentCreateProject",
+    "managedAgentCreateSession",
     "managedAgentGetMembership",
     "managedAgentGetOrganization",
     "managedAgentGetPlatformTenant",
     "managedAgentGetProject",
     "managedAgentGetRole",
     "managedAgentGetRoleBinding",
+    "managedAgentGetSession",
     "managedHostGetProjectContext",
     "managedHostGetRoleBinding",
   ];

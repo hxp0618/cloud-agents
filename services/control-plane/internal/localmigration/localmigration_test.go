@@ -123,6 +123,19 @@ func TestRunVersionedSuccessorCompleteLedgerIsNoOp(t *testing.T) {
 	}
 }
 
+func TestLoadAndVerifyIndependentProductSessionManifest(t *testing.T) {
+	config := testConfig(t)
+	config.ManifestSelector = "product-000015"
+	config.ManifestPath = "services/control-plane/migrations/product/000015/manifest.json"
+	bundle, err := loadAndVerify(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.manifest.SchemaBundle.SchemaHead != "000015" || len(bundle.manifest.SchemaBundle.Migrations) != 15 {
+		t.Fatalf("unexpected product manifest: head=%s migrations=%d", bundle.manifest.SchemaBundle.SchemaHead, len(bundle.manifest.SchemaBundle.Migrations))
+	}
+}
+
 func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 	for _, test := range []struct {
 		head   string
@@ -130,13 +143,14 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 	}{
 		{head: "000013", length: 13},
 		{head: "000014", length: 14},
+		{head: "000015", length: 15},
 	} {
 		length, ok := supportedManifestLength(test.head)
 		if !ok || length != test.length {
 			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
 		}
 	}
-	if length, ok := supportedManifestLength("000015"); ok || length != 0 {
+	if length, ok := supportedManifestLength("000016"); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
 	}
 }

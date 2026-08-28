@@ -24,9 +24,9 @@ type Config struct {
 	DatabaseURL    string
 	RepositoryRoot string
 	ManifestPath   string
-	// ManifestSelector is an optional member of the generated r2 closed
-	// selector set. An empty selector selects canonical 000013 only; the
-	// successor requires its explicit generated selector.
+	// ManifestSelector selects a checked-in canonical/successor product bundle.
+	// An empty selector selects canonical 000013; reviewed successors require
+	// their exact selector.
 	ManifestSelector string
 }
 
@@ -144,6 +144,8 @@ func supportedManifestLength(schemaHead string) (int, bool) {
 		return 13, true
 	case "000014":
 		return 14, true
+	case "000015":
+		return 15, true
 	default:
 		return 0, false
 	}
@@ -316,6 +318,13 @@ func bindGeneratedRunnerSelection(root string, config Config) (boundRunnerSelect
 }
 
 func selectGeneratedRunnerBinding(config Config) (generatedRunnerBindingSelector, error) {
+	if config.ManifestSelector == "product-000015" {
+		selector := productRunnerBindingSelector()
+		if config.ManifestPath != "" && config.ManifestPath != selector.manifestPath {
+			return generatedRunnerBindingSelector{}, errors.New("manifest path does not match the product selector")
+		}
+		return selector, nil
+	}
 	// Selector and path are identity inputs.  Do not normalize whitespace or
 	// path spelling, otherwise a caller-controlled near miss could be treated
 	// as one of the frozen generated identities.

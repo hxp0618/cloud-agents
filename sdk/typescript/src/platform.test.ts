@@ -10,6 +10,7 @@ import {
   decodePlatformTenant,
   decodeProject,
   decodeProjectCreateRequest,
+  decodeManagedAgentSession,
   decodeRole,
   decodeRoleBinding,
   decodeWatchCursor,
@@ -17,6 +18,7 @@ import {
   parseProblem,
   parseProject,
   parseProjectCreateRequest,
+  parseManagedAgentSession,
   parseWatchCursor,
   validateProjectResolvedOrganization,
   type FixtureResponse,
@@ -33,6 +35,27 @@ const platformFixtureRoot = resolve(
 );
 
 describe("generated platform JSON models", () => {
+  it("replays the managed-agent Session contract and client lifecycle", async () => {
+    const session = JSON.stringify({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "Session",
+      metadata: { uid: "session-alpha", projectId: "project-alpha", resourceVersion: "2", createdAt: "2026-08-29T08:00:00Z", updatedAt: "2026-08-29T08:01:00Z" },
+      spec: { providerKind: "codex", state: "active" },
+    });
+    expect(decodeManagedAgentSession(JSON.parse(session)).spec.providerKind).toBe("codex");
+    expect(parseManagedAgentSession(session).value.kind).toBe("Session");
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return { status: request.method === "POST" && request.path.endsWith("/sessions") ? 201 : request.method === "GET" ? 200 : 200, headers: { "X-Resource-Version": "2" }, body: session };
+    });
+    await client.createManagedAgentSession("tenant-alpha", "project-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", { sessionId: "session-alpha", providerKind: "codex" });
+    await client.getManagedAgentSession("tenant-alpha", "project-alpha", "session-alpha", "request-alpha");
+    await client.closeManagedAgentSession("tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3");
+    expect(seen).toHaveLength(3);
+    expect(seen[0]?.body).toBe('{"sessionId":"session-alpha","providerKind":"codex"}');
+    expect(seen[2]?.body).toBeUndefined();
+  });
   it("replays common and platform golden fixtures", () => {
     expect(parseProblem(readFixture(commonFixtureRoot, "golden/problem.json")).status).toBe(404);
     expect(decodeIdempotency(readJSON(commonFixtureRoot, "golden/idempotency.json")).key).toContain(

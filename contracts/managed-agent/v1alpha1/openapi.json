@@ -204,6 +204,84 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions": {
+      "post": {
+        "operationId": "managedAgentCreateSession",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "./schemas/session-create-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "./schemas/session.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}": {
+      "get": {
+        "operationId": "managedAgentGetSession",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "./schemas/session.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}:close": {
+      "post": {
+        "operationId": "managedAgentCloseSession",
+        "x-cloud-agents-coordination": "direct-transaction",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "./schemas/session.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/memberships/{membershipId}": {
       "get": {
         "operationId": "managedAgentGetMembership",
@@ -367,6 +445,14 @@
       },
       "ProjectId": {
         "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "SessionId": {
+        "name": "sessionId",
         "in": "path",
         "required": true,
         "schema": {
