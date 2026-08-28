@@ -217,4 +217,3 @@ D-053-MIG-000014.r2 source/profile/schema/manifest/SQL/catalog/archive/review by
 It authorizes continuation to the next already-approved code-bearing P1 slice only; it does not
 authorize canonical/production Runner, production database writes, HTTP/P2/provider access,
 deployment, publication, release, or Gate closure.
-
