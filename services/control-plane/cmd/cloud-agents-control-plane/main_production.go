@@ -101,8 +101,13 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("organization HTTP server is unavailable")
 	}
+	roleServer, err := server.NewRoleHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("role HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationRoute, organizationServer)
+	mux.Handle(server.RoleRoute, roleServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, projectServer)
 	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, request *http.Request) {
