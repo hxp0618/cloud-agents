@@ -51,6 +51,12 @@ describe("createCloudAgentRuntime", () => {
     ).toThrow(/registered more than once/u);
   });
 
+  it("rejects non-canonical provider identities at registration", () => {
+    expect(() => createCloudAgentRuntime({ providers: [provider(" codex ")] })).toThrow(
+      /canonical spelling/u,
+    );
+  });
+
   it("rejects malformed provider descriptors at the runtime boundary", async () => {
     const runtime = createCloudAgentRuntime({
       providers: [

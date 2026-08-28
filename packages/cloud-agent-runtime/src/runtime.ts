@@ -40,6 +40,9 @@ export function createCloudAgentRuntime(input: {
       );
     }
     const providerKind = normalizedProviderKind(provider.providerKind);
+    if (provider.providerKind !== providerKind) {
+      throw new Error(`Provider kind ${provider.providerKind} must use its canonical spelling.`);
+    }
     if (providers.has(providerKind)) {
       throw new Error(`Provider ${providerKind} is registered more than once.`);
     }
