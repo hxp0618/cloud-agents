@@ -8,7 +8,7 @@ The implementation performs no provider/runtime invocation, database or durable 
 
 Generated source/profile/schema/Go files are produced only by `bun scripts/generate-worker-localdev-bridge-profile.ts --write` and verified with `--check`. The generator records the complete sorted regular-file input set, exclusions, generated outputs, deterministic archive/member-manifest algorithms, pinned Go/Bun/Node versions and platforms, process-local receipt path, and single-predecessor D-056 lineage fence. Docs and review bytes are evidence, not generator inputs.
 
-Final generated evidence is source `sha256:764ab77a2e852f722c502795ce3ea8906f662786589bce9415e468ecc6060b01`, profile `sha256:56a992e653621a32327d6286f59ca35c79e6b9bc0ad9f1157d95179e9b41ff81`, input manifest `sha256:0743e869a03bd29008fab23c0d0fbde2a44de8670cd734b5c6669cfaff254d16` (46/12/5 input/exclusion/generated counts).
+Final generated evidence is source `sha256:25386d876955ea706406672bc5186a5680cd76e51cf13570ba69fdee6c4e1eb9`, profile `sha256:ddb4299c44b39afec63e0346da4401c55c3fcc97bb2d826bfa375accebc8aa86`, input manifest `sha256:f7595f033d853363812a92ecd83b702cd6a62ce7aa69de3e17324360e17124e9` (46/12/5 input/exclusion/generated counts).
 
 ## Focused checks
 

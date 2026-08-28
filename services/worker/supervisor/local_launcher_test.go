@@ -193,7 +193,8 @@ func TestLocalLauncherHealthRejectsDuplicateKeysAndClosesRejectedBody(t *testing
 		t.Fatal("rejected health response body was not closed")
 	}
 
-	duplicateBody := &trackingReadCloser{Reader: strings.NewReader(`{"api_version":"cloud-agents.localdev/v1","authority":"first","authority":"second"}`), onClose: func() {}}
+	duplicateClosed := false
+	duplicateBody := &trackingReadCloser{Reader: strings.NewReader(localLauncherDuplicateHealthJSON()), onClose: func() { duplicateClosed = true }}
 	duplicateLauncher := &LocalLauncher{
 		endpoint: "http://127.0.0.1:8091",
 		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -203,11 +204,30 @@ func TestLocalLauncherHealthRejectsDuplicateKeysAndClosesRejectedBody(t *testing
 	if err := duplicateLauncher.checkLauncherHealth(context.Background()); err != errLocalLauncherHealth {
 		t.Fatalf("duplicate health error=%v", err)
 	}
+	if !duplicateClosed {
+		t.Fatal("duplicate health response body was not closed")
+	}
 
 	duplicate := []byte(`{"api_version":"cloud-agents.localdev/v1","authority":"first","authority":"second"}`)
 	if localLauncherJSONKeysUnique(duplicate) {
 		t.Fatal("duplicate JSON key accepted")
 	}
+}
+
+func localLauncherDuplicateHealthJSON() string {
+	quote := func(value string) string {
+		encoded, _ := json.Marshal(value)
+		return string(encoded)
+	}
+	return `{"api_version":` + quote("cloud-agents.localdev/v1") +
+		`,"authority":"wrong","authority":` + quote(workerkernel.WorkerLocalDevLauncherAuthorityID) +
+		`,"profile":` + quote(workerkernel.WorkerLocalDevLauncherProfileID) +
+		`,"revision":` + quote(workerkernel.WorkerLocalDevLauncherRevision) +
+		`,"profile_digest":` + quote(workerkernel.WorkerLocalDevLauncherProfileDigest) +
+		`,"version":"v1.0","status":"serving","worker_identity":` + quote(workerkernel.WorkerLocalDevLauncherWorkerIdentitySPIFFE) +
+		`,"supervisor_identity":` + quote(workerkernel.WorkerLocalDevLauncherSupervisorIdentitySPIFFE) +
+		`,"lease_id":` + quote(workerkernel.WorkerLocalDevLauncherLeaseID) +
+		`,"generation":1,"external_side_effects":false,"transport":"loopback_http_connect"}`
 }
 
 type trackingReadCloser struct {
