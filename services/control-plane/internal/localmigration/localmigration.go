@@ -146,6 +146,8 @@ func supportedManifestLength(schemaHead string) (int, bool) {
 		return 14, true
 	case "000015":
 		return 15, true
+	case "000016":
+		return 16, true
 	default:
 		return 0, false
 	}
@@ -318,8 +320,12 @@ func bindGeneratedRunnerSelection(root string, config Config) (boundRunnerSelect
 }
 
 func selectGeneratedRunnerBinding(config Config) (generatedRunnerBindingSelector, error) {
-	if config.ManifestSelector == "product-000015" {
-		selector := productRunnerBindingSelector()
+	if strings.HasPrefix(config.ManifestSelector, "product-") {
+		version := strings.TrimPrefix(config.ManifestSelector, "product-")
+		if version != "000015" && version != "000016" {
+			return generatedRunnerBindingSelector{}, errors.New("unknown product selector")
+		}
+		selector := productRunnerBindingSelector(version)
 		if config.ManifestPath != "" && config.ManifestPath != selector.manifestPath {
 			return generatedRunnerBindingSelector{}, errors.New("manifest path does not match the product selector")
 		}

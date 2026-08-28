@@ -113,6 +113,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed agent session HTTP server is unavailable")
 	}
+	turnServer, err := server.NewManagedAgentTurnHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("managed agent turn HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleRoute, roleServer)
@@ -120,6 +124,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.RoleBindingRoute, rbacServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesManagedAgentTurnPath(request.URL.Path) {
+			turnServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesManagedAgentSessionPath(request.URL.Path) {
 			sessionServer.ServeHTTP(writer, request)
 			return

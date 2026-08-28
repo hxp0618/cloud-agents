@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:f84386809bc969894335d28e166ab2ea0803b1cc20beb106583fa738afd93d3a",
-    "inputManifestSha256": "sha256:8e937da63fc13100dba78d49d8f6096082e5fd8351356774a1a4bf513dc036d3",
+    "manifestSha256": "sha256:a90a7b669ae3e3080d7f91b69acf9bafe811b3e4b72544ea4328789e536a31e1",
+    "inputManifestSha256": "sha256:d0548258a236c6dabd872aadae2a66cdaa3ea989c3ae246540a7c81ae92f99f4",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -45,6 +45,8 @@
       "contracts/managed-agent/v1alpha1/openapi.json",
       "contracts/managed-agent/v1alpha1/schemas/session-create-request.schema.json",
       "contracts/managed-agent/v1alpha1/schemas/session.schema.json",
+      "contracts/managed-agent/v1alpha1/schemas/turn-create-request.schema.json",
+      "contracts/managed-agent/v1alpha1/schemas/turn.schema.json",
       "contracts/managed-host/v1alpha1/openapi.json",
       "contracts/platform/v1alpha1/fixtures/golden/membership.json",
       "contracts/platform/v1alpha1/fixtures/golden/organization.json",
@@ -75,7 +77,7 @@
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:c5ae35f4a91aa7adbf7ca874d3cb6e9d0c7b485539d7cf492177fe5cce51791f",
+      "manifestSha256": "sha256:254134c64f2787732cea3666ca9a5c3e8588c2a8694d254cfd2016cb669ac140",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -98,6 +100,10 @@
         "contracts/common/v1alpha1/schemas/watch-cursor-token.schema.json",
         "contracts/common/v1alpha1/schemas/watch-cursor.schema.json",
         "contracts/managed-agent/v1alpha1/openapi.json",
+        "contracts/managed-agent/v1alpha1/schemas/session-create-request.schema.json",
+        "contracts/managed-agent/v1alpha1/schemas/session.schema.json",
+        "contracts/managed-agent/v1alpha1/schemas/turn-create-request.schema.json",
+        "contracts/managed-agent/v1alpha1/schemas/turn.schema.json",
         "contracts/managed-host/v1alpha1/openapi.json",
         "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
         "contracts/platform/v1alpha1/schemas/membership.schema.json",
@@ -116,7 +122,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:21fd2c229aab778ed756775cf5f791a3b9adc3d7c95a6cfb539bc3ea13f7d7cb",
+    "sourceManifestSha256": "sha256:c06aefb293dd0e03cb861b3f8767576d44754fcea24b40a709717a429f6e7b73",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -132,7 +138,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:3febeba91ae24a286207165d79efa24f5a710f6f52d864d84b9685cd5dfa0c74"
+    "configDigest": "sha256:57b7766d96a57ee15e29643aff8e16550b7b710a00f25dfe5fe1b40f57aac6b5"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -147,12 +153,12 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:07d05fd90e70bd0bf36a5b5c09fe89982031ad3677e96fdb85dcc7a83a0f498d",
+  "outputTreeSha256": "sha256:94f034427bdd3cec3ed1aa92c287705d1700d8d1e4bad608121283051b7d4d44",
   "outputs": [
     {
       "path": "sdk/typescript/src/platform.ts",
-      "sha256": "sha256:06f0d58f227f9317b563bae1c51afbe8f15ceeb7fda121706f242f90b33f15f3",
-      "sizeBytes": 50629
+      "sha256": "sha256:da0ee4fdbaf51206695b4cf706ea4ec6d1fc8e1627624ef04ae65cca81d0e8e2",
+      "sizeBytes": 56998
     }
   ]
 }

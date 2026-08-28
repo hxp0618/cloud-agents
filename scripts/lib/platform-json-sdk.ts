@@ -39,7 +39,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-  "sha256:c5ae35f4a91aa7adbf7ca874d3cb6e9d0c7b485539d7cf492177fe5cce51791f";
+  "sha256:254134c64f2787732cea3666ca9a5c3e8588c2a8694d254cfd2016cb669ac140";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -75,7 +75,12 @@ const PLATFORM_SCHEMAS = [
   "role-binding.schema.json",
   "role.schema.json",
 ] as const;
-const MANAGED_AGENT_SCHEMAS = ["session-create-request.schema.json", "session.schema.json"] as const;
+const MANAGED_AGENT_SCHEMAS = [
+  "session-create-request.schema.json",
+  "session.schema.json",
+  "turn-create-request.schema.json",
+  "turn.schema.json",
+] as const;
 
 const SELECTED_COMMON_SCHEMA_REFS = new Set(COMMON_SCHEMAS.map((name) => `../schemas/${name}`));
 const SELECTED_PLATFORM_SCHEMA_REFS = new Set(PLATFORM_SCHEMAS.map((name) => `../schemas/${name}`));
@@ -341,6 +346,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentCloseSession",
     "managedAgentCreateProject",
     "managedAgentCreateSession",
+    "managedAgentCreateTurn",
     "managedAgentGetMembership",
     "managedAgentGetOrganization",
     "managedAgentGetPlatformTenant",
@@ -348,6 +354,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentGetRole",
     "managedAgentGetRoleBinding",
     "managedAgentGetSession",
+    "managedAgentGetTurn",
     "managedHostGetProjectContext",
     "managedHostGetRoleBinding",
   ];

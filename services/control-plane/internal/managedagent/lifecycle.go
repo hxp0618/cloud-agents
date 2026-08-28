@@ -929,6 +929,36 @@ func SessionCloseMutationDigest(input CloseSessionInput) (string, error) {
 	}), nil
 }
 
+// TurnCreateMutationDigest returns the canonical request digest used by the
+// in-memory kernel and durable Turn writers.
+func TurnCreateMutationDigest(input CreateTurnInput) (string, error) {
+	if err := input.Scope.validate(); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier(input.SessionID, maxIdentifierBytes, "session id"); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier(input.TurnID, maxIdentifierBytes, "turn id"); err != nil {
+		return "", err
+	}
+	inputDigest, err := TurnInputDigest(input.InputText)
+	if err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "turn.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, TurnID: input.TurnID, InputDigest: inputDigest,
+	}), nil
+}
+
+// TurnInputDigest returns the bounded content digest persisted with a Turn.
+func TurnInputDigest(inputText string) (string, error) {
+	return digestInput(inputText)
+}
+
 func validateExecutionInput(scope Scope, sessionID, turnID, executionID string, generation uint64) error {
 	if err := validateExecutionPath(scope, sessionID, turnID, executionID); err != nil {
 		return err
