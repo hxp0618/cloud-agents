@@ -1,10 +1,11 @@
 # `@synara/cloud-agent-distribution`
 
-Pinned Cloud Agent distribution shared by Synara and T3 Code. Its JavaScript
-factory explicitly registers the allowlisted Providers; it also exports the
-stdio client, deeply immutable source manifest, and the Protocol v2 envelope
-schema from `@synara/cloud-agent-distribution/schemas`. It does not modify
-either host during installation.
+Pinned Cloud Agent distribution for independent hosts. Synara and T3 Code
+remain future consumers/integrations outside the current product scope. Its
+JavaScript factory explicitly registers the allowlisted Providers; it also
+exports the stdio client, deeply immutable source manifest, and the Protocol v2
+envelope schema from `@synara/cloud-agent-distribution/schemas`. It does not
+modify a host during installation.
 
 The `cloud-agent-runtime` bin is emitted as a single bundled executable so a
 host-side SHA-256 check covers the actual Runtime implementation rather than an

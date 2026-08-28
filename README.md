@@ -2,7 +2,7 @@
 
 Portable Cloud Agent protocol, provider APIs, runtime, provider implementations, conformance tooling, and immutable distributions shared by independent host applications.
 
-The repository is being rebuilt around a host-neutral JavaScript/stdio ABI. Synara and T3 Code remain separate consumers and retain their own orchestration, workspace, VCS, checkpoint, UI, and lifecycle authority.
+The repository is being rebuilt around a host-neutral JavaScript/stdio ABI. Synara and T3 Code are future consumers/integrations; they retain their own orchestration, workspace, VCS, checkpoint, UI, and lifecycle authority outside this product.
 
 The seven packages keep their `@synara/cloud-agent-*` names for first-RC wire and import compatibility. That namespace does not make the repository depend on the Synara application root: the workspace contains no Turbo, Effect, Synara Control Plane, or T3-private dependency.
 

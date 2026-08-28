@@ -1,7 +1,7 @@
 {
   "name": "@synara/cloud-agent-distribution",
   "version": "0.1.0-rc.1",
-  "description": "Pinned Cloud Agent runtime distribution for Synara and T3 Code hosts",
+  "description": "Pinned Cloud Agent runtime distribution for independent hosts; Synara/T3 integrations remain future consumers",
   "homepage": "https://github.com/hxp0618/cloud-agents#readme",
   "bugs": {
     "url": "https://github.com/hxp0618/cloud-agents/issues"
