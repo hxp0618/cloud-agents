@@ -1,7 +1,7 @@
 # D-053-FRESH-20260828-C independent read-only review
 
-Date: 2026-08-28 Asia/Shanghai  
-Review type: independent, fixed-object, read-only review  
+Date: 2026-08-28 Asia/Shanghai
+Review type: independent, fixed-object, read-only review
 Authority: `D-053-FRESH-20260828-C`
 
 ## Verdict
