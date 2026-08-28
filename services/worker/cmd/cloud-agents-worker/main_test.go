@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,6 +27,11 @@ func TestParseLocalWorkerConfigRejectsNonLoopback(t *testing.T) {
 			t.Errorf("%q error = %v, want loopback rejection", address, err)
 		}
 	}
+	for _, address := range []string{"127.0.0.1:0", "127.0.0.1:not-a-port", "127.0.0.1:65536", "127.0.0.1:-1", "[::1]:0"} {
+		if _, err := parseLocalWorkerConfig([]string{"--listen", address, "--token-file", filepath.Join(t.TempDir(), "token")}); !errors.Is(err, errNonLoopbackListen) {
+			t.Errorf("%q error = %v, want invalid-port rejection", address, err)
+		}
+	}
 	for _, address := range []string{"127.0.0.1:8091", "[::1]:8091"} {
 		if cfg, err := parseLocalWorkerConfig([]string{"--listen", address, "--token-file", filepath.Join(t.TempDir(), "token")}); err != nil || cfg.listen != address {
 			t.Errorf("%q config = %#v, error = %v", address, cfg, err)
@@ -40,6 +46,26 @@ func TestRunMainReturnsFailureWithoutExitingProcess(t *testing.T) {
 	}
 	if err := runMain(nil, nil); !errors.Is(err, errInvalidWorkerConfig) {
 		t.Fatalf("nil context error = %v, want invalid config", err)
+	}
+}
+
+func TestRunLocalWorkerDoesNotLeaveTokenWhenListenFails(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	tokenPath := filepath.Join(t.TempDir(), "worker-token")
+	err = runLocalWorker(context.Background(), localWorkerConfig{
+		listen:    occupied.Addr().String(),
+		tokenFile: tokenPath,
+		token:     "token-bind-failure",
+	})
+	if err == nil {
+		t.Fatal("runLocalWorker unexpectedly succeeded on an occupied listener")
+	}
+	if _, statErr := os.Lstat(tokenPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("token file after failed listen: stat=%v, want absent", statErr)
 	}
 }
 
@@ -126,7 +152,7 @@ func TestLocalWorkerAuthMiddlewareBindsOnlyFixedIdentity(t *testing.T) {
 }
 
 func TestGeneratedConnectClientNegotiateAndHealthAgainstLoopbackServer(t *testing.T) {
-	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:0", token: "token-connect", clock: func() time.Time { return time.Date(2026, 8, 28, 1, 2, 3, 0, time.UTC) }})
+	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18092", token: "token-connect", clock: func() time.Time { return time.Date(2026, 8, 28, 1, 2, 3, 0, time.UTC) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +191,7 @@ func TestGeneratedConnectClientNegotiateAndHealthAgainstLoopbackServer(t *testin
 }
 
 func TestGeneratedConnectClientDispatchAndReceiptRemainUnimplemented(t *testing.T) {
-	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:0", token: "token-noop"})
+	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18093", token: "token-noop"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +212,7 @@ func TestGeneratedConnectClientDispatchAndReceiptRemainUnimplemented(t *testing.
 }
 
 func TestLocalWorkerHealthAndUnknownRouteFailClosed(t *testing.T) {
-	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:0", token: "token-health"})
+	server, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18094", token: "token-health"})
 	if err != nil {
 		t.Fatal(err)
 	}

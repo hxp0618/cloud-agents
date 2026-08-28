@@ -16,9 +16,10 @@ Profile：cloud-agents/worker-localdev-launcher/v1alpha1
 
 它把已有 worker.NewService 和 worker.NewHandler 放入真实的 net.Listen/
 graceful-shutdown 生命周期。默认监听 127.0.0.1:8091，并且 parser 先验证地址必须是合法
-IPv4/IPv6 loopback（含 1..65535 port），再要求显式 --token-file。token 用 32-byte
-CSPRNG、URL-safe base64 生成，通过 O_EXCL 和 mode 0600 一次写入；既有 token/文件不会被
-覆盖，token 不打印、不放入 argv 或 health JSON。SIGINT/SIGTERM 只触发 bounded graceful
+IPv4/IPv6 loopback（含 1..65535 port），再要求显式 --token-file。运行时先绑定 listener，
+只有 bind 成功后才创建 token 文件；token 用 32-byte CSPRNG、URL-safe base64 生成，通过
+O_EXCL 和 mode 0600 一次写入；既有 token/文件不会被覆盖，token 不打印、不放入 argv 或
+health JSON。SIGINT/SIGTERM 只触发 bounded graceful
 shutdown。
 
 transport middleware 在进入 generated handler 前同时检查：
@@ -74,9 +75,9 @@ Draft 2020-12 schema 和 exact nested values。当前生成器检查：
 
 | 对象 | digest |
 | --- | --- |
-| authority source | sha256:7f6a9fc3b097d793d708c6c9ac4b2de16ac78fe8020408c3cec9fcdd5c94ff5c |
-| profile | sha256:2490437ed60735fc0ebfcff0aaaa9adeb48f0850823db15666608ae4ca22ee4a |
-| input manifest | sha256:dd373d37032bb4e31856498b5dc06a6a8d7df3f7b0d2f24aaac270ee232f034d |
+| authority source | sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699 |
+| profile | sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e |
+| input manifest | sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea |
 
 前置 lineage 为 D-055 profile
 sha256:892a718cfd58e138cbb22e556da2f0088fdc8b73f43b47805b35e9c90f777e74；
@@ -93,8 +94,8 @@ Gate：
     GOWORK=off GOFLAGS=-mod=readonly go -C services/worker test -tags localdev -race ./... -count=1 -timeout=30m
     GOWORK=off GOFLAGS=-mod=readonly go -C services/worker vet -tags localdev ./...
 
-launcher unit tests include non-loopback/malformed address rejection, token file mode and
-exclusive-write checks, duplicate/missing/wrong token rejection, fixed identity context
+launcher unit tests include non-loopback/malformed/invalid-port address rejection, occupied-
+listener startup cleanup, token file mode and exclusive-write checks, duplicate/missing/wrong token rejection, fixed identity context
 binding, malformed peer address rejection, generated Connect Negotiate→CheckHealth over an
 httptest loopback server, health JSON and unknown-route checks. A separate live evidence run
 will start the command on loopback with a temporary token file, query /healthz, and send

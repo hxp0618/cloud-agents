@@ -137,12 +137,16 @@ func validateLocalWorkerConfig(cfg localWorkerConfig) error {
 }
 
 func validateLoopbackListen(address string) error {
-	host, _, err := net.SplitHostPort(address)
+	host, port, err := net.SplitHostPort(address)
 	if err != nil || host == "" {
 		return errNonLoopbackListen
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
+		return errNonLoopbackListen
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return errNonLoopbackListen
 	}
 	return nil
@@ -403,10 +407,6 @@ func runLocalWorker(ctx context.Context, cfg localWorkerConfig) error {
 	if ctx == nil {
 		return errInvalidWorkerConfig
 	}
-	built, err := newLocalWorkerHTTPServer(cfg)
-	if err != nil {
-		return err
-	}
 	if err := validateLoopbackListen(cfg.listen); err != nil {
 		return err
 	}
@@ -415,6 +415,12 @@ func runLocalWorker(ctx context.Context, cfg localWorkerConfig) error {
 		return err
 	}
 	defer listener.Close()
+	// Bind the listener before creating the token file. A failed bind must not
+	// leave an apparently valid credential behind for a process that never ran.
+	built, err := newLocalWorkerHTTPServer(cfg)
+	if err != nil {
+		return err
+	}
 	errorsCh := make(chan error, 1)
 	go func() { errorsCh <- built.Server.Serve(listener) }()
 	select {

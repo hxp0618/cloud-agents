@@ -21,9 +21,10 @@ Worker RPC 和只读 `/healthz`。它是后续 Control Plane transport bridge �
 - lease：`worker-localdev-lease-000001`
 - generation：`1`
 
-监听地址必须是 IPv4/IPv6 loopback；非 loopback、主机名、通配地址和 malformed address
-均 fail closed。token 只能由 launcher 生成并以 `O_EXCL`、mode `0600` 写入 caller 指定的
-文件；token 不进入 argv、日志、health 响应或 profile。 `expected_*` 请求字段只作为 peer
+监听地址必须是 IPv4/IPv6 loopback 且端口为 `1..65535`；非 loopback、主机名、通配地址、
+malformed address 或无效端口均 fail closed。launcher 先成功绑定监听地址，再由 launcher
+生成 token 并以 `O_EXCL`、mode `0600` 写入 caller 指定的文件；因此 bind 失败不会留下
+credential。token 不进入 argv、日志、health 响应或 profile。 `expected_*` 请求字段只作为 peer
 identity constraint，永远不是认证材料。当前 bearer-to-context 身份适配器只用于
 localdev 测试/开发，不声称实现生产 mTLS 或 trust provisioning。
 
@@ -55,9 +56,9 @@ services/worker/localdev_launcher_profile_generated.go
 
 | 对象 | digest |
 | --- | --- |
-| authority source | `sha256:7f6a9fc3b097d793d708c6c9ac4b2de16ac78fe8020408c3cec9fcdd5c94ff5c` |
-| profile | `sha256:2490437ed60735fc0ebfcff0aaaa9adeb48f0850823db15666608ae4ca22ee4a` |
-| input manifest | `sha256:dd373d37032bb4e31856498b5dc06a6a8d7df3f7b0d2f24aaac270ee232f034d` |
+| authority source | `sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699` |
+| profile | `sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e` |
+| input manifest | `sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea` |
 
 上述 digest 以 generator 为 authority；candidate commit/tree 和五个文件的 Git blob
 digest 只在 fixed candidate commit 后追加到 implementation/review record，不在这里
@@ -87,9 +88,9 @@ sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.c
 sdk/go/gen/common/v1alpha1/identity_generated.go
 sdk/go/go.mod
 sdk/go/go.sum
+services/worker/cmd/cloud-agents-worker/README.md
 services/worker/cmd/cloud-agents-worker/main.go
 services/worker/cmd/cloud-agents-worker/main_test.go
-services/worker/cmd/cloud-agents-worker/README.md
 services/worker/doc.go
 services/worker/execution.go
 services/worker/execution_test.go

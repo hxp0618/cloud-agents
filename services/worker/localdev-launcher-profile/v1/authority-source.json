@@ -80,7 +80,7 @@
     "services/worker/localdev_launcher_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:dd373d37032bb4e31856498b5dc06a6a8d7df3f7b0d2f24aaac270ee232f034d",
+  "inputManifestDigest": "sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -252,5 +252,5 @@
     "publication": "forbidden",
     "gateTransition": "forbidden"
   },
-  "sourceDigest": "sha256:7f6a9fc3b097d793d708c6c9ac4b2de16ac78fe8020408c3cec9fcdd5c94ff5c"
+  "sourceDigest": "sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699"
 }

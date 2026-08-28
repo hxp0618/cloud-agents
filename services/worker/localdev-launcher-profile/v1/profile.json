@@ -80,7 +80,7 @@
     "services/worker/localdev_launcher_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:dd373d37032bb4e31856498b5dc06a6a8d7df3f7b0d2f24aaac270ee232f034d",
+  "inputManifestDigest": "sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -255,7 +255,7 @@
   "sourceAuthority": {
     "authorityId": "D-056-WORKER-LOCALDEV-LAUNCHER-000001",
     "revision": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1",
-    "sourceDigest": "sha256:7f6a9fc3b097d793d708c6c9ac4b2de16ac78fe8020408c3cec9fcdd5c94ff5c"
+    "sourceDigest": "sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699"
   },
-  "profileDigest": "sha256:2490437ed60735fc0ebfcff0aaaa9adeb48f0850823db15666608ae4ca22ee4a"
+  "profileDigest": "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e"
 }
