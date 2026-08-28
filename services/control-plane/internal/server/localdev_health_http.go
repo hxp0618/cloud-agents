@@ -59,7 +59,7 @@ func (server *LocalControlPlaneHealthHTTPServer) ServeHTTP(
 	request *http.Request,
 ) {
 	writer.Header().Set("Cache-Control", "no-store")
-	if server == nil || server.readiness == nil {
+	if server == nil || server.readiness == nil || request == nil {
 		writeLocalControlPlaneHealthError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}

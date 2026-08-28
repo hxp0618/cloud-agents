@@ -172,6 +172,19 @@ func localDurableProjectCreateHTTPRequest(token, body string) *http.Request {
 	return request
 }
 
+func TestLocalDurableProjectCreateHTTPServerNilRequestFailsClosed(t *testing.T) {
+	verifier, _ := localVerifierAndToken(t, testLocalHTTPNow())
+	server, err := newLocalDurableProjectCreateHTTPServer(verifier, &localDurableProjectCreatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, nil)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func testLocalHTTPNow() (now time.Time) {
 	return time.Date(2026, 8, 25, 8, 0, 0, 0, time.UTC)
 }

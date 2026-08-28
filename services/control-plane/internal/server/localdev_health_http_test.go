@@ -92,6 +92,18 @@ func TestLocalControlPlaneHealthHTTPServerNilReceiverFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLocalControlPlaneHealthHTTPServerNilRequestFailsClosed(t *testing.T) {
+	server, err := NewLocalControlPlaneHealthHTTPServer(func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, nil)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func assertHealthResponse(t *testing.T, response *httptest.ResponseRecorder, status int, kind, state string) {
 	t.Helper()
 	if response.Code != status {

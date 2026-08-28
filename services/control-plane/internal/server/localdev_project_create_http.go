@@ -87,7 +87,7 @@ type localDurableProjectCreateErrorResponse struct {
 
 func (server *LocalDurableProjectCreateHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
-	if server == nil || server.verifier == nil || server.creator == nil {
+	if server == nil || server.verifier == nil || server.creator == nil || request == nil {
 		writeLocalDurableProjectCreateError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}

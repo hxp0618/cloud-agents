@@ -253,6 +253,19 @@ func localVerifierAndToken(t *testing.T, now time.Time) (*authn.LocalVerifier, s
 	return verifier, token
 }
 
+func TestLocalProjectClaimHTTPServerNilRequestFailsClosed(t *testing.T) {
+	verifier, _ := localVerifierAndToken(t, testLocalHTTPNow())
+	server, err := newLocalProjectClaimHTTPServer(verifier, &localProjectClaimerFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, nil)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func localClaimHTTPRequest(token, body string) *http.Request {
 	request := httptest.NewRequest(http.MethodPost, LocalProjectClaimRoutePrefix+"tenant-alpha"+LocalProjectClaimRouteSuffix, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer "+token)

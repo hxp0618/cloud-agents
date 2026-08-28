@@ -88,7 +88,7 @@ type localProjectClaimErrorResponse struct {
 
 func (server *LocalProjectClaimHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
-	if server == nil || server.verifier == nil || server.claimer == nil {
+	if server == nil || server.verifier == nil || server.claimer == nil || request == nil {
 		writeLocalClaimError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}
