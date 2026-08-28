@@ -173,7 +173,7 @@
       "const": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1"
     },
     "inputManifestDigest": {
-      "const": "sha256:6127f8473585e283b14a3bcfaf1bba613d50d99748977633ce2148b0b18ecaf4"
+      "const": "sha256:b2e9fcda623534bdaaaba1b19f343b801a7b5864900b7891254f34423f3b8c76"
     },
     "archive": {
       "type": "object",
@@ -780,7 +780,7 @@
       }
     },
     "sourceDigest": {
-      "const": "sha256:368d4e852c3be9d53e2f05fe76006359bd7f2462888b15c76c5ff8b996ee880c"
+      "const": "sha256:d9c42d2a98d15fb17632bf7a873465ea18db96871ec085d8f700e90f5e7ac82c"
     }
   }
 }

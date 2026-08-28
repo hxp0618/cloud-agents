@@ -468,7 +468,6 @@ function schemaFor(kind: "source" | "profile", root: string): JsonRecord {
     "implementationBoundary",
     ...(isSource ? ["sourceDigest"] : ["sourceAuthority", "profileDigest"]),
   ];
-  const digestSchema = { type: "string", pattern: "^sha256:[0-9a-f]{64}$" };
   const exactArray = (values: readonly unknown[]) => ({
     type: "array",
     const: [...values],
