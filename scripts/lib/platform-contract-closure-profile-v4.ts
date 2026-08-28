@@ -175,38 +175,38 @@ const V4_REPLAY_AUTHORITY = {
 
 type V4PredecessorFileRecord = Readonly<ImmutableFileRecord & { gitBlob: string }>;
 
-export const CONTRACT_CLOSURE_V4_V3_PREDECESSOR_FILES = [
-  {
+export const CONTRACT_CLOSURE_V4_V3_PREDECESSOR_FILES = Object.freeze([
+  Object.freeze({
     path: "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
     gitBlob: "d714424ac6b42a44ee775a6edde6327d87f2d7c3",
     sha256: "e8384fb25f3828dfafeecf0040110df3a51cd64ce5877e966ecec12769099bf4",
     sizeBytes: 14_215,
-  },
-  {
+  }),
+  Object.freeze({
     path: "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v3.json",
     gitBlob: "58f651367aea31c5662423b602bf293d085a8afa",
     sha256: "face6b9f01732255d4f3ae3aebb040d0af19efae416bad074a2f84510e385862",
     sizeBytes: 13_451,
-  },
-  {
+  }),
+  Object.freeze({
     path: "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v3.schema.json",
     gitBlob: "eb2c46f916ac52b13a6d225685bf48064cf35836",
     sha256: "3fbc85313f2195860b6211f8c31fc185d825469146f703b7e442c34b0612ed25",
     sizeBytes: 23_642,
-  },
-  {
+  }),
+  Object.freeze({
     path: "contracts/platform/v1alpha1/schemas/contract-closure-profile-v3.schema.json",
     gitBlob: "ccdef422ab3ef6a61cb2be8ff1e071572cd99374",
     sha256: "3a98b5558cf7d359e4854a46ab95a1a14fb3cc1298a304954d4033a092f8fcb2",
     sizeBytes: 2_080,
-  },
-  {
+  }),
+  Object.freeze({
     path: "docs/plan/p1/g-contract-closure-profile-v3-independent-review-20260824.md",
     gitBlob: "95cd52d4074852f1792620bcac8cf6bf6ffc0853",
     sha256: "83975f780dbcaed587988155f680c33e3b1a42ee10776af2a3077a5482d13001",
     sizeBytes: 10_102,
-  },
-] as const satisfies readonly V4PredecessorFileRecord[];
+  }),
+] as const satisfies readonly V4PredecessorFileRecord[]);
 
 const CONTRACT_CLOSURE_V4_V3_BASELINE = {
   commit: "16275f6cbf390c343a9ac00f9193e75eaad0094e",
@@ -254,7 +254,7 @@ const FIXED_GIT_CONFIG_ARGS = [
   "diff.renames=false",
 ] as const;
 
-export const CONTRACT_CLOSURE_V4_CRITERIA = [
+export const CONTRACT_CLOSURE_V4_CRITERIA = Object.freeze([
   "json-schema-2020-12-official-test-suite",
   "openapi-3.1-semantic-validation",
   "generated-sdk-replay",
@@ -262,28 +262,30 @@ export const CONTRACT_CLOSURE_V4_CRITERIA = [
   "response-watch-unknown-field-preservation",
   "runtime-server-path-and-tenant-authority-enforcement",
   "remaining-generator-supply-chain-review",
-] as const;
+] as const);
 
-export const CONTRACT_CLOSURE_V4_MISSING = ["remaining-generator-supply-chain-review"] as const;
+export const CONTRACT_CLOSURE_V4_MISSING = Object.freeze([
+  "remaining-generator-supply-chain-review",
+] as const);
 
-export const CONTRACT_CLOSURE_V4_RUNTIME_FILES = [
-  {
+export const CONTRACT_CLOSURE_V4_RUNTIME_FILES = Object.freeze([
+  Object.freeze({
     path: "services/control-plane/go.mod",
     sha256: "d27871e7d4d8788d455ac2a5b9d512b0b6628903fad05213a9e227c0f0883d3d",
     sizeBytes: 672,
-  },
-  {
+  }),
+  Object.freeze({
     path: "services/control-plane/go.sum",
     sha256: "4b870f580591894010f0762c8d04b83cba95a5c09eabc4ffc2631e41290abfbc",
     sizeBytes: 3634,
-  },
-] as const satisfies readonly ImmutableFileRecord[];
+  }),
+] as const satisfies readonly ImmutableFileRecord[]);
 
-export const CONTRACT_CLOSURE_V4_RUNTIME_REVIEW_FILE = {
+export const CONTRACT_CLOSURE_V4_RUNTIME_REVIEW_FILE = Object.freeze({
   path: RUNTIME_REVIEW_PATH,
   sha256: "46bd55af8d0bb6983062cba7c104fd6432785adbf7db24b046a92e4b39b4fcd6",
   sizeBytes: 5030,
-} as const satisfies ImmutableFileRecord;
+} as const satisfies ImmutableFileRecord);
 
 export type ContractClosureV4Review = JsonRecord & {
   readonly path: string;

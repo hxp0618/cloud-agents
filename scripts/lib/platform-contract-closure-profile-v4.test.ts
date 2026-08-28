@@ -370,11 +370,25 @@ describe("contract closure profile v4 Slice A authority", () => {
   it("keeps exported authority and runtime selectors immutable against caller replacement", () => {
     expect(Object.isFrozen(CONTRACT_CLOSURE_V4_AUTHORITY_FILE)).toBe(true);
     expect(Object.isFrozen(CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE)).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_RUNTIME_FILES)).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_RUNTIME_FILES[0])).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_RUNTIME_REVIEW_FILE)).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_V3_PREDECESSOR_FILES)).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_V3_PREDECESSOR_FILES[0])).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_CRITERIA)).toBe(true);
+    expect(Object.isFrozen(CONTRACT_CLOSURE_V4_MISSING)).toBe(true);
     expect(() => {
       (CONTRACT_CLOSURE_V4_AUTHORITY_FILE as unknown as MutableRecord).gitBlob = "0".repeat(40);
     }).toThrow(TypeError);
     expect(() => {
       (CONTRACT_CLOSURE_V4_RUNTIME_GIT_LINEAGE as unknown as MutableRecord).candidateCommit =
+        "0".repeat(40);
+    }).toThrow(TypeError);
+    expect(() => {
+      (CONTRACT_CLOSURE_V4_RUNTIME_FILES[0] as unknown as MutableRecord).sha256 = "0".repeat(64);
+    }).toThrow(TypeError);
+    expect(() => {
+      (CONTRACT_CLOSURE_V4_V3_PREDECESSOR_FILES[0] as unknown as MutableRecord).gitBlob =
         "0".repeat(40);
     }).toThrow(TypeError);
   });
