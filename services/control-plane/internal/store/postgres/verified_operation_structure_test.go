@@ -328,6 +328,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CreateProjectDurable",
 		"*DurableCoordinationService.GetManagedAgentSession",
 		"*DurableCoordinationService.GetManagedAgentTurn",
+		"*DurableCoordinationService.GetManagedAgentExecution",
 		"*DurableCoordinationService.GetOrganization",
 		"*DurableCoordinationService.GetPlatformTenant",
 		"*DurableCoordinationService.GetProject",
@@ -338,6 +339,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*RBACMutationService.CreateMembership",
 		"*RBACMutationService.RevokeRoleBinding",
 		"*RBACMutationService.transitionMembership",
+		"withManagedAgentProjectMutation",
 	)
 	requireCallerClosure(t, tree, "executeVerifiedRBACOperation",
 		"*DurableCoordinationService.ClaimIdempotency",
@@ -349,6 +351,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.CreateProjectDurable",
 		"*DurableCoordinationService.GetManagedAgentSession",
 		"*DurableCoordinationService.GetManagedAgentTurn",
+		"*DurableCoordinationService.GetManagedAgentExecution",
 		"*DurableCoordinationService.GetOrganization",
 		"*DurableCoordinationService.GetPlatformTenant",
 		"*DurableCoordinationService.GetProject",
@@ -357,6 +360,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.GetRoleBinding",
 		"*RBACMutationService.withKnownScopeMutation",
 		"*RBACMutationService.withStoredScopeMutation",
+		"withManagedAgentProjectMutation",
 	)
 	for _, forbidden := range []string{"authorizeMutation", "bindAuthorizedProfile"} {
 		if callers := productionCallers(tree, forbidden); len(callers) != 0 {

@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000016.tar` into a directory and run Compose
+Extract `cloud-agents-deployment-000017.tar` into a directory and run Compose
 from this directory with an env file copied from `.env.example`.
 
 The deployment is intentionally fail-closed around PostgreSQL authority:

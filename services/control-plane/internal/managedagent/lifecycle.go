@@ -959,6 +959,74 @@ func TurnInputDigest(inputText string) (string, error) {
 	return digestInput(inputText)
 }
 
+// ExecutionCreateMutationDigest returns the canonical digest used by the
+// durable Execution create writer.
+func ExecutionCreateMutationDigest(input CreateExecutionInput) (string, error) {
+	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "execution.create", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
+	}), nil
+}
+
+// ExecutionStartMutationDigest returns the canonical digest used by the
+// durable Execution start writer.
+func ExecutionStartMutationDigest(input StartExecutionInput) (string, error) {
+	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "execution.start", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
+	}), nil
+}
+
+// ExecutionCompleteMutationDigest returns the canonical digest used by the
+// durable successful Execution settlement writer.
+func ExecutionCompleteMutationDigest(input CompleteExecutionInput) (string, error) {
+	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation); err != nil {
+		return "", err
+	}
+	if err := validateDigest(input.ResultDigest, "result digest"); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "execution.complete", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
+		ResultDigest: input.ResultDigest,
+	}), nil
+}
+
+// ExecutionFailMutationDigest returns the canonical digest used by the
+// durable failed Execution settlement writer.
+func ExecutionFailMutationDigest(input FailExecutionInput) (string, error) {
+	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation); err != nil {
+		return "", err
+	}
+	if err := validateErrorCode(input.ErrorCode); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "execution.fail", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
+		ErrorCode: input.ErrorCode,
+	}), nil
+}
+
 func validateExecutionInput(scope Scope, sessionID, turnID, executionID string, generation uint64) error {
 	if err := validateExecutionPath(scope, sessionID, turnID, executionID); err != nil {
 		return err

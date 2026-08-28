@@ -123,21 +123,21 @@ func TestRunVersionedSuccessorCompleteLedgerIsNoOp(t *testing.T) {
 
 func TestLoadAndVerifyIndependentProductSessionManifest(t *testing.T) {
 	config := testConfig(t)
-	config.ManifestSelector = "product-000016"
-	config.ManifestPath = "services/control-plane/migrations/product/000016/manifest.json"
+	config.ManifestSelector = "product-000017"
+	config.ManifestPath = "services/control-plane/migrations/product/000017/manifest.json"
 	bundle, err := loadAndVerify(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bundle.manifest.SchemaBundle.SchemaHead != "000016" || len(bundle.manifest.SchemaBundle.Migrations) != 16 {
+	if bundle.manifest.SchemaBundle.SchemaHead != "000017" || len(bundle.manifest.SchemaBundle.Migrations) != 17 {
 		t.Fatalf("unexpected product manifest: head=%s migrations=%d", bundle.manifest.SchemaBundle.SchemaHead, len(bundle.manifest.SchemaBundle.Migrations))
 	}
 }
 
 func TestProductManifestDoesNotRequireHistoricalRunnerProfile(t *testing.T) {
 	sourceConfig := testConfig(t)
-	sourceConfig.ManifestSelector = "product-000016"
-	sourceConfig.ManifestPath = "services/control-plane/migrations/product/000016/manifest.json"
+	sourceConfig.ManifestSelector = "product-000017"
+	sourceConfig.ManifestPath = "services/control-plane/migrations/product/000017/manifest.json"
 	bundle, err := loadAndVerify(sourceConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestProductManifestDoesNotRequireHistoricalRunnerProfile(t *testing.T) {
 		}
 	}
 	copyArtifact(sourceConfig.ManifestPath)
-	copyArtifact("services/control-plane/migrations/product/000016/schema-bundle.json")
+	copyArtifact("services/control-plane/migrations/product/000017/schema-bundle.json")
 	for _, entry := range bundle.manifest.SchemaBundle.Migrations {
 		copyArtifact(entry.SQLArtifact.Path)
 	}
@@ -178,13 +178,14 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 		{head: "000014", length: 14},
 		{head: "000015", length: 15},
 		{head: "000016", length: 16},
+		{head: "000017", length: 17},
 	} {
 		length, ok := supportedManifestLength(test.head)
 		if !ok || length != test.length {
 			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
 		}
 	}
-	if length, ok := supportedManifestLength("000017"); ok || length != 0 {
+	if length, ok := supportedManifestLength("000018"); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
 	}
 }
