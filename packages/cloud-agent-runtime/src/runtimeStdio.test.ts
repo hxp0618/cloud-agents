@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 
-import { CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION } from "@synara/cloud-agent-provider-api";
+import { CLOUD_AGENT_CAPABILITY_IDS } from "@synara/cloud-agent-protocol";
+import {
+  CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
+  type CloudAgentProviderDescriptor,
+} from "@synara/cloud-agent-provider-api";
 import { describe, expect, it } from "vitest";
 
 import { createCloudAgentRuntime } from "./runtime";
@@ -608,7 +612,9 @@ function fakeRuntime() {
               compatible: true,
               compatibleRange: { minimumInclusive: "0.0.0" },
             },
-            capabilities: {} as never,
+            capabilities: Object.fromEntries(
+              CLOUD_AGENT_CAPABILITY_IDS.map((capability) => [capability, "unsupported"]),
+            ) as CloudAgentProviderDescriptor["capabilities"],
           };
         },
         async createSession() {

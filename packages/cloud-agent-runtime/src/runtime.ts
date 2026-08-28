@@ -1,5 +1,6 @@
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
+  assertCloudAgentProviderDescriptor,
   type CloudAgentHostServices,
   type CloudAgentProviderDescriptor,
   type CloudAgentProviderPluginV1,
@@ -44,7 +45,17 @@ export function createCloudAgentRuntime(input: {
   const runtime: CloudAgentRuntimeV1 = {
     abiVersion: CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
     providerKinds,
-    describe: (providerKind, signal) => providerFor(providers, providerKind).describe(signal),
+    describe: async (providerKind, signal) => {
+      const normalized = normalizedProviderKind(providerKind);
+      const descriptor = await providerFor(providers, normalized).describe(signal);
+      assertCloudAgentProviderDescriptor(descriptor);
+      if (descriptor.providerKind !== normalized) {
+        throw new Error(
+          `Provider descriptor identity ${descriptor.providerKind} does not match ${normalized}.`,
+        );
+      }
+      return descriptor;
+    },
     createSession: (providerKind, sessionInput, host, signal) =>
       providerFor(providers, providerKind).createSession(sessionInput, host, signal),
   };
