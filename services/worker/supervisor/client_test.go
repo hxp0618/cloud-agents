@@ -2,6 +2,9 @@ package supervisor
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"net/http/httptest"
 	"strings"
@@ -65,6 +68,28 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 	bad := &workerv1alpha1.WorkloadIdentity{SpiffeId: strings.Repeat("x", int(workerkernel.MaxStringBytes)+1), TrustDomain: "cloud-agents.test"}
 	if supervisor, err := New(Config{Client: &fakeWorkerClient{}, ExpectedWorkerIdentity: bad}); supervisor != nil || !errors.Is(err, errInvalidConfig) {
 		t.Fatalf("overlong identity result = %#v / %v", supervisor, err)
+	}
+}
+
+func TestNewMTLSRequiresHTTPSAndExplicitCredentials(t *testing.T) {
+	identity := testWorkerIdentity()
+	rootCAs := x509.NewCertPool()
+	credentials := tls.Certificate{Certificate: [][]byte{{1}}, PrivateKey: &rsa.PrivateKey{}}
+	base := MTLSConfig{Endpoint: "https://worker.example:8091", ExpectedWorkerIdentity: identity, ClientCertificate: credentials, RootCAs: rootCAs}
+	for name, mutate := range map[string]func(*MTLSConfig){
+		"cleartext":           func(config *MTLSConfig) { config.Endpoint = "http://worker.example:8091" },
+		"missing client cert": func(config *MTLSConfig) { config.ClientCertificate = tls.Certificate{} },
+		"missing private key": func(config *MTLSConfig) { config.ClientCertificate.PrivateKey = nil },
+		"missing CA pool":     func(config *MTLSConfig) { config.RootCAs = nil },
+	} {
+		config := base
+		mutate(&config)
+		if supervisor, err := NewMTLS(config); supervisor != nil || !errors.Is(err, errInvalidMTLSConfig) {
+			t.Errorf("%s result = %#v / %v", name, supervisor, err)
+		}
+	}
+	if supervisor, err := NewMTLS(base); err != nil || supervisor == nil {
+		t.Fatalf("valid mTLS constructor result = %#v / %v", supervisor, err)
 	}
 }
 

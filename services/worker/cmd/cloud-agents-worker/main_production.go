@@ -1,0 +1,191 @@
+//go:build !localdev
+
+// cloud-agents-worker is the production Worker HTTP entry point. It accepts
+// only verified mTLS clients and exposes the generated Worker contract.
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
+)
+
+var errInvalidProductionWorkerConfig = errors.New("cloud-agents-worker/invalid_production_config")
+
+const (
+	defaultProductionWorkerListen = ":8091"
+	maxProductionCABytes          = 1 << 20
+)
+
+type productionWorkerConfig struct {
+	listen       string
+	tlsCertFile  string
+	tlsKeyFile   string
+	clientCAFile string
+	workerSPIFFE string
+}
+
+func parseProductionWorkerConfig(args []string) (productionWorkerConfig, error) {
+	set := flag.NewFlagSet("cloud-agents-worker", flag.ContinueOnError)
+	set.SetOutput(io.Discard)
+	listen := set.String("listen", defaultProductionWorkerListen, "mTLS listen address")
+	tlsCert := set.String("tls-cert", "", "server certificate PEM file")
+	tlsKey := set.String("tls-key", "", "server private key PEM file")
+	clientCA := set.String("client-ca", "", "client CA certificate PEM file")
+	workerSPIFFE := set.String("worker-spiffe-id", "", "worker SPIFFE identity")
+	if err := set.Parse(args); err != nil || set.NArg() != 0 {
+		return productionWorkerConfig{}, errInvalidProductionWorkerConfig
+	}
+	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE}
+	if err := validateProductionWorkerConfig(cfg); err != nil {
+		return productionWorkerConfig{}, err
+	}
+	return cfg, nil
+}
+
+func validateProductionWorkerConfig(cfg productionWorkerConfig) error {
+	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" {
+		return errInvalidProductionWorkerConfig
+	}
+	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile {
+		return errInvalidProductionWorkerConfig
+	}
+	if _, err := productionIdentity(cfg.workerSPIFFE); err != nil {
+		return errInvalidProductionWorkerConfig
+	}
+	return nil
+}
+
+func validateProductionListen(address string) error {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return errInvalidProductionWorkerConfig
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return errInvalidProductionWorkerConfig
+	}
+	return nil
+}
+
+func productionIdentity(value string) (*workerv1alpha1.WorkloadIdentity, error) {
+	if strings.TrimSpace(value) != value || value == "" {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "spiffe" || parsed.Host == "" || parsed.Path == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	return &workerv1alpha1.WorkloadIdentity{SpiffeId: value, TrustDomain: parsed.Host}, nil
+}
+
+func readProductionCAPool(path string) (*x509.CertPool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	defer file.Close()
+	contents, err := io.ReadAll(io.LimitReader(file, maxProductionCABytes+1))
+	if err != nil || len(contents) > maxProductionCABytes {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(contents) {
+		return nil, errInvalidProductionWorkerConfig
+	}
+	return pool, nil
+}
+
+func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error {
+	if ctx == nil || validateProductionWorkerConfig(cfg) != nil {
+		return errInvalidProductionWorkerConfig
+	}
+	identity, err := productionIdentity(cfg.workerSPIFFE)
+	if err != nil {
+		return errInvalidProductionWorkerConfig
+	}
+	certificate, err := tls.LoadX509KeyPair(cfg.tlsCertFile, cfg.tlsKeyFile)
+	if err != nil {
+		return errInvalidProductionWorkerConfig
+	}
+	clientCAs, err := readProductionCAPool(cfg.clientCAFile)
+	if err != nil {
+		return err
+	}
+	service, err := workerkernel.NewService(workerkernel.Config{
+		WorkerIdentity:   identity,
+		IdentityProvider: workerkernel.TLSIdentityProvider{},
+	})
+	if err != nil {
+		return errInvalidProductionWorkerConfig
+	}
+	connectPath, connectHandler := workerkernel.NewHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(connectPath, connectHandler)
+	server := &http.Server{
+		Addr:              cfg.listen,
+		Handler:           workerkernel.NewTLSHandler(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion:   tls.VersionTLS13,
+			Certificates: []tls.Certificate{certificate},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    clientCAs,
+		},
+	}
+	listener, err := net.Listen("tcp", cfg.listen)
+	if err != nil {
+		return err
+	}
+	tlsListener := tls.NewListener(listener, server.TLSConfig)
+	serve := make(chan error, 1)
+	go func() { serve <- server.Serve(tlsListener) }()
+	select {
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownContext); err != nil {
+			return err
+		}
+		return nil
+	case err := <-serve:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := runProductionMain(os.Args[1:], ctx); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "cloud-agents-worker: startup or shutdown failed")
+		os.Exit(2)
+	}
+}
+
+func runProductionMain(args []string, ctx context.Context) error {
+	cfg, err := parseProductionWorkerConfig(args)
+	if err != nil {
+		return err
+	}
+	return runProductionWorker(ctx, cfg)
+}

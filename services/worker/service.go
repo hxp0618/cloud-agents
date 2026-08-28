@@ -33,8 +33,8 @@ const (
 
 // IdentityProvider supplies the caller identity established by the transport.
 // Request expected_* fields are never used as authentication. The default
-// provider rejects every call, making an explicit test/integration provider
-// mandatory until a real mTLS listener is introduced.
+// provider rejects every call; production HTTP entry points must install a
+// transport provider such as TLSIdentityProvider.
 type IdentityProvider interface {
 	ClientIdentity(context.Context) (*workerv1alpha1.WorkloadIdentity, error)
 }
@@ -45,8 +45,8 @@ func (rejectIdentityProvider) ClientIdentity(context.Context) (*workerv1alpha1.W
 	return nil, errors.New("worker/transport_identity_missing")
 }
 
-// StaticIdentityProvider is useful for in-process tests and a future
-// transport adapter. It does not implement or imply mTLS.
+// StaticIdentityProvider is useful for in-process tests. It does not implement
+// or imply mTLS.
 type StaticIdentityProvider struct {
 	Identity *workerv1alpha1.WorkloadIdentity
 }
@@ -494,8 +494,8 @@ func (s *Service) validateBinding(got *workerv1alpha1.NegotiationBinding, client
 
 func NewHandler(svc *Service, opts ...connect.HandlerOption) (string, http.Handler) {
 	// Hard ceilings are appended last so callers cannot raise transport limits.
-	// This remains a decoded-handler seam; no network/TLS listener or pre-decode
-	// enforcement is claimed by this package.
+	// This remains a decoded-handler seam; the production command owns the
+	// network/TLS listener and wraps this handler with NewTLSHandler.
 	var impl workerv1alpha1connect.WorkerExecutionServiceHandler = svc
 	if svc == nil {
 		impl = workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler{}

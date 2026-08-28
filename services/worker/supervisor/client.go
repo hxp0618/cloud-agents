@@ -1,12 +1,13 @@
 // Package supervisor contains the Supervisor-side admission client for the
-// generated Worker contract.
+// generated Worker contract, including the production mTLS constructor.
 //
 // It owns the v1.0 negotiate/health bindings and a separately gated localdev
 // dispatch profile. The default Bind method is the original health-only
 // profile; BindOperationAdmission is an explicit local admission profile and
 // still does not dispatch work. Only NewLocal + BindLocalDispatch can invoke
-// the opaque in-process Worker handle. No method starts a listener, configures
-// TLS, persists a lease, invokes a provider, or writes a durable receipt.
+// the opaque in-process Worker handle. NewMTLS supplies the production HTTPS
+// transport; no method starts a listener, persists a lease, invokes a
+// provider, or writes a durable receipt.
 package supervisor
 
 import (
