@@ -46,7 +46,9 @@ export function createCloudAgentRuntime(input: {
     if (providers.has(providerKind)) {
       throw new Error(`Provider ${providerKind} is registered more than once.`);
     }
-    providers.set(providerKind, provider);
+    // Keep the registry independent from later mutation of the caller-owned
+    // plugin object. Provider closures remain responsible for their own state.
+    providers.set(providerKind, { ...provider });
   }
 
   const providerKinds = Object.freeze([...providers.keys()].toSorted());

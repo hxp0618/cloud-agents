@@ -57,6 +57,19 @@ describe("createCloudAgentRuntime", () => {
     );
   });
 
+  it("keeps the registry identity stable after caller plugin mutation", async () => {
+    const plugin = provider("codex");
+    const runtime = createCloudAgentRuntime({ providers: [plugin] });
+    Object.assign(plugin, {
+      describe: async () => ({}) as CloudAgentProviderDescriptor,
+    });
+
+    await expect(runtime.describe("codex")).resolves.toMatchObject({
+      providerKind: "codex",
+      displayName: "codex",
+    });
+  });
+
   it("rejects malformed provider descriptors at the runtime boundary", async () => {
     const runtime = createCloudAgentRuntime({
       providers: [
