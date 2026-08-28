@@ -24,9 +24,9 @@ source、strict schema、profile 和 Go profile 均由以下生成器产生；�
 
 当前生成 digest（JSON logical digest；文件 raw SHA 由审查记录另行绑定）：
 
-- source：`sha256:d9c42d2a98d15fb17632bf7a873465ea18db96871ec085d8f700e90f5e7ac82c`
-- profile：`sha256:59a1241a845cdc94cf1aa2776985ceb7179adf4a749a1930cbc7a581337f2304`
-- input manifest：`sha256:b2e9fcda623534bdaaaba1b19f343b801a7b5864900b7891254f34423f3b8c76`
+- source：`sha256:5d71d92b815b397a5c2a0f7093629b0373d7db8754d9c2e71aaef0e5dbdfcea2`
+- profile：`sha256:e60725fc159f5b03e6352fcb60dc91a97874a66995e3c392f2f88f31173720a0`
+- input manifest：`sha256:007970eb504765c76b33b29af949365f8883d11107730b938c2d65ca882350d1`
 
 ## 2. 完整输入集合与排除集合
 
@@ -99,7 +99,7 @@ services/worker/cmd
 tools/g-contract-external-consumer
 ```
 
-`inputManifestDigest` 为 `sha256:b2e9fcda623534bdaaaba1b19f343b801a7b5864900b7891254f34423f3b8c76`；它按上述
+`inputManifestDigest` 为 `sha256:007970eb504765c76b33b29af949365f8883d11107730b938c2d65ca882350d1`；它按上述
 算法对每个输入的 path、Git mode、byte size 与 raw SHA-256 做 NUL 分隔聚合。任何输入内容、mode、
 size 或锁文件变化都会使 authority/profile 生成检查失败。上述集合不改变、替换或重算
 D-053-MIG-000014.r2、D-053-EC-2.r3 或其任何 source/profile/
