@@ -24,8 +24,8 @@ operation-execution/localdev-v1alpha1 接受的操作交给 Worker 执行。绑�
 
 当前冻结 digest（由 generator 计算，格式为 `sha256:<64 lowercase hex>`）：
 
-- authority source：`sha256:e3428875dc37d9cdc88ceb9dee30bade918d1a8d70ae7e86fff1cecd6d8f2d5d`
-- generated profile：`sha256:c9e8b5ad969e580358d05dbf32f8f2a3186eed66d584cb67d854141afb3283f9`
+- authority source：`sha256:b97cb1e464e1cd01e4a42eae270834b45c8db92deddc964f7652fb68417565fa`
+- generated profile：`sha256:4ed83884e50cf2f55e9799a16afe28c97cf5756969ae47cdc082a1987b5ddbc1`
 
 ## 2. 固定 profile contract
 
