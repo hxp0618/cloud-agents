@@ -285,7 +285,13 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local durable project HTTP server is unavailable")
 	}
+	healthHTTPServer, err := server.NewLocalControlPlaneHealthHTTPServer(pool.Ping)
+	if err != nil {
+		return errors.New("local health HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
+	mux.Handle(server.LocalControlPlaneHealthRoute, healthHTTPServer)
+	mux.Handle(server.LocalControlPlaneReadinessRoute, healthHTTPServer)
 	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	httpServer := &http.Server{
