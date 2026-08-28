@@ -21,3 +21,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 )
+
+replace github.com/hxp0618/cloud-agents/services/worker => ../worker
+
+replace github.com/hxp0618/cloud-agents/sdk/go => ../../sdk/go
