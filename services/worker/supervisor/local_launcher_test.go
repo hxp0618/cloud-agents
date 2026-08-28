@@ -3,10 +3,12 @@ package supervisor
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,6 +175,51 @@ func TestLocalLauncherBindsAfterD056HealthMetadata(t *testing.T) {
 	if _, err := launcher.GetOperationReceipt(context.Background(), nil); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Fatalf("receipt error=%v", err)
 	}
+}
+
+func TestLocalLauncherHealthRejectsDuplicateKeysAndClosesRejectedBody(t *testing.T) {
+	closed := false
+	body := &trackingReadCloser{Reader: strings.NewReader(`{"api_version":"cloud-agents.localdev/v1","authority":"wrong","authority":"D-056-WORKER-LOCALDEV-LAUNCHER-000001"}`), onClose: func() { closed = true }}
+	launcher := &LocalLauncher{
+		endpoint: "http://127.0.0.1:8091",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: body, Header: make(http.Header)}, nil
+		})},
+	}
+	if err := launcher.checkLauncherHealth(context.Background()); err != errLocalLauncherHealth {
+		t.Fatalf("health error=%v", err)
+	}
+	if !closed {
+		t.Fatal("rejected health response body was not closed")
+	}
+
+	duplicateBody := &trackingReadCloser{Reader: strings.NewReader(`{"api_version":"cloud-agents.localdev/v1","authority":"first","authority":"second"}`), onClose: func() {}}
+	duplicateLauncher := &LocalLauncher{
+		endpoint: "http://127.0.0.1:8091",
+		httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: duplicateBody, Header: http.Header{"Content-Type": []string{"application/json"}}}, nil
+		})},
+	}
+	if err := duplicateLauncher.checkLauncherHealth(context.Background()); err != errLocalLauncherHealth {
+		t.Fatalf("duplicate health error=%v", err)
+	}
+
+	duplicate := []byte(`{"api_version":"cloud-agents.localdev/v1","authority":"first","authority":"second"}`)
+	if localLauncherJSONKeysUnique(duplicate) {
+		t.Fatal("duplicate JSON key accepted")
+	}
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	onClose func()
+}
+
+func (r *trackingReadCloser) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return nil
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

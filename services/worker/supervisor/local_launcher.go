@@ -201,7 +201,7 @@ type localLauncherHealth struct {
 	SupervisorIdentity  string `json:"supervisor_identity"`
 	LeaseID             string `json:"lease_id"`
 	Generation          uint64 `json:"generation"`
-	ExternalSideEffects bool   `json:"external_side_effects"`
+	ExternalSideEffects *bool  `json:"external_side_effects"`
 	Transport           string `json:"transport"`
 }
 
@@ -214,16 +214,22 @@ func (l *LocalLauncher) checkLauncherHealth(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if response == nil || response.Body == nil || response.StatusCode != http.StatusOK {
+	if response == nil || response.Body == nil {
 		return errLocalLauncherHealth
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errLocalLauncherHealth
+	}
 	mediaType, _, mediaErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if response.ContentLength > localLauncherMaxHealthBytes || mediaErr != nil || !strings.EqualFold(mediaType, "application/json") {
 		return errLocalLauncherHealth
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, localLauncherMaxHealthBytes+1))
 	if err != nil || len(body) > localLauncherMaxHealthBytes {
+		return errLocalLauncherHealth
+	}
+	if !localLauncherJSONKeysUnique(body) {
 		return errLocalLauncherHealth
 	}
 	var health localLauncherHealth
@@ -236,10 +242,63 @@ func (l *LocalLauncher) checkLauncherHealth(ctx context.Context) error {
 	if decoder.Decode(&extra) != io.EOF {
 		return errLocalLauncherHealth
 	}
-	if health.APIVersion != "cloud-agents.localdev/v1" || health.Authority != workerkernel.WorkerLocalDevLauncherAuthorityID || health.Profile != workerkernel.WorkerLocalDevLauncherProfileID || health.Revision != workerkernel.WorkerLocalDevLauncherRevision || health.ProfileDigest != workerkernel.WorkerLocalDevLauncherProfileDigest || health.Version != "v1.0" || health.Status != "serving" || health.WorkerIdentity != workerkernel.WorkerLocalDevLauncherWorkerIdentitySPIFFE || health.SupervisorIdentity != workerkernel.WorkerLocalDevLauncherSupervisorIdentitySPIFFE || health.LeaseID != workerkernel.WorkerLocalDevLauncherLeaseID || health.Generation != workerkernel.WorkerLocalDevLauncherGeneration || health.ExternalSideEffects || health.Transport != "loopback_http_connect" {
+	if health.APIVersion != "cloud-agents.localdev/v1" || health.Authority != workerkernel.WorkerLocalDevLauncherAuthorityID || health.Profile != workerkernel.WorkerLocalDevLauncherProfileID || health.Revision != workerkernel.WorkerLocalDevLauncherRevision || health.ProfileDigest != workerkernel.WorkerLocalDevLauncherProfileDigest || health.Version != "v1.0" || health.Status != "serving" || health.WorkerIdentity != workerkernel.WorkerLocalDevLauncherWorkerIdentitySPIFFE || health.SupervisorIdentity != workerkernel.WorkerLocalDevLauncherSupervisorIdentitySPIFFE || health.LeaseID != workerkernel.WorkerLocalDevLauncherLeaseID || health.Generation != workerkernel.WorkerLocalDevLauncherGeneration || health.ExternalSideEffects == nil || *health.ExternalSideEffects || health.Transport != "loopback_http_connect" {
 		return errLocalLauncherHealth
 	}
 	return nil
+}
+
+// localLauncherJSONKeysUnique rejects duplicate object members before the
+// typed decoder applies last-write-wins semantics.  Health metadata is an
+// identity boundary, so an ambiguous JSON object must fail closed.
+func localLauncherJSONKeysUnique(body []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if !walkLocalLauncherJSONValue(decoder) {
+		return false
+	}
+	var extra json.RawMessage
+	return decoder.Decode(&extra) == io.EOF
+}
+
+func walkLocalLauncherJSONValue(decoder *json.Decoder) bool {
+	token, err := decoder.Token()
+	if err != nil {
+		return false
+	}
+	delim, isDelim := token.(json.Delim)
+	if !isDelim {
+		return true
+	}
+	switch delim {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			key, ok := keyToken.(string)
+			if err != nil || !ok {
+				return false
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return false
+			}
+			seen[key] = struct{}{}
+			if !walkLocalLauncherJSONValue(decoder) {
+				return false
+			}
+		}
+		end, err := decoder.Token()
+		return err == nil && end == json.Delim('}')
+	case '[':
+		for decoder.More() {
+			if !walkLocalLauncherJSONValue(decoder) {
+				return false
+			}
+		}
+		end, err := decoder.Token()
+		return err == nil && end == json.Delim(']')
+	default:
+		return false
+	}
 }
 
 func validateLocalLauncherEndpoint(raw string) (string, error) {

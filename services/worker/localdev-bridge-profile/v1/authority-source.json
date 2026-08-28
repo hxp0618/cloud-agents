@@ -84,7 +84,7 @@
     "services/worker/localdev_bridge_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:3a19d9e902f57605d60a4f853704ce00f1a28f28fee5a81d73f41ec394939c70",
+  "inputManifestDigest": "sha256:0743e869a03bd29008fab23c0d0fbde2a44de8670cd734b5c6669cfaff254d16",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -269,5 +269,5 @@
     "publication": "forbidden",
     "gateTransition": "forbidden"
   },
-  "sourceDigest": "sha256:a4225472b83f540a591ce483058e8429d404ee497ea5ad8af1c672056771fc1a"
+  "sourceDigest": "sha256:764ab77a2e852f722c502795ce3ea8906f662786589bce9415e468ecc6060b01"
 }
