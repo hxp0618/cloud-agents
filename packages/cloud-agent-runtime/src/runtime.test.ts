@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { CLOUD_AGENT_CAPABILITY_IDS } from "@synara/cloud-agent-protocol";
+import {
+  CLOUD_AGENT_CAPABILITY_IDS,
+  type CloudAgentCommandEnvelope,
+} from "@synara/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   type CloudAgentProviderDescriptor,
@@ -81,4 +84,89 @@ describe("createCloudAgentRuntime", () => {
       /descriptor identity claude does not match codex/u,
     );
   });
+
+  it("rejects malformed provider sessions at the runtime boundary", async () => {
+    const runtime = createCloudAgentRuntime({
+      providers: [
+        {
+          ...provider("codex"),
+          createSession: async () => ({
+            sessionId: "",
+            events: emptyEvents(),
+            execute: async () => validMessage(),
+            close: async () => undefined,
+            async [Symbol.asyncDispose]() {},
+          }),
+        },
+      ],
+    });
+
+    await expect(runtime.createSession("codex", sessionInput(), {} as never)).rejects.toThrow(
+      /sessionId/u,
+    );
+  });
+
+  it("validates commands, results, and events from provider sessions", async () => {
+    const runtime = createCloudAgentRuntime({
+      providers: [
+        {
+          ...provider("codex"),
+          createSession: async () => ({
+            sessionId: "session-1",
+            events: {
+              async *[Symbol.asyncIterator]() {
+                yield {} as never;
+              },
+            },
+            execute: async () => ({}) as never,
+            close: async () => undefined,
+            async [Symbol.asyncDispose]() {},
+          }),
+        },
+      ],
+    });
+    const session = await runtime.createSession("codex", sessionInput(), {} as never);
+
+    await expect(session.execute({} as never)).rejects.toThrow(/command envelope/u);
+    await expect(session.execute(validCommand())).rejects.toThrow(/message envelope/u);
+    await expect(session.events[Symbol.asyncIterator]().next()).rejects.toThrow(
+      /message envelope/u,
+    );
+    await session.close();
+  });
 });
+
+function sessionInput() {
+  return {
+    hostInstanceId: "host-1",
+    hostThreadId: "thread-1",
+    configuration: {},
+  };
+}
+
+function validCommand(): CloudAgentCommandEnvelope {
+  return {
+    requestId: "request-1",
+    protocolVersion: { major: 2, minor: 3 },
+    executionId: "execution-1",
+    generation: 1,
+    commandType: "Describe",
+    commandId: "command-1",
+    occurredAt: "2026-08-28T00:00:00.000Z",
+    payload: {},
+  };
+}
+
+function validMessage() {
+  return {
+    ...validCommand(),
+    messageType: "Result" as const,
+    payload: {},
+  };
+}
+
+function emptyEvents() {
+  return {
+    async *[Symbol.asyncIterator]() {},
+  };
+}

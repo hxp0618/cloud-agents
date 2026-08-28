@@ -1,4 +1,10 @@
 import {
+  assertCloudAgentCommandEnvelope,
+  assertCloudAgentMessageEnvelope,
+  type CloudAgentCommandEnvelope,
+  type CloudAgentMessageEnvelope,
+} from "@synara/cloud-agent-protocol";
+import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   assertCloudAgentProviderDescriptor,
   type CloudAgentHostServices,
@@ -56,10 +62,76 @@ export function createCloudAgentRuntime(input: {
       }
       return descriptor;
     },
-    createSession: (providerKind, sessionInput, host, signal) =>
-      providerFor(providers, providerKind).createSession(sessionInput, host, signal),
+    createSession: async (providerKind, sessionInput, host, signal) => {
+      const normalized = normalizedProviderKind(providerKind);
+      const session = await providerFor(providers, normalized).createSession(
+        sessionInput,
+        host,
+        signal,
+      );
+      return validatedProviderSession(session);
+    },
   };
   return Object.freeze(runtime);
+}
+
+function validatedProviderSession(value: unknown): CloudAgentProviderSession {
+  if (!isRecord(value)) throw new Error("Cloud Agent Provider session must be an object.");
+  const candidate = value as Record<PropertyKey, unknown>;
+  if (typeof candidate.sessionId !== "string" || !candidate.sessionId.trim()) {
+    throw new Error("Cloud Agent Provider sessionId must be a non-empty string.");
+  }
+  if (!isAsyncIterable(candidate.events)) {
+    throw new Error("Cloud Agent Provider session events must be async iterable.");
+  }
+  if (typeof candidate.execute !== "function" || typeof candidate.close !== "function") {
+    throw new Error("Cloud Agent Provider session methods are invalid.");
+  }
+  const execute = candidate.execute as (
+    command: CloudAgentCommandEnvelope,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
+  const close = candidate.close as (reason?: string) => Promise<void>;
+  const asyncDispose = candidate[Symbol.asyncDispose];
+  return {
+    sessionId: candidate.sessionId,
+    events: validatedProviderEvents(candidate.events),
+    async execute(command, signal) {
+      assertCloudAgentCommandEnvelope(command);
+      const message = await execute.call(value, command, signal);
+      assertCloudAgentMessageEnvelope(message);
+      return message;
+    },
+    close: (reason) => close.call(value, reason),
+    async [Symbol.asyncDispose]() {
+      if (typeof asyncDispose === "function") {
+        await (asyncDispose as () => Promise<void>).call(value);
+      } else {
+        await close.call(value, "disposed");
+      }
+    },
+  };
+}
+
+async function* validatedProviderEvents(
+  events: AsyncIterable<unknown>,
+): AsyncGenerator<CloudAgentMessageEnvelope> {
+  for await (const message of events) {
+    assertCloudAgentMessageEnvelope(message);
+    yield message;
+  }
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    typeof (value as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === "function"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function providerFor(
