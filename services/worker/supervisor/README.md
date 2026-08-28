@@ -11,16 +11,21 @@ v1.0 binding profiles:
   expired binding before making another RPC;
 - `BindOperationAdmission` explicitly negotiates the Worker operation-
   admission capability without changing the default health-only `Bind`;
-- returns stable `Unimplemented` errors for operation dispatch and durable
-  receipt retrieval.
+- `NewLocal` + `BindLocalDispatch` explicitly select the generated
+  `cloud-agents/worker-supervisor-operation-dispatch/localdev-v1alpha1`
+  profile through an opaque in-process Worker handle, then dispatch strict
+  Probe/ValidateBinding attempts and replay detached, bounded receipts;
+- the generic `New` constructor, `Bind`, and `BindOperationAdmission` retain
+  their compatibility behavior and return stable `Unimplemented` errors for
+  dispatch/receipt calls.
 
-The caller supplies an already configured generated Connect client. This
-package does not construct an endpoint, listener, TLS/mTLS configuration,
-database lease, provider call, workspace/credential/artifact writer, or
-receipt. The operation-admission profile is still local admission-only in the
-current Worker slice; this Supervisor package does not dispatch it. The transport remains the authority
-for the authenticated client identity. No production HTTP or external side
-effect is implied.
+The generic caller supplies an already configured generated Connect client. The
+local constructor instead accepts only a Worker-minted opaque handle; it never
+accepts a URL, endpoint, selector, or caller capability list. This package does
+not construct a listener, TLS/mTLS configuration, database lease, provider
+call, workspace/credential/artifact writer, or durable receipt. The transport
+remains the authority for the authenticated client identity. No production
+HTTP or external side effect is implied.
 
 The limits are shared with `services/worker` P1-A (`1 MiB` wire,
 `64 KiB` payload, `64` repeated items, `1 KiB` strings, `256`-byte negotiation
