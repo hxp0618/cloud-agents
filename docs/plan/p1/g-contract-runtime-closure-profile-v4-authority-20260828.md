@@ -239,6 +239,19 @@ receipt blobs, and the immutable v3/C/runtime predecessor references.  Review
 bytes cannot be self-referential: the review child must be a direct child of
 the candidate and must not be included as an input whose identity it claims.
 
+The fixed closure-only candidate for this review is:
+
+| item | identity |
+| --- | --- |
+| candidate commit | `c571e81b5e265644d75c5d97a522f022d22898c5` |
+| candidate tree | `ca22a345bfba0ab9c9562a01fd9b98aec442a9cc` |
+| candidate parent | `6ff645bbea150602226dc0cb727d21579a54f0a7` |
+| parent-to-candidate binary diff SHA-256 | `sha256:ecfa2be338c8a4ea71d315efad5cad3651ba43fe22fc07e1c14546c7614e9f57` |
+
+The candidate contains only the nine additive v4 authority/review paths
+listed above.  Their Git blobs and raw bytes are independently recomputed by
+the review; no v3 path is changed.
+
 One independent, read-only review is required.  The reviewer must independently
 recompute:
 
