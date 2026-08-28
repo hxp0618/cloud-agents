@@ -85,23 +85,23 @@
           {
             "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
             "mode": "100644",
-            "gitBlob": "d714424ac6b42a44ee775a6edde6327d87f2d7c3",
-            "sha256": "e8384fb25f3828dfafeecf0040110df3a51cd64ce5877e966ecec12769099bf4",
-            "sizeBytes": 14215
+            "gitBlob": "1acb65a0af7191a34f1ffb9d8683e6acc8a50750",
+            "sha256": "01334ae451d06e7de73b94617e541dd67e4c6b7f2b12a268e10ac2cb2b64688f",
+            "sizeBytes": 14209
           },
           {
             "path": "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v3.json",
             "mode": "100644",
-            "gitBlob": "58f651367aea31c5662423b602bf293d085a8afa",
-            "sha256": "face6b9f01732255d4f3ae3aebb040d0af19efae416bad074a2f84510e385862",
-            "sizeBytes": 13451
+            "gitBlob": "a1a865b0b328509c22a760a9a2d77175b3047e0c",
+            "sha256": "cdc33125b4c6e04658823e7bea0e621bb113699287e4fd0ef283c78a8e73c56f",
+            "sizeBytes": 13445
           },
           {
             "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v3.schema.json",
             "mode": "100644",
-            "gitBlob": "eb2c46f916ac52b13a6d225685bf48064cf35836",
-            "sha256": "3fbc85313f2195860b6211f8c31fc185d825469146f703b7e442c34b0612ed25",
-            "sizeBytes": 23642
+            "gitBlob": "20c5abff9f939a58ddd88bfa004b49613900b038",
+            "sha256": "ad7eb1bbea893d0088d13593fb27b77be0afc25d099a70865378218dadfb14d8",
+            "sizeBytes": 23640
           },
           {
             "path": "contracts/platform/v1alpha1/schemas/contract-closure-profile-v3.schema.json",
