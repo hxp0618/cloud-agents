@@ -44,6 +44,9 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID string,
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
+	if err := s.ensureRuntimeBinding(ctx); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	state := cloneBindingState(s.binding)
 	s.mu.RUnlock()
@@ -72,6 +75,14 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID string,
 		return nil, fail(connect.CodeInternal, "runtime_ready_invalid")
 	}
 	return &RuntimeSession{stream: stream, execution: executionID, generation: generation}, nil
+}
+
+func (s *Supervisor) ensureRuntimeBinding(ctx context.Context) error {
+	if binding, ok := s.CurrentBinding(); ok && binding.ProfileID == OperationAdmissionProfileID {
+		return nil
+	}
+	_, err := s.BindRuntime(ctx)
+	return err
 }
 
 func (session *RuntimeSession) Send(ctx context.Context, command runtimeprocess.Command) error {
