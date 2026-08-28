@@ -11,6 +11,7 @@ import {
   CLOUD_AGENT_MAX_COMMAND_BYTES,
   CLOUD_AGENT_MAX_MESSAGE_BYTES,
   validateCloudAgentCommandEnvelope,
+  validateCloudAgentMessageEnvelope,
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
 } from "@synara/cloud-agent-protocol";
@@ -377,41 +378,7 @@ function validatedCredentialFd(value: number | undefined): number | undefined {
 }
 
 function isMessageEnvelope(value: unknown): value is CloudAgentMessageEnvelope {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const message = value as Record<string, unknown>;
-  const protocolVersion = recordValue(message.protocolVersion);
-  const common =
-    typeof message.requestId === "string" &&
-    protocolVersion !== undefined &&
-    Number.isInteger(protocolVersion.major) &&
-    Number.isInteger(protocolVersion.minor) &&
-    typeof message.executionId === "string" &&
-    Number.isInteger(message.generation) &&
-    typeof message.commandId === "string" &&
-    typeof message.occurredAt === "string";
-  if (!common) return false;
-  if (message.messageType === "Error") {
-    const error = recordValue(message.error);
-    return (
-      error !== undefined &&
-      typeof error.code === "string" &&
-      typeof error.message === "string" &&
-      typeof error.retryable === "boolean" &&
-      typeof error.requiresNewExecution === "boolean" &&
-      typeof error.requiresUserAction === "boolean" &&
-      typeof error.canReconstructFromHistory === "boolean" &&
-      typeof error.canMoveWorker === "boolean"
-    );
-  }
-  return (
-    (message.messageType === "Event" ||
-      message.messageType === "InteractionRequest" ||
-      message.messageType === "ArtifactCandidate" ||
-      message.messageType === "Checkpoint" ||
-      message.messageType === "Progress" ||
-      message.messageType === "Result") &&
-    recordValue(message.payload) !== undefined
-  );
+  return validateCloudAgentMessageEnvelope(value).valid;
 }
 
 function messageCorrelationIssue(
@@ -431,12 +398,6 @@ function messageCorrelationIssue(
     return "Cloud Agent Runtime response execution identity did not match the in-flight command.";
   }
   return undefined;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 function errorWithCause(message: string, cause?: unknown): Error {

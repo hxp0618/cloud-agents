@@ -83,6 +83,23 @@ const MISMATCHED_RUNTIME = RESPONDING_RUNTIME.replace(
   'executionId: "wrong-execution",',
 );
 
+const INVALID_MESSAGE_RUNTIME = String.raw`
+const readline = require("node:readline");
+readline.createInterface({ input: process.stdin }).once("line", (line) => {
+  const command = JSON.parse(line);
+  process.stdout.write(JSON.stringify({
+    requestId: command.requestId,
+    protocolVersion: command.protocolVersion,
+    executionId: command.executionId,
+    generation: 0,
+    commandId: command.commandId,
+    occurredAt: command.occurredAt,
+    messageType: "Result",
+    payload: {},
+  }) + "\n");
+});
+`;
+
 const SIGTERM_IGNORING_MALFORMED_RUNTIME = String.raw`
 process.on("SIGTERM", () => {});
 setInterval(() => {}, 1_000);
@@ -229,6 +246,17 @@ readline.createInterface({ input: process.stdin }).once("line", (line) => {
       args: ["-e", 'process.stdin.once("data", () => process.stdout.write("not-json\\n"));', "--"],
     });
     await expect(client.execute(command("invalid-json"))).rejects.toThrow("invalid JSON");
+    await client.close();
+  });
+
+  it("fails closed when the runtime emits an invalid message envelope", async () => {
+    const client = createCloudAgentStdioClient({
+      command: process.execPath,
+      args: ["-e", INVALID_MESSAGE_RUNTIME, "--"],
+    });
+    await expect(client.execute(command("invalid-message"))).rejects.toThrow(
+      "invalid message envelope",
+    );
     await client.close();
   });
 
