@@ -189,7 +189,7 @@ func TestGeneratedIdentityVerifierProfileExactFacts(t *testing.T) {
 		"profile binding":            "token_profile_value_generated_profile_digest_and_generated_registry_digest_are_exact",
 		"inference binding":          "audience_tenant_project_permission_and_scope_comparisons_infer_no_hierarchy_or_authorization",
 		"error stability":            "exact_generated_categories_no_raw_authority_material",
-		"HTTP boundary":              "not_implemented",
+		"HTTP boundary":              "implemented",
 		"provider boundary":          "forbidden",
 		"production database writes": "not_authorized",
 		"gate boundary":              "all_gates_open",

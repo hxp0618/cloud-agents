@@ -293,7 +293,7 @@
     "trustSnapshot": {
       "const": {
         "authority": "package_private_owned_immutable_generation",
-        "provisioning": "test_builder_only_no_production_constructor",
+        "provisioning": "configured_static_jwks_file",
         "requiredFacts": [
           "audience",
           "generation",
@@ -327,7 +327,7 @@
         ],
         "audienceAuthority": "snapshot_owned_single_resource_audience",
         "tenantProjectPermissionAuthority": "context_owned_not_token_or_http_caller_selected",
-        "productionConstructor": "absent"
+        "productionConstructor": "configured_static_jwks_file"
       }
     },
     "verifiedPrincipal": {
@@ -369,12 +369,12 @@
     },
     "implementationNonClaims": {
       "const": {
-        "httpSurface": "not_implemented",
+        "httpSurface": "implemented",
         "oidcDiscovery": "not_implemented",
         "remoteJwks": "not_implemented",
         "providerSideEffects": "forbidden",
         "p2Surface": "not_implemented",
-        "productionTrustProvisioning": "not_implemented",
+        "productionTrustProvisioning": "configured_static_jwks_file",
         "productionDatabaseWrites": "not_authorized",
         "deployment": "not_authorized",
         "publication": "not_authorized",
@@ -386,7 +386,7 @@
     "editable": true,
     "authority": "generated_contract_profile_only",
     "networkLookup": "forbidden",
-    "productionTrustProvisioning": "absent",
+    "productionTrustProvisioning": "configured_static_jwks_file",
     "writerAuthority": "none"
   }
 }

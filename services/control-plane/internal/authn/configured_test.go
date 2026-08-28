@@ -41,4 +41,12 @@ func TestConfiguredVerifierRejectsIncompleteTrustInput(t *testing.T) {
 	if verifier, err := NewConfiguredVerifier(ConfiguredVerifierConfig{}); verifier != nil || !errors.Is(err, ErrInvalidConfiguredVerifier) {
 		t.Fatalf("empty config result=%v err=%v", verifier, err)
 	}
+	config := ConfiguredVerifierConfig{
+		Issuer: "https://issuer.example", Audience: "https://api.example", Generation: 2, SecurityEpoch: 1,
+		NotBefore: testNow - 100, ExpiresAt: testNow + 1000,
+		Keys: []ConfiguredVerifierKey{{JWK: []byte(`{"kty":"RSA","n":"bad","e":"AQAB"}`), Enabled: true}}, Clock: time.Now,
+	}
+	if verifier, err := NewConfiguredVerifier(config); verifier != nil || !errors.Is(err, ErrInvalidConfiguredVerifier) {
+		t.Fatalf("non-initial generation result=%v err=%v", verifier, err)
+	}
 }

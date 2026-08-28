@@ -104,7 +104,7 @@
     "editable": false,
     "lookup": "exact_profile_id_profile_digest_and_registry_digest",
     "networkLookup": "forbidden",
-    "productionTrustProvisioning": "absent",
+    "productionTrustProvisioning": "configured_static_jwks_file",
     "writerAuthority": "none"
   }
 }

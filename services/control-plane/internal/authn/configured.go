@@ -41,7 +41,7 @@ type ConfiguredVerifier struct {
 }
 
 func NewConfiguredVerifier(config ConfiguredVerifierConfig) (*ConfiguredVerifier, error) {
-	if config.Clock == nil || config.Issuer == "" || config.Audience == "" || config.Generation < 1 || config.SecurityEpoch < 1 || config.ExpiresAt <= config.NotBefore || len(config.Keys) == 0 {
+	if config.Clock == nil || config.Issuer == "" || config.Audience == "" || config.Generation != 1 || config.SecurityEpoch < 1 || config.ExpiresAt <= config.NotBefore || len(config.Keys) == 0 {
 		return nil, ErrInvalidConfiguredVerifier
 	}
 	keys := make([]snapshotKeyCandidate, len(config.Keys))
@@ -51,7 +51,7 @@ func NewConfiguredVerifier(config ConfiguredVerifierConfig) (*ConfiguredVerifier
 		}
 		keys[index] = snapshotKeyCandidate{jwk: append([]byte(nil), key.JWK...), enabled: key.Enabled, notBefore: key.NotBefore, notAfter: key.NotAfter}
 	}
-	lineage := newTrustLineage()
+	lineage := &trustLineage{}
 	if err := lineage.replace(snapshotCandidate{
 		issuer: config.Issuer, audience: config.Audience, generation: config.Generation,
 		securityEpoch: config.SecurityEpoch, notBefore: config.NotBefore, expiresAt: config.ExpiresAt, keys: keys,

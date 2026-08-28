@@ -40,9 +40,9 @@ const temporaryRoots: string[] = [];
 const PROFILE_DOMAIN = "cloud-agents/platform-identity-verifier/profile/v1";
 const REGISTRY_DOMAIN = "cloud-agents/platform-identity-verifier/registry/v1";
 const PINNED_PROFILE_DIGEST =
-  "sha256:1846e974ad3efc192704e4409f1d97786e3fb7df9de17e5ea2f2024d729b3c07";
+  "sha256:d7da4c6be5048ec8e82e7ace4ef11dc39845843b3718b5e90e4babebd7091459";
 const PINNED_REGISTRY_DIGEST =
-  "sha256:654d5f8d20dfd1fcf8a9da3a06dd445d46f813f5c60d926ce3b3a00cd9eccde1";
+  "sha256:ac468edeca5bc69b15a57a5d2def9d3c372f87a87423cc7922407da7e1aa8dea";
 
 afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { force: true, recursive: true });
@@ -179,7 +179,7 @@ describe("platform identity verifier generated registry", () => {
         ],
       },
       implementationNonClaims: {
-        httpSurface: "not_implemented",
+        httpSurface: "implemented",
         providerSideEffects: "forbidden",
         productionDatabaseWrites: "not_authorized",
         gateStatus: "all_gates_open",
@@ -315,8 +315,8 @@ describe("platform identity verifier generated registry", () => {
 
     const boundaryRoot = temporaryContractRoot();
     const boundary = readSource(boundaryRoot);
-    ((boundary.profile as JsonRecord).implementationNonClaims as JsonRecord).httpSurface =
-      "implemented";
+    ((boundary.profile as JsonRecord).implementationNonClaims as JsonRecord).productionTrustProvisioning =
+      "not_implemented";
     writeSource(boundaryRoot, boundary);
     expectContractError(
       () => validateIdentityVerifierSource(boundaryRoot, readSource(boundaryRoot) as never),

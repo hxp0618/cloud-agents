@@ -3,17 +3,17 @@
 package authn
 
 const (
-	identityVerifierRegistryDigest = "sha256:654d5f8d20dfd1fcf8a9da3a06dd445d46f813f5c60d926ce3b3a00cd9eccde1"
-	identityVerifierProfileDigest  = "sha256:1846e974ad3efc192704e4409f1d97786e3fb7df9de17e5ea2f2024d729b3c07"
+	identityVerifierRegistryDigest = "sha256:ac468edeca5bc69b15a57a5d2def9d3c372f87a87423cc7922407da7e1aa8dea"
+	identityVerifierProfileDigest  = "sha256:d7da4c6be5048ec8e82e7ace4ef11dc39845843b3718b5e90e4babebd7091459"
 )
 
 func generatedIdentityVerifierProfile() identityVerifierProfile {
 	return identityVerifierProfile{
 		formatVersion:  "cloud-agents-platform-identity-verifier-registry/v1",
 		registryID:     "cloud-agents/platform/identity-verifier",
-		registryDigest: "sha256:654d5f8d20dfd1fcf8a9da3a06dd445d46f813f5c60d926ce3b3a00cd9eccde1",
+		registryDigest: "sha256:ac468edeca5bc69b15a57a5d2def9d3c372f87a87423cc7922407da7e1aa8dea",
 		profileID:      "platform-identity-verifier/v1",
-		profileDigest:  "sha256:1846e974ad3efc192704e4409f1d97786e3fb7df9de17e5ea2f2024d729b3c07",
+		profileDigest:  "sha256:d7da4c6be5048ec8e82e7ace4ef11dc39845843b3718b5e90e4babebd7091459",
 		token: identityVerifierTokenRules{
 			serialization:  "compact_jws",
 			segmentCount:   3,
@@ -184,7 +184,7 @@ func generatedIdentityVerifierProfile() identityVerifierProfile {
 		},
 		trustSnapshot: identityVerifierTrustSnapshotRules{
 			authority:      "package_private_owned_immutable_generation",
-			provisioning:   "test_builder_only_no_production_constructor",
+			provisioning:   "configured_static_jwks_file",
 			requiredFacts:  [12]string{"audience", "generation", "issuer", "key_lineage", "keys", "previous_snapshot_digest", "profile_digest", "registry_digest", "revoked_key_ids", "revoked_token_ids", "security_epoch", "validity_window"},
 			mutation:       "new_generation_only_never_in_place",
 			selection:      "current_generation_only",
@@ -196,7 +196,7 @@ func generatedIdentityVerifierProfile() identityVerifierProfile {
 			requiredFacts:                    [6]string{"active_trust_generation", "clock", "required_permission", "target_resource_id", "target_resource_level", "target_tenant_id"},
 			audienceAuthority:                "snapshot_owned_single_resource_audience",
 			tenantProjectPermissionAuthority: "context_owned_not_token_or_http_caller_selected",
-			productionConstructor:            "absent",
+			productionConstructor:            "configured_static_jwks_file",
 		},
 		verifiedPrincipal: identityVerifierPrincipalRules{
 			construction:              "package_private_pointer_only_after_successful_verification",
@@ -208,12 +208,12 @@ func generatedIdentityVerifierProfile() identityVerifierProfile {
 			secondOrConcurrentConsume: "fail_closed",
 		},
 		implementationNonClaims: identityVerifierImplementationNonClaims{
-			httpSurface:                 "not_implemented",
+			httpSurface:                 "implemented",
 			oidcDiscovery:               "not_implemented",
 			remoteJWKs:                  "not_implemented",
 			providerSideEffects:         "forbidden",
 			p2Surface:                   "not_implemented",
-			productionTrustProvisioning: "not_implemented",
+			productionTrustProvisioning: "configured_static_jwks_file",
 			productionDatabaseWrites:    "not_authorized",
 			deployment:                  "not_authorized",
 			publication:                 "not_authorized",

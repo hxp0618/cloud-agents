@@ -213,7 +213,7 @@
     },
     "trustSnapshot": {
       "authority": "package_private_owned_immutable_generation",
-      "provisioning": "test_builder_only_no_production_constructor",
+      "provisioning": "configured_static_jwks_file",
       "requiredFacts": [
         "audience",
         "generation",
@@ -245,7 +245,7 @@
       ],
       "audienceAuthority": "snapshot_owned_single_resource_audience",
       "tenantProjectPermissionAuthority": "context_owned_not_token_or_http_caller_selected",
-      "productionConstructor": "absent"
+      "productionConstructor": "configured_static_jwks_file"
     },
     "verifiedPrincipal": {
       "construction": "package_private_pointer_only_after_successful_verification",
