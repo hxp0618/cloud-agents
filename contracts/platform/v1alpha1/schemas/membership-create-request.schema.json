@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/membership-create-request.schema.json",
+  "title": "MembershipCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedTenantRevision", "membershipId", "membershipName", "subject", "scope", "auditFactUid", "reasonCode"],
+  "properties": {
+    "expectedTenantRevision": { "type": "integer", "minimum": 1 },
+    "membershipId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "membershipName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "subject": { "$ref": "../../../common/v1alpha1/schemas/subject-ref.schema.json" },
+    "scope": { "$ref": "../../../common/v1alpha1/schemas/authorization-scope.schema.json" },
+    "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "auditFactUid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "reasonCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

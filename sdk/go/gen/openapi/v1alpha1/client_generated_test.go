@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
 func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	requestBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	projectBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project.json")
+	mutationBody := []byte(`{"resourceUid":"membership-new","resourceVersion":"8","state":"active"}`)
 	responses := map[string]Response{
 		"GET /v1/tenants/tenant-alpha":                                               responseFixture(t, "platform-tenant", 200),
 		"GET /v1/tenants/tenant-alpha/organizations/organization-alpha":              responseFixture(t, "organization", 200),
@@ -26,6 +28,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":           responseFixture(t, "project", 200),
 		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha": responseFixture(t, "role-binding", 200),
 		"POST /v1/tenants/tenant-alpha/projects":                                     {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
+		"POST /v1/tenants/tenant-alpha/memberships":                                  {Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"}, Body: mutationBody},
 	}
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(ctx context.Context, request Request) (Response, error) {
@@ -67,18 +70,26 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateProject(ctx, "tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 9 {
-		t.Fatalf("transport calls = %d, want 9", len(seen))
+	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 10 {
+		t.Fatalf("transport calls = %d, want 10", len(seen))
 	}
 	for _, request := range seen {
 		if request.Headers[HeaderRequestID] != "req-alpha" {
 			t.Fatalf("request headers = %#v", request.Headers)
 		}
 	}
-	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[len(seen)-1].Body)
-	if seen[len(seen)-1].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
-		t.Fatalf("create request = %#v", seen[len(seen)-1])
+	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[8].Body)
+	if seen[8].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
+		t.Fatalf("create request = %#v", seen[8])
 	}
+}
+
+func rawTenantRef(id string) *json.RawMessage {
+	raw := json.RawMessage(`{"namespace":"cloud-agents","kind":"tenant","id":"` + id + `"}`)
+	return &raw
 }
 
 func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {

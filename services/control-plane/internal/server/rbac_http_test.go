@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
@@ -23,6 +25,34 @@ type rbacHTTPReaderFake struct {
 	resolves    int
 	memberships int
 	bindings    int
+}
+
+type rbacHTTPMutatorFake struct {
+	created      postgres.CreateMembershipInput
+	bound        postgres.BindRoleInput
+	transitioned postgres.MembershipTransitionInput
+	result       postgres.MutationResult
+	err          error
+}
+
+func (fake *rbacHTTPMutatorFake) CreateMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.CreateMembershipInput) (postgres.MutationResult, error) {
+	fake.created = input
+	return fake.result, fake.err
+}
+func (fake *rbacHTTPMutatorFake) SuspendMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.MembershipTransitionInput) (postgres.MutationResult, error) {
+	fake.transitioned = input
+	return postgres.MutationResult{}, fake.err
+}
+func (fake *rbacHTTPMutatorFake) RevokeMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.MembershipTransitionInput) (postgres.MutationResult, error) {
+	fake.transitioned = input
+	return fake.result, fake.err
+}
+func (fake *rbacHTTPMutatorFake) BindRole(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.BindRoleInput) (postgres.MutationResult, error) {
+	fake.bound = input
+	return fake.result, fake.err
+}
+func (fake *rbacHTTPMutatorFake) RevokeRoleBinding(context.Context, string, *authn.VerifiedPrincipal, postgres.RevokeRoleBindingInput) (postgres.MutationResult, error) {
+	return postgres.MutationResult{}, fake.err
 }
 
 func (fake *rbacHTTPReaderFake) ResolveMembershipScope(context.Context, string, string) (authz.ScopeRef, error) {
@@ -95,7 +125,7 @@ func TestRBACHTTPServerUsesStoredScopeAndGeneratedResources(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			verifier := &projectHTTPVerifierFake{}
-			server, err := NewRBACHTTPServer(verifier, test.reader)
+			server, err := NewRBACHTTPServer(verifier, test.reader, &rbacHTTPMutatorFake{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,10 +148,124 @@ func TestRBACHTTPServerUsesStoredScopeAndGeneratedResources(t *testing.T) {
 	}
 }
 
+func TestRBACHTTPServerCreatesMembershipWithScopedMutationContract(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	mutator := &rbacHTTPMutatorFake{result: postgres.MutationResult{TenantID: "tenant-alpha", ResourceUID: "membership-new", ResourceVersion: 8, State: "active"}}
+	server, err := NewRBACHTTPServer(verifier, &rbacHTTPReaderFake{}, mutator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeTenant, ID: "tenant-alpha"}
+	body, err := platformv1alpha1.EncodeMembershipCreateRequestJSON(platformv1alpha1.MembershipCreateRequest{
+		ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new",
+		Subject: commonv1alpha1.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: scopeResource(scope, "tenant-alpha"), AuditFactUID: "audit-create", ReasonCode: "operator-request",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/memberships", strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || response.Header().Get("X-Resource-Version") != "8" {
+		t.Fatalf("status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+	value, err := platformv1alpha1.DecodeRBACMutationResultResponseJSON(response.Body.Bytes())
+	if err != nil || value.Value.ResourceUID != "membership-new" || value.Value.ResourceVersion != "8" {
+		t.Fatalf("result=%#v err=%v", value.Value, err)
+	}
+	if verifier.seen.RequiredPermission != "memberships.create" || verifier.seen.ResourceLevel != "tenant" || verifier.seen.ResourceID != "tenant-alpha" {
+		t.Fatalf("verification=%#v", verifier.seen)
+	}
+	if mutator.created.ExpectedTenantRevision != 7 || mutator.created.Scope != scope || mutator.created.Subject.Subject != "user-alpha" {
+		t.Fatalf("mutation input=%#v", mutator.created)
+	}
+}
+
+func TestRBACHTTPServerMapsMutationConflict(t *testing.T) {
+	server, err := NewRBACHTTPServer(&projectHTTPVerifierFake{}, &rbacHTTPReaderFake{}, &rbacHTTPMutatorFake{err: postgres.ErrMutationConflict})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := platformv1alpha1.EncodeMembershipCreateRequestJSON(platformv1alpha1.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: commonv1alpha1.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: scopeResource(authz.ScopeRef{Level: authz.ScopeTenant, ID: "tenant-alpha"}, "tenant-alpha"), AuditFactUID: "audit-create", ReasonCode: "operator-request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/memberships", strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestRBACHTTPServerBindsRoleWithScopedMutationContract(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	mutator := &rbacHTTPMutatorFake{result: postgres.MutationResult{ResourceUID: "binding-new", ResourceVersion: 11, State: "active"}}
+	server, err := NewRBACHTTPServer(verifier, &rbacHTTPReaderFake{}, mutator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: "project-alpha"}
+	body, err := platformv1alpha1.EncodeRoleBindingCreateRequestJSON(platformv1alpha1.RoleBindingCreateRequest{
+		ExpectedTenantRevision: 10, RoleBindingID: "binding-new", RoleBindingName: "binding-new",
+		Subject: commonv1alpha1.SubjectRef{Kind: "serviceAccount", Issuer: "https://issuer.example", Subject: "agent-alpha"}, RoleName: "project.operator", RoleVersion: 1,
+		Scope: scopeResource(scope, "tenant-alpha"), AuditFactUID: "audit-bind", ReasonCode: "operator-request",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/role-bindings", strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || response.Header().Get("X-Resource-Version") != "11" {
+		t.Fatalf("status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+	if verifier.seen.RequiredPermission != "role-bindings.bind" || verifier.seen.ResourceLevel != "project" || verifier.seen.ResourceID != "project-alpha" {
+		t.Fatalf("verification=%#v", verifier.seen)
+	}
+	if mutator.bound.RoleBindingUID != "binding-new" || mutator.bound.RoleName != "project.operator" || mutator.bound.Scope != scope {
+		t.Fatalf("mutation input=%#v", mutator.bound)
+	}
+}
+
+func TestRBACHTTPServerRevokesMembershipUsingStoredScope(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	reader := &rbacHTTPReaderFake{scope: authz.ScopeRef{Level: authz.ScopeProject, ID: "project-alpha"}}
+	mutator := &rbacHTTPMutatorFake{result: postgres.MutationResult{TenantID: "tenant-alpha", ResourceUID: "membership-alpha", ResourceVersion: 9, State: "revoked"}}
+	server, err := NewRBACHTTPServer(verifier, reader, mutator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := platformv1alpha1.EncodeMembershipTransitionRequestJSON(platformv1alpha1.MembershipTransitionRequest{ExpectedTenantRevision: 8, ExpectedResourceVersion: 7, AuditFactUID: "audit-revoke", ReasonCode: "operator-request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/memberships/membership-alpha:revoke", strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("X-Resource-Version") != "9" || reader.resolves != 1 {
+		t.Fatalf("status=%d headers=%v resolves=%d body=%s", response.Code, response.Header(), reader.resolves, response.Body.String())
+	}
+	if verifier.seen.RequiredPermission != "memberships.delete" || verifier.seen.ResourceLevel != "project" || verifier.seen.ResourceID != "project-alpha" {
+		t.Fatalf("verification=%#v", verifier.seen)
+	}
+	if mutator.transitioned.MembershipUID != "membership-alpha" || mutator.transitioned.ExpectedResourceVersion != 7 {
+		t.Fatalf("transition=%#v", mutator.transitioned)
+	}
+}
+
 func TestRBACHTTPServerDoesNotExposeMissingResourceBeforeAuthentication(t *testing.T) {
 	verifier := &projectHTTPVerifierFake{}
 	reader := &rbacHTTPReaderFake{resolveErr: postgres.ErrMembershipNotFound}
-	server, err := NewRBACHTTPServer(verifier, reader)
+	server, err := NewRBACHTTPServer(verifier, reader, &rbacHTTPMutatorFake{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +278,10 @@ func TestRBACHTTPServerDoesNotExposeMissingResourceBeforeAuthentication(t *testi
 		t.Fatalf("status=%d verifier calls=%d resolves=%d body=%s", response.Code, verifier.calls, reader.resolves, response.Body.String())
 	}
 
-	if _, err := NewRBACHTTPServer(nil, reader); !errors.Is(err, ErrInvalidRBACHTTPServer) {
+	if _, err := NewRBACHTTPServer(nil, reader, &rbacHTTPMutatorFake{}); !errors.Is(err, ErrInvalidRBACHTTPServer) {
 		t.Fatalf("nil verifier error=%v", err)
+	}
+	if _, err := NewRBACHTTPServer(verifier, reader, nil); !errors.Is(err, ErrInvalidRBACHTTPServer) {
+		t.Fatalf("nil mutator error=%v", err)
 	}
 }

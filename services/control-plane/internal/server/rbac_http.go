@@ -17,7 +17,9 @@ import (
 )
 
 const (
+	MembershipCollectionRoute   = "/v1/tenants/{tenantId}/memberships"
 	MembershipRoute             = "/v1/tenants/{tenantId}/memberships/{membershipId}"
+	RoleBindingCollectionRoute  = "/v1/tenants/{tenantId}/role-bindings"
 	RoleBindingRoute            = "/v1/tenants/{tenantId}/role-bindings/{roleBindingId}"
 	ManagedHostRoleBindingRoute = "/v1/managed-host/tenants/{tenantId}/role-bindings/{roleBindingId}"
 	managedHostTenantPrefix     = "/v1/managed-host/tenants/"
@@ -28,24 +30,29 @@ var ErrInvalidRBACHTTPServer = errors.New("RBAC HTTP server configuration is inv
 type RBACHTTPServer struct {
 	verifier AccessTokenVerifier
 	reader   ManagedAgentRBACReader
+	mutator  ManagedAgentRBACMutator
 }
 
-func NewRBACHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentRBACReader) (*RBACHTTPServer, error) {
-	if verifier == nil || reader == nil {
+func NewRBACHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentRBACReader, mutator ManagedAgentRBACMutator) (*RBACHTTPServer, error) {
+	if verifier == nil || reader == nil || mutator == nil {
 		return nil, ErrInvalidRBACHTTPServer
 	}
-	return &RBACHTTPServer{verifier: verifier, reader: reader}, nil
+	return &RBACHTTPServer{verifier: verifier, reader: reader, mutator: mutator}, nil
 }
 
 func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
 	writer.Header().Set("Cache-Control", "no-store")
-	if server == nil || server.verifier == nil || server.reader == nil || request == nil {
+	if server == nil || server.verifier == nil || server.reader == nil || server.mutator == nil || request == nil {
 		writeRBACError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}
 	if request.Method != http.MethodGet {
-		writer.Header().Set("Allow", http.MethodGet)
+		if request.Method == http.MethodPost && server.mutator != nil {
+			server.mutate(writer, request)
+			return
+		}
+		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writeRBACError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}

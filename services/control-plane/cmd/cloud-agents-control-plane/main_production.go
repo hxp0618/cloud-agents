@@ -120,6 +120,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("control-plane store is unavailable")
 	}
+	rbacMutationService, err := postgres.NewRBACMutationService(pool)
+	if err != nil {
+		return errors.New("RBAC mutation store is unavailable")
+	}
 	workerIdentity, err := productionWorkerIdentity(config.workerSPIFFE)
 	if err != nil {
 		return errors.New("worker identity configuration is invalid")
@@ -170,7 +174,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("role HTTP server is unavailable")
 	}
-	rbacServer, err := server.NewRBACHTTPServer(verifier, coordinationService)
+	rbacServer, err := server.NewRBACHTTPServer(verifier, coordinationService, rbacMutationService)
 	if err != nil {
 		return errors.New("RBAC HTTP server is unavailable")
 	}
@@ -194,11 +198,17 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleRoute, roleServer)
 	mux.Handle(server.MembershipRoute, rbacServer)
+	mux.Handle(server.MembershipCollectionRoute, rbacServer)
 	mux.Handle(server.RoleBindingRoute, rbacServer)
+	mux.Handle(server.RoleBindingCollectionRoute, rbacServer)
 	mux.Handle(server.ManagedHostProjectRoute, projectServer)
 	mux.Handle(server.ManagedHostRoleBindingRoute, rbacServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if server.HandlesRBACPath(request.URL.Path) {
+			rbacServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesManagedAgentExecutionPath(request.URL.Path) {
 			executionServer.ServeHTTP(writer, request)
 			return

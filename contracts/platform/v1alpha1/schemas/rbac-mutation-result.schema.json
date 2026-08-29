@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/rbac-mutation-result.schema.json",
+  "title": "RBACMutationResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceUid", "resourceVersion", "state"],
+  "properties": {
+    "resourceUid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "resourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "state": { "type": "string", "enum": ["active", "suspended", "revoked"] }
+  }
+}

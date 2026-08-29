@@ -419,6 +419,30 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/memberships": {
+      "post": {
+        "operationId": "managedAgentCreateMembership",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-create-request.schema.json" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/memberships/{membershipId}": {
       "get": {
         "operationId": "managedAgentGetMembership",
@@ -461,6 +485,58 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/memberships/{membershipId}:suspend": {
+      "post": {
+        "operationId": "managedAgentSuspendMembership",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/MembershipId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/memberships/{membershipId}:revoke": {
+      "post": {
+        "operationId": "managedAgentRevokeMembership",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/MembershipId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
         }
       }
     },
@@ -509,6 +585,30 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/role-bindings": {
+      "post": {
+        "operationId": "managedAgentBindRole",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-binding-create-request.schema.json" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/role-bindings/{roleBindingId}": {
       "get": {
         "operationId": "managedAgentGetRoleBinding",
@@ -551,6 +651,32 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/role-bindings/{roleBindingId}:revoke": {
+      "post": {
+        "operationId": "managedAgentRevokeRoleBinding",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/RoleBindingId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-binding-revoke-request.schema.json" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
         }
       }
     }

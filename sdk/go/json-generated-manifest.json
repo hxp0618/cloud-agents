@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:3b28ffc88c170524f497d959a57001825bb7e90cfef9336c5176639cd81d520e",
-    "inputManifestSha256": "sha256:3b28ffc88c170524f497d959a57001825bb7e90cfef9336c5176639cd81d520e",
+    "manifestSha256": "sha256:b6cbb28e55f53ff09c015ca2674ef436341031f879955b81fcdf501e5fca5172",
+    "inputManifestSha256": "sha256:b6cbb28e55f53ff09c015ca2674ef436341031f879955b81fcdf501e5fca5172",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -68,12 +68,17 @@
       "contracts/platform/v1alpha1/fixtures/negative/role-binding-unknown-role.json",
       "contracts/platform/v1alpha1/fixtures/negative/role-wildcard-permission.json",
       "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+      "contracts/platform/v1alpha1/schemas/membership-create-request.schema.json",
+      "contracts/platform/v1alpha1/schemas/membership-transition-request.schema.json",
       "contracts/platform/v1alpha1/schemas/membership.schema.json",
       "contracts/platform/v1alpha1/schemas/organization.schema.json",
       "contracts/platform/v1alpha1/schemas/permission.schema.json",
       "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
       "contracts/platform/v1alpha1/schemas/project-create-request.schema.json",
       "contracts/platform/v1alpha1/schemas/project.schema.json",
+      "contracts/platform/v1alpha1/schemas/rbac-mutation-result.schema.json",
+      "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
+      "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
       "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
       "contracts/platform/v1alpha1/schemas/role.schema.json",
       "docs/plan/p1/sdk-identity-closure-entry-20260820.md"
@@ -81,7 +86,7 @@
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:ffff09b89cc83c241ff7f16690d462a9bbe29a94896a7ed21ccf4def2dd0296e",
+      "manifestSha256": "sha256:6cead20f525e892d136669f07e5f9e6f5d4f27817ed832a4a968613d8714ceaf",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -114,12 +119,17 @@
         "contracts/managed-agent/v1alpha1/schemas/turn.schema.json",
         "contracts/managed-host/v1alpha1/openapi.json",
         "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
+        "contracts/platform/v1alpha1/schemas/membership-create-request.schema.json",
+        "contracts/platform/v1alpha1/schemas/membership-transition-request.schema.json",
         "contracts/platform/v1alpha1/schemas/membership.schema.json",
         "contracts/platform/v1alpha1/schemas/organization.schema.json",
         "contracts/platform/v1alpha1/schemas/permission.schema.json",
         "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
         "contracts/platform/v1alpha1/schemas/project-create-request.schema.json",
         "contracts/platform/v1alpha1/schemas/project.schema.json",
+        "contracts/platform/v1alpha1/schemas/rbac-mutation-result.schema.json",
+        "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
+        "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
         "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
         "contracts/platform/v1alpha1/schemas/role.schema.json"
       ]
@@ -130,7 +140,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:7c9afe210ad92f78cd115bf88a8bd38fb38946ff621f7cb6176a421bc20c4e9a",
+    "sourceManifestSha256": "sha256:548527fff5f2b32dea5667643ada3d8cccc2d9db17cf632069b14cde648f5d3f",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -146,7 +156,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:97b592768ce37562790cd72486da2b0f3676b6fea0e2ec0c8010505f866ea25c"
+    "configDigest": "sha256:cb24abaf7d797ed210553141d915f85ccbd91b9e1fcb4a9db84be46c80ee7cb7"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -161,22 +171,22 @@
   "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:044826141d45f1c822561b209ff896e7b1a46867267c0f90a035e7b551c13f9f",
+  "outputTreeSha256": "sha256:6a396191ff8a0fbf616bec916f0143b807bfa2675723a678e05c5731a57fcfdb",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-      "sha256": "sha256:8872f9be352d74d7c978184ef03e54c2471484866ca192a287dce831176d3164",
+      "sha256": "sha256:be6bf8bc983f83716504c16e175cde963c33ee048302a29f9c69b21403b02594",
       "sizeBytes": 28791
     },
     {
       "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-      "sha256": "sha256:aa8b5c2dd95602269e74ec4c356a5d20705132b27890d2da0dcb08d1b8939a11",
-      "sizeBytes": 24032
+      "sha256": "sha256:6d7170fc894c64f7fa7962a0181141e8b2ad330d0005e1edde4468d4adcfac15",
+      "sizeBytes": 37438
     },
     {
       "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-      "sha256": "sha256:88b74e84d82c680280417bf7fd44ca2a52b2572a6bffd8aa815a63c0eade5c98",
-      "sizeBytes": 49236
+      "sha256": "sha256:f2269deb0aea8c13c5168d1b494204a652b02d4e584fa96e62ff3e5bb556d54d",
+      "sizeBytes": 56251
     }
   ]
 }

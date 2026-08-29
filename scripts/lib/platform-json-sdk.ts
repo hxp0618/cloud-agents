@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:ffff09b89cc83c241ff7f16690d462a9bbe29a94896a7ed21ccf4def2dd0296e";
+	"sha256:6cead20f525e892d136669f07e5f9e6f5d4f27817ed832a4a968613d8714ceaf";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -64,15 +64,20 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
-  "managed-agent-create-project-organization-ref.schema.json",
-  "membership.schema.json",
-  "organization.schema.json",
-  "permission.schema.json",
-  "platform-tenant.schema.json",
-  "project-create-request.schema.json",
-  "project.schema.json",
-  "role-binding.schema.json",
-  "role.schema.json",
+	"managed-agent-create-project-organization-ref.schema.json",
+	"membership-create-request.schema.json",
+	"membership.schema.json",
+	"membership-transition-request.schema.json",
+	"organization.schema.json",
+	"permission.schema.json",
+	"platform-tenant.schema.json",
+	"project-create-request.schema.json",
+	"project.schema.json",
+	"rbac-mutation-result.schema.json",
+	"role-binding-create-request.schema.json",
+	"role-binding.schema.json",
+	"role-binding-revoke-request.schema.json",
+	"role.schema.json",
 ] as const;
 const MANAGED_AGENT_SCHEMAS = [
 	"event-page.schema.json",
@@ -348,7 +353,9 @@ function validateJSONSDKAuthority(root: string): void {
   }
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
   const expected = [
+		"managedAgentBindRole",
     "managedAgentCloseSession",
+		"managedAgentCreateMembership",
     "managedAgentCreateProject",
     "managedAgentCreateSession",
     "managedAgentCreateTurn",
@@ -358,11 +365,14 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentGetOrganization",
     "managedAgentGetPlatformTenant",
     "managedAgentGetProject",
-    "managedAgentGetRole",
-    "managedAgentGetRoleBinding",
+		"managedAgentGetRole",
+		"managedAgentGetRoleBinding",
 		"managedAgentGetSession",
 		"managedAgentGetTurn",
 		"managedAgentListEvents",
+		"managedAgentRevokeMembership",
+		"managedAgentRevokeRoleBinding",
+		"managedAgentSuspendMembership",
     "managedHostGetProjectContext",
     "managedHostGetRoleBinding",
   ];

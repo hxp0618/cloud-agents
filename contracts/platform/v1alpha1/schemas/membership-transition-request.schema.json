@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/membership-transition-request.schema.json",
+  "title": "MembershipTransitionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedTenantRevision", "expectedResourceVersion", "auditFactUid", "reasonCode"],
+  "properties": {
+    "expectedTenantRevision": { "type": "integer", "minimum": 1 },
+    "expectedResourceVersion": { "type": "integer", "minimum": 1 },
+    "auditFactUid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "reasonCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
+  "title": "RoleBindingCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedTenantRevision", "roleBindingId", "roleBindingName", "subject", "roleName", "roleVersion", "scope", "auditFactUid", "reasonCode"],
+  "properties": {
+    "expectedTenantRevision": { "type": "integer", "minimum": 1 },
+    "roleBindingId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "roleBindingName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "subject": { "$ref": "../../../common/v1alpha1/schemas/subject-ref.schema.json" },
+    "roleName": { "type": "string", "enum": ["tenant.admin", "organization.admin", "project.admin", "project.operator", "project.developer", "project.viewer"] },
+    "roleVersion": { "type": "integer", "minimum": 1 },
+    "scope": { "$ref": "../../../common/v1alpha1/schemas/authorization-scope.schema.json" },
+    "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "auditFactUid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "reasonCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}
