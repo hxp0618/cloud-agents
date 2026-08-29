@@ -9,6 +9,7 @@ export type PlatformReleaseTarget = (typeof PLATFORM_RELEASE_TARGETS)[number];
 
 export const PLATFORM_RELEASE_GO_COMMANDS = [
   "cloud-agents-control-plane",
+  "cloud-agentsctl",
   "cloud-agents-worker",
   "cloud-agents-product-migrate",
   "cloud-agents-evidencefs-provision",
