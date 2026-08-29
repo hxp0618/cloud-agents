@@ -54,3 +54,37 @@ func TestManagedAgentEventsHTTPServerReturnsBoundPage(t *testing.T) {
 		t.Fatalf("verification request=%#v", verifier.seen)
 	}
 }
+
+func TestManagedAgentEventsHTTPServerRejectsInvalidPublicInputs(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		requestID string
+	}{
+		{name: "request id", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/events", requestID: "request:invalid"},
+		{name: "tenant identifier", path: "/v1/tenants/-tenant/projects/project-alpha/sessions/session-alpha/events", requestID: "request-events"},
+		{name: "project identifier", path: "/v1/tenants/tenant-alpha/projects/-project/sessions/session-alpha/events", requestID: "request-events"},
+		{name: "session identifier", path: "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/-session/events", requestID: "request-events"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifier := &projectHTTPVerifierFake{}
+			store := &managedAgentEventsStoreFake{}
+			handler, err := NewManagedAgentEventsHTTPServer(verifier, store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			request.Header.Set("Authorization", "Bearer access-token")
+			request.Header.Set("X-Request-ID", test.requestID)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || verifier.calls != 0 || store.called != 0 {
+				t.Fatalf("status=%d verifierCalls=%d storeCalls=%d body=%s", response.Code, verifier.calls, store.called, response.Body.String())
+			}
+			if test.requestID == "request:invalid" && response.Header().Get("X-Request-ID") != publicFallbackRequestID {
+				t.Fatalf("invalid request id was echoed: %q", response.Header().Get("X-Request-ID"))
+			}
+		})
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -49,8 +50,12 @@ func (server *ManagedAgentEventsHTTPServer) ServeHTTP(writer http.ResponseWriter
 		writeManagedAgentSessionError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
-	requestID, requestIDOK := exactSingleHeader(request.Header, "X-Request-ID")
+	requestID, requestIDOK := validatedManagedAgentRequestID(writer, request)
 	if !requestIDOK {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := validateManagedAgentScope(tenantID, projectID); err != nil || commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}

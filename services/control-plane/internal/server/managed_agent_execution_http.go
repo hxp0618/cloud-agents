@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,9 +54,12 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 		writeManagedAgentSessionError(writer, http.StatusNotFound, "route_not_found")
 		return
 	}
-	requestID, requestIDOK := exactSingleHeader(request.Header, "X-Request-ID")
-	if !requestIDOK || commonv1alpha1.ValidateIdentifier(requestID, "/Request-ID") != nil {
-		writer.Header().Set("X-Request-ID", publicFallbackRequestID)
+	requestID, requestIDOK := validatedManagedAgentRequestID(writer, request)
+	if !requestIDOK {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := validateManagedAgentScope(tenantID, projectID); err != nil || sessionID == "" || commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil || turnID != "" && commonv1alpha1.ValidateIdentifier(turnID, "/turnId") != nil || executionID != "" && commonv1alpha1.ValidateIdentifier(executionID, "/executionId") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -93,14 +95,37 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 
 func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, requestID, bearer string) {
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
-	if !ok {
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	var body managedAgentExecutionRequest
-	if err := decodeManagedAgentExecutionJSON(request.Body, &body); err != nil || body.TurnID == "" || body.ExecutionID == "" || body.InputText == "" {
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentExecutionRequest{}, []string{"turnId", "executionId", "model", "inputText"}, []string{"turnId", "executionId", "inputText"})
+	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
+	}
+	turnID, err := managedAgentIdentifierField(fields, "turnId", "/turnId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	executionID, err := managedAgentIdentifierField(fields, "executionId", "/executionId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	inputText, err := managedAgentStringField(fields, "inputText", "/inputText", 1, 1<<20)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	model := ""
+	if _, present := fields["model"]; present {
+		model, err = managedAgentStringField(fields, "model", "/model", 1, 128)
+		if err != nil {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
 	}
 	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
@@ -109,7 +134,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 	}
 	result, err := server.runner.Execute(request.Context(), principal, internalmanagedagent.DurableRuntimeExecutionInput{
 		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
-		TurnID: body.TurnID, ExecutionID: body.ExecutionID, Model: body.Model, InputText: body.InputText,
+		TurnID: turnID, ExecutionID: executionID, Model: model, InputText: inputText,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
@@ -137,12 +162,12 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 
 func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
-	if !ok {
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	var body managedAgentExecutionCancelBody
-	if err := decodeManagedAgentExecutionJSON(request.Body, &body); err != nil || body.Generation == 0 {
+	if _, err := decodeManagedAgentJSON(request.Body, &body, []string{"generation"}, []string{"generation"}); err != nil || body.Generation == 0 || body.Generation > maxManagedAgentGeneration {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -165,12 +190,12 @@ func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter
 
 func (server *ManagedAgentExecutionHTTPServer) interrupt(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
-	if !ok {
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	var body managedAgentExecutionInterruptBody
-	if err := decodeManagedAgentExecutionJSON(request.Body, &body); err != nil || body.Generation == 0 {
+	if _, err := decodeManagedAgentJSON(request.Body, &body, []string{"generation"}, []string{"generation"}); err != nil || body.Generation == 0 || body.Generation > maxManagedAgentGeneration {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -247,18 +272,7 @@ func writeManagedAgentExecution(writer http.ResponseWriter, status int, requestI
 
 const timeFormat = "2006-01-02T15:04:05.999999999Z07:00"
 
-func decodeManagedAgentExecutionJSON(reader io.Reader, value any) error {
-	decoder := json.NewDecoder(io.LimitReader(reader, 1<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(value); err != nil {
-		return err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return errors.New("trailing JSON")
-	}
-	return nil
-}
+const maxManagedAgentGeneration = uint64(9223372036854775807)
 
 func managedAgentExecutionPath(path string) (tenantID, projectID, sessionID, turnID, executionID, action string, ok bool) {
 	if !strings.HasPrefix(path, ManagedAgentExecutionRoutePrefix) {

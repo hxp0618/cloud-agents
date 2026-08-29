@@ -168,6 +168,78 @@ func TestManagedAgentExecutionHTTPServerRejectsNonIdentifierRequestID(t *testing
 	}
 }
 
+func TestManagedAgentExecutionHTTPServerRejectsInvalidExecuteInputs(t *testing.T) {
+	validPath := "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions"
+	validRequestID := "request-alpha"
+	validIdempotencyKey := "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX"
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "turn identifier", body: `{"turnId":"-turn","executionId":"execution-alpha","inputText":"hello"}`},
+		{name: "execution identifier", body: `{"turnId":"turn-alpha","executionId":"-execution","inputText":"hello"}`},
+		{name: "empty input", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":""}`},
+		{name: "empty model", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"","inputText":"hello"}`},
+		{name: "null model", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","model":null,"inputText":"hello"}`},
+		{name: "unknown field", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","extra":true}`},
+		{name: "duplicate field", body: `{"turnId":"turn-alpha","turnId":"turn-beta","executionId":"execution-alpha","inputText":"hello"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifier := &projectHTTPVerifierFake{}
+			store := &managedAgentExecutionStoreFake{}
+			runner := &managedAgentExecutionRunnerFake{}
+			handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, validPath, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer access-token")
+			request.Header.Set("X-Request-ID", validRequestID)
+			request.Header.Set("Idempotency-Key", validIdempotencyKey)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || verifier.calls != 0 || runner.input.TurnID != "" || runner.input.ExecutionID != "" {
+				t.Fatalf("status=%d verifierCalls=%d runnerInput=%#v body=%s", response.Code, verifier.calls, runner.input, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestManagedAgentExecutionHTTPServerRejectsInvalidMutationInputs(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+		body   string
+	}{
+		{name: "cancel generation overflow", action: "cancel", body: `{"generation":9223372036854775808}`},
+		{name: "interrupt generation overflow", action: "interrupt", body: `{"generation":9223372036854775808}`},
+		{name: "cancel unknown field", action: "cancel", body: `{"generation":7,"extra":true}`},
+		{name: "interrupt zero generation", action: "interrupt", body: `{"generation":0}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifier := &projectHTTPVerifierFake{}
+			store := &managedAgentExecutionStoreFake{}
+			runner := &managedAgentExecutionRunnerFake{}
+			handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:" + test.action
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer access-token")
+			request.Header.Set("X-Request-ID", "request-alpha")
+			request.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || verifier.calls != 0 || runner.cancelInput.Generation != 0 || runner.interruptInput.Generation != 0 {
+				t.Fatalf("status=%d verifierCalls=%d cancel=%#v interrupt=%#v body=%s", response.Code, verifier.calls, runner.cancelInput, runner.interruptInput, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestManagedAgentExecutionPathRejectsCrossTurnLookup(t *testing.T) {
 	if HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/t:bad/executions/e") {
 		t.Fatal("accepted a colon-bearing turn id")

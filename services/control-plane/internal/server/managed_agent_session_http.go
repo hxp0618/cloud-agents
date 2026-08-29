@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -47,8 +48,12 @@ func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWrite
 		writeManagedAgentSessionError(writer, http.StatusNotFound, "route_not_found")
 		return
 	}
-	requestID, requestIDOK := exactSingleHeader(request.Header, "X-Request-ID")
+	requestID, requestIDOK := validatedManagedAgentRequestID(writer, request)
 	if !requestIDOK {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := validateManagedAgentScope(tenantID, projectID); err != nil || sessionID != "" && commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -78,12 +83,22 @@ func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWrite
 
 func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
-	if !ok {
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	var body managedAgentSessionCreateBody
-	if err := decodeManagedAgentSessionJSON(request.Body, &body); err != nil || body.SessionID == "" || body.ProviderKind == "" {
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentSessionCreateBody{}, []string{"sessionId", "providerKind"}, []string{"sessionId", "providerKind"})
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	sessionID, err := managedAgentIdentifierField(fields, "sessionId", "/sessionId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	providerKind, err := managedAgentIdentifierField(fields, "providerKind", "/providerKind", 64)
+	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -93,7 +108,7 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 		return
 	}
 	snapshot, err := server.store.CreateManagedAgentSession(request.Context(), tenantID, principal, internalmanagedagent.CreateSessionInput{
-		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: body.SessionID, ProviderKind: body.ProviderKind,
+		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, ProviderKind: providerKind,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
@@ -106,7 +121,7 @@ func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, 
 
 func (server *ManagedAgentSessionHTTPServer) close(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, requestID, bearer string) {
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
-	if !ok {
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -179,17 +194,77 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 	})
 }
 
-func decodeManagedAgentSessionJSON(reader io.Reader, value any) error {
-	decoder := json.NewDecoder(io.LimitReader(reader, 1<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(value); err != nil {
+const managedAgentMaximumBodyBytes = 1 << 20
+
+func validatedManagedAgentRequestID(writer http.ResponseWriter, request *http.Request) (string, bool) {
+	if request == nil {
+		if writer != nil {
+			writer.Header().Set("X-Request-ID", publicFallbackRequestID)
+		}
+		return "", false
+	}
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok || commonv1alpha1.ValidateIdentifier(requestID, "/Request-ID") != nil {
+		if writer != nil {
+			writer.Header().Set("X-Request-ID", publicFallbackRequestID)
+		}
+		return "", false
+	}
+	return requestID, true
+}
+
+func validateManagedAgentScope(tenantID, projectID string) error {
+	if err := commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId"); err != nil {
 		return err
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return errors.New("trailing JSON")
+	return commonv1alpha1.ValidateIdentifier(projectID, "/projectId")
+}
+
+func decodeManagedAgentJSON(reader io.Reader, value any, allowed, required []string) (map[string]json.RawMessage, error) {
+	if reader == nil {
+		return nil, errors.New("managed agent request body is nil")
 	}
-	return nil
+	body, err := io.ReadAll(io.LimitReader(reader, managedAgentMaximumBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > managedAgentMaximumBodyBytes {
+		return nil, errors.New("managed agent request body exceeds limit")
+	}
+	fields, err := commonv1alpha1.DecodeStrictObject(body, allowed, required)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, value); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+func managedAgentStringField(fields map[string]json.RawMessage, key, path string, minimum, maximum int) (string, error) {
+	raw, ok := fields[key]
+	if !ok {
+		return "", commonv1alpha1.ContractError("MISSING_FIELD", path)
+	}
+	var value *string
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return "", commonv1alpha1.ContractError("INVALID_FIELD_TYPE", path)
+	}
+	if err := commonv1alpha1.ValidateString(*value, minimum, maximum, path); err != nil {
+		return "", err
+	}
+	return *value, nil
+}
+
+func managedAgentIdentifierField(fields map[string]json.RawMessage, key, path string, maximum int) (string, error) {
+	value, err := managedAgentStringField(fields, key, path, 1, maximum)
+	if err != nil {
+		return "", err
+	}
+	if err := commonv1alpha1.ValidateIdentifier(value, path); err != nil {
+		return "", err
+	}
+	return value, nil
 }
 
 func managedAgentSessionPath(path string) (tenantID, projectID, sessionID, action string, ok bool) {

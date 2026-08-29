@@ -63,3 +63,47 @@ func TestManagedAgentTurnHTTPServerLifecycleRoutes(t *testing.T) {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
 	}
 }
+
+func TestManagedAgentTurnHTTPServerRejectsInvalidPublicInputs(t *testing.T) {
+	validPath := "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns"
+	validRequestID := "request-alpha"
+	validIdempotencyKey := "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4"
+	tests := []struct {
+		name        string
+		path        string
+		requestID   string
+		idempotency string
+		body        string
+	}{
+		{name: "request id", path: validPath, requestID: "request:invalid", idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"hello"}`},
+		{name: "project identifier", path: "/v1/tenants/tenant-alpha/projects/-project/sessions/session-alpha/turns", requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"hello"}`},
+		{name: "idempotency key", path: validPath, requestID: validRequestID, idempotency: "short", body: `{"turnId":"turn-alpha","inputText":"hello"}`},
+		{name: "turn identifier", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"-turn","inputText":"hello"}`},
+		{name: "null input", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":null}`},
+		{name: "unknown field", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"hello","extra":true}`},
+		{name: "duplicate field", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","turnId":"turn-beta","inputText":"hello"}`},
+		{name: "body too large", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"` + strings.Repeat("a", 1<<20) + `"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			verifier := &projectHTTPVerifierFake{}
+			store := &managedAgentTurnStoreFake{}
+			handler, err := NewManagedAgentTurnHTTPServer(verifier, store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer access-token")
+			request.Header.Set("X-Request-ID", test.requestID)
+			request.Header.Set("Idempotency-Key", test.idempotency)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || verifier.calls != 0 || store.create != 0 {
+				t.Fatalf("status=%d verifierCalls=%d storeCreates=%d body=%s", response.Code, verifier.calls, store.create, response.Body.String())
+			}
+			if test.requestID == "request:invalid" && response.Header().Get("X-Request-ID") != publicFallbackRequestID {
+				t.Fatalf("invalid request id was echoed: %q", response.Header().Get("X-Request-ID"))
+			}
+		})
+	}
+}

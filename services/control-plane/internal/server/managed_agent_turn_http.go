@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -43,8 +44,12 @@ func (server *ManagedAgentTurnHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 		writeManagedAgentSessionError(writer, http.StatusNotFound, "route_not_found")
 		return
 	}
-	requestID, requestIDOK := exactSingleHeader(request.Header, "X-Request-ID")
+	requestID, requestIDOK := validatedManagedAgentRequestID(writer, request)
 	if !requestIDOK {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := validateManagedAgentScope(tenantID, projectID); err != nil || sessionID == "" || commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil || turnID != "" && commonv1alpha1.ValidateIdentifier(turnID, "/turnId") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -72,12 +77,22 @@ func (server *ManagedAgentTurnHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 
 func (server *ManagedAgentTurnHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, requestID, bearer string) {
 	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
-	if !ok {
+	if !ok || commonv1alpha1.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key") != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	var body managedAgentTurnCreateBody
-	if err := decodeManagedAgentSessionJSON(request.Body, &body); err != nil || body.TurnID == "" {
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentTurnCreateBody{}, []string{"turnId", "inputText"}, []string{"turnId", "inputText"})
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	turnID, err := managedAgentIdentifierField(fields, "turnId", "/turnId", 128)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	inputText, err := managedAgentStringField(fields, "inputText", "/inputText", 0, 1<<20)
+	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
@@ -87,7 +102,7 @@ func (server *ManagedAgentTurnHTTPServer) create(writer http.ResponseWriter, req
 		return
 	}
 	snapshot, err := server.store.CreateManagedAgentTurn(request.Context(), tenantID, principal, internalmanagedagent.CreateTurnInput{
-		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, TurnID: body.TurnID, InputText: body.InputText,
+		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, TurnID: turnID, InputText: inputText,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
