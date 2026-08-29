@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:779e9be46651ec35d365db999d2382e9dd127fda002dd1b2f004de89ab4a90ce",
-    "inputManifestSha256": "sha256:779e9be46651ec35d365db999d2382e9dd127fda002dd1b2f004de89ab4a90ce",
+    "manifestSha256": "sha256:393bd07d5c6209a70bcaa51158fdb078b0aae71929fbd8c944a44d4462b9c20f",
+    "inputManifestSha256": "sha256:393bd07d5c6209a70bcaa51158fdb078b0aae71929fbd8c944a44d4462b9c20f",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -47,6 +47,7 @@
       "contracts/managed-agent/v1alpha1/schemas/event.schema.json",
       "contracts/managed-agent/v1alpha1/schemas/execution-cancel-request.schema.json",
       "contracts/managed-agent/v1alpha1/schemas/execution-create-request.schema.json",
+      "contracts/managed-agent/v1alpha1/schemas/execution-interrupt-request.schema.json",
       "contracts/managed-agent/v1alpha1/schemas/execution.schema.json",
       "contracts/managed-agent/v1alpha1/schemas/session-create-request.schema.json",
       "contracts/managed-agent/v1alpha1/schemas/session.schema.json",
@@ -87,7 +88,7 @@
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:6915e805c526fc13621c742a9a58e8b99168a2b4b591484a2f470862d903d770",
+      "manifestSha256": "sha256:f131bef54ea371d8ccba2dc763542e84bf133c8bd10d38d38b1e7a494e5bb2e9",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -114,6 +115,7 @@
         "contracts/managed-agent/v1alpha1/schemas/event.schema.json",
         "contracts/managed-agent/v1alpha1/schemas/execution-cancel-request.schema.json",
         "contracts/managed-agent/v1alpha1/schemas/execution-create-request.schema.json",
+        "contracts/managed-agent/v1alpha1/schemas/execution-interrupt-request.schema.json",
         "contracts/managed-agent/v1alpha1/schemas/execution.schema.json",
         "contracts/managed-agent/v1alpha1/schemas/session-create-request.schema.json",
         "contracts/managed-agent/v1alpha1/schemas/session.schema.json",
@@ -142,7 +144,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:70a64bb5eb79854e8bf9aa444a8bd6763a2e41c18a05ca2717cd60e527d2a380",
+    "sourceManifestSha256": "sha256:eb9f3897a20916b937a6a245db55a81daf22bcd357d0fd0c673341227e3307ff",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -158,7 +160,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:39086bbc3657f271e192c68b6d7d7c48d41115c0079dd92cb137fa0f9125897d"
+    "configDigest": "sha256:5240b5b52c3f9b252688e7842b19205ee32e3c6627497aeed33b79245da4b94e"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -173,22 +175,22 @@
   "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:925879d72689a1f4680268d86951b5cd3b4d15ae1680cd6b3045e6544d516d0d",
+  "outputTreeSha256": "sha256:17ba48d9f4a03ba397c8bcec148bf12b60b589b0c324dfd835405f3f5abdd79b",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-      "sha256": "sha256:7cc174b678feb9960f50d89154ea92e604942f984643538b3874b3ff596f0e08",
+      "sha256": "sha256:00da7e8706419ab9a9b93e18164d9edfb4515f96e80e57b91df4c59f8f1106e3",
       "sizeBytes": 28791
     },
     {
       "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-      "sha256": "sha256:d091f27fce0060ad855492b01aff8488573746e7de3caff333aa4a3d04acd420",
+      "sha256": "sha256:09eea6e16756fd5b6545de26bd3aeab62738ab382fcb69ec5415ce1bc626e771",
       "sizeBytes": 37438
     },
     {
       "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-      "sha256": "sha256:24b97484c6a508ad1f3d021dbfc0db0b11400872b1f6ab8b6dfaa5f836262a55",
-      "sizeBytes": 58486
+      "sha256": "sha256:315b909bf6091b2549a5a6890ed1d4f5eb9ba1b64f0aa80cd58f2dd9fbe14344",
+      "sizeBytes": 60748
     }
   ]
 }

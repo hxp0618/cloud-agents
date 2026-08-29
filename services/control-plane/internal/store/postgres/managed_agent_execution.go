@@ -26,6 +26,9 @@ FROM cloud_agents.settle_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, 
 	cancelManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.cancel_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
+	interruptManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
+execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
+FROM cloud_agents.interrupt_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	getManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at
 FROM cloud_agents.managed_agent_executions
 WHERE tenant_id = cloud_agents.require_tenant_id()
@@ -151,6 +154,39 @@ func (service *DurableCoordinationService) CancelManagedAgentExecution(
 			MutationDigest: digest, ErrorCode: result.Execution.ErrorCode,
 			Changes: []internalmanagedagent.LifecycleStateChange{
 				{Resource: internalmanagedagent.ResourceTurn, From: string(internalmanagedagent.TurnRunning), To: string(internalmanagedagent.TurnCancelled), Version: result.Turn.Version},
+				{Resource: internalmanagedagent.ResourceExecution, From: string(internalmanagedagent.ExecutionRunning), To: string(internalmanagedagent.ExecutionCancelled), Version: result.Execution.Version},
+			},
+		})
+	})
+	return result, err
+}
+
+func (service *DurableCoordinationService) InterruptManagedAgentExecution(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	input internalmanagedagent.InterruptTurnInput,
+) (internalmanagedagent.ExecutionTransitionResult, error) {
+	digest, err := internalmanagedagent.TurnInterruptMutationDigest(input)
+	if err != nil {
+		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+	}
+	if service == nil || service.runner == nil || input.Scope.TenantID != tenantID || ctx == nil || input.Generation > math.MaxInt64 {
+		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+	}
+	var result internalmanagedagent.ExecutionTransitionResult
+	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
+		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, interruptManagedAgentExecutionSQL,
+			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.TargetExecutionID,
+			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result); err != nil {
+			return err
+		}
+		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
+			Scope: input.Scope, SessionID: result.Execution.SessionID, Operation: "turn.interrupt", Resource: internalmanagedagent.ResourceExecution,
+			TurnID: result.Turn.TurnID, ExecutionID: result.Execution.ExecutionID, Generation: result.Execution.Generation,
+			MutationDigest: digest, ErrorCode: result.Execution.ErrorCode,
+			Changes: []internalmanagedagent.LifecycleStateChange{
+				{Resource: internalmanagedagent.ResourceTurn, From: string(internalmanagedagent.TurnRunning), To: string(internalmanagedagent.TurnInterrupted), Version: result.Turn.Version},
 				{Resource: internalmanagedagent.ResourceExecution, From: string(internalmanagedagent.ExecutionRunning), To: string(internalmanagedagent.ExecutionCancelled), Version: result.Execution.Version},
 			},
 		})

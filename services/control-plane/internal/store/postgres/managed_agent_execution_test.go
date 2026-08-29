@@ -71,4 +71,8 @@ func TestManagedAgentExecutionDigestsMatchLifecycleKernel(t *testing.T) {
 	if err != nil || !strings.HasPrefix(cancelled, "sha256:") || cancelled == completed {
 		t.Fatalf("cancel digest/error = %q/%v", cancelled, err)
 	}
+	interrupted, err := internalmanagedagent.TurnInterruptMutationDigest(internalmanagedagent.InterruptTurnInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", TargetExecutionID: "execution-alpha", Generation: 7, Mutation: mutation})
+	if err != nil || !strings.HasPrefix(interrupted, "sha256:") || interrupted == cancelled {
+		t.Fatalf("interrupt digest/error = %q/%v", interrupted, err)
+	}
 }

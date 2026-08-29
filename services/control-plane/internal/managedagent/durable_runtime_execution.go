@@ -27,6 +27,7 @@ type DurableRuntimeExecutionStore interface {
 	StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, StartExecutionInput) (ExecutionTransitionResult, error)
 	CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CompleteExecutionInput) (ExecutionTransitionResult, error)
 	FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, FailExecutionInput) (ExecutionTransitionResult, error)
+	InterruptManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, InterruptTurnInput) (ExecutionTransitionResult, error)
 	CancelManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CancelTurnInput) (ExecutionTransitionResult, error)
 }
 
@@ -132,11 +133,34 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Cancel(ctx context.Contex
 	if err != nil {
 		return ExecutionTransitionResult{}, err
 	}
-	coordinator.activeMu.Lock()
-	active := coordinator.active[durableExecutionKey{
+	coordinator.stopActiveExecution(durableExecutionKey{
 		tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID,
 		turnID: input.TurnID, executionID: input.TargetExecutionID, generation: input.Generation,
-	}]
+	})
+	return result, nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) Interrupt(ctx context.Context, principal *authn.VerifiedPrincipal, input InterruptTurnInput) (ExecutionTransitionResult, error) {
+	if coordinator == nil || coordinator.store == nil {
+		return ExecutionTransitionResult{}, ErrDurableRuntimeExecutionUnavailable
+	}
+	if ctx == nil {
+		return ExecutionTransitionResult{}, ErrNilContext
+	}
+	result, err := coordinator.store.InterruptManagedAgentExecution(ctx, input.Scope.TenantID, principal, input)
+	if err != nil {
+		return ExecutionTransitionResult{}, err
+	}
+	coordinator.stopActiveExecution(durableExecutionKey{
+		tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID,
+		turnID: input.TurnID, executionID: input.TargetExecutionID, generation: input.Generation,
+	})
+	return result, nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) stopActiveExecution(key durableExecutionKey) {
+	coordinator.activeMu.Lock()
+	active := coordinator.active[key]
 	var cancel context.CancelFunc
 	if active != nil {
 		active.externallyCancelled = true
@@ -146,7 +170,6 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Cancel(ctx context.Contex
 	if cancel != nil {
 		cancel()
 	}
-	return result, nil
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Context, principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput) (DurableRuntimeExecutionResult, error) {

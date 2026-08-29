@@ -1043,6 +1043,22 @@ func TurnCancelMutationDigest(input CancelTurnInput) (string, error) {
 	}), nil
 }
 
+// TurnInterruptMutationDigest returns the canonical digest used by the durable
+// caller-requested interruption writer.
+func TurnInterruptMutationDigest(input InterruptTurnInput) (string, error) {
+	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.TargetExecutionID, input.Generation); err != nil {
+		return "", err
+	}
+	if err := input.Mutation.validate(); err != nil {
+		return "", err
+	}
+	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
+		Operation: "turn.interrupt", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
+		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.TargetExecutionID,
+		Generation: input.Generation, TargetExecutionID: input.TargetExecutionID,
+	}), nil
+}
+
 func validateExecutionInput(scope Scope, sessionID, turnID, executionID string, generation uint64) error {
 	if err := validateExecutionPath(scope, sessionID, turnID, executionID); err != nil {
 		return err

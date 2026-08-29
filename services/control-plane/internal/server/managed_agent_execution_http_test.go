@@ -45,6 +45,12 @@ func (fake *managedAgentExecutionStoreFake) FailManagedAgentExecution(context.Co
 	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
 }
 
+func (fake *managedAgentExecutionStoreFake) InterruptManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedagent.InterruptTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
+	fake.execution.State = internalmanagedagent.ExecutionCancelled
+	fake.execution.ErrorCode = "interrupted"
+	return internalmanagedagent.ExecutionTransitionResult{Turn: internalmanagedagent.TurnSnapshot{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, State: internalmanagedagent.TurnInterrupted}, Execution: fake.execution}, nil
+}
+
 func (fake *managedAgentExecutionStoreFake) CancelManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
 	fake.cancel = input
 	fake.execution.State = internalmanagedagent.ExecutionCancelled
@@ -59,9 +65,11 @@ func (fake *managedAgentExecutionStoreFake) GetManagedAgentExecution(_ context.C
 }
 
 type managedAgentExecutionRunnerFake struct {
-	input        internalmanagedagent.DurableRuntimeExecutionInput
-	cancelInput  internalmanagedagent.CancelTurnInput
-	cancelResult internalmanagedagent.ExecutionTransitionResult
+	input           internalmanagedagent.DurableRuntimeExecutionInput
+	interruptInput  internalmanagedagent.InterruptTurnInput
+	interruptResult internalmanagedagent.ExecutionTransitionResult
+	cancelInput     internalmanagedagent.CancelTurnInput
+	cancelResult    internalmanagedagent.ExecutionTransitionResult
 }
 
 func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error) {
@@ -69,6 +77,11 @@ func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, _ *authn
 	return internalmanagedagent.DurableRuntimeExecutionResult{Transition: internalmanagedagent.ExecutionTransitionResult{
 		Execution: internalmanagedagent.ExecutionSnapshot{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)},
 	}, Messages: []runtime.Message{{MessageType: "Result", CommandID: "turn", ExecutionID: input.ExecutionID, Generation: 7}}}, nil
+}
+
+func (fake *managedAgentExecutionRunnerFake) Interrupt(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.InterruptTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
+	fake.interruptInput = input
+	return fake.interruptResult, nil
 }
 
 func (fake *managedAgentExecutionRunnerFake) Cancel(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
@@ -82,7 +95,12 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	cancelledExecution := store.execution
 	cancelledExecution.State = internalmanagedagent.ExecutionCancelled
 	cancelledExecution.ErrorCode = "cancelled"
-	runner := &managedAgentExecutionRunnerFake{cancelResult: internalmanagedagent.ExecutionTransitionResult{Execution: cancelledExecution}}
+	interruptedExecution := cancelledExecution
+	interruptedExecution.ErrorCode = "interrupted"
+	runner := &managedAgentExecutionRunnerFake{
+		cancelResult:    internalmanagedagent.ExecutionTransitionResult{Execution: cancelledExecution},
+		interruptResult: internalmanagedagent.ExecutionTransitionResult{Execution: interruptedExecution},
+	}
 	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +137,16 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	if cancelled.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.act" || runner.cancelInput.Generation != 7 || runner.cancelInput.TargetExecutionID != "execution-alpha" || !strings.Contains(cancelled.Body.String(), `"state":"cancelled"`) {
 		t.Fatalf("cancel status=%d verification=%#v input=%#v body=%s", cancelled.Code, verifier.seen, runner.cancelInput, cancelled.Body.String())
 	}
+
+	interrupt := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt", strings.NewReader(`{"generation":7}`))
+	interrupt.Header.Set("Authorization", "Bearer access-token")
+	interrupt.Header.Set("X-Request-ID", "request-interrupt")
+	interrupt.Header.Set("Idempotency-Key", "idem-interrupt-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
+	interrupted := httptest.NewRecorder()
+	handler.ServeHTTP(interrupted, interrupt)
+	if interrupted.Code != http.StatusOK || runner.interruptInput.Generation != 7 || runner.interruptInput.TargetExecutionID != "execution-alpha" || !strings.Contains(interrupted.Body.String(), `"errorCode":"interrupted"`) {
+		t.Fatalf("interrupt status=%d input=%#v body=%s", interrupted.Code, runner.interruptInput, interrupted.Body.String())
+	}
 }
 
 func TestManagedAgentExecutionPathRejectsCrossTurnLookup(t *testing.T) {
@@ -127,5 +155,8 @@ func TestManagedAgentExecutionPathRejectsCrossTurnLookup(t *testing.T) {
 	}
 	if !HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/turn/executions/execution:cancel") {
 		t.Fatal("did not accept execution cancel path")
+	}
+	if !HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/turn/executions/execution:interrupt") {
+		t.Fatal("did not accept execution interrupt path")
 	}
 }

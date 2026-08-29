@@ -55,6 +55,13 @@ func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(context.
 	return ExecutionTransitionResult{}, nil
 }
 
+func (fake *durableRuntimeExecutionStoreFake) InterruptManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input InterruptTurnInput) (ExecutionTransitionResult, error) {
+	fake.calls = append(fake.calls, "interrupt")
+	fake.execution.State = ExecutionCancelled
+	fake.execution.ErrorCode = "interrupted"
+	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnInterrupted}, Execution: fake.execution}, nil
+}
+
 func (fake *durableRuntimeExecutionStoreFake) CancelManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "cancel")
 	fake.execution.State = ExecutionCancelled

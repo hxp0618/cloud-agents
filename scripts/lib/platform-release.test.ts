@@ -91,8 +91,8 @@ describe("platform release", () => {
   it("packages the current product migration manifest, catalog, and SQL", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
-    expect(entries.some(({ path }) => path.endsWith("product/000019/manifest.json"))).toBe(true);
-    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(19);
+		expect(entries.some(({ path }) => path.endsWith("product/000020/manifest.json"))).toBe(true);
+		expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(20);
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agents-migrations",
       target: "portable",
