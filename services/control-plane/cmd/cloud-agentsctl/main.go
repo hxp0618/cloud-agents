@@ -19,7 +19,11 @@ type globalOptions struct {
 	endpoint       string
 	token          string
 	tenant         string
+	organization   string
 	project        string
+	membership     string
+	role           string
+	roleBinding    string
 	session        string
 	turn           string
 	execution      string
@@ -46,6 +50,10 @@ func run(args []string, stdout io.Writer) error {
 	ctx := context.Background()
 	var value any
 	switch command + " " + action {
+	case "tenant get":
+		value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
+	case "organization get":
+		value, err = client.GetOrganization(ctx, options.tenant, options.organization, options.requestID)
 	case "project get":
 		value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
 	case "project create":
@@ -99,6 +107,16 @@ func run(args []string, stdout io.Writer) error {
 		}); err == nil {
 			value, err = client.ListManagedAgentEvents(ctx, options.tenant, options.project, options.session, options.requestID, cursor, limit)
 		}
+	case "membership get":
+		value, err = client.GetMembership(ctx, options.tenant, options.membership, options.requestID)
+	case "role get":
+		value, err = client.GetRole(ctx, options.tenant, options.role, options.requestID)
+	case "role-binding get":
+		value, err = client.GetRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+	case "managed-host-project get":
+		value, err = client.GetProjectContext(ctx, options.tenant, options.project, options.requestID)
+	case "managed-host-role-binding get":
+		value, err = client.GetManagedHostRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
 	default:
 		return fmt.Errorf("unknown command %q; use cloud-agentsctl help", command+" "+action)
 	}
@@ -115,7 +133,11 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.endpoint, "endpoint", "", "Control Plane URL")
 	set.StringVar(&options.token, "token", "", "bearer token")
 	set.StringVar(&options.tenant, "tenant", "", "tenant identifier")
+	set.StringVar(&options.organization, "organization", "", "organization identifier")
 	set.StringVar(&options.project, "project", "", "project identifier")
+	set.StringVar(&options.membership, "membership", "", "membership identifier")
+	set.StringVar(&options.role, "role", "", "role identifier")
+	set.StringVar(&options.roleBinding, "role-binding", "", "role binding identifier")
 	set.StringVar(&options.session, "session", "", "session identifier")
 	set.StringVar(&options.turn, "turn", "", "turn identifier")
 	set.StringVar(&options.execution, "execution", "", "execution identifier")
@@ -139,6 +161,18 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if requiresProject(command, action) && options.project == "" {
 		return globalOptions{}, "", "", nil, errors.New("--project is required")
+	}
+	if requiresOrganization(command, action) && options.organization == "" {
+		return globalOptions{}, "", "", nil, errors.New("--organization is required")
+	}
+	if requiresMembership(command, action) && options.membership == "" {
+		return globalOptions{}, "", "", nil, errors.New("--membership is required")
+	}
+	if requiresRole(command, action) && options.role == "" {
+		return globalOptions{}, "", "", nil, errors.New("--role is required")
+	}
+	if requiresRoleBinding(command, action) && options.roleBinding == "" {
+		return globalOptions{}, "", "", nil, errors.New("--role-binding is required")
 	}
 	if requiresSession(command, action) && options.session == "" {
 		return globalOptions{}, "", "", nil, errors.New("--session is required")
@@ -180,6 +214,16 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.ManagedAgentEventPageResult:
 		return result.Value
+	case openapi.TenantResult:
+		return result.Value
+	case openapi.OrganizationResult:
+		return result.Value
+	case openapi.MembershipResult:
+		return result.Value
+	case openapi.RoleResult:
+		return result.Value
+	case openapi.RoleBindingResult:
+		return result.Value
 	default:
 		return value
 	}
@@ -187,7 +231,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "events list":
+	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "events list", "membership get", "role get", "role-binding get", "managed-host-project get", "managed-host-role-binding get":
 		return true
 	default:
 		return false
@@ -195,7 +239,13 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events"
+	return command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project"
+}
+func requiresOrganization(command, action string) bool { return command == "organization" }
+func requiresMembership(command, action string) bool   { return command == "membership" }
+func requiresRole(command, action string) bool         { return command == "role" }
+func requiresRoleBinding(command, action string) bool {
+	return command == "role-binding" || command == "managed-host-role-binding"
 }
 func requiresSession(command, action string) bool {
 	return command == "session" || command == "turn" || command == "execution" || command == "events"
@@ -206,4 +256,4 @@ func requiresIdempotency(command, action string) bool {
 	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && action == "execute")
 }
 
-const usage = `usage: cloud-agentsctl --endpoint URL --token TOKEN --tenant ID --request-id ID <project|session|turn|execution|events> <action> [flags]`
+const usage = `usage: cloud-agentsctl --endpoint URL --token TOKEN --tenant ID --request-id ID <resource> <action> [flags]`

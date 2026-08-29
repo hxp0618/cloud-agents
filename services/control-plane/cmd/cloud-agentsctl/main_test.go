@@ -42,3 +42,26 @@ func TestParseArgsRejectsMissingRequiredGlobalInput(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "tenant", args: []string{"tenant", "get"}},
+		{name: "organization", args: []string{"--organization", "organization-alpha", "organization", "get"}},
+		{name: "project", args: []string{"--project", "project-alpha", "project", "get"}},
+		{name: "membership", args: []string{"--membership", "membership-alpha", "membership", "get"}},
+		{name: "role", args: []string{"--role", "role-alpha", "role", "get"}},
+		{name: "role binding", args: []string{"--role-binding", "binding-alpha", "role-binding", "get"}},
+		{name: "managed host project", args: []string{"--project", "project-alpha", "managed-host-project", "get"}},
+		{name: "managed host role binding", args: []string{"--role-binding", "binding-alpha", "managed-host-role-binding", "get"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			args := append([]string{"--endpoint", "http://127.0.0.1:8080", "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha"}, test.args...)
+			if _, _, _, _, err := parseArgs(args); err != nil {
+				t.Fatalf("parseArgs(%v) = %v", args, err)
+			}
+		})
+	}
+}
