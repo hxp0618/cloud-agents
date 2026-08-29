@@ -407,12 +407,16 @@ func run(ctx context.Context, args []string) error {
 	}
 	mux.Handle(server.LocalControlPlaneHealthRoute, healthHTTPServer)
 	mux.Handle(server.LocalControlPlaneReadinessRoute, healthHTTPServer)
+	writeTimeout := 15 * time.Second
+	if runtimeSupervisor != nil {
+		writeTimeout = 5*time.Minute + 15*time.Second
+	}
 	httpServer := &http.Server{
 		Addr:              config.listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       30 * time.Second,
 	}
 	errorChannel := make(chan error, 1)
