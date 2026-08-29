@@ -5,6 +5,9 @@ package main
 import (
 	"errors"
 	"testing"
+
+	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
 )
 
 func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
@@ -55,5 +58,23 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	cfg, err := parseProductionWorkerConfig(envArgs, func(name string) string { return environment[name] })
 	if err != nil || cfg.admissionLeaseID != "lease-from-secret" || cfg.admissionGeneration != 9 || string(cfg.admissionToken) != "token-from-secret" {
 		t.Fatalf("environment lease = %q generation = %d token bytes = %d error = %v", cfg.admissionLeaseID, cfg.admissionGeneration, len(cfg.admissionToken), err)
+	}
+}
+
+func TestProductionWorkerRuntimeAdvertisesOperationDispatch(t *testing.T) {
+	service, err := workerkernel.NewService(workerkernel.Config{
+		WorkerIdentity: &workerv1alpha1.WorkloadIdentity{
+			SpiffeId:    "spiffe://cloud-agents.example/worker",
+			TrustDomain: "cloud-agents.example",
+		},
+		Capabilities:     productionWorkerCapabilities(),
+		AdmissionLeaseID: "lease-production", AdmissionGeneration: 1, AdmissionToken: []byte("token"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := service.ProtocolDescriptor()
+	if descriptor == nil || len(descriptor.GetCapabilities()) != 3 || descriptor.GetCapabilities()[2] != workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH {
+		t.Fatalf("production Runtime capabilities = %#v", descriptor.GetCapabilities())
 	}
 }

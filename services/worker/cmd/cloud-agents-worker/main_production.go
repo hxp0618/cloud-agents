@@ -154,6 +154,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 	}
 	service, err := workerkernel.NewService(workerkernel.Config{
 		WorkerIdentity:      identity,
+		Capabilities:        productionWorkerCapabilities(),
 		IdentityProvider:    workerkernel.TLSIdentityProvider{},
 		RuntimeCommand:      []string{cfg.runtimeCommand},
 		AdmissionLeaseID:    cfg.admissionLeaseID,
@@ -200,6 +201,14 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 			return nil
 		}
 		return err
+	}
+}
+
+func productionWorkerCapabilities() []workerv1alpha1.Capability {
+	return []workerv1alpha1.Capability{
+		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+		workerv1alpha1.Capability_CAPABILITY_HEALTH,
+		workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
 	}
 }
 
