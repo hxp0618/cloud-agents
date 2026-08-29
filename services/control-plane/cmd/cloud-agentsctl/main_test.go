@@ -68,6 +68,157 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 	}
 }
 
+func TestParseArgsAcceptsRBACMutations(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "membership create", args: []string{"--membership", "membership-alpha", "membership", "create"}},
+		{name: "membership suspend", args: []string{"--membership", "membership-alpha", "membership", "suspend"}},
+		{name: "membership revoke", args: []string{"--membership", "membership-alpha", "membership", "revoke"}},
+		{name: "role binding create", args: []string{"--role-binding", "binding-alpha", "role-binding", "create"}},
+		{name: "role binding revoke", args: []string{"--role-binding", "binding-alpha", "role-binding", "revoke"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			args := append([]string{"--endpoint", "http://127.0.0.1:8080", "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha"}, test.args...)
+			if _, _, _, _, err := parseArgs(args); err != nil {
+				t.Fatalf("parseArgs(%v) = %v", args, err)
+			}
+		})
+	}
+}
+
+func TestRunRBACMutations(t *testing.T) {
+	const base = "--endpoint PLACEHOLDER --token token-alpha --tenant tenant-alpha --request-id request-alpha"
+	tests := []struct {
+		name       string
+		resource   string
+		action     string
+		resourceID string
+		status     int
+		bodyParts  []string
+	}{
+		{
+			name:       "membership create",
+			resource:   "membership",
+			action:     "create",
+			resourceID: "membership-alpha",
+			status:     http.StatusCreated,
+			bodyParts: []string{
+				`"expectedTenantRevision":7`, `"membershipId":"membership-alpha"`, `"membershipName":"membership-alpha"`,
+				`"kind":"user"`, `"issuer":"https://issuer.example"`, `"subject":"user-alpha"`,
+				`"level":"tenant"`, `"id":"tenant-alpha"`, `"auditFactUid":"audit-create"`, `"reasonCode":"operator-request"`,
+			},
+		},
+		{
+			name:       "membership suspend",
+			resource:   "membership",
+			action:     "suspend",
+			resourceID: "membership-alpha",
+			status:     http.StatusOK,
+			bodyParts:  []string{`"expectedTenantRevision":8`, `"expectedResourceVersion":3`, `"auditFactUid":"audit-transition"`, `"reasonCode":"operator-request"`},
+		},
+		{
+			name:       "membership revoke",
+			resource:   "membership",
+			action:     "revoke",
+			resourceID: "membership-alpha",
+			status:     http.StatusOK,
+			bodyParts:  []string{`"expectedTenantRevision":8`, `"expectedResourceVersion":3`, `"auditFactUid":"audit-transition"`, `"reasonCode":"operator-request"`},
+		},
+		{
+			name:       "role binding create",
+			resource:   "role-binding",
+			action:     "create",
+			resourceID: "binding-alpha",
+			status:     http.StatusCreated,
+			bodyParts: []string{
+				`"expectedTenantRevision":9`, `"roleBindingId":"binding-alpha"`, `"roleBindingName":"binding-alpha"`,
+				`"roleName":"project.viewer"`, `"roleVersion":1`, `"level":"project"`, `"id":"project-alpha"`,
+				`"auditFactUid":"audit-bind"`, `"reasonCode":"operator-request"`,
+			},
+		},
+		{
+			name:       "role binding revoke",
+			resource:   "role-binding",
+			action:     "revoke",
+			resourceID: "binding-alpha",
+			status:     http.StatusOK,
+			bodyParts:  []string{`"expectedTenantRevision":9`, `"expectedResourceVersion":4`, `"auditFactUid":"audit-revoke"`, `"reasonCode":"operator-request"`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var gotPath, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				gotPath = request.URL.Path
+				if request.Method != http.MethodPost || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" || request.Header.Get("Idempotency-Key") != "" {
+					t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.Path, request.Header)
+				}
+				contents, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				gotBody = string(contents)
+				writer.Header().Set("X-Resource-Version", "4")
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(test.status)
+				state := "active"
+				if test.action == "suspend" {
+					state = "suspended"
+				} else if test.action == "revoke" {
+					state = "revoked"
+				}
+				_, _ = writer.Write([]byte(`{"resourceUid":"` + test.resourceID + `","resourceVersion":"4","state":"` + state + `"}`))
+			}))
+			defer server.Close()
+
+			args := strings.Fields(strings.Replace(base, "PLACEHOLDER", server.URL, 1))
+			if test.resource == "membership" {
+				args = append(args, "--membership", test.resourceID)
+			} else {
+				args = append(args, "--role-binding", test.resourceID)
+			}
+			// Resource flags are global and must precede the command for the Go flag package.
+			args = append(args, test.resource, test.action)
+			if test.action == "create" && test.resource == "membership" {
+				args = append(args, "--expected-tenant-revision", "7", "--name", "membership-alpha", "--subject-kind", "user", "--subject-issuer", "https://issuer.example", "--subject", "user-alpha", "--scope-level", "tenant", "--scope-id", "tenant-alpha", "--audit-fact-uid", "audit-create", "--reason-code", "operator-request")
+			} else if test.action == "create" {
+				args = append(args, "--expected-tenant-revision", "9", "--name", "binding-alpha", "--subject-kind", "user", "--subject-issuer", "https://issuer.example", "--subject", "user-alpha", "--role-name", "project.viewer", "--role-version", "1", "--scope-level", "project", "--scope-id", "project-alpha", "--audit-fact-uid", "audit-bind", "--reason-code", "operator-request")
+			} else if test.resource == "membership" {
+				args = append(args, "--expected-tenant-revision", "8", "--expected-resource-version", "3", "--audit-fact-uid", "audit-transition", "--reason-code", "operator-request")
+			} else {
+				args = append(args, "--expected-tenant-revision", "9", "--expected-resource-version", "4", "--audit-fact-uid", "audit-revoke", "--reason-code", "operator-request")
+			}
+			var stdout bytes.Buffer
+			if err := run(args, &stdout); err != nil {
+				t.Fatal(err)
+			}
+			wantPath := "/v1/tenants/tenant-alpha/"
+			if test.resource == "membership" {
+				wantPath += "memberships"
+			} else {
+				wantPath += "role-bindings"
+			}
+			if test.action == "create" {
+				if gotPath != wantPath {
+					t.Fatalf("path = %q, want %q", gotPath, wantPath)
+				}
+			} else if !strings.HasPrefix(gotPath, wantPath+"/"+test.resourceID+":") || !strings.HasSuffix(gotPath, ":"+test.action) {
+				t.Fatalf("path = %q", gotPath)
+			}
+			for _, part := range test.bodyParts {
+				if !strings.Contains(gotBody, part) {
+					t.Fatalf("body %q does not contain %q", gotBody, part)
+				}
+			}
+			if !strings.Contains(stdout.String(), `"resourceUid":"`+test.resourceID+`"`) {
+				t.Fatalf("output = %q", stdout.String())
+			}
+		})
+	}
+}
+
 func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
 	const releaseDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	const responseBody = `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"CloudEnvironmentLease","metadata":{"uid":"lease-alpha","name":"lease-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"desiredPhase":"active","observedPhase":"provisioning","cleanupPhase":"none","environmentId":"lease-alpha","releaseDigest":"` + releaseDigest + `","expiresAt":"2026-08-29T09:00:00Z"}}`

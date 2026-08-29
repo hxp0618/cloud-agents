@@ -123,10 +123,73 @@ func run(args []string, stdout io.Writer) error {
 		}
 	case "membership get":
 		value, err = client.GetMembership(ctx, options.tenant, options.membership, options.requestID)
+	case "membership create":
+		var flags membershipCreateFlags
+		if err = parseActionFlags("membership create", actionArgs, defineMembershipCreateFlags(&flags)); err == nil {
+			var scope common.AuthorizationScope
+			scope, err = cliAuthorizationScope(options.tenant, flags.scopeLevel, flags.scopeID)
+			if err == nil {
+				value, err = client.CreateMembership(ctx, options.tenant, options.requestID, platform.MembershipCreateRequest{
+					ExpectedTenantRevision: flags.expectedTenantRevision,
+					MembershipID:           options.membership,
+					MembershipName:         flags.name,
+					Subject:                common.SubjectRef{Kind: flags.subjectKind, Issuer: flags.subjectIssuer, Subject: flags.subject},
+					Scope:                  scope,
+					ExpiresAt:              flags.expiresAt,
+					AuditFactUID:           flags.auditFactUID,
+					ReasonCode:             flags.reasonCode,
+				})
+			}
+		}
+	case "membership suspend", "membership revoke":
+		var flags rbacTransitionFlags
+		if err = parseActionFlags("membership "+action, actionArgs, defineRBACTransitionFlags(&flags)); err == nil {
+			body := platform.MembershipTransitionRequest{
+				ExpectedTenantRevision:  flags.expectedTenantRevision,
+				ExpectedResourceVersion: flags.expectedResourceVersion,
+				AuditFactUID:            flags.auditFactUID,
+				ReasonCode:              flags.reasonCode,
+			}
+			if action == "suspend" {
+				value, err = client.SuspendMembership(ctx, options.tenant, options.membership, options.requestID, body)
+			} else {
+				value, err = client.RevokeMembership(ctx, options.tenant, options.membership, options.requestID, body)
+			}
+		}
 	case "role get":
 		value, err = client.GetRole(ctx, options.tenant, options.role, options.requestID)
 	case "role-binding get":
 		value, err = client.GetRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+	case "role-binding create":
+		var flags roleBindingCreateFlags
+		if err = parseActionFlags("role-binding create", actionArgs, defineRoleBindingCreateFlags(&flags)); err == nil {
+			var scope common.AuthorizationScope
+			scope, err = cliAuthorizationScope(options.tenant, flags.scopeLevel, flags.scopeID)
+			if err == nil {
+				value, err = client.BindRole(ctx, options.tenant, options.requestID, platform.RoleBindingCreateRequest{
+					ExpectedTenantRevision: flags.expectedTenantRevision,
+					RoleBindingID:          options.roleBinding,
+					RoleBindingName:        flags.name,
+					Subject:                common.SubjectRef{Kind: flags.subjectKind, Issuer: flags.subjectIssuer, Subject: flags.subject},
+					RoleName:               flags.roleName,
+					RoleVersion:            flags.roleVersion,
+					Scope:                  scope,
+					ExpiresAt:              flags.expiresAt,
+					AuditFactUID:           flags.auditFactUID,
+					ReasonCode:             flags.reasonCode,
+				})
+			}
+		}
+	case "role-binding revoke":
+		var flags rbacTransitionFlags
+		if err = parseActionFlags("role-binding revoke", actionArgs, defineRBACTransitionFlags(&flags)); err == nil {
+			value, err = client.RevokeRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID, platform.RoleBindingRevokeRequest{
+				ExpectedTenantRevision:  flags.expectedTenantRevision,
+				ExpectedResourceVersion: flags.expectedResourceVersion,
+				AuditFactUID:            flags.auditFactUID,
+				ReasonCode:              flags.reasonCode,
+			})
+		}
 	case "managed-host-project get":
 		value, err = client.GetProjectContext(ctx, options.tenant, options.project, options.requestID)
 	case "managed-host-role-binding get":
@@ -270,6 +333,8 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.EnvironmentLeaseResult:
 		return result.Value
+	case openapi.RBACMutationResult:
+		return result.Value
 	default:
 		return value
 	}
@@ -277,7 +342,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "role get", "role-binding get", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -304,3 +369,108 @@ func requiresIdempotency(command, action string) bool {
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL --token TOKEN --tenant ID --request-id ID <resource> <action> [flags]`
+
+type membershipCreateFlags struct {
+	expectedTenantRevision int64
+	name                   string
+	subjectKind            string
+	subjectIssuer          string
+	subject                string
+	scopeLevel             string
+	scopeID                string
+	expiresAt              string
+	auditFactUID           string
+	reasonCode             string
+}
+
+func defineMembershipCreateFlags(flags *membershipCreateFlags) func(*flag.FlagSet) {
+	return func(set *flag.FlagSet) {
+		set.Int64Var(&flags.expectedTenantRevision, "expected-tenant-revision", 0, "expected tenant resource revision")
+		set.StringVar(&flags.name, "name", "", "membership name")
+		set.StringVar(&flags.subjectKind, "subject-kind", "", "subject kind")
+		set.StringVar(&flags.subjectIssuer, "subject-issuer", "", "subject issuer URL")
+		set.StringVar(&flags.subject, "subject", "", "subject identifier")
+		set.StringVar(&flags.scopeLevel, "scope-level", "", "authorization scope level")
+		set.StringVar(&flags.scopeID, "scope-id", "", "authorization scope identifier")
+		set.StringVar(&flags.expiresAt, "expires-at", "", "optional RFC3339 expiration")
+		set.StringVar(&flags.auditFactUID, "audit-fact-uid", "", "audit fact identifier")
+		set.StringVar(&flags.reasonCode, "reason-code", "", "mutation reason code")
+	}
+}
+
+type roleBindingCreateFlags struct {
+	expectedTenantRevision int64
+	name                   string
+	subjectKind            string
+	subjectIssuer          string
+	subject                string
+	roleName               string
+	roleVersion            int64
+	scopeLevel             string
+	scopeID                string
+	expiresAt              string
+	auditFactUID           string
+	reasonCode             string
+}
+
+func defineRoleBindingCreateFlags(flags *roleBindingCreateFlags) func(*flag.FlagSet) {
+	return func(set *flag.FlagSet) {
+		set.Int64Var(&flags.expectedTenantRevision, "expected-tenant-revision", 0, "expected tenant resource revision")
+		set.StringVar(&flags.name, "name", "", "role binding name")
+		set.StringVar(&flags.subjectKind, "subject-kind", "", "subject kind")
+		set.StringVar(&flags.subjectIssuer, "subject-issuer", "", "subject issuer URL")
+		set.StringVar(&flags.subject, "subject", "", "subject identifier")
+		set.StringVar(&flags.roleName, "role-name", "", "role name")
+		set.Int64Var(&flags.roleVersion, "role-version", 0, "role version")
+		set.StringVar(&flags.scopeLevel, "scope-level", "", "authorization scope level")
+		set.StringVar(&flags.scopeID, "scope-id", "", "authorization scope identifier")
+		set.StringVar(&flags.expiresAt, "expires-at", "", "optional RFC3339 expiration")
+		set.StringVar(&flags.auditFactUID, "audit-fact-uid", "", "audit fact identifier")
+		set.StringVar(&flags.reasonCode, "reason-code", "", "mutation reason code")
+	}
+}
+
+type rbacTransitionFlags struct {
+	expectedTenantRevision  int64
+	expectedResourceVersion int64
+	auditFactUID            string
+	reasonCode              string
+}
+
+func defineRBACTransitionFlags(flags *rbacTransitionFlags) func(*flag.FlagSet) {
+	return func(set *flag.FlagSet) {
+		set.Int64Var(&flags.expectedTenantRevision, "expected-tenant-revision", 0, "expected tenant resource revision")
+		set.Int64Var(&flags.expectedResourceVersion, "expected-resource-version", 0, "expected resource version")
+		set.StringVar(&flags.auditFactUID, "audit-fact-uid", "", "audit fact identifier")
+		set.StringVar(&flags.reasonCode, "reason-code", "", "mutation reason code")
+	}
+}
+
+func cliAuthorizationScope(tenantID, level, id string) (common.AuthorizationScope, error) {
+	if strings.TrimSpace(level) != level || strings.TrimSpace(id) != id || level == "" {
+		return common.AuthorizationScope{}, errors.New("--scope-level and --scope-id are required")
+	}
+	if level == "tenant" && id == "" {
+		id = tenantID
+	}
+	if id == "" {
+		return common.AuthorizationScope{}, errors.New("--scope-id is required")
+	}
+	var reference any
+	switch level {
+	case "tenant":
+		reference = common.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: id}
+	case "organization":
+		reference = common.OrganizationRef{Namespace: "cloud-agents", Kind: "organization", ID: id}
+	case "project":
+		reference = common.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: id}
+	default:
+		return common.AuthorizationScope{}, errors.New("--scope-level must be tenant, organization, or project")
+	}
+	raw, err := json.Marshal(reference)
+	if err != nil {
+		return common.AuthorizationScope{}, errors.New("authorization scope cannot be encoded")
+	}
+	message := json.RawMessage(raw)
+	return common.AuthorizationScope{Level: level, Ref: &message}, nil
+}
