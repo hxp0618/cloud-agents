@@ -27,6 +27,7 @@ type globalOptions struct {
 	session        string
 	turn           string
 	execution      string
+	lease          string
 	requestID      string
 	idempotencyKey string
 }
@@ -130,6 +131,32 @@ func run(args []string, stdout io.Writer) error {
 		value, err = client.GetProjectContext(ctx, options.tenant, options.project, options.requestID)
 	case "managed-host-role-binding get":
 		value, err = client.GetManagedHostRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+	case "environment-lease create":
+		var flags struct {
+			name          string
+			releaseDigest string
+			ttlSeconds    int64
+		}
+		if err = parseActionFlags("environment-lease create", actionArgs, func(set *flag.FlagSet) {
+			set.StringVar(&flags.name, "name", "", "lease name")
+			set.StringVar(&flags.releaseDigest, "release-digest", "", "release artifact digest")
+			set.Int64Var(&flags.ttlSeconds, "ttl-seconds", 0, "lease lifetime in seconds")
+		}); err == nil {
+			value, err = client.CreateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseCreateRequest{
+				LeaseID: options.lease, LeaseName: flags.name, ReleaseDigest: flags.releaseDigest, TTLSeconds: flags.ttlSeconds,
+			})
+		}
+	case "environment-lease get":
+		value, err = client.GetManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID)
+	case "environment-lease terminate":
+		var generation int64
+		if err = parseActionFlags("environment-lease terminate", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&generation, "generation", 0, "lease fencing generation")
+		}); err == nil && generation <= 0 {
+			err = errors.New("--generation must be greater than zero")
+		} else if err == nil {
+			value, err = client.TerminateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseTerminateRequest{ExpectedGeneration: generation})
+		}
 	default:
 		return fmt.Errorf("unknown command %q; use cloud-agentsctl help", command+" "+action)
 	}
@@ -154,6 +181,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.session, "session", "", "session identifier")
 	set.StringVar(&options.turn, "turn", "", "turn identifier")
 	set.StringVar(&options.execution, "execution", "", "execution identifier")
+	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
 	set.StringVar(&options.idempotencyKey, "idempotency-key", "", "idempotency key")
 	if err := set.Parse(args); err != nil {
@@ -196,6 +224,9 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if requiresExecution(command, action) && options.execution == "" {
 		return globalOptions{}, "", "", nil, errors.New("--execution is required")
 	}
+	if requiresLease(command, action) && options.lease == "" {
+		return globalOptions{}, "", "", nil, errors.New("--lease is required")
+	}
 	if requiresIdempotency(command, action) && options.idempotencyKey == "" {
 		return globalOptions{}, "", "", nil, errors.New("--idempotency-key is required")
 	}
@@ -237,6 +268,8 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.RoleBindingResult:
 		return result.Value
+	case openapi.EnvironmentLeaseResult:
+		return result.Value
 	default:
 		return value
 	}
@@ -244,7 +277,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "role get", "role-binding get", "managed-host-project get", "managed-host-role-binding get":
+	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "role get", "role-binding get", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -252,7 +285,7 @@ func knownCommand(command, action string) bool {
 }
 
 func requiresProject(command, action string) bool {
-	return command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project"
+	return command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool { return command == "organization" }
 func requiresMembership(command, action string) bool   { return command == "membership" }
@@ -265,8 +298,9 @@ func requiresSession(command, action string) bool {
 }
 func requiresTurn(command, action string) bool      { return command == "turn" || command == "execution" }
 func requiresExecution(command, action string) bool { return command == "execution" }
+func requiresLease(command, action string) bool     { return command == "environment-lease" }
 func requiresIdempotency(command, action string) bool {
-	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt"))
+	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL --token TOKEN --tenant ID --request-id ID <resource> <action> [flags]`
