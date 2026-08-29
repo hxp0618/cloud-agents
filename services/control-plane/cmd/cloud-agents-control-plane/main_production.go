@@ -189,6 +189,8 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.RoleRoute, roleServer)
 	mux.Handle(server.MembershipRoute, rbacServer)
 	mux.Handle(server.RoleBindingRoute, rbacServer)
+	mux.Handle(server.ManagedHostProjectRoute, projectServer)
+	mux.Handle(server.ManagedHostRoleBindingRoute, rbacServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesManagedAgentExecutionPath(request.URL.Path) {

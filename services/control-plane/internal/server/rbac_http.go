@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	MembershipRoute  = "/v1/tenants/{tenantId}/memberships/{membershipId}"
-	RoleBindingRoute = "/v1/tenants/{tenantId}/role-bindings/{roleBindingId}"
+	MembershipRoute             = "/v1/tenants/{tenantId}/memberships/{membershipId}"
+	RoleBindingRoute            = "/v1/tenants/{tenantId}/role-bindings/{roleBindingId}"
+	ManagedHostRoleBindingRoute = "/v1/managed-host/tenants/{tenantId}/role-bindings/{roleBindingId}"
+	managedHostTenantPrefix     = "/v1/managed-host/tenants/"
 )
 
 var ErrInvalidRBACHTTPServer = errors.New("RBAC HTTP server configuration is invalid")
@@ -123,7 +125,10 @@ func (server *RBACHTTPServer) resolveScope(request *http.Request, tenantID, reso
 }
 
 func rbacPath(path string) (string, string, string, bool) {
-	const prefix = "/v1/tenants/"
+	prefix := "/v1/tenants/"
+	if strings.HasPrefix(path, managedHostTenantPrefix) {
+		prefix = managedHostTenantPrefix
+	}
 	if !strings.HasPrefix(path, prefix) {
 		return "", "", "", false
 	}

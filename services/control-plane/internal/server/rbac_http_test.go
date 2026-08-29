@@ -78,6 +78,18 @@ func TestRBACHTTPServerUsesStoredScopeAndGeneratedResources(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "managed host role binding", path: "/v1/managed-host/tenants/tenant-alpha/role-bindings/binding-alpha", permission: "role-bindings.get",
+			reader: &rbacHTTPReaderFake{scope: authz.ScopeRef{Level: authz.ScopeOrganization, ID: "organization-alpha"}, roleBinding: postgres.RoleBinding{
+				UID: "binding-alpha", Name: "binding-alpha", TenantID: "tenant-alpha", Subject: authz.SubjectRef{Kind: "serviceAccount", Issuer: "https://issuer.example", Subject: "agent-alpha"}, RoleName: "organization.admin", RoleVersion: 1, Scope: authz.ScopeRef{Level: authz.ScopeOrganization, ID: "organization-alpha"}, State: "active", ResourceVersion: 5, CreatedAt: now, UpdatedAt: now,
+			}},
+			check: func(t *testing.T, body []byte) {
+				value, err := platformv1alpha1.DecodeRoleBindingResponseJSON(body)
+				if err != nil || value.Value.Spec.RoleName != "organization.admin" || value.Value.Spec.Scope.Level != "organization" {
+					t.Fatalf("role binding response=%#v err=%v", value.Value, err)
+				}
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -98,7 +110,7 @@ func TestRBACHTTPServerUsesStoredScopeAndGeneratedResources(t *testing.T) {
 			if verifier.seen.ResourceLevel != string(test.reader.scope.Level) || verifier.seen.ResourceID != test.reader.scope.ID || verifier.seen.RequiredPermission != test.permission {
 				t.Fatalf("verification request=%#v", verifier.seen)
 			}
-			if test.name == "membership" && test.reader.memberships != 1 || test.name == "role binding" && test.reader.bindings != 1 {
+			if test.permission == "memberships.get" && test.reader.memberships != 1 || test.permission == "role-bindings.get" && test.reader.bindings != 1 {
 				t.Fatalf("reader calls membership=%d binding=%d", test.reader.memberships, test.reader.bindings)
 			}
 			test.check(t, response.Body.Bytes())

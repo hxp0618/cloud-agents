@@ -19,6 +19,8 @@ import (
 
 const (
 	ProjectRoutePrefix       = "/v1/tenants/"
+	ManagedHostProjectRoute  = "/v1/managed-host/tenants/{tenantId}/projects/{projectId}"
+	managedHostProjectPrefix = "/v1/managed-host/tenants/"
 	ProjectRouteSuffix       = "/projects/"
 	projectCreateRouteSuffix = "/projects"
 	projectMaximumBodyBytes  = 1 << 20
@@ -54,7 +56,8 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}
-	if request.Method == http.MethodPost {
+	managedHost := strings.HasPrefix(request.URL.Path, managedHostProjectPrefix)
+	if request.Method == http.MethodPost && !managedHost {
 		tenantID, ok := projectCreatePath(request.URL.Path)
 		if !ok {
 			writeProjectError(writer, http.StatusNotFound, "route_not_found")
@@ -69,7 +72,11 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 		return
 	}
 	if request.Method != http.MethodGet {
-		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+		allowed := http.MethodGet
+		if !managedHost {
+			allowed += ", " + http.MethodPost
+		}
+		writer.Header().Set("Allow", allowed)
 		writeProjectError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
@@ -93,16 +100,12 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
-		TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ResourceID, RequiredPermission: "projects.get",
-	})
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ResourceID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	project, err := GetProject(request.Context(), server.reader, principal, ManagedAgentGetProjectRequest{
-		TenantID: validated.TenantID, ProjectID: validated.ResourceID, RequestID: validated.RequestID,
-	})
+	project, err := GetProject(request.Context(), server.reader, principal, ManagedAgentGetProjectRequest{TenantID: validated.TenantID, ProjectID: validated.ResourceID, RequestID: validated.RequestID})
 	if err != nil {
 		status, code := projectErrorStatus(err)
 		writeProjectError(writer, status, code)
@@ -197,10 +200,17 @@ func projectCreatePath(path string) (string, bool) {
 }
 
 func projectPath(path string) (string, string, bool) {
-	if !strings.HasPrefix(path, ProjectRoutePrefix) {
+	if strings.HasPrefix(path, managedHostProjectPrefix) {
+		return projectPathWithPrefix(path, managedHostProjectPrefix)
+	}
+	return projectPathWithPrefix(path, ProjectRoutePrefix)
+}
+
+func projectPathWithPrefix(path, prefix string) (string, string, bool) {
+	if !strings.HasPrefix(path, prefix) {
 		return "", "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(path, ProjectRoutePrefix), ProjectRouteSuffix)
+	parts := strings.Split(strings.TrimPrefix(path, prefix), ProjectRouteSuffix)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.Contains(parts[0], "/") || strings.Contains(parts[1], "/") {
 		return "", "", false
 	}

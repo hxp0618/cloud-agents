@@ -60,19 +60,27 @@ func TestProjectHTTPServerReturnsGeneratedProjectResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha", nil)
-	request.Header.Set("Authorization", "Bearer access-token")
-	request.Header.Set("X-Request-ID", "request-alpha")
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Header().Get("X-Request-ID") != "request-alpha" || response.Header().Get("X-Resource-Version") != "3" || reader.calls != 1 {
-		t.Fatalf("status=%d headers=%v calls=%d body=%s", response.Code, response.Header(), reader.calls, response.Body.String())
+	for _, path := range []string{
+		"/v1/tenants/tenant-alpha/projects/project-alpha",
+		"/v1/managed-host/tenants/tenant-alpha/projects/project-alpha",
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer access-token")
+		request.Header.Set("X-Request-ID", "request-alpha")
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Header().Get("X-Request-ID") != "request-alpha" || response.Header().Get("X-Resource-Version") != "3" {
+			t.Fatalf("path=%s status=%d headers=%v body=%s", path, response.Code, response.Header(), response.Body.String())
+		}
+		if _, err := platformv1alpha1.DecodeProjectResponseJSON(response.Body.Bytes()); err != nil {
+			t.Fatalf("path=%s response is not the generated project contract: %v", path, err)
+		}
+		if verifier.token != "access-token" || verifier.seen.TenantID != "tenant-alpha" || verifier.seen.ResourceID != "project-alpha" || verifier.seen.RequiredPermission != "projects.get" || verifier.seen.ResourceLevel != "project" {
+			t.Fatalf("path=%s verification request = %#v token=%q", path, verifier.seen, verifier.token)
+		}
 	}
-	if _, err := platformv1alpha1.DecodeProjectResponseJSON(response.Body.Bytes()); err != nil {
-		t.Fatalf("response is not the generated project contract: %v", err)
-	}
-	if verifier.calls != 1 || verifier.token != "access-token" || verifier.seen.TenantID != "tenant-alpha" || verifier.seen.ResourceID != "project-alpha" || verifier.seen.RequiredPermission != "projects.get" || verifier.seen.ResourceLevel != "project" {
-		t.Fatalf("verification request = %#v calls=%d token=%q", verifier.seen, verifier.calls, verifier.token)
+	if verifier.calls != 2 || reader.calls != 2 {
+		t.Fatalf("verifier calls=%d reader calls=%d", verifier.calls, reader.calls)
 	}
 }
 
