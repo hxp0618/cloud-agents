@@ -281,8 +281,12 @@ func (client *Client) run(stdout io.ReadCloser) {
 		_ = client.process.Process.Kill()
 	}
 	waitErr := client.process.Wait()
-	if runErr == nil && waitErr != nil {
-		runErr = fmt.Errorf("runtime exited: %w", waitErr)
+	if runErr == nil {
+		if waitErr != nil {
+			runErr = fmt.Errorf("runtime exited: %w", waitErr)
+		} else {
+			runErr = fmt.Errorf("%w: runtime exited before a terminal response", ErrProtocolViolation)
+		}
 	}
 	client.finish(runErr)
 }

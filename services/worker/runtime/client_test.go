@@ -14,6 +14,11 @@ import (
 
 func TestRuntimeHelperProcess(t *testing.T) {
 	if os.Getenv("CLOUD_AGENTS_RUNTIME_HELPER") != "1" {
+		if os.Getenv("CLOUD_AGENTS_RUNTIME_EXIT_HELPER") == "1" {
+			scanner := bufio.NewScanner(os.Stdin)
+			_ = scanner.Scan()
+			os.Exit(0)
+		}
 		return
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -40,6 +45,21 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T00:00:00Z","messageType":"Result","payload":{"ok":true}}`+"\n", requestID, command.ExecutionID, command.Generation, command.CommandID)
 	}
 	os.Exit(0)
+}
+
+func TestClientFailsPendingCommandWhenRuntimeExitsCleanly(t *testing.T) {
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_EXIT_HELPER=1")
+	client, err := New(context.Background(), Config{
+		Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeClient(t, client)
+	message, err := client.Execute(context.Background(), testCommand("SendTurn", "exit-before-terminal-1"))
+	if !errors.Is(err, ErrProtocolViolation) || message.MessageType != "" {
+		t.Fatalf("clean Runtime exit = %#v, %v", message, err)
+	}
 }
 
 func TestClientExecutesCommandsAndPreservesEvents(t *testing.T) {
