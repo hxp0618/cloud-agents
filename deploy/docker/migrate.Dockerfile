@@ -1,8 +1,9 @@
 ARG BASE_IMAGE=postgres:17.6-bookworm
 FROM ${BASE_IMAGE}
 
-ARG TARGET=linux-amd64
-COPY cloud-agents-product-migrate-${TARGET} /usr/local/bin/cloud-agents-product-migrate
+ARG TARGETOS
+ARG TARGETARCH
+COPY cloud-agents-product-migrate-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-product-migrate
 COPY cloud-agents-migrations-000017.tar /opt/cloud-agents/cloud-agents-migrations-000017.tar
 RUN mkdir -p /opt/cloud-agents/migrations \
     && tar -xf /opt/cloud-agents/cloud-agents-migrations-000017.tar -C /opt/cloud-agents/migrations \

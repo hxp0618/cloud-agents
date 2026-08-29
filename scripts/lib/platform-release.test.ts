@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { readDeterministicUstar } from "./platform-migration-ustar";
@@ -94,6 +95,19 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.yaml",
     ]);
+  });
+
+  it("selects matching OCI base and binary architectures", () => {
+    for (const name of ["control-plane", "worker", "migrate"]) {
+      const dockerfile = readFileSync(`deploy/docker/${name}.Dockerfile`, "utf8");
+      expect(dockerfile).toContain("ARG TARGETOS");
+      expect(dockerfile).toContain("ARG TARGETARCH");
+      expect(dockerfile).toContain("${TARGETOS}-${TARGETARCH}");
+      expect(dockerfile).not.toContain("ARG TARGET=");
+    }
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
+    expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
   });
 
   it("packages public contracts without internal provenance inputs", () => {

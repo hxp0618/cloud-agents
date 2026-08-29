@@ -36,11 +36,10 @@ services:
       -f /bootstrap/database.sql
 
   migrate:
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:
       context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
       dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/migrate.Dockerfile
-      args:
-        TARGET: ${CLOUD_AGENTS_TARGET:-linux-amd64}
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,11 +47,10 @@ services:
       CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_MIGRATION_DATABASE_URL:?set the migration-owner database URL}
 
   control-plane:
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:
       context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
       dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/control-plane.Dockerfile
-      args:
-        TARGET: ${CLOUD_AGENTS_TARGET:-linux-amd64}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -82,11 +80,10 @@ services:
       - "${CLOUD_AGENTS_CONTROL_PLANE_BIND:-127.0.0.1:8080}:8080"
 
   worker:
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:
       context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
       dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/worker.Dockerfile
-      args:
-        TARGET: ${CLOUD_AGENTS_TARGET:-linux-amd64}
     command:
       - "--listen"
       - ":8091"
