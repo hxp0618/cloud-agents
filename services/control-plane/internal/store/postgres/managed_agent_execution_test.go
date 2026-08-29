@@ -47,6 +47,7 @@ func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 		"create": createManagedAgentExecutionSQL,
 		"start":  startManagedAgentExecutionSQL,
 		"settle": settleManagedAgentExecutionSQL,
+		"cancel": cancelManagedAgentExecutionSQL,
 		"get":    getManagedAgentExecutionSQL,
 	} {
 		if !strings.Contains(sql, "managed_agent") || (name == "get" && !strings.Contains(sql, "cloud_agents.require_tenant_id()")) {
@@ -65,5 +66,9 @@ func TestManagedAgentExecutionDigestsMatchLifecycleKernel(t *testing.T) {
 	completed, err := internalmanagedagent.ExecutionCompleteMutationDigest(internalmanagedagent.CompleteExecutionInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, ResultDigest: "sha256:" + strings.Repeat("b", 64), Mutation: mutation})
 	if err != nil || !strings.HasPrefix(completed, "sha256:") || completed == created {
 		t.Fatalf("complete digest/error = %q/%v", completed, err)
+	}
+	cancelled, err := internalmanagedagent.TurnCancelMutationDigest(internalmanagedagent.CancelTurnInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", TargetExecutionID: "execution-alpha", Generation: 7, Mutation: mutation})
+	if err != nil || !strings.HasPrefix(cancelled, "sha256:") || cancelled == completed {
+		t.Fatalf("cancel digest/error = %q/%v", cancelled, err)
 	}
 }

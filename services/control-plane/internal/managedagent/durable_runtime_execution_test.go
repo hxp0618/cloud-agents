@@ -2,6 +2,7 @@ package managedagent
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 type durableRuntimeExecutionStoreFake struct {
 	calls     []string
 	execution ExecutionSnapshot
+	cancel    context.CancelFunc
 }
 
 func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (SessionSnapshot, error) {
@@ -36,7 +38,11 @@ func (fake *durableRuntimeExecutionStoreFake) CreateManagedAgentExecution(_ cont
 
 func (fake *durableRuntimeExecutionStoreFake) StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, StartExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "start")
-	return ExecutionTransitionResult{}, nil
+	if fake.cancel != nil {
+		fake.cancel()
+	}
+	fake.execution.State = ExecutionRunning
+	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnRunning}, Execution: fake.execution}, nil
 }
 
 func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CompleteExecutionInput) (ExecutionTransitionResult, error) {
@@ -48,6 +54,14 @@ func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(context.
 	fake.calls = append(fake.calls, "fail")
 	return ExecutionTransitionResult{}, nil
 }
+
+func (fake *durableRuntimeExecutionStoreFake) CancelManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
+	fake.calls = append(fake.calls, "cancel")
+	fake.execution.State = ExecutionCancelled
+	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnCancelled}, Execution: fake.execution}, nil
+}
+
+var _ DurableRuntimeExecutionStore = (*durableRuntimeExecutionStoreFake)(nil)
 
 func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{}
@@ -66,6 +80,28 @@ func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *tes
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution"}) {
+		t.Fatalf("calls=%v", store.calls)
+	}
+}
+
+func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, cancel: cancel}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(ctx, nil, DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if err == nil || !errors.Is(err, context.Canceled) || result.Transition.Execution.State != ExecutionCancelled {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution", "start", "cancel"}) {
 		t.Fatalf("calls=%v", store.calls)
 	}
 }

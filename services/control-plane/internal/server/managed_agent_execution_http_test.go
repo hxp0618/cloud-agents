@@ -44,6 +44,10 @@ func (fake *managedAgentExecutionStoreFake) FailManagedAgentExecution(context.Co
 	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
 }
 
+func (fake *managedAgentExecutionStoreFake) CancelManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
+	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
+}
+
 func (fake *managedAgentExecutionStoreFake) GetManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _, _, turnID, executionID string) (internalmanagedagent.ExecutionSnapshot, error) {
 	fake.gotTurn, fake.gotExec = turnID, executionID
 	return fake.execution, nil

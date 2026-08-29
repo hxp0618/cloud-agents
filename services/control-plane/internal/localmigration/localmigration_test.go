@@ -193,13 +193,14 @@ func TestSupportedManifestLengthsAreVersioned(t *testing.T) {
 		{head: "000016", length: 16},
 		{head: "000017", length: 17},
 		{head: "000018", length: 18},
+		{head: "000019", length: 19},
 	} {
 		length, ok := supportedManifestLength(test.head)
 		if !ok || length != test.length {
 			t.Fatalf("supportedManifestLength(%q) = (%d, %v), want (%d, true)", test.head, length, ok, test.length)
 		}
 	}
-	if length, ok := supportedManifestLength("000019"); ok || length != 0 {
+	if length, ok := supportedManifestLength("000020"); ok || length != 0 {
 		t.Fatalf("unsupported head accepted: (%d, %v)", length, ok)
 	}
 }

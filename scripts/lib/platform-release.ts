@@ -26,8 +26,8 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
-export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000018.tar";
-export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000018.tar";
+export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000019.tar";
+export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000019.tar";
 export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
 export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
@@ -115,7 +115,7 @@ export function platformReleaseArtifact(
 }
 
 export function buildPlatformMigrationPackage(root: string): Uint8Array {
-  const manifestPath = "services/control-plane/migrations/product/000018/manifest.json";
+  const manifestPath = "services/control-plane/migrations/product/000019/manifest.json";
   const manifest = JSON.parse(readFileSync(resolve(root, manifestPath), "utf8")) as {
     readonly schema_bundle: {
       readonly migrations: ReadonlyArray<{
@@ -126,7 +126,7 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   };
   const paths = new Set<string>([
     manifestPath,
-    "services/control-plane/migrations/product/000018/schema-bundle.json",
+    "services/control-plane/migrations/product/000019/schema-bundle.json",
   ]);
   for (const migration of manifest.schema_bundle.migrations) {
     paths.add(migration.sql_artifact.path);

@@ -26,6 +26,7 @@ type DurableRuntimeExecutionStore interface {
 	StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, StartExecutionInput) (ExecutionTransitionResult, error)
 	CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CompleteExecutionInput) (ExecutionTransitionResult, error)
 	FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, FailExecutionInput) (ExecutionTransitionResult, error)
+	CancelManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CancelTurnInput) (ExecutionTransitionResult, error)
 }
 
 type DurableRuntimeExecutionConfig struct {
@@ -147,6 +148,9 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
+		if errors.Is(runCtx.Err(), context.Canceled) {
+			return coordinator.cancel(principal, input, started, runtimeResult.Messages)
+		}
 		return coordinator.fail(principal, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err)
 	}
 	if runtimeResult.Terminal.MessageType == "Error" {
@@ -165,6 +169,14 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
 	return DurableRuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message) (DurableRuntimeExecutionResult, error) {
+	cancelled, err := coordinator.store.CancelManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CancelTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, TargetExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
+	if err != nil {
+		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(context.Canceled, err)
+	}
+	return DurableRuntimeExecutionResult{Transition: cancelled, Messages: messages}, context.Canceled
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) fail(principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message, code string, cause error) (DurableRuntimeExecutionResult, error) {

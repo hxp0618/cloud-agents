@@ -214,6 +214,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionFailed):
 		return http.StatusBadGateway, "runtime_failed"
+	case errors.Is(err, context.Canceled):
+		return 499, "cancelled"
 	default:
 		return http.StatusInternalServerError, "internal_error"
 	}
