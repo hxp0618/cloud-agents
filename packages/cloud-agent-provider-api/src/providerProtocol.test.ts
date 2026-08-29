@@ -117,16 +117,16 @@ describe("Provider Host Protocol v2", () => {
       },
     });
 
-    expect(codex.capabilityDescriptor.providerCliVersion).toBe("0.145.0");
+    expect(codex.capabilityDescriptor.providerCliVersion).toBe("0.150.1");
     expect(codex.capabilityDescriptor.runtime).toEqual({
       kind: "cli",
       name: "codex",
-      version: "0.145.0",
+      version: "0.150.1",
       available: true,
       versionSource: "probe",
       compatibleRange: {
-        minimumInclusive: "0.145.0",
-        maximumExclusive: "0.146.0",
+        minimumInclusive: "0.150.1",
+        maximumExclusive: "0.151.0",
       },
       compatible: true,
     });
@@ -409,27 +409,27 @@ describe("Provider Host Protocol v2", () => {
       },
       {
         label: "unstable-semver",
-        probe: { available: true, output: "codex-cli 0.145.0-beta.1" },
+        probe: { available: true, output: "codex-cli 0.150.1-beta.1" },
         expected: "provider_version_incompatible",
       },
       {
         label: "below-minimum",
-        probe: { available: true, output: "codex-cli 0.144.0" },
+        probe: { available: true, output: "codex-cli 0.150.0" },
         expected: "provider_version_incompatible",
       },
       {
         label: "minimum",
-        probe: { available: true, output: "codex-cli 0.145.0" },
+        probe: { available: true, output: "codex-cli 0.150.1" },
         expected: "Result",
       },
       {
         label: "compatible-patch",
-        probe: { available: true, output: "codex-cli 0.145.99" },
+        probe: { available: true, output: "codex-cli 0.150.99" },
         expected: "Result",
       },
       {
         label: "maximum-exclusive",
-        probe: { available: true, output: "codex-cli 0.146.0" },
+        probe: { available: true, output: "codex-cli 0.151.0" },
         expected: "provider_version_incompatible",
       },
     ] as const;
@@ -1405,7 +1405,7 @@ describe("Provider Host Protocol v2", () => {
 });
 
 function compatibleCodexProbe(): ProviderVersionProbeResult {
-  return { available: true, output: "codex-cli 0.145.0" };
+  return { available: true, output: "codex-cli 0.150.1" };
 }
 
 function enabledDescriptorForProvider(provider: ProviderHostProviderKind) {

@@ -483,7 +483,7 @@ function testPlugin(overrides: TestPluginOverrides = { startRun: unavailableExec
     displayName: "Codex",
     descriptor: {
       environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
-      runtimeVersionProbe: () => ({ available: true, output: "codex-cli 0.145.0" }),
+      runtimeVersionProbe: () => ({ available: true, output: "codex-cli 0.150.1" }),
     },
     ...overrides,
   });

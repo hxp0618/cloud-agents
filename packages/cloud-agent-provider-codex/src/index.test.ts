@@ -4,7 +4,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return {
     ...actual,
-    spawnSync: vi.fn(() => ({ status: 0, stdout: "codex-cli 0.145.0", stderr: "" })),
+    spawnSync: vi.fn(() => ({ status: 0, stdout: "codex-cli 0.150.1", stderr: "" })),
   };
 });
 
