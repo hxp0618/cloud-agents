@@ -59,7 +59,9 @@ func (fake *managedAgentExecutionStoreFake) GetManagedAgentExecution(_ context.C
 }
 
 type managedAgentExecutionRunnerFake struct {
-	input internalmanagedagent.DurableRuntimeExecutionInput
+	input        internalmanagedagent.DurableRuntimeExecutionInput
+	cancelInput  internalmanagedagent.CancelTurnInput
+	cancelResult internalmanagedagent.ExecutionTransitionResult
 }
 
 func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error) {
@@ -69,10 +71,18 @@ func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, _ *authn
 	}, Messages: []runtime.Message{{MessageType: "Result", CommandID: "turn", ExecutionID: input.ExecutionID, Generation: 7}}}, nil
 }
 
+func (fake *managedAgentExecutionRunnerFake) Cancel(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
+	fake.cancelInput = input
+	return fake.cancelResult, nil
+}
+
 func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	verifier := &projectHTTPVerifierFake{}
 	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)}}
-	runner := &managedAgentExecutionRunnerFake{}
+	cancelledExecution := store.execution
+	cancelledExecution.State = internalmanagedagent.ExecutionCancelled
+	cancelledExecution.ErrorCode = "cancelled"
+	runner := &managedAgentExecutionRunnerFake{cancelResult: internalmanagedagent.ExecutionTransitionResult{Execution: cancelledExecution}}
 	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -106,8 +116,8 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	cancel.Header.Set("Idempotency-Key", "idem-cancel-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
 	cancelled := httptest.NewRecorder()
 	handler.ServeHTTP(cancelled, cancel)
-	if cancelled.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.act" || store.cancel.Generation != 7 || store.cancel.TargetExecutionID != "execution-alpha" || !strings.Contains(cancelled.Body.String(), `"state":"cancelled"`) {
-		t.Fatalf("cancel status=%d verification=%#v input=%#v body=%s", cancelled.Code, verifier.seen, store.cancel, cancelled.Body.String())
+	if cancelled.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.act" || runner.cancelInput.Generation != 7 || runner.cancelInput.TargetExecutionID != "execution-alpha" || !strings.Contains(cancelled.Body.String(), `"state":"cancelled"`) {
+		t.Fatalf("cancel status=%d verification=%#v input=%#v body=%s", cancelled.Code, verifier.seen, runner.cancelInput, cancelled.Body.String())
 	}
 }
 

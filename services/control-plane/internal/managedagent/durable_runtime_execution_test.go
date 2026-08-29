@@ -105,3 +105,32 @@ func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
 		t.Fatalf("calls=%v", store.calls)
 	}
 }
+
+func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeContext, activeCancel := context.WithCancel(context.Background())
+	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
+	unregister := coordinator.registerActiveExecution(key, activeCancel)
+	_, err = coordinator.Cancel(context.Background(), nil, CancelTurnInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", TargetExecutionID: "execution", Generation: 7,
+		Mutation: Mutation{RequestID: "cancel-request", IdempotencyKey: "cancel-idem"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-activeContext.Done():
+	case <-time.After(time.Second):
+		t.Fatal("active runtime context was not cancelled")
+	}
+	if !unregister() {
+		t.Fatal("active cancellation was not recorded")
+	}
+}

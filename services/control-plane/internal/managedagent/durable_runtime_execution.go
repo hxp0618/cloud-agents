@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
@@ -82,6 +83,22 @@ type DurableRuntimeExecutionCoordinator struct {
 	fencingToken       []byte
 	workspaceDirectory string
 	maxDuration        time.Duration
+	activeMu           sync.Mutex
+	active             map[durableExecutionKey]*activeDurableExecution
+}
+
+type durableExecutionKey struct {
+	tenantID    string
+	projectID   string
+	sessionID   string
+	turnID      string
+	executionID string
+	generation  uint64
+}
+
+type activeDurableExecution struct {
+	cancel              context.CancelFunc
+	externallyCancelled bool
 }
 
 var (
@@ -100,8 +117,36 @@ func NewDurableRuntimeExecutionCoordinator(config DurableRuntimeExecutionConfig)
 		store: config.Store, supervisor: config.Supervisor, now: config.Clock,
 		fencingLeaseID: config.FencingLeaseID, fencingGeneration: config.FencingGeneration,
 		fencingToken: append([]byte(nil), config.FencingToken...), workspaceDirectory: config.WorkspaceDirectory,
-		maxDuration: config.MaxDuration,
+		maxDuration: config.MaxDuration, active: make(map[durableExecutionKey]*activeDurableExecution),
 	}, nil
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) Cancel(ctx context.Context, principal *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
+	if coordinator == nil || coordinator.store == nil {
+		return ExecutionTransitionResult{}, ErrDurableRuntimeExecutionUnavailable
+	}
+	if ctx == nil {
+		return ExecutionTransitionResult{}, ErrNilContext
+	}
+	result, err := coordinator.store.CancelManagedAgentExecution(ctx, input.Scope.TenantID, principal, input)
+	if err != nil {
+		return ExecutionTransitionResult{}, err
+	}
+	coordinator.activeMu.Lock()
+	active := coordinator.active[durableExecutionKey{
+		tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID,
+		turnID: input.TurnID, executionID: input.TargetExecutionID, generation: input.Generation,
+	}]
+	var cancel context.CancelFunc
+	if active != nil {
+		active.externallyCancelled = true
+		cancel = active.cancel
+	}
+	coordinator.activeMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return result, nil
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Context, principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput) (DurableRuntimeExecutionResult, error) {
@@ -120,6 +165,13 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	}
 	runCtx, cancel := context.WithTimeout(ctx, coordinator.maxDuration)
 	defer cancel()
+	runtimeCtx, runtimeCancel := context.WithCancel(runCtx)
+	key := durableExecutionKey{tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID, turnID: input.TurnID, executionID: input.ExecutionID, generation: coordinator.fencingGeneration}
+	unregister := coordinator.registerActiveExecution(key, runtimeCancel)
+	defer func() {
+		unregister()
+		runtimeCancel()
+	}()
 	session, err := coordinator.store.GetManagedAgentSessionForExecution(runCtx, input.Scope.TenantID, principal, input.Scope.ProjectID, input.SessionID)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
@@ -142,12 +194,15 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if started.Execution.State != ExecutionRunning {
 		return DurableRuntimeExecutionResult{Transition: started}, nil
 	}
-	runtimeResult, err := ExecuteRuntimeTurn(runCtx, coordinator.supervisor, RuntimeTurnInput{
+	runtimeResult, err := ExecuteRuntimeTurn(runtimeCtx, coordinator.supervisor, RuntimeTurnInput{
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
 		Fencing:            &workerv1alpha1.FencingProof{LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...)},
 		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
+		if unregister() {
+			return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, context.Canceled
+		}
 		if errors.Is(runCtx.Err(), context.Canceled) {
 			return coordinator.cancel(principal, input, started, runtimeResult.Messages)
 		}
@@ -171,6 +226,22 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	return DurableRuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, nil
 }
 
+func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(key durableExecutionKey, cancel context.CancelFunc) func() bool {
+	active := &activeDurableExecution{cancel: cancel}
+	coordinator.activeMu.Lock()
+	coordinator.active[key] = active
+	coordinator.activeMu.Unlock()
+	return func() bool {
+		coordinator.activeMu.Lock()
+		defer coordinator.activeMu.Unlock()
+		if coordinator.active[key] != active {
+			return active.externallyCancelled
+		}
+		externallyCancelled := active.externallyCancelled
+		delete(coordinator.active, key)
+		return externallyCancelled
+	}
+}
 func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message) (DurableRuntimeExecutionResult, error) {
 	cancelled, err := coordinator.store.CancelManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CancelTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, TargetExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
 	if err != nil {

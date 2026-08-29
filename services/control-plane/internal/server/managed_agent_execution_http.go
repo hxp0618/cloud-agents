@@ -26,6 +26,7 @@ type managedAgentExecutionStore interface {
 
 type managedAgentExecutionRunner interface {
 	Execute(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error)
+	Cancel(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
 }
 
 type ManagedAgentExecutionHTTPServer struct {
@@ -143,7 +144,7 @@ func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	result, err := server.store.CancelManagedAgentExecution(request.Context(), tenantID, principal, internalmanagedagent.CancelTurnInput{
+	result, err := server.runner.Cancel(request.Context(), principal, internalmanagedagent.CancelTurnInput{
 		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, TurnID: turnID, TargetExecutionID: executionID,
 		Generation: body.Generation, Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
