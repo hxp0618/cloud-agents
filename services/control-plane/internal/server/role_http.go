@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -32,6 +31,7 @@ func NewRoleHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentRoleRead
 }
 
 func (server *RoleHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	preparePublicRequestID(writer, request)
 	writer.Header().Set("Cache-Control", "no-store")
 	if server == nil || server.verifier == nil || server.reader == nil || request == nil {
 		writeRoleError(writer, http.StatusInternalServerError, "internal_error")
@@ -130,7 +130,5 @@ func roleErrorStatus(err error) (int, string) {
 }
 
 func writeRoleError(writer http.ResponseWriter, status int, code string) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(projectErrorResponse{APIVersion: projectAPIVersion, Kind: "Error", Code: code})
+	writePublicProblem(writer, status, code)
 }

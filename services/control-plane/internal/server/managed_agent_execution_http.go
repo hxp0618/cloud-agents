@@ -42,6 +42,7 @@ func NewManagedAgentExecutionHTTPServer(verifier AccessTokenVerifier, store mana
 }
 
 func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	preparePublicRequestID(writer, request)
 	if server == nil || server.verifier == nil || server.store == nil || server.runner == nil || request == nil {
 		writeManagedAgentSessionError(writer, http.StatusInternalServerError, "internal_error")
 		return

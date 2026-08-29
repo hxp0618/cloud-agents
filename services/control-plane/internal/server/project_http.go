@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -51,6 +50,7 @@ func NewProjectHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentProje
 }
 
 func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	preparePublicRequestID(writer, request)
 	writer.Header().Set("Cache-Control", "no-store")
 	if server == nil || server.verifier == nil || server.reader == nil || server.creator == nil || request == nil {
 		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
@@ -249,14 +249,6 @@ func projectErrorStatus(err error) (int, string) {
 	}
 }
 
-type projectErrorResponse struct {
-	APIVersion string `json:"apiVersion"`
-	Kind       string `json:"kind"`
-	Code       string `json:"code"`
-}
-
 func writeProjectError(writer http.ResponseWriter, status int, code string) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(projectErrorResponse{APIVersion: projectAPIVersion, Kind: "Error", Code: code})
+	writePublicProblem(writer, status, code)
 }

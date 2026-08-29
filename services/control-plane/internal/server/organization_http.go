@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -30,6 +29,7 @@ func NewOrganizationHTTPServer(verifier AccessTokenVerifier, reader ManagedAgent
 }
 
 func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	preparePublicRequestID(writer, request)
 	writer.Header().Set("Cache-Control", "no-store")
 	if request == nil || server == nil || server.verifier == nil || server.reader == nil {
 		writeOrganizationError(writer, http.StatusInternalServerError, "internal_error")
@@ -128,7 +128,5 @@ func organizationErrorStatus(err error) (int, string) {
 }
 
 func writeOrganizationError(writer http.ResponseWriter, status int, code string) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(projectErrorResponse{APIVersion: projectAPIVersion, Kind: "Error", Code: code})
+	writePublicProblem(writer, status, code)
 }

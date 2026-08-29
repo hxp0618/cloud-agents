@@ -38,6 +38,7 @@ func NewRBACHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentRBACRead
 }
 
 func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	preparePublicRequestID(writer, request)
 	writer.Header().Set("Cache-Control", "no-store")
 	if server == nil || server.verifier == nil || server.reader == nil || request == nil {
 		writeRBACError(writer, http.StatusInternalServerError, "internal_error")
@@ -218,7 +219,5 @@ func writeRBACErrorFromStore(writer http.ResponseWriter, err, notFound error) {
 }
 
 func writeRBACError(writer http.ResponseWriter, status int, code string) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(projectErrorResponse{APIVersion: projectAPIVersion, Kind: "Error", Code: code})
+	writePublicProblem(writer, status, code)
 }

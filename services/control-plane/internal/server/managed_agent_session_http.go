@@ -37,6 +37,7 @@ func NewManagedAgentSessionHTTPServer(verifier AccessTokenVerifier, store manage
 }
 
 func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	preparePublicRequestID(writer, request)
 	if server == nil || server.verifier == nil || server.store == nil || request == nil {
 		writeManagedAgentSessionError(writer, http.StatusInternalServerError, "internal_error")
 		return
@@ -232,10 +233,5 @@ func managedAgentSessionErrorStatus(err error) (int, string) {
 }
 
 func writeManagedAgentSessionError(writer http.ResponseWriter, status int, code string) {
-	if code == "" {
-		status, code = http.StatusInternalServerError, "internal_error"
-	}
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(map[string]string{"apiVersion": "managed-agent.cloud-agents.dev/v1alpha1", "kind": "Error", "code": code})
+	writePublicProblem(writer, status, code)
 }

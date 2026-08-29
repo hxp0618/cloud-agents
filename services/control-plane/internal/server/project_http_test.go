@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	platformv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -99,6 +100,26 @@ func TestProjectHTTPServerRejectsDuplicateAuthorizationBeforeReader(t *testing.T
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized || verifier.calls != 0 || reader.calls != 0 {
 		t.Fatalf("status=%d verifier calls=%d reader calls=%d body=%s", response.Code, verifier.calls, reader.calls, response.Body.String())
+	}
+}
+
+func TestProjectHTTPServerReturnsPublicProblemContract(t *testing.T) {
+	server, err := NewProjectHTTPServer(&projectHTTPVerifierFake{}, &projectHTTPReaderFake{}, &projectHTTPCreatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha", nil)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || response.Header().Get("Content-Type") != "application/problem+json" || response.Header().Get("X-Request-ID") != "request-unknown" {
+		t.Fatalf("status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+	problem, err := commonv1alpha1.DecodeProblemJSON(response.Body.Bytes())
+	if err != nil {
+		t.Fatalf("response is not the public Problem contract: %v", err)
+	}
+	if problem.Status != http.StatusBadRequest || problem.Error.Code != "INVALID_REQUEST" || problem.Error.Retryable || problem.RequestID != "request-unknown" {
+		t.Fatalf("problem=%#v", problem)
 	}
 }
 
