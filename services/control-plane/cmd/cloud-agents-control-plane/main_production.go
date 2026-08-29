@@ -45,6 +45,7 @@ const (
 	maxAuthConfigBytes                       = 1 << 20
 	maxProductionCABytes                     = 1 << 20
 	productionRuntimeMaxDuration             = 5 * time.Minute
+	productionWorkerBindTimeout              = 15 * time.Second
 	productionHTTPWriteGrace                 = 15 * time.Second
 )
 
@@ -129,7 +130,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("worker transport configuration is invalid")
 	}
-	if _, err := workerSupervisor.BindRuntime(ctx); err != nil {
+	bindContext, cancelBind := context.WithTimeout(ctx, productionWorkerBindTimeout)
+	_, bindErr := workerSupervisor.BindRuntime(bindContext)
+	cancelBind()
+	if bindErr != nil {
 		return errors.New("worker Runtime is unavailable")
 	}
 	runtimeCoordinator, err := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{

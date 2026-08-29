@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -173,6 +174,16 @@ func TestNewMTLSConfiguresRuntimeClientOnTheSameTransport(t *testing.T) {
 	}
 	if !runtimeClientAvailable(supervisor.runtimeClient) {
 		t.Fatal("mTLS Supervisor did not configure the Worker Runtime client")
+	}
+}
+
+func TestMTLSHTTPClientLeavesStreamingLifetimeToContext(t *testing.T) {
+	client := newMTLSHTTPClient(http.DefaultTransport)
+	if client.Timeout != 0 {
+		t.Fatalf("mTLS stream-wide timeout = %v", client.Timeout)
+	}
+	if client.CheckRedirect == nil || !errors.Is(client.CheckRedirect(nil, nil), errInvalidMTLSConfig) {
+		t.Fatal("mTLS redirects are not rejected")
 	}
 }
 

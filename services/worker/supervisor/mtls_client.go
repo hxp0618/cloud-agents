@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -48,7 +49,13 @@ func NewMTLS(config MTLSConfig) (*Supervisor, error) {
 	}
 	expectedServerIdentity := cloneIdentity(config.ExpectedWorkerIdentity)
 	transport := &http.Transport{
-		Proxy: nil,
+		Proxy:                 nil,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     true,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig: &tls.Config{
 			MinVersion:   tls.VersionTLS13,
 			RootCAs:      config.RootCAs,
@@ -68,13 +75,17 @@ func NewMTLS(config MTLSConfig) (*Supervisor, error) {
 			},
 		},
 	}
-	client := &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidMTLSConfig }}
+	client := newMTLSHTTPClient(transport)
 	return New(Config{
 		Client:                 workerv1alpha1connect.NewWorkerExecutionServiceClient(client, endpoint),
 		RuntimeClient:          workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(client, endpoint),
 		ExpectedWorkerIdentity: config.ExpectedWorkerIdentity,
 		Clock:                  config.Clock,
 	})
+}
+
+func newMTLSHTTPClient(transport http.RoundTripper) *http.Client {
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidMTLSConfig }}
 }
 
 func validateMTLSEndpoint(value string) (string, error) {
