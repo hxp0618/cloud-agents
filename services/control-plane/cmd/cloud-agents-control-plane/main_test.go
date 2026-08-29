@@ -22,6 +22,33 @@ func TestParseControlPlaneConfigUsesExplicitDatabaseURL(t *testing.T) {
 	}
 }
 
+func TestParseControlPlaneConfigAcceptsLocalRuntimeBridge(t *testing.T) {
+	config, err := parseControlPlaneConfig([]string{
+		"--database-url", "postgres://task-local", "--listen", "127.0.0.1:9090",
+		"--runtime-command", "/tmp/cloud-agent-runtime", "--workspace-directory", "/tmp/workspace",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.runtimeCommand != "/tmp/cloud-agent-runtime" || config.workspaceDirectory != "/tmp/workspace" {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
+func TestNewLocalRuntimeSupervisorBindsWorkerRuntime(t *testing.T) {
+	supervisor, workerServer, fencingToken, err := newLocalRuntimeSupervisor("/bin/true", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workerServer.Close()
+	if supervisor == nil || workerServer == nil || len(fencingToken) == 0 {
+		t.Fatalf("supervisor=%v workerServer=%v fencingToken=%d", supervisor, workerServer, len(fencingToken))
+	}
+	if binding, ok := supervisor.CurrentBinding(); !ok || binding.ProfileID == "" || len(binding.AcceptedCapabilities) != 3 {
+		t.Fatalf("binding=%#v ok=%v", binding, ok)
+	}
+}
+
 func TestValidateLoopbackListenAddress(t *testing.T) {
 	for _, address := range []string{"127.0.0.1:8080", "[::1]:8080"} {
 		if err := validateLoopbackListenAddress(address); err != nil {

@@ -18,7 +18,7 @@ const (
 	localAudience   = "https://local.invalid/cloud-agents/control-plane"
 	localKeyID      = "local-ephemeral-rs256"
 	localClientID   = "local-control-plane"
-	localPermission = "projects.create projects.get"
+	localPermission = "projects.create projects.get projects.act"
 	localTokenTTL   = 5 * time.Minute
 )
 
@@ -29,7 +29,7 @@ type LocalVerifierConfig struct {
 }
 
 // LocalTokenClaims are the only caller-controlled claims admitted by the local
-// issuer. Tokens are always tenant scoped and grant only projects.create.
+// issuer. Tokens are always tenant scoped and grant the local product routes.
 type LocalTokenClaims struct {
 	TenantID string
 	Subject  string
