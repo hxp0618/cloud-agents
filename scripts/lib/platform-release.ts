@@ -22,7 +22,6 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
   "cloud-agentsctl",
   "cloud-agents-worker",
   "cloud-agents-product-migrate",
-  "cloud-agents-evidencefs-provision",
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
