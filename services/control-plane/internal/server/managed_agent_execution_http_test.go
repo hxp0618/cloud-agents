@@ -149,6 +149,25 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	}
 }
 
+func TestManagedAgentExecutionHTTPServerRejectsNonIdentifierRequestID(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	store := &managedAgentExecutionStoreFake{}
+	runner := &managedAgentExecutionRunnerFake{}
+	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions", strings.NewReader(`{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello"}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request:invalid")
+	request.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || response.Header().Get("X-Request-ID") != publicFallbackRequestID || verifier.calls != 0 || !strings.Contains(response.Body.String(), `"code":"INVALID_REQUEST"`) {
+		t.Fatalf("status=%d requestID=%q verifierCalls=%d body=%s", response.Code, response.Header().Get("X-Request-ID"), verifier.calls, response.Body.String())
+	}
+}
+
 func TestManagedAgentExecutionPathRejectsCrossTurnLookup(t *testing.T) {
 	if HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/t:bad/executions/e") {
 		t.Fatal("accepted a colon-bearing turn id")

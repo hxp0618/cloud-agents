@@ -14,6 +14,7 @@ import (
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+	openapiv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	controlplane "github.com/hxp0618/cloud-agents/services/control-plane"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
 	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
@@ -25,7 +26,7 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 		runRuntimeExecutionHelper()
 		return
 	}
-	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker/runtime", TrustDomain: "cloud-agents.test"}
 	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor/runtime", TrustDomain: "cloud-agents.test"}
 	worker, err := workerkernel.NewService(workerkernel.Config{
@@ -95,6 +96,35 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 	}
 	if result.Messages[1].MessageType != "Event" || result.Messages[2].MessageType != "Result" || result.Messages[2].Payload["inputText"] != "hello runtime" {
 		t.Fatalf("runtime messages = %#v", result.Messages)
+	}
+	if result.Messages[0].RequestID != "request-execution-startsession" || result.Messages[0].CommandID != "request-execution-start" || result.Messages[2].RequestID != "request-execution-sendturn" || result.Messages[2].CommandID != "request-execution-turn" {
+		t.Fatalf("runtime correlation IDs = %#v", result.Messages)
+	}
+	execution := result.Transition.Execution
+	responseBody, err := json.Marshal(map[string]any{
+		"apiVersion": "managed-agent.cloud-agents.dev/v1alpha1",
+		"kind":       "Execution",
+		"metadata": map[string]any{
+			"uid":             execution.ExecutionID,
+			"projectId":       execution.Scope.ProjectID,
+			"sessionId":       execution.SessionID,
+			"turnId":          execution.TurnID,
+			"resourceVersion": fmt.Sprintf("%d", execution.Version),
+			"createdAt":       execution.CreatedAt.UTC().Format(time.RFC3339Nano),
+			"updatedAt":       execution.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		},
+		"spec": map[string]any{
+			"generation":   execution.Generation,
+			"state":        execution.State,
+			"resultDigest": execution.ResultDigest,
+		},
+		"messages": result.Messages,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openapiv1alpha1.DecodeManagedAgentExecutionResponseJSON(responseBody); err != nil {
+		t.Fatalf("public execution response rejected Runtime messages: %v; body=%s", err, responseBody)
 	}
 	failure, failureErr := coordinator.Execute(context.Background(), controlplane.RuntimeExecutionInput{
 		Scope: scope, SessionID: "session-runtime", TurnID: "turn-runtime-failure", ExecutionID: "execution-runtime-failure", Generation: 7,

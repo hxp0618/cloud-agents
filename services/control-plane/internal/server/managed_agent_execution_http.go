@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -55,7 +56,8 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 		return
 	}
 	requestID, requestIDOK := exactSingleHeader(request.Header, "X-Request-ID")
-	if !requestIDOK {
+	if !requestIDOK || commonv1alpha1.ValidateIdentifier(requestID, "/Request-ID") != nil {
+		writer.Header().Set("X-Request-ID", publicFallbackRequestID)
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}

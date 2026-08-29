@@ -102,6 +102,8 @@ type activeDurableExecution struct {
 	externallyCancelled bool
 }
 
+const maxPublicExecutionMessageIdentifierBytes = 128
+
 var (
 	ErrDurableRuntimeExecutionUnavailable = errors.New("durable Runtime execution is unavailable")
 	ErrDurableRuntimeExecutionConflict    = errors.New("durable Runtime execution is already active")
@@ -297,9 +299,9 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 	}
 	defer func() { _ = session.CloseRequest(); _ = session.CloseResponse() }()
 	command := func(commandType, commandID string, payload map[string]any) runtime.Command {
-		return runtime.Command{RequestID: input.RequestID + ":" + commandType, Protocol: runtime.Protocol{Major: runtime.ProtocolMajor, Minor: runtime.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
+		return runtime.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtime.Protocol{Major: runtime.ProtocolMajor, Minor: runtime.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
 	}
-	start := command("StartSession", input.RequestID+":start", map[string]any{"runnerInput": map[string]any{
+	start := command("StartSession", boundedRuntimeIdentifier(input.RequestID, "start"), map[string]any{"runnerInput": map[string]any{
 		"workspaceDirectory": input.WorkspaceDirectory,
 		"workload":           map[string]any{"provider": input.ProviderKind, "model": input.Model},
 		"execution":          map[string]any{"id": input.ExecutionID},
@@ -316,7 +318,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 	if terminal.MessageType == "Error" {
 		return result, errors.New("Runtime StartSession failed")
 	}
-	turn := command("SendTurn", input.RequestID+":turn", map[string]any{"inputText": input.InputText})
+	turn := command("SendTurn", boundedRuntimeIdentifier(input.RequestID, "turn"), map[string]any{"inputText": input.InputText})
 	result.FailureCode = "runtime_turn_failed"
 	if err := session.Send(ctx, turn); err != nil {
 		return result, err
@@ -329,6 +331,15 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 	}
 	result.FailureCode = ""
 	return result, nil
+}
+
+func boundedRuntimeIdentifier(base, suffix string) string {
+	separator := "-"
+	maximumBase := maxPublicExecutionMessageIdentifierBytes - len(separator) - len(suffix)
+	if len(base) > maximumBase {
+		base = base[:maximumBase]
+	}
+	return base + separator + suffix
 }
 
 func receiveRuntimeMessages(session *supervisor.RuntimeSession, commandID string) ([]runtime.Message, runtime.Message, error) {

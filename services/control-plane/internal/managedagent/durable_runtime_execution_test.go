@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,15 @@ func (fake *durableRuntimeExecutionStoreFake) CancelManagedAgentExecution(_ cont
 }
 
 var _ DurableRuntimeExecutionStore = (*durableRuntimeExecutionStoreFake)(nil)
+
+func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
+	base := strings.Repeat("a", maxPublicExecutionMessageIdentifierBytes)
+	got := boundedRuntimeIdentifier(base, "start")
+	want := strings.Repeat("a", maxPublicExecutionMessageIdentifierBytes-len("-start")) + "-start"
+	if got != want || len(got) != maxPublicExecutionMessageIdentifierBytes {
+		t.Fatalf("bounded runtime identifier = %q, want %q", got, want)
+	}
+}
 
 func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{}
