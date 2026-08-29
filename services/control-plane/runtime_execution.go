@@ -116,6 +116,7 @@ func (coordinator *RuntimeExecutionCoordinator) Execute(ctx context.Context, inp
 	}
 
 	runtimeResult, err := internalmanagedagent.ExecuteRuntimeTurn(runCtx, coordinator.supervisor, internalmanagedagent.RuntimeTurnInput{
+		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: input.Generation, Fencing: input.fencingProof(),
 		WorkspaceDirectory: input.WorkspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
 	})

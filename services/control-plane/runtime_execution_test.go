@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -97,6 +98,11 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 	if result.Messages[1].MessageType != "Event" || result.Messages[2].MessageType != "Result" || result.Messages[2].Payload["inputText"] != "hello runtime" {
 		t.Fatalf("runtime messages = %#v", result.Messages)
 	}
+	if result.Messages[0].Payload["workspaceDirectory"] != filepath.Join("/tmp/cloud-agents-runtime-test", ".cloud-agents", "managed-agent", "tenants", "tenant-runtime", "projects", "project-runtime", "sessions", "session-runtime", "workspace") ||
+		result.Messages[0].Payload["runtimeOutputDirectory"] != filepath.Join("/tmp/cloud-agents-runtime-test", ".cloud-agents", "managed-agent", "tenants", "tenant-runtime", "projects", "project-runtime", "sessions", "session-runtime", "runtime-output", "turn-runtime", "execution-runtime") ||
+		result.Messages[0].Payload["providerStateDirectory"] != filepath.Join("/tmp/cloud-agents-runtime-test", ".cloud-agents", "managed-agent", "tenants", "tenant-runtime", "projects", "project-runtime", "sessions", "session-runtime", "provider-state") {
+		t.Fatalf("runtime workspace binding = %#v", result.Messages[0].Payload)
+	}
 	if result.Messages[0].RequestID != "request-execution-startsession" || result.Messages[0].CommandID != "request-execution-start" || result.Messages[2].RequestID != "request-execution-sendturn" || result.Messages[2].CommandID != "request-execution-turn" {
 		t.Fatalf("runtime correlation IDs = %#v", result.Messages)
 	}
@@ -155,6 +161,15 @@ func runRuntimeExecutionHelper() {
 			time.Sleep(10 * time.Millisecond)
 			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"inputText":%q}}
 `, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, command.Payload["inputText"])
+			continue
+		}
+		if command.CommandType == "StartSession" {
+			runnerInput, _ := command.Payload["runnerInput"].(map[string]any)
+			workspaceDirectory, _ := runnerInput["workspaceDirectory"].(string)
+			runtimeOutputDirectory, _ := runnerInput["runtimeOutputDirectory"].(string)
+			providerStateDirectory, _ := runnerInput["providerStateDirectory"].(string)
+			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"workspaceDirectory":%q,"runtimeOutputDirectory":%q,"providerStateDirectory":%q}}
+`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, workspaceDirectory, runtimeOutputDirectory, providerStateDirectory)
 			continue
 		}
 		_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"ok":true}}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,9 @@ type DurableRuntimeExecutionResult struct {
 }
 
 type RuntimeTurnInput struct {
+	Scope              Scope
+	SessionID          string
+	TurnID             string
 	RequestID          string
 	ExecutionID        string
 	Generation         uint64
@@ -72,6 +76,12 @@ type RuntimeTurnInput struct {
 	Model              string
 	InputText          string
 	OccurredAt         time.Time
+}
+
+type runtimeWorkspacePaths struct {
+	workspaceDirectory     string
+	runtimeOutputDirectory string
+	providerStateDirectory string
 }
 
 type RuntimeTurnResult struct {
@@ -248,6 +258,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return DurableRuntimeExecutionResult{Transition: started}, nil
 	}
 	runtimeResult, err := ExecuteRuntimeTurn(runtimeCtx, coordinator.supervisor, RuntimeTurnInput{
+		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
 		Fencing:            &workerv1alpha1.FencingProof{LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...)},
 		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
@@ -343,6 +354,11 @@ func nextVerifiedPrincipal(source VerifiedPrincipalSource) (*authn.VerifiedPrinc
 
 func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Supervisor, input RuntimeTurnInput) (RuntimeTurnResult, error) {
 	result := RuntimeTurnResult{FailureCode: "runtime_open_failed"}
+	paths, err := deriveRuntimeWorkspacePaths(input.WorkspaceDirectory, input.Scope, input.SessionID, input.TurnID, input.ExecutionID)
+	if err != nil {
+		result.FailureCode = "workspace_invalid"
+		return result, err
+	}
 	session, err := workerSupervisor.OpenRuntimeSession(ctx, input.ExecutionID, input.Generation, input.Fencing)
 	if err != nil {
 		return result, err
@@ -352,9 +368,11 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 		return runtime.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtime.Protocol{Major: runtime.ProtocolMajor, Minor: runtime.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
 	}
 	start := command("StartSession", boundedRuntimeIdentifier(input.RequestID, "start"), map[string]any{"runnerInput": map[string]any{
-		"workspaceDirectory": input.WorkspaceDirectory,
-		"workload":           map[string]any{"provider": input.ProviderKind, "model": input.Model},
-		"execution":          map[string]any{"id": input.ExecutionID},
+		"workspaceDirectory":     paths.workspaceDirectory,
+		"runtimeOutputDirectory": paths.runtimeOutputDirectory,
+		"providerStateDirectory": paths.providerStateDirectory,
+		"workload":               map[string]any{"provider": input.ProviderKind, "model": input.Model},
+		"execution":              map[string]any{"id": input.ExecutionID},
 	}})
 	result.FailureCode = "runtime_start_failed"
 	if err := session.Send(ctx, start); err != nil {
@@ -381,6 +399,40 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 	}
 	result.FailureCode = ""
 	return result, nil
+}
+
+func deriveRuntimeWorkspacePaths(base string, scope Scope, sessionID, turnID, executionID string) (runtimeWorkspacePaths, error) {
+	if err := scope.validate(); err != nil {
+		return runtimeWorkspacePaths{}, err
+	}
+	for value, field := range map[string]string{
+		sessionID:   "session id",
+		turnID:      "turn id",
+		executionID: "execution id",
+	} {
+		if err := validateIdentifier(value, maxIdentifierBytes, field); err != nil {
+			return runtimeWorkspacePaths{}, err
+		}
+	}
+	if base == "" || strings.TrimSpace(base) != base || filepath.Clean(base) == string(filepath.Separator) || !filepath.IsAbs(base) || containsRuntimePathControl(base) {
+		return runtimeWorkspacePaths{}, fmt.Errorf("%w: workspace directory", ErrInvalidInput)
+	}
+	base = filepath.Clean(base)
+	sessionRoot := filepath.Join(base, ".cloud-agents", "managed-agent", "tenants", scope.TenantID, "projects", scope.ProjectID, "sessions", sessionID)
+	return runtimeWorkspacePaths{
+		workspaceDirectory:     filepath.Join(sessionRoot, "workspace"),
+		runtimeOutputDirectory: filepath.Join(sessionRoot, "runtime-output", turnID, executionID),
+		providerStateDirectory: filepath.Join(sessionRoot, "provider-state"),
+	}, nil
+}
+
+func containsRuntimePathControl(value string) bool {
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func boundedRuntimeIdentifier(base, suffix string) string {

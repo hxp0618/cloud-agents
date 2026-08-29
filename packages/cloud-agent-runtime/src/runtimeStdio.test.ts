@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 
 import { CLOUD_AGENT_CAPABILITY_IDS } from "@synara/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
+  type CloudAgentWorkspaceBinding,
   type CloudAgentProviderDescriptor,
 } from "@synara/cloud-agent-provider-api";
 import { describe, expect, it } from "vitest";
@@ -96,6 +99,53 @@ describe("runCloudAgentRuntimeStdio", () => {
       messageType: "Error",
       error: { code: "provider_not_installed", message: "Provider codex is disabled." },
     });
+  });
+
+  it("prepares isolated workspace, output, and provider state roots", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-runtime-binding-"));
+    const workspace = join(root, "workspace");
+    const runtimeOutput = join(root, "runtime-output");
+    const providerState = join(root, "provider-state");
+    let observed: CloudAgentWorkspaceBinding | undefined;
+    try {
+      const output = captureOutput();
+      await runCloudAgentRuntimeStdio(
+        runtimeWithProvider(async (_input, host) => {
+          observed = host.workspace;
+          return testSession("binding", [], () => undefined);
+        }),
+        {
+          source: Readable.from([
+            `${JSON.stringify({
+              ...startCommand,
+              payload: {
+                runnerInput: {
+                  ...startCommand.payload.runnerInput,
+                  workspaceDirectory: workspace,
+                  runtimeOutputDirectory: runtimeOutput,
+                  providerStateDirectory: providerState,
+                },
+              },
+            })}\n`,
+          ]),
+          output: output.stream,
+        },
+      );
+      expect(observed).toEqual({
+        authority: "host",
+        root: resolve(workspace),
+        runtimeOutputRoot: resolve(runtimeOutput),
+        providerStateRoot: resolve(providerState),
+        generation: 1,
+        readOnly: false,
+      });
+      expect(existsSync(workspace)).toBe(true);
+      expect(existsSync(runtimeOutput)).toBe(true);
+      expect(existsSync(providerState)).toBe(true);
+      expect(lstatSync(workspace).isDirectory()).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("bounds raw stdin before a newline is received", async () => {

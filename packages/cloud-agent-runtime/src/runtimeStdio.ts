@@ -1,4 +1,6 @@
+import { lstatSync, mkdirSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
+import { isAbsolute, resolve } from "node:path";
 
 import {
   CLOUD_AGENT_COMMAND_TYPES,
@@ -325,9 +327,21 @@ function runnerBinding(command: CloudAgentCommandEnvelope): {
   const workload = isRecord(input?.workload) ? input.workload : undefined;
   const execution = isRecord(input?.execution) ? input.execution : undefined;
   const providerKind = requiredProvider(workload?.provider);
-  if (typeof input?.workspaceDirectory !== "string" || !input.workspaceDirectory.trim()) {
+  const workspaceRoot = prepareRuntimeDirectory(input?.workspaceDirectory, "Workspace", {
+    required: true,
+  });
+  const runtimeOutputRoot = prepareRuntimeDirectory(
+    input?.runtimeOutputDirectory,
+    "Runtime Output",
+    { absolute: true },
+  );
+  const providerStateRoot = prepareRuntimeDirectory(
+    input?.providerStateDirectory,
+    "Provider State",
+    { absolute: true },
+  );
+  if (!workspaceRoot)
     throw runtimeFailure("workspace_invalid", "runnerInput Workspace is required.");
-  }
   const model =
     typeof workload?.model === "string" && workload.model.trim()
       ? workload.model.trim()
@@ -336,15 +350,39 @@ function runnerBinding(command: CloudAgentCommandEnvelope): {
     providerKind,
     hostThreadId:
       typeof execution?.id === "string" && execution.id.trim() ? execution.id : command.executionId,
-    workspaceRoot: input.workspaceDirectory,
-    ...(typeof input.runtimeOutputDirectory === "string"
-      ? { runtimeOutputRoot: input.runtimeOutputDirectory }
-      : {}),
-    ...(typeof input.providerStateDirectory === "string"
-      ? { providerStateRoot: input.providerStateDirectory }
-      : {}),
+    workspaceRoot,
+    ...(runtimeOutputRoot ? { runtimeOutputRoot } : {}),
+    ...(providerStateRoot ? { providerStateRoot } : {}),
     configuration: model ? { model } : {},
   };
+}
+
+function prepareRuntimeDirectory(
+  value: unknown,
+  label: string,
+  options: { readonly absolute?: boolean; readonly required?: boolean } = {},
+): string | undefined {
+  if (value === undefined) {
+    if (!options.required) return undefined;
+    throw runtimeFailure("workspace_invalid", `Runtime ${label} path is invalid.`);
+  }
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    (options.absolute && !isAbsolute(value)) ||
+    /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    throw runtimeFailure("workspace_invalid", `Runtime ${label} path is invalid.`);
+  }
+  const directory = resolve(value);
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const info = lstatSync(directory);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("not a directory");
+  } catch {
+    throw runtimeFailure("workspace_invalid", `Runtime ${label} directory could not be prepared.`);
+  }
+  return directory;
 }
 
 function hostServices(

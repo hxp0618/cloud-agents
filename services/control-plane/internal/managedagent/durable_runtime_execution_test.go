@@ -3,6 +3,7 @@ package managedagent
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -110,6 +111,36 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 	want := strings.Repeat("a", maxPublicExecutionMessageIdentifierBytes-len("-start")) + "-start"
 	if got != want || len(got) != maxPublicExecutionMessageIdentifierBytes {
 		t.Fatalf("bounded runtime identifier = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveRuntimeWorkspacePathsScopesSessionStateAndExecutionOutput(t *testing.T) {
+	scope := Scope{TenantID: "tenant", ProjectID: "project"}
+	first, err := deriveRuntimeWorkspacePaths("/workspace", scope, "session", "turn-a", "execution-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := deriveRuntimeWorkspacePaths("/workspace", scope, "session", "turn-b", "execution-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSessionRoot := filepath.Join("/workspace", ".cloud-agents", "managed-agent", "tenants", "tenant", "projects", "project", "sessions", "session")
+	want := runtimeWorkspacePaths{
+		workspaceDirectory:     filepath.Join(wantSessionRoot, "workspace"),
+		runtimeOutputDirectory: filepath.Join(wantSessionRoot, "runtime-output", "turn-a", "execution-a"),
+		providerStateDirectory: filepath.Join(wantSessionRoot, "provider-state"),
+	}
+	if !reflect.DeepEqual(first, want) {
+		t.Fatalf("first paths = %#v, want %#v", first, want)
+	}
+	if first.workspaceDirectory != second.workspaceDirectory || first.providerStateDirectory != second.providerStateDirectory || first.runtimeOutputDirectory == second.runtimeOutputDirectory {
+		t.Fatalf("session/output scoping = first %#v, second %#v", first, second)
+	}
+	if _, err := deriveRuntimeWorkspacePaths("relative", scope, "session", "turn", "execution"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("relative base error = %v", err)
+	}
+	if _, err := deriveRuntimeWorkspacePaths("/workspace", scope, "../session", "turn", "execution"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("traversal session error = %v", err)
 	}
 }
 
