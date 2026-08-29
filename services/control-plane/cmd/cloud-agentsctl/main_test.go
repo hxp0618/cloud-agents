@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,6 +62,32 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 			args := append([]string{"--endpoint", "http://127.0.0.1:8080", "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha"}, test.args...)
 			if _, _, _, _, err := parseArgs(args); err != nil {
 				t.Fatalf("parseArgs(%v) = %v", args, err)
+			}
+		})
+	}
+}
+
+func TestRunExecutionMutationUsesGenerationAndIdempotency(t *testing.T) {
+	for _, action := range []string{"cancel", "interrupt"} {
+		t.Run(action, func(t *testing.T) {
+			var method, path, body string
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				method, path = request.Method, request.URL.Path
+				contents, _ := io.ReadAll(request.Body)
+				body = string(contents)
+				writer.Header().Set("X-Resource-Version", "2")
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":7,"state":"cancelled"}}`))
+			}))
+			defer server.Close()
+			args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "--idempotency-key", "idempotency-alpha", "execution", action, "--generation", "7"}
+			var stdout bytes.Buffer
+			if err := run(args, &stdout); err != nil {
+				t.Fatal(err)
+			}
+			wantSuffix := ":" + action
+			if method != http.MethodPost || !strings.HasSuffix(path, wantSuffix) || !strings.Contains(body, `"generation":7`) || !strings.Contains(stdout.String(), `"state":"cancelled"`) {
+				t.Fatalf("request=%s %s body=%q output=%q", method, path, body, stdout.String())
 			}
 		})
 	}

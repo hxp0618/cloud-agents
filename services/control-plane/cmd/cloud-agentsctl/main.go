@@ -98,6 +98,19 @@ func run(args []string, stdout io.Writer) error {
 		}
 	case "execution get":
 		value, err = client.GetManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID)
+	case "execution cancel", "execution interrupt":
+		var generation uint64
+		if err = parseActionFlags("execution "+action, actionArgs, func(set *flag.FlagSet) {
+			set.Uint64Var(&generation, "generation", 0, "execution fencing generation")
+		}); err == nil && generation == 0 {
+			err = errors.New("--generation must be greater than zero")
+		} else if err == nil {
+			if action == "interrupt" {
+				value, err = client.InterruptManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionInterruptRequest{Generation: generation})
+			} else {
+				value, err = client.CancelManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCancelRequest{Generation: generation})
+			}
+		}
 	case "events list":
 		var cursor string
 		limit := 0
@@ -231,7 +244,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "events list", "membership get", "role get", "role-binding get", "managed-host-project get", "managed-host-role-binding get":
+	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "role get", "role-binding get", "managed-host-project get", "managed-host-role-binding get":
 		return true
 	default:
 		return false
@@ -253,7 +266,7 @@ func requiresSession(command, action string) bool {
 func requiresTurn(command, action string) bool      { return command == "turn" || command == "execution" }
 func requiresExecution(command, action string) bool { return command == "execution" }
 func requiresIdempotency(command, action string) bool {
-	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && action == "execute")
+	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt"))
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL --token TOKEN --tenant ID --request-id ID <resource> <action> [flags]`
