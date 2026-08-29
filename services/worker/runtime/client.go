@@ -147,6 +147,8 @@ func (client *Client) Events() <-chan Message {
 	if client == nil {
 		return nil
 	}
+	// The channel is the ordered output stream. It includes terminal messages
+	// so callers can forward Runtime output without racing Execute waiters.
 	return client.events
 }
 
@@ -316,6 +318,14 @@ func (client *Client) deliverTerminal(message Message) error {
 	if message.RequestID != pending.command.RequestID || message.ExecutionID != pending.command.ExecutionID || message.Generation != pending.command.Generation {
 		delete(client.pending, message.CommandID)
 		err := fmt.Errorf("%w: response identity does not match command", ErrProtocolViolation)
+		pending.waiter <- result{err: err}
+		return err
+	}
+	select {
+	case client.events <- message:
+	default:
+		delete(client.pending, message.CommandID)
+		err := fmt.Errorf("%w: event queue is full", ErrProtocolViolation)
 		pending.waiter <- result{err: err}
 		return err
 	}

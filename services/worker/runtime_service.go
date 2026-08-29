@@ -139,10 +139,6 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 			if executeErr != nil && message.MessageType == "" {
 				_ = sendRuntimeError(send, "runtime_execution_failed", "Runtime command failed")
 				cancel()
-				return
-			}
-			if err := sendRuntimeJSON(send, message); err != nil {
-				cancel()
 			}
 		}(command)
 	}

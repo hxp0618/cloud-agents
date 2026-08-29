@@ -54,13 +54,18 @@ func TestClientExecutesCommandsAndPreservesEvents(t *testing.T) {
 	if err != nil || message.Payload["ok"] != true {
 		t.Fatalf("SendTurn = %#v, %v", message, err)
 	}
-	select {
-	case event := <-client.Events():
-		if event.MessageType != "Event" || event.CommandID != turn.CommandID {
-			t.Fatalf("event = %#v", event)
+	for _, expected := range []struct {
+		commandID   string
+		messageType string
+	}{{start.CommandID, "Result"}, {turn.CommandID, "Event"}, {turn.CommandID, "Result"}} {
+		select {
+		case actual := <-client.Events():
+			if actual.CommandID != expected.commandID || actual.MessageType != expected.messageType {
+				t.Fatalf("Runtime output = %#v, expected %s/%s", actual, expected.commandID, expected.messageType)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for Runtime output %s/%s", expected.commandID, expected.messageType)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for Runtime event")
 	}
 }
 
