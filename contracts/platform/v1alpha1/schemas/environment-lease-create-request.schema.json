@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-lease-create-request.schema.json",
+  "title": "EnvironmentLeaseCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["leaseId", "leaseName", "releaseDigest", "ttlSeconds"],
+  "properties": {
+    "leaseId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "leaseName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
+  }
+}

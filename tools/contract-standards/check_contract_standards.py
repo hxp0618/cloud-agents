@@ -31,7 +31,7 @@ PROFILE_V1_PREDECESSOR = {
     "mutation": "forbidden",
 }
 CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256 = (
-    "sha256:2aca3288e2591f07fa90d6681a6acd5d4edfdc190f4b37768811ffad8a07e4f2"
+    "sha256:790423483353694575f5d27bc299b5677bafbd2bdee6a1a21a9d6774fa8ff998"
 )
 PROFILE_V2_PREDECESSOR = {
     "path": "tools/contract-standards/profile-v2.json",
@@ -549,7 +549,7 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
     if current.get("crossEngineExactFixtureResults") is not True:
         raise ContractStandardsError("cross-engine fixture comparison must remain enabled")
     expected_current = (
-        {"schemaFiles": 87, "fixtureManifests": 2, "fixtureCases": 79}
+        {"schemaFiles": 90, "fixtureManifests": 2, "fixtureCases": 79}
         if v3
         else {"schemaFiles": 60, "fixtureManifests": 2, "fixtureCases": 79}
         if format_version == PROFILE_V2
@@ -586,7 +586,7 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             {"schemaFiles", "fixtureManifests", "fixtureCases", "sourceContractManifestSha256"},
             "bootstrap contract profile",
         )
-        expected_bootstrap = {"schemaFiles": 83, "fixtureManifests": 2, "fixtureCases": 79}
+        expected_bootstrap = {"schemaFiles": 86, "fixtureManifests": 2, "fixtureCases": 79}
         declared_bootstrap = {
             key: bootstrap.get(key)
             for key in expected_bootstrap

@@ -57,6 +57,12 @@ const DURABLE_COORDINATION_OPERATION_EFFECT_INDEX = {
   sha256: "sha256:a068696a4c581b604a9f08d6a99e6d0e4c3a2336cd2342de533fc1f3b9162fc4",
   targetIdentity: "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx",
 } as const;
+const MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX = {
+  migrationId: "000021",
+  statementIndex: 1,
+  sha256: "sha256:a8bf73adb48cb4be976422e41e1ec546a4490a7f1e8b167ae5287e7743c6f83d",
+  targetIdentity: "index:unquoted:cloud_agents/unquoted:managed_host_leases_create_key_idx",
+} as const;
 
 export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlStatementSlice> {
   const statements: SqlStatementSlice[] = [];
@@ -190,6 +196,21 @@ export function classifyMigrationStatement(
   }
   if (first === "CREATE") {
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
+      if (
+        migrationId === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.migrationId &&
+        statement.index === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.statementIndex &&
+        statement.sha256 === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.sha256 &&
+        tokens[3] === "MANAGED_HOST_LEASES_CREATE_KEY_IDX" &&
+        tokens[4] === "ON"
+      ) {
+        requireCloudAgentsQualified(tokens, 5);
+        return classification(
+          "CREATE",
+          "INDEX",
+          qualifiedDerivedIdentity("index", tokens, 5, tokens[3]!),
+          null,
+        );
+      }
       if (
         migrationId !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.migrationId ||
         statement.index !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.statementIndex ||

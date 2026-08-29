@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/environment-lease.schema.json",
+  "title": "CloudEnvironmentLease",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "platform.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "CloudEnvironmentLease" },
+    "metadata": { "$ref": "../../../common/v1alpha1/schemas/resource-metadata.schema.json" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "expiresAt"],
+      "properties": {
+        "projectRef": { "$ref": "../../../common/v1alpha1/schemas/project-ref.schema.json" },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "desiredPhase": { "enum": ["active", "terminated"] },
+        "observedPhase": { "enum": ["provisioning", "ready", "terminating", "terminated", "failed"] },
+        "cleanupPhase": { "enum": ["none", "pending", "revoking", "reaping", "complete", "blocked"] },
+        "environmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "metadata.tenantRef.id == spec.projectRef.id is not required; projectRef is checked against the route project",
+    "spec.environmentId is server-controlled",
+    "create returns desiredPhase=active, observedPhase=provisioning, cleanupPhase=none",
+    "bounded termination returns desiredPhase=terminated, observedPhase=terminated, cleanupPhase=complete"
+  ]
+}

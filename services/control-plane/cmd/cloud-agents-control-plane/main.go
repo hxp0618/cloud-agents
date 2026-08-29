@@ -337,13 +337,18 @@ func run(ctx context.Context, args []string) error {
 		}
 		defer runtimeWorkerHTTPServer.Close()
 	}
+	verifierAdapter := localAccessTokenVerifier{verifier: verifier}
+	leaseHTTPServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService)
+	if leaseErr != nil {
+		return errors.New("local managed host environment lease HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
+	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseHTTPServer)
 	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)
 	if runtimeSupervisor == nil {
 		mux.Handle(server.LocalProjectGetRoutePrefix, projectGetHTTPServer)
 	} else {
-		verifierAdapter := localAccessTokenVerifier{verifier: verifier}
 		projectHTTPServer, projectErr := server.NewProjectHTTPServer(verifierAdapter, coordinationService, durableProjectCreateServer)
 		if projectErr != nil {
 			return errors.New("local project HTTP server is unavailable")

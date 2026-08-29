@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:f131bef54ea371d8ccba2dc763542e84bf133c8bd10d38d38b1e7a494e5bb2e9";
+	"sha256:c6717046050b763100f5502232edb0fd89b1a084bd68cb0c154370b8ebfd611c";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -64,6 +64,9 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
+	"environment-lease-create-request.schema.json",
+	"environment-lease-terminate-request.schema.json",
+	"environment-lease.schema.json",
 	"managed-agent-create-project-organization-ref.schema.json",
 	"membership-create-request.schema.json",
 	"membership.schema.json",
@@ -377,8 +380,11 @@ function validateJSONSDKAuthority(root: string): void {
 		"managedAgentRevokeMembership",
 		"managedAgentRevokeRoleBinding",
 		"managedAgentSuspendMembership",
-    "managedHostGetProjectContext",
-    "managedHostGetRoleBinding",
+		"managedHostCreateEnvironmentLease",
+		"managedHostGetEnvironmentLease",
+		"managedHostGetProjectContext",
+		"managedHostGetRoleBinding",
+		"managedHostTerminateEnvironmentLease",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {
     throw new Error(`OpenAPI operation set changed: ${operations.join(",")}`);

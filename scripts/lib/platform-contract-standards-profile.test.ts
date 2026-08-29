@@ -71,9 +71,9 @@ describe("versioned contract-standards profile", () => {
     const v3 = readContractStandardsProfile(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V3_PATH);
     expect(v3.formatVersion).toBe("cloud-agents-contract-standards-profile/v3");
     expect(v3.currentContracts).toMatchObject({
-      schemaFiles: 87,
+		schemaFiles: 90,
       fixtureCases: 79,
-      bootstrapContracts: { schemaFiles: 83, fixtureCases: 79 },
+		bootstrapContracts: { schemaFiles: 86, fixtureCases: 79 },
     });
 
     const root = temporaryCurrentRoot();

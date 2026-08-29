@@ -194,6 +194,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("managed agent execution HTTP server is unavailable")
 	}
+	leaseServer, err := server.NewManagedHostEnvironmentLeaseHTTPServer(verifier, coordinationService)
+	if err != nil {
+		return errors.New("managed host environment lease HTTP server is unavailable")
+	}
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleRoute, roleServer)
@@ -203,6 +207,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.RoleBindingCollectionRoute, rbacServer)
 	mux.Handle(server.ManagedHostProjectRoute, projectServer)
 	mux.Handle(server.ManagedHostRoleBindingRoute, rbacServer)
+	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesRBACPath(request.URL.Path) {

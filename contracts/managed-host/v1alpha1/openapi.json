@@ -100,6 +100,64 @@
           }
         }
       }
+    },
+    "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases": {
+      "post": {
+        "operationId": "managedHostCreateEnvironmentLease",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-create-request.schema.json" } } } },
+        "responses": {
+          "201": { "$ref": "#/components/responses/EnvironmentLease" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}": {
+      "get": {
+        "operationId": "managedHostGetEnvironmentLease",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/EnvironmentLease" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:terminate": {
+      "post": {
+        "operationId": "managedHostTerminateEnvironmentLease",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/LeaseId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease-terminate-request.schema.json" } } } },
+        "responses": {
+          "200": { "$ref": "#/components/responses/EnvironmentLease" },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
     }
   },
   "components": {
@@ -135,6 +193,12 @@
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
         }
       },
+      "LeaseId": {
+        "name": "leaseId",
+        "in": "path",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/identifier.schema.json" }
+      },
       "RequestId": {
         "name": "X-Request-Id",
         "in": "header",
@@ -142,6 +206,12 @@
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
         }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/idempotency-key.schema.json" }
       }
     },
     "headers": {
@@ -160,6 +230,17 @@
             "schema": {
               "$ref": "../../common/v1alpha1/schemas/problem.schema.json"
             }
+          }
+        }
+      },
+      "EnvironmentLease": {
+        "description": "Environment lease",
+        "headers": {
+          "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../platform/v1alpha1/schemas/environment-lease.schema.json" }
           }
         }
       }
