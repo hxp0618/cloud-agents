@@ -143,8 +143,12 @@ describe("platform release", () => {
     const entries = readDeterministicUstar(buildPlatformContractPackage(process.cwd()));
     const paths = entries.map(({ path }) => path);
     expect(paths).toContain("contracts/managed-agent/v1alpha1/openapi.json");
+    expect(paths).toContain("contracts/managed-host/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/worker/runtime/v1alpha1/runtime.proto");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
+    expect(paths).toContain(
+      "contracts/platform/v1alpha1/schemas/environment-lease.schema.json",
+    );
     expect(paths).not.toContain("contracts/platform/v1alpha1/fixtures/manifest.json");
     expect(
       paths.some((path) => path.includes("generation.lock") || path.includes("docs/plan")),
