@@ -31,6 +31,11 @@ type DurableRuntimeExecutionStore interface {
 	CancelManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CancelTurnInput) (ExecutionTransitionResult, error)
 }
 
+// VerifiedPrincipalSource returns a fresh, one-shot principal for one protected
+// persistence operation. A Runtime execution spans several transactions, so
+// the coordinator must never reuse a consumed principal.
+type VerifiedPrincipalSource func() (*authn.VerifiedPrincipal, error)
+
 type DurableRuntimeExecutionConfig struct {
 	Store              DurableRuntimeExecutionStore
 	Supervisor         *supervisor.Supervisor
@@ -175,12 +180,15 @@ func (coordinator *DurableRuntimeExecutionCoordinator) stopActiveExecution(key d
 	}
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Context, principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput) (DurableRuntimeExecutionResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Context, principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput) (DurableRuntimeExecutionResult, error) {
 	if coordinator == nil || coordinator.store == nil || coordinator.supervisor == nil || coordinator.now == nil {
 		return DurableRuntimeExecutionResult{}, ErrDurableRuntimeExecutionUnavailable
 	}
 	if ctx == nil {
 		return DurableRuntimeExecutionResult{}, ErrNilContext
+	}
+	if principalSource == nil {
+		return DurableRuntimeExecutionResult{}, ErrDurableRuntimeExecutionUnavailable
 	}
 	now := coordinator.now().UTC()
 	if now.IsZero() || input.Scope.validate() != nil || input.SessionID == "" || input.TurnID == "" || input.ExecutionID == "" || input.InputText == "" || input.Mutation.validate() != nil {
@@ -201,11 +209,23 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		unregister()
 		runtimeCancel()
 	}()
+	principal, err := nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
+	}
 	session, err := coordinator.store.GetManagedAgentSessionForExecution(runCtx, input.Scope.TenantID, principal, input.Scope.ProjectID, input.SessionID)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
+	principal, err = nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
+	}
 	turn, err := coordinator.store.CreateManagedAgentTurn(runCtx, input.Scope.TenantID, principal, CreateTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, InputText: input.InputText, Mutation: input.Mutation})
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
+	}
+	principal, err = nextVerifiedPrincipal(principalSource)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
@@ -215,6 +235,10 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	}
 	if execution.State != ExecutionQueued {
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}}, nil
+	}
+	principal, err = nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
 	}
 	started, err := coordinator.store.StartManagedAgentExecution(runCtx, input.Scope.TenantID, principal, StartExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
 	if err != nil {
@@ -233,20 +257,24 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 			return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, context.Canceled
 		}
 		if errors.Is(runCtx.Err(), context.Canceled) {
-			return coordinator.cancel(principal, input, started, runtimeResult.Messages)
+			return coordinator.cancel(principalSource, input, started, runtimeResult.Messages)
 		}
-		return coordinator.fail(principal, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err)
+		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err)
 	}
 	if runtimeResult.Terminal.MessageType == "Error" {
 		code := "runtime_failed"
 		if runtimeResult.Terminal.Error != nil && ValidRuntimeErrorCode(runtimeResult.Terminal.Error.Code) {
 			code = runtimeResult.Terminal.Error.Code
 		}
-		return coordinator.fail(principal, input, started, runtimeResult.Messages, code, errors.New(code))
+		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, code, errors.New(code))
 	}
 	digest, err := RuntimeMessageDigest(runtimeResult.Terminal)
 	if err != nil {
-		return coordinator.fail(principal, input, started, runtimeResult.Messages, "runtime_result_invalid", err)
+		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, "runtime_result_invalid", err)
+	}
+	principal, err = nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
 	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation})
 	if err != nil {
@@ -275,7 +303,11 @@ func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(k
 		return externallyCancelled
 	}, nil
 }
-func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message) (DurableRuntimeExecutionResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message) (DurableRuntimeExecutionResult, error) {
+	principal, err := nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(context.Canceled, err)
+	}
 	cancelled, err := coordinator.store.CancelManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CancelTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, TargetExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(context.Canceled, err)
@@ -283,12 +315,30 @@ func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principal *authn.V
 	return DurableRuntimeExecutionResult{Transition: cancelled, Messages: messages}, context.Canceled
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) fail(principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message, code string, cause error) (DurableRuntimeExecutionResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) fail(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message, code string, cause error) (DurableRuntimeExecutionResult, error) {
+	principal, err := nextVerifiedPrincipal(principalSource)
+	if err != nil {
+		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
+	}
 	failed, err := coordinator.store.FailManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, FailExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ErrorCode: code, Mutation: input.Mutation})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
 	}
 	return DurableRuntimeExecutionResult{Transition: failed, Messages: messages}, fmt.Errorf("%w: %v", ErrDurableRuntimeExecutionFailed, cause)
+}
+
+func nextVerifiedPrincipal(source VerifiedPrincipalSource) (*authn.VerifiedPrincipal, error) {
+	if source == nil {
+		return nil, ErrDurableRuntimeExecutionUnavailable
+	}
+	principal, err := source()
+	if err != nil {
+		return nil, err
+	}
+	if principal == nil {
+		return nil, ErrDurableRuntimeExecutionUnavailable
+	}
+	return principal, nil
 }
 
 func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Supervisor, input RuntimeTurnInput) (RuntimeTurnResult, error) {

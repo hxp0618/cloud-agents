@@ -59,6 +59,34 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
+  it("classifies the scoped managed-agent event-id successor", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000023_scope_managed_agent_event_ids.sql"),
+      ),
+    );
+    expect(statements).toHaveLength(1);
+    const classification = classifyMigrationStatement(statements[0]!, "000023");
+    expect(classification).toMatchObject({
+      profile: "postgresql-ddl-v1",
+      command: "CREATE",
+      object_kind: "FUNCTION",
+      target_identity:
+        "function:unquoted:cloud_agents/unquoted:append_managed_agent_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:jsonb)",
+    });
+    const sql = new TextDecoder().decode(statements[0]!.bytes);
+    expect(sql).toContain("cloud-agents/managed-agent-events/event-id/v1");
+    for (const fragment of [
+      "p_tenant_id",
+      "p_project_uid",
+      "p_session_uid",
+      "sequence_value",
+      "pg_catalog.sha256",
+    ]) {
+      expect(sql).toContain(fragment);
+    }
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

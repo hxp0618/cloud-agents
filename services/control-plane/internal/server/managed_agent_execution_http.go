@@ -18,6 +18,7 @@ import (
 const ManagedAgentExecutionRoutePrefix = "/v1/tenants/"
 
 var ErrInvalidManagedAgentExecutionHTTPServer = errors.New("managed agent execution HTTP server configuration is invalid")
+var errManagedAgentExecutionAuthentication = errors.New("managed agent execution authentication failed")
 
 type managedAgentExecutionStore interface {
 	internalmanagedagent.DurableRuntimeExecutionStore
@@ -25,7 +26,7 @@ type managedAgentExecutionStore interface {
 }
 
 type managedAgentExecutionRunner interface {
-	Execute(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error)
+	Execute(context.Context, internalmanagedagent.VerifiedPrincipalSource, internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error)
 	Interrupt(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.InterruptTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
 	Cancel(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
 }
@@ -132,7 +133,20 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	result, err := server.runner.Execute(request.Context(), principal, internalmanagedagent.DurableRuntimeExecutionInput{
+	verificationRequest := authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"}
+	principalSource := internalmanagedagent.VerifiedPrincipalSource(func() (*authn.VerifiedPrincipal, error) {
+		if principal != nil {
+			next := principal
+			principal = nil
+			return next, nil
+		}
+		next, verifyErr := server.verifier.Verify(bearer, verificationRequest)
+		if verifyErr != nil {
+			return nil, errManagedAgentExecutionAuthentication
+		}
+		return next, nil
+	})
+	result, err := server.runner.Execute(request.Context(), principalSource, internalmanagedagent.DurableRuntimeExecutionInput{
 		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
 		TurnID: turnID, ExecutionID: executionID, Model: model, InputText: inputText,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
@@ -307,6 +321,8 @@ func HandlesManagedAgentExecutionPath(path string) bool {
 
 func managedAgentExecutionErrorStatus(err error) (int, string) {
 	switch {
+	case errors.Is(err, errManagedAgentExecutionAuthentication):
+		return http.StatusUnauthorized, "authentication_failed"
 	case errors.Is(err, postgres.ErrManagedAgentExecutionNotFound):
 		return http.StatusNotFound, "not_found"
 	case errors.Is(err, postgres.ErrMutationDenied):

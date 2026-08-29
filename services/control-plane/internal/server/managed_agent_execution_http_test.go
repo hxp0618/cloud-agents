@@ -66,13 +66,26 @@ func (fake *managedAgentExecutionStoreFake) GetManagedAgentExecution(_ context.C
 
 type managedAgentExecutionRunnerFake struct {
 	input           internalmanagedagent.DurableRuntimeExecutionInput
+	sourceReads     int
 	interruptInput  internalmanagedagent.InterruptTurnInput
 	interruptResult internalmanagedagent.ExecutionTransitionResult
 	cancelInput     internalmanagedagent.CancelTurnInput
 	cancelResult    internalmanagedagent.ExecutionTransitionResult
 }
 
-func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error) {
+func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, principalSource internalmanagedagent.VerifiedPrincipalSource, input internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error) {
+	if principalSource == nil {
+		return internalmanagedagent.DurableRuntimeExecutionResult{}, errors.New("missing principal source")
+	}
+	reads := fake.sourceReads
+	if reads == 0 {
+		reads = 1
+	}
+	for range reads {
+		if _, err := principalSource(); err != nil {
+			return internalmanagedagent.DurableRuntimeExecutionResult{}, err
+		}
+	}
 	fake.input = input
 	return internalmanagedagent.DurableRuntimeExecutionResult{Transition: internalmanagedagent.ExecutionTransitionResult{
 		Execution: internalmanagedagent.ExecutionSnapshot{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)},
@@ -87,6 +100,19 @@ func (fake *managedAgentExecutionRunnerFake) Interrupt(_ context.Context, _ *aut
 func (fake *managedAgentExecutionRunnerFake) Cancel(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
 	fake.cancelInput = input
 	return fake.cancelResult, nil
+}
+
+type managedAgentExecutionVerifierFake struct {
+	calls      int
+	failOnCall int
+}
+
+func (fake *managedAgentExecutionVerifierFake) Verify(_ string, _ authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	fake.calls++
+	if fake.failOnCall == fake.calls {
+		return nil, errors.New("verification failed")
+	}
+	return &authn.VerifiedPrincipal{}, nil
 }
 
 func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
@@ -146,6 +172,25 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	handler.ServeHTTP(interrupted, interrupt)
 	if interrupted.Code != http.StatusOK || runner.interruptInput.Generation != 7 || runner.interruptInput.TargetExecutionID != "execution-alpha" || !strings.Contains(interrupted.Body.String(), `"errorCode":"interrupted"`) {
 		t.Fatalf("interrupt status=%d input=%#v body=%s", interrupted.Code, runner.interruptInput, interrupted.Body.String())
+	}
+}
+
+func TestManagedAgentExecutionHTTPServerRejectsPrincipalReverificationFailure(t *testing.T) {
+	verifier := &managedAgentExecutionVerifierFake{failOnCall: 2}
+	store := &managedAgentExecutionStoreFake{}
+	runner := &managedAgentExecutionRunnerFake{sourceReads: 2}
+	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions", strings.NewReader(`{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello"}`))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	request.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || verifier.calls != 2 || runner.input.TurnID != "" || !strings.Contains(response.Body.String(), `"code":"AUTHENTICATION_FAILED"`) {
+		t.Fatalf("status=%d verifierCalls=%d runnerInput=%#v body=%s", response.Code, verifier.calls, runner.input, response.Body.String())
 	}
 }
 
