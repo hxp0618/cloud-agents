@@ -75,6 +75,10 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 		server.get(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer)
 		return
 	}
+	if action == "cancel" && request.Method == http.MethodPost {
+		server.cancel(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer)
+		return
+	}
 	writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 	writeManagedAgentSessionError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 }
@@ -123,11 +127,43 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, nil)
 }
 
+func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
+	idempotencyKey, ok := exactSingleHeader(request.Header, "Idempotency-Key")
+	if !ok {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	var body managedAgentExecutionCancelBody
+	if err := decodeManagedAgentExecutionJSON(request.Body, &body); err != nil || body.Generation == 0 {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	result, err := server.store.CancelManagedAgentExecution(request.Context(), tenantID, principal, internalmanagedagent.CancelTurnInput{
+		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, TurnID: turnID, TargetExecutionID: executionID,
+		Generation: body.Generation, Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
+	})
+	if err != nil {
+		status, code := managedAgentExecutionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	writeManagedAgentExecution(writer, http.StatusOK, requestID, result, nil)
+}
+
 type managedAgentExecutionRequest struct {
 	TurnID      string `json:"turnId"`
 	ExecutionID string `json:"executionId"`
 	Model       string `json:"model,omitempty"`
 	InputText   string `json:"inputText"`
+}
+
+type managedAgentExecutionCancelBody struct {
+	Generation uint64 `json:"generation"`
 }
 
 type managedAgentExecutionResource struct {
@@ -194,6 +230,12 @@ func managedAgentExecutionPath(path string) (tenantID, projectID, sessionID, tur
 	}
 	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && parts[8] != "" && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") && !strings.Contains(parts[8], ":") {
 		return parts[0], parts[2], parts[4], parts[6], parts[8], "get", true
+	}
+	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && strings.HasSuffix(parts[8], ":cancel") && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") {
+		executionID = strings.TrimSuffix(parts[8], ":cancel")
+		if executionID != "" {
+			return parts[0], parts[2], parts[4], parts[6], executionID, "cancel", true
+		}
 	}
 	return "", "", "", "", "", "", false
 }

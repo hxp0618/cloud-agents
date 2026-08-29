@@ -75,11 +75,14 @@ describe("generated platform JSON models", () => {
     });
     await client.executeManagedAgent("tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", { turnId: "turn-alpha", executionId: "execution-alpha", model: "codex", inputText: "hello" });
     await client.getManagedAgentExecution("tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-alpha");
+	await client.cancelManagedAgentExecution("tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-cancel", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX", { generation: 1 });
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions",
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha",
+	  "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel",
     ]);
     expect(seen[0]?.body).toBe('{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex"}');
+	expect(seen[2]?.body).toBe('{"generation":1}');
   });
   it("replays common and platform golden fixtures", () => {
     expect(parseProblem(readFixture(commonFixtureRoot, "golden/problem.json")).status).toBe(404);

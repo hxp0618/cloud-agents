@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:6cead20f525e892d136669f07e5f9e6f5d4f27817ed832a4a968613d8714ceaf";
+	"sha256:6915e805c526fc13621c742a9a58e8b99168a2b4b591484a2f470862d903d770";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -82,6 +82,7 @@ const PLATFORM_SCHEMAS = [
 const MANAGED_AGENT_SCHEMAS = [
 	"event-page.schema.json",
 	"event.schema.json",
+	"execution-cancel-request.schema.json",
 	"execution-create-request.schema.json",
   "execution.schema.json",
   "session-create-request.schema.json",
@@ -352,13 +353,14 @@ function validateJSONSDKAuthority(root: string): void {
     throw new Error("JSON SDK OpenAPI authority must remain OpenAPI 3.1.1.");
   }
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
-  const expected = [
+	const expected = [
 		"managedAgentBindRole",
-    "managedAgentCloseSession",
+		"managedAgentCancelExecution",
+		"managedAgentCloseSession",
 		"managedAgentCreateMembership",
     "managedAgentCreateProject",
     "managedAgentCreateSession",
-    "managedAgentCreateTurn",
+		"managedAgentCreateTurn",
     "managedAgentExecute",
 		"managedAgentGetExecution",
     "managedAgentGetMembership",

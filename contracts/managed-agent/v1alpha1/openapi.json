@@ -419,6 +419,41 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/turns/{turnId}/executions/{executionId}:cancel": {
+      "post": {
+        "operationId": "managedAgentCancelExecution",
+        "x-cloud-agents-coordination": "durable-runtime",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/TurnId" },
+          { "$ref": "#/components/parameters/ExecutionId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/IdempotencyKey" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "./schemas/execution-cancel-request.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "./schemas/execution.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/memberships": {
       "post": {
         "operationId": "managedAgentCreateMembership",
