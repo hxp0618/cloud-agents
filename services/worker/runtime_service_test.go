@@ -1,13 +1,34 @@
 package worker
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
+	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
 )
+
+func TestRuntimeInvalidCommandHelperProcess(t *testing.T) {
+	if os.Getenv("CLOUD_AGENTS_WORKER_RUNTIME_HELPER") != "1" {
+		return
+	}
+	for scanner := bufio.NewScanner(os.Stdin); scanner.Scan(); {
+		_, _ = fmt.Fprintln(os.Stdout, scanner.Text())
+	}
+	os.Exit(0)
+}
 
 func TestRuntimeFencingRequiresConfiguredToken(t *testing.T) {
 	service, err := NewService(Config{
@@ -27,5 +48,74 @@ func TestRuntimeFencingRequiresConfiguredToken(t *testing.T) {
 	open.Fencing.Token = []byte("wrong-token")
 	if err := service.validateRuntimeFencing(open); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "fencing_token_mismatch") {
 		t.Fatalf("wrong Runtime token = %v", err)
+	}
+}
+
+func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
+	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
+	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor", TrustDomain: "cloud-agents.test"}
+	service, err := NewService(Config{
+		WorkerIdentity: workerIdentity,
+		Capabilities: []workerv1alpha1.Capability{
+			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+			workerv1alpha1.Capability_CAPABILITY_HEALTH,
+			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		},
+		IdentityProvider:    StaticIdentityProvider{Identity: supervisorIdentity},
+		AdmissionLeaseID:    "lease-runtime-invalid-command",
+		AdmissionGeneration: 7,
+		AdmissionToken:      []byte("runtime-token"),
+		RuntimeCommand:      []string{os.Args[0], "-test.run=TestRuntimeInvalidCommandHelperProcess", "--"},
+		RuntimeEnvironment:  append(os.Environ(), "CLOUD_AGENTS_WORKER_RUNTIME_HELPER=1"),
+		NegotiationTTL:      time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerPath, workerHandler := NewHandler(service)
+	runtimePath, runtimeHandler := NewRuntimeHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(workerPath, workerHandler)
+	mux.Handle(runtimePath, runtimeHandler)
+	server := httptest.NewUnstartedServer(mux)
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	workerClient := workerv1alpha1connect.NewWorkerExecutionServiceClient(server.Client(), server.URL)
+	negotiation, err := workerClient.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
+		SupportedVersions:      []*workerv1alpha1.ProtocolVersion{{Major: ProtocolMajor, Minor: ProtocolMinor}},
+		RequiredCapabilities:   []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION, workerv1alpha1.Capability_CAPABILITY_HEALTH, workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH},
+		ExpectedServerIdentity: workerIdentity,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeClient := workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL)
+	stream := runtimeClient.OpenSession(context.Background())
+	defer func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() }()
+	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
+		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()},
+		Fencing:     &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-invalid-command", Generation: 7, Token: []byte("runtime-token")},
+		ExecutionId: "execution-invalid-command", Generation: 7, ExpectedWorkerIdentity: workerIdentity,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := stream.Receive(); err != nil || ready.GetReady() == nil {
+		t.Fatalf("Runtime ready = %#v, %v", ready, err)
+	}
+	commandBytes, err := json.Marshal(runtimeprocess.Command{RequestID: "request-invalid-command", Protocol: runtimeprocess.Protocol{Major: runtimeprocess.ProtocolMajor, Minor: runtimeprocess.ProtocolMinor}, ExecutionID: "execution-invalid-command", Generation: 7, CommandType: "Unsupported", CommandID: "command-invalid", OccurredAt: "2026-08-29T00:00:00Z", Payload: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Command{Command: &workerruntimev1alpha1.RuntimeCommandFrame{Json: commandBytes}}}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := stream.Receive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeError := response.GetError(); runtimeError == nil || runtimeError.GetCode() != "command_invalid" {
+		t.Fatalf("invalid Runtime response = %#v", response)
 	}
 }

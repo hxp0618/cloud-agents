@@ -132,6 +132,12 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 			cancel()
 			break
 		}
+		if err := runtimeprocess.ValidateCommand(command); err != nil {
+			_ = sendRuntimeError(send, "command_invalid", "Runtime command is not supported")
+			sessionErr = runtimeSessionFailure(connect.CodeInvalidArgument, "command_invalid", "Runtime command is not supported")
+			cancel()
+			break
+		}
 		commands.Add(1)
 		go func(command runtimeprocess.Command) {
 			defer commands.Done()
