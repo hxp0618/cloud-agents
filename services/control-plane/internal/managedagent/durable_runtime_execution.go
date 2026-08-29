@@ -104,6 +104,7 @@ type activeDurableExecution struct {
 
 var (
 	ErrDurableRuntimeExecutionUnavailable = errors.New("durable Runtime execution is unavailable")
+	ErrDurableRuntimeExecutionConflict    = errors.New("durable Runtime execution is already active")
 	ErrDurableRuntimeExecutionFailed      = errors.New("durable Runtime execution failed")
 )
 
@@ -190,7 +191,10 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	defer cancel()
 	runtimeCtx, runtimeCancel := context.WithCancel(runCtx)
 	key := durableExecutionKey{tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID, turnID: input.TurnID, executionID: input.ExecutionID, generation: coordinator.fencingGeneration}
-	unregister := coordinator.registerActiveExecution(key, runtimeCancel)
+	unregister, err := coordinator.registerActiveExecution(key, runtimeCancel)
+	if err != nil {
+		return DurableRuntimeExecutionResult{}, err
+	}
 	defer func() {
 		unregister()
 		runtimeCancel()
@@ -249,9 +253,13 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	return DurableRuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, nil
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(key durableExecutionKey, cancel context.CancelFunc) func() bool {
+func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(key durableExecutionKey, cancel context.CancelFunc) (func() bool, error) {
 	active := &activeDurableExecution{cancel: cancel}
 	coordinator.activeMu.Lock()
+	if _, exists := coordinator.active[key]; exists {
+		coordinator.activeMu.Unlock()
+		return nil, ErrDurableRuntimeExecutionConflict
+	}
 	coordinator.active[key] = active
 	coordinator.activeMu.Unlock()
 	return func() bool {
@@ -263,7 +271,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(k
 		externallyCancelled := active.externallyCancelled
 		delete(coordinator.active, key)
 		return externallyCancelled
-	}
+	}, nil
 }
 func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principal *authn.VerifiedPrincipal, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message) (DurableRuntimeExecutionResult, error) {
 	cancelled, err := coordinator.store.CancelManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CancelTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, TargetExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, Mutation: input.Mutation})

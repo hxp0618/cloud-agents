@@ -124,7 +124,10 @@ func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 	}
 	activeContext, activeCancel := context.WithCancel(context.Background())
 	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
-	unregister := coordinator.registerActiveExecution(key, activeCancel)
+	unregister, err := coordinator.registerActiveExecution(key, activeCancel)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = coordinator.Cancel(context.Background(), nil, CancelTurnInput{
 		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", TargetExecutionID: "execution", Generation: 7,
 		Mutation: Mutation{RequestID: "cancel-request", IdempotencyKey: "cancel-idem"},
@@ -139,5 +142,24 @@ func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 	}
 	if !unregister() {
 		t.Fatal("active cancellation was not recorded")
+	}
+}
+
+func TestDurableRuntimeExecutionRejectsDuplicateActiveExecution(t *testing.T) {
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: &durableRuntimeExecutionStoreFake{}, Supervisor: &supervisor.Supervisor{}, Clock: time.Now,
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
+	first, err := coordinator.registerActiveExecution(key, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first()
+	if _, err := coordinator.registerActiveExecution(key, func() {}); !errors.Is(err, ErrDurableRuntimeExecutionConflict) {
+		t.Fatalf("duplicate active execution error = %v", err)
 	}
 }

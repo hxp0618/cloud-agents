@@ -297,6 +297,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusForbidden, "authorization_denied"
 	case errors.Is(err, postgres.ErrCoordinationRejected):
 		return http.StatusConflict, "execution_conflict"
+	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionConflict):
+		return http.StatusConflict, "execution_in_progress"
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput), errors.Is(err, internalmanagedagent.ErrInvalidInput):
 		return http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionFailed):
