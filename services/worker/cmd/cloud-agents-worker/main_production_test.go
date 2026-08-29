@@ -78,3 +78,22 @@ func TestProductionWorkerRuntimeAdvertisesOperationDispatch(t *testing.T) {
 		t.Fatalf("production Runtime capabilities = %#v", descriptor.GetCapabilities())
 	}
 }
+
+func TestProductionRuntimeEnvironmentExcludesWorkerAdmissionAuthority(t *testing.T) {
+	filtered := productionRuntimeEnvironment([]string{
+		"PATH=/usr/bin",
+		admissionLeaseIDEnvironment + "=lease",
+		admissionGenerationEnvironment + "=7",
+		admissionTokenEnvironment + "=secret",
+		"OPENAI_API_KEY=provider-key",
+	})
+	want := []string{"PATH=/usr/bin", "OPENAI_API_KEY=provider-key"}
+	if len(filtered) != len(want) {
+		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+	}
+	for index := range want {
+		if filtered[index] != want[index] {
+			t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+		}
+	}
+}

@@ -157,6 +157,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		Capabilities:        productionWorkerCapabilities(),
 		IdentityProvider:    workerkernel.TLSIdentityProvider{},
 		RuntimeCommand:      []string{cfg.runtimeCommand},
+		RuntimeEnvironment:  productionRuntimeEnvironment(os.Environ()),
 		AdmissionLeaseID:    cfg.admissionLeaseID,
 		AdmissionGeneration: cfg.admissionGeneration,
 		AdmissionToken:      cfg.admissionToken,
@@ -202,6 +203,18 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		}
 		return err
 	}
+}
+
+func productionRuntimeEnvironment(source []string) []string {
+	filtered := make([]string, 0, len(source))
+	for _, entry := range source {
+		name, _, found := strings.Cut(entry, "=")
+		if found && (name == admissionLeaseIDEnvironment || name == admissionGenerationEnvironment || name == admissionTokenEnvironment) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func productionWorkerCapabilities() []workerv1alpha1.Capability {
