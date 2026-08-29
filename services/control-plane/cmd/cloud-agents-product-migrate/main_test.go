@@ -12,7 +12,7 @@ func TestParseProductMigrationConfigUsesDatabaseEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.databaseURL == "" || config.repositoryRoot != "/srv/cloud-agents" || config.selector != "product-000021" {
+	if config.databaseURL == "" || config.repositoryRoot != "/srv/cloud-agents" || config.selector != "product-000022" {
 		t.Fatalf("config = %+v", config)
 	}
 }

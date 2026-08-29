@@ -32,6 +32,33 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(counts).toEqual([20, 71, 46, 20, 1, 1, 89]);
   });
 
+  it("classifies the managed-agent lifecycle repair as one forward migration", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000022_repair_managed_agent_lifecycle_transitions.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(14);
+    expect(statements.slice(0, 4).map((statement) => classifyMigrationStatement(statement, "000022").command)).toEqual([
+      "CREATE",
+      "CREATE",
+      "CREATE",
+      "CREATE",
+    ]);
+    for (const statement of statements) {
+      expect(classifyMigrationStatement(statement, "000022").profile).toBe("postgresql-ddl-v1");
+    }
+    expect(classifyMigrationStatement(statements.at(-1)!, "000022").target_identity).toContain(
+      "append_managed_agent_event_v1",
+    );
+    expect(() => classifyMigrationStatement(statements[0]!, "000021")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

@@ -231,7 +231,7 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set(["000005", "000006", "000009", "000012", "000013", "000014", "000016"]).has(migrationId) ||
+      (!new Set(["000005", "000006", "000009", "000012", "000013", "000014", "000016", "000022"]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
@@ -345,6 +345,15 @@ export function classifyMigrationStatement(
           "000016",
           [
             "function:unquoted:cloud_agents/unquoted:close_managed_agent_session_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000022",
+          [
+            "function:unquoted:cloud_agents/unquoted:close_managed_agent_session_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:start_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:append_managed_agent_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:jsonb)",
           ],
         ],
       ]).get(migrationId);
