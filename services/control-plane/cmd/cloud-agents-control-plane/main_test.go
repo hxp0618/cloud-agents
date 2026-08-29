@@ -49,6 +49,37 @@ func TestNewLocalRuntimeSupervisorBindsWorkerRuntime(t *testing.T) {
 	}
 }
 
+func TestLocalRuntimeEnvironmentExcludesControlPlaneAuthority(t *testing.T) {
+	filtered := localRuntimeEnvironment([]string{
+		"PATH=/usr/bin",
+		databaseURLEnvironment + "=postgres://runtime:secret@127.0.0.1/cloud_agents",
+		localRuntimeAuthConfigEnvironment + "=/run/cloud-agents/auth.json",
+		localRuntimeWorkerEndpointEnvironment + "=https://worker:8091",
+		localRuntimeWorkerSPIFFEEnvironment + "=spiffe://cloud-agents.example/worker",
+		localRuntimeWorkerClientCertEnvironment + "=/run/cloud-agents/worker-client.crt",
+		localRuntimeWorkerClientKeyEnvironment + "=/run/cloud-agents/worker-client.key",
+		localRuntimeWorkerCAEnvironment + "=/run/cloud-agents/worker-ca.crt",
+		localRuntimeWorkspaceEnvironment + "=/workspace",
+		localRuntimeAdmissionLeaseEnvironment + "=platform-lease",
+		localRuntimeAdmissionGenerationEnvironment + "=7",
+		localRuntimeAdmissionTokenEnvironment + "=platform-secret",
+		localRuntimeWorkerLeaseEnvironment + "=worker-lease",
+		localRuntimeWorkerGenerationEnvironment + "=8",
+		localRuntimeWorkerTokenEnvironment + "=worker-secret",
+		"OPENAI_API_KEY=provider-key",
+		"CLOUD_AGENTS_RUNTIME_MODE=localdev",
+	})
+	want := []string{"PATH=/usr/bin", "OPENAI_API_KEY=provider-key", "CLOUD_AGENTS_RUNTIME_MODE=localdev"}
+	if len(filtered) != len(want) {
+		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+	}
+	for index := range want {
+		if filtered[index] != want[index] {
+			t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+		}
+	}
+}
+
 func TestValidateLoopbackListenAddress(t *testing.T) {
 	for _, address := range []string{"127.0.0.1:8080", "[::1]:8080"} {
 		if err := validateLoopbackListenAddress(address); err != nil {

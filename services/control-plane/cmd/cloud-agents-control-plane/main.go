@@ -36,7 +36,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const databaseURLEnvironment = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+const (
+	databaseURLEnvironment                     = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+	localRuntimeAuthConfigEnvironment          = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
+	localRuntimeWorkerEndpointEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
+	localRuntimeWorkerSPIFFEEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
+	localRuntimeWorkerClientCertEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
+	localRuntimeWorkerClientKeyEnvironment     = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
+	localRuntimeWorkerCAEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
+	localRuntimeWorkspaceEnvironment           = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	localRuntimeAdmissionLeaseEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
+	localRuntimeAdmissionGenerationEnvironment = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
+	localRuntimeAdmissionTokenEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
+	localRuntimeWorkerLeaseEnvironment         = "CLOUD_AGENTS_ADMISSION_LEASE_ID"
+	localRuntimeWorkerGenerationEnvironment    = "CLOUD_AGENTS_ADMISSION_GENERATION"
+	localRuntimeWorkerTokenEnvironment         = "CLOUD_AGENTS_ADMISSION_TOKEN"
+)
 
 var (
 	errMissingDatabaseURL   = errors.New("database URL is required")
@@ -497,7 +512,7 @@ func newLocalRuntimeSupervisor(runtimeCommand, workspaceDirectory string) (*supe
 		AdmissionGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
 		AdmissionToken:      admissionToken,
 		RuntimeCommand:      []string{runtimeCommand},
-		RuntimeEnvironment:  os.Environ(),
+		RuntimeEnvironment:  localRuntimeEnvironment(os.Environ()),
 		RuntimeDirectory:    workspaceDirectory,
 	})
 	if err != nil {
@@ -525,6 +540,35 @@ func newLocalRuntimeSupervisor(runtimeCommand, workspaceDirectory string) (*supe
 		return nil, nil, nil, errors.New("local Worker Runtime is unavailable")
 	}
 	return workerSupervisor, workerHTTPServer, admissionToken, nil
+}
+
+// The embedded localdev Worker still crosses the Runtime trust boundary.
+func localRuntimeEnvironment(source []string) []string {
+	filtered := make([]string, 0, len(source))
+	for _, entry := range source {
+		name, _, found := strings.Cut(entry, "=")
+		if found {
+			switch name {
+			case databaseURLEnvironment,
+				localRuntimeAuthConfigEnvironment,
+				localRuntimeWorkerEndpointEnvironment,
+				localRuntimeWorkerSPIFFEEnvironment,
+				localRuntimeWorkerClientCertEnvironment,
+				localRuntimeWorkerClientKeyEnvironment,
+				localRuntimeWorkerCAEnvironment,
+				localRuntimeWorkspaceEnvironment,
+				localRuntimeAdmissionLeaseEnvironment,
+				localRuntimeAdmissionGenerationEnvironment,
+				localRuntimeAdmissionTokenEnvironment,
+				localRuntimeWorkerLeaseEnvironment,
+				localRuntimeWorkerGenerationEnvironment,
+				localRuntimeWorkerTokenEnvironment:
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func validateLoopbackListenAddress(address string) error {
