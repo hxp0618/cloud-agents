@@ -50,3 +50,32 @@ func TestConfiguredVerifierRejectsIncompleteTrustInput(t *testing.T) {
 		t.Fatalf("non-initial generation result=%v err=%v", verifier, err)
 	}
 }
+
+func TestConfiguredVerifierReloadAdvancesTrustGenerationAtomically(t *testing.T) {
+	verifier := configuredVerifierForTest(t)
+	oldToken := tokenFor(t, testPrivateKey(t), validHeader(), validClaims())
+	newHeader := validHeader()
+	newHeader["kid"] = "key-2"
+	newToken := tokenFor(t, testPrivateKey(t), newHeader, validClaims())
+	config := ConfiguredVerifierConfig{
+		Issuer: "https://issuer.example", Audience: "https://api.example", Generation: 2, SecurityEpoch: 7,
+		NotBefore: testNow - 100, ExpiresAt: testNow + 1000,
+		Keys:  []ConfiguredVerifierKey{{JWK: jwkFor(t, testPrivateKey(t), "key-2"), Enabled: true, NotBefore: testNow - 1000, NotAfter: testNow + 1000}},
+		Clock: func() time.Time { return time.Unix(testNow, 0) },
+	}
+	if err := verifier.Reload(config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.Verify(newToken, VerificationRequest{TenantID: "tenant-1", ResourceLevel: "tenant", ResourceID: "tenant-1", RequiredPermission: "agents.get"}); err != nil {
+		t.Fatalf("new trust snapshot rejected token: %v", err)
+	}
+	if _, err := verifier.Verify(oldToken, VerificationRequest{TenantID: "tenant-1", ResourceLevel: "tenant", ResourceID: "tenant-1", RequiredPermission: "agents.get"}); errorCategory(err) != errorUnknownKey {
+		t.Fatalf("old key category=%v", errorCategory(err))
+	}
+	if err := verifier.Reload(config); !errors.Is(err, ErrInvalidConfiguredVerifier) {
+		t.Fatalf("repeated generation reload error=%v", err)
+	}
+	if _, err := verifier.Verify(newToken, VerificationRequest{TenantID: "tenant-1", ResourceLevel: "tenant", ResourceID: "tenant-1", RequiredPermission: "agents.get"}); err != nil {
+		t.Fatalf("failed reload disturbed active snapshot: %v", err)
+	}
+}

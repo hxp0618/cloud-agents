@@ -41,24 +41,39 @@ type ConfiguredVerifier struct {
 }
 
 func NewConfiguredVerifier(config ConfiguredVerifierConfig) (*ConfiguredVerifier, error) {
-	if config.Clock == nil || config.Issuer == "" || config.Audience == "" || config.Generation != 1 || config.SecurityEpoch < 1 || config.ExpiresAt <= config.NotBefore || len(config.Keys) == 0 {
+	if !validConfiguredVerifierConfig(config, true) {
 		return nil, ErrInvalidConfiguredVerifier
 	}
-	keys := make([]snapshotKeyCandidate, len(config.Keys))
-	for index, key := range config.Keys {
-		if len(key.JWK) == 0 {
-			return nil, ErrInvalidConfiguredVerifier
-		}
-		keys[index] = snapshotKeyCandidate{jwk: append([]byte(nil), key.JWK...), enabled: key.Enabled, notBefore: key.NotBefore, notAfter: key.NotAfter}
-	}
 	lineage := &trustLineage{}
-	if err := lineage.replace(snapshotCandidate{
-		issuer: config.Issuer, audience: config.Audience, generation: config.Generation,
-		securityEpoch: config.SecurityEpoch, notBefore: config.NotBefore, expiresAt: config.ExpiresAt, keys: keys,
-	}); err != nil {
+	if err := lineage.replace(config.snapshotCandidate()); err != nil {
 		return nil, ErrInvalidConfiguredVerifier
 	}
 	return &ConfiguredVerifier{lineage: lineage, clock: config.Clock}, nil
+}
+
+// Reload replaces the active trust snapshot only after the complete candidate
+// is valid. Generations are explicit so a SIGHUP cannot silently roll trust
+// backwards or change an existing key's material under the same kid.
+func (verifier *ConfiguredVerifier) Reload(config ConfiguredVerifierConfig) error {
+	if verifier == nil || !validConfiguredVerifierConfig(config, false) {
+		return ErrInvalidConfiguredVerifier
+	}
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	if verifier.invalidated || verifier.lineage == nil || verifier.clock == nil || config.Clock == nil {
+		return ErrInvalidConfiguredVerifier
+	}
+	previous := currentSnapshot(verifier.lineage)
+	if previous == nil || config.Issuer != previous.issuer {
+		return ErrInvalidConfiguredVerifier
+	}
+	candidate := config.snapshotCandidate()
+	candidate.previousSnapshotDigest = previous.digest
+	if err := verifier.lineage.replace(candidate); err != nil {
+		return ErrInvalidConfiguredVerifier
+	}
+	verifier.clock = config.Clock
+	return nil
 }
 
 func (verifier *ConfiguredVerifier) Verify(token string, request VerificationRequest) (*VerifiedPrincipal, error) {
@@ -113,4 +128,33 @@ func targetResourceLevelForString(value string) (targetResourceLevel, bool) {
 	default:
 		return "", false
 	}
+}
+
+func validConfiguredVerifierConfig(config ConfiguredVerifierConfig, initial bool) bool {
+	return config.Clock != nil && config.Issuer != "" && config.Audience != "" &&
+		((initial && config.Generation == 1) || (!initial && config.Generation > 1)) &&
+		config.SecurityEpoch >= 1 && config.ExpiresAt > config.NotBefore && len(config.Keys) > 0
+}
+
+func (config ConfiguredVerifierConfig) snapshotCandidate() snapshotCandidate {
+	keys := make([]snapshotKeyCandidate, len(config.Keys))
+	for index, key := range config.Keys {
+		keys[index] = snapshotKeyCandidate{jwk: append([]byte(nil), key.JWK...), enabled: key.Enabled, notBefore: key.NotBefore, notAfter: key.NotAfter}
+	}
+	return snapshotCandidate{
+		issuer: config.Issuer, audience: config.Audience, generation: config.Generation,
+		securityEpoch: config.SecurityEpoch, notBefore: config.NotBefore, expiresAt: config.ExpiresAt, keys: keys,
+	}
+}
+
+func currentSnapshot(lineage *trustLineage) *trustSnapshot {
+	if lineage == nil {
+		return nil
+	}
+	lineage.state.Lock()
+	defer lineage.state.Unlock()
+	if lineage.current == nil || lineage.current.snapshot == nil {
+		return nil
+	}
+	return lineage.current.snapshot
 }

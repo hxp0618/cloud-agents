@@ -19,6 +19,10 @@ Runtime admission values are deployment-owned inputs and are never generated
 by this package. Keep provider credentials in the referenced runtime env file,
 outside the release and deployment archives.
 
+The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
+The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish
+the next `generation` and keeps the previous key material bound to its lineage.
+
 For Kubernetes, use `deploy/helm/cloud-agents` from the extracted directory. The chart expects an external
 PostgreSQL database and pre-created Secrets named by `values.yaml`: database
 URLs (`runtime-url`, `migration-url`), `auth.json`, Control Plane/Worker mTLS,

@@ -4,6 +4,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -36,5 +41,38 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 func TestParseProductionConfigRejectsPartialTLS(t *testing.T) {
 	if _, err := parseProductionConfig([]string{"--database-url", "postgres://runtime@db/cloud_agents", "--auth-config", "/etc/cloud-agents/auth.json", "--tls-cert", "/tmp/cert"}, nil); err == nil {
 		t.Fatal("expected partial TLS configuration error")
+	}
+}
+
+func TestFetchJWKSRequiresHTTPSAndPreservesKeys(t *testing.T) {
+	if _, err := fetchJWKSWithClient("http://issuer.example/jwks", http.DefaultClient); err == nil {
+		t.Fatal("accepted non-HTTPS JWKS URL")
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Accept") != "application/json" {
+			t.Fatalf("Accept = %q", request.Header.Get("Accept"))
+		}
+		_, _ = io.WriteString(writer, `{"keys":[{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB"}]}`)
+	}))
+	defer server.Close()
+	client := server.Client()
+	keys, err := fetchJWKSWithClient(server.URL, client)
+	if err != nil || len(keys) != 1 || string(keys[0]) != `{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB"}` {
+		t.Fatalf("keys=%s err=%v", keys, err)
+	}
+}
+
+func TestLoadConfiguredVerifierConfigUsesJWKSURL(t *testing.T) {
+	path := t.TempDir() + "/auth.json"
+	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var fetched string
+	config, err := loadConfiguredVerifierConfigWith(path, func(rawURL string) ([]json.RawMessage, error) {
+		fetched = rawURL
+		return []json.RawMessage{json.RawMessage(`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB"}`)}, nil
+	})
+	if err != nil || fetched != "https://issuer.example/jwks" || len(config.Keys) != 1 || string(config.Keys[0].JWK) != `{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB"}` || !config.Keys[0].Enabled || config.Keys[0].NotBefore != 100 || config.Keys[0].NotAfter != 200 {
+		t.Fatalf("config=%#v fetched=%q err=%v", config, fetched, err)
 	}
 }

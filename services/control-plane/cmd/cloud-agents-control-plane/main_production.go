@@ -47,6 +47,8 @@ const (
 	productionRuntimeMaxDuration             = 5 * time.Minute
 	productionWorkerBindTimeout              = 15 * time.Second
 	productionHTTPWriteGrace                 = 15 * time.Second
+	productionJWKSFetchTimeout               = 5 * time.Second
+	maxJWKSResponseBytes                     = 1 << 20
 )
 
 type productionConfig struct {
@@ -69,6 +71,7 @@ type productionConfig struct {
 type authConfigFile struct {
 	Issuer        string          `json:"issuer"`
 	Audience      string          `json:"audience"`
+	JWKSURL       string          `json:"jwksUrl,omitempty"`
 	Generation    int64           `json:"generation"`
 	SecurityEpoch int64           `json:"securityEpoch"`
 	NotBefore     int64           `json:"notBefore"`
@@ -102,6 +105,9 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return err
 	}
 	defer verifier.Invalidate()
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
 	pool, err := pgxpool.New(ctx, config.database)
 	if err != nil {
 		return errors.New("database pool configuration failed")
@@ -246,16 +252,22 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		errorChannel <- httpServer.ListenAndServe()
 	}()
-	select {
-	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdownContext)
-	case err := <-errorChannel:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	for {
+		select {
+		case <-ctx.Done():
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return httpServer.Shutdown(shutdownContext)
+		case <-hup:
+			if refreshed, refreshErr := loadConfiguredVerifierConfig(config.authPath); refreshErr == nil {
+				_ = verifier.Reload(refreshed)
+			}
+		case err := <-errorChannel:
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return errors.New("HTTP server stopped")
 		}
-		return errors.New("HTTP server stopped")
 	}
 }
 
@@ -349,32 +361,105 @@ func readProductionCAPool(path string) (*x509.CertPool, error) {
 }
 
 func loadConfiguredVerifier(path string) (*authn.ConfiguredVerifier, error) {
+	input, err := loadConfiguredVerifierConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := authn.NewConfiguredVerifier(input)
+	if err != nil {
+		return nil, errors.New("auth configuration is invalid")
+	}
+	return verifier, nil
+}
+
+func loadConfiguredVerifierConfig(path string) (authn.ConfiguredVerifierConfig, error) {
+	return loadConfiguredVerifierConfigWith(path, fetchJWKS)
+}
+
+func loadConfiguredVerifierConfigWith(path string, fetch func(string) ([]json.RawMessage, error)) (authn.ConfiguredVerifierConfig, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, errors.New("auth configuration cannot be opened")
+		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration cannot be opened")
 	}
 	defer file.Close()
 	contents, err := io.ReadAll(io.LimitReader(file, maxAuthConfigBytes+1))
 	if err != nil || len(contents) > maxAuthConfigBytes {
-		return nil, errors.New("auth configuration is invalid")
+		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.DisallowUnknownFields()
 	var input authConfigFile
 	if err := decoder.Decode(&input); err != nil {
-		return nil, errors.New("auth configuration is invalid")
+		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, errors.New("auth configuration has trailing data")
+		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration has trailing data")
 	}
-	keys := make([]authn.ConfiguredVerifierKey, len(input.Keys))
-	for index, key := range input.Keys {
-		keys[index] = authn.ConfiguredVerifierKey{JWK: key.JWK, Enabled: key.Enabled, NotBefore: key.NotBefore, NotAfter: key.NotAfter}
+	if input.JWKSURL != "" && len(input.Keys) != 0 {
+		return authn.ConfiguredVerifierConfig{}, errors.New("auth configuration must select keys or jwksUrl")
 	}
-	verifier, err := authn.NewConfiguredVerifier(authn.ConfiguredVerifierConfig{Issuer: input.Issuer, Audience: input.Audience, Generation: input.Generation, SecurityEpoch: input.SecurityEpoch, NotBefore: input.NotBefore, ExpiresAt: input.ExpiresAt, Keys: keys, Clock: time.Now})
+	keys := input.Keys
+	if input.JWKSURL != "" {
+		if fetch == nil {
+			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetcher is required")
+		}
+		remoteKeys, err := fetch(input.JWKSURL)
+		if err != nil {
+			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetch failed")
+		}
+		keys = make([]authConfigKey, len(remoteKeys))
+		for index, key := range remoteKeys {
+			keys[index] = authConfigKey{JWK: key, Enabled: true, NotBefore: input.NotBefore, NotAfter: input.ExpiresAt}
+		}
+	}
+	configuredKeys := make([]authn.ConfiguredVerifierKey, len(keys))
+	for index, key := range keys {
+		configuredKeys[index] = authn.ConfiguredVerifierKey{JWK: key.JWK, Enabled: key.Enabled, NotBefore: key.NotBefore, NotAfter: key.NotAfter}
+	}
+	return authn.ConfiguredVerifierConfig{Issuer: input.Issuer, Audience: input.Audience, Generation: input.Generation, SecurityEpoch: input.SecurityEpoch, NotBefore: input.NotBefore, ExpiresAt: input.ExpiresAt, Keys: configuredKeys, Clock: time.Now}, nil
+}
+
+func fetchJWKS(rawURL string) ([]json.RawMessage, error) {
+	return fetchJWKSWithClient(rawURL, &http.Client{Timeout: productionJWKSFetchTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }})
+}
+
+func fetchJWKSWithClient(rawURL string, client *http.Client) ([]json.RawMessage, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || strings.TrimSpace(rawURL) != rawURL {
+		return nil, errors.New("JWKS URL must be an HTTPS URL")
+	}
+	if client == nil {
+		return nil, errors.New("JWKS HTTP client is required")
+	}
+	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, errors.New("auth configuration is invalid")
+		return nil, err
 	}
-	return verifier, nil
+	request.Header.Set("Accept", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, errors.New("JWKS endpoint returned non-200")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxJWKSResponseBytes+1))
+	if err != nil || len(body) > maxJWKSResponseBytes {
+		return nil, errors.New("JWKS response is too large")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var document struct {
+		Keys []json.RawMessage `json:"keys"`
+	}
+	if err := decoder.Decode(&document); err != nil || len(document.Keys) == 0 {
+		return nil, errors.New("JWKS response is invalid")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, errors.New("JWKS response has trailing data")
+	}
+	return document.Keys, nil
 }
