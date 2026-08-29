@@ -54,9 +54,16 @@ func (service *DurableCoordinationService) CreateManagedAgentTurn(
 		}
 		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
-				return scanManagedAgentTurn(handle.transaction.queryRow(ctx, createManagedAgentTurnSQL,
+				if err := scanManagedAgentTurn(handle.transaction.queryRow(ctx, createManagedAgentTurnSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, inputDigest,
-					input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result)
+					input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result); err != nil {
+					return err
+				}
+				return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
+					Scope: input.Scope, SessionID: result.SessionID, Operation: "turn.create", Resource: internalmanagedagent.ResourceTurn,
+					TurnID: result.TurnID, InputDigest: result.InputDigest,
+					MutationDigest: digest, Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceTurn, To: string(result.State), Version: result.Version}},
+				})
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)

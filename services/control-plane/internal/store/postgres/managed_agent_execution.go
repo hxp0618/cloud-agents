@@ -47,9 +47,16 @@ func (service *DurableCoordinationService) CreateManagedAgentExecution(
 	}
 	var result internalmanagedagent.ExecutionSnapshot
 	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
-		return scanManagedAgentExecution(handle.transaction.queryRow(ctx, createManagedAgentExecutionSQL,
+		if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, createManagedAgentExecutionSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
-			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, input.TurnID, &result)
+			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, input.TurnID, &result); err != nil {
+			return err
+		}
+		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
+			Scope: input.Scope, SessionID: result.SessionID, Operation: "execution.create", Resource: internalmanagedagent.ResourceExecution,
+			TurnID: result.TurnID, ExecutionID: result.ExecutionID, Generation: result.Generation, MutationDigest: digest,
+			Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceExecution, To: string(result.State), Version: result.Version}},
+		})
 	})
 	return result, err
 }
@@ -72,9 +79,19 @@ func (service *DurableCoordinationService) StartManagedAgentExecution(
 	}
 	var result internalmanagedagent.ExecutionTransitionResult
 	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
-		return scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, startManagedAgentExecutionSQL,
+		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, startManagedAgentExecutionSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
-			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result)
+			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, &result); err != nil {
+			return err
+		}
+		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
+			Scope: input.Scope, SessionID: result.Execution.SessionID, Operation: "execution.start", Resource: internalmanagedagent.ResourceExecution,
+			TurnID: result.Turn.TurnID, ExecutionID: result.Execution.ExecutionID, Generation: result.Execution.Generation, MutationDigest: digest,
+			Changes: []internalmanagedagent.LifecycleStateChange{
+				{Resource: internalmanagedagent.ResourceTurn, From: string(internalmanagedagent.TurnQueued), To: string(internalmanagedagent.TurnRunning), Version: result.Turn.Version},
+				{Resource: internalmanagedagent.ResourceExecution, From: string(internalmanagedagent.ExecutionQueued), To: string(internalmanagedagent.ExecutionRunning), Version: result.Execution.Version},
+			},
+		})
 	})
 	return result, err
 }
@@ -122,9 +139,28 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	}
 	var result internalmanagedagent.ExecutionTransitionResult
 	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
-		return scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
+		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
-			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest), scope, sessionID, &result)
+			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest), scope, sessionID, &result); err != nil {
+			return err
+		}
+		operation := "execution.complete"
+		executionTo := string(internalmanagedagent.ExecutionSucceeded)
+		turnTo := string(internalmanagedagent.TurnCompleted)
+		if outcome == "failed" {
+			operation = "execution.fail"
+			executionTo = string(internalmanagedagent.ExecutionFailed)
+			turnTo = string(internalmanagedagent.TurnFailed)
+		}
+		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
+			Scope: scope, SessionID: result.Execution.SessionID, Operation: operation, Resource: internalmanagedagent.ResourceExecution,
+			TurnID: result.Turn.TurnID, ExecutionID: result.Execution.ExecutionID, Generation: result.Execution.Generation,
+			MutationDigest: requestDigest, ResultDigest: result.Execution.ResultDigest, ErrorCode: result.Execution.ErrorCode,
+			Changes: []internalmanagedagent.LifecycleStateChange{
+				{Resource: internalmanagedagent.ResourceTurn, From: string(internalmanagedagent.TurnRunning), To: turnTo, Version: result.Turn.Version},
+				{Resource: internalmanagedagent.ResourceExecution, From: string(internalmanagedagent.ExecutionRunning), To: executionTo, Version: result.Execution.Version},
+			},
+		})
 	})
 	return result, err
 }

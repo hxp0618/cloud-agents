@@ -315,6 +315,29 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/events": {
+      "get": {
+        "operationId": "managedAgentListEvents",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/EventCursor" },
+          { "$ref": "#/components/parameters/EventLimit" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "./schemas/event-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/turns/{turnId}": {
       "get": {
         "operationId": "managedAgentGetTurn",
@@ -620,6 +643,18 @@
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
         }
+      },
+      "EventCursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "./schemas/event-cursor.schema.json" }
+      },
+      "EventLimit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "./schemas/event-limit.schema.json" }
       },
       "IdempotencyKey": {
         "name": "Idempotency-Key",

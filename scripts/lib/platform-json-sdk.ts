@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-  "sha256:78b504f6d5d3c90e6e84708a4da6656c186a23c9899fd12889b28b2259cff64e";
+	"sha256:ffff09b89cc83c241ff7f16690d462a9bbe29a94896a7ed21ccf4def2dd0296e";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -75,7 +75,9 @@ const PLATFORM_SCHEMAS = [
   "role.schema.json",
 ] as const;
 const MANAGED_AGENT_SCHEMAS = [
-  "execution-create-request.schema.json",
+	"event-page.schema.json",
+	"event.schema.json",
+	"execution-create-request.schema.json",
   "execution.schema.json",
   "session-create-request.schema.json",
   "session.schema.json",
@@ -351,15 +353,16 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentCreateSession",
     "managedAgentCreateTurn",
     "managedAgentExecute",
-    "managedAgentGetExecution",
+		"managedAgentGetExecution",
     "managedAgentGetMembership",
     "managedAgentGetOrganization",
     "managedAgentGetPlatformTenant",
     "managedAgentGetProject",
     "managedAgentGetRole",
     "managedAgentGetRoleBinding",
-    "managedAgentGetSession",
-    "managedAgentGetTurn",
+		"managedAgentGetSession",
+		"managedAgentGetTurn",
+		"managedAgentListEvents",
     "managedHostGetProjectContext",
     "managedHostGetRoleBinding",
   ];

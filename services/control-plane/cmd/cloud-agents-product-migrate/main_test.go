@@ -12,13 +12,13 @@ func TestParseProductMigrationConfigUsesDatabaseEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.databaseURL == "" || config.repositoryRoot != "/srv/cloud-agents" || config.selector != "product-000017" {
+	if config.databaseURL == "" || config.repositoryRoot != "/srv/cloud-agents" || config.selector != "product-000018" {
 		t.Fatalf("config = %+v", config)
 	}
 }
 
 func TestParseProductMigrationConfigRejectsSelectorDrift(t *testing.T) {
-	if _, err := parseProductMigrationConfig([]string{"--selector", "product-000016", "--database-url", "postgres://migration@db/cloud_agents"}, nil); err == nil {
+	if _, err := parseProductMigrationConfig([]string{"--selector", "product-000017", "--database-url", "postgres://migration@db/cloud_agents"}, nil); err == nil {
 		t.Fatal("accepted a non-current independent product selector")
 	}
 }

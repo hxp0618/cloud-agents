@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/event-page.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "events", "nextCursor", "hasMore"],
+  "properties": {
+    "apiVersion": { "const": "managed-agent.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "EventPage" },
+    "events": { "type": "array", "maxItems": 64, "items": { "$ref": "event.schema.json" } },
+    "nextCursor": { "type": "string", "maxLength": 2048 },
+    "hasMore": { "type": "boolean" }
+  }
+}

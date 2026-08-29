@@ -53,9 +53,12 @@ func (service *DurableCoordinationService) CreateManagedAgentSession(
 		}
 		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
-				return scanManagedAgentSession(handle.transaction.queryRow(ctx, createManagedAgentSessionSQL,
+				if err := scanManagedAgentSession(handle.transaction.queryRow(ctx, createManagedAgentSessionSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.ProviderKind,
-					input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+					input.Mutation.IdempotencyKey, digest), input.Scope, &result); err != nil {
+					return err
+				}
+				return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{Scope: input.Scope, SessionID: result.SessionID, Operation: "session.create", Resource: internalmanagedagent.ResourceSession, MutationDigest: digest, Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceSession, To: string(result.State), Version: result.Version}}})
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -99,7 +102,10 @@ func (service *DurableCoordinationService) CloseManagedAgentSession(
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentSessionNotFound
 				}
-				return err
+				if err != nil {
+					return err
+				}
+				return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{Scope: input.Scope, SessionID: result.SessionID, Operation: "session.close", Resource: internalmanagedagent.ResourceSession, MutationDigest: digest, Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceSession, From: string(internalmanagedagent.SessionActive), To: string(result.State), Version: result.Version}}})
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
