@@ -133,6 +133,10 @@ describe("platform release", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
+    const migrateDockerfile = readFileSync("deploy/docker/migrate.Dockerfile", "utf8");
+    expect(migrateDockerfile).toContain("cloud-agents-migrations-000021.tar");
+    expect(migrateDockerfile).toContain("product/000021/manifest.json");
+    expect(migrateDockerfile).not.toContain("000020");
   });
 
   it("packages public contracts without internal provenance inputs", () => {
