@@ -68,15 +68,15 @@
     }
   },
   "currentContracts": {
-    "schemaFiles": 68,
+    "schemaFiles": 87,
     "fixtureManifests": 2,
     "fixtureCases": 79,
-    "sourceContractManifestSha256": "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37",
+    "sourceContractManifestSha256": "sha256:2aca3288e2591f07fa90d6681a6acd5d4edfdc190f4b37768811ffad8a07e4f2",
     "bootstrapContracts": {
-      "schemaFiles": 64,
+      "schemaFiles": 83,
       "fixtureManifests": 2,
       "fixtureCases": 79,
-      "sourceContractManifestSha256": "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37"
+      "sourceContractManifestSha256": "sha256:2aca3288e2591f07fa90d6681a6acd5d4edfdc190f4b37768811ffad8a07e4f2"
     },
     "productionValidator": "Ajv 8.20.0 plus in-repo semantics",
     "independentValidator": "jsonschema-rs 0.50.1",

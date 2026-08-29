@@ -33,7 +33,7 @@ const FORMAT_V2 = "cloud-agents-contract-standards-profile/v2";
 const FORMAT_V3 = "cloud-agents-contract-standards-profile/v3";
 const CORPUS_ALGORITHM = "sorted-path-nul-sha256-nul-size-v1";
 const CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256 =
-  "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37";
+  "sha256:2aca3288e2591f07fa90d6681a6acd5d4edfdc190f4b37768811ffad8a07e4f2";
 const EXPECTED_OPENAPI_DOCUMENTS = [
   "contracts/managed-agent/v1alpha1/openapi.json",
   "contracts/managed-host/v1alpha1/openapi.json",
@@ -388,7 +388,7 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
     "/currentContracts",
   );
   const expected = v3
-    ? { schemaFiles: 68, fixtureManifests: 2, fixtureCases: 79 }
+    ? { schemaFiles: 87, fixtureManifests: 2, fixtureCases: 79 }
     : v2
       ? { schemaFiles: 60, fixtureManifests: 2, fixtureCases: 79 }
       : { schemaFiles: 58, fixtureManifests: 2, fixtureCases: 77 };
@@ -417,7 +417,7 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
       "/currentContracts/bootstrapContracts",
     );
     if (
-      bootstrap.schemaFiles !== 64 ||
+      bootstrap.schemaFiles !== 83 ||
       bootstrap.fixtureManifests !== 2 ||
       bootstrap.fixtureCases !== 79 ||
       bootstrap.sourceContractManifestSha256 !== CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
