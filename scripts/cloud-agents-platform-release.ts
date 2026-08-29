@@ -14,6 +14,7 @@ import {
   PLATFORM_RELEASE_DEPLOYMENT,
   PLATFORM_RELEASE_GO_SDK,
   PLATFORM_RELEASE_GO_COMMANDS,
+  PLATFORM_RELEASE_CLI_TARGETS,
   PLATFORM_RELEASE_MIGRATIONS,
   PLATFORM_RELEASE_RUNTIME,
   PLATFORM_RELEASE_TARGETS,
@@ -39,16 +40,11 @@ if (existsSync(options.outputDirectory))
 mkdirSync(options.outputDirectory, { recursive: true, mode: 0o755 });
 
 const artifacts: PlatformReleaseArtifact[] = [];
-for (const target of PLATFORM_RELEASE_TARGETS) {
-  for (const command of PLATFORM_RELEASE_GO_COMMANDS) {
-    const filename = `${command}-${target}`;
-    const output = join(options.outputDirectory, filename);
-    buildGoArtifact(command, target, output);
-    const bytes = readFileSync(output);
-    chmodSync(output, 0o555);
-    artifacts.push(platformReleaseArtifact(command, target, filename, bytes));
-  }
-}
+buildGoArtifacts(
+  PLATFORM_RELEASE_TARGETS,
+  PLATFORM_RELEASE_GO_COMMANDS.filter((name) => name !== "cloud-agentsctl"),
+);
+buildGoArtifacts(PLATFORM_RELEASE_CLI_TARGETS, ["cloud-agentsctl"]);
 
 run("bun", ["run", "--cwd", "packages/cloud-agent-distribution", "build"], repositoryRoot);
 const runtimeOutput = join(options.outputDirectory, PLATFORM_RELEASE_RUNTIME);
@@ -147,6 +143,22 @@ function buildGoArtifact(command: string, target: PlatformReleaseTarget, output:
       GOFLAGS: "-mod=readonly",
     },
   );
+}
+
+function buildGoArtifacts(
+  targets: ReadonlyArray<PlatformReleaseTarget>,
+  commands: ReadonlyArray<string>,
+): void {
+  for (const target of targets) {
+    for (const command of commands) {
+      const filename = `${command}-${target}${target.startsWith("windows-") ? ".exe" : ""}`;
+      const output = join(options.outputDirectory, filename);
+      buildGoArtifact(command, target, output);
+      const bytes = readFileSync(output);
+      chmodSync(output, 0o555);
+      artifacts.push(platformReleaseArtifact(command, target, filename, bytes));
+    }
+  }
 }
 
 function run(

@@ -5,7 +5,17 @@ import { resolve } from "node:path";
 import { createDeterministicUstar } from "./platform-migration-ustar";
 
 export const PLATFORM_RELEASE_TARGETS = ["linux-amd64", "linux-arm64"] as const;
-export type PlatformReleaseTarget = (typeof PLATFORM_RELEASE_TARGETS)[number];
+export const PLATFORM_RELEASE_CLI_TARGETS = [
+  "linux-amd64",
+  "linux-arm64",
+  "darwin-amd64",
+  "darwin-arm64",
+  "windows-amd64",
+  "windows-arm64",
+] as const;
+export type PlatformReleaseTarget =
+  | (typeof PLATFORM_RELEASE_TARGETS)[number]
+  | (typeof PLATFORM_RELEASE_CLI_TARGETS)[number];
 
 export const PLATFORM_RELEASE_GO_COMMANDS = [
   "cloud-agents-control-plane",
@@ -238,8 +248,12 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
 }> {
   return [
     ...PLATFORM_RELEASE_TARGETS.flatMap((target) =>
-      PLATFORM_RELEASE_GO_COMMANDS.map((name) => ({ name, target })),
+      PLATFORM_RELEASE_GO_COMMANDS.filter((name) => name !== "cloud-agentsctl").map((name) => ({
+        name,
+        target,
+      })),
     ),
+    ...PLATFORM_RELEASE_CLI_TARGETS.map((target) => ({ name: "cloud-agentsctl", target })),
     { name: "cloud-agent-runtime", target: "portable" },
     { name: "cloud-agents-migrations", target: "portable" },
     { name: "cloud-agents-deployment", target: "portable" },
@@ -249,7 +263,11 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
 }
 
 export function expectedArtifactCount(): number {
-  return PLATFORM_RELEASE_TARGETS.length * PLATFORM_RELEASE_GO_COMMANDS.length + 5;
+  return (
+    PLATFORM_RELEASE_TARGETS.length * (PLATFORM_RELEASE_GO_COMMANDS.length - 1) +
+    PLATFORM_RELEASE_CLI_TARGETS.length +
+    5
+  );
 }
 
 const PUBLIC_PLATFORM_CONTRACT_PATHS = [

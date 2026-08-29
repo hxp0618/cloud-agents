@@ -11,6 +11,9 @@ import {
   buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
+  PLATFORM_RELEASE_CLI_TARGETS,
+  PLATFORM_RELEASE_GO_COMMANDS,
+  PLATFORM_RELEASE_TARGETS,
   validatePlatformReleaseManifest,
 } from "./platform-release";
 
@@ -45,7 +48,7 @@ describe("platform release", () => {
     const artifacts = expectedArtifactIdentities().map(({ name, target }) => ({
       name,
       target,
-      filename: `${name}-${target}`,
+      filename: `${name}-${target}${target.startsWith("windows-") ? ".exe" : ""}`,
       sizeBytes: 1,
       sha256: `sha256:${"a".repeat(64)}`,
     }));
@@ -61,6 +64,27 @@ describe("platform release", () => {
     expect(() =>
       validatePlatformReleaseManifest({ ...manifest, artifacts: artifacts.slice(1) }),
     ).toThrow(/artifacts/);
+  });
+
+  it("publishes the CLI for every supported desktop target while keeping services Linux-only", () => {
+    expect(PLATFORM_RELEASE_CLI_TARGETS).toEqual([
+      "linux-amd64",
+      "linux-arm64",
+      "darwin-amd64",
+      "darwin-arm64",
+      "windows-amd64",
+      "windows-arm64",
+    ]);
+    expect(PLATFORM_RELEASE_TARGETS).toEqual(["linux-amd64", "linux-arm64"]);
+    expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agentsctl");
+    expect(expectedArtifactIdentities()).toContainEqual({
+      name: "cloud-agentsctl",
+      target: "darwin-arm64",
+    });
+    expect(expectedArtifactIdentities()).not.toContainEqual({
+      name: "cloud-agents-worker",
+      target: "darwin-arm64",
+    });
   });
 
   it("packages the current product migration manifest, catalog, and SQL", () => {
