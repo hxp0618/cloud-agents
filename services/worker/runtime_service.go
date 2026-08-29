@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -164,6 +165,9 @@ func (s *Service) validateRuntimeFencing(open *workerruntimev1alpha1.RuntimeSess
 	}
 	if s.admissionLeaseID == "" || s.admissionGeneration == 0 {
 		return runtimeSessionFailure(connect.CodeFailedPrecondition, "generation_authority_missing", "Runtime fencing authority is not configured")
+	}
+	if len(s.admissionToken) == 0 || subtle.ConstantTimeCompare(fencing.GetToken(), s.admissionToken) != 1 {
+		return runtimeSessionFailure(connect.CodePermissionDenied, "fencing_token_mismatch", "Runtime fencing token does not match the Worker authority")
 	}
 	if fencing.GetLeaseId() != s.admissionLeaseID {
 		return runtimeSessionFailure(connect.CodePermissionDenied, "lease_mismatch", "Runtime lease does not match the Worker authority")

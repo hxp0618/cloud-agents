@@ -38,6 +38,7 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 		IdentityProvider:    workerkernel.StaticIdentityProvider{Identity: supervisorIdentity},
 		AdmissionLeaseID:    "runtime-lease",
 		AdmissionGeneration: 7,
+		AdmissionToken:      []byte("runtime-token"),
 		Clock:               func() time.Time { return now },
 		RuntimeCommand:      []string{os.Args[0], "-test.run=TestRuntimeExecutionCoordinator", "--"},
 		RuntimeEnvironment:  append(os.Environ(), "CLOUD_AGENTS_RUNTIME_EXECUTION_HELPER=1"),

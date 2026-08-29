@@ -36,6 +36,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 		IdentityProvider:    workerkernel.StaticIdentityProvider{Identity: supervisorIdentity},
 		AdmissionLeaseID:    "lease-runtime-test",
 		AdmissionGeneration: 7,
+		AdmissionToken:      []byte("runtime-token"),
 		RuntimeCommand:      []string{os.Args[0], "-test.run=TestRuntimeSessionBridgesWorkerAndRuntimeProcess", "--"},
 		RuntimeEnvironment:  append(os.Environ(), "CLOUD_AGENTS_RUNTIME_BRIDGE_HELPER=1"),
 		NegotiationTTL:      time.Minute,

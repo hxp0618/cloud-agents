@@ -72,11 +72,12 @@ type Config struct {
 	RuntimeCommand     []string
 	RuntimeEnvironment []string
 	RuntimeDirectory   string
-	// AdmissionLeaseID and AdmissionGeneration bind the local, in-memory
-	// operation-admission seam to one externally supplied fencing authority.
+	// AdmissionLeaseID, AdmissionGeneration, and AdmissionToken bind the local,
+	// in-memory operation-admission seam to one externally supplied fencing authority.
 	// They do not authorize dispatch, durable receipts, or any external write.
 	AdmissionLeaseID    string
 	AdmissionGeneration uint64
+	AdmissionToken      []byte
 	IdentityProvider    IdentityProvider
 	IDGenerator         IDGenerator
 	Clock               Clock
@@ -101,6 +102,7 @@ type Service struct {
 	bindings            map[string]binding
 	admissionLeaseID    string
 	admissionGeneration uint64
+	admissionToken      []byte
 	runtimeCommand      []string
 	runtimeEnvironment  []string
 	runtimeDirectory    string
@@ -136,6 +138,9 @@ func NewService(cfg Config) (*Service, error) {
 	if cfg.IDGenerator == nil {
 		cfg.IDGenerator = randomID
 	}
+	if len(cfg.RuntimeCommand) > 0 && len(cfg.AdmissionToken) == 0 {
+		return nil, fmt.Errorf("worker/invalid_config: Runtime admission token is required")
+	}
 	caps := cfg.Capabilities
 	if caps == nil {
 		caps = []workerv1alpha1.Capability{
@@ -159,6 +164,7 @@ func NewService(cfg Config) (*Service, error) {
 	return &Service{workerIdentity: cloneIdentity(cfg.WorkerIdentity), capabilities: set, ttl: cfg.NegotiationTTL,
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
+		admissionToken: append([]byte(nil), cfg.AdmissionToken...),
 		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory,
 		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
 		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil

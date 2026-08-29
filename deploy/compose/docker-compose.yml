@@ -103,6 +103,8 @@ services:
       - "${CLOUD_AGENTS_ADMISSION_GENERATION:?set the Runtime admission generation}"
     env_file:
       - ${CLOUD_AGENTS_RUNTIME_ENV_FILE:?set the Runtime provider environment file}
+    environment:
+      CLOUD_AGENTS_ADMISSION_TOKEN: ${CLOUD_AGENTS_ADMISSION_TOKEN:?set the Runtime admission token}
     restart: unless-stopped
     volumes:
       - ${CLOUD_AGENTS_WORKER_TLS_DIR:?set the Worker TLS directory}:/run/cloud-agents/tls:ro

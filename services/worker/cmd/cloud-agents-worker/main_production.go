@@ -33,6 +33,7 @@ const (
 	maxProductionCABytes           = 1 << 20
 	admissionLeaseIDEnvironment    = "CLOUD_AGENTS_ADMISSION_LEASE_ID"
 	admissionGenerationEnvironment = "CLOUD_AGENTS_ADMISSION_GENERATION"
+	admissionTokenEnvironment      = "CLOUD_AGENTS_ADMISSION_TOKEN"
 )
 
 type productionWorkerConfig struct {
@@ -44,6 +45,7 @@ type productionWorkerConfig struct {
 	runtimeCommand      string
 	admissionLeaseID    string
 	admissionGeneration uint64
+	admissionToken      []byte
 }
 
 func parseProductionWorkerConfig(args []string, getenv func(string) string) (productionWorkerConfig, error) {
@@ -70,7 +72,11 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 		}
 		*admissionGeneration = value
 	}
-	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration}
+	var admissionToken []byte
+	if getenv != nil {
+		admissionToken = []byte(getenv(admissionTokenEnvironment))
+	}
+	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
 	if err := validateProductionWorkerConfig(cfg); err != nil {
 		return productionWorkerConfig{}, err
 	}
@@ -78,7 +84,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 }
 
 func validateProductionWorkerConfig(cfg productionWorkerConfig) error {
-	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 {
+	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
 		return errInvalidProductionWorkerConfig
 	}
 	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
@@ -152,6 +158,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		RuntimeCommand:      []string{cfg.runtimeCommand},
 		AdmissionLeaseID:    cfg.admissionLeaseID,
 		AdmissionGeneration: cfg.admissionGeneration,
+		AdmissionToken:      cfg.admissionToken,
 	})
 	if err != nil {
 		return errInvalidProductionWorkerConfig

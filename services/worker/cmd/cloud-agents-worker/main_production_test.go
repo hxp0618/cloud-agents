@@ -20,8 +20,13 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	}
 	validArgs := append(append([]string{}, base...), "--worker-spiffe-id", "spiffe://cloud-agents.example/worker", "--runtime-command", "/opt/cloud-agents/runtime", "--admission-lease-id", "lease-production", "--admission-generation", "7")
 	validArgs = append([]string{"--listen", "worker.example:8091"}, validArgs...)
-	if cfg, err := parseProductionWorkerConfig(validArgs, nil); err != nil || cfg.listen != "worker.example:8091" {
-		t.Fatalf("hostname listen config = %#v error = %v", cfg, err)
+	if cfg, err := parseProductionWorkerConfig(validArgs, func(name string) string {
+		if name == admissionTokenEnvironment {
+			return "admission-token"
+		}
+		return ""
+	}); err != nil || cfg.listen != "worker.example:8091" {
+		t.Fatalf("hostname listen = %q error = %v", cfg.listen, err)
 	}
 	for _, identity := range []string{"", "https://cloud-agents.example/worker", "spiffe://", "spiffe://cloud-agents.example/worker?bad=1"} {
 		args := append(append([]string{}, base...), "--worker-spiffe-id", identity, "--runtime-command", "/opt/cloud-agents/runtime", "--admission-lease-id", "lease-production", "--admission-generation", "7")
@@ -30,16 +35,25 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 		}
 	}
 	args := append(append([]string{"--listen", ":8091"}, base...), "--worker-spiffe-id", "spiffe://cloud-agents.example/worker", "--runtime-command", "/opt/cloud-agents/runtime", "--admission-lease-id", "lease-production", "--admission-generation", "7")
-	if cfg, err := parseProductionWorkerConfig(args, nil); err != nil || cfg.listen != ":8091" {
-		t.Fatalf("valid config = %#v error = %v", cfg, err)
+	if _, err := parseProductionWorkerConfig(args, nil); !errors.Is(err, errInvalidProductionWorkerConfig) {
+		t.Fatalf("missing admission token error = %v", err)
+	}
+	if cfg, err := parseProductionWorkerConfig(args, func(name string) string {
+		if name == admissionTokenEnvironment {
+			return "admission-token"
+		}
+		return ""
+	}); err != nil || cfg.listen != ":8091" {
+		t.Fatalf("valid listen = %q error = %v", cfg.listen, err)
 	}
 	environment := map[string]string{
 		admissionLeaseIDEnvironment:    "lease-from-secret",
 		admissionGenerationEnvironment: "9",
+		admissionTokenEnvironment:      "token-from-secret",
 	}
 	envArgs := append(append([]string{"--listen", ":8091"}, base...), "--worker-spiffe-id", "spiffe://cloud-agents.example/worker", "--runtime-command", "/opt/cloud-agents/runtime")
 	cfg, err := parseProductionWorkerConfig(envArgs, func(name string) string { return environment[name] })
-	if err != nil || cfg.admissionLeaseID != "lease-from-secret" || cfg.admissionGeneration != 9 {
-		t.Fatalf("environment config = %#v error = %v", cfg, err)
+	if err != nil || cfg.admissionLeaseID != "lease-from-secret" || cfg.admissionGeneration != 9 || string(cfg.admissionToken) != "token-from-secret" {
+		t.Fatalf("environment lease = %q generation = %d token bytes = %d error = %v", cfg.admissionLeaseID, cfg.admissionGeneration, len(cfg.admissionToken), err)
 	}
 }

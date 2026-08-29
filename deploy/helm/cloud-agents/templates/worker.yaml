@@ -65,6 +65,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.admission.secretName }}
                   key: {{ .Values.admission.generationKey }}
+            - name: CLOUD_AGENTS_ADMISSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admission.secretName }}
+                  key: {{ .Values.admission.tokenKey }}
           envFrom:
             - secretRef:
                 name: {{ .Values.runtime.environmentSecretName }}
