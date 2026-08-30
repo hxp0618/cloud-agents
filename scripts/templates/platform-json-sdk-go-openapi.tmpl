@@ -40,6 +40,7 @@ type TenantResult = common.ResponseEnvelope[platform.PlatformTenant]
 type OrganizationResult = common.ResponseEnvelope[platform.Organization]
 type OrganizationPageResult = common.ResponseEnvelope[platform.OrganizationPage]
 type ProjectResult = common.ResponseEnvelope[platform.Project]
+type ProjectPageResult = common.ResponseEnvelope[platform.ProjectPage]
 type MembershipResult = common.ResponseEnvelope[platform.Membership]
 type RoleResult = common.ResponseEnvelope[platform.Role]
 type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
@@ -188,6 +189,19 @@ func (client *Client) CreateOrganization(ctx context.Context, tenantID, requestI
 }
 func (client *Client) GetProject(ctx context.Context, tenantID, projectID, requestID string) (ProjectResult, error) {
 	return doGet(ctx, client, "managedAgentGetProject", "/v1/tenants/"+tenantID+"/projects/"+projectID, tenantID, projectID, requestID, platform.DecodeProjectResponseJSON)
+}
+func (client *Client) ListProjects(ctx context.Context, tenantID, organizationID, requestID string, pageSize int, pageToken string) (ProjectPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil { return ProjectPageResult{}, err }
+	if err := common.ValidateIdentifier(organizationID, "/organizationId"); err != nil { return ProjectPageResult{}, err }
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) { return ProjectPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }
+	if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ProjectPageResult{}, err } }
+	query := url.Values{"organizationId": []string{organizationID}}; if pageSize != 0 { query.Set("pageSize", strconv.Itoa(pageSize)) }; if pageToken != "" { query.Set("pageToken", pageToken) }
+	path := "/v1/tenants/"+tenantID+"/projects?"+query.Encode()
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}}); if err != nil { return ProjectPageResult{}, err }
+	if response.Status != 200 { return ProjectPageResult{}, client.problemError("managedAgentListProjects", response) }
+	value, err := platform.DecodeProjectPageResponseJSON(response.Body); if err != nil { return ProjectPageResult{}, &ClientError{Operation: "managedAgentListProjects", Status: response.Status, Cause: err} }
+	for _, project := range value.Value.Projects { if project.Metadata.TenantRef.ID != tenantID || project.Spec.OrganizationRef.ID != organizationID { return ProjectPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/projects") } }
+	return value, nil
 }
 func (client *Client) GetMembership(ctx context.Context, tenantID, membershipID, requestID string) (MembershipResult, error) {
 	return doGet(ctx, client, "managedAgentGetMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID, tenantID, membershipID, requestID, platform.DecodeMembershipResponseJSON)
@@ -432,6 +446,8 @@ type ListOrganizationsServerInput struct { TenantID string; RequestID string; Pa
 func ValidateListOrganizationsServerRequest(tenantID, requestID string, pageSize int, pageToken string) (ListOrganizationsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListOrganizationsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListOrganizationsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListOrganizationsServerInput{}, err } }; return ListOrganizationsServerInput{TenantID: tenantID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type CreateProjectServerInput struct { TenantID string; RequestID string; IdempotencyKey string; Body platform.ProjectCreateRequest }
 func ValidateCreateProjectServerRequest(tenantID, requestID, idempotencyKey string, body []byte) (CreateProjectServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateProjectServerInput{}, err }; if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil { return CreateProjectServerInput{}, err }; project, err := platform.DecodeProjectCreateRequestJSON(body); if err != nil { return CreateProjectServerInput{}, err }; return CreateProjectServerInput{TenantID: tenantID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: project}, nil }
+type ListProjectsServerInput struct { TenantID string; OrganizationID string; RequestID string; PageSize int; PageToken string }
+func ValidateListProjectsServerRequest(tenantID, organizationID, requestID string, pageSize int, pageToken string) (ListProjectsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListProjectsServerInput{}, err }; if err := common.ValidateIdentifier(organizationID, "/organizationId"); err != nil { return ListProjectsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListProjectsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListProjectsServerInput{}, err } }; return ListProjectsServerInput{TenantID: tenantID, OrganizationID: organizationID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type CreateMembershipServerInput struct { TenantID string; RequestID string; Body platform.MembershipCreateRequest }
 func ValidateCreateMembershipServerRequest(tenantID, requestID string, body []byte) (CreateMembershipServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateMembershipServerInput{}, err }; value, err := platform.DecodeMembershipCreateRequestJSON(body); if err != nil { return CreateMembershipServerInput{}, err }; return CreateMembershipServerInput{TenantID: tenantID, RequestID: requestID, Body: value}, nil }
 type MembershipTransitionServerInput struct { TenantID string; ResourceID string; RequestID string; Body platform.MembershipTransitionRequest }

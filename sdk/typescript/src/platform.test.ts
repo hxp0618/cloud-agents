@@ -10,6 +10,7 @@ import {
   decodeOrganizationPage,
   decodePlatformTenant,
   decodeProject,
+  decodeProjectPage,
   decodeProjectCreateRequest,
   decodeManagedAgentSession,
   decodeManagedAgentExecution,
@@ -196,6 +197,7 @@ describe("generated platform JSON models", () => {
     expect(decodeProject(readJSON(platformFixtureRoot, "golden/project.json")).kind).toBe(
       "Project",
     );
+    expect(decodeProjectPage(readJSON(platformFixtureRoot, "golden/project-page.json")).projects).toHaveLength(1);
     expect(
       decodeProjectCreateRequest(
         readJSON(platformFixtureRoot, "golden/project-create-request.json"),
@@ -342,6 +344,11 @@ describe("generated fixture client", () => {
         body: readFixture(platformFixtureRoot, "golden/organization-page.json"),
       },
       "GET /v1/tenants/tenant-alpha/projects/project-alpha": projectGetResponse,
+      "GET /v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1": {
+        status: 200,
+        headers: {},
+        body: readFixture(platformFixtureRoot, "golden/project-page.json"),
+      },
       "GET /v1/tenants/tenant-alpha/memberships/membership-alpha": fixtureResponse(
         platformFixtureRoot,
         "membership",
@@ -389,6 +396,13 @@ describe("generated fixture client", () => {
       "organization-page-token-1",
     );
     await client.getProject("tenant-alpha", "project-alpha", "req-alpha");
+    await client.listProjects(
+      "tenant-alpha",
+      "organization-alpha",
+      "req-alpha",
+      1,
+      "project-page-token-1",
+    );
     await client.getMembership("tenant-alpha", "membership-alpha", "req-alpha");
     await client.getRole("tenant-alpha", "role-project-viewer-v1", "req-alpha");
     await client.getRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
@@ -408,8 +422,8 @@ describe("generated fixture client", () => {
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
       request,
     );
-    expect(seen).toHaveLength(11);
-    expect(JSON.parse(seen[10]!.body!)).toEqual(request);
+    expect(seen).toHaveLength(12);
+    expect(JSON.parse(seen[11]!.body!)).toEqual(request);
   });
 
   it("keeps problem status and abort semantics stable", async () => {

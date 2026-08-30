@@ -112,6 +112,15 @@ func run(args []string, stdout io.Writer) error {
 		}
 	case "project get":
 		value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
+	case "project list":
+		var pageSize int
+		var pageToken string
+		if err = parseActionFlags("project list", actionArgs, func(set *flag.FlagSet) {
+			set.IntVar(&pageSize, "page-size", 0, "maximum projects to return")
+			set.StringVar(&pageToken, "page-token", "", "opaque project page token")
+		}); err == nil {
+			value, err = client.ListProjects(ctx, options.tenant, options.organization, options.requestID, pageSize, pageToken)
+		}
 	case "project create":
 		var flags struct {
 			name           string
@@ -382,6 +391,8 @@ func responseValue(value any) any {
 	switch result := value.(type) {
 	case openapi.ProjectResult:
 		return result.Value
+	case openapi.ProjectPageResult:
+		return result.Value
 	case openapi.ManagedAgentSessionResult:
 		return result.Value
 	case openapi.ManagedAgentTurnResult:
@@ -413,7 +424,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -424,7 +435,7 @@ func requiresProject(command, action string) bool {
 	return command == "project" && action == "get" || command == "session" || command == "turn" || command == "execution" || command == "events" || command == "managed-host-project" || command == "environment-lease"
 }
 func requiresOrganization(command, action string) bool {
-	return command == "organization" && action != "list"
+	return command == "organization" && action != "list" || command == "project" && action == "list"
 }
 func requiresMembership(command, action string) bool { return command == "membership" }
 func requiresRole(command, action string) bool       { return command == "role" }

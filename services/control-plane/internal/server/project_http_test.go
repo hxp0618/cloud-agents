@@ -29,9 +29,12 @@ func (fake *projectHTTPVerifierFake) Verify(token string, request authn.Verifica
 }
 
 type projectHTTPReaderFake struct {
-	project postgres.Project
-	err     error
-	calls   int
+	project  postgres.Project
+	page     postgres.ProjectPage
+	err      error
+	calls    int
+	afterUID string
+	limit    int
 }
 
 type projectHTTPCreatorFake struct {
@@ -48,6 +51,13 @@ func (fake *projectHTTPCreatorFake) Create(_ context.Context, _ *authn.VerifiedP
 func (fake *projectHTTPReaderFake) GetProject(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string) (postgres.Project, error) {
 	fake.calls++
 	return fake.project, fake.err
+}
+
+func (fake *projectHTTPReaderFake) ListProjects(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, afterUID string, limit int) (postgres.ProjectPage, error) {
+	fake.calls++
+	fake.afterUID = afterUID
+	fake.limit = limit
+	return fake.page, fake.err
 }
 
 func TestProjectHTTPServerReturnsGeneratedProjectResource(t *testing.T) {
@@ -149,5 +159,73 @@ func TestProjectHTTPServerCreatesProjectWithGeneratedResponse(t *testing.T) {
 	}
 	if verifier.seen.ResourceLevel != "organization" || verifier.seen.ResourceID != "organization-alpha" || verifier.seen.RequiredPermission != "projects.create" {
 		t.Fatalf("verification request = %#v", verifier.seen)
+	}
+}
+
+func TestProjectHTTPServerListsProjectsAtOrganizationScope(t *testing.T) {
+	now := time.Date(2026, time.August, 30, 9, 0, 0, 0, time.UTC)
+	verifier := &projectHTTPVerifierFake{}
+	reader := &projectHTTPReaderFake{page: postgres.ProjectPage{
+		Projects: []postgres.Project{{
+			UID: "project-alpha", Name: "project-alpha", TenantID: "tenant-alpha", OrganizationID: "organization-alpha",
+			DisplayName: "Project Alpha", State: "active", ResourceVersion: 3, CreatedAt: now, UpdatedAt: now,
+		}},
+		NextProjectUID: "project-alpha",
+	}}
+	server, err := NewProjectHTTPServer(verifier, reader, &projectHTTPCreatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects?organizationId=organization-alpha", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-list")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || reader.calls != 1 || reader.afterUID != "" || reader.limit != 50 {
+		t.Fatalf("status=%d calls=%d after=%q limit=%d body=%s", response.Code, reader.calls, reader.afterUID, reader.limit, response.Body.String())
+	}
+	page, err := platformv1alpha1.DecodeProjectPageResponseJSON(response.Body.Bytes())
+	if err != nil || len(page.Value.Projects) != 1 || page.Value.NextPageToken == "" {
+		t.Fatalf("project page = %#v / %v", page, err)
+	}
+	if after, ok := decodeProjectPageToken("tenant-alpha", "organization-alpha", page.Value.NextPageToken); !ok || after != "project-alpha" {
+		t.Fatalf("next page token = %q / %q / %t", page.Value.NextPageToken, after, ok)
+	}
+	if verifier.seen != (authn.VerificationRequest{TenantID: "tenant-alpha", ResourceLevel: "organization", ResourceID: "organization-alpha", RequiredPermission: "projects.list"}) {
+		t.Fatalf("verification request = %#v", verifier.seen)
+	}
+}
+
+func TestProjectHTTPServerRejectsInvalidProjectPagination(t *testing.T) {
+	reader := &projectHTTPReaderFake{}
+	server, err := NewProjectHTTPServer(&projectHTTPVerifierFake{}, reader, &projectHTTPCreatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{
+		"/v1/tenants/tenant-alpha/projects",
+		"/v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=0",
+		"/v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageSize=2",
+		"/v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageToken=short",
+		"/v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&unknown=true",
+	} {
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		request.Header.Set("Authorization", "Bearer access-token")
+		request.Header.Set("X-Request-ID", "request-list")
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s status=%d body=%s", target, response.Code, response.Body.String())
+		}
+	}
+	if reader.calls != 0 {
+		t.Fatalf("invalid pagination reached store %d times", reader.calls)
+	}
+	token, ok := encodeProjectPageToken("tenant-alpha", "organization-alpha", "project-alpha")
+	if !ok {
+		t.Fatal("valid project page token was not encoded")
+	}
+	if _, ok := decodeProjectPageToken("tenant-alpha", "organization-other", token); ok {
+		t.Fatal("cross-organization project page token was accepted")
 	}
 }

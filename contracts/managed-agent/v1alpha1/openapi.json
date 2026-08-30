@@ -189,6 +189,47 @@
       }
     },
     "/v1/tenants/{tenantId}/projects": {
+      "get": {
+        "operationId": "managedAgentListProjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectListOrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
       "post": {
         "operationId": "managedAgentCreateProject",
         "parameters": [
@@ -888,6 +929,30 @@
         "required": true,
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "ProjectListOrganizationId": {
+        "name": "organizationId",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "ProjectPageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/page-size.schema.json"
+        }
+      },
+      "ProjectPageToken": {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/page-token.schema.json"
         }
       },
       "SessionId": {

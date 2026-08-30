@@ -98,6 +98,7 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 		{name: "organization", args: []string{"--organization", "organization-alpha", "organization", "get"}},
 		{name: "organization list", args: []string{"organization", "list"}},
 		{name: "project", args: []string{"--project", "project-alpha", "project", "get"}},
+		{name: "project list", args: []string{"--organization", "organization-alpha", "project", "list"}},
 		{name: "membership", args: []string{"--membership", "membership-alpha", "membership", "get"}},
 		{name: "role", args: []string{"--role", "role-alpha", "role", "get"}},
 		{name: "role binding", args: []string{"--role-binding", "binding-alpha", "role-binding", "get"}},
@@ -190,6 +191,29 @@ func TestRunOrganizationList(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), `"kind":"OrganizationPage"`) {
+		t.Fatalf("output = %q", stdout.String())
+	}
+}
+
+func TestRunProjectList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/projects" || request.URL.Query().Get("organizationId") != "organization-alpha" || request.URL.Query().Get("pageSize") != "1" || request.URL.Query().Get("pageToken") != "project-page-token-1" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.String())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"ProjectPage","projects":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"Project","metadata":{"uid":"project-alpha","name":"project-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"3","createdAt":"2026-08-30T09:00:00Z","updatedAt":"2026-08-30T09:00:00Z"},"spec":{"tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"organizationRef":{"namespace":"cloud-agents","kind":"organization","id":"organization-alpha"},"displayName":"Project Alpha","state":"active"}}]}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--organization", "organization-alpha", "--request-id", "request-alpha",
+		"project", "list", "--page-size", "1", "--page-token", "project-page-token-1",
+	}, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"kind":"ProjectPage"`) {
 		t.Fatalf("output = %q", stdout.String())
 	}
 }

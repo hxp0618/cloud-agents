@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -57,13 +58,16 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 		return
 	}
 	managedHost := strings.HasPrefix(request.URL.Path, managedHostProjectPrefix)
-	if request.Method == http.MethodPost && !managedHost {
-		tenantID, ok := projectCreatePath(request.URL.Path)
-		if !ok {
-			writeProjectError(writer, http.StatusNotFound, "route_not_found")
-			return
+	if tenantID, ok := projectCreatePath(request.URL.Path); ok && !managedHost {
+		switch request.Method {
+		case http.MethodGet:
+			server.list(writer, request, tenantID)
+		case http.MethodPost:
+			server.create(writer, request, tenantID)
+		default:
+			writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
+			writeProjectError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		}
-		server.create(writer, request, tenantID)
 		return
 	}
 	tenantID, projectID, ok := projectPath(request.URL.Path)
@@ -119,6 +123,81 @@ func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *
 	}
 	writer.Header().Set("X-Request-ID", validated.RequestID)
 	writer.Header().Set("X-Resource-Version", value.Metadata.ResourceVersion)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
+func (server *ProjectHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	organizationID, pageSize, pageToken, ok := projectPagination(request)
+	if !ok {
+		writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListProjectsServerRequest(tenantID, organizationID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterProjectUID := ""
+	if validated.PageToken != "" {
+		if afterProjectUID, ok = decodeProjectPageToken(validated.TenantID, validated.OrganizationID, validated.PageToken); !ok {
+			writeProjectError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "organization", ResourceID: validated.OrganizationID, RequiredPermission: "projects.list",
+	})
+	if err != nil {
+		writeProjectError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.reader.ListProjects(request.Context(), validated.TenantID, principal, validated.OrganizationID, afterProjectUID, validated.PageSize)
+	if err != nil {
+		status, code := projectErrorStatus(err)
+		writeProjectError(writer, status, code)
+		return
+	}
+	server.writeProjectPage(writer, validated.RequestID, validated.TenantID, validated.OrganizationID, page)
+}
+
+func (server *ProjectHTTPServer) writeProjectPage(writer http.ResponseWriter, requestID, tenantID, organizationID string, page postgres.ProjectPage) {
+	projects := make([]platformv1alpha1.Project, 0, len(page.Projects))
+	for _, project := range page.Projects {
+		projects = append(projects, projectResource(project))
+	}
+	nextPageToken := ""
+	if page.NextProjectUID != "" {
+		var ok bool
+		nextPageToken, ok = encodeProjectPageToken(tenantID, organizationID, page.NextProjectUID)
+		if !ok {
+			writeProjectError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	value := platformv1alpha1.ProjectPage{APIVersion: projectAPIVersion, Kind: "ProjectPage", Projects: projects, NextPageToken: nextPageToken}
+	body, err := platformv1alpha1.EncodeProjectPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.ProjectPage]{Value: value})
+	if err != nil {
+		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(body)
@@ -197,6 +276,56 @@ func projectCreatePath(path string) (string, bool) {
 	}
 	tenantID := strings.TrimSuffix(strings.TrimPrefix(path, ProjectRoutePrefix), projectCreateRouteSuffix)
 	return tenantID, tenantID != "" && !strings.Contains(tenantID, "/")
+}
+
+func projectPagination(request *http.Request) (string, int, string, bool) {
+	organizationID := ""
+	pageSize := 50
+	pageToken := ""
+	for name, values := range request.URL.Query() {
+		if len(values) != 1 || values[0] == "" {
+			return "", 0, "", false
+		}
+		switch name {
+		case "organizationId":
+			organizationID = values[0]
+		case "pageSize":
+			value, err := strconv.Atoi(values[0])
+			if err != nil {
+				return "", 0, "", false
+			}
+			pageSize = value
+		case "pageToken":
+			pageToken = values[0]
+		default:
+			return "", 0, "", false
+		}
+	}
+	return organizationID, pageSize, pageToken, organizationID != ""
+}
+
+func encodeProjectPageToken(tenantID, organizationID, projectUID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(organizationID, "/organizationId") != nil || commonv1alpha1.ValidateIdentifier(projectUID, "/projectId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("project/v1\x00" + tenantID + "\x00" + organizationID + "\x00" + projectUID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeProjectPageToken(tenantID, organizationID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 4 || parts[0] != "project/v1" || parts[1] != tenantID || parts[2] != organizationID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/organizationId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/projectId") != nil {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func projectPath(path string) (string, string, bool) {

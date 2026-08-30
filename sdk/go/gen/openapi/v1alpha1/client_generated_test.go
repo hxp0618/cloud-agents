@@ -24,18 +24,19 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	}
 	mutationBody := []byte(`{"resourceUid":"membership-new","resourceVersion":"8","state":"active"}`)
 	responses := map[string]Response{
-		"GET /v1/tenants/tenant-alpha":                                                              responseFixture(t, "platform-tenant", 200),
-		"GET /v1/tenants/tenant-alpha/organizations/organization-alpha":                             responseFixture(t, "organization", 200),
-		"GET /v1/tenants/tenant-alpha/organizations?pageSize=1&pageToken=organization-page-token-1": {Status: 200, Body: readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/organization-page.json")},
-		"GET /v1/tenants/tenant-alpha/projects/project-alpha":                                       projectGetResponse,
-		"GET /v1/tenants/tenant-alpha/memberships/membership-alpha":                                 responseFixture(t, "membership", 200),
-		"GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1":                                 responseFixture(t, "role", 200),
-		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":                             responseFixture(t, "role-binding", 200),
-		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":                          projectGetResponse,
-		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha":                responseFixture(t, "role-binding", 200),
-		"POST /v1/tenants/tenant-alpha/organizations":                                               {Status: 201, Headers: map[string]string{HeaderResourceVersion: "2"}, Body: responseFixture(t, "organization", 200).Body},
-		"POST /v1/tenants/tenant-alpha/projects":                                                    {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
-		"POST /v1/tenants/tenant-alpha/memberships":                                                 {Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"}, Body: mutationBody},
+		"GET /v1/tenants/tenant-alpha":                                                                                      responseFixture(t, "platform-tenant", 200),
+		"GET /v1/tenants/tenant-alpha/organizations/organization-alpha":                                                     responseFixture(t, "organization", 200),
+		"GET /v1/tenants/tenant-alpha/organizations?pageSize=1&pageToken=organization-page-token-1":                         {Status: 200, Body: readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/organization-page.json")},
+		"GET /v1/tenants/tenant-alpha/projects/project-alpha":                                                               projectGetResponse,
+		"GET /v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1": {Status: 200, Body: readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-page.json")},
+		"GET /v1/tenants/tenant-alpha/memberships/membership-alpha":                                                         responseFixture(t, "membership", 200),
+		"GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1":                                                         responseFixture(t, "role", 200),
+		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":                                                     responseFixture(t, "role-binding", 200),
+		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":                                                  projectGetResponse,
+		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha":                                        responseFixture(t, "role-binding", 200),
+		"POST /v1/tenants/tenant-alpha/organizations":                                                                       {Status: 201, Headers: map[string]string{HeaderResourceVersion: "2"}, Body: responseFixture(t, "organization", 200).Body},
+		"POST /v1/tenants/tenant-alpha/projects":                                                                            {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
+		"POST /v1/tenants/tenant-alpha/memberships":                                                                         {Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"}, Body: mutationBody},
 	}
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(ctx context.Context, request Request) (Response, error) {
@@ -57,6 +58,9 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	}
 	if _, err := client.GetProject(ctx, "tenant-alpha", "project-alpha", "req-alpha"); err != nil {
 		t.Fatal(err)
+	}
+	if page, err := client.ListProjects(ctx, "tenant-alpha", "organization-alpha", "req-alpha", 1, "project-page-token-1"); err != nil || len(page.Value.Projects) != 1 {
+		t.Fatalf("project page = %#v / %v", page, err)
 	}
 	if _, err := client.GetMembership(ctx, "tenant-alpha", "membership-alpha", "req-alpha"); err != nil {
 		t.Fatal(err)
@@ -86,17 +90,17 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 12 {
-		t.Fatalf("transport calls = %d, want 12", len(seen))
+	if len(seen) != 13 {
+		t.Fatalf("transport calls = %d, want 13", len(seen))
 	}
 	for _, request := range seen {
 		if request.Headers[HeaderRequestID] != "req-alpha" {
 			t.Fatalf("request headers = %#v", request.Headers)
 		}
 	}
-	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[10].Body)
-	if seen[10].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
-		t.Fatalf("create request = %#v", seen[10])
+	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[11].Body)
+	if seen[11].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
+		t.Fatalf("create request = %#v", seen[11])
 	}
 }
 
@@ -217,6 +221,10 @@ func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
 	page, err := ValidateListOrganizationsServerRequest("tenant-alpha", "req-alpha", 50, "organization-page-token-1")
 	if err != nil || page.PageSize != 50 || page.PageToken == "" {
 		t.Fatalf("organization list input = %#v / %v", page, err)
+	}
+	projects, err := ValidateListProjectsServerRequest("tenant-alpha", "organization-alpha", "req-alpha", 50, "project-page-token-1")
+	if err != nil || projects.OrganizationID != "organization-alpha" || projects.PageSize != 50 || projects.PageToken == "" {
+		t.Fatalf("project list input = %#v / %v", projects, err)
 	}
 	body := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	input, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body)

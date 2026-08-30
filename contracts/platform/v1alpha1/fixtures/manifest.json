@@ -30,6 +30,13 @@
       "expectedSemanticValid": true
     },
     {
+      "name": "project-page",
+      "schema": "../schemas/project-page.schema.json",
+      "instance": "golden/project-page.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
       "name": "project-response-n-minus-one",
       "schema": "../schemas/project.schema.json",
       "instance": "negative/project-response-n-minus-one.json",

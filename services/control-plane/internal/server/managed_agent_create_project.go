@@ -90,6 +90,7 @@ type ManagedAgentGetProjectRequest struct {
 
 type ManagedAgentProjectReader interface {
 	GetProject(context.Context, string, *authn.VerifiedPrincipal, string) (postgres.Project, error)
+	ListProjects(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ProjectPage, error)
 }
 
 func GetProject(
