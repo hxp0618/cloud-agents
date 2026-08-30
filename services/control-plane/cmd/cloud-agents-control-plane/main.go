@@ -305,6 +305,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("durable coordination service is unavailable")
 	}
+	rbacMutationService, err := postgres.NewRBACMutationService(pool)
+	if err != nil {
+		return errors.New("local RBAC mutation store is unavailable")
+	}
 	claimServer, err := server.NewManagedAgentCreateProjectServer(coordinationService)
 	if err != nil {
 		return errors.New("claim server is unavailable")
@@ -374,11 +378,30 @@ func run(ctx context.Context, args []string) error {
 	if tenantErr != nil {
 		return errors.New("local tenant HTTP server is unavailable")
 	}
+	organizationHTTPServer, organizationErr := server.NewOrganizationHTTPServer(verifierAdapter, coordinationService)
+	if organizationErr != nil {
+		return errors.New("local organization HTTP server is unavailable")
+	}
+	roleHTTPServer, roleErr := server.NewRoleHTTPServer(verifierAdapter, coordinationService)
+	if roleErr != nil {
+		return errors.New("local role HTTP server is unavailable")
+	}
+	rbacHTTPServer, rbacErr := server.NewRBACHTTPServer(verifierAdapter, coordinationService, rbacMutationService)
+	if rbacErr != nil {
+		return errors.New("local RBAC HTTP server is unavailable")
+	}
 	leaseHTTPServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService)
 	if leaseErr != nil {
 		return errors.New("local managed host environment lease HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
+	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
+	mux.Handle(server.RoleRoute, roleHTTPServer)
+	mux.Handle(server.MembershipRoute, rbacHTTPServer)
+	mux.Handle(server.MembershipCollectionRoute, rbacHTTPServer)
+	mux.Handle(server.RoleBindingRoute, rbacHTTPServer)
+	mux.Handle(server.RoleBindingCollectionRoute, rbacHTTPServer)
+	mux.Handle(server.ManagedHostRoleBindingRoute, rbacHTTPServer)
 	mux.Handle(server.PlatformTenantRoute, tenantHTTPServer)
 	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseHTTPServer)
 	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)

@@ -80,15 +80,33 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := verifier.Verify(token, LocalVerificationRequest{
-		TenantID: "tenant-1", ResourceLevel: "tenant", ResourceID: "tenant-1", RequiredPermission: "tenants.get",
-	}); err != nil {
-		t.Fatalf("tenants.get verification failed: %v", err)
+	for _, test := range []struct {
+		permission, level, resourceID string
+	}{
+		{"memberships.create", "tenant", "tenant-1"},
+		{"memberships.delete", "tenant", "tenant-1"},
+		{"memberships.get", "tenant", "tenant-1"},
+		{"memberships.update", "tenant", "tenant-1"},
+		{"organizations.get", "organization", "organization-1"},
+		{"projects.act", "project", "project-1"},
+		{"projects.create", "organization", "organization-1"},
+		{"projects.get", "project", "project-1"},
+		{"role-bindings.bind", "tenant", "tenant-1"},
+		{"role-bindings.delete", "tenant", "tenant-1"},
+		{"role-bindings.get", "tenant", "tenant-1"},
+		{"roles.get", "tenant", "tenant-1"},
+		{"tenants.get", "tenant", "tenant-1"},
+	} {
+		if _, err := verifier.Verify(token, LocalVerificationRequest{
+			TenantID: "tenant-1", ResourceLevel: test.level, ResourceID: test.resourceID, RequiredPermission: test.permission,
+		}); err != nil {
+			t.Errorf("%s verification failed: %v", test.permission, err)
+		}
 	}
 	if _, err := verifier.Verify(token, LocalVerificationRequest{
-		TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "projects.act",
-	}); err != nil {
-		t.Fatalf("projects.act verification failed: %v", err)
+		TenantID: "tenant-1", ResourceLevel: "organization", ResourceID: "organization-1", RequiredPermission: "organizations.create",
+	}); errorCategory(err) != errorScopeMismatch {
+		t.Fatalf("unexpected unexposed permission category: %v", err)
 	}
 }
 
