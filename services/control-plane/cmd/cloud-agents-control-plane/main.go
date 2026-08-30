@@ -44,6 +44,7 @@ const (
 	localRuntimeWorkerEndpointEnvironment = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
 	localRuntimeWorkerTokenEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_TOKEN_FILE"
 	localRuntimeWorkspaceEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
+	localTokenRefreshInterval             = 4 * time.Minute
 )
 
 var (
@@ -325,6 +326,9 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(config.localTokenFile) }()
+	refreshContext, stopTokenRefresh := context.WithCancel(ctx)
+	defer stopTokenRefresh()
+	tokenRefreshErrors := refreshLocalTokenFile(refreshContext, verifier, authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject}, config.localTokenFile, localTokenRefreshInterval)
 	claimHTTPServer, err := server.NewLocalProjectClaimHTTPServer(verifier, claimServer)
 	if err != nil {
 		return errors.New("local HTTP server is unavailable")
@@ -469,6 +473,13 @@ func run(ctx context.Context, args []string) error {
 			return nil
 		}
 		return errors.New("HTTP server stopped")
+	case err := <-tokenRefreshErrors:
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutdownErr := httpServer.Shutdown(shutdownContext); shutdownErr != nil {
+			return errors.New("HTTP shutdown failed")
+		}
+		return err
 	}
 }
 
@@ -714,4 +725,61 @@ func writeLocalTokenFile(path, token string) error {
 		return errors.New("cannot close local token file")
 	}
 	return nil
+}
+
+func replaceLocalTokenFile(path, token string) error {
+	if path == "" || token == "" {
+		return errInvalidTokenFilePath
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return errors.New("cannot refresh local token file")
+	}
+	temporaryPath := file.Name()
+	remove := true
+	defer func() {
+		if remove {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if _, err := file.WriteString(token + "\n"); err != nil {
+		_ = file.Close()
+		return errors.New("cannot refresh local token file")
+	}
+	if err := file.Close(); err != nil {
+		return errors.New("cannot refresh local token file")
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return errors.New("cannot refresh local token file")
+	}
+	remove = false
+	return nil
+}
+
+func refreshLocalTokenFile(ctx context.Context, verifier *authn.LocalVerifier, claims authn.LocalTokenClaims, path string, interval time.Duration) <-chan error {
+	errorsChannel := make(chan error, 1)
+	go func() {
+		if ctx == nil || interval <= 0 {
+			errorsChannel <- errors.New("local token refresh failed")
+			return
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				token, err := verifier.IssueToken(claims)
+				if err == nil {
+					err = replaceLocalTokenFile(path, token)
+				}
+				if err != nil {
+					errorsChannel <- errors.New("local token refresh failed")
+					return
+				}
+			}
+		}
+	}()
+	return errorsChannel
 }

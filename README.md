@@ -19,6 +19,17 @@ Portable `CLOUD_AGENT_*` environment names take precedence over legacy `SYNARA_*
 
 The coordinated RC keeps every internal package edge as an exact peer pin. Consumers install the required tarball closure as top-level GitHub Release URLs from `cloud-agent-candidate.lock.json`; no unpublished `@synara/*` package is resolved through npm, and no package-manager security switch needs to be relaxed.
 
+## Local development
+
+With the pinned Node.js, Bun, and Go versions on `PATH` and Docker running:
+
+```sh
+bun install --frozen-lockfile --ignore-scripts
+bun run dev
+```
+
+The command starts an ephemeral PostgreSQL 17 database, applies the product migrations, bootstraps `tenant-local` and `organization-local`, builds the Runtime and local Go binaries, then serves the Worker on `127.0.0.1:8091` and the Control Plane on `127.0.0.1:8080`. It prints the generated 0600 bearer-token path and an exact `cloud-agentsctl` prefix. `Ctrl-C` removes the owned container and local credentials; Provider credential files remain optional and can be supplied with `CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR`.
+
 ## Verification
 
 ```sh

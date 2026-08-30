@@ -20,6 +20,7 @@
   "scripts": {
     "build": "bun run --filter '@synara/*' build",
     "check": "bun run fmt:check && bun run lint && bun run platform:contracts:check && bun run platform:migrations:check && bun run platform:go:check && bun run platform:go:test && bun run typecheck && bun run test && bun run build",
+    "dev": "bash scripts/cloud-agents-dev.sh",
     "fmt": "oxfmt . --write",
     "fmt:check": "oxfmt . --check",
     "lint": "oxlint . --deny-warnings",

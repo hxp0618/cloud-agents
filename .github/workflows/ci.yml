@@ -21,6 +21,7 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bunx oxfmt .github/workflows/ci.yml packages sdk/typescript scripts/cloud-agent-release-smoke.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/cloud-agent-release.ts scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
       - run: bunx oxlint . --deny-warnings --ignore-pattern scripts/lib/platform-contract-lock.ts
+      - run: bash -n scripts/cloud-agents-dev.sh
       - run: bun run platform:go:check
       - run: sh scripts/test-platform-go-products.sh
       - run: bun run typecheck

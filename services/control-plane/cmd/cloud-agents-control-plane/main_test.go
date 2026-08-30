@@ -3,11 +3,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 )
 
 func TestParseControlPlaneConfigUsesExplicitDatabaseURL(t *testing.T) {
@@ -148,5 +152,51 @@ func TestWriteLocalTokenFileIs0600AndExclusive(t *testing.T) {
 	}
 	if err := writeLocalTokenFile(path, "second-token"); err == nil {
 		t.Fatal("expected existing token file to be rejected")
+	}
+}
+
+func TestRefreshLocalTokenFileAtomicallyReplacesToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	verifier, err := authn.NewLocalVerifier(authn.LocalVerifierConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer verifier.Invalidate()
+	claims := authn.LocalTokenClaims{TenantID: "tenant-local", Subject: "user-local"}
+	initial, err := verifier.IssueToken(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLocalTokenFile(path, initial); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errorsChannel := refreshLocalTokenFile(ctx, verifier, claims, path, time.Millisecond)
+	deadline := time.Now().Add(time.Second)
+	for {
+		contents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(contents) != initial+"\n" {
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+			if info.Mode().Perm() != 0o600 {
+				t.Fatalf("token mode = %v", info.Mode().Perm())
+			}
+			break
+		}
+		select {
+		case refreshErr := <-errorsChannel:
+			t.Fatal(refreshErr)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("local token was not refreshed")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
