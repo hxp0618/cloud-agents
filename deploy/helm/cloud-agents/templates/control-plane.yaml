@@ -24,6 +24,8 @@ metadata:
     app.kubernetes.io/component: control-plane
 spec:
   replicas: {{ .Values.controlPlane.replicas }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}

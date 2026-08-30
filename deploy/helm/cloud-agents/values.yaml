@@ -40,7 +40,7 @@ runtime:
     size: 20Gi
 
 controlPlane:
-  replicas: 2
+  replicas: 1
   service:
     type: ClusterIP
     port: 8080

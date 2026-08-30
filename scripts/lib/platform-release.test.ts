@@ -118,8 +118,19 @@ describe("platform release", () => {
       "deploy/helm/cloud-agents/templates/network-policy.yaml",
       "deploy/helm/cloud-agents/templates/worker.yaml",
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
+      "deploy/helm/cloud-agents/values.schema.json",
       "deploy/helm/cloud-agents/values.yaml",
     ]);
+  });
+
+  it("keeps the process-local execution coordinator on one Control Plane replica", () => {
+    const schema = JSON.parse(
+      readFileSync("deploy/helm/cloud-agents/values.schema.json", "utf8"),
+    ) as { properties: { controlPlane: { properties: { replicas: { const: number } } } } };
+    expect(schema.properties.controlPlane.properties.replicas.const).toBe(1);
+    expect(readFileSync("deploy/helm/cloud-agents/templates/control-plane.yaml", "utf8")).toContain(
+      "type: Recreate",
+    );
   });
 
   it("selects matching OCI base and binary architectures", () => {
