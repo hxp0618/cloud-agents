@@ -37,6 +37,9 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -99,6 +102,8 @@ spec:
               readOnly: true
             - name: workspace
               mountPath: /workspace
+            - name: runtime-tmp
+              mountPath: /tmp
             - name: provider-credentials
               mountPath: /run/cloud-agents/provider-credentials
               readOnly: true
@@ -109,6 +114,8 @@ spec:
         - name: workspace
           persistentVolumeClaim:
             claimName: {{ include "cloud-agents.workspaceClaim" . }}
+        - name: runtime-tmp
+          emptyDir: {}
         - name: provider-credentials
           secret:
             secretName: {{ .Values.runtime.credentialSecretName }}

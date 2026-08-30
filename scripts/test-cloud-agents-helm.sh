@@ -13,6 +13,10 @@ helm template cloud-agents "$chart" >"$rendered"
 for image in control-plane worker migrate; do
   grep -Fq "image: \"cloud-agents/$image:0.2.0\"" "$rendered"
 done
+grep -Fq "fsGroup: 1000" "$rendered"
+grep -Fq "mountPath: /workspace" "$rendered"
+grep -Fq "mountPath: /tmp" "$rendered"
+grep -Fq "emptyDir: {}" "$rendered"
 
 helm template cloud-agents "$chart" \
   --set-string images.controlPlane.digest="$digest" \
