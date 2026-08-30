@@ -15,7 +15,8 @@ import (
 
 func TestTenantReadSuccessNullClearAndSavedHandle(t *testing.T) {
 	tenantID := "tenant-001"
-	now := time.Date(2026, time.August, 11, 1, 2, 3, 0, time.UTC)
+	createdAt := time.Date(2026, time.August, 11, 1, 2, 3, 0, time.UTC)
+	revisionUpdatedAt := createdAt.Add(time.Minute)
 	transaction := &fakeTransaction{rows: []rowScanner{
 		rowValues(tenantID),
 		rowValues(tenantID),
@@ -25,9 +26,9 @@ func TestTenantReadSuccessNullClearAndSavedHandle(t *testing.T) {
 			"tenant-one",
 			"Tenant One",
 			"active",
-			int64(1),
-			now,
-			now,
+			int64(4),
+			createdAt,
+			revisionUpdatedAt,
 		),
 	}}
 	connection := newFakeConnection(transaction)
@@ -44,7 +45,7 @@ func TestTenantReadSuccessNullClearAndSavedHandle(t *testing.T) {
 		if readErr != nil {
 			return readErr
 		}
-		if tenant.TenantID != tenantID || tenant.ResourceVersion != 1 {
+		if tenant.TenantID != tenantID || tenant.ResourceVersion != 4 || !tenant.UpdatedAt.Equal(revisionUpdatedAt) {
 			t.Fatalf("unexpected tenant projection: %#v", tenant)
 		}
 		return nil
@@ -72,6 +73,8 @@ func TestTenantReadSuccessNullClearAndSavedHandle(t *testing.T) {
 		t.Fatalf("typed query leaked arguments or changed SQL: %#v", transaction.queries[2])
 	}
 	if !strings.Contains(transaction.queries[2].sql, "cloud_agents.platform_tenants") ||
+		!strings.Contains(transaction.queries[2].sql, "cloud_agents.tenant_resource_versions") ||
+		!strings.Contains(transaction.queries[2].sql, "revision.current_revision") ||
 		!strings.Contains(transaction.queries[2].sql, "cloud_agents.require_tenant_id()") {
 		t.Fatalf("typed query is not fully-qualified and GUC-bound: %s", transaction.queries[2].sql)
 	}

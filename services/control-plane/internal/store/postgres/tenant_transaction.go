@@ -25,10 +25,13 @@ const (
     tenant.tenant_name,
     tenant.display_name,
     tenant.state,
-    tenant.resource_version,
+    revision.current_revision,
     tenant.created_at,
-    tenant.updated_at
+    revision.updated_at
 FROM cloud_agents.platform_tenants AS tenant
+JOIN cloud_agents.tenant_resource_versions AS revision
+    ON revision.tenant_id = tenant.tenant_id
+    AND revision.tenant_uid = tenant.tenant_uid
 WHERE tenant.tenant_id = cloud_agents.require_tenant_id()
     AND tenant.tenant_uid = tenant.tenant_id`
 )
