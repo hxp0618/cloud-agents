@@ -18,6 +18,7 @@ import (
 type globalOptions struct {
 	endpoint       string
 	token          string
+	tokenFile      string
 	tenant         string
 	organization   string
 	project        string
@@ -32,6 +33,8 @@ type globalOptions struct {
 	idempotencyKey string
 }
 
+const maxBearerTokenFileBytes = 16 << 10
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "cloud-agentsctl:", err)
@@ -44,7 +47,20 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	client, err := openapi.NewHTTPClient(options.endpoint, options.token)
+	token := options.token
+	if options.tokenFile != "" {
+		file, openErr := os.Open(options.tokenFile)
+		if openErr != nil {
+			return errors.New("cannot read bearer token file")
+		}
+		contents, readErr := io.ReadAll(io.LimitReader(file, maxBearerTokenFileBytes+1))
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil || len(contents) > maxBearerTokenFileBytes {
+			return errors.New("cannot read bearer token file")
+		}
+		token = strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r")
+	}
+	client, err := openapi.NewHTTPClient(options.endpoint, token)
 	if err != nil {
 		return errors.New("invalid endpoint or bearer token")
 	}
@@ -235,6 +251,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	var options globalOptions
 	set.StringVar(&options.endpoint, "endpoint", "", "Control Plane URL")
 	set.StringVar(&options.token, "token", "", "bearer token")
+	set.StringVar(&options.tokenFile, "token-file", "", "file containing the bearer token")
 	set.StringVar(&options.tenant, "tenant", "", "tenant identifier")
 	set.StringVar(&options.organization, "organization", "", "organization identifier")
 	set.StringVar(&options.project, "project", "", "project identifier")
@@ -254,10 +271,19 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if len(remaining) < 2 {
 		return globalOptions{}, "", "", nil, errors.New(usage)
 	}
-	for name, value := range map[string]string{"endpoint": options.endpoint, "token": options.token, "tenant": options.tenant, "request-id": options.requestID} {
+	for name, value := range map[string]string{"endpoint": options.endpoint, "tenant": options.tenant, "request-id": options.requestID} {
 		if strings.TrimSpace(value) != value || value == "" {
 			return globalOptions{}, "", "", nil, fmt.Errorf("--%s is required", name)
 		}
+	}
+	if options.token == "" && options.tokenFile == "" {
+		return globalOptions{}, "", "", nil, errors.New("--token or --token-file is required")
+	}
+	if options.token != "" && options.tokenFile != "" {
+		return globalOptions{}, "", "", nil, errors.New("--token and --token-file are mutually exclusive")
+	}
+	if strings.TrimSpace(options.token) != options.token || strings.TrimSpace(options.tokenFile) != options.tokenFile {
+		return globalOptions{}, "", "", nil, errors.New("bearer token input is invalid")
 	}
 	command, action := remaining[0], remaining[1]
 	if !knownCommand(command, action) {
@@ -368,7 +394,7 @@ func requiresIdempotency(command, action string) bool {
 	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }
 
-const usage = `usage: cloud-agentsctl --endpoint URL --token TOKEN --tenant ID --request-id ID <resource> <action> [flags]`
+const usage = `usage: cloud-agentsctl --endpoint URL (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]`
 
 type membershipCreateFlags struct {
 	expectedTenantRevision int64

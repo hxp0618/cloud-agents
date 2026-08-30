@@ -5,11 +5,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
 
-func TestRunProjectGetUsesPublicHTTPClient(t *testing.T) {
+func TestRunProjectGetUsesTokenFile(t *testing.T) {
 	var gotAuthorization string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		gotAuthorization = request.Header.Get("Authorization")
@@ -21,10 +22,14 @@ func TestRunProjectGetUsesPublicHTTPClient(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"Project","metadata":{"uid":"project-alpha","name":"project-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"organizationRef":{"namespace":"cloud-agents","kind":"organization","id":"organization-alpha"},"displayName":"Project Alpha","state":"active"}}`))
 	}))
 	defer server.Close()
+	tokenFile := t.TempDir() + "/token"
+	if err := os.WriteFile(tokenFile, []byte("token-alpha\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	var stdout, stderr bytes.Buffer
 	err := run([]string{
-		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--request-id", "request-alpha",
+		"--endpoint", server.URL, "--token-file", tokenFile, "--tenant", "tenant-alpha", "--project", "project-alpha", "--request-id", "request-alpha",
 		"project", "get",
 	}, &stdout)
 	if err != nil {
@@ -40,6 +45,24 @@ func TestRunProjectGetUsesPublicHTTPClient(t *testing.T) {
 
 func TestParseArgsRejectsMissingRequiredGlobalInput(t *testing.T) {
 	if _, _, _, _, err := parseArgs([]string{"--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "project", "get"}); err == nil || !strings.Contains(err.Error(), "--endpoint is required") {
+		t.Fatalf("error = %v", err)
+	}
+	base := []string{"--endpoint", "https://control-plane.example", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}
+	if _, _, _, _, err := parseArgs(base); err == nil || !strings.Contains(err.Error(), "--token or --token-file") {
+		t.Fatalf("missing token error = %v", err)
+	}
+	if _, _, _, _, err := parseArgs(append([]string{"--token", "token-alpha", "--token-file", "/tmp/token"}, base...)); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("conflicting token error = %v", err)
+	}
+}
+
+func TestRunRejectsOversizedTokenFile(t *testing.T) {
+	tokenFile := t.TempDir() + "/token"
+	if err := os.WriteFile(tokenFile, bytes.Repeat([]byte("x"), maxBearerTokenFileBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := run([]string{"--endpoint", "https://control-plane.example", "--token-file", tokenFile, "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
+	if err == nil || err.Error() != "cannot read bearer token file" {
 		t.Fatalf("error = %v", err)
 	}
 }
