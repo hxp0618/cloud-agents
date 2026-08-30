@@ -305,6 +305,15 @@ func run(args []string, stdout io.Writer) error {
 		value, err = client.GetProjectContext(ctx, options.tenant, options.project, options.requestID)
 	case "managed-host-role-binding get":
 		value, err = client.GetManagedHostRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+	case "environment-lease list":
+		var pageSize int
+		var pageToken string
+		if err = parseActionFlags("environment-lease list", actionArgs, func(set *flag.FlagSet) {
+			set.IntVar(&pageSize, "page-size", 0, "maximum environment leases to return")
+			set.StringVar(&pageToken, "page-token", "", "opaque environment lease page token")
+		}); err == nil {
+			value, err = client.ListManagedHostEnvironmentLeases(ctx, options.tenant, options.project, options.requestID, pageSize, pageToken)
+		}
 	case "environment-lease create":
 		var flags struct {
 			name          string
@@ -472,6 +481,8 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.EnvironmentLeaseResult:
 		return result.Value
+	case openapi.EnvironmentLeasePageResult:
+		return result.Value
 	case openapi.RBACMutationResult:
 		return result.Value
 	default:
@@ -481,7 +492,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -508,7 +519,9 @@ func requiresTurn(command, action string) bool {
 	return command == "turn" && action != "list" || command == "execution"
 }
 func requiresExecution(command, action string) bool { return command == "execution" }
-func requiresLease(command, action string) bool     { return command == "environment-lease" }
+func requiresLease(command, action string) bool {
+	return command == "environment-lease" && action != "list"
+}
 func requiresIdempotency(command, action string) bool {
 	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }

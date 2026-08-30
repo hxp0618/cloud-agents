@@ -528,6 +528,26 @@ func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestRunEnvironmentLeaseListDoesNotRequireLeaseID(t *testing.T) {
+	const responseBody = `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"EnvironmentLeasePage","environmentLeases":[],"nextPageToken":"lease-page-token-2"}`
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.RequestURI() != "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.RequestURI())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(responseBody))
+	}))
+	defer server.Close()
+	args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--request-id", "request-alpha", "environment-lease", "list", "--page-size", "1", "--page-token", "lease-page-token-1"}
+	var stdout bytes.Buffer
+	if err := run(args, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"kind":"EnvironmentLeasePage"`) || !strings.Contains(stdout.String(), `"nextPageToken":"lease-page-token-2"`) {
+		t.Fatalf("output = %q", stdout.String())
+	}
+}
+
 func TestRunExecutionMutationUsesGenerationAndIdempotency(t *testing.T) {
 	for _, action := range []string{"cancel", "interrupt"} {
 		t.Run(action, func(t *testing.T) {

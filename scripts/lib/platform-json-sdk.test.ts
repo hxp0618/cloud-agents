@@ -24,10 +24,13 @@ describe("platform JSON SDK generator", () => {
     const inputs = platformJSONSDKAuthorityProfileInputs();
     expect(inputs).toEqual([...inputs].toSorted());
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
+    expect(inputs).toContain(
+      "contracts/platform/v1alpha1/schemas/environment-lease-page.schema.json",
+    );
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/membership-page.schema.json");
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/role-binding-page.schema.json");
     expect(platformJSONSDKAuthorityProfileDigest(root)).toBe(
-      "sha256:368c996771b8d4ca4d94bf5f2b282199bf452f2953832cef0003828df925831f",
+      "sha256:f38e0068aefe910e4b108facf5b69652265eb1c1ec456bdc59b554b122988e4a",
     );
   });
 

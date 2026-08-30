@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:368c996771b8d4ca4d94bf5f2b282199bf452f2953832cef0003828df925831f";
+	"sha256:f38e0068aefe910e4b108facf5b69652265eb1c1ec456bdc59b554b122988e4a";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -66,6 +66,7 @@ const COMMON_SCHEMAS = [
 
 const PLATFORM_SCHEMAS = [
 	"environment-lease-create-request.schema.json",
+	"environment-lease-page.schema.json",
 	"environment-lease-terminate-request.schema.json",
 	"environment-lease.schema.json",
 	"managed-agent-create-project-organization-ref.schema.json",
@@ -402,6 +403,7 @@ function validateJSONSDKAuthority(root: string): void {
 		"managedHostGetEnvironmentLease",
 		"managedHostGetProjectContext",
 		"managedHostGetRoleBinding",
+		"managedHostListEnvironmentLeases",
 		"managedHostTerminateEnvironmentLease",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {

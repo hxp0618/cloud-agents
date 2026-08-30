@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,12 +11,16 @@ import (
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
 type managedHostEnvironmentLeaseStoreFake struct {
 	snapshot  internalmanagedhost.Snapshot
 	create    int
 	get       int
+	list      int
+	after     string
+	limit     int
 	terminate int
 }
 
@@ -31,6 +36,13 @@ func (fake *managedHostEnvironmentLeaseStoreFake) CreateManagedHostEnvironmentLe
 func (fake *managedHostEnvironmentLeaseStoreFake) GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error) {
 	fake.get++
 	return fake.snapshot, nil
+}
+
+func (fake *managedHostEnvironmentLeaseStoreFake) ListManagedHostEnvironmentLeases(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, afterLeaseID string, limit int) (postgres.ManagedHostEnvironmentLeasePage, error) {
+	fake.list++
+	fake.after = afterLeaseID
+	fake.limit = limit
+	return postgres.ManagedHostEnvironmentLeasePage{EnvironmentLeases: []internalmanagedhost.Snapshot{fake.snapshot}, NextLeaseID: fake.snapshot.LeaseID}, nil
 }
 
 func (fake *managedHostEnvironmentLeaseStoreFake) TerminateManagedHostEnvironmentLease(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error) {
@@ -74,6 +86,22 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 	got := request(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha", "", "request-get", "")
 	if got.Code != http.StatusOK || store.get != 1 || verifier.seen.RequiredPermission != "projects.get" {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
+	}
+	listed := request(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1", "", "request-list", "")
+	var listedBody struct {
+		Kind          string `json:"kind"`
+		NextPageToken string `json:"nextPageToken"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &listedBody); err != nil || listed.Code != http.StatusOK || store.list != 1 || store.limit != 1 || verifier.seen.RequiredPermission != "projects.get" || listedBody.Kind != "EnvironmentLeasePage" || listedBody.NextPageToken == "" {
+		t.Fatalf("list status=%d calls=%d limit=%d verification=%#v body=%s error=%v", listed.Code, store.list, store.limit, verifier.seen, listed.Body.String(), err)
+	}
+	pageTwo := request(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken="+listedBody.NextPageToken, "", "request-list-two", "")
+	if pageTwo.Code != http.StatusOK || store.list != 2 || store.after != "lease-alpha" {
+		t.Fatalf("page two status=%d calls=%d after=%q body=%s", pageTwo.Code, store.list, store.after, pageTwo.Body.String())
+	}
+	crossProject := request(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-other/environment-leases?pageToken="+listedBody.NextPageToken, "", "request-list-cross", "")
+	if crossProject.Code != http.StatusBadRequest || store.list != 2 {
+		t.Fatalf("cross-project status=%d calls=%d body=%s", crossProject.Code, store.list, crossProject.Body.String())
 	}
 	terminated := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha:terminate", `{"expectedGeneration":1}`, "request-terminate", "terminate-key-123456")
 	if terminated.Code != http.StatusOK || store.terminate != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(terminated.Body.String(), `"cleanupPhase":"complete"`) {

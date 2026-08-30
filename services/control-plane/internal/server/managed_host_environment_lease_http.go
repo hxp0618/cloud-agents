@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -22,6 +23,7 @@ const ManagedHostEnvironmentLeaseRoutePrefix = "/v1/managed-host/tenants/"
 type managedHostEnvironmentLeaseStore interface {
 	CreateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.CreateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
 	GetManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedhost.Snapshot, error)
+	ListManagedHostEnvironmentLeases(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedHostEnvironmentLeasePage, error)
 	TerminateManagedHostEnvironmentLease(context.Context, string, *authn.VerifiedPrincipal, internalmanagedhost.TerminateEnvironmentLeaseInput) (internalmanagedhost.Snapshot, error)
 }
 
@@ -64,7 +66,9 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		return
 	}
 	switch {
-	case action == "create" && request.Method == http.MethodPost:
+	case action == "collection" && request.Method == http.MethodGet:
+		server.list(writer, request, tenantID, projectID, requestID, bearer)
+	case action == "collection" && request.Method == http.MethodPost:
 		server.create(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "get" && request.Method == http.MethodGet:
 		server.get(writer, request, tenantID, projectID, leaseID, requestID, bearer)
@@ -74,6 +78,38 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 	}
+}
+
+func (server *ManagedHostEnvironmentLeaseHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1alpha1.ValidateListManagedHostEnvironmentLeasesServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterLeaseID := ""
+	if validated.PageToken != "" {
+		if afterLeaseID, ok = decodeManagedHostEnvironmentLeasePageToken(validated.TenantID, validated.ProjectID, validated.PageToken); !ok {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.store.ListManagedHostEnvironmentLeases(request.Context(), validated.TenantID, principal, validated.ProjectID, afterLeaseID, validated.PageSize)
+	if err != nil {
+		status, code := managedHostEnvironmentLeaseErrorStatus(err)
+		writePublicProblem(writer, status, code)
+		return
+	}
+	writeManagedHostEnvironmentLeasePage(writer, requestID, tenantID, projectID, page)
 }
 
 func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
@@ -156,8 +192,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminate(writer http.Respo
 }
 
 func writeManagedHostEnvironmentLease(writer http.ResponseWriter, status int, requestID string, snapshot internalmanagedhost.Snapshot) {
-	tenant := commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID}
-	value := platformv1alpha1.EnvironmentLease{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "CloudEnvironmentLease", Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName, TenantRef: tenant, ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, Spec: platformv1alpha1.EnvironmentLeaseSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID}, Generation: snapshot.Generation, DesiredPhase: snapshot.DesiredPhase, ObservedPhase: snapshot.ObservedPhase, CleanupPhase: snapshot.CleanupPhase, EnvironmentID: snapshot.EnvironmentID, ReleaseDigest: snapshot.ReleaseDigest, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)}}
+	value := managedHostEnvironmentLeaseResource(snapshot)
 	body, err := openapiv1alpha1.EncodeEnvironmentLeaseResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.EnvironmentLease]{Value: value})
 	if err != nil {
 		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
@@ -170,13 +205,43 @@ func writeManagedHostEnvironmentLease(writer http.ResponseWriter, status int, re
 	_, _ = writer.Write(body)
 }
 
+func managedHostEnvironmentLeaseResource(snapshot internalmanagedhost.Snapshot) platformv1alpha1.EnvironmentLease {
+	tenant := commonv1alpha1.TenantRef{Namespace: "cloud-agents", Kind: "tenant", ID: snapshot.Scope.TenantID}
+	return platformv1alpha1.EnvironmentLease{ResourceBase: platformv1alpha1.ResourceBase{APIVersion: platformv1alpha1.APIVersion, Kind: "CloudEnvironmentLease", Metadata: commonv1alpha1.ResourceMetadata{UID: snapshot.LeaseID, Name: snapshot.LeaseName, TenantRef: tenant, ResourceVersion: strconv.FormatInt(snapshot.ResourceVersion, 10), CreatedAt: snapshot.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: snapshot.UpdatedAt.UTC().Format(time.RFC3339Nano)}}, Spec: platformv1alpha1.EnvironmentLeaseSpec{ProjectRef: commonv1alpha1.ProjectRef{Namespace: "cloud-agents", Kind: "project", ID: snapshot.Scope.ProjectID}, Generation: snapshot.Generation, DesiredPhase: snapshot.DesiredPhase, ObservedPhase: snapshot.ObservedPhase, CleanupPhase: snapshot.CleanupPhase, EnvironmentID: snapshot.EnvironmentID, ReleaseDigest: snapshot.ReleaseDigest, ExpiresAt: snapshot.ExpiresAt.UTC().Format(time.RFC3339Nano)}}
+}
+
+func writeManagedHostEnvironmentLeasePage(writer http.ResponseWriter, requestID, tenantID, projectID string, page postgres.ManagedHostEnvironmentLeasePage) {
+	leases := make([]platformv1alpha1.EnvironmentLease, 0, len(page.EnvironmentLeases))
+	for _, snapshot := range page.EnvironmentLeases {
+		leases = append(leases, managedHostEnvironmentLeaseResource(snapshot))
+	}
+	nextPageToken := ""
+	if page.NextLeaseID != "" {
+		var ok bool
+		nextPageToken, ok = encodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, page.NextLeaseID)
+		if !ok {
+			writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeEnvironmentLeasePageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.EnvironmentLeasePage]{Value: platformv1alpha1.EnvironmentLeasePage{APIVersion: platformv1alpha1.APIVersion, Kind: "EnvironmentLeasePage", EnvironmentLeases: leases, NextPageToken: nextPageToken}})
+	if err != nil {
+		writePublicProblem(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func managedHostEnvironmentLeasePath(path string) (tenantID, projectID, leaseID, action string, ok bool) {
 	if !strings.HasPrefix(path, ManagedHostEnvironmentLeaseRoutePrefix) {
 		return "", "", "", "", false
 	}
 	parts := strings.Split(strings.TrimPrefix(path, ManagedHostEnvironmentLeaseRoutePrefix), "/")
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "environment-leases" && parts[0] != "" && parts[2] != "" {
-		return parts[0], parts[2], "", "create", true
+		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "environment-leases" && parts[0] != "" && parts[2] != "" && parts[4] != "" && !strings.Contains(parts[4], ":") {
 		return parts[0], parts[2], parts[4], "get", true
@@ -188,6 +253,30 @@ func managedHostEnvironmentLeasePath(path string) (tenantID, projectID, leaseID,
 		}
 	}
 	return "", "", "", "", false
+}
+
+func encodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, leaseID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(leaseID, "/leaseId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("environment-lease/v1\x00" + tenantID + "\x00" + projectID + "\x00" + leaseID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeManagedHostEnvironmentLeasePageToken(tenantID, projectID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 4 || parts[0] != "environment-lease/v1" || parts[1] != tenantID || parts[2] != projectID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/leaseId") != nil {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func HandlesManagedHostEnvironmentLeasePath(path string) bool {

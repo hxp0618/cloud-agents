@@ -102,6 +102,31 @@
       }
     },
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases": {
+      "get": {
+        "operationId": "managedHostListEnvironmentLeases",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/PageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/environment-lease-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
       "post": {
         "operationId": "managedHostCreateEnvironmentLease",
         "parameters": [
@@ -212,6 +237,18 @@
         "in": "header",
         "required": true,
         "schema": { "$ref": "../../common/v1alpha1/schemas/idempotency-key.schema.json" }
+      },
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/page-size.schema.json" }
+      },
+      "PageToken": {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "schema": { "$ref": "../../common/v1alpha1/schemas/page-token.schema.json" }
       }
     },
     "headers": {

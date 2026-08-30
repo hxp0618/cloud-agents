@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   Client,
+  decodeEnvironmentLeasePage,
   decodeIdempotency,
   decodeMembership,
   decodeMembershipPage,
@@ -24,6 +25,7 @@ import {
   decodeWatchCursor,
   encodeResponse,
   parseProblem,
+  parseEnvironmentLeasePage,
   parseProject,
   parseProjectCreateRequest,
   parseManagedAgentSession,
@@ -121,6 +123,55 @@ describe("generated platform JSON models", () => {
       "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1",
     );
     expect(seen[3]?.body).toBeUndefined();
+  });
+  it("lists managed-host environment leases with project-bound pagination", async () => {
+    const page = JSON.stringify({
+      apiVersion: "platform.cloud-agents.dev/v1alpha1",
+      kind: "EnvironmentLeasePage",
+      environmentLeases: [
+        {
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "CloudEnvironmentLease",
+          metadata: {
+            uid: "lease-alpha",
+            name: "lease-alpha",
+            tenantRef: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+            resourceVersion: "1",
+            createdAt: "2026-08-31T08:00:00Z",
+            updatedAt: "2026-08-31T08:00:00Z",
+          },
+          spec: {
+            projectRef: { namespace: "cloud-agents", kind: "project", id: "project-alpha" },
+            generation: 1,
+            desiredPhase: "active",
+            observedPhase: "provisioning",
+            cleanupPhase: "none",
+            environmentId: "lease-alpha",
+            releaseDigest: `sha256:${"a".repeat(64)}`,
+            expiresAt: "2026-08-31T09:00:00Z",
+          },
+        },
+      ],
+      nextPageToken: "lease-page-token-2",
+    });
+    expect(decodeEnvironmentLeasePage(JSON.parse(page)).environmentLeases).toHaveLength(1);
+    expect(parseEnvironmentLeasePage(page).value.nextPageToken).toBe("lease-page-token-2");
+    let seen: FixtureRequest | undefined;
+    const client = new Client(async (request) => {
+      seen = request;
+      return { status: 200, headers: {}, body: page };
+    });
+    const result = await client.listManagedHostEnvironmentLeases(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "lease-page-token-1",
+    );
+    expect(result.value.environmentLeases[0]?.metadata.uid).toBe("lease-alpha");
+    expect(seen?.path).toBe(
+      "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases?pageSize=1&pageToken=lease-page-token-1",
+    );
   });
   it("replays the managed-agent Turn contract and client lifecycle", async () => {
     const turn = JSON.stringify({
