@@ -133,17 +133,74 @@ SQL
     psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cag_migration -d cagtest \
     -c 'SET ROLE cloud_agents_migration_owner' \
     -f /workspace/services/control-plane/migrations/000001_expand_migration_kernel.sql \
-    -f /workspace/services/control-plane/migrations/000002_expand_tenancy.sql >/dev/null
+    -f /workspace/services/control-plane/migrations/000002_expand_tenancy.sql \
+    -f /workspace/services/control-plane/migrations/000003_expand_membership_rbac.sql \
+    -f /workspace/services/control-plane/migrations/000004_expand_membership_rbac_mutations.sql \
+    -f /workspace/services/control-plane/migrations/000005_close_membership_binding_authority.sql \
+    -f /workspace/services/control-plane/migrations/000006_close_subject_issuer_validation.sql \
+    -f /workspace/services/control-plane/migrations/000007_expand_durable_coordination_kernel.sql \
+    -f /workspace/services/control-plane/migrations/000008_add_durable_coordination_service.sql \
+    -f /workspace/services/control-plane/migrations/000009_redact_coordination_conflicts.sql \
+    -f /workspace/services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql \
+    -f /workspace/services/control-plane/migrations/000011_add_compatibility_recovery_writer.sql \
+    -f /workspace/services/control-plane/migrations/000012_fix_compatibility_recovery_preflight.sql \
+    -f /workspace/services/control-plane/migrations/000013_add_durable_project_create_writer.sql \
+    -f /workspace/services/control-plane/migrations/000014_harden_durable_project_create_identifiers.sql \
+    -f /workspace/services/control-plane/migrations/000015_add_managed_agent_sessions.sql \
+    -f /workspace/services/control-plane/migrations/000016_add_managed_agent_turns.sql \
+    -f /workspace/services/control-plane/migrations/000017_add_managed_agent_executions.sql \
+    -f /workspace/services/control-plane/migrations/000018_add_managed_agent_events.sql \
+    -f /workspace/services/control-plane/migrations/000019_persist_managed_agent_execution_cancellation.sql \
+    -f /workspace/services/control-plane/migrations/000020_persist_managed_agent_execution_interruption.sql \
+    -f /workspace/services/control-plane/migrations/000021_add_managed_host_environment_leases.sql \
+    -f /workspace/services/control-plane/migrations/000022_repair_managed_agent_lifecycle_transitions.sql \
+    -f /workspace/services/control-plane/migrations/000023_scope_managed_agent_event_ids.sql \
+    -f /workspace/services/control-plane/migrations/000024_persist_managed_agent_provider_resume_cursor.sql \
+    -f /workspace/services/control-plane/migrations/000025_bootstrap_tenant_administrator.sql >/dev/null
 
-  for tenant in 001 002; do
-    bootstrap_result=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
-      psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_bootstrap -d cagtest \
-      -c "SELECT * FROM cloud_agents.bootstrap_platform_tenant('tenant-$tenant','tenant-$tenant','Tenant $tenant','audit-$tenant','bootstrap');")
-    if [[ $bootstrap_result != "tenant-$tenant|1" ]]; then
-      echo "Unexpected tenant bootstrap result: $bootstrap_result" >&2
-      exit 1
-    fi
-  done
+  bootstrap_sql="SELECT * FROM cloud_agents.bootstrap_tenant_administrator_v1('tenant-001','tenant-001','Tenant 001','organization-001','organization-001','Organization 001','user','https://identity.example.test/','user-001','membership-admin-001','membership-admin-001','role-binding-admin-001','role-binding-admin-001','audit-tenant-001','audit-membership-001','audit-role-binding-001','bootstrap');"
+  bootstrap_result=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_bootstrap -d cagtest \
+    -c "$bootstrap_sql")
+  if [[ $bootstrap_result != "tenant-001|organization-001|membership-admin-001|role-binding-admin-001|4" ]]; then
+    echo "Unexpected tenant administrator bootstrap result: $bootstrap_result" >&2
+    exit 1
+  fi
+  replay_result=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_bootstrap -d cagtest \
+    -c "$bootstrap_sql")
+  if [[ $replay_result != "$bootstrap_result" ]]; then
+    echo "Tenant administrator bootstrap replay drifted: $replay_result" >&2
+    exit 1
+  fi
+  if docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest \
+    -c "$bootstrap_sql" >/dev/null 2>&1; then
+    echo "Runtime login unexpectedly executed tenant administrator bootstrap" >&2
+    exit 1
+  fi
+  if docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_bootstrap -d cagtest \
+    -c "${bootstrap_sql/Organization 001/Conflicting Organization}" >/dev/null 2>&1; then
+    echo "Conflicting tenant administrator bootstrap unexpectedly succeeded" >&2
+    exit 1
+  fi
+
+  bootstrap_result=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_bootstrap -d cagtest \
+    -c "SELECT * FROM cloud_agents.bootstrap_platform_tenant('tenant-002','tenant-002','Tenant 002','audit-tenant-002','bootstrap');")
+  if [[ $bootstrap_result != "tenant-002|1" ]]; then
+    echo "Unexpected tenant bootstrap result: $bootstrap_result" >&2
+    exit 1
+  fi
+
+  bootstrap_facts=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
+    psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest \
+    -c "SELECT pg_catalog.set_config('cloud_agents.tenant_id','tenant-001',false); SELECT revision.current_revision, (SELECT count(*) FROM cloud_agents.organizations), (SELECT count(*) FROM cloud_agents.memberships), (SELECT count(*) FROM cloud_agents.role_bindings), (SELECT count(*) FROM cloud_agents.builtin_role_permissions AS permission WHERE permission.role_name = 'tenant.admin' AND permission.permission = 'projects.create') FROM cloud_agents.tenant_resource_versions AS revision WHERE revision.tenant_id = 'tenant-001';" | tail -1)
+  if [[ $bootstrap_facts != "4|1|1|1|1" ]]; then
+    echo "Unexpected tenant administrator bootstrap facts: $bootstrap_facts" >&2
+    exit 1
+  fi
 
   preflight=$(docker exec -e PGPASSWORD="$test_password" "$active_container" \
     psql -X -v ON_ERROR_STOP=1 -At -h 127.0.0.1 -U cag_runtime -d cagtest \
@@ -157,13 +214,13 @@ SQL
   database_url="postgres://cag_runtime:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test \
       -run '^TestTenantTransactionRunnerPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
       -run '^TestTenantTransactionRunnerPostgresConformance$' \
       -count=1 -v ./internal/store/postgres

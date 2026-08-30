@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000024.tar` into a directory, then run Compose
+Extract `cloud-agents-deployment-000025.tar` into a directory, then run Compose
 from its `deploy/compose` directory with an env file copied from `.env.example`.
 Set `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
@@ -9,11 +9,15 @@ transaction and fails closed on existing role drift:
 
 1. Run `docker compose --env-file .env --profile bootstrap run --rm bootstrap`
    once with an isolated unswitched superuser URL.
-2. Run `docker compose --env-file .env up --build`.
+2. Run `docker compose --env-file .env --profile tenant-bootstrap run --rm tenant-bootstrap`
+   once to migrate the database and create the initial tenant, organization, and `tenant.admin`
+   membership for the configured authenticated subject. Exact retries are safe; conflicting
+   retries fail without partial changes.
+3. Run `docker compose --env-file .env up --build`.
 
 The migration URL must be able to `SET ROLE cloud_agents_migration_owner`; the
 runtime URL uses the least-privileged `cloud_agents_runtime_login`. Use the
-tenant-bootstrap URL only for `cloud_agents.bootstrap_platform_tenant(...)`. TLS,
+tenant-bootstrap URL only for the packaged one-shot bootstrap. TLS,
 JWK trust configuration, Runtime provider environment, SPIFFE identity, and
 Runtime admission values are deployment-owned inputs and are never generated
 by this package. Keep provider credentials in the referenced runtime env file,
@@ -40,6 +44,8 @@ helm upgrade --install cloud-agents deploy/helm/cloud-agents \
   --set images.migrate.tag=VERSION
 ```
 
-The migration Job runs before install and upgrade. Use standard
+The migration Job runs before install and upgrade. After the first migration, run
+`deploy/compose/tenant-bootstrap.sql` once with `psql` and the tenant-bootstrap URL,
+supplying the same named variables shown in the Compose service. Use standard
 `helm rollback cloud-agents REVISION` to restore a prior image/chart revision;
 database rollback remains an explicit forward-migration operation.

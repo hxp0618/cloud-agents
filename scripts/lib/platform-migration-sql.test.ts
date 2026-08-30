@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -42,12 +43,11 @@ describe("postgresql-lex-v1 bootstrap", () => {
       ),
     );
     expect(statements).toHaveLength(14);
-    expect(statements.slice(0, 4).map((statement) => classifyMigrationStatement(statement, "000022").command)).toEqual([
-      "CREATE",
-      "CREATE",
-      "CREATE",
-      "CREATE",
-    ]);
+    expect(
+      statements
+        .slice(0, 4)
+        .map((statement) => classifyMigrationStatement(statement, "000022").command),
+    ).toEqual(["CREATE", "CREATE", "CREATE", "CREATE"]);
     for (const statement of statements) {
       expect(classifyMigrationStatement(statement, "000022").profile).toBe("postgresql-ddl-v1");
     }
@@ -102,6 +102,55 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ).toEqual(["ALTER", "CREATE", "ALTER", "REVOKE", "GRANT"]);
     expect(classifyMigrationStatement(statements[1]!, "000024").target_identity).toContain(
       "settle_managed_agent_execution_v2",
+    );
+  });
+
+  it("classifies initial tenant administrator bootstrap", () => {
+    const bytes = readFileSync(
+      resolve(root, "services/control-plane/migrations/000025_bootstrap_tenant_administrator.sql"),
+    );
+    const statements = splitPostgresStatements(bytes);
+    const classifications = statements.map((statement) =>
+      classifyMigrationStatement(statement, "000025"),
+    );
+    expect(statements).toHaveLength(5);
+    expect(classifications.map(({ command }) => command)).toEqual([
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+    ]);
+    expect(classifications[0]!.target_identity).toContain("bootstrap_tenant_administrator_v1");
+
+    const catalog = JSON.parse(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/product/000025/catalog/schema-000025.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
+      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+    };
+    expect(catalog.source_descriptors.at(-1)).toEqual({
+      migration_id: "000025",
+      sql_sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      statements: statements.map((statement, index) => ({
+        index,
+        start: statement.start,
+        end: statement.end,
+        sha256: statement.sha256,
+        classification: classifications[index],
+      })),
+    });
+    expect(catalog.declared_object_identities).toContainEqual(
+      expect.objectContaining({
+        kind: "function",
+        identity: expect.objectContaining({ name: "bootstrap_tenant_administrator_v1" }),
+      }),
     );
   });
 

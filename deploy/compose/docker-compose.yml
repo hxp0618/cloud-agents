@@ -52,6 +52,56 @@ services:
     environment:
       CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_MIGRATION_DATABASE_URL:?set the migration-owner database URL}
 
+  tenant-bootstrap:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    profiles: [tenant-bootstrap]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      CLOUD_AGENTS_TENANT_BOOTSTRAP_DATABASE_URL: ${CLOUD_AGENTS_TENANT_BOOTSTRAP_DATABASE_URL:?set the tenant-bootstrap database URL}
+      CLOUD_AGENTS_TENANT_UID: ${CLOUD_AGENTS_TENANT_UID:?set the initial tenant UID}
+      CLOUD_AGENTS_TENANT_NAME: ${CLOUD_AGENTS_TENANT_NAME:?set the initial tenant name}
+      CLOUD_AGENTS_TENANT_DISPLAY_NAME: ${CLOUD_AGENTS_TENANT_DISPLAY_NAME:?set the initial tenant display name}
+      CLOUD_AGENTS_ORGANIZATION_UID: ${CLOUD_AGENTS_ORGANIZATION_UID:?set the initial organization UID}
+      CLOUD_AGENTS_ORGANIZATION_NAME: ${CLOUD_AGENTS_ORGANIZATION_NAME:?set the initial organization name}
+      CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME: ${CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME:?set the initial organization display name}
+      CLOUD_AGENTS_ADMIN_SUBJECT_KIND: ${CLOUD_AGENTS_ADMIN_SUBJECT_KIND:?set the initial administrator subject kind}
+      CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER: ${CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER:?set the initial administrator subject issuer}
+      CLOUD_AGENTS_ADMIN_SUBJECT_VALUE: ${CLOUD_AGENTS_ADMIN_SUBJECT_VALUE:?set the initial administrator subject value}
+      CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID: ${CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID:?set the initial administrator membership UID}
+      CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME: ${CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME:?set the initial administrator membership name}
+      CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID: ${CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID:?set the initial administrator role binding UID}
+      CLOUD_AGENTS_ADMIN_ROLE_BINDING_NAME: ${CLOUD_AGENTS_ADMIN_ROLE_BINDING_NAME:?set the initial administrator role binding name}
+      CLOUD_AGENTS_TENANT_AUDIT_FACT_UID: ${CLOUD_AGENTS_TENANT_AUDIT_FACT_UID:?set the tenant bootstrap audit fact UID}
+      CLOUD_AGENTS_MEMBERSHIP_AUDIT_FACT_UID: ${CLOUD_AGENTS_MEMBERSHIP_AUDIT_FACT_UID:?set the membership bootstrap audit fact UID}
+      CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID: ${CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID:?set the role binding bootstrap audit fact UID}
+      CLOUD_AGENTS_BOOTSTRAP_REASON_CODE: ${CLOUD_AGENTS_BOOTSTRAP_REASON_CODE:?set the bootstrap reason code}
+    volumes:
+      - ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}:/deploy:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        exec psql "$${CLOUD_AGENTS_TENANT_BOOTSTRAP_DATABASE_URL}" -X -P pager=off --single-transaction -v ON_ERROR_STOP=1
+        -v cloud_agents_tenant_uid="$${CLOUD_AGENTS_TENANT_UID}"
+        -v cloud_agents_tenant_name="$${CLOUD_AGENTS_TENANT_NAME}"
+        -v cloud_agents_tenant_display_name="$${CLOUD_AGENTS_TENANT_DISPLAY_NAME}"
+        -v cloud_agents_organization_uid="$${CLOUD_AGENTS_ORGANIZATION_UID}"
+        -v cloud_agents_organization_name="$${CLOUD_AGENTS_ORGANIZATION_NAME}"
+        -v cloud_agents_organization_display_name="$${CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME}"
+        -v cloud_agents_admin_subject_kind="$${CLOUD_AGENTS_ADMIN_SUBJECT_KIND}"
+        -v cloud_agents_admin_subject_issuer="$${CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER}"
+        -v cloud_agents_admin_subject_value="$${CLOUD_AGENTS_ADMIN_SUBJECT_VALUE}"
+        -v cloud_agents_admin_membership_uid="$${CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID}"
+        -v cloud_agents_admin_membership_name="$${CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME}"
+        -v cloud_agents_admin_role_binding_uid="$${CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID}"
+        -v cloud_agents_admin_role_binding_name="$${CLOUD_AGENTS_ADMIN_ROLE_BINDING_NAME}"
+        -v cloud_agents_tenant_audit_fact_uid="$${CLOUD_AGENTS_TENANT_AUDIT_FACT_UID}"
+        -v cloud_agents_membership_audit_fact_uid="$${CLOUD_AGENTS_MEMBERSHIP_AUDIT_FACT_UID}"
+        -v cloud_agents_role_binding_audit_fact_uid="$${CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID}"
+        -v cloud_agents_bootstrap_reason_code="$${CLOUD_AGENTS_BOOTSTRAP_REASON_CODE}"
+        -f /deploy/compose/tenant-bootstrap.sql
+
   control-plane:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:
