@@ -19,7 +19,7 @@ jobs:
         with:
           cache: true
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bunx oxfmt .github/workflows deploy/helm/cloud-agents/values.yaml deploy/helm/cloud-agents/values.schema.json packages sdk/typescript scripts/check-platform-go-modules.ts scripts/cloud-agent-release-smoke.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/cloud-agent-release.ts scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
+      - run: bunx oxfmt .github/workflows deploy/helm/cloud-agents/values.yaml deploy/helm/cloud-agents/values.schema.json packages sdk/typescript scripts/check-platform-go-modules.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
       - run: bunx oxlint . --deny-warnings --ignore-pattern scripts/lib/platform-contract-lock.ts
       - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh
       - run: sh scripts/test-cloud-agents-helm.sh
@@ -27,7 +27,7 @@ jobs:
       - run: sh scripts/test-platform-go-products.sh
       - run: bun run typecheck
       - run: bun run --filter '@synara/*' test
-      - run: bunx vitest run scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
+      - run: bunx vitest run scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
       - run: bun run build
       - run: bun run secret:scan
         env:
@@ -35,7 +35,3 @@ jobs:
       - run: bun run platform:release -- --version 0.0.0-ci --output-dir "${RUNNER_TEMP}/cloud-agents-platform-candidate"
       - run: sha256sum -c checksums.sha256
         working-directory: ${{ runner.temp }}/cloud-agents-platform-candidate
-      - run: bun run release:smoke -- --output-dir candidate
-        env:
-          CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER: github-actions
-      - run: cmp "${RUNNER_TEMP}/cloud-agents-platform-candidate/cloud-agent-runtime-standalone.mjs" candidate/cloud-agent-runtime-standalone.mjs

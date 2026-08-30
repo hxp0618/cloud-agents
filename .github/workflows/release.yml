@@ -41,7 +41,7 @@ jobs:
         with:
           cache: true
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bunx oxfmt .github/workflows deploy/helm/cloud-agents/values.yaml deploy/helm/cloud-agents/values.schema.json packages sdk/typescript scripts/check-platform-go-modules.ts scripts/cloud-agent-release-smoke.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/cloud-agent-release.ts scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
+      - run: bunx oxfmt .github/workflows deploy/helm/cloud-agents/values.yaml deploy/helm/cloud-agents/values.schema.json packages sdk/typescript scripts/check-platform-go-modules.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
       - run: bunx oxlint . --deny-warnings --ignore-pattern scripts/lib/platform-contract-lock.ts
       - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh
       - run: sh scripts/test-cloud-agents-helm.sh
@@ -49,23 +49,16 @@ jobs:
       - run: sh scripts/test-platform-go-products.sh
       - run: bun run typecheck
       - run: bun run --filter '@synara/*' test
-      - run: bunx vitest run scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
+      - run: bunx vitest run scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
       - run: bun run build
       - run: bun run secret:scan
       - name: Build release assets
-        env:
-          CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER: github-actions
         run: |
           set -euo pipefail
           platform_directory=$RUNNER_TEMP/cloud-agents-platform
-          package_directory=$RUNNER_TEMP/cloud-agent-packages
           bun run platform:release -- --version "$CLOUD_AGENTS_RELEASE_VERSION" --output-dir "$platform_directory"
-          bun run release:smoke -- --output-dir "$package_directory"
           (cd "$platform_directory" && sha256sum -c checksums.sha256)
-          (cd "$package_directory" && sha256sum -c checksums.sha256)
-          cmp "$platform_directory/cloud-agent-runtime-standalone.mjs" "$package_directory/cloud-agent-runtime-standalone.mjs"
           echo "CLOUD_AGENTS_PLATFORM_DIRECTORY=$platform_directory" >>"$GITHUB_ENV"
-          echo "CLOUD_AGENT_PACKAGE_DIRECTORY=$package_directory" >>"$GITHUB_ENV"
       - name: Publish OCI images
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -90,24 +83,6 @@ jobs:
           mkdir "$release_directory"
           cp "$CLOUD_AGENTS_PLATFORM_DIRECTORY"/* "$release_directory/"
           mv "$release_directory/checksums.sha256" "$release_directory/cloud-agents-platform-checksums.sha256"
-          for source in "$CLOUD_AGENT_PACKAGE_DIRECTORY"/*; do
-            filename=${source##*/}
-            case $filename in
-              checksums.sha256)
-                cp "$source" "$release_directory/cloud-agent-package-checksums.sha256"
-                ;;
-              cloud-agent-runtime-standalone.mjs)
-                cmp "$source" "$release_directory/$filename"
-                ;;
-              *)
-                if [[ -e $release_directory/$filename ]]; then
-                  echo "duplicate release asset: $filename" >&2
-                  exit 1
-                fi
-                cp "$source" "$release_directory/$filename"
-                ;;
-            esac
-          done
           export CLOUD_AGENTS_OCI_MANIFEST="$release_directory/cloud-agents-oci-images.json"
           node <<'NODE'
           const { readFileSync, writeFileSync } = require("node:fs");
