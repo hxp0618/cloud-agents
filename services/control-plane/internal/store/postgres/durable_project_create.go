@@ -172,13 +172,9 @@ func createDurableProjectTransaction(
 	if result.ResourceKind == nil || *result.ResourceKind != "project" || result.ResourceID == nil {
 		return result, nil
 	}
-	if err := handle.transaction.queryRow(ctx, getProjectSQL, *result.ResourceID).Scan(
-		&result.Project.UID, &result.Project.Name, &result.Project.OrganizationID, &result.Project.DisplayName,
-		&result.Project.State, &result.Project.ResourceVersion, &result.Project.CreatedAt, &result.Project.UpdatedAt,
-	); err != nil {
+	if err := scanProject(handle.transaction.queryRow(ctx, getProjectSQL, *result.ResourceID), tenantID, &result.Project); err != nil {
 		return DurableProjectCreateResult{}, err
 	}
-	result.Project.TenantID = tenantID
 	return result, nil
 }
 

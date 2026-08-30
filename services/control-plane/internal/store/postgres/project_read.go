@@ -56,10 +56,7 @@ func (service *DurableCoordinationService) GetProject(
 				return ErrTenantCapabilityClosed
 			}
 			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}, func() error {
-				err := handle.transaction.queryRow(readContext, getProjectSQL, projectID).Scan(
-					&result.UID, &result.Name, &result.OrganizationID, &result.DisplayName, &result.State,
-					&result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt,
-				)
+				err := scanProject(handle.transaction.queryRow(readContext, getProjectSQL, projectID), tenantID, &result)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrProjectNotFound
 				}
@@ -69,4 +66,15 @@ func (service *DurableCoordinationService) GetProject(
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, err
+}
+
+func scanProject(row rowScanner, tenantID string, result *Project) error {
+	if err := row.Scan(
+		&result.UID, &result.Name, &result.OrganizationID, &result.DisplayName, &result.State,
+		&result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt,
+	); err != nil {
+		return err
+	}
+	result.TenantID = tenantID
+	return nil
 }

@@ -312,6 +312,15 @@ describe("generated platform JSON models", () => {
 describe("generated fixture client", () => {
   it("drives all declared operations through an injected transport", async () => {
     const projectBody = readFixture(platformFixtureRoot, "golden/project.json");
+    const projectGetBody = projectBody.replace(
+      `"name": "project-alpha"`,
+      `"name": "project-roundtrip"`,
+    );
+    expect(projectGetBody).not.toBe(projectBody);
+    const projectGetResponse = {
+      ...fixtureResponse(platformFixtureRoot, "project", 200),
+      body: projectGetBody,
+    };
     const request = decodeProjectCreateRequest(
       readJSON(platformFixtureRoot, "golden/project-create-request.json"),
     );
@@ -322,11 +331,7 @@ describe("generated fixture client", () => {
         "organization",
         200,
       ),
-      "GET /v1/tenants/tenant-alpha/projects/project-alpha": fixtureResponse(
-        platformFixtureRoot,
-        "project",
-        200,
-      ),
+      "GET /v1/tenants/tenant-alpha/projects/project-alpha": projectGetResponse,
       "GET /v1/tenants/tenant-alpha/memberships/membership-alpha": fixtureResponse(
         platformFixtureRoot,
         "membership",
@@ -342,11 +347,7 @@ describe("generated fixture client", () => {
         "role-binding",
         200,
       ),
-      "GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha": fixtureResponse(
-        platformFixtureRoot,
-        "project",
-        200,
-      ),
+      "GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha": projectGetResponse,
       "GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha": fixtureResponse(
         platformFixtureRoot,
         "role-binding",
@@ -423,6 +424,19 @@ describe("generated fixture client", () => {
       guardedClient.getProject("tenant-alpha", "wrong/id", "req-alpha"),
     ).rejects.toMatchObject({ code: "INVALID_IDENTIFIER" });
     expect(transportCalls).toBe(0);
+
+    const authorityBody = readFixture(platformFixtureRoot, "golden/project.json").replace(
+      `"uid": "project-alpha"`,
+      `"uid": "project-other"`,
+    );
+    const authorityClient = new Client(async () => ({
+      status: 200,
+      headers: { "X-Resource-Version": "3" },
+      body: authorityBody,
+    }));
+    await expect(
+      authorityClient.getProject("tenant-alpha", "project-alpha", "req-alpha"),
+    ).rejects.toMatchObject({ code: "PATH_BODY_AUTHORITY_MISMATCH", path: "/metadata/uid" });
   });
 });
 

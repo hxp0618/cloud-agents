@@ -17,15 +17,20 @@ import (
 func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	requestBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	projectBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project.json")
+	projectGetResponse := responseFixture(t, "project", 200)
+	projectGetResponse.Body = []byte(strings.Replace(string(projectGetResponse.Body), `"name": "project-alpha"`, `"name": "project-roundtrip"`, 1))
+	if string(projectGetResponse.Body) == string(projectBody) {
+		t.Fatal("project GET fixture must distinguish metadata.uid from metadata.name")
+	}
 	mutationBody := []byte(`{"resourceUid":"membership-new","resourceVersion":"8","state":"active"}`)
 	responses := map[string]Response{
 		"GET /v1/tenants/tenant-alpha":                                               responseFixture(t, "platform-tenant", 200),
 		"GET /v1/tenants/tenant-alpha/organizations/organization-alpha":              responseFixture(t, "organization", 200),
-		"GET /v1/tenants/tenant-alpha/projects/project-alpha":                        responseFixture(t, "project", 200),
+		"GET /v1/tenants/tenant-alpha/projects/project-alpha":                        projectGetResponse,
 		"GET /v1/tenants/tenant-alpha/memberships/membership-alpha":                  responseFixture(t, "membership", 200),
 		"GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1":                  responseFixture(t, "role", 200),
 		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":              responseFixture(t, "role-binding", 200),
-		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":           responseFixture(t, "project", 200),
+		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":           projectGetResponse,
 		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha": responseFixture(t, "role-binding", 200),
 		"POST /v1/tenants/tenant-alpha/projects":                                     {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
 		"POST /v1/tenants/tenant-alpha/memberships":                                  {Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"}, Body: mutationBody},
@@ -186,6 +191,13 @@ func TestGeneratedOpenAPIClientErrorAndCancellationBoundaries(t *testing.T) {
 	}
 	if transportCalls != 1 {
 		t.Fatalf("invalid path identifier reached transport: calls = %d", transportCalls)
+	}
+	authorityBody := []byte(strings.Replace(string(readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project.json")), `"uid": "project-alpha"`, `"uid": "project-other"`, 1))
+	authorityClient, _ := NewClient(TransportFunc(func(context.Context, Request) (Response, error) {
+		return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: authorityBody}, nil
+	}))
+	if _, err := authorityClient.GetProject(context.Background(), "tenant-alpha", "project-alpha", "req-alpha"); err == nil || !strings.Contains(err.Error(), "PATH_BODY_AUTHORITY_MISMATCH") {
+		t.Fatalf("resource UID authority mismatch = %#v", err)
 	}
 }
 
