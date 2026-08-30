@@ -58,6 +58,14 @@ func TestRuntimeHelperProcess(t *testing.T) {
 		}
 		_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T00:00:00Z","messageType":"Result","payload":{"ok":true}}`+"\n", requestID, command.ExecutionID, command.Generation, command.CommandID)
 	}
+	if os.Getenv("CLOUD_AGENTS_RUNTIME_IGNORE_EOF") == "1" {
+		for {
+			time.Sleep(time.Hour)
+		}
+	}
+	if marker := os.Getenv("CLOUD_AGENTS_RUNTIME_CLOSE_MARKER"); marker != "" {
+		_ = os.WriteFile(marker, []byte("closed"), 0o600)
+	}
 	os.Exit(0)
 }
 
@@ -96,7 +104,8 @@ func TestClientFailsPendingCommandWhenRuntimeExitsCleanly(t *testing.T) {
 
 func TestClientStopsRuntimeWhenOwnerContextIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1")
+	marker := t.TempDir() + "/closed"
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1", "CLOUD_AGENTS_RUNTIME_CLOSE_MARKER="+marker)
 	client, err := New(ctx, Config{
 		Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment,
 	})
@@ -110,6 +119,40 @@ func TestClientStopsRuntimeWhenOwnerContextIsCanceled(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Runtime process survived owner context cancellation")
 	}
+	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "closed" {
+		t.Fatalf("Runtime owner-cancel cleanup marker = %q, %v", contents, err)
+	}
+}
+
+func TestClientCloseLetsRuntimeDrainStdin(t *testing.T) {
+	marker := t.TempDir() + "/closed"
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1", "CLOUD_AGENTS_RUNTIME_CLOSE_MARKER="+marker)
+	client, err := New(context.Background(), Config{
+		Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeClient(t, client)
+	if contents, err := os.ReadFile(marker); err != nil || string(contents) != "closed" {
+		t.Fatalf("Runtime close cleanup marker = %q, %v", contents, err)
+	}
+}
+
+func TestClientCloseForceStopsRuntimeAtCallerDeadline(t *testing.T) {
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1", "CLOUD_AGENTS_RUNTIME_IGNORE_EOF=1")
+	client, err := New(context.Background(), Config{
+		Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := client.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("forced Runtime close error = %v", err)
+	}
+	closeClient(t, client)
 }
 
 func TestClientExecutesCommandsAndPreservesEvents(t *testing.T) {

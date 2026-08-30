@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
@@ -20,6 +21,7 @@ import (
 const (
 	maxEventQueueItems  = 128
 	maxCommandTombstone = 4096
+	runtimeStopTimeout  = 5 * time.Second
 )
 
 var (
@@ -89,6 +91,11 @@ func New(ctx context.Context, config Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("runtime stdin: %w", err)
 	}
+	process.Cancel = func() error {
+		_ = stdin.Close()
+		return nil
+	}
+	process.WaitDelay = runtimeStopTimeout
 	stdout, err := process.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
@@ -210,14 +217,26 @@ func (client *Client) Close(ctx context.Context) error {
 	}
 	client.mu.Unlock()
 	_ = client.stdin.Close()
-	if client.process.Process != nil {
-		_ = client.process.Process.Kill()
-	}
+	timer := time.NewTimer(runtimeStopTimeout)
+	defer timer.Stop()
 	select {
 	case <-client.done:
 		return nil
 	case <-ctx.Done():
+		if client.process.Process != nil {
+			_ = client.process.Process.Kill()
+		}
 		return ctx.Err()
+	case <-timer.C:
+		if client.process.Process != nil {
+			_ = client.process.Process.Kill()
+		}
+		select {
+		case <-client.done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
