@@ -58,10 +58,15 @@ func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ co
 	return ExecutionTransitionResult{}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ FailExecutionInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input FailExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "fail")
 	fake.recordPrincipal(principal)
-	return ExecutionTransitionResult{}, nil
+	fake.execution.State = ExecutionFailed
+	fake.execution.ErrorCode = input.ErrorCode
+	return ExecutionTransitionResult{
+		Turn:      TurnSnapshot{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, State: TurnFailed},
+		Execution: fake.execution,
+	}, nil
 }
 
 func (fake *durableRuntimeExecutionStoreFake) InterruptManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input InterruptTurnInput) (ExecutionTransitionResult, error) {
@@ -164,6 +169,28 @@ func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *tes
 		t.Fatalf("calls=%v", store.calls)
 	}
 	assertFreshPrincipals(t, store.principals, 3)
+}
+
+func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t *testing.T) {
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrDurableRuntimeExecutionFailed) || result.Transition.Execution.State != ExecutionFailed || result.Transition.Execution.ErrorCode != "orphaned_execution" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution", "fail"}) {
+		t.Fatalf("calls=%v", store.calls)
+	}
+	assertFreshPrincipals(t, store.principals, 4)
 }
 
 func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {

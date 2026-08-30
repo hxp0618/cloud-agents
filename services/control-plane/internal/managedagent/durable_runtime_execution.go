@@ -246,6 +246,9 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
+	if execution.State == ExecutionRunning {
+		return coordinator.fail(principalSource, input, ExecutionTransitionResult{Turn: turn, Execution: execution}, nil, "orphaned_execution", errors.New("running Runtime execution has no active owner"))
+	}
 	if execution.State != ExecutionQueued {
 		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}}, nil
 	}
