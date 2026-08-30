@@ -119,8 +119,6 @@ spec:
             - name: worker-ca
               mountPath: /run/cloud-agents/worker-ca
               readOnly: true
-            - name: workspace
-              mountPath: /workspace
       volumes:
         - name: auth
           secret:
@@ -140,6 +138,3 @@ spec:
             items:
               - key: ca.crt
                 path: ca.crt
-        - name: workspace
-          persistentVolumeClaim:
-            claimName: {{ include "cloud-agents.workspaceClaim" . }}

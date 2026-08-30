@@ -143,6 +143,22 @@ describe("platform release", () => {
     }
   });
 
+  it("mounts the persistent Runtime workspace only on the Worker", () => {
+    const controlPlane = readFileSync(
+      "deploy/helm/cloud-agents/templates/control-plane.yaml",
+      "utf8",
+    );
+    const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
+    const claim = readFileSync(
+      "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
+      "utf8",
+    );
+    expect(controlPlane).not.toContain("mountPath: /workspace");
+    expect(worker).toContain("mountPath: /workspace");
+    expect(claim).toContain("accessModes: [ReadWriteOnce]");
+    expect(claim).not.toContain("ReadWriteMany");
+  });
+
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     expect(compose).toContain('command:\n      - >-\n        exec psql');

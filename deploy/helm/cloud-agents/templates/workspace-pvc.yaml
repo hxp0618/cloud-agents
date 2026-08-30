@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "cloud-agents.labels" . | nindent 4 }}
 spec:
-  accessModes: [ReadWriteMany]
+  accessModes: [ReadWriteOnce]
   {{- with .Values.runtime.workspace.storageClassName }}
   storageClassName: {{ . | quote }}
   {{- end }}
