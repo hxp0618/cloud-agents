@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -19,7 +22,7 @@ import (
 
 // OpenSession is the Worker-side bridge from an authenticated Supervisor to
 // one local Cloud Agent Runtime process. Runtime JSON remains the source of
-// truth; protobuf carries only transport identity and fencing.
+// truth; protobuf carries transport identity, fencing, and Provider binding.
 func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[workerruntimev1alpha1.RuntimeSessionRequest, workerruntimev1alpha1.RuntimeSessionResponse]) error {
 	if !s.ready() || len(s.runtimeCommand) == 0 {
 		return runtimeSessionFailure(connect.CodeUnimplemented, "runtime_not_configured", "Runtime command is not configured")
@@ -58,8 +61,15 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if err := validateIdentifier(open.GetExecutionId(), "execution_id"); err != nil || open.GetGeneration() == 0 || open.GetGeneration() != open.GetFencing().GetGeneration() {
 		return runtimeSessionFailure(connect.CodeInvalidArgument, "runtime_identity_invalid", "execution id and generation are invalid")
 	}
+	if !validRuntimeProviderKind(open.GetProviderKind()) {
+		return runtimeSessionFailure(connect.CodeInvalidArgument, "provider_invalid", "Runtime provider kind is invalid")
+	}
+	credentialFile, err := runtimeProviderCredentialFile(s.runtimeCredentialDirectory, open.GetProviderKind())
+	if err != nil {
+		return err
+	}
 	client, err := runtimeprocess.New(ctx, runtimeprocess.Config{
-		Command: s.runtimeCommand, Environment: s.runtimeEnvironment, Directory: s.runtimeDirectory,
+		Command: s.runtimeCommand, Environment: s.runtimeEnvironment, Directory: s.runtimeDirectory, CredentialFile: credentialFile,
 	})
 	if err != nil {
 		return runtimeSessionFailure(connect.CodeFailedPrecondition, "runtime_start_failed", "Runtime process could not be started")
@@ -138,6 +148,12 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 			cancel()
 			break
 		}
+		if providerKind, bindsProvider := runtimeCommandProvider(command); bindsProvider && providerKind != open.GetProviderKind() {
+			_ = sendRuntimeError(send, "provider_mismatch", "Runtime command Provider does not match the opened session")
+			sessionErr = runtimeSessionFailure(connect.CodePermissionDenied, "provider_mismatch", "Runtime command Provider does not match the opened session")
+			cancel()
+			break
+		}
 		commands.Add(1)
 		go func(command runtimeprocess.Command) {
 			defer commands.Done()
@@ -155,6 +171,39 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 		return eventErr
 	}
 	return sessionErr
+}
+
+var runtimeProviderKindPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
+
+func validRuntimeProviderKind(value string) bool {
+	return runtimeProviderKindPattern.MatchString(value)
+}
+
+func runtimeProviderCredentialFile(directory, providerKind string) (string, error) {
+	if directory == "" {
+		return "", nil
+	}
+	path := filepath.Join(directory, providerKind+".json")
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", runtimeSessionFailure(connect.CodeFailedPrecondition, "provider_credential_unavailable", "Runtime Provider credential is unavailable")
+	}
+	return path, nil
+}
+
+func runtimeCommandProvider(command runtimeprocess.Command) (string, bool) {
+	switch command.CommandType {
+	case "Describe":
+		providerKind, _ := command.Payload["provider"].(string)
+		return providerKind, true
+	case "StartSession", "ResumeSession":
+		runnerInput, _ := command.Payload["runnerInput"].(map[string]any)
+		workload, _ := runnerInput["workload"].(map[string]any)
+		providerKind, _ := workload["provider"].(string)
+		return providerKind, true
+	default:
+		return "", false
+	}
 }
 
 func (s *Service) validateRuntimeFencing(open *workerruntimev1alpha1.RuntimeSessionOpen) error {

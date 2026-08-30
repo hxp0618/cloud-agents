@@ -98,7 +98,7 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 	if result.Messages[1].MessageType != "Event" || result.Messages[2].MessageType != "Result" || result.Messages[2].Payload["inputText"] != "hello runtime" {
 		t.Fatalf("runtime messages = %#v", result.Messages)
 	}
-	if result.Messages[0].Payload["sessionCommand"] != "StartSession" || result.Messages[0].Payload["cursorAccepted"] != true {
+	if result.Messages[0].Payload["sessionCommand"] != "StartSession" || result.Messages[0].Payload["cursorAccepted"] != true || result.Messages[0].Payload["inputAccepted"] != true {
 		t.Fatalf("Runtime session start = %#v", result.Messages[0].Payload)
 	}
 	assertNoProviderResumeCursor(t, result.Messages)
@@ -202,6 +202,8 @@ func runRuntimeExecutionHelper() {
 			workspaceDirectory, _ := runnerInput["workspaceDirectory"].(string)
 			runtimeOutputDirectory, _ := runnerInput["runtimeOutputDirectory"].(string)
 			providerStateDirectory, _ := runnerInput["providerStateDirectory"].(string)
+			workload, _ := runnerInput["workload"].(map[string]any)
+			sessionInputText, inputPresent := workload["inputText"].(string)
 			cursor, _ := runnerInput["providerResumeCursor"].(string)
 			expectedCursor := ""
 			if command.ExecutionID == "execution-runtime-second" {
@@ -210,8 +212,8 @@ func runRuntimeExecutionHelper() {
 				expectedCursor = "provider-cursor-2"
 			}
 			cursorAccepted := command.CommandType == "StartSession" && cursor == "" || command.CommandType == "ResumeSession" && cursor == expectedCursor && cursor != ""
-			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"workspaceDirectory":%q,"runtimeOutputDirectory":%q,"providerStateDirectory":%q,"sessionCommand":%q,"cursorAccepted":%t}}
-`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, workspaceDirectory, runtimeOutputDirectory, providerStateDirectory, command.CommandType, cursorAccepted)
+			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"workspaceDirectory":%q,"runtimeOutputDirectory":%q,"providerStateDirectory":%q,"sessionCommand":%q,"cursorAccepted":%t,"inputAccepted":%t}}
+`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, workspaceDirectory, runtimeOutputDirectory, providerStateDirectory, command.CommandType, cursorAccepted, inputPresent && sessionInputText == "")
 			continue
 		}
 		_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"ok":true}}

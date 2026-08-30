@@ -153,6 +153,8 @@ services:
       - "${CLOUD_AGENTS_WORKER_SPIFFE_ID:?set the Worker SPIFFE identity}"
       - "--runtime-command"
       - "/usr/local/bin/cloud-agent-runtime"
+      - "--provider-credential-directory"
+      - "/run/cloud-agents/provider-credentials"
       - "--admission-lease-id"
       - "${CLOUD_AGENTS_ADMISSION_LEASE_ID:?set the Runtime admission lease id}"
       - "--admission-generation"
@@ -164,6 +166,7 @@ services:
     restart: unless-stopped
     volumes:
       - ${CLOUD_AGENTS_WORKER_TLS_DIR:?set the Worker TLS directory}:/run/cloud-agents/tls:ro
+      - ${CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR:?set the Provider credential directory}:/run/cloud-agents/provider-credentials:ro
       - ${CLOUD_AGENTS_WORKSPACE_DIR:?set the Runtime workspace directory}:/workspace
     ports:
       - "${CLOUD_AGENTS_WORKER_BIND:-127.0.0.1:8091}:8091"

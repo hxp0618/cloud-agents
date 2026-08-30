@@ -369,7 +369,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 		result.FailureCode = "workspace_invalid"
 		return result, err
 	}
-	session, err := workerSupervisor.OpenRuntimeSession(ctx, input.ExecutionID, input.Generation, input.Fencing)
+	session, err := workerSupervisor.OpenRuntimeSession(ctx, input.ExecutionID, input.ProviderKind, input.Generation, input.Fencing)
 	if err != nil {
 		return result, err
 	}
@@ -381,7 +381,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 		"workspaceDirectory":     paths.workspaceDirectory,
 		"runtimeOutputDirectory": paths.runtimeOutputDirectory,
 		"providerStateDirectory": paths.providerStateDirectory,
-		"workload":               map[string]any{"provider": input.ProviderKind, "model": input.Model},
+		"workload":               map[string]any{"provider": input.ProviderKind, "model": input.Model, "inputText": ""},
 		"execution":              map[string]any{"id": input.ExecutionID},
 	}
 	sessionCommand, sessionSuffix := "StartSession", "start"

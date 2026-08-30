@@ -97,7 +97,7 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()},
 		Fencing:     &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-invalid-command", Generation: 7, Token: []byte("runtime-token")},
-		ExecutionId: "execution-invalid-command", Generation: 7, ExpectedWorkerIdentity: workerIdentity,
+		ExecutionId: "execution-invalid-command", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -117,5 +117,26 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	}
 	if runtimeError := response.GetError(); runtimeError == nil || runtimeError.GetCode() != "command_invalid" {
 		t.Fatalf("invalid Runtime response = %#v", response)
+	}
+}
+
+func TestRuntimeCommandProviderReadsOnlyProviderBindingCommands(t *testing.T) {
+	start := runtimeprocess.Command{CommandType: "StartSession", Payload: map[string]any{"runnerInput": map[string]any{"workload": map[string]any{"provider": "codex"}}}}
+	if providerKind, binds := runtimeCommandProvider(start); !binds || providerKind != "codex" {
+		t.Fatalf("StartSession provider = %q, binds = %t", providerKind, binds)
+	}
+	if providerKind, binds := runtimeCommandProvider(runtimeprocess.Command{CommandType: "SendTurn", Payload: map[string]any{"provider": "claudeAgent"}}); binds || providerKind != "" {
+		t.Fatalf("SendTurn provider = %q, binds = %t", providerKind, binds)
+	}
+}
+
+func TestRuntimeProviderCredentialFileRejectsInvalidOrMissingBinding(t *testing.T) {
+	for _, providerKind := range []string{"", "../codex", "codex.json", strings.Repeat("a", 65)} {
+		if validRuntimeProviderKind(providerKind) {
+			t.Fatalf("provider kind %q unexpectedly valid", providerKind)
+		}
+	}
+	if _, err := runtimeProviderCredentialFile(t.TempDir(), "codex"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "provider_credential_unavailable") {
+		t.Fatalf("missing Provider credential error = %v", err)
 	}
 }

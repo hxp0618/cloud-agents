@@ -14,7 +14,7 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	if _, err := parseProductionWorkerConfig(nil, nil); !errors.Is(err, errInvalidProductionWorkerConfig) {
 		t.Fatalf("missing TLS config error = %v", err)
 	}
-	base := []string{"--tls-cert", "server.pem", "--tls-key", "server.key", "--client-ca", "clients.pem"}
+	base := []string{"--tls-cert", "server.pem", "--tls-key", "server.key", "--client-ca", "clients.pem", "--provider-credential-directory", "/run/cloud-agents/provider-credentials"}
 	for _, address := range []string{"127.0.0.1:0", ":not-a-port", ":65536", "worker.example"} {
 		args := append([]string{"--listen", address}, base...)
 		if _, err := parseProductionWorkerConfig(args, nil); !errors.Is(err, errInvalidProductionWorkerConfig) {
@@ -30,6 +30,9 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 		return ""
 	}); err != nil || cfg.listen != "worker.example:8091" {
 		t.Fatalf("hostname listen = %q error = %v", cfg.listen, err)
+	}
+	if _, err := parseProductionWorkerConfig(append(validArgs, "--provider-credential-directory", "relative"), func(string) string { return "admission-token" }); !errors.Is(err, errInvalidProductionWorkerConfig) {
+		t.Fatalf("relative Provider credential directory error = %v", err)
 	}
 	for _, identity := range []string{"", "https://cloud-agents.example/worker", "spiffe://", "spiffe://cloud-agents.example/worker?bad=1"} {
 		args := append(append([]string{}, base...), "--worker-spiffe-id", identity, "--runtime-command", "/opt/cloud-agents/runtime", "--admission-lease-id", "lease-production", "--admission-generation", "7")
@@ -79,15 +82,17 @@ func TestProductionWorkerRuntimeAdvertisesOperationDispatch(t *testing.T) {
 	}
 }
 
-func TestProductionRuntimeEnvironmentExcludesWorkerAdmissionAuthority(t *testing.T) {
+func TestProductionRuntimeEnvironmentExcludesWorkerAndProviderCredentials(t *testing.T) {
 	filtered := productionRuntimeEnvironment([]string{
 		"PATH=/usr/bin",
 		admissionLeaseIDEnvironment + "=lease",
 		admissionGenerationEnvironment + "=7",
 		admissionTokenEnvironment + "=secret",
 		"OPENAI_API_KEY=provider-key",
+		"ANTHROPIC_AUTH_TOKEN=provider-token",
+		"CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=99",
 	})
-	want := []string{"PATH=/usr/bin", "OPENAI_API_KEY=provider-key"}
+	want := []string{"PATH=/usr/bin"}
 	if len(filtered) != len(want) {
 		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
 	}

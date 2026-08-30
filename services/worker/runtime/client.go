@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -69,9 +70,10 @@ type Message struct {
 }
 
 type Config struct {
-	Command     []string
-	Environment []string
-	Directory   string
+	Command        []string
+	Environment    []string
+	Directory      string
+	CredentialFile string
 }
 
 type Client struct {
@@ -114,6 +116,17 @@ func New(ctx context.Context, config Config) (*Client, error) {
 	if config.Environment != nil {
 		process.Env = append([]string(nil), config.Environment...)
 	}
+	var credential *os.File
+	if config.CredentialFile != "" {
+		var err error
+		credential, err = os.Open(config.CredentialFile)
+		if err != nil {
+			return nil, fmt.Errorf("runtime credential: %w", err)
+		}
+		defer credential.Close()
+		process.ExtraFiles = []*os.File{credential}
+		process.Env = credentialEnvironment(process.Env)
+	}
 	stdin, err := process.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("runtime stdin: %w", err)
@@ -141,6 +154,19 @@ func New(ctx context.Context, config Config) (*Client, error) {
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
 	go client.run(stdout)
 	return client, nil
+}
+
+func credentialEnvironment(environment []string) []string {
+	if environment == nil {
+		environment = os.Environ()
+	}
+	filtered := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=") && !strings.HasPrefix(entry, "SYNARA_PROVIDER_CREDENTIAL_FD=") {
+			filtered = append(filtered, entry)
+		}
+	}
+	return append(filtered, "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=3")
 }
 
 func (client *Client) Events() <-chan Message {

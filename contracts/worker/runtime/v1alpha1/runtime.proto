@@ -2,7 +2,7 @@
 //
 // Runtime transport authority for the independent Cloud Agents product.
 // The JSON bytes carry the Runtime Protocol 2.3 envelope; this contract
-// carries only the authenticated Worker session and its fencing boundary.
+// carries only the authenticated Worker session, fencing, and Provider binding.
 syntax = "proto3";
 
 package cloudagents.worker.runtime.v1alpha1;
@@ -17,6 +17,9 @@ message RuntimeSessionOpen {
   string execution_id = 3;
   uint64 generation = 4;
   cloudagents.worker.v1alpha1.WorkloadIdentity expected_worker_identity = 5;
+  // Selects the deployment-owned credential passed to this Runtime process.
+  // Every session command that names a Provider must match this binding.
+  string provider_kind = 6;
 }
 
 message RuntimeCommandFrame {

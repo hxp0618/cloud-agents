@@ -72,6 +72,9 @@ type Config struct {
 	RuntimeCommand     []string
 	RuntimeEnvironment []string
 	RuntimeDirectory   string
+	// RuntimeCredentialDirectory contains one <providerKind>.json anonymous-FD
+	// credential envelope per production Provider.
+	RuntimeCredentialDirectory string
 	// AdmissionLeaseID, AdmissionGeneration, and AdmissionToken bind the local,
 	// in-memory operation-admission seam to one externally supplied fencing authority.
 	// They do not authorize dispatch, durable receipts, or any external write.
@@ -91,26 +94,27 @@ type Config struct {
 // Negotiation state is ephemeral and bound to client/server identities.
 type Service struct {
 	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
-	workerIdentity      *workerv1alpha1.WorkloadIdentity
-	capabilities        map[workerv1alpha1.Capability]struct{}
-	ttl                 time.Duration
-	identity            IdentityProvider
-	newID               IDGenerator
-	now                 Clock
-	mu                  sync.RWMutex
-	executionMu         sync.Mutex
-	bindings            map[string]binding
-	admissionLeaseID    string
-	admissionGeneration uint64
-	admissionToken      []byte
-	runtimeCommand      []string
-	runtimeEnvironment  []string
-	runtimeDirectory    string
-	admissions          map[string]admissionRecord
-	executor            OperationExecutor
-	receipts            map[string]receiptRecord
-	receiptsByAttempt   map[string]string
-	receiptSequence     uint64
+	workerIdentity             *workerv1alpha1.WorkloadIdentity
+	capabilities               map[workerv1alpha1.Capability]struct{}
+	ttl                        time.Duration
+	identity                   IdentityProvider
+	newID                      IDGenerator
+	now                        Clock
+	mu                         sync.RWMutex
+	executionMu                sync.Mutex
+	bindings                   map[string]binding
+	admissionLeaseID           string
+	admissionGeneration        uint64
+	admissionToken             []byte
+	runtimeCommand             []string
+	runtimeEnvironment         []string
+	runtimeDirectory           string
+	runtimeCredentialDirectory string
+	admissions                 map[string]admissionRecord
+	executor                   OperationExecutor
+	receipts                   map[string]receiptRecord
+	receiptsByAttempt          map[string]string
+	receiptSequence            uint64
 }
 
 type binding struct {
@@ -165,7 +169,7 @@ func NewService(cfg Config) (*Service, error) {
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
 		admissionToken: append([]byte(nil), cfg.AdmissionToken...),
-		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory,
+		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory,
 		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
 		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil
 }

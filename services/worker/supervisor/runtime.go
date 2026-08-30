@@ -48,8 +48,8 @@ func (s *Supervisor) CheckRuntimeHealth(ctx context.Context) error {
 
 // OpenRuntimeSession starts a Worker-side Runtime process after binding the
 // current negotiation, expected Worker identity, and fencing proof.
-func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
-	if s == nil || !runtimeClientAvailable(s.runtimeClient) || !validIdentity(s.workerIdentity) || executionID == "" || generation == 0 || fencing == nil {
+func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
+	if s == nil || !runtimeClientAvailable(s.runtimeClient) || !validIdentity(s.workerIdentity) || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
 		return nil, errInvalidConfig
 	}
 	if err := contextErr(ctx); err != nil {
@@ -73,7 +73,7 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID string,
 	}
 	stream := s.runtimeClient.OpenSession(ctx)
 	open := &workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
-		Negotiation: state.negotiationBinding(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(s.workerIdentity),
+		Negotiation: state.negotiationBinding(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(s.workerIdentity), ProviderKind: providerKind,
 	}}}
 	if err := stream.Send(open); err != nil {
 		return nil, rpcFailure("runtime_open", err)

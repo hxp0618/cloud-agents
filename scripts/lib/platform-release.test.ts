@@ -109,6 +109,7 @@ describe("platform release", () => {
       "deploy/compose/README.md",
       "deploy/compose/docker-compose.yml",
       "deploy/compose/provision.sql",
+      "deploy/compose/runtime.env.example",
       "deploy/compose/tenant-bootstrap.sql",
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
@@ -157,6 +158,16 @@ describe("platform release", () => {
     expect(worker).toContain("mountPath: /workspace");
     expect(claim).toContain("accessModes: [ReadWriteOnce]");
     expect(claim).not.toContain("ReadWriteMany");
+  });
+
+  it("delivers deployment-owned Provider credentials through the Worker", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
+    for (const deployment of [compose, worker]) {
+      expect(deployment).toContain("--provider-credential-directory");
+      expect(deployment).toContain("/run/cloud-agents/provider-credentials");
+    }
+    expect(worker).toContain("secretName: {{ .Values.runtime.credentialSecretName }}");
   });
 
   it("packages an atomic Compose database authority bootstrap", () => {

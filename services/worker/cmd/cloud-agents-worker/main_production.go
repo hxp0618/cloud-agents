@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,15 +38,16 @@ const (
 )
 
 type productionWorkerConfig struct {
-	listen              string
-	tlsCertFile         string
-	tlsKeyFile          string
-	clientCAFile        string
-	workerSPIFFE        string
-	runtimeCommand      string
-	admissionLeaseID    string
-	admissionGeneration uint64
-	admissionToken      []byte
+	listen                     string
+	tlsCertFile                string
+	tlsKeyFile                 string
+	clientCAFile               string
+	workerSPIFFE               string
+	runtimeCommand             string
+	runtimeCredentialDirectory string
+	admissionLeaseID           string
+	admissionGeneration        uint64
+	admissionToken             []byte
 }
 
 func parseProductionWorkerConfig(args []string, getenv func(string) string) (productionWorkerConfig, error) {
@@ -57,6 +59,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	clientCA := set.String("client-ca", "", "client CA certificate PEM file")
 	workerSPIFFE := set.String("worker-spiffe-id", "", "worker SPIFFE identity")
 	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
+	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "directory containing <providerKind>.json credentials")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
@@ -76,7 +79,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	if getenv != nil {
 		admissionToken = []byte(getenv(admissionTokenEnvironment))
 	}
-	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
+	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, runtimeCredentialDirectory: *runtimeCredentialDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
 	if err := validateProductionWorkerConfig(cfg); err != nil {
 		return productionWorkerConfig{}, err
 	}
@@ -84,10 +87,10 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 }
 
 func validateProductionWorkerConfig(cfg productionWorkerConfig) error {
-	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
+	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || !filepath.IsAbs(cfg.runtimeCredentialDirectory) || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
 		return errInvalidProductionWorkerConfig
 	}
-	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
+	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
 		return errInvalidProductionWorkerConfig
 	}
 	if _, err := productionIdentity(cfg.workerSPIFFE); err != nil {
@@ -153,14 +156,15 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		return err
 	}
 	service, err := workerkernel.NewService(workerkernel.Config{
-		WorkerIdentity:      identity,
-		Capabilities:        productionWorkerCapabilities(),
-		IdentityProvider:    workerkernel.TLSIdentityProvider{},
-		RuntimeCommand:      []string{cfg.runtimeCommand},
-		RuntimeEnvironment:  productionRuntimeEnvironment(os.Environ()),
-		AdmissionLeaseID:    cfg.admissionLeaseID,
-		AdmissionGeneration: cfg.admissionGeneration,
-		AdmissionToken:      cfg.admissionToken,
+		WorkerIdentity:             identity,
+		Capabilities:               productionWorkerCapabilities(),
+		IdentityProvider:           workerkernel.TLSIdentityProvider{},
+		RuntimeCommand:             []string{cfg.runtimeCommand},
+		RuntimeEnvironment:         productionRuntimeEnvironment(os.Environ()),
+		RuntimeCredentialDirectory: cfg.runtimeCredentialDirectory,
+		AdmissionLeaseID:           cfg.admissionLeaseID,
+		AdmissionGeneration:        cfg.admissionGeneration,
+		AdmissionToken:             cfg.admissionToken,
 	})
 	if err != nil {
 		return errInvalidProductionWorkerConfig
@@ -209,12 +213,24 @@ func productionRuntimeEnvironment(source []string) []string {
 	filtered := make([]string, 0, len(source))
 	for _, entry := range source {
 		name, _, found := strings.Cut(entry, "=")
-		if found && (name == admissionLeaseIDEnvironment || name == admissionGenerationEnvironment || name == admissionTokenEnvironment) {
+		if found && productionRuntimeEnvironmentExcluded(name) {
 			continue
 		}
 		filtered = append(filtered, entry)
 	}
 	return filtered
+}
+
+func productionRuntimeEnvironmentExcluded(name string) bool {
+	switch name {
+	case admissionLeaseIDEnvironment, admissionGenerationEnvironment, admissionTokenEnvironment,
+		"CLOUD_AGENT_PROVIDER_CREDENTIAL_FD", "SYNARA_PROVIDER_CREDENTIAL_FD",
+		"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORGANIZATION",
+		"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL":
+		return true
+	default:
+		return false
+	}
 }
 
 func productionWorkerCapabilities() []workerv1alpha1.Capability {
