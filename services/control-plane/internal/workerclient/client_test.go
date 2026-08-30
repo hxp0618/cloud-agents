@@ -30,13 +30,16 @@ type workerWireFake struct {
 }
 
 func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
-	if !exactCapabilities(request.Msg.GetRequiredCapabilities(), fake.capabilities) {
+	required := []workerv1alpha1.Capability{
+		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+		workerv1alpha1.Capability_CAPABILITY_HEALTH,
+	}
+	if !exactCapabilities(request.Msg.GetRequiredCapabilities(), required) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errInvalidConfig)
 	}
-	capabilities := append([]workerv1alpha1.Capability(nil), fake.capabilities...)
-	descriptor := workerDescriptor(capabilities)
+	descriptor := workerDescriptor(fake.capabilities)
 	return connect.NewResponse(&workerv1alpha1.NegotiationResponse{
-		SelectedVersion: request.Msg.GetSupportedVersions()[0], AcceptedCapabilities: capabilities, Server: descriptor,
+		SelectedVersion: request.Msg.GetSupportedVersions()[0], AcceptedCapabilities: required, Server: descriptor,
 		AuthenticatedServerIdentity: proto.Clone(fake.identity).(*workerv1alpha1.WorkloadIdentity), NegotiationId: "negotiation-1", ExpiresAt: timestamppb.New(fake.now.Add(time.Minute)),
 	}), nil
 }
@@ -71,6 +74,7 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	fake := &workerWireFake{identity: identity, capabilities: []workerv1alpha1.Capability{
 		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
 		workerv1alpha1.Capability_CAPABILITY_HEALTH,
+		workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
 	}, now: now}
 	mux := http.NewServeMux()
 	workerPath, workerHandler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(fake)

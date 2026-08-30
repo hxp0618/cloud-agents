@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -326,8 +327,13 @@ func validateNegotiation(response *connect.Response[workerv1alpha1.NegotiationRe
 		return nil, fail(connect.CodeFailedPrecondition, "negotiation_invalid")
 	}
 	descriptor, err := validateDescriptor(message.GetServer())
-	if err != nil || !exactCapabilities(descriptor.GetCapabilities(), required) {
+	if err != nil {
 		return nil, fail(connect.CodeFailedPrecondition, "protocol_descriptor_invalid")
+	}
+	for _, capability := range required {
+		if !slices.Contains(descriptor.GetCapabilities(), capability) {
+			return nil, fail(connect.CodeFailedPrecondition, "protocol_descriptor_invalid")
+		}
 	}
 	expiresAt := message.GetExpiresAt().AsTime().UTC()
 	if !now.Before(expiresAt) {
