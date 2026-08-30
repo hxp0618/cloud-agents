@@ -51,6 +51,33 @@ func TestScanManagedAgentExecutionTransitionPreservesNullableTerminalFields(t *t
 	}
 }
 
+func TestScanManagedAgentExecutionTransitionAcceptsLifecycleOutcomes(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	for _, test := range []struct {
+		name           string
+		turnState      string
+		executionState string
+		resultDigest   *string
+		errorCode      *string
+		wantError      bool
+	}{
+		{name: "completed", turnState: "completed", executionState: "succeeded", resultDigest: &digest},
+		{name: "failed", turnState: "failed", executionState: "failed", errorCode: nullableString("provider_unavailable")},
+		{name: "cancelled", turnState: "cancelled", executionState: "cancelled", errorCode: nullableString("cancelled")},
+		{name: "interrupted", turnState: "interrupted", executionState: "cancelled", errorCode: nullableString("interrupted")},
+		{name: "mismatched", turnState: "completed", executionState: "failed", errorCode: nullableString("provider_unavailable"), wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var result internalmanagedagent.ExecutionTransitionResult
+			err := scanManagedAgentExecutionTransition(rowValues("turn-alpha", test.turnState, int64(4), now, now, "execution-alpha", int64(7), test.executionState, test.resultDigest, test.errorCode, int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", &result)
+			if (err != nil) != test.wantError {
+				t.Fatalf("error = %v, wantError = %v", err, test.wantError)
+			}
+		})
+	}
+}
+
 func TestScanManagedAgentExecutionPreservesNotFound(t *testing.T) {
 	var snapshot internalmanagedagent.ExecutionSnapshot
 	if err := scanManagedAgentExecution(rowError(pgx.ErrNoRows), internalmanagedagent.Scope{}, "", "", &snapshot); !errors.Is(err, pgx.ErrNoRows) {
@@ -72,6 +99,9 @@ func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	}
 	if !strings.Contains(settleManagedAgentExecutionSQL, "settle_managed_agent_execution_v3") {
 		t.Fatal("execution settlement does not persist the terminal Result")
+	}
+	if strings.Contains(createManagedAgentExecutionSQL, "managed_agent_executions") {
+		t.Fatal("execution creation must read its projection in a later SQL statement")
 	}
 }
 

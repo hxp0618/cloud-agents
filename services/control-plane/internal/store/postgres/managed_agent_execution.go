@@ -19,16 +19,8 @@ import (
 var ErrManagedAgentExecutionNotFound = errors.New("managed agent execution was not found")
 
 const (
-	createManagedAgentExecutionSQL = `WITH created AS (
-    SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at
-    FROM cloud_agents.create_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)
-)
-SELECT created.execution_uid, created.generation, created.state, created.result_digest, created.error_code,
-    created.resource_version, created.created_at, created.updated_at, execution.terminal_message
-FROM created
-JOIN cloud_agents.managed_agent_executions AS execution
-    ON execution.tenant_id = $1 AND execution.project_uid = $2 AND execution.session_uid = $3
-    AND execution.turn_uid = $4 AND execution.execution_uid = created.execution_uid`
+	createManagedAgentExecutionSQL = `SELECT execution_uid
+FROM cloud_agents.create_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	startManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.start_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
@@ -65,10 +57,27 @@ func (service *DurableCoordinationService) CreateManagedAgentExecution(
 	}
 	var result internalmanagedagent.ExecutionSnapshot
 	err = withManagedAgentProjectMutation(service, ctx, tenantID, principal, input.Scope.ProjectID, func(handle *tenantReadHandle) error {
-		if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, createManagedAgentExecutionSQL,
+		var executionID string
+		if err := handle.transaction.queryRow(ctx, createManagedAgentExecutionSQL,
 			input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.TurnID, input.ExecutionID,
-			int64(input.Generation), input.Mutation.IdempotencyKey, digest), input.Scope, input.SessionID, input.TurnID, &result); err != nil {
+			int64(input.Generation), input.Mutation.IdempotencyKey, digest).Scan(&executionID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrCoordinationResultDrift
+			}
+			return mapMutationDatabaseError("managed agent execution", err)
+		}
+		if !validMutationIdentifier(executionID) {
+			return ErrCoordinationResultDrift
+		}
+		if err := scanManagedAgentExecution(handle.transaction.queryRow(ctx, getManagedAgentExecutionSQL,
+			input.Scope.ProjectID, input.SessionID, input.TurnID, executionID), input.Scope, input.SessionID, input.TurnID, &result); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrCoordinationResultDrift
+			}
 			return err
+		}
+		if result.ExecutionID != executionID {
+			return ErrCoordinationResultDrift
 		}
 		return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{
 			Scope: input.Scope, SessionID: result.SessionID, Operation: "execution.create", Resource: internalmanagedagent.ResourceExecution,
@@ -229,7 +238,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
-			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage)), scope, sessionID, &result); err != nil {
+			nullableString(resultDigest), nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage)), scope, sessionID, &result); err != nil {
 			return err
 		}
 		operation := "execution.complete"
@@ -400,8 +409,27 @@ func scanManagedAgentExecutionTransition(row rowScanner, scope internalmanagedag
 		result.Execution.ErrorCode = *errorCode
 	}
 	result.Execution.Version = uint64(executionVersion)
-	if result.Turn.TurnID == "" || turnVersion <= 0 || executionGeneration <= 0 || executionVersion <= 0 || (result.Turn.State != internalmanagedagent.TurnRunning && result.Turn.State != internalmanagedagent.TurnCompleted && result.Turn.State != internalmanagedagent.TurnFailed) || (result.Execution.State != internalmanagedagent.ExecutionRunning && result.Execution.State != internalmanagedagent.ExecutionSucceeded && result.Execution.State != internalmanagedagent.ExecutionFailed) || result.Execution.ExecutionID == "" || result.Turn.CreatedAt.IsZero() || result.Turn.UpdatedAt.IsZero() || result.Execution.CreatedAt.IsZero() || result.Execution.UpdatedAt.IsZero() {
+	if result.Turn.TurnID == "" || turnVersion <= 0 || executionGeneration <= 0 || executionVersion <= 0 ||
+		!validManagedAgentExecutionTransition(result.Turn.State, result.Execution.State, result.Execution.ResultDigest, result.Execution.ErrorCode) ||
+		result.Execution.ExecutionID == "" || result.Turn.CreatedAt.IsZero() || result.Turn.UpdatedAt.IsZero() || result.Execution.CreatedAt.IsZero() || result.Execution.UpdatedAt.IsZero() {
 		return fmt.Errorf("%w: managed agent execution transition projection", ErrCoordinationResultDrift)
 	}
 	return nil
+}
+
+func validManagedAgentExecutionTransition(turn internalmanagedagent.TurnState, execution internalmanagedagent.ExecutionState, resultDigest, errorCode string) bool {
+	switch {
+	case turn == internalmanagedagent.TurnRunning && execution == internalmanagedagent.ExecutionRunning:
+		return resultDigest == "" && errorCode == ""
+	case turn == internalmanagedagent.TurnCompleted && execution == internalmanagedagent.ExecutionSucceeded:
+		return validCoordinationDigest(resultDigest) && errorCode == ""
+	case turn == internalmanagedagent.TurnFailed && execution == internalmanagedagent.ExecutionFailed:
+		return resultDigest == "" && internalmanagedagent.ValidRuntimeErrorCode(errorCode)
+	case turn == internalmanagedagent.TurnCancelled && execution == internalmanagedagent.ExecutionCancelled:
+		return resultDigest == "" && errorCode == "cancelled"
+	case turn == internalmanagedagent.TurnInterrupted && execution == internalmanagedagent.ExecutionCancelled:
+		return resultDigest == "" && errorCode == "interrupted"
+	default:
+		return false
+	}
 }
