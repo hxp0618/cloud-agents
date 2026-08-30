@@ -223,7 +223,14 @@ describe("platform release", () => {
     expect(migrateDockerfile).not.toContain("000027");
     const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
     expect(workerDockerfile).toContain("@openai/codex@0.150.1");
+    expect(workerDockerfile).toContain(
+      '"@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@0.3.207"',
+    );
+    expect(workerDockerfile).toContain('test "$(claude --version)" = "2.1.207 (Claude Code)"');
     expect(workerDockerfile).not.toContain("@openai/codex@latest");
+    expect(workerDockerfile).not.toContain(
+      "@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@latest",
+    );
   });
 
   it("packages public contracts without internal provenance inputs", () => {

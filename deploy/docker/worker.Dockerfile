@@ -5,7 +5,16 @@ ARG TARGETOS
 ARG TARGETARCH
 COPY cloud-agents-worker-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-worker
 COPY cloud-agent-runtime-standalone.mjs /usr/local/bin/cloud-agent-runtime
-RUN npm install --global --ignore-scripts --omit=dev --no-audit --no-fund @openai/codex@0.150.1 \
+RUN case "${TARGETARCH}" in \
+        amd64) claude_arch=x64 ;; \
+        arm64) claude_arch=arm64 ;; \
+        *) echo "unsupported Worker architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && npm install --global --ignore-scripts --omit=dev --no-audit --no-fund \
+        @openai/codex@0.150.1 \
+        "@anthropic-ai/claude-agent-sdk-linux-${claude_arch}@0.3.207" \
+    && ln -s "/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk-linux-${claude_arch}/claude" /usr/local/bin/claude \
+    && test "$(claude --version)" = "2.1.207 (Claude Code)" \
     && npm cache clean --force \
     && chmod 0555 /usr/local/bin/cloud-agents-worker /usr/local/bin/cloud-agent-runtime
 
