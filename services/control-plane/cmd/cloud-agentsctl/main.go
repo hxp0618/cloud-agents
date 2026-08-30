@@ -160,6 +160,15 @@ func run(args []string, stdout io.Writer) error {
 		if err = parseActionFlags("turn create", actionArgs, func(set *flag.FlagSet) { set.StringVar(&inputText, "input", "", "turn input text") }); err == nil {
 			value, err = client.CreateManagedAgentTurn(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey, openapi.ManagedAgentTurnCreateRequest{TurnID: options.turn, InputText: inputText})
 		}
+	case "turn list":
+		var pageSize int
+		var pageToken string
+		if err = parseActionFlags("turn list", actionArgs, func(set *flag.FlagSet) {
+			set.IntVar(&pageSize, "page-size", 0, "maximum turns to return")
+			set.StringVar(&pageToken, "page-token", "", "opaque turn page token")
+		}); err == nil {
+			value, err = client.ListManagedAgentTurns(ctx, options.tenant, options.project, options.session, options.requestID, pageSize, pageToken)
+		}
 	case "turn get":
 		value, err = client.GetManagedAgentTurn(ctx, options.tenant, options.project, options.session, options.turn, options.requestID)
 	case "execution execute":
@@ -408,6 +417,8 @@ func responseValue(value any) any {
 		return result.Value
 	case openapi.ManagedAgentTurnResult:
 		return result.Value
+	case openapi.ManagedAgentTurnPageResult:
+		return result.Value
 	case openapi.ManagedAgentExecutionResult:
 		return result.Value
 	case openapi.ManagedAgentEventPageResult:
@@ -435,7 +446,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -456,7 +467,9 @@ func requiresRoleBinding(command, action string) bool {
 func requiresSession(command, action string) bool {
 	return command == "session" && action != "list" || command == "turn" || command == "execution" || command == "events"
 }
-func requiresTurn(command, action string) bool      { return command == "turn" || command == "execution" }
+func requiresTurn(command, action string) bool {
+	return command == "turn" && action != "list" || command == "execution"
+}
 func requiresExecution(command, action string) bool { return command == "execution" }
 func requiresLease(command, action string) bool     { return command == "environment-lease" }
 func requiresIdempotency(command, action string) bool {

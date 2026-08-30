@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/turn-page.schema.json",
+  "title": "TurnPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "turns"],
+  "properties": {
+    "apiVersion": { "const": "managed-agent.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "TurnPage" },
+    "turns": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "turn.schema.json" }
+    },
+    "nextPageToken": {
+      "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json"
+    }
+  }
+}

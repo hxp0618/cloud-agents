@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -29,8 +30,28 @@ func TestScanManagedAgentTurnPreservesNotFound(t *testing.T) {
 	}
 }
 
+func TestDecodeManagedAgentTurnPageRowsBindsSessionAndCursor(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
+	executionID := "execution-alpha"
+	raw, err := json.Marshal([]managedAgentTurnPageRow{
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-alpha", InputDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", State: "queued", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now},
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-beta", InputDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ExecutionID: &executionID, State: "completed", ResourceVersion: 2, CreatedAt: now, UpdatedAt: now},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := decodeManagedAgentTurnPageRows(raw, "tenant-alpha", "project-alpha", "session-alpha", 1)
+	if err != nil || len(page.Turns) != 1 || page.Turns[0].TurnID != "turn-alpha" || page.Turns[0].SessionID != "session-alpha" || page.NextTurnID != "turn-alpha" {
+		t.Fatalf("page = %#v / %v", page, err)
+	}
+	if _, err := decodeManagedAgentTurnPageRows(raw, "tenant-alpha", "project-alpha", "session-other", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cross-session page error = %v", err)
+	}
+}
+
 func TestManagedAgentTurnSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
-	if !strings.Contains(createManagedAgentTurnSQL, "cloud_agents.create_managed_agent_turn_v1(") || !strings.Contains(getManagedAgentTurnSQL, "cloud_agents.require_tenant_id()") {
+	if !strings.Contains(createManagedAgentTurnSQL, "cloud_agents.create_managed_agent_turn_v1(") || !strings.Contains(getManagedAgentTurnSQL, "cloud_agents.require_tenant_id()") ||
+		!strings.Contains(listManagedAgentTurnsSQL, "session_uid = $2") || !strings.Contains(managedAgentTurnPageCursorIdentitySQL, "turn_uid = $3") {
 		t.Fatalf("turn SQL is not tenant-bound typed SQL: create=%s get=%s", createManagedAgentTurnSQL, getManagedAgentTurnSQL)
 	}
 }

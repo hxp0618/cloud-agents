@@ -25,7 +25,7 @@ describe("platform JSON SDK generator", () => {
     expect(inputs).toEqual([...inputs].toSorted());
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
     expect(platformJSONSDKAuthorityProfileDigest(root)).toBe(
-      "sha256:f4c8c9cc0eac5a5f67b3bee5280b33c2b48d1d7c194f416dcd37624373a5cb63",
+      "sha256:3ac57286c7c6d4177f07382c971e298ef7da4fe316778aca4c69a8da762a7591",
     );
   });
 

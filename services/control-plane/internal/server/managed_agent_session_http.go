@@ -87,7 +87,7 @@ func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWrite
 }
 
 func (server *ManagedAgentSessionHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
-	pageSize, pageToken, ok := managedAgentSessionPagination(request)
+	pageSize, pageToken, ok := managedAgentPagination(request)
 	if !ok {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
@@ -361,7 +361,7 @@ func managedAgentSessionPath(path string) (tenantID, projectID, sessionID, actio
 	return "", "", "", "", false
 }
 
-func managedAgentSessionPagination(request *http.Request) (int, string, bool) {
+func managedAgentPagination(request *http.Request) (int, string, bool) {
 	pageSize := 50
 	pageToken := ""
 	for name, values := range request.URL.Query() {

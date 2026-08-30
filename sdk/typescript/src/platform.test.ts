@@ -14,6 +14,7 @@ import {
   decodeProjectCreateRequest,
   decodeManagedAgentSession,
   decodeManagedAgentSessionPage,
+  decodeManagedAgentTurnPage,
   decodeManagedAgentExecution,
   decodeRole,
   decodeRoleBinding,
@@ -24,6 +25,7 @@ import {
   parseProjectCreateRequest,
   parseManagedAgentSession,
   parseManagedAgentSessionPage,
+  parseManagedAgentTurnPage,
   parseManagedAgentExecution,
   parseWatchCursor,
   validateProjectResolvedOrganization,
@@ -116,6 +118,65 @@ describe("generated platform JSON models", () => {
       "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1",
     );
     expect(seen[3]?.body).toBeUndefined();
+  });
+  it("replays the managed-agent Turn contract and client lifecycle", async () => {
+    const turn = JSON.stringify({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "Turn",
+      metadata: {
+        uid: "turn-alpha",
+        projectId: "project-alpha",
+        sessionId: "session-alpha",
+        resourceVersion: "2",
+        createdAt: "2026-08-29T08:00:00Z",
+        updatedAt: "2026-08-29T08:01:00Z",
+      },
+      spec: { inputDigest: `sha256:${"a".repeat(64)}`, state: "queued" },
+    });
+    const turnPage = JSON.stringify({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "TurnPage",
+      turns: [JSON.parse(turn)],
+      nextPageToken: "turn-page-token-1",
+    });
+    expect(decodeManagedAgentTurnPage(JSON.parse(turnPage)).turns).toHaveLength(1);
+    expect(parseManagedAgentTurnPage(turnPage).value.nextPageToken).toBe("turn-page-token-1");
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return {
+        status: request.method === "POST" ? 201 : 200,
+        headers: { "X-Resource-Version": "2" },
+        body: request.method === "GET" && request.path.includes("/turns?") ? turnPage : turn,
+      };
+    });
+    await client.createManagedAgentTurn(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "request-alpha",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4",
+      { turnId: "turn-alpha", inputText: "hello" },
+    );
+    await client.getManagedAgentTurn(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "request-alpha",
+    );
+    await client.listManagedAgentTurns(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "request-alpha",
+      1,
+      "turn-page-token-1",
+    );
+    expect(seen).toHaveLength(3);
+    expect(seen[2]?.path).toBe(
+      "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns?pageSize=1&pageToken=turn-page-token-1",
+    );
   });
   it("replays the managed-agent Execution contract and client lifecycle", async () => {
     const execution = JSON.stringify({

@@ -49,6 +49,7 @@ type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
 type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
 type ManagedAgentTurnResult = common.ResponseEnvelope[ManagedAgentTurn]
+type ManagedAgentTurnPageResult = common.ResponseEnvelope[ManagedAgentTurnPage]
 type ManagedAgentExecutionResult = common.ResponseEnvelope[ManagedAgentExecution]
 type ManagedAgentEventPageResult = common.ResponseEnvelope[ManagedAgentEventPage]
 
@@ -84,6 +85,12 @@ type ManagedAgentTurn struct {
 	Kind       string                  `json:"kind"`
 	Metadata   ManagedAgentTurnMetadata `json:"metadata"`
 	Spec       ManagedAgentTurnSpec    `json:"spec"`
+}
+type ManagedAgentTurnPage struct {
+	APIVersion    string             `json:"apiVersion"`
+	Kind          string             `json:"kind"`
+	Turns         []ManagedAgentTurn `json:"turns"`
+	NextPageToken string             `json:"nextPageToken,omitempty"`
 }
 type ManagedAgentTurnMetadata struct {
 	UID             string `json:"uid"`
@@ -347,6 +354,18 @@ func (client *Client) GetManagedAgentTurn(ctx context.Context, tenantID, project
 	if value.Value.Metadata.ProjectID != projectID || value.Value.Metadata.SessionID != sessionID || value.Value.Metadata.UID != turnID { return ManagedAgentTurnResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata") }
 	return value, nil
 }
+func (client *Client) ListManagedAgentTurns(ctx context.Context, tenantID, projectID, sessionID, requestID string, pageSize int, pageToken string) (ManagedAgentTurnPageResult, error) {
+	if err := validateSessionPath(tenantID, projectID, requestID, sessionID); err != nil { return ManagedAgentTurnPageResult{}, err }
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) { return ManagedAgentTurnPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }
+	if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ManagedAgentTurnPageResult{}, err } }
+	query := url.Values{}; if pageSize != 0 { query.Set("pageSize", strconv.Itoa(pageSize)) }; if pageToken != "" { query.Set("pageToken", pageToken) }
+	path := "/v1/tenants/"+tenantID+"/projects/"+projectID+"/sessions/"+sessionID+"/turns"; if encoded := query.Encode(); encoded != "" { path += "?"+encoded }
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}}); if err != nil { return ManagedAgentTurnPageResult{}, err }
+	if response.Status != 200 { return ManagedAgentTurnPageResult{}, client.problemError("managedAgentListTurns", response) }
+	value, err := DecodeManagedAgentTurnPageResponseJSON(response.Body); if err != nil { return ManagedAgentTurnPageResult{}, &ClientError{Operation: "managedAgentListTurns", Status: response.Status, Cause: err} }
+	for _, turn := range value.Value.Turns { if turn.Metadata.ProjectID != projectID || turn.Metadata.SessionID != sessionID { return ManagedAgentTurnPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/turns") } }
+	return value, nil
+}
 func (client *Client) ExecuteManagedAgent(ctx context.Context, tenantID, projectID, sessionID, requestID, idempotencyKey string, body ManagedAgentExecutionCreateRequest) (ManagedAgentExecutionResult, error) {
 	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, body.TurnID, body.ExecutionID); err != nil { return ManagedAgentExecutionResult{}, err }
 	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil { return ManagedAgentExecutionResult{}, err }
@@ -416,6 +435,18 @@ var managedAgentTurnResponseShape = common.ObjectResponseShape(map[string]common
 })
 func DecodeManagedAgentTurnResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentTurn], error) { raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentTurnResponseShape); if err != nil { return common.ResponseEnvelope[ManagedAgentTurn]{}, err }; value, err := decodeManagedAgentTurn(raw); if err != nil { return common.ResponseEnvelope[ManagedAgentTurn]{}, err }; return common.ResponseEnvelope[ManagedAgentTurn]{Value: value, Unknown: sidecar}, nil }
 func EncodeManagedAgentTurnResponseJSON(value common.ResponseEnvelope[ManagedAgentTurn]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
+var managedAgentTurnPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "turns": common.ArrayResponseShape(managedAgentTurnResponseShape), "nextPageToken": common.ScalarResponseShape()})
+func DecodeManagedAgentTurnPageResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentTurnPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentTurnPageResponseShape); if err != nil { return common.ResponseEnvelope[ManagedAgentTurnPage]{}, err }
+	fields, err := common.DecodeStrictObject(raw, []string{"apiVersion", "kind", "turns", "nextPageToken"}, []string{"apiVersion", "kind", "turns"}); if err != nil { return common.ResponseEnvelope[ManagedAgentTurnPage]{}, err }
+	var wire struct { APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; Turns []json.RawMessage `json:"turns"`; NextPageToken string `json:"nextPageToken"` }
+	if err := json.Unmarshal(raw, &wire); err != nil || wire.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || wire.Kind != "TurnPage" || wire.Turns == nil || len(wire.Turns) > 200 { return common.ResponseEnvelope[ManagedAgentTurnPage]{}, common.ContractError("INVALID_TURN_PAGE", "") }
+	value := ManagedAgentTurnPage{APIVersion: wire.APIVersion, Kind: wire.Kind, Turns: make([]ManagedAgentTurn, 0, len(wire.Turns))}
+	for index, item := range wire.Turns { turn, err := decodeManagedAgentTurn(item); if err != nil { return common.ResponseEnvelope[ManagedAgentTurnPage]{}, fmt.Errorf("/turns/%d: %w", index, err) }; value.Turns = append(value.Turns, turn) }
+	if _, present := fields["nextPageToken"]; present { if err := common.ValidatePageToken(wire.NextPageToken, "/nextPageToken"); err != nil { return common.ResponseEnvelope[ManagedAgentTurnPage]{}, err }; value.NextPageToken = wire.NextPageToken }
+	return common.ResponseEnvelope[ManagedAgentTurnPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeManagedAgentTurnPageResponseJSON(value common.ResponseEnvelope[ManagedAgentTurnPage]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
 var managedAgentExecutionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "turnId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
@@ -482,6 +513,8 @@ type ListProjectsServerInput struct { TenantID string; OrganizationID string; Re
 func ValidateListProjectsServerRequest(tenantID, organizationID, requestID string, pageSize int, pageToken string) (ListProjectsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListProjectsServerInput{}, err }; if err := common.ValidateIdentifier(organizationID, "/organizationId"); err != nil { return ListProjectsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListProjectsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListProjectsServerInput{}, err } }; return ListProjectsServerInput{TenantID: tenantID, OrganizationID: organizationID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type ListManagedAgentSessionsServerInput struct { TenantID string; ProjectID string; RequestID string; PageSize int; PageToken string }
 func ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListManagedAgentSessionsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListManagedAgentSessionsServerInput{}, err }; if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil { return ListManagedAgentSessionsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListManagedAgentSessionsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListManagedAgentSessionsServerInput{}, err } }; return ListManagedAgentSessionsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
+type ListManagedAgentTurnsServerInput struct { TenantID string; ProjectID string; SessionID string; RequestID string; PageSize int; PageToken string }
+func ValidateListManagedAgentTurnsServerRequest(tenantID, projectID, sessionID, requestID string, pageSize int, pageToken string) (ListManagedAgentTurnsServerInput, error) { if err := validateSessionPath(tenantID, projectID, requestID, sessionID); err != nil { return ListManagedAgentTurnsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListManagedAgentTurnsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListManagedAgentTurnsServerInput{}, err } }; return ListManagedAgentTurnsServerInput{TenantID: tenantID, ProjectID: projectID, SessionID: sessionID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type CreateMembershipServerInput struct { TenantID string; RequestID string; Body platform.MembershipCreateRequest }
 func ValidateCreateMembershipServerRequest(tenantID, requestID string, body []byte) (CreateMembershipServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateMembershipServerInput{}, err }; value, err := platform.DecodeMembershipCreateRequestJSON(body); if err != nil { return CreateMembershipServerInput{}, err }; return CreateMembershipServerInput{TenantID: tenantID, RequestID: requestID, Body: value}, nil }
 type MembershipTransitionServerInput struct { TenantID string; ResourceID string; RequestID string; Body platform.MembershipTransitionRequest }

@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
@@ -13,6 +15,24 @@ import (
 
 var ErrManagedAgentTurnNotFound = errors.New("managed agent turn was not found")
 
+type ManagedAgentTurnPage struct {
+	Turns      []internalmanagedagent.TurnSnapshot
+	NextTurnID string
+}
+
+type managedAgentTurnPageRow struct {
+	TenantID        string    `json:"tenant_id"`
+	ProjectID       string    `json:"project_uid"`
+	SessionID       string    `json:"session_uid"`
+	TurnID          string    `json:"turn_uid"`
+	InputDigest     string    `json:"input_digest"`
+	ExecutionID     *string   `json:"execution_uid"`
+	State           string    `json:"state"`
+	ResourceVersion int64     `json:"resource_version"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 const (
 	createManagedAgentTurnSQL = `SELECT turn_uid, input_digest, execution_uid, state, resource_version, created_at, updated_at
 FROM cloud_agents.create_managed_agent_turn_v1($1, $2, $3, $4, $5, $6, $7)`
@@ -20,6 +40,23 @@ FROM cloud_agents.create_managed_agent_turn_v1($1, $2, $3, $4, $5, $6, $7)`
 FROM cloud_agents.managed_agent_turns
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3`
+	managedAgentTurnPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.managed_agent_turns
+WHERE tenant_id = cloud_agents.require_tenant_id()
+    AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3`
+	listManagedAgentTurnsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(managed_turn)
+    ORDER BY managed_turn.turn_uid), '[]'::jsonb)
+FROM (
+    SELECT tenant_id, project_uid, session_uid, turn_uid, input_digest, execution_uid,
+        state, resource_version, created_at, updated_at
+    FROM cloud_agents.managed_agent_turns
+    WHERE tenant_id = cloud_agents.require_tenant_id()
+        AND project_uid = $1
+        AND session_uid = $2
+        AND turn_uid > $3
+    ORDER BY turn_uid
+    LIMIT $4
+) AS managed_turn`
 )
 
 // CreateManagedAgentTurn persists one queued Turn under an active Session.
@@ -111,6 +148,91 @@ func (service *DurableCoordinationService) GetManagedAgentTurn(
 	return result, err
 }
 
+func (service *DurableCoordinationService) ListManagedAgentTurns(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	sessionID string,
+	afterTurnID string,
+	limit int,
+) (ManagedAgentTurnPage, error) {
+	if service == nil || service.runner == nil {
+		return ManagedAgentTurnPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		!validMutationIdentifier(sessionID) || afterTurnID != "" && !validMutationIdentifier(afterTurnID) ||
+		limit < 1 || limit > 200 {
+		return ManagedAgentTurnPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result ManagedAgentTurnPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterTurnID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, managedAgentTurnPageCursorIdentitySQL, projectID, sessionID, afterTurnID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapMutationDatabaseError("managed agent turn page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listManagedAgentTurnsSQL, projectID, sessionID, afterTurnID, limit+1).Scan(&raw); err != nil {
+					return mapMutationDatabaseError("managed agent turns", err)
+				}
+				var err error
+				result, err = decodeManagedAgentTurnPageRows(raw, tenantID, projectID, sessionID, limit)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, err
+}
+
+func decodeManagedAgentTurnPageRows(raw []byte, tenantID, projectID, sessionID string, limit int) (ManagedAgentTurnPage, error) {
+	var rows []managedAgentTurnPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return ManagedAgentTurnPage{}, ErrCoordinationResultDrift
+	}
+	turns := make([]internalmanagedagent.TurnSnapshot, 0, len(rows))
+	for _, row := range rows {
+		state := internalmanagedagent.TurnState(row.State)
+		if row.TenantID != tenantID || row.ProjectID != projectID || row.SessionID != sessionID ||
+			!validMutationIdentifier(row.TurnID) || !validCoordinationDigest(row.InputDigest) ||
+			row.ExecutionID != nil && !validMutationIdentifier(*row.ExecutionID) || !validManagedAgentTurnState(state) ||
+			row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+			return ManagedAgentTurnPage{}, ErrCoordinationResultDrift
+		}
+		turn := internalmanagedagent.TurnSnapshot{
+			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
+			TurnID: row.TurnID, InputDigest: row.InputDigest, State: state, Version: uint64(row.ResourceVersion),
+			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if row.ExecutionID != nil {
+			turn.ExecutionID = *row.ExecutionID
+		}
+		turns = append(turns, turn)
+	}
+	result := ManagedAgentTurnPage{Turns: turns}
+	if len(turns) > limit {
+		result.Turns = turns[:limit]
+		result.NextTurnID = result.Turns[len(result.Turns)-1].TurnID
+	}
+	return result, nil
+}
+
 func scanManagedAgentTurn(row rowScanner, scope internalmanagedagent.Scope, sessionID string, result *internalmanagedagent.TurnSnapshot) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
@@ -130,9 +252,15 @@ func scanManagedAgentTurn(row rowScanner, scope internalmanagedagent.Scope, sess
 	if executionID != nil {
 		result.ExecutionID = *executionID
 	}
-	if version <= 0 || result.TurnID == "" || result.InputDigest == "" || (result.State != internalmanagedagent.TurnQueued && result.State != internalmanagedagent.TurnRunning && result.State != internalmanagedagent.TurnCompleted && result.State != internalmanagedagent.TurnFailed && result.State != internalmanagedagent.TurnInterrupted && result.State != internalmanagedagent.TurnCancelled) || result.CreatedAt.IsZero() || result.UpdatedAt.IsZero() {
+	if version <= 0 || result.TurnID == "" || result.InputDigest == "" || !validManagedAgentTurnState(result.State) || result.CreatedAt.IsZero() || result.UpdatedAt.IsZero() {
 		return fmt.Errorf("%w: managed agent turn projection", ErrCoordinationResultDrift)
 	}
 	result.Version = uint64(version)
 	return nil
+}
+
+func validManagedAgentTurnState(state internalmanagedagent.TurnState) bool {
+	return state == internalmanagedagent.TurnQueued || state == internalmanagedagent.TurnRunning ||
+		state == internalmanagedagent.TurnCompleted || state == internalmanagedagent.TurnFailed ||
+		state == internalmanagedagent.TurnInterrupted || state == internalmanagedagent.TurnCancelled
 }

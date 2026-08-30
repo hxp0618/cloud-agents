@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,12 +11,17 @@ import (
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
 type managedAgentTurnStoreFake struct {
 	snapshot internalmanagedagent.TurnSnapshot
 	create   int
 	get      int
+	list     int
+	page     postgres.ManagedAgentTurnPage
+	after    string
+	limit    int
 }
 
 func (fake *managedAgentTurnStoreFake) CreateManagedAgentTurn(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internalmanagedagent.CreateTurnInput) (internalmanagedagent.TurnSnapshot, error) {
@@ -32,10 +38,18 @@ func (fake *managedAgentTurnStoreFake) GetManagedAgentTurn(_ context.Context, _ 
 	return fake.snapshot, nil
 }
 
+func (fake *managedAgentTurnStoreFake) ListManagedAgentTurns(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _, _ string, after string, limit int) (postgres.ManagedAgentTurnPage, error) {
+	fake.list++
+	fake.after = after
+	fake.limit = limit
+	return fake.page, nil
+}
+
 func TestManagedAgentTurnHTTPServerLifecycleRoutes(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
 	verifier := &projectHTTPVerifierFake{}
-	store := &managedAgentTurnStoreFake{snapshot: internalmanagedagent.TurnSnapshot{InputDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Version: 1, CreatedAt: now, UpdatedAt: now}}
+	snapshot := internalmanagedagent.TurnSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", InputDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", State: internalmanagedagent.TurnQueued, Version: 1, CreatedAt: now, UpdatedAt: now}
+	store := &managedAgentTurnStoreFake{snapshot: snapshot, page: postgres.ManagedAgentTurnPage{Turns: []internalmanagedagent.TurnSnapshot{snapshot}, NextTurnID: "turn-alpha"}}
 	handler, err := NewManagedAgentTurnHTTPServer(verifier, store)
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +75,31 @@ func TestManagedAgentTurnHTTPServerLifecycleRoutes(t *testing.T) {
 	handler.ServeHTTP(got, get)
 	if got.Code != http.StatusOK || store.get != 1 || verifier.seen.RequiredPermission != "projects.get" {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
+	}
+
+	list := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns?pageSize=1", nil)
+	list.Header.Set("Authorization", "Bearer access-token")
+	list.Header.Set("X-Request-ID", "request-list")
+	listed := httptest.NewRecorder()
+	handler.ServeHTTP(listed, list)
+	var page managedAgentTurnPageResource
+	if err := json.Unmarshal(listed.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if listed.Code != http.StatusOK || store.list != 1 || store.limit != 1 || store.after != "" || verifier.seen.RequiredPermission != "projects.get" || len(page.Turns) != 1 || page.NextPageToken == "" {
+		t.Fatalf("list status=%d calls=%d after=%q limit=%d verification=%#v page=%#v", listed.Code, store.list, store.after, store.limit, verifier.seen, page)
+	}
+	wrongSessionToken, ok := encodeManagedAgentTurnPageToken("tenant-alpha", "project-alpha", "session-other", "turn-alpha")
+	if !ok {
+		t.Fatal("failed to encode wrong-session token")
+	}
+	wrongSession := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns?pageToken="+wrongSessionToken, nil)
+	wrongSession.Header.Set("Authorization", "Bearer access-token")
+	wrongSession.Header.Set("X-Request-ID", "request-list-wrong")
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(rejected, wrongSession)
+	if rejected.Code != http.StatusBadRequest || store.list != 1 {
+		t.Fatalf("wrong-session token status=%d calls=%d body=%s", rejected.Code, store.list, rejected.Body.String())
 	}
 }
 

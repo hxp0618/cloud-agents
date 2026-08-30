@@ -433,6 +433,26 @@
       }
     },
     "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/turns": {
+      "get": {
+        "operationId": "managedAgentListTurns",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/ProjectPageSize" },
+          { "$ref": "#/components/parameters/ProjectPageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "./schemas/turn-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
       "post": {
         "operationId": "managedAgentCreateTurn",
         "x-cloud-agents-coordination": "direct-transaction",

@@ -143,6 +143,36 @@ func TestGeneratedOpenAPIClientManagedAgentSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestGeneratedOpenAPIClientManagedAgentTurnLifecycle(t *testing.T) {
+	turnBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Turn","metadata":{"uid":"turn-alpha","projectId":"project-alpha","sessionId":"session-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"inputDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","state":"queued"}}`)
+	turnPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"TurnPage","turns":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Turn","metadata":{"uid":"turn-alpha","projectId":"project-alpha","sessionId":"session-alpha","resourceVersion":"2","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"inputDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","state":"queued"}}],"nextPageToken":"turn-page-token-1"}`)
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		body := turnBody
+		if request.Method == "GET" && strings.Contains(request.Path, "/turns?") {
+			body = turnPageBody
+		}
+		return Response{Status: map[string]int{"POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns": 201, "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha": 200, "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns?pageSize=1&pageToken=turn-page-token-1": 200}[request.Method+" "+request.Path], Headers: map[string]string{HeaderResourceVersion: "2"}, Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.CreateManagedAgentTurn(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4", ManagedAgentTurnCreateRequest{TurnID: "turn-alpha", InputText: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetManagedAgentTurn(ctx, "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "request-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if page, err := client.ListManagedAgentTurns(ctx, "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", 1, "turn-page-token-1"); err != nil || len(page.Value.Turns) != 1 || page.Value.NextPageToken == "" {
+		t.Fatalf("turn page = %#v / %v", page, err)
+	}
+	if len(seen) != 3 || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns?pageSize=1&pageToken=turn-page-token-1" {
+		t.Fatalf("turn requests = %#v", seen)
+	}
+}
+
 func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	executionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"messages":[{"requestId":"request-alpha","protocolVersion":{"major":2,"minor":3},"executionId":"execution-alpha","generation":1,"commandId":"command-alpha","occurredAt":"2026-08-29T08:01:00Z","messageType":"Result","payload":{"text":"done"}}]}`)
 	var seen []Request
@@ -237,6 +267,10 @@ func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
 	sessions, err := ValidateListManagedAgentSessionsServerRequest("tenant-alpha", "project-alpha", "req-alpha", 50, "session-page-token-1")
 	if err != nil || sessions.ProjectID != "project-alpha" || sessions.PageSize != 50 || sessions.PageToken == "" {
 		t.Fatalf("session list input = %#v / %v", sessions, err)
+	}
+	turns, err := ValidateListManagedAgentTurnsServerRequest("tenant-alpha", "project-alpha", "session-alpha", "req-alpha", 50, "turn-page-token-1")
+	if err != nil || turns.SessionID != "session-alpha" || turns.PageSize != 50 || turns.PageToken == "" {
+		t.Fatalf("turn list input = %#v / %v", turns, err)
 	}
 	body := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	input, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body)
