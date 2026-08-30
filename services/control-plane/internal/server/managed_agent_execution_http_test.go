@@ -32,6 +32,10 @@ func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(c
 	return internalmanagedagent.RuntimeSessionSnapshot{}, nil
 }
 
+func (fake *managedAgentExecutionStoreFake) FindManagedAgentTurnForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string, string) (internalmanagedagent.TurnSnapshot, bool, error) {
+	return internalmanagedagent.TurnSnapshot{}, false, nil
+}
+
 func (fake *managedAgentExecutionStoreFake) CreateManagedAgentTurn(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CreateTurnInput) (internalmanagedagent.TurnSnapshot, error) {
 	return internalmanagedagent.TurnSnapshot{}, errors.New("not used")
 }

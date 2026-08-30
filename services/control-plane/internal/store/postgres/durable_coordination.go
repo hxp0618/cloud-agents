@@ -794,8 +794,15 @@ func settleIdempotencyFailure(result IdempotencyFailureResult, err error, input 
 }
 
 func mapVerifiedCoordinationAuthorizationError(err error) error {
-	if errors.Is(err, authz.ErrOperationDenied) {
+	switch {
+	case errors.Is(err, authz.ErrOperationDenied):
 		return ErrMutationDenied
+	case errors.Is(err, ErrMutationInvalidInput):
+		return ErrCoordinationInvalidInput
+	case errors.Is(err, ErrMutationConflict):
+		return ErrCoordinationRejected
+	case errors.Is(err, ErrMutationAuthority):
+		return ErrCoordinationAuthority
 	}
 	return err
 }

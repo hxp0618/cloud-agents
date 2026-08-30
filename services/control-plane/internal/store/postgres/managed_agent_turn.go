@@ -117,6 +117,33 @@ func (service *DurableCoordinationService) GetManagedAgentTurn(
 	sessionID string,
 	turnID string,
 ) (internalmanagedagent.TurnSnapshot, error) {
+	return service.readManagedAgentTurn(ctx, tenantID, principal, projectID, sessionID, turnID, "projects.get")
+}
+
+func (service *DurableCoordinationService) FindManagedAgentTurnForExecution(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	sessionID string,
+	turnID string,
+) (internalmanagedagent.TurnSnapshot, bool, error) {
+	result, err := service.readManagedAgentTurn(ctx, tenantID, principal, projectID, sessionID, turnID, "projects.act")
+	if errors.Is(err, ErrManagedAgentTurnNotFound) {
+		return internalmanagedagent.TurnSnapshot{}, false, nil
+	}
+	return result, err == nil, err
+}
+
+func (service *DurableCoordinationService) readManagedAgentTurn(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	sessionID string,
+	turnID string,
+	permission string,
+) (internalmanagedagent.TurnSnapshot, error) {
 	if service == nil || service.runner == nil {
 		return internalmanagedagent.TurnSnapshot{}, ErrNilCoordinationRunner
 	}
@@ -126,7 +153,7 @@ func (service *DurableCoordinationService) GetManagedAgentTurn(
 	}
 	var result internalmanagedagent.TurnSnapshot
 	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
-		operation, bindErr := binder.Bind(scope.TenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, "projects.get")
+		operation, bindErr := binder.Bind(scope.TenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, permission)
 		if bindErr != nil {
 			return mapVerifiedCoordinationAuthorizationError(bindErr)
 		}

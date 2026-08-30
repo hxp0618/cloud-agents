@@ -17,6 +17,7 @@ import (
 type durableRuntimeExecutionStoreFake struct {
 	calls      []string
 	principals []*authn.VerifiedPrincipal
+	turn       *TurnSnapshot
 	execution  ExecutionSnapshot
 	cancel     context.CancelFunc
 }
@@ -25,6 +26,15 @@ func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForExecution
 	fake.calls = append(fake.calls, "session")
 	fake.recordPrincipal(principal)
 	return RuntimeSessionSnapshot{SessionSnapshot: SessionSnapshot{ProviderKind: "codex"}}, nil
+}
+
+func (fake *durableRuntimeExecutionStoreFake) FindManagedAgentTurnForExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ string, _ string, _ string) (TurnSnapshot, bool, error) {
+	fake.calls = append(fake.calls, "find-turn")
+	fake.recordPrincipal(principal)
+	if fake.turn == nil {
+		return TurnSnapshot{}, false, nil
+	}
+	return *fake.turn, true, nil
 }
 
 func (fake *durableRuntimeExecutionStoreFake) CreateManagedAgentTurn(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CreateTurnInput) (TurnSnapshot, error) {
@@ -240,10 +250,59 @@ func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *tes
 	if err != nil || result.Transition.Execution.State != ExecutionSucceeded || len(result.Messages) != 1 || result.Messages[0].Payload["text"] != "persisted" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution"}) {
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution"}) {
 		t.Fatalf("calls=%v", store.calls)
 	}
+	assertFreshPrincipals(t, store.principals, 4)
+}
+
+func TestDurableRuntimeExecutionUsesMatchingPrecreatedTurn(t *testing.T) {
+	scope := Scope{TenantID: "tenant", ProjectID: "project"}
+	digest, err := TurnInputDigest("hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := TurnSnapshot{Scope: scope, SessionID: "session", TurnID: "turn", InputDigest: digest, State: TurnQueued}
+	store := &durableRuntimeExecutionStoreFake{turn: &turn, execution: ExecutionSnapshot{State: ExecutionSucceeded}}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: scope, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if err != nil || result.Transition.Execution.State != ExecutionSucceeded || !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "execution"}) {
+		t.Fatalf("result=%#v calls=%v err=%v", result, store.calls, err)
+	}
 	assertFreshPrincipals(t, store.principals, 3)
+}
+
+func TestDurableRuntimeExecutionRejectsMismatchedPrecreatedTurn(t *testing.T) {
+	scope := Scope{TenantID: "tenant", ProjectID: "project"}
+	digest, err := TurnInputDigest("different")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := TurnSnapshot{Scope: scope, SessionID: "session", TurnID: "turn", InputDigest: digest, State: TurnQueued}
+	store := &durableRuntimeExecutionStoreFake{turn: &turn}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: time.Now,
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+		Scope: scope, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+	})
+	if !errors.Is(err, ErrDurableRuntimeExecutionConflict) || !reflect.DeepEqual(store.calls, []string{"session", "find-turn"}) {
+		t.Fatalf("calls=%v err=%v", store.calls, err)
+	}
 }
 
 func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t *testing.T) {
@@ -262,10 +321,10 @@ func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t
 	if !errors.Is(err, ErrDurableRuntimeExecutionFailed) || result.Transition.Execution.State != ExecutionFailed || result.Transition.Execution.ErrorCode != "orphaned_execution" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution", "fail"}) {
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "fail"}) {
 		t.Fatalf("calls=%v", store.calls)
 	}
-	assertFreshPrincipals(t, store.principals, 4)
+	assertFreshPrincipals(t, store.principals, 5)
 }
 
 func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
@@ -285,10 +344,10 @@ func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
 	if err == nil || !errors.Is(err, context.Canceled) || result.Transition.Execution.State != ExecutionCancelled {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
-	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution", "start", "cancel"}) {
+	if !reflect.DeepEqual(store.calls, []string{"session", "find-turn", "turn", "execution", "start", "cancel"}) {
 		t.Fatalf("calls=%v", store.calls)
 	}
-	assertFreshPrincipals(t, store.principals, 5)
+	assertFreshPrincipals(t, store.principals, 6)
 }
 
 func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {

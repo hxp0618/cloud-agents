@@ -147,7 +147,10 @@ func TestRBACMutationValidationAndDatabaseErrorMapping(t *testing.T) {
 	}
 	if !errors.Is(mapMutationDatabaseError("create", &pgconn.PgError{Code: "23505"}), ErrMutationConflict) ||
 		!errors.Is(mapMutationDatabaseError("create", &pgconn.PgError{Code: "42501"}), ErrMutationAuthority) ||
-		!errors.Is(mapVerifiedMutationError(authz.ErrOperationDenied), ErrMutationDenied) {
+		!errors.Is(mapVerifiedMutationError(authz.ErrOperationDenied), ErrMutationDenied) ||
+		!errors.Is(mapVerifiedCoordinationAuthorizationError(ErrMutationInvalidInput), ErrCoordinationInvalidInput) ||
+		!errors.Is(mapVerifiedCoordinationAuthorizationError(ErrMutationConflict), ErrCoordinationRejected) ||
+		!errors.Is(mapVerifiedCoordinationAuthorizationError(ErrMutationAuthority), ErrCoordinationAuthority) {
 		t.Fatal("mutation typed error mapping drift")
 	}
 }

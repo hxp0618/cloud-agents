@@ -24,6 +24,7 @@ import (
 // the PostgreSQL store and each call carries the verified principal.
 type DurableRuntimeExecutionStore interface {
 	GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (RuntimeSessionSnapshot, error)
+	FindManagedAgentTurnForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string, string) (TurnSnapshot, bool, error)
 	CreateManagedAgentTurn(context.Context, string, *authn.VerifiedPrincipal, CreateTurnInput) (TurnSnapshot, error)
 	CreateManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CreateExecutionInput) (ExecutionSnapshot, error)
 	StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, StartExecutionInput) (ExecutionTransitionResult, error)
@@ -237,9 +238,24 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
-	turn, err := coordinator.store.CreateManagedAgentTurn(runCtx, input.Scope.TenantID, principal, CreateTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, InputText: input.InputText, Mutation: input.Mutation})
+	turn, found, err := coordinator.store.FindManagedAgentTurnForExecution(runCtx, input.Scope.TenantID, principal, input.Scope.ProjectID, input.SessionID, input.TurnID)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
+	}
+	if found {
+		inputDigest, digestErr := TurnInputDigest(input.InputText)
+		if digestErr != nil || turn.Scope != input.Scope || turn.SessionID != input.SessionID || turn.TurnID != input.TurnID || turn.InputDigest != inputDigest || turn.ExecutionID != "" && turn.ExecutionID != input.ExecutionID || turn.ExecutionID == "" && turn.State != TurnQueued {
+			return DurableRuntimeExecutionResult{}, ErrDurableRuntimeExecutionConflict
+		}
+	} else {
+		principal, err = nextVerifiedPrincipal(principalSource)
+		if err != nil {
+			return DurableRuntimeExecutionResult{}, err
+		}
+		turn, err = coordinator.store.CreateManagedAgentTurn(runCtx, input.Scope.TenantID, principal, CreateTurnInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, InputText: input.InputText, Mutation: input.Mutation})
+		if err != nil {
+			return DurableRuntimeExecutionResult{}, err
+		}
 	}
 	principal, err = nextVerifiedPrincipal(principalSource)
 	if err != nil {
