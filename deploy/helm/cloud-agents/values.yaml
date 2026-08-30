@@ -16,6 +16,11 @@ database:
   secretName: cloud-agents-database
   runtimeURLKey: runtime-url
   migrationURLKey: migration-url
+  tenantBootstrapURLKey: tenant-bootstrap-url
+
+tenantBootstrap:
+  enabled: true
+  secretName: cloud-agents-tenant-bootstrap
 
 auth:
   secretName: cloud-agents-auth

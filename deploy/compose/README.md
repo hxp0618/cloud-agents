@@ -51,8 +51,33 @@ helm upgrade --install cloud-agents deploy/helm/cloud-agents \
   --set images.migrate.tag=VERSION
 ```
 
-The migration Job runs before install and upgrade. After the first migration, run
-`deploy/compose/tenant-bootstrap.sql` once with `psql` and the tenant-bootstrap URL,
-supplying the same named variables shown in the Compose service. Use standard
-`helm rollback cloud-agents REVISION` to restore a prior image/chart revision;
-database rollback remains an explicit forward-migration operation.
+The migration Job runs before install and upgrade. On first install, the following
+Hook creates the initial tenant, organization, and `tenant.admin` after migration.
+Add `tenant-bootstrap-url` to the database Secret and create the
+`cloud-agents-tenant-bootstrap` Secret with these keys:
+
+```text
+CLOUD_AGENTS_TENANT_UID
+CLOUD_AGENTS_TENANT_NAME
+CLOUD_AGENTS_TENANT_DISPLAY_NAME
+CLOUD_AGENTS_ORGANIZATION_UID
+CLOUD_AGENTS_ORGANIZATION_NAME
+CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME
+CLOUD_AGENTS_ADMIN_SUBJECT_KIND
+CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER
+CLOUD_AGENTS_ADMIN_SUBJECT_VALUE
+CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID
+CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME
+CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID
+CLOUD_AGENTS_ADMIN_ROLE_BINDING_NAME
+CLOUD_AGENTS_TENANT_AUDIT_FACT_UID
+CLOUD_AGENTS_MEMBERSHIP_AUDIT_FACT_UID
+CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID
+CLOUD_AGENTS_BOOTSTRAP_REASON_CODE
+```
+
+Override the Secret names or database key through `values.yaml`. Disable
+`tenantBootstrap.enabled` only when the same bootstrap was completed externally.
+Exact retries are safe; conflicting existing state fails the installation. Use
+standard `helm rollback cloud-agents REVISION` to restore a prior image/chart
+revision; database rollback remains an explicit forward-migration operation.

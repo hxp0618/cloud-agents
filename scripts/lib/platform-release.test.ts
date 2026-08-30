@@ -110,15 +110,16 @@ describe("platform release", () => {
       "deploy/compose/docker-compose.yml",
       "deploy/compose/provision.sql",
       "deploy/compose/runtime.env.example",
-      "deploy/compose/tenant-bootstrap.sql",
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
       "deploy/helm/cloud-agents/Chart.yaml",
+      "deploy/helm/cloud-agents/files/tenant-bootstrap.sql",
       "deploy/helm/cloud-agents/templates/_helpers.tpl",
       "deploy/helm/cloud-agents/templates/control-plane.yaml",
       "deploy/helm/cloud-agents/templates/migrate-job.yaml",
       "deploy/helm/cloud-agents/templates/network-policy.yaml",
+      "deploy/helm/cloud-agents/templates/tenant-bootstrap-job.yaml",
       "deploy/helm/cloud-agents/templates/worker.yaml",
       "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
       "deploy/helm/cloud-agents/values.schema.json",
@@ -175,11 +176,24 @@ describe("platform release", () => {
     expect(compose).toContain('command:\n      - >-\n        exec psql');
     expect(compose).toContain("--single-transaction");
     expect(compose).toContain("/deploy/compose/provision.sql");
-    expect(compose).toContain("/deploy/compose/tenant-bootstrap.sql");
+    expect(compose).toContain("/deploy/helm/cloud-agents/files/tenant-bootstrap.sql");
     expect(compose).toContain("-P pager=off");
     const environment = readFileSync("deploy/compose/.env.example", "utf8");
     expect(environment).toContain("postgresql://cloud_agents_runtime_login:");
     expect(environment).not.toContain("postgresql://cloud_agents_runtime:");
+  });
+
+  it("bootstraps the first Helm tenant administrator after migrations", () => {
+    const bootstrap = readFileSync(
+      "deploy/helm/cloud-agents/templates/tenant-bootstrap-job.yaml",
+      "utf8",
+    );
+    expect(bootstrap).toContain('"helm.sh/hook": pre-install');
+    expect(bootstrap).toContain('"helm.sh/hook-weight": "-4"');
+    expect(bootstrap).toContain('.Files.Get "files/tenant-bootstrap.sql"');
+    expect(bootstrap).toContain(".Values.database.tenantBootstrapURLKey");
+    expect(bootstrap).toContain(".Values.tenantBootstrap.secretName");
+    expect(bootstrap).toContain("--single-transaction");
   });
 
   it("selects matching OCI base and binary architectures", () => {

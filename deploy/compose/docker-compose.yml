@@ -100,7 +100,7 @@ services:
         -v cloud_agents_membership_audit_fact_uid="$${CLOUD_AGENTS_MEMBERSHIP_AUDIT_FACT_UID}"
         -v cloud_agents_role_binding_audit_fact_uid="$${CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID}"
         -v cloud_agents_bootstrap_reason_code="$${CLOUD_AGENTS_BOOTSTRAP_REASON_CODE}"
-        -f /deploy/compose/tenant-bootstrap.sql
+        -f /deploy/helm/cloud-agents/files/tenant-bootstrap.sql
 
   control-plane:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}

@@ -143,7 +143,6 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/compose/docker-compose.yml",
     "deploy/compose/provision.sql",
     "deploy/compose/runtime.env.example",
-    "deploy/compose/tenant-bootstrap.sql",
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/worker.Dockerfile",
