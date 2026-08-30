@@ -76,6 +76,13 @@ func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
 		t.Fatalf("role page = %#v / %v", rolePage, err)
 	}
 
+	roleBindingBody := bytes.TrimSpace(readPlatformFixture(t, "golden/role-binding.json"))
+	roleBindingPageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RoleBindingPage","roleBindings":[` + string(roleBindingBody) + `],"nextPageToken":"role-binding-page-token-1"}`)
+	roleBindingPage, err := DecodeRoleBindingPageResponseJSON(roleBindingPageBody)
+	if err != nil || len(roleBindingPage.Value.RoleBindings) != 1 || roleBindingPage.Value.NextPageToken != "role-binding-page-token-1" {
+		t.Fatalf("role binding page = %#v / %v", roleBindingPage, err)
+	}
+
 	organization, err := DecodeOrganizationCreateRequestJSON([]byte(`{"expectedTenantRevision":4,"organizationId":"organization-beta","name":"organization-beta","displayName":"Organization Beta","auditFactUid":"audit-organization-beta","reasonCode":"operator-request"}`))
 	if err != nil || organization.OrganizationID != "organization-beta" || organization.ExpectedTenantRevision != 4 {
 		t.Fatalf("organization create request = %#v / %v", organization, err)

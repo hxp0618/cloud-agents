@@ -308,6 +308,7 @@ const PUBLIC_PLATFORM_CONTRACT_PATHS = [
   "contracts/platform/v1alpha1/schemas/project.schema.json",
   "contracts/platform/v1alpha1/schemas/rbac-mutation-result.schema.json",
   "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
+  "contracts/platform/v1alpha1/schemas/role-binding-page.schema.json",
   "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
   "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
   "contracts/platform/v1alpha1/schemas/role-page.schema.json",

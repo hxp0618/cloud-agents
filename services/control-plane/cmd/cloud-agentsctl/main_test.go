@@ -118,6 +118,24 @@ func TestRunMembershipList(t *testing.T) {
 	}
 }
 
+func TestRunRoleBindingList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/role-bindings" || request.URL.Query().Get("pageSize") != "1" || request.URL.Query().Get("pageToken") != "role-binding-page-token-1" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.String())
+		}
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RoleBindingPage","roleBindings":[],"nextPageToken":"role-binding-page-token-2"}`))
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
+		"role-binding", "list", "--page-size", "1", "--page-token", "role-binding-page-token-1",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"kind":"RoleBindingPage"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestParseArgsRejectsMissingRequiredGlobalInput(t *testing.T) {
 	if _, _, _, _, err := parseArgs([]string{"--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "project", "get"}); err == nil || !strings.Contains(err.Error(), "--endpoint is required") {
 		t.Fatalf("error = %v", err)
@@ -178,6 +196,7 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 		{name: "role", args: []string{"--role", "role-alpha", "role", "get"}},
 		{name: "role list", args: []string{"role", "list"}},
 		{name: "role binding", args: []string{"--role-binding", "binding-alpha", "role-binding", "get"}},
+		{name: "role binding list", args: []string{"role-binding", "list"}},
 		{name: "managed host project", args: []string{"--project", "project-alpha", "managed-host-project", "get"}},
 		{name: "managed host role binding", args: []string{"--role-binding", "binding-alpha", "managed-host-role-binding", "get"}},
 		{name: "environment lease", args: []string{"--project", "project-alpha", "--lease", "lease-alpha", "environment-lease", "get"}},

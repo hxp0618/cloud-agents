@@ -98,6 +98,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		{"role-bindings.bind", "tenant", "tenant-1"},
 		{"role-bindings.delete", "tenant", "tenant-1"},
 		{"role-bindings.get", "tenant", "tenant-1"},
+		{"role-bindings.list", "tenant", "tenant-1"},
 		{"roles.get", "tenant", "tenant-1"},
 		{"roles.list", "tenant", "tenant-1"},
 		{"tenants.get", "tenant", "tenant-1"},

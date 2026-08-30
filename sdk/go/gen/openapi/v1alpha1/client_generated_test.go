@@ -27,6 +27,8 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	membershipPageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MembershipPage","memberships":[` + string(membershipBody) + `],"nextPageToken":"membership-page-token-2"}`)
 	roleBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/role.json")
 	rolePageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RolePage","roles":[` + string(roleBody) + `],"nextPageToken":"role-page-token-2"}`)
+	roleBindingBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/role-binding.json")
+	roleBindingPageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RoleBindingPage","roleBindings":[` + string(roleBindingBody) + `],"nextPageToken":"role-binding-page-token-2"}`)
 	responses := map[string]Response{
 		"GET /v1/tenants/tenant-alpha":                                                                                      responseFixture(t, "platform-tenant", 200),
 		"GET /v1/tenants/tenant-alpha/organizations/organization-alpha":                                                     responseFixture(t, "organization", 200),
@@ -38,6 +40,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		"GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1":                                                         responseFixture(t, "role", 200),
 		"GET /v1/tenants/tenant-alpha/roles?pageSize=1&pageToken=role-page-token-1":                                         {Status: 200, Body: rolePageBody},
 		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":                                                     responseFixture(t, "role-binding", 200),
+		"GET /v1/tenants/tenant-alpha/role-bindings?pageSize=1&pageToken=role-binding-page-token-1":                         {Status: 200, Body: roleBindingPageBody},
 		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":                                                  projectGetResponse,
 		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha":                                        responseFixture(t, "role-binding", 200),
 		"POST /v1/tenants/tenant-alpha/organizations":                                                                       {Status: 201, Headers: map[string]string{HeaderResourceVersion: "2"}, Body: responseFixture(t, "organization", 200).Body},
@@ -83,6 +86,9 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.GetRoleBinding(ctx, "tenant-alpha", "role-binding-alpha", "req-alpha"); err != nil {
 		t.Fatal(err)
 	}
+	if page, err := client.ListRoleBindings(ctx, "tenant-alpha", "req-alpha", 1, "role-binding-page-token-1"); err != nil || len(page.Value.RoleBindings) != 1 || page.Value.NextPageToken != "role-binding-page-token-2" {
+		t.Fatalf("role binding page = %#v / %v", page, err)
+	}
 	if _, err := client.GetProjectContext(ctx, "tenant-alpha", "project-alpha", "req-alpha"); err != nil {
 		t.Fatal(err)
 	}
@@ -102,17 +108,17 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 15 {
-		t.Fatalf("transport calls = %d, want 15", len(seen))
+	if len(seen) != 16 {
+		t.Fatalf("transport calls = %d, want 16", len(seen))
 	}
 	for _, request := range seen {
 		if request.Headers[HeaderRequestID] != "req-alpha" {
 			t.Fatalf("request headers = %#v", request.Headers)
 		}
 	}
-	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[13].Body)
-	if seen[13].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
-		t.Fatalf("create request = %#v", seen[13])
+	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[14].Body)
+	if seen[14].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
+		t.Fatalf("create request = %#v", seen[14])
 	}
 }
 
@@ -279,6 +285,10 @@ func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
 	memberships, err := ValidateListMembershipsServerRequest("tenant-alpha", "req-alpha", 50, "membership-page-token-1")
 	if err != nil || memberships.PageSize != 50 || memberships.PageToken == "" {
 		t.Fatalf("membership list input = %#v / %v", memberships, err)
+	}
+	roleBindings, err := ValidateListRoleBindingsServerRequest("tenant-alpha", "req-alpha", 50, "role-binding-page-token-1")
+	if err != nil || roleBindings.PageSize != 50 || roleBindings.PageToken == "" {
+		t.Fatalf("role binding list input = %#v / %v", roleBindings, err)
 	}
 	projects, err := ValidateListProjectsServerRequest("tenant-alpha", "organization-alpha", "req-alpha", 50, "project-page-token-1")
 	if err != nil || projects.OrganizationID != "organization-alpha" || projects.PageSize != 50 || projects.PageToken == "" {

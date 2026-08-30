@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/role-binding-page.schema.json",
+  "title": "RoleBindingPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "roleBindings"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "RoleBindingPage"
+    },
+    "roleBindings": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "role-binding.schema.json"
+      }
+    },
+    "nextPageToken": {
+      "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json"
+    }
+  }
+}

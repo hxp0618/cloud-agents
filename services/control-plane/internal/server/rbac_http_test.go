@@ -17,18 +17,22 @@ import (
 )
 
 type rbacHTTPReaderFake struct {
-	scope          authz.ScopeRef
-	resolveErr     error
-	membership     postgres.Membership
-	membershipPage postgres.MembershipPage
-	roleBinding    postgres.RoleBinding
-	err            error
-	resolves       int
-	memberships    int
-	lists          int
-	after          string
-	limit          int
-	bindings       int
+	scope           authz.ScopeRef
+	resolveErr      error
+	membership      postgres.Membership
+	membershipPage  postgres.MembershipPage
+	roleBinding     postgres.RoleBinding
+	roleBindingPage postgres.RoleBindingPage
+	err             error
+	resolves        int
+	memberships     int
+	lists           int
+	after           string
+	limit           int
+	bindings        int
+	bindingLists    int
+	bindingAfter    string
+	bindingLimit    int
 }
 
 type rbacHTTPMutatorFake struct {
@@ -84,6 +88,13 @@ func (fake *rbacHTTPReaderFake) ListMemberships(_ context.Context, _ string, _ *
 func (fake *rbacHTTPReaderFake) GetRoleBinding(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, _ authz.ScopeRef) (postgres.RoleBinding, error) {
 	fake.bindings++
 	return fake.roleBinding, fake.err
+}
+
+func (fake *rbacHTTPReaderFake) ListRoleBindings(_ context.Context, _ string, _ *authn.VerifiedPrincipal, after string, limit int) (postgres.RoleBindingPage, error) {
+	fake.bindingLists++
+	fake.bindingAfter = after
+	fake.bindingLimit = limit
+	return fake.roleBindingPage, fake.err
 }
 
 func TestRBACHTTPServerUsesStoredScopeAndGeneratedResources(t *testing.T) {
@@ -204,6 +215,54 @@ func TestRBACHTTPServerListsMembershipsWithTenantBoundCursor(t *testing.T) {
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest || reader.lists != 1 || verifier.calls != 1 {
 		t.Fatalf("cross-tenant token status=%d verifier calls=%d list calls=%d body=%s", response.Code, verifier.calls, reader.lists, response.Body.String())
+	}
+}
+
+func TestRBACHTTPServerListsRoleBindingsWithTenantBoundCursor(t *testing.T) {
+	now := time.Date(2026, time.August, 30, 8, 0, 0, 0, time.UTC)
+	verifier := &projectHTTPVerifierFake{}
+	reader := &rbacHTTPReaderFake{roleBindingPage: postgres.RoleBindingPage{
+		RoleBindings: []postgres.RoleBinding{{
+			UID: "binding-alpha", Name: "binding-alpha", TenantID: "tenant-alpha",
+			Subject:  authz.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"},
+			RoleName: "tenant.admin", RoleVersion: 1, Scope: authz.ScopeRef{Level: authz.ScopeTenant, ID: "tenant-alpha"}, State: "active", ResourceVersion: 4, CreatedAt: now, UpdatedAt: now,
+		}},
+		NextRoleBindingID: "binding-alpha",
+	}}
+	server, err := NewRBACHTTPServer(verifier, reader, &rbacHTTPMutatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/role-bindings?pageSize=1", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-list")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || reader.bindingLists != 1 || reader.bindingAfter != "" || reader.bindingLimit != 1 || reader.resolves != 0 {
+		t.Fatalf("status=%d lists=%d after=%q limit=%d resolves=%d body=%s", response.Code, reader.bindingLists, reader.bindingAfter, reader.bindingLimit, reader.resolves, response.Body.String())
+	}
+	page, err := platformv1alpha1.DecodeRoleBindingPageResponseJSON(response.Body.Bytes())
+	if err != nil || len(page.Value.RoleBindings) != 1 || page.Value.NextPageToken == "" {
+		t.Fatalf("role binding page = %#v / %v", page, err)
+	}
+	if after, ok := decodeRoleBindingPageToken("tenant-alpha", page.Value.NextPageToken); !ok || after != "binding-alpha" {
+		t.Fatalf("next page token = %q / %q / %t", page.Value.NextPageToken, after, ok)
+	}
+	if verifier.seen != (authn.VerificationRequest{TenantID: "tenant-alpha", ResourceLevel: "tenant", ResourceID: "tenant-alpha", RequiredPermission: "role-bindings.list"}) {
+		t.Fatalf("verification request = %#v", verifier.seen)
+	}
+
+	otherTenantToken, ok := encodeRoleBindingPageToken("tenant-other", "binding-alpha")
+	if !ok {
+		t.Fatal("valid cross-tenant fixture token was not encoded")
+	}
+	request = httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/role-bindings?pageToken="+otherTenantToken, nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-invalid")
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || reader.bindingLists != 1 || verifier.calls != 1 {
+		t.Fatalf("cross-tenant token status=%d verifier calls=%d list calls=%d body=%s", response.Code, verifier.calls, reader.bindingLists, response.Body.String())
 	}
 }
 

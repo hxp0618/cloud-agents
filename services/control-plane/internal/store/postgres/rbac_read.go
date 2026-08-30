@@ -36,18 +36,23 @@ type MembershipPage struct {
 }
 
 type RoleBinding struct {
-	UID             string
-	Name            string
-	TenantID        string
-	Subject         authz.SubjectRef
-	RoleName        string
-	RoleVersion     int64
-	Scope           authz.ScopeRef
-	State           string
-	ExpiresAt       *time.Time
-	ResourceVersion int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	UID             string           `json:"uid"`
+	Name            string           `json:"name"`
+	TenantID        string           `json:"tenant_id"`
+	Subject         authz.SubjectRef `json:"subject"`
+	RoleName        string           `json:"role_name"`
+	RoleVersion     int64            `json:"role_version"`
+	Scope           authz.ScopeRef   `json:"scope"`
+	State           string           `json:"state"`
+	ExpiresAt       *time.Time       `json:"expires_at"`
+	ResourceVersion int64            `json:"resource_version"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+}
+
+type RoleBindingPage struct {
+	RoleBindings      []RoleBinding
+	NextRoleBindingID string
 }
 
 const (
@@ -150,6 +155,47 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
         WHEN 'organization' THEN scope_organization_uid
         WHEN 'project' THEN scope_project_uid
     END = $3`
+	roleBindingPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.role_bindings
+WHERE tenant_id = cloud_agents.require_tenant_id()
+    AND role_binding_uid = $1
+    AND state <> 'revoked'
+    AND scope_level <> 'platform'`
+	listRoleBindingsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(role_binding_page)
+    ORDER BY role_binding_page.uid), '[]'::jsonb)
+FROM (
+    SELECT
+        role_binding_uid AS uid,
+        role_binding_name AS name,
+        tenant_id,
+        pg_catalog.jsonb_build_object(
+            'Kind', subject_kind,
+            'Issuer', subject_issuer,
+            'Subject', subject_value
+        ) AS subject,
+        role_name,
+        role_version,
+        pg_catalog.jsonb_build_object(
+            'Level', scope_level,
+            'ID', CASE scope_level
+                WHEN 'tenant' THEN scope_tenant_uid
+                WHEN 'organization' THEN scope_organization_uid
+                WHEN 'project' THEN scope_project_uid
+            END
+        ) AS scope,
+        state,
+        expires_at,
+        resource_version,
+        created_at,
+        updated_at
+    FROM cloud_agents.role_bindings
+    WHERE tenant_id = cloud_agents.require_tenant_id()
+        AND state <> 'revoked'
+        AND scope_level <> 'platform'
+        AND role_binding_uid > $1
+    ORDER BY role_binding_uid
+    LIMIT $2
+) AS role_binding_page`
 )
 
 func (service *DurableCoordinationService) ResolveMembershipScope(ctx context.Context, tenantID, membershipID string) (authz.ScopeRef, error) {
@@ -346,6 +392,74 @@ func (service *DurableCoordinationService) GetRoleBinding(ctx context.Context, t
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, err
+}
+
+func (service *DurableCoordinationService) ListRoleBindings(ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, afterRoleBindingID string, limit int) (RoleBindingPage, error) {
+	if service == nil || service.runner == nil {
+		return RoleBindingPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || afterRoleBindingID != "" && !validMutationIdentifier(afterRoleBindingID) || limit < 1 || limit > 200 {
+		return RoleBindingPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}
+	var result RoleBindingPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "role-bindings.list")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterRoleBindingID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, roleBindingPageCursorIdentitySQL, afterRoleBindingID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapMutationDatabaseError("role binding page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listRoleBindingsSQL, afterRoleBindingID, limit+1).Scan(&raw); err != nil {
+					return mapMutationDatabaseError("role bindings", err)
+				}
+				var err error
+				result, err = decodeRoleBindingPageRows(raw, tenantID, limit)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, err
+}
+
+func decodeRoleBindingPageRows(raw []byte, tenantID string, limit int) (RoleBindingPage, error) {
+	var roleBindings []RoleBinding
+	if json.Unmarshal(raw, &roleBindings) != nil || roleBindings == nil || len(roleBindings) > limit+1 {
+		return RoleBindingPage{}, ErrCoordinationResultDrift
+	}
+	for index, roleBinding := range roleBindings {
+		if !validRoleBindingProjection(roleBinding, tenantID) || index > 0 && roleBindings[index-1].UID >= roleBinding.UID {
+			return RoleBindingPage{}, ErrCoordinationResultDrift
+		}
+	}
+	result := RoleBindingPage{RoleBindings: roleBindings}
+	if len(roleBindings) > limit {
+		result.RoleBindings = roleBindings[:limit]
+		result.NextRoleBindingID = result.RoleBindings[len(result.RoleBindings)-1].UID
+	}
+	return result, nil
+}
+
+func validRoleBindingProjection(roleBinding RoleBinding, tenantID string) bool {
+	return roleBinding.TenantID == tenantID && validMutationIdentifier(roleBinding.UID) && validMutationIdentifier(roleBinding.Name) &&
+		roleBinding.Subject.Validate() == nil && validBuiltinRoleName(roleBinding.RoleName) && roleBinding.RoleVersion > 0 &&
+		roleBinding.Scope.Level != authz.ScopePlatform && roleBinding.Scope.Validate(tenantID) == nil && roleBinding.State == authz.BindingActive &&
+		roleBinding.ResourceVersion > 0 && !roleBinding.CreatedAt.IsZero() && !roleBinding.UpdatedAt.IsZero()
 }
 
 func validateStoredRBACRead(tenantID, resourceID string, scope authz.ScopeRef) error {

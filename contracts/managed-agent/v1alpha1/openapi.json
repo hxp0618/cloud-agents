@@ -864,6 +864,24 @@
       }
     },
     "/v1/tenants/{tenantId}/role-bindings": {
+      "get": {
+        "operationId": "managedAgentListRoleBindings",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/ProjectPageSize" },
+          { "$ref": "#/components/parameters/ProjectPageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-binding-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
       "post": {
         "operationId": "managedAgentBindRole",
         "parameters": [

@@ -25,8 +25,9 @@ describe("platform JSON SDK generator", () => {
     expect(inputs).toEqual([...inputs].toSorted());
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/membership-page.schema.json");
+    expect(inputs).toContain("contracts/platform/v1alpha1/schemas/role-binding-page.schema.json");
     expect(platformJSONSDKAuthorityProfileDigest(root)).toBe(
-      "sha256:ac99eddb16bfe01a91ad7961140c6413aae642114a6de08e1a69790e08c311f7",
+      "sha256:e550b33a2a4ba310767b13698ce4ada0e3b8819cd214fd299b0eeab3bb3d5462",
     );
   });
 

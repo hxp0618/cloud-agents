@@ -66,6 +66,10 @@ func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *htt
 		server.listMemberships(writer, request, tenantID)
 		return
 	}
+	if kind == "role_binding" && resourceID == "" {
+		server.listRoleBindings(writer, request, tenantID)
+		return
+	}
 	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
 	if !ok {
 		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
@@ -198,6 +202,74 @@ func (server *RBACHTTPServer) listMemberships(writer http.ResponseWriter, reques
 	_, _ = writer.Write(body)
 }
 
+func (server *RBACHTTPServer) listRoleBindings(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListRoleBindingsServerRequest(tenantID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterRoleBindingID := ""
+	if validated.PageToken != "" {
+		if afterRoleBindingID, ok = decodeRoleBindingPageToken(validated.TenantID, validated.PageToken); !ok {
+			writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "role-bindings.list",
+	})
+	if err != nil {
+		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.reader.ListRoleBindings(request.Context(), validated.TenantID, principal, afterRoleBindingID, validated.PageSize)
+	if err != nil {
+		writeRBACErrorFromStore(writer, err, postgres.ErrRoleBindingNotFound)
+		return
+	}
+	roleBindings := make([]platformv1alpha1.RoleBinding, 0, len(page.RoleBindings))
+	for _, roleBinding := range page.RoleBindings {
+		roleBindings = append(roleBindings, roleBindingResource(roleBinding))
+	}
+	value := platformv1alpha1.RoleBindingPage{APIVersion: platformv1alpha1.APIVersion, Kind: "RoleBindingPage", RoleBindings: roleBindings}
+	if page.NextRoleBindingID != "" {
+		value.NextPageToken, ok = encodeRoleBindingPageToken(validated.TenantID, page.NextRoleBindingID)
+		if !ok {
+			writeRBACError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeRoleBindingPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.RoleBindingPage]{Value: value})
+	if err != nil {
+		writeRBACError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", validated.RequestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func (server *RBACHTTPServer) resolveScope(request *http.Request, tenantID, resourceID, kind string) (authz.ScopeRef, error) {
 	if kind == "membership" {
 		return server.reader.ResolveMembershipScope(request.Context(), tenantID, resourceID)
@@ -217,6 +289,10 @@ func rbacPath(path string) (string, string, string, bool) {
 	if prefix == "/v1/tenants/" && strings.HasSuffix(rest, "/memberships") {
 		tenantID := strings.TrimSuffix(rest, "/memberships")
 		return tenantID, "", "membership", tenantID != "" && !strings.Contains(tenantID, "/")
+	}
+	if prefix == "/v1/tenants/" && strings.HasSuffix(rest, "/role-bindings") {
+		tenantID := strings.TrimSuffix(rest, "/role-bindings")
+		return tenantID, "", "role_binding", tenantID != "" && !strings.Contains(tenantID, "/")
 	}
 	for suffix, kind := range map[string]string{"/memberships/": "membership", "/role-bindings/": "role_binding"} {
 		parts := strings.Split(rest, suffix)
@@ -246,6 +322,30 @@ func decodeMembershipPageToken(tenantID, token string) (string, bool) {
 	parts := strings.Split(string(decoded), "\x00")
 	if len(parts) != 3 || parts[0] != "membership/v1" || parts[1] != tenantID ||
 		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/membershipId") != nil {
+		return "", false
+	}
+	return parts[2], true
+}
+
+func encodeRoleBindingPageToken(tenantID, roleBindingID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(roleBindingID, "/roleBindingId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("role-binding/v1\x00" + tenantID + "\x00" + roleBindingID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeRoleBindingPageToken(tenantID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 3 || parts[0] != "role-binding/v1" || parts[1] != tenantID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/roleBindingId") != nil {
 		return "", false
 	}
 	return parts[2], true

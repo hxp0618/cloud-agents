@@ -46,6 +46,7 @@ type MembershipPageResult = common.ResponseEnvelope[platform.MembershipPage]
 type RoleResult = common.ResponseEnvelope[platform.Role]
 type RolePageResult = common.ResponseEnvelope[platform.RolePage]
 type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
+type RoleBindingPageResult = common.ResponseEnvelope[platform.RoleBindingPage]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
@@ -251,6 +252,18 @@ func (client *Client) ListRoles(ctx context.Context, tenantID, requestID string,
 }
 func (client *Client) GetRoleBinding(ctx context.Context, tenantID, roleBindingID, requestID string) (RoleBindingResult, error) {
 	return doGet(ctx, client, "managedAgentGetRoleBinding", "/v1/tenants/"+tenantID+"/role-bindings/"+roleBindingID, tenantID, roleBindingID, requestID, platform.DecodeRoleBindingResponseJSON)
+}
+func (client *Client) ListRoleBindings(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (RoleBindingPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil { return RoleBindingPageResult{}, err }
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) { return RoleBindingPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }
+	if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return RoleBindingPageResult{}, err } }
+	query := url.Values{}; if pageSize != 0 { query.Set("pageSize", strconv.Itoa(pageSize)) }; if pageToken != "" { query.Set("pageToken", pageToken) }
+	path := "/v1/tenants/"+tenantID+"/role-bindings"; if encoded := query.Encode(); encoded != "" { path += "?"+encoded }
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}}); if err != nil { return RoleBindingPageResult{}, err }
+	if response.Status != 200 { return RoleBindingPageResult{}, client.problemError("managedAgentListRoleBindings", response) }
+	value, err := platform.DecodeRoleBindingPageResponseJSON(response.Body); if err != nil { return RoleBindingPageResult{}, &ClientError{Operation: "managedAgentListRoleBindings", Status: response.Status, Cause: err} }
+	for _, roleBinding := range value.Value.RoleBindings { if roleBinding.Metadata.TenantRef.ID != tenantID { return RoleBindingPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/roleBindings") } }
+	return value, nil
 }
 func (client *Client) GetProjectContext(ctx context.Context, tenantID, projectID, requestID string) (ProjectResult, error) {
 	return doGet(ctx, client, "managedHostGetProjectContext", "/v1/managed-host/tenants/"+tenantID+"/projects/"+projectID, tenantID, projectID, requestID, platform.DecodeProjectResponseJSON)
@@ -537,6 +550,8 @@ type ListMembershipsServerInput struct { TenantID string; RequestID string; Page
 func ValidateListMembershipsServerRequest(tenantID, requestID string, pageSize int, pageToken string) (ListMembershipsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListMembershipsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListMembershipsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListMembershipsServerInput{}, err } }; return ListMembershipsServerInput{TenantID: tenantID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type ListRolesServerInput struct { TenantID string; RequestID string; PageSize int; PageToken string }
 func ValidateListRolesServerRequest(tenantID, requestID string, pageSize int, pageToken string) (ListRolesServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListRolesServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListRolesServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListRolesServerInput{}, err } }; return ListRolesServerInput{TenantID: tenantID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
+type ListRoleBindingsServerInput struct { TenantID string; RequestID string; PageSize int; PageToken string }
+func ValidateListRoleBindingsServerRequest(tenantID, requestID string, pageSize int, pageToken string) (ListRoleBindingsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListRoleBindingsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListRoleBindingsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListRoleBindingsServerInput{}, err } }; return ListRoleBindingsServerInput{TenantID: tenantID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type CreateProjectServerInput struct { TenantID string; RequestID string; IdempotencyKey string; Body platform.ProjectCreateRequest }
 func ValidateCreateProjectServerRequest(tenantID, requestID, idempotencyKey string, body []byte) (CreateProjectServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateProjectServerInput{}, err }; if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil { return CreateProjectServerInput{}, err }; project, err := platform.DecodeProjectCreateRequestJSON(body); if err != nil { return CreateProjectServerInput{}, err }; return CreateProjectServerInput{TenantID: tenantID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: project}, nil }
 type ListProjectsServerInput struct { TenantID string; OrganizationID string; RequestID string; PageSize int; PageToken string }

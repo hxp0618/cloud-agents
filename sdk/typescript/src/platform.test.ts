@@ -20,6 +20,7 @@ import {
   decodeRole,
   decodeRolePage,
   decodeRoleBinding,
+  decodeRoleBindingPage,
   decodeWatchCursor,
   encodeResponse,
   parseProblem,
@@ -316,6 +317,14 @@ describe("generated platform JSON models", () => {
     expect(decodeRoleBinding(readJSON(platformFixtureRoot, "golden/role-binding.json")).kind).toBe(
       "RoleBinding",
     );
+    expect(
+      decodeRoleBindingPage({
+        apiVersion: "platform.cloud-agents.dev/v1alpha1",
+        kind: "RoleBindingPage",
+        roleBindings: [readJSON(platformFixtureRoot, "golden/role-binding.json")],
+        nextPageToken: "role-binding-page-token-1",
+      }).roleBindings,
+    ).toHaveLength(1);
   });
 
   it("rejects mutation, Unicode identity, duplicate, and trailing input", () => {
@@ -488,6 +497,16 @@ describe("generated fixture client", () => {
         "role-binding",
         200,
       ),
+      "GET /v1/tenants/tenant-alpha/role-bindings?pageSize=1&pageToken=role-binding-page-token-1": {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "RoleBindingPage",
+          roleBindings: [readJSON(platformFixtureRoot, "golden/role-binding.json")],
+          nextPageToken: "role-binding-page-token-2",
+        }),
+      },
       "GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha": projectGetResponse,
       "GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha": fixtureResponse(
         platformFixtureRoot,
@@ -537,6 +556,12 @@ describe("generated fixture client", () => {
     await client.getRole("tenant-alpha", "role-project-viewer-v1", "req-alpha");
     await client.listRoles("tenant-alpha", "req-alpha", 1, "role-page-token-1");
     await client.getRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
+    await client.listRoleBindings(
+      "tenant-alpha",
+      "req-alpha",
+      1,
+      "role-binding-page-token-1",
+    );
     await client.getProjectContext("tenant-alpha", "project-alpha", "req-alpha");
     await client.getManagedHostRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
     await client.createOrganization("tenant-alpha", "req-alpha", {
@@ -553,8 +578,8 @@ describe("generated fixture client", () => {
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
       request,
     );
-    expect(seen).toHaveLength(14);
-    expect(JSON.parse(seen[13]!.body!)).toEqual(request);
+    expect(seen).toHaveLength(15);
+    expect(JSON.parse(seen[14]!.body!)).toEqual(request);
   });
 
   it("keeps problem status and abort semantics stable", async () => {
