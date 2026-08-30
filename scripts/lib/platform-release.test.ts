@@ -91,8 +91,8 @@ describe("platform release", () => {
   it("packages the current product migration manifest, catalog, and SQL", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
-    expect(entries.some(({ path }) => path.endsWith("product/000027/manifest.json"))).toBe(true);
-    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(27);
+    expect(entries.some(({ path }) => path.endsWith("product/000028/manifest.json"))).toBe(true);
+    expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(28);
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agents-migrations",
       target: "portable",
@@ -218,9 +218,9 @@ describe("platform release", () => {
     expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     const migrateDockerfile = readFileSync("deploy/docker/migrate.Dockerfile", "utf8");
-    expect(migrateDockerfile).toContain("cloud-agents-migrations-000027.tar");
-    expect(migrateDockerfile).toContain("product/000027/manifest.json");
-    expect(migrateDockerfile).not.toContain("000026");
+    expect(migrateDockerfile).toContain("cloud-agents-migrations-000028.tar");
+    expect(migrateDockerfile).toContain("product/000028/manifest.json");
+    expect(migrateDockerfile).not.toContain("000027");
     const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
     expect(workerDockerfile).toContain("@openai/codex@0.150.1");
     expect(workerDockerfile).not.toContain("@openai/codex@latest");

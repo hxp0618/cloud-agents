@@ -287,6 +287,11 @@ func (client *Client) CreateMembership(ctx context.Context, tenantID, requestID 
 	bodyBytes, err := platform.EncodeMembershipCreateRequestJSON(body); if err != nil { return RBACMutationResult{}, err }
 	return doMutation(ctx, client, "managedAgentCreateMembership", "/v1/tenants/"+tenantID+"/memberships", tenantID, "", requestID, bodyBytes, 201)
 }
+func (client *Client) ResumeMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil { return RBACMutationResult{}, err }; if err := common.ValidateIdentifier(membershipID, "/membershipId"); err != nil { return RBACMutationResult{}, err }
+	bodyBytes, err := platform.EncodeMembershipTransitionRequestJSON(body); if err != nil { return RBACMutationResult{}, err }
+	return doMutation(ctx, client, "managedAgentResumeMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":resume", tenantID, membershipID, requestID, bodyBytes, 200)
+}
 func (client *Client) SuspendMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
 	if err := validatePath(tenantID, requestID); err != nil { return RBACMutationResult{}, err }; if err := common.ValidateIdentifier(membershipID, "/membershipId"); err != nil { return RBACMutationResult{}, err }
 	bodyBytes, err := platform.EncodeMembershipTransitionRequestJSON(body); if err != nil { return RBACMutationResult{}, err }

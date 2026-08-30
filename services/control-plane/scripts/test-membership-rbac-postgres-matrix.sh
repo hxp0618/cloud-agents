@@ -135,7 +135,8 @@ SQL
     000003_expand_membership_rbac.sql \
     000004_expand_membership_rbac_mutations.sql \
     000005_close_membership_binding_authority.sql \
-    000006_close_subject_issuer_validation.sql; do
+    000006_close_subject_issuer_validation.sql \
+    000028_resume_membership.sql; do
     docker exec -e PGPASSWORD="$test_password" "$active_container" \
       psql -X -v ON_ERROR_STOP=1 --single-transaction \
       -h 127.0.0.1 -U cag_migration -d cagtest \
@@ -295,7 +296,7 @@ SQL
   observer_database_url="postgres://postgres:$test_password@127.0.0.1:$host_port/cagtest?sslmode=disable"
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOWORK="$repo_root/go.work" GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test \
       -run '^TestTenantRBACFactMaterializationPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
@@ -303,7 +304,7 @@ SQL
   CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
   CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-normal' \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOWORK="$repo_root/go.work" GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test \
       -run '^TestTenantRBACMutationAuthorityPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
@@ -313,13 +314,13 @@ SQL
   CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-normal' \
   CLOUD_AGENTS_EXTERNAL_POSTGRES_RUN_ID='normal' \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOWORK="$repo_root/go.work" GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test \
       -run '^TestPostgresExternalVerifiedPrincipal(RBACConformance|LeaseThroughCommitAndCancelRollback)$' \
       -count=1 -v ./internal/authn
   CLOUD_AGENTS_TEST_DATABASE_URL="$database_url" \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOWORK="$repo_root/go.work" GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
       -run '^TestTenantRBACFactMaterializationPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
@@ -327,7 +328,7 @@ SQL
   CLOUD_AGENTS_TEST_MIGRATION_DATABASE_URL="$migration_database_url" \
   CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-race' \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOWORK="$repo_root/go.work" GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
       -run '^TestTenantRBACMutationAuthorityPostgresConformance$' \
       -count=1 -v ./internal/store/postgres
@@ -337,7 +338,7 @@ SQL
   CLOUD_AGENTS_MUTATION_TENANT_ID='tenant-mutation-race' \
   CLOUD_AGENTS_EXTERNAL_POSTGRES_RUN_ID='race' \
   CLOUD_AGENTS_REQUIRE_POSTGRES_TEST=1 \
-  GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
+  GOWORK="$repo_root/go.work" GOTOOLCHAIN=local GOFLAGS=-mod=readonly \
     go -C "$module_dir" test -race \
       -run '^TestPostgresExternalVerifiedPrincipal(RBACConformance|LeaseThroughCommitAndCancelRollback)$' \
       -count=1 -v ./internal/authn

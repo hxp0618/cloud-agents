@@ -196,6 +196,7 @@ func TestRBACMutationVerifiedOperationCallGraphIsClosed(t *testing.T) {
 		result []string
 	}{
 		"CreateMembership":  {input: "CreateMembershipInput", result: []string{"MutationResult", "error"}},
+		"ResumeMembership":  {input: "MembershipTransitionInput", result: []string{"MutationResult", "error"}},
 		"SuspendMembership": {input: "MembershipTransitionInput", result: []string{"MutationResult", "error"}},
 		"RevokeMembership":  {input: "MembershipTransitionInput", result: []string{"MutationResult", "error"}},
 		"BindRole":          {input: "BindRoleInput", result: []string{"MutationResult", "error"}},
@@ -245,7 +246,7 @@ func TestRBACMutationVerifiedOperationCallGraphIsClosed(t *testing.T) {
 	checkOuterPath(revokeBinding, "withStoredScopeMutation", "revokeRoleBindingInTransaction")
 	checkOuterPath(transition, "withStoredScopeMutation", "transitionMembershipInTransaction")
 
-	for _, name := range []string{"SuspendMembership", "RevokeMembership"} {
+	for _, name := range []string{"ResumeMembership", "SuspendMembership", "RevokeMembership"} {
 		method := tree.functions["*RBACMutationService."+name]
 		call := requireOneCall(t, method.Body, "transitionMembership")
 		if len(callsNamed(method.Body, "WithVerifiedOperation")) != 0 || len(call.Args) != 7 {
@@ -278,7 +279,7 @@ func TestRBACMutationVerifiedOperationCallGraphIsClosed(t *testing.T) {
 	requireCallerClosure(t, tree, "revokeRoleBindingInTransaction", "*RBACMutationService.RevokeRoleBinding")
 	requireCallerClosure(t, tree, "withKnownScopeMutation", "*RBACMutationService.BindRole", "*RBACMutationService.CreateMembership")
 	requireCallerClosure(t, tree, "withStoredScopeMutation", "*RBACMutationService.RevokeRoleBinding", "*RBACMutationService.transitionMembership")
-	requireCallerClosure(t, tree, "transitionMembership", "*RBACMutationService.RevokeMembership", "*RBACMutationService.SuspendMembership")
+	requireCallerClosure(t, tree, "transitionMembership", "*RBACMutationService.ResumeMembership", "*RBACMutationService.RevokeMembership", "*RBACMutationService.SuspendMembership")
 }
 
 func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing.T) {

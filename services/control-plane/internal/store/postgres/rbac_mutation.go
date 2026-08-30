@@ -24,6 +24,8 @@ const (
 
 	createMembershipSQL = `SELECT resource_uid, resource_version, resource_state
 FROM cloud_agents.create_membership($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	resumeMembershipSQL = `SELECT resource_uid, resource_version, resource_state
+FROM cloud_agents.resume_membership($1, $2, $3, $4, $5, $6)`
 	suspendMembershipSQL = `SELECT resource_uid, resource_version, resource_state
 FROM cloud_agents.suspend_membership($1, $2, $3, $4, $5, $6)`
 	revokeMembershipSQL = `SELECT resource_uid, resource_version, resource_state
@@ -89,7 +91,7 @@ type CreateMembershipInput struct {
 	ReasonCode             string
 }
 
-// MembershipTransitionInput is shared by the two closed membership state
+// MembershipTransitionInput is shared by the closed membership state
 // transitions. The public methods select the target state; callers cannot.
 type MembershipTransitionInput struct {
 	ExpectedTenantRevision  int64
@@ -123,7 +125,7 @@ type RevokeRoleBindingInput struct {
 	ReasonCode              string
 }
 
-// RBACMutationService owns the five closed membership and role-binding
+// RBACMutationService owns the closed membership and role-binding
 // mutation methods. It intentionally exposes neither callbacks nor raw SQL.
 type RBACMutationService struct {
 	runner *TenantTransactionRunner
@@ -182,6 +184,17 @@ func (service *RBACMutationService) SuspendMembership(
 	input MembershipTransitionInput,
 ) (MutationResult, error) {
 	return service.transitionMembership(ctx, tenantID, principal, input, permissionMembershipUpdate, suspendMembershipSQL, authz.MembershipSuspended)
+}
+
+// ResumeMembership authorizes memberships.update at the stored target scope
+// before invoking the exact unexpired suspended-to-active transition.
+func (service *RBACMutationService) ResumeMembership(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	input MembershipTransitionInput,
+) (MutationResult, error) {
+	return service.transitionMembership(ctx, tenantID, principal, input, permissionMembershipUpdate, resumeMembershipSQL, authz.MembershipActive)
 }
 
 // RevokeMembership authorizes memberships.delete at the stored target scope

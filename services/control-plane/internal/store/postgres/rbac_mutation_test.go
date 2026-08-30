@@ -41,6 +41,15 @@ func TestRBACMutationTypedKernelsUseClosedFunctionSet(t *testing.T) {
 			},
 		},
 		{
+			name: "resume membership", wantSQL: resumeMembershipSQL, wantUID: "membership-target", wantState: authz.MembershipActive,
+			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
+				return transitionMembershipInTransaction(ctx, handle, tenantID, MembershipTransitionInput{
+					ExpectedTenantRevision: 7, MembershipUID: "membership-target", ExpectedResourceVersion: 6,
+					AuditFactUID: "audit-resume", ReasonCode: "operator-request",
+				}, resumeMembershipSQL, authz.MembershipActive)
+			},
+		},
+		{
 			name: "revoke membership", wantSQL: revokeMembershipSQL, wantUID: "membership-target", wantState: authz.MembershipRevoked,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
 				return transitionMembershipInTransaction(ctx, handle, tenantID, MembershipTransitionInput{

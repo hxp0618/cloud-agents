@@ -148,6 +148,10 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create public RBAC mutation service: %v", err)
 	}
+	readService, err := postgres.NewDurableCoordinationService(environment.runtimePool)
+	if err != nil {
+		t.Fatalf("create public coordination service: %v", err)
+	}
 
 	actor := "user-admin"
 	target := authz.SubjectRef{Kind: "user", Issuer: externalIdentityIssuer, Subject: "user-external-" + mode}
@@ -187,16 +191,44 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 		t.Fatalf("public SuspendMembership result/error = %#v/%v", suspended, err)
 	}
 	revision = suspended.ResourceVersion
+	suspendedReader := newExternalPrincipal(t, tenantID, "tenant", tenantID, "tenants.get", target.Subject)
+	if _, err := readService.GetPlatformTenant(environment.ctx, suspendedReader.Principal, tenantID); !errors.Is(err, postgres.ErrMutationDenied) {
+		t.Fatalf("suspended membership authorization error = %v", err)
+	}
+
+	resumePrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.update", actor)
+	resumed, err := service.ResumeMembership(environment.ctx, tenantID, resumePrincipal.Principal, postgres.MembershipTransitionInput{
+		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: suspended.ResourceVersion,
+		AuditFactUID: "audit-external-" + mode + "-membership-resume", ReasonCode: "conformance",
+	})
+	if err != nil || resumed.ResourceVersion != revision+1 || resumed.State != authz.MembershipActive {
+		t.Fatalf("public ResumeMembership result/error = %#v/%v", resumed, err)
+	}
+	revision = resumed.ResourceVersion
+	resumedReader := newExternalPrincipal(t, tenantID, "tenant", tenantID, "tenants.get", target.Subject)
+	if tenant, err := readService.GetPlatformTenant(environment.ctx, resumedReader.Principal, tenantID); err != nil || tenant.TenantID != tenantID {
+		t.Fatalf("resumed membership tenant read = %#v/%v", tenant, err)
+	}
 
 	revokePrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.delete", actor)
 	revoked, err := service.RevokeMembership(environment.ctx, tenantID, revokePrincipal.Principal, postgres.MembershipTransitionInput{
-		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: suspended.ResourceVersion,
+		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: resumed.ResourceVersion,
 		AuditFactUID: "audit-external-" + mode + "-membership-revoke", ReasonCode: "conformance",
 	})
 	if err != nil || revoked.ResourceVersion != revision+1 || revoked.State != authz.MembershipRevoked {
 		t.Fatalf("public RevokeMembership result/error = %#v/%v", revoked, err)
 	}
 	revision = revoked.ResourceVersion
+	revokedResumePrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.update", actor)
+	if _, err := service.ResumeMembership(environment.ctx, tenantID, revokedResumePrincipal.Principal, postgres.MembershipTransitionInput{
+		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: revoked.ResourceVersion,
+		AuditFactUID: "audit-external-" + mode + "-membership-resume-revoked", ReasonCode: "conformance",
+	}); !errors.Is(err, postgres.ErrMutationConflict) {
+		t.Fatalf("resume revoked membership error = %v", err)
+	}
+	if actual := externalTenantRevision(t, environment, tenantID); actual != revision {
+		t.Fatalf("resume revoked membership changed tenant revision: got %d want %d", actual, revision)
+	}
 
 	revokeBindingPrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "role-bindings.delete", actor)
 	revokedBinding, err := service.RevokeRoleBinding(environment.ctx, tenantID, revokeBindingPrincipal.Principal, postgres.RevokeRoleBindingInput{

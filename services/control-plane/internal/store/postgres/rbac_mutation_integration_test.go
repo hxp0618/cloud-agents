@@ -41,13 +41,13 @@ func TestTenantRBACMutationAuthorityPostgresConformance(t *testing.T) {
 FROM pg_catalog.pg_proc AS routine
 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = routine.pronamespace
 WHERE namespace.nspname = 'cloud_agents'
-  AND routine.proname IN ('create_membership','suspend_membership','revoke_membership','bind_role','revoke_role_binding')
+	  AND routine.proname IN ('create_membership','resume_membership','suspend_membership','revoke_membership','bind_role','revoke_role_binding')
   AND pg_catalog.has_function_privilege(current_user, routine.oid, 'EXECUTE')`).Scan(&callable)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if callable != 5 {
-		t.Fatalf("callable typed RBAC mutation functions = %d, want 5", callable)
+	if callable != 6 {
+		t.Fatalf("callable typed RBAC mutation functions = %d, want 6", callable)
 	}
 	var directDML int
 	err = pool.QueryRow(ctx, `SELECT pg_catalog.count(*)

@@ -582,6 +582,42 @@ describe("generated fixture client", () => {
     expect(JSON.parse(seen[14]!.body!)).toEqual(request);
   });
 
+  it("resumes a membership through the transition contract", async () => {
+    const seen: FixtureRequest[] = [];
+    const client = new Client(async (request) => {
+      seen.push(request);
+      return {
+        status: 200,
+        headers: { "X-Resource-Version": "9" },
+        body: JSON.stringify({
+          resourceUid: "membership-alpha",
+          resourceVersion: "9",
+          state: "active",
+        }),
+      };
+    });
+    const result = await client.resumeMembership("tenant-alpha", "membership-alpha", "req-alpha", {
+      expectedTenantRevision: 8,
+      expectedResourceVersion: 8,
+      auditFactUid: "audit-resume",
+      reasonCode: "operator-request",
+    });
+    expect(result.value.state).toBe("active");
+    expect(seen).toEqual([
+      {
+        method: "POST",
+        path: "/v1/tenants/tenant-alpha/memberships/membership-alpha:resume",
+        headers: { "X-Request-ID": "req-alpha" },
+        body: JSON.stringify({
+          expectedTenantRevision: 8,
+          auditFactUid: "audit-resume",
+          reasonCode: "operator-request",
+          expectedResourceVersion: 8,
+        }),
+      },
+    ]);
+  });
+
   it("keeps problem status and abort semantics stable", async () => {
     const problem = readFixture(commonFixtureRoot, "golden/problem.json");
     const errorClient = new Client(async () => ({ status: 404, headers: {}, body: problem }));

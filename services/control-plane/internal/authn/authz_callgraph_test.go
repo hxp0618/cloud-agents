@@ -176,6 +176,7 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.CreateMembership:package.VerifiedOperationBinder",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.CreateMembership:package.WithVerifiedOperation",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.CreateMembership:bridge.withKnownScopeMutation",
+		"internal/store/postgres/rbac_mutation.go:RBACMutationService.ResumeMembership:bridge.transitionMembership",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.RevokeMembership:bridge.transitionMembership",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.RevokeRoleBinding:package.VerifiedOperationBinder",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.RevokeRoleBinding:package.WithVerifiedOperation",

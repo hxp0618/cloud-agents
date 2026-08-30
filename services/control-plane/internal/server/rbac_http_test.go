@@ -47,9 +47,13 @@ func (fake *rbacHTTPMutatorFake) CreateMembership(_ context.Context, _ string, _
 	fake.created = input
 	return fake.result, fake.err
 }
+func (fake *rbacHTTPMutatorFake) ResumeMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.MembershipTransitionInput) (postgres.MutationResult, error) {
+	fake.transitioned = input
+	return fake.result, fake.err
+}
 func (fake *rbacHTTPMutatorFake) SuspendMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.MembershipTransitionInput) (postgres.MutationResult, error) {
 	fake.transitioned = input
-	return postgres.MutationResult{}, fake.err
+	return fake.result, fake.err
 }
 func (fake *rbacHTTPMutatorFake) RevokeMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input postgres.MembershipTransitionInput) (postgres.MutationResult, error) {
 	fake.transitioned = input
@@ -352,31 +356,38 @@ func TestRBACHTTPServerBindsRoleWithScopedMutationContract(t *testing.T) {
 	}
 }
 
-func TestRBACHTTPServerRevokesMembershipUsingStoredScope(t *testing.T) {
-	verifier := &projectHTTPVerifierFake{}
-	reader := &rbacHTTPReaderFake{scope: authz.ScopeRef{Level: authz.ScopeProject, ID: "project-alpha"}}
-	mutator := &rbacHTTPMutatorFake{result: postgres.MutationResult{TenantID: "tenant-alpha", ResourceUID: "membership-alpha", ResourceVersion: 9, State: "revoked"}}
-	server, err := NewRBACHTTPServer(verifier, reader, mutator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := platformv1alpha1.EncodeMembershipTransitionRequestJSON(platformv1alpha1.MembershipTransitionRequest{ExpectedTenantRevision: 8, ExpectedResourceVersion: 7, AuditFactUID: "audit-revoke", ReasonCode: "operator-request"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/memberships/membership-alpha:revoke", strings.NewReader(string(body)))
-	request.Header.Set("Authorization", "Bearer access-token")
-	request.Header.Set("X-Request-ID", "request-alpha")
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || response.Header().Get("X-Resource-Version") != "9" || reader.resolves != 1 {
-		t.Fatalf("status=%d headers=%v resolves=%d body=%s", response.Code, response.Header(), reader.resolves, response.Body.String())
-	}
-	if verifier.seen.RequiredPermission != "memberships.delete" || verifier.seen.ResourceLevel != "project" || verifier.seen.ResourceID != "project-alpha" {
-		t.Fatalf("verification=%#v", verifier.seen)
-	}
-	if mutator.transitioned.MembershipUID != "membership-alpha" || mutator.transitioned.ExpectedResourceVersion != 7 {
-		t.Fatalf("transition=%#v", mutator.transitioned)
+func TestRBACHTTPServerTransitionsMembershipUsingStoredScope(t *testing.T) {
+	for _, test := range []struct{ action, permission, state string }{
+		{action: "resume", permission: "memberships.update", state: "active"},
+		{action: "revoke", permission: "memberships.delete", state: "revoked"},
+	} {
+		t.Run(test.action, func(t *testing.T) {
+			verifier := &projectHTTPVerifierFake{}
+			reader := &rbacHTTPReaderFake{scope: authz.ScopeRef{Level: authz.ScopeProject, ID: "project-alpha"}}
+			mutator := &rbacHTTPMutatorFake{result: postgres.MutationResult{TenantID: "tenant-alpha", ResourceUID: "membership-alpha", ResourceVersion: 9, State: test.state}}
+			server, err := NewRBACHTTPServer(verifier, reader, mutator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := platformv1alpha1.EncodeMembershipTransitionRequestJSON(platformv1alpha1.MembershipTransitionRequest{ExpectedTenantRevision: 8, ExpectedResourceVersion: 7, AuditFactUID: "audit-" + test.action, ReasonCode: "operator-request"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/memberships/membership-alpha:"+test.action, strings.NewReader(string(body)))
+			request.Header.Set("Authorization", "Bearer access-token")
+			request.Header.Set("X-Request-ID", "request-alpha")
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || response.Header().Get("X-Resource-Version") != "9" || reader.resolves != 1 {
+				t.Fatalf("status=%d headers=%v resolves=%d body=%s", response.Code, response.Header(), reader.resolves, response.Body.String())
+			}
+			if verifier.seen.RequiredPermission != test.permission || verifier.seen.ResourceLevel != "project" || verifier.seen.ResourceID != "project-alpha" {
+				t.Fatalf("verification=%#v", verifier.seen)
+			}
+			if mutator.transitioned.MembershipUID != "membership-alpha" || mutator.transitioned.ExpectedResourceVersion != 7 {
+				t.Fatalf("transition=%#v", mutator.transitioned)
+			}
+		})
 	}
 }
 

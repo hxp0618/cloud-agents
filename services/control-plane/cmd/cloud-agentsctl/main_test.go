@@ -217,6 +217,7 @@ func TestParseArgsAcceptsRBACMutations(t *testing.T) {
 	}{
 		{name: "organization create", args: []string{"--organization", "organization-beta", "organization", "create"}},
 		{name: "membership create", args: []string{"--membership", "membership-alpha", "membership", "create"}},
+		{name: "membership resume", args: []string{"--membership", "membership-alpha", "membership", "resume"}},
 		{name: "membership suspend", args: []string{"--membership", "membership-alpha", "membership", "suspend"}},
 		{name: "membership revoke", args: []string{"--membership", "membership-alpha", "membership", "revoke"}},
 		{name: "role binding create", args: []string{"--role-binding", "binding-alpha", "role-binding", "create"}},
@@ -334,6 +335,14 @@ func TestRunRBACMutations(t *testing.T) {
 				`"kind":"user"`, `"issuer":"https://issuer.example"`, `"subject":"user-alpha"`,
 				`"level":"tenant"`, `"id":"tenant-alpha"`, `"auditFactUid":"audit-create"`, `"reasonCode":"operator-request"`,
 			},
+		},
+		{
+			name:       "membership resume",
+			resource:   "membership",
+			action:     "resume",
+			resourceID: "membership-alpha",
+			status:     http.StatusOK,
+			bodyParts:  []string{`"expectedTenantRevision":8`, `"expectedResourceVersion":3`, `"auditFactUid":"audit-transition"`, `"reasonCode":"operator-request"`},
 		},
 		{
 			name:       "membership suspend",

@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:1a1e6c484545c12e7a65779267e9f457786cb00a60c57c8aab4b13f877b80b72",
-    "inputManifestSha256": "sha256:1a1e6c484545c12e7a65779267e9f457786cb00a60c57c8aab4b13f877b80b72",
+    "manifestSha256": "sha256:41e019b02c00f262d51e2d08863b17aeb4a7877e2071f9224e9be128cf16f013",
+    "inputManifestSha256": "sha256:41e019b02c00f262d51e2d08863b17aeb4a7877e2071f9224e9be128cf16f013",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -102,7 +102,7 @@
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:e550b33a2a4ba310767b13698ce4ada0e3b8819cd214fd299b0eeab3bb3d5462",
+      "manifestSha256": "sha256:368c996771b8d4ca4d94bf5f2b282199bf452f2953832cef0003828df925831f",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -170,7 +170,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:9639f2a644e3529c88bb1b1424c5e8d36688c33ac311181eb1f06f2a844834eb",
+    "sourceManifestSha256": "sha256:fa974dd0b35a3db4a00493ef35aa079f9d0a1e17b4d1a899691371b1b75f1861",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -186,7 +186,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:b244b3da818d70d5afbe53b87348c6f8838356cc5a9c2b56d9006c7e480e57a1"
+    "configDigest": "sha256:5295905921d2749adf273e3b02b0eed541b494cdfa94512a977f81d0a48e9109"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -201,12 +201,12 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:42c06fe79cd520cc5efa82e17cfd5b272a1f60321b0973921c2f6a28538a899a",
+  "outputTreeSha256": "sha256:ff6632f548769fe68f4140ad2dbc681b97295273824824d0fe62ab43c9051271",
   "outputs": [
     {
       "path": "sdk/typescript/src/platform.ts",
-      "sha256": "sha256:9532bb858a305be6d1658f4bfe625d44f9ea085ae896c9ecadc9e28cbf3cb8e4",
-      "sizeBytes": 122619
+      "sha256": "sha256:6d74533e9d76de9f60cd967cb6e9214f39712eb1d02c5cd5ac016ea9c955e8c4",
+      "sizeBytes": 123186
     }
   ]
 }

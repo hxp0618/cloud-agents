@@ -746,6 +746,32 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/memberships/{membershipId}:resume": {
+      "post": {
+        "operationId": "managedAgentResumeMembership",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/MembershipId" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": { "X-Resource-Version": { "$ref": "#/components/headers/ResourceVersion" } },
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/memberships/{membershipId}:suspend": {
       "post": {
         "operationId": "managedAgentSuspendMembership",

@@ -52,7 +52,9 @@ func TestRBACFactReadersUseExactBoundedQueries(t *testing.T) {
 		t.Fatalf("candidate arguments = %#v", got)
 	}
 	if strings.Contains(readAuthorizationCandidatesSQL, "binding.subject_digest = membership.subject_digest") ||
-		!strings.Contains(readAuthorizationCandidatesSQL, "membership.resource_version < binding.resource_version") {
+		strings.Contains(readAuthorizationCandidatesSQL, "membership.resource_version < binding.resource_version") ||
+		!strings.Contains(readAuthorizationCandidatesSQL, "membership_admission.change_kind = 'created'") ||
+		!strings.Contains(readAuthorizationCandidatesSQL, "membership_admission.resource_version < binding.resource_version") {
 		t.Fatal("candidate query no longer exposes digest drift or creation ordering")
 	}
 }
@@ -119,7 +121,7 @@ func TestRBACProductionSurfaceHasNoStandaloneAuthorizeOrRawActor(t *testing.T) {
 			if function.Name.Name == "Authorize" || function.Name.Name == "authorizeMutation" {
 				t.Errorf("forbidden standalone authorization function %s remains", function.Name.Name)
 			}
-			if function.Name.Name == "CreateMembership" || function.Name.Name == "SuspendMembership" ||
+			if function.Name.Name == "CreateMembership" || function.Name.Name == "ResumeMembership" || function.Name.Name == "SuspendMembership" ||
 				function.Name.Name == "RevokeMembership" || function.Name.Name == "BindRole" || function.Name.Name == "RevokeRoleBinding" {
 				if function.Type.Params == nil || len(function.Type.Params.List) != 4 {
 					t.Errorf("%s parameter shape drift", function.Name.Name)

@@ -23,6 +23,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		t.Fatal("project GET fixture must distinguish metadata.uid from metadata.name")
 	}
 	mutationBody := []byte(`{"resourceUid":"membership-new","resourceVersion":"8","state":"active"}`)
+	resumeBody := []byte(`{"resourceUid":"membership-new","resourceVersion":"9","state":"active"}`)
 	membershipBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/membership.json")
 	membershipPageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MembershipPage","memberships":[` + string(membershipBody) + `],"nextPageToken":"membership-page-token-2"}`)
 	roleBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/role.json")
@@ -46,6 +47,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		"POST /v1/tenants/tenant-alpha/organizations":                                                                       {Status: 201, Headers: map[string]string{HeaderResourceVersion: "2"}, Body: responseFixture(t, "organization", 200).Body},
 		"POST /v1/tenants/tenant-alpha/projects":                                                                            {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
 		"POST /v1/tenants/tenant-alpha/memberships":                                                                         {Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"}, Body: mutationBody},
+		"POST /v1/tenants/tenant-alpha/memberships/membership-new:resume":                                                   {Status: 200, Headers: map[string]string{HeaderResourceVersion: "9"}, Body: resumeBody},
 	}
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(ctx context.Context, request Request) (Response, error) {
@@ -108,8 +110,11 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 16 {
-		t.Fatalf("transport calls = %d, want 16", len(seen))
+	if _, err := client.ResumeMembership(ctx, "tenant-alpha", "membership-new", "req-alpha", platform.MembershipTransitionRequest{ExpectedTenantRevision: 8, ExpectedResourceVersion: 8, AuditFactUID: "audit-resume", ReasonCode: "operator-request"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 17 {
+		t.Fatalf("transport calls = %d, want 17", len(seen))
 	}
 	for _, request := range seen {
 		if request.Headers[HeaderRequestID] != "req-alpha" {
@@ -119,6 +124,9 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[14].Body)
 	if seen[14].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
 		t.Fatalf("create request = %#v", seen[14])
+	}
+	if string(seen[16].Body) != `{"expectedTenantRevision":8,"expectedResourceVersion":8,"auditFactUid":"audit-resume","reasonCode":"operator-request"}` {
+		t.Fatalf("resume request = %#v", seen[16])
 	}
 }
 

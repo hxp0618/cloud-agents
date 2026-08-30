@@ -231,7 +231,18 @@ export function classifyMigrationStatement(
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
-      (!new Set(["000005", "000006", "000009", "000012", "000013", "000014", "000016", "000022", "000023"]).has(migrationId) ||
+      (!new Set([
+        "000005",
+        "000006",
+        "000009",
+        "000012",
+        "000013",
+        "000014",
+        "000016",
+        "000022",
+        "000023",
+        "000028",
+      ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
       reject(tokens);
@@ -362,6 +373,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:append_managed_agent_event_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:jsonb)",
           ],
         ],
+        [
+          "000028",
+          [
+            "function:unquoted:cloud_agents/unquoted:transition_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -409,6 +426,7 @@ export function classifyMigrationStatement(
               ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION_RESOURCE"].join("\0"),
             ]),
           ],
+          ["000028", new Set([["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0")])],
         ])
           .get(migrationId)
           ?.has(subcommand.join("\0")) === true;

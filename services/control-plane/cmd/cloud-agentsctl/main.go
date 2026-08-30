@@ -232,7 +232,7 @@ func run(args []string, stdout io.Writer) error {
 				})
 			}
 		}
-	case "membership suspend", "membership revoke":
+	case "membership resume", "membership suspend", "membership revoke":
 		var flags rbacTransitionFlags
 		if err = parseActionFlags("membership "+action, actionArgs, defineRBACTransitionFlags(&flags)); err == nil {
 			body := platform.MembershipTransitionRequest{
@@ -241,7 +241,9 @@ func run(args []string, stdout io.Writer) error {
 				AuditFactUID:            flags.auditFactUID,
 				ReasonCode:              flags.reasonCode,
 			}
-			if action == "suspend" {
+			if action == "resume" {
+				value, err = client.ResumeMembership(ctx, options.tenant, options.membership, options.requestID, body)
+			} else if action == "suspend" {
 				value, err = client.SuspendMembership(ctx, options.tenant, options.membership, options.requestID, body)
 			} else {
 				value, err = client.RevokeMembership(ctx, options.tenant, options.membership, options.requestID, body)
@@ -479,7 +481,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership list", "membership create", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false

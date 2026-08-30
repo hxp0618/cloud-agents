@@ -19,6 +19,7 @@ import (
 
 type ManagedAgentRBACMutator interface {
 	CreateMembership(context.Context, string, *authn.VerifiedPrincipal, postgres.CreateMembershipInput) (postgres.MutationResult, error)
+	ResumeMembership(context.Context, string, *authn.VerifiedPrincipal, postgres.MembershipTransitionInput) (postgres.MutationResult, error)
 	SuspendMembership(context.Context, string, *authn.VerifiedPrincipal, postgres.MembershipTransitionInput) (postgres.MutationResult, error)
 	RevokeMembership(context.Context, string, *authn.VerifiedPrincipal, postgres.MembershipTransitionInput) (postgres.MutationResult, error)
 	BindRole(context.Context, string, *authn.VerifiedPrincipal, postgres.BindRoleInput) (postgres.MutationResult, error)
@@ -149,6 +150,8 @@ func (server *RBACHTTPServer) transition(writer http.ResponseWriter, request *ht
 	}
 	var result postgres.MutationResult
 	switch {
+	case kind == "membership" && action == "resume":
+		result, err = server.mutator.ResumeMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode})
 	case kind == "membership" && action == "suspend":
 		result, err = server.mutator.SuspendMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode})
 	case kind == "membership" && action == "revoke":
@@ -238,7 +241,7 @@ func rbacMutationPath(path string) (tenantID, resourceID, kind, action string, o
 	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
 		return "", "", "", "", false
 	}
-	for _, candidate := range []struct{ suffix, action, kind string }{{":suspend", "suspend", "membership"}, {":revoke", "revoke", "membership"}, {":revoke", "revoke", "role_binding"}} {
+	for _, candidate := range []struct{ suffix, action, kind string }{{":resume", "resume", "membership"}, {":suspend", "suspend", "membership"}, {":revoke", "revoke", "membership"}, {":revoke", "revoke", "role_binding"}} {
 		if strings.HasSuffix(parts[2], candidate.suffix) && strings.TrimSuffix(parts[2], candidate.suffix) != "" {
 			if (candidate.kind == "membership" && parts[1] == "memberships") || (candidate.kind == "role_binding" && parts[1] == "role-bindings") {
 				return parts[0], strings.TrimSuffix(parts[2], candidate.suffix), candidate.kind, candidate.action, true
