@@ -1,7 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^$|^sha256:[0-9a-f]{64}$"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    }
+  },
   "properties": {
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controlPlane", "worker", "migrate"],
+      "properties": {
+        "controlPlane": {
+          "$ref": "#/definitions/image"
+        },
+        "worker": {
+          "$ref": "#/definitions/image"
+        },
+        "migrate": {
+          "$ref": "#/definitions/image"
+        }
+      }
+    },
     "database": {
       "type": "object",
       "properties": {

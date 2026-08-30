@@ -38,17 +38,18 @@ PostgreSQL database and pre-created Secrets named by `values.yaml`: database
 URLs (`runtime-url`, `migration-url`), `auth.json`, Control Plane/Worker mTLS,
 Runtime provider environment, Provider credentials (`codex.json` and/or
 `claudeAgent.json`), and Runtime admission (`lease-id`, `generation`, `token`).
-Override all three image repositories and tags with the OCI images
-built from this release before installing:
+Override all three image repositories and set their digests from
+`cloud-agents-oci-images.json` before installing. A non-empty digest takes
+precedence over the chart's fallback tag:
 
 ```sh
 helm upgrade --install cloud-agents deploy/helm/cloud-agents \
   --set images.controlPlane.repository=REGISTRY/control-plane \
   --set images.worker.repository=REGISTRY/worker \
   --set images.migrate.repository=REGISTRY/migrate \
-  --set images.controlPlane.tag=VERSION \
-  --set images.worker.tag=VERSION \
-  --set images.migrate.tag=VERSION
+  --set-string images.controlPlane.digest=sha256:CONTROL_PLANE_DIGEST \
+  --set-string images.worker.digest=sha256:WORKER_DIGEST \
+  --set-string images.migrate.digest=sha256:MIGRATE_DIGEST
 ```
 
 The migration Job runs before install and upgrade. On first install, the following

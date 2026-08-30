@@ -2,14 +2,17 @@ images:
   controlPlane:
     repository: cloud-agents/control-plane
     tag: 0.2.0
+    digest: ""
     pullPolicy: IfNotPresent
   worker:
     repository: cloud-agents/worker
     tag: 0.2.0
+    digest: ""
     pullPolicy: IfNotPresent
   migrate:
     repository: cloud-agents/migrate
     tag: 0.2.0
+    digest: ""
     pullPolicy: IfNotPresent
 
 database:
