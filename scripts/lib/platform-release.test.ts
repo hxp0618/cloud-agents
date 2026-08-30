@@ -170,6 +170,16 @@ describe("platform release", () => {
     expect(worker).toContain("secretName: {{ .Values.runtime.credentialSecretName }}");
   });
 
+  it("publishes the Worker Runtime capacity limit in Compose and Helm", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
+    for (const deployment of [compose, worker]) {
+      expect(deployment).toContain("--runtime-max-sessions");
+    }
+    expect(compose).toContain("CLOUD_AGENTS_RUNTIME_MAX_SESSIONS:-4");
+    expect(worker).toContain(".Values.runtime.maxSessions");
+  });
+
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     expect(compose).toContain("command:\n      - >-\n        exec psql");

@@ -44,6 +44,7 @@ type productionWorkerConfig struct {
 	clientCAFile               string
 	workerSPIFFE               string
 	runtimeCommand             string
+	runtimeMaxSessions         int
 	runtimeCredentialDirectory string
 	admissionLeaseID           string
 	admissionGeneration        uint64
@@ -59,6 +60,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	clientCA := set.String("client-ca", "", "client CA certificate PEM file")
 	workerSPIFFE := set.String("worker-spiffe-id", "", "worker SPIFFE identity")
 	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
+	runtimeMaxSessions := set.Int("runtime-max-sessions", workerkernel.DefaultRuntimeMaxSessions, "maximum concurrent Runtime sessions")
 	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "directory containing <providerKind>.json credentials")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
@@ -79,7 +81,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 	if getenv != nil {
 		admissionToken = []byte(getenv(admissionTokenEnvironment))
 	}
-	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, runtimeCredentialDirectory: *runtimeCredentialDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
+	cfg := productionWorkerConfig{listen: *listen, tlsCertFile: *tlsCert, tlsKeyFile: *tlsKey, clientCAFile: *clientCA, workerSPIFFE: *workerSPIFFE, runtimeCommand: *runtimeCommand, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: admissionToken}
 	if err := validateProductionWorkerConfig(cfg); err != nil {
 		return productionWorkerConfig{}, err
 	}
@@ -87,7 +89,7 @@ func parseProductionWorkerConfig(args []string, getenv func(string) string) (pro
 }
 
 func validateProductionWorkerConfig(cfg productionWorkerConfig) error {
-	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || !filepath.IsAbs(cfg.runtimeCredentialDirectory) || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
+	if err := validateProductionListen(cfg.listen); err != nil || cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" || cfg.clientCAFile == "" || cfg.runtimeCommand == "" || cfg.runtimeMaxSessions < 1 || cfg.runtimeMaxSessions > workerkernel.MaxRuntimeSessions || !filepath.IsAbs(cfg.runtimeCredentialDirectory) || cfg.admissionLeaseID == "" || cfg.admissionGeneration == 0 || len(cfg.admissionToken) == 0 || len(cfg.admissionToken) > int(workerkernel.MaxPayloadBytes) {
 		return errInvalidProductionWorkerConfig
 	}
 	if strings.TrimSpace(cfg.tlsCertFile) != cfg.tlsCertFile || strings.TrimSpace(cfg.tlsKeyFile) != cfg.tlsKeyFile || strings.TrimSpace(cfg.clientCAFile) != cfg.clientCAFile || strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || strings.TrimSpace(cfg.admissionLeaseID) != cfg.admissionLeaseID {
@@ -160,6 +162,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 		Capabilities:               productionWorkerCapabilities(),
 		IdentityProvider:           workerkernel.TLSIdentityProvider{},
 		RuntimeCommand:             []string{cfg.runtimeCommand},
+		RuntimeMaxSessions:         cfg.runtimeMaxSessions,
 		RuntimeEnvironment:         productionRuntimeEnvironment(os.Environ()),
 		RuntimeCredentialDirectory: cfg.runtimeCredentialDirectory,
 		AdmissionLeaseID:           cfg.admissionLeaseID,

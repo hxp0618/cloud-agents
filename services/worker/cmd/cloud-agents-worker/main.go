@@ -50,6 +50,7 @@ type localWorkerConfig struct {
 	tokenFile                  string
 	runtimeCommand             string
 	runtimeDirectory           string
+	runtimeMaxSessions         int
 	runtimeCredentialDirectory string
 	// token and tokenGenerator are test seams. The command never accepts a
 	// token on the command line and therefore cannot leak it via argv.
@@ -106,11 +107,12 @@ func parseLocalWorkerConfig(args []string) (localWorkerConfig, error) {
 	tokenFile := set.String("token-file", "", "write one ephemeral local bearer token to this 0600 file")
 	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
 	runtimeDirectory := set.String("runtime-directory", "", "absolute Runtime working directory")
+	runtimeMaxSessions := set.Int("runtime-max-sessions", workerkernel.DefaultRuntimeMaxSessions, "maximum concurrent Runtime sessions")
 	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "optional absolute directory containing <providerKind>.json credentials")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return localWorkerConfig{}, errInvalidWorkerConfig
 	}
-	cfg := localWorkerConfig{listen: *listen, tokenFile: *tokenFile, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeCredentialDirectory: *runtimeCredentialDirectory}
+	cfg := localWorkerConfig{listen: *listen, tokenFile: *tokenFile, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeMaxSessions: *runtimeMaxSessions, runtimeCredentialDirectory: *runtimeCredentialDirectory}
 	if err := validateLoopbackListen(cfg.listen); err != nil {
 		return localWorkerConfig{}, err
 	}
@@ -140,7 +142,7 @@ func validateLocalWorkerConfig(cfg localWorkerConfig) error {
 			return err
 		}
 	}
-	if strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.ContainsRune(cfg.runtimeCommand, '\x00') || strings.TrimSpace(cfg.runtimeDirectory) != cfg.runtimeDirectory || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory {
+	if strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.ContainsRune(cfg.runtimeCommand, '\x00') || strings.TrimSpace(cfg.runtimeDirectory) != cfg.runtimeDirectory || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory || cfg.runtimeMaxSessions < 0 || cfg.runtimeMaxSessions > workerkernel.MaxRuntimeSessions || (cfg.runtimeCommand != "" && cfg.runtimeMaxSessions == 0) {
 		return errInvalidWorkerConfig
 	}
 	if cfg.runtimeCommand == "" {
@@ -265,8 +267,10 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 		}
 	}
 	var runtimeCommand []string
+	runtimeMaxSessions := 0
 	if cfg.runtimeCommand != "" {
 		runtimeCommand = []string{cfg.runtimeCommand}
+		runtimeMaxSessions = cfg.runtimeMaxSessions
 	}
 	workerService, err := workerkernel.NewService(workerkernel.Config{
 		WorkerIdentity: workerIdentity,
@@ -282,6 +286,7 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 		Clock:                      clock,
 		Executor:                   workerkernel.DeterministicLocalExecutor{},
 		RuntimeCommand:             runtimeCommand,
+		RuntimeMaxSessions:         runtimeMaxSessions,
 		RuntimeEnvironment:         localRuntimeEnvironment(os.Environ()),
 		RuntimeDirectory:           cfg.runtimeDirectory,
 		RuntimeCredentialDirectory: cfg.runtimeCredentialDirectory,

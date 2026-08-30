@@ -20,13 +20,15 @@ import (
 )
 
 const (
-	ProtocolMajor       uint32 = 1
-	ProtocolMinor       uint32 = 0
-	MaxWireMessageBytes uint32 = 1 << 20
-	MaxRepeatedItems    uint32 = 64
-	MaxStringBytes      uint32 = 1024
-	MaxPayloadBytes     uint32 = 64 << 10
-	MaxDeadlineSeconds  uint32 = 300
+	ProtocolMajor             uint32 = 1
+	ProtocolMinor             uint32 = 0
+	MaxWireMessageBytes       uint32 = 1 << 20
+	MaxRepeatedItems          uint32 = 64
+	MaxStringBytes            uint32 = 1024
+	MaxPayloadBytes           uint32 = 64 << 10
+	MaxDeadlineSeconds        uint32 = 300
+	DefaultRuntimeMaxSessions        = 4
+	MaxRuntimeSessions               = 1024
 	// Negotiation identifiers use the contract's stricter 256-byte identifier cap.
 	MaxIdentifierBytes uint32 = 256
 )
@@ -72,6 +74,9 @@ type Config struct {
 	RuntimeCommand     []string
 	RuntimeEnvironment []string
 	RuntimeDirectory   string
+	// RuntimeMaxSessions bounds concurrent Runtime processes. Zero selects the
+	// production-safe default when RuntimeCommand is configured.
+	RuntimeMaxSessions int
 	// RuntimeCredentialDirectory contains one <providerKind>.json anonymous-FD
 	// credential envelope per production Provider.
 	RuntimeCredentialDirectory string
@@ -110,6 +115,7 @@ type Service struct {
 	runtimeEnvironment         []string
 	runtimeDirectory           string
 	runtimeCredentialDirectory string
+	runtimeSlots               chan struct{}
 	admissions                 map[string]admissionRecord
 	executor                   OperationExecutor
 	receipts                   map[string]receiptRecord
@@ -142,8 +148,20 @@ func NewService(cfg Config) (*Service, error) {
 	if cfg.IDGenerator == nil {
 		cfg.IDGenerator = randomID
 	}
-	if len(cfg.RuntimeCommand) > 0 && len(cfg.AdmissionToken) == 0 {
-		return nil, fmt.Errorf("worker/invalid_config: Runtime admission token is required")
+	var runtimeSlots chan struct{}
+	if len(cfg.RuntimeCommand) > 0 {
+		if len(cfg.AdmissionToken) == 0 {
+			return nil, fmt.Errorf("worker/invalid_config: Runtime admission token is required")
+		}
+		if cfg.RuntimeMaxSessions == 0 {
+			cfg.RuntimeMaxSessions = DefaultRuntimeMaxSessions
+		}
+		if cfg.RuntimeMaxSessions < 1 || cfg.RuntimeMaxSessions > MaxRuntimeSessions {
+			return nil, fmt.Errorf("worker/invalid_config: Runtime max sessions must be between 1 and %d", MaxRuntimeSessions)
+		}
+		runtimeSlots = make(chan struct{}, cfg.RuntimeMaxSessions)
+	} else if cfg.RuntimeMaxSessions != 0 {
+		return nil, fmt.Errorf("worker/invalid_config: Runtime max sessions require a Runtime command")
 	}
 	caps := cfg.Capabilities
 	if caps == nil {
@@ -169,7 +187,7 @@ func NewService(cfg Config) (*Service, error) {
 		identity: cfg.IdentityProvider, newID: cfg.IDGenerator, now: cfg.Clock, bindings: make(map[string]binding),
 		admissionLeaseID: cfg.AdmissionLeaseID, admissionGeneration: cfg.AdmissionGeneration,
 		admissionToken: append([]byte(nil), cfg.AdmissionToken...),
-		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory,
+		runtimeCommand: append([]string(nil), cfg.RuntimeCommand...), runtimeEnvironment: append([]string(nil), cfg.RuntimeEnvironment...), runtimeDirectory: cfg.RuntimeDirectory, runtimeCredentialDirectory: cfg.RuntimeCredentialDirectory, runtimeSlots: runtimeSlots,
 		admissions: make(map[string]admissionRecord), executor: cfg.Executor,
 		receipts: make(map[string]receiptRecord), receiptsByAttempt: make(map[string]string)}, nil
 }
@@ -196,7 +214,7 @@ func (s *Service) ProtocolDescriptor() *workerv1alpha1.ProtocolDescriptor {
 func (s *Service) ready() bool {
 	return s != nil && s.workerIdentity != nil && s.capabilities != nil && s.identity != nil &&
 		s.newID != nil && s.now != nil && s.bindings != nil && s.admissions != nil &&
-		s.receipts != nil && s.receiptsByAttempt != nil
+		s.receipts != nil && s.receiptsByAttempt != nil && (len(s.runtimeCommand) == 0 || s.runtimeSlots != nil)
 }
 
 func (s *Service) Negotiate(ctx context.Context, req *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {

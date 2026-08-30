@@ -29,8 +29,18 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 			return "admission-token"
 		}
 		return ""
-	}); err != nil || cfg.listen != "worker.example:8091" {
+	}); err != nil || cfg.listen != "worker.example:8091" || cfg.runtimeMaxSessions != workerkernel.DefaultRuntimeMaxSessions {
 		t.Fatalf("hostname listen = %q error = %v", cfg.listen, err)
+	}
+	customArgs := append(append([]string{}, validArgs...), "--runtime-max-sessions", "7")
+	if cfg, err := parseProductionWorkerConfig(customArgs, func(string) string { return "admission-token" }); err != nil || cfg.runtimeMaxSessions != 7 {
+		t.Fatalf("custom Runtime capacity = %d error = %v", cfg.runtimeMaxSessions, err)
+	}
+	for _, value := range []string{"0", "1025"} {
+		args := append(append([]string{}, validArgs...), "--runtime-max-sessions", value)
+		if _, err := parseProductionWorkerConfig(args, func(string) string { return "admission-token" }); !errors.Is(err, errInvalidProductionWorkerConfig) {
+			t.Fatalf("Runtime max sessions %s error = %v", value, err)
+		}
 	}
 	if _, err := parseProductionWorkerConfig(append(validArgs, "--provider-credential-directory", "relative"), func(string) string { return "admission-token" }); !errors.Is(err, errInvalidProductionWorkerConfig) {
 		t.Fatalf("relative Provider credential directory error = %v", err)

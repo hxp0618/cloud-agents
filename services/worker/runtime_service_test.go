@@ -51,6 +51,33 @@ func TestRuntimeFencingRequiresConfiguredToken(t *testing.T) {
 	}
 }
 
+func TestRuntimeSessionCapacityConfigDefaultsAndRejectsInvalidBounds(t *testing.T) {
+	base := Config{
+		WorkerIdentity:      &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+		RuntimeCommand:      []string{"runtime"},
+		AdmissionToken:      []byte("runtime-token"),
+		AdmissionLeaseID:    "lease-runtime",
+		AdmissionGeneration: 7,
+	}
+	service, err := NewService(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cap(service.runtimeSlots) != DefaultRuntimeMaxSessions {
+		t.Fatalf("default Runtime capacity = %d", cap(service.runtimeSlots))
+	}
+	for _, limit := range []int{-1, MaxRuntimeSessions + 1} {
+		candidate := base
+		candidate.RuntimeMaxSessions = limit
+		if _, err := NewService(candidate); err == nil {
+			t.Fatalf("Runtime max sessions %d unexpectedly accepted", limit)
+		}
+	}
+	if _, err := NewService(Config{WorkerIdentity: base.WorkerIdentity, RuntimeMaxSessions: 1}); err == nil {
+		t.Fatal("Runtime capacity without a Runtime command unexpectedly accepted")
+	}
+}
+
 func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
 	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor", TrustDomain: "cloud-agents.test"}

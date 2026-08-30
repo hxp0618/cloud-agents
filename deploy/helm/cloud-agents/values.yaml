@@ -41,6 +41,7 @@ admission:
   tokenKey: token
 
 runtime:
+  maxSessions: 4
   environmentSecretName: cloud-agents-runtime-env
   credentialSecretName: cloud-agents-provider-credentials
   workspace:

@@ -71,6 +71,12 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if err != nil {
 		return err
 	}
+	select {
+	case s.runtimeSlots <- struct{}{}:
+		defer func() { <-s.runtimeSlots }()
+	default:
+		return runtimeSessionFailure(connect.CodeResourceExhausted, "capacity_exhausted", "Runtime session capacity is exhausted")
+	}
 	client, err := runtimeprocess.New(ctx, runtimeprocess.Config{
 		Command: s.runtimeCommand, Environment: s.runtimeEnvironment, Directory: s.runtimeDirectory, CredentialFile: credentialFile,
 	})

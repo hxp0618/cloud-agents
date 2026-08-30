@@ -8,6 +8,7 @@ control_plane_listen=${CLOUD_AGENTS_DEV_CONTROL_PLANE_LISTEN:-127.0.0.1:8080}
 worker_listen=${CLOUD_AGENTS_DEV_WORKER_LISTEN:-127.0.0.1:8091}
 workspace_directory=${CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY:-$repository_root}
 credential_directory=${CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR:-}
+runtime_max_sessions=${CLOUD_AGENTS_DEV_RUNTIME_MAX_SESSIONS:-4}
 run_id="${UID:-0}-$$"
 container_name="cloud-agents-dev-$run_id"
 state_parent="$repository_root/.tmp"
@@ -61,6 +62,10 @@ if [[ ! -d $workspace_directory || $workspace_directory != /* ]]; then
 fi
 if [[ -n $credential_directory && (! -d $credential_directory || $credential_directory != /*) ]]; then
   echo "CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR must be an absolute directory" >&2
+  exit 1
+fi
+if [[ ! $runtime_max_sessions =~ ^[1-9][0-9]*$ ]] || ((runtime_max_sessions > 1024)); then
+  echo "CLOUD_AGENTS_DEV_RUNTIME_MAX_SESSIONS must be between 1 and 1024" >&2
   exit 1
 fi
 if ! docker info >/dev/null 2>&1; then
@@ -152,6 +157,7 @@ worker_arguments=(
   --token-file "$state_directory/worker.token"
   --runtime-command "$runtime_command"
   --runtime-directory "$workspace_directory"
+  --runtime-max-sessions "$runtime_max_sessions"
 )
 if [[ -n $credential_directory ]]; then
   worker_arguments+=(--provider-credential-directory "$credential_directory")

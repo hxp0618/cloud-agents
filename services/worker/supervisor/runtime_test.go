@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
@@ -44,6 +46,7 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 		AdmissionGeneration:        7,
 		AdmissionToken:             []byte("runtime-token"),
 		RuntimeCommand:             []string{os.Args[0], "-test.run=TestRuntimeSessionBridgesWorkerAndRuntimeProcess", "--"},
+		RuntimeMaxSessions:         2,
 		RuntimeEnvironment:         append(os.Environ(), "CLOUD_AGENTS_RUNTIME_BRIDGE_HELPER=1"),
 		RuntimeCredentialDirectory: credentialDirectory,
 		NegotiationTTL:             time.Minute,
@@ -130,11 +133,28 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
 		t.Fatalf("Runtime health check = %v", err)
 	}
-	mismatchStream, err := supervisor.OpenRuntimeSession(context.Background(), "execution-runtime-test-3", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
-	if err != nil {
-		t.Fatal(err)
+	var mismatchStream *RuntimeSession
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		mismatchStream, err = supervisor.OpenRuntimeSession(context.Background(), "execution-runtime-test-3", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")})
+		if err == nil {
+			break
+		}
+		if connect.CodeOf(err) != connect.CodeResourceExhausted || time.Now().After(deadline) {
+			t.Fatal(err)
+		}
 	}
 	defer func() { _ = mismatchStream.CloseRequest(); _ = mismatchStream.CloseResponse() }()
+	capacityStream := runtimeClient.OpenSession(context.Background())
+	defer func() { _ = capacityStream.CloseRequest(); _ = capacityStream.CloseResponse() }()
+	if err := capacityStream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
+		Negotiation: secondBinding.Negotiation(), Fencing: &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-test", Generation: 7, Token: []byte("runtime-token")},
+		ExecutionId: "execution-runtime-capacity", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capacityStream.Receive(); connect.CodeOf(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), "runtime_capacity_exhausted") {
+		t.Fatalf("Runtime capacity error = %v", err)
+	}
 	mismatch := runtimeCommand("StartSession", "start-runtime-mismatch", "execution-runtime-test-3", 7)
 	mismatch.Payload["runnerInput"].(map[string]any)["workload"].(map[string]any)["provider"] = "claudeAgent"
 	if err := mismatchStream.Send(context.Background(), mismatch); err != nil {

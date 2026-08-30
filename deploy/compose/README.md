@@ -51,6 +51,10 @@ using the Runtime's existing anonymous-FD envelopes: `codex.json` contains
 requested Provider before starting each Runtime process; provider keys in the
 runtime env file are ignored.
 
+The Worker accepts at most `CLOUD_AGENTS_RUNTIME_MAX_SESSIONS` concurrent Runtime
+sessions (default `4`). Additional session opens fail immediately with
+`ResourceExhausted`; tune the value to the CPU and memory assigned to the Worker.
+
 The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
 The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish
 the next `generation` and keeps the previous key material bound to its lineage.

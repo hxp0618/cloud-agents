@@ -17,6 +17,7 @@ grep -Fq "fsGroup: 1000" "$rendered"
 grep -Fq "mountPath: /workspace" "$rendered"
 grep -Fq "mountPath: /tmp" "$rendered"
 grep -Fq "emptyDir: {}" "$rendered"
+grep -A1 -F -- "- --runtime-max-sessions" "$rendered" | grep -Fq -- '- "4"'
 
 helm template cloud-agents "$chart" \
   --set-string images.controlPlane.digest="$digest" \
@@ -29,5 +30,9 @@ done
 
 if helm template cloud-agents "$chart" --set-string images.worker.digest=sha256:invalid >/dev/null 2>&1; then
   echo "invalid OCI image digest passed Helm values validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set runtime.maxSessions=0 >/dev/null 2>&1; then
+  echo "invalid Runtime max sessions passed Helm values validation" >&2
   exit 1
 fi

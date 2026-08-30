@@ -42,14 +42,19 @@ func TestParseLocalWorkerConfigRejectsNonLoopback(t *testing.T) {
 	}
 }
 
-func TestParseLocalWorkerConfigAcceptsCompleteRuntimeMode(t *testing.T) {
+func TestParseLocalWorkerConfigAcceptsBoundedRuntimeMode(t *testing.T) {
 	directory := t.TempDir()
-	cfg, err := parseLocalWorkerConfig([]string{"--token-file", filepath.Join(directory, "worker.token"), "--runtime-command", "/bin/cat", "--runtime-directory", directory})
-	if err != nil || cfg.runtimeCommand != "/bin/cat" || cfg.runtimeDirectory != directory {
+	cfg, err := parseLocalWorkerConfig([]string{"--token-file", filepath.Join(directory, "worker.token"), "--runtime-command", "/bin/cat", "--runtime-directory", directory, "--runtime-max-sessions", "7"})
+	if err != nil || cfg.runtimeCommand != "/bin/cat" || cfg.runtimeDirectory != directory || cfg.runtimeMaxSessions != 7 {
 		t.Fatalf("config = %#v, err = %v", cfg, err)
 	}
 	if _, err := parseLocalWorkerConfig([]string{"--token-file", filepath.Join(directory, "incomplete.token"), "--runtime-command", "/bin/cat"}); !errors.Is(err, errInvalidWorkerConfig) {
 		t.Fatalf("incomplete Runtime error = %v", err)
+	}
+	for _, value := range []string{"0", "1025"} {
+		if _, err := parseLocalWorkerConfig([]string{"--token-file", filepath.Join(directory, "invalid-"+value+".token"), "--runtime-command", "/bin/cat", "--runtime-directory", directory, "--runtime-max-sessions", value}); !errors.Is(err, errInvalidWorkerConfig) {
+			t.Fatalf("Runtime max sessions %s error = %v", value, err)
+		}
 	}
 }
 
@@ -258,7 +263,7 @@ func TestGeneratedConnectClientDispatchAndReceiptAgainstLoopbackServer(t *testin
 }
 
 func TestLocalWorkerRuntimeModeServesGeneratedWireOverH2C(t *testing.T) {
-	built, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18095", token: "runtime-token", runtimeCommand: "/bin/cat", runtimeDirectory: t.TempDir()})
+	built, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18095", token: "runtime-token", runtimeCommand: "/bin/cat", runtimeDirectory: t.TempDir(), runtimeMaxSessions: workerkernel.DefaultRuntimeMaxSessions})
 	if err != nil {
 		t.Fatal(err)
 	}
