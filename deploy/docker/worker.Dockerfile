@@ -7,5 +7,5 @@ COPY cloud-agents-worker-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-w
 COPY cloud-agent-runtime-standalone.mjs /usr/local/bin/cloud-agent-runtime
 RUN chmod 0555 /usr/local/bin/cloud-agents-worker /usr/local/bin/cloud-agent-runtime
 
-USER node
+USER 1000:1000
 ENTRYPOINT ["/usr/local/bin/cloud-agents-worker"]

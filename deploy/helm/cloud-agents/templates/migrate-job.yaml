@@ -17,6 +17,10 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: migrate
           image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
@@ -27,3 +31,8 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: {{ .Values.database.migrationURLKey }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

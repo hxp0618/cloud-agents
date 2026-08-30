@@ -145,13 +145,26 @@ describe("platform release", () => {
   });
 
   it("selects matching OCI base and binary architectures", () => {
-    for (const name of ["control-plane", "worker", "migrate"]) {
+    const users = {
+      "control-plane": "USER 65532:65532",
+      worker: "USER 1000:1000",
+      migrate: "USER 999:999",
+    } as const;
+    for (const name of ["control-plane", "worker", "migrate"] as const) {
       const dockerfile = readFileSync(`deploy/docker/${name}.Dockerfile`, "utf8");
       expect(dockerfile).toContain("ARG TARGETOS");
       expect(dockerfile).toContain("ARG TARGETARCH");
       expect(dockerfile).toContain("${TARGETOS}-${TARGETARCH}");
       expect(dockerfile).not.toContain("ARG TARGET=");
+      expect(dockerfile).toContain(users[name]);
     }
+    const migrationJob = readFileSync(
+      "deploy/helm/cloud-agents/templates/migrate-job.yaml",
+      "utf8",
+    );
+    expect(migrationJob).toContain("runAsNonRoot: true");
+    expect(migrationJob).toContain("readOnlyRootFilesystem: true");
+    expect(migrationJob).toContain("drop: [ALL]");
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");

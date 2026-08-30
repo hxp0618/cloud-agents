@@ -5,5 +5,5 @@ ARG TARGETOS
 ARG TARGETARCH
 COPY cloud-agents-control-plane-${TARGETOS}-${TARGETARCH} /usr/local/bin/cloud-agents-control-plane
 
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/cloud-agents-control-plane"]
