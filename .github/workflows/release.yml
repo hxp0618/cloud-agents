@@ -1,0 +1,154 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Validate release tag
+        run: |
+          set -euo pipefail
+          if [[ ! $GITHUB_REF_NAME =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "release tag must be v<semver> without build metadata" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "release tag commit must belong to main" >&2
+            exit 1
+          fi
+          version=${GITHUB_REF_NAME#v}
+          image_prefix=ghcr.io/${GITHUB_REPOSITORY,,}
+          echo "CLOUD_AGENTS_RELEASE_VERSION=$version" >>"$GITHUB_ENV"
+          echo "CLOUD_AGENTS_IMAGE_PREFIX=$image_prefix" >>"$GITHUB_ENV"
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          cache: true
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bunx oxfmt .github/workflows packages sdk/typescript scripts/check-platform-go-modules.ts scripts/cloud-agent-release-smoke.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/cloud-agent-release.ts scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
+      - run: bunx oxlint . --deny-warnings --ignore-pattern scripts/lib/platform-contract-lock.ts
+      - run: bash -n scripts/cloud-agents-dev.sh
+      - run: bun run platform:go:check
+      - run: sh scripts/test-platform-go-products.sh
+      - run: bun run typecheck
+      - run: bun run --filter '@synara/*' test
+      - run: bunx vitest run scripts/lib/cloud-agent-release.test.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
+      - run: bun run build
+      - run: bun run secret:scan
+      - name: Build release assets
+        env:
+          CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER: github-actions
+        run: |
+          set -euo pipefail
+          platform_directory=$RUNNER_TEMP/cloud-agents-platform
+          package_directory=$RUNNER_TEMP/cloud-agent-packages
+          bun run platform:release -- --version "$CLOUD_AGENTS_RELEASE_VERSION" --output-dir "$platform_directory"
+          bun run release:smoke -- --output-dir "$package_directory"
+          (cd "$platform_directory" && sha256sum -c checksums.sha256)
+          (cd "$package_directory" && sha256sum -c checksums.sha256)
+          cmp "$platform_directory/cloud-agent-runtime-standalone.mjs" "$package_directory/cloud-agent-runtime-standalone.mjs"
+          echo "CLOUD_AGENTS_PLATFORM_DIRECTORY=$platform_directory" >>"$GITHUB_ENV"
+          echo "CLOUD_AGENT_PACKAGE_DIRECTORY=$package_directory" >>"$GITHUB_ENV"
+      - name: Publish OCI images
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          builder=cloud-agents-release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT
+          docker buildx create --name "$builder" --driver docker-container --use
+          for image in control-plane worker migrate; do
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --file "$GITHUB_WORKSPACE/deploy/docker/$image.Dockerfile" \
+              --tag "$CLOUD_AGENTS_IMAGE_PREFIX/$image:$CLOUD_AGENTS_RELEASE_VERSION" \
+              --metadata-file "$RUNNER_TEMP/$image-image-metadata.json" \
+              --push \
+              "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
+          done
+      - name: Stage GitHub Release assets
+        run: |
+          set -euo pipefail
+          release_directory=$RUNNER_TEMP/cloud-agents-release-assets
+          mkdir "$release_directory"
+          cp "$CLOUD_AGENTS_PLATFORM_DIRECTORY"/* "$release_directory/"
+          mv "$release_directory/checksums.sha256" "$release_directory/cloud-agents-platform-checksums.sha256"
+          for source in "$CLOUD_AGENT_PACKAGE_DIRECTORY"/*; do
+            filename=${source##*/}
+            case $filename in
+              checksums.sha256)
+                cp "$source" "$release_directory/cloud-agent-package-checksums.sha256"
+                ;;
+              cloud-agent-runtime-standalone.mjs)
+                cmp "$source" "$release_directory/$filename"
+                ;;
+              *)
+                if [[ -e $release_directory/$filename ]]; then
+                  echo "duplicate release asset: $filename" >&2
+                  exit 1
+                fi
+                cp "$source" "$release_directory/$filename"
+                ;;
+            esac
+          done
+          export CLOUD_AGENTS_OCI_MANIFEST="$release_directory/cloud-agents-oci-images.json"
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const images = ["control-plane", "worker", "migrate"].map((name) => {
+            const metadata = JSON.parse(
+              readFileSync(`${process.env.RUNNER_TEMP}/${name}-image-metadata.json`, "utf8"),
+            );
+            const digest = metadata["containerimage.digest"];
+            if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error(`${name} image digest is invalid`);
+            return {
+              name,
+              reference: `${process.env.CLOUD_AGENTS_IMAGE_PREFIX}/${name}:${process.env.CLOUD_AGENTS_RELEASE_VERSION}`,
+              digest,
+            };
+          });
+          writeFileSync(
+            process.env.CLOUD_AGENTS_OCI_MANIFEST,
+            `${JSON.stringify(
+              {
+                schemaVersion: 1,
+                kind: "cloud-agents-oci-images",
+                version: process.env.CLOUD_AGENTS_RELEASE_VERSION,
+                sourceCommit: process.env.GITHUB_SHA,
+                images,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+          NODE
+          echo "CLOUD_AGENTS_RELEASE_DIRECTORY=$release_directory" >>"$GITHUB_ENV"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=()
+          if [[ $CLOUD_AGENTS_RELEASE_VERSION == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" "$CLOUD_AGENTS_RELEASE_DIRECTORY"/* \
+            --verify-tag \
+            --title "Cloud Agents $CLOUD_AGENTS_RELEASE_VERSION" \
+            --generate-notes \
+            "${flags[@]}"

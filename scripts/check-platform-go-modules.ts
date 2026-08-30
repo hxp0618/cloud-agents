@@ -20,7 +20,6 @@ const ISOLATED_GO_ENV = {
   ...PINNED_GO_ENV,
   GOWORK: "off",
 } as const;
-const MODULE_POLICY_PACKAGE = "./internal/modpolicy";
 
 const goVersion = run("go", ["version"], root, PINNED_GO_ENV).trim();
 if (!goVersion.startsWith(`go version ${PLATFORM_GO_TOOLCHAIN} `)) {
@@ -55,20 +54,12 @@ if ((workspace.Replace?.length ?? 0) !== 0) {
   throw new Error("go.work must not contain replace directives.");
 }
 
-run(
-  "go",
-  ["test", "-count=1", MODULE_POLICY_PACKAGE],
-  resolve(root, "services/control-plane"),
-  ISOLATED_GO_ENV,
-);
-
 for (const entry of PLATFORM_GO_MODULES) {
   const directory = resolve(root, entry.directory);
   const module = JSON.parse(
     run("go", ["mod", "edit", "-json"], directory, ISOLATED_GO_ENV),
   ) as GoModuleEditDocument;
   validateGoModuleEdit(module, entry.module, `${entry.directory}/go.mod`);
-  run("go", ["test", "-timeout=30m", "./..."], directory, PINNED_GO_ENV);
 }
 
 process.stdout.write(

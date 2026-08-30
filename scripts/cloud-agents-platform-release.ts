@@ -24,6 +24,15 @@ import {
 } from "./lib/platform-release.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
+const runtimePackageBuildOrder = [
+  "packages/cloud-agent-protocol",
+  "packages/cloud-agent-provider-api",
+  "packages/cloud-agent-runtime",
+  "packages/cloud-agent-provider-codex",
+  "packages/cloud-agent-provider-claude",
+  "packages/cloud-agent-testkit",
+  "packages/cloud-agent-distribution",
+] as const;
 const options = parsePlatformReleaseOptions(process.argv.slice(2), repositoryRoot);
 const sourceStatus = run(
   "git",
@@ -46,7 +55,9 @@ buildGoArtifacts(
 );
 buildGoArtifacts(PLATFORM_RELEASE_CLI_TARGETS, ["cloud-agentsctl"]);
 
-run("bun", ["run", "--cwd", "packages/cloud-agent-distribution", "build"], repositoryRoot);
+for (const directory of runtimePackageBuildOrder) {
+  run("bun", ["run", "--cwd", directory, "build"], repositoryRoot);
+}
 const runtimeOutput = join(options.outputDirectory, PLATFORM_RELEASE_RUNTIME);
 const runtimeBytes = readFileSync(
   join(repositoryRoot, "packages/cloud-agent-distribution/dist/stdio.mjs"),

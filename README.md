@@ -46,3 +46,5 @@ node scripts/cloud-agent-release-smoke.ts --output-dir candidate
 The release smoke emits seven read-only tarballs, a standalone runtime, checksums, an SPDX 2.3 SBOM, SLSA-shaped provenance, and a candidate manifest. See `docs/release-candidate.md` for the exact boundary.
 
 No package from this repository is published to npm yet. GitHub release candidates are engineering artifacts and do not imply deployment, public beta, production support, or GA.
+
+Tags matching `v<semver>` on `main` run the same product checks, publish the release assets to GitHub, and push multi-architecture Control Plane, Worker, and migration images to GHCR. Pre-release semver tags create GitHub pre-releases; published image digests are included in `cloud-agents-oci-images.json`.
