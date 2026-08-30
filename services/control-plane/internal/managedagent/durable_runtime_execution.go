@@ -14,9 +14,9 @@ import (
 	"time"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
-	"github.com/hxp0618/cloud-agents/services/worker/runtime"
-	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 )
 
 // DurableRuntimeExecutionStore is the persistence seam for the production
@@ -40,7 +40,7 @@ type VerifiedPrincipalSource func() (*authn.VerifiedPrincipal, error)
 
 type DurableRuntimeExecutionConfig struct {
 	Store              DurableRuntimeExecutionStore
-	Supervisor         *supervisor.Supervisor
+	Supervisor         *workerclient.Supervisor
 	Clock              Clock
 	FencingLeaseID     string
 	FencingGeneration  uint64
@@ -61,7 +61,7 @@ type DurableRuntimeExecutionInput struct {
 
 type DurableRuntimeExecutionResult struct {
 	Transition ExecutionTransitionResult
-	Messages   []runtime.Message
+	Messages   []runtimeprotocol.Message
 }
 
 type RuntimeTurnInput struct {
@@ -87,15 +87,15 @@ type runtimeWorkspacePaths struct {
 }
 
 type RuntimeTurnResult struct {
-	Messages             []runtime.Message
-	Terminal             runtime.Message
+	Messages             []runtimeprotocol.Message
+	Terminal             runtimeprotocol.Message
 	ProviderResumeCursor string
 	FailureCode          string
 }
 
 type DurableRuntimeExecutionCoordinator struct {
 	store              DurableRuntimeExecutionStore
-	supervisor         *supervisor.Supervisor
+	supervisor         *workerclient.Supervisor
 	now                Clock
 	fencingLeaseID     string
 	fencingGeneration  uint64
@@ -320,7 +320,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(k
 		return externallyCancelled
 	}, nil
 }
-func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message) (DurableRuntimeExecutionResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtimeprotocol.Message) (DurableRuntimeExecutionResult, error) {
 	principal, err := nextVerifiedPrincipal(principalSource)
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(context.Canceled, err)
@@ -332,7 +332,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principalSource Ve
 	return DurableRuntimeExecutionResult{Transition: cancelled, Messages: messages}, context.Canceled
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) fail(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtime.Message, code string, cause error) (DurableRuntimeExecutionResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) fail(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtimeprotocol.Message, code string, cause error) (DurableRuntimeExecutionResult, error) {
 	principal, err := nextVerifiedPrincipal(principalSource)
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
@@ -358,7 +358,7 @@ func nextVerifiedPrincipal(source VerifiedPrincipalSource) (*authn.VerifiedPrinc
 	return principal, nil
 }
 
-func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Supervisor, input RuntimeTurnInput) (RuntimeTurnResult, error) {
+func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supervisor, input RuntimeTurnInput) (RuntimeTurnResult, error) {
 	result := RuntimeTurnResult{FailureCode: "runtime_open_failed"}
 	if err := ValidateProviderResumeCursor(input.ProviderResumeCursor); err != nil {
 		result.FailureCode = "runtime_result_invalid"
@@ -374,8 +374,8 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 		return result, err
 	}
 	defer func() { _ = session.CloseRequest(); _ = session.CloseResponse() }()
-	command := func(commandType, commandID string, payload map[string]any) runtime.Command {
-		return runtime.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtime.Protocol{Major: runtime.ProtocolMajor, Minor: runtime.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
+	command := func(commandType, commandID string, payload map[string]any) runtimeprotocol.Command {
+		return runtimeprotocol.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
 	}
 	runnerInput := map[string]any{
 		"workspaceDirectory":     paths.workspaceDirectory,
@@ -423,7 +423,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 	return result, nil
 }
 
-func runtimeProviderResumeCursor(message runtime.Message) (string, error) {
+func runtimeProviderResumeCursor(message runtimeprotocol.Message) (string, error) {
 	value, exists := message.Payload["providerResumeCursor"]
 	if !exists || value == nil {
 		return "", nil
@@ -441,7 +441,7 @@ func runtimeProviderResumeCursor(message runtime.Message) (string, error) {
 	return cursor, nil
 }
 
-func appendPublicRuntimeMessages(destination []runtime.Message, messages ...runtime.Message) []runtime.Message {
+func appendPublicRuntimeMessages(destination []runtimeprotocol.Message, messages ...runtimeprotocol.Message) []runtimeprotocol.Message {
 	for _, message := range messages {
 		if _, exists := message.Payload["providerResumeCursor"]; exists {
 			message.Payload = maps.Clone(message.Payload)
@@ -495,12 +495,12 @@ func boundedRuntimeIdentifier(base, suffix string) string {
 	return base + separator + suffix
 }
 
-func receiveRuntimeMessages(session *supervisor.RuntimeSession, commandID string) ([]runtime.Message, runtime.Message, error) {
-	var messages []runtime.Message
+func receiveRuntimeMessages(session *workerclient.RuntimeSession, commandID string) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
+	var messages []runtimeprotocol.Message
 	for {
 		message, err := session.Receive()
 		if err != nil {
-			return messages, runtime.Message{}, err
+			return messages, runtimeprotocol.Message{}, err
 		}
 		messages = append(messages, message)
 		if message.CommandID != commandID {
@@ -512,7 +512,7 @@ func receiveRuntimeMessages(session *supervisor.RuntimeSession, commandID string
 	}
 }
 
-func RuntimeMessageDigest(message runtime.Message) (string, error) {
+func RuntimeMessageDigest(message runtimeprotocol.Message) (string, error) {
 	encoded, err := json.Marshal(message)
 	if err != nil {
 		return "", err

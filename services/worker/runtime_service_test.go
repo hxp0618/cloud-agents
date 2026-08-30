@@ -17,7 +17,7 @@ import (
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
-	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
 func TestRuntimeInvalidCommandHelperProcess(t *testing.T) {
@@ -104,7 +104,7 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	if ready, err := stream.Receive(); err != nil || ready.GetReady() == nil {
 		t.Fatalf("Runtime ready = %#v, %v", ready, err)
 	}
-	commandBytes, err := json.Marshal(runtimeprocess.Command{RequestID: "request-invalid-command", Protocol: runtimeprocess.Protocol{Major: runtimeprocess.ProtocolMajor, Minor: runtimeprocess.ProtocolMinor}, ExecutionID: "execution-invalid-command", Generation: 7, CommandType: "Unsupported", CommandID: "command-invalid", OccurredAt: "2026-08-29T00:00:00Z", Payload: map[string]any{}})
+	commandBytes, err := json.Marshal(runtimeprotocol.Command{RequestID: "request-invalid-command", Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: "execution-invalid-command", Generation: 7, CommandType: "Unsupported", CommandID: "command-invalid", OccurredAt: "2026-08-29T00:00:00Z", Payload: map[string]any{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +121,11 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 }
 
 func TestRuntimeCommandProviderReadsOnlyProviderBindingCommands(t *testing.T) {
-	start := runtimeprocess.Command{CommandType: "StartSession", Payload: map[string]any{"runnerInput": map[string]any{"workload": map[string]any{"provider": "codex"}}}}
+	start := runtimeprotocol.Command{CommandType: "StartSession", Payload: map[string]any{"runnerInput": map[string]any{"workload": map[string]any{"provider": "codex"}}}}
 	if providerKind, binds := runtimeCommandProvider(start); !binds || providerKind != "codex" {
 		t.Fatalf("StartSession provider = %q, binds = %t", providerKind, binds)
 	}
-	if providerKind, binds := runtimeCommandProvider(runtimeprocess.Command{CommandType: "SendTurn", Payload: map[string]any{"provider": "claudeAgent"}}); binds || providerKind != "" {
+	if providerKind, binds := runtimeCommandProvider(runtimeprotocol.Command{CommandType: "SendTurn", Payload: map[string]any{"provider": "claudeAgent"}}); binds || providerKind != "" {
 		t.Fatalf("SendTurn provider = %q, binds = %t", providerKind, binds)
 	}
 }

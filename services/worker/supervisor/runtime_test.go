@@ -17,8 +17,8 @@ import (
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
-	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
 )
 
 func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
@@ -169,7 +169,7 @@ func runRuntimeBridgeHelper() {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		var command runtimeprocess.Command
+		var command runtimeprotocol.Command
 		if json.Unmarshal(scanner.Bytes(), &command) != nil {
 			continue
 		}
@@ -183,10 +183,10 @@ func runRuntimeBridgeHelper() {
 	os.Exit(0)
 }
 
-func runtimeCommand(commandType, commandID, executionID string, generation uint64) runtimeprocess.Command {
+func runtimeCommand(commandType, commandID, executionID string, generation uint64) runtimeprotocol.Command {
 	payload := map[string]any{}
 	if commandType == "StartSession" || commandType == "ResumeSession" {
 		payload["runnerInput"] = map[string]any{"workload": map[string]any{"provider": "codex"}}
 	}
-	return runtimeprocess.Command{RequestID: "request-" + commandID, Protocol: runtimeprocess.Protocol{Major: 2, Minor: 3}, ExecutionID: executionID, Generation: generation, CommandType: commandType, CommandID: commandID, OccurredAt: "2026-08-29T00:00:00Z", Payload: payload}
+	return runtimeprotocol.Command{RequestID: "request-" + commandID, Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: executionID, Generation: generation, CommandType: commandType, CommandID: commandID, OccurredAt: "2026-08-29T00:00:00Z", Payload: payload}
 }

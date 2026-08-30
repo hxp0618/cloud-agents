@@ -255,6 +255,7 @@ describe("platform release", () => {
     const entries = readDeterministicUstar(buildPlatformGoSDKPackage(process.cwd()));
     const paths = entries.map(({ path }) => path);
     expect(paths).toContain("go.mod");
+    expect(paths).toContain("runtime/protocol.go");
     expect(paths).toContain("gen/openapi/v1alpha1/client_generated.go");
     expect(paths).toContain("gen/cloudagents/worker/runtime/v1alpha1/runtime.pb.go");
     expect(

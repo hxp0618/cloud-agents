@@ -13,61 +13,19 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
 const (
-	ProtocolMajor       = 2
-	ProtocolMinor       = 3
-	MaxCommandBytes     = 2 * 1024 * 1024
-	MaxMessageBytes     = 1 * 1024 * 1024
 	maxEventQueueItems  = 128
 	maxCommandTombstone = 4096
 )
 
 var (
-	ErrNilContext        = errors.New("runtime client context is nil")
-	ErrInvalidCommand    = errors.New("runtime client command is invalid")
-	ErrClientClosed      = errors.New("runtime client is closed")
-	ErrProtocolViolation = errors.New("runtime protocol violation")
+	ErrNilContext   = errors.New("runtime client context is nil")
+	ErrClientClosed = errors.New("runtime client is closed")
 )
-
-type Command struct {
-	RequestID   string         `json:"requestId"`
-	Protocol    Protocol       `json:"protocolVersion"`
-	ExecutionID string         `json:"executionId"`
-	Generation  uint64         `json:"generation"`
-	CommandType string         `json:"commandType"`
-	CommandID   string         `json:"commandId"`
-	OccurredAt  string         `json:"occurredAt"`
-	Payload     map[string]any `json:"payload"`
-}
-
-type Protocol struct {
-	Major uint32 `json:"major"`
-	Minor uint32 `json:"minor"`
-}
-
-type Error struct {
-	Code                  string `json:"code"`
-	Message               string `json:"message"`
-	Retryable             bool   `json:"retryable"`
-	RequiresNewExecution  bool   `json:"requiresNewExecution"`
-	RequiresUserAction    bool   `json:"requiresUserAction"`
-	CanReconstructHistory bool   `json:"canReconstructFromHistory"`
-	CanMoveWorker         bool   `json:"canMoveWorker"`
-}
-
-type Message struct {
-	RequestID   string         `json:"requestId"`
-	Protocol    Protocol       `json:"protocolVersion"`
-	ExecutionID string         `json:"executionId"`
-	Generation  uint64         `json:"generation"`
-	CommandID   string         `json:"commandId"`
-	OccurredAt  string         `json:"occurredAt"`
-	MessageType string         `json:"messageType"`
-	Payload     map[string]any `json:"payload,omitempty"`
-	Error       *Error         `json:"error,omitempty"`
-}
 
 type Config struct {
 	Command        []string
@@ -80,7 +38,7 @@ type Client struct {
 	stdin   io.WriteCloser
 	process *exec.Cmd
 	done    chan struct{}
-	events  chan Message
+	events  chan runtimeprotocol.Message
 
 	mu          sync.Mutex
 	writes      sync.Mutex
@@ -91,12 +49,12 @@ type Client struct {
 }
 
 type result struct {
-	message Message
+	message runtimeprotocol.Message
 	err     error
 }
 
 type pendingRequest struct {
-	command Command
+	command runtimeprotocol.Command
 	waiter  chan result
 }
 
@@ -108,7 +66,7 @@ func New(ctx context.Context, config Config) (*Client, error) {
 		return nil, err
 	}
 	if len(config.Command) == 0 || strings.TrimSpace(config.Command[0]) == "" {
-		return nil, fmt.Errorf("%w: runtime command is required", ErrInvalidCommand)
+		return nil, fmt.Errorf("%w: runtime command is required", runtimeprotocol.ErrInvalidCommand)
 	}
 	command := append([]string(nil), config.Command...)
 	process := exec.Command(command[0], command[1:]...)
@@ -148,7 +106,7 @@ func New(ctx context.Context, config Config) (*Client, error) {
 
 	client := &Client{
 		stdin: stdin, process: process, done: make(chan struct{}),
-		events:  make(chan Message, maxEventQueueItems),
+		events:  make(chan runtimeprotocol.Message, maxEventQueueItems),
 		pending: make(map[string]pendingRequest), tombstones: make(map[string]struct{}),
 	}
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
@@ -169,7 +127,7 @@ func credentialEnvironment(environment []string) []string {
 	return append(filtered, "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=3")
 }
 
-func (client *Client) Events() <-chan Message {
+func (client *Client) Events() <-chan runtimeprotocol.Message {
 	if client == nil {
 		return nil
 	}
@@ -178,19 +136,19 @@ func (client *Client) Events() <-chan Message {
 	return client.events
 }
 
-func (client *Client) Execute(ctx context.Context, command Command) (Message, error) {
+func (client *Client) Execute(ctx context.Context, command runtimeprotocol.Command) (runtimeprotocol.Message, error) {
 	if ctx == nil {
-		return Message{}, ErrNilContext
+		return runtimeprotocol.Message{}, ErrNilContext
 	}
 	if err := ctx.Err(); err != nil {
-		return Message{}, err
+		return runtimeprotocol.Message{}, err
 	}
-	if err := validateCommand(command); err != nil {
-		return Message{}, err
+	if err := runtimeprotocol.ValidateCommand(command); err != nil {
+		return runtimeprotocol.Message{}, err
 	}
 	encoded, err := json.Marshal(command)
-	if err != nil || len(encoded) > MaxCommandBytes {
-		return Message{}, fmt.Errorf("%w: command exceeds %d bytes", ErrInvalidCommand, MaxCommandBytes)
+	if err != nil || len(encoded) > runtimeprotocol.MaxCommandBytes {
+		return runtimeprotocol.Message{}, fmt.Errorf("%w: command exceeds %d bytes", runtimeprotocol.ErrInvalidCommand, runtimeprotocol.MaxCommandBytes)
 	}
 	encoded = append(encoded, '\n')
 	waiter := make(chan result, 1)
@@ -199,17 +157,17 @@ func (client *Client) Execute(ctx context.Context, command Command) (Message, er
 		err := client.terminalErr
 		client.mu.Unlock()
 		if err != nil {
-			return Message{}, err
+			return runtimeprotocol.Message{}, err
 		}
-		return Message{}, ErrClientClosed
+		return runtimeprotocol.Message{}, ErrClientClosed
 	}
 	if _, exists := client.pending[command.CommandID]; exists {
 		client.mu.Unlock()
-		return Message{}, fmt.Errorf("%w: duplicate command id", ErrInvalidCommand)
+		return runtimeprotocol.Message{}, fmt.Errorf("%w: duplicate command id", runtimeprotocol.ErrInvalidCommand)
 	}
 	if _, exists := client.tombstones[command.CommandID]; exists {
 		client.mu.Unlock()
-		return Message{}, fmt.Errorf("%w: command id was already cancelled", ErrInvalidCommand)
+		return runtimeprotocol.Message{}, fmt.Errorf("%w: command id was already cancelled", runtimeprotocol.ErrInvalidCommand)
 	}
 	client.pending[command.CommandID] = pendingRequest{command: command, waiter: waiter}
 	client.mu.Unlock()
@@ -219,14 +177,14 @@ func (client *Client) Execute(ctx context.Context, command Command) (Message, er
 	client.writes.Unlock()
 	if writeErr != nil {
 		client.removePending(command.CommandID, writeErr)
-		return Message{}, writeErr
+		return runtimeprotocol.Message{}, writeErr
 	}
 	select {
 	case response := <-waiter:
 		return response.message, response.err
 	case <-ctx.Done():
 		client.cancelPending(command.CommandID)
-		return Message{}, ctx.Err()
+		return runtimeprotocol.Message{}, ctx.Err()
 	case <-client.done:
 		client.mu.Lock()
 		err := client.terminalErr
@@ -234,7 +192,7 @@ func (client *Client) Execute(ctx context.Context, command Command) (Message, er
 		if err == nil {
 			err = ErrClientClosed
 		}
-		return Message{}, err
+		return runtimeprotocol.Message{}, err
 	}
 }
 
@@ -265,23 +223,23 @@ func (client *Client) Close(ctx context.Context) error {
 
 func (client *Client) run(stdout io.ReadCloser) {
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 4096), MaxMessageBytes+1)
+	scanner.Buffer(make([]byte, 4096), runtimeprotocol.MaxMessageBytes+1)
 	var runErr error
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
-		if len(line) > MaxMessageBytes {
-			runErr = fmt.Errorf("%w: message exceeds %d bytes", ErrProtocolViolation, MaxMessageBytes)
+		if len(line) > runtimeprotocol.MaxMessageBytes {
+			runErr = fmt.Errorf("%w: message exceeds %d bytes", runtimeprotocol.ErrProtocolViolation, runtimeprotocol.MaxMessageBytes)
 			break
 		}
-		var message Message
+		var message runtimeprotocol.Message
 		if err := json.Unmarshal(line, &message); err != nil {
-			runErr = fmt.Errorf("%w: invalid JSON", ErrProtocolViolation)
+			runErr = fmt.Errorf("%w: invalid JSON", runtimeprotocol.ErrProtocolViolation)
 			break
 		}
-		if err := validateMessage(message); err != nil {
+		if err := runtimeprotocol.ValidateMessage(message); err != nil {
 			runErr = err
 			break
 		}
@@ -300,7 +258,7 @@ func (client *Client) run(stdout io.ReadCloser) {
 		}
 	}
 	if runErr == nil && scanner.Err() != nil {
-		runErr = fmt.Errorf("%w: message exceeds %d bytes", ErrProtocolViolation, MaxMessageBytes)
+		runErr = fmt.Errorf("%w: message exceeds %d bytes", runtimeprotocol.ErrProtocolViolation, runtimeprotocol.MaxMessageBytes)
 	}
 	_ = stdout.Close()
 	if client.process.Process != nil && runErr != nil {
@@ -311,7 +269,7 @@ func (client *Client) run(stdout io.ReadCloser) {
 		if waitErr != nil {
 			runErr = fmt.Errorf("runtime exited: %w", waitErr)
 		} else {
-			runErr = fmt.Errorf("%w: runtime exited before a terminal response", ErrProtocolViolation)
+			runErr = fmt.Errorf("%w: runtime exited before a terminal response", runtimeprotocol.ErrProtocolViolation)
 		}
 	}
 	client.finish(runErr)
@@ -334,7 +292,7 @@ func (client *Client) finish(err error) {
 	client.mu.Unlock()
 }
 
-func (client *Client) deliverTerminal(message Message) error {
+func (client *Client) deliverTerminal(message runtimeprotocol.Message) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	pending, ok := client.pending[message.CommandID]
@@ -343,11 +301,11 @@ func (client *Client) deliverTerminal(message Message) error {
 			delete(client.tombstones, message.CommandID)
 			return nil
 		}
-		return fmt.Errorf("%w: unknown command id", ErrProtocolViolation)
+		return fmt.Errorf("%w: unknown command id", runtimeprotocol.ErrProtocolViolation)
 	}
 	if message.RequestID != pending.command.RequestID || message.ExecutionID != pending.command.ExecutionID || message.Generation != pending.command.Generation {
 		delete(client.pending, message.CommandID)
-		err := fmt.Errorf("%w: response identity does not match command", ErrProtocolViolation)
+		err := fmt.Errorf("%w: response identity does not match command", runtimeprotocol.ErrProtocolViolation)
 		pending.waiter <- result{err: err}
 		return err
 	}
@@ -355,7 +313,7 @@ func (client *Client) deliverTerminal(message Message) error {
 	case client.events <- message:
 	default:
 		delete(client.pending, message.CommandID)
-		err := fmt.Errorf("%w: event queue is full", ErrProtocolViolation)
+		err := fmt.Errorf("%w: event queue is full", runtimeprotocol.ErrProtocolViolation)
 		pending.waiter <- result{err: err}
 		return err
 	}
@@ -364,7 +322,7 @@ func (client *Client) deliverTerminal(message Message) error {
 	return nil
 }
 
-func (client *Client) deliverEvent(message Message) error {
+func (client *Client) deliverEvent(message runtimeprotocol.Message) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	pending, ok := client.pending[message.CommandID]
@@ -372,16 +330,16 @@ func (client *Client) deliverEvent(message Message) error {
 		if _, cancelled := client.tombstones[message.CommandID]; cancelled {
 			return nil
 		}
-		return fmt.Errorf("%w: unknown event command id", ErrProtocolViolation)
+		return fmt.Errorf("%w: unknown event command id", runtimeprotocol.ErrProtocolViolation)
 	}
 	if message.RequestID != pending.command.RequestID || message.ExecutionID != pending.command.ExecutionID || message.Generation != pending.command.Generation {
-		return fmt.Errorf("%w: event identity does not match command", ErrProtocolViolation)
+		return fmt.Errorf("%w: event identity does not match command", runtimeprotocol.ErrProtocolViolation)
 	}
 	select {
 	case client.events <- message:
 		return nil
 	default:
-		return fmt.Errorf("%w: event queue is full", ErrProtocolViolation)
+		return fmt.Errorf("%w: event queue is full", runtimeprotocol.ErrProtocolViolation)
 	}
 }
 
@@ -410,44 +368,7 @@ func (client *Client) cancelPending(commandID string) {
 	}
 }
 
-func validateCommand(command Command) error {
-	if command.Protocol.Major != ProtocolMajor || command.Protocol.Minor > ProtocolMinor ||
-		command.RequestID == "" || command.ExecutionID == "" || command.CommandType == "" ||
-		command.CommandID == "" || command.OccurredAt == "" || command.Generation == 0 || command.Payload == nil {
-		return fmt.Errorf("%w: envelope fields are invalid", ErrInvalidCommand)
-	}
-	switch command.CommandType {
-	case "Describe", "StartSession", "ResumeSession", "SendTurn", "SteerTurn", "InterruptTurn", "SuspendTurn", "ResolveApproval", "ResolveUserInput", "CompactSession", "RollbackSession", "ForkSession", "StartReview", "GenerateText", "StopSession":
-		return nil
-	default:
-		return fmt.Errorf("%w: unknown command type", ErrInvalidCommand)
-	}
-}
-
-// ValidateCommand applies the same closed Runtime command vocabulary used by
-// the process client. It is also used by the Supervisor transport wrapper.
-func ValidateCommand(command Command) error { return validateCommand(command) }
-
-func validateMessage(message Message) error {
-	if message.Protocol.Major != ProtocolMajor || message.Protocol.Minor > ProtocolMinor ||
-		message.RequestID == "" || message.ExecutionID == "" || message.CommandID == "" ||
-		message.OccurredAt == "" || message.MessageType == "" {
-		return fmt.Errorf("%w: message envelope fields are invalid", ErrProtocolViolation)
-	}
-	if message.MessageType == "Error" && message.Error == nil {
-		return fmt.Errorf("%w: Error message has no error body", ErrProtocolViolation)
-	}
-	if message.MessageType != "Error" && message.MessageType != "Event" && message.MessageType != "InteractionRequest" && message.MessageType != "ArtifactCandidate" && message.MessageType != "Checkpoint" && message.MessageType != "Result" && message.MessageType != "Progress" {
-		return fmt.Errorf("%w: unknown message type", ErrProtocolViolation)
-	}
-	return nil
-}
-
-// ValidateMessage applies the Runtime message envelope checks at a transport
-// boundary before a message is exposed to a caller.
-func ValidateMessage(message Message) error { return validateMessage(message) }
-
-func messageError(message Message) error {
+func messageError(message runtimeprotocol.Message) error {
 	if message.MessageType != "Error" || message.Error == nil {
 		return nil
 	}

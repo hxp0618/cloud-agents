@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
 func TestRuntimeHelperProcess(t *testing.T) {
@@ -35,13 +37,13 @@ func TestRuntimeHelperProcess(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		var command Command
+		var command runtimeprotocol.Command
 		if err := json.Unmarshal(scanner.Bytes(), &command); err != nil {
 			_, _ = fmt.Fprintln(os.Stdout, `{"messageType":"Error"}`)
 			continue
 		}
 		if command.CommandID == "oversize-1" {
-			_, _ = fmt.Fprintln(os.Stdout, strings.Repeat("x", MaxMessageBytes+1))
+			_, _ = fmt.Fprintln(os.Stdout, strings.Repeat("x", runtimeprotocol.MaxMessageBytes+1))
 			continue
 		}
 		if command.CommandID == "cancelled-1" {
@@ -87,7 +89,7 @@ func TestClientFailsPendingCommandWhenRuntimeExitsCleanly(t *testing.T) {
 	}
 	defer closeClient(t, client)
 	message, err := client.Execute(context.Background(), testCommand("SendTurn", "exit-before-terminal-1"))
-	if !errors.Is(err, ErrProtocolViolation) || message.MessageType != "" {
+	if !errors.Is(err, runtimeprotocol.ErrProtocolViolation) || message.MessageType != "" {
 		t.Fatalf("clean Runtime exit = %#v, %v", message, err)
 	}
 }
@@ -142,7 +144,7 @@ func TestClientRejectsOversizedRuntimeMessage(t *testing.T) {
 	client := newTestClient(t)
 	defer closeClient(t, client)
 	_, err := client.Execute(context.Background(), testCommand("Describe", "oversize-1"))
-	if !errors.Is(err, ErrProtocolViolation) {
+	if !errors.Is(err, runtimeprotocol.ErrProtocolViolation) {
 		t.Fatalf("oversized message error = %v", err)
 	}
 }
@@ -151,7 +153,7 @@ func TestClientRejectsTerminalWithMismatchedExecutionIdentity(t *testing.T) {
 	client := newTestClient(t)
 	defer closeClient(t, client)
 	_, err := client.Execute(context.Background(), testCommand("Describe", "mismatch-1"))
-	if !errors.Is(err, ErrProtocolViolation) {
+	if !errors.Is(err, runtimeprotocol.ErrProtocolViolation) {
 		t.Fatalf("mismatched response error = %v", err)
 	}
 }
@@ -160,7 +162,7 @@ func TestClientRejectsUnknownCommandTypeBeforeWriting(t *testing.T) {
 	client := newTestClient(t)
 	defer closeClient(t, client)
 	_, err := client.Execute(context.Background(), testCommand("Unknown", "unknown-1"))
-	if !errors.Is(err, ErrInvalidCommand) {
+	if !errors.Is(err, runtimeprotocol.ErrInvalidCommand) {
 		t.Fatalf("unknown command error = %v", err)
 	}
 }
@@ -184,6 +186,6 @@ func closeClient(t *testing.T, client *Client) {
 	}
 }
 
-func testCommand(commandType, commandID string) Command {
-	return Command{RequestID: "request-" + commandID, Protocol: Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-1", Generation: 1, CommandType: commandType, CommandID: commandID, OccurredAt: "2026-08-29T00:00:00Z", Payload: map[string]any{}}
+func testCommand(commandType, commandID string) runtimeprotocol.Command {
+	return runtimeprotocol.Command{RequestID: "request-" + commandID, Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-1", Generation: 1, CommandType: commandType, CommandID: commandID, OccurredAt: "2026-08-29T00:00:00Z", Payload: map[string]any{}}
 }

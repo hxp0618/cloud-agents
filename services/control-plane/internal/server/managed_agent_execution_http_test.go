@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
-	"github.com/hxp0618/cloud-agents/services/worker/runtime"
 )
 
 type managedAgentExecutionStoreFake struct {
@@ -89,7 +89,7 @@ func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, principa
 	fake.input = input
 	return internalmanagedagent.DurableRuntimeExecutionResult{Transition: internalmanagedagent.ExecutionTransitionResult{
 		Execution: internalmanagedagent.ExecutionSnapshot{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)},
-	}, Messages: []runtime.Message{{MessageType: "Result", CommandID: "turn", ExecutionID: input.ExecutionID, Generation: 7}}}, nil
+	}, Messages: []runtimeprotocol.Message{{MessageType: "Result", CommandID: "turn", ExecutionID: input.ExecutionID, Generation: 7}}}, nil
 }
 
 func (fake *managedAgentExecutionRunnerFake) Interrupt(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.InterruptTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {

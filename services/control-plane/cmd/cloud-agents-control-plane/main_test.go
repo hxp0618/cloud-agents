@@ -25,57 +25,36 @@ func TestParseControlPlaneConfigUsesExplicitDatabaseURL(t *testing.T) {
 func TestParseControlPlaneConfigAcceptsLocalRuntimeBridge(t *testing.T) {
 	config, err := parseControlPlaneConfig([]string{
 		"--database-url", "postgres://task-local", "--listen", "127.0.0.1:9090",
-		"--runtime-command", "/tmp/cloud-agent-runtime", "--workspace-directory", "/tmp/workspace",
+		"--worker-endpoint", "http://127.0.0.1:8091", "--worker-token-file", "/tmp/cloud-agents-worker.token", "--workspace-directory", "/tmp/workspace",
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.runtimeCommand != "/tmp/cloud-agent-runtime" || config.workspaceDirectory != "/tmp/workspace" {
+	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" {
 		t.Fatalf("config = %#v", config)
 	}
 }
 
-func TestNewLocalRuntimeSupervisorBindsWorkerRuntime(t *testing.T) {
-	supervisor, workerServer, fencingToken, err := newLocalRuntimeSupervisor("/bin/true", t.TempDir())
-	if err != nil {
+func TestLocalWorkerEndpointAndTokenAreLoopbackOnly(t *testing.T) {
+	tokenFile := filepath.Join(t.TempDir(), "worker.token")
+	if err := os.WriteFile(tokenFile, []byte("worker-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	defer workerServer.Close()
-	if supervisor == nil || workerServer == nil || len(fencingToken) == 0 {
-		t.Fatalf("supervisor=%v workerServer=%v fencingToken=%d", supervisor, workerServer, len(fencingToken))
+	if endpoint, err := validateLocalWorkerEndpoint("http://127.0.0.1:8091/"); err != nil || endpoint != "http://127.0.0.1:8091" {
+		t.Fatalf("endpoint = %q, err = %v", endpoint, err)
 	}
-	if binding, ok := supervisor.CurrentBinding(); !ok || binding.ProfileID == "" || len(binding.AcceptedCapabilities) != 3 {
-		t.Fatalf("binding=%#v ok=%v", binding, ok)
+	if token, err := readLocalWorkerToken(tokenFile); err != nil || token != "worker-token" {
+		t.Fatalf("token length = %d, err = %v", len(token), err)
 	}
-}
-
-func TestLocalRuntimeEnvironmentExcludesControlPlaneAuthority(t *testing.T) {
-	filtered := localRuntimeEnvironment([]string{
-		"PATH=/usr/bin",
-		databaseURLEnvironment + "=postgres://runtime:secret@127.0.0.1/cloud_agents",
-		localRuntimeAuthConfigEnvironment + "=/run/cloud-agents/auth.json",
-		localRuntimeWorkerEndpointEnvironment + "=https://worker:8091",
-		localRuntimeWorkerSPIFFEEnvironment + "=spiffe://cloud-agents.example/worker",
-		localRuntimeWorkerClientCertEnvironment + "=/run/cloud-agents/worker-client.crt",
-		localRuntimeWorkerClientKeyEnvironment + "=/run/cloud-agents/worker-client.key",
-		localRuntimeWorkerCAEnvironment + "=/run/cloud-agents/worker-ca.crt",
-		localRuntimeWorkspaceEnvironment + "=/workspace",
-		localRuntimeAdmissionLeaseEnvironment + "=platform-lease",
-		localRuntimeAdmissionGenerationEnvironment + "=7",
-		localRuntimeAdmissionTokenEnvironment + "=platform-secret",
-		localRuntimeWorkerLeaseEnvironment + "=worker-lease",
-		localRuntimeWorkerGenerationEnvironment + "=8",
-		localRuntimeWorkerTokenEnvironment + "=worker-secret",
-		"OPENAI_API_KEY=provider-key",
-		"CLOUD_AGENTS_RUNTIME_MODE=localdev",
-	})
-	want := []string{"PATH=/usr/bin", "OPENAI_API_KEY=provider-key", "CLOUD_AGENTS_RUNTIME_MODE=localdev"}
-	if len(filtered) != len(want) {
-		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+	if err := os.Chmod(tokenFile, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for index := range want {
-		if filtered[index] != want[index] {
-			t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+	if _, err := readLocalWorkerToken(tokenFile); !errors.Is(err, errInvalidRuntimeConfig) {
+		t.Fatalf("broad token mode error = %v", err)
+	}
+	for _, endpoint := range []string{"https://127.0.0.1:8091", "http://localhost:8091", "http://192.0.2.1:8091"} {
+		if _, err := validateLocalWorkerEndpoint(endpoint); !errors.Is(err, errInvalidRuntimeConfig) {
+			t.Errorf("%s should be rejected", endpoint)
 		}
 	}
 }

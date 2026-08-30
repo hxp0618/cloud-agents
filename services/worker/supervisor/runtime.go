@@ -13,7 +13,7 @@ import (
 	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
-	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -82,7 +82,7 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID, provid
 	if err != nil {
 		return nil, rpcFailure("runtime_ready", err)
 	}
-	if ready == nil || ready.GetReady() == nil || ready.GetReady().GetExecutionId() != executionID || ready.GetReady().GetGeneration() != generation || ready.GetReady().GetProtocolMajor() != runtimeprocess.ProtocolMajor || ready.GetReady().GetProtocolMinor() != runtimeprocess.ProtocolMinor {
+	if ready == nil || ready.GetReady() == nil || ready.GetReady().GetExecutionId() != executionID || ready.GetReady().GetGeneration() != generation || ready.GetReady().GetProtocolMajor() != runtimeprotocol.ProtocolMajor || ready.GetReady().GetProtocolMinor() != runtimeprotocol.ProtocolMinor {
 		return nil, fail(connect.CodeInternal, "runtime_ready_invalid")
 	}
 	return &RuntimeSession{stream: stream, execution: executionID, generation: generation}, nil
@@ -96,7 +96,7 @@ func (s *Supervisor) ensureRuntimeBinding(ctx context.Context) error {
 	return err
 }
 
-func (session *RuntimeSession) Send(ctx context.Context, command runtimeprocess.Command) error {
+func (session *RuntimeSession) Send(ctx context.Context, command runtimeprotocol.Command) error {
 	if session == nil || session.stream == nil {
 		return errInvalidConfig
 	}
@@ -106,11 +106,11 @@ func (session *RuntimeSession) Send(ctx context.Context, command runtimeprocess.
 	if command.ExecutionID != session.execution || command.Generation != session.generation {
 		return fail(connect.CodeInvalidArgument, "runtime_command_identity_mismatch")
 	}
-	if err := runtimeprocess.ValidateCommand(command); err != nil {
+	if err := runtimeprotocol.ValidateCommand(command); err != nil {
 		return fail(connect.CodeInvalidArgument, "runtime_command_invalid")
 	}
 	encoded, err := json.Marshal(command)
-	if err != nil || len(encoded) > runtimeprocess.MaxCommandBytes {
+	if err != nil || len(encoded) > runtimeprotocol.MaxCommandBytes {
 		return fail(connect.CodeInvalidArgument, "runtime_command_too_large")
 	}
 	session.sendMu.Lock()
@@ -118,32 +118,32 @@ func (session *RuntimeSession) Send(ctx context.Context, command runtimeprocess.
 	return session.stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Command{Command: &workerruntimev1alpha1.RuntimeCommandFrame{Json: encoded}}})
 }
 
-func (session *RuntimeSession) Receive() (runtimeprocess.Message, error) {
+func (session *RuntimeSession) Receive() (runtimeprotocol.Message, error) {
 	if session == nil || session.stream == nil {
-		return runtimeprocess.Message{}, errInvalidConfig
+		return runtimeprotocol.Message{}, errInvalidConfig
 	}
 	response, err := session.stream.Receive()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return runtimeprocess.Message{}, io.EOF
+			return runtimeprotocol.Message{}, io.EOF
 		}
-		return runtimeprocess.Message{}, rpcFailure("runtime_receive", err)
+		return runtimeprotocol.Message{}, rpcFailure("runtime_receive", err)
 	}
 	if response == nil {
-		return runtimeprocess.Message{}, fail(connect.CodeInternal, "runtime_response_missing")
+		return runtimeprotocol.Message{}, fail(connect.CodeInternal, "runtime_response_missing")
 	}
 	if runtimeError := response.GetError(); runtimeError != nil {
-		return runtimeprocess.Message{}, fmt.Errorf("runtime %s: %s", runtimeError.GetCode(), runtimeError.GetMessage())
+		return runtimeprotocol.Message{}, fmt.Errorf("runtime %s: %s", runtimeError.GetCode(), runtimeError.GetMessage())
 	}
-	if len(response.GetJson()) == 0 || len(response.GetJson()) > runtimeprocess.MaxMessageBytes {
-		return runtimeprocess.Message{}, fail(connect.CodeInternal, "runtime_message_invalid")
+	if len(response.GetJson()) == 0 || len(response.GetJson()) > runtimeprotocol.MaxMessageBytes {
+		return runtimeprotocol.Message{}, fail(connect.CodeInternal, "runtime_message_invalid")
 	}
-	var message runtimeprocess.Message
-	if err := json.Unmarshal(response.GetJson(), &message); err != nil || runtimeprocess.ValidateMessage(message) != nil {
-		return runtimeprocess.Message{}, fail(connect.CodeInternal, "runtime_message_invalid")
+	var message runtimeprotocol.Message
+	if err := json.Unmarshal(response.GetJson(), &message); err != nil || runtimeprotocol.ValidateMessage(message) != nil {
+		return runtimeprotocol.Message{}, fail(connect.CodeInternal, "runtime_message_invalid")
 	}
 	if message.ExecutionID != session.execution || message.Generation != session.generation {
-		return runtimeprocess.Message{}, fail(connect.CodePermissionDenied, "runtime_message_identity_mismatch")
+		return runtimeprotocol.Message{}, fail(connect.CodePermissionDenied, "runtime_message_identity_mismatch")
 	}
 	return message, nil
 }

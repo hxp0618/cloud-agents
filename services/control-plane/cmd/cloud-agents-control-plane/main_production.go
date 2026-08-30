@@ -26,7 +26,7 @@ import (
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
-	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -136,12 +136,12 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("worker CA configuration is invalid")
 	}
-	workerSupervisor, err := supervisor.NewMTLS(supervisor.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
+	workerSupervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
 	if err != nil {
 		return errors.New("worker transport configuration is invalid")
 	}
 	bindContext, cancelBind := context.WithTimeout(ctx, productionWorkerBindTimeout)
-	_, bindErr := workerSupervisor.BindRuntime(bindContext)
+	bindErr := workerSupervisor.BindRuntime(bindContext)
 	cancelBind()
 	if bindErr != nil {
 		return errors.New("worker Runtime is unavailable")

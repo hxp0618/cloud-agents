@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
+	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	workerv1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
@@ -37,6 +39,17 @@ func TestParseLocalWorkerConfigRejectsNonLoopback(t *testing.T) {
 		if cfg, err := parseLocalWorkerConfig([]string{"--listen", address, "--token-file", filepath.Join(t.TempDir(), "token")}); err != nil || cfg.listen != address {
 			t.Errorf("%q config = %#v, error = %v", address, cfg, err)
 		}
+	}
+}
+
+func TestParseLocalWorkerConfigAcceptsCompleteRuntimeMode(t *testing.T) {
+	directory := t.TempDir()
+	cfg, err := parseLocalWorkerConfig([]string{"--token-file", filepath.Join(directory, "worker.token"), "--runtime-command", "/bin/cat", "--runtime-directory", directory})
+	if err != nil || cfg.runtimeCommand != "/bin/cat" || cfg.runtimeDirectory != directory {
+		t.Fatalf("config = %#v, err = %v", cfg, err)
+	}
+	if _, err := parseLocalWorkerConfig([]string{"--token-file", filepath.Join(directory, "incomplete.token"), "--runtime-command", "/bin/cat"}); !errors.Is(err, errInvalidWorkerConfig) {
+		t.Fatalf("incomplete Runtime error = %v", err)
 	}
 }
 
@@ -241,6 +254,81 @@ func TestGeneratedConnectClientDispatchAndReceiptAgainstLoopbackServer(t *testin
 	}))
 	if err != nil || receipt == nil || receipt.Msg == nil || receipt.Msg.GetReceiptId() != response.Msg.GetReceiptId() {
 		t.Fatalf("GetOperationReceipt response=%v error=%v", receipt, err)
+	}
+}
+
+func TestLocalWorkerRuntimeModeServesGeneratedWireOverH2C(t *testing.T) {
+	built, err := newLocalWorkerHTTPServer(localWorkerConfig{listen: "127.0.0.1:18095", token: "runtime-token", runtimeCommand: "/bin/cat", runtimeDirectory: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built.Server.ReadTimeout != 0 || built.Server.WriteTimeout != 0 {
+		t.Fatalf("Runtime HTTP timeouts = %s/%s", built.Server.ReadTimeout, built.Server.WriteTimeout)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serve := make(chan error, 1)
+	go func() { serve <- built.Server.Serve(listener) }()
+	defer func() {
+		_ = built.Server.Shutdown(context.Background())
+		<-serve
+	}()
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	transport := &http.Transport{Proxy: nil, Protocols: protocols}
+	httpClient := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		clone := request.Clone(request.Context())
+		clone.Header.Set("Authorization", "Bearer runtime-token")
+		return transport.RoundTrip(clone)
+	})}
+	endpoint := "http://" + listener.Addr().String()
+	healthResponse, err := httpClient.Get(endpoint + workerkernel.WorkerLocalDevLauncherHealthRoute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var health localWorkerHealth
+	if healthResponse.StatusCode != http.StatusOK || json.NewDecoder(healthResponse.Body).Decode(&health) != nil || health.Profile != "cloud-agents/worker-localdev-runtime/v1" || !health.ExternalEffects {
+		t.Fatalf("health = %#v, status = %d", health, healthResponse.StatusCode)
+	}
+	_ = healthResponse.Body.Close()
+	workerIdentity := generatedWorkerIdentity()
+	workerClient := workerv1alpha1connect.NewWorkerExecutionServiceClient(httpClient, endpoint)
+	negotiation, err := workerClient.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
+		SupportedVersions: []*workerv1alpha1.ProtocolVersion{{Major: workerkernel.ProtocolMajor, Minor: workerkernel.ProtocolMinor}}, RequiredCapabilities: []workerv1alpha1.Capability{
+			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION, workerv1alpha1.Capability_CAPABILITY_HEALTH, workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		}, ExpectedServerIdentity: workerIdentity,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeClient := workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(httpClient, endpoint)
+	stream := runtimeClient.OpenSession(context.Background())
+	defer func() { _ = stream.CloseResponse() }()
+	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
+		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()},
+		Fencing:     &workerv1alpha1.FencingProof{LeaseId: workerkernel.WorkerLocalDevLauncherLeaseID, Generation: workerkernel.WorkerLocalDevLauncherGeneration, Token: []byte("runtime-token")}, ExecutionId: "execution-localdev", Generation: workerkernel.WorkerLocalDevLauncherGeneration, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := stream.Receive()
+	if err != nil || ready.GetReady() == nil || ready.GetReady().GetExecutionId() != "execution-localdev" {
+		t.Fatalf("ready = %#v, err = %v", ready, err)
+	}
+	if err := stream.CloseRequest(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLocalRuntimeEnvironmentExcludesControlPlaneAuthority(t *testing.T) {
+	filtered := localRuntimeEnvironment([]string{
+		"PATH=/usr/bin", "CLOUD_AGENTS_PLATFORM_DATABASE_URL=postgres://runtime:secret@127.0.0.1/cloud_agents", "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG=/run/cloud-agents/auth.json", "CLOUD_AGENTS_ADMISSION_TOKEN=worker-secret", "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=9", "OPENAI_API_KEY=provider-key",
+	})
+	want := []string{"PATH=/usr/bin", "OPENAI_API_KEY=provider-key"}
+	if len(filtered) != len(want) || filtered[0] != want[0] || filtered[1] != want[1] {
+		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
 	}
 }
 

@@ -181,6 +181,9 @@ export function buildPlatformGoSDKPackage(root: string): Uint8Array {
     "sdk/go/doc.go",
     "sdk/go/go.mod",
     "sdk/go/go.sum",
+    ...readTree(root, "sdk/go/runtime").filter(
+      (path) => path.endsWith(".go") && !path.endsWith("_test.go"),
+    ),
     ...readTree(root, "sdk/go/gen").filter(
       (path) =>
         path.endsWith(".go") && !path.endsWith("_test.go") && !path.includes("/platformadapter/"),

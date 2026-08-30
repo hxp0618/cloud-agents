@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -45,8 +46,11 @@ const (
 )
 
 type localWorkerConfig struct {
-	listen    string
-	tokenFile string
+	listen                     string
+	tokenFile                  string
+	runtimeCommand             string
+	runtimeDirectory           string
+	runtimeCredentialDirectory string
 	// token and tokenGenerator are test seams. The command never accepts a
 	// token on the command line and therefore cannot leak it via argv.
 	token          string
@@ -100,10 +104,13 @@ func parseLocalWorkerConfig(args []string) (localWorkerConfig, error) {
 	set.SetOutput(io.Discard)
 	listen := set.String("listen", defaultWorkerListen, "loopback listen address")
 	tokenFile := set.String("token-file", "", "write one ephemeral local bearer token to this 0600 file")
+	runtimeCommand := set.String("runtime-command", "", "Cloud Agent Runtime executable")
+	runtimeDirectory := set.String("runtime-directory", "", "absolute Runtime working directory")
+	runtimeCredentialDirectory := set.String("provider-credential-directory", "", "optional absolute directory containing <providerKind>.json credentials")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return localWorkerConfig{}, errInvalidWorkerConfig
 	}
-	cfg := localWorkerConfig{listen: *listen, tokenFile: *tokenFile}
+	cfg := localWorkerConfig{listen: *listen, tokenFile: *tokenFile, runtimeCommand: *runtimeCommand, runtimeDirectory: *runtimeDirectory, runtimeCredentialDirectory: *runtimeCredentialDirectory}
 	if err := validateLoopbackListen(cfg.listen); err != nil {
 		return localWorkerConfig{}, err
 	}
@@ -132,6 +139,18 @@ func validateLocalWorkerConfig(cfg localWorkerConfig) error {
 		if err := validateLocalToken(cfg.token); err != nil {
 			return err
 		}
+	}
+	if strings.TrimSpace(cfg.runtimeCommand) != cfg.runtimeCommand || strings.ContainsRune(cfg.runtimeCommand, '\x00') || strings.TrimSpace(cfg.runtimeDirectory) != cfg.runtimeDirectory || strings.TrimSpace(cfg.runtimeCredentialDirectory) != cfg.runtimeCredentialDirectory {
+		return errInvalidWorkerConfig
+	}
+	if cfg.runtimeCommand == "" {
+		if cfg.runtimeDirectory != "" || cfg.runtimeCredentialDirectory != "" {
+			return errInvalidWorkerConfig
+		}
+		return nil
+	}
+	if !filepath.IsAbs(cfg.runtimeDirectory) || (cfg.runtimeCredentialDirectory != "" && !filepath.IsAbs(cfg.runtimeCredentialDirectory)) {
+		return errInvalidWorkerConfig
 	}
 	return nil
 }
@@ -203,7 +222,7 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 	if err := validateLocalWorkerConfig(cfg); err != nil {
 		return nil, err
 	}
-	if !validGeneratedLauncherProfile() {
+	if cfg.runtimeCommand == "" && !validGeneratedLauncherProfile() {
 		return nil, errInvalidWorkerConfig
 	}
 	workerIdentity := cfg.workerIdentity
@@ -223,25 +242,15 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 	if clock == nil {
 		clock = time.Now
 	}
-	workerService, err := workerkernel.NewService(workerkernel.Config{
-		WorkerIdentity: workerIdentity,
-		Capabilities: []workerv1alpha1.Capability{
-			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
-			workerv1alpha1.Capability_CAPABILITY_HEALTH,
-			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
-		},
-		IdentityProvider:    contextIdentityProvider{},
-		AdmissionLeaseID:    workerkernel.WorkerLocalDevLauncherLeaseID,
-		AdmissionGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
-		Clock:               clock,
-		Executor:            workerkernel.DeterministicLocalExecutor{},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%w: worker service: %v", errInvalidWorkerConfig, err)
-	}
-	connectPath, connectHandler := workerkernel.NewHandler(workerService)
-	if connectPath != workerkernel.WorkerLocalDevLauncherHTTPRoutePrefix {
-		return nil, fmt.Errorf("%w: generated connect route mismatch", errInvalidWorkerConfig)
+	if cfg.runtimeCommand != "" {
+		if info, err := os.Stat(cfg.runtimeDirectory); err != nil || !info.IsDir() {
+			return nil, errInvalidWorkerConfig
+		}
+		if cfg.runtimeCredentialDirectory != "" {
+			if info, err := os.Stat(cfg.runtimeCredentialDirectory); err != nil || !info.IsDir() {
+				return nil, errInvalidWorkerConfig
+			}
+		}
 	}
 	token := cfg.token
 	if token == "" {
@@ -255,21 +264,53 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 			return nil, fmt.Errorf("%w: token generation failed", errInvalidWorkerConfig)
 		}
 	}
+	var runtimeCommand []string
+	if cfg.runtimeCommand != "" {
+		runtimeCommand = []string{cfg.runtimeCommand}
+	}
+	workerService, err := workerkernel.NewService(workerkernel.Config{
+		WorkerIdentity: workerIdentity,
+		Capabilities: []workerv1alpha1.Capability{
+			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+			workerv1alpha1.Capability_CAPABILITY_HEALTH,
+			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
+		},
+		IdentityProvider:           contextIdentityProvider{},
+		AdmissionLeaseID:           workerkernel.WorkerLocalDevLauncherLeaseID,
+		AdmissionGeneration:        workerkernel.WorkerLocalDevLauncherGeneration,
+		AdmissionToken:             []byte(token),
+		Clock:                      clock,
+		Executor:                   workerkernel.DeterministicLocalExecutor{},
+		RuntimeCommand:             runtimeCommand,
+		RuntimeEnvironment:         localRuntimeEnvironment(os.Environ()),
+		RuntimeDirectory:           cfg.runtimeDirectory,
+		RuntimeCredentialDirectory: cfg.runtimeCredentialDirectory,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: worker service: %v", errInvalidWorkerConfig, err)
+	}
+	connectPath, connectHandler := workerkernel.NewHandler(workerService)
+	if connectPath != workerkernel.WorkerLocalDevLauncherHTTPRoutePrefix {
+		return nil, fmt.Errorf("%w: generated connect route mismatch", errInvalidWorkerConfig)
+	}
 	if cfg.tokenFile != "" {
 		if err := writeLocalWorkerTokenFile(cfg.tokenFile, token); err != nil {
 			return nil, err
 		}
 	}
-
 	mux := http.NewServeMux()
 	mux.Handle(connectPath, connectHandler)
+	if cfg.runtimeCommand != "" {
+		runtimePath, runtimeHandler := workerkernel.NewRuntimeHandler(workerService)
+		mux.Handle(runtimePath, runtimeHandler)
+	}
 	mux.HandleFunc(workerkernel.WorkerLocalDevLauncherHealthRoute, func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			response.Header().Set("Allow", http.MethodGet)
 			response.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeLocalWorkerHealth(response, localWorkerHealth{
+		health := localWorkerHealth{
 			APIVersion:      "cloud-agents.localdev/v1",
 			Authority:       workerkernel.WorkerLocalDevLauncherAuthorityID,
 			Profile:         workerkernel.WorkerLocalDevLauncherProfileID,
@@ -281,12 +322,41 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 			Supervisor:      supervisorIdentity.GetSpiffeId(),
 			LeaseID:         workerkernel.WorkerLocalDevLauncherLeaseID,
 			Generation:      workerkernel.WorkerLocalDevLauncherGeneration,
-			ExternalEffects: false,
+			ExternalEffects: cfg.runtimeCommand != "",
 			Transport:       "loopback_http_connect",
-		})
+		}
+		if cfg.runtimeCommand != "" {
+			health.Authority = "cloud-agents-localdev"
+			health.Profile = "cloud-agents/worker-localdev-runtime/v1"
+			health.Revision = "v1"
+			health.ProfileDigest = ""
+		}
+		writeLocalWorkerHealth(response, health)
 	})
 	root := localWorkerAuthMiddleware(token, supervisorIdentity, mux)
-	return &localWorkerHTTPServer{Server: &http.Server{Handler: root, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}, Token: token}, nil
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	readTimeout, writeTimeout := 30*time.Second, 30*time.Second
+	if cfg.runtimeCommand != "" {
+		readTimeout, writeTimeout = 0, 0
+	}
+	return &localWorkerHTTPServer{Server: &http.Server{Handler: root, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: readTimeout, WriteTimeout: writeTimeout, IdleTimeout: 60 * time.Second, Protocols: protocols}, Token: token}, nil
+}
+
+func localRuntimeEnvironment(source []string) []string {
+	filtered := make([]string, 0, len(source))
+	for _, entry := range source {
+		name, _, found := strings.Cut(entry, "=")
+		if found {
+			switch name {
+			case "CLOUD_AGENTS_PLATFORM_DATABASE_URL", "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG", "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT", "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID", "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT", "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY", "CLOUD_AGENTS_PLATFORM_WORKER_CA", "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY", "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID", "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION", "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN", "CLOUD_AGENTS_ADMISSION_LEASE_ID", "CLOUD_AGENTS_ADMISSION_GENERATION", "CLOUD_AGENTS_ADMISSION_TOKEN", "CLOUD_AGENT_PROVIDER_CREDENTIAL_FD", "SYNARA_PROVIDER_CREDENTIAL_FD":
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func validGeneratedLauncherProfile() bool {

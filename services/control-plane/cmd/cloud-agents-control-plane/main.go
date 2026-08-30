@@ -2,26 +2,30 @@
 
 // cloud-agents-control-plane is an explicitly localdev-only HTTP entry point.
 // It binds to loopback, uses an ephemeral in-memory authn trust snapshot, and
-// exposes loopback-only project routes and, when given --runtime-command, the
-// local Managed Agent Runtime API. It is not a production server.
+// exposes loopback-only project routes and can connect to the independent
+// localdev Worker process. It is not a production server.
 package main
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
@@ -30,27 +34,16 @@ import (
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
-	workerkernel "github.com/hxp0618/cloud-agents/services/worker"
-	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	databaseURLEnvironment                     = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
-	localRuntimeAuthConfigEnvironment          = "CLOUD_AGENTS_PLATFORM_AUTH_CONFIG"
-	localRuntimeWorkerEndpointEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
-	localRuntimeWorkerSPIFFEEnvironment        = "CLOUD_AGENTS_PLATFORM_WORKER_SPIFFE_ID"
-	localRuntimeWorkerClientCertEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_CERT"
-	localRuntimeWorkerClientKeyEnvironment     = "CLOUD_AGENTS_PLATFORM_WORKER_CLIENT_KEY"
-	localRuntimeWorkerCAEnvironment            = "CLOUD_AGENTS_PLATFORM_WORKER_CA"
-	localRuntimeWorkspaceEnvironment           = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
-	localRuntimeAdmissionLeaseEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
-	localRuntimeAdmissionGenerationEnvironment = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
-	localRuntimeAdmissionTokenEnvironment      = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
-	localRuntimeWorkerLeaseEnvironment         = "CLOUD_AGENTS_ADMISSION_LEASE_ID"
-	localRuntimeWorkerGenerationEnvironment    = "CLOUD_AGENTS_ADMISSION_GENERATION"
-	localRuntimeWorkerTokenEnvironment         = "CLOUD_AGENTS_ADMISSION_TOKEN"
+	databaseURLEnvironment                = "CLOUD_AGENTS_PLATFORM_DATABASE_URL"
+	localRuntimeWorkerEndpointEnvironment = "CLOUD_AGENTS_PLATFORM_WORKER_ENDPOINT"
+	localRuntimeWorkerTokenEnvironment    = "CLOUD_AGENTS_PLATFORM_WORKER_TOKEN_FILE"
+	localRuntimeWorkspaceEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
 )
 
 var (
@@ -239,8 +232,25 @@ type controlPlaneConfig struct {
 	localTokenFile     string
 	localTenantID      string
 	localSubject       string
-	runtimeCommand     string
+	workerEndpoint     string
+	workerTokenFile    string
 	workspaceDirectory string
+}
+
+type localRuntimeWorkerHealth struct {
+	APIVersion      string `json:"api_version"`
+	Authority       string `json:"authority"`
+	Profile         string `json:"profile"`
+	Revision        string `json:"revision"`
+	ProfileDigest   string `json:"profile_digest"`
+	Version         string `json:"version"`
+	Status          string `json:"status"`
+	WorkerIdentity  string `json:"worker_identity"`
+	Supervisor      string `json:"supervisor_identity"`
+	LeaseID         string `json:"lease_id"`
+	Generation      uint64 `json:"generation"`
+	ExternalEffects bool   `json:"external_side_effects"`
+	Transport       string `json:"transport"`
 }
 
 type localAccessTokenVerifier struct{ verifier *authn.LocalVerifier }
@@ -327,11 +337,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return errors.New("local project get HTTP server is unavailable")
 	}
-	var runtimeSupervisor *supervisor.Supervisor
-	var runtimeWorkerHTTPServer *httptest.Server
+	var runtimeSupervisor *workerclient.Supervisor
 	var runtimeFencingToken []byte
+	var runtimeLeaseID string
+	var runtimeGeneration uint64
 	workspaceDirectory := config.workspaceDirectory
-	if config.runtimeCommand != "" {
+	if config.workerEndpoint != "" {
 		if workspaceDirectory == "" {
 			workspaceDirectory, err = os.Getwd()
 			if err != nil {
@@ -346,11 +357,13 @@ func run(ctx context.Context, args []string) error {
 		if statErr != nil || !workspaceInfo.IsDir() {
 			return errInvalidRuntimeConfig
 		}
-		runtimeSupervisor, runtimeWorkerHTTPServer, runtimeFencingToken, err = newLocalRuntimeSupervisor(config.runtimeCommand, workspaceDirectory)
+		var health localRuntimeWorkerHealth
+		runtimeSupervisor, health, runtimeFencingToken, err = newLocalRuntimeSupervisor(ctx, config.workerEndpoint, config.workerTokenFile)
 		if err != nil {
 			return err
 		}
-		defer runtimeWorkerHTTPServer.Close()
+		runtimeLeaseID = health.LeaseID
+		runtimeGeneration = health.Generation
 	}
 	verifierAdapter := localAccessTokenVerifier{verifier: verifier}
 	leaseHTTPServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService)
@@ -382,7 +395,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		runtimeCoordinator, coordinatorErr := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
 			Store: coordinationService, Supervisor: runtimeSupervisor, Clock: time.Now,
-			FencingLeaseID: workerkernel.WorkerLocalDevLauncherLeaseID, FencingGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
+			FencingLeaseID: runtimeLeaseID, FencingGeneration: runtimeGeneration,
 			FencingToken: runtimeFencingToken, WorkspaceDirectory: workspaceDirectory, MaxDuration: 5 * time.Minute,
 		})
 		if coordinatorErr != nil {
@@ -467,7 +480,8 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	localTokenFile := set.String("local-token-file", "", "write one ephemeral local bearer token to this 0600 file")
 	localTenantID := set.String("local-tenant-id", "tenant-coordination-normal", "tenant for the optional local token")
 	localSubject := set.String("local-subject", "user-admin", "subject for the optional local token")
-	runtimeCommand := set.String("runtime-command", "", "absolute or PATH Runtime executable for the local Managed Agent API")
+	workerEndpoint := set.String("worker-endpoint", "", "loopback HTTP endpoint of the localdev Worker")
+	workerTokenFile := set.String("worker-token-file", "", "0600 bearer token file written by the localdev Worker")
 	workspaceDirectory := set.String("workspace-directory", "", "workspace passed to the local Runtime")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return controlPlaneConfig{}, errors.New("invalid control-plane configuration")
@@ -476,10 +490,22 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	if resolvedDatabaseURL == "" && getenv != nil {
 		resolvedDatabaseURL = getenv(databaseURLEnvironment)
 	}
+	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory := *workerEndpoint, *workerTokenFile, *workspaceDirectory
+	if getenv != nil {
+		if resolvedWorkerEndpoint == "" {
+			resolvedWorkerEndpoint = getenv(localRuntimeWorkerEndpointEnvironment)
+		}
+		if resolvedWorkerTokenFile == "" {
+			resolvedWorkerTokenFile = getenv(localRuntimeWorkerTokenEnvironment)
+		}
+		if resolvedWorkspaceDirectory == "" {
+			resolvedWorkspaceDirectory = getenv(localRuntimeWorkspaceEnvironment)
+		}
+	}
 	if *localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator))) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
-	if strings.TrimSpace(*runtimeCommand) != *runtimeCommand || strings.TrimSpace(*workspaceDirectory) != *workspaceDirectory {
+	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
 		return controlPlaneConfig{}, errInvalidRuntimeConfig
 	}
 	return controlPlaneConfig{
@@ -488,87 +514,138 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		localTokenFile:     *localTokenFile,
 		localTenantID:      *localTenantID,
 		localSubject:       *localSubject,
-		runtimeCommand:     *runtimeCommand,
-		workspaceDirectory: *workspaceDirectory,
+		workerEndpoint:     resolvedWorkerEndpoint,
+		workerTokenFile:    resolvedWorkerTokenFile,
+		workspaceDirectory: resolvedWorkspaceDirectory,
 	}, nil
 }
 
-func newLocalRuntimeSupervisor(runtimeCommand, workspaceDirectory string) (*supervisor.Supervisor, *httptest.Server, []byte, error) {
-	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: workerkernel.WorkerLocalDevLauncherWorkerIdentitySPIFFE, TrustDomain: "cloud-agents.local"}
-	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: workerkernel.WorkerLocalDevLauncherSupervisorIdentitySPIFFE, TrustDomain: "cloud-agents.local"}
-	admissionToken := make([]byte, 32)
-	if _, err := rand.Read(admissionToken); err != nil {
-		return nil, nil, nil, errInvalidRuntimeConfig
+func newLocalRuntimeSupervisor(ctx context.Context, endpoint, tokenFile string) (*workerclient.Supervisor, localRuntimeWorkerHealth, []byte, error) {
+	endpoint, err := validateLocalWorkerEndpoint(endpoint)
+	if err != nil {
+		return nil, localRuntimeWorkerHealth{}, nil, err
 	}
-	workerService, err := workerkernel.NewService(workerkernel.Config{
-		WorkerIdentity: workerIdentity,
-		Capabilities: []workerv1alpha1.Capability{
-			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
-			workerv1alpha1.Capability_CAPABILITY_HEALTH,
-			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
-		},
-		IdentityProvider:    workerkernel.StaticIdentityProvider{Identity: supervisorIdentity},
-		AdmissionLeaseID:    workerkernel.WorkerLocalDevLauncherLeaseID,
-		AdmissionGeneration: workerkernel.WorkerLocalDevLauncherGeneration,
-		AdmissionToken:      admissionToken,
-		RuntimeCommand:      []string{runtimeCommand},
-		RuntimeEnvironment:  localRuntimeEnvironment(os.Environ()),
-		RuntimeDirectory:    workspaceDirectory,
+	token, err := readLocalWorkerToken(tokenFile)
+	if err != nil {
+		return nil, localRuntimeWorkerHealth{}, nil, err
+	}
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	transport := &http.Transport{Proxy: nil, Protocols: protocols}
+	httpClient := &http.Client{Transport: localWorkerBearerTransport{base: transport, token: token}, CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidRuntimeConfig }}
+	healthRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/healthz", nil)
+	if err != nil {
+		return nil, localRuntimeWorkerHealth{}, nil, errInvalidRuntimeConfig
+	}
+	healthResponse, err := httpClient.Do(healthRequest)
+	if err != nil {
+		return nil, localRuntimeWorkerHealth{}, nil, errors.New("local Worker Runtime is unavailable")
+	}
+	defer healthResponse.Body.Close()
+	healthBody, err := io.ReadAll(io.LimitReader(healthResponse.Body, 64*1024+1))
+	if err != nil || len(healthBody) > 64*1024 {
+		return nil, localRuntimeWorkerHealth{}, nil, errInvalidRuntimeConfig
+	}
+	var health localRuntimeWorkerHealth
+	decoder := json.NewDecoder(bytes.NewReader(healthBody))
+	decoder.DisallowUnknownFields()
+	if healthResponse.StatusCode != http.StatusOK || decoder.Decode(&health) != nil || decoder.Decode(&struct{}{}) != io.EOF || health.APIVersion != "cloud-agents.localdev/v1" || health.Authority != "cloud-agents-localdev" || health.Profile != "cloud-agents/worker-localdev-runtime/v1" || health.Revision != "v1" || health.Version != "v1.0" || health.Status != "serving" || health.LeaseID == "" || health.Generation == 0 || !health.ExternalEffects || health.Transport != "loopback_http_connect" {
+		return nil, localRuntimeWorkerHealth{}, nil, errInvalidRuntimeConfig
+	}
+	workerIdentity, err := localWorkerIdentity(health.WorkerIdentity)
+	if err != nil {
+		return nil, localRuntimeWorkerHealth{}, nil, errInvalidRuntimeConfig
+	}
+	supervisor, err := workerclient.New(workerclient.Config{
+		Client: workerv1alpha1connect.NewWorkerExecutionServiceClient(httpClient, endpoint), RuntimeClient: workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(httpClient, endpoint), ExpectedWorkerIdentity: workerIdentity, Clock: time.Now,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, localRuntimeWorkerHealth{}, nil, errInvalidRuntimeConfig
 	}
-	workerPath, workerHandler := workerkernel.NewHandler(workerService)
-	runtimePath, runtimeHandler := workerkernel.NewRuntimeHandler(workerService)
-	mux := http.NewServeMux()
-	mux.Handle(workerPath, workerHandler)
-	mux.Handle(runtimePath, runtimeHandler)
-	workerHTTPServer := httptest.NewUnstartedServer(mux)
-	workerHTTPServer.EnableHTTP2 = true
-	workerHTTPServer.StartTLS()
-	workerClient := workerv1alpha1connect.NewWorkerExecutionServiceClient(workerHTTPServer.Client(), workerHTTPServer.URL)
-	runtimeClient := workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(workerHTTPServer.Client(), workerHTTPServer.URL)
-	workerSupervisor, err := supervisor.New(supervisor.Config{Client: workerClient, RuntimeClient: runtimeClient, ExpectedWorkerIdentity: workerIdentity, Clock: time.Now})
-	if err != nil {
-		workerHTTPServer.Close()
-		return nil, nil, nil, err
-	}
-	bindContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	bindContext, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if _, err := workerSupervisor.BindRuntime(bindContext); err != nil {
-		workerHTTPServer.Close()
-		return nil, nil, nil, errors.New("local Worker Runtime is unavailable")
+	if err := supervisor.BindRuntime(bindContext); err != nil {
+		return nil, localRuntimeWorkerHealth{}, nil, errors.New("local Worker Runtime is unavailable")
 	}
-	return workerSupervisor, workerHTTPServer, admissionToken, nil
+	return supervisor, health, []byte(token), nil
 }
 
-// The embedded localdev Worker still crosses the Runtime trust boundary.
-func localRuntimeEnvironment(source []string) []string {
-	filtered := make([]string, 0, len(source))
-	for _, entry := range source {
-		name, _, found := strings.Cut(entry, "=")
-		if found {
-			switch name {
-			case databaseURLEnvironment,
-				localRuntimeAuthConfigEnvironment,
-				localRuntimeWorkerEndpointEnvironment,
-				localRuntimeWorkerSPIFFEEnvironment,
-				localRuntimeWorkerClientCertEnvironment,
-				localRuntimeWorkerClientKeyEnvironment,
-				localRuntimeWorkerCAEnvironment,
-				localRuntimeWorkspaceEnvironment,
-				localRuntimeAdmissionLeaseEnvironment,
-				localRuntimeAdmissionGenerationEnvironment,
-				localRuntimeAdmissionTokenEnvironment,
-				localRuntimeWorkerLeaseEnvironment,
-				localRuntimeWorkerGenerationEnvironment,
-				localRuntimeWorkerTokenEnvironment:
-				continue
-			}
-		}
-		filtered = append(filtered, entry)
+type localWorkerBearerTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (transport localWorkerBearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.Header.Set("Authorization", "Bearer "+transport.token)
+	return transport.base.RoundTrip(clone)
+}
+
+func validateLocalWorkerEndpoint(value string) (string, error) {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return "", errInvalidRuntimeConfig
 	}
-	return filtered
+	host, port, err := net.SplitHostPort(parsed.Host)
+	if err != nil || port == "" {
+		return "", errInvalidRuntimeConfig
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return "", errInvalidRuntimeConfig
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return "", errInvalidRuntimeConfig
+	}
+	return strings.TrimSuffix(value, "/"), nil
+}
+
+func readLocalWorkerToken(path string) (string, error) {
+	if path == "" || strings.TrimSpace(path) != path {
+		return "", errInvalidRuntimeConfig
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		return "", errInvalidRuntimeConfig
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return "", errInvalidRuntimeConfig
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil || !os.SameFile(info, stat) || !stat.Mode().IsRegular() || stat.Mode().Perm() != 0o600 || stat.Size() <= 1 || stat.Size() > 257 {
+		return "", errInvalidRuntimeConfig
+	}
+	initialSize := stat.Size()
+	contents, err := io.ReadAll(io.LimitReader(file, 258))
+	if err != nil || len(contents) < 2 || len(contents) > 257 || contents[len(contents)-1] != '\n' {
+		return "", errInvalidRuntimeConfig
+	}
+	contents = contents[:len(contents)-1]
+	token := string(contents)
+	if !utf8.Valid(contents) || len(contents) > 256 || strings.TrimSpace(token) != token || strings.ContainsAny(token, " \t\r\n") {
+		return "", errInvalidRuntimeConfig
+	}
+	for _, character := range token {
+		if unicode.IsControl(character) {
+			return "", errInvalidRuntimeConfig
+		}
+	}
+	finalStat, err := file.Stat()
+	if err != nil || !os.SameFile(info, finalStat) || finalStat.Size() != initialSize || finalStat.Mode().Perm() != 0o600 {
+		return "", errInvalidRuntimeConfig
+	}
+	return token, nil
+}
+
+func localWorkerIdentity(value string) (*workerv1alpha1.WorkloadIdentity, error) {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "spiffe" || parsed.Host == "" || parsed.Path == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errInvalidRuntimeConfig
+	}
+	return &workerv1alpha1.WorkloadIdentity{SpiffeId: value, TrustDomain: parsed.Host}, nil
 }
 
 func validateLoopbackListenAddress(address string) error {

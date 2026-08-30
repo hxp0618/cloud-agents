@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
-	"github.com/hxp0618/cloud-agents/services/worker/runtime"
 )
 
 const ManagedAgentExecutionRoutePrefix = "/v1/tenants/"
@@ -250,7 +250,7 @@ type managedAgentExecutionResource struct {
 	Kind       string                        `json:"kind"`
 	Metadata   managedAgentExecutionMetadata `json:"metadata"`
 	Spec       managedAgentExecutionSpec     `json:"spec"`
-	Messages   []runtime.Message             `json:"messages,omitempty"`
+	Messages   []runtimeprotocol.Message     `json:"messages,omitempty"`
 }
 
 type managedAgentExecutionMetadata struct {
@@ -270,7 +270,7 @@ type managedAgentExecutionSpec struct {
 	ErrorCode    string `json:"errorCode,omitempty"`
 }
 
-func writeManagedAgentExecution(writer http.ResponseWriter, status int, requestID string, transition internalmanagedagent.ExecutionTransitionResult, messages []runtime.Message) {
+func writeManagedAgentExecution(writer http.ResponseWriter, status int, requestID string, transition internalmanagedagent.ExecutionTransitionResult, messages []runtimeprotocol.Message) {
 	execution := transition.Execution
 	writer.Header().Set("X-Request-ID", requestID)
 	writer.Header().Set("X-Resource-Version", strconv.FormatUint(execution.Version, 10))

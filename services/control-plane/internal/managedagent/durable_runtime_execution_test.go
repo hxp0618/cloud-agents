@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
-	"github.com/hxp0618/cloud-agents/services/worker/supervisor"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 )
 
 type durableRuntimeExecutionStoreFake struct {
@@ -152,7 +152,7 @@ func TestDeriveRuntimeWorkspacePathsScopesSessionStateAndExecutionOutput(t *test
 func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
-		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
 	})
 	if err != nil {
@@ -174,7 +174,7 @@ func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *tes
 func TestDurableRuntimeExecutionFailsOrphanedRunningReplayWithoutOpeningWorker(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
-		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
 	})
 	if err != nil {
@@ -197,7 +197,7 @@ func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, cancel: cancel}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
-		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
 	})
 	if err != nil {
@@ -219,7 +219,7 @@ func TestDurableRuntimeExecutionPersistsCallerCancellation(t *testing.T) {
 func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionRunning}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
-		Store: store, Supervisor: &supervisor.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
+		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
 	})
 	if err != nil {
@@ -250,7 +250,7 @@ func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 
 func TestDurableRuntimeExecutionRejectsDuplicateActiveExecution(t *testing.T) {
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
-		Store: &durableRuntimeExecutionStoreFake{}, Supervisor: &supervisor.Supervisor{}, Clock: time.Now,
+		Store: &durableRuntimeExecutionStoreFake{}, Supervisor: &workerclient.Supervisor{}, Clock: time.Now,
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
 	})
 	if err != nil {

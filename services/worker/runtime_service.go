@@ -17,6 +17,7 @@ import (
 	workerruntimev1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1"
 	workerruntimev1alpha1connect "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect"
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	runtimeprocess "github.com/hxp0618/cloud-agents/services/worker/runtime"
 )
 
@@ -83,7 +84,7 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 		return stream.Send(response)
 	}
 	if err := send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Ready{Ready: &workerruntimev1alpha1.RuntimeSessionReady{
-		ExecutionId: open.GetExecutionId(), Generation: open.GetGeneration(), ProtocolMajor: runtimeprocess.ProtocolMajor, ProtocolMinor: runtimeprocess.ProtocolMinor,
+		ExecutionId: open.GetExecutionId(), Generation: open.GetGeneration(), ProtocolMajor: runtimeprotocol.ProtocolMajor, ProtocolMinor: runtimeprotocol.ProtocolMinor,
 	}}}); err != nil {
 		return err
 	}
@@ -129,20 +130,20 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 			break
 		}
 		frame := request.GetCommand().GetJson()
-		if len(frame) == 0 || len(frame) > runtimeprocess.MaxCommandBytes {
+		if len(frame) == 0 || len(frame) > runtimeprotocol.MaxCommandBytes {
 			_ = sendRuntimeError(send, "command_invalid", "Runtime command size is invalid")
 			sessionErr = runtimeSessionFailure(connect.CodeInvalidArgument, "command_invalid", "Runtime command size is invalid")
 			cancel()
 			break
 		}
-		var command runtimeprocess.Command
+		var command runtimeprotocol.Command
 		if err := json.Unmarshal(frame, &command); err != nil || command.ExecutionID != open.GetExecutionId() || command.Generation != open.GetGeneration() {
 			_ = sendRuntimeError(send, "command_invalid", "Runtime command envelope is invalid")
 			sessionErr = runtimeSessionFailure(connect.CodeInvalidArgument, "command_invalid", "Runtime command envelope is invalid")
 			cancel()
 			break
 		}
-		if err := runtimeprocess.ValidateCommand(command); err != nil {
+		if err := runtimeprotocol.ValidateCommand(command); err != nil {
 			_ = sendRuntimeError(send, "command_invalid", "Runtime command is not supported")
 			sessionErr = runtimeSessionFailure(connect.CodeInvalidArgument, "command_invalid", "Runtime command is not supported")
 			cancel()
@@ -155,7 +156,7 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 			break
 		}
 		commands.Add(1)
-		go func(command runtimeprocess.Command) {
+		go func(command runtimeprotocol.Command) {
 			defer commands.Done()
 			message, executeErr := client.Execute(sessionContext, command)
 			if executeErr != nil && message.MessageType == "" {
@@ -191,7 +192,7 @@ func runtimeProviderCredentialFile(directory, providerKind string) (string, erro
 	return path, nil
 }
 
-func runtimeCommandProvider(command runtimeprocess.Command) (string, bool) {
+func runtimeCommandProvider(command runtimeprotocol.Command) (string, bool) {
 	switch command.CommandType {
 	case "Describe":
 		providerKind, _ := command.Payload["provider"].(string)
@@ -229,9 +230,9 @@ func (s *Service) validateRuntimeFencing(open *workerruntimev1alpha1.RuntimeSess
 	return nil
 }
 
-func sendRuntimeJSON(send func(*workerruntimev1alpha1.RuntimeSessionResponse) error, message runtimeprocess.Message) error {
+func sendRuntimeJSON(send func(*workerruntimev1alpha1.RuntimeSessionResponse) error, message runtimeprotocol.Message) error {
 	encoded, err := json.Marshal(message)
-	if err != nil || len(encoded) > runtimeprocess.MaxMessageBytes {
+	if err != nil || len(encoded) > runtimeprotocol.MaxMessageBytes {
 		return runtimeSessionFailure(connect.CodeInternal, "runtime_message_invalid", "Runtime message is invalid")
 	}
 	return send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Json{Json: encoded}})
@@ -259,6 +260,6 @@ func NewRuntimeHandler(svc *Service, opts ...connect.HandlerOption) (string, htt
 }
 
 const (
-	MaxCommandBytesForRuntimeFrame = runtimeprocess.MaxCommandBytes + 4096
-	MaxMessageBytesForRuntimeFrame = runtimeprocess.MaxMessageBytes + 4096
+	MaxCommandBytesForRuntimeFrame = runtimeprotocol.MaxCommandBytes + 4096
+	MaxMessageBytesForRuntimeFrame = runtimeprotocol.MaxMessageBytes + 4096
 )
