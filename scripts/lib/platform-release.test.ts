@@ -136,6 +136,7 @@ describe("platform release", () => {
 
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    expect(compose).toContain('command:\n      - >-\n        exec psql');
     expect(compose).toContain("--single-transaction");
     expect(compose).toContain("/deploy/compose/provision.sql");
     const environment = readFileSync("deploy/compose/.env.example", "utf8");
