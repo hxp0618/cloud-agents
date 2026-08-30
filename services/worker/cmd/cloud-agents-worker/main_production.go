@@ -214,20 +214,27 @@ func productionRuntimeEnvironment(source []string) []string {
 	filtered := make([]string, 0, len(source))
 	for _, entry := range source {
 		name, _, found := strings.Cut(entry, "=")
-		if found && productionRuntimeEnvironmentExcluded(name) {
-			continue
+		if found && productionRuntimeEnvironmentAllowed(name) {
+			filtered = append(filtered, entry)
 		}
-		filtered = append(filtered, entry)
 	}
 	return filtered
 }
 
-func productionRuntimeEnvironmentExcluded(name string) bool {
+func productionRuntimeEnvironmentAllowed(name string) bool {
 	switch name {
-	case admissionLeaseIDEnvironment, admissionGenerationEnvironment, admissionTokenEnvironment,
-		"CLOUD_AGENT_PROVIDER_CREDENTIAL_FD", "SYNARA_PROVIDER_CREDENTIAL_FD",
-		"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORGANIZATION",
-		"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL":
+	case "PATH", "HOME", "USER", "LOGNAME", "USERNAME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+		"TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+		"LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_COLLATE", "LC_MESSAGES", "LC_MONETARY",
+		"LC_NUMERIC", "LC_TIME", "LC_PAPER", "LC_NAME", "LC_ADDRESS", "LC_TELEPHONE",
+		"LC_MEASUREMENT", "LC_IDENTIFICATION", "TZ", "TERM", "COLORTERM", "TERM_PROGRAM",
+		"TERM_PROGRAM_VERSION", "SHELL", "NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE",
+		"SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
+		"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE",
+		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS",
+		"CLOUD_AGENT_PROVIDER_HTTP_PROXY", "CLOUD_AGENT_PROVIDER_HTTPS_PROXY",
+		"CLOUD_AGENT_PROVIDER_ALL_PROXY", "CLOUD_AGENT_PROVIDER_NO_PROXY",
+		"CLOUD_AGENT_PROVIDER_NPM_CONFIG_USERCONFIG", "CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE":
 		return true
 	default:
 		return false

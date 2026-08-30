@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
@@ -83,23 +84,44 @@ func TestProductionWorkerDoesNotAdvertiseUnavailableOperationDispatch(t *testing
 	}
 }
 
-func TestProductionRuntimeEnvironmentExcludesWorkerAndProviderCredentials(t *testing.T) {
+func TestProductionRuntimeEnvironmentAllowsOnlyRuntimeConfiguration(t *testing.T) {
 	filtered := productionRuntimeEnvironment([]string{
 		"PATH=/usr/bin",
+		"HOME=/home/cloud-agents",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=C",
+		"NODE_EXTRA_CA_CERTS=/run/cloud-agents/ca.pem",
+		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
+		"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
+		"CLOUD_AGENT_PROVIDER_HTTP_PROXY=http://proxy.example:8080",
+		"CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE=/run/cloud-agents/pip.conf",
 		admissionLeaseIDEnvironment + "=lease",
 		admissionGenerationEnvironment + "=7",
 		admissionTokenEnvironment + "=secret",
 		"OPENAI_API_KEY=provider-key",
 		"ANTHROPIC_AUTH_TOKEN=provider-token",
+		"AWS_SECRET_ACCESS_KEY=cloud-secret",
+		"DATABASE_URL=postgres://database-secret",
+		"NODE_OPTIONS=--require=/tmp/injected.cjs",
 		"CLOUD_AGENT_PROVIDER_CREDENTIAL_FD=99",
+		"SYNARA_PROVIDER_CREDENTIAL_FD=98",
+		"SYNARA_PROVIDER_HTTP_PROXY=http://legacy-proxy.example:8080",
+		"SYNARA_PROVIDER_OUTER_SANDBOX_PROFILE=legacy-profile",
+		"CLOUD_AGENT_FUTURE_SECRET=secret",
+		"malformed",
 	})
-	want := []string{"PATH=/usr/bin"}
-	if len(filtered) != len(want) {
-		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
+	want := []string{
+		"PATH=/usr/bin",
+		"HOME=/home/cloud-agents",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=C",
+		"NODE_EXTRA_CA_CERTS=/run/cloud-agents/ca.pem",
+		"CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent",
+		"CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE=single-tenant-trusted-v1",
+		"CLOUD_AGENT_PROVIDER_HTTP_PROXY=http://proxy.example:8080",
+		"CLOUD_AGENT_PROVIDER_PIP_CONFIG_FILE=/run/cloud-agents/pip.conf",
 	}
-	for index := range want {
-		if filtered[index] != want[index] {
-			t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
-		}
+	if !slices.Equal(filtered, want) {
+		t.Fatalf("filtered environment = %#v, want %#v", filtered, want)
 	}
 }
