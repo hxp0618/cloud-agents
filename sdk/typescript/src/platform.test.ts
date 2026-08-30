@@ -41,7 +41,13 @@ describe("generated platform JSON models", () => {
     const session = JSON.stringify({
       apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
       kind: "Session",
-      metadata: { uid: "session-alpha", projectId: "project-alpha", resourceVersion: "2", createdAt: "2026-08-29T08:00:00Z", updatedAt: "2026-08-29T08:01:00Z" },
+      metadata: {
+        uid: "session-alpha",
+        projectId: "project-alpha",
+        resourceVersion: "2",
+        createdAt: "2026-08-29T08:00:00Z",
+        updatedAt: "2026-08-29T08:01:00Z",
+      },
       spec: { providerKind: "codex", state: "active" },
     });
     expect(decodeManagedAgentSession(JSON.parse(session)).spec.providerKind).toBe("codex");
@@ -49,11 +55,37 @@ describe("generated platform JSON models", () => {
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
-      return { status: request.method === "POST" && request.path.endsWith("/sessions") ? 201 : request.method === "GET" ? 200 : 200, headers: { "X-Resource-Version": "2" }, body: session };
+      return {
+        status:
+          request.method === "POST" && request.path.endsWith("/sessions")
+            ? 201
+            : request.method === "GET"
+              ? 200
+              : 200,
+        headers: { "X-Resource-Version": "2" },
+        body: session,
+      };
     });
-    await client.createManagedAgentSession("tenant-alpha", "project-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", { sessionId: "session-alpha", providerKind: "codex" });
-    await client.getManagedAgentSession("tenant-alpha", "project-alpha", "session-alpha", "request-alpha");
-    await client.closeManagedAgentSession("tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3");
+    await client.createManagedAgentSession(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
+      { sessionId: "session-alpha", providerKind: "codex" },
+    );
+    await client.getManagedAgentSession(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "request-alpha",
+    );
+    await client.closeManagedAgentSession(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "request-alpha",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3",
+    );
     expect(seen).toHaveLength(3);
     expect(seen[0]?.body).toBe('{"sessionId":"session-alpha","providerKind":"codex"}');
     expect(seen[2]?.body).toBeUndefined();
@@ -62,30 +94,85 @@ describe("generated platform JSON models", () => {
     const execution = JSON.stringify({
       apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
       kind: "Execution",
-      metadata: { uid: "execution-alpha", projectId: "project-alpha", sessionId: "session-alpha", turnId: "turn-alpha", resourceVersion: "3", createdAt: "2026-08-29T08:00:00Z", updatedAt: "2026-08-29T08:01:00Z" },
+      metadata: {
+        uid: "execution-alpha",
+        projectId: "project-alpha",
+        sessionId: "session-alpha",
+        turnId: "turn-alpha",
+        resourceVersion: "3",
+        createdAt: "2026-08-29T08:00:00Z",
+        updatedAt: "2026-08-29T08:01:00Z",
+      },
       spec: { generation: 1, state: "succeeded", resultDigest: `sha256:${"a".repeat(64)}` },
-      messages: [{ requestId: "request-alpha", protocolVersion: { major: 2, minor: 3 }, executionId: "execution-alpha", generation: 1, commandId: "command-alpha", occurredAt: "2026-08-29T08:01:00Z", messageType: "Result", payload: { text: "done" } }],
+      messages: [
+        {
+          requestId: "request-alpha",
+          protocolVersion: { major: 2, minor: 3 },
+          executionId: "execution-alpha",
+          generation: 1,
+          commandId: "command-alpha",
+          occurredAt: "2026-08-29T08:01:00Z",
+          messageType: "Result",
+          payload: { text: "done" },
+        },
+      ],
     });
-    expect(decodeManagedAgentExecution(JSON.parse(execution)).messages?.[0]?.messageType).toBe("Result");
+    expect(decodeManagedAgentExecution(JSON.parse(execution)).messages?.[0]?.messageType).toBe(
+      "Result",
+    );
     expect(parseManagedAgentExecution(execution).value.kind).toBe("Execution");
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
       return { status: 200, headers: { "X-Resource-Version": "3" }, body: execution };
     });
-    await client.executeManagedAgent("tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", { turnId: "turn-alpha", executionId: "execution-alpha", model: "codex", inputText: "hello" });
-	await client.getManagedAgentExecution("tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-alpha");
-	await client.cancelManagedAgentExecution("tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-cancel", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX", { generation: 1 });
-	await client.interruptManagedAgentExecution("tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-interrupt", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY", { generation: 1 });
-	expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
-	  "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions",
-	  "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha",
-	  "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel",
-	  "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt",
-	]);
-	expect(seen[0]?.body).toBe('{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex"}');
-	expect(seen[2]?.body).toBe('{"generation":1}');
-	expect(seen[3]?.body).toBe('{"generation":1}');
+    await client.executeManagedAgent(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "request-alpha",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
+      { turnId: "turn-alpha", executionId: "execution-alpha", model: "codex", inputText: "hello" },
+    );
+    await client.getManagedAgentExecution(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-alpha",
+      "request-alpha",
+    );
+    await client.cancelManagedAgentExecution(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-alpha",
+      "request-cancel",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX",
+      { generation: 1 },
+    );
+    await client.interruptManagedAgentExecution(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-alpha",
+      "request-interrupt",
+      "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY",
+      { generation: 1 },
+    );
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions",
+      "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt",
+    ]);
+    expect(seen[0]?.body).toBe(
+      '{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex"}',
+    );
+    expect(seen[2]?.body).toBe('{"generation":1}');
+    expect(seen[3]?.body).toBe('{"generation":1}');
   });
   it("replays common and platform golden fixtures", () => {
     expect(parseProblem(readFixture(commonFixtureRoot, "golden/problem.json")).status).toBe(404);

@@ -151,10 +151,7 @@ describe("platform release", () => {
       "utf8",
     );
     const worker = readFileSync("deploy/helm/cloud-agents/templates/worker.yaml", "utf8");
-    const claim = readFileSync(
-      "deploy/helm/cloud-agents/templates/workspace-pvc.yaml",
-      "utf8",
-    );
+    const claim = readFileSync("deploy/helm/cloud-agents/templates/workspace-pvc.yaml", "utf8");
     expect(controlPlane).not.toContain("mountPath: /workspace");
     expect(worker).toContain("mountPath: /workspace");
     expect(claim).toContain("accessModes: [ReadWriteOnce]");
@@ -173,7 +170,7 @@ describe("platform release", () => {
 
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
-    expect(compose).toContain('command:\n      - >-\n        exec psql');
+    expect(compose).toContain("command:\n      - >-\n        exec psql");
     expect(compose).toContain("--single-transaction");
     expect(compose).toContain("/deploy/compose/provision.sql");
     expect(compose).toContain("/deploy/helm/cloud-agents/files/tenant-bootstrap.sql");
@@ -236,9 +233,7 @@ describe("platform release", () => {
     expect(paths).toContain("contracts/managed-host/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/worker/runtime/v1alpha1/runtime.proto");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
-    expect(paths).toContain(
-      "contracts/platform/v1alpha1/schemas/environment-lease.schema.json",
-    );
+    expect(paths).toContain("contracts/platform/v1alpha1/schemas/environment-lease.schema.json");
     expect(paths).not.toContain("contracts/platform/v1alpha1/fixtures/manifest.json");
     expect(
       paths.some((path) => path.includes("generation.lock") || path.includes("docs/plan")),
