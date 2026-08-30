@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 )
@@ -119,6 +120,26 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 	}
 }
 
+func TestRuntimeTerminalDigestBindsPublicMessage(t *testing.T) {
+	original := runtimeprotocol.Message{RequestID: "request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done", "providerResumeCursor": "private-cursor"}}
+	public := publicRuntimeMessage(original)
+	if _, exists := public.Payload["providerResumeCursor"]; exists || original.Payload["providerResumeCursor"] != "private-cursor" {
+		t.Fatalf("public/original payload = %#v / %#v", public.Payload, original.Payload)
+	}
+	digest, err := RuntimeMessageDigest(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7, ResultDigest: digest, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idempotency-key-1234"}}, ProviderResumeCursor: "private-cursor", TerminalMessage: public}
+	if _, err := RuntimeExecutionCompleteMutationDigest(input); err != nil {
+		t.Fatal(err)
+	}
+	input.ResultDigest = "sha256:" + strings.Repeat("0", 64)
+	if _, err := RuntimeExecutionCompleteMutationDigest(input); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("mismatched terminal digest error = %v", err)
+	}
+}
+
 func TestDeriveRuntimeWorkspacePathsScopesSessionStateAndExecutionOutput(t *testing.T) {
 	scope := Scope{TenantID: "tenant", ProjectID: "project"}
 	first, err := deriveRuntimeWorkspacePaths("/workspace", scope, "session", "turn-a", "execution-a")
@@ -150,7 +171,12 @@ func TestDeriveRuntimeWorkspacePathsScopesSessionStateAndExecutionOutput(t *test
 }
 
 func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *testing.T) {
-	store := &durableRuntimeExecutionStoreFake{}
+	terminal := runtimeprotocol.Message{RequestID: "request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "persisted"}}
+	digest, err := RuntimeMessageDigest(terminal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionSucceeded, ResultDigest: digest, TerminalMessage: &terminal}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
 		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
@@ -162,7 +188,7 @@ func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *tes
 		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
 		Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
 	})
-	if err != nil || result.Transition.Execution.State != ExecutionSucceeded {
+	if err != nil || result.Transition.Execution.State != ExecutionSucceeded || len(result.Messages) != 1 || result.Messages[0].Payload["text"] != "persisted" {
 		t.Fatalf("result=%#v err=%v", result, err)
 	}
 	if !reflect.DeepEqual(store.calls, []string{"session", "turn", "execution"}) {

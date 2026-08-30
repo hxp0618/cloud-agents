@@ -171,7 +171,11 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 		writeManagedAgentSessionError(writer, status, code)
 		return
 	}
-	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, nil)
+	var messages []runtimeprotocol.Message
+	if execution.TerminalMessage != nil {
+		messages = []runtimeprotocol.Message{*execution.TerminalMessage}
+	}
+	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, messages)
 }
 
 func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {

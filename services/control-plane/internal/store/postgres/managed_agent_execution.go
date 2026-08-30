@@ -1,11 +1,15 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
@@ -15,21 +19,29 @@ import (
 var ErrManagedAgentExecutionNotFound = errors.New("managed agent execution was not found")
 
 const (
-	createManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at
-FROM cloud_agents.create_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
+	createManagedAgentExecutionSQL = `WITH created AS (
+    SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at
+    FROM cloud_agents.create_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)
+)
+SELECT created.execution_uid, created.generation, created.state, created.result_digest, created.error_code,
+    created.resource_version, created.created_at, created.updated_at, execution.terminal_message
+FROM created
+JOIN cloud_agents.managed_agent_executions AS execution
+    ON execution.tenant_id = $1 AND execution.project_uid = $2 AND execution.session_uid = $3
+    AND execution.turn_uid = $4 AND execution.execution_uid = created.execution_uid`
 	startManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.start_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	settleManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.settle_managed_agent_execution_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+FROM cloud_agents.settle_managed_agent_execution_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 	cancelManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.cancel_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	interruptManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.interrupt_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
-	getManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at
+	getManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at, terminal_message
 FROM cloud_agents.managed_agent_executions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3 AND execution_uid = $4`
@@ -112,7 +124,11 @@ func (service *DurableCoordinationService) CompleteManagedAgentExecution(
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor)
+	terminalMessage, err := json.Marshal(input.TerminalMessage)
+	if err != nil {
+		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+	}
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor, string(terminalMessage))
 }
 
 func (service *DurableCoordinationService) FailManagedAgentExecution(
@@ -125,7 +141,7 @@ func (service *DurableCoordinationService) FailManagedAgentExecution(
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "")
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "", "")
 }
 
 func (service *DurableCoordinationService) CancelManagedAgentExecution(
@@ -201,7 +217,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	scope internalmanagedagent.Scope,
 	sessionID, turnID, executionID string,
 	generation uint64,
-	outcome, resultDigest, errorCode, idempotencyKey, requestDigest, providerResumeCursor string,
+	outcome, resultDigest, errorCode, idempotencyKey, requestDigest, providerResumeCursor, terminalMessage string,
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
 	if service == nil || service.runner == nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrNilCoordinationRunner
@@ -213,7 +229,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
-			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor)), scope, sessionID, &result); err != nil {
+			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage)), scope, sessionID, &result); err != nil {
 			return err
 		}
 		operation := "execution.complete"
@@ -300,8 +316,8 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	}
 	var generation, version int64
 	var state string
-	var resultDigest, errorCode *string
-	if err := row.Scan(&result.ExecutionID, &generation, &state, &resultDigest, &errorCode, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
+	var resultDigest, errorCode, terminalMessage *string
+	if err := row.Scan(&result.ExecutionID, &generation, &state, &resultDigest, &errorCode, &version, &result.CreatedAt, &result.UpdatedAt, &terminalMessage); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -324,8 +340,37 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	if (result.State == internalmanagedagent.ExecutionSucceeded && result.ResultDigest == "") || (result.State == internalmanagedagent.ExecutionFailed && result.ErrorCode == "") {
 		return fmt.Errorf("%w: managed agent execution terminal projection", ErrCoordinationResultDrift)
 	}
+	if terminalMessage != nil {
+		message, err := decodePersistedRuntimeMessage(*terminalMessage)
+		if err != nil || result.State != internalmanagedagent.ExecutionSucceeded || message.MessageType != "Result" || message.ExecutionID != result.ExecutionID || message.Generation != result.Generation {
+			return fmt.Errorf("%w: managed agent execution terminal message", ErrCoordinationResultDrift)
+		}
+		digest, err := internalmanagedagent.RuntimeMessageDigest(message)
+		if err != nil || digest != result.ResultDigest {
+			return fmt.Errorf("%w: managed agent execution terminal digest", ErrCoordinationResultDrift)
+		}
+		result.TerminalMessage = &message
+	}
 	result.Version = uint64(version)
 	return nil
+}
+
+func decodePersistedRuntimeMessage(value string) (runtimeprotocol.Message, error) {
+	if len(value) == 0 || len(value) > runtimeprotocol.MaxMessageBytes {
+		return runtimeprotocol.Message{}, ErrCoordinationResultDrift
+	}
+	decoder := json.NewDecoder(bytes.NewBufferString(value))
+	decoder.DisallowUnknownFields()
+	var message runtimeprotocol.Message
+	var trailing any
+	if err := decoder.Decode(&message); err != nil || decoder.Decode(&trailing) != io.EOF || runtimeprotocol.ValidateMessage(message) != nil {
+		return runtimeprotocol.Message{}, ErrCoordinationResultDrift
+	}
+	encoded, err := json.Marshal(message)
+	if err != nil || !bytes.Equal(encoded, []byte(value)) {
+		return runtimeprotocol.Message{}, ErrCoordinationResultDrift
+	}
+	return message, nil
 }
 
 func scanManagedAgentExecutionTransition(row rowScanner, scope internalmanagedagent.Scope, sessionID string, result *internalmanagedagent.ExecutionTransitionResult) error {

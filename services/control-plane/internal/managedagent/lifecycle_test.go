@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
 var lifecycleTestScope = Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}
@@ -152,12 +154,18 @@ func TestLifecycleHappyPathAndIdempotentReplay(t *testing.T) {
 func TestRuntimeCompletionPersistsPrivateResumeCursor(t *testing.T) {
 	store := newTestStore(t, newTestClock())
 	createLifecycle(t, store, "session-resume", "turn-resume", "execution-resume")
+	terminal := runtimeprotocol.Message{RequestID: "request-resume", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-resume", Generation: 1, CommandID: "command-resume", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done"}}
+	resultDigest, err := RuntimeMessageDigest(terminal)
+	if err != nil {
+		t.Fatal(err)
+	}
 	input := CompleteRuntimeExecutionInput{
 		CompleteExecutionInput: CompleteExecutionInput{
 			Scope: lifecycleTestScope, SessionID: "session-resume", TurnID: "turn-resume", ExecutionID: "execution-resume", Generation: 1,
-			ResultDigest: "sha256:" + strings.Repeat("a", 64), Mutation: Mutation{RequestID: "request-resume", IdempotencyKey: "idem-resume"},
+			ResultDigest: resultDigest, Mutation: Mutation{RequestID: "request-resume", IdempotencyKey: "idem-resume"},
 		},
 		ProviderResumeCursor: "provider-thread-resume",
+		TerminalMessage:      terminal,
 	}
 	if _, err := store.CompleteRuntimeExecution(context.Background(), input); err != nil {
 		t.Fatal(err)

@@ -250,7 +250,11 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return coordinator.fail(principalSource, input, ExecutionTransitionResult{Turn: turn, Execution: execution}, nil, "orphaned_execution", errors.New("running Runtime execution has no active owner"))
 	}
 	if execution.State != ExecutionQueued {
-		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}}, nil
+		var messages []runtimeprotocol.Message
+		if execution.TerminalMessage != nil {
+			messages = []runtimeprotocol.Message{*execution.TerminalMessage}
+		}
+		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: messages}, nil
 	}
 	principal, err = nextVerifiedPrincipal(principalSource)
 	if err != nil {
@@ -285,7 +289,8 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		}
 		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, code, errors.New(code))
 	}
-	digest, err := RuntimeMessageDigest(runtimeResult.Terminal)
+	terminal := publicRuntimeMessage(runtimeResult.Terminal)
+	digest, err := RuntimeMessageDigest(terminal)
 	if err != nil {
 		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, "runtime_result_invalid", err)
 	}
@@ -293,7 +298,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
-	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor})
+	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor, TerminalMessage: terminal})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
@@ -443,13 +448,17 @@ func runtimeProviderResumeCursor(message runtimeprotocol.Message) (string, error
 
 func appendPublicRuntimeMessages(destination []runtimeprotocol.Message, messages ...runtimeprotocol.Message) []runtimeprotocol.Message {
 	for _, message := range messages {
-		if _, exists := message.Payload["providerResumeCursor"]; exists {
-			message.Payload = maps.Clone(message.Payload)
-			delete(message.Payload, "providerResumeCursor")
-		}
-		destination = append(destination, message)
+		destination = append(destination, publicRuntimeMessage(message))
 	}
 	return destination
+}
+
+func publicRuntimeMessage(message runtimeprotocol.Message) runtimeprotocol.Message {
+	if _, exists := message.Payload["providerResumeCursor"]; exists {
+		message.Payload = maps.Clone(message.Payload)
+		delete(message.Payload, "providerResumeCursor")
+	}
+	return message
 }
 
 func deriveRuntimeWorkspacePaths(base string, scope Scope, sessionID, turnID, executionID string) (runtimeWorkspacePaths, error) {
@@ -519,6 +528,22 @@ func RuntimeMessageDigest(message runtimeprotocol.Message) (string, error) {
 	}
 	digest := sha256.Sum256(encoded)
 	return "sha256:" + hex.EncodeToString(digest[:]), nil
+}
+
+func validateRuntimeTerminalMessage(input CompleteRuntimeExecutionInput) error {
+	message := input.TerminalMessage
+	if runtimeprotocol.ValidateMessage(message) != nil || message.MessageType != "Result" || message.ExecutionID != input.ExecutionID || message.Generation != input.Generation {
+		return fmt.Errorf("%w: Runtime terminal message", ErrInvalidInput)
+	}
+	encoded, err := json.Marshal(message)
+	if err != nil || len(encoded) > runtimeprotocol.MaxMessageBytes {
+		return fmt.Errorf("%w: Runtime terminal message", ErrInvalidInput)
+	}
+	digest, err := RuntimeMessageDigest(message)
+	if err != nil || digest != input.ResultDigest {
+		return fmt.Errorf("%w: Runtime terminal digest", ErrInvalidInput)
+	}
+	return nil
 }
 
 func ValidRuntimeErrorCode(value string) bool {

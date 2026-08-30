@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
 const (
@@ -211,6 +213,7 @@ type CompleteExecutionInput struct {
 type CompleteRuntimeExecutionInput struct {
 	CompleteExecutionInput
 	ProviderResumeCursor string
+	TerminalMessage      runtimeprotocol.Message
 }
 
 type FailExecutionInput struct {
@@ -271,17 +274,18 @@ type TurnSnapshot struct {
 }
 
 type ExecutionSnapshot struct {
-	Scope        Scope
-	SessionID    string
-	TurnID       string
-	ExecutionID  string
-	Generation   uint64
-	State        ExecutionState
-	ResultDigest string
-	ErrorCode    string
-	Version      uint64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	Scope           Scope
+	SessionID       string
+	TurnID          string
+	ExecutionID     string
+	Generation      uint64
+	State           ExecutionState
+	ResultDigest    string
+	ErrorCode       string
+	TerminalMessage *runtimeprotocol.Message
+	Version         uint64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // ExecutionTransitionResult returns both coupled rows after an execution
@@ -585,6 +589,9 @@ func (store *Store) CompleteExecution(ctx context.Context, input CompleteExecuti
 // CompleteRuntimeExecution atomically advances the lifecycle and the
 // Provider-private continuation cursor.
 func (store *Store) CompleteRuntimeExecution(ctx context.Context, input CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
+	if err := validateRuntimeTerminalMessage(input); err != nil {
+		return ExecutionTransitionResult{}, err
+	}
 	return store.completeExecution(ctx, input.CompleteExecutionInput, input.ProviderResumeCursor)
 }
 
@@ -1044,6 +1051,9 @@ func ExecutionCompleteMutationDigest(input CompleteExecutionInput) (string, erro
 // RuntimeExecutionCompleteMutationDigest binds Provider-private continuation
 // state to durable completion idempotency without exposing it publicly.
 func RuntimeExecutionCompleteMutationDigest(input CompleteRuntimeExecutionInput) (string, error) {
+	if err := validateRuntimeTerminalMessage(input); err != nil {
+		return "", err
+	}
 	return executionCompleteMutationDigest(input.CompleteExecutionInput, input.ProviderResumeCursor)
 }
 

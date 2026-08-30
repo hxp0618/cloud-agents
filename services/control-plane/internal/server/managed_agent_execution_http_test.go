@@ -117,7 +117,8 @@ func (fake *managedAgentExecutionVerifierFake) Verify(_ string, _ authn.Verifica
 
 func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	verifier := &projectHTTPVerifierFake{}
-	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)}}
+	terminal := runtimeprotocol.Message{RequestID: "request-alpha", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "persisted"}}
+	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionSucceeded, TerminalMessage: &terminal, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)}}
 	cancelledExecution := store.execution
 	cancelledExecution.State = internalmanagedagent.ExecutionCancelled
 	cancelledExecution.ErrorCode = "cancelled"
@@ -150,7 +151,7 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	get.Header.Set("X-Request-ID", "request-get")
 	got := httptest.NewRecorder()
 	handler.ServeHTTP(got, get)
-	if got.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.get" || store.gotTurn != "turn-alpha" || store.gotExec != "execution-alpha" {
+	if got.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.get" || store.gotTurn != "turn-alpha" || store.gotExec != "execution-alpha" || !strings.Contains(got.Body.String(), `"text":"persisted"`) {
 		t.Fatalf("get status=%d verification=%#v turn=%q execution=%q body=%s", got.Code, verifier.seen, store.gotTurn, store.gotExec, got.Body.String())
 	}
 
