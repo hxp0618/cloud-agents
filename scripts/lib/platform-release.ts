@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 
 import { createDeterministicUstar } from "./platform-migration-ustar";
 
@@ -29,6 +30,7 @@ export const PLATFORM_RELEASE_MIGRATIONS = "cloud-agents-migrations-000028.tar";
 export const PLATFORM_RELEASE_DEPLOYMENT = "cloud-agents-deployment-000028.tar";
 export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
 export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
+export const PLATFORM_RELEASE_TYPESCRIPT_SDK = "cloud-agents-typescript-sdk.tgz";
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -197,6 +199,42 @@ export function buildPlatformGoSDKPackage(root: string): Uint8Array {
   );
 }
 
+export function buildPlatformTypeScriptSDKPackage(root: string, version: string): Uint8Array {
+  if (!SEMVER.test(version)) throw new Error("TypeScript SDK version is not semver.");
+  const source = JSON.parse(
+    readFileSync(resolve(root, "sdk/typescript/package.json"), "utf8"),
+  ) as Record<string, unknown>;
+  if (source.name !== "@synara/cloud-agent-platform-sdk") {
+    throw new Error("TypeScript SDK package identity is invalid.");
+  }
+  const manifest = {
+    ...source,
+    version,
+    description: "Cloud Agents Platform TypeScript SDK",
+    files: ["dist", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md"],
+  };
+  delete manifest.private;
+  delete manifest.scripts;
+  delete manifest.devDependencies;
+  const files = [
+    "sdk/typescript/LICENSE",
+    "sdk/typescript/README.md",
+    "sdk/typescript/THIRD_PARTY_NOTICES.md",
+    ...readTree(root, "sdk/typescript/dist"),
+  ];
+  const archive = createDeterministicUstar([
+    {
+      path: "package/package.json",
+      data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`),
+    },
+    ...files.map((path) => ({
+      path: `package/${path.replace("sdk/typescript/", "")}`,
+      data: readFileSync(resolve(root, path)),
+    })),
+  ]);
+  return gzipSync(archive, { level: 9 });
+}
+
 export function validatePlatformReleaseManifest(
   manifest: unknown,
 ): asserts manifest is PlatformReleaseManifest {
@@ -264,6 +302,7 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
     { name: "cloud-agents-deployment", target: "portable" },
     { name: "cloud-agents-contracts", target: "portable" },
     { name: "cloud-agents-go-sdk", target: "portable" },
+    { name: "cloud-agents-typescript-sdk", target: "portable" },
   ];
 }
 
@@ -271,7 +310,7 @@ export function expectedArtifactCount(): number {
   return (
     PLATFORM_RELEASE_TARGETS.length * (PLATFORM_RELEASE_GO_COMMANDS.length - 1) +
     PLATFORM_RELEASE_CLI_TARGETS.length +
-    5
+    6
   );
 }
 

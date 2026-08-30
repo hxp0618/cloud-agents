@@ -6,6 +6,7 @@ import {
   expectedArtifactCount,
   buildPlatformContractPackage,
   buildPlatformGoSDKPackage,
+  buildPlatformTypeScriptSDKPackage,
   buildPlatformMigrationPackage,
   buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
@@ -13,6 +14,7 @@ import {
   PLATFORM_RELEASE_CONTRACTS,
   PLATFORM_RELEASE_DEPLOYMENT,
   PLATFORM_RELEASE_GO_SDK,
+  PLATFORM_RELEASE_TYPESCRIPT_SDK,
   PLATFORM_RELEASE_GO_COMMANDS,
   PLATFORM_RELEASE_CLI_TARGETS,
   PLATFORM_RELEASE_MIGRATIONS,
@@ -113,6 +115,19 @@ const sdkBytes = buildPlatformGoSDKPackage(repositoryRoot);
 writeFileSync(sdkOutput, sdkBytes, { mode: 0o444 });
 artifacts.push(
   platformReleaseArtifact("cloud-agents-go-sdk", "portable", PLATFORM_RELEASE_GO_SDK, sdkBytes),
+);
+
+run("bun", ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
+const typescriptSDKOutput = join(options.outputDirectory, PLATFORM_RELEASE_TYPESCRIPT_SDK);
+const typescriptSDKBytes = buildPlatformTypeScriptSDKPackage(repositoryRoot, options.version);
+writeFileSync(typescriptSDKOutput, typescriptSDKBytes, { mode: 0o444 });
+artifacts.push(
+  platformReleaseArtifact(
+    "cloud-agents-typescript-sdk",
+    "portable",
+    PLATFORM_RELEASE_TYPESCRIPT_SDK,
+    typescriptSDKBytes,
+  ),
 );
 
 artifacts.sort((left, right) => left.filename.localeCompare(right.filename));

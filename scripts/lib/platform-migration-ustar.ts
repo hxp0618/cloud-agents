@@ -46,7 +46,7 @@ export function readDeterministicUstar(bytes: Uint8Array): ReadonlyArray<UstarEn
   let previous = "";
   const seen = new Set<string>();
   while (offset < bytes.length - BLOCK * 2) {
-    const header = bytes.slice(offset, offset + BLOCK);
+    const header = Uint8Array.from(bytes.subarray(offset, offset + BLOCK));
     if (isZeroBlock(header)) throw new MigrationValidationError("USTAR_EARLY_END", String(offset));
     const storedChecksum = readOctal(header, 148, 8);
     const checksumHeader = header.slice();

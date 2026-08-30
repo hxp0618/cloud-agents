@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { readDeterministicUstar } from "./platform-migration-ustar";
@@ -7,6 +8,7 @@ import {
   expectedArtifactIdentities,
   buildPlatformContractPackage,
   buildPlatformGoSDKPackage,
+  buildPlatformTypeScriptSDKPackage,
   buildPlatformMigrationPackage,
   buildPlatformDeploymentPackage,
   parsePlatformReleaseOptions,
@@ -292,5 +294,37 @@ describe("platform release", () => {
           path.includes("platformadapter"),
       ),
     ).toBe(false);
+  });
+
+  it("packages an installable public TypeScript SDK without internal provenance", () => {
+    const version = "0.1.0-rc.1";
+    const first = buildPlatformTypeScriptSDKPackage(process.cwd(), version);
+    const second = buildPlatformTypeScriptSDKPackage(process.cwd(), version);
+    expect(Buffer.from(first).equals(Buffer.from(second))).toBe(true);
+    const entries = readDeterministicUstar(gunzipSync(first));
+    const paths = entries.map(({ path }) => path);
+    expect(paths).toContain("package/package.json");
+    expect(paths).toContain("package/dist/platform.mjs");
+    expect(paths).toContain("package/dist/platform.d.mts");
+    expect(paths).toContain("package/LICENSE");
+    expect(
+      paths.some(
+        (path) =>
+          path.includes("generated-manifest") ||
+          path.includes("/src/") ||
+          path.endsWith(".test.ts"),
+      ),
+    ).toBe(false);
+    const packageJSON = entries.find(({ path }) => path === "package/package.json");
+    expect(packageJSON).toBeDefined();
+    const manifest = JSON.parse(new TextDecoder().decode(packageJSON?.data)) as Record<
+      string,
+      unknown
+    >;
+    expect(manifest.name).toBe("@synara/cloud-agent-platform-sdk");
+    expect(manifest.version).toBe(version);
+    expect(manifest.private).toBeUndefined();
+    expect(manifest.scripts).toBeUndefined();
+    expect(manifest.devDependencies).toBeUndefined();
   });
 });

@@ -17,6 +17,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { buildPlatformTypeScriptSDKPackage } from "./lib/platform-release";
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const toolchainRoot = process.env.CLOUD_AGENTS_A24_TOOLCHAIN;
 const bun = toolchainRoot ? join(toolchainRoot, "bun") : "bun";
@@ -190,21 +192,9 @@ function packTypeScriptSDK(root: string): Artifact {
   run(bun, ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
   const output = join(root, "typescript-pack");
   mkdirSync(output, { recursive: true });
-  const packed = run(
-    "npm",
-    ["pack", "--json", "--pack-destination", output, resolve(repositoryRoot, "sdk/typescript")],
-    repositoryRoot,
-  );
-  const records: unknown = JSON.parse(packed);
-  if (!Array.isArray(records) || records.length !== 1 || !isRecord(records[0])) {
-    throw new Error("TypeScript SDK pack did not return exactly one artifact.");
-  }
-  const filename = records[0].filename;
-  if (typeof filename !== "string" || filename.length === 0) {
-    throw new Error("TypeScript SDK pack omitted its filename.");
-  }
+  const filename = `synara-cloud-agent-platform-sdk-${packageVersion}.tgz`;
   const path = join(output, filename);
-  if (!existsSync(path)) throw new Error(`TypeScript SDK tarball is missing: ${path}`);
+  writeFileSync(path, buildPlatformTypeScriptSDKPackage(repositoryRoot, packageVersion));
   return artifact(path);
 }
 
@@ -414,7 +404,7 @@ try {
   }
   const installedManifest = join(consumer, "node_modules", sdkPackage, "package.json");
   const manifest = JSON.parse(readFileSync(installedManifest, "utf8")) as Record<string, unknown>;
-  if (manifest.name !== sdkPackage || manifest.version !== "0.0.0-a3.2") {
+  if (manifest.name !== sdkPackage || manifest.version !== packageVersion) {
     throw new Error("Fresh TypeScript consumer did not install the exact SDK package.");
   }
   assertExactDependency(manifest, "@bufbuild/protobuf", "2.14.0");
