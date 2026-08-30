@@ -1,0 +1,31 @@
+{
+  "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+  "kind": "OrganizationPage",
+  "organizations": [
+    {
+      "apiVersion": "platform.cloud-agents.dev/v1alpha1",
+      "kind": "Organization",
+      "metadata": {
+        "uid": "organization-alpha",
+        "name": "organization-alpha",
+        "tenantRef": {
+          "namespace": "cloud-agents",
+          "kind": "tenant",
+          "id": "tenant-alpha"
+        },
+        "resourceVersion": "2",
+        "createdAt": "2025-01-01T00:00:00Z",
+        "updatedAt": "2025-01-01T00:00:00Z"
+      },
+      "spec": {
+        "tenantRef": {
+          "namespace": "cloud-agents",
+          "kind": "tenant",
+          "id": "tenant-alpha"
+        },
+        "displayName": "Organization Alpha",
+        "state": "active"
+      }
+    }
+  ]
+}

@@ -89,6 +89,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		{"memberships.update", "tenant", "tenant-1"},
 		{"organizations.create", "tenant", "tenant-1"},
 		{"organizations.get", "organization", "organization-1"},
+		{"organizations.list", "tenant", "tenant-1"},
 		{"projects.act", "project", "project-1"},
 		{"projects.create", "organization", "organization-1"},
 		{"projects.get", "project", "project-1"},

@@ -16,9 +16,19 @@ import (
 
 type organizationHTTPReaderFake struct {
 	organization postgres.Organization
+	page         postgres.OrganizationPage
 	err          error
 	calls        int
 	created      postgres.CreateOrganizationInput
+	afterUID     string
+	limit        int
+}
+
+func (fake *organizationHTTPReaderFake) ListOrganizations(_ context.Context, _ string, _ *authn.VerifiedPrincipal, afterUID string, limit int) (postgres.OrganizationPage, error) {
+	fake.calls++
+	fake.afterUID = afterUID
+	fake.limit = limit
+	return fake.page, fake.err
 }
 
 func (fake *organizationHTTPReaderFake) GetOrganization(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string) (postgres.Organization, error) {
@@ -91,6 +101,74 @@ func TestOrganizationHTTPServerCreatesAtTenantScope(t *testing.T) {
 	value, err := platformv1alpha1.DecodeOrganizationResponseJSON(response.Body.Bytes())
 	if err != nil || value.Value.Metadata.UID != "organization-beta" {
 		t.Fatalf("create response = %#v, %v", value, err)
+	}
+}
+
+func TestOrganizationHTTPServerListsAtTenantScope(t *testing.T) {
+	now := time.Date(2026, time.August, 30, 8, 0, 0, 0, time.UTC)
+	verifier := &projectHTTPVerifierFake{}
+	service := &organizationHTTPReaderFake{page: postgres.OrganizationPage{
+		Organizations: []postgres.Organization{{
+			UID: "organization-alpha", Name: "organization-alpha", TenantID: "tenant-alpha",
+			DisplayName: "Organization Alpha", State: "active", ResourceVersion: 5, CreatedAt: now, UpdatedAt: now,
+		}},
+		NextOrganizationUID: "organization-alpha",
+	}}
+	server, err := NewOrganizationHTTPServer(verifier, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/organizations?pageSize=1", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-list")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || service.calls != 1 || service.afterUID != "" || service.limit != 1 {
+		t.Fatalf("status=%d calls=%d after=%q limit=%d body=%s", response.Code, service.calls, service.afterUID, service.limit, response.Body.String())
+	}
+	page, err := platformv1alpha1.DecodeOrganizationPageResponseJSON(response.Body.Bytes())
+	if err != nil || len(page.Value.Organizations) != 1 || page.Value.NextPageToken == "" {
+		t.Fatalf("organization page = %#v / %v", page, err)
+	}
+	if after, ok := decodeOrganizationPageToken("tenant-alpha", page.Value.NextPageToken); !ok || after != "organization-alpha" {
+		t.Fatalf("next page token = %q / %q / %t", page.Value.NextPageToken, after, ok)
+	}
+	if verifier.seen != (authn.VerificationRequest{TenantID: "tenant-alpha", ResourceLevel: "tenant", ResourceID: "tenant-alpha", RequiredPermission: "organizations.list"}) {
+		t.Fatalf("verification request = %#v", verifier.seen)
+	}
+}
+
+func TestOrganizationHTTPServerRejectsInvalidPagination(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	service := &organizationHTTPReaderFake{}
+	server, err := NewOrganizationHTTPServer(verifier, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{
+		"/v1/tenants/tenant-alpha/organizations?pageSize=0",
+		"/v1/tenants/tenant-alpha/organizations?pageSize=1&pageSize=2",
+		"/v1/tenants/tenant-alpha/organizations?pageToken=short",
+		"/v1/tenants/tenant-alpha/organizations?unknown=true",
+	} {
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		request.Header.Set("Authorization", "Bearer access-token")
+		request.Header.Set("X-Request-ID", "request-list")
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s status=%d body=%s", target, response.Code, response.Body.String())
+		}
+	}
+	if service.calls != 0 {
+		t.Fatalf("invalid pagination reached store %d times", service.calls)
+	}
+	token, ok := encodeOrganizationPageToken("tenant-alpha", "organization-alpha")
+	if !ok {
+		t.Fatal("valid page token was not encoded")
+	}
+	if _, ok := decodeOrganizationPageToken("tenant-beta", token); ok {
+		t.Fatal("cross-tenant page token was accepted")
 	}
 }
 

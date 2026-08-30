@@ -24,9 +24,9 @@ describe("platform JSON SDK generator", () => {
     const inputs = platformJSONSDKAuthorityProfileInputs();
     expect(inputs).toEqual([...inputs].toSorted());
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");
-	  expect(platformJSONSDKAuthorityProfileDigest(root)).toBe(
-		"sha256:c6717046050b763100f5502232edb0fd89b1a084bd68cb0c154370b8ebfd611c",
-	  );
+    expect(platformJSONSDKAuthorityProfileDigest(root)).toBe(
+      "sha256:fbe6fafc2d7baaa50b0aed345b1ad078b1f0dc618fee127bdf5e0630bccafeed",
+    );
   });
 
   it("binds sorted unique JSON Schema, OpenAPI, fixture, generator, and entry inputs", () => {

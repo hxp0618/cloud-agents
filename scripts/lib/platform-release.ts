@@ -298,6 +298,7 @@ const PUBLIC_PLATFORM_CONTRACT_PATHS = [
   "contracts/platform/v1alpha1/schemas/membership.schema.json",
   "contracts/platform/v1alpha1/schemas/membership-transition-request.schema.json",
   "contracts/platform/v1alpha1/schemas/organization-create-request.schema.json",
+  "contracts/platform/v1alpha1/schemas/organization-page.schema.json",
   "contracts/platform/v1alpha1/schemas/organization.schema.json",
   "contracts/platform/v1alpha1/schemas/permission.schema.json",
   "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",

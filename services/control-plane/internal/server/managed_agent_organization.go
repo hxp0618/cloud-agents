@@ -13,6 +13,7 @@ var ErrNilManagedAgentOrganizationReadService = errors.New("managed agent organi
 
 type ManagedAgentOrganizationReader interface {
 	GetOrganization(context.Context, string, *authn.VerifiedPrincipal, string) (postgres.Organization, error)
+	ListOrganizations(context.Context, string, *authn.VerifiedPrincipal, string, int) (postgres.OrganizationPage, error)
 	CreateOrganization(context.Context, string, *authn.VerifiedPrincipal, postgres.CreateOrganizationInput) (postgres.Organization, error)
 }
 

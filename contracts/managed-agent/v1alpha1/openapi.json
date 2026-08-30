@@ -99,6 +99,44 @@
       }
     },
     "/v1/tenants/{tenantId}/organizations": {
+      "get": {
+        "operationId": "managedAgentListOrganizations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/organization-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
       "post": {
         "operationId": "managedAgentCreateOrganization",
         "parameters": [
@@ -826,6 +864,22 @@
         "required": true,
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "OrganizationPageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/page-size.schema.json"
+        }
+      },
+      "OrganizationPageToken": {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/page-token.schema.json"
         }
       },
       "ProjectId": {

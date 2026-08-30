@@ -236,6 +236,7 @@ describe("platform release", () => {
     expect(paths).toContain(
       "contracts/platform/v1alpha1/schemas/organization-create-request.schema.json",
     );
+    expect(paths).toContain("contracts/platform/v1alpha1/schemas/organization-page.schema.json");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/environment-lease.schema.json");
     expect(paths).not.toContain("contracts/platform/v1alpha1/fixtures/manifest.json");
     expect(

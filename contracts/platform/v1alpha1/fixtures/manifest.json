@@ -16,6 +16,13 @@
       "expectedSemanticValid": true
     },
     {
+      "name": "organization-page",
+      "schema": "../schemas/organization-page.schema.json",
+      "instance": "golden/organization-page.json",
+      "expectedSchemaValid": true,
+      "expectedSemanticValid": true
+    },
+    {
       "name": "project",
       "schema": "../schemas/project.schema.json",
       "instance": "golden/project.json",

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -40,7 +41,7 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 		return
 	}
 	if request.Method == http.MethodPost {
-		tenantID, ok := organizationCreatePath(request.URL.Path)
+		tenantID, ok := organizationCollectionPath(request.URL.Path)
 		if !ok {
 			writeOrganizationError(writer, http.StatusNotFound, "route_not_found")
 			return
@@ -51,6 +52,10 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 	if request.Method != http.MethodGet {
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writeOrganizationError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	if tenantID, ok := organizationCollectionPath(request.URL.Path); ok {
+		server.list(writer, request, tenantID)
 		return
 	}
 	tenantID, organizationID, ok := organizationPath(request.URL.Path)
@@ -91,6 +96,55 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 		return
 	}
 	server.writeOrganization(writer, requestID, http.StatusOK, organization)
+}
+
+func (server *OrganizationHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	pageSize, pageToken, ok := organizationPagination(request)
+	if !ok {
+		writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListOrganizationsServerRequest(tenantID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterOrganizationUID := ""
+	if validated.PageToken != "" {
+		if afterOrganizationUID, ok = decodeOrganizationPageToken(validated.TenantID, validated.PageToken); !ok {
+			writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "organizations.list",
+	})
+	if err != nil {
+		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.reader.ListOrganizations(request.Context(), validated.TenantID, principal, afterOrganizationUID, validated.PageSize)
+	if err != nil {
+		status, code := organizationErrorStatus(err)
+		writeOrganizationError(writer, status, code)
+		return
+	}
+	server.writeOrganizationPage(writer, validated.RequestID, validated.TenantID, page)
 }
 
 func (server *OrganizationHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID string) {
@@ -156,7 +210,33 @@ func (server *OrganizationHTTPServer) writeOrganization(writer http.ResponseWrit
 	_, _ = writer.Write(body)
 }
 
-func organizationCreatePath(path string) (string, bool) {
+func (server *OrganizationHTTPServer) writeOrganizationPage(writer http.ResponseWriter, requestID, tenantID string, page postgres.OrganizationPage) {
+	organizations := make([]platformv1alpha1.Organization, 0, len(page.Organizations))
+	for _, organization := range page.Organizations {
+		organizations = append(organizations, organizationResource(organization))
+	}
+	nextPageToken := ""
+	if page.NextOrganizationUID != "" {
+		var ok bool
+		nextPageToken, ok = encodeOrganizationPageToken(tenantID, page.NextOrganizationUID)
+		if !ok {
+			writeOrganizationError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	value := platformv1alpha1.OrganizationPage{APIVersion: projectAPIVersion, Kind: "OrganizationPage", Organizations: organizations, NextPageToken: nextPageToken}
+	body, err := platformv1alpha1.EncodeOrganizationPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.OrganizationPage]{Value: value})
+	if err != nil {
+		writeOrganizationError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
+func organizationCollectionPath(path string) (string, bool) {
 	const prefix = "/v1/tenants/"
 	const suffix = "/organizations"
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
@@ -164,6 +244,53 @@ func organizationCreatePath(path string) (string, bool) {
 	}
 	tenantID := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
 	return tenantID, tenantID != "" && !strings.Contains(tenantID, "/")
+}
+
+func organizationPagination(request *http.Request) (int, string, bool) {
+	pageSize := 50
+	pageToken := ""
+	for name, values := range request.URL.Query() {
+		if len(values) != 1 || values[0] == "" {
+			return 0, "", false
+		}
+		switch name {
+		case "pageSize":
+			value, err := strconv.Atoi(values[0])
+			if err != nil {
+				return 0, "", false
+			}
+			pageSize = value
+		case "pageToken":
+			pageToken = values[0]
+		default:
+			return 0, "", false
+		}
+	}
+	return pageSize, pageToken, true
+}
+
+func encodeOrganizationPageToken(tenantID, organizationUID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(organizationUID, "/organizationId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("organization/v1\x00" + tenantID + "\x00" + organizationUID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeOrganizationPageToken(tenantID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 3 || parts[0] != "organization/v1" || parts[1] != tenantID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/organizationId") != nil {
+		return "", false
+	}
+	return parts[2], true
 }
 
 func organizationPath(path string) (string, string, bool) {

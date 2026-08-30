@@ -17,6 +17,7 @@ func TestGeneratedPlatformJSONFixtures(t *testing.T) {
 	}{
 		{"platform-tenant", func(data []byte) error { _, err := DecodePlatformTenantJSON(data); return err }},
 		{"organization", func(data []byte) error { _, err := DecodeOrganizationJSON(data); return err }},
+		{"organization-page", func(data []byte) error { _, err := DecodeOrganizationPageJSON(data); return err }},
 		{"project", func(data []byte) error { _, err := DecodeProjectJSON(data); return err }},
 		{"project-create-request", func(data []byte) error { _, err := DecodeProjectCreateRequestJSON(data); return err }},
 		{"membership", func(data []byte) error { _, err := DecodeMembershipJSON(data); return err }},

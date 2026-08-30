@@ -299,6 +299,7 @@ func validateIdentifier(value, path string) error {
 }
 func ValidateIdentifier(value, path string) error { return validateIdentifier(value, path) }
 func ValidateIdempotencyKey(value, path string) error { return validateIdempotencyKey(value, path) }
+func ValidatePageToken(value, path string) error { return validateToken(value, path) }
 func ValidateResourceVersion(value, path string) error { return validateResourceVersion(value, path) }
 func ValidateDateTime(value, path string) error { return validateDateTime(value, path) }
 func ValidateString(value string, min, max int, path string) error { return validateString(value, min, max, path) }

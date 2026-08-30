@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:6ea1d0f02dcd1093f711dece08136abd93d9996a77a844db10e30490a8a1cf43";
+	"sha256:fbe6fafc2d7baaa50b0aed345b1ad078b1f0dc618fee127bdf5e0630bccafeed";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -47,6 +47,7 @@ const COMMON_SCHEMAS = [
   "identifier.schema.json",
   "organization-authorization-scope.schema.json",
   "organization-ref.schema.json",
+  "page-size.schema.json",
   "page-token.schema.json",
   "pagination.schema.json",
   "platform-authorization-scope.schema.json",
@@ -72,6 +73,7 @@ const PLATFORM_SCHEMAS = [
 	"membership.schema.json",
 	"membership-transition-request.schema.json",
 	"organization-create-request.schema.json",
+	"organization-page.schema.json",
 	"organization.schema.json",
 	"permission.schema.json",
 	"platform-tenant.schema.json",
@@ -379,7 +381,8 @@ function validateJSONSDKAuthority(root: string): void {
 	"managedAgentGetTurn",
 	"managedAgentInterruptExecution",
 	"managedAgentListEvents",
-		"managedAgentRevokeMembership",
+	"managedAgentListOrganizations",
+	"managedAgentRevokeMembership",
 		"managedAgentRevokeRoleBinding",
 		"managedAgentSuspendMembership",
 		"managedHostCreateEnvironmentLease",

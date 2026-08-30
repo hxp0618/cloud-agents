@@ -96,6 +96,7 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 	}{
 		{name: "tenant", args: []string{"tenant", "get"}},
 		{name: "organization", args: []string{"--organization", "organization-alpha", "organization", "get"}},
+		{name: "organization list", args: []string{"organization", "list"}},
 		{name: "project", args: []string{"--project", "project-alpha", "project", "get"}},
 		{name: "membership", args: []string{"--membership", "membership-alpha", "membership", "get"}},
 		{name: "role", args: []string{"--role", "role-alpha", "role", "get"}},
@@ -166,6 +167,29 @@ func TestRunOrganizationCreate(t *testing.T) {
 		}
 	}
 	if !strings.Contains(stdout.String(), `"kind":"Organization"`) {
+		t.Fatalf("output = %q", stdout.String())
+	}
+}
+
+func TestRunOrganizationList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/organizations" || request.URL.Query().Get("pageSize") != "1" || request.URL.Query().Get("pageToken") != "organization-page-token-1" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.String())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"OrganizationPage","organizations":[{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"Organization","metadata":{"uid":"organization-alpha","name":"organization-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"2","createdAt":"2026-08-30T08:00:00Z","updatedAt":"2026-08-30T08:00:00Z"},"spec":{"tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"displayName":"Organization Alpha","state":"active"}}]}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
+		"organization", "list", "--page-size", "1", "--page-token", "organization-page-token-1",
+	}, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"kind":"OrganizationPage"`) {
 		t.Fatalf("output = %q", stdout.String())
 	}
 }
