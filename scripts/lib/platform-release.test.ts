@@ -125,14 +125,22 @@ describe("platform release", () => {
     ]);
   });
 
-  it("keeps the process-local execution coordinator on one Control Plane replica", () => {
+  it("keeps process-local coordinators on singleton replicas", () => {
     const schema = JSON.parse(
       readFileSync("deploy/helm/cloud-agents/values.schema.json", "utf8"),
-    ) as { properties: { controlPlane: { properties: { replicas: { const: number } } } } };
+    ) as {
+      properties: Record<
+        "controlPlane" | "worker",
+        { properties: { replicas: { const: number } } }
+      >;
+    };
     expect(schema.properties.controlPlane.properties.replicas.const).toBe(1);
-    expect(readFileSync("deploy/helm/cloud-agents/templates/control-plane.yaml", "utf8")).toContain(
-      "type: Recreate",
-    );
+    expect(schema.properties.worker.properties.replicas.const).toBe(1);
+    for (const component of ["control-plane", "worker"]) {
+      expect(
+        readFileSync(`deploy/helm/cloud-agents/templates/${component}.yaml`, "utf8"),
+      ).toContain("type: Recreate");
+    }
   });
 
   it("packages an atomic Compose database authority bootstrap", () => {

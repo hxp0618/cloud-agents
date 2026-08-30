@@ -10,6 +10,15 @@
           "const": 1
         }
       }
+    },
+    "worker": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "const": 1
+        }
+      }
     }
   }
 }
