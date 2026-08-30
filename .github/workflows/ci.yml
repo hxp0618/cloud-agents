@@ -19,8 +19,8 @@ jobs:
         with:
           cache: true
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bunx oxfmt .github/workflows deploy/helm/cloud-agents/values.yaml deploy/helm/cloud-agents/values.schema.json packages sdk/typescript scripts/check-platform-go-modules.ts scripts/cloud-agents-platform-release.ts scripts/generate-sbom.ts scripts/secret-scan.ts scripts/lib/platform-go-modules.ts scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.ts scripts/lib/platform-release.test.ts scripts/lib/platform-migration-ustar.ts --check
-      - run: bunx oxlint . --deny-warnings --ignore-pattern scripts/lib/platform-contract-lock.ts
+      - run: bun run fmt:check
+      - run: bun run lint
       - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh
       - run: sh scripts/test-cloud-agents-helm.sh
       - run: bun run platform:go:check

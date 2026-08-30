@@ -307,7 +307,8 @@ function ensureProtoc(
 ): string {
   const installRoot = resolve(cacheRoot, `protoc-${profile.compiler.version}`);
   const binary = resolve(installRoot, "bin/protoc");
-  if (existsSync(binary)) return binary;
+  if (platformProtocInstallationComplete(installRoot)) return binary;
+  rmSync(installRoot, { force: true, recursive: true });
   const staging = mkdtempSync(join(cacheRoot, ".protoc-stage-"));
   try {
     const archive = resolve(staging, basename(new URL(artifact.url).pathname));
@@ -329,6 +330,12 @@ function ensureProtoc(
   } finally {
     rmSync(staging, { force: true, recursive: true });
   }
+}
+
+export function platformProtocInstallationComplete(installRoot: string): boolean {
+  return ["bin/protoc", "include/google/protobuf/timestamp.proto"].every((path) =>
+    existsSync(resolve(installRoot, path)),
+  );
 }
 
 function ensureGoPlugin(go: string, pluginRoot: string, plugin: PluginProfile): string {
