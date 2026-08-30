@@ -32,6 +32,26 @@ func TestHTTPClientUsesBearerAndExistingGeneratedOperation(t *testing.T) {
 	}
 }
 
+func TestHTTPClientUsesProvidedHTTPClient(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set(HeaderResourceVersion, "1")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"PlatformTenant","metadata":{"uid":"tenant-alpha","name":"tenant-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-31T00:00:00Z"},"spec":{"displayName":"Tenant Alpha","state":"active"}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClientWithClient(server.URL, "token-alpha", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetPlatformTenant(context.Background(), "tenant-alpha", "request-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if client, err := NewHTTPClientWithClient(server.URL, "token-alpha", nil); client != nil || err == nil {
+		t.Fatal("nil HTTP client was accepted")
+	}
+}
+
 func TestHTTPClientRejectsUnsafeConfigAndRedirects(t *testing.T) {
 	for _, value := range []struct{ base, token string }{
 		{"", "token"}, {"ftp://example.com", "token"}, {"https://user@example.com", "token"}, {"https://example.com?x=1", "token"}, {"https://example.com", " token"},
@@ -40,7 +60,9 @@ func TestHTTPClientRejectsUnsafeConfigAndRedirects(t *testing.T) {
 			t.Fatalf("unsafe config accepted: %#v", value)
 		}
 	}
+	redirectFollowed := false
 	redirectTarget := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		redirectFollowed = true
 		writer.WriteHeader(http.StatusOK)
 	}))
 	defer redirectTarget.Close()
@@ -54,6 +76,16 @@ func TestHTTPClientRejectsUnsafeConfigAndRedirects(t *testing.T) {
 	}
 	if _, err := client.GetPlatformTenant(context.Background(), "tenant-alpha", "request-alpha"); err == nil {
 		t.Fatal("redirect response unexpectedly decoded as success")
+	}
+	if redirectFollowed {
+		t.Fatal("default HTTP client followed a credentialed redirect")
+	}
+	client, err = NewHTTPClientWithClient(redirect.URL, "token", &http.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetPlatformTenant(context.Background(), "tenant-alpha", "request-alpha"); err == nil || redirectFollowed {
+		t.Fatal("provided HTTP client followed a credentialed redirect")
 	}
 }
 

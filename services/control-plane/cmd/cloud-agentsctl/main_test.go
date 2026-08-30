@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net/http"
@@ -43,6 +44,35 @@ func TestRunProjectGetUsesTokenFile(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"kind":"Project"`) || stderr.Len() != 0 {
 		t.Fatalf("stdout/stderr = %q / %q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunUsesCAFile(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/tenants/tenant-alpha" {
+			t.Fatalf("path = %q", request.URL.Path)
+		}
+		writer.Header().Set("X-Resource-Version", "1")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"PlatformTenant","metadata":{"uid":"tenant-alpha","name":"tenant-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-31T00:00:00Z"},"spec":{"displayName":"Tenant Alpha","state":"active"}}`))
+	}))
+	defer server.Close()
+	caFile := t.TempDir() + "/ca.pem"
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(caFile, certificate, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{"--endpoint", server.URL, "--ca-file", caFile, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(caFile, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = run([]string{"--endpoint", server.URL, "--ca-file", caFile, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
+	if err == nil || err.Error() != "CA file contains no certificates" {
+		t.Fatalf("invalid CA error = %v", err)
 	}
 }
 

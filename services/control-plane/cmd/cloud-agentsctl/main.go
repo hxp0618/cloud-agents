@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +21,7 @@ import (
 
 type globalOptions struct {
 	endpoint       string
+	caFile         string
 	token          string
 	tokenFile      string
 	tenant         string
@@ -37,6 +41,7 @@ type globalOptions struct {
 
 const (
 	maxBearerTokenFileBytes = 16 << 10
+	maxCAFileBytes          = 1 << 20
 	defaultRequestTimeout   = 6 * time.Minute
 )
 
@@ -65,9 +70,9 @@ func run(args []string, stdout io.Writer) error {
 		}
 		token = strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r")
 	}
-	client, err := openapi.NewHTTPClient(options.endpoint, token)
+	client, err := newHTTPClient(options, token)
 	if err != nil {
-		return errors.New("invalid endpoint or bearer token")
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), options.timeout)
 	defer cancel()
@@ -358,11 +363,42 @@ func run(args []string, stdout io.Writer) error {
 	return json.NewEncoder(stdout).Encode(responseValue(value))
 }
 
+func newHTTPClient(options globalOptions, token string) (*openapi.Client, error) {
+	if options.caFile == "" {
+		client, err := openapi.NewHTTPClient(options.endpoint, token)
+		if err != nil {
+			return nil, errors.New("invalid endpoint or bearer token")
+		}
+		return client, nil
+	}
+	file, err := os.Open(options.caFile)
+	if err != nil {
+		return nil, errors.New("cannot read CA file")
+	}
+	contents, readErr := io.ReadAll(io.LimitReader(file, maxCAFileBytes+1))
+	closeErr := file.Close()
+	if readErr != nil || closeErr != nil || len(contents) > maxCAFileBytes {
+		return nil, errors.New("cannot read CA file")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(contents) {
+		return nil, errors.New("CA file contains no certificates")
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: roots}
+	client, err := openapi.NewHTTPClientWithClient(options.endpoint, token, &http.Client{Transport: transport})
+	if err != nil {
+		return nil, errors.New("invalid endpoint or bearer token")
+	}
+	return client, nil
+}
+
 func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set := flag.NewFlagSet("cloud-agentsctl", flag.ContinueOnError)
 	set.SetOutput(io.Discard)
 	var options globalOptions
 	set.StringVar(&options.endpoint, "endpoint", "", "Control Plane URL")
+	set.StringVar(&options.caFile, "ca-file", "", "PEM CA bundle for the Control Plane")
 	set.StringVar(&options.token, "token", "", "bearer token")
 	set.StringVar(&options.tokenFile, "token-file", "", "file containing the bearer token")
 	set.StringVar(&options.tenant, "tenant", "", "tenant identifier")
@@ -398,6 +434,9 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if strings.TrimSpace(options.token) != options.token || strings.TrimSpace(options.tokenFile) != options.tokenFile {
 		return globalOptions{}, "", "", nil, errors.New("bearer token input is invalid")
+	}
+	if strings.TrimSpace(options.caFile) != options.caFile {
+		return globalOptions{}, "", "", nil, errors.New("CA file input is invalid")
 	}
 	if options.timeout <= 0 {
 		return globalOptions{}, "", "", nil, errors.New("--timeout must be greater than zero")
@@ -539,7 +578,7 @@ func requiresIdempotency(command, action string) bool {
 	return (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))
 }
 
-const usage = `usage: cloud-agentsctl --endpoint URL (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]`
+const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]`
 
 type membershipCreateFlags struct {
 	expectedTenantRevision int64

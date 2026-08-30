@@ -20,16 +20,22 @@ var ErrInvalidHTTPClientConfig = errors.New("invalid Cloud Agents HTTP client co
 // Plane endpoint. The bearer is attached by the transport, never by an
 // operation caller, and redirects are disabled to prevent credential leaks.
 func NewHTTPClient(baseURL, bearerToken string) (*Client, error) {
+	return NewHTTPClientWithClient(baseURL, bearerToken, &http.Client{})
+}
+
+// NewHTTPClientWithClient creates the public SDK client with a caller-provided
+// HTTP client. Redirects remain disabled so bearer credentials cannot leak.
+func NewHTTPClientWithClient(baseURL, bearerToken string, client *http.Client) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" || strings.HasSuffix(parsed.Path, "/") {
+	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" || strings.HasSuffix(parsed.Path, "/") || client == nil {
 		return nil, ErrInvalidHTTPClientConfig
 	}
 	if strings.TrimSpace(bearerToken) != bearerToken || bearerToken == "" || strings.ContainsAny(bearerToken, " \t\r\n") {
 		return nil, ErrInvalidHTTPClientConfig
 	}
-	return NewClient(httpTransport{baseURL: strings.TrimSuffix(baseURL, "/"), bearerToken: bearerToken, client: &http.Client{
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}})
+	clientCopy := *client
+	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return NewClient(httpTransport{baseURL: strings.TrimSuffix(baseURL, "/"), bearerToken: bearerToken, client: &clientCopy})
 }
 
 type httpTransport struct {

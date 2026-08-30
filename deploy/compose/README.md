@@ -32,6 +32,8 @@ runtime env file are ignored.
 The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
 The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish
 the next `generation` and keeps the previous key material bound to its lineage.
+When the Control Plane certificate uses a private CA, pass its PEM bundle to the
+packaged CLI with `cloud-agentsctl --ca-file PATH ...`.
 
 For Kubernetes, use `deploy/helm/cloud-agents` from the extracted directory. The chart expects an external
 PostgreSQL database and pre-created Secrets named by `values.yaml`: database
