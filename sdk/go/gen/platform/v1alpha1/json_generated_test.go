@@ -62,6 +62,13 @@ func TestGeneratedPlatformJSONFixtures(t *testing.T) {
 }
 
 func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
+	roleBody := bytes.TrimSpace(readPlatformFixture(t, "golden/role.json"))
+	rolePageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RolePage","roles":[` + string(roleBody) + `],"nextPageToken":"role-page-token-1"}`)
+	rolePage, err := DecodeRolePageResponseJSON(rolePageBody)
+	if err != nil || len(rolePage.Value.Roles) != 1 || rolePage.Value.NextPageToken != "role-page-token-1" {
+		t.Fatalf("role page = %#v / %v", rolePage, err)
+	}
+
 	organization, err := DecodeOrganizationCreateRequestJSON([]byte(`{"expectedTenantRevision":4,"organizationId":"organization-beta","name":"organization-beta","displayName":"Organization Beta","auditFactUid":"audit-organization-beta","reasonCode":"operator-request"}`))
 	if err != nil || organization.OrganizationID != "organization-beta" || organization.ExpectedTenantRevision != 4 {
 		t.Fatalf("organization create request = %#v / %v", organization, err)

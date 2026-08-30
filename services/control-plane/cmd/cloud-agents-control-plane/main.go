@@ -397,6 +397,7 @@ func run(ctx context.Context, args []string) error {
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
+	mux.Handle(server.RoleCollectionRoute, roleHTTPServer)
 	mux.Handle(server.RoleRoute, roleHTTPServer)
 	mux.Handle(server.MembershipRoute, rbacHTTPServer)
 	mux.Handle(server.MembershipCollectionRoute, rbacHTTPServer)

@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:9a8889287984eba65dc9e70cfbe97c302a8f184ca44252408fd62d1a042d639e",
-    "inputManifestSha256": "sha256:9a8889287984eba65dc9e70cfbe97c302a8f184ca44252408fd62d1a042d639e",
+    "manifestSha256": "sha256:f6f4c719da67fdd4234d0daf979d3ea74a2c6edfd2b86070cc3ae64094c78d54",
+    "inputManifestSha256": "sha256:f6f4c719da67fdd4234d0daf979d3ea74a2c6edfd2b86070cc3ae64094c78d54",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -93,13 +93,14 @@
       "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
       "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
       "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+      "contracts/platform/v1alpha1/schemas/role-page.schema.json",
       "contracts/platform/v1alpha1/schemas/role.schema.json",
       "docs/plan/p1/sdk-identity-closure-entry-20260820.md"
     ],
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:3ac57286c7c6d4177f07382c971e298ef7da4fe316778aca4c69a8da762a7591",
+      "manifestSha256": "sha256:3ae81763582d07f665f1b88b4d27c38306591903dfb77b22e080ccc14dea98d1",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -155,6 +156,7 @@
         "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
         "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
         "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+        "contracts/platform/v1alpha1/schemas/role-page.schema.json",
         "contracts/platform/v1alpha1/schemas/role.schema.json"
       ]
     }
@@ -164,7 +166,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:84ff8ac05c1e7d57a1054e324f8a01d8f2b789d26c0d24c1f08d5c365f6a1223",
+    "sourceManifestSha256": "sha256:bcd3b14a498d4cf1945cc1a0394522b64032cc6263d6a1adae9bab022ee253b9",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -180,7 +182,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:b1173b82f0998f98d589e0ae645632d5b6ca67071ced166772ae209eca5bc84f"
+    "configDigest": "sha256:cd748ebbdb02786b4e78148dfa2a6c33bb66bfc8e956484b9d286a16af87e7b1"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -195,22 +197,22 @@
   "packageIdentity": "github.com/hxp0618/cloud-agents/sdk/go",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:77d401a20e9696105722b16b635e600434f3eafc863bbc591a61b47b87ff0b4a",
+  "outputTreeSha256": "sha256:6c024f13b8e1ccf00de3836447a1c61dd5432223c423dfb3534939859fd270ee",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
-      "sha256": "sha256:261d18a5bc0f486d3438872b5bb61ff16ba45def1dadf29e2a2a3d7109bbd5ca",
+      "sha256": "sha256:b5e99772f92cb58896bde66cf1780c0f21560c1d9ccd2706c3d49ba559714dc1",
       "sizeBytes": 28884
     },
     {
       "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-      "sha256": "sha256:04f551b461a7933eec13b796e9117bdf01222c275512640af883652615658794",
-      "sizeBytes": 53182
+      "sha256": "sha256:4aa26dc7a654b94cc53d3eb8238dafbe226756889422973e96bcee6375808e8a",
+      "sizeBytes": 55691
     },
     {
       "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-      "sha256": "sha256:6aa84ad4876674ff140e0cc2a42225097d02b019139980f11cc64f0f12a3ae0e",
-      "sizeBytes": 88581
+      "sha256": "sha256:6fdcbea5c062f5f50e9f2525dfa95e15bac50977019688df055634bd27f48cff",
+      "sizeBytes": 90860
     }
   ]
 }

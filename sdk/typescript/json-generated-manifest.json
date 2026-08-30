@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:9a8889287984eba65dc9e70cfbe97c302a8f184ca44252408fd62d1a042d639e",
-    "inputManifestSha256": "sha256:9a8889287984eba65dc9e70cfbe97c302a8f184ca44252408fd62d1a042d639e",
+    "manifestSha256": "sha256:f6f4c719da67fdd4234d0daf979d3ea74a2c6edfd2b86070cc3ae64094c78d54",
+    "inputManifestSha256": "sha256:f6f4c719da67fdd4234d0daf979d3ea74a2c6edfd2b86070cc3ae64094c78d54",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -93,13 +93,14 @@
       "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
       "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
       "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+      "contracts/platform/v1alpha1/schemas/role-page.schema.json",
       "contracts/platform/v1alpha1/schemas/role.schema.json",
       "docs/plan/p1/sdk-identity-closure-entry-20260820.md"
     ],
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:3ac57286c7c6d4177f07382c971e298ef7da4fe316778aca4c69a8da762a7591",
+      "manifestSha256": "sha256:3ae81763582d07f665f1b88b4d27c38306591903dfb77b22e080ccc14dea98d1",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -155,6 +156,7 @@
         "contracts/platform/v1alpha1/schemas/role-binding-create-request.schema.json",
         "contracts/platform/v1alpha1/schemas/role-binding-revoke-request.schema.json",
         "contracts/platform/v1alpha1/schemas/role-binding.schema.json",
+        "contracts/platform/v1alpha1/schemas/role-page.schema.json",
         "contracts/platform/v1alpha1/schemas/role.schema.json"
       ]
     }
@@ -164,7 +166,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:84ff8ac05c1e7d57a1054e324f8a01d8f2b789d26c0d24c1f08d5c365f6a1223",
+    "sourceManifestSha256": "sha256:bcd3b14a498d4cf1945cc1a0394522b64032cc6263d6a1adae9bab022ee253b9",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -180,7 +182,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:b1173b82f0998f98d589e0ae645632d5b6ca67071ced166772ae209eca5bc84f"
+    "configDigest": "sha256:cd748ebbdb02786b4e78148dfa2a6c33bb66bfc8e956484b9d286a16af87e7b1"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -195,12 +197,12 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:26772b03abc8d8d8875e0f5cb043fc2aa4f4234fd772695215727bc9ed2f2311",
+  "outputTreeSha256": "sha256:ffb20ba25d1e3c78806b7c6c328970b31e776b0a2419bd4e815e203c4b5e4bdb",
   "outputs": [
     {
       "path": "sdk/typescript/src/platform.ts",
-      "sha256": "sha256:e03cf2387d76dd9b3197be46dbcb9ec78db4175086d9731f0646eee6c1ebd49f",
-      "sizeBytes": 114765
+      "sha256": "sha256:c83bc0a5654dc8763be55059dc005b1db498723399633435dae5b4a07a358d79",
+      "sizeBytes": 117225
     }
   ]
 }

@@ -202,6 +202,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux := http.NewServeMux()
 	mux.Handle(server.OrganizationCollectionRoute, organizationServer)
 	mux.Handle(server.OrganizationRoute, organizationServer)
+	mux.Handle(server.RoleCollectionRoute, roleServer)
 	mux.Handle(server.RoleRoute, roleServer)
 	mux.Handle(server.MembershipRoute, rbacServer)
 	mux.Handle(server.MembershipCollectionRoute, rbacServer)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -14,7 +15,10 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
-const RoleRoute = "/v1/tenants/{tenantId}/roles/{roleId}"
+const (
+	RoleCollectionRoute = "/v1/tenants/{tenantId}/roles"
+	RoleRoute           = "/v1/tenants/{tenantId}/roles/{roleId}"
+)
 
 var ErrInvalidRoleHTTPServer = errors.New("role HTTP server configuration is invalid")
 
@@ -47,6 +51,14 @@ func (server *RoleHTTPServer) ServeHTTP(writer http.ResponseWriter, request *htt
 		writeRoleError(writer, http.StatusNotFound, "route_not_found")
 		return
 	}
+	if roleID == "" {
+		server.list(writer, request, tenantID)
+		return
+	}
+	server.get(writer, request, tenantID, roleID)
+}
+
+func (server *RoleHTTPServer) get(writer http.ResponseWriter, request *http.Request, tenantID, roleID string) {
 	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
 	if !ok {
 		writeRoleError(writer, http.StatusBadRequest, "invalid_request")
@@ -93,17 +105,120 @@ func (server *RoleHTTPServer) ServeHTTP(writer http.ResponseWriter, request *htt
 	_, _ = writer.Write(body)
 }
 
+func (server *RoleHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writeRoleError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writeRoleError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListRolesServerRequest(tenantID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeRoleError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterRoleName := ""
+	var afterRoleVersion int64
+	if validated.PageToken != "" {
+		if afterRoleName, afterRoleVersion, ok = decodeRolePageToken(validated.TenantID, validated.PageToken); !ok {
+			writeRoleError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeRoleError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeRoleError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "roles.list",
+	})
+	if err != nil {
+		writeRoleError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.reader.ListRoles(request.Context(), validated.TenantID, principal, afterRoleName, afterRoleVersion, validated.PageSize)
+	if err != nil {
+		status, code := roleErrorStatus(err)
+		writeRoleError(writer, status, code)
+		return
+	}
+	roles := make([]platformv1alpha1.Role, 0, len(page.Roles))
+	for _, role := range page.Roles {
+		roles = append(roles, roleResource(role))
+	}
+	value := platformv1alpha1.RolePage{APIVersion: platformv1alpha1.APIVersion, Kind: "RolePage", Roles: roles}
+	if page.NextRoleName != "" {
+		value.NextPageToken, ok = encodeRolePageToken(validated.TenantID, page.NextRoleName, page.NextRoleVersion)
+		if !ok {
+			writeRoleError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeRolePageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.RolePage]{Value: value})
+	if err != nil {
+		writeRoleError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", validated.RequestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func rolePath(path string) (string, string, bool) {
 	const prefix = "/v1/tenants/"
 	const separator = "/roles/"
 	if !strings.HasPrefix(path, prefix) {
 		return "", "", false
 	}
-	parts := strings.Split(strings.TrimPrefix(path, prefix), separator)
+	rest := strings.TrimPrefix(path, prefix)
+	if strings.HasSuffix(rest, "/roles") {
+		tenantID := strings.TrimSuffix(rest, "/roles")
+		return tenantID, "", tenantID != "" && !strings.Contains(tenantID, "/")
+	}
+	parts := strings.Split(rest, separator)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.Contains(parts[0], "/") || strings.Contains(parts[1], "/") {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
+}
+
+func encodeRolePageToken(tenantID, roleName string, roleVersion int64) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(roleName, "/roleName") != nil || roleVersion < 1 {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("role/v1\x00" + tenantID + "\x00" + roleName + "\x00" + strconv.FormatInt(roleVersion, 10)))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeRolePageToken(tenantID, token string) (string, int64, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", 0, false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", 0, false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 4 || parts[0] != "role/v1" || parts[1] != tenantID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/roleName") != nil {
+		return "", 0, false
+	}
+	version, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil || version < 1 {
+		return "", 0, false
+	}
+	return parts[2], version, true
 }
 
 func roleResource(role postgres.Role) platformv1alpha1.Role {

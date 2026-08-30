@@ -13,6 +13,7 @@ var ErrInvalidManagedAgentRoleReadService = errors.New("managed agent role read 
 
 type ManagedAgentRoleReader interface {
 	GetRole(context.Context, string, *authn.VerifiedPrincipal, string) (postgres.Role, error)
+	ListRoles(context.Context, string, *authn.VerifiedPrincipal, string, int64, int) (postgres.RolePage, error)
 }
 
 type ManagedAgentGetRoleRequest struct {

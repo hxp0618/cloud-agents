@@ -780,6 +780,26 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/roles": {
+      "get": {
+        "operationId": "managedAgentListRoles",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/ProjectPageSize" },
+          { "$ref": "#/components/parameters/ProjectPageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/role-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/roles/{roleId}": {
       "get": {
         "operationId": "managedAgentGetRole",
