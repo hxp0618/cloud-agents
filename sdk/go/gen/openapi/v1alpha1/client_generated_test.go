@@ -23,6 +23,8 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		t.Fatal("project GET fixture must distinguish metadata.uid from metadata.name")
 	}
 	mutationBody := []byte(`{"resourceUid":"membership-new","resourceVersion":"8","state":"active"}`)
+	membershipBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/membership.json")
+	membershipPageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MembershipPage","memberships":[` + string(membershipBody) + `],"nextPageToken":"membership-page-token-2"}`)
 	roleBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/role.json")
 	rolePageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RolePage","roles":[` + string(roleBody) + `],"nextPageToken":"role-page-token-2"}`)
 	responses := map[string]Response{
@@ -32,6 +34,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		"GET /v1/tenants/tenant-alpha/projects/project-alpha":                                                               projectGetResponse,
 		"GET /v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1": {Status: 200, Body: readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-page.json")},
 		"GET /v1/tenants/tenant-alpha/memberships/membership-alpha":                                                         responseFixture(t, "membership", 200),
+		"GET /v1/tenants/tenant-alpha/memberships?pageSize=1&pageToken=membership-page-token-1":                             {Status: 200, Body: membershipPageBody},
 		"GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1":                                                         responseFixture(t, "role", 200),
 		"GET /v1/tenants/tenant-alpha/roles?pageSize=1&pageToken=role-page-token-1":                                         {Status: 200, Body: rolePageBody},
 		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":                                                     responseFixture(t, "role-binding", 200),
@@ -68,6 +71,9 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.GetMembership(ctx, "tenant-alpha", "membership-alpha", "req-alpha"); err != nil {
 		t.Fatal(err)
 	}
+	if page, err := client.ListMemberships(ctx, "tenant-alpha", "req-alpha", 1, "membership-page-token-1"); err != nil || len(page.Value.Memberships) != 1 || page.Value.NextPageToken != "membership-page-token-2" {
+		t.Fatalf("membership page = %#v / %v", page, err)
+	}
 	if _, err := client.GetRole(ctx, "tenant-alpha", "role-project-viewer-v1", "req-alpha"); err != nil {
 		t.Fatal(err)
 	}
@@ -96,17 +102,17 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 14 {
-		t.Fatalf("transport calls = %d, want 14", len(seen))
+	if len(seen) != 15 {
+		t.Fatalf("transport calls = %d, want 15", len(seen))
 	}
 	for _, request := range seen {
 		if request.Headers[HeaderRequestID] != "req-alpha" {
 			t.Fatalf("request headers = %#v", request.Headers)
 		}
 	}
-	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[12].Body)
-	if seen[12].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
-		t.Fatalf("create request = %#v", seen[12])
+	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[13].Body)
+	if seen[13].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
+		t.Fatalf("create request = %#v", seen[13])
 	}
 }
 
@@ -269,6 +275,10 @@ func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
 	roles, err := ValidateListRolesServerRequest("tenant-alpha", "req-alpha", 50, "role-page-token-1")
 	if err != nil || roles.PageSize != 50 || roles.PageToken == "" {
 		t.Fatalf("role list input = %#v / %v", roles, err)
+	}
+	memberships, err := ValidateListMembershipsServerRequest("tenant-alpha", "req-alpha", 50, "membership-page-token-1")
+	if err != nil || memberships.PageSize != 50 || memberships.PageToken == "" {
+		t.Fatalf("membership list input = %#v / %v", memberships, err)
 	}
 	projects, err := ValidateListProjectsServerRequest("tenant-alpha", "organization-alpha", "req-alpha", 50, "project-page-token-1")
 	if err != nil || projects.OrganizationID != "organization-alpha" || projects.PageSize != 50 || projects.PageToken == "" {

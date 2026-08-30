@@ -17,14 +17,18 @@ import (
 )
 
 type rbacHTTPReaderFake struct {
-	scope       authz.ScopeRef
-	resolveErr  error
-	membership  postgres.Membership
-	roleBinding postgres.RoleBinding
-	err         error
-	resolves    int
-	memberships int
-	bindings    int
+	scope          authz.ScopeRef
+	resolveErr     error
+	membership     postgres.Membership
+	membershipPage postgres.MembershipPage
+	roleBinding    postgres.RoleBinding
+	err            error
+	resolves       int
+	memberships    int
+	lists          int
+	after          string
+	limit          int
+	bindings       int
 }
 
 type rbacHTTPMutatorFake struct {
@@ -68,6 +72,13 @@ func (fake *rbacHTTPReaderFake) ResolveRoleBindingScope(context.Context, string,
 func (fake *rbacHTTPReaderFake) GetMembership(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, _ authz.ScopeRef) (postgres.Membership, error) {
 	fake.memberships++
 	return fake.membership, fake.err
+}
+
+func (fake *rbacHTTPReaderFake) ListMemberships(_ context.Context, _ string, _ *authn.VerifiedPrincipal, after string, limit int) (postgres.MembershipPage, error) {
+	fake.lists++
+	fake.after = after
+	fake.limit = limit
+	return fake.membershipPage, fake.err
 }
 
 func (fake *rbacHTTPReaderFake) GetRoleBinding(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, _ authz.ScopeRef) (postgres.RoleBinding, error) {
@@ -145,6 +156,54 @@ func TestRBACHTTPServerUsesStoredScopeAndGeneratedResources(t *testing.T) {
 			}
 			test.check(t, response.Body.Bytes())
 		})
+	}
+}
+
+func TestRBACHTTPServerListsMembershipsWithTenantBoundCursor(t *testing.T) {
+	now := time.Date(2026, time.August, 30, 8, 0, 0, 0, time.UTC)
+	verifier := &projectHTTPVerifierFake{}
+	reader := &rbacHTTPReaderFake{membershipPage: postgres.MembershipPage{
+		Memberships: []postgres.Membership{{
+			UID: "membership-alpha", Name: "membership-alpha", TenantID: "tenant-alpha",
+			Subject: authz.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"},
+			Scope:   authz.ScopeRef{Level: authz.ScopeTenant, ID: "tenant-alpha"}, State: "active", ResourceVersion: 4, CreatedAt: now, UpdatedAt: now,
+		}},
+		NextMembershipID: "membership-alpha",
+	}}
+	server, err := NewRBACHTTPServer(verifier, reader, &rbacHTTPMutatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/memberships?pageSize=1", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-list")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || reader.lists != 1 || reader.after != "" || reader.limit != 1 || reader.resolves != 0 {
+		t.Fatalf("status=%d lists=%d after=%q limit=%d resolves=%d body=%s", response.Code, reader.lists, reader.after, reader.limit, reader.resolves, response.Body.String())
+	}
+	page, err := platformv1alpha1.DecodeMembershipPageResponseJSON(response.Body.Bytes())
+	if err != nil || len(page.Value.Memberships) != 1 || page.Value.NextPageToken == "" {
+		t.Fatalf("membership page = %#v / %v", page, err)
+	}
+	if after, ok := decodeMembershipPageToken("tenant-alpha", page.Value.NextPageToken); !ok || after != "membership-alpha" {
+		t.Fatalf("next page token = %q / %q / %t", page.Value.NextPageToken, after, ok)
+	}
+	if verifier.seen != (authn.VerificationRequest{TenantID: "tenant-alpha", ResourceLevel: "tenant", ResourceID: "tenant-alpha", RequiredPermission: "memberships.list"}) {
+		t.Fatalf("verification request = %#v", verifier.seen)
+	}
+
+	otherTenantToken, ok := encodeMembershipPageToken("tenant-other", "membership-alpha")
+	if !ok {
+		t.Fatal("valid cross-tenant fixture token was not encoded")
+	}
+	request = httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/memberships?pageToken="+otherTenantToken, nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-invalid")
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || reader.lists != 1 || verifier.calls != 1 {
+		t.Fatalf("cross-tenant token status=%d verifier calls=%d list calls=%d body=%s", response.Code, verifier.calls, reader.lists, response.Body.String())
 	}
 }
 

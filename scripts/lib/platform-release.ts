@@ -295,6 +295,7 @@ const PUBLIC_PLATFORM_CONTRACT_PATHS = [
   "contracts/platform/v1alpha1/schemas/environment-lease.schema.json",
   "contracts/platform/v1alpha1/schemas/managed-agent-create-project-organization-ref.schema.json",
   "contracts/platform/v1alpha1/schemas/membership-create-request.schema.json",
+  "contracts/platform/v1alpha1/schemas/membership-page.schema.json",
   "contracts/platform/v1alpha1/schemas/membership.schema.json",
   "contracts/platform/v1alpha1/schemas/membership-transition-request.schema.json",
   "contracts/platform/v1alpha1/schemas/organization-create-request.schema.json",

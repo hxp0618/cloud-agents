@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,16 +18,21 @@ var (
 )
 
 type Membership struct {
-	UID             string
-	Name            string
-	TenantID        string
-	Subject         authz.SubjectRef
-	Scope           authz.ScopeRef
-	State           string
-	ExpiresAt       *time.Time
-	ResourceVersion int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	UID             string           `json:"uid"`
+	Name            string           `json:"name"`
+	TenantID        string           `json:"tenant_id"`
+	Subject         authz.SubjectRef `json:"subject"`
+	Scope           authz.ScopeRef   `json:"scope"`
+	State           string           `json:"state"`
+	ExpiresAt       *time.Time       `json:"expires_at"`
+	ResourceVersion int64            `json:"resource_version"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+}
+
+type MembershipPage struct {
+	Memberships      []Membership
+	NextMembershipID string
 }
 
 type RoleBinding struct {
@@ -85,6 +91,45 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
         WHEN 'organization' THEN scope_organization_uid
         WHEN 'project' THEN scope_project_uid
     END = $3`
+	membershipPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.memberships
+WHERE tenant_id = cloud_agents.require_tenant_id()
+    AND membership_uid = $1
+    AND state <> 'revoked'
+    AND scope_level <> 'platform'`
+	listMembershipsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(membership_page)
+    ORDER BY membership_page.uid), '[]'::jsonb)
+FROM (
+    SELECT
+        membership_uid AS uid,
+        membership_name AS name,
+        tenant_id,
+        pg_catalog.jsonb_build_object(
+            'Kind', subject_kind,
+            'Issuer', subject_issuer,
+            'Subject', subject_value
+        ) AS subject,
+        pg_catalog.jsonb_build_object(
+            'Level', scope_level,
+            'ID', CASE scope_level
+                WHEN 'tenant' THEN scope_tenant_uid
+                WHEN 'organization' THEN scope_organization_uid
+                WHEN 'project' THEN scope_project_uid
+            END
+        ) AS scope,
+        state,
+        expires_at,
+        resource_version,
+        created_at,
+        updated_at
+    FROM cloud_agents.memberships
+    WHERE tenant_id = cloud_agents.require_tenant_id()
+        AND state <> 'revoked'
+        AND scope_level <> 'platform'
+        AND membership_uid > $1
+    ORDER BY membership_uid
+    LIMIT $2
+) AS membership_page`
 	getRoleBindingSQL = `SELECT
     role_binding_uid, role_binding_name, tenant_id,
     subject_kind, subject_issuer, subject_value,
@@ -189,6 +234,74 @@ func (service *DurableCoordinationService) GetMembership(ctx context.Context, te
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, err
+}
+
+func (service *DurableCoordinationService) ListMemberships(ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, afterMembershipID string, limit int) (MembershipPage, error) {
+	if service == nil || service.runner == nil {
+		return MembershipPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || afterMembershipID != "" && !validMutationIdentifier(afterMembershipID) || limit < 1 || limit > 200 {
+		return MembershipPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}
+	var result MembershipPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "memberships.list")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterMembershipID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, membershipPageCursorIdentitySQL, afterMembershipID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapMutationDatabaseError("membership page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listMembershipsSQL, afterMembershipID, limit+1).Scan(&raw); err != nil {
+					return mapMutationDatabaseError("memberships", err)
+				}
+				var err error
+				result, err = decodeMembershipPageRows(raw, tenantID, limit)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, err
+}
+
+func decodeMembershipPageRows(raw []byte, tenantID string, limit int) (MembershipPage, error) {
+	var memberships []Membership
+	if json.Unmarshal(raw, &memberships) != nil || memberships == nil || len(memberships) > limit+1 {
+		return MembershipPage{}, ErrCoordinationResultDrift
+	}
+	for index, membership := range memberships {
+		if !validMembershipProjection(membership, tenantID) || index > 0 && memberships[index-1].UID >= membership.UID {
+			return MembershipPage{}, ErrCoordinationResultDrift
+		}
+	}
+	result := MembershipPage{Memberships: memberships}
+	if len(memberships) > limit {
+		result.Memberships = memberships[:limit]
+		result.NextMembershipID = result.Memberships[len(result.Memberships)-1].UID
+	}
+	return result, nil
+}
+
+func validMembershipProjection(membership Membership, tenantID string) bool {
+	return membership.TenantID == tenantID && validMutationIdentifier(membership.UID) && validMutationIdentifier(membership.Name) &&
+		membership.Subject.Validate() == nil && membership.Scope.Level != authz.ScopePlatform && membership.Scope.Validate(tenantID) == nil &&
+		(membership.State == authz.MembershipActive || membership.State == authz.MembershipSuspended) && membership.ResourceVersion > 0 &&
+		!membership.CreatedAt.IsZero() && !membership.UpdatedAt.IsZero()
 }
 
 func (service *DurableCoordinationService) GetRoleBinding(ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, roleBindingID string, scope authz.ScopeRef) (RoleBinding, error) {

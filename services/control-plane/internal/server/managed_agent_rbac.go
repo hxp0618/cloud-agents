@@ -16,6 +16,7 @@ type ManagedAgentRBACReader interface {
 	ResolveMembershipScope(context.Context, string, string) (authz.ScopeRef, error)
 	ResolveRoleBindingScope(context.Context, string, string) (authz.ScopeRef, error)
 	GetMembership(context.Context, string, *authn.VerifiedPrincipal, string, authz.ScopeRef) (postgres.Membership, error)
+	ListMemberships(context.Context, string, *authn.VerifiedPrincipal, string, int) (postgres.MembershipPage, error)
 	GetRoleBinding(context.Context, string, *authn.VerifiedPrincipal, string, authz.ScopeRef) (postgres.RoleBinding, error)
 }
 

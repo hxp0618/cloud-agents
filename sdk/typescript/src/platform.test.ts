@@ -6,6 +6,7 @@ import {
   Client,
   decodeIdempotency,
   decodeMembership,
+  decodeMembershipPage,
   decodeOrganization,
   decodeOrganizationPage,
   decodePlatformTenant,
@@ -293,6 +294,14 @@ describe("generated platform JSON models", () => {
     expect(decodeMembership(readJSON(platformFixtureRoot, "golden/membership.json")).kind).toBe(
       "Membership",
     );
+    expect(
+      decodeMembershipPage({
+        apiVersion: "platform.cloud-agents.dev/v1alpha1",
+        kind: "MembershipPage",
+        memberships: [readJSON(platformFixtureRoot, "golden/membership.json")],
+        nextPageToken: "membership-page-token-1",
+      }).memberships,
+    ).toHaveLength(1);
     expect(decodeRole(readJSON(platformFixtureRoot, "golden/role.json")).spec.name).toBe(
       "project.viewer",
     );
@@ -449,6 +458,16 @@ describe("generated fixture client", () => {
         "membership",
         200,
       ),
+      "GET /v1/tenants/tenant-alpha/memberships?pageSize=1&pageToken=membership-page-token-1": {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          apiVersion: "platform.cloud-agents.dev/v1alpha1",
+          kind: "MembershipPage",
+          memberships: [readJSON(platformFixtureRoot, "golden/membership.json")],
+          nextPageToken: "membership-page-token-2",
+        }),
+      },
       "GET /v1/tenants/tenant-alpha/roles/role-project-viewer-v1": fixtureResponse(
         platformFixtureRoot,
         "role",
@@ -509,6 +528,12 @@ describe("generated fixture client", () => {
       "project-page-token-1",
     );
     await client.getMembership("tenant-alpha", "membership-alpha", "req-alpha");
+    await client.listMemberships(
+      "tenant-alpha",
+      "req-alpha",
+      1,
+      "membership-page-token-1",
+    );
     await client.getRole("tenant-alpha", "role-project-viewer-v1", "req-alpha");
     await client.listRoles("tenant-alpha", "req-alpha", 1, "role-page-token-1");
     await client.getRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
@@ -528,8 +553,8 @@ describe("generated fixture client", () => {
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
       request,
     );
-    expect(seen).toHaveLength(13);
-    expect(JSON.parse(seen[12]!.body!)).toEqual(request);
+    expect(seen).toHaveLength(14);
+    expect(JSON.parse(seen[13]!.body!)).toEqual(request);
   });
 
   it("keeps problem status and abort semantics stable", async () => {

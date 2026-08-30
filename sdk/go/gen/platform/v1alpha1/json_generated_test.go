@@ -62,6 +62,13 @@ func TestGeneratedPlatformJSONFixtures(t *testing.T) {
 }
 
 func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
+	membershipBody := bytes.TrimSpace(readPlatformFixture(t, "golden/membership.json"))
+	membershipPageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MembershipPage","memberships":[` + string(membershipBody) + `],"nextPageToken":"membership-page-token-1"}`)
+	membershipPage, err := DecodeMembershipPageResponseJSON(membershipPageBody)
+	if err != nil || len(membershipPage.Value.Memberships) != 1 || membershipPage.Value.NextPageToken != "membership-page-token-1" {
+		t.Fatalf("membership page = %#v / %v", membershipPage, err)
+	}
+
 	roleBody := bytes.TrimSpace(readPlatformFixture(t, "golden/role.json"))
 	rolePageBody := []byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"RolePage","roles":[` + string(roleBody) + `],"nextPageToken":"role-page-token-1"}`)
 	rolePage, err := DecodeRolePageResponseJSON(rolePageBody)

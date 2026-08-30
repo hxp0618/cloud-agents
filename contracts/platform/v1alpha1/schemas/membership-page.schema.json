@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/membership-page.schema.json",
+  "title": "MembershipPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "memberships"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "MembershipPage"
+    },
+    "memberships": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "membership.schema.json"
+      }
+    },
+    "nextPageToken": {
+      "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json"
+    }
+  }
+}

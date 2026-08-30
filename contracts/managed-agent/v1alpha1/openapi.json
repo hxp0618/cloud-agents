@@ -660,6 +660,24 @@
       }
     },
     "/v1/tenants/{tenantId}/memberships": {
+      "get": {
+        "operationId": "managedAgentListMemberships",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/ProjectPageSize" },
+          { "$ref": "#/components/parameters/ProjectPageToken" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "../../platform/v1alpha1/schemas/membership-page.schema.json" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
       "post": {
         "operationId": "managedAgentCreateMembership",
         "parameters": [

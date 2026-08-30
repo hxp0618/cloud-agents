@@ -100,6 +100,24 @@ func TestRunRoleList(t *testing.T) {
 	}
 }
 
+func TestRunMembershipList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/memberships" || request.URL.Query().Get("pageSize") != "1" || request.URL.Query().Get("pageToken") != "membership-page-token-1" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.String())
+		}
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"MembershipPage","memberships":[],"nextPageToken":"membership-page-token-2"}`))
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
+		"membership", "list", "--page-size", "1", "--page-token", "membership-page-token-1",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"kind":"MembershipPage"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestParseArgsRejectsMissingRequiredGlobalInput(t *testing.T) {
 	if _, _, _, _, err := parseArgs([]string{"--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "project", "get"}); err == nil || !strings.Contains(err.Error(), "--endpoint is required") {
 		t.Fatalf("error = %v", err)
@@ -156,6 +174,7 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 		{name: "session list", args: []string{"--project", "project-alpha", "session", "list"}},
 		{name: "turn list", args: []string{"--project", "project-alpha", "--session", "session-alpha", "turn", "list"}},
 		{name: "membership", args: []string{"--membership", "membership-alpha", "membership", "get"}},
+		{name: "membership list", args: []string{"membership", "list"}},
 		{name: "role", args: []string{"--role", "role-alpha", "role", "get"}},
 		{name: "role list", args: []string{"role", "list"}},
 		{name: "role binding", args: []string{"--role-binding", "binding-alpha", "role-binding", "get"}},

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -59,6 +60,10 @@ func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *htt
 	tenantID, resourceID, kind, ok := rbacPath(request.URL.Path)
 	if !ok {
 		writeRBACError(writer, http.StatusNotFound, "route_not_found")
+		return
+	}
+	if kind == "membership" && resourceID == "" {
+		server.listMemberships(writer, request, tenantID)
 		return
 	}
 	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
@@ -125,6 +130,74 @@ func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *htt
 	writeRBACResource(writer, validated.RequestID, roleBinding.ResourceVersion, body)
 }
 
+func (server *RBACHTTPServer) listMemberships(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListMembershipsServerRequest(tenantID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterMembershipID := ""
+	if validated.PageToken != "" {
+		if afterMembershipID, ok = decodeMembershipPageToken(validated.TenantID, validated.PageToken); !ok {
+			writeRBACError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "memberships.list",
+	})
+	if err != nil {
+		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.reader.ListMemberships(request.Context(), validated.TenantID, principal, afterMembershipID, validated.PageSize)
+	if err != nil {
+		writeRBACErrorFromStore(writer, err, postgres.ErrMembershipNotFound)
+		return
+	}
+	memberships := make([]platformv1alpha1.Membership, 0, len(page.Memberships))
+	for _, membership := range page.Memberships {
+		memberships = append(memberships, membershipResource(membership))
+	}
+	value := platformv1alpha1.MembershipPage{APIVersion: platformv1alpha1.APIVersion, Kind: "MembershipPage", Memberships: memberships}
+	if page.NextMembershipID != "" {
+		value.NextPageToken, ok = encodeMembershipPageToken(validated.TenantID, page.NextMembershipID)
+		if !ok {
+			writeRBACError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	body, err := platformv1alpha1.EncodeMembershipPageResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.MembershipPage]{Value: value})
+	if err != nil {
+		writeRBACError(writer, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writer.Header().Set("X-Request-ID", validated.RequestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(body)
+}
+
 func (server *RBACHTTPServer) resolveScope(request *http.Request, tenantID, resourceID, kind string) (authz.ScopeRef, error) {
 	if kind == "membership" {
 		return server.reader.ResolveMembershipScope(request.Context(), tenantID, resourceID)
@@ -141,6 +214,10 @@ func rbacPath(path string) (string, string, string, bool) {
 		return "", "", "", false
 	}
 	rest := strings.TrimPrefix(path, prefix)
+	if prefix == "/v1/tenants/" && strings.HasSuffix(rest, "/memberships") {
+		tenantID := strings.TrimSuffix(rest, "/memberships")
+		return tenantID, "", "membership", tenantID != "" && !strings.Contains(tenantID, "/")
+	}
 	for suffix, kind := range map[string]string{"/memberships/": "membership", "/role-bindings/": "role_binding"} {
 		parts := strings.Split(rest, suffix)
 		if len(parts) == 2 && parts[0] != "" && parts[1] != "" && !strings.Contains(parts[0], "/") && !strings.Contains(parts[1], "/") {
@@ -148,6 +225,30 @@ func rbacPath(path string) (string, string, string, bool) {
 		}
 	}
 	return "", "", "", false
+}
+
+func encodeMembershipPageToken(tenantID, membershipID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(membershipID, "/membershipId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("membership/v1\x00" + tenantID + "\x00" + membershipID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeMembershipPageToken(tenantID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 3 || parts[0] != "membership/v1" || parts[1] != tenantID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/membershipId") != nil {
+		return "", false
+	}
+	return parts[2], true
 }
 
 func rbacPermission(kind string) string {
