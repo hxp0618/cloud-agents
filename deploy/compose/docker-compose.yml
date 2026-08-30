@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${CLOUD_AGENTS_POSTGRES_DB:?set the Cloud Agents database name}
-      POSTGRES_USER: ${CLOUD_AGENTS_POSTGRES_OWNER:?set the deployment-owned database owner}
-      POSTGRES_PASSWORD: ${CLOUD_AGENTS_POSTGRES_PASSWORD:?set the database password}
+      POSTGRES_USER: cloud_agents_install_admin
+      POSTGRES_PASSWORD: ${CLOUD_AGENTS_POSTGRES_INSTALL_PASSWORD:?set the isolated install-admin password}
     volumes:
       - cloud-agents-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -23,17 +23,22 @@ services:
     environment:
       CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL: ${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL:?set an isolated unswitched superuser URL}
       CLOUD_AGENTS_POSTGRES_DB: ${CLOUD_AGENTS_POSTGRES_DB:?set the Cloud Agents database name}
-      CLOUD_AGENTS_POSTGRES_OWNER: ${CLOUD_AGENTS_POSTGRES_OWNER:?set the deployment-owned database owner}
+      CLOUD_AGENTS_MIGRATION_PASSWORD: ${CLOUD_AGENTS_MIGRATION_PASSWORD:?set the migration LOGIN password}
+      CLOUD_AGENTS_RUNTIME_PASSWORD: ${CLOUD_AGENTS_RUNTIME_PASSWORD:?set the runtime LOGIN password}
+      CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD: ${CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD:?set the tenant-bootstrap LOGIN password}
     volumes:
-      - ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/bootstrap:/bootstrap:ro
+      - ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}:/deploy:ro
     entrypoint: ["/bin/sh", "-ec"]
     command: >-
-      psql "$${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL}" -v ON_ERROR_STOP=1
-      -f /bootstrap/roles.sql
-      && psql "$${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL}" -v ON_ERROR_STOP=1
+      psql "$${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL}" --single-transaction -v ON_ERROR_STOP=1
       -v cloud_agents_database="$${CLOUD_AGENTS_POSTGRES_DB}"
-      -v cloud_agents_database_owner="$${CLOUD_AGENTS_POSTGRES_OWNER}"
-      -f /bootstrap/database.sql
+      -v cloud_agents_database_owner=cloud_agents_database_owner
+      -v cloud_agents_migration_password="$${CLOUD_AGENTS_MIGRATION_PASSWORD}"
+      -v cloud_agents_runtime_password="$${CLOUD_AGENTS_RUNTIME_PASSWORD}"
+      -v cloud_agents_tenant_bootstrap_password="$${CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD}"
+      -f /deploy/bootstrap/roles.sql
+      -f /deploy/compose/provision.sql
+      -f /deploy/bootstrap/database.sql
 
   migrate:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}

@@ -108,6 +108,7 @@ describe("platform release", () => {
       "deploy/compose/.env.example",
       "deploy/compose/README.md",
       "deploy/compose/docker-compose.yml",
+      "deploy/compose/provision.sql",
       "deploy/docker/control-plane.Dockerfile",
       "deploy/docker/migrate.Dockerfile",
       "deploy/docker/worker.Dockerfile",
@@ -131,6 +132,15 @@ describe("platform release", () => {
     expect(readFileSync("deploy/helm/cloud-agents/templates/control-plane.yaml", "utf8")).toContain(
       "type: Recreate",
     );
+  });
+
+  it("packages an atomic Compose database authority bootstrap", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    expect(compose).toContain("--single-transaction");
+    expect(compose).toContain("/deploy/compose/provision.sql");
+    const environment = readFileSync("deploy/compose/.env.example", "utf8");
+    expect(environment).toContain("postgresql://cloud_agents_runtime_login:");
+    expect(environment).not.toContain("postgresql://cloud_agents_runtime:");
   });
 
   it("selects matching OCI base and binary architectures", () => {
