@@ -172,6 +172,9 @@ describe("platform release", () => {
     expect(migrateDockerfile).toContain("cloud-agents-migrations-000024.tar");
     expect(migrateDockerfile).toContain("product/000024/manifest.json");
     expect(migrateDockerfile).not.toContain("000023");
+    const workerDockerfile = readFileSync("deploy/docker/worker.Dockerfile", "utf8");
+    expect(workerDockerfile).toContain("@openai/codex@0.150.1");
+    expect(workerDockerfile).not.toContain("@openai/codex@latest");
   });
 
   it("packages public contracts without internal provenance inputs", () => {
