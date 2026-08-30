@@ -120,6 +120,23 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 	}
 }
 
+func TestReceiveRuntimeTerminalDiscardsNonterminalMessages(t *testing.T) {
+	messages := []runtimeprotocol.Message{
+		{CommandID: "turn", MessageType: "Progress"},
+		{CommandID: "turn", MessageType: "Event"},
+		{CommandID: "turn", MessageType: "Result", Payload: map[string]any{"text": "done"}},
+	}
+	index := 0
+	terminal, err := receiveRuntimeTerminal(func() (runtimeprotocol.Message, error) {
+		message := messages[index]
+		index++
+		return message, nil
+	}, "turn")
+	if err != nil || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(messages) {
+		t.Fatalf("terminal=%#v reads=%d err=%v", terminal, index, err)
+	}
+}
+
 func TestRuntimeTerminalDigestBindsPublicMessage(t *testing.T) {
 	original := runtimeprotocol.Message{RequestID: "request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done", "providerResumeCursor": "private-cursor"}}
 	public := publicRuntimeMessage(original)

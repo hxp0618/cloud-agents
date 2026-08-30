@@ -399,8 +399,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 	if err := session.Send(ctx, start); err != nil {
 		return result, err
 	}
-	startMessages, terminal, err := receiveRuntimeMessages(session, start.CommandID)
-	result.Messages = appendPublicRuntimeMessages(result.Messages, startMessages...)
+	terminal, err := receiveRuntimeTerminal(session.Receive, start.CommandID)
 	if err != nil {
 		return result, err
 	}
@@ -412,8 +411,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 	if err := session.Send(ctx, turn); err != nil {
 		return result, err
 	}
-	turnMessages, terminal, err := receiveRuntimeMessages(session, turn.CommandID)
-	result.Messages = appendPublicRuntimeMessages(result.Messages, turnMessages...)
+	terminal, err = receiveRuntimeTerminal(session.Receive, turn.CommandID)
 	result.Terminal = terminal
 	if err != nil {
 		return result, err
@@ -424,6 +422,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 		return result, err
 	}
 	result.ProviderResumeCursor = providerResumeCursor
+	result.Messages = []runtimeprotocol.Message{publicRuntimeMessage(terminal)}
 	result.FailureCode = ""
 	return result, nil
 }
@@ -444,13 +443,6 @@ func runtimeProviderResumeCursor(message runtimeprotocol.Message) (string, error
 		return "", fmt.Errorf("%w: provider resume cursor", ErrInvalidInput)
 	}
 	return cursor, nil
-}
-
-func appendPublicRuntimeMessages(destination []runtimeprotocol.Message, messages ...runtimeprotocol.Message) []runtimeprotocol.Message {
-	for _, message := range messages {
-		destination = append(destination, publicRuntimeMessage(message))
-	}
-	return destination
 }
 
 func publicRuntimeMessage(message runtimeprotocol.Message) runtimeprotocol.Message {
@@ -504,19 +496,17 @@ func boundedRuntimeIdentifier(base, suffix string) string {
 	return base + separator + suffix
 }
 
-func receiveRuntimeMessages(session *workerclient.RuntimeSession, commandID string) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
-	var messages []runtimeprotocol.Message
+func receiveRuntimeTerminal(receive func() (runtimeprotocol.Message, error), commandID string) (runtimeprotocol.Message, error) {
 	for {
-		message, err := session.Receive()
+		message, err := receive()
 		if err != nil {
-			return messages, runtimeprotocol.Message{}, err
+			return runtimeprotocol.Message{}, err
 		}
-		messages = append(messages, message)
 		if message.CommandID != commandID {
-			return messages, message, errors.New("Runtime response command id mismatch")
+			return message, errors.New("Runtime response command id mismatch")
 		}
 		if message.MessageType == "Result" || message.MessageType == "Error" {
-			return messages, message, nil
+			return message, nil
 		}
 	}
 }

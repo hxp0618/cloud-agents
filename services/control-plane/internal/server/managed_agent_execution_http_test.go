@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -173,6 +175,30 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	handler.ServeHTTP(interrupted, interrupt)
 	if interrupted.Code != http.StatusOK || runner.interruptInput.Generation != 7 || runner.interruptInput.TargetExecutionID != "execution-alpha" || !strings.Contains(interrupted.Body.String(), `"errorCode":"interrupted"`) {
 		t.Fatalf("interrupt status=%d input=%#v body=%s", interrupted.Code, runner.interruptInput, interrupted.Body.String())
+	}
+}
+
+func TestManagedAgentExecutionHTTPServerAcceptsMaximumEscapedInput(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	store := &managedAgentExecutionStoreFake{}
+	runner := &managedAgentExecutionRunnerFake{}
+	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputText := strings.Repeat("<", managedAgentMaximumInputBytes)
+	body, err := json.Marshal(managedAgentExecutionRequest{TurnID: "turn-alpha", ExecutionID: "execution-alpha", InputText: inputText})
+	if err != nil || len(body) <= managedAgentMaximumInputBytes || len(body) > managedAgentMaximumBodyBytes {
+		t.Fatalf("maximum input body bytes=%d err=%v", len(body), err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-alpha")
+	request.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || runner.input.InputText != inputText {
+		t.Fatalf("status=%d inputBytes=%d body=%s", response.Code, len(runner.input.InputText), response.Body.String())
 	}
 }
 

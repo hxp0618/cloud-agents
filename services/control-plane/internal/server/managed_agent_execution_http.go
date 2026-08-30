@@ -115,7 +115,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	inputText, err := managedAgentStringField(fields, "inputText", "/inputText", 1, 1<<20)
+	inputText, err := managedAgentStringField(fields, "inputText", "/inputText", 1, managedAgentMaximumInputBytes)
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return

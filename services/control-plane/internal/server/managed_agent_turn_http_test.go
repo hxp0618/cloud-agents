@@ -82,7 +82,7 @@ func TestManagedAgentTurnHTTPServerRejectsInvalidPublicInputs(t *testing.T) {
 		{name: "null input", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":null}`},
 		{name: "unknown field", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"hello","extra":true}`},
 		{name: "duplicate field", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","turnId":"turn-beta","inputText":"hello"}`},
-		{name: "body too large", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"` + strings.Repeat("a", 1<<20) + `"}`},
+		{name: "input too large", path: validPath, requestID: validRequestID, idempotency: validIdempotencyKey, body: `{"turnId":"turn-alpha","inputText":"` + strings.Repeat("a", managedAgentMaximumInputBytes+1) + `"}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

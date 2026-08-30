@@ -194,7 +194,11 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 	})
 }
 
-const managedAgentMaximumBodyBytes = 1 << 20
+const (
+	managedAgentMaximumInputBytes = 1 << 20
+	// JSON escaping can expand a valid input string up to sixfold.
+	managedAgentMaximumBodyBytes = 6*managedAgentMaximumInputBytes + 4*1024
+)
 
 func validatedManagedAgentRequestID(writer http.ResponseWriter, request *http.Request) (string, bool) {
 	if request == nil {
