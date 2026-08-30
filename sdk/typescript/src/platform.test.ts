@@ -13,6 +13,7 @@ import {
   decodeProjectPage,
   decodeProjectCreateRequest,
   decodeManagedAgentSession,
+  decodeManagedAgentSessionPage,
   decodeManagedAgentExecution,
   decodeRole,
   decodeRoleBinding,
@@ -22,6 +23,7 @@ import {
   parseProject,
   parseProjectCreateRequest,
   parseManagedAgentSession,
+  parseManagedAgentSessionPage,
   parseManagedAgentExecution,
   parseWatchCursor,
   validateProjectResolvedOrganization,
@@ -52,8 +54,18 @@ describe("generated platform JSON models", () => {
       },
       spec: { providerKind: "codex", state: "active" },
     });
+    const sessionPage = JSON.stringify({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "SessionPage",
+      sessions: [JSON.parse(session)],
+      nextPageToken: "session-page-token-1",
+    });
     expect(decodeManagedAgentSession(JSON.parse(session)).spec.providerKind).toBe("codex");
     expect(parseManagedAgentSession(session).value.kind).toBe("Session");
+    expect(decodeManagedAgentSessionPage(JSON.parse(sessionPage)).sessions).toHaveLength(1);
+    expect(parseManagedAgentSessionPage(sessionPage).value.nextPageToken).toBe(
+      "session-page-token-1",
+    );
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
@@ -65,7 +77,10 @@ describe("generated platform JSON models", () => {
               ? 200
               : 200,
         headers: { "X-Resource-Version": "2" },
-        body: session,
+        body:
+          request.method === "GET" && request.path.includes("/sessions?")
+            ? sessionPage
+            : session,
       };
     });
     await client.createManagedAgentSession(
@@ -81,6 +96,13 @@ describe("generated platform JSON models", () => {
       "session-alpha",
       "request-alpha",
     );
+    await client.listManagedAgentSessions(
+      "tenant-alpha",
+      "project-alpha",
+      "request-alpha",
+      1,
+      "session-page-token-1",
+    );
     await client.closeManagedAgentSession(
       "tenant-alpha",
       "project-alpha",
@@ -88,9 +110,12 @@ describe("generated platform JSON models", () => {
       "request-alpha",
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R3",
     );
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(4);
     expect(seen[0]?.body).toBe('{"sessionId":"session-alpha","providerKind":"codex"}');
-    expect(seen[2]?.body).toBeUndefined();
+    expect(seen[2]?.path).toBe(
+      "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1&pageToken=session-page-token-1",
+    );
+    expect(seen[3]?.body).toBeUndefined();
   });
   it("replays the managed-agent Execution contract and client lifecycle", async () => {
     const execution = JSON.stringify({

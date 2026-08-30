@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
@@ -12,6 +14,22 @@ import (
 )
 
 var ErrManagedAgentSessionNotFound = errors.New("managed agent session was not found")
+
+type ManagedAgentSessionPage struct {
+	Sessions      []internalmanagedagent.SessionSnapshot
+	NextSessionID string
+}
+
+type managedAgentSessionPageRow struct {
+	TenantID        string    `json:"tenant_id"`
+	ProjectID       string    `json:"project_uid"`
+	SessionID       string    `json:"session_uid"`
+	ProviderKind    string    `json:"provider_kind"`
+	State           string    `json:"state"`
+	ResourceVersion int64     `json:"resource_version"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
 
 const (
 	createManagedAgentSessionSQL = `SELECT session_uid, provider_kind, state, resource_version, created_at, updated_at
@@ -26,6 +44,22 @@ WHERE tenant_id = cloud_agents.require_tenant_id()
 FROM cloud_agents.managed_agent_sessions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2`
+	managedAgentSessionPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.managed_agent_sessions
+WHERE tenant_id = cloud_agents.require_tenant_id()
+    AND project_uid = $1 AND session_uid = $2`
+	listManagedAgentSessionsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(managed_session)
+    ORDER BY managed_session.session_uid), '[]'::jsonb)
+FROM (
+    SELECT tenant_id, project_uid, session_uid, provider_kind, state,
+        resource_version, created_at, updated_at
+    FROM cloud_agents.managed_agent_sessions
+    WHERE tenant_id = cloud_agents.require_tenant_id()
+        AND project_uid = $1
+        AND session_uid > $2
+    ORDER BY session_uid
+    LIMIT $3
+) AS managed_session`
 )
 
 // CreateManagedAgentSession persists one active Session. The database derives
@@ -155,6 +189,83 @@ func (service *DurableCoordinationService) GetManagedAgentSession(
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, err
+}
+
+func (service *DurableCoordinationService) ListManagedAgentSessions(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	afterSessionID string,
+	limit int,
+) (ManagedAgentSessionPage, error) {
+	if service == nil || service.runner == nil {
+		return ManagedAgentSessionPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		afterSessionID != "" && !validMutationIdentifier(afterSessionID) || limit < 1 || limit > 200 {
+		return ManagedAgentSessionPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result ManagedAgentSessionPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterSessionID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, managedAgentSessionPageCursorIdentitySQL, projectID, afterSessionID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapMutationDatabaseError("managed agent session page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listManagedAgentSessionsSQL, projectID, afterSessionID, limit+1).Scan(&raw); err != nil {
+					return mapMutationDatabaseError("managed agent sessions", err)
+				}
+				var err error
+				result, err = decodeManagedAgentSessionPageRows(raw, tenantID, projectID, limit)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, err
+}
+
+func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, limit int) (ManagedAgentSessionPage, error) {
+	var rows []managedAgentSessionPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
+	}
+	sessions := make([]internalmanagedagent.SessionSnapshot, 0, len(rows))
+	for _, row := range rows {
+		state := internalmanagedagent.SessionState(row.State)
+		if row.TenantID != tenantID || row.ProjectID != projectID || !validMutationIdentifier(row.SessionID) ||
+			!validMutationIdentifier(row.ProviderKind) || state != internalmanagedagent.SessionActive && state != internalmanagedagent.SessionClosed ||
+			row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+			return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
+		}
+		sessions = append(sessions, internalmanagedagent.SessionSnapshot{
+			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: row.SessionID,
+			ProviderKind: row.ProviderKind, State: state, Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		})
+	}
+	result := ManagedAgentSessionPage{Sessions: sessions}
+	if len(sessions) > limit {
+		result.Sessions = sessions[:limit]
+		result.NextSessionID = result.Sessions[len(result.Sessions)-1].SessionID
+	}
+	return result, nil
 }
 
 // GetManagedAgentSessionForExecution reads the Session under the action

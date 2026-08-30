@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	openapiv1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
@@ -23,6 +25,7 @@ type managedAgentSessionStore interface {
 	CreateManagedAgentSession(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CreateSessionInput) (internalmanagedagent.SessionSnapshot, error)
 	CloseManagedAgentSession(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CloseSessionInput) (internalmanagedagent.SessionSnapshot, error)
 	GetManagedAgentSession(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.SessionSnapshot, error)
+	ListManagedAgentSessions(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedAgentSessionPage, error)
 }
 
 type ManagedAgentSessionHTTPServer struct {
@@ -69,7 +72,9 @@ func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWrite
 	}
 
 	switch {
-	case action == "create" && request.Method == http.MethodPost:
+	case action == "collection" && request.Method == http.MethodGet:
+		server.list(writer, request, tenantID, projectID, requestID, bearer)
+	case action == "collection" && request.Method == http.MethodPost:
 		server.create(writer, request, tenantID, projectID, requestID, bearer)
 	case action == "close" && request.Method == http.MethodPost:
 		server.close(writer, request, tenantID, projectID, sessionID, requestID, bearer)
@@ -79,6 +84,38 @@ func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWrite
 		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writeManagedAgentSessionError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 	}
+}
+
+func (server *ManagedAgentSessionHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
+	pageSize, pageToken, ok := managedAgentSessionPagination(request)
+	if !ok {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterSessionID := ""
+	if validated.PageToken != "" {
+		if afterSessionID, ok = decodeManagedAgentSessionPageToken(validated.TenantID, validated.ProjectID, validated.PageToken); !ok {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.store.ListManagedAgentSessions(request.Context(), validated.TenantID, principal, validated.ProjectID, afterSessionID, validated.PageSize)
+	if err != nil {
+		status, code := managedAgentSessionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	writeManagedAgentSessionPage(writer, requestID, tenantID, projectID, page)
 }
 
 func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
@@ -182,6 +219,13 @@ type managedAgentSessionResourceSpec struct {
 	State        string `json:"state"`
 }
 
+type managedAgentSessionPageResource struct {
+	APIVersion    string                        `json:"apiVersion"`
+	Kind          string                        `json:"kind"`
+	Sessions      []managedAgentSessionResource `json:"sessions"`
+	NextPageToken string                        `json:"nextPageToken,omitempty"`
+}
+
 func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID string, snapshot internalmanagedagent.SessionSnapshot) {
 	writer.Header().Set("X-Request-ID", requestID)
 	writer.Header().Set("X-Resource-Version", strconv.FormatUint(snapshot.Version, 10))
@@ -191,6 +235,32 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
 		Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
 		Spec:     managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, State: string(snapshot.State)},
+	})
+}
+
+func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantID, projectID string, page postgres.ManagedAgentSessionPage) {
+	sessions := make([]managedAgentSessionResource, 0, len(page.Sessions))
+	for _, snapshot := range page.Sessions {
+		sessions = append(sessions, managedAgentSessionResource{
+			APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Session",
+			Metadata: managedAgentSessionResourceMetadata{UID: snapshot.SessionID, ProjectID: snapshot.Scope.ProjectID, ResourceVersion: strconv.FormatUint(snapshot.Version, 10), CreatedAt: snapshot.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), UpdatedAt: snapshot.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")},
+			Spec:     managedAgentSessionResourceSpec{ProviderKind: snapshot.ProviderKind, State: string(snapshot.State)},
+		})
+	}
+	nextPageToken := ""
+	if page.NextSessionID != "" {
+		var ok bool
+		nextPageToken, ok = encodeManagedAgentSessionPageToken(tenantID, projectID, page.NextSessionID)
+		if !ok {
+			writeManagedAgentSessionError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(managedAgentSessionPageResource{
+		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "SessionPage", Sessions: sessions, NextPageToken: nextPageToken,
 	})
 }
 
@@ -277,7 +347,7 @@ func managedAgentSessionPath(path string) (tenantID, projectID, sessionID, actio
 	}
 	parts := strings.Split(strings.TrimPrefix(path, ManagedAgentSessionRoutePrefix), "/")
 	if len(parts) == 4 && parts[1] == "projects" && parts[3] == "sessions" && parts[0] != "" && parts[2] != "" {
-		return parts[0], parts[2], "", "create", true
+		return parts[0], parts[2], "", "collection", true
 	}
 	if len(parts) == 5 && parts[1] == "projects" && parts[3] == "sessions" && parts[0] != "" && parts[2] != "" && parts[4] != "" && !strings.Contains(parts[4], ":") {
 		return parts[0], parts[2], parts[4], "get", true
@@ -289,6 +359,53 @@ func managedAgentSessionPath(path string) (tenantID, projectID, sessionID, actio
 		}
 	}
 	return "", "", "", "", false
+}
+
+func managedAgentSessionPagination(request *http.Request) (int, string, bool) {
+	pageSize := 50
+	pageToken := ""
+	for name, values := range request.URL.Query() {
+		if len(values) != 1 || values[0] == "" {
+			return 0, "", false
+		}
+		switch name {
+		case "pageSize":
+			value, err := strconv.Atoi(values[0])
+			if err != nil {
+				return 0, "", false
+			}
+			pageSize = value
+		case "pageToken":
+			pageToken = values[0]
+		default:
+			return 0, "", false
+		}
+	}
+	return pageSize, pageToken, true
+}
+
+func encodeManagedAgentSessionPageToken(tenantID, projectID, sessionID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil || commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("session/v1\x00" + tenantID + "\x00" + projectID + "\x00" + sessionID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeManagedAgentSessionPageToken(tenantID, projectID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 4 || parts[0] != "session/v1" || parts[1] != tenantID || parts[2] != projectID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil || commonv1alpha1.ValidateIdentifier(parts[3], "/sessionId") != nil {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func HandlesManagedAgentSessionPath(path string) bool {

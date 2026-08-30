@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/session-page.schema.json",
+  "title": "SessionPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "sessions"],
+  "properties": {
+    "apiVersion": { "const": "managed-agent.cloud-agents.dev/v1alpha1" },
+    "kind": { "const": "SessionPage" },
+    "sessions": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "session.schema.json" }
+    },
+    "nextPageToken": {
+      "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json"
+    }
+  }
+}

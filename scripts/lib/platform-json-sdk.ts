@@ -38,7 +38,7 @@ const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
 const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:0b56864bcc2d8f6d5021ca354f2594c757df29ee4d9037ea568fc693e7be45d1";
+	"sha256:f4c8c9cc0eac5a5f67b3bee5280b33c2b48d1d7c194f416dcd37624373a5cb63";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -94,6 +94,7 @@ const MANAGED_AGENT_SCHEMAS = [
 	"execution-create-request.schema.json",
   "execution.schema.json",
   "session-create-request.schema.json",
+  "session-page.schema.json",
   "session.schema.json",
   "turn-create-request.schema.json",
   "turn.schema.json",
@@ -384,6 +385,7 @@ function validateJSONSDKAuthority(root: string): void {
 	"managedAgentListEvents",
 	"managedAgentListOrganizations",
 	"managedAgentListProjects",
+	"managedAgentListSessions",
 	"managedAgentRevokeMembership",
 		"managedAgentRevokeRoleBinding",
 		"managedAgentSuspendMembership",

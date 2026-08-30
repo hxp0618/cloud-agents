@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -29,6 +30,24 @@ func TestScanManagedAgentSessionPreservesNotFound(t *testing.T) {
 	}
 }
 
+func TestDecodeManagedAgentSessionPageRowsBindsProjectAndCursor(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
+	raw, err := json.Marshal([]managedAgentSessionPageRow{
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", ProviderKind: "codex", State: "active", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now},
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-beta", ProviderKind: "claude", State: "closed", ResourceVersion: 2, CreatedAt: now, UpdatedAt: now},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := decodeManagedAgentSessionPageRows(raw, "tenant-alpha", "project-alpha", 1)
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].SessionID != "session-alpha" || page.Sessions[0].Scope.ProjectID != "project-alpha" || page.NextSessionID != "session-alpha" {
+		t.Fatalf("page = %#v / %v", page, err)
+	}
+	if _, err := decodeManagedAgentSessionPageRows(raw, "tenant-alpha", "project-other", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cross-project page error = %v", err)
+	}
+}
+
 func TestManagedAgentSessionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	for _, sql := range []string{createManagedAgentSessionSQL, closeManagedAgentSessionSQL} {
 		if !strings.Contains(sql, "cloud_agents.") || !strings.Contains(sql, "_v1(") {
@@ -37,6 +56,9 @@ func TestManagedAgentSessionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	}
 	if !strings.Contains(getManagedAgentSessionSQL, "cloud_agents.require_tenant_id()") {
 		t.Fatal("session read does not bind the tenant context")
+	}
+	if !strings.Contains(listManagedAgentSessionsSQL, "cloud_agents.require_tenant_id()") || !strings.Contains(listManagedAgentSessionsSQL, "project_uid = $1") || !strings.Contains(managedAgentSessionPageCursorIdentitySQL, "session_uid = $2") {
+		t.Fatal("session list does not bind tenant, project, and cursor identity")
 	}
 	if !strings.Contains(getManagedAgentSessionForExecutionSQL, "provider_resume_cursor") {
 		t.Fatal("execution session read omits Provider continuation state")

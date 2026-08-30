@@ -47,6 +47,7 @@ type RoleBindingResult = common.ResponseEnvelope[platform.RoleBinding]
 type EnvironmentLeaseResult = common.ResponseEnvelope[platform.EnvironmentLease]
 type RBACMutationResult = common.ResponseEnvelope[platform.RBACMutationResult]
 type ManagedAgentSessionResult = common.ResponseEnvelope[ManagedAgentSession]
+type ManagedAgentSessionPageResult = common.ResponseEnvelope[ManagedAgentSessionPage]
 type ManagedAgentTurnResult = common.ResponseEnvelope[ManagedAgentTurn]
 type ManagedAgentExecutionResult = common.ResponseEnvelope[ManagedAgentExecution]
 type ManagedAgentEventPageResult = common.ResponseEnvelope[ManagedAgentEventPage]
@@ -56,6 +57,12 @@ type ManagedAgentSession struct {
 	Kind       string `json:"kind"`
 	Metadata   ManagedAgentSessionMetadata `json:"metadata"`
 	Spec       ManagedAgentSessionSpec `json:"spec"`
+}
+type ManagedAgentSessionPage struct {
+	APIVersion    string                `json:"apiVersion"`
+	Kind          string                `json:"kind"`
+	Sessions      []ManagedAgentSession `json:"sessions"`
+	NextPageToken string                `json:"nextPageToken,omitempty"`
 }
 type ManagedAgentSessionMetadata struct {
 	UID             string `json:"uid"`
@@ -286,6 +293,19 @@ func (client *Client) GetManagedAgentSession(ctx context.Context, tenantID, proj
 	if value.Value.Metadata.ProjectID != projectID || value.Value.Metadata.UID != sessionID { return ManagedAgentSessionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata") }
 	return value, nil
 }
+func (client *Client) ListManagedAgentSessions(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (ManagedAgentSessionPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil { return ManagedAgentSessionPageResult{}, err }
+	if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil { return ManagedAgentSessionPageResult{}, err }
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) { return ManagedAgentSessionPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }
+	if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ManagedAgentSessionPageResult{}, err } }
+	query := url.Values{}; if pageSize != 0 { query.Set("pageSize", strconv.Itoa(pageSize)) }; if pageToken != "" { query.Set("pageToken", pageToken) }
+	path := "/v1/tenants/"+tenantID+"/projects/"+projectID+"/sessions"; if encoded := query.Encode(); encoded != "" { path += "?"+encoded }
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}}); if err != nil { return ManagedAgentSessionPageResult{}, err }
+	if response.Status != 200 { return ManagedAgentSessionPageResult{}, client.problemError("managedAgentListSessions", response) }
+	value, err := DecodeManagedAgentSessionPageResponseJSON(response.Body); if err != nil { return ManagedAgentSessionPageResult{}, &ClientError{Operation: "managedAgentListSessions", Status: response.Status, Cause: err} }
+	for _, session := range value.Value.Sessions { if session.Metadata.ProjectID != projectID { return ManagedAgentSessionPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sessions") } }
+	return value, nil
+}
 func (client *Client) ListManagedAgentEvents(ctx context.Context, tenantID, projectID, sessionID, requestID, cursor string, limit int) (ManagedAgentEventPageResult, error) {
 	if err := validateSessionPath(tenantID, projectID, requestID, sessionID); err != nil { return ManagedAgentEventPageResult{}, err }
 	if limit < 0 || limit > 64 { return ManagedAgentEventPageResult{}, common.ContractError("INVALID_EVENT_LIMIT", "/limit") }
@@ -377,6 +397,18 @@ var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]com
 })
 func DecodeManagedAgentSessionResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentSession], error) { raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentSessionResponseShape); if err != nil { return common.ResponseEnvelope[ManagedAgentSession]{}, err }; value, err := decodeManagedAgentSession(raw); if err != nil { return common.ResponseEnvelope[ManagedAgentSession]{}, err }; return common.ResponseEnvelope[ManagedAgentSession]{Value: value, Unknown: sidecar}, nil }
 func EncodeManagedAgentSessionResponseJSON(value common.ResponseEnvelope[ManagedAgentSession]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
+var managedAgentSessionPageResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(), "sessions": common.ArrayResponseShape(managedAgentSessionResponseShape), "nextPageToken": common.ScalarResponseShape()})
+func DecodeManagedAgentSessionPageResponseJSON(data []byte) (common.ResponseEnvelope[ManagedAgentSessionPage], error) {
+	raw, sidecar, err := common.DecodeResponseJSONWithSidecar(data, managedAgentSessionPageResponseShape); if err != nil { return common.ResponseEnvelope[ManagedAgentSessionPage]{}, err }
+	fields, err := common.DecodeStrictObject(raw, []string{"apiVersion", "kind", "sessions", "nextPageToken"}, []string{"apiVersion", "kind", "sessions"}); if err != nil { return common.ResponseEnvelope[ManagedAgentSessionPage]{}, err }
+	var wire struct { APIVersion string `json:"apiVersion"`; Kind string `json:"kind"`; Sessions []json.RawMessage `json:"sessions"`; NextPageToken string `json:"nextPageToken"` }
+	if err := json.Unmarshal(raw, &wire); err != nil || wire.APIVersion != "managed-agent.cloud-agents.dev/v1alpha1" || wire.Kind != "SessionPage" || wire.Sessions == nil || len(wire.Sessions) > 200 { return common.ResponseEnvelope[ManagedAgentSessionPage]{}, common.ContractError("INVALID_SESSION_PAGE", "") }
+	value := ManagedAgentSessionPage{APIVersion: wire.APIVersion, Kind: wire.Kind, Sessions: make([]ManagedAgentSession, 0, len(wire.Sessions))}
+	for index, item := range wire.Sessions { session, err := decodeManagedAgentSession(item); if err != nil { return common.ResponseEnvelope[ManagedAgentSessionPage]{}, fmt.Errorf("/sessions/%d: %w", index, err) }; value.Sessions = append(value.Sessions, session) }
+	if _, present := fields["nextPageToken"]; present { if err := common.ValidatePageToken(wire.NextPageToken, "/nextPageToken"); err != nil { return common.ResponseEnvelope[ManagedAgentSessionPage]{}, err }; value.NextPageToken = wire.NextPageToken }
+	return common.ResponseEnvelope[ManagedAgentSessionPage]{Value: value, Unknown: sidecar}, nil
+}
+func EncodeManagedAgentSessionPageResponseJSON(value common.ResponseEnvelope[ManagedAgentSessionPage]) ([]byte, error) { return common.EncodeJSONObjectWithSidecar(value.Value, value.Unknown) }
 var managedAgentTurnResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
 	"metadata": common.ObjectResponseShape(map[string]common.ResponseShape{"uid": common.ScalarResponseShape(), "projectId": common.ScalarResponseShape(), "sessionId": common.ScalarResponseShape(), "resourceVersion": common.ScalarResponseShape(), "createdAt": common.ScalarResponseShape(), "updatedAt": common.ScalarResponseShape()}),
@@ -448,6 +480,8 @@ type CreateProjectServerInput struct { TenantID string; RequestID string; Idempo
 func ValidateCreateProjectServerRequest(tenantID, requestID, idempotencyKey string, body []byte) (CreateProjectServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateProjectServerInput{}, err }; if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil { return CreateProjectServerInput{}, err }; project, err := platform.DecodeProjectCreateRequestJSON(body); if err != nil { return CreateProjectServerInput{}, err }; return CreateProjectServerInput{TenantID: tenantID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: project}, nil }
 type ListProjectsServerInput struct { TenantID string; OrganizationID string; RequestID string; PageSize int; PageToken string }
 func ValidateListProjectsServerRequest(tenantID, organizationID, requestID string, pageSize int, pageToken string) (ListProjectsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListProjectsServerInput{}, err }; if err := common.ValidateIdentifier(organizationID, "/organizationId"); err != nil { return ListProjectsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListProjectsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListProjectsServerInput{}, err } }; return ListProjectsServerInput{TenantID: tenantID, OrganizationID: organizationID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
+type ListManagedAgentSessionsServerInput struct { TenantID string; ProjectID string; RequestID string; PageSize int; PageToken string }
+func ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListManagedAgentSessionsServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return ListManagedAgentSessionsServerInput{}, err }; if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil { return ListManagedAgentSessionsServerInput{}, err }; if pageSize < 1 || pageSize > 200 { return ListManagedAgentSessionsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize") }; if pageToken != "" { if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil { return ListManagedAgentSessionsServerInput{}, err } }; return ListManagedAgentSessionsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil }
 type CreateMembershipServerInput struct { TenantID string; RequestID string; Body platform.MembershipCreateRequest }
 func ValidateCreateMembershipServerRequest(tenantID, requestID string, body []byte) (CreateMembershipServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateMembershipServerInput{}, err }; value, err := platform.DecodeMembershipCreateRequestJSON(body); if err != nil { return CreateMembershipServerInput{}, err }; return CreateMembershipServerInput{TenantID: tenantID, RequestID: requestID, Body: value}, nil }
 type MembershipTransitionServerInput struct { TenantID string; ResourceID string; RequestID string; Body platform.MembershipTransitionRequest }
