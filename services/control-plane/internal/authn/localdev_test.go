@@ -87,6 +87,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		{"memberships.delete", "tenant", "tenant-1"},
 		{"memberships.get", "tenant", "tenant-1"},
 		{"memberships.update", "tenant", "tenant-1"},
+		{"organizations.create", "tenant", "tenant-1"},
 		{"organizations.get", "organization", "organization-1"},
 		{"projects.act", "project", "project-1"},
 		{"projects.create", "organization", "organization-1"},
@@ -104,7 +105,7 @@ func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 		}
 	}
 	if _, err := verifier.Verify(token, LocalVerificationRequest{
-		TenantID: "tenant-1", ResourceLevel: "organization", ResourceID: "organization-1", RequiredPermission: "organizations.create",
+		TenantID: "tenant-1", ResourceLevel: "organization", ResourceID: "organization-1", RequiredPermission: "organizations.delete",
 	}); errorCategory(err) != errorScopeMismatch {
 		t.Fatalf("unexpected unexposed permission category: %v", err)
 	}

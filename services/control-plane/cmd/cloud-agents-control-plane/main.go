@@ -395,6 +395,7 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("local managed host environment lease HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
+	mux.Handle(server.OrganizationCollectionRoute, organizationHTTPServer)
 	mux.Handle(server.OrganizationRoute, organizationHTTPServer)
 	mux.Handle(server.RoleRoute, roleHTTPServer)
 	mux.Handle(server.MembershipRoute, rbacHTTPServer)

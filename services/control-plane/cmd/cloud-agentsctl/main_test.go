@@ -118,6 +118,7 @@ func TestParseArgsAcceptsRBACMutations(t *testing.T) {
 		name string
 		args []string
 	}{
+		{name: "organization create", args: []string{"--organization", "organization-beta", "organization", "create"}},
 		{name: "membership create", args: []string{"--membership", "membership-alpha", "membership", "create"}},
 		{name: "membership suspend", args: []string{"--membership", "membership-alpha", "membership", "suspend"}},
 		{name: "membership revoke", args: []string{"--membership", "membership-alpha", "membership", "revoke"}},
@@ -130,6 +131,42 @@ func TestParseArgsAcceptsRBACMutations(t *testing.T) {
 				t.Fatalf("parseArgs(%v) = %v", args, err)
 			}
 		})
+	}
+}
+
+func TestRunOrganizationCreate(t *testing.T) {
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/tenants/tenant-alpha/organizations" || request.Header.Get("X-Request-ID") != "request-alpha" {
+			t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.Path, request.Header)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotBody = string(body)
+		writer.Header().Set("X-Resource-Version", "5")
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write([]byte(`{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"Organization","metadata":{"uid":"organization-beta","name":"organization-beta","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"5","createdAt":"2026-08-30T08:00:00Z","updatedAt":"2026-08-30T08:00:00Z"},"spec":{"tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"displayName":"Organization Beta","state":"active"}}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--organization", "organization-beta", "--request-id", "request-alpha",
+		"organization", "create", "--expected-tenant-revision", "4", "--name", "organization-beta", "--display-name", "Organization Beta", "--audit-fact-uid", "audit-organization-beta", "--reason-code", "operator-request",
+	}, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{`"expectedTenantRevision":4`, `"organizationId":"organization-beta"`, `"name":"organization-beta"`, `"auditFactUid":"audit-organization-beta"`} {
+		if !strings.Contains(gotBody, part) {
+			t.Fatalf("body %q does not contain %q", gotBody, part)
+		}
+	}
+	if !strings.Contains(stdout.String(), `"kind":"Organization"`) {
+		t.Fatalf("output = %q", stdout.String())
 	}
 }
 

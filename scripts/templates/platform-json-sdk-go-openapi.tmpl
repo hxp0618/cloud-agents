@@ -163,6 +163,16 @@ func (client *Client) GetPlatformTenant(ctx context.Context, tenantID, requestID
 func (client *Client) GetOrganization(ctx context.Context, tenantID, organizationID, requestID string) (OrganizationResult, error) {
 	return doGet(ctx, client, "managedAgentGetOrganization", "/v1/tenants/"+tenantID+"/organizations/"+organizationID, tenantID, organizationID, requestID, platform.DecodeOrganizationResponseJSON)
 }
+func (client *Client) CreateOrganization(ctx context.Context, tenantID, requestID string, body platform.OrganizationCreateRequest) (OrganizationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil { return OrganizationResult{}, err }
+	bodyBytes, err := platform.EncodeOrganizationCreateRequestJSON(body); if err != nil { return OrganizationResult{}, err }
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/"+tenantID+"/organizations", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes}); if err != nil { return OrganizationResult{}, err }
+	if response.Status != 201 { return OrganizationResult{}, client.problemError("managedAgentCreateOrganization", response) }
+	value, err := platform.DecodeOrganizationResponseJSON(response.Body); if err != nil { return OrganizationResult{}, &ClientError{Operation: "managedAgentCreateOrganization", Status: response.Status, Cause: err} }
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil { return OrganizationResult{}, err }
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.OrganizationID || value.Value.Metadata.Name != body.Name { return OrganizationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata") }
+	return value, nil
+}
 func (client *Client) GetProject(ctx context.Context, tenantID, projectID, requestID string) (ProjectResult, error) {
 	return doGet(ctx, client, "managedAgentGetProject", "/v1/tenants/"+tenantID+"/projects/"+projectID, tenantID, projectID, requestID, platform.DecodeProjectResponseJSON)
 }
@@ -403,6 +413,8 @@ func resourceVersion[T any](value T) string { switch resource := any(value).(typ
 func metadataTenant[T any](value T) string { switch resource := any(value).(type) { case platform.PlatformTenant: return resource.Metadata.TenantRef.ID; case platform.Organization: return resource.Metadata.TenantRef.ID; case platform.Project: return resource.Metadata.TenantRef.ID; case platform.Membership: return resource.Metadata.TenantRef.ID; case platform.Role: return resource.Metadata.TenantRef.ID; case platform.RoleBinding: return resource.Metadata.TenantRef.ID; case platform.EnvironmentLease: return resource.Metadata.TenantRef.ID; default: return "" } }
 func metadataUID[T any](value T) string { switch resource := any(value).(type) { case platform.PlatformTenant: return resource.Metadata.UID; case platform.Organization: return resource.Metadata.UID; case platform.Project: return resource.Metadata.UID; case platform.Membership: return resource.Metadata.UID; case platform.Role: return resource.Metadata.UID; case platform.RoleBinding: return resource.Metadata.UID; case platform.EnvironmentLease: return resource.Metadata.UID; default: return "" } }
 
+type CreateOrganizationServerInput struct { TenantID string; RequestID string; Body platform.OrganizationCreateRequest }
+func ValidateCreateOrganizationServerRequest(tenantID, requestID string, body []byte) (CreateOrganizationServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateOrganizationServerInput{}, err }; value, err := platform.DecodeOrganizationCreateRequestJSON(body); if err != nil { return CreateOrganizationServerInput{}, err }; return CreateOrganizationServerInput{TenantID: tenantID, RequestID: requestID, Body: value}, nil }
 type CreateProjectServerInput struct { TenantID string; RequestID string; IdempotencyKey string; Body platform.ProjectCreateRequest }
 func ValidateCreateProjectServerRequest(tenantID, requestID, idempotencyKey string, body []byte) (CreateProjectServerInput, error) { if err := validatePath(tenantID, requestID); err != nil { return CreateProjectServerInput{}, err }; if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil { return CreateProjectServerInput{}, err }; project, err := platform.DecodeProjectCreateRequestJSON(body); if err != nil { return CreateProjectServerInput{}, err }; return CreateProjectServerInput{TenantID: tenantID, RequestID: requestID, IdempotencyKey: idempotencyKey, Body: project}, nil }
 type CreateMembershipServerInput struct { TenantID string; RequestID string; Body platform.MembershipCreateRequest }

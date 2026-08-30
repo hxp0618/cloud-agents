@@ -60,6 +60,14 @@ func TestGeneratedPlatformJSONFixtures(t *testing.T) {
 }
 
 func TestGeneratedPlatformJSONRequestAndResponseBoundaries(t *testing.T) {
+	organization, err := DecodeOrganizationCreateRequestJSON([]byte(`{"expectedTenantRevision":4,"organizationId":"organization-beta","name":"organization-beta","displayName":"Organization Beta","auditFactUid":"audit-organization-beta","reasonCode":"operator-request"}`))
+	if err != nil || organization.OrganizationID != "organization-beta" || organization.ExpectedTenantRevision != 4 {
+		t.Fatalf("organization create request = %#v / %v", organization, err)
+	}
+	if _, err := EncodeOrganizationCreateRequestJSON(organization); err != nil {
+		t.Fatal(err)
+	}
+
 	request := readPlatformFixture(t, "golden/project-create-request.json")
 	decoded, err := DecodeProjectCreateRequestJSON(request)
 	if err != nil {

@@ -55,17 +55,21 @@ func (service *DurableCoordinationService) GetOrganization(
 				return ErrTenantCapabilityClosed
 			}
 			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeOrganization, ID: organizationID}, func() error {
-				err := handle.transaction.queryRow(readContext, getOrganizationSQL, organizationID).Scan(
-					&result.UID, &result.Name, &result.TenantID, &result.DisplayName,
-					&result.State, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt,
-				)
-				if errors.Is(err, pgx.ErrNoRows) {
-					return ErrOrganizationNotFound
-				}
-				return err
+				return scanOrganization(handle.transaction.queryRow(readContext, getOrganizationSQL, organizationID), &result)
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
 	})
 	return result, err
+}
+
+func scanOrganization(row rowScanner, result *Organization) error {
+	err := row.Scan(
+		&result.UID, &result.Name, &result.TenantID, &result.DisplayName,
+		&result.State, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrOrganizationNotFound
+	}
+	return err
 }

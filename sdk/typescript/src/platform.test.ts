@@ -358,6 +358,11 @@ describe("generated fixture client", () => {
         headers: { "X-Resource-Version": "3" },
         body: projectBody,
       },
+      "POST /v1/tenants/tenant-alpha/organizations": fixtureResponse(
+        platformFixtureRoot,
+        "organization",
+        201,
+      ),
     };
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
@@ -373,14 +378,22 @@ describe("generated fixture client", () => {
     await client.getRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
     await client.getProjectContext("tenant-alpha", "project-alpha", "req-alpha");
     await client.getManagedHostRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
+    await client.createOrganization("tenant-alpha", "req-alpha", {
+      expectedTenantRevision: 1,
+      organizationId: "organization-alpha",
+      name: "organization-alpha",
+      displayName: "Organization Alpha",
+      auditFactUid: "audit-organization",
+      reasonCode: "operator-request",
+    });
     await client.createProject(
       "tenant-alpha",
       "req-alpha",
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
       request,
     );
-    expect(seen).toHaveLength(9);
-    expect(JSON.parse(seen[8]!.body!)).toEqual(request);
+    expect(seen).toHaveLength(10);
+    expect(JSON.parse(seen[9]!.body!)).toEqual(request);
   });
 
   it("keeps problem status and abort semantics stable", async () => {

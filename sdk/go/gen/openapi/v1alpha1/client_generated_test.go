@@ -32,6 +32,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 		"GET /v1/tenants/tenant-alpha/role-bindings/role-binding-alpha":              responseFixture(t, "role-binding", 200),
 		"GET /v1/managed-host/tenants/tenant-alpha/projects/project-alpha":           projectGetResponse,
 		"GET /v1/managed-host/tenants/tenant-alpha/role-bindings/role-binding-alpha": responseFixture(t, "role-binding", 200),
+		"POST /v1/tenants/tenant-alpha/organizations":                                {Status: 201, Headers: map[string]string{HeaderResourceVersion: "2"}, Body: responseFixture(t, "organization", 200).Body},
 		"POST /v1/tenants/tenant-alpha/projects":                                     {Status: 201, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: projectBody},
 		"POST /v1/tenants/tenant-alpha/memberships":                                  {Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"}, Body: mutationBody},
 	}
@@ -68,6 +69,9 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.GetManagedHostRoleBinding(ctx, "tenant-alpha", "role-binding-alpha", "req-alpha"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := client.CreateOrganization(ctx, "tenant-alpha", "req-alpha", platform.OrganizationCreateRequest{ExpectedTenantRevision: 1, OrganizationID: "organization-alpha", Name: "organization-alpha", DisplayName: "Organization Alpha", AuditFactUID: "audit-organization", ReasonCode: "operator-request"}); err != nil {
+		t.Fatal(err)
+	}
 	body, err := platform.DecodeProjectCreateRequestJSON(requestBody)
 	if err != nil {
 		t.Fatal(err)
@@ -78,17 +82,17 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 10 {
-		t.Fatalf("transport calls = %d, want 10", len(seen))
+	if len(seen) != 11 {
+		t.Fatalf("transport calls = %d, want 11", len(seen))
 	}
 	for _, request := range seen {
 		if request.Headers[HeaderRequestID] != "req-alpha" {
 			t.Fatalf("request headers = %#v", request.Headers)
 		}
 	}
-	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[8].Body)
-	if seen[8].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
-		t.Fatalf("create request = %#v", seen[8])
+	sentBody, sentErr := platform.DecodeProjectCreateRequestJSON(seen[9].Body)
+	if seen[9].Headers[HeaderIdempotencyKey] == "" || sentErr != nil || sentBody != body {
+		t.Fatalf("create request = %#v", seen[9])
 	}
 }
 
@@ -202,6 +206,10 @@ func TestGeneratedOpenAPIClientErrorAndCancellationBoundaries(t *testing.T) {
 }
 
 func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
+	organization, err := ValidateCreateOrganizationServerRequest("tenant-alpha", "req-alpha", []byte(`{"expectedTenantRevision":4,"organizationId":"organization-beta","name":"organization-beta","displayName":"Organization Beta","auditFactUid":"audit-organization-beta","reasonCode":"operator-request"}`))
+	if err != nil || organization.Body.OrganizationID != "organization-beta" {
+		t.Fatalf("organization server input = %#v / %v", organization, err)
+	}
 	body := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	input, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body)
 	if err != nil || input.Body.Name != "project-alpha" {

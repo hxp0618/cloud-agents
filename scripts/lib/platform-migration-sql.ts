@@ -392,12 +392,26 @@ export function classifyMigrationStatement(
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"].join("\0");
       const dropAuditFactConstraint =
-        migrationId === "000004" &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:audit_facts" &&
-        new Set([
-          ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0"),
-          ["DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"].join("\0"),
-        ]).has(subcommand.join("\0"));
+        new Map<string, ReadonlySet<string>>([
+          [
+            "000004",
+            new Set([
+              ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0"),
+              ["DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"].join("\0"),
+            ]),
+          ],
+          [
+            "000027",
+            new Set([
+              ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0"),
+              ["DROP", "CONSTRAINT", "AUDIT_FACTS_RESOURCE_KIND"].join("\0"),
+              ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION_RESOURCE"].join("\0"),
+            ]),
+          ],
+        ])
+          .get(migrationId)
+          ?.has(subcommand.join("\0")) === true;
       const dropCoordinationRegistryConstraint =
         (migrationId === "000009" || migrationId === "000013") &&
         new Map([

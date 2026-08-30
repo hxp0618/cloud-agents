@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +15,10 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
-const OrganizationRoute = "/v1/tenants/{tenantId}/organizations/{organizationId}"
+const (
+	OrganizationCollectionRoute = "/v1/tenants/{tenantId}/organizations"
+	OrganizationRoute           = "/v1/tenants/{tenantId}/organizations/{organizationId}"
+)
 
 type OrganizationHTTPServer struct {
 	verifier AccessTokenVerifier
@@ -35,8 +39,17 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 		writeOrganizationError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}
+	if request.Method == http.MethodPost {
+		tenantID, ok := organizationCreatePath(request.URL.Path)
+		if !ok {
+			writeOrganizationError(writer, http.StatusNotFound, "route_not_found")
+			return
+		}
+		server.create(writer, request, tenantID)
+		return
+	}
 	if request.Method != http.MethodGet {
-		writer.Header().Set("Allow", http.MethodGet)
+		writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		writeOrganizationError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
@@ -77,6 +90,59 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 		writeOrganizationError(writer, status, code)
 		return
 	}
+	server.writeOrganization(writer, requestID, http.StatusOK, organization)
+}
+
+func (server *OrganizationHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID string) {
+	requestID, ok := exactSingleHeader(request.Header, "X-Request-ID")
+	if !ok {
+		writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
+	if err != nil {
+		writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateCreateOrganizationServerRequest(tenantID, requestID, body)
+	if err != nil {
+		writeOrganizationError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	authorization, ok := exactSingleHeader(request.Header, "Authorization")
+	if !ok {
+		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	bearer, ok := bearerToken(authorization)
+	if !ok {
+		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "organizations.create",
+	})
+	if err != nil {
+		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	organization, err := server.reader.CreateOrganization(request.Context(), validated.TenantID, principal, postgres.CreateOrganizationInput{
+		ExpectedTenantRevision: validated.Body.ExpectedTenantRevision,
+		OrganizationUID:        validated.Body.OrganizationID,
+		OrganizationName:       validated.Body.Name,
+		DisplayName:            validated.Body.DisplayName,
+		AuditFactUID:           validated.Body.AuditFactUID,
+		ReasonCode:             validated.Body.ReasonCode,
+	})
+	if err != nil {
+		status, code := organizationErrorStatus(err)
+		writeOrganizationError(writer, status, code)
+		return
+	}
+	server.writeOrganization(writer, validated.RequestID, http.StatusCreated, organization)
+}
+
+func (server *OrganizationHTTPServer) writeOrganization(writer http.ResponseWriter, requestID string, status int, organization postgres.Organization) {
 	value := organizationResource(organization)
 	body, err := platformv1alpha1.EncodeOrganizationResponseJSON(commonv1alpha1.ResponseEnvelope[platformv1alpha1.Organization]{Value: value})
 	if err != nil {
@@ -86,8 +152,18 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 	writer.Header().Set("X-Request-ID", requestID)
 	writer.Header().Set("X-Resource-Version", value.Metadata.ResourceVersion)
 	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
+	writer.WriteHeader(status)
 	_, _ = writer.Write(body)
+}
+
+func organizationCreatePath(path string) (string, bool) {
+	const prefix = "/v1/tenants/"
+	const suffix = "/organizations"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return "", false
+	}
+	tenantID := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	return tenantID, tenantID != "" && !strings.Contains(tenantID, "/")
 }
 
 func organizationPath(path string) (string, string, bool) {
@@ -120,6 +196,12 @@ func organizationErrorStatus(err error) (int, string) {
 		return http.StatusNotFound, "not_found"
 	case errors.Is(err, postgres.ErrMutationDenied):
 		return http.StatusForbidden, "authorization_denied"
+	case errors.Is(err, postgres.ErrMutationInvalidInput):
+		return http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, postgres.ErrMutationConflict):
+		return http.StatusConflict, "mutation_conflict"
+	case errors.Is(err, postgres.ErrMutationCommitUnknown):
+		return http.StatusInternalServerError, "commit_outcome_unknown"
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput):
 		return http.StatusBadRequest, "invalid_request"
 	default:

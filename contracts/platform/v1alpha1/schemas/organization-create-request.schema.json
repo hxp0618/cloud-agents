@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/organization-create-request.schema.json",
+  "title": "OrganizationCreateRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedTenantRevision", "organizationId", "name", "displayName", "auditFactUid", "reasonCode"],
+  "properties": {
+    "expectedTenantRevision": { "type": "integer", "minimum": 1 },
+    "organizationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "name": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "auditFactUid": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "reasonCode": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  }
+}

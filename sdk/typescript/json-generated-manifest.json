@@ -5,8 +5,8 @@
   "notGateClosure": true,
   "contract": {
     "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:e73f2543df87dfc1bbbf0025e6bbe567e158859c26a0db84f77b4ce495c8bd27",
-    "inputManifestSha256": "sha256:e73f2543df87dfc1bbbf0025e6bbe567e158859c26a0db84f77b4ce495c8bd27",
+    "manifestSha256": "sha256:7a73b9e821ec0d6be25dfa2db5d4559c7de5ffc5533f199d860e503afd52c01d",
+    "inputManifestSha256": "sha256:7a73b9e821ec0d6be25dfa2db5d4559c7de5ffc5533f199d860e503afd52c01d",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
       "contracts/common/v1alpha1/fixtures/golden/idempotency.json",
@@ -76,6 +76,7 @@
       "contracts/platform/v1alpha1/schemas/membership-create-request.schema.json",
       "contracts/platform/v1alpha1/schemas/membership-transition-request.schema.json",
       "contracts/platform/v1alpha1/schemas/membership.schema.json",
+      "contracts/platform/v1alpha1/schemas/organization-create-request.schema.json",
       "contracts/platform/v1alpha1/schemas/organization.schema.json",
       "contracts/platform/v1alpha1/schemas/permission.schema.json",
       "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
@@ -91,7 +92,7 @@
     "authorityProfile": {
       "id": "cloud-agents-json-contract-sdk-model-authority/v1alpha1",
       "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-      "manifestSha256": "sha256:c6717046050b763100f5502232edb0fd89b1a084bd68cb0c154370b8ebfd611c",
+      "manifestSha256": "sha256:6ea1d0f02dcd1093f711dece08136abd93d9996a77a844db10e30490a8a1cf43",
       "inputs": [
         "contracts/common/v1alpha1/schemas/authorization-scope.schema.json",
         "contracts/common/v1alpha1/schemas/idempotency-key.schema.json",
@@ -132,6 +133,7 @@
         "contracts/platform/v1alpha1/schemas/membership-create-request.schema.json",
         "contracts/platform/v1alpha1/schemas/membership-transition-request.schema.json",
         "contracts/platform/v1alpha1/schemas/membership.schema.json",
+        "contracts/platform/v1alpha1/schemas/organization-create-request.schema.json",
         "contracts/platform/v1alpha1/schemas/organization.schema.json",
         "contracts/platform/v1alpha1/schemas/permission.schema.json",
         "contracts/platform/v1alpha1/schemas/platform-tenant.schema.json",
@@ -150,7 +152,7 @@
     "version": "v1",
     "entrypoint": "scripts/generate-platform-json-sdks.ts",
     "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:37b812df7eb63e5ad90cee8e8f16518d2ff33e9a26d7ad225875bc1f2ea3d356",
+    "sourceManifestSha256": "sha256:1e3ed0e16feed16ed2ab5561097d8789d0178787c3d0cd449d6372e443408505",
     "sources": [
       "scripts/generate-platform-json-sdks.ts",
       "scripts/lib/platform-json-sdk.test.ts",
@@ -166,7 +168,7 @@
       "sdk/go/gen/platform/v1alpha1/json_generated_test.go",
       "sdk/typescript/src/platform.test.ts"
     ],
-    "configDigest": "sha256:d4fca78e239a997f268a8c7d88e707cd8a551cc53b2f4c2dba909483e9103d74"
+    "configDigest": "sha256:960ad34d273701ca56236ddcd5243e33ec02984838d0b5744b610034b048e885"
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -181,12 +183,12 @@
   "packageIdentity": "@synara/cloud-agent-platform-sdk/platform",
   "runtimeDependencies": [],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:fc220ec4980ec2dfd70344e29d1b556a1063ecfd9e4c91da4481e0583024d5a7",
+  "outputTreeSha256": "sha256:24a94268c863008f6438eb5b1cd8117704e60c4754610496eda07d1b90b42f68",
   "outputs": [
     {
       "path": "sdk/typescript/src/platform.ts",
-      "sha256": "sha256:f9c27986dd185548bf799e4372d427945cae4a1525dd763b3d61c504eda4801b",
-      "sizeBytes": 101473
+      "sha256": "sha256:4405f0f1ce180f672658fed97b5b93eecdbc1e3d36542f777999756503138769",
+      "sizeBytes": 103512
     }
   ]
 }

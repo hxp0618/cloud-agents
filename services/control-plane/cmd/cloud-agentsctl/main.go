@@ -77,6 +77,30 @@ func run(args []string, stdout io.Writer) error {
 		value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
 	case "organization get":
 		value, err = client.GetOrganization(ctx, options.tenant, options.organization, options.requestID)
+	case "organization create":
+		var flags struct {
+			expectedTenantRevision int64
+			name                   string
+			displayName            string
+			auditFactUID           string
+			reasonCode             string
+		}
+		if err = parseActionFlags("organization create", actionArgs, func(set *flag.FlagSet) {
+			set.Int64Var(&flags.expectedTenantRevision, "expected-tenant-revision", 0, "expected tenant resource revision")
+			set.StringVar(&flags.name, "name", "", "organization name")
+			set.StringVar(&flags.displayName, "display-name", "", "organization display name")
+			set.StringVar(&flags.auditFactUID, "audit-fact-uid", "", "audit fact identifier")
+			set.StringVar(&flags.reasonCode, "reason-code", "", "mutation reason code")
+		}); err == nil {
+			value, err = client.CreateOrganization(ctx, options.tenant, options.requestID, platform.OrganizationCreateRequest{
+				ExpectedTenantRevision: flags.expectedTenantRevision,
+				OrganizationID:         options.organization,
+				Name:                   flags.name,
+				DisplayName:            flags.displayName,
+				AuditFactUID:           flags.auditFactUID,
+				ReasonCode:             flags.reasonCode,
+			})
+		}
 	case "project get":
 		value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
 	case "project create":
@@ -378,7 +402,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization create", "project get", "project create", "session create", "session get", "session close", "turn create", "turn get", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership create", "membership suspend", "membership revoke", "role get", "role-binding get", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false

@@ -200,6 +200,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return errors.New("managed host environment lease HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
+	mux.Handle(server.OrganizationCollectionRoute, organizationServer)
 	mux.Handle(server.OrganizationRoute, organizationServer)
 	mux.Handle(server.RoleRoute, roleServer)
 	mux.Handle(server.MembershipRoute, rbacServer)
