@@ -95,6 +95,21 @@ func (verifier *ConfiguredVerifier) Verify(token string, request VerificationReq
 	}, token)
 }
 
+// Ready reports whether the active trust snapshot is within its configured
+// validity window at the current verifier time.
+func (verifier *ConfiguredVerifier) Ready() bool {
+	if verifier == nil {
+		return false
+	}
+	verifier.mu.RLock()
+	defer verifier.mu.RUnlock()
+	if verifier.invalidated || verifier.lineage == nil || verifier.clock == nil {
+		return false
+	}
+	profile := generatedIdentityVerifierProfile()
+	return profile.valid() && validSnapshotAt(currentSnapshot(verifier.lineage), verifier.clock().UTC().Unix(), profile)
+}
+
 func (verifier *ConfiguredVerifier) Invalidate() {
 	if verifier == nil {
 		return

@@ -249,6 +249,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			writer.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		if !verifier.Ready() {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		if err := pool.Ping(request.Context()); err != nil {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return

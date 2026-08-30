@@ -79,3 +79,38 @@ func TestConfiguredVerifierReloadAdvancesTrustGenerationAtomically(t *testing.T)
 		t.Fatalf("failed reload disturbed active snapshot: %v", err)
 	}
 }
+
+func TestConfiguredVerifierReadinessTracksTrustWindowAndReload(t *testing.T) {
+	now := time.Unix(testNow, 0)
+	clock := func() time.Time { return now }
+	key := jwkFor(t, testPrivateKey(t), "key-1")
+	verifier, err := NewConfiguredVerifier(ConfiguredVerifierConfig{
+		Issuer: "https://issuer.example", Audience: "https://api.example", Generation: 1, SecurityEpoch: 7,
+		NotBefore: testNow - 100, ExpiresAt: testNow + 100,
+		Keys: []ConfiguredVerifierKey{{JWK: key, Enabled: true, NotBefore: testNow - 1000, NotAfter: testNow + 1000}}, Clock: clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verifier.Ready() {
+		t.Fatal("active trust snapshot is not ready")
+	}
+	now = time.Unix(testNow+100, 0)
+	if verifier.Ready() {
+		t.Fatal("expired trust snapshot is ready")
+	}
+	if err := verifier.Reload(ConfiguredVerifierConfig{
+		Issuer: "https://issuer.example", Audience: "https://api.example", Generation: 2, SecurityEpoch: 7,
+		NotBefore: testNow + 99, ExpiresAt: testNow + 1000,
+		Keys: []ConfiguredVerifierKey{{JWK: key, Enabled: true, NotBefore: testNow - 1000, NotAfter: testNow + 1000}}, Clock: clock,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !verifier.Ready() {
+		t.Fatal("reloaded trust snapshot is not ready")
+	}
+	verifier.Invalidate()
+	if verifier.Ready() || (*ConfiguredVerifier)(nil).Ready() {
+		t.Fatal("invalidated or nil verifier is ready")
+	}
+}
