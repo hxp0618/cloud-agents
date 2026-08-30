@@ -102,6 +102,44 @@ services:
         -v cloud_agents_bootstrap_reason_code="$${CLOUD_AGENTS_BOOTSTRAP_REASON_CODE}"
         -f /deploy/helm/cloud-agents/files/tenant-bootstrap.sql
 
+  backup:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    profiles: [backup]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "999:999"
+    read_only: true
+    environment:
+      CLOUD_AGENTS_BACKUP_DATABASE_URL: ${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL:?set the isolated install-admin database URL}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        exec pg_dump --dbname="$${CLOUD_AGENTS_BACKUP_DATABASE_URL}"
+        --format=custom --no-owner
+
+  restore:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    profiles: [restore]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "999:999"
+    read_only: true
+    environment:
+      CLOUD_AGENTS_MIGRATION_DATABASE_URL: ${CLOUD_AGENTS_MIGRATION_DATABASE_URL:?set the migration-owner database URL}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        state=$$(psql "$${CLOUD_AGENTS_MIGRATION_DATABASE_URL}" -X -A -t -q -v ON_ERROR_STOP=1
+        -c "SELECT CASE WHEN pg_catalog.to_regnamespace('cloud_agents') IS NULL THEN 'empty' ELSE 'initialized' END");
+        if [ "$$state" != empty ]; then
+          echo "restore target already contains the cloud_agents schema" >&2;
+          exit 1;
+        fi;
+        exec pg_restore --dbname="$${CLOUD_AGENTS_MIGRATION_DATABASE_URL}"
+        --exit-on-error --single-transaction --no-owner --role=cloud_agents_migration_owner
+
   control-plane:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:

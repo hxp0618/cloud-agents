@@ -15,6 +15,28 @@ transaction and fails closed on existing role drift:
    retries fail without partial changes.
 3. Run `docker compose --env-file .env up --build`.
 
+Create a consistent custom-format logical backup without writing it inside a
+container:
+
+```sh
+umask 077
+docker compose --env-file .env --profile backup run --rm -T backup > cloud-agents.dump.tmp &&
+  mv cloud-agents.dump.tmp cloud-agents.dump
+```
+
+The backup profile uses the isolated install-admin URL because forced tenant RLS
+must not omit rows from an all-tenant backup. Do not substitute the runtime or
+migration URL.
+
+Restore only into a freshly bootstrapped database that does not yet contain the
+`cloud_agents` schema, then start the normal stack. Restore is one transaction;
+an invalid dump leaves the target empty, and a repeated restore is rejected:
+
+```sh
+docker compose --env-file .env --profile restore run --rm -T restore < cloud-agents.dump
+docker compose --env-file .env up --build
+```
+
 The migration URL must be able to `SET ROLE cloud_agents_migration_owner`; the
 runtime URL uses the least-privileged `cloud_agents_runtime_login`. Use the
 tenant-bootstrap URL only for the packaged one-shot bootstrap. TLS,

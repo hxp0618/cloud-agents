@@ -180,6 +180,22 @@ describe("platform release", () => {
     expect(environment).not.toContain("postgresql://cloud_agents_runtime:");
   });
 
+  it("backs up and atomically restores an empty Compose database", () => {
+    const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    expect(compose).toContain("profiles: [backup]");
+    expect(compose).toContain(
+      "CLOUD_AGENTS_BACKUP_DATABASE_URL: ${CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL:",
+    );
+    expect(compose).toContain('exec pg_dump --dbname="$${CLOUD_AGENTS_BACKUP_DATABASE_URL}"');
+    expect(compose).toContain("--format=custom --no-owner");
+    expect(compose).toContain("profiles: [restore]");
+    expect(compose).toContain("pg_catalog.to_regnamespace('cloud_agents') IS NULL");
+    expect(compose).toContain(
+      "--exit-on-error --single-transaction --no-owner --role=cloud_agents_migration_owner",
+    );
+    expect(compose).not.toContain("pg_restore --clean");
+  });
+
   it("bootstraps the first Helm tenant administrator after migrations", () => {
     const bootstrap = readFileSync(
       "deploy/helm/cloud-agents/templates/tenant-bootstrap-job.yaml",
