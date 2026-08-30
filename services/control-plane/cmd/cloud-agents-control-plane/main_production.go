@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -258,7 +259,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		writer.WriteHeader(http.StatusOK)
 	})
-	httpServer := &http.Server{Addr: config.listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
+	httpServer := &http.Server{Addr: config.listen, Handler: mux, BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second}
 	errorChannel := make(chan error, 1)
 	go func() {
 		if config.tlsCert != "" {

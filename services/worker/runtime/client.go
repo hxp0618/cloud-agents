@@ -69,7 +69,7 @@ func New(ctx context.Context, config Config) (*Client, error) {
 		return nil, fmt.Errorf("%w: runtime command is required", runtimeprotocol.ErrInvalidCommand)
 	}
 	command := append([]string(nil), config.Command...)
-	process := exec.Command(command[0], command[1:]...)
+	process := exec.CommandContext(ctx, command[0], command[1:]...)
 	process.Dir = config.Directory
 	if config.Environment != nil {
 		process.Env = append([]string(nil), config.Environment...)

@@ -497,6 +497,7 @@ func runLocalWorker(ctx context.Context, cfg localWorkerConfig) error {
 	if err != nil {
 		return err
 	}
+	built.Server.BaseContext = func(net.Listener) context.Context { return ctx }
 	errorsCh := make(chan error, 1)
 	go func() { errorsCh <- built.Server.Serve(listener) }()
 	select {

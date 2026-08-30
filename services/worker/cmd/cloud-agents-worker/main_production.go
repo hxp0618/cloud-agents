@@ -177,6 +177,7 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 	server := &http.Server{
 		Addr:              cfg.listen,
 		Handler:           workerkernel.NewTLSHandler(mux),
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		TLSConfig: &tls.Config{

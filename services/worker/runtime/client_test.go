@@ -94,6 +94,24 @@ func TestClientFailsPendingCommandWhenRuntimeExitsCleanly(t *testing.T) {
 	}
 }
 
+func TestClientStopsRuntimeWhenOwnerContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	environment := append(os.Environ(), "CLOUD_AGENTS_RUNTIME_HELPER=1")
+	client, err := New(ctx, Config{
+		Command: []string{os.Args[0], "-test.run=TestRuntimeHelperProcess", "--"}, Environment: environment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeClient(t, client)
+	cancel()
+	select {
+	case <-client.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Runtime process survived owner context cancellation")
+	}
+}
+
 func TestClientExecutesCommandsAndPreservesEvents(t *testing.T) {
 	client := newTestClient(t)
 	defer closeClient(t, client)
