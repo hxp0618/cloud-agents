@@ -370,11 +370,16 @@ func run(ctx context.Context, args []string) error {
 		runtimeGeneration = health.Generation
 	}
 	verifierAdapter := localAccessTokenVerifier{verifier: verifier}
+	tenantHTTPServer, tenantErr := server.NewPlatformTenantHTTPServer(verifierAdapter, coordinationService)
+	if tenantErr != nil {
+		return errors.New("local tenant HTTP server is unavailable")
+	}
 	leaseHTTPServer, leaseErr := server.NewManagedHostEnvironmentLeaseHTTPServer(verifierAdapter, coordinationService)
 	if leaseErr != nil {
 		return errors.New("local managed host environment lease HTTP server is unavailable")
 	}
 	mux := http.NewServeMux()
+	mux.Handle(server.PlatformTenantRoute, tenantHTTPServer)
 	mux.Handle(server.ManagedHostEnvironmentLeaseRoutePrefix, leaseHTTPServer)
 	mux.Handle(server.LocalProjectClaimRoutePrefix, claimHTTPServer)
 	mux.Handle("/v1alpha1/tenants/{tenantId}/project-creations", durableProjectHTTPServer)

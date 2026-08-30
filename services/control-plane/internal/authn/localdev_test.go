@@ -71,7 +71,7 @@ func TestLocalVerifierRejectsTenantScopeAndSignatureMismatch(t *testing.T) {
 	}
 }
 
-func TestLocalVerifierAllowsManagedAgentExecutionPermission(t *testing.T) {
+func TestLocalVerifierAllowsLocalProductPermissions(t *testing.T) {
 	verifier, err := NewLocalVerifier(LocalVerifierConfig{Clock: func() time.Time { return time.Unix(1_800_000_000, 0) }})
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +79,11 @@ func TestLocalVerifierAllowsManagedAgentExecutionPermission(t *testing.T) {
 	token, err := verifier.IssueToken(LocalTokenClaims{TenantID: "tenant-1", Subject: "local-user"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := verifier.Verify(token, LocalVerificationRequest{
+		TenantID: "tenant-1", ResourceLevel: "tenant", ResourceID: "tenant-1", RequiredPermission: "tenants.get",
+	}); err != nil {
+		t.Fatalf("tenants.get verification failed: %v", err)
 	}
 	if _, err := verifier.Verify(token, LocalVerificationRequest{
 		TenantID: "tenant-1", ResourceLevel: "project", ResourceID: "project-1", RequiredPermission: "projects.act",
