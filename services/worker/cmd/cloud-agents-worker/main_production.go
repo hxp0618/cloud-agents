@@ -191,9 +191,8 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 	if err != nil {
 		return err
 	}
-	tlsListener := tls.NewListener(listener, server.TLSConfig)
 	serve := make(chan error, 1)
-	go func() { serve <- server.Serve(tlsListener) }()
+	go func() { serve <- server.ServeTLS(listener, "", "") }()
 	select {
 	case <-ctx.Done():
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
