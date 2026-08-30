@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunProjectGetUsesTokenFile(t *testing.T) {
@@ -64,6 +67,25 @@ func TestRunRejectsOversizedTokenFile(t *testing.T) {
 	err := run([]string{"--endpoint", "https://control-plane.example", "--token-file", tokenFile, "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
 	if err == nil || err.Error() != "cannot read bearer token file" {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRunCancelsRequestAtConfiguredTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+
+	started := time.Now()
+	err := run([]string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "--timeout", "25ms", "tenant", "get"}, io.Discard)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("request timeout took %v", elapsed)
+	}
+	if _, _, _, _, err := parseArgs([]string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "--timeout", "0s", "tenant", "get"}); err == nil {
+		t.Fatal("zero timeout was accepted")
 	}
 }
 

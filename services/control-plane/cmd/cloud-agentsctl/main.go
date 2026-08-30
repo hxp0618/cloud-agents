@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	openapi "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
@@ -31,9 +32,13 @@ type globalOptions struct {
 	lease          string
 	requestID      string
 	idempotencyKey string
+	timeout        time.Duration
 }
 
-const maxBearerTokenFileBytes = 16 << 10
+const (
+	maxBearerTokenFileBytes = 16 << 10
+	defaultRequestTimeout   = 6 * time.Minute
+)
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -64,7 +69,8 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return errors.New("invalid endpoint or bearer token")
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), options.timeout)
+	defer cancel()
 	var value any
 	switch command + " " + action {
 	case "tenant get":
@@ -264,6 +270,7 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set.StringVar(&options.lease, "lease", "", "environment lease identifier")
 	set.StringVar(&options.requestID, "request-id", "", "request identifier")
 	set.StringVar(&options.idempotencyKey, "idempotency-key", "", "idempotency key")
+	set.DurationVar(&options.timeout, "timeout", defaultRequestTimeout, "request timeout")
 	if err := set.Parse(args); err != nil {
 		return globalOptions{}, "", "", nil, err
 	}
@@ -284,6 +291,9 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if strings.TrimSpace(options.token) != options.token || strings.TrimSpace(options.tokenFile) != options.tokenFile {
 		return globalOptions{}, "", "", nil, errors.New("bearer token input is invalid")
+	}
+	if options.timeout <= 0 {
+		return globalOptions{}, "", "", nil, errors.New("--timeout must be greater than zero")
 	}
 	command, action := remaining[0], remaining[1]
 	if !knownCommand(command, action) {
