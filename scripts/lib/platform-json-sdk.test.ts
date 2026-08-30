@@ -1,7 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   buildPlatformJSONSDKOutputs,
@@ -13,11 +12,6 @@ import {
 } from "./platform-json-sdk";
 
 const root = resolve(import.meta.dirname, "../..");
-const temporaryRoots: string[] = [];
-
-afterEach(() => {
-  for (const path of temporaryRoots.splice(0)) rmSync(path, { force: true, recursive: true });
-});
 
 describe("platform JSON SDK generator", () => {
   it("binds the model authority to an explicit versioned profile", () => {
@@ -49,12 +43,17 @@ describe("platform JSON SDK generator", () => {
     );
   });
 
-  it("renders deterministic language outputs and manifests", () => {
+  it("renders deterministic language outputs without internal provenance", () => {
     const first = expectedPlatformJSONSDKFiles(root);
     const second = expectedPlatformJSONSDKFiles(root);
     expect(second).toEqual(first);
-    expect(first).toHaveLength(6);
-    for (const output of first) expect(output.source.length, output.path).toBeGreaterThan(100);
+    expect(first).toHaveLength(4);
+    for (const output of first) {
+      expect(output.source.length, output.path).toBeGreaterThan(100);
+      expect(output.source, output.path).not.toContain("Contract manifest:");
+      expect(output.source, output.path).not.toContain("Generator source manifest:");
+      expect(output.source, output.path).not.toContain("Generation config:");
+    }
     expect(buildPlatformJSONSDKOutputs(root).map(({ path }) => path)).toEqual([
       "sdk/go/gen/common/v1alpha1/json_generated.go",
       "sdk/go/gen/platform/v1alpha1/json_generated.go",
@@ -72,11 +71,5 @@ describe("platform JSON SDK generator", () => {
         /net\/http|internal\/store|internal\/coordination|from ["']node:(?:http|https|net)|\bfetch\s*\(|\bDeno\.serve|\bBun\.serve/iu,
       );
     }
-  });
-
-  it("uses no external mutable generation directory", () => {
-    const path = mkdtempSync(join(tmpdir(), "platform-json-sdk-"));
-    temporaryRoots.push(path);
-    expect(path.startsWith(root)).toBe(false);
   });
 });

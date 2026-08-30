@@ -2,7 +2,7 @@
   "name": "@synara/cloud-agent-platform-sdk",
   "version": "0.0.0-a3.2",
   "private": true,
-  "description": "Generated Cloud Agents Platform TypeScript SDK (unpublished P1-A3 evidence)",
+  "description": "Cloud Agents Platform TypeScript SDK",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -11,9 +11,6 @@
   },
   "files": [
     "dist",
-    "generated-manifest.json",
-    "json-generated-manifest.json",
-    "proto-generated-manifest.json",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "README.md"

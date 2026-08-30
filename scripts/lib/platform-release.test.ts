@@ -294,6 +294,17 @@ describe("platform release", () => {
           path.includes("platformadapter"),
       ),
     ).toBe(false);
+    const source = entries
+      .filter(({ path }) => path.endsWith(".go"))
+      .map(({ data }) => new TextDecoder().decode(data))
+      .join("\n");
+    for (const marker of [
+      "Contract manifest:",
+      "Generator source manifest:",
+      "Generation config:",
+    ]) {
+      expect(source).not.toContain(marker);
+    }
   });
 
   it("packages an installable public TypeScript SDK without internal provenance", () => {
@@ -315,6 +326,17 @@ describe("platform release", () => {
           path.endsWith(".test.ts"),
       ),
     ).toBe(false);
+    const source = entries
+      .filter(({ path }) => /\.(?:[cm]?js|[cm]?ts)$/u.test(path))
+      .map(({ data }) => new TextDecoder().decode(data))
+      .join("\n");
+    for (const marker of [
+      "Contract manifest:",
+      "Generator source manifest:",
+      "Generation config:",
+    ]) {
+      expect(source).not.toContain(marker);
+    }
     const packageJSON = entries.find(({ path }) => path === "package/package.json");
     expect(packageJSON).toBeDefined();
     const manifest = JSON.parse(new TextDecoder().decode(packageJSON?.data)) as Record<

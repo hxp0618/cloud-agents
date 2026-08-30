@@ -40,6 +40,8 @@
     "platform:sdk:consumers": "bun scripts/test-platform-sdk-consumers.ts",
     "platform:contracts:external-consumer:source-check": "bun scripts/generate-platform-g-contract-external-consumer.ts --check-source",
     "platform:contracts:external-consumer:profile-check": "bun scripts/generate-platform-g-contract-external-consumer.ts --check-profile tools/g-contract-external-consumer/v1/evidence/consumer.json",
+    "platform:sdk:check": "bun scripts/generate-platform-identity-sdks.ts --check && bun scripts/generate-platform-json-sdks.ts --check && bun scripts/generate-platform-proto-sdks.ts --check",
+    "platform:sdk:generate": "bun scripts/generate-platform-identity-sdks.ts --write && bun scripts/generate-platform-json-sdks.ts --write && bun scripts/generate-platform-proto-sdks.ts --write",
     "platform:migrations:check": "bun scripts/check-platform-migration-bundle.ts && bun scripts/generate-platform-migration-bundle.ts --check",
     "platform:go:check": "bun scripts/check-platform-go-modules.ts",
     "platform:go:test": "GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test ./... && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane test -race ./... && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane vet ./... && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/control-plane mod verify && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C services/worker mod verify && GOTOOLCHAIN=local GOFLAGS=-mod=readonly go -C sdk/go mod verify"

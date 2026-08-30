@@ -87,9 +87,7 @@ describe("generated platform JSON models", () => {
               : 200,
         headers: { "X-Resource-Version": "2" },
         body:
-          request.method === "GET" && request.path.includes("/sessions?")
-            ? sessionPage
-            : session,
+          request.method === "GET" && request.path.includes("/sessions?") ? sessionPage : session,
       };
     });
     await client.createManagedAgentSession(
@@ -365,7 +363,9 @@ describe("generated platform JSON models", () => {
     expect(decodeProject(readJSON(platformFixtureRoot, "golden/project.json")).kind).toBe(
       "Project",
     );
-    expect(decodeProjectPage(readJSON(platformFixtureRoot, "golden/project-page.json")).projects).toHaveLength(1);
+    expect(
+      decodeProjectPage(readJSON(platformFixtureRoot, "golden/project-page.json")).projects,
+    ).toHaveLength(1);
     expect(
       decodeProjectCreateRequest(
         readJSON(platformFixtureRoot, "golden/project-create-request.json"),
@@ -536,11 +536,12 @@ describe("generated fixture client", () => {
         body: readFixture(platformFixtureRoot, "golden/organization-page.json"),
       },
       "GET /v1/tenants/tenant-alpha/projects/project-alpha": projectGetResponse,
-      "GET /v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1": {
-        status: 200,
-        headers: {},
-        body: readFixture(platformFixtureRoot, "golden/project-page.json"),
-      },
+      "GET /v1/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1":
+        {
+          status: 200,
+          headers: {},
+          body: readFixture(platformFixtureRoot, "golden/project-page.json"),
+        },
       "GET /v1/tenants/tenant-alpha/memberships/membership-alpha": fixtureResponse(
         platformFixtureRoot,
         "membership",
@@ -611,12 +612,7 @@ describe("generated fixture client", () => {
     const args = ["tenant-alpha", "req-alpha"] as const;
     await client.getPlatformTenant(...args);
     await client.getOrganization("tenant-alpha", "organization-alpha", "req-alpha");
-    await client.listOrganizations(
-      "tenant-alpha",
-      "req-alpha",
-      1,
-      "organization-page-token-1",
-    );
+    await client.listOrganizations("tenant-alpha", "req-alpha", 1, "organization-page-token-1");
     await client.getProject("tenant-alpha", "project-alpha", "req-alpha");
     await client.listProjects(
       "tenant-alpha",
@@ -626,21 +622,11 @@ describe("generated fixture client", () => {
       "project-page-token-1",
     );
     await client.getMembership("tenant-alpha", "membership-alpha", "req-alpha");
-    await client.listMemberships(
-      "tenant-alpha",
-      "req-alpha",
-      1,
-      "membership-page-token-1",
-    );
+    await client.listMemberships("tenant-alpha", "req-alpha", 1, "membership-page-token-1");
     await client.getRole("tenant-alpha", "role-project-viewer-v1", "req-alpha");
     await client.listRoles("tenant-alpha", "req-alpha", 1, "role-page-token-1");
     await client.getRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
-    await client.listRoleBindings(
-      "tenant-alpha",
-      "req-alpha",
-      1,
-      "role-binding-page-token-1",
-    );
+    await client.listRoleBindings("tenant-alpha", "req-alpha", 1, "role-binding-page-token-1");
     await client.getProjectContext("tenant-alpha", "project-alpha", "req-alpha");
     await client.getManagedHostRoleBinding("tenant-alpha", "role-binding-alpha", "req-alpha");
     await client.createOrganization("tenant-alpha", "req-alpha", {

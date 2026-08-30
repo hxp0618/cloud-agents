@@ -4,13 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertIdentitySDKCurrent,
-  buildIdentitySDKManifests,
   buildIdentitySDKOutputs,
-  GO_IDENTITY_MANIFEST_PATH,
   GO_IDENTITY_OUTPUT_PATH,
-  identitySDKConfigDigest,
   identitySDKContractInputs,
-  TYPESCRIPT_IDENTITY_MANIFEST_PATH,
   TYPESCRIPT_IDENTITY_OUTPUT_PATH,
 } from "./platform-identity-sdk";
 
@@ -56,65 +52,15 @@ describe("generated common identity SDK", () => {
       expect(output.source).not.toContain("cloud-agents/services/");
       expect(output.source).not.toContain("workspace:");
       expect(output.source).not.toContain("file:");
-    }
-  });
-
-  it("binds each language output to a deterministic non-Gate manifest", () => {
-    const manifests = buildIdentitySDKManifests(root);
-    expect(manifests.map((manifest) => manifest.path)).toEqual([
-      GO_IDENTITY_MANIFEST_PATH,
-      TYPESCRIPT_IDENTITY_MANIFEST_PATH,
-    ]);
-    expect(identitySDKConfigDigest()).toMatch(/^sha256:[0-9a-f]{64}$/u);
-    for (const manifest of manifests) {
-      const document = JSON.parse(manifest.source) as {
-        language: string;
-        notGateClosure: boolean;
-        outputTreeSha256: string;
-        outputs: Array<{ path: string; sha256: string; sizeBytes: number }>;
-        implementationBoundary: Record<string, string | boolean>;
-        runtimeDependencies: Array<Record<string, string>>;
-      };
-      expect(document.notGateClosure).toBe(true);
-      expect(document.outputTreeSha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
-      expect(document.outputs).toHaveLength(1);
-      expect(document.outputs[0]?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
-      expect(document.outputs[0]?.sizeBytes).toBeGreaterThan(1_000);
-      expect(document.implementationBoundary).toEqual(
-        expect.objectContaining({
-          gateClosure: false,
-          httpSurface: "NOT_IMPLEMENTED",
-          p2Surface: "NOT_IMPLEMENTED",
-          providerSideEffects: "FORBIDDEN",
-          productionDatabaseWrites: "NOT_AUTHORIZED",
-          publication: "NOT_AUTHORIZED",
-        }),
-      );
-      if (document.language === "go") {
-        expect(document.runtimeDependencies).toEqual([
-          expect.objectContaining({
-            module: "golang.org/x/text",
-            version: "v0.39.0",
-            package: "golang.org/x/text/unicode/norm",
-            license: "BSD-3-Clause",
-            review: "docs/plan/p1/dependency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md",
-            bitsReview: "docs/plan/p1/dependency-reviews/x-text-v0.39.0.md",
-          }),
-        ]);
-      } else {
-        expect(document.runtimeDependencies).toEqual([]);
-      }
+      expect(output.source).not.toContain("Contract manifest:");
+      expect(output.source).not.toContain("Generator source manifest:");
+      expect(output.source).not.toContain("Generation config:");
     }
   });
 
   it("keeps every checked-in generated file byte exact", () => {
     expect(() => assertIdentitySDKCurrent(root)).not.toThrow();
-    for (const path of [
-      GO_IDENTITY_OUTPUT_PATH,
-      GO_IDENTITY_MANIFEST_PATH,
-      TYPESCRIPT_IDENTITY_OUTPUT_PATH,
-      TYPESCRIPT_IDENTITY_MANIFEST_PATH,
-    ]) {
+    for (const path of [GO_IDENTITY_OUTPUT_PATH, TYPESCRIPT_IDENTITY_OUTPUT_PATH]) {
       expect(readFileSync(resolve(root, path), "utf8").length).toBeGreaterThan(0);
     }
   });

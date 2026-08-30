@@ -18,7 +18,6 @@ import { spawnSync } from "node:child_process";
 import { fromBinary } from "@bufbuild/protobuf";
 import { FileDescriptorSetSchema } from "@bufbuild/protobuf/wkt";
 
-import { validatePlatformContractTree } from "./platform-contracts";
 import {
   formatWithOxfmt,
   PLATFORM_OXFMT_LIBRARY_PATH,
@@ -27,7 +26,6 @@ import {
 
 export const PLATFORM_PROTO_PROFILE_PATH = "contracts/proto-generation.profile.json";
 const ENTRY_PATH = "docs/plan/p1/sdk-identity-closure-entry-20260820.md";
-const DEPENDENCY_REVIEW_PATH = "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md";
 export const PLATFORM_PROTO_GENERATOR_PATH = "scripts/generate-platform-proto-sdks.ts";
 export const PLATFORM_PROTO_LIBRARY_PATH = "scripts/lib/platform-proto-sdk.ts";
 export const PLATFORM_PROTO_TEST_PATH = "scripts/lib/platform-proto-sdk.test.ts";
@@ -40,9 +38,9 @@ export const PLATFORM_PROTO_DESCRIPTOR_PATH =
   "contracts/generated/proto/cloud-agents-v1alpha1.binpb";
 export const PLATFORM_PROTO_BREAKING_BASELINE_PATH =
   "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb";
-const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
-const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-size-v1";
-const GO_MODULE = "github.com/hxp0618/cloud-agents/sdk/go";
+const WORKER_RUNTIME_PROTO_SOURCE = "contracts/worker/runtime/v1alpha1/runtime.proto";
+const WORKER_RUNTIME_PROTO_DESCRIPTOR_PATH =
+  "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb";
 
 export const PLATFORM_PROTO_GO_OUTPUTS = [
   "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
@@ -50,6 +48,11 @@ export const PLATFORM_PROTO_GO_OUTPUTS = [
   "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
   "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
   "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+] as const;
+
+const WORKER_RUNTIME_PROTO_GO_OUTPUTS = [
+  "sdk/go/gen/cloudagents/worker/runtime/v1alpha1/runtime.pb.go",
+  "sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect/runtime.connect.go",
 ] as const;
 
 export const PLATFORM_PROTO_TYPESCRIPT_OUTPUTS = [
@@ -96,7 +99,6 @@ type Toolchain = {
   readonly protocGenConnectGo: string;
   readonly protocGenES: string;
 };
-type FileRecord = { readonly path: string; readonly sha256: string; readonly sizeBytes: number };
 
 export function platformProtoGeneratorSources(): string[] {
   return [
@@ -134,9 +136,6 @@ export function writePlatformProtoSDKFiles(root: string): void {
   if (!existsSync(resolve(root, PLATFORM_PROTO_BREAKING_BASELINE_PATH))) {
     writeGenerated(root, { path: PLATFORM_PROTO_BREAKING_BASELINE_PATH, bytes: baseline });
   }
-  for (const manifest of buildManifests(root, generated, baseline, profile)) {
-    writeGenerated(root, manifest);
-  }
 }
 
 export function assertPlatformProtoSDKCurrent(root: string): void {
@@ -148,9 +147,6 @@ export function assertPlatformProtoSDKCurrent(root: string): void {
     baseline,
   );
   for (const output of generated) assertCurrent(root, output);
-  for (const manifest of buildManifests(root, generated, baseline, profile)) {
-    assertCurrent(root, manifest);
-  }
 }
 
 function generatePlatformProtoArtifacts(
@@ -163,6 +159,10 @@ function generatePlatformProtoArtifacts(
     const goRoot = resolve(temporary, "go");
     const typescriptRoot = resolve(temporary, "typescript");
     const descriptor = resolve(temporary, "cloud-agents-v1alpha1.binpb");
+    const workerRuntimeDescriptor = resolve(
+      temporary,
+      "cloud-agents-worker-runtime-v1alpha1.binpb",
+    );
     mkdirSync(goRoot, { recursive: true });
     mkdirSync(typescriptRoot, { recursive: true });
     const goPlugin = requiredPlugin(profile, "google.golang.org/protobuf/cmd/protoc-gen-go");
@@ -188,12 +188,37 @@ function generatePlatformProtoArtifacts(
       ...profile.sources,
     ];
     run(tools.protoc, arguments_, root, "protoc generation");
+    run(
+      tools.protoc,
+      [
+        `-I${root}`,
+        `-I${resolve(dirname(dirname(tools.protoc)), "include")}`,
+        `--descriptor_set_out=${workerRuntimeDescriptor}`,
+        "--include_imports",
+        `--plugin=protoc-gen-go=${tools.protocGenGo}`,
+        `--plugin=protoc-gen-connect-go=${tools.protocGenConnectGo}`,
+        `--go_out=${goRoot}`,
+        `--go_opt=${goPlugin.options.join(",")}`,
+        `--connect-go_out=${goRoot}`,
+        `--connect-go_opt=${connectPlugin.options.join(",")}`,
+        WORKER_RUNTIME_PROTO_SOURCE,
+      ],
+      root,
+      "Worker Runtime protoc generation",
+    );
     const descriptorBytes = readFileSync(descriptor);
+    const workerRuntimeDescriptorBytes = readFileSync(workerRuntimeDescriptor);
     validateDescriptorSet(descriptorBytes, profile);
+    validateWorkerRuntimeDescriptorSet(workerRuntimeDescriptorBytes);
 
     const outputs: GeneratedFile[] = [
       { path: PLATFORM_PROTO_DESCRIPTOR_PATH, bytes: descriptorBytes },
+      { path: WORKER_RUNTIME_PROTO_DESCRIPTOR_PATH, bytes: workerRuntimeDescriptorBytes },
       ...PLATFORM_PROTO_GO_OUTPUTS.map((path) => ({
+        path,
+        bytes: readFileSync(resolve(goRoot, path.slice("sdk/go/".length))),
+      })),
+      ...WORKER_RUNTIME_PROTO_GO_OUTPUTS.map((path) => ({
         path,
         bytes: readFileSync(resolve(goRoot, path.slice("sdk/go/".length))),
       })),
@@ -219,7 +244,9 @@ function generatePlatformProtoArtifacts(
     ];
     assertGeneratedTree(
       goRoot,
-      PLATFORM_PROTO_GO_OUTPUTS.map((path) => path.slice("sdk/go/".length)),
+      [...PLATFORM_PROTO_GO_OUTPUTS, ...WORKER_RUNTIME_PROTO_GO_OUTPUTS].map((path) =>
+        path.slice("sdk/go/".length),
+      ),
     );
     assertGeneratedTree(
       typescriptRoot,
@@ -229,151 +256,6 @@ function generatePlatformProtoArtifacts(
   } finally {
     rmSync(temporary, { force: true, recursive: true });
   }
-}
-
-function buildManifests(
-  root: string,
-  generated: ReadonlyArray<GeneratedFile>,
-  baseline: Buffer,
-  profile: ProtoGenerationProfile,
-): ReadonlyArray<GeneratedFile> {
-  const summary = validatePlatformContractTree(root);
-  const common = {
-    formatVersion: "cloud-agents-generated-proto-manifest/v1",
-    status: "GENERATED_NON_GATE_EVIDENCE",
-    notGateClosure: true,
-    authority: "proto3",
-    contract: {
-      manifestAlgorithm: MANIFEST_ALGORITHM,
-      manifestSha256: summary.contractManifestSha256,
-      inputManifestSha256: normalizedManifestDigest(root, platformProtoContractInputs(root)),
-      inputs: platformProtoContractInputs(root),
-    },
-    generator: {
-      id: "platform-proto-sdk-generator",
-      version: "v1",
-      entrypoint: PLATFORM_PROTO_GENERATOR_PATH,
-      sourceManifestAlgorithm: MANIFEST_ALGORITHM,
-      sourceManifestSha256: normalizedManifestDigest(root, platformProtoGeneratorSources()),
-      sources: platformProtoGeneratorSources(),
-      profilePath: PLATFORM_PROTO_PROFILE_PATH,
-      profileSha256: digest(readRegularFile(root, PLATFORM_PROTO_PROFILE_PATH)),
-      compiler: profile.compiler,
-      plugins: profile.plugins,
-    },
-    descriptor: {
-      path: PLATFORM_PROTO_DESCRIPTOR_PATH,
-      sha256: digest(requiredGenerated(generated, PLATFORM_PROTO_DESCRIPTOR_PATH).bytes),
-      breakingBaseline: PLATFORM_PROTO_BREAKING_BASELINE_PATH,
-      breakingBaselineSha256: digest(baseline),
-      breakingPolicy: "EXACT_V1ALPHA1_BASELINE_NO_UNREVIEWED_DELTA",
-      includeImports: true,
-      includeSourceInfo: false,
-    },
-    transportProfile: profile.transportProfile,
-    implementationBoundary: profile.implementationBoundary,
-  };
-  const manifests = [
-    {
-      path: PLATFORM_PROTO_DESCRIPTOR_MANIFEST_PATH,
-      language: "descriptor-set",
-      packageIdentity: "cloudagents.worker.v1alpha1+cloudagents.platformadapter.v1alpha1",
-      runtimeDependencies: [] as ReadonlyArray<Readonly<Record<string, string>>>,
-      outputPaths: [PLATFORM_PROTO_DESCRIPTOR_PATH],
-    },
-    {
-      path: PLATFORM_PROTO_GO_MANIFEST_PATH,
-      language: "go",
-      packageIdentity: GO_MODULE,
-      runtimeDependencies: [
-        { package: "connectrpc.com/connect", version: "v1.20.0", license: "Apache-2.0" },
-        { package: "golang.org/x/text", version: "v0.39.0", license: "BSD-3-Clause" },
-        {
-          package: "google.golang.org/protobuf",
-          version: "v1.36.12",
-          license: "BSD-3-Clause",
-        },
-      ],
-      testDependencies: [
-        { package: "golang.org/x/net", version: "v0.55.0", license: "BSD-3-Clause" },
-        { package: "golang.org/x/sys", version: "v0.45.0", license: "BSD-3-Clause" },
-        {
-          package: "google.golang.org/genproto/googleapis/rpc",
-          version: "v0.0.0-20260526163538-3dc84a4a5aaa",
-          license: "Apache-2.0",
-        },
-        { package: "google.golang.org/grpc", version: "v1.83.1", license: "Apache-2.0" },
-      ],
-      dependencyFiles: {
-        goMod: { path: "sdk/go/go.mod", sha256: digest(readRegularFile(root, "sdk/go/go.mod")) },
-        goSum: { path: "sdk/go/go.sum", sha256: digest(readRegularFile(root, "sdk/go/go.sum")) },
-        notice: {
-          path: "sdk/go/THIRD_PARTY_NOTICES.md",
-          sha256: digest(readRegularFile(root, "sdk/go/THIRD_PARTY_NOTICES.md")),
-        },
-        review: {
-          path: DEPENDENCY_REVIEW_PATH,
-          sha256: digest(readRegularFile(root, DEPENDENCY_REVIEW_PATH)),
-        },
-      },
-      outputPaths: [...PLATFORM_PROTO_GO_OUTPUTS],
-    },
-    {
-      path: PLATFORM_PROTO_TYPESCRIPT_MANIFEST_PATH,
-      language: "typescript",
-      packageIdentity: "@synara/cloud-agent-platform-sdk/proto",
-      packagePrivate: true,
-      runtimeDependencies: [
-        {
-          package: "@bufbuild/protobuf",
-          version: "2.14.0",
-          license: "(Apache-2.0 AND BSD-3-Clause)",
-        },
-        { package: "@connectrpc/connect", version: "2.1.2", license: "Apache-2.0" },
-      ],
-      dependencyFiles: {
-        package: {
-          path: "sdk/typescript/package.json",
-          sha256: digest(readRegularFile(root, "sdk/typescript/package.json")),
-        },
-        bunLock: { path: "bun.lock", sha256: digest(readRegularFile(root, "bun.lock")) },
-        notice: {
-          path: "sdk/typescript/THIRD_PARTY_NOTICES.md",
-          sha256: digest(readRegularFile(root, "sdk/typescript/THIRD_PARTY_NOTICES.md")),
-        },
-        review: {
-          path: DEPENDENCY_REVIEW_PATH,
-          sha256: digest(readRegularFile(root, DEPENDENCY_REVIEW_PATH)),
-        },
-      },
-      outputPaths: [...PLATFORM_PROTO_TYPESCRIPT_OUTPUTS, PLATFORM_PROTO_TYPESCRIPT_INDEX_PATH],
-    },
-  ] as const;
-  return manifests.map((manifest) => {
-    const files = manifest.outputPaths.map((path) =>
-      fileRecord(requiredGenerated(generated, path)),
-    );
-    return {
-      path: manifest.path,
-      bytes: Buffer.from(
-        formatGeneratedText(
-          root,
-          manifest.path,
-          `${JSON.stringify(
-            {
-              ...common,
-              ...manifest,
-              outputTreeAlgorithm: OUTPUT_TREE_ALGORITHM,
-              outputTreeSha256: outputTreeDigest(files),
-              outputs: files,
-            },
-            null,
-            2,
-          )}\n`,
-        ),
-      ),
-    };
-  });
 }
 
 function ensureToolchain(root: string, profile: ProtoGenerationProfile): Toolchain {
@@ -489,6 +371,31 @@ function validateDescriptorSet(bytes: Buffer, profile: ProtoGenerationProfile): 
     )
   ) {
     throw new Error("The approved v1alpha1 compatibility profile permits unary RPCs only.");
+  }
+}
+
+function validateWorkerRuntimeDescriptorSet(bytes: Buffer): void {
+  const descriptor = fromBinary(FileDescriptorSetSchema, bytes);
+  const names = descriptor.file.map((file) => file.name).toSorted();
+  const expected = [
+    "google/protobuf/timestamp.proto",
+    "contracts/worker/v1alpha1/kernel.proto",
+    WORKER_RUNTIME_PROTO_SOURCE,
+  ].toSorted();
+  if (JSON.stringify(names) !== JSON.stringify(expected)) {
+    throw new Error(`Worker Runtime descriptor file set drifted: ${names.join(", ")}.`);
+  }
+  const runtime = descriptor.file.find((file) => file.name === WORKER_RUNTIME_PROTO_SOURCE);
+  if (!runtime || runtime.sourceCodeInfo !== undefined) {
+    throw new Error("Generated Worker Runtime descriptor must exist and exclude source info.");
+  }
+  const methods = runtime.service.flatMap((service) => service.method);
+  if (
+    runtime.service.length !== 1 ||
+    methods.length !== 1 ||
+    methods.some((method) => !method.clientStreaming || !method.serverStreaming)
+  ) {
+    throw new Error("Worker Runtime descriptor must expose one bidirectional streaming RPC.");
   }
 }
 
@@ -624,40 +531,6 @@ function readRegularFile(root: string, path: string): Buffer {
   const stat = lstatSync(target);
   if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${path} must be a regular file.`);
   return readFileSync(target);
-}
-
-function normalizedManifestDigest(root: string, paths: ReadonlyArray<string>): string {
-  const hash = createHash("sha256");
-  for (const path of [...paths].toSorted()) {
-    const stat = lstatSync(resolve(root, path));
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${path} must be a regular file.`);
-    hash
-      .update(path)
-      .update("\0")
-      .update(digest(readFileSync(resolve(root, path))))
-      .update("\0")
-      .update((stat.mode & 0o111) === 0 ? "100644" : "100755")
-      .update("\0");
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-function fileRecord(output: GeneratedFile): FileRecord {
-  return { path: output.path, sha256: digest(output.bytes), sizeBytes: output.bytes.length };
-}
-
-function outputTreeDigest(files: ReadonlyArray<FileRecord>): string {
-  const hash = createHash("sha256");
-  for (const file of [...files].toSorted((left, right) => left.path.localeCompare(right.path))) {
-    hash
-      .update(file.path)
-      .update("\0")
-      .update(file.sha256)
-      .update("\0")
-      .update(String(file.sizeBytes))
-      .update("\0");
-  }
-  return `sha256:${hash.digest("hex")}`;
 }
 
 function digest(bytes: Uint8Array): string {

@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
-import { canonicalizeJson } from "./platform-json-semantics";
 import {
   formatWithOxfmt,
   PLATFORM_OXFMT_LIBRARY_PATH,
@@ -34,11 +33,8 @@ const COMMON_MANIFEST_PATH = "contracts/common/v1alpha1/fixtures/manifest.json";
 const PLATFORM_MANIFEST_PATH = "contracts/platform/v1alpha1/fixtures/manifest.json";
 const MANAGED_AGENT_OPENAPI_PATH = "contracts/managed-agent/v1alpha1/openapi.json";
 const MANAGED_HOST_OPENAPI_PATH = "contracts/managed-host/v1alpha1/openapi.json";
-const MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
-const OUTPUT_TREE_ALGORITHM = "sorted-path-nul-sha256-nul-v1";
-const JSON_SDK_AUTHORITY_PROFILE_ID = "cloud-agents-json-contract-sdk-model-authority/v1alpha1";
 const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-	"sha256:d20c3bdf3c50da23b5c73cc13af7a088ec98636cc3336f921e7a2158c6aa5690";
+  "sha256:d20c3bdf3c50da23b5c73cc13af7a088ec98636cc3336f921e7a2158c6aa5690";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -65,38 +61,38 @@ const COMMON_SCHEMAS = [
 ] as const;
 
 const PLATFORM_SCHEMAS = [
-	"environment-lease-create-request.schema.json",
-	"environment-lease-page.schema.json",
-	"environment-lease-terminate-request.schema.json",
-	"environment-lease.schema.json",
-	"managed-agent-create-project-organization-ref.schema.json",
-	"membership-create-request.schema.json",
-	"membership-page.schema.json",
-	"membership.schema.json",
-	"membership-transition-request.schema.json",
-	"organization-create-request.schema.json",
-	"organization-page.schema.json",
-	"organization.schema.json",
-	"permission.schema.json",
-	"platform-tenant.schema.json",
-	"project-create-request.schema.json",
-	"project-page.schema.json",
-	"project.schema.json",
-	"rbac-mutation-result.schema.json",
-	"role-binding-create-request.schema.json",
-	"role-binding-page.schema.json",
-	"role-binding.schema.json",
-	"role-binding-revoke-request.schema.json",
-	"role-page.schema.json",
-	"role.schema.json",
+  "environment-lease-create-request.schema.json",
+  "environment-lease-page.schema.json",
+  "environment-lease-terminate-request.schema.json",
+  "environment-lease.schema.json",
+  "managed-agent-create-project-organization-ref.schema.json",
+  "membership-create-request.schema.json",
+  "membership-page.schema.json",
+  "membership.schema.json",
+  "membership-transition-request.schema.json",
+  "organization-create-request.schema.json",
+  "organization-page.schema.json",
+  "organization.schema.json",
+  "permission.schema.json",
+  "platform-tenant.schema.json",
+  "project-create-request.schema.json",
+  "project-page.schema.json",
+  "project.schema.json",
+  "rbac-mutation-result.schema.json",
+  "role-binding-create-request.schema.json",
+  "role-binding-page.schema.json",
+  "role-binding.schema.json",
+  "role-binding-revoke-request.schema.json",
+  "role-page.schema.json",
+  "role.schema.json",
 ] as const;
 const MANAGED_AGENT_SCHEMAS = [
-	"event-page.schema.json",
-	"event.schema.json",
-	"execution-cancel-request.schema.json",
-	"execution-interrupt-request.schema.json",
-	"execution-create-request.schema.json",
-	"execution-page.schema.json",
+  "event-page.schema.json",
+  "event.schema.json",
+  "execution-cancel-request.schema.json",
+  "execution-interrupt-request.schema.json",
+  "execution-create-request.schema.json",
+  "execution-page.schema.json",
   "execution.schema.json",
   "session-create-request.schema.json",
   "session-page.schema.json",
@@ -109,39 +105,6 @@ const MANAGED_AGENT_SCHEMAS = [
 const SELECTED_COMMON_SCHEMA_REFS = new Set(COMMON_SCHEMAS.map((name) => `../schemas/${name}`));
 const SELECTED_PLATFORM_SCHEMA_REFS = new Set(PLATFORM_SCHEMAS.map((name) => `../schemas/${name}`));
 
-const JSON_SDK_CONFIG = {
-  profile: "cloud-agents-json-contract-sdk/v1alpha1",
-  jsonAuthority: "JSON Schema 2020-12",
-  routeAuthority: "OpenAPI 3.1.1 HTTP metadata only",
-  mutationUnknownFields: "REJECT",
-  responseUnknownFields: "PRESERVE_IN_EXPLICIT_SIDECAR_ONLY",
-  nMinusOneReader: true,
-  clients: {
-    transport: "INJECTED_FIXTURE_TRANSPORT_ONLY",
-    productionHTTP: "SERVER_ROUTE_IMPLEMENTED_CLIENT_TRANSPORT_INJECTED",
-    cancellation: "CONTEXT_OR_ABORT_SIGNAL",
-  },
-  serverSeam: {
-    language: "go",
-    routeRegistration: "NOT_IMPLEMENTED",
-    pathBodyAuthority: "PATH_TENANT_ONLY",
-  },
-  implementationBoundary: {
-    gateClosure: false,
-    httpSurface: "PRODUCTION_GO_ROUTE_AND_INJECTED_CLIENT",
-    p2Surface: "NOT_IMPLEMENTED",
-    providerSideEffects: "FORBIDDEN",
-    productionDatabaseWrites: "CONTROL_PLANE_ROUTE_IMPLEMENTED_OUTSIDE_SDK",
-    deployment: "COMPOSE_DEPLOYMENT_CONFIGURED",
-    publication: "NOT_AUTHORIZED",
-  },
-  authorityProfile: {
-    id: JSON_SDK_AUTHORITY_PROFILE_ID,
-    manifestAlgorithm: MANIFEST_ALGORITHM,
-    manifestSha256: JSON_SDK_AUTHORITY_PROFILE_SHA256,
-  },
-} as const;
-
 type FixtureManifest = {
   readonly cases: ReadonlyArray<{
     readonly schema?: unknown;
@@ -151,11 +114,6 @@ type FixtureManifest = {
 };
 
 type GeneratedOutput = { readonly path: string; readonly source: string };
-type GeneratedFileRecord = {
-  readonly path: string;
-  readonly sha256: string;
-  readonly sizeBytes: number;
-};
 
 export function platformJSONSDKGeneratorSources(): string[] {
   return [
@@ -193,10 +151,6 @@ export function platformJSONSDKContractInputs(root: string): string[] {
   return inputs;
 }
 
-export function platformJSONSDKConfigDigest(): string {
-  return digestBytes(canonicalizeJson(JSON_SDK_CONFIG));
-}
-
 export function platformJSONSDKAuthorityProfileInputs(): string[] {
   return [
     MANAGED_AGENT_OPENAPI_PATH,
@@ -213,15 +167,6 @@ export function platformJSONSDKAuthorityProfileDigest(root: string): string {
 
 export function buildPlatformJSONSDKOutputs(root: string): ReadonlyArray<GeneratedOutput> {
   validateJSONSDKAuthority(root);
-  const contractManifestSha256 = normalizedManifestDigest(root, platformJSONSDKContractInputs(root));
-  const replacements = new Map([
-    ["{{CONTRACT_MANIFEST_SHA256}}", contractManifestSha256],
-    [
-      "{{GENERATOR_SOURCE_MANIFEST_SHA256}}",
-      normalizedManifestDigest(root, platformJSONSDKGeneratorSources()),
-    ],
-    ["{{CONFIG_DIGEST}}", platformJSONSDKConfigDigest()],
-  ]);
   return [
     [GO_COMMON_JSON_OUTPUT_PATH, GO_COMMON_TEMPLATE_PATH],
     [GO_PLATFORM_JSON_OUTPUT_PATH, GO_PLATFORM_TEMPLATE_PATH],
@@ -229,95 +174,12 @@ export function buildPlatformJSONSDKOutputs(root: string): ReadonlyArray<Generat
     [TYPESCRIPT_PLATFORM_OUTPUT_PATH, TYPESCRIPT_TEMPLATE_PATH],
   ].map(([path, template]) => ({
     path,
-    source: formatOutput(
-      root,
-      path,
-      renderTemplate(readText(root, template), replacements, template),
-    ),
+    source: formatOutput(root, path, readText(root, template)),
   }));
 }
 
-export function buildPlatformJSONSDKManifests(
-  root: string,
-  outputs = buildPlatformJSONSDKOutputs(root),
-): ReadonlyArray<GeneratedOutput> {
-  const contractInputs = platformJSONSDKContractInputs(root);
-  const contractManifestSha256 = normalizedManifestDigest(root, contractInputs);
-  const generatorSources = platformJSONSDKGeneratorSources();
-  const common = {
-    formatVersion: "cloud-agents-generated-sdk-manifest/v1",
-    profile: JSON_SDK_CONFIG.profile,
-    status: "GENERATED_NON_GATE_EVIDENCE",
-    notGateClosure: true,
-    contract: {
-      manifestAlgorithm: MANIFEST_ALGORITHM,
-      manifestSha256: contractManifestSha256,
-      inputManifestSha256: contractManifestSha256,
-      inputs: contractInputs,
-      authorityProfile: {
-        id: JSON_SDK_AUTHORITY_PROFILE_ID,
-        manifestAlgorithm: MANIFEST_ALGORITHM,
-        manifestSha256: JSON_SDK_AUTHORITY_PROFILE_SHA256,
-        inputs: platformJSONSDKAuthorityProfileInputs(),
-      },
-    },
-    generator: {
-      id: "platform-json-contract-sdk-generator",
-      version: "v1",
-      entrypoint: GENERATOR_PATH,
-      sourceManifestAlgorithm: MANIFEST_ALGORITHM,
-      sourceManifestSha256: normalizedManifestDigest(root, generatorSources),
-      sources: generatorSources,
-      configDigest: platformJSONSDKConfigDigest(),
-    },
-    implementationBoundary: JSON_SDK_CONFIG.implementationBoundary,
-  };
-  const byPath = new Map(outputs.map((output) => [output.path, output]));
-  return [
-    {
-      language: "go",
-      packageIdentity: "github.com/hxp0618/cloud-agents/sdk/go",
-      outputPaths: [
-        GO_COMMON_JSON_OUTPUT_PATH,
-        GO_PLATFORM_JSON_OUTPUT_PATH,
-        GO_OPENAPI_OUTPUT_PATH,
-      ],
-      manifestPath: GO_JSON_MANIFEST_PATH,
-    },
-    {
-      language: "typescript",
-      packageIdentity: "@synara/cloud-agent-platform-sdk/platform",
-      outputPaths: [TYPESCRIPT_PLATFORM_OUTPUT_PATH],
-      manifestPath: TYPESCRIPT_JSON_MANIFEST_PATH,
-    },
-  ].map((language) => {
-    const files = language.outputPaths.map((path) => {
-      const output = byPath.get(path);
-      if (output === undefined) throw new Error(`Missing JSON SDK output ${path}.`);
-      return generatedFileRecord(output);
-    });
-    return {
-      path: language.manifestPath,
-      source: `${JSON.stringify(
-        {
-          ...common,
-          language: language.language,
-          packageIdentity: language.packageIdentity,
-          runtimeDependencies: [],
-          outputTreeAlgorithm: OUTPUT_TREE_ALGORITHM,
-          outputTreeSha256: outputTreeDigest(files),
-          outputs: files,
-        },
-        null,
-        2,
-      )}\n`,
-    };
-  });
-}
-
 export function expectedPlatformJSONSDKFiles(root: string): ReadonlyArray<GeneratedOutput> {
-  const outputs = buildPlatformJSONSDKOutputs(root);
-  return [...outputs, ...buildPlatformJSONSDKManifests(root, outputs)];
+  return buildPlatformJSONSDKOutputs(root);
 }
 
 export function assertPlatformJSONSDKCurrent(root: string): void {
@@ -368,45 +230,45 @@ function validateJSONSDKAuthority(root: string): void {
     throw new Error("JSON SDK OpenAPI authority must remain OpenAPI 3.1.1.");
   }
   const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
-	const expected = [
-		"managedAgentBindRole",
-		"managedAgentCancelExecution",
-		"managedAgentCloseSession",
-		"managedAgentCreateMembership",
-		"managedAgentCreateOrganization",
+  const expected = [
+    "managedAgentBindRole",
+    "managedAgentCancelExecution",
+    "managedAgentCloseSession",
+    "managedAgentCreateMembership",
+    "managedAgentCreateOrganization",
     "managedAgentCreateProject",
     "managedAgentCreateSession",
-		"managedAgentCreateTurn",
+    "managedAgentCreateTurn",
     "managedAgentExecute",
-		"managedAgentGetExecution",
+    "managedAgentGetExecution",
     "managedAgentGetMembership",
     "managedAgentGetOrganization",
     "managedAgentGetPlatformTenant",
     "managedAgentGetProject",
-		"managedAgentGetRole",
-		"managedAgentGetRoleBinding",
-		"managedAgentGetSession",
-	"managedAgentGetTurn",
-	"managedAgentInterruptExecution",
-	"managedAgentListEvents",
-	"managedAgentListExecutions",
-	"managedAgentListMemberships",
-	"managedAgentListOrganizations",
-	"managedAgentListProjects",
-	"managedAgentListRoleBindings",
-	"managedAgentListRoles",
-	"managedAgentListSessions",
-	"managedAgentListTurns",
-	"managedAgentResumeMembership",
-	"managedAgentRevokeMembership",
-		"managedAgentRevokeRoleBinding",
-		"managedAgentSuspendMembership",
-		"managedHostCreateEnvironmentLease",
-		"managedHostGetEnvironmentLease",
-		"managedHostGetProjectContext",
-		"managedHostGetRoleBinding",
-		"managedHostListEnvironmentLeases",
-		"managedHostTerminateEnvironmentLease",
+    "managedAgentGetRole",
+    "managedAgentGetRoleBinding",
+    "managedAgentGetSession",
+    "managedAgentGetTurn",
+    "managedAgentInterruptExecution",
+    "managedAgentListEvents",
+    "managedAgentListExecutions",
+    "managedAgentListMemberships",
+    "managedAgentListOrganizations",
+    "managedAgentListProjects",
+    "managedAgentListRoleBindings",
+    "managedAgentListRoles",
+    "managedAgentListSessions",
+    "managedAgentListTurns",
+    "managedAgentResumeMembership",
+    "managedAgentRevokeMembership",
+    "managedAgentRevokeRoleBinding",
+    "managedAgentSuspendMembership",
+    "managedHostCreateEnvironmentLease",
+    "managedHostGetEnvironmentLease",
+    "managedHostGetProjectContext",
+    "managedHostGetRoleBinding",
+    "managedHostListEnvironmentLeases",
+    "managedHostTerminateEnvironmentLease",
   ];
   if (JSON.stringify(operations) !== JSON.stringify(expected)) {
     throw new Error(`OpenAPI operation set changed: ${operations.join(",")}`);
@@ -433,17 +295,6 @@ function readText(root: string, path: string): string {
   return readFileSync(target, "utf8");
 }
 
-function renderTemplate(
-  template: string,
-  replacements: ReadonlyMap<string, string>,
-  path: string,
-): string {
-  let result = template;
-  for (const [placeholder, value] of replacements) result = result.replaceAll(placeholder, value);
-  if (/\{\{[A-Z0-9_]+\}\}/u.test(result)) throw new Error(`Unresolved placeholder in ${path}.`);
-  return result;
-}
-
 function formatOutput(root: string, path: string, source: string): string {
   if (!path.endsWith(".go")) return formatWithOxfmt(root, path, source);
   const result = spawnSync("gofmt", [], { input: source, encoding: "utf8", cwd: root });
@@ -464,28 +315,6 @@ function normalizedManifestDigest(root: string, paths: ReadonlyArray<string>): s
       .update(digestBytes(readFileSync(resolve(root, path))))
       .update("\0");
     hash.update((stat.mode & 0o111) === 0 ? "100644" : "100755").update("\0");
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-function generatedFileRecord(output: GeneratedOutput): GeneratedFileRecord {
-  return {
-    path: output.path,
-    sha256: digestBytes(Buffer.from(output.source)),
-    sizeBytes: Buffer.byteLength(output.source),
-  };
-}
-
-function outputTreeDigest(files: ReadonlyArray<GeneratedFileRecord>): string {
-  const hash = createHash("sha256");
-  for (const file of [...files].toSorted((left, right) => left.path.localeCompare(right.path))) {
-    hash
-      .update(file.path)
-      .update("\0")
-      .update(file.sha256)
-      .update("\0")
-      .update(String(file.sizeBytes))
-      .update("\0");
   }
   return `sha256:${hash.digest("hex")}`;
 }

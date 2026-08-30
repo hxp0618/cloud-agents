@@ -46,6 +46,7 @@ jobs:
       - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh
       - run: sh scripts/test-cloud-agents-helm.sh
       - run: bun run platform:go:check
+      - run: bun run platform:sdk:check
       - run: sh scripts/test-platform-go-products.sh
       - run: bun run typecheck
       - run: bun run --filter '@synara/*' test
