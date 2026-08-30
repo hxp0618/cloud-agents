@@ -82,6 +82,24 @@ func TestRunTurnList(t *testing.T) {
 	}
 }
 
+func TestRunExecutionListDoesNotRequireTurnOrExecutionID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.RequestURI() != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.RequestURI())
+		}
+		_, _ = writer.Write([]byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"ExecutionPage","executions":[],"nextPageToken":"execution-page-token-2"}`))
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--request-id", "request-alpha",
+		"execution", "list", "--page-size", "1", "--page-token", "execution-page-token-1",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"kind":"ExecutionPage"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
 func TestRunRoleList(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/roles" || request.URL.Query().Get("pageSize") != "1" || request.URL.Query().Get("pageToken") != "role-page-token-1" {
@@ -191,6 +209,7 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 		{name: "project list", args: []string{"--organization", "organization-alpha", "project", "list"}},
 		{name: "session list", args: []string{"--project", "project-alpha", "session", "list"}},
 		{name: "turn list", args: []string{"--project", "project-alpha", "--session", "session-alpha", "turn", "list"}},
+		{name: "execution list", args: []string{"--project", "project-alpha", "--session", "session-alpha", "execution", "list"}},
 		{name: "membership", args: []string{"--membership", "membership-alpha", "membership", "get"}},
 		{name: "membership list", args: []string{"membership", "list"}},
 		{name: "role", args: []string{"--role", "role-alpha", "role", "get"}},

@@ -14,6 +14,7 @@ import (
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
 type managedAgentExecutionStoreFake struct {
@@ -21,6 +22,10 @@ type managedAgentExecutionStoreFake struct {
 	gotTurn   string
 	gotExec   string
 	cancel    internalmanagedagent.CancelTurnInput
+	list      int
+	page      postgres.ManagedAgentExecutionPage
+	after     string
+	limit     int
 }
 
 func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.RuntimeSessionSnapshot, error) {
@@ -64,6 +69,13 @@ func (fake *managedAgentExecutionStoreFake) CancelManagedAgentExecution(_ contex
 func (fake *managedAgentExecutionStoreFake) GetManagedAgentExecution(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _, _, turnID, executionID string) (internalmanagedagent.ExecutionSnapshot, error) {
 	fake.gotTurn, fake.gotExec = turnID, executionID
 	return fake.execution, nil
+}
+
+func (fake *managedAgentExecutionStoreFake) ListManagedAgentExecutions(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _, _ string, after string, limit int) (postgres.ManagedAgentExecutionPage, error) {
+	fake.list++
+	fake.after = after
+	fake.limit = limit
+	return fake.page, nil
 }
 
 type managedAgentExecutionRunnerFake struct {
@@ -121,6 +133,7 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	verifier := &projectHTTPVerifierFake{}
 	terminal := runtimeprotocol.Message{RequestID: "request-alpha", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "persisted"}}
 	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionSucceeded, TerminalMessage: &terminal, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)}}
+	store.page = postgres.ManagedAgentExecutionPage{Executions: []internalmanagedagent.ExecutionSnapshot{store.execution}, NextTurnID: "turn-alpha"}
 	cancelledExecution := store.execution
 	cancelledExecution.State = internalmanagedagent.ExecutionCancelled
 	cancelledExecution.ErrorCode = "cancelled"
@@ -155,6 +168,31 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	handler.ServeHTTP(got, get)
 	if got.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.get" || store.gotTurn != "turn-alpha" || store.gotExec != "execution-alpha" || !strings.Contains(got.Body.String(), `"text":"persisted"`) {
 		t.Fatalf("get status=%d verification=%#v turn=%q execution=%q body=%s", got.Code, verifier.seen, store.gotTurn, store.gotExec, got.Body.String())
+	}
+
+	list := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1", nil)
+	list.Header.Set("Authorization", "Bearer access-token")
+	list.Header.Set("X-Request-ID", "request-list")
+	listed := httptest.NewRecorder()
+	handler.ServeHTTP(listed, list)
+	var page managedAgentExecutionPageResource
+	if err := json.Unmarshal(listed.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if listed.Code != http.StatusOK || store.list != 1 || store.limit != 1 || store.after != "" || verifier.seen.RequiredPermission != "projects.get" || len(page.Executions) != 1 || page.Executions[0].Messages != nil || page.NextPageToken == "" {
+		t.Fatalf("list status=%d calls=%d after=%q limit=%d verification=%#v page=%#v", listed.Code, store.list, store.after, store.limit, verifier.seen, page)
+	}
+	wrongSessionToken, ok := encodeManagedAgentExecutionPageToken("tenant-alpha", "project-alpha", "session-other", "turn-alpha")
+	if !ok {
+		t.Fatal("failed to encode wrong-session token")
+	}
+	wrongSession := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageToken="+wrongSessionToken, nil)
+	wrongSession.Header.Set("Authorization", "Bearer access-token")
+	wrongSession.Header.Set("X-Request-ID", "request-list-wrong")
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(rejected, wrongSession)
+	if rejected.Code != http.StatusBadRequest || store.list != 1 {
+		t.Fatalf("wrong-session token status=%d calls=%d body=%s", rejected.Code, store.list, rejected.Body.String())
 	}
 
 	cancel := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel", strings.NewReader(`{"generation":7}`))

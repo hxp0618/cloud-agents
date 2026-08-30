@@ -18,6 +18,7 @@ import {
   decodeManagedAgentSessionPage,
   decodeManagedAgentTurnPage,
   decodeManagedAgentExecution,
+  decodeManagedAgentExecutionPage,
   decodeRole,
   decodeRolePage,
   decodeRoleBinding,
@@ -32,6 +33,7 @@ import {
   parseManagedAgentSessionPage,
   parseManagedAgentTurnPage,
   parseManagedAgentExecution,
+  parseManagedAgentExecutionPage,
   parseWatchCursor,
   validateProjectResolvedOrganization,
   type FixtureResponse,
@@ -263,10 +265,27 @@ describe("generated platform JSON models", () => {
       "Result",
     );
     expect(parseManagedAgentExecution(execution).value.kind).toBe("Execution");
+    const executionPage = JSON.stringify({
+      apiVersion: "managed-agent.cloud-agents.dev/v1alpha1",
+      kind: "ExecutionPage",
+      executions: [{ ...JSON.parse(execution), messages: undefined }],
+      nextPageToken: "execution-page-token-2",
+    });
+    expect(decodeManagedAgentExecutionPage(JSON.parse(executionPage)).executions).toHaveLength(1);
+    expect(parseManagedAgentExecutionPage(executionPage).value.nextPageToken).toBe(
+      "execution-page-token-2",
+    );
     const seen: FixtureRequest[] = [];
     const client = new Client(async (request) => {
       seen.push(request);
-      return { status: 200, headers: { "X-Resource-Version": "3" }, body: execution };
+      return {
+        status: 200,
+        headers: { "X-Resource-Version": "3" },
+        body:
+          request.method === "GET" && request.path.includes("/executions?")
+            ? executionPage
+            : execution,
+      };
     });
     await client.executeManagedAgent(
       "tenant-alpha",
@@ -283,6 +302,14 @@ describe("generated platform JSON models", () => {
       "turn-alpha",
       "execution-alpha",
       "request-alpha",
+    );
+    await client.listManagedAgentExecutions(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "request-list",
+      1,
+      "execution-page-token-1",
     );
     await client.cancelManagedAgentExecution(
       "tenant-alpha",
@@ -307,14 +334,15 @@ describe("generated platform JSON models", () => {
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions",
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha",
+      "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt",
     ]);
     expect(seen[0]?.body).toBe(
       '{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex"}',
     );
-    expect(seen[2]?.body).toBe('{"generation":1}');
     expect(seen[3]?.body).toBe('{"generation":1}');
+    expect(seen[4]?.body).toBe('{"generation":1}');
   });
   it("replays common and platform golden fixtures", () => {
     expect(parseProblem(readFixture(commonFixtureRoot, "golden/problem.json")).status).toBe(404);

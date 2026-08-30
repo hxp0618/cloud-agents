@@ -85,6 +85,25 @@ func TestScanManagedAgentExecutionPreservesNotFound(t *testing.T) {
 	}
 }
 
+func TestDecodeManagedAgentExecutionPageRowsBindsSessionAndCursor(t *testing.T) {
+	now := time.Date(2026, time.August, 31, 8, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	raw, err := json.Marshal([]managedAgentExecutionPageRow{
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 1, State: "queued", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now},
+		{TenantID: "tenant-alpha", ProjectID: "project-alpha", SessionID: "session-alpha", TurnID: "turn-beta", ExecutionID: "execution-beta", Generation: 2, State: "succeeded", ResultDigest: &digest, ResourceVersion: 3, CreatedAt: now, UpdatedAt: now},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := decodeManagedAgentExecutionPageRows(raw, "tenant-alpha", "project-alpha", "session-alpha", 1)
+	if err != nil || len(page.Executions) != 1 || page.Executions[0].ExecutionID != "execution-alpha" || page.Executions[0].TurnID != "turn-alpha" || page.NextTurnID != "turn-alpha" {
+		t.Fatalf("page = %#v / %v", page, err)
+	}
+	if _, err := decodeManagedAgentExecutionPageRows(raw, "tenant-alpha", "project-alpha", "session-other", 1); !errors.Is(err, ErrCoordinationResultDrift) {
+		t.Fatalf("cross-session page error = %v", err)
+	}
+}
+
 func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	for name, sql := range map[string]string{
 		"create": createManagedAgentExecutionSQL,
@@ -102,6 +121,9 @@ func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	}
 	if strings.Contains(createManagedAgentExecutionSQL, "managed_agent_executions") {
 		t.Fatal("execution creation must read its projection in a later SQL statement")
+	}
+	if !strings.Contains(listManagedAgentExecutionsSQL, "session_uid = $2") || !strings.Contains(managedAgentExecutionPageCursorIdentitySQL, "turn_uid = $3") {
+		t.Fatal("execution list is not session-bound keyset SQL")
 	}
 }
 

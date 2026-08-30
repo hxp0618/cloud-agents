@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	openapiv1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
@@ -23,6 +25,7 @@ var errManagedAgentExecutionAuthentication = errors.New("managed agent execution
 type managedAgentExecutionStore interface {
 	internalmanagedagent.DurableRuntimeExecutionStore
 	GetManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, string, string, string, string) (internalmanagedagent.ExecutionSnapshot, error)
+	ListManagedAgentExecutions(context.Context, string, *authn.VerifiedPrincipal, string, string, string, int) (postgres.ManagedAgentExecutionPage, error)
 }
 
 type managedAgentExecutionRunner interface {
@@ -74,6 +77,10 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
+	if action == "execute" && request.Method == http.MethodGet {
+		server.list(writer, request, tenantID, projectID, sessionID, requestID, bearer)
+		return
+	}
 	if action == "execute" && request.Method == http.MethodPost {
 		server.execute(writer, request, tenantID, projectID, sessionID, requestID, bearer)
 		return
@@ -92,6 +99,38 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 	}
 	writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 	writeManagedAgentSessionError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+}
+
+func (server *ManagedAgentExecutionHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, requestID, bearer string) {
+	pageSize, pageToken, ok := managedAgentPagination(request)
+	if !ok {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	validated, err := openapiv1.ValidateListManagedAgentExecutionsServerRequest(tenantID, projectID, sessionID, requestID, pageSize, pageToken)
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	afterTurnID := ""
+	if validated.PageToken != "" {
+		if afterTurnID, ok = decodeManagedAgentExecutionPageToken(validated.TenantID, validated.ProjectID, validated.SessionID, validated.PageToken); !ok {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	page, err := server.store.ListManagedAgentExecutions(request.Context(), validated.TenantID, principal, validated.ProjectID, validated.SessionID, afterTurnID, validated.PageSize)
+	if err != nil {
+		status, code := managedAgentExecutionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	writeManagedAgentExecutionPage(writer, requestID, tenantID, projectID, sessionID, page)
 }
 
 func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, requestID, bearer string) {
@@ -257,6 +296,13 @@ type managedAgentExecutionResource struct {
 	Messages   []runtimeprotocol.Message     `json:"messages,omitempty"`
 }
 
+type managedAgentExecutionPageResource struct {
+	APIVersion    string                          `json:"apiVersion"`
+	Kind          string                          `json:"kind"`
+	Executions    []managedAgentExecutionResource `json:"executions"`
+	NextPageToken string                          `json:"nextPageToken,omitempty"`
+}
+
 type managedAgentExecutionMetadata struct {
 	UID             string `json:"uid"`
 	ProjectID       string `json:"projectId"`
@@ -280,11 +326,37 @@ func writeManagedAgentExecution(writer http.ResponseWriter, status int, requestI
 	writer.Header().Set("X-Resource-Version", strconv.FormatUint(execution.Version, 10))
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(managedAgentExecutionResource{
+	_ = json.NewEncoder(writer).Encode(managedAgentExecutionResourceFromSnapshot(execution, messages))
+}
+
+func managedAgentExecutionResourceFromSnapshot(execution internalmanagedagent.ExecutionSnapshot, messages []runtimeprotocol.Message) managedAgentExecutionResource {
+	return managedAgentExecutionResource{
 		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "Execution",
 		Metadata: managedAgentExecutionMetadata{UID: execution.ExecutionID, ProjectID: execution.Scope.ProjectID, SessionID: execution.SessionID, TurnID: execution.TurnID, ResourceVersion: strconv.FormatUint(execution.Version, 10), CreatedAt: execution.CreatedAt.UTC().Format(timeFormat), UpdatedAt: execution.UpdatedAt.UTC().Format(timeFormat)},
 		Spec:     managedAgentExecutionSpec{Generation: execution.Generation, State: string(execution.State), ResultDigest: execution.ResultDigest, ErrorCode: execution.ErrorCode},
 		Messages: messages,
+	}
+}
+
+func writeManagedAgentExecutionPage(writer http.ResponseWriter, requestID, tenantID, projectID, sessionID string, page postgres.ManagedAgentExecutionPage) {
+	executions := make([]managedAgentExecutionResource, 0, len(page.Executions))
+	for _, snapshot := range page.Executions {
+		executions = append(executions, managedAgentExecutionResourceFromSnapshot(snapshot, nil))
+	}
+	nextPageToken := ""
+	if page.NextTurnID != "" {
+		var ok bool
+		nextPageToken, ok = encodeManagedAgentExecutionPageToken(tenantID, projectID, sessionID, page.NextTurnID)
+		if !ok {
+			writeManagedAgentSessionError(writer, http.StatusInternalServerError, "internal_error")
+			return
+		}
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(writer).Encode(managedAgentExecutionPageResource{
+		APIVersion: "managed-agent.cloud-agents.dev/v1alpha1", Kind: "ExecutionPage", Executions: executions, NextPageToken: nextPageToken,
 	})
 }
 
@@ -316,6 +388,32 @@ func managedAgentExecutionPath(path string) (tenantID, projectID, sessionID, tur
 		}
 	}
 	return "", "", "", "", "", "", false
+}
+
+func encodeManagedAgentExecutionPageToken(tenantID, projectID, sessionID, turnID string) (string, bool) {
+	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil ||
+		commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil || commonv1alpha1.ValidateIdentifier(turnID, "/turnId") != nil {
+		return "", false
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("execution/v1\x00" + tenantID + "\x00" + projectID + "\x00" + sessionID + "\x00" + turnID))
+	return token, commonv1alpha1.ValidatePageToken(token, "/pageToken") == nil
+}
+
+func decodeManagedAgentExecutionPageToken(tenantID, projectID, sessionID, token string) (string, bool) {
+	if commonv1alpha1.ValidatePageToken(token, "/pageToken") != nil {
+		return "", false
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		return "", false
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 5 || parts[0] != "execution/v1" || parts[1] != tenantID || parts[2] != projectID || parts[3] != sessionID ||
+		commonv1alpha1.ValidateIdentifier(parts[1], "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(parts[2], "/projectId") != nil ||
+		commonv1alpha1.ValidateIdentifier(parts[3], "/sessionId") != nil || commonv1alpha1.ValidateIdentifier(parts[4], "/turnId") != nil {
+		return "", false
+	}
+	return parts[4], true
 }
 
 func HandlesManagedAgentExecutionPath(path string) bool {

@@ -201,10 +201,15 @@ func TestGeneratedOpenAPIClientManagedAgentTurnLifecycle(t *testing.T) {
 
 func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	executionBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"messages":[{"requestId":"request-alpha","protocolVersion":{"major":2,"minor":3},"executionId":"execution-alpha","generation":1,"commandId":"command-alpha","occurredAt":"2026-08-29T08:01:00Z","messageType":"Result","payload":{"text":"done"}}]}`)
+	executionPageBody := []byte(`{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"ExecutionPage","executions":[{"apiVersion":"managed-agent.cloud-agents.dev/v1alpha1","kind":"Execution","metadata":{"uid":"execution-alpha","projectId":"project-alpha","sessionId":"session-alpha","turnId":"turn-alpha","resourceVersion":"3","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:01:00Z"},"spec":{"generation":1,"state":"succeeded","resultDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"nextPageToken":"execution-page-token-2"}`)
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = append(seen, request)
-		return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: executionBody}, nil
+		body := executionBody
+		if request.Method == "GET" && strings.Contains(request.Path, "/executions?") {
+			body = executionPageBody
+		}
+		return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: body}, nil
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -212,6 +217,9 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	result, err := client.ExecuteManagedAgent(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "request-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", ManagedAgentExecutionCreateRequest{TurnID: "turn-alpha", ExecutionID: "execution-alpha", Model: "codex", InputText: "hello"})
 	if err != nil || len(result.Value.Messages) != 1 || result.Value.Messages[0].MessageType != "Result" {
 		t.Fatalf("execute = %#v / %v", result, err)
+	}
+	if page, err := client.ListManagedAgentExecutions(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "request-list", 1, "execution-page-token-1"); err != nil || len(page.Value.Executions) != 1 || page.Value.NextPageToken == "" || page.Value.Executions[0].Messages != nil {
+		t.Fatalf("execution page = %#v / %v", page, err)
 	}
 	if _, err := client.GetManagedAgentExecution(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-alpha"); err != nil {
 		t.Fatal(err)
@@ -222,7 +230,7 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if _, err := client.InterruptManagedAgentExecution(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-interrupt", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY", ManagedAgentExecutionInterruptRequest{Generation: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 4 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","inputText":"hello"}` || string(seen[2].Body) != `{"generation":1}` || string(seen[3].Body) != `{"generation":1}` {
+	if len(seen) != 5 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","inputText":"hello"}` || string(seen[3].Body) != `{"generation":1}` || string(seen[4].Body) != `{"generation":1}` {
 		t.Fatalf("execution requests = %#v", seen)
 	}
 }
@@ -309,6 +317,10 @@ func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
 	turns, err := ValidateListManagedAgentTurnsServerRequest("tenant-alpha", "project-alpha", "session-alpha", "req-alpha", 50, "turn-page-token-1")
 	if err != nil || turns.SessionID != "session-alpha" || turns.PageSize != 50 || turns.PageToken == "" {
 		t.Fatalf("turn list input = %#v / %v", turns, err)
+	}
+	executions, err := ValidateListManagedAgentExecutionsServerRequest("tenant-alpha", "project-alpha", "session-alpha", "req-alpha", 50, "execution-page-token-1")
+	if err != nil || executions.SessionID != "session-alpha" || executions.PageSize != 50 || executions.PageToken == "" {
+		t.Fatalf("execution list input = %#v / %v", executions, err)
 	}
 	body := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	input, err := ValidateCreateProjectServerRequest("tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body)

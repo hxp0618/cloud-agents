@@ -30,7 +30,7 @@ describe("platform JSON SDK generator", () => {
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/membership-page.schema.json");
     expect(inputs).toContain("contracts/platform/v1alpha1/schemas/role-binding-page.schema.json");
     expect(platformJSONSDKAuthorityProfileDigest(root)).toBe(
-      "sha256:f38e0068aefe910e4b108facf5b69652265eb1c1ec456bdc59b554b122988e4a",
+      "sha256:d20c3bdf3c50da23b5c73cc13af7a088ec98636cc3336f921e7a2158c6aa5690",
     );
   });
 

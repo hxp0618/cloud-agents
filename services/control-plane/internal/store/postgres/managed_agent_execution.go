@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
 
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
@@ -17,6 +18,26 @@ import (
 )
 
 var ErrManagedAgentExecutionNotFound = errors.New("managed agent execution was not found")
+
+type ManagedAgentExecutionPage struct {
+	Executions []internalmanagedagent.ExecutionSnapshot
+	NextTurnID string
+}
+
+type managedAgentExecutionPageRow struct {
+	TenantID        string    `json:"tenant_id"`
+	ProjectID       string    `json:"project_uid"`
+	SessionID       string    `json:"session_uid"`
+	TurnID          string    `json:"turn_uid"`
+	ExecutionID     string    `json:"execution_uid"`
+	Generation      int64     `json:"generation"`
+	State           string    `json:"state"`
+	ResultDigest    *string   `json:"result_digest"`
+	ErrorCode       *string   `json:"error_code"`
+	ResourceVersion int64     `json:"resource_version"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
 
 const (
 	createManagedAgentExecutionSQL = `SELECT execution_uid
@@ -37,6 +58,23 @@ FROM cloud_agents.interrupt_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $
 FROM cloud_agents.managed_agent_executions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3 AND execution_uid = $4`
+	managedAgentExecutionPageCursorIdentitySQL = `SELECT 1
+FROM cloud_agents.managed_agent_executions
+WHERE tenant_id = cloud_agents.require_tenant_id()
+    AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3`
+	listManagedAgentExecutionsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(managed_execution)
+    ORDER BY managed_execution.turn_uid), '[]'::jsonb)
+FROM (
+    SELECT tenant_id, project_uid, session_uid, turn_uid, execution_uid, generation, state,
+        result_digest, error_code, resource_version, created_at, updated_at
+    FROM cloud_agents.managed_agent_executions
+    WHERE tenant_id = cloud_agents.require_tenant_id()
+        AND project_uid = $1
+        AND session_uid = $2
+        AND turn_uid > $3
+    ORDER BY turn_uid
+    LIMIT $4
+) AS managed_execution`
 )
 
 func (service *DurableCoordinationService) CreateManagedAgentExecution(
@@ -299,6 +337,59 @@ func (service *DurableCoordinationService) GetManagedAgentExecution(
 	return result, err
 }
 
+func (service *DurableCoordinationService) ListManagedAgentExecutions(
+	ctx context.Context,
+	tenantID string,
+	principal *authn.VerifiedPrincipal,
+	projectID string,
+	sessionID string,
+	afterTurnID string,
+	limit int,
+) (ManagedAgentExecutionPage, error) {
+	if service == nil || service.runner == nil {
+		return ManagedAgentExecutionPage{}, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		!validMutationIdentifier(sessionID) || afterTurnID != "" && !validMutationIdentifier(afterTurnID) ||
+		limit < 1 || limit > 200 {
+		return ManagedAgentExecutionPage{}, ErrCoordinationInvalidInput
+	}
+	scope := authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}
+	var result ManagedAgentExecutionPage
+	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
+		operation, bindErr := binder.Bind(tenantID, scope, "projects.get")
+		if bindErr != nil {
+			return mapVerifiedCoordinationAuthorizationError(bindErr)
+		}
+		transactionErr := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+			handle, ok := capability.(*tenantReadHandle)
+			if !ok {
+				return ErrTenantCapabilityClosed
+			}
+			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
+				if afterTurnID != "" {
+					var exists int
+					if err := handle.transaction.queryRow(readContext, managedAgentExecutionPageCursorIdentitySQL, projectID, sessionID, afterTurnID).Scan(&exists); err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return ErrCoordinationInvalidInput
+						}
+						return mapMutationDatabaseError("managed agent execution page cursor", err)
+					}
+				}
+				var raw []byte
+				if err := handle.transaction.queryRow(readContext, listManagedAgentExecutionsSQL, projectID, sessionID, afterTurnID, limit+1).Scan(&raw); err != nil {
+					return mapMutationDatabaseError("managed agent executions", err)
+				}
+				var err error
+				result, err = decodeManagedAgentExecutionPageRows(raw, tenantID, projectID, sessionID, limit)
+				return err
+			})
+		})
+		return mapVerifiedCoordinationAuthorizationError(transactionErr)
+	})
+	return result, err
+}
+
 func withManagedAgentProjectMutation(service *DurableCoordinationService, ctx context.Context, tenantID string, principal *authn.VerifiedPrincipal, projectID string, callback func(*tenantReadHandle) error) error {
 	return authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
 		operation, bindErr := binder.Bind(tenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: projectID}, "projects.act")
@@ -317,6 +408,51 @@ func nullableString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func decodeManagedAgentExecutionPageRows(raw []byte, tenantID, projectID, sessionID string, limit int) (ManagedAgentExecutionPage, error) {
+	var rows []managedAgentExecutionPageRow
+	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
+		return ManagedAgentExecutionPage{}, ErrCoordinationResultDrift
+	}
+	executions := make([]internalmanagedagent.ExecutionSnapshot, 0, len(rows))
+	for _, row := range rows {
+		state := internalmanagedagent.ExecutionState(row.State)
+		if row.TenantID != tenantID || row.ProjectID != projectID || row.SessionID != sessionID ||
+			!validMutationIdentifier(row.TurnID) || !validMutationIdentifier(row.ExecutionID) ||
+			row.Generation < 1 || row.ResourceVersion < 1 || !validManagedAgentExecutionState(state) ||
+			row.ResultDigest != nil && !validCoordinationDigest(*row.ResultDigest) ||
+			row.ErrorCode != nil && !internalmanagedagent.ValidRuntimeErrorCode(*row.ErrorCode) ||
+			state == internalmanagedagent.ExecutionSucceeded && row.ResultDigest == nil ||
+			state == internalmanagedagent.ExecutionFailed && row.ErrorCode == nil ||
+			row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+			return ManagedAgentExecutionPage{}, ErrCoordinationResultDrift
+		}
+		execution := internalmanagedagent.ExecutionSnapshot{
+			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
+			TurnID: row.TurnID, ExecutionID: row.ExecutionID, Generation: uint64(row.Generation), State: state,
+			Version: uint64(row.ResourceVersion), CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if row.ResultDigest != nil {
+			execution.ResultDigest = *row.ResultDigest
+		}
+		if row.ErrorCode != nil {
+			execution.ErrorCode = *row.ErrorCode
+		}
+		executions = append(executions, execution)
+	}
+	result := ManagedAgentExecutionPage{Executions: executions}
+	if len(executions) > limit {
+		result.Executions = executions[:limit]
+		result.NextTurnID = result.Executions[len(result.Executions)-1].TurnID
+	}
+	return result, nil
+}
+
+func validManagedAgentExecutionState(state internalmanagedagent.ExecutionState) bool {
+	return state == internalmanagedagent.ExecutionQueued || state == internalmanagedagent.ExecutionRunning ||
+		state == internalmanagedagent.ExecutionSucceeded || state == internalmanagedagent.ExecutionFailed ||
+		state == internalmanagedagent.ExecutionCancelled
 }
 
 func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope, sessionID, turnID string, result *internalmanagedagent.ExecutionSnapshot) error {
@@ -343,7 +479,7 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	if errorCode != nil {
 		result.ErrorCode = *errorCode
 	}
-	if generation <= 0 || version <= 0 || result.ExecutionID == "" || (result.State != internalmanagedagent.ExecutionQueued && result.State != internalmanagedagent.ExecutionRunning && result.State != internalmanagedagent.ExecutionSucceeded && result.State != internalmanagedagent.ExecutionFailed && result.State != internalmanagedagent.ExecutionCancelled) || result.CreatedAt.IsZero() || result.UpdatedAt.IsZero() {
+	if generation <= 0 || version <= 0 || result.ExecutionID == "" || !validManagedAgentExecutionState(result.State) || result.CreatedAt.IsZero() || result.UpdatedAt.IsZero() {
 		return fmt.Errorf("%w: managed agent execution projection", ErrCoordinationResultDrift)
 	}
 	if (result.State == internalmanagedagent.ExecutionSucceeded && result.ResultDigest == "") || (result.State == internalmanagedagent.ExecutionFailed && result.ErrorCode == "") {
