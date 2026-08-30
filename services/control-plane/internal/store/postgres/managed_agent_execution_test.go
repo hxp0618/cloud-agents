@@ -54,6 +54,9 @@ func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 			t.Fatalf("%s SQL is not tenant-bound execution SQL: %s", name, sql)
 		}
 	}
+	if !strings.Contains(settleManagedAgentExecutionSQL, "settle_managed_agent_execution_v2") {
+		t.Fatal("execution settlement does not persist Provider continuation state")
+	}
 }
 
 func TestManagedAgentExecutionDigestsMatchLifecycleKernel(t *testing.T) {
@@ -66,6 +69,13 @@ func TestManagedAgentExecutionDigestsMatchLifecycleKernel(t *testing.T) {
 	completed, err := internalmanagedagent.ExecutionCompleteMutationDigest(internalmanagedagent.CompleteExecutionInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, ResultDigest: "sha256:" + strings.Repeat("b", 64), Mutation: mutation})
 	if err != nil || !strings.HasPrefix(completed, "sha256:") || completed == created {
 		t.Fatalf("complete digest/error = %q/%v", completed, err)
+	}
+	withCursor, err := internalmanagedagent.RuntimeExecutionCompleteMutationDigest(internalmanagedagent.CompleteRuntimeExecutionInput{
+		CompleteExecutionInput: internalmanagedagent.CompleteExecutionInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, ResultDigest: "sha256:" + strings.Repeat("b", 64), Mutation: mutation},
+		ProviderResumeCursor:   "provider-thread-alpha",
+	})
+	if err != nil || withCursor == completed {
+		t.Fatalf("runtime complete digest/error = %q/%v", withCursor, err)
 	}
 	cancelled, err := internalmanagedagent.TurnCancelMutationDigest(internalmanagedagent.CancelTurnInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", TargetExecutionID: "execution-alpha", Generation: 7, Mutation: mutation})
 	if err != nil || !strings.HasPrefix(cancelled, "sha256:") || cancelled == completed {

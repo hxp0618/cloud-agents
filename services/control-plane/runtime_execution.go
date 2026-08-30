@@ -87,7 +87,7 @@ func (coordinator *RuntimeExecutionCoordinator) Execute(ctx context.Context, inp
 	}
 	runCtx, cancel := context.WithDeadline(ctx, input.Deadline.UTC())
 	defer cancel()
-	session, err := coordinator.service.GetSession(runCtx, input.Scope, input.SessionID)
+	session, err := coordinator.service.store.GetRuntimeSession(runCtx, input.Scope, input.SessionID)
 	if err != nil {
 		return RuntimeExecutionResult{}, err
 	}
@@ -118,7 +118,7 @@ func (coordinator *RuntimeExecutionCoordinator) Execute(ctx context.Context, inp
 	runtimeResult, err := internalmanagedagent.ExecuteRuntimeTurn(runCtx, coordinator.supervisor, internalmanagedagent.RuntimeTurnInput{
 		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: input.Generation, Fencing: input.fencingProof(),
-		WorkspaceDirectory: input.WorkspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
+		WorkspaceDirectory: input.WorkspaceDirectory, ProviderKind: session.ProviderKind, ProviderResumeCursor: session.ProviderResumeCursor, Model: input.Model, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
 		return coordinator.failWithMessages(ctx, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err)
@@ -134,7 +134,7 @@ func (coordinator *RuntimeExecutionCoordinator) Execute(ctx context.Context, inp
 	if err != nil {
 		return coordinator.failWithMessages(ctx, input, started, runtimeResult.Messages, "runtime_result_invalid", err)
 	}
-	completed, err := coordinator.service.CompleteExecution(context.Background(), CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation, ResultDigest: digest, Mutation: input.Mutation})
+	completed, err := coordinator.service.store.CompleteRuntimeExecution(context.Background(), internalmanagedagent.CompleteRuntimeExecutionInput{CompleteExecutionInput: internalmanagedagent.CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor})
 	if err != nil {
 		return RuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}

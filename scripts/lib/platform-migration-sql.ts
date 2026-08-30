@@ -381,6 +381,10 @@ export function classifyMigrationStatement(
         subcommand[0] === "ADD" &&
         subcommand[1] === "CONSTRAINT" &&
         !hasTopLevelComma(subcommand.slice(2));
+      const addColumn =
+        subcommand[0] === "ADD" &&
+        subcommand[1] === "COLUMN" &&
+        !hasTopLevelComma(subcommand.slice(2));
       const targetIdentity = qualifiedIdentity("table", tokens, 2);
       const dropResourceKindConstraint =
         migrationId === "000003" &&
@@ -416,6 +420,7 @@ export function classifyMigrationStatement(
       if (
         !exact &&
         !addConstraint &&
+        !addColumn &&
         !dropResourceKindConstraint &&
         !dropAuditFactConstraint &&
         !dropCoordinationRegistryConstraint

@@ -22,7 +22,7 @@ execution_uid, execution_generation, execution_state, result_digest, error_code,
 FROM cloud_agents.start_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	settleManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.settle_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+FROM cloud_agents.settle_managed_agent_execution_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	cancelManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.cancel_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
@@ -106,13 +106,13 @@ func (service *DurableCoordinationService) CompleteManagedAgentExecution(
 	ctx context.Context,
 	tenantID string,
 	principal *authn.VerifiedPrincipal,
-	input internalmanagedagent.CompleteExecutionInput,
+	input internalmanagedagent.CompleteRuntimeExecutionInput,
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
-	digest, err := internalmanagedagent.ExecutionCompleteMutationDigest(input)
+	digest, err := internalmanagedagent.RuntimeExecutionCompleteMutationDigest(input)
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest)
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor)
 }
 
 func (service *DurableCoordinationService) FailManagedAgentExecution(
@@ -125,7 +125,7 @@ func (service *DurableCoordinationService) FailManagedAgentExecution(
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest)
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "")
 }
 
 func (service *DurableCoordinationService) CancelManagedAgentExecution(
@@ -201,7 +201,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	scope internalmanagedagent.Scope,
 	sessionID, turnID, executionID string,
 	generation uint64,
-	outcome, resultDigest, errorCode, idempotencyKey, requestDigest string,
+	outcome, resultDigest, errorCode, idempotencyKey, requestDigest, providerResumeCursor string,
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
 	if service == nil || service.runner == nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrNilCoordinationRunner
@@ -213,7 +213,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
-			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest), scope, sessionID, &result); err != nil {
+			resultDigest, nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor)), scope, sessionID, &result); err != nil {
 			return err
 		}
 		operation := "execution.complete"

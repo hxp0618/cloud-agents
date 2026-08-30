@@ -22,6 +22,10 @@ FROM cloud_agents.close_managed_agent_session_v1($1, $2, $3, $4, $5)`
 FROM cloud_agents.managed_agent_sessions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2`
+	getManagedAgentSessionForExecutionSQL = `SELECT session_uid, provider_kind, state, resource_version, created_at, updated_at, provider_resume_cursor
+FROM cloud_agents.managed_agent_sessions
+WHERE tenant_id = cloud_agents.require_tenant_id()
+    AND project_uid = $1 AND session_uid = $2`
 )
 
 // CreateManagedAgentSession persists one active Session. The database derives
@@ -55,7 +59,7 @@ func (service *DurableCoordinationService) CreateManagedAgentSession(
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
 				if err := scanManagedAgentSession(handle.transaction.queryRow(ctx, createManagedAgentSessionSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID, input.ProviderKind,
-					input.Mutation.IdempotencyKey, digest), input.Scope, &result); err != nil {
+					input.Mutation.IdempotencyKey, digest), input.Scope, &result, nil); err != nil {
 					return err
 				}
 				return appendManagedAgentEvent(ctx, handle.transaction, managedAgentEventInput{Scope: input.Scope, SessionID: result.SessionID, Operation: "session.create", Resource: internalmanagedagent.ResourceSession, MutationDigest: digest, Changes: []internalmanagedagent.LifecycleStateChange{{Resource: internalmanagedagent.ResourceSession, To: string(result.State), Version: result.Version}}})
@@ -98,7 +102,7 @@ func (service *DurableCoordinationService) CloseManagedAgentSession(
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
 				err := scanManagedAgentSession(handle.transaction.queryRow(ctx, closeManagedAgentSessionSQL,
 					input.Scope.TenantID, input.Scope.ProjectID, input.SessionID,
-					input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+					input.Mutation.IdempotencyKey, digest), input.Scope, &result, nil)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentSessionNotFound
 				}
@@ -141,7 +145,7 @@ func (service *DurableCoordinationService) GetManagedAgentSession(
 				return ErrTenantCapabilityClosed
 			}
 			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, func() error {
-				err := scanManagedAgentSession(handle.transaction.queryRow(readContext, getManagedAgentSessionSQL, scope.ProjectID, sessionID), scope, &result)
+				err := scanManagedAgentSession(handle.transaction.queryRow(readContext, getManagedAgentSessionSQL, scope.ProjectID, sessionID), scope, &result, nil)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentSessionNotFound
 				}
@@ -162,15 +166,15 @@ func (service *DurableCoordinationService) GetManagedAgentSessionForExecution(
 	principal *authn.VerifiedPrincipal,
 	projectID string,
 	sessionID string,
-) (internalmanagedagent.SessionSnapshot, error) {
+) (internalmanagedagent.RuntimeSessionSnapshot, error) {
 	if service == nil || service.runner == nil {
-		return internalmanagedagent.SessionSnapshot{}, ErrNilCoordinationRunner
+		return internalmanagedagent.RuntimeSessionSnapshot{}, ErrNilCoordinationRunner
 	}
 	scope := internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}
 	if ctx == nil || len(scope.TenantID) == 0 || len(scope.ProjectID) == 0 || len(sessionID) == 0 {
-		return internalmanagedagent.SessionSnapshot{}, ErrCoordinationInvalidInput
+		return internalmanagedagent.RuntimeSessionSnapshot{}, ErrCoordinationInvalidInput
 	}
-	var result internalmanagedagent.SessionSnapshot
+	var result internalmanagedagent.RuntimeSessionSnapshot
 	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
 		operation, bindErr := binder.Bind(scope.TenantID, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, "projects.act")
 		if bindErr != nil {
@@ -182,11 +186,22 @@ func (service *DurableCoordinationService) GetManagedAgentSessionForExecution(
 				return ErrTenantCapabilityClosed
 			}
 			return executeVerifiedRBACOperation(readContext, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: scope.ProjectID}, func() error {
-				err := scanManagedAgentSession(handle.transaction.queryRow(readContext, getManagedAgentSessionSQL, scope.ProjectID, sessionID), scope, &result)
+				var cursor *string
+				err := scanManagedAgentSession(handle.transaction.queryRow(readContext, getManagedAgentSessionForExecutionSQL, scope.ProjectID, sessionID), scope, &result.SessionSnapshot, &cursor)
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrManagedAgentSessionNotFound
 				}
-				return err
+				if err != nil {
+					return err
+				}
+				if cursor == nil {
+					return nil
+				}
+				if err := internalmanagedagent.ValidateProviderResumeCursor(*cursor); err != nil || *cursor == "" {
+					return fmt.Errorf("%w: managed agent provider resume cursor", ErrCoordinationResultDrift)
+				}
+				result.ProviderResumeCursor = *cursor
+				return nil
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -194,13 +209,17 @@ func (service *DurableCoordinationService) GetManagedAgentSessionForExecution(
 	return result, err
 }
 
-func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot) error {
+func scanManagedAgentSession(row rowScanner, scope internalmanagedagent.Scope, result *internalmanagedagent.SessionSnapshot, providerResumeCursor **string) error {
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
 	var state string
 	var version int64
-	if err := row.Scan(&result.SessionID, &result.ProviderKind, &state, &version, &result.CreatedAt, &result.UpdatedAt); err != nil {
+	targets := []any{&result.SessionID, &result.ProviderKind, &state, &version, &result.CreatedAt, &result.UpdatedAt}
+	if providerResumeCursor != nil {
+		targets = append(targets, providerResumeCursor)
+	}
+	if err := row.Scan(targets...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}

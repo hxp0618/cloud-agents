@@ -19,11 +19,12 @@ import (
 const (
 	// LifecycleProfileID is the versioned, transport-neutral contract boundary
 	// implemented by this package. It is not a public HTTP API version.
-	LifecycleProfileID = "cloud-agents/managed-agent-lifecycle/v1alpha1"
-	maxIdentifierBytes = 128
-	maxProviderBytes   = 64
-	maxMutationBytes   = 256
-	maxInputBytes      = 1 << 20
+	LifecycleProfileID           = "cloud-agents/managed-agent-lifecycle/v1alpha1"
+	maxIdentifierBytes           = 128
+	maxProviderBytes             = 64
+	maxMutationBytes             = 256
+	maxInputBytes                = 1 << 20
+	maxProviderResumeCursorBytes = 4096
 )
 
 var (
@@ -205,6 +206,13 @@ type CompleteExecutionInput struct {
 	Mutation     Mutation
 }
 
+// CompleteRuntimeExecutionInput carries Provider-private continuation state.
+// It is intentionally separate from the public lifecycle completion input.
+type CompleteRuntimeExecutionInput struct {
+	CompleteExecutionInput
+	ProviderResumeCursor string
+}
+
 type FailExecutionInput struct {
 	Scope       Scope
 	SessionID   string
@@ -241,6 +249,13 @@ type SessionSnapshot struct {
 	Version      uint64
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+// RuntimeSessionSnapshot is the internal execution view of a Session.
+// ProviderResumeCursor must never be serialized by the public Control Plane.
+type RuntimeSessionSnapshot struct {
+	SessionSnapshot
+	ProviderResumeCursor string
 }
 
 type TurnSnapshot struct {
@@ -285,19 +300,20 @@ type Clock func() time.Time
 // has no PostgreSQL, HTTP, Worker, Provider, Workspace, Credential, or
 // deployment dependency.
 type Store struct {
-	mu                sync.RWMutex
-	clock             Clock
-	sessions          map[sessionKey]sessionRecord
-	turns             map[turnKey]turnRecord
-	executions        map[executionKey]executionRecord
-	mutations         map[mutationKey]mutationRecord
-	events            []LifecycleEvent
-	nextEventSequence uint64
+	mu                    sync.RWMutex
+	clock                 Clock
+	sessions              map[sessionKey]sessionRecord
+	turns                 map[turnKey]turnRecord
+	executions            map[executionKey]executionRecord
+	mutations             map[mutationKey]mutationRecord
+	providerResumeCursors map[sessionKey]string
+	events                []LifecycleEvent
+	nextEventSequence     uint64
 }
 
 func (store *Store) ready() bool {
 	return store != nil && store.clock != nil && store.sessions != nil && store.turns != nil &&
-		store.executions != nil && store.mutations != nil
+		store.executions != nil && store.mutations != nil && store.providerResumeCursors != nil
 }
 
 // NewStore constructs a store with an explicit clock. A nil clock is rejected
@@ -310,12 +326,13 @@ func NewStore(clock Clock) (*Store, error) {
 		return nil, ErrContractDrift
 	}
 	return &Store{
-		clock:      clock,
-		sessions:   make(map[sessionKey]sessionRecord),
-		turns:      make(map[turnKey]turnRecord),
-		executions: make(map[executionKey]executionRecord),
-		mutations:  make(map[mutationKey]mutationRecord),
-		events:     make([]LifecycleEvent, 0),
+		clock:                 clock,
+		sessions:              make(map[sessionKey]sessionRecord),
+		turns:                 make(map[turnKey]turnRecord),
+		executions:            make(map[executionKey]executionRecord),
+		mutations:             make(map[mutationKey]mutationRecord),
+		providerResumeCursors: make(map[sessionKey]string),
+		events:                make([]LifecycleEvent, 0),
 	}, nil
 }
 
@@ -562,6 +579,16 @@ func (store *Store) StartExecution(ctx context.Context, input StartExecutionInpu
 }
 
 func (store *Store) CompleteExecution(ctx context.Context, input CompleteExecutionInput) (ExecutionTransitionResult, error) {
+	return store.completeExecution(ctx, input, "")
+}
+
+// CompleteRuntimeExecution atomically advances the lifecycle and the
+// Provider-private continuation cursor.
+func (store *Store) CompleteRuntimeExecution(ctx context.Context, input CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
+	return store.completeExecution(ctx, input.CompleteExecutionInput, input.ProviderResumeCursor)
+}
+
+func (store *Store) completeExecution(ctx context.Context, input CompleteExecutionInput, providerResumeCursor string) (ExecutionTransitionResult, error) {
 	if !store.ready() {
 		return ExecutionTransitionResult{}, ErrInvalidInput
 	}
@@ -574,13 +601,16 @@ func (store *Store) CompleteExecution(ctx context.Context, input CompleteExecuti
 	if err := validateDigest(input.ResultDigest, "result digest"); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
+	if err := ValidateProviderResumeCursor(providerResumeCursor); err != nil {
+		return ExecutionTransitionResult{}, err
+	}
 	if err := input.Mutation.validate(); err != nil {
 		return ExecutionTransitionResult{}, err
 	}
 	digest := digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.complete", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID,
-		Generation: input.Generation, ResultDigest: input.ResultDigest,
+		Generation: input.Generation, ResultDigest: input.ResultDigest, ProviderResumeCursor: providerResumeCursor,
 	})
 	record, err := store.mutate(ctx, input.Scope, "execution.complete", input.Mutation, digest, func(now time.Time) (mutationRecord, error) {
 		turn, execution, turnKey, executionKey, err := store.lookupExecution(input.Scope, input.SessionID, input.TurnID, input.ExecutionID)
@@ -602,6 +632,9 @@ func (store *Store) CompleteExecution(ctx context.Context, input CompleteExecuti
 		execution.snapshot.UpdatedAt = now
 		store.turns[turnKey] = turn
 		store.executions[executionKey] = execution
+		if providerResumeCursor != "" {
+			store.providerResumeCursors[sessionKey{scope: input.Scope, id: input.SessionID}] = providerResumeCursor
+		}
 		return mutationRecord{kind: mutationTransition, transition: ExecutionTransitionResult{Turn: turn.snapshot, Execution: execution.snapshot}}, nil
 	})
 	return record.transition, err
@@ -762,6 +795,19 @@ func (store *Store) GetSession(ctx context.Context, scope Scope, sessionID strin
 		return SessionSnapshot{}, ErrNotFound
 	}
 	return snapshot.snapshot, nil
+}
+
+// GetRuntimeSession adds Provider-private continuation state to the internal
+// execution view without widening the public Session snapshot.
+func (store *Store) GetRuntimeSession(ctx context.Context, scope Scope, sessionID string) (RuntimeSessionSnapshot, error) {
+	session, err := store.GetSession(ctx, scope, sessionID)
+	if err != nil {
+		return RuntimeSessionSnapshot{}, err
+	}
+	store.mu.RLock()
+	cursor := store.providerResumeCursors[sessionKey{scope: scope, id: sessionID}]
+	store.mu.RUnlock()
+	return RuntimeSessionSnapshot{SessionSnapshot: session, ProviderResumeCursor: cursor}, nil
 }
 
 func (store *Store) GetTurn(ctx context.Context, scope Scope, sessionID, turnID string) (TurnSnapshot, error) {
@@ -992,10 +1038,23 @@ func ExecutionStartMutationDigest(input StartExecutionInput) (string, error) {
 // ExecutionCompleteMutationDigest returns the canonical digest used by the
 // durable successful Execution settlement writer.
 func ExecutionCompleteMutationDigest(input CompleteExecutionInput) (string, error) {
+	return executionCompleteMutationDigest(input, "")
+}
+
+// RuntimeExecutionCompleteMutationDigest binds Provider-private continuation
+// state to durable completion idempotency without exposing it publicly.
+func RuntimeExecutionCompleteMutationDigest(input CompleteRuntimeExecutionInput) (string, error) {
+	return executionCompleteMutationDigest(input.CompleteExecutionInput, input.ProviderResumeCursor)
+}
+
+func executionCompleteMutationDigest(input CompleteExecutionInput, providerResumeCursor string) (string, error) {
 	if err := validateExecutionInput(input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation); err != nil {
 		return "", err
 	}
 	if err := validateDigest(input.ResultDigest, "result digest"); err != nil {
+		return "", err
+	}
+	if err := ValidateProviderResumeCursor(providerResumeCursor); err != nil {
 		return "", err
 	}
 	if err := input.Mutation.validate(); err != nil {
@@ -1004,7 +1063,7 @@ func ExecutionCompleteMutationDigest(input CompleteExecutionInput) (string, erro
 	return digestMutationWithBinding(input.Mutation, mutationDigestInput{
 		Operation: "execution.complete", TenantID: input.Scope.TenantID, ProjectID: input.Scope.ProjectID,
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
-		ResultDigest: input.ResultDigest,
+		ResultDigest: input.ResultDigest, ProviderResumeCursor: providerResumeCursor,
 	}), nil
 }
 
@@ -1114,6 +1173,18 @@ func validateToken(value string, maximum int, field string) error {
 	return nil
 }
 
+// ValidateProviderResumeCursor validates the opaque Runtime/Provider trust
+// boundary. Empty means the Provider did not supply native continuation state.
+func ValidateProviderResumeCursor(value string) error {
+	if value == "" {
+		return nil
+	}
+	if strings.Trim(value, " ") != value {
+		return fmt.Errorf("%w: provider resume cursor", ErrInvalidInput)
+	}
+	return validateToken(value, maxProviderResumeCursorBytes, "provider resume cursor")
+}
+
 func digestInput(input string) (string, error) {
 	if len(input) == 0 || len(input) > maxInputBytes || !utf8.ValidString(input) {
 		return "", fmt.Errorf("%w: input text", ErrInvalidInput)
@@ -1220,6 +1291,7 @@ type mutationDigestInput struct {
 	Generation             uint64 `json:"generation,omitempty"`
 	InputDigest            string `json:"input_digest,omitempty"`
 	ResultDigest           string `json:"result_digest,omitempty"`
+	ProviderResumeCursor   string `json:"provider_resume_cursor,omitempty"`
 	ErrorCode              string `json:"error_code,omitempty"`
 	ExecutionBindingDigest string `json:"execution_binding_digest,omitempty"`
 }

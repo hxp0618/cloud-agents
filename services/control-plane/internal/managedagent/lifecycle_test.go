@@ -149,6 +149,29 @@ func TestLifecycleHappyPathAndIdempotentReplay(t *testing.T) {
 	}
 }
 
+func TestRuntimeCompletionPersistsPrivateResumeCursor(t *testing.T) {
+	store := newTestStore(t, newTestClock())
+	createLifecycle(t, store, "session-resume", "turn-resume", "execution-resume")
+	input := CompleteRuntimeExecutionInput{
+		CompleteExecutionInput: CompleteExecutionInput{
+			Scope: lifecycleTestScope, SessionID: "session-resume", TurnID: "turn-resume", ExecutionID: "execution-resume", Generation: 1,
+			ResultDigest: "sha256:" + strings.Repeat("a", 64), Mutation: Mutation{RequestID: "request-resume", IdempotencyKey: "idem-resume"},
+		},
+		ProviderResumeCursor: "provider-thread-resume",
+	}
+	if _, err := store.CompleteRuntimeExecution(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.GetRuntimeSession(context.Background(), lifecycleTestScope, "session-resume")
+	if err != nil || session.ProviderResumeCursor != input.ProviderResumeCursor {
+		t.Fatalf("runtime session = %#v, err = %v", session, err)
+	}
+	input.ProviderResumeCursor = " provider-thread-resume "
+	if _, err := RuntimeExecutionCompleteMutationDigest(input); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("invalid cursor digest error = %v", err)
+	}
+}
+
 func TestLifecycleFailureAndInterruptTransitions(t *testing.T) {
 	ctx := context.Background()
 	for _, test := range []struct {

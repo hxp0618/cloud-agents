@@ -13,7 +13,7 @@ import (
 func TestScanManagedAgentSessionBuildsDetachedSnapshot(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 8, 0, 0, 0, time.UTC)
 	var snapshot internalmanagedagent.SessionSnapshot
-	err := scanManagedAgentSession(rowValues("session-alpha", "codex", "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot)
+	err := scanManagedAgentSession(rowValues("session-alpha", "codex", "active", int64(2), now, now), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, &snapshot, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestScanManagedAgentSessionBuildsDetachedSnapshot(t *testing.T) {
 
 func TestScanManagedAgentSessionPreservesNotFound(t *testing.T) {
 	var snapshot internalmanagedagent.SessionSnapshot
-	if err := scanManagedAgentSession(rowError(pgx.ErrNoRows), internalmanagedagent.Scope{}, &snapshot); !errors.Is(err, pgx.ErrNoRows) {
+	if err := scanManagedAgentSession(rowError(pgx.ErrNoRows), internalmanagedagent.Scope{}, &snapshot, nil); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("error = %v, want pgx.ErrNoRows", err)
 	}
 }
@@ -37,6 +37,9 @@ func TestManagedAgentSessionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 	}
 	if !strings.Contains(getManagedAgentSessionSQL, "cloud_agents.require_tenant_id()") {
 		t.Fatal("session read does not bind the tenant context")
+	}
+	if !strings.Contains(getManagedAgentSessionForExecutionSQL, "provider_resume_cursor") {
+		t.Fatal("execution session read omits Provider continuation state")
 	}
 }
 

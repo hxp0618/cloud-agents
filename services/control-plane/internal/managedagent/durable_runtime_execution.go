@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,11 +23,11 @@ import (
 // Runtime path. It is intentionally narrow: every method is implemented by
 // the PostgreSQL store and each call carries the verified principal.
 type DurableRuntimeExecutionStore interface {
-	GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (SessionSnapshot, error)
+	GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (RuntimeSessionSnapshot, error)
 	CreateManagedAgentTurn(context.Context, string, *authn.VerifiedPrincipal, CreateTurnInput) (TurnSnapshot, error)
 	CreateManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CreateExecutionInput) (ExecutionSnapshot, error)
 	StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, StartExecutionInput) (ExecutionTransitionResult, error)
-	CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CompleteExecutionInput) (ExecutionTransitionResult, error)
+	CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error)
 	FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, FailExecutionInput) (ExecutionTransitionResult, error)
 	InterruptManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, InterruptTurnInput) (ExecutionTransitionResult, error)
 	CancelManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CancelTurnInput) (ExecutionTransitionResult, error)
@@ -64,18 +65,19 @@ type DurableRuntimeExecutionResult struct {
 }
 
 type RuntimeTurnInput struct {
-	Scope              Scope
-	SessionID          string
-	TurnID             string
-	RequestID          string
-	ExecutionID        string
-	Generation         uint64
-	Fencing            *workerv1alpha1.FencingProof
-	WorkspaceDirectory string
-	ProviderKind       string
-	Model              string
-	InputText          string
-	OccurredAt         time.Time
+	Scope                Scope
+	SessionID            string
+	TurnID               string
+	RequestID            string
+	ExecutionID          string
+	Generation           uint64
+	Fencing              *workerv1alpha1.FencingProof
+	WorkspaceDirectory   string
+	ProviderKind         string
+	ProviderResumeCursor string
+	Model                string
+	InputText            string
+	OccurredAt           time.Time
 }
 
 type runtimeWorkspacePaths struct {
@@ -85,9 +87,10 @@ type runtimeWorkspacePaths struct {
 }
 
 type RuntimeTurnResult struct {
-	Messages    []runtime.Message
-	Terminal    runtime.Message
-	FailureCode string
+	Messages             []runtime.Message
+	Terminal             runtime.Message
+	ProviderResumeCursor string
+	FailureCode          string
 }
 
 type DurableRuntimeExecutionCoordinator struct {
@@ -261,7 +264,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
 		Fencing:            &workerv1alpha1.FencingProof{LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...)},
-		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, Model: input.Model, InputText: input.InputText, OccurredAt: now,
+		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, ProviderResumeCursor: session.ProviderResumeCursor, Model: input.Model, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
 		if unregister() {
@@ -287,7 +290,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
-	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation})
+	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
@@ -354,6 +357,10 @@ func nextVerifiedPrincipal(source VerifiedPrincipalSource) (*authn.VerifiedPrinc
 
 func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Supervisor, input RuntimeTurnInput) (RuntimeTurnResult, error) {
 	result := RuntimeTurnResult{FailureCode: "runtime_open_failed"}
+	if err := ValidateProviderResumeCursor(input.ProviderResumeCursor); err != nil {
+		result.FailureCode = "runtime_result_invalid"
+		return result, err
+	}
 	paths, err := deriveRuntimeWorkspacePaths(input.WorkspaceDirectory, input.Scope, input.SessionID, input.TurnID, input.ExecutionID)
 	if err != nil {
 		result.FailureCode = "workspace_invalid"
@@ -367,19 +374,25 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 	command := func(commandType, commandID string, payload map[string]any) runtime.Command {
 		return runtime.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtime.Protocol{Major: runtime.ProtocolMajor, Minor: runtime.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
 	}
-	start := command("StartSession", boundedRuntimeIdentifier(input.RequestID, "start"), map[string]any{"runnerInput": map[string]any{
+	runnerInput := map[string]any{
 		"workspaceDirectory":     paths.workspaceDirectory,
 		"runtimeOutputDirectory": paths.runtimeOutputDirectory,
 		"providerStateDirectory": paths.providerStateDirectory,
 		"workload":               map[string]any{"provider": input.ProviderKind, "model": input.Model},
 		"execution":              map[string]any{"id": input.ExecutionID},
-	}})
+	}
+	sessionCommand, sessionSuffix := "StartSession", "start"
+	if input.ProviderResumeCursor != "" {
+		sessionCommand, sessionSuffix = "ResumeSession", "resume"
+		runnerInput["providerResumeCursor"] = input.ProviderResumeCursor
+	}
+	start := command(sessionCommand, boundedRuntimeIdentifier(input.RequestID, sessionSuffix), map[string]any{"runnerInput": runnerInput})
 	result.FailureCode = "runtime_start_failed"
 	if err := session.Send(ctx, start); err != nil {
 		return result, err
 	}
 	startMessages, terminal, err := receiveRuntimeMessages(session, start.CommandID)
-	result.Messages = append(result.Messages, startMessages...)
+	result.Messages = appendPublicRuntimeMessages(result.Messages, startMessages...)
 	if err != nil {
 		return result, err
 	}
@@ -392,13 +405,48 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *supervisor.Superv
 		return result, err
 	}
 	turnMessages, terminal, err := receiveRuntimeMessages(session, turn.CommandID)
-	result.Messages = append(result.Messages, turnMessages...)
+	result.Messages = appendPublicRuntimeMessages(result.Messages, turnMessages...)
 	result.Terminal = terminal
 	if err != nil {
 		return result, err
 	}
+	providerResumeCursor, err := runtimeProviderResumeCursor(terminal)
+	if err != nil {
+		result.FailureCode = "runtime_result_invalid"
+		return result, err
+	}
+	result.ProviderResumeCursor = providerResumeCursor
 	result.FailureCode = ""
 	return result, nil
+}
+
+func runtimeProviderResumeCursor(message runtime.Message) (string, error) {
+	value, exists := message.Payload["providerResumeCursor"]
+	if !exists || value == nil {
+		return "", nil
+	}
+	cursor, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("%w: provider resume cursor", ErrInvalidInput)
+	}
+	if err := ValidateProviderResumeCursor(cursor); err != nil || cursor == "" {
+		if err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("%w: provider resume cursor", ErrInvalidInput)
+	}
+	return cursor, nil
+}
+
+func appendPublicRuntimeMessages(destination []runtime.Message, messages ...runtime.Message) []runtime.Message {
+	for _, message := range messages {
+		if _, exists := message.Payload["providerResumeCursor"]; exists {
+			message.Payload = maps.Clone(message.Payload)
+			delete(message.Payload, "providerResumeCursor")
+		}
+		destination = append(destination, message)
+	}
+	return destination
 }
 
 func deriveRuntimeWorkspacePaths(base string, scope Scope, sessionID, turnID, executionID string) (runtimeWorkspacePaths, error) {

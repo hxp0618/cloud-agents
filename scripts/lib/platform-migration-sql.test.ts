@@ -87,6 +87,24 @@ describe("postgresql-lex-v1 bootstrap", () => {
     }
   });
 
+  it("classifies Provider resume cursor persistence", () => {
+    const statements = splitPostgresStatements(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/000024_persist_managed_agent_provider_resume_cursor.sql",
+        ),
+      ),
+    );
+    expect(statements).toHaveLength(5);
+    expect(
+      statements.map((statement) => classifyMigrationStatement(statement, "000024").command),
+    ).toEqual(["ALTER", "CREATE", "ALTER", "REVOKE", "GRANT"]);
+    expect(classifyMigrationStatement(statements[1]!, "000024").target_identity).toContain(
+      "settle_managed_agent_execution_v2",
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

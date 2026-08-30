@@ -21,8 +21,8 @@ type managedAgentExecutionStoreFake struct {
 	cancel    internalmanagedagent.CancelTurnInput
 }
 
-func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.SessionSnapshot, error) {
-	return internalmanagedagent.SessionSnapshot{}, nil
+func (fake *managedAgentExecutionStoreFake) GetManagedAgentSessionForExecution(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.RuntimeSessionSnapshot, error) {
+	return internalmanagedagent.RuntimeSessionSnapshot{}, nil
 }
 
 func (fake *managedAgentExecutionStoreFake) CreateManagedAgentTurn(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CreateTurnInput) (internalmanagedagent.TurnSnapshot, error) {
@@ -37,7 +37,7 @@ func (fake *managedAgentExecutionStoreFake) StartManagedAgentExecution(context.C
 	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
 }
 
-func (fake *managedAgentExecutionStoreFake) CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CompleteExecutionInput) (internalmanagedagent.ExecutionTransitionResult, error) {
+func (fake *managedAgentExecutionStoreFake) CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CompleteRuntimeExecutionInput) (internalmanagedagent.ExecutionTransitionResult, error) {
 	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
 }
 

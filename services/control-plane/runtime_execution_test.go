@@ -98,6 +98,10 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 	if result.Messages[1].MessageType != "Event" || result.Messages[2].MessageType != "Result" || result.Messages[2].Payload["inputText"] != "hello runtime" {
 		t.Fatalf("runtime messages = %#v", result.Messages)
 	}
+	if result.Messages[0].Payload["sessionCommand"] != "StartSession" || result.Messages[0].Payload["cursorAccepted"] != true {
+		t.Fatalf("Runtime session start = %#v", result.Messages[0].Payload)
+	}
+	assertNoProviderResumeCursor(t, result.Messages)
 	if result.Messages[0].Payload["workspaceDirectory"] != filepath.Join("/tmp/cloud-agents-runtime-test", ".cloud-agents", "managed-agent", "tenants", "tenant-runtime", "projects", "project-runtime", "sessions", "session-runtime", "workspace") ||
 		result.Messages[0].Payload["runtimeOutputDirectory"] != filepath.Join("/tmp/cloud-agents-runtime-test", ".cloud-agents", "managed-agent", "tenants", "tenant-runtime", "projects", "project-runtime", "sessions", "session-runtime", "runtime-output", "turn-runtime", "execution-runtime") ||
 		result.Messages[0].Payload["providerStateDirectory"] != filepath.Join("/tmp/cloud-agents-runtime-test", ".cloud-agents", "managed-agent", "tenants", "tenant-runtime", "projects", "project-runtime", "sessions", "session-runtime", "provider-state") {
@@ -132,6 +136,19 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 	if _, err := openapiv1alpha1.DecodeManagedAgentExecutionResponseJSON(responseBody); err != nil {
 		t.Fatalf("public execution response rejected Runtime messages: %v; body=%s", err, responseBody)
 	}
+	second, err := coordinator.Execute(context.Background(), controlplane.RuntimeExecutionInput{
+		Scope: scope, SessionID: "session-runtime", TurnID: "turn-runtime-second", ExecutionID: "execution-runtime-second", Generation: 7,
+		FencingLeaseID: "runtime-lease", FencingGeneration: 7, FencingToken: []byte("runtime-token"), Deadline: now.Add(20 * time.Second),
+		WorkspaceDirectory: "/tmp/cloud-agents-runtime-test", Model: "test-model", InputText: "second",
+		Mutation: controlplane.Mutation{RequestID: "request-second", IdempotencyKey: "second-key"},
+	})
+	if err != nil || second.Transition.Turn.State != controlplane.TurnCompleted || second.Messages[0].Payload["sessionCommand"] != "ResumeSession" || second.Messages[0].Payload["cursorAccepted"] != true {
+		t.Fatalf("second = %#v, err = %v", second, err)
+	}
+	if second.Messages[0].RequestID != "request-second-resumesession" || second.Messages[0].CommandID != "request-second-resume" {
+		t.Fatalf("Runtime resume correlation IDs = %#v", second.Messages[0])
+	}
+	assertNoProviderResumeCursor(t, second.Messages)
 	failure, failureErr := coordinator.Execute(context.Background(), controlplane.RuntimeExecutionInput{
 		Scope: scope, SessionID: "session-runtime", TurnID: "turn-runtime-failure", ExecutionID: "execution-runtime-failure", Generation: 7,
 		FencingLeaseID: "runtime-lease", FencingGeneration: 7, FencingToken: []byte("runtime-token"), Deadline: now.Add(20 * time.Second),
@@ -140,6 +157,19 @@ func TestRuntimeExecutionCoordinator(t *testing.T) {
 	})
 	if failureErr == nil || failure.Transition.Turn.State != controlplane.TurnFailed || failure.Transition.Execution.State != controlplane.ExecutionFailed {
 		t.Fatalf("failure = %#v, err = %v", failure, failureErr)
+	}
+	if failure.Messages[0].Payload["sessionCommand"] != "ResumeSession" || failure.Messages[0].Payload["cursorAccepted"] != true {
+		t.Fatalf("failure resume = %#v", failure.Messages[0].Payload)
+	}
+	assertNoProviderResumeCursor(t, failure.Messages)
+}
+
+func assertNoProviderResumeCursor(t *testing.T, messages []runtimeprocess.Message) {
+	t.Helper()
+	for _, message := range messages {
+		if _, exists := message.Payload["providerResumeCursor"]; exists {
+			t.Fatalf("Provider resume cursor crossed the public message boundary: %#v", message)
+		}
 	}
 }
 
@@ -159,17 +189,29 @@ func runRuntimeExecutionHelper() {
 			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Event","payload":{"text":"partial"}}
 `, command.RequestID, command.ExecutionID, command.Generation, command.CommandID)
 			time.Sleep(10 * time.Millisecond)
-			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"inputText":%q}}
-`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, command.Payload["inputText"])
+			cursor := "provider-cursor-1"
+			if command.Payload["inputText"] == "second" {
+				cursor = "provider-cursor-2"
+			}
+			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"inputText":%q,"providerResumeCursor":%q}}
+`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, command.Payload["inputText"], cursor)
 			continue
 		}
-		if command.CommandType == "StartSession" {
+		if command.CommandType == "StartSession" || command.CommandType == "ResumeSession" {
 			runnerInput, _ := command.Payload["runnerInput"].(map[string]any)
 			workspaceDirectory, _ := runnerInput["workspaceDirectory"].(string)
 			runtimeOutputDirectory, _ := runnerInput["runtimeOutputDirectory"].(string)
 			providerStateDirectory, _ := runnerInput["providerStateDirectory"].(string)
-			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"workspaceDirectory":%q,"runtimeOutputDirectory":%q,"providerStateDirectory":%q}}
-`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, workspaceDirectory, runtimeOutputDirectory, providerStateDirectory)
+			cursor, _ := runnerInput["providerResumeCursor"].(string)
+			expectedCursor := ""
+			if command.ExecutionID == "execution-runtime-second" {
+				expectedCursor = "provider-cursor-1"
+			} else if command.ExecutionID == "execution-runtime-failure" {
+				expectedCursor = "provider-cursor-2"
+			}
+			cursorAccepted := command.CommandType == "StartSession" && cursor == "" || command.CommandType == "ResumeSession" && cursor == expectedCursor && cursor != ""
+			_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"workspaceDirectory":%q,"runtimeOutputDirectory":%q,"providerStateDirectory":%q,"sessionCommand":%q,"cursorAccepted":%t}}
+`, command.RequestID, command.ExecutionID, command.Generation, command.CommandID, workspaceDirectory, runtimeOutputDirectory, providerStateDirectory, command.CommandType, cursorAccepted)
 			continue
 		}
 		_, _ = fmt.Fprintf(os.Stdout, `{"requestId":%q,"protocolVersion":{"major":2,"minor":3},"executionId":%q,"generation":%d,"commandId":%q,"occurredAt":"2026-08-29T10:00:00Z","messageType":"Result","payload":{"ok":true}}

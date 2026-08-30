@@ -91,8 +91,8 @@ describe("platform release", () => {
   it("packages the current product migration manifest, catalog, and SQL", () => {
     const archive = buildPlatformMigrationPackage(process.cwd());
     const entries = readDeterministicUstar(new Uint8Array(archive));
-	expect(entries.some(({ path }) => path.endsWith("product/000023/manifest.json"))).toBe(true);
-	expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(23);
+	expect(entries.some(({ path }) => path.endsWith("product/000024/manifest.json"))).toBe(true);
+	expect(entries.filter(({ path }) => path.endsWith(".sql")).length).toBe(24);
     expect(expectedArtifactIdentities()).toContainEqual({
       name: "cloud-agents-migrations",
       target: "portable",
@@ -134,9 +134,9 @@ describe("platform release", () => {
     expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(3);
     expect(compose).not.toContain("CLOUD_AGENTS_TARGET");
     const migrateDockerfile = readFileSync("deploy/docker/migrate.Dockerfile", "utf8");
-    expect(migrateDockerfile).toContain("cloud-agents-migrations-000023.tar");
-    expect(migrateDockerfile).toContain("product/000023/manifest.json");
-    expect(migrateDockerfile).not.toContain("000022");
+    expect(migrateDockerfile).toContain("cloud-agents-migrations-000024.tar");
+    expect(migrateDockerfile).toContain("product/000024/manifest.json");
+    expect(migrateDockerfile).not.toContain("000023");
   });
 
   it("packages public contracts without internal provenance inputs", () => {

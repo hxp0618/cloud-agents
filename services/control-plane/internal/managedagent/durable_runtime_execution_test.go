@@ -20,10 +20,10 @@ type durableRuntimeExecutionStoreFake struct {
 	cancel     context.CancelFunc
 }
 
-func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ string, _ string) (SessionSnapshot, error) {
+func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ string, _ string) (RuntimeSessionSnapshot, error) {
 	fake.calls = append(fake.calls, "session")
 	fake.recordPrincipal(principal)
-	return SessionSnapshot{ProviderKind: "codex"}, nil
+	return RuntimeSessionSnapshot{SessionSnapshot: SessionSnapshot{ProviderKind: "codex"}}, nil
 }
 
 func (fake *durableRuntimeExecutionStoreFake) CreateManagedAgentTurn(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CreateTurnInput) (TurnSnapshot, error) {
@@ -52,7 +52,7 @@ func (fake *durableRuntimeExecutionStoreFake) StartManagedAgentExecution(_ conte
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnRunning}, Execution: fake.execution}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ CompleteExecutionInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "complete")
 	fake.recordPrincipal(principal)
 	return ExecutionTransitionResult{}, nil
