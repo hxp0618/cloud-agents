@@ -47,14 +47,14 @@ execution_uid, execution_generation, execution_state, result_digest, error_code,
 FROM cloud_agents.start_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	settleManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
-FROM cloud_agents.settle_managed_agent_execution_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
+FROM cloud_agents.settle_managed_agent_execution_v4($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 	cancelManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.cancel_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
 	interruptManagedAgentExecutionSQL = `SELECT turn_uid, turn_state, turn_resource_version, turn_created_at, turn_updated_at,
 execution_uid, execution_generation, execution_state, result_digest, error_code, execution_resource_version, execution_created_at, execution_updated_at
 FROM cloud_agents.interrupt_managed_agent_execution_v1($1, $2, $3, $4, $5, $6, $7, $8)`
-	getManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at, terminal_message
+	getManagedAgentExecutionSQL = `SELECT execution_uid, generation, state, result_digest, error_code, resource_version, created_at, updated_at, terminal_message, runtime_messages
 FROM cloud_agents.managed_agent_executions
 WHERE tenant_id = cloud_agents.require_tenant_id()
     AND project_uid = $1 AND session_uid = $2 AND turn_uid = $3 AND execution_uid = $4`
@@ -171,24 +171,36 @@ func (service *DurableCoordinationService) CompleteManagedAgentExecution(
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	terminalMessage, err := json.Marshal(input.TerminalMessage)
+	terminalMessage, err := json.Marshal(input.Messages[len(input.Messages)-1])
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor, string(terminalMessage))
+	runtimeMessages, err := json.Marshal(input.Messages)
+	if err != nil {
+		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+	}
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "succeeded", input.ResultDigest, "", input.Mutation.IdempotencyKey, digest, input.ProviderResumeCursor, string(terminalMessage), string(runtimeMessages))
 }
 
 func (service *DurableCoordinationService) FailManagedAgentExecution(
 	ctx context.Context,
 	tenantID string,
 	principal *authn.VerifiedPrincipal,
-	input internalmanagedagent.FailExecutionInput,
+	input internalmanagedagent.FailRuntimeExecutionInput,
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
-	digest, err := internalmanagedagent.ExecutionFailMutationDigest(input)
+	digest, err := internalmanagedagent.RuntimeExecutionFailMutationDigest(input)
 	if err != nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
 	}
-	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "", "")
+	var runtimeMessages string
+	if len(input.Messages) > 0 {
+		encoded, encodeErr := json.Marshal(input.Messages)
+		if encodeErr != nil {
+			return internalmanagedagent.ExecutionTransitionResult{}, ErrCoordinationInvalidInput
+		}
+		runtimeMessages = string(encoded)
+	}
+	return service.settleManagedAgentExecution(ctx, tenantID, principal, input.Scope, input.SessionID, input.TurnID, input.ExecutionID, input.Generation, "failed", "", input.ErrorCode, input.Mutation.IdempotencyKey, digest, "", "", runtimeMessages)
 }
 
 func (service *DurableCoordinationService) CancelManagedAgentExecution(
@@ -264,7 +276,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	scope internalmanagedagent.Scope,
 	sessionID, turnID, executionID string,
 	generation uint64,
-	outcome, resultDigest, errorCode, idempotencyKey, requestDigest, providerResumeCursor, terminalMessage string,
+	outcome, resultDigest, errorCode, idempotencyKey, requestDigest, providerResumeCursor, terminalMessage, runtimeMessages string,
 ) (internalmanagedagent.ExecutionTransitionResult, error) {
 	if service == nil || service.runner == nil {
 		return internalmanagedagent.ExecutionTransitionResult{}, ErrNilCoordinationRunner
@@ -276,7 +288,7 @@ func (service *DurableCoordinationService) settleManagedAgentExecution(
 	err := withManagedAgentProjectMutation(service, ctx, tenantID, principal, scope.ProjectID, func(handle *tenantReadHandle) error {
 		if err := scanManagedAgentExecutionTransition(handle.transaction.queryRow(ctx, settleManagedAgentExecutionSQL,
 			scope.TenantID, scope.ProjectID, sessionID, turnID, executionID, int64(generation), outcome,
-			nullableString(resultDigest), nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage)), scope, sessionID, &result); err != nil {
+			nullableString(resultDigest), nullableString(errorCode), idempotencyKey, requestDigest, nullableString(providerResumeCursor), nullableString(terminalMessage), nullableString(runtimeMessages)), scope, sessionID, &result); err != nil {
 			return err
 		}
 		operation := "execution.complete"
@@ -461,8 +473,8 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	}
 	var generation, version int64
 	var state string
-	var resultDigest, errorCode, terminalMessage *string
-	if err := row.Scan(&result.ExecutionID, &generation, &state, &resultDigest, &errorCode, &version, &result.CreatedAt, &result.UpdatedAt, &terminalMessage); err != nil {
+	var resultDigest, errorCode, terminalMessage, runtimeMessages *string
+	if err := row.Scan(&result.ExecutionID, &generation, &state, &resultDigest, &errorCode, &version, &result.CreatedAt, &result.UpdatedAt, &terminalMessage, &runtimeMessages); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -485,7 +497,13 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 	if (result.State == internalmanagedagent.ExecutionSucceeded && result.ResultDigest == "") || (result.State == internalmanagedagent.ExecutionFailed && result.ErrorCode == "") {
 		return fmt.Errorf("%w: managed agent execution terminal projection", ErrCoordinationResultDrift)
 	}
-	if terminalMessage != nil {
+	if runtimeMessages != nil {
+		messages, err := decodePersistedRuntimeMessages(*runtimeMessages, result.ExecutionID, result.Generation, result.State, result.ErrorCode)
+		if err != nil {
+			return fmt.Errorf("%w: managed agent execution Runtime messages", ErrCoordinationResultDrift)
+		}
+		result.Messages = messages
+	} else if terminalMessage != nil {
 		message, err := decodePersistedRuntimeMessage(*terminalMessage)
 		if err != nil || result.State != internalmanagedagent.ExecutionSucceeded || message.MessageType != "Result" || message.ExecutionID != result.ExecutionID || message.Generation != result.Generation {
 			return fmt.Errorf("%w: managed agent execution terminal message", ErrCoordinationResultDrift)
@@ -494,7 +512,14 @@ func scanManagedAgentExecution(row rowScanner, scope internalmanagedagent.Scope,
 		if err != nil || digest != result.ResultDigest {
 			return fmt.Errorf("%w: managed agent execution terminal digest", ErrCoordinationResultDrift)
 		}
-		result.TerminalMessage = &message
+		result.Messages = []runtimeprotocol.Message{message}
+	}
+	if len(result.Messages) > 0 && result.State == internalmanagedagent.ExecutionSucceeded {
+		terminal := result.Messages[len(result.Messages)-1]
+		digest, err := internalmanagedagent.RuntimeMessageDigest(terminal)
+		if err != nil || digest != result.ResultDigest || runtimeMessages != nil && terminalMessage != nil && !runtimeMessagesEndWithTerminal(*runtimeMessages, *terminalMessage) {
+			return fmt.Errorf("%w: managed agent execution terminal digest", ErrCoordinationResultDrift)
+		}
 	}
 	result.Version = uint64(version)
 	return nil
@@ -516,6 +541,52 @@ func decodePersistedRuntimeMessage(value string) (runtimeprotocol.Message, error
 		return runtimeprotocol.Message{}, ErrCoordinationResultDrift
 	}
 	return message, nil
+}
+
+func decodePersistedRuntimeMessages(value, executionID string, generation uint64, state internalmanagedagent.ExecutionState, errorCode string) ([]runtimeprotocol.Message, error) {
+	if len(value) == 0 || len(value) > runtimeprotocol.MaxMessageBytes {
+		return nil, ErrCoordinationResultDrift
+	}
+	decoder := json.NewDecoder(bytes.NewBufferString(value))
+	decoder.DisallowUnknownFields()
+	var messages []runtimeprotocol.Message
+	var trailing any
+	if err := decoder.Decode(&messages); err != nil || decoder.Decode(&trailing) != io.EOF || len(messages) == 0 {
+		return nil, ErrCoordinationResultDrift
+	}
+	encoded, err := json.Marshal(messages)
+	if err != nil || !bytes.Equal(encoded, []byte(value)) {
+		return nil, ErrCoordinationResultDrift
+	}
+	mutation := internalmanagedagent.Mutation{RequestID: "request", IdempotencyKey: "idempotency-key"}
+	if state == internalmanagedagent.ExecutionSucceeded {
+		terminal := messages[len(messages)-1]
+		digest, digestErr := internalmanagedagent.RuntimeMessageDigest(terminal)
+		if digestErr != nil {
+			return nil, ErrCoordinationResultDrift
+		}
+		input := internalmanagedagent.CompleteRuntimeExecutionInput{CompleteExecutionInput: internalmanagedagent.CompleteExecutionInput{Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: executionID, Generation: generation, ResultDigest: digest, Mutation: mutation}, Messages: messages}
+		if _, validateErr := internalmanagedagent.RuntimeExecutionCompleteMutationDigest(input); validateErr != nil {
+			return nil, ErrCoordinationResultDrift
+		}
+	} else if state == internalmanagedagent.ExecutionFailed {
+		input := internalmanagedagent.FailRuntimeExecutionInput{FailExecutionInput: internalmanagedagent.FailExecutionInput{Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: executionID, Generation: generation, ErrorCode: errorCode, Mutation: mutation}, Messages: messages}
+		if _, validateErr := internalmanagedagent.RuntimeExecutionFailMutationDigest(input); validateErr != nil {
+			return nil, ErrCoordinationResultDrift
+		}
+	} else {
+		return nil, ErrCoordinationResultDrift
+	}
+	return messages, nil
+}
+
+func runtimeMessagesEndWithTerminal(messages, terminal string) bool {
+	var transcript []json.RawMessage
+	var terminalMessage json.RawMessage
+	if json.Unmarshal([]byte(messages), &transcript) != nil || len(transcript) == 0 || json.Unmarshal([]byte(terminal), &terminalMessage) != nil {
+		return false
+	}
+	return bytes.Equal(transcript[len(transcript)-1], terminalMessage)
 }
 
 func scanManagedAgentExecutionTransition(row rowScanner, scope internalmanagedagent.Scope, sessionID string, result *internalmanagedagent.ExecutionTransitionResult) error {

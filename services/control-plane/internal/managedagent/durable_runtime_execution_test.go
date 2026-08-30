@@ -59,7 +59,7 @@ func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ co
 	return ExecutionTransitionResult{}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input FailExecutionInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input FailRuntimeExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "fail")
 	fake.recordPrincipal(principal)
 	fake.execution.State = ExecutionFailed
@@ -120,20 +120,37 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 	}
 }
 
-func TestReceiveRuntimeTerminalDiscardsNonterminalMessages(t *testing.T) {
+func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
 	messages := []runtimeprotocol.Message{
 		{CommandID: "turn", MessageType: "Progress"},
 		{CommandID: "turn", MessageType: "Event"},
 		{CommandID: "turn", MessageType: "Result", Payload: map[string]any{"text": "done"}},
 	}
 	index := 0
-	terminal, err := receiveRuntimeTerminal(func() (runtimeprotocol.Message, error) {
+	collected, terminal, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		message := messages[index]
 		index++
 		return message, nil
 	}, "turn")
-	if err != nil || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(messages) {
-		t.Fatalf("terminal=%#v reads=%d err=%v", terminal, index, err)
+	if err != nil || !reflect.DeepEqual(collected, messages) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(messages) {
+		t.Fatalf("messages=%#v terminal=%#v reads=%d err=%v", collected, terminal, index, err)
+	}
+}
+
+func TestReceiveRuntimeMessagesRejectsPublicLimits(t *testing.T) {
+	reads := 0
+	messages, _, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
+		reads++
+		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress"}, nil
+	}, "turn")
+	if err == nil || len(messages) != maxRuntimeExecutionMessages || reads != maxRuntimeExecutionMessages+1 {
+		t.Fatalf("count limit: messages=%d reads=%d err=%v", len(messages), reads, err)
+	}
+	messages, _, err = receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
+		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress", Payload: map[string]any{"text": strings.Repeat("x", runtimeprotocol.MaxMessageBytes)}}, nil
+	}, "turn")
+	if err == nil || len(messages) != 0 {
+		t.Fatalf("byte limit: messages=%d err=%v", len(messages), err)
 	}
 }
 
@@ -147,13 +164,28 @@ func TestRuntimeTerminalDigestBindsPublicMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7, ResultDigest: digest, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idempotency-key-1234"}}, ProviderResumeCursor: "private-cursor", TerminalMessage: public}
+	progress := public
+	progress.MessageType = "Progress"
+	progress.Payload = map[string]any{"text": "working"}
+	input := CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7, ResultDigest: digest, Mutation: Mutation{RequestID: "request", IdempotencyKey: "idempotency-key-1234"}}, ProviderResumeCursor: "private-cursor", Messages: []runtimeprotocol.Message{progress, public}}
 	if _, err := RuntimeExecutionCompleteMutationDigest(input); err != nil {
 		t.Fatal(err)
 	}
 	input.ResultDigest = "sha256:" + strings.Repeat("0", 64)
 	if _, err := RuntimeExecutionCompleteMutationDigest(input); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("mismatched terminal digest error = %v", err)
+	}
+}
+
+func TestRuntimeResultInvalidFailurePreservesReceivedResult(t *testing.T) {
+	result := runtimeprotocol.Message{RequestID: "request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "command", OccurredAt: time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done"}}
+	input := FailRuntimeExecutionInput{FailExecutionInput: FailExecutionInput{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7, ErrorCode: "runtime_result_invalid", Mutation: Mutation{RequestID: "request", IdempotencyKey: "idempotency-key-1234"}}, Messages: []runtimeprotocol.Message{result}}
+	if _, err := RuntimeExecutionFailMutationDigest(input); err != nil {
+		t.Fatal(err)
+	}
+	input.ErrorCode = "runtime_failed"
+	if _, err := RuntimeExecutionFailMutationDigest(input); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("ordinary failure accepted a Result transcript: %v", err)
 	}
 }
 
@@ -193,7 +225,7 @@ func TestDurableRuntimeExecutionReturnsTerminalReplayWithoutOpeningWorker(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionSucceeded, ResultDigest: digest, TerminalMessage: &terminal}}
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionSucceeded, ResultDigest: digest, Messages: []runtimeprotocol.Message{terminal}}}
 	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
 		Store: store, Supervisor: &workerclient.Supervisor{}, Clock: func() time.Time { return time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC) },
 		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",

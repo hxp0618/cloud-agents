@@ -43,15 +43,10 @@ import {
   validateLineageIndexFrame,
   validateRecoveryPolicyChainFixture,
 } from "./platform-migration-evidence";
+import { DURABLE_COORDINATION_OUTPUT_PATH } from "./platform-durable-coordination-registry";
 import {
-  assertDurableCoordinationRegistryCurrent,
-  buildDurableCoordinationRegistry,
-} from "./platform-durable-coordination-registry";
-import {
-  assertCompatibilityRecoveryRegistryCurrent,
-  assertCompatibilityRecoveryRegistryV2Current,
-  buildCompatibilityRecoveryRegistry,
-  buildCompatibilityRecoveryRegistryV2,
+  COMPATIBILITY_RECOVERY_OUTPUT_PATH,
+  COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH,
 } from "./platform-compatibility-recovery-registry";
 
 export type GeneratedMigrationBundle = {
@@ -527,16 +522,17 @@ export function buildMigrationBundle(root: string): GeneratedMigrationBundle {
     }
     files.set(ancestor.path, bytes);
   }
-  assertDurableCoordinationRegistryCurrent(root);
-  const durableCoordinationRegistry = requiredObject(buildDurableCoordinationRegistry(root));
+  const durableCoordinationRegistry = requiredObject(
+    parseStrictMigrationJson(readExactFile(root, DURABLE_COORDINATION_OUTPUT_PATH)),
+  );
   const historicalDurableCoordinationRegistry = durableCoordinationHistoricalRegistrySnapshot(
     durableCoordinationRegistry,
   );
-  assertCompatibilityRecoveryRegistryCurrent(root);
-  const compatibilityRecoveryRegistry = requiredObject(buildCompatibilityRecoveryRegistry(root));
-  assertCompatibilityRecoveryRegistryV2Current(root);
   const compatibilityRecoveryRegistryV2 = requiredObject(
-    buildCompatibilityRecoveryRegistryV2(root),
+    parseStrictMigrationJson(readExactFile(root, COMPATIBILITY_RECOVERY_V2_OUTPUT_PATH)),
+  );
+  const compatibilityRecoveryRegistry = requiredObject(
+    parseStrictMigrationJson(readExactFile(root, COMPATIBILITY_RECOVERY_OUTPUT_PATH)),
   );
   const sqlBytes = new Map(SQL_PATHS.map((path) => [path, readExactFile(root, path)] as const));
   validateDurableCoordinationKernel(

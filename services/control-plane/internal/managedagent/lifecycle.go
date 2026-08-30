@@ -213,7 +213,7 @@ type CompleteExecutionInput struct {
 type CompleteRuntimeExecutionInput struct {
 	CompleteExecutionInput
 	ProviderResumeCursor string
-	TerminalMessage      runtimeprotocol.Message
+	Messages             []runtimeprotocol.Message
 }
 
 type FailExecutionInput struct {
@@ -224,6 +224,11 @@ type FailExecutionInput struct {
 	Generation  uint64
 	ErrorCode   string
 	Mutation    Mutation
+}
+
+type FailRuntimeExecutionInput struct {
+	FailExecutionInput
+	Messages []runtimeprotocol.Message
 }
 
 type InterruptTurnInput struct {
@@ -274,18 +279,18 @@ type TurnSnapshot struct {
 }
 
 type ExecutionSnapshot struct {
-	Scope           Scope
-	SessionID       string
-	TurnID          string
-	ExecutionID     string
-	Generation      uint64
-	State           ExecutionState
-	ResultDigest    string
-	ErrorCode       string
-	TerminalMessage *runtimeprotocol.Message
-	Version         uint64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	Scope        Scope
+	SessionID    string
+	TurnID       string
+	ExecutionID  string
+	Generation   uint64
+	State        ExecutionState
+	ResultDigest string
+	ErrorCode    string
+	Messages     []runtimeprotocol.Message
+	Version      uint64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // ExecutionTransitionResult returns both coupled rows after an execution
@@ -1094,6 +1099,15 @@ func ExecutionFailMutationDigest(input FailExecutionInput) (string, error) {
 		SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: input.Generation,
 		ErrorCode: input.ErrorCode,
 	}), nil
+}
+
+// RuntimeExecutionFailMutationDigest validates the bounded Runtime transcript
+// while retaining the existing durable failure idempotency digest.
+func RuntimeExecutionFailMutationDigest(input FailRuntimeExecutionInput) (string, error) {
+	if err := validateRuntimeFailureMessages(input); err != nil {
+		return "", err
+	}
+	return ExecutionFailMutationDigest(input.FailExecutionInput)
 }
 
 // TurnCancelMutationDigest returns the canonical digest used by the durable

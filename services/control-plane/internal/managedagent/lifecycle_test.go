@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -132,7 +133,7 @@ func TestLifecycleHappyPathAndIdempotentReplay(t *testing.T) {
 		Scope: lifecycleTestScope, SessionID: "session-1", TurnID: "turn-1", ExecutionID: "execution-1", Generation: 1,
 		ResultDigest: resultDigest, Mutation: Mutation{RequestID: "request-complete-retry", IdempotencyKey: "idem-complete-1"},
 	})
-	if err != nil || replayed != completed {
+	if err != nil || !reflect.DeepEqual(replayed, completed) {
 		t.Fatalf("terminal replay = %#v / %v", replayed, err)
 	}
 
@@ -165,7 +166,7 @@ func TestRuntimeCompletionPersistsPrivateResumeCursor(t *testing.T) {
 			ResultDigest: resultDigest, Mutation: Mutation{RequestID: "request-resume", IdempotencyKey: "idem-resume"},
 		},
 		ProviderResumeCursor: "provider-thread-resume",
-		TerminalMessage:      terminal,
+		Messages:             []runtimeprotocol.Message{terminal},
 	}
 	if _, err := store.CompleteRuntimeExecution(context.Background(), input); err != nil {
 		t.Fatal(err)

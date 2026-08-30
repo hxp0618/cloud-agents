@@ -24,7 +24,7 @@ import {
   validateRuntimeArtifactSafety,
   validateSchemaAncestorChain,
 } from "./platform-migration-bundle";
-import { buildDurableCoordinationRegistry } from "./platform-durable-coordination-registry";
+import { DURABLE_COORDINATION_OUTPUT_PATH } from "./platform-durable-coordination-registry";
 import {
   buildCompatibilityRecoveryRegistry,
   buildCompatibilityRecoveryRegistryV2,
@@ -285,9 +285,11 @@ describe("migration bundle bootstrap", () => {
         "services/control-plane/migrations/000008_add_durable_coordination_service.sql",
       ),
     );
-    const currentRegistry = buildDurableCoordinationRegistry(root);
-    const registry = durableCoordinationHistoricalRegistrySnapshot(currentRegistry);
-    expect(currentRegistry.registryDigest).not.toBe(registry.registryDigest);
+    const checkedInRegistry = JSON.parse(
+      readFileSync(resolve(root, DURABLE_COORDINATION_OUTPUT_PATH), "utf8"),
+    );
+    const registry = durableCoordinationHistoricalRegistrySnapshot(checkedInRegistry);
+    expect(checkedInRegistry.registryDigest).not.toBe(registry.registryDigest);
     expect(() => validateDurableCoordinationKernel(kernelSql, registry)).not.toThrow();
     expect(() => validateDurableCoordinationService(serviceSql, registry)).not.toThrow();
 
@@ -346,7 +348,9 @@ describe("migration bundle bootstrap", () => {
     const sql = readFileSync(
       resolve(root, "services/control-plane/migrations/000009_redact_coordination_conflicts.sql"),
     );
-    const registry = buildDurableCoordinationRegistry(root);
+    const registry = JSON.parse(
+      readFileSync(resolve(root, DURABLE_COORDINATION_OUTPUT_PATH), "utf8"),
+    );
     expect(() => validateDurableCoordinationRepair(sql, registry)).not.toThrow();
 
     const profileDrift = structuredClone(registry);

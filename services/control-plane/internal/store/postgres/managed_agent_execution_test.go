@@ -16,12 +16,46 @@ func TestScanManagedAgentExecutionBuildsDetachedSnapshot(t *testing.T) {
 	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
 	terminal, terminalJSON, resultDigest := persistedTerminalForTest(t)
 	var snapshot internalmanagedagent.ExecutionSnapshot
-	err := scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "succeeded", &resultDigest, nil, int64(3), now, now, &terminalJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+	err := scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "succeeded", &resultDigest, nil, int64(3), now, now, &terminalJSON, nil), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.ExecutionID != "execution-alpha" || snapshot.Generation != 7 || snapshot.State != internalmanagedagent.ExecutionSucceeded || snapshot.ResultDigest == "" || snapshot.Version != 3 || snapshot.TerminalMessage == nil || snapshot.TerminalMessage.Payload["text"] != terminal.Payload["text"] {
+	if snapshot.ExecutionID != "execution-alpha" || snapshot.Generation != 7 || snapshot.State != internalmanagedagent.ExecutionSucceeded || snapshot.ResultDigest == "" || snapshot.Version != 3 || len(snapshot.Messages) != 1 || snapshot.Messages[0].Payload["text"] != terminal.Payload["text"] {
 		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
+func TestScanManagedAgentExecutionRestoresRuntimeTranscript(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
+	terminal, terminalJSON, resultDigest := persistedTerminalForTest(t)
+	progress := terminal
+	progress.MessageType = "Progress"
+	progress.Payload = map[string]any{"text": "working"}
+	encoded, err := json.Marshal([]runtimeprotocol.Message{progress, terminal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcriptJSON := string(encoded)
+	var snapshot internalmanagedagent.ExecutionSnapshot
+	err = scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "succeeded", &resultDigest, nil, int64(3), now, now, &terminalJSON, &transcriptJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+	if err != nil || len(snapshot.Messages) != 2 || snapshot.Messages[0].MessageType != "Progress" || snapshot.Messages[1].MessageType != "Result" {
+		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
+	}
+}
+
+func TestScanManagedAgentExecutionRestoresRejectedRuntimeResult(t *testing.T) {
+	now := time.Date(2026, time.August, 29, 10, 0, 0, 0, time.UTC)
+	terminal, _, _ := persistedTerminalForTest(t)
+	encoded, err := json.Marshal([]runtimeprotocol.Message{terminal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcriptJSON := string(encoded)
+	errorCode := "runtime_result_invalid"
+	var snapshot internalmanagedagent.ExecutionSnapshot
+	err = scanManagedAgentExecution(rowValues("execution-alpha", int64(7), "failed", nil, &errorCode, int64(3), now, now, nil, &transcriptJSON), internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, "session-alpha", "turn-alpha", &snapshot)
+	if err != nil || len(snapshot.Messages) != 1 || snapshot.Messages[0].MessageType != "Result" {
+		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
 	}
 }
 
@@ -116,8 +150,8 @@ func TestManagedAgentExecutionSQLUsesTypedFunctionsAndTenantRLS(t *testing.T) {
 			t.Fatalf("%s SQL is not tenant-bound execution SQL: %s", name, sql)
 		}
 	}
-	if !strings.Contains(settleManagedAgentExecutionSQL, "settle_managed_agent_execution_v3") {
-		t.Fatal("execution settlement does not persist the terminal Result")
+	if !strings.Contains(settleManagedAgentExecutionSQL, "settle_managed_agent_execution_v4") {
+		t.Fatal("execution settlement does not persist the Runtime transcript")
 	}
 	if strings.Contains(createManagedAgentExecutionSQL, "managed_agent_executions") {
 		t.Fatal("execution creation must read its projection in a later SQL statement")
@@ -142,7 +176,7 @@ func TestManagedAgentExecutionDigestsMatchLifecycleKernel(t *testing.T) {
 	withCursor, err := internalmanagedagent.RuntimeExecutionCompleteMutationDigest(internalmanagedagent.CompleteRuntimeExecutionInput{
 		CompleteExecutionInput: internalmanagedagent.CompleteExecutionInput{Scope: scope, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, ResultDigest: terminalDigest, Mutation: mutation},
 		ProviderResumeCursor:   "provider-thread-alpha",
-		TerminalMessage:        terminal,
+		Messages:               []runtimeprotocol.Message{terminal},
 	})
 	if err != nil || withCursor == completed {
 		t.Fatalf("runtime complete digest/error = %q/%v", withCursor, err)

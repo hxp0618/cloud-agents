@@ -48,7 +48,7 @@ func (fake *managedAgentExecutionStoreFake) CompleteManagedAgentExecution(contex
 	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
 }
 
-func (fake *managedAgentExecutionStoreFake) FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.FailExecutionInput) (internalmanagedagent.ExecutionTransitionResult, error) {
+func (fake *managedAgentExecutionStoreFake) FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.FailRuntimeExecutionInput) (internalmanagedagent.ExecutionTransitionResult, error) {
 	return internalmanagedagent.ExecutionTransitionResult{}, errors.New("not used")
 }
 
@@ -132,7 +132,7 @@ func (fake *managedAgentExecutionVerifierFake) Verify(_ string, _ authn.Verifica
 func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	verifier := &projectHTTPVerifierFake{}
 	terminal := runtimeprotocol.Message{RequestID: "request-alpha", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "persisted"}}
-	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionSucceeded, TerminalMessage: &terminal, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)}}
+	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Messages: []runtimeprotocol.Message{terminal}, Version: 2, CreatedAt: time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 8, 29, 8, 0, 1, 0, time.UTC)}}
 	store.page = postgres.ManagedAgentExecutionPage{Executions: []internalmanagedagent.ExecutionSnapshot{store.execution}, NextTurnID: "turn-alpha"}
 	cancelledExecution := store.execution
 	cancelledExecution.State = internalmanagedagent.ExecutionCancelled

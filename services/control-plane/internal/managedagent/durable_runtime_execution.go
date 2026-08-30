@@ -28,7 +28,7 @@ type DurableRuntimeExecutionStore interface {
 	CreateManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CreateExecutionInput) (ExecutionSnapshot, error)
 	StartManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, StartExecutionInput) (ExecutionTransitionResult, error)
 	CompleteManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error)
-	FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, FailExecutionInput) (ExecutionTransitionResult, error)
+	FailManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, FailRuntimeExecutionInput) (ExecutionTransitionResult, error)
 	InterruptManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, InterruptTurnInput) (ExecutionTransitionResult, error)
 	CancelManagedAgentExecution(context.Context, string, *authn.VerifiedPrincipal, CancelTurnInput) (ExecutionTransitionResult, error)
 }
@@ -120,7 +120,10 @@ type activeDurableExecution struct {
 	externallyCancelled bool
 }
 
-const maxPublicExecutionMessageIdentifierBytes = 128
+const (
+	maxPublicExecutionMessageIdentifierBytes = 128
+	maxRuntimeExecutionMessages              = 64
+)
 
 var (
 	ErrDurableRuntimeExecutionUnavailable = errors.New("durable Runtime execution is unavailable")
@@ -250,11 +253,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return coordinator.fail(principalSource, input, ExecutionTransitionResult{Turn: turn, Execution: execution}, nil, "orphaned_execution", errors.New("running Runtime execution has no active owner"))
 	}
 	if execution.State != ExecutionQueued {
-		var messages []runtimeprotocol.Message
-		if execution.TerminalMessage != nil {
-			messages = []runtimeprotocol.Message{*execution.TerminalMessage}
-		}
-		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: messages}, nil
+		return DurableRuntimeExecutionResult{Transition: ExecutionTransitionResult{Turn: turn, Execution: execution}, Messages: execution.Messages}, nil
 	}
 	principal, err = nextVerifiedPrincipal(principalSource)
 	if err != nil {
@@ -298,7 +297,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
-	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor, TerminalMessage: terminal})
+	completed, err := coordinator.store.CompleteManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, CompleteRuntimeExecutionInput{CompleteExecutionInput: CompleteExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ResultDigest: digest, Mutation: input.Mutation}, ProviderResumeCursor: runtimeResult.ProviderResumeCursor, Messages: runtimeResult.Messages})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: runtimeResult.Messages}, err
 	}
@@ -342,7 +341,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) fail(principalSource Veri
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
 	}
-	failed, err := coordinator.store.FailManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, FailExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ErrorCode: code, Mutation: input.Mutation})
+	failed, err := coordinator.store.FailManagedAgentExecution(context.Background(), input.Scope.TenantID, principal, FailRuntimeExecutionInput{FailExecutionInput: FailExecutionInput{Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration, ErrorCode: code, Mutation: input.Mutation}, Messages: messages})
 	if err != nil {
 		return DurableRuntimeExecutionResult{Transition: started, Messages: messages}, errors.Join(cause, err)
 	}
@@ -399,7 +398,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 	if err := session.Send(ctx, start); err != nil {
 		return result, err
 	}
-	terminal, err := receiveRuntimeTerminal(session.Receive, start.CommandID)
+	_, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID)
 	if err != nil {
 		return result, err
 	}
@@ -411,7 +410,8 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 	if err := session.Send(ctx, turn); err != nil {
 		return result, err
 	}
-	terminal, err = receiveRuntimeTerminal(session.Receive, turn.CommandID)
+	messages, terminal, err := receiveRuntimeMessages(session.Receive, turn.CommandID)
+	result.Messages = publicRuntimeMessages(messages)
 	result.Terminal = terminal
 	if err != nil {
 		return result, err
@@ -422,7 +422,6 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 		return result, err
 	}
 	result.ProviderResumeCursor = providerResumeCursor
-	result.Messages = []runtimeprotocol.Message{publicRuntimeMessage(terminal)}
 	result.FailureCode = ""
 	return result, nil
 }
@@ -451,6 +450,14 @@ func publicRuntimeMessage(message runtimeprotocol.Message) runtimeprotocol.Messa
 		delete(message.Payload, "providerResumeCursor")
 	}
 	return message
+}
+
+func publicRuntimeMessages(messages []runtimeprotocol.Message) []runtimeprotocol.Message {
+	result := make([]runtimeprotocol.Message, len(messages))
+	for index, message := range messages {
+		result[index] = publicRuntimeMessage(message)
+	}
+	return result
 }
 
 func deriveRuntimeWorkspacePaths(base string, scope Scope, sessionID, turnID, executionID string) (runtimeWorkspacePaths, error) {
@@ -496,17 +503,29 @@ func boundedRuntimeIdentifier(base, suffix string) string {
 	return base + separator + suffix
 }
 
-func receiveRuntimeTerminal(receive func() (runtimeprotocol.Message, error), commandID string) (runtimeprotocol.Message, error) {
+func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), commandID string) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
+	messages := make([]runtimeprotocol.Message, 0, maxRuntimeExecutionMessages)
+	totalBytes := 2
 	for {
 		message, err := receive()
 		if err != nil {
-			return runtimeprotocol.Message{}, err
+			return messages, runtimeprotocol.Message{}, err
 		}
 		if message.CommandID != commandID {
-			return message, errors.New("Runtime response command id mismatch")
+			return messages, message, errors.New("Runtime response command id mismatch")
 		}
+		encoded, err := json.Marshal(message)
+		separatorBytes := 0
+		if len(messages) > 0 {
+			separatorBytes = 1
+		}
+		if err != nil || len(messages) == maxRuntimeExecutionMessages || totalBytes+len(encoded)+separatorBytes > runtimeprotocol.MaxMessageBytes {
+			return messages, message, errors.New("Runtime response transcript exceeds the public limit")
+		}
+		totalBytes += len(encoded) + separatorBytes
+		messages = append(messages, message)
 		if message.MessageType == "Result" || message.MessageType == "Error" {
-			return message, nil
+			return messages, message, nil
 		}
 	}
 }
@@ -521,17 +540,44 @@ func RuntimeMessageDigest(message runtimeprotocol.Message) (string, error) {
 }
 
 func validateRuntimeTerminalMessage(input CompleteRuntimeExecutionInput) error {
-	message := input.TerminalMessage
-	if runtimeprotocol.ValidateMessage(message) != nil || message.MessageType != "Result" || message.ExecutionID != input.ExecutionID || message.Generation != input.Generation {
+	if err := validateRuntimeMessageTranscript(input.Messages, input.ExecutionID, input.Generation, true); err != nil {
 		return fmt.Errorf("%w: Runtime terminal message", ErrInvalidInput)
 	}
-	encoded, err := json.Marshal(message)
-	if err != nil || len(encoded) > runtimeprotocol.MaxMessageBytes {
-		return fmt.Errorf("%w: Runtime terminal message", ErrInvalidInput)
-	}
-	digest, err := RuntimeMessageDigest(message)
+	digest, err := RuntimeMessageDigest(input.Messages[len(input.Messages)-1])
 	if err != nil || digest != input.ResultDigest {
 		return fmt.Errorf("%w: Runtime terminal digest", ErrInvalidInput)
+	}
+	return nil
+}
+
+func validateRuntimeFailureMessages(input FailRuntimeExecutionInput) error {
+	err := validateRuntimeMessageTranscript(input.Messages, input.ExecutionID, input.Generation, false)
+	if err == nil || input.ErrorCode != "runtime_result_invalid" {
+		return err
+	}
+	return validateRuntimeMessageTranscript(input.Messages, input.ExecutionID, input.Generation, true)
+}
+
+func validateRuntimeMessageTranscript(messages []runtimeprotocol.Message, executionID string, generation uint64, requireResult bool) error {
+	if len(messages) == 0 {
+		if requireResult {
+			return ErrInvalidInput
+		}
+		return nil
+	}
+	if len(messages) > maxRuntimeExecutionMessages {
+		return ErrInvalidInput
+	}
+	requestID, commandID := messages[0].RequestID, messages[0].CommandID
+	for index, message := range messages {
+		terminal := message.MessageType == "Result" || message.MessageType == "Error"
+		if runtimeprotocol.ValidateMessage(message) != nil || message.ExecutionID != executionID || message.Generation != generation || message.RequestID != requestID || message.CommandID != commandID || terminal && index != len(messages)-1 || !requireResult && message.MessageType == "Result" {
+			return ErrInvalidInput
+		}
+	}
+	encoded, err := json.Marshal(messages)
+	if err != nil || len(encoded) > runtimeprotocol.MaxMessageBytes || requireResult && messages[len(messages)-1].MessageType != "Result" {
+		return ErrInvalidInput
 	}
 	return nil
 }
