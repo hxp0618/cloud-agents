@@ -59,7 +59,6 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 		Capabilities: []workerv1alpha1.Capability{
 			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
 			workerv1alpha1.Capability_CAPABILITY_HEALTH,
-			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
 		},
 		IdentityProvider:    StaticIdentityProvider{Identity: supervisorIdentity},
 		AdmissionLeaseID:    "lease-runtime-invalid-command",
@@ -83,15 +82,37 @@ func TestRuntimeSessionRejectsInvalidCommandAtWorkerBoundary(t *testing.T) {
 	defer server.Close()
 
 	workerClient := workerv1alpha1connect.NewWorkerExecutionServiceClient(server.Client(), server.URL)
-	negotiation, err := workerClient.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
+	runtimeClient := workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL)
+	incomplete, err := workerClient.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
 		SupportedVersions:      []*workerv1alpha1.ProtocolVersion{{Major: ProtocolMajor, Minor: ProtocolMinor}},
-		RequiredCapabilities:   []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION, workerv1alpha1.Capability_CAPABILITY_HEALTH, workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH},
+		RequiredCapabilities:   []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION},
 		ExpectedServerIdentity: workerIdentity,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeClient := workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL)
+	rejected := runtimeClient.OpenSession(context.Background())
+	if err := rejected.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
+		Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: incomplete.Msg.GetSelectedVersion(), NegotiationId: incomplete.Msg.GetNegotiationId(), ExpiresAt: incomplete.Msg.GetExpiresAt()},
+		Fencing:     &workerv1alpha1.FencingProof{LeaseId: "lease-runtime-invalid-command", Generation: 7, Token: []byte("runtime-token")},
+		ExecutionId: "execution-incomplete-binding", Generation: 7, ExpectedWorkerIdentity: workerIdentity, ProviderKind: "codex",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rejected.Receive(); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "capability_not_negotiated") {
+		t.Fatalf("incomplete Runtime binding error = %v", err)
+	}
+	_ = rejected.CloseRequest()
+	_ = rejected.CloseResponse()
+
+	negotiation, err := workerClient.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
+		SupportedVersions:      []*workerv1alpha1.ProtocolVersion{{Major: ProtocolMajor, Minor: ProtocolMinor}},
+		RequiredCapabilities:   []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION, workerv1alpha1.Capability_CAPABILITY_HEALTH},
+		ExpectedServerIdentity: workerIdentity,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	stream := runtimeClient.OpenSession(context.Background())
 	defer func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() }()
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{

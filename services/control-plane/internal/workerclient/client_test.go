@@ -24,12 +24,16 @@ import (
 type workerWireFake struct {
 	workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
 	workerruntimev1alpha1connect.UnimplementedWorkerRuntimeServiceHandler
-	identity *workerv1alpha1.WorkloadIdentity
-	now      time.Time
+	identity     *workerv1alpha1.WorkloadIdentity
+	capabilities []workerv1alpha1.Capability
+	now          time.Time
 }
 
 func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
-	capabilities := append([]workerv1alpha1.Capability(nil), request.Msg.GetRequiredCapabilities()...)
+	if !exactCapabilities(request.Msg.GetRequiredCapabilities(), fake.capabilities) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errInvalidConfig)
+	}
+	capabilities := append([]workerv1alpha1.Capability(nil), fake.capabilities...)
 	descriptor := workerDescriptor(capabilities)
 	return connect.NewResponse(&workerv1alpha1.NegotiationResponse{
 		SelectedVersion: request.Msg.GetSupportedVersions()[0], AcceptedCapabilities: capabilities, Server: descriptor,
@@ -38,7 +42,7 @@ func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Reques
 }
 
 func (fake *workerWireFake) CheckHealth(context.Context, *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
-	return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: workerDescriptor(runtimeCapabilities()), ObservedAt: timestamppb.New(fake.now)}), nil
+	return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: workerDescriptor(fake.capabilities), ObservedAt: timestamppb.New(fake.now)}), nil
 }
 
 func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiStream[workerruntimev1alpha1.RuntimeSessionRequest, workerruntimev1alpha1.RuntimeSessionResponse]) error {
@@ -64,7 +68,10 @@ func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiS
 func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.UTC)
 	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
-	fake := &workerWireFake{identity: identity, now: now}
+	fake := &workerWireFake{identity: identity, capabilities: []workerv1alpha1.Capability{
+		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+		workerv1alpha1.Capability_CAPABILITY_HEALTH,
+	}, now: now}
 	mux := http.NewServeMux()
 	workerPath, workerHandler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(fake)
 	runtimePath, runtimeHandler := workerruntimev1alpha1connect.NewWorkerRuntimeServiceHandler(fake)

@@ -38,7 +38,6 @@ func TestRuntimeSessionBridgesWorkerAndRuntimeProcess(t *testing.T) {
 		Capabilities: []workerv1alpha1.Capability{
 			workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
 			workerv1alpha1.Capability_CAPABILITY_HEALTH,
-			workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH,
 		},
 		IdentityProvider:           workerkernel.StaticIdentityProvider{Identity: supervisorIdentity},
 		AdmissionLeaseID:           "lease-runtime-test",

@@ -349,7 +349,7 @@ func validateDescriptor(descriptor *workerv1alpha1.ProtocolDescriptor) (*workerv
 }
 
 func runtimeCapabilities() []workerv1alpha1.Capability {
-	return []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION, workerv1alpha1.Capability_CAPABILITY_HEALTH, workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH}
+	return []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION, workerv1alpha1.Capability_CAPABILITY_HEALTH}
 }
 
 func exactCapabilities(got, want []workerv1alpha1.Capability) bool {

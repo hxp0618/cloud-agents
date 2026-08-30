@@ -53,8 +53,10 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if err != nil {
 		return err
 	}
-	if _, ok := binding.caps[workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH]; !ok {
-		return runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_not_negotiated", "Runtime sessions require operation dispatch capability")
+	_, negotiation := binding.caps[workerv1alpha1.Capability_CAPABILITY_NEGOTIATION]
+	_, health := binding.caps[workerv1alpha1.Capability_CAPABILITY_HEALTH]
+	if !negotiation || !health {
+		return runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_not_negotiated", "Runtime sessions require the negotiation and health capabilities")
 	}
 	if err := s.validateRuntimeFencing(open); err != nil {
 		return err

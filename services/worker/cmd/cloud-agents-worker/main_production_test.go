@@ -64,7 +64,7 @@ func TestParseProductionWorkerConfigRequiresExplicitTLSInputs(t *testing.T) {
 	}
 }
 
-func TestProductionWorkerRuntimeAdvertisesOperationDispatch(t *testing.T) {
+func TestProductionWorkerDoesNotAdvertiseUnavailableOperationDispatch(t *testing.T) {
 	service, err := workerkernel.NewService(workerkernel.Config{
 		WorkerIdentity: &workerv1alpha1.WorkloadIdentity{
 			SpiffeId:    "spiffe://cloud-agents.example/worker",
@@ -77,8 +77,9 @@ func TestProductionWorkerRuntimeAdvertisesOperationDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	descriptor := service.ProtocolDescriptor()
-	if descriptor == nil || len(descriptor.GetCapabilities()) != 3 || descriptor.GetCapabilities()[2] != workerv1alpha1.Capability_CAPABILITY_OPERATION_DISPATCH {
-		t.Fatalf("production Runtime capabilities = %#v", descriptor.GetCapabilities())
+	capabilities := descriptor.GetCapabilities()
+	if descriptor == nil || len(capabilities) != 2 || capabilities[0] != workerv1alpha1.Capability_CAPABILITY_NEGOTIATION || capabilities[1] != workerv1alpha1.Capability_CAPABILITY_HEALTH {
+		t.Fatalf("production Worker capabilities = %#v", capabilities)
 	}
 }
 

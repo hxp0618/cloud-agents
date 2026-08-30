@@ -27,12 +27,12 @@ type RuntimeSession struct {
 	sendMu     sync.Mutex
 }
 
-// BindRuntime negotiates the Worker capability required by the Runtime route.
+// BindRuntime negotiates the protocol and health binding used by the Runtime route.
 func (s *Supervisor) BindRuntime(ctx context.Context) (BindingSnapshot, error) {
 	if s == nil || !runtimeClientAvailable(s.runtimeClient) {
 		return BindingSnapshot{}, errInvalidConfig
 	}
-	return s.BindOperationAdmission(ctx)
+	return s.Bind(ctx)
 }
 
 // CheckRuntimeHealth refreshes an expired Runtime binding before checking the
@@ -61,7 +61,7 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID, provid
 	s.mu.RLock()
 	state := cloneBindingState(s.binding)
 	s.mu.RUnlock()
-	if state == nil || state.profileID != OperationAdmissionProfileID {
+	if state == nil || state.profileID != NegotiationHealthProfileID {
 		return nil, fail(connect.CodeFailedPrecondition, "runtime_binding_required")
 	}
 	now, ok := s.nowUTC()
@@ -89,7 +89,7 @@ func (s *Supervisor) OpenRuntimeSession(ctx context.Context, executionID, provid
 }
 
 func (s *Supervisor) ensureRuntimeBinding(ctx context.Context) error {
-	if binding, ok := s.CurrentBinding(); ok && binding.ProfileID == OperationAdmissionProfileID {
+	if binding, ok := s.CurrentBinding(); ok && binding.ProfileID == NegotiationHealthProfileID {
 		return nil
 	}
 	_, err := s.BindRuntime(ctx)
