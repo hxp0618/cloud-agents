@@ -172,6 +172,7 @@ export type ProviderPrimaryOperation =
 const PROVIDER_PROCESS_ENVIRONMENT_ALLOWLIST = [
   "PATH",
   "HOME",
+  "CODEX_HOME",
   "USER",
   "LOGNAME",
   "USERNAME",

@@ -98,6 +98,7 @@ func TestProductionRuntimeEnvironmentAllowsOnlyRuntimeConfiguration(t *testing.T
 	filtered := productionRuntimeEnvironment([]string{
 		"PATH=/usr/bin",
 		"HOME=/home/cloud-agents",
+		"CODEX_HOME=/var/lib/cloud-agents/codex",
 		"LANG=en_US.UTF-8",
 		"LC_ALL=C",
 		"NODE_EXTRA_CA_CERTS=/run/cloud-agents/ca.pem",
@@ -123,6 +124,7 @@ func TestProductionRuntimeEnvironmentAllowsOnlyRuntimeConfiguration(t *testing.T
 	want := []string{
 		"PATH=/usr/bin",
 		"HOME=/home/cloud-agents",
+		"CODEX_HOME=/var/lib/cloud-agents/codex",
 		"LANG=en_US.UTF-8",
 		"LC_ALL=C",
 		"NODE_EXTRA_CA_CERTS=/run/cloud-agents/ca.pem",

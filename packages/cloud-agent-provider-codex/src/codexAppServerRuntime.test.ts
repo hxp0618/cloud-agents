@@ -1223,6 +1223,7 @@ async function withFakeCodex(
     ...process.env,
     PATH: `${directory}:${process.env.PATH ?? ""}`,
     HOME: directory,
+    CODEX_HOME: join(directory, "ambient-codex-home"),
     TMPDIR: directory,
     LANG: "C.UTF-8",
     TERM: "xterm-256color",
@@ -1292,6 +1293,10 @@ const scenario = ${JSON.stringify(scenario)};
 const trace = ${JSON.stringify(tracePath)};
 const requiredEnvironment = ${JSON.stringify({
     HOME: directory,
+    CODEX_HOME:
+      scenario === "credential-environment"
+        ? join(directory, "provider-state", "codex-home")
+        : join(directory, "ambient-codex-home"),
     TMPDIR: directory,
     LANG: "C.UTF-8",
     TERM: "xterm-256color",
@@ -1300,7 +1305,6 @@ const requiredEnvironment = ${JSON.stringify({
       ? {
           OPENAI_API_KEY: "provider-secret",
           OPENAI_BASE_URL: "http://provider-fault.example.test/v1",
-          CODEX_HOME: join(directory, "provider-state", "codex-home"),
         }
       : {}),
   })};
@@ -1320,7 +1324,6 @@ for (const name of ${JSON.stringify([
     "SYNARA_CONTROL_PLANE_URL",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
-    "CODEX_HOME",
     "ANTHROPIC_API_KEY",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
@@ -1335,7 +1338,7 @@ for (const name of ${JSON.stringify([
     "SSH_AUTH_SOCK",
     "NODE_OPTIONS",
   ])}) {
-  if (scenario === "credential-environment" && ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"].includes(name)) continue;
+  if (scenario === "credential-environment" && ["OPENAI_API_KEY", "OPENAI_BASE_URL"].includes(name)) continue;
   if (process.env[name] !== undefined) {
     process.stderr.write("ambient secret leaked to Codex child: " + name + "\\n");
     process.exit(92);

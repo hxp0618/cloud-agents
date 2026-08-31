@@ -42,7 +42,7 @@
         "versionSource": "probe",
         "compatibleRange": {
           "minimumInclusive": "0.150.1",
-          "maximumExclusive": "0.151.0"
+          "maximumExclusive": "0.152.0"
         }
       },
       "capabilities": {

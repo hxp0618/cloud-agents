@@ -126,7 +126,7 @@ describe("Provider Host Protocol v2", () => {
       versionSource: "probe",
       compatibleRange: {
         minimumInclusive: "0.150.1",
-        maximumExclusive: "0.151.0",
+        maximumExclusive: "0.152.0",
       },
       compatible: true,
     });
@@ -428,8 +428,13 @@ describe("Provider Host Protocol v2", () => {
         expected: "Result",
       },
       {
-        label: "maximum-exclusive",
+        label: "compatible-next-minor",
         probe: { available: true, output: "codex-cli 0.151.0" },
+        expected: "Result",
+      },
+      {
+        label: "maximum-exclusive",
+        probe: { available: true, output: "codex-cli 0.152.0" },
         expected: "provider_version_incompatible",
       },
     ] as const;
