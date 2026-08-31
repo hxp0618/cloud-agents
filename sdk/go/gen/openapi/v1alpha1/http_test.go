@@ -54,11 +54,14 @@ func TestHTTPClientUsesProvidedHTTPClient(t *testing.T) {
 
 func TestHTTPClientRejectsUnsafeConfigAndRedirects(t *testing.T) {
 	for _, value := range []struct{ base, token string }{
-		{"", "token"}, {"ftp://example.com", "token"}, {"https://user@example.com", "token"}, {"https://example.com?x=1", "token"}, {"https://example.com", " token"},
+		{"", "token"}, {"ftp://example.com", "token"}, {"http://example.com", "token"}, {"http://localhost", "token"}, {"https://user@example.com", "token"}, {"https://example.com?x=1", "token"}, {"https://example.com", " token"},
 	} {
 		if client, err := NewHTTPClient(value.base, value.token); client != nil || err == nil {
 			t.Fatalf("unsafe config accepted: %#v", value)
 		}
+	}
+	if client, err := NewHTTPClient("https://example.com", "token"); client == nil || err != nil {
+		t.Fatalf("HTTPS endpoint rejected: client=%v err=%v", client, err)
 	}
 	redirectFollowed := false
 	redirectTarget := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

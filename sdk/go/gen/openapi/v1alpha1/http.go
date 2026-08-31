@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,8 +18,9 @@ const maxHTTPResponseBytes = 2 * runtimeprotocol.MaxMessageBytes
 var ErrInvalidHTTPClientConfig = errors.New("invalid Cloud Agents HTTP client configuration")
 
 // NewHTTPClient creates the public SDK client for a Cloud Agents Control
-// Plane endpoint. The bearer is attached by the transport, never by an
-// operation caller, and redirects are disabled to prevent credential leaks.
+// Plane endpoint. Plain HTTP is accepted only for literal loopback addresses.
+// The bearer is attached by the transport, never by an operation caller, and
+// redirects are disabled to prevent credential leaks.
 func NewHTTPClient(baseURL, bearerToken string) (*Client, error) {
 	return NewHTTPClientWithClient(baseURL, bearerToken, &http.Client{})
 }
@@ -29,6 +31,12 @@ func NewHTTPClientWithClient(baseURL, bearerToken string, client *http.Client) (
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" || strings.HasSuffix(parsed.Path, "/") || client == nil {
 		return nil, ErrInvalidHTTPClientConfig
+	}
+	if parsed.Scheme == "http" {
+		ip := net.ParseIP(parsed.Hostname())
+		if ip == nil || !ip.IsLoopback() {
+			return nil, ErrInvalidHTTPClientConfig
+		}
 	}
 	if strings.TrimSpace(bearerToken) != bearerToken || bearerToken == "" || strings.ContainsAny(bearerToken, " \t\r\n") {
 		return nil, ErrInvalidHTTPClientConfig

@@ -9,8 +9,9 @@ The current output contains generated common identity models, generated JSON
 contract models and clients, plus generated proto3 messages and ConnectRPC
 service descriptors. The JSON clients include `createHTTPClient(baseURL,
 bearerToken)` from `@cloud-agents/cloud-agent-platform-sdk/platform`; it uses the
-native `fetch`, refuses redirects, and limits response bodies to 2 MiB. Injected
-transports remain available for tests and custom environments.
+native `fetch`, requires HTTPS except for literal loopback addresses, refuses
+redirects, and limits response bodies to 2 MiB. Injected transports remain
+available for tests and custom environments.
 
 The public package contains only `dist`, package metadata, notices, and this
 README. Internal generation manifests and their per-file provenance are not

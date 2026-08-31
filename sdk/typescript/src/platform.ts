@@ -2275,6 +2275,9 @@ export function createHTTPClient(baseURL: string, bearerToken: string): Client {
   if (
     baseURL.trim() !== baseURL ||
     (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ||
+    (endpoint.protocol === "http:" &&
+      endpoint.hostname !== "[::1]" &&
+      !/^127(?:\.[0-9]{1,3}){3}$/u.test(endpoint.hostname)) ||
     endpoint.host === "" ||
     endpoint.username !== "" ||
     endpoint.password !== "" ||

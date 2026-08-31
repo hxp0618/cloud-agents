@@ -613,6 +613,9 @@ describe("generated platform client", () => {
       expect(() => createHTTPClient(`${baseURL}/`, "token-alpha")).toThrow(TypeError);
       expect(() => createHTTPClient(baseURL, "token alpha")).toThrow(TypeError);
       expect(() => createHTTPClient("ftp://127.0.0.1", "token-alpha")).toThrow(TypeError);
+      expect(() => createHTTPClient("http://example.com", "token-alpha")).toThrow(TypeError);
+      expect(() => createHTTPClient("http://localhost", "token-alpha")).toThrow(TypeError);
+      expect(() => createHTTPClient("https://example.com", "token-alpha")).not.toThrow();
       expect(() => createHTTPClient(undefined as unknown as string, "token-alpha")).toThrow(
         TypeError,
       );
