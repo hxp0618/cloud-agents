@@ -36,6 +36,7 @@ type managedAgentExecutionRunner interface {
 	ActiveInteractions(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message
 	ResolveApproval(context.Context, internalmanagedagent.RuntimeApprovalResolutionInput) error
 	ResolveUserInput(context.Context, internalmanagedagent.RuntimeUserInputResolutionInput) error
+	ReadArtifact(context.Context, internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error)
 }
 
 type ManagedAgentExecutionHTTPServer struct {
@@ -58,6 +59,11 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 		return
 	}
 	tenantID, projectID, sessionID, turnID, executionID, action, ok := managedAgentExecutionPath(request.URL.Path)
+	messageIndex := -1
+	if artifactTenant, artifactProject, artifactSession, artifactTurn, artifactExecution, artifactIndex, artifactOK := managedAgentArtifactPath(request.URL.Path); artifactOK {
+		tenantID, projectID, sessionID, turnID, executionID, action, ok = artifactTenant, artifactProject, artifactSession, artifactTurn, artifactExecution, "artifact", true
+		messageIndex = artifactIndex
+	}
 	if !ok {
 		writeManagedAgentSessionError(writer, http.StatusNotFound, "route_not_found")
 		return
@@ -91,6 +97,10 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 	}
 	if action == "get" && request.Method == http.MethodGet {
 		server.get(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer)
+		return
+	}
+	if action == "artifact" && request.Method == http.MethodGet {
+		server.downloadArtifact(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer, messageIndex)
 		return
 	}
 	if action == "cancel" && request.Method == http.MethodPost {
@@ -239,6 +249,42 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 		messages = append(messages, server.runner.ActiveInteractions(runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation))...)
 	}
 	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, messages)
+}
+
+func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string, messageIndex int) {
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	if err != nil {
+		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	execution, err := server.store.GetManagedAgentExecution(request.Context(), tenantID, principal, projectID, sessionID, turnID, executionID)
+	if err != nil {
+		status, code := managedAgentExecutionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	if messageIndex < 0 || messageIndex >= len(execution.Messages) || execution.Messages[messageIndex].MessageType != "ArtifactCandidate" {
+		writeManagedAgentSessionError(writer, http.StatusNotFound, "not_found")
+		return
+	}
+	artifact, err := server.runner.ReadArtifact(request.Context(), internalmanagedagent.RuntimeArtifactReadInput{
+		RuntimeExecutionReference: runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation),
+		Message:                   execution.Messages[messageIndex],
+	})
+	if err != nil {
+		status, code := managedAgentExecutionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.Header().Set("Content-Type", artifact.ContentType)
+	writer.Header().Set("Content-Length", strconv.Itoa(len(artifact.Data)))
+	writer.Header().Set("X-Content-Type-Options", "nosniff")
+	if artifact.SHA256 != "" {
+		writer.Header().Set("ETag", `"sha256:`+artifact.SHA256+`"`)
+	}
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(artifact.Data)
 }
 
 func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
@@ -494,6 +540,26 @@ func managedAgentExecutionPath(path string) (tenantID, projectID, sessionID, tur
 	return "", "", "", "", "", "", false
 }
 
+func managedAgentArtifactPath(value string) (tenantID, projectID, sessionID, turnID, executionID string, messageIndex int, ok bool) {
+	if !strings.HasPrefix(value, ManagedAgentExecutionRoutePrefix) {
+		return "", "", "", "", "", 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(value, ManagedAgentExecutionRoutePrefix), "/")
+	if len(parts) != 12 || parts[1] != "projects" || parts[3] != "sessions" || parts[5] != "turns" || parts[7] != "executions" || parts[9] != "messages" || parts[11] != "artifact" {
+		return "", "", "", "", "", 0, false
+	}
+	for _, index := range []int{0, 2, 4, 6, 8} {
+		if parts[index] == "" || strings.Contains(parts[index], ":") {
+			return "", "", "", "", "", 0, false
+		}
+	}
+	parsed, err := strconv.Atoi(parts[10])
+	if err != nil || parsed < 0 || parsed >= 64 || strconv.Itoa(parsed) != parts[10] {
+		return "", "", "", "", "", 0, false
+	}
+	return parts[0], parts[2], parts[4], parts[6], parts[8], parsed, true
+}
+
 func encodeManagedAgentExecutionPageToken(tenantID, projectID, sessionID, turnID string) (string, bool) {
 	if commonv1alpha1.ValidateIdentifier(tenantID, "/tenantId") != nil || commonv1alpha1.ValidateIdentifier(projectID, "/projectId") != nil ||
 		commonv1alpha1.ValidateIdentifier(sessionID, "/sessionId") != nil || commonv1alpha1.ValidateIdentifier(turnID, "/turnId") != nil {
@@ -522,6 +588,10 @@ func decodeManagedAgentExecutionPageToken(tenantID, projectID, sessionID, token 
 
 func HandlesManagedAgentExecutionPath(path string) bool {
 	_, _, _, _, _, _, ok := managedAgentExecutionPath(path)
+	if ok {
+		return true
+	}
+	_, _, _, _, _, _, ok = managedAgentArtifactPath(path)
 	return ok
 }
 
@@ -543,6 +613,8 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, internalmanagedagent.ErrRuntimeInteractionFailed):
 		return http.StatusBadGateway, "runtime_interaction_failed"
+	case errors.Is(err, internalmanagedagent.ErrRuntimeArtifactUnavailable):
+		return http.StatusBadGateway, "artifact_unavailable"
 	case errors.Is(err, context.DeadlineExceeded):
 		return http.StatusGatewayTimeout, "deadline_exceeded"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionFailed):

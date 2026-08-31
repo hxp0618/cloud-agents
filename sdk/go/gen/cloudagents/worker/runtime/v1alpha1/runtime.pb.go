@@ -460,6 +460,166 @@ func (*RuntimeSessionResponse_Json) isRuntimeSessionResponse_Frame() {}
 
 func (*RuntimeSessionResponse_Error) isRuntimeSessionResponse_Frame() {}
 
+type RuntimeArtifactReadRequest struct {
+	state                  protoimpl.MessageState       `protogen:"open.v1"`
+	Negotiation            *v1alpha1.NegotiationBinding `protobuf:"bytes,1,opt,name=negotiation,proto3" json:"negotiation,omitempty"`
+	Fencing                *v1alpha1.FencingProof       `protobuf:"bytes,2,opt,name=fencing,proto3" json:"fencing,omitempty"`
+	ExecutionId            string                       `protobuf:"bytes,3,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
+	Generation             uint64                       `protobuf:"varint,4,opt,name=generation,proto3" json:"generation,omitempty"`
+	ExpectedWorkerIdentity *v1alpha1.WorkloadIdentity   `protobuf:"bytes,5,opt,name=expected_worker_identity,json=expectedWorkerIdentity,proto3" json:"expected_worker_identity,omitempty"`
+	RootDirectory          string                       `protobuf:"bytes,6,opt,name=root_directory,json=rootDirectory,proto3" json:"root_directory,omitempty"`
+	RelativePath           string                       `protobuf:"bytes,7,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
+	ExpectedSizeBytes      *uint64                      `protobuf:"varint,8,opt,name=expected_size_bytes,json=expectedSizeBytes,proto3,oneof" json:"expected_size_bytes,omitempty"`
+	ExpectedSha256         string                       `protobuf:"bytes,9,opt,name=expected_sha256,json=expectedSha256,proto3" json:"expected_sha256,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *RuntimeArtifactReadRequest) Reset() {
+	*x = RuntimeArtifactReadRequest{}
+	mi := &file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeArtifactReadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeArtifactReadRequest) ProtoMessage() {}
+
+func (x *RuntimeArtifactReadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeArtifactReadRequest.ProtoReflect.Descriptor instead.
+func (*RuntimeArtifactReadRequest) Descriptor() ([]byte, []int) {
+	return file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RuntimeArtifactReadRequest) GetNegotiation() *v1alpha1.NegotiationBinding {
+	if x != nil {
+		return x.Negotiation
+	}
+	return nil
+}
+
+func (x *RuntimeArtifactReadRequest) GetFencing() *v1alpha1.FencingProof {
+	if x != nil {
+		return x.Fencing
+	}
+	return nil
+}
+
+func (x *RuntimeArtifactReadRequest) GetExecutionId() string {
+	if x != nil {
+		return x.ExecutionId
+	}
+	return ""
+}
+
+func (x *RuntimeArtifactReadRequest) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *RuntimeArtifactReadRequest) GetExpectedWorkerIdentity() *v1alpha1.WorkloadIdentity {
+	if x != nil {
+		return x.ExpectedWorkerIdentity
+	}
+	return nil
+}
+
+func (x *RuntimeArtifactReadRequest) GetRootDirectory() string {
+	if x != nil {
+		return x.RootDirectory
+	}
+	return ""
+}
+
+func (x *RuntimeArtifactReadRequest) GetRelativePath() string {
+	if x != nil {
+		return x.RelativePath
+	}
+	return ""
+}
+
+func (x *RuntimeArtifactReadRequest) GetExpectedSizeBytes() uint64 {
+	if x != nil && x.ExpectedSizeBytes != nil {
+		return *x.ExpectedSizeBytes
+	}
+	return 0
+}
+
+func (x *RuntimeArtifactReadRequest) GetExpectedSha256() string {
+	if x != nil {
+		return x.ExpectedSha256
+	}
+	return ""
+}
+
+type RuntimeArtifactChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	SizeBytes     uint64                 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuntimeArtifactChunk) Reset() {
+	*x = RuntimeArtifactChunk{}
+	mi := &file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeArtifactChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeArtifactChunk) ProtoMessage() {}
+
+func (x *RuntimeArtifactChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeArtifactChunk.ProtoReflect.Descriptor instead.
+func (*RuntimeArtifactChunk) Descriptor() ([]byte, []int) {
+	return file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RuntimeArtifactChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *RuntimeArtifactChunk) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
 var File_contracts_worker_runtime_v1alpha1_runtime_proto protoreflect.FileDescriptor
 
 const file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDesc = "" +
@@ -494,9 +654,27 @@ const file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDesc = "" +
 	"\x05ready\x18\x01 \x01(\v28.cloudagents.worker.runtime.v1alpha1.RuntimeSessionReadyH\x00R\x05ready\x12\x14\n" +
 	"\x04json\x18\x02 \x01(\fH\x00R\x04json\x12P\n" +
 	"\x05error\x18\x03 \x01(\v28.cloudagents.worker.runtime.v1alpha1.RuntimeSessionErrorH\x00R\x05errorB\a\n" +
-	"\x05frame2\xa3\x01\n" +
+	"\x05frame\"\xa2\x04\n" +
+	"\x1aRuntimeArtifactReadRequest\x12Q\n" +
+	"\vnegotiation\x18\x01 \x01(\v2/.cloudagents.worker.v1alpha1.NegotiationBindingR\vnegotiation\x12C\n" +
+	"\afencing\x18\x02 \x01(\v2).cloudagents.worker.v1alpha1.FencingProofR\afencing\x12!\n" +
+	"\fexecution_id\x18\x03 \x01(\tR\vexecutionId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x04 \x01(\x04R\n" +
+	"generation\x12g\n" +
+	"\x18expected_worker_identity\x18\x05 \x01(\v2-.cloudagents.worker.v1alpha1.WorkloadIdentityR\x16expectedWorkerIdentity\x12%\n" +
+	"\x0eroot_directory\x18\x06 \x01(\tR\rrootDirectory\x12#\n" +
+	"\rrelative_path\x18\a \x01(\tR\frelativePath\x123\n" +
+	"\x13expected_size_bytes\x18\b \x01(\x04H\x00R\x11expectedSizeBytes\x88\x01\x01\x12'\n" +
+	"\x0fexpected_sha256\x18\t \x01(\tR\x0eexpectedSha256B\x16\n" +
+	"\x14_expected_size_bytes\"I\n" +
+	"\x14RuntimeArtifactChunk\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes2\xb2\x02\n" +
 	"\x14WorkerRuntimeService\x12\x8a\x01\n" +
-	"\vOpenSession\x12:.cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest\x1a;.cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse(\x010\x01BfZdgithub.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1;workerruntimev1alpha1b\x06proto3"
+	"\vOpenSession\x12:.cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest\x1a;.cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse(\x010\x01\x12\x8c\x01\n" +
+	"\fReadArtifact\x12?.cloudagents.worker.runtime.v1alpha1.RuntimeArtifactReadRequest\x1a9.cloudagents.worker.runtime.v1alpha1.RuntimeArtifactChunk0\x01BfZdgithub.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/runtime/v1alpha1;workerruntimev1alpha1b\x06proto3"
 
 var (
 	file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDescOnce sync.Once
@@ -510,7 +688,7 @@ func file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDescGZIP() []byte {
 	return file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDescData
 }
 
-var file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_contracts_worker_runtime_v1alpha1_runtime_proto_goTypes = []any{
 	(*RuntimeSessionOpen)(nil),          // 0: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen
 	(*RuntimeCommandFrame)(nil),         // 1: cloudagents.worker.runtime.v1alpha1.RuntimeCommandFrame
@@ -518,25 +696,32 @@ var file_contracts_worker_runtime_v1alpha1_runtime_proto_goTypes = []any{
 	(*RuntimeSessionReady)(nil),         // 3: cloudagents.worker.runtime.v1alpha1.RuntimeSessionReady
 	(*RuntimeSessionError)(nil),         // 4: cloudagents.worker.runtime.v1alpha1.RuntimeSessionError
 	(*RuntimeSessionResponse)(nil),      // 5: cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse
-	(*v1alpha1.NegotiationBinding)(nil), // 6: cloudagents.worker.v1alpha1.NegotiationBinding
-	(*v1alpha1.FencingProof)(nil),       // 7: cloudagents.worker.v1alpha1.FencingProof
-	(*v1alpha1.WorkloadIdentity)(nil),   // 8: cloudagents.worker.v1alpha1.WorkloadIdentity
+	(*RuntimeArtifactReadRequest)(nil),  // 6: cloudagents.worker.runtime.v1alpha1.RuntimeArtifactReadRequest
+	(*RuntimeArtifactChunk)(nil),        // 7: cloudagents.worker.runtime.v1alpha1.RuntimeArtifactChunk
+	(*v1alpha1.NegotiationBinding)(nil), // 8: cloudagents.worker.v1alpha1.NegotiationBinding
+	(*v1alpha1.FencingProof)(nil),       // 9: cloudagents.worker.v1alpha1.FencingProof
+	(*v1alpha1.WorkloadIdentity)(nil),   // 10: cloudagents.worker.v1alpha1.WorkloadIdentity
 }
 var file_contracts_worker_runtime_v1alpha1_runtime_proto_depIdxs = []int32{
-	6, // 0: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen.negotiation:type_name -> cloudagents.worker.v1alpha1.NegotiationBinding
-	7, // 1: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen.fencing:type_name -> cloudagents.worker.v1alpha1.FencingProof
-	8, // 2: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen.expected_worker_identity:type_name -> cloudagents.worker.v1alpha1.WorkloadIdentity
-	0, // 3: cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest.open:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen
-	1, // 4: cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest.command:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeCommandFrame
-	3, // 5: cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse.ready:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionReady
-	4, // 6: cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse.error:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionError
-	2, // 7: cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.OpenSession:input_type -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest
-	5, // 8: cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.OpenSession:output_type -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse
-	8, // [8:9] is the sub-list for method output_type
-	7, // [7:8] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	8,  // 0: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen.negotiation:type_name -> cloudagents.worker.v1alpha1.NegotiationBinding
+	9,  // 1: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen.fencing:type_name -> cloudagents.worker.v1alpha1.FencingProof
+	10, // 2: cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen.expected_worker_identity:type_name -> cloudagents.worker.v1alpha1.WorkloadIdentity
+	0,  // 3: cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest.open:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionOpen
+	1,  // 4: cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest.command:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeCommandFrame
+	3,  // 5: cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse.ready:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionReady
+	4,  // 6: cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse.error:type_name -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionError
+	8,  // 7: cloudagents.worker.runtime.v1alpha1.RuntimeArtifactReadRequest.negotiation:type_name -> cloudagents.worker.v1alpha1.NegotiationBinding
+	9,  // 8: cloudagents.worker.runtime.v1alpha1.RuntimeArtifactReadRequest.fencing:type_name -> cloudagents.worker.v1alpha1.FencingProof
+	10, // 9: cloudagents.worker.runtime.v1alpha1.RuntimeArtifactReadRequest.expected_worker_identity:type_name -> cloudagents.worker.v1alpha1.WorkloadIdentity
+	2,  // 10: cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.OpenSession:input_type -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionRequest
+	6,  // 11: cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.ReadArtifact:input_type -> cloudagents.worker.runtime.v1alpha1.RuntimeArtifactReadRequest
+	5,  // 12: cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.OpenSession:output_type -> cloudagents.worker.runtime.v1alpha1.RuntimeSessionResponse
+	7,  // 13: cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.ReadArtifact:output_type -> cloudagents.worker.runtime.v1alpha1.RuntimeArtifactChunk
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_contracts_worker_runtime_v1alpha1_runtime_proto_init() }
@@ -553,13 +738,14 @@ func file_contracts_worker_runtime_v1alpha1_runtime_proto_init() {
 		(*RuntimeSessionResponse_Json)(nil),
 		(*RuntimeSessionResponse_Error)(nil),
 	}
+	file_contracts_worker_runtime_v1alpha1_runtime_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDesc), len(file_contracts_worker_runtime_v1alpha1_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

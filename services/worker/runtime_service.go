@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -58,7 +60,7 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	if !negotiation || !health {
 		return runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_not_negotiated", "Runtime sessions require the negotiation and health capabilities")
 	}
-	if err := s.validateRuntimeFencing(open); err != nil {
+	if err := s.validateRuntimeFencing(open.GetFencing(), open.GetGeneration()); err != nil {
 		return err
 	}
 	if err := validateIdentifier(open.GetExecutionId(), "execution_id"); err != nil || open.GetGeneration() == 0 || open.GetGeneration() != open.GetFencing().GetGeneration() {
@@ -182,6 +184,107 @@ func (s *Service) OpenSession(ctx context.Context, stream *connect.BidiStream[wo
 	return sessionErr
 }
 
+// ReadArtifact streams one execution-owned ArtifactCandidate without exposing
+// a general Worker filesystem API.
+func (s *Service) ReadArtifact(ctx context.Context, request *connect.Request[workerruntimev1alpha1.RuntimeArtifactReadRequest], stream *connect.ServerStream[workerruntimev1alpha1.RuntimeArtifactChunk]) error {
+	if !s.ready() {
+		return runtimeSessionFailure(connect.CodeFailedPrecondition, "worker_unavailable", "Worker service is not initialized")
+	}
+	if request == nil || request.Msg == nil || stream == nil {
+		return runtimeSessionFailure(connect.CodeInvalidArgument, "artifact_request_invalid", "Artifact request is required")
+	}
+	message := request.Msg
+	clientIdentity, err := s.identity.ClientIdentity(ctx)
+	if err != nil || clientIdentity == nil || validateIdentity(clientIdentity) != nil {
+		return runtimeSessionFailure(connect.CodeUnauthenticated, "transport_identity_missing", "authenticated client identity is required")
+	}
+	if err := validateExpectedIdentity(message.GetExpectedWorkerIdentity(), s.workerIdentity); err != nil {
+		return err
+	}
+	binding, err := s.validateBinding(message.GetNegotiation(), clientIdentity)
+	if err != nil {
+		return err
+	}
+	if _, ok := binding.caps[workerv1alpha1.Capability_CAPABILITY_NEGOTIATION]; !ok {
+		return runtimeSessionFailure(connect.CodeFailedPrecondition, "capability_not_negotiated", "Artifact reads require the negotiation capability")
+	}
+	if err := s.validateRuntimeFencing(message.GetFencing(), message.GetGeneration()); err != nil {
+		return err
+	}
+	if err := validateIdentifier(message.GetExecutionId(), "execution_id"); err != nil || message.GetGeneration() == 0 || message.GetGeneration() != message.GetFencing().GetGeneration() || !validRuntimeArtifactRoot(message.GetRootDirectory()) || !validRuntimeArtifactPath(message.GetRelativePath()) || message.GetExpectedSha256() != "" && !runtimeArtifactSHA256Pattern.MatchString(message.GetExpectedSha256()) {
+		return runtimeSessionFailure(connect.CodeInvalidArgument, "artifact_request_invalid", "Artifact identity or path is invalid")
+	}
+	root, err := os.OpenRoot(message.GetRootDirectory())
+	if err != nil {
+		return runtimeSessionFailure(connect.CodeNotFound, "artifact_root_unavailable", "Artifact root is unavailable")
+	}
+	defer root.Close()
+	file, err := root.Open(message.GetRelativePath())
+	if err != nil {
+		return runtimeSessionFailure(connect.CodeNotFound, "artifact_unavailable", "Artifact is unavailable")
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 {
+		return runtimeSessionFailure(connect.CodeFailedPrecondition, "artifact_not_regular", "Artifact is not a regular file")
+	}
+	size := uint64(info.Size())
+	if size > runtimeprotocol.MaxArtifactBytes {
+		return runtimeSessionFailure(connect.CodeResourceExhausted, "artifact_too_large", "Artifact exceeds the download limit")
+	}
+	if message.ExpectedSizeBytes != nil && message.GetExpectedSizeBytes() != size {
+		return runtimeSessionFailure(connect.CodeFailedPrecondition, "artifact_size_mismatch", "Artifact size no longer matches its candidate")
+	}
+	if expected := message.GetExpectedSha256(); expected != "" {
+		digest := sha256.New()
+		if _, err := io.Copy(digest, file); err != nil || fmt.Sprintf("%x", digest.Sum(nil)) != expected {
+			return runtimeSessionFailure(connect.CodeFailedPrecondition, "artifact_digest_mismatch", "Artifact digest no longer matches its candidate")
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return runtimeSessionFailure(connect.CodeInternal, "artifact_seek_failed", "Artifact could not be read")
+		}
+	}
+	buffer := make([]byte, runtimeArtifactChunkBytes)
+	if size == 0 {
+		return stream.Send(&workerruntimev1alpha1.RuntimeArtifactChunk{SizeBytes: 0})
+	}
+	for {
+		count, readErr := file.Read(buffer)
+		if count > 0 {
+			if err := stream.Send(&workerruntimev1alpha1.RuntimeArtifactChunk{Data: append([]byte(nil), buffer[:count]...), SizeBytes: size}); err != nil {
+				return err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return nil
+		}
+		if readErr != nil {
+			return runtimeSessionFailure(connect.CodeInternal, "artifact_read_failed", "Artifact could not be read")
+		}
+	}
+}
+
+const runtimeArtifactChunkBytes = 64 << 10
+
+var runtimeArtifactSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func validRuntimeArtifactRoot(value string) bool {
+	return value != "" && strings.TrimSpace(value) == value && filepath.IsAbs(value) && filepath.Clean(value) != string(filepath.Separator) && !runtimePathHasControl(value)
+}
+
+func validRuntimeArtifactPath(value string) bool {
+	return value != "" && len(value) <= 4096 && value != "." && !strings.Contains(value, `\`) && filepath.IsLocal(value) && filepath.Clean(value) == value && !runtimePathHasControl(value)
+}
+
+func runtimePathHasControl(value string) bool {
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
 var runtimeProviderKindPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 
 func validRuntimeProviderKind(value string) bool {
@@ -215,8 +318,7 @@ func runtimeCommandProvider(command runtimeprotocol.Command) (string, bool) {
 	}
 }
 
-func (s *Service) validateRuntimeFencing(open *workerruntimev1alpha1.RuntimeSessionOpen) error {
-	fencing := open.GetFencing()
+func (s *Service) validateRuntimeFencing(fencing *workerv1alpha1.FencingProof, generation uint64) error {
 	if fencing == nil || fencing.GetLeaseId() == "" || fencing.GetGeneration() == 0 || len(fencing.GetToken()) == 0 || len(fencing.GetToken()) > int(MaxPayloadBytes) {
 		return runtimeSessionFailure(connect.CodeInvalidArgument, "fencing_required", "Runtime fencing proof is required")
 	}
@@ -234,6 +336,9 @@ func (s *Service) validateRuntimeFencing(open *workerruntimev1alpha1.RuntimeSess
 	}
 	if fencing.GetGeneration() != s.admissionGeneration {
 		return runtimeSessionFailure(connect.CodeFailedPrecondition, "stale_generation", "Runtime generation does not match the Worker authority")
+	}
+	if fencing.GetGeneration() != generation {
+		return runtimeSessionFailure(connect.CodeInvalidArgument, "runtime_generation_mismatch", "Runtime generation does not match its fencing proof")
 	}
 	return nil
 }

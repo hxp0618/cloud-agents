@@ -218,6 +218,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentCreateProject",
     "managedAgentCreateSession",
     "managedAgentCreateTurn",
+    "managedAgentDownloadArtifact",
     "managedAgentExecute",
     "managedAgentGetExecution",
     "managedAgentGetMembership",

@@ -609,6 +609,35 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/turns/{turnId}/executions/{executionId}/messages/{messageIndex}/artifact": {
+      "get": {
+        "operationId": "managedAgentDownloadArtifact",
+        "parameters": [
+          { "$ref": "#/components/parameters/TenantId" },
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/SessionId" },
+          { "$ref": "#/components/parameters/TurnId" },
+          { "$ref": "#/components/parameters/ExecutionId" },
+          { "$ref": "#/components/parameters/MessageIndex" },
+          { "$ref": "#/components/parameters/RequestId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact bytes",
+            "content": {
+              "*/*": {
+                "schema": { "type": "string", "format": "binary", "maxLength": 16777216 }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "502": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects/{projectId}/sessions/{sessionId}/turns/{turnId}/executions/{executionId}:cancel": {
       "post": {
         "operationId": "managedAgentCancelExecution",
@@ -1176,6 +1205,16 @@
         "required": true,
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "MessageIndex": {
+        "name": "messageIndex",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63
         }
       },
       "MembershipId": {

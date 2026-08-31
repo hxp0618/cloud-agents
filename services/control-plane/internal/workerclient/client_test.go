@@ -32,6 +32,7 @@ type workerWireFake struct {
 	mu           sync.Mutex
 	negotiations int
 	active       string
+	artifact     *workerruntimev1alpha1.RuntimeArtifactReadRequest
 }
 
 func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
@@ -90,6 +91,18 @@ func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiS
 	return stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Json{Json: message}})
 }
 
+func (fake *workerWireFake) ReadArtifact(_ context.Context, request *connect.Request[workerruntimev1alpha1.RuntimeArtifactReadRequest], stream *connect.ServerStream[workerruntimev1alpha1.RuntimeArtifactChunk]) error {
+	fake.mu.Lock()
+	active := fake.active
+	fake.artifact = proto.Clone(request.Msg).(*workerruntimev1alpha1.RuntimeArtifactReadRequest)
+	fake.mu.Unlock()
+	if request.Msg.GetNegotiation().GetNegotiationId() != active {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("negotiation unknown"))
+	}
+	contents := []byte("artifact bytes")
+	return stream.Send(&workerruntimev1alpha1.RuntimeArtifactChunk{Data: contents, SizeBytes: uint64(len(contents))})
+}
+
 func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.UTC)
 	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
@@ -130,6 +143,17 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	fake.mu.Unlock()
 	if negotiations != 2 {
 		t.Fatalf("negotiations after Worker restart = %d", negotiations)
+	}
+	artifactSize := uint64(len("artifact bytes"))
+	artifact, err := supervisor.ReadRuntimeArtifact(context.Background(), "execution-1", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")}, "/workspace/execution-1", "result.txt", &artifactSize, "")
+	if err != nil || string(artifact) != "artifact bytes" {
+		t.Fatalf("artifact=%q err=%v", artifact, err)
+	}
+	fake.mu.Lock()
+	artifactRequest := fake.artifact
+	fake.mu.Unlock()
+	if artifactRequest.GetRootDirectory() != "/workspace/execution-1" || artifactRequest.GetRelativePath() != "result.txt" || artifactRequest.GetExpectedSizeBytes() != artifactSize {
+		t.Fatalf("artifact request = %#v", artifactRequest)
 	}
 	fake.mu.Lock()
 	fake.active = ""

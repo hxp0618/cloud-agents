@@ -21,7 +21,7 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 			if err := run([]string{argument}, &stdout); err != nil {
 				t.Fatal(err)
 			}
-			for _, expected := range []string{usage, "execution get|list|execute|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list|create|terminate"} {
+			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list|create|terminate"} {
 				if !strings.Contains(stdout.String(), expected) {
 					t.Fatalf("help output %q does not contain %q", stdout.String(), expected)
 				}
@@ -39,6 +39,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"project", "create", "--help"}, expected: "-organization-id string"},
 		{args: []string{"membership", "create", "-h"}, expected: "-subject-issuer string"},
 		{args: []string{"execution", "execute", "help"}, expected: "-runtime-mode string"},
+		{args: []string{"execution", "download-artifact", "help"}, expected: "-message-index int"},
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
 	} {
 		var stdout bytes.Buffer
@@ -164,6 +165,25 @@ func TestRunExecutionListDoesNotRequireTurnOrExecutionID(t *testing.T) {
 	}, &stdout)
 	if err != nil || !strings.Contains(stdout.String(), `"kind":"ExecutionPage"`) {
 		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
+func TestRunExecutionDownloadArtifactWritesRawBytes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/2/artifact" || request.Header.Get("X-Request-ID") != "request-alpha" {
+			t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.Path, request.Header)
+		}
+		writer.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = writer.Write([]byte{0, 1, 2, 255})
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha",
+		"execution", "download-artifact", "--message-index", "2",
+	}, &stdout)
+	if err != nil || !bytes.Equal(stdout.Bytes(), []byte{0, 1, 2, 255}) {
+		t.Fatalf("output/error = %v / %v", stdout.Bytes(), err)
 	}
 }
 

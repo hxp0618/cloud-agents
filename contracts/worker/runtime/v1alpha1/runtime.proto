@@ -55,8 +55,29 @@ message RuntimeSessionResponse {
   }
 }
 
+message RuntimeArtifactReadRequest {
+  cloudagents.worker.v1alpha1.NegotiationBinding negotiation = 1;
+  cloudagents.worker.v1alpha1.FencingProof fencing = 2;
+  string execution_id = 3;
+  uint64 generation = 4;
+  cloudagents.worker.v1alpha1.WorkloadIdentity expected_worker_identity = 5;
+  string root_directory = 6;
+  string relative_path = 7;
+  optional uint64 expected_size_bytes = 8;
+  string expected_sha256 = 9;
+}
+
+message RuntimeArtifactChunk {
+  bytes data = 1;
+  uint64 size_bytes = 2;
+}
+
 service WorkerRuntimeService {
   // The first request MUST be open. Commands and Runtime messages then use
   // the Runtime Protocol 2.3 JSON envelope without a duplicate protobuf DTO.
   rpc OpenSession(stream RuntimeSessionRequest) returns (stream RuntimeSessionResponse);
+
+  // Reads one ArtifactCandidate beneath its execution-owned Workspace or
+  // Runtime Output root. The Worker contains path traversal and size limits.
+  rpc ReadArtifact(RuntimeArtifactReadRequest) returns (stream RuntimeArtifactChunk);
 }

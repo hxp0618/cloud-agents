@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	HeaderRequestID       = "X-Request-ID"
-	HeaderIdempotencyKey  = "Idempotency-Key"
-	HeaderResourceVersion = "X-Resource-Version"
+	HeaderRequestID              = "X-Request-ID"
+	HeaderIdempotencyKey         = "Idempotency-Key"
+	HeaderResourceVersion        = "X-Resource-Version"
+	MaxManagedAgentArtifactBytes = 16 * 1024 * 1024
 )
 
 type Request struct {
@@ -97,6 +98,11 @@ type ManagedAgentTurnPageResult = common.ResponseEnvelope[ManagedAgentTurnPage]
 type ManagedAgentExecutionResult = common.ResponseEnvelope[ManagedAgentExecution]
 type ManagedAgentExecutionPageResult = common.ResponseEnvelope[ManagedAgentExecutionPage]
 type ManagedAgentEventPageResult = common.ResponseEnvelope[ManagedAgentEventPage]
+type ManagedAgentArtifactResult struct {
+	Data        []byte
+	ContentType string
+	ETag        string
+}
 
 type ManagedAgentSession struct {
 	APIVersion string                      `json:"apiVersion"`
@@ -1098,6 +1104,33 @@ func (client *Client) GetManagedAgentExecution(ctx context.Context, tenantID, pr
 		return ManagedAgentExecutionResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
 	}
 	return value, nil
+}
+func (client *Client) DownloadManagedAgentArtifact(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID string, messageIndex int) (ManagedAgentArtifactResult, error) {
+	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {
+		return ManagedAgentArtifactResult{}, err
+	}
+	if messageIndex < 0 || messageIndex >= 64 {
+		return ManagedAgentArtifactResult{}, common.ContractError("INVALID_MESSAGE_INDEX", "/messageIndex")
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sessions/" + sessionID + "/turns/" + turnID + "/executions/" + executionID + "/messages/" + strconv.Itoa(messageIndex) + "/artifact", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ManagedAgentArtifactResult{}, err
+	}
+	if response.Status != 200 {
+		return ManagedAgentArtifactResult{}, client.problemError("managedAgentDownloadArtifact", response)
+	}
+	if len(response.Body) > MaxManagedAgentArtifactBytes {
+		return ManagedAgentArtifactResult{}, &ClientError{Operation: "managedAgentDownloadArtifact", Status: response.Status, Cause: errors.New("artifact exceeds the SDK limit")}
+	}
+	contentType := response.Headers["Content-Type"]
+	if contentType == "" {
+		return ManagedAgentArtifactResult{}, &ClientError{Operation: "managedAgentDownloadArtifact", Status: response.Status, Cause: errors.New("artifact Content-Type is missing")}
+	}
+	etag := response.Headers["ETag"]
+	if etag == "" {
+		etag = response.Headers["Etag"]
+	}
+	return ManagedAgentArtifactResult{Data: append([]byte(nil), response.Body...), ContentType: contentType, ETag: etag}, nil
 }
 func (client *Client) CancelManagedAgentExecution(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID, idempotencyKey string, body ManagedAgentExecutionCancelRequest) (ManagedAgentExecutionResult, error) {
 	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {

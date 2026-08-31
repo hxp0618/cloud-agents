@@ -495,3 +495,21 @@ func TestDurableRuntimeExecutionRejectsDuplicateActiveExecution(t *testing.T) {
 		t.Fatalf("duplicate active execution error = %v", err)
 	}
 }
+
+func TestRuntimeArtifactCandidateUsesPersistedExecutionAuthority(t *testing.T) {
+	message := runtimeprotocol.Message{
+		RequestID: "request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "turn",
+		OccurredAt: "2026-09-01T08:00:00Z", MessageType: "ArtifactCandidate",
+		Payload: map[string]any{"artifact": map[string]any{"path": "provider-diffs/result.diff", "kind": "diff", "sourceRoot": "runtime-output", "contentType": "text/x-diff", "reportedSize": float64(10), "sha256": strings.Repeat("a", 64)}},
+	}
+	input := RuntimeArtifactReadInput{RuntimeExecutionReference: RuntimeExecutionReference{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7}, Message: message}
+	candidate, err := runtimeArtifactCandidate(input)
+	if err != nil || candidate.sourceRoot != "runtime-output" || candidate.relativePath != "provider-diffs/result.diff" || candidate.expectedSize == nil || *candidate.expectedSize != 10 || candidate.sha256 != strings.Repeat("a", 64) {
+		t.Fatalf("candidate=%#v err=%v", candidate, err)
+	}
+	message.Payload["artifact"].(map[string]any)["path"] = "../secret"
+	input.Message = message
+	if _, err := runtimeArtifactCandidate(input); !errors.Is(err, ErrRuntimeArtifactUnavailable) {
+		t.Fatalf("escaping candidate error=%v", err)
+	}
+}

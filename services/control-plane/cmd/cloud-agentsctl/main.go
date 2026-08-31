@@ -218,6 +218,15 @@ func run(args []string, stdout io.Writer) error {
 		if err = parseActionFlags("execution get", actionArgs, nil); err == nil {
 			value, err = client.GetManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID)
 		}
+	case "execution download-artifact":
+		messageIndex := -1
+		if err = parseActionFlags("execution download-artifact", actionArgs, func(set *flag.FlagSet) {
+			set.IntVar(&messageIndex, "message-index", -1, "ArtifactCandidate message index")
+		}); err == nil && (messageIndex < 0 || messageIndex >= 64) {
+			err = errors.New("--message-index must be between 0 and 63")
+		} else if err == nil {
+			value, err = client.DownloadManagedAgentArtifact(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, messageIndex)
+		}
 	case "execution cancel", "execution interrupt":
 		var generation uint64
 		if err = parseActionFlags("execution "+action, actionArgs, func(set *flag.FlagSet) {
@@ -431,6 +440,10 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if artifact, ok := value.(openapi.ManagedAgentArtifactResult); ok {
+		_, err = stdout.Write(artifact.Data)
+		return err
+	}
 	return json.NewEncoder(stdout).Encode(responseValue(value))
 }
 
@@ -634,7 +647,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution download-artifact", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false
@@ -680,7 +693,7 @@ resources and actions:
   project get|list|create
   session get|list|create|close
   turn get|list|create
-  execution get|list|execute|cancel|interrupt|resolve-approval|resolve-user-input
+  execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input
   events list
   membership get|list|create|resume|suspend|revoke
   role get|list

@@ -94,6 +94,9 @@ type managedAgentExecutionRunnerFake struct {
 	approvalInput   internalmanagedagent.RuntimeApprovalResolutionInput
 	userInput       internalmanagedagent.RuntimeUserInputResolutionInput
 	resolveErr      error
+	artifactInput   internalmanagedagent.RuntimeArtifactReadInput
+	artifactResult  internalmanagedagent.RuntimeArtifact
+	artifactErr     error
 }
 
 func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, principalSource internalmanagedagent.VerifiedPrincipalSource, input internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error) {
@@ -137,6 +140,11 @@ func (fake *managedAgentExecutionRunnerFake) ResolveApproval(_ context.Context, 
 func (fake *managedAgentExecutionRunnerFake) ResolveUserInput(_ context.Context, input internalmanagedagent.RuntimeUserInputResolutionInput) error {
 	fake.userInput = input
 	return fake.resolveErr
+}
+
+func (fake *managedAgentExecutionRunnerFake) ReadArtifact(_ context.Context, input internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error) {
+	fake.artifactInput = input
+	return fake.artifactResult, fake.artifactErr
 }
 
 type managedAgentExecutionVerifierFake struct {
@@ -236,6 +244,44 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	handler.ServeHTTP(interrupted, interrupt)
 	if interrupted.Code != http.StatusOK || runner.interruptInput.Generation != 7 || runner.interruptInput.TargetExecutionID != "execution-alpha" || !strings.Contains(interrupted.Body.String(), `"errorCode":"interrupted"`) {
 		t.Fatalf("interrupt status=%d input=%#v body=%s", interrupted.Code, runner.interruptInput, interrupted.Body.String())
+	}
+}
+
+func TestManagedAgentExecutionHTTPServerDownloadsPersistedArtifactCandidate(t *testing.T) {
+	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	candidate := runtimeprotocol.Message{
+		RequestID: "request-artifact", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7,
+		CommandID: "turn-command", OccurredAt: now.Format(time.RFC3339Nano), MessageType: "ArtifactCandidate",
+		Payload: map[string]any{"artifact": map[string]any{"path": "provider-diffs/result.diff", "kind": "diff", "sourceRoot": "runtime-output", "contentType": "text/x-diff"}},
+	}
+	terminal := candidate
+	terminal.MessageType = "Result"
+	terminal.Payload = map[string]any{"status": "completed"}
+	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{
+		Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha",
+		Generation: 7, State: internalmanagedagent.ExecutionSucceeded, Messages: []runtimeprotocol.Message{candidate, terminal}, Version: 2, CreatedAt: now, UpdatedAt: now,
+	}}
+	runner := &managedAgentExecutionRunnerFake{artifactResult: internalmanagedagent.RuntimeArtifact{Data: []byte("diff bytes"), ContentType: "text/x-diff", SHA256: strings.Repeat("a", 64)}}
+	verifier := &projectHTTPVerifierFake{}
+	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/0/artifact", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-download")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.String() != "diff bytes" || response.Header().Get("Content-Type") != "text/x-diff" || response.Header().Get("ETag") != `"sha256:`+strings.Repeat("a", 64)+`"` || verifier.seen.RequiredPermission != "projects.get" || runner.artifactInput.Message.MessageType != "ArtifactCandidate" {
+		t.Fatalf("status=%d headers=%v body=%q verification=%#v input=%#v", response.Code, response.Header(), response.Body.String(), verifier.seen, runner.artifactInput)
+	}
+	notArtifact := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/1/artifact", nil)
+	notArtifact.Header.Set("Authorization", "Bearer access-token")
+	notArtifact.Header.Set("X-Request-ID", "request-not-artifact")
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(rejected, notArtifact)
+	if rejected.Code != http.StatusNotFound {
+		t.Fatalf("non-ArtifactCandidate status=%d body=%s", rejected.Code, rejected.Body.String())
 	}
 }
 

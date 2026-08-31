@@ -189,6 +189,74 @@ func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, executionI
 	return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, true)
 }
 
+func (supervisor *Supervisor) ReadRuntimeArtifact(ctx context.Context, executionID string, generation uint64, fencing *workerv1alpha1.FencingProof, rootDirectory, relativePath string, expectedSize *uint64, expectedSHA256 string) ([]byte, error) {
+	return supervisor.readRuntimeArtifact(ctx, executionID, generation, fencing, rootDirectory, relativePath, expectedSize, expectedSHA256, true)
+}
+
+func (supervisor *Supervisor) readRuntimeArtifact(ctx context.Context, executionID string, generation uint64, fencing *workerv1alpha1.FencingProof, rootDirectory, relativePath string, expectedSize *uint64, expectedSHA256 string, retryStaleBinding bool) ([]byte, error) {
+	if supervisor == nil || !runtimeClientAvailable(supervisor.runtimeClient) || !validIdentity(supervisor.workerIdentity) || executionID == "" || generation == 0 || fencing == nil || rootDirectory == "" || relativePath == "" {
+		return nil, errInvalidConfig
+	}
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if err := supervisor.ensureBinding(ctx); err != nil {
+		return nil, err
+	}
+	supervisor.mu.RLock()
+	state := cloneBinding(supervisor.binding)
+	supervisor.mu.RUnlock()
+	if state == nil || !supervisor.now().UTC().Before(state.expiresAt) {
+		return nil, fail(connect.CodeDeadlineExceeded, "binding_expired")
+	}
+	if fencing.GetGeneration() != generation || fencing.GetLeaseId() == "" || len(fencing.GetToken()) == 0 {
+		return nil, fail(connect.CodeInvalidArgument, "runtime_fencing_invalid")
+	}
+	var size *uint64
+	if expectedSize != nil {
+		copySize := *expectedSize
+		size = &copySize
+	}
+	stream, err := supervisor.runtimeClient.ReadArtifact(ctx, connect.NewRequest(&workerruntimev1alpha1.RuntimeArtifactReadRequest{
+		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID,
+		Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), RootDirectory: rootDirectory,
+		RelativePath: relativePath, ExpectedSizeBytes: size, ExpectedSha256: expectedSHA256,
+	}))
+	if err != nil {
+		if retryStaleBinding && staleBindingError(err) {
+			supervisor.clearBinding(state)
+			return supervisor.readRuntimeArtifact(ctx, executionID, generation, fencing, rootDirectory, relativePath, expectedSize, expectedSHA256, false)
+		}
+		return nil, rpcFailure("runtime_artifact_read", err)
+	}
+	defer stream.Close()
+	var artifact bytes.Buffer
+	var total uint64
+	chunks := 0
+	for stream.Receive() {
+		chunk := stream.Msg()
+		if chunk == nil || chunk.GetSizeBytes() > runtimeprotocol.MaxArtifactBytes || chunks > 0 && chunk.GetSizeBytes() != total || uint64(artifact.Len()+len(chunk.GetData())) > chunk.GetSizeBytes() {
+			return nil, fail(connect.CodeInternal, "runtime_artifact_invalid")
+		}
+		if chunks == 0 {
+			total = chunk.GetSizeBytes()
+		}
+		chunks++
+		_, _ = artifact.Write(chunk.GetData())
+	}
+	if err := stream.Err(); err != nil {
+		if retryStaleBinding && staleBindingError(err) {
+			supervisor.clearBinding(state)
+			return supervisor.readRuntimeArtifact(ctx, executionID, generation, fencing, rootDirectory, relativePath, expectedSize, expectedSHA256, false)
+		}
+		return nil, rpcFailure("runtime_artifact_read", err)
+	}
+	if chunks == 0 || uint64(artifact.Len()) != total || expectedSize != nil && *expectedSize != total || expectedSHA256 != "" && fmt.Sprintf("%x", sha256.Sum256(artifact.Bytes())) != expectedSHA256 {
+		return nil, fail(connect.CodeFailedPrecondition, "runtime_artifact_changed")
+	}
+	return artifact.Bytes(), nil
+}
+
 func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, retryStaleBinding bool) (*RuntimeSession, error) {
 	if supervisor == nil || !runtimeClientAvailable(supervisor.runtimeClient) || !validIdentity(supervisor.workerIdentity) || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
 		return nil, errInvalidConfig

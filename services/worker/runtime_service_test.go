@@ -3,11 +3,13 @@ package worker
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -42,12 +44,78 @@ func TestRuntimeFencingRequiresConfiguredToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	open := &workerruntimev1alpha1.RuntimeSessionOpen{ExecutionId: "execution", Generation: 7, Fencing: &workerv1alpha1.FencingProof{LeaseId: "lease-runtime", Generation: 7, Token: []byte("expected-token")}}
-	if err := service.validateRuntimeFencing(open); err != nil {
+	if err := service.validateRuntimeFencing(open.GetFencing(), open.GetGeneration()); err != nil {
 		t.Fatalf("matching Runtime token = %v", err)
 	}
 	open.Fencing.Token = []byte("wrong-token")
-	if err := service.validateRuntimeFencing(open); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "fencing_token_mismatch") {
+	if err := service.validateRuntimeFencing(open.GetFencing(), open.GetGeneration()); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "fencing_token_mismatch") {
 		t.Fatalf("wrong Runtime token = %v", err)
+	}
+}
+
+func TestRuntimeArtifactReadIsBoundedToCandidateRoot(t *testing.T) {
+	workerIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
+	supervisorIdentity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/supervisor", TrustDomain: "cloud-agents.test"}
+	service, err := NewService(Config{
+		WorkerIdentity: workerIdentity, Capabilities: []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION},
+		IdentityProvider: StaticIdentityProvider{Identity: supervisorIdentity}, AdmissionLeaseID: "lease-artifact", AdmissionGeneration: 7,
+		AdmissionToken: []byte("artifact-token"), NegotiationTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	workerPath, workerHandler := NewHandler(service)
+	runtimePath, runtimeHandler := NewRuntimeHandler(service)
+	mux.Handle(workerPath, workerHandler)
+	mux.Handle(runtimePath, runtimeHandler)
+	server := httptest.NewUnstartedServer(mux)
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+	workerClient := workerv1alpha1connect.NewWorkerExecutionServiceClient(server.Client(), server.URL)
+	runtimeClient := workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL)
+	negotiation, err := workerClient.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{
+		SupportedVersions: []*workerv1alpha1.ProtocolVersion{{Major: ProtocolMajor, Minor: ProtocolMinor}}, RequiredCapabilities: []workerv1alpha1.Capability{workerv1alpha1.Capability_CAPABILITY_NEGOTIATION}, ExpectedServerIdentity: workerIdentity,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	contents := []byte("artifact bytes")
+	if err := os.WriteFile(filepath.Join(root, "result.txt"), contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	size := uint64(len(contents))
+	digest := fmt.Sprintf("%x", sha256.Sum256(contents))
+	request := func(relativePath string) *workerruntimev1alpha1.RuntimeArtifactReadRequest {
+		return &workerruntimev1alpha1.RuntimeArtifactReadRequest{
+			Negotiation: &workerv1alpha1.NegotiationBinding{ProtocolVersion: negotiation.Msg.GetSelectedVersion(), NegotiationId: negotiation.Msg.GetNegotiationId(), ExpiresAt: negotiation.Msg.GetExpiresAt()},
+			Fencing:     &workerv1alpha1.FencingProof{LeaseId: "lease-artifact", Generation: 7, Token: []byte("artifact-token")}, ExecutionId: "execution-artifact", Generation: 7,
+			ExpectedWorkerIdentity: workerIdentity, RootDirectory: root, RelativePath: relativePath, ExpectedSizeBytes: &size, ExpectedSha256: digest,
+		}
+	}
+	stream, err := runtimeClient.ReadArtifact(context.Background(), connect.NewRequest(request("result.txt")))
+	if err != nil || !stream.Receive() || string(stream.Msg().GetData()) != string(contents) || stream.Msg().GetSizeBytes() != size || stream.Receive() || stream.Err() != nil {
+		t.Fatalf("artifact stream=%v err=%v streamErr=%v", stream, err, stream.Err())
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	for _, relativePath := range []string{"../outside.txt", "escape"} {
+		rejected, callErr := runtimeClient.ReadArtifact(context.Background(), connect.NewRequest(request(relativePath)))
+		if callErr == nil {
+			for rejected.Receive() {
+			}
+			callErr = rejected.Err()
+		}
+		if callErr == nil {
+			t.Fatalf("unsafe path %q was accepted", relativePath)
+		}
 	}
 }
 

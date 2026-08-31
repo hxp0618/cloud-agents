@@ -42,6 +42,9 @@ const (
 	// WorkerRuntimeServiceOpenSessionProcedure is the fully-qualified name of the
 	// WorkerRuntimeService's OpenSession RPC.
 	WorkerRuntimeServiceOpenSessionProcedure = "/cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService/OpenSession"
+	// WorkerRuntimeServiceReadArtifactProcedure is the fully-qualified name of the
+	// WorkerRuntimeService's ReadArtifact RPC.
+	WorkerRuntimeServiceReadArtifactProcedure = "/cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService/ReadArtifact"
 )
 
 // WorkerRuntimeServiceClient is a client for the
@@ -50,6 +53,9 @@ type WorkerRuntimeServiceClient interface {
 	// The first request MUST be open. Commands and Runtime messages then use
 	// the Runtime Protocol 2.3 JSON envelope without a duplicate protobuf DTO.
 	OpenSession(context.Context) *connect.BidiStreamForClient[v1alpha1.RuntimeSessionRequest, v1alpha1.RuntimeSessionResponse]
+	// Reads one ArtifactCandidate beneath its execution-owned Workspace or
+	// Runtime Output root. The Worker contains path traversal and size limits.
+	ReadArtifact(context.Context, *connect.Request[v1alpha1.RuntimeArtifactReadRequest]) (*connect.ServerStreamForClient[v1alpha1.RuntimeArtifactChunk], error)
 }
 
 // NewWorkerRuntimeServiceClient constructs a client for the
@@ -70,17 +76,29 @@ func NewWorkerRuntimeServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(workerRuntimeServiceMethods.ByName("OpenSession")),
 			connect.WithClientOptions(opts...),
 		),
+		readArtifact: connect.NewClient[v1alpha1.RuntimeArtifactReadRequest, v1alpha1.RuntimeArtifactChunk](
+			httpClient,
+			baseURL+WorkerRuntimeServiceReadArtifactProcedure,
+			connect.WithSchema(workerRuntimeServiceMethods.ByName("ReadArtifact")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // workerRuntimeServiceClient implements WorkerRuntimeServiceClient.
 type workerRuntimeServiceClient struct {
-	openSession *connect.Client[v1alpha1.RuntimeSessionRequest, v1alpha1.RuntimeSessionResponse]
+	openSession  *connect.Client[v1alpha1.RuntimeSessionRequest, v1alpha1.RuntimeSessionResponse]
+	readArtifact *connect.Client[v1alpha1.RuntimeArtifactReadRequest, v1alpha1.RuntimeArtifactChunk]
 }
 
 // OpenSession calls cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.OpenSession.
 func (c *workerRuntimeServiceClient) OpenSession(ctx context.Context) *connect.BidiStreamForClient[v1alpha1.RuntimeSessionRequest, v1alpha1.RuntimeSessionResponse] {
 	return c.openSession.CallBidiStream(ctx)
+}
+
+// ReadArtifact calls cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.ReadArtifact.
+func (c *workerRuntimeServiceClient) ReadArtifact(ctx context.Context, req *connect.Request[v1alpha1.RuntimeArtifactReadRequest]) (*connect.ServerStreamForClient[v1alpha1.RuntimeArtifactChunk], error) {
+	return c.readArtifact.CallServerStream(ctx, req)
 }
 
 // WorkerRuntimeServiceHandler is an implementation of the
@@ -89,6 +107,9 @@ type WorkerRuntimeServiceHandler interface {
 	// The first request MUST be open. Commands and Runtime messages then use
 	// the Runtime Protocol 2.3 JSON envelope without a duplicate protobuf DTO.
 	OpenSession(context.Context, *connect.BidiStream[v1alpha1.RuntimeSessionRequest, v1alpha1.RuntimeSessionResponse]) error
+	// Reads one ArtifactCandidate beneath its execution-owned Workspace or
+	// Runtime Output root. The Worker contains path traversal and size limits.
+	ReadArtifact(context.Context, *connect.Request[v1alpha1.RuntimeArtifactReadRequest], *connect.ServerStream[v1alpha1.RuntimeArtifactChunk]) error
 }
 
 // NewWorkerRuntimeServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -104,10 +125,18 @@ func NewWorkerRuntimeServiceHandler(svc WorkerRuntimeServiceHandler, opts ...con
 		connect.WithSchema(workerRuntimeServiceMethods.ByName("OpenSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerRuntimeServiceReadArtifactHandler := connect.NewServerStreamHandler(
+		WorkerRuntimeServiceReadArtifactProcedure,
+		svc.ReadArtifact,
+		connect.WithSchema(workerRuntimeServiceMethods.ByName("ReadArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerRuntimeServiceOpenSessionProcedure:
 			workerRuntimeServiceOpenSessionHandler.ServeHTTP(w, r)
+		case WorkerRuntimeServiceReadArtifactProcedure:
+			workerRuntimeServiceReadArtifactHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -119,4 +148,8 @@ type UnimplementedWorkerRuntimeServiceHandler struct{}
 
 func (UnimplementedWorkerRuntimeServiceHandler) OpenSession(context.Context, *connect.BidiStream[v1alpha1.RuntimeSessionRequest, v1alpha1.RuntimeSessionResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.OpenSession is not implemented"))
+}
+
+func (UnimplementedWorkerRuntimeServiceHandler) ReadArtifact(context.Context, *connect.Request[v1alpha1.RuntimeArtifactReadRequest], *connect.ServerStream[v1alpha1.RuntimeArtifactChunk]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("cloudagents.worker.runtime.v1alpha1.WorkerRuntimeService.ReadArtifact is not implemented"))
 }

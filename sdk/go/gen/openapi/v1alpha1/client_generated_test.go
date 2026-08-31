@@ -205,6 +205,9 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	var seen []Request
 	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
 		seen = append(seen, request)
+		if strings.HasSuffix(request.Path, "/messages/0/artifact") {
+			return Response{Status: 200, Headers: map[string]string{"Content-Type": "text/plain", "Etag": `"sha256:artifact"`}, Body: []byte("artifact bytes")}, nil
+		}
 		body := executionBody
 		if request.Method == "GET" && strings.Contains(request.Path, "/executions?") {
 			body = executionPageBody
@@ -234,6 +237,13 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if _, err := client.GetManagedAgentExecution(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-alpha"); err != nil {
 		t.Fatal(err)
 	}
+	artifact, err := client.DownloadManagedAgentArtifact(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-artifact", 0)
+	if err != nil || string(artifact.Data) != "artifact bytes" || artifact.ContentType != "text/plain" {
+		t.Fatalf("artifact = %#v / %v", artifact, err)
+	}
+	if _, err := client.DownloadManagedAgentArtifact(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-artifact", 64); err == nil {
+		t.Fatal("out-of-range message index was accepted")
+	}
 	if _, err := client.CancelManagedAgentExecution(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-cancel", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX", ManagedAgentExecutionCancelRequest{Generation: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +259,7 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if err := client.ResolveManagedAgentUserInput(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-user-input-invalid", ManagedAgentUserInputResolutionRequest{Generation: 1, RequestID: "claude:generation-1:user-input:2", Answers: map[string][]string{"question-1": {"bad\x00answer"}}}); err == nil {
 		t.Fatal("user-input resolution accepted a NUL answer")
 	}
-	if len(seen) != 7 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || seen[5].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval" || seen[6].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","runtimeMode":"approval-required","interactionMode":"plan","inputText":"hello"}` || string(seen[3].Body) != `{"generation":1}` || string(seen[4].Body) != `{"generation":1}` || string(seen[5].Body) != `{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}` || string(seen[6].Body) != `{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"question-1":["one","two"]}}` {
+	if len(seen) != 8 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/0/artifact" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[5].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || seen[6].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval" || seen[7].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","runtimeMode":"approval-required","interactionMode":"plan","inputText":"hello"}` || string(seen[4].Body) != `{"generation":1}` || string(seen[5].Body) != `{"generation":1}` || string(seen[6].Body) != `{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}` || string(seen[7].Body) != `{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"question-1":["one","two"]}}` {
 		t.Fatalf("execution requests = %#v", seen)
 	}
 }

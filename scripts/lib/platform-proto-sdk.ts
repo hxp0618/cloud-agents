@@ -399,10 +399,17 @@ function validateWorkerRuntimeDescriptorSet(bytes: Buffer): void {
   const methods = runtime.service.flatMap((service) => service.method);
   if (
     runtime.service.length !== 1 ||
-    methods.length !== 1 ||
-    methods.some((method) => !method.clientStreaming || !method.serverStreaming)
+    methods.length !== 2 ||
+    methods[0]?.name !== "OpenSession" ||
+    !methods[0].clientStreaming ||
+    !methods[0].serverStreaming ||
+    methods[1]?.name !== "ReadArtifact" ||
+    methods[1].clientStreaming ||
+    !methods[1].serverStreaming
   ) {
-    throw new Error("Worker Runtime descriptor must expose one bidirectional streaming RPC.");
+    throw new Error(
+      "Worker Runtime descriptor must expose OpenSession and server-streaming ReadArtifact RPCs.",
+    );
   }
 }
 

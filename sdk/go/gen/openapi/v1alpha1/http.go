@@ -9,11 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
 )
 
-const maxHTTPResponseBytes = 2 * runtimeprotocol.MaxMessageBytes
+const maxHTTPResponseBytes = MaxManagedAgentArtifactBytes
 
 var ErrInvalidHTTPClientConfig = errors.New("invalid Cloud Agents HTTP client configuration")
 

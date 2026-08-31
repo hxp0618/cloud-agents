@@ -14,6 +14,9 @@ const (
 	ProtocolMinor   = 3
 	MaxCommandBytes = 2 * 1024 * 1024
 	MaxMessageBytes = 1 * 1024 * 1024
+	// ponytail: buffer one Artifact per download; switch the public path to
+	// end-to-end streaming if files larger than 16 MiB become a product need.
+	MaxArtifactBytes = 16 * 1024 * 1024
 )
 
 var (
