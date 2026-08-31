@@ -5,6 +5,8 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -73,17 +75,44 @@ func ValidateCommand(command Command) error {
 
 func ValidateMessage(message Message) error {
 	if message.Protocol.Major != ProtocolMajor || message.Protocol.Minor > ProtocolMinor ||
-		message.RequestID == "" || message.ExecutionID == "" || message.CommandID == "" ||
-		message.OccurredAt == "" || message.MessageType == "" {
+		!validEnvelopeIdentifier(message.RequestID) || !validEnvelopeIdentifier(message.ExecutionID) ||
+		!validEnvelopeIdentifier(message.CommandID) || message.Generation == 0 ||
+		!validOccurredAt(message.OccurredAt) || message.MessageType == "" {
 		return fmt.Errorf("%w: message envelope fields are invalid", ErrProtocolViolation)
 	}
-	if message.MessageType == "Error" && message.Error == nil {
-		return fmt.Errorf("%w: Error message has no error body", ErrProtocolViolation)
-	}
 	switch message.MessageType {
-	case "Error", "Event", "InteractionRequest", "ArtifactCandidate", "Checkpoint", "Result", "Progress":
+	case "Error":
+		if message.Payload != nil || !validRuntimeError(message.Error) {
+			return fmt.Errorf("%w: Error message body is invalid", ErrProtocolViolation)
+		}
+		return nil
+	case "Event", "InteractionRequest", "ArtifactCandidate", "Checkpoint", "Result", "Progress":
+		if message.Payload == nil || message.Error != nil {
+			return fmt.Errorf("%w: payload message body is invalid", ErrProtocolViolation)
+		}
 		return nil
 	default:
 		return fmt.Errorf("%w: unknown message type", ErrProtocolViolation)
+	}
+}
+
+func validEnvelopeIdentifier(value string) bool {
+	return len(value) > 0 && len(value) <= 200 && utf8.ValidString(value)
+}
+
+func validOccurredAt(value string) bool {
+	_, err := time.Parse(time.RFC3339Nano, value)
+	return err == nil
+}
+
+func validRuntimeError(value *Error) bool {
+	if value == nil || value.Message == "" || len(value.Message) > 4096 || !utf8.ValidString(value.Message) {
+		return false
+	}
+	switch value.Code {
+	case "provider_not_installed", "provider_version_incompatible", "capability_unsupported", "credential_missing", "credential_invalid", "authentication_required", "session_resume_invalid", "session_resume_expired", "provider_rate_limited", "provider_unavailable", "workspace_invalid", "protocol_violation", "cancelled", "interrupted", "internal_error":
+		return true
+	default:
+		return false
 	}
 }
