@@ -193,7 +193,7 @@ func buildTrustSnapshot(candidate snapshotCandidate, previous *trustSnapshot, pr
 		return nil, nil, verifierError(errorInternalFailure)
 	}
 	if previous == nil {
-		if candidate.generation != 1 || candidate.previousSnapshotDigest != "" || len(priorHistory) != 0 {
+		if candidate.previousSnapshotDigest != "" || len(priorHistory) != 0 {
 			return nil, nil, verifierError(errorInternalFailure)
 		}
 	} else if candidate.generation != previous.generation+1 || candidate.previousSnapshotDigest != previous.digest ||

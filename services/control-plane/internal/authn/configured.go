@@ -147,7 +147,7 @@ func targetResourceLevelForString(value string) (targetResourceLevel, bool) {
 
 func validConfiguredVerifierConfig(config ConfiguredVerifierConfig, initial bool) bool {
 	return config.Clock != nil && config.Issuer != "" && config.Audience != "" &&
-		((initial && config.Generation == 1) || (!initial && config.Generation > 1)) &&
+		((initial && config.Generation > 0) || (!initial && config.Generation > 1)) &&
 		config.SecurityEpoch >= 1 && config.ExpiresAt > config.NotBefore && len(config.Keys) > 0
 }
 

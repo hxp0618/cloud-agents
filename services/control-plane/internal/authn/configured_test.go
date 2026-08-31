@@ -47,7 +47,25 @@ func TestConfiguredVerifierRejectsIncompleteTrustInput(t *testing.T) {
 		Keys: []ConfiguredVerifierKey{{JWK: []byte(`{"kty":"RSA","n":"bad","e":"AQAB"}`), Enabled: true}}, Clock: time.Now,
 	}
 	if verifier, err := NewConfiguredVerifier(config); verifier != nil || !errors.Is(err, ErrInvalidConfiguredVerifier) {
-		t.Fatalf("non-initial generation result=%v err=%v", verifier, err)
+		t.Fatalf("invalid key result=%v err=%v", verifier, err)
+	}
+}
+
+func TestConfiguredVerifierStartsFromCurrentTrustGeneration(t *testing.T) {
+	config := ConfiguredVerifierConfig{
+		Issuer: "https://issuer.example", Audience: "https://api.example", Generation: 2, SecurityEpoch: 7,
+		NotBefore: testNow - 100, ExpiresAt: testNow + 1000,
+		Keys:  []ConfiguredVerifierKey{{JWK: jwkFor(t, testPrivateKey(t), "key-2"), Enabled: true, NotBefore: testNow - 1000, NotAfter: testNow + 1000}},
+		Clock: func() time.Time { return time.Unix(testNow, 0) },
+	}
+	verifier, err := NewConfiguredVerifier(config)
+	if err != nil || !verifier.Ready() {
+		t.Fatalf("current trust generation result=%v err=%v", verifier, err)
+	}
+	t.Cleanup(verifier.Invalidate)
+	config.Generation++
+	if err := verifier.Reload(config); err != nil {
+		t.Fatalf("next trust generation reload: %v", err)
 	}
 }
 
