@@ -147,6 +147,45 @@ func TestLoadAndVerifyLatestIndependentProductManifest(t *testing.T) {
 	}
 }
 
+func TestRunUpgradesLedgerWrittenByPreviousProductBundle(t *testing.T) {
+	previousConfig := testConfig(t)
+	previousConfig.ManifestSelector = "product-000028"
+	previousConfig.ManifestPath = "services/control-plane/migrations/product/000028/manifest.json"
+	previous, err := loadAndVerify(previousConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeSession{}
+	for _, entry := range previous.manifest.SchemaBundle.Migrations {
+		session.rows = append(session.rows, ledgerRow(entry, previous.manifest.SchemaBundleDigest, "previous-release"))
+	}
+
+	currentConfig := testConfig(t)
+	currentConfig.ManifestSelector = "product-000029"
+	currentConfig.ManifestPath = "services/control-plane/migrations/product/000029/manifest.json"
+	result, err := Run(context.Background(), currentConfig, &fakeConnector{session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Applied != 1 || result.NoOp || result.SchemaHead != "000029" || len(session.apply) != 1 || session.apply[0] != "000029" {
+		t.Fatalf("unexpected upgrade result: result=%+v applied=%v", result, session.apply)
+	}
+}
+
+func TestRunRejectsUnknownHistoricalBundleDigest(t *testing.T) {
+	config := testConfig(t)
+	config.ManifestSelector = "product-000029"
+	config.ManifestPath = "services/control-plane/migrations/product/000029/manifest.json"
+	bundle, err := loadAndVerify(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeSession{rows: []migration.LedgerRow{ledgerRow(bundle.manifest.SchemaBundle.Migrations[0], migration.DigestBytes([]byte("unknown-bundle")), "unknown-release")}}
+	if _, err := Run(context.Background(), config, &fakeConnector{session: session}); err == nil {
+		t.Fatal("unknown historical bundle digest unexpectedly accepted")
+	}
+}
+
 func TestProductManifestDoesNotRequireHistoricalRunnerProfile(t *testing.T) {
 	sourceConfig := testConfig(t)
 	sourceConfig.ManifestSelector = "product-000017"

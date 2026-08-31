@@ -125,7 +125,7 @@ func Run(ctx context.Context, config Config, connector Connector) (result Result
 		return Result{}, errors.New("migration ledger is ahead of the selected manifest")
 	default:
 		for index := range rows {
-			if !ledgerRowMatches(rows[index], entries[index], bundle.manifest.SchemaBundleDigest) {
+			if !ledgerRowMatches(rows[index], entries[index], index+1, len(entries)) {
 				return Result{}, fmt.Errorf("migration ledger differs from manifest at index %d", index)
 			}
 		}
@@ -590,16 +590,33 @@ func digestDomain(domain string, canonical []byte) string {
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
-func ledgerRowMatches(row migration.LedgerRow, entry migration.MigrationEntry, bundle migration.Digest) bool {
+func ledgerRowMatches(row migration.LedgerRow, entry migration.MigrationEntry, index, currentCount int) bool {
 	return row.MigrationID == entry.ID &&
 		row.MigrationName == entry.Name &&
 		equalOptional(row.PredecessorID, entry.PredecessorID) &&
 		row.Phase == entry.Phase && row.SchemaFrom == entry.SchemaFrom && row.SchemaTo == entry.SchemaTo &&
 		row.CompatibleBinaryMin == entry.CompatibleControlPlaneMin && row.CompatibleBinaryMax == entry.CompatibleControlPlaneMax &&
 		row.SQLPath == entry.SQLArtifact.Path && row.SQLSizeBytes == int64(entry.SQLArtifact.SizeBytes) && row.SQLSHA256 == entry.SQLArtifact.SHA256 &&
-		row.BundleDigest == bundle && row.TransactionMode == entry.TransactionMode && row.Reentrancy == entry.Reentrancy &&
+		knownLedgerBundleDigest(row.BundleDigest, index, currentCount) && row.TransactionMode == entry.TransactionMode && row.Reentrancy == entry.Reentrancy &&
 		row.RollbackBoundary == entry.RollbackBoundary && row.RequiresLiveInstancePreflight == entry.RequiresLiveInstancePreflight &&
 		row.RequiresPITRPreflight == entry.RequiresPITRPreflight && !row.AppliedAt.IsZero() && strings.TrimSpace(row.AppliedBy) != ""
+}
+
+// Each row retains the bundle digest that originally wrote it; upgrades append
+// rows and never rewrite that history.
+func knownLedgerBundleDigest(digest migration.Digest, index, currentCount int) bool {
+	for _, selector := range generatedRunnerBindingSelectors {
+		if selector.migrationCount >= index && selector.migrationCount <= currentCount && digest == migration.Digest(selector.schemaBundleDigest) {
+			return true
+		}
+	}
+	for version := 15; version <= currentCount; version++ {
+		selector := productRunnerBindingSelector(fmt.Sprintf("%06d", version))
+		if selector.migrationCount >= index && digest == migration.Digest(selector.schemaBundleDigest) {
+			return true
+		}
+	}
+	return false
 }
 
 func equalOptional(left, right *string) bool {
