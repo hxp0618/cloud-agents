@@ -622,3 +622,36 @@ func TestRunExecutionMutationUsesGenerationAndIdempotency(t *testing.T) {
 		})
 	}
 }
+
+func TestRunExecutionResolvesInteractions(t *testing.T) {
+	tests := []struct {
+		action string
+		suffix string
+		flags  []string
+		body   string
+	}{
+		{action: "resolve-approval", suffix: ":resolveApproval", flags: []string{"--generation", "7", "--interaction-request", "codex:generation-7:approval:1", "--decision", "accept"}, body: `{"generation":7,"requestId":"codex:generation-7:approval:1","decision":"accept"}`},
+		{action: "resolve-user-input", suffix: ":resolveUserInput", flags: []string{"--generation", "7", "--interaction-request", "claude:generation-7:user-input:2", "--answers-json", `{"question-1":["one","two"]}`}, body: `{"generation":7,"requestId":"claude:generation-7:user-input:2","answers":{"question-1":["one","two"]}}`},
+	}
+	for _, test := range tests {
+		t.Run(test.action, func(t *testing.T) {
+			var path, body string
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				path = request.URL.Path
+				contents, _ := io.ReadAll(request.Body)
+				body = string(contents)
+				writer.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "execution", test.action}
+			args = append(args, test.flags...)
+			var stdout bytes.Buffer
+			if err := run(args, &stdout); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasSuffix(path, test.suffix) || body != test.body || !strings.Contains(stdout.String(), `"resolved":true`) {
+				t.Fatalf("path=%q body=%q output=%q", path, body, stdout.String())
+			}
+		})
+	}
+}

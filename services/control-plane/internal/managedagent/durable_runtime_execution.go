@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
 	runtimeprotocol "github.com/hxp0618/cloud-agents/sdk/go/runtime"
@@ -94,6 +95,28 @@ type RuntimeTurnResult struct {
 	FailureCode          string
 }
 
+type RuntimeExecutionReference struct {
+	Scope       Scope
+	SessionID   string
+	TurnID      string
+	ExecutionID string
+	Generation  uint64
+}
+
+type RuntimeApprovalResolutionInput struct {
+	RuntimeExecutionReference
+	RequestID            string
+	InteractionRequestID string
+	Decision             string
+}
+
+type RuntimeUserInputResolutionInput struct {
+	RuntimeExecutionReference
+	RequestID            string
+	InteractionRequestID string
+	Answers              map[string][]string
+}
+
 type DurableRuntimeExecutionCoordinator struct {
 	store              DurableRuntimeExecutionStore
 	supervisor         *workerclient.Supervisor
@@ -119,17 +142,45 @@ type durableExecutionKey struct {
 type activeDurableExecution struct {
 	cancel              context.CancelFunc
 	externallyCancelled bool
+	send                func(context.Context, runtimeprotocol.Command) error
+	interactions        map[string]*activeRuntimeInteraction
+	interactionOrder    []string
+	controls            map[string]*activeRuntimeInteractionResolution
+	nextControl         uint64
+}
+
+type activeRuntimeInteraction struct {
+	message         runtimeprotocol.Message
+	interactionType string
+	resolvedPayload string
+	resolution      *activeRuntimeInteractionResolution
+}
+
+type activeRuntimeInteractionResolution struct {
+	interaction *activeRuntimeInteraction
+	payload     string
+	requestID   string
+	commandID   string
+	done        chan struct{}
+	err         error
 }
 
 const (
 	maxPublicExecutionMessageIdentifierBytes = 128
 	maxRuntimeExecutionMessages              = 64
+	maxRuntimeInteractionRequestIDCharacters = 200
+	maxRuntimeInteractionAnswers             = 3
+	maxRuntimeInteractionAnswerValues        = 20
+	maxRuntimeInteractionAnswerCharacters    = 2000
 )
 
 var (
 	ErrDurableRuntimeExecutionUnavailable = errors.New("durable Runtime execution is unavailable")
 	ErrDurableRuntimeExecutionConflict    = errors.New("durable Runtime execution is already active")
 	ErrDurableRuntimeExecutionFailed      = errors.New("durable Runtime execution failed")
+	ErrRuntimeInteractionUnavailable      = errors.New("Runtime interaction is unavailable")
+	ErrRuntimeInteractionConflict         = errors.New("Runtime interaction resolution conflicts with active state")
+	ErrRuntimeInteractionFailed           = errors.New("Runtime interaction resolution failed")
 )
 
 func NewDurableRuntimeExecutionCoordinator(config DurableRuntimeExecutionConfig) (*DurableRuntimeExecutionCoordinator, error) {
@@ -189,12 +240,142 @@ func (coordinator *DurableRuntimeExecutionCoordinator) stopActiveExecution(key d
 	var cancel context.CancelFunc
 	if active != nil {
 		active.externallyCancelled = true
+		failActiveInteractionResolutions(active, context.Canceled)
 		cancel = active.cancel
 	}
 	coordinator.activeMu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) ActiveInteractions(reference RuntimeExecutionReference) []runtimeprotocol.Message {
+	key, err := durableRuntimeExecutionKey(reference)
+	if coordinator == nil || err != nil {
+		return nil
+	}
+	coordinator.activeMu.Lock()
+	defer coordinator.activeMu.Unlock()
+	active := coordinator.active[key]
+	if active == nil {
+		return nil
+	}
+	result := make([]runtimeprotocol.Message, 0, len(active.interactionOrder))
+	for _, requestID := range active.interactionOrder {
+		interaction := active.interactions[requestID]
+		if interaction != nil && interaction.resolvedPayload == "" {
+			result = append(result, interaction.message)
+		}
+	}
+	return result
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) ResolveApproval(ctx context.Context, input RuntimeApprovalResolutionInput) error {
+	if input.Decision != "accept" && input.Decision != "decline" {
+		return ErrInvalidInput
+	}
+	payload := map[string]any{"requestId": input.InteractionRequestID, "resolution": map[string]any{"decision": input.Decision}}
+	return coordinator.resolveRuntimeInteraction(ctx, input.RuntimeExecutionReference, input.RequestID, input.InteractionRequestID, "approval", "ResolveApproval", payload)
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) ResolveUserInput(ctx context.Context, input RuntimeUserInputResolutionInput) error {
+	answers := make(map[string]any, len(input.Answers))
+	if len(input.Answers) == 0 || len(input.Answers) > maxRuntimeInteractionAnswers {
+		return ErrInvalidInput
+	}
+	for questionID, values := range input.Answers {
+		if err := validateRuntimeInteractionToken(questionID, "question id"); err != nil || len(values) == 0 || len(values) > maxRuntimeInteractionAnswerValues {
+			return ErrInvalidInput
+		}
+		copyValues := append([]string(nil), values...)
+		for _, value := range copyValues {
+			if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > maxRuntimeInteractionAnswerCharacters || strings.ContainsRune(value, '\x00') {
+				return ErrInvalidInput
+			}
+		}
+		answers[questionID] = copyValues
+	}
+	payload := map[string]any{"requestId": input.InteractionRequestID, "resolution": map[string]any{"answers": answers}}
+	return coordinator.resolveRuntimeInteraction(ctx, input.RuntimeExecutionReference, input.RequestID, input.InteractionRequestID, "user-input", "ResolveUserInput", payload)
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) resolveRuntimeInteraction(ctx context.Context, reference RuntimeExecutionReference, requestID, interactionRequestID, interactionType, commandType string, payload map[string]any) error {
+	if coordinator == nil || ctx == nil || coordinator.now == nil || validateIdentifier(requestID, maxIdentifierBytes, "request id") != nil || validateRuntimeInteractionToken(interactionRequestID, "interaction request id") != nil {
+		return ErrInvalidInput
+	}
+	key, err := durableRuntimeExecutionKey(reference)
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(struct {
+		CommandType string         `json:"commandType"`
+		Payload     map[string]any `json:"payload"`
+	}{CommandType: commandType, Payload: payload})
+	if err != nil {
+		return ErrInvalidInput
+	}
+	canonical := string(encoded)
+
+	coordinator.activeMu.Lock()
+	active := coordinator.active[key]
+	if active == nil || active.send == nil {
+		coordinator.activeMu.Unlock()
+		return ErrRuntimeInteractionUnavailable
+	}
+	interaction := active.interactions[interactionRequestID]
+	if interaction == nil || interaction.interactionType != interactionType {
+		coordinator.activeMu.Unlock()
+		return ErrRuntimeInteractionConflict
+	}
+	if interaction.resolvedPayload != "" {
+		resolvedPayload := interaction.resolvedPayload
+		coordinator.activeMu.Unlock()
+		if resolvedPayload == canonical {
+			return nil
+		}
+		return ErrRuntimeInteractionConflict
+	}
+	if interaction.resolution != nil {
+		resolution := interaction.resolution
+		coordinator.activeMu.Unlock()
+		if resolution.payload != canonical {
+			return ErrRuntimeInteractionConflict
+		}
+		return waitRuntimeInteractionResolution(ctx, resolution)
+	}
+	active.nextControl++
+	commandID := boundedRuntimeIdentifier(requestID, fmt.Sprintf("interaction-%d", active.nextControl))
+	resolution := &activeRuntimeInteractionResolution{interaction: interaction, payload: canonical, requestID: requestID, commandID: commandID, done: make(chan struct{})}
+	interaction.resolution = resolution
+	active.controls[commandID] = resolution
+	send := active.send
+	now := coordinator.now().UTC()
+	coordinator.activeMu.Unlock()
+	if now.IsZero() {
+		coordinator.failRuntimeInteractionResolution(key, active, resolution, ErrRuntimeInteractionUnavailable)
+		return ErrRuntimeInteractionUnavailable
+	}
+	command := runtimeprotocol.Command{RequestID: requestID, Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: reference.ExecutionID, Generation: reference.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: now.Format(time.RFC3339Nano), Payload: payload}
+	if err := send(ctx, command); err != nil {
+		coordinator.failRuntimeInteractionResolution(key, active, resolution, fmt.Errorf("%w: %v", ErrRuntimeInteractionFailed, err))
+	}
+	return waitRuntimeInteractionResolution(ctx, resolution)
+}
+
+func waitRuntimeInteractionResolution(ctx context.Context, resolution *activeRuntimeInteractionResolution) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-resolution.done:
+		return resolution.err
+	}
+}
+
+func durableRuntimeExecutionKey(reference RuntimeExecutionReference) (durableExecutionKey, error) {
+	if err := validateExecutionInput(reference.Scope, reference.SessionID, reference.TurnID, reference.ExecutionID, reference.Generation); err != nil {
+		return durableExecutionKey{}, err
+	}
+	return durableExecutionKey{tenantID: reference.Scope.TenantID, projectID: reference.Scope.ProjectID, sessionID: reference.SessionID, turnID: reference.TurnID, executionID: reference.ExecutionID, generation: reference.Generation}, nil
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Context, principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput) (DurableRuntimeExecutionResult, error) {
@@ -218,7 +399,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	defer cancel()
 	runtimeCtx, runtimeCancel := context.WithCancel(runCtx)
 	key := durableExecutionKey{tenantID: input.Scope.TenantID, projectID: input.Scope.ProjectID, sessionID: input.SessionID, turnID: input.TurnID, executionID: input.ExecutionID, generation: coordinator.fencingGeneration}
-	unregister, err := coordinator.registerActiveExecution(key, runtimeCancel)
+	active, unregister, err := coordinator.registerActiveExecution(key, runtimeCancel)
 	if err != nil {
 		return DurableRuntimeExecutionResult{}, err
 	}
@@ -282,7 +463,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if started.Execution.State != ExecutionRunning {
 		return DurableRuntimeExecutionResult{Transition: started}, nil
 	}
-	runtimeResult, err := ExecuteRuntimeTurn(runtimeCtx, coordinator.supervisor, RuntimeTurnInput{
+	runtimeResult, err := coordinator.executeRuntimeTurn(runtimeCtx, key, active, RuntimeTurnInput{
 		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
 		Fencing:            &workerv1alpha1.FencingProof{LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...)},
@@ -320,25 +501,51 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	return DurableRuntimeExecutionResult{Transition: completed, Messages: runtimeResult.Messages}, nil
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(key durableExecutionKey, cancel context.CancelFunc) (func() bool, error) {
-	active := &activeDurableExecution{cancel: cancel}
+func (coordinator *DurableRuntimeExecutionCoordinator) registerActiveExecution(key durableExecutionKey, cancel context.CancelFunc) (*activeDurableExecution, func() bool, error) {
+	active := &activeDurableExecution{cancel: cancel, interactions: make(map[string]*activeRuntimeInteraction), controls: make(map[string]*activeRuntimeInteractionResolution)}
 	coordinator.activeMu.Lock()
 	if _, exists := coordinator.active[key]; exists {
 		coordinator.activeMu.Unlock()
-		return nil, ErrDurableRuntimeExecutionConflict
+		return nil, nil, ErrDurableRuntimeExecutionConflict
 	}
 	coordinator.active[key] = active
 	coordinator.activeMu.Unlock()
-	return func() bool {
+	return active, func() bool {
 		coordinator.activeMu.Lock()
 		defer coordinator.activeMu.Unlock()
 		if coordinator.active[key] != active {
 			return active.externallyCancelled
 		}
 		externallyCancelled := active.externallyCancelled
+		failActiveInteractionResolutions(active, ErrRuntimeInteractionUnavailable)
 		delete(coordinator.active, key)
 		return externallyCancelled
 	}, nil
+}
+
+func failActiveInteractionResolutions(active *activeDurableExecution, err error) {
+	for commandID, resolution := range active.controls {
+		delete(active.controls, commandID)
+		if resolution.interaction.resolution == resolution {
+			resolution.interaction.resolution = nil
+		}
+		resolution.err = err
+		close(resolution.done)
+	}
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) failRuntimeInteractionResolution(key durableExecutionKey, active *activeDurableExecution, resolution *activeRuntimeInteractionResolution, err error) {
+	coordinator.activeMu.Lock()
+	defer coordinator.activeMu.Unlock()
+	if coordinator.active[key] != active || active.controls[resolution.commandID] != resolution {
+		return
+	}
+	delete(active.controls, resolution.commandID)
+	if resolution.interaction.resolution == resolution {
+		resolution.interaction.resolution = nil
+	}
+	resolution.err = err
+	close(resolution.done)
 }
 func (coordinator *DurableRuntimeExecutionCoordinator) cancel(principalSource VerifiedPrincipalSource, input DurableRuntimeExecutionInput, started ExecutionTransitionResult, messages []runtimeprotocol.Message) (DurableRuntimeExecutionResult, error) {
 	principal, err := nextVerifiedPrincipal(principalSource)
@@ -378,7 +585,7 @@ func nextVerifiedPrincipal(source VerifiedPrincipalSource) (*authn.VerifiedPrinc
 	return principal, nil
 }
 
-func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supervisor, input RuntimeTurnInput) (RuntimeTurnResult, error) {
+func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx context.Context, key durableExecutionKey, active *activeDurableExecution, input RuntimeTurnInput) (RuntimeTurnResult, error) {
 	result := RuntimeTurnResult{FailureCode: "runtime_open_failed"}
 	if err := ValidateProviderResumeCursor(input.ProviderResumeCursor); err != nil {
 		result.FailureCode = "runtime_result_invalid"
@@ -389,11 +596,18 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 		result.FailureCode = "workspace_invalid"
 		return result, err
 	}
-	session, err := workerSupervisor.OpenRuntimeSession(ctx, input.ExecutionID, input.ProviderKind, input.Generation, input.Fencing)
+	session, err := coordinator.supervisor.OpenRuntimeSession(ctx, input.ExecutionID, input.ProviderKind, input.Generation, input.Fencing)
 	if err != nil {
 		return result, err
 	}
 	defer func() { _ = session.CloseRequest(); _ = session.CloseResponse() }()
+	coordinator.activeMu.Lock()
+	if coordinator.active[key] != active || active.externallyCancelled {
+		coordinator.activeMu.Unlock()
+		return result, context.Canceled
+	}
+	active.send = session.Send
+	coordinator.activeMu.Unlock()
 	command := func(commandType, commandID string, payload map[string]any) runtimeprotocol.Command {
 		return runtimeprotocol.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
 	}
@@ -414,7 +628,7 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 	if err := session.Send(ctx, start); err != nil {
 		return result, err
 	}
-	_, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID)
+	_, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID, nil)
 	if err != nil {
 		return result, err
 	}
@@ -426,7 +640,9 @@ func ExecuteRuntimeTurn(ctx context.Context, workerSupervisor *workerclient.Supe
 	if err := session.Send(ctx, turn); err != nil {
 		return result, err
 	}
-	messages, terminal, err := receiveRuntimeMessages(session.Receive, turn.CommandID)
+	messages, terminal, err := receiveRuntimeMessages(session.Receive, turn.CommandID, func(message runtimeprotocol.Message) (bool, error) {
+		return coordinator.routeRuntimeMessage(key, active, turn.CommandID, message)
+	})
 	result.Messages = publicRuntimeMessages(messages)
 	result.Terminal = terminal
 	if err != nil {
@@ -519,13 +735,22 @@ func boundedRuntimeIdentifier(base, suffix string) string {
 	return base + separator + suffix
 }
 
-func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), commandID string) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
+func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), commandID string, route func(runtimeprotocol.Message) (bool, error)) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
 	messages := make([]runtimeprotocol.Message, 0, maxRuntimeExecutionMessages)
 	totalBytes := 2
 	for {
 		message, err := receive()
 		if err != nil {
 			return messages, runtimeprotocol.Message{}, err
+		}
+		if route != nil {
+			handled, routeErr := route(message)
+			if routeErr != nil {
+				return messages, message, routeErr
+			}
+			if handled {
+				continue
+			}
 		}
 		if message.CommandID != commandID {
 			return messages, message, errors.New("Runtime response command id mismatch")
@@ -544,6 +769,69 @@ func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), com
 			return messages, message, nil
 		}
 	}
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) routeRuntimeMessage(key durableExecutionKey, active *activeDurableExecution, turnCommandID string, message runtimeprotocol.Message) (bool, error) {
+	coordinator.activeMu.Lock()
+	defer coordinator.activeMu.Unlock()
+	if coordinator.active[key] != active {
+		return false, ErrRuntimeInteractionUnavailable
+	}
+	if message.CommandID == turnCommandID {
+		if message.MessageType != "InteractionRequest" {
+			return false, nil
+		}
+		requestID, interactionType, err := runtimeInteractionIdentity(message)
+		if err != nil {
+			return false, err
+		}
+		if _, exists := active.interactions[requestID]; exists {
+			return false, errors.New("Runtime reused an interaction request id")
+		}
+		active.interactions[requestID] = &activeRuntimeInteraction{message: publicRuntimeMessage(message), interactionType: interactionType}
+		active.interactionOrder = append(active.interactionOrder, requestID)
+		return false, nil
+	}
+	resolution := active.controls[message.CommandID]
+	if resolution == nil {
+		return false, nil
+	}
+	if message.RequestID != resolution.requestID {
+		return true, errors.New("Runtime interaction response request id mismatch")
+	}
+	if message.MessageType != "Result" && message.MessageType != "Error" {
+		return true, nil
+	}
+	delete(active.controls, resolution.commandID)
+	resolution.interaction.resolution = nil
+	if message.MessageType == "Result" {
+		resolution.interaction.resolvedPayload = resolution.payload
+	} else {
+		resolution.err = ErrRuntimeInteractionFailed
+	}
+	close(resolution.done)
+	return true, nil
+}
+
+func runtimeInteractionIdentity(message runtimeprotocol.Message) (string, string, error) {
+	requestID, requestOK := message.Payload["requestId"].(string)
+	interactionType, typeOK := message.Payload["interactionType"].(string)
+	if !requestOK || validateRuntimeInteractionToken(requestID, "interaction request id") != nil || !typeOK || interactionType != "approval" && interactionType != "user-input" {
+		return "", "", errors.New("Runtime interaction request payload is invalid")
+	}
+	return requestID, interactionType, nil
+}
+
+func validateRuntimeInteractionToken(value, field string) error {
+	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > maxRuntimeInteractionRequestIDCharacters {
+		return fmt.Errorf("%w: %s", ErrInvalidInput, field)
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return fmt.Errorf("%w: %s", ErrInvalidInput, field)
+		}
+	}
+	return nil
 }
 
 func RuntimeMessageDigest(message runtimeprotocol.Message) (string, error) {

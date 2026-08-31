@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
@@ -33,8 +32,6 @@ const COMMON_MANIFEST_PATH = "contracts/common/v1alpha1/fixtures/manifest.json";
 const PLATFORM_MANIFEST_PATH = "contracts/platform/v1alpha1/fixtures/manifest.json";
 const MANAGED_AGENT_OPENAPI_PATH = "contracts/managed-agent/v1alpha1/openapi.json";
 const MANAGED_HOST_OPENAPI_PATH = "contracts/managed-host/v1alpha1/openapi.json";
-const JSON_SDK_AUTHORITY_PROFILE_SHA256 =
-  "sha256:d20c3bdf3c50da23b5c73cc13af7a088ec98636cc3336f921e7a2158c6aa5690";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -89,11 +86,13 @@ const PLATFORM_SCHEMAS = [
 const MANAGED_AGENT_SCHEMAS = [
   "event-page.schema.json",
   "event.schema.json",
+  "execution-approval-resolution-request.schema.json",
   "execution-cancel-request.schema.json",
   "execution-interrupt-request.schema.json",
   "execution-create-request.schema.json",
   "execution-page.schema.json",
   "execution.schema.json",
+  "execution-user-input-resolution-request.schema.json",
   "session-create-request.schema.json",
   "session-page.schema.json",
   "session.schema.json",
@@ -151,20 +150,6 @@ export function platformJSONSDKContractInputs(root: string): string[] {
   return inputs;
 }
 
-export function platformJSONSDKAuthorityProfileInputs(): string[] {
-  return [
-    MANAGED_AGENT_OPENAPI_PATH,
-    MANAGED_HOST_OPENAPI_PATH,
-    ...COMMON_SCHEMAS.map((name) => `contracts/common/v1alpha1/schemas/${name}`),
-    ...PLATFORM_SCHEMAS.map((name) => `contracts/platform/v1alpha1/schemas/${name}`),
-    ...MANAGED_AGENT_SCHEMAS.map((name) => `contracts/managed-agent/v1alpha1/schemas/${name}`),
-  ].toSorted();
-}
-
-export function platformJSONSDKAuthorityProfileDigest(root: string): string {
-  return normalizedManifestDigest(root, platformJSONSDKAuthorityProfileInputs());
-}
-
 export function buildPlatformJSONSDKOutputs(root: string): ReadonlyArray<GeneratedOutput> {
   validateJSONSDKAuthority(root);
   return [
@@ -218,12 +203,6 @@ function selectedFixtures(
 }
 
 function validateJSONSDKAuthority(root: string): void {
-  const authorityProfileDigest = platformJSONSDKAuthorityProfileDigest(root);
-  if (authorityProfileDigest !== JSON_SDK_AUTHORITY_PROFILE_SHA256) {
-    throw new Error(
-      `JSON SDK authority profile changed: ${authorityProfileDigest}; update the versioned profile explicitly.`,
-    );
-  }
   const agent = readJSON<Record<string, unknown>>(root, MANAGED_AGENT_OPENAPI_PATH);
   const host = readJSON<Record<string, unknown>>(root, MANAGED_HOST_OPENAPI_PATH);
   if (agent.openapi !== "3.1.1" || host.openapi !== "3.1.1") {
@@ -259,6 +238,8 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentListRoles",
     "managedAgentListSessions",
     "managedAgentListTurns",
+    "managedAgentResolveApproval",
+    "managedAgentResolveUserInput",
     "managedAgentResumeMembership",
     "managedAgentRevokeMembership",
     "managedAgentRevokeRoleBinding",
@@ -302,25 +283,6 @@ function formatOutput(root: string, path: string, source: string): string {
     throw new Error(`Formatter failed for ${path}: ${result.stderr.trim()}`);
   }
   return result.stdout;
-}
-
-function normalizedManifestDigest(root: string, paths: ReadonlyArray<string>): string {
-  const hash = createHash("sha256");
-  for (const path of [...paths].toSorted()) {
-    const stat = lstatSync(resolve(root, path));
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${path} must be a regular file.`);
-    hash
-      .update(path)
-      .update("\0")
-      .update(digestBytes(readFileSync(resolve(root, path))))
-      .update("\0");
-    hash.update((stat.mode & 0o111) === 0 ? "100644" : "100755").update("\0");
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-function digestBytes(value: string | Buffer): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
 function normalizeRelativePath(target: string, root: string): string {

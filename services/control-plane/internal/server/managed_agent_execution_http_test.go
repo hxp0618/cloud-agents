@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,10 @@ type managedAgentExecutionRunnerFake struct {
 	interruptResult internalmanagedagent.ExecutionTransitionResult
 	cancelInput     internalmanagedagent.CancelTurnInput
 	cancelResult    internalmanagedagent.ExecutionTransitionResult
+	interactions    []runtimeprotocol.Message
+	approvalInput   internalmanagedagent.RuntimeApprovalResolutionInput
+	userInput       internalmanagedagent.RuntimeUserInputResolutionInput
+	resolveErr      error
 }
 
 func (fake *managedAgentExecutionRunnerFake) Execute(_ context.Context, principalSource internalmanagedagent.VerifiedPrincipalSource, input internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error) {
@@ -118,6 +123,20 @@ func (fake *managedAgentExecutionRunnerFake) Interrupt(_ context.Context, _ *aut
 func (fake *managedAgentExecutionRunnerFake) Cancel(_ context.Context, _ *authn.VerifiedPrincipal, input internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error) {
 	fake.cancelInput = input
 	return fake.cancelResult, nil
+}
+
+func (fake *managedAgentExecutionRunnerFake) ActiveInteractions(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message {
+	return fake.interactions
+}
+
+func (fake *managedAgentExecutionRunnerFake) ResolveApproval(_ context.Context, input internalmanagedagent.RuntimeApprovalResolutionInput) error {
+	fake.approvalInput = input
+	return fake.resolveErr
+}
+
+func (fake *managedAgentExecutionRunnerFake) ResolveUserInput(_ context.Context, input internalmanagedagent.RuntimeUserInputResolutionInput) error {
+	fake.userInput = input
+	return fake.resolveErr
 }
 
 type managedAgentExecutionVerifierFake struct {
@@ -217,6 +236,55 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	handler.ServeHTTP(interrupted, interrupt)
 	if interrupted.Code != http.StatusOK || runner.interruptInput.Generation != 7 || runner.interruptInput.TargetExecutionID != "execution-alpha" || !strings.Contains(interrupted.Body.String(), `"errorCode":"interrupted"`) {
 		t.Fatalf("interrupt status=%d input=%#v body=%s", interrupted.Code, runner.interruptInput, interrupted.Body.String())
+	}
+}
+
+func TestManagedAgentExecutionHTTPServerExposesAndResolvesActiveInteractions(t *testing.T) {
+	verifier := &projectHTTPVerifierFake{}
+	now := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
+	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionRunning, Version: 3, CreatedAt: now, UpdatedAt: now}}
+	interaction := runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7, CommandID: "turn-command", OccurredAt: now.Format(time.RFC3339Nano), MessageType: "InteractionRequest", Payload: map[string]any{"requestId": "codex:generation-7:approval:1", "interactionType": "approval", "summary": "Run command"}}
+	runner := &managedAgentExecutionRunnerFake{interactions: []runtimeprotocol.Message{interaction}}
+	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha", nil)
+	get.Header.Set("Authorization", "Bearer access-token")
+	get.Header.Set("X-Request-ID", "request-get")
+	got := httptest.NewRecorder()
+	handler.ServeHTTP(got, get)
+	if got.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.get" || !strings.Contains(got.Body.String(), `"messageType":"InteractionRequest"`) || !strings.Contains(got.Body.String(), `"requestId":"codex:generation-7:approval:1"`) {
+		t.Fatalf("get status=%d verification=%#v body=%s", got.Code, verifier.seen, got.Body.String())
+	}
+
+	approval := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval", strings.NewReader(`{"generation":7,"requestId":"codex:generation-7:approval:1","decision":"accept"}`))
+	approval.Header.Set("Authorization", "Bearer access-token")
+	approval.Header.Set("X-Request-ID", "request-approval")
+	approved := httptest.NewRecorder()
+	handler.ServeHTTP(approved, approval)
+	if approved.Code != http.StatusNoContent || verifier.seen.RequiredPermission != "projects.act" || runner.approvalInput.Generation != 7 || runner.approvalInput.InteractionRequestID != "codex:generation-7:approval:1" || runner.approvalInput.Decision != "accept" {
+		t.Fatalf("approval status=%d verification=%#v input=%#v body=%s", approved.Code, verifier.seen, runner.approvalInput, approved.Body.String())
+	}
+
+	questionID := strings.Repeat("问", 200)
+	userInput := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput", strings.NewReader(`{"generation":7,"requestId":"claude:generation-7:user-input:2","answers":{"`+questionID+`":["one","two"]}}`))
+	userInput.Header.Set("Authorization", "Bearer access-token")
+	userInput.Header.Set("X-Request-ID", "request-user-input")
+	answered := httptest.NewRecorder()
+	handler.ServeHTTP(answered, userInput)
+	if answered.Code != http.StatusNoContent || runner.userInput.InteractionRequestID != "claude:generation-7:user-input:2" || !reflect.DeepEqual(runner.userInput.Answers, map[string][]string{questionID: {"one", "two"}}) {
+		t.Fatalf("user-input status=%d input=%#v body=%s", answered.Code, runner.userInput, answered.Body.String())
+	}
+
+	invalid := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval", strings.NewReader(`{"generation":7,"requestId":"approval","decision":"always"}`))
+	invalid.Header.Set("Authorization", "Bearer access-token")
+	invalid.Header.Set("X-Request-ID", "request-invalid")
+	rejected := httptest.NewRecorder()
+	handler.ServeHTTP(rejected, invalid)
+	if rejected.Code != http.StatusBadRequest {
+		t.Fatalf("invalid approval status=%d body=%s", rejected.Code, rejected.Body.String())
 	}
 }
 

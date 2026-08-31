@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/execution-approval-resolution-request.schema.json",
+  "title": "ManagedAgentApprovalResolutionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "requestId", "decision"],
+  "properties": {
+    "generation": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+    "decision": { "enum": ["accept", "decline"] }
+  }
+}

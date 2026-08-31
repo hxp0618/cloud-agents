@@ -131,19 +131,98 @@ func TestBoundedRuntimeIdentifierUsesPublicLimit(t *testing.T) {
 }
 
 func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
-	messages := []runtimeprotocol.Message{
+	wire := []runtimeprotocol.Message{
+		{RequestID: "resolve-request", CommandID: "interaction-1", MessageType: "Result"},
 		{CommandID: "turn", MessageType: "Progress"},
 		{CommandID: "turn", MessageType: "Event"},
 		{CommandID: "turn", MessageType: "Result", Payload: map[string]any{"text": "done"}},
 	}
 	index := 0
 	collected, terminal, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
-		message := messages[index]
+		message := wire[index]
 		index++
 		return message, nil
-	}, "turn")
-	if err != nil || !reflect.DeepEqual(collected, messages) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(messages) {
+	}, "turn", func(message runtimeprotocol.Message) (bool, error) {
+		return message.CommandID == "interaction-1", nil
+	})
+	if err != nil || !reflect.DeepEqual(collected, wire[1:]) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(wire) {
 		t.Fatalf("messages=%#v terminal=%#v reads=%d err=%v", collected, terminal, index, err)
+	}
+}
+
+func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
+	reference := RuntimeExecutionReference{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7}
+	key, err := durableRuntimeExecutionKey(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator := &DurableRuntimeExecutionCoordinator{now: func() time.Time { return time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC) }, active: make(map[durableExecutionKey]*activeDurableExecution)}
+	active, unregister, err := coordinator.registerActiveExecution(key, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unregister()
+	sent := make(chan runtimeprotocol.Command, 3)
+	active.send = func(_ context.Context, command runtimeprotocol.Command) error {
+		sent <- command
+		return nil
+	}
+	approval := runtimeprotocol.Message{RequestID: "turn-request", CommandID: "turn-command", MessageType: "InteractionRequest", Payload: map[string]any{"requestId": "codex:generation-7:approval:1", "interactionType": "approval"}}
+	if handled, err := coordinator.routeRuntimeMessage(key, active, "turn-command", approval); handled || err != nil {
+		t.Fatalf("register approval handled=%v err=%v", handled, err)
+	}
+	if got := coordinator.ActiveInteractions(reference); len(got) != 1 || got[0].Payload["requestId"] != approval.Payload["requestId"] {
+		t.Fatalf("active approval = %#v", got)
+	}
+	resolved := make(chan error, 1)
+	approvalInput := RuntimeApprovalResolutionInput{RuntimeExecutionReference: reference, RequestID: "resolve-approval", InteractionRequestID: "codex:generation-7:approval:1", Decision: "accept"}
+	go func() { resolved <- coordinator.ResolveApproval(context.Background(), approvalInput) }()
+	command := <-sent
+	if command.CommandType != "ResolveApproval" || command.Payload["requestId"] != approvalInput.InteractionRequestID {
+		t.Fatalf("approval command = %#v", command)
+	}
+	if handled, err := coordinator.routeRuntimeMessage(key, active, "turn-command", runtimeprotocol.Message{RequestID: command.RequestID, CommandID: command.CommandID, MessageType: "Result"}); !handled || err != nil {
+		t.Fatalf("approval result handled=%v err=%v", handled, err)
+	}
+	if err := <-resolved; err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.ResolveApproval(context.Background(), approvalInput); err != nil {
+		t.Fatalf("idempotent approval = %v", err)
+	}
+	approvalInput.Decision = "decline"
+	if err := coordinator.ResolveApproval(context.Background(), approvalInput); !errors.Is(err, ErrRuntimeInteractionConflict) {
+		t.Fatalf("conflicting approval = %v", err)
+	}
+
+	userInput := runtimeprotocol.Message{RequestID: "turn-request", CommandID: "turn-command", MessageType: "InteractionRequest", Payload: map[string]any{"requestId": "claude:generation-7:user-input:2", "interactionType": "user-input"}}
+	if _, err := coordinator.routeRuntimeMessage(key, active, "turn-command", userInput); err != nil {
+		t.Fatal(err)
+	}
+	answered := make(chan error, 1)
+	questionID := strings.Repeat("问", maxRuntimeInteractionRequestIDCharacters)
+	answerInput := RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, RequestID: "resolve-input", InteractionRequestID: "claude:generation-7:user-input:2", Answers: map[string][]string{questionID: {"one", "two"}}}
+	go func() { answered <- coordinator.ResolveUserInput(context.Background(), answerInput) }()
+	command = <-sent
+	if command.CommandType != "ResolveUserInput" {
+		t.Fatalf("user-input command = %#v", command)
+	}
+	if handled, err := coordinator.routeRuntimeMessage(key, active, "turn-command", runtimeprotocol.Message{RequestID: command.RequestID, CommandID: command.CommandID, MessageType: "Error", Error: &runtimeprotocol.Error{Code: "provider_failed"}}); !handled || err != nil {
+		t.Fatalf("user-input error handled=%v err=%v", handled, err)
+	}
+	if err := <-answered; !errors.Is(err, ErrRuntimeInteractionFailed) {
+		t.Fatalf("user-input failure = %v", err)
+	}
+	go func() { answered <- coordinator.ResolveUserInput(context.Background(), answerInput) }()
+	command = <-sent
+	if handled, err := coordinator.routeRuntimeMessage(key, active, "turn-command", runtimeprotocol.Message{RequestID: command.RequestID, CommandID: command.CommandID, MessageType: "Result"}); !handled || err != nil {
+		t.Fatalf("user-input retry handled=%v err=%v", handled, err)
+	}
+	if err := <-answered; err != nil {
+		t.Fatal(err)
+	}
+	if got := coordinator.ActiveInteractions(reference); len(got) != 0 {
+		t.Fatalf("resolved interactions = %#v", got)
 	}
 }
 
@@ -152,13 +231,13 @@ func TestReceiveRuntimeMessagesRejectsPublicLimits(t *testing.T) {
 	messages, _, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		reads++
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress"}, nil
-	}, "turn")
+	}, "turn", nil)
 	if err == nil || len(messages) != maxRuntimeExecutionMessages || reads != maxRuntimeExecutionMessages+1 {
 		t.Fatalf("count limit: messages=%d reads=%d err=%v", len(messages), reads, err)
 	}
 	messages, _, err = receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress", Payload: map[string]any{"text": strings.Repeat("x", runtimeprotocol.MaxMessageBytes)}}, nil
-	}, "turn")
+	}, "turn", nil)
 	if err == nil || len(messages) != 0 {
 		t.Fatalf("byte limit: messages=%d err=%v", len(messages), err)
 	}
@@ -361,7 +440,7 @@ func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 	}
 	activeContext, activeCancel := context.WithCancel(context.Background())
 	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
-	unregister, err := coordinator.registerActiveExecution(key, activeCancel)
+	_, unregister, err := coordinator.registerActiveExecution(key, activeCancel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,12 +470,12 @@ func TestDurableRuntimeExecutionRejectsDuplicateActiveExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
-	first, err := coordinator.registerActiveExecution(key, func() {})
+	_, first, err := coordinator.registerActiveExecution(key, func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first()
-	if _, err := coordinator.registerActiveExecution(key, func() {}); !errors.Is(err, ErrDurableRuntimeExecutionConflict) {
+	if _, _, err := coordinator.registerActiveExecution(key, func() {}); !errors.Is(err, ErrDurableRuntimeExecutionConflict) {
 		t.Fatalf("duplicate active execution error = %v", err)
 	}
 }

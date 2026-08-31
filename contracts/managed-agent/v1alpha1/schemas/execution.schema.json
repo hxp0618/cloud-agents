@@ -34,6 +34,7 @@
     },
     "messages": {
       "type": "array",
+      "description": "Persisted Runtime transcript, plus currently pending InteractionRequest messages while the execution is running.",
       "items": {
         "type": "object",
         "additionalProperties": false,

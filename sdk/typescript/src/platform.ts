@@ -298,6 +298,16 @@ export type ManagedAgentExecutionCreateRequest = Readonly<{
 }>;
 export type ManagedAgentExecutionCancelRequest = Readonly<{ generation: number }>;
 export type ManagedAgentExecutionInterruptRequest = Readonly<{ generation: number }>;
+export type ManagedAgentApprovalResolutionRequest = Readonly<{
+  generation: number;
+  requestId: string;
+  decision: "accept" | "decline";
+}>;
+export type ManagedAgentUserInputResolutionRequest = Readonly<{
+  generation: number;
+  requestId: string;
+  answers: Readonly<Record<string, readonly string[]>>;
+}>;
 export type ManagedAgentExecutionError = Readonly<{
   code: string;
   message: string;
@@ -1836,6 +1846,35 @@ export function encodeManagedAgentExecutionInterruptRequest(
     generation: integer(value.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
   });
 }
+export function encodeManagedAgentApprovalResolutionRequest(
+  value: ManagedAgentApprovalResolutionRequest,
+): string {
+  return JSON.stringify({
+    generation: integer(value.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    requestId: interactionRequestId(value.requestId, "/requestId"),
+    decision: enumValue(value.decision, ["accept", "decline"] as const, "/decision"),
+  });
+}
+export function encodeManagedAgentUserInputResolutionRequest(
+  value: ManagedAgentUserInputResolutionRequest,
+): string {
+  const source = record(value.answers, "/answers");
+  const entries = Object.entries(source);
+  if (entries.length < 1 || entries.length > 3) error("INVALID_ANSWERS", "/answers");
+  const answers = Object.create(null) as Record<string, string[]>;
+  for (const [questionId, raw] of entries) {
+    interactionRequestId(questionId, "/answers");
+    if (!Array.isArray(raw)) error("INVALID_ANSWERS", "/answers");
+    const values = raw as unknown[];
+    if (values.length < 1 || values.length > 20) error("INVALID_ANSWERS", "/answers");
+    answers[questionId] = values.map((answer) => interactionAnswer(answer, "/answers"));
+  }
+  return JSON.stringify({
+    generation: integer(value.generation, 1, Number.MAX_SAFE_INTEGER, "/generation"),
+    requestId: interactionRequestId(value.requestId, "/requestId"),
+    answers,
+  });
+}
 export function decodeManagedAgentEventPage(value: unknown): ManagedAgentEventPage {
   const source = strictRecord(
     value,
@@ -2195,6 +2234,16 @@ function token(value: unknown, path: string): string {
   const text = string(value, path);
   if (text.length < 16 || text.length > 2048 || !/^[A-Za-z0-9_-]+$/u.test(text))
     error("INVALID_TOKEN", path);
+  return text;
+}
+function interactionRequestId(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 200, path);
+  if (/[\u0000-\u001f\u007f]/u.test(text)) error("INVALID_INTERACTION_REQUEST_ID", path);
+  return text;
+}
+function interactionAnswer(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 2000, path);
+  if (text.includes("\u0000")) error("INVALID_ANSWER", path);
   return text;
 }
 
@@ -2627,6 +2676,50 @@ export class Client {
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
+  }
+  async resolveManagedAgentApproval(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    turnId: string,
+    executionId: string,
+    requestId: string,
+    body: ManagedAgentApprovalResolutionRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateExecutionPath(tenantId, projectId, requestId, sessionId, turnId, executionId);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/turns/${turnId}/executions/${executionId}:resolveApproval`,
+        headers: { "X-Request-ID": requestId },
+        body: encodeManagedAgentApprovalResolutionRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw await this.problem("managedAgentResolveApproval", response);
+  }
+  async resolveManagedAgentUserInput(
+    tenantId: string,
+    projectId: string,
+    sessionId: string,
+    turnId: string,
+    executionId: string,
+    requestId: string,
+    body: ManagedAgentUserInputResolutionRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    validateExecutionPath(tenantId, projectId, requestId, sessionId, turnId, executionId);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/tenants/${tenantId}/projects/${projectId}/sessions/${sessionId}/turns/${turnId}/executions/${executionId}:resolveUserInput`,
+        headers: { "X-Request-ID": requestId },
+        body: encodeManagedAgentUserInputResolutionRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw await this.problem("managedAgentResolveUserInput", response);
   }
   async listManagedAgentEvents(
     tenantId: string,

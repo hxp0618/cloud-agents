@@ -166,6 +166,16 @@ type ManagedAgentExecutionCancelRequest struct {
 type ManagedAgentExecutionInterruptRequest struct {
 	Generation uint64 `json:"generation"`
 }
+type ManagedAgentApprovalResolutionRequest struct {
+	Generation uint64 `json:"generation"`
+	RequestID  string `json:"requestId"`
+	Decision   string `json:"decision"`
+}
+type ManagedAgentUserInputResolutionRequest struct {
+	Generation uint64              `json:"generation"`
+	RequestID  string              `json:"requestId"`
+	Answers    map[string][]string `json:"answers"`
+}
 type ManagedAgentExecution struct {
 	APIVersion string                         `json:"apiVersion"`
 	Kind       string                         `json:"kind"`
@@ -1147,6 +1157,40 @@ func (client *Client) InterruptManagedAgentExecution(ctx context.Context, tenant
 	}
 	return value, nil
 }
+func (client *Client) ResolveManagedAgentApproval(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID string, body ManagedAgentApprovalResolutionRequest) error {
+	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {
+		return err
+	}
+	bodyBytes, err := encodeManagedAgentApprovalResolutionRequest(body)
+	if err != nil {
+		return err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sessions/" + sessionID + "/turns/" + turnID + "/executions/" + executionID + ":resolveApproval", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return client.problemError("managedAgentResolveApproval", response)
+	}
+	return nil
+}
+func (client *Client) ResolveManagedAgentUserInput(ctx context.Context, tenantID, projectID, sessionID, turnID, executionID, requestID string, body ManagedAgentUserInputResolutionRequest) error {
+	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {
+		return err
+	}
+	bodyBytes, err := encodeManagedAgentUserInputResolutionRequest(body)
+	if err != nil {
+		return err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sessions/" + sessionID + "/turns/" + turnID + "/executions/" + executionID + ":resolveUserInput", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return client.problemError("managedAgentResolveUserInput", response)
+	}
+	return nil
+}
 
 var managedAgentSessionResponseShape = common.ObjectResponseShape(map[string]common.ResponseShape{
 	"apiVersion": common.ScalarResponseShape(), "kind": common.ScalarResponseShape(),
@@ -1494,6 +1538,63 @@ func encodeManagedAgentExecutionInterruptRequest(value ManagedAgentExecutionInte
 		return nil, common.ContractError("INVALID_GENERATION", "/generation")
 	}
 	return json.Marshal(value)
+}
+func encodeManagedAgentApprovalResolutionRequest(value ManagedAgentApprovalResolutionRequest) ([]byte, error) {
+	if value.Generation == 0 || value.Generation > 9223372036854775807 {
+		return nil, common.ContractError("INVALID_GENERATION", "/generation")
+	}
+	if err := validateManagedAgentInteractionRequestID(value.RequestID, "/requestId"); err != nil {
+		return nil, err
+	}
+	if value.Decision != "accept" && value.Decision != "decline" {
+		return nil, common.ContractError("INVALID_DECISION", "/decision")
+	}
+	return json.Marshal(value)
+}
+func encodeManagedAgentUserInputResolutionRequest(value ManagedAgentUserInputResolutionRequest) ([]byte, error) {
+	if value.Generation == 0 || value.Generation > 9223372036854775807 {
+		return nil, common.ContractError("INVALID_GENERATION", "/generation")
+	}
+	if err := validateManagedAgentInteractionRequestID(value.RequestID, "/requestId"); err != nil {
+		return nil, err
+	}
+	if len(value.Answers) == 0 || len(value.Answers) > 3 {
+		return nil, common.ContractError("INVALID_ANSWERS", "/answers")
+	}
+	for questionID, answers := range value.Answers {
+		if err := validateManagedAgentInteractionRequestID(questionID, "/answers"); err != nil {
+			return nil, err
+		}
+		if len(answers) == 0 || len(answers) > 20 {
+			return nil, common.ContractError("INVALID_ANSWERS", "/answers")
+		}
+		for _, answer := range answers {
+			if err := validateManagedAgentInteractionAnswer(answer, "/answers"); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return json.Marshal(value)
+}
+func validateManagedAgentInteractionRequestID(value, path string) error {
+	if err := common.ValidateString(value, 1, 200, path); err != nil {
+		return err
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return common.ContractError("INVALID_INTERACTION_REQUEST_ID", path)
+		}
+	}
+	return nil
+}
+func validateManagedAgentInteractionAnswer(value, path string) error {
+	if err := common.ValidateString(value, 1, 2000, path); err != nil {
+		return err
+	}
+	if strings.ContainsRune(value, '\x00') {
+		return common.ContractError("INVALID_ANSWER", path)
+	}
+	return nil
 }
 func decodeManagedAgentTurn(data []byte) (ManagedAgentTurn, error) {
 	fields, err := common.DecodeStrictObject(data, []string{"apiVersion", "kind", "metadata", "spec"}, []string{"apiVersion", "kind", "metadata", "spec"})

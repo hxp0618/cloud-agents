@@ -209,7 +209,11 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 		if request.Method == "GET" && strings.Contains(request.Path, "/executions?") {
 			body = executionPageBody
 		}
-		return Response{Status: 200, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: body}, nil
+		status := 200
+		if strings.HasSuffix(request.Path, ":resolveApproval") || strings.HasSuffix(request.Path, ":resolveUserInput") {
+			status = 204
+		}
+		return Response{Status: status, Headers: map[string]string{HeaderResourceVersion: "3"}, Body: body}, nil
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +234,16 @@ func TestGeneratedOpenAPIClientManagedAgentExecutionLifecycle(t *testing.T) {
 	if _, err := client.InterruptManagedAgentExecution(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-interrupt", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY", ManagedAgentExecutionInterruptRequest{Generation: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 5 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","inputText":"hello"}` || string(seen[3].Body) != `{"generation":1}` || string(seen[4].Body) != `{"generation":1}` {
+	if err := client.ResolveManagedAgentApproval(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-approval", ManagedAgentApprovalResolutionRequest{Generation: 1, RequestID: "codex:generation-1:approval:1", Decision: "accept"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ResolveManagedAgentUserInput(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-user-input", ManagedAgentUserInputResolutionRequest{Generation: 1, RequestID: "claude:generation-1:user-input:2", Answers: map[string][]string{"question-1": {"one", "two"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ResolveManagedAgentUserInput(context.Background(), "tenant-alpha", "project-alpha", "session-alpha", "turn-alpha", "execution-alpha", "request-user-input-invalid", ManagedAgentUserInputResolutionRequest{Generation: 1, RequestID: "claude:generation-1:user-input:2", Answers: map[string][]string{"question-1": {"bad\x00answer"}}}); err == nil {
+		t.Fatal("user-input resolution accepted a NUL answer")
+	}
+	if len(seen) != 7 || seen[0].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions" || seen[1].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1" || seen[2].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha" || seen[3].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel" || seen[4].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt" || seen[5].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval" || seen[6].Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput" || string(seen[0].Body) != `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"codex","inputText":"hello"}` || string(seen[3].Body) != `{"generation":1}` || string(seen[4].Body) != `{"generation":1}` || string(seen[5].Body) != `{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}` || string(seen[6].Body) != `{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"question-1":["one","two"]}}` {
 		t.Fatalf("execution requests = %#v", seen)
 	}
 }

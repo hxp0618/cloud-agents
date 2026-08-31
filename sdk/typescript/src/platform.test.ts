@@ -277,7 +277,10 @@ describe("generated platform JSON models", () => {
     const client = new Client(async (request) => {
       seen.push(request);
       return {
-        status: 200,
+        status:
+          request.path.endsWith(":resolveApproval") || request.path.endsWith(":resolveUserInput")
+            ? 204
+            : 200,
         headers: { "X-Resource-Version": "3" },
         body:
           request.method === "GET" && request.path.includes("/executions?")
@@ -329,18 +332,63 @@ describe("generated platform JSON models", () => {
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EY",
       { generation: 1 },
     );
+    await client.resolveManagedAgentApproval(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-alpha",
+      "request-approval",
+      { generation: 1, requestId: "codex:generation-1:approval:1", decision: "accept" },
+    );
+    await client.resolveManagedAgentUserInput(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-alpha",
+      "request-user-input",
+      {
+        generation: 1,
+        requestId: "claude:generation-1:user-input:2",
+        answers: Object.fromEntries([["__proto__", ["one", "two"]]]),
+      },
+    );
+    await expect(
+      client.resolveManagedAgentUserInput(
+        "tenant-alpha",
+        "project-alpha",
+        "session-alpha",
+        "turn-alpha",
+        "execution-alpha",
+        "request-user-input-invalid",
+        {
+          generation: 1,
+          requestId: "claude:generation-1:user-input:2",
+          answers: { "question-1": ["bad\u0000answer"] },
+        },
+      ),
+    ).rejects.toThrow();
     expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions",
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha",
       "GET /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions?pageSize=1&pageToken=execution-page-token-1",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:cancel",
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:interrupt",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveApproval",
+      "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput",
     ]);
     expect(seen[0]?.body).toBe(
       '{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex"}',
     );
     expect(seen[3]?.body).toBe('{"generation":1}');
     expect(seen[4]?.body).toBe('{"generation":1}');
+    expect(seen[5]?.body).toBe(
+      '{"generation":1,"requestId":"codex:generation-1:approval:1","decision":"accept"}',
+    );
+    expect(seen[6]?.body).toBe(
+      '{"generation":1,"requestId":"claude:generation-1:user-input:2","answers":{"__proto__":["one","two"]}}',
+    );
   });
   it("replays common and platform golden fixtures", () => {
     expect(parseProblem(readFixture(commonFixtureRoot, "golden/problem.json")).status).toBe(404);

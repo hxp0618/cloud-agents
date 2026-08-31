@@ -208,6 +208,37 @@ func run(args []string, stdout io.Writer) error {
 				value, err = client.CancelManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCancelRequest{Generation: generation})
 			}
 		}
+	case "execution resolve-approval":
+		var generation uint64
+		var interactionRequest, decision string
+		if err = parseActionFlags("execution resolve-approval", actionArgs, func(set *flag.FlagSet) {
+			set.Uint64Var(&generation, "generation", 0, "execution fencing generation")
+			set.StringVar(&interactionRequest, "interaction-request", "", "pending interaction request identifier")
+			set.StringVar(&decision, "decision", "", "approval decision: accept or decline")
+		}); err == nil && generation == 0 {
+			err = errors.New("--generation must be greater than zero")
+		} else if err == nil {
+			err = client.ResolveManagedAgentApproval(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, openapi.ManagedAgentApprovalResolutionRequest{Generation: generation, RequestID: interactionRequest, Decision: decision})
+			value = map[string]bool{"resolved": err == nil}
+		}
+	case "execution resolve-user-input":
+		var generation uint64
+		var interactionRequest, answersJSON string
+		if err = parseActionFlags("execution resolve-user-input", actionArgs, func(set *flag.FlagSet) {
+			set.Uint64Var(&generation, "generation", 0, "execution fencing generation")
+			set.StringVar(&interactionRequest, "interaction-request", "", "pending interaction request identifier")
+			set.StringVar(&answersJSON, "answers-json", "", "JSON object mapping question identifiers to string arrays")
+		}); err == nil && generation == 0 {
+			err = errors.New("--generation must be greater than zero")
+		} else if err == nil {
+			var answers map[string][]string
+			if err = json.Unmarshal([]byte(answersJSON), &answers); err == nil {
+				err = client.ResolveManagedAgentUserInput(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, openapi.ManagedAgentUserInputResolutionRequest{Generation: generation, RequestID: interactionRequest, Answers: answers})
+				value = map[string]bool{"resolved": err == nil}
+			} else {
+				err = errors.New("--answers-json must be a JSON object mapping question identifiers to string arrays")
+			}
+		}
 	case "events list":
 		var cursor string
 		limit := 0
@@ -542,7 +573,7 @@ func responseValue(value any) any {
 
 func knownCommand(command, action string) bool {
 	switch command + " " + action {
-	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution cancel", "execution interrupt", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
+	case "tenant get", "organization get", "organization list", "organization create", "project get", "project list", "project create", "session create", "session list", "session get", "session close", "turn create", "turn list", "turn get", "execution list", "execution execute", "execution get", "execution cancel", "execution interrupt", "execution resolve-approval", "execution resolve-user-input", "events list", "membership get", "membership list", "membership create", "membership resume", "membership suspend", "membership revoke", "role get", "role list", "role-binding get", "role-binding list", "role-binding create", "role-binding revoke", "managed-host-project get", "managed-host-role-binding get", "environment-lease list", "environment-lease create", "environment-lease get", "environment-lease terminate":
 		return true
 	default:
 		return false

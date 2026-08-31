@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	openapiv1 "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
@@ -32,6 +33,9 @@ type managedAgentExecutionRunner interface {
 	Execute(context.Context, internalmanagedagent.VerifiedPrincipalSource, internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error)
 	Interrupt(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.InterruptTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
 	Cancel(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
+	ActiveInteractions(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message
+	ResolveApproval(context.Context, internalmanagedagent.RuntimeApprovalResolutionInput) error
+	ResolveUserInput(context.Context, internalmanagedagent.RuntimeUserInputResolutionInput) error
 }
 
 type ManagedAgentExecutionHTTPServer struct {
@@ -95,6 +99,10 @@ func (server *ManagedAgentExecutionHTTPServer) ServeHTTP(writer http.ResponseWri
 	}
 	if action == "interrupt" && request.Method == http.MethodPost {
 		server.interrupt(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer)
+		return
+	}
+	if (action == "resolveApproval" || action == "resolveUserInput") && request.Method == http.MethodPost {
+		server.resolveInteraction(writer, request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer, action)
 		return
 	}
 	writer.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
@@ -210,7 +218,11 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 		writeManagedAgentSessionError(writer, status, code)
 		return
 	}
-	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, execution.Messages)
+	messages := append([]runtimeprotocol.Message(nil), execution.Messages...)
+	if execution.State == internalmanagedagent.ExecutionRunning {
+		messages = append(messages, server.runner.ActiveInteractions(runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation))...)
+	}
+	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, messages)
 }
 
 func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
@@ -269,6 +281,43 @@ func (server *ManagedAgentExecutionHTTPServer) interrupt(writer http.ResponseWri
 	writeManagedAgentExecution(writer, http.StatusOK, requestID, result, nil)
 }
 
+func (server *ManagedAgentExecutionHTTPServer) resolveInteraction(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer, action string) {
+	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	if err != nil || principal == nil {
+		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
+		return
+	}
+	reference := runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, 0)
+	if action == "resolveApproval" {
+		var body managedAgentApprovalResolutionBody
+		if _, err := decodeManagedAgentJSON(request.Body, &body, []string{"generation", "requestId", "decision"}, []string{"generation", "requestId", "decision"}); err != nil || !validManagedAgentInteractionGenerationAndRequest(body.Generation, body.RequestID) || body.Decision != "accept" && body.Decision != "decline" {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		reference.Generation = body.Generation
+		err = server.runner.ResolveApproval(request.Context(), internalmanagedagent.RuntimeApprovalResolutionInput{RuntimeExecutionReference: reference, RequestID: requestID, InteractionRequestID: body.RequestID, Decision: body.Decision})
+	} else {
+		var body managedAgentUserInputResolutionBody
+		if _, err := decodeManagedAgentJSON(request.Body, &body, []string{"generation", "requestId", "answers"}, []string{"generation", "requestId", "answers"}); err != nil || !validManagedAgentInteractionGenerationAndRequest(body.Generation, body.RequestID) || !validManagedAgentInteractionAnswers(body.Answers) {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		reference.Generation = body.Generation
+		err = server.runner.ResolveUserInput(request.Context(), internalmanagedagent.RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, RequestID: requestID, InteractionRequestID: body.RequestID, Answers: body.Answers})
+	}
+	if err != nil {
+		status, code := managedAgentExecutionErrorStatus(err)
+		writeManagedAgentSessionError(writer, status, code)
+		return
+	}
+	writer.Header().Set("X-Request-ID", requestID)
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID string, generation uint64) internalmanagedagent.RuntimeExecutionReference {
+	return internalmanagedagent.RuntimeExecutionReference{Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID, TurnID: turnID, ExecutionID: executionID, Generation: generation}
+}
+
 type managedAgentExecutionRequest struct {
 	TurnID      string `json:"turnId"`
 	ExecutionID string `json:"executionId"`
@@ -282,6 +331,51 @@ type managedAgentExecutionCancelBody struct {
 
 type managedAgentExecutionInterruptBody struct {
 	Generation uint64 `json:"generation"`
+}
+
+type managedAgentApprovalResolutionBody struct {
+	Generation uint64 `json:"generation"`
+	RequestID  string `json:"requestId"`
+	Decision   string `json:"decision"`
+}
+
+type managedAgentUserInputResolutionBody struct {
+	Generation uint64              `json:"generation"`
+	RequestID  string              `json:"requestId"`
+	Answers    map[string][]string `json:"answers"`
+}
+
+func validManagedAgentInteractionGenerationAndRequest(generation uint64, requestID string) bool {
+	return generation > 0 && generation <= maxManagedAgentGeneration && validManagedAgentInteractionToken(requestID, 200)
+}
+
+func validManagedAgentInteractionAnswers(answers map[string][]string) bool {
+	if len(answers) == 0 || len(answers) > 3 {
+		return false
+	}
+	for questionID, values := range answers {
+		if !validManagedAgentInteractionToken(questionID, 200) || len(values) == 0 || len(values) > 20 {
+			return false
+		}
+		for _, value := range values {
+			if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > 2000 || strings.ContainsRune(value, '\x00') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validManagedAgentInteractionToken(value string, maximum int) bool {
+	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > maximum {
+		return false
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 type managedAgentExecutionResource struct {
@@ -371,16 +465,12 @@ func managedAgentExecutionPath(path string) (tenantID, projectID, sessionID, tur
 	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && parts[8] != "" && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") && !strings.Contains(parts[8], ":") {
 		return parts[0], parts[2], parts[4], parts[6], parts[8], "get", true
 	}
-	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && strings.HasSuffix(parts[8], ":cancel") && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") {
-		executionID = strings.TrimSuffix(parts[8], ":cancel")
-		if executionID != "" {
-			return parts[0], parts[2], parts[4], parts[6], executionID, "cancel", true
-		}
-	}
-	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && strings.HasSuffix(parts[8], ":interrupt") && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") {
-		executionID = strings.TrimSuffix(parts[8], ":interrupt")
-		if executionID != "" {
-			return parts[0], parts[2], parts[4], parts[6], executionID, "interrupt", true
+	if len(parts) == 9 && parts[1] == "projects" && parts[3] == "sessions" && parts[5] == "turns" && parts[7] == "executions" && parts[0] != "" && parts[2] != "" && parts[4] != "" && parts[6] != "" && !strings.Contains(parts[6], ":") {
+		for _, candidate := range []struct{ suffix, action string }{{":cancel", "cancel"}, {":interrupt", "interrupt"}, {":resolveApproval", "resolveApproval"}, {":resolveUserInput", "resolveUserInput"}} {
+			executionID = strings.TrimSuffix(parts[8], candidate.suffix)
+			if executionID != parts[8] && executionID != "" {
+				return parts[0], parts[2], parts[4], parts[6], executionID, candidate.action, true
+			}
 		}
 	}
 	return "", "", "", "", "", "", false
@@ -429,8 +519,14 @@ func managedAgentExecutionErrorStatus(err error) (int, string) {
 		return http.StatusConflict, "execution_conflict"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionConflict):
 		return http.StatusConflict, "execution_in_progress"
+	case errors.Is(err, internalmanagedagent.ErrRuntimeInteractionUnavailable), errors.Is(err, internalmanagedagent.ErrRuntimeInteractionConflict):
+		return http.StatusConflict, "interaction_not_pending"
 	case errors.Is(err, postgres.ErrCoordinationInvalidInput), errors.Is(err, internalmanagedagent.ErrInvalidInput):
 		return http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, internalmanagedagent.ErrRuntimeInteractionFailed):
+		return http.StatusBadGateway, "runtime_interaction_failed"
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusGatewayTimeout, "deadline_exceeded"
 	case errors.Is(err, internalmanagedagent.ErrDurableRuntimeExecutionFailed):
 		return http.StatusBadGateway, "runtime_failed"
 	case errors.Is(err, context.Canceled):
