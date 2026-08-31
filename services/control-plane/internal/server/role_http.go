@@ -36,7 +36,6 @@ func NewRoleHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentRoleRead
 
 func (server *RoleHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
-	writer.Header().Set("Cache-Control", "no-store")
 	if server == nil || server.verifier == nil || server.reader == nil || request == nil {
 		writeRoleError(writer, http.StatusInternalServerError, "internal_error")
 		return

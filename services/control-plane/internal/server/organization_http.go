@@ -35,7 +35,6 @@ func NewOrganizationHTTPServer(verifier AccessTokenVerifier, reader ManagedAgent
 
 func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
-	writer.Header().Set("Cache-Control", "no-store")
 	if request == nil || server == nil || server.verifier == nil || server.reader == nil {
 		writeOrganizationError(writer, http.StatusInternalServerError, "internal_error")
 		return

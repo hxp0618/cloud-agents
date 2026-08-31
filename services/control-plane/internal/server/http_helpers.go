@@ -25,6 +25,7 @@ func preparePublicRequestID(writer http.ResponseWriter, request *http.Request) {
 	if writer == nil {
 		return
 	}
+	writer.Header().Set("Cache-Control", "no-store")
 	requestID := publicFallbackRequestID
 	if request != nil {
 		if value, ok := exactSingleHeader(request.Header, "X-Request-ID"); ok {

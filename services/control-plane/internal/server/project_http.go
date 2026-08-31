@@ -52,7 +52,6 @@ func NewProjectHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentProje
 
 func (server *ProjectHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
-	writer.Header().Set("Cache-Control", "no-store")
 	if server == nil || server.verifier == nil || server.reader == nil || server.creator == nil || request == nil {
 		writeProjectError(writer, http.StatusInternalServerError, "internal_error")
 		return

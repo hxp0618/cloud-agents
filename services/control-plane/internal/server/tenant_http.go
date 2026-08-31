@@ -30,7 +30,6 @@ func NewPlatformTenantHTTPServer(verifier AccessTokenVerifier, reader ManagedAge
 
 func (server *PlatformTenantHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
-	writer.Header().Set("Cache-Control", "no-store")
 	if request == nil || server == nil || server.verifier == nil || server.reader == nil {
 		writeTenantError(writer, http.StatusInternalServerError, "internal_error")
 		return

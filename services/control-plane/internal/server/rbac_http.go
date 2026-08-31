@@ -43,7 +43,6 @@ func NewRBACHTTPServer(verifier AccessTokenVerifier, reader ManagedAgentRBACRead
 
 func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	preparePublicRequestID(writer, request)
-	writer.Header().Set("Cache-Control", "no-store")
 	if server == nil || server.verifier == nil || server.reader == nil || server.mutator == nil || request == nil {
 		writeRBACError(writer, http.StatusInternalServerError, "internal_error")
 		return

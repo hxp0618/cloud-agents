@@ -74,7 +74,7 @@ func TestManagedAgentSessionHTTPServerLifecycleRoutes(t *testing.T) {
 	if created.Code != http.StatusCreated || store.create != 1 || verifier.seen.RequiredPermission != "projects.act" {
 		t.Fatalf("create status=%d calls=%d verification=%#v body=%s", created.Code, store.create, verifier.seen, created.Body.String())
 	}
-	if !strings.Contains(created.Body.String(), `"kind":"Session"`) || created.Header().Get("X-Resource-Version") != "1" {
+	if !strings.Contains(created.Body.String(), `"kind":"Session"`) || created.Header().Get("X-Resource-Version") != "1" || created.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("create response=%s headers=%v", created.Body.String(), created.Header())
 	}
 
