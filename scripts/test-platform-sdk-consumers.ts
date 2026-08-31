@@ -2,9 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
-  copyFileSync,
   cpSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -14,8 +12,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { buildPlatformTypeScriptSDKPackage } from "./lib/platform-release";
 
@@ -77,29 +74,9 @@ type ModuleProxy = Readonly<{
 type NpmDependencyArtifact = Readonly<{
   version: string;
   artifactPath: string;
-  sha256: string;
   integrity: string;
 }>;
 type NpmRegistry = Readonly<Record<string, NpmDependencyArtifact>>;
-
-type ConsumerEvidence = Readonly<{
-  formatVersion: "cloud-agents-platform-sdk-consumer-evidence/v1";
-  harness: Readonly<{
-    path: string;
-    sha256: string;
-    sizeBytes: number;
-    mode: "100644";
-  }>;
-  toolchain: Readonly<{
-    bun: string;
-    go: string;
-    typescript: string;
-    goFlags: "-mod=readonly";
-    goWork: "off";
-  }>;
-  typescript: Readonly<Record<string, unknown>>;
-  go: Readonly<Record<string, unknown>>;
-}>;
 
 type FixtureServer = Readonly<{
   baseUrl: string;
@@ -108,47 +85,23 @@ type FixtureServer = Readonly<{
 }>;
 
 async function main(): Promise<void> {
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "cloud-agents-a24-sdk-consumer-"));
+  const temporaryBase = resolve(repositoryRoot, ".tmp");
+  mkdirSync(temporaryBase, { recursive: true });
+  const temporaryRoot = mkdtempSync(join(temporaryBase, "platform-sdk-consumer-"));
   let fixtureServer: FixtureServer | undefined;
   try {
     const typescriptArtifact = packTypeScriptSDK(temporaryRoot);
     const npmRegistry = prepareNpmRegistry(temporaryRoot);
     const goProxy = buildGoModuleProxy(temporaryRoot);
     fixtureServer = await startArtifactServer(temporaryRoot);
-    const typescript = runFreshTypeScriptConsumer(
+    runFreshTypeScriptConsumer(
       temporaryRoot,
       typescriptArtifact,
       npmRegistry,
       fixtureServer.baseUrl,
       fixtureServer.requestLogPath,
     );
-    const goEvidence = runFreshGoConsumer(
-      temporaryRoot,
-      goProxy,
-      fixtureServer.baseUrl,
-      fixtureServer.requestLogPath,
-    );
-    const evidence: ConsumerEvidence = {
-      formatVersion: "cloud-agents-platform-sdk-consumer-evidence/v1",
-      harness: {
-        path: "scripts/test-platform-sdk-consumers.ts",
-        sha256: sha256File(resolve(import.meta.dirname, "test-platform-sdk-consumers.ts")),
-        sizeBytes: readFileSync(resolve(import.meta.dirname, "test-platform-sdk-consumers.ts"))
-          .byteLength,
-        mode: "100644",
-      },
-      toolchain: {
-        bun: run(bun, ["--version"], repositoryRoot).trim(),
-        go: run(go, ["version"], repositoryRoot).trim(),
-        typescript: "5.7.3",
-        goFlags: "-mod=readonly",
-        goWork: "off",
-      },
-      typescript,
-      go: goEvidence,
-    };
-    const evidenceOutput = process.env.CLOUD_AGENTS_SDK_CONSUMER_EVIDENCE;
-    if (evidenceOutput) writeEvidence(evidenceOutput, evidence);
+    runFreshGoConsumer(temporaryRoot, goProxy, fixtureServer.baseUrl, fixtureServer.requestLogPath);
     process.stdout.write("platform-sdk-consumers: fresh TypeScript and Go consumers passed\n");
     process.stdout.write(
       `platform-sdk-consumers: typescriptArtifactSha256=${typescriptArtifact.sha256}\n`,
@@ -158,7 +111,6 @@ async function main(): Promise<void> {
     );
     process.stdout.write(`platform-sdk-consumers: goModuleZipSha256=${goProxy.zip.sha256}\n`);
     process.stdout.write(`platform-sdk-consumers: goModuleGoModSha256=${goProxy.goModSha256}\n`);
-    process.stdout.write(`platform-sdk-consumers: goSumSha256=${goEvidence.goSumSha256}\n`);
   } finally {
     await fixtureServer?.stop();
     try {
@@ -225,7 +177,6 @@ function prepareNpmRegistry(root: string): NpmRegistry {
     artifacts[name] = {
       version,
       artifactPath: `npm-registry-tar/${name}/${filename}`,
-      sha256: packedArtifact.sha256,
       integrity: packedArtifact.integrity,
     };
     writeFileSync(
@@ -273,12 +224,16 @@ function runFreshTypeScriptConsumer(
   npmRegistry: NpmRegistry,
   baseUrl: string,
   requestLogPath: string,
-): Readonly<Record<string, unknown>> {
+): void {
   const consumer = join(root, "typescript-consumer");
   mkdirSync(consumer, { recursive: true });
   const filename = sdk.path.split("/").pop();
   if (!filename) throw new Error("TypeScript artifact filename is empty.");
   const tarballUrl = `${baseUrl}/typescript-pack/${encodeURIComponent(filename)}`;
+  const projectFixture = readFileSync(
+    resolve(repositoryRoot, "contracts/platform/v1alpha1/fixtures/golden/project.json"),
+    "utf8",
+  ).trim();
   writeFileSync(
     join(consumer, "package.json"),
     `${JSON.stringify(
@@ -309,10 +264,32 @@ import { createClient } from "@connectrpc/connect";
 import { createFetchClient } from "@connectrpc/connect/protocol";
 import { createTransport } from "@connectrpc/connect/protocol-connect";
 import { create, toBinary } from "@bufbuild/protobuf";
+import { createHTTPClient } from "${sdkPackage}/platform";
 import { NegotiationResponseSchema, WorkerExecutionService } from "${sdkPackage}/proto";
 
-let requests = 0;
+const project = ${projectFixture};
+let controlPlaneRequests = 0;
+let workerRequests = 0;
 const fixture = createServer(async (request, response) => {
+  if (
+    request.method === "GET" &&
+    request.url === "/v1/tenants/tenant-alpha/projects/project-alpha"
+  ) {
+    if (
+      request.headers.authorization !== "Bearer token-alpha" ||
+      request.headers["x-request-id"] !== "request-alpha"
+    ) {
+      response.statusCode = 401;
+      response.end();
+      return;
+    }
+    controlPlaneRequests += 1;
+    response.statusCode = 200;
+    response.setHeader("Content-Type", "application/json");
+    response.setHeader("X-Resource-Version", "3");
+    response.end(JSON.stringify(project));
+    return;
+  }
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   if (
@@ -325,7 +302,7 @@ const fixture = createServer(async (request, response) => {
     return;
   }
   if (Buffer.concat(chunks).byteLength !== 0) throw new Error("fixture received a non-empty negotiation request");
-  requests += 1;
+  workerRequests += 1;
   response.statusCode = 200;
   response.setHeader("Content-Type", "application/proto");
   response.end(Buffer.from(toBinary(NegotiationResponseSchema, create(NegotiationResponseSchema))));
@@ -338,8 +315,12 @@ await new Promise<void>((resolve, reject) => {
 try {
   const address = fixture.address();
   if (!address || typeof address === "string") throw new Error("fixture did not bind a loopback port");
+  const baseUrl = "http://127.0.0.1:" + address.port;
+  const platformClient = createHTTPClient(baseUrl, "token-alpha");
+  const loadedProject = await platformClient.getProject("tenant-alpha", "project-alpha", "request-alpha");
+  if (loadedProject.value.metadata.uid !== "project-alpha") throw new Error("fresh TypeScript Control Plane client returned the wrong project");
   const transport = createTransport({
-    baseUrl: "http://127.0.0.1:" + address.port,
+    baseUrl,
     httpClient: createFetchClient(fetch),
     useBinaryFormat: true,
     interceptors: [],
@@ -351,7 +332,7 @@ try {
   });
   const client = createClient(WorkerExecutionService, transport);
   await client.negotiate({});
-  if (requests !== 1) throw new Error("fresh TypeScript consumer made " + requests + " loopback calls");
+  if (controlPlaneRequests !== 1 || workerRequests !== 1) throw new Error("fresh TypeScript consumer did not make both loopback calls exactly once");
   console.log("fresh-typescript-consumer-ok");
 } finally {
   await new Promise<void>((resolve) => fixture.close(() => resolve()));
@@ -445,31 +426,6 @@ try {
     assertRequestLogged(requestLogPath, npmTarballPath(root, dependency));
   run(bun, ["run", "check"], consumer);
   run(bun, ["run", "main.ts"], consumer);
-  return {
-    package: sdkPackage,
-    version: packageVersion,
-    toolchain: "bun@1.4.0;typescript@5.7.3",
-    artifactPath: `typescript-pack/${filename}`,
-    artifactSha256: sdk.sha256,
-    integrity: sdk.integrity,
-    dependencies: {
-      "@bufbuild/protobuf": "2.14.0",
-      "@connectrpc/connect": "2.1.2",
-    },
-    dependencyArtifacts: npmRegistry,
-    lockArtifactUrl: `http://127.0.0.1:<ephemeral-port>/typescript-pack/${encodeURIComponent(filename)}`,
-    lockIntegrity: sdk.integrity,
-    fixture: {
-      transport: "connect",
-      method: "POST",
-      path: "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
-      requestContentType: "application/proto",
-      responseContentType: "application/proto",
-      loopback: true,
-      callCount: 1,
-    },
-    loopbackCallCount: 1,
-  };
 }
 
 function buildGoModuleProxy(root: string): ModuleProxy {
@@ -489,54 +445,10 @@ function buildGoModuleProxy(root: string): ModuleProxy {
     join(moduleVersionRoot, `${version}.info`),
     `${JSON.stringify({ Version: version, Time: "2026-08-21T00:00:00Z" })}\n`,
   );
-  populateGoProxyDependencies(proxy, resolve(repositoryRoot, "sdk/go/go.sum"));
   return {
     zip: artifact(zipPath),
     goModSha256: sha256File(modPath),
   };
-}
-
-function populateGoProxyDependencies(proxy: string, goSumPath: string): void {
-  const moduleCache = join(
-    run(go, ["env", "GOMODCACHE"], repositoryRoot, undefined, {
-      GOWORK: "off",
-      GOTOOLCHAIN: "local",
-    }).trim(),
-    "cache",
-    "download",
-  );
-  const entries = new Set<string>();
-  for (const line of readFileSync(goSumPath, "utf8").split("\n")) {
-    const fields = line.trim().split(/\s+/u);
-    if (fields.length < 2 || !fields[1].startsWith("v")) continue;
-    entries.add(`${fields[0]}@${fields[1].replace(/\/go\.mod$/u, "")}`);
-  }
-  for (const entry of [...entries].sort()) {
-    const separator = entry.lastIndexOf("@");
-    if (separator <= 0) continue;
-    const module = entry.slice(0, separator);
-    const version = entry.slice(separator + 1);
-    if (module === modulePath) continue;
-    const sourceBase = join(moduleCache, escapeModulePath(module), "@v", version);
-    const destinationBase = join(proxy, module, "@v", version);
-    mkdirSync(join(proxy, module, "@v"), { recursive: true });
-    let copied = false;
-    for (const suffix of [".info", ".mod", ".zip"] as const) {
-      const source = `${sourceBase}${suffix}`;
-      if (!existsSync(source)) continue;
-      copyFileSync(source, `${destinationBase}${suffix}`);
-      copied = true;
-    }
-    if (!copied) {
-      throw new Error(`Go module cache is missing a proxy artifact for ${module}@${version}`);
-    }
-  }
-}
-
-function escapeModulePath(value: string): string {
-  return value
-    .replaceAll("!", "!!")
-    .replace(/[A-Z]/gu, (character) => `!${character.toLowerCase()}`);
 }
 
 function normalizeArchiveTimestamps(path: string): void {
@@ -555,11 +467,15 @@ function runFreshGoConsumer(
   module: ModuleProxy,
   baseUrl: string,
   requestLogPath: string,
-): Readonly<Record<string, unknown>> {
+): void {
   const consumer = join(root, "go-consumer");
   mkdirSync(consumer, { recursive: true });
   run(go, ["mod", "init", "example.com/fresh-cloud-agents-sdk-consumer"], consumer);
   run(go, ["mod", "edit", `-require=${modulePath}@${version}`], consumer);
+  const projectFixture = readFileSync(
+    resolve(repositoryRoot, "contracts/platform/v1alpha1/fixtures/golden/project.json"),
+    "utf8",
+  ).trim();
   writeFileSync(
     join(consumer, "main.go"),
     `package main
@@ -574,7 +490,10 @@ import (
   connect "connectrpc.com/connect"
   workerv1alpha1 "${modulePath}/gen/cloudagents/worker/v1alpha1"
   workerv1alpha1connect "${modulePath}/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect"
+  platformv1alpha1 "${modulePath}/gen/openapi/v1alpha1"
 )
+
+const projectResponse = \`${projectFixture}\`
 
 type fixtureService struct {
   workerv1alpha1connect.UnimplementedWorkerExecutionServiceHandler
@@ -596,8 +515,30 @@ func main() {
   path, handler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(service)
   mux := http.NewServeMux()
   mux.Handle(path, handler)
+  var controlPlaneCalls atomic.Int32
+  mux.HandleFunc("/v1/tenants/tenant-alpha/projects/project-alpha", func(response http.ResponseWriter, request *http.Request) {
+    if request.Method != http.MethodGet || request.Header.Get("Authorization") != "Bearer token-alpha" || request.Header.Get("X-Request-ID") != "request-alpha" {
+      http.Error(response, "unauthorized", http.StatusUnauthorized)
+      return
+    }
+    controlPlaneCalls.Add(1)
+    response.Header().Set("Content-Type", "application/json")
+    response.Header().Set("X-Resource-Version", "3")
+    _, _ = response.Write([]byte(projectResponse))
+  })
   fixture := httptest.NewServer(mux)
   defer fixture.Close()
+  platformClient, err := platformv1alpha1.NewHTTPClient(fixture.URL, "token-alpha")
+  if err != nil {
+    panic(fmt.Sprintf("generated Go Control Plane client construction failed: %v", err))
+  }
+  project, err := platformClient.GetProject(context.Background(), "tenant-alpha", "project-alpha", "request-alpha")
+  if err != nil {
+    panic(fmt.Sprintf("generated Go Control Plane client loopback call failed: %v", err))
+  }
+  if project.Value.Metadata.UID != "project-alpha" || controlPlaneCalls.Load() != 1 {
+    panic("generated Go Control Plane client returned the wrong project")
+  }
   client := workerv1alpha1connect.NewWorkerExecutionServiceClient(http.DefaultClient, fixture.URL)
   response, err := client.Negotiate(context.Background(), connect.NewRequest(&workerv1alpha1.NegotiationRequest{}))
   if err != nil {
@@ -616,17 +557,13 @@ func main() {
   const goModuleCache = join(root, "go-mod-cache");
   mkdirSync(goModuleCache, { recursive: true });
   const env = {
-    GOPROXY: `${baseUrl}/go-proxy`,
-    GOSUMDB: "off",
-    GONOSUMDB: "*",
+    GOPROXY: `${baseUrl}/go-proxy,https://proxy.golang.org,direct`,
+    GOSUMDB: "sum.golang.org",
+    GONOSUMDB: modulePath,
     GOWORK: "off",
     GOTOOLCHAIN: "local",
     GOMODCACHE: goModuleCache,
   };
-  run(go, ["mod", "download", "all"], consumer, undefined, {
-    ...env,
-    GOFLAGS: "-mod=mod",
-  });
   run(go, ["mod", "tidy"], consumer, undefined, {
     ...env,
     GOFLAGS: "-mod=mod",
@@ -671,30 +608,6 @@ func main() {
   ) {
     throw new Error("Fresh Go consumer go.sum did not bind the exact module and go.mod checksums.");
   }
-  return {
-    module: modulePath,
-    version,
-    toolchain: "go1.27.0",
-    moduleProxyPath: `go-proxy/${modulePath}/@v/${version}.zip`,
-    moduleZipSha256: module.zip.sha256,
-    goModSha256: module.goModSha256,
-    moduleSum: download.Sum,
-    goModSum: download.GoModSum,
-    goSumSha256: sha256File(join(consumer, "go.sum")),
-    goFlags: "-mod=readonly",
-    goWork: "off",
-    goproxy: "http://127.0.0.1:<ephemeral-port>/go-proxy",
-    fixture: {
-      transport: "connect",
-      method: "POST",
-      path: "/cloudagents.worker.v1alpha1.WorkerExecutionService/Negotiate",
-      requestContentType: "application/proto",
-      responseContentType: "application/proto",
-      loopback: true,
-      callCount: 1,
-    },
-    loopbackCallCount: 1,
-  };
 }
 
 function startArtifactServer(root: string): Promise<FixtureServer> {
@@ -823,23 +736,6 @@ function assertRequestLogged(logPath: string, path: string): void {
   if (!requests.includes(path)) {
     throw new Error(`artifact request was not served from the loopback fixture: ${path}`);
   }
-}
-
-function writeEvidence(path: string, evidence: ConsumerEvidence): void {
-  const repository = resolve(repositoryRoot);
-  const target = resolve(repository, path);
-  if (target !== repository && !target.startsWith(`${repository}/`)) {
-    throw new Error("Evidence output must remain contained by the repository root.");
-  }
-  mkdirSync(dirname(target), { recursive: true });
-  const bytes = `${JSON.stringify(evidence, null, 2)}\n`;
-  if (existsSync(target)) {
-    if (readFileSync(target, "utf8") !== bytes) {
-      throw new Error(`Refusing to overwrite divergent evidence output: ${path}`);
-    }
-    return;
-  }
-  writeFileSync(target, bytes, { flag: "wx" });
 }
 
 function run(

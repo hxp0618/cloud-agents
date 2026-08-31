@@ -48,6 +48,7 @@ jobs:
       - run: bun run platform:go:check
       - run: bun run platform:sdk:check
       - run: sh scripts/test-platform-go-products.sh
+      - run: bun run platform:sdk:consumers
       - run: bun run typecheck
       - run: bun run --filter '@synara/*' test
       - run: bunx vitest run scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
