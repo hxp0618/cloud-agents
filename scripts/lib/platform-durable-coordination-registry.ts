@@ -755,8 +755,9 @@ function discoverOperations(root: string): IdempotentHttpOperation[] {
       for (const method of Object.keys(pathItem).toSorted()) {
         if (!OPERATION_METHODS.has(method)) continue;
         const operation = requireRecord(pathItem[method], `/${repositoryPath}/${method}/${path}`);
-        // Direct-transaction operations own their typed DB idempotency contract.
-        if (operation["x-cloud-agents-coordination"] === "direct-transaction") continue;
+        // Explicit owners carry their own typed idempotency contract.
+        const coordination = operation["x-cloud-agents-coordination"];
+        if (coordination === "direct-transaction" || coordination === "durable-runtime") continue;
         const parameters = [
           ...pathParameters,
           ...collectParameters(operation.parameters, document),

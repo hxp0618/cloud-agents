@@ -129,6 +129,7 @@
       },
       "post": {
         "operationId": "managedHostCreateEnvironmentLease",
+        "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
@@ -166,6 +167,7 @@
     "/v1/managed-host/tenants/{tenantId}/projects/{projectId}/environment-leases/{leaseId}:terminate": {
       "post": {
         "operationId": "managedHostTerminateEnvironmentLease",
+        "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
