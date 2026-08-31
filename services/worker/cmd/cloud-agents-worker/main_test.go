@@ -267,8 +267,8 @@ func TestLocalWorkerRuntimeModeServesGeneratedWireOverH2C(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built.Server.ReadTimeout != 0 || built.Server.WriteTimeout != 0 {
-		t.Fatalf("Runtime HTTP timeouts = %s/%s", built.Server.ReadTimeout, built.Server.WriteTimeout)
+	if built.Server.ReadHeaderTimeout != 0 || built.Server.ReadTimeout != 0 || built.Server.WriteTimeout != 0 {
+		t.Fatalf("Runtime HTTP timeouts = %s/%s/%s", built.Server.ReadHeaderTimeout, built.Server.ReadTimeout, built.Server.WriteTimeout)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

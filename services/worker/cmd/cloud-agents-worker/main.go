@@ -342,11 +342,11 @@ func newLocalWorkerHTTPServer(cfg localWorkerConfig) (*localWorkerHTTPServer, er
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
-	readTimeout, writeTimeout := 30*time.Second, 30*time.Second
+	readHeaderTimeout, readTimeout, writeTimeout := 5*time.Second, 30*time.Second, 30*time.Second
 	if cfg.runtimeCommand != "" {
-		readTimeout, writeTimeout = 0, 0
+		readHeaderTimeout, readTimeout, writeTimeout = 0, 0, 0
 	}
-	return &localWorkerHTTPServer{Server: &http.Server{Handler: root, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: readTimeout, WriteTimeout: writeTimeout, IdleTimeout: 60 * time.Second, Protocols: protocols}, Token: token}, nil
+	return &localWorkerHTTPServer{Server: &http.Server{Handler: root, ReadHeaderTimeout: readHeaderTimeout, ReadTimeout: readTimeout, WriteTimeout: writeTimeout, IdleTimeout: 60 * time.Second, Protocols: protocols}, Token: token}, nil
 }
 
 func localRuntimeEnvironment(source []string) []string {

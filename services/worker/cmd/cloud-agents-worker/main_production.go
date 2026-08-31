@@ -178,11 +178,10 @@ func runProductionWorker(ctx context.Context, cfg productionWorkerConfig) error 
 	mux.Handle(connectPath, connectHandler)
 	mux.Handle(runtimePath, runtimeHandler)
 	server := &http.Server{
-		Addr:              cfg.listen,
-		Handler:           workerkernel.NewTLSHandler(mux),
-		BaseContext:       func(net.Listener) context.Context { return ctx },
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		Addr:        cfg.listen,
+		Handler:     workerkernel.NewTLSHandler(mux),
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		IdleTimeout: 60 * time.Second,
 		TLSConfig: &tls.Config{
 			MinVersion:   tls.VersionTLS13,
 			Certificates: []tls.Certificate{certificate},
