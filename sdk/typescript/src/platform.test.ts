@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   Client,
+  createHTTPClient,
   decodeEnvironmentLeasePage,
   decodeIdempotency,
   decodeMembership,
@@ -556,7 +558,69 @@ describe("generated platform JSON models", () => {
   });
 });
 
-describe("generated fixture client", () => {
+describe("generated platform client", () => {
+  it("calls the Control Plane with bearer auth without following redirects", async () => {
+    const project = readFixture(platformFixtureRoot, "golden/project.json");
+    let redirectTargetCalls = 0;
+    const fixture = createServer((request, response) => {
+      if (request.url === "/redirect-target") {
+        redirectTargetCalls += 1;
+        response.end();
+        return;
+      }
+      if (
+        request.headers.authorization !== "Bearer token-alpha" ||
+        request.headers["x-request-id"] !== "request-alpha"
+      ) {
+        response.statusCode = 401;
+        response.end();
+        return;
+      }
+      if (request.url?.endsWith("/project-redirect")) {
+        response.statusCode = 307;
+        response.setHeader("Location", "/redirect-target");
+        response.end();
+        return;
+      }
+      if (request.url?.endsWith("/project-oversize")) {
+        response.statusCode = 200;
+        response.end(Buffer.alloc(2 * 1024 * 1024 + 1, 0x20));
+        return;
+      }
+      response.statusCode = 200;
+      response.setHeader("Content-Type", "application/json");
+      response.setHeader("X-Resource-Version", "3");
+      response.end(project);
+    });
+    await new Promise<void>((resolveListen, reject) => {
+      fixture.once("error", reject);
+      fixture.listen(0, "127.0.0.1", resolveListen);
+    });
+    try {
+      const address = fixture.address();
+      if (address === null || typeof address === "string") throw new Error("fixture did not bind");
+      const baseURL = `http://127.0.0.1:${address.port}/control-plane`;
+      const client = createHTTPClient(baseURL, "token-alpha");
+      const result = await client.getProject("tenant-alpha", "project-alpha", "request-alpha");
+      expect(result.value.metadata.uid).toBe("project-alpha");
+      await expect(
+        client.getProject("tenant-alpha", "project-redirect", "request-alpha"),
+      ).rejects.toMatchObject({ status: 307 });
+      expect(redirectTargetCalls).toBe(0);
+      await expect(
+        client.getProject("tenant-alpha", "project-oversize", "request-alpha"),
+      ).rejects.toThrow("Cloud Agents HTTP response exceeds the SDK limit");
+      expect(() => createHTTPClient(`${baseURL}/`, "token-alpha")).toThrow(TypeError);
+      expect(() => createHTTPClient(baseURL, "token alpha")).toThrow(TypeError);
+      expect(() => createHTTPClient("ftp://127.0.0.1", "token-alpha")).toThrow(TypeError);
+      expect(() => createHTTPClient(undefined as unknown as string, "token-alpha")).toThrow(
+        TypeError,
+      );
+    } finally {
+      await new Promise<void>((resolveClose) => fixture.close(() => resolveClose()));
+    }
+  });
+
   it("drives all declared operations through an injected transport", async () => {
     const projectBody = readFixture(platformFixtureRoot, "golden/project.json");
     const projectGetBody = projectBody.replace(

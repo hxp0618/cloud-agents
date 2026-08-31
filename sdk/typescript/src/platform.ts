@@ -2262,6 +2262,75 @@ export type FixtureTransport = (
   request: FixtureRequest,
   signal: AbortSignal,
 ) => Promise<FixtureResponse>;
+const maxHTTPResponseBytes = 2 * 1024 * 1024;
+export function createHTTPClient(baseURL: string, bearerToken: string): Client {
+  if (typeof baseURL !== "string" || typeof bearerToken !== "string")
+    throw new TypeError("invalid Cloud Agents HTTP client configuration");
+  let endpoint: URL;
+  try {
+    endpoint = new URL(baseURL);
+  } catch {
+    throw new TypeError("invalid Cloud Agents HTTP client configuration");
+  }
+  if (
+    baseURL.trim() !== baseURL ||
+    (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ||
+    endpoint.host === "" ||
+    endpoint.username !== "" ||
+    endpoint.password !== "" ||
+    endpoint.search !== "" ||
+    endpoint.hash !== "" ||
+    baseURL.endsWith("/") ||
+    bearerToken === "" ||
+    bearerToken.trim() !== bearerToken ||
+    /\s/u.test(bearerToken) ||
+    typeof globalThis.fetch !== "function"
+  )
+    throw new TypeError("invalid Cloud Agents HTTP client configuration");
+  return new Client(async (request, signal) => {
+    if (!request.path.startsWith("/") || /[\r\n]/u.test(request.path))
+      throw new TypeError("invalid Cloud Agents HTTP request");
+    const headers = new Headers(request.headers);
+    headers.set("Authorization", `Bearer ${bearerToken}`);
+    if (request.body !== undefined) headers.set("Content-Type", "application/json");
+    const response = await globalThis.fetch(baseURL + request.path, {
+      method: request.method,
+      headers,
+      signal,
+      redirect: "manual",
+      ...(request.body === undefined ? {} : { body: request.body }),
+    });
+    const responseHeaders: Record<string, string> = Object.fromEntries(response.headers.entries());
+    const resourceVersion = response.headers.get("X-Resource-Version");
+    if (resourceVersion !== null) responseHeaders["X-Resource-Version"] = resourceVersion;
+    return {
+      status: response.status,
+      headers: responseHeaders,
+      body: await readHTTPResponseBody(response),
+    };
+  });
+}
+async function readHTTPResponseBody(response: Response): Promise<string> {
+  if (response.body === null) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let body = "";
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return body + decoder.decode();
+      size += value.byteLength;
+      if (size > maxHTTPResponseBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("Cloud Agents HTTP response exceeds the SDK limit");
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
 export class ClientError extends Error {
   constructor(
     readonly operation: string,

@@ -49,13 +49,13 @@ describe("platform JSON SDK generator", () => {
     ]);
   }, 120_000);
 
-  it("does not import a network, service, or database runtime", () => {
+  it("does not import a server, service, or database runtime", () => {
     for (const source of platformJSONSDKGeneratorSources().filter(
-      (source) => source !== "scripts/lib/platform-json-sdk.test.ts",
+      (source) => !source.endsWith(".test.ts") && !source.endsWith("_test.go"),
     )) {
       const text = readFileSync(join(root, source), "utf8");
       expect(text, source).not.toMatch(
-        /net\/http|internal\/store|internal\/coordination|from ["']node:(?:http|https|net)|\bfetch\s*\(|\bDeno\.serve|\bBun\.serve/iu,
+        /internal\/store|internal\/coordination|from ["']node:(?:http|https|net)|\bDeno\.serve|\bBun\.serve/iu,
       );
     }
   });
