@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +29,9 @@ type workerWireFake struct {
 	identity     *workerv1alpha1.WorkloadIdentity
 	capabilities []workerv1alpha1.Capability
 	now          time.Time
+	mu           sync.Mutex
+	negotiations int
+	active       string
 }
 
 func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Request[workerv1alpha1.NegotiationRequest]) (*connect.Response[workerv1alpha1.NegotiationResponse], error) {
@@ -37,14 +42,25 @@ func (fake *workerWireFake) Negotiate(_ context.Context, request *connect.Reques
 	if !exactCapabilities(request.Msg.GetRequiredCapabilities(), required) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errInvalidConfig)
 	}
+	fake.mu.Lock()
+	fake.negotiations++
+	fake.active = fmt.Sprintf("negotiation-%d", fake.negotiations)
+	negotiationID := fake.active
+	fake.mu.Unlock()
 	descriptor := workerDescriptor(fake.capabilities)
 	return connect.NewResponse(&workerv1alpha1.NegotiationResponse{
 		SelectedVersion: request.Msg.GetSupportedVersions()[0], AcceptedCapabilities: required, Server: descriptor,
-		AuthenticatedServerIdentity: proto.Clone(fake.identity).(*workerv1alpha1.WorkloadIdentity), NegotiationId: "negotiation-1", ExpiresAt: timestamppb.New(fake.now.Add(time.Minute)),
+		AuthenticatedServerIdentity: proto.Clone(fake.identity).(*workerv1alpha1.WorkloadIdentity), NegotiationId: negotiationID, ExpiresAt: timestamppb.New(fake.now.Add(time.Minute)),
 	}), nil
 }
 
-func (fake *workerWireFake) CheckHealth(context.Context, *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
+func (fake *workerWireFake) CheckHealth(_ context.Context, request *connect.Request[workerv1alpha1.HealthRequest]) (*connect.Response[workerv1alpha1.HealthResponse], error) {
+	fake.mu.Lock()
+	active := fake.active
+	fake.mu.Unlock()
+	if request.Msg.GetNegotiation().GetNegotiationId() != active {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("negotiation unknown"))
+	}
 	return connect.NewResponse(&workerv1alpha1.HealthResponse{State: workerv1alpha1.HealthState_HEALTH_STATE_SERVING, Protocol: workerDescriptor(fake.capabilities), ObservedAt: timestamppb.New(fake.now)}), nil
 }
 
@@ -52,6 +68,12 @@ func (fake *workerWireFake) OpenSession(_ context.Context, stream *connect.BidiS
 	open, err := stream.Receive()
 	if err != nil {
 		return err
+	}
+	fake.mu.Lock()
+	active := fake.active
+	fake.mu.Unlock()
+	if open.GetOpen().GetNegotiation().GetNegotiationId() != active {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("negotiation unknown"))
 	}
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionResponse{Frame: &workerruntimev1alpha1.RuntimeSessionResponse_Ready{Ready: &workerruntimev1alpha1.RuntimeSessionReady{ExecutionId: open.GetOpen().GetExecutionId(), Generation: open.GetOpen().GetGeneration(), ProtocolMajor: runtimeprotocol.ProtocolMajor, ProtocolMinor: runtimeprotocol.ProtocolMinor}}}); err != nil {
 		return err
@@ -97,9 +119,30 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	if err := supervisor.CheckRuntimeHealth(nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("nil health context error = %v", err)
 	}
+	fake.mu.Lock()
+	fake.active = ""
+	fake.mu.Unlock()
+	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
+		t.Fatalf("health after Worker restart = %v", err)
+	}
+	fake.mu.Lock()
+	negotiations := fake.negotiations
+	fake.mu.Unlock()
+	if negotiations != 2 {
+		t.Fatalf("negotiations after Worker restart = %d", negotiations)
+	}
+	fake.mu.Lock()
+	fake.active = ""
+	fake.mu.Unlock()
 	session, err := supervisor.OpenRuntimeSession(context.Background(), "execution-1", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")})
 	if err != nil {
 		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	negotiations = fake.negotiations
+	fake.mu.Unlock()
+	if negotiations != 3 {
+		t.Fatalf("negotiations before Runtime open after Worker restart = %d", negotiations)
 	}
 	defer session.CloseResponse()
 	command := runtimeprotocol.Command{RequestID: "request-1", Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: "execution-1", Generation: 7, CommandType: "SendTurn", CommandID: "command-1", OccurredAt: now.Format(time.RFC3339), Payload: map[string]any{"inputText": "hello"}}

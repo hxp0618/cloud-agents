@@ -118,6 +118,10 @@ func (supervisor *Supervisor) BindRuntime(ctx context.Context) error {
 }
 
 func (supervisor *Supervisor) CheckRuntimeHealth(ctx context.Context) error {
+	return supervisor.checkRuntimeHealth(ctx, true)
+}
+
+func (supervisor *Supervisor) checkRuntimeHealth(ctx context.Context, retryStaleBinding bool) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
@@ -134,6 +138,10 @@ func (supervisor *Supervisor) CheckRuntimeHealth(ctx context.Context) error {
 		Negotiation: state.negotiation(), RequiredCapabilities: append([]workerv1alpha1.Capability(nil), state.accepted...), ExpectedServerIdentity: cloneIdentity(supervisor.workerIdentity),
 	}))
 	if err != nil {
+		if retryStaleBinding && staleBindingError(err) {
+			supervisor.clearBinding(state)
+			return supervisor.checkRuntimeHealth(ctx, false)
+		}
 		return rpcFailure("health", err)
 	}
 	if err := contextErr(ctx); err != nil {
@@ -178,6 +186,10 @@ type RuntimeSession struct {
 }
 
 func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof) (*RuntimeSession, error) {
+	return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, true)
+}
+
+func (supervisor *Supervisor) openRuntimeSession(ctx context.Context, executionID, providerKind string, generation uint64, fencing *workerv1alpha1.FencingProof, retryStaleBinding bool) (*RuntimeSession, error) {
 	if supervisor == nil || !runtimeClientAvailable(supervisor.runtimeClient) || !validIdentity(supervisor.workerIdentity) || executionID == "" || providerKind == "" || generation == 0 || fencing == nil {
 		return nil, errInvalidConfig
 	}
@@ -200,10 +212,22 @@ func (supervisor *Supervisor) OpenRuntimeSession(ctx context.Context, executionI
 	if err := stream.Send(&workerruntimev1alpha1.RuntimeSessionRequest{Frame: &workerruntimev1alpha1.RuntimeSessionRequest_Open{Open: &workerruntimev1alpha1.RuntimeSessionOpen{
 		Negotiation: state.negotiation(), Fencing: proto.Clone(fencing).(*workerv1alpha1.FencingProof), ExecutionId: executionID, Generation: generation, ExpectedWorkerIdentity: cloneIdentity(supervisor.workerIdentity), ProviderKind: providerKind,
 	}}}); err != nil {
+		if retryStaleBinding && staleBindingError(err) {
+			supervisor.clearBinding(state)
+			_ = stream.CloseRequest()
+			_ = stream.CloseResponse()
+			return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, false)
+		}
 		return nil, rpcFailure("runtime_open", err)
 	}
 	ready, err := stream.Receive()
 	if err != nil {
+		if retryStaleBinding && staleBindingError(err) {
+			supervisor.clearBinding(state)
+			_ = stream.CloseRequest()
+			_ = stream.CloseResponse()
+			return supervisor.openRuntimeSession(ctx, executionID, providerKind, generation, fencing, false)
+		}
 		return nil, rpcFailure("runtime_ready", err)
 	}
 	if ready == nil || ready.GetReady() == nil || ready.GetReady().GetExecutionId() != executionID || ready.GetReady().GetGeneration() != generation || ready.GetReady().GetProtocolMajor() != runtimeprotocol.ProtocolMajor || ready.GetReady().GetProtocolMinor() != runtimeprotocol.ProtocolMinor {
@@ -529,3 +553,5 @@ func rpcFailure(operation string, err error) error {
 	}
 	return fail(code, fmt.Sprintf("%s_rpc_failed", operation))
 }
+
+func staleBindingError(err error) bool { return connect.CodeOf(err) == connect.CodeFailedPrecondition }
