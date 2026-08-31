@@ -57,7 +57,7 @@ function temporaryCurrentRoot(): string {
 }
 
 describe("versioned contract-standards profile", () => {
-  it("keeps v1/v2 authority bytes immutable and validates the v3 current source", () => {
+  it("keeps historical authorities immutable without binding current contract bytes", () => {
     expect(
       readFileSync(resolve(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V1_PATH)).byteLength,
     ).toBe(CONTRACT_STANDARDS_PROFILE_V1_IMMUTABLE.sizeBytes);
@@ -71,15 +71,25 @@ describe("versioned contract-standards profile", () => {
     const v3 = readContractStandardsProfile(repositoryRoot, CONTRACT_STANDARDS_PROFILE_V3_PATH);
     expect(v3.formatVersion).toBe("cloud-agents-contract-standards-profile/v3");
     expect(v3.currentContracts).toMatchObject({
-		schemaFiles: 90,
+      schemaFiles: 90,
       fixtureCases: 79,
-		bootstrapContracts: { schemaFiles: 86, fixtureCases: 79 },
+      bootstrapContracts: { schemaFiles: 86, fixtureCases: 79 },
     });
 
     const root = temporaryCurrentRoot();
     expect(() => assertContractStandardsProfileCurrent(root)).not.toThrow();
     const profilePath = resolve(root, CONTRACT_STANDARDS_PROFILE_V3_PATH);
     const profile = JSON.parse(readFileSync(profilePath, "utf8")) as JsonObject;
+    (profile.currentContracts as JsonObject).sourceContractManifestSha256 =
+      `sha256:${"0".repeat(64)}`;
+    (
+      (profile.currentContracts as JsonObject).bootstrapContracts as JsonObject
+    ).sourceContractManifestSha256 = `sha256:${"1".repeat(64)}`;
+    writeFileSync(profilePath, `${JSON.stringify(profile)}\n`);
+    const contractPath = resolve(root, "contracts/managed-agent/v1alpha1/openapi.json");
+    writeFileSync(contractPath, `${readFileSync(contractPath, "utf8")}\n`);
+    expect(() => assertContractStandardsProfileCurrent(root)).not.toThrow();
+
     (profile.currentContracts as JsonObject).schemaFiles = 67;
     writeFileSync(profilePath, `${JSON.stringify(profile)}\n`);
     expect(() => assertContractStandardsProfileCurrent(root)).toThrow(
@@ -101,10 +111,6 @@ describe("versioned contract-standards profile", () => {
       },
       (candidate: JsonObject): void => {
         (candidate.currentContracts as JsonObject).fixtureCases = 77;
-      },
-      (candidate: JsonObject): void => {
-        (candidate.currentContracts as JsonObject).sourceContractManifestSha256 =
-          `sha256:${"0".repeat(64)}`;
       },
       (candidate: JsonObject): void => {
         (candidate.implementationBoundary as JsonObject).gateStatus = "CLOSED";

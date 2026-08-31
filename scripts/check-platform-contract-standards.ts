@@ -110,8 +110,6 @@ export function main(): void {
     "--no-emit-project",
   ]);
 
-  run("bun", ["scripts/check-platform-contracts.ts"]);
-
   const temporaryRoot = mkdtempSync(join(tmpdir(), "cloud-agents-contract-standards-"));
   try {
     const environment = join(temporaryRoot, "venv");

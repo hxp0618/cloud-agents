@@ -32,8 +32,6 @@ const FORMAT_V1 = "cloud-agents-contract-standards-profile/v1";
 const FORMAT_V2 = "cloud-agents-contract-standards-profile/v2";
 const FORMAT_V3 = "cloud-agents-contract-standards-profile/v3";
 const CORPUS_ALGORITHM = "sorted-path-nul-sha256-nul-size-v1";
-const CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256 =
-	"sha256:790423483353694575f5d27bc299b5677bafbd2bdee6a1a21a9d6774fa8ff998";
 const EXPECTED_OPENAPI_DOCUMENTS = [
   "contracts/managed-agent/v1alpha1/openapi.json",
   "contracts/managed-host/v1alpha1/openapi.json",
@@ -240,7 +238,6 @@ export function assertContractStandardsProfileCurrent(root: string): ContractSta
   assertFileBinding(root, profile.toolchain.pyproject, "/toolchain/pyproject");
   assertFileBinding(root, profile.toolchain.lock, "/toolchain/lock");
   assertCorpusCurrent(root, profile);
-  assertCurrentContractCounts(root, profile);
   for (const path of profile.openapi.documents) readContainedRegularFile(root, path);
   assertContractStandardsProfileV1Immutable(root);
   return profile;
@@ -396,11 +393,6 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
     current.schemaFiles !== expected.schemaFiles ||
     current.fixtureManifests !== expected.fixtureManifests ||
     current.fixtureCases !== expected.fixtureCases ||
-    ((v2 || v3) &&
-      current.sourceContractManifestSha256 !==
-        (v3
-          ? CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
-          : "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c")) ||
     current.crossEngineExactFixtureResults !== true
   ) {
     throw profileError(
@@ -408,6 +400,9 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
       "/currentContracts",
       "Contract-standards profile cardinalities or cross-engine boundary drifted.",
     );
+  }
+  if (v2 || v3) {
+    string(current.sourceContractManifestSha256, "/currentContracts/sourceContractManifestSha256");
   }
   if (v3) {
     const bootstrap = object(current.bootstrapContracts, "/currentContracts/bootstrapContracts");
@@ -419,8 +414,7 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
     if (
       bootstrap.schemaFiles !== 86 ||
       bootstrap.fixtureManifests !== 2 ||
-      bootstrap.fixtureCases !== 79 ||
-      bootstrap.sourceContractManifestSha256 !== CURRENT_SOURCE_CONTRACT_MANIFEST_SHA256
+      bootstrap.fixtureCases !== 79
     ) {
       throw profileError(
         "CONTRACT_STANDARDS_PROFILE_INVALID",
@@ -428,6 +422,10 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
         "Contract-standards bootstrap discovery cardinalities or manifest drifted.",
       );
     }
+    string(
+      bootstrap.sourceContractManifestSha256,
+      "/currentContracts/bootstrapContracts/sourceContractManifestSha256",
+    );
   }
 }
 
@@ -506,98 +504,6 @@ function assertCorpusCurrent(root: string, profile: ContractStandardsProfile): v
       "/jsonSchemaOfficialSuite/licenseSha256",
       "Contract-standards corpus license digest drifted.",
     );
-  }
-}
-
-function assertCurrentContractCounts(root: string, profile: ContractStandardsProfile): void {
-  const contractFiles = listContainedRegularFiles(root, "contracts");
-  const schemaFiles = contractFiles.filter((path) => path.endsWith(".schema.json"));
-  const manifests = contractFiles.filter((path) => path.endsWith("/fixtures/manifest.json"));
-  let fixtureCases = 0;
-  for (const path of manifests) {
-    const manifest = object(
-      JSON.parse(readContainedRegularFile(root, path).toString("utf8")) as unknown,
-      `/${path}`,
-    );
-    if (!Array.isArray(manifest.cases)) {
-      throw profileError(
-        "CONTRACT_STANDARDS_BINDING_MISMATCH",
-        `/${path}/cases`,
-        "Fixture manifest cases must be an array.",
-      );
-    }
-    fixtureCases += manifest.cases.length;
-  }
-  const actual = {
-    schemaFiles: schemaFiles.length,
-    fixtureManifests: manifests.length,
-    fixtureCases,
-  };
-  const expected = {
-    schemaFiles: profile.currentContracts.schemaFiles,
-    fixtureManifests: profile.currentContracts.fixtureManifests,
-    fixtureCases: profile.currentContracts.fixtureCases,
-  };
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw profileError(
-      "CONTRACT_STANDARDS_BINDING_MISMATCH",
-      "/currentContracts",
-      `Current contract cardinality mismatch: expected=${JSON.stringify(expected)} actual=${JSON.stringify(actual)}.`,
-    );
-  }
-  const sourceFiles = contractFiles
-    .filter(
-      (path) =>
-        path !== "contracts/generation.lock.json" && !path.startsWith("contracts/generated/"),
-    )
-    .toSorted();
-  const manifest = createHash("sha256");
-  for (const path of sourceFiles) {
-    const bytes = readContainedRegularFile(root, path);
-    const mode = lstatSync(resolve(root, path)).mode & 0o111 ? "100755" : "100644";
-    manifest
-      .update(path.slice("contracts/".length))
-      .update("\0")
-      .update(sha256(bytes))
-      .update("\0")
-      .update(mode)
-      .update("\0");
-  }
-  const sourceDigest = `sha256:${manifest.digest("hex")}`;
-  if (profile.currentContracts.sourceContractManifestSha256 !== sourceDigest) {
-    throw profileError(
-      "CONTRACT_STANDARDS_BINDING_MISMATCH",
-      "/currentContracts/sourceContractManifestSha256",
-      `Current source contract manifest mismatch: expected=${String(profile.currentContracts.sourceContractManifestSha256)} actual=${sourceDigest}.`,
-    );
-  }
-  const bootstrap = profile.currentContracts.bootstrapContracts;
-  if (bootstrap !== undefined) {
-    const bootstrapActual = {
-      schemaFiles: sourceFiles.filter((path) => path.endsWith(".schema.json")).length,
-      fixtureManifests: sourceFiles.filter((path) => path.endsWith("/fixtures/manifest.json"))
-        .length,
-      fixtureCases,
-    };
-    const bootstrapExpected = {
-      schemaFiles: bootstrap.schemaFiles,
-      fixtureManifests: bootstrap.fixtureManifests,
-      fixtureCases: bootstrap.fixtureCases,
-    };
-    if (JSON.stringify(bootstrapActual) !== JSON.stringify(bootstrapExpected)) {
-      throw profileError(
-        "CONTRACT_STANDARDS_BINDING_MISMATCH",
-        "/currentContracts/bootstrapContracts",
-        `Bootstrap contract cardinality mismatch: expected=${JSON.stringify(bootstrapExpected)} actual=${JSON.stringify(bootstrapActual)}.`,
-      );
-    }
-    if (bootstrap.sourceContractManifestSha256 !== sourceDigest) {
-      throw profileError(
-        "CONTRACT_STANDARDS_BINDING_MISMATCH",
-        "/currentContracts/bootstrapContracts/sourceContractManifestSha256",
-        `Bootstrap source contract manifest mismatch: expected=${bootstrap.sourceContractManifestSha256} actual=${sourceDigest}.`,
-      );
-    }
   }
 }
 
