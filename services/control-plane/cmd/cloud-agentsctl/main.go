@@ -61,20 +61,23 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	token := options.token
-	if options.tokenFile != "" {
-		file, openErr := os.Open(options.tokenFile)
-		if openErr != nil {
-			return errors.New("cannot read bearer token file")
+	var client *openapi.Client
+	if !actionHelpRequested(actionArgs) {
+		token := options.token
+		if options.tokenFile != "" {
+			file, openErr := os.Open(options.tokenFile)
+			if openErr != nil {
+				return errors.New("cannot read bearer token file")
+			}
+			contents, readErr := io.ReadAll(io.LimitReader(file, maxBearerTokenFileBytes+1))
+			closeErr := file.Close()
+			if readErr != nil || closeErr != nil || len(contents) > maxBearerTokenFileBytes {
+				return errors.New("cannot read bearer token file")
+			}
+			token = strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r")
 		}
-		contents, readErr := io.ReadAll(io.LimitReader(file, maxBearerTokenFileBytes+1))
-		closeErr := file.Close()
-		if readErr != nil || closeErr != nil || len(contents) > maxBearerTokenFileBytes {
-			return errors.New("cannot read bearer token file")
-		}
-		token = strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r")
+		client, err = newHTTPClient(options, token)
 	}
-	client, err := newHTTPClient(options, token)
 	if err != nil {
 		return err
 	}
@@ -83,9 +86,13 @@ func run(args []string, stdout io.Writer) error {
 	var value any
 	switch command + " " + action {
 	case "tenant get":
-		value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
+		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
+			value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
+		}
 	case "organization get":
-		value, err = client.GetOrganization(ctx, options.tenant, options.organization, options.requestID)
+		if err = parseActionFlags("organization get", actionArgs, nil); err == nil {
+			value, err = client.GetOrganization(ctx, options.tenant, options.organization, options.requestID)
+		}
 	case "organization list":
 		var pageSize int
 		var pageToken string
@@ -120,7 +127,9 @@ func run(args []string, stdout io.Writer) error {
 			})
 		}
 	case "project get":
-		value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
+		if err = parseActionFlags("project get", actionArgs, nil); err == nil {
+			value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
+		}
 	case "project list":
 		var pageSize int
 		var pageToken string
@@ -161,9 +170,13 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ListManagedAgentSessions(ctx, options.tenant, options.project, options.requestID, pageSize, pageToken)
 		}
 	case "session get":
-		value, err = client.GetManagedAgentSession(ctx, options.tenant, options.project, options.session, options.requestID)
+		if err = parseActionFlags("session get", actionArgs, nil); err == nil {
+			value, err = client.GetManagedAgentSession(ctx, options.tenant, options.project, options.session, options.requestID)
+		}
 	case "session close":
-		value, err = client.CloseManagedAgentSession(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey)
+		if err = parseActionFlags("session close", actionArgs, nil); err == nil {
+			value, err = client.CloseManagedAgentSession(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey)
+		}
 	case "turn create":
 		var inputText string
 		if err = parseActionFlags("turn create", actionArgs, func(set *flag.FlagSet) { set.StringVar(&inputText, "input", "", "turn input text") }); err == nil {
@@ -179,7 +192,9 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ListManagedAgentTurns(ctx, options.tenant, options.project, options.session, options.requestID, pageSize, pageToken)
 		}
 	case "turn get":
-		value, err = client.GetManagedAgentTurn(ctx, options.tenant, options.project, options.session, options.turn, options.requestID)
+		if err = parseActionFlags("turn get", actionArgs, nil); err == nil {
+			value, err = client.GetManagedAgentTurn(ctx, options.tenant, options.project, options.session, options.turn, options.requestID)
+		}
 	case "execution list":
 		var pageSize int
 		var pageToken string
@@ -198,7 +213,9 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ExecuteManagedAgent(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCreateRequest{TurnID: options.turn, ExecutionID: options.execution, Model: model, InputText: inputText})
 		}
 	case "execution get":
-		value, err = client.GetManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID)
+		if err = parseActionFlags("execution get", actionArgs, nil); err == nil {
+			value, err = client.GetManagedAgentExecution(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID)
+		}
 	case "execution cancel", "execution interrupt":
 		var generation uint64
 		if err = parseActionFlags("execution "+action, actionArgs, func(set *flag.FlagSet) {
@@ -253,7 +270,9 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ListManagedAgentEvents(ctx, options.tenant, options.project, options.session, options.requestID, cursor, limit)
 		}
 	case "membership get":
-		value, err = client.GetMembership(ctx, options.tenant, options.membership, options.requestID)
+		if err = parseActionFlags("membership get", actionArgs, nil); err == nil {
+			value, err = client.GetMembership(ctx, options.tenant, options.membership, options.requestID)
+		}
 	case "membership list":
 		var pageSize int
 		var pageToken string
@@ -299,7 +318,9 @@ func run(args []string, stdout io.Writer) error {
 			}
 		}
 	case "role get":
-		value, err = client.GetRole(ctx, options.tenant, options.role, options.requestID)
+		if err = parseActionFlags("role get", actionArgs, nil); err == nil {
+			value, err = client.GetRole(ctx, options.tenant, options.role, options.requestID)
+		}
 	case "role list":
 		var pageSize int
 		var pageToken string
@@ -310,7 +331,9 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ListRoles(ctx, options.tenant, options.requestID, pageSize, pageToken)
 		}
 	case "role-binding get":
-		value, err = client.GetRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+		if err = parseActionFlags("role-binding get", actionArgs, nil); err == nil {
+			value, err = client.GetRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+		}
 	case "role-binding list":
 		var pageSize int
 		var pageToken string
@@ -351,9 +374,13 @@ func run(args []string, stdout io.Writer) error {
 			})
 		}
 	case "managed-host-project get":
-		value, err = client.GetProjectContext(ctx, options.tenant, options.project, options.requestID)
+		if err = parseActionFlags("managed-host-project get", actionArgs, nil); err == nil {
+			value, err = client.GetProjectContext(ctx, options.tenant, options.project, options.requestID)
+		}
 	case "managed-host-role-binding get":
-		value, err = client.GetManagedHostRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+		if err = parseActionFlags("managed-host-role-binding get", actionArgs, nil); err == nil {
+			value, err = client.GetManagedHostRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+		}
 	case "environment-lease list":
 		var pageSize int
 		var pageToken string
@@ -379,7 +406,9 @@ func run(args []string, stdout io.Writer) error {
 			})
 		}
 	case "environment-lease get":
-		value, err = client.GetManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID)
+		if err = parseActionFlags("environment-lease get", actionArgs, nil); err == nil {
+			value, err = client.GetManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.lease, options.requestID)
+		}
 	case "environment-lease terminate":
 		var generation int64
 		if err = parseActionFlags("environment-lease terminate", actionArgs, func(set *flag.FlagSet) {
@@ -391,6 +420,11 @@ func run(args []string, stdout io.Writer) error {
 		}
 	default:
 		return fmt.Errorf("unknown command %q; use cloud-agentsctl help", command+" "+action)
+	}
+	var actionHelp actionHelpOutput
+	if errors.As(err, &actionHelp) {
+		_, writeErr := io.WriteString(stdout, string(actionHelp))
+		return writeErr
 	}
 	if err != nil {
 		return err
@@ -456,6 +490,14 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if len(remaining) < 2 {
 		return globalOptions{}, "", "", nil, errors.New(usage)
 	}
+	command, action := remaining[0], remaining[1]
+	if !knownCommand(command, action) {
+		return globalOptions{}, "", "", nil, errors.New(usage)
+	}
+	actionArgs := remaining[2:]
+	if actionHelpRequested(actionArgs) {
+		return options, command, action, actionArgs, nil
+	}
 	for name, value := range map[string]string{"endpoint": options.endpoint, "tenant": options.tenant, "request-id": options.requestID} {
 		if strings.TrimSpace(value) != value || value == "" {
 			return globalOptions{}, "", "", nil, fmt.Errorf("--%s is required", name)
@@ -475,10 +517,6 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	}
 	if options.timeout <= 0 {
 		return globalOptions{}, "", "", nil, errors.New("--timeout must be greater than zero")
-	}
-	command, action := remaining[0], remaining[1]
-	if !knownCommand(command, action) {
-		return globalOptions{}, "", "", nil, errors.New(usage)
 	}
 	if requiresProject(command, action) && options.project == "" {
 		return globalOptions{}, "", "", nil, errors.New("--project is required")
@@ -510,13 +548,30 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if requiresIdempotency(command, action) && options.idempotencyKey == "" {
 		return globalOptions{}, "", "", nil, errors.New("--idempotency-key is required")
 	}
-	return options, command, action, remaining[2:], nil
+	return options, command, action, actionArgs, nil
 }
+
+func actionHelpRequested(args []string) bool {
+	return len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help")
+}
+
+type actionHelpOutput string
+
+func (output actionHelpOutput) Error() string { return string(output) }
 
 func parseActionFlags(name string, args []string, define func(*flag.FlagSet)) error {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.SetOutput(io.Discard)
-	define(set)
+	if define != nil {
+		define(set)
+	}
+	if actionHelpRequested(args) {
+		var output strings.Builder
+		_, _ = fmt.Fprintf(&output, "usage: cloud-agentsctl [global flags] %s [flags]\n", name)
+		set.SetOutput(&output)
+		set.PrintDefaults()
+		return actionHelpOutput(output.String())
+	}
 	if err := set.Parse(args); err != nil {
 		return err
 	}

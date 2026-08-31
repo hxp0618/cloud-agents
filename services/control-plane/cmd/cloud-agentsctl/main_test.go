@@ -30,6 +30,26 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 	}
 }
 
+func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
+	for _, test := range []struct {
+		args     []string
+		expected string
+	}{
+		{args: []string{"tenant", "get", "--help"}, expected: "usage: cloud-agentsctl [global flags] tenant get [flags]"},
+		{args: []string{"project", "create", "--help"}, expected: "-organization-id string"},
+		{args: []string{"membership", "create", "-h"}, expected: "-subject-issuer string"},
+		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
+	} {
+		var stdout bytes.Buffer
+		if err := run(test.args, &stdout); err != nil {
+			t.Fatalf("run(%v) = %v", test.args, err)
+		}
+		if !strings.Contains(stdout.String(), test.expected) {
+			t.Fatalf("run(%v) output %q does not contain %q", test.args, stdout.String(), test.expected)
+		}
+	}
+}
+
 func TestRunProjectGetUsesTokenFile(t *testing.T) {
 	var gotAuthorization string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
