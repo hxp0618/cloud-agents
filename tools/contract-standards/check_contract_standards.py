@@ -499,7 +499,11 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             "independentValidator",
             "crossEngineExactFixtureResults",
         }
-        | ({"sourceContractManifestSha256"} if versioned else set())
+        | (
+            {"sourceContractManifestSha256"}
+            if "sourceContractManifestSha256" in current
+            else set()
+        )
         | ({"bootstrapContracts"} if v3 else set()),
         "current contract profile",
     )
@@ -518,18 +522,18 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
             f"contract standards current counts mismatch: expected={expected_current} "
             f"actual={actual_current}"
         )
-    if versioned:
-        required_string(
-            current.get("sourceContractManifestSha256"),
-            "current source contract manifest SHA-256",
-        )
     if v3:
         bootstrap = required_object(
             current.get("bootstrapContracts"), "bootstrap contract profile"
         )
         exact_keys(
             bootstrap,
-            {"schemaFiles", "fixtureManifests", "fixtureCases", "sourceContractManifestSha256"},
+            {"schemaFiles", "fixtureManifests", "fixtureCases"}
+            | (
+                {"sourceContractManifestSha256"}
+                if "sourceContractManifestSha256" in bootstrap
+                else set()
+            ),
             "bootstrap contract profile",
         )
         expected_bootstrap = {"schemaFiles": 86, "fixtureManifests": 2, "fixtureCases": 79}
@@ -542,10 +546,6 @@ def validate_profile(profile: dict[str, Any], root: Path) -> None:
                 f"bootstrap contract profile counts mismatch: expected={expected_bootstrap} "
                 f"actual={declared_bootstrap}"
             )
-        required_string(
-            bootstrap.get("sourceContractManifestSha256"),
-            "bootstrap source contract manifest SHA-256",
-        )
     suite = required_object(profile.get("jsonSchemaOfficialSuite"), "official suite profile")
     production_ajv_audit = required_object(
         suite.get("productionAjvOfficialSuiteAudit"), "production Ajv official-suite audit"

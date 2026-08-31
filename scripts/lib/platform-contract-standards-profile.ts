@@ -95,12 +95,10 @@ export type ContractStandardsProfile = {
     readonly schemaFiles: number;
     readonly fixtureManifests: number;
     readonly fixtureCases: number;
-    readonly sourceContractManifestSha256?: string;
     readonly bootstrapContracts?: {
       readonly schemaFiles: number;
       readonly fixtureManifests: number;
       readonly fixtureCases: number;
-      readonly sourceContractManifestSha256: string;
     };
     readonly productionValidator: string;
     readonly independentValidator: string;
@@ -376,7 +374,9 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
       "schemaFiles",
       "fixtureManifests",
       "fixtureCases",
-      ...(v2 || v3 ? ["sourceContractManifestSha256"] : []),
+      ...((v2 || v3) && "sourceContractManifestSha256" in current
+        ? ["sourceContractManifestSha256"]
+        : []),
       ...(v3 ? ["bootstrapContracts"] : []),
       "productionValidator",
       "independentValidator",
@@ -401,14 +401,16 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
       "Contract-standards profile cardinalities or cross-engine boundary drifted.",
     );
   }
-  if (v2 || v3) {
-    string(current.sourceContractManifestSha256, "/currentContracts/sourceContractManifestSha256");
-  }
   if (v3) {
     const bootstrap = object(current.bootstrapContracts, "/currentContracts/bootstrapContracts");
     exactKeys(
       bootstrap,
-      ["schemaFiles", "fixtureManifests", "fixtureCases", "sourceContractManifestSha256"],
+      [
+        "schemaFiles",
+        "fixtureManifests",
+        "fixtureCases",
+        ...("sourceContractManifestSha256" in bootstrap ? ["sourceContractManifestSha256"] : []),
+      ],
       "/currentContracts/bootstrapContracts",
     );
     if (
@@ -422,10 +424,6 @@ function validateCurrentContracts(value: unknown, v2: boolean, v3: boolean): voi
         "Contract-standards bootstrap discovery cardinalities or manifest drifted.",
       );
     }
-    string(
-      bootstrap.sourceContractManifestSha256,
-      "/currentContracts/bootstrapContracts/sourceContractManifestSha256",
-    );
   }
 }
 

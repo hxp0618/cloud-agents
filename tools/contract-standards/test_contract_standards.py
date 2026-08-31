@@ -73,9 +73,14 @@ class ContractStandardsTest(unittest.TestCase):
         with self.assertRaisesRegex(ContractStandardsError, "predecessor path/hash/size fence"):
             validate_profile(profile, ROOT)
 
-    def test_v2_treats_source_contract_manifest_as_historical_metadata(self) -> None:
+    def test_source_contract_manifest_is_optional_historical_metadata(self) -> None:
         profile = copy.deepcopy(load_json(PROFILE_V2_PATH))
-        profile["currentContracts"]["sourceContractManifestSha256"] = "sha256:" + "0" * 64
+        profile["currentContracts"].pop("sourceContractManifestSha256")
+        validate_profile(profile, ROOT)
+
+        profile = copy.deepcopy(load_json(PROFILE_V3_PATH))
+        profile["currentContracts"].pop("sourceContractManifestSha256")
+        profile["currentContracts"]["bootstrapContracts"].pop("sourceContractManifestSha256")
         validate_profile(profile, ROOT)
 
     def test_v3_rejects_predecessor_hash_or_bootstrap_count_drift(self) -> None:

@@ -199,7 +199,6 @@ export type SuccessorLockCoreOutputRecord = SuccessorLockFileRecord &
   }>;
 
 export type PlatformSuccessorContractLockAuthority = Readonly<{
-  sourceContractManifestSha256: string;
   standards: Readonly<{
     formatVersion: string;
     profile: SuccessorLockFileRecord;
@@ -1200,7 +1199,6 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
         generatedOutputs: [],
         outputSummary: {
           profile: contractStandardsProfile.formatVersion,
-          sourceContractManifestSha256: summary.contractManifestSha256,
           toolchain: {
             bun: contractStandardsProfile.toolchain.bun,
             python: contractStandardsProfile.toolchain.python,
@@ -1222,8 +1220,6 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
             schemas: contractStandardsProfile.currentContracts.schemaFiles,
             fixtureManifests: contractStandardsProfile.currentContracts.fixtureManifests,
             fixtureCases: contractStandardsProfile.currentContracts.fixtureCases,
-            sourceContractManifestSha256:
-              contractStandardsProfile.currentContracts.sourceContractManifestSha256,
             crossEngineExactFixtureResults:
               contractStandardsProfile.currentContracts.crossEngineExactFixtureResults,
           },
@@ -2156,7 +2152,6 @@ export function buildPlatformSuccessorContractLockDocument(
   authority: PlatformSuccessorContractLockAuthority,
 ): Record<string, unknown> {
   assertExactSuccessorObjectKeys(authority, [
-    "sourceContractManifestSha256",
     "standards",
     "closure",
     "supply",
@@ -2188,9 +2183,6 @@ export function buildPlatformSuccessorContractLockDocument(
     "outputFiles",
     "output",
   ]);
-  if (!/^sha256:[0-9a-f]{64}$/u.test(authority.sourceContractManifestSha256)) {
-    throw new Error("Successor lock source-contract manifest SHA-256 is invalid.");
-  }
   assertSuccessorFileRecord(
     authority.standards.profile,
     CONTRACT_STANDARDS_PROFILE_V2_PATH,
@@ -2306,12 +2298,6 @@ export function buildPlatformSuccessorContractLockDocument(
         : "SUCCESSOR_ASSEMBLED_REVIEW_BOUND",
     notGateClosure: true,
     gateStatus: "ALL_GATES_OPEN",
-    sourceContract: {
-      manifestSha256: authority.sourceContractManifestSha256,
-      schemaFiles: 60,
-      fixtureManifests: 2,
-      fixtureCases: 79,
-    },
     authorities: {
       standards: {
         ...authority.standards,
@@ -2354,14 +2340,7 @@ export function buildPlatformSuccessorContractLockDocument(
 }
 
 export function buildPlatformSuccessorContractLock(root: string): Record<string, unknown> {
-  const sourceContract = validatePlatformContractTree(root);
   const standards = assertContractStandardsProfileCurrent(root);
-  if (
-    standards.currentContracts.sourceContractManifestSha256 !==
-    sourceContract.contractManifestSha256
-  ) {
-    throw new Error("Successor lock standards-v2 and canonical contract manifest disagree.");
-  }
   assertSuccessorCoreGeneratorOutputsCurrent(root);
   const closure = assertContractClosureProfileV3Current(root);
   const supply = assertGeneratorSupplyV2RegistryCurrent(root);
@@ -2370,7 +2349,6 @@ export function buildPlatformSuccessorContractLock(root: string): Record<string,
     readStableSuccessorCoreOutputSnapshot(root, path),
   );
   const authority: PlatformSuccessorContractLockAuthority = {
-    sourceContractManifestSha256: sourceContract.contractManifestSha256,
     standards: {
       formatVersion: standards.formatVersion,
       profile: readStableSuccessorFileRecord(root, CONTRACT_STANDARDS_PROFILE_V2_PATH),

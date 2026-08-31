@@ -80,11 +80,9 @@ describe("versioned contract-standards profile", () => {
     expect(() => assertContractStandardsProfileCurrent(root)).not.toThrow();
     const profilePath = resolve(root, CONTRACT_STANDARDS_PROFILE_V3_PATH);
     const profile = JSON.parse(readFileSync(profilePath, "utf8")) as JsonObject;
-    (profile.currentContracts as JsonObject).sourceContractManifestSha256 =
-      `sha256:${"0".repeat(64)}`;
-    (
-      (profile.currentContracts as JsonObject).bootstrapContracts as JsonObject
-    ).sourceContractManifestSha256 = `sha256:${"1".repeat(64)}`;
+    delete (profile.currentContracts as JsonObject).sourceContractManifestSha256;
+    delete ((profile.currentContracts as JsonObject).bootstrapContracts as JsonObject)
+      .sourceContractManifestSha256;
     writeFileSync(profilePath, `${JSON.stringify(profile)}\n`);
     const contractPath = resolve(root, "contracts/managed-agent/v1alpha1/openapi.json");
     writeFileSync(contractPath, `${readFileSync(contractPath, "utf8")}\n`);

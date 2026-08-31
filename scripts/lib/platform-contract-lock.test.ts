@@ -105,8 +105,6 @@ function successorAuthority(
     }),
   );
   return {
-    sourceContractManifestSha256:
-      "sha256:97ccd739db755b1fbfaf9166f87c4cd985980d6ec78a1b172bbd65638006413c",
     standards: {
       formatVersion: "cloud-agents-contract-standards-profile/v2",
       profile: testFileRecord("tools/contract-standards/profile-v2.json", "1"),
@@ -163,7 +161,6 @@ describe("Platform contract generation lock", () => {
       status: "SUCCESSOR_ASSEMBLED_PRE_REVIEW",
       notGateClosure: true,
       gateStatus: "ALL_GATES_OPEN",
-      sourceContract: { schemaFiles: 60, fixtureManifests: 2, fixtureCases: 79 },
       authorities: {
         generatorSupply: {
           outputFiles: 49,
@@ -182,6 +179,7 @@ describe("Platform contract generation lock", () => {
       },
       reviewBinding: { state: "PRE_REVIEW_ABSENT" },
     });
+    expect(pre).not.toHaveProperty("sourceContract");
     expect(serializePlatformContractLock(pre)).toBe(
       serializePlatformContractLock(
         buildPlatformSuccessorContractLockDocument(successorAuthority()),
@@ -304,10 +302,10 @@ describe("Platform contract generation lock", () => {
     ).toThrow(/parent/u);
   });
 
-  it("fails closed when the current source invalidates the historical standards authority", () => {
+  it("keeps historical standards metadata independent from current source changes", () => {
     const root = join(import.meta.dirname, "../..");
-    expect(() => buildPlatformContractStandardsLockState(root)).toThrow(
-      /Current contract cardinality mismatch: expected=\{"schemaFiles":60/u,
+    expect(buildPlatformContractStandardsLockState(root).profile.formatVersion).toBe(
+      "cloud-agents-contract-standards-profile/v3",
     );
     const inputs = platformContractStandardsInputs(root);
     expect(inputs).toEqual(inputs.toSorted());
@@ -462,8 +460,6 @@ describe("Platform contract generation lock", () => {
       outputStatus: "IMPLEMENTED_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
       notGateClosure: true,
       outputSummary: {
-        sourceContractManifestSha256:
-          "sha256:3eb9200f07930b284103d7101d35a53459e1461f026fa908486106787cb567ad",
         toolchain: { bun: "1.3.14", python: "3.14.7", uv: "0.12.5" },
         officialJsonSchemaSuite: {
           files: 46,
@@ -488,6 +484,10 @@ describe("Platform contract generation lock", () => {
         gateStatus: "ALL_GATES_OPEN",
       },
     });
+    expect(pipeline).not.toHaveProperty("outputSummary.sourceContractManifestSha256");
+    expect(pipeline).not.toHaveProperty(
+      "outputSummary.currentJsonSchema.sourceContractManifestSha256",
+    );
     expect(pipeline?.inputs).toEqual([...(pipeline?.inputs ?? [])].toSorted());
     expect(pipeline?.inputs).toContain(
       "tools/contract-standards/vendor/json-schema-test-suite/tests/draft2020-12/ref.json",
