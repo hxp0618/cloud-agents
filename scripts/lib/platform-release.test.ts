@@ -299,6 +299,7 @@ describe("platform release", () => {
   it("packages the independent Go SDK module", () => {
     const entries = readDeterministicUstar(buildPlatformGoSDKPackage(process.cwd()));
     const paths = entries.map(({ path }) => path);
+    expect(paths).toContain("LICENSE");
     expect(paths).toContain("go.mod");
     expect(paths).toContain("runtime/protocol.go");
     expect(paths).toContain("gen/openapi/v1alpha1/client_generated.go");

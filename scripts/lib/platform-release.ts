@@ -180,6 +180,7 @@ export function buildPlatformContractPackage(root: string): Uint8Array {
 
 export function buildPlatformGoSDKPackage(root: string): Uint8Array {
   const paths = [
+    "sdk/go/LICENSE",
     "sdk/go/THIRD_PARTY_NOTICES.md",
     "sdk/go/doc.go",
     "sdk/go/go.mod",
