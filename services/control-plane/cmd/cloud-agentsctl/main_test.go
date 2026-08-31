@@ -14,6 +14,22 @@ import (
 	"time"
 )
 
+func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
+	for _, argument := range []string{"help", "-h", "--help"} {
+		t.Run(argument, func(t *testing.T) {
+			var stdout bytes.Buffer
+			if err := run([]string{argument}, &stdout); err != nil {
+				t.Fatal(err)
+			}
+			for _, expected := range []string{usage, "execution get|list|execute|cancel|interrupt|resolve-approval|resolve-user-input", "environment-lease get|list|create|terminate"} {
+				if !strings.Contains(stdout.String(), expected) {
+					t.Fatalf("help output %q does not contain %q", stdout.String(), expected)
+				}
+			}
+		})
+	}
+}
+
 func TestRunProjectGetUsesTokenFile(t *testing.T) {
 	var gotAuthorization string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

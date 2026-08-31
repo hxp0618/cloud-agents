@@ -53,6 +53,10 @@ func main() {
 }
 
 func run(args []string, stdout io.Writer) error {
+	if len(args) == 1 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
+		_, err := fmt.Fprintln(stdout, help)
+		return err
+	}
 	options, command, action, actionArgs, err := parseArgs(args)
 	if err != nil {
 		return err
@@ -610,6 +614,23 @@ func requiresIdempotency(command, action string) bool {
 }
 
 const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]`
+
+const help = usage + `
+
+resources and actions:
+  tenant get
+  organization get|list|create
+  project get|list|create
+  session get|list|create|close
+  turn get|list|create
+  execution get|list|execute|cancel|interrupt|resolve-approval|resolve-user-input
+  events list
+  membership get|list|create|resume|suspend|revoke
+  role get|list
+  role-binding get|list|create|revoke
+  managed-host-project get
+  managed-host-role-binding get
+  environment-lease get|list|create|terminate`
 
 type membershipCreateFlags struct {
 	expectedTenantRevision int64
