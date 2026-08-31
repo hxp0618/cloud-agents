@@ -90,7 +90,7 @@ type managedAgentExecutionRunnerFake struct {
 	interruptResult internalmanagedagent.ExecutionTransitionResult
 	cancelInput     internalmanagedagent.CancelTurnInput
 	cancelResult    internalmanagedagent.ExecutionTransitionResult
-	interactions    []runtimeprotocol.Message
+	messages        []runtimeprotocol.Message
 	approvalInput   internalmanagedagent.RuntimeApprovalResolutionInput
 	userInput       internalmanagedagent.RuntimeUserInputResolutionInput
 	resolveErr      error
@@ -128,8 +128,8 @@ func (fake *managedAgentExecutionRunnerFake) Cancel(_ context.Context, _ *authn.
 	return fake.cancelResult, nil
 }
 
-func (fake *managedAgentExecutionRunnerFake) ActiveInteractions(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message {
-	return fake.interactions
+func (fake *managedAgentExecutionRunnerFake) ActiveMessages(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message {
+	return fake.messages
 }
 
 func (fake *managedAgentExecutionRunnerFake) ResolveApproval(_ context.Context, input internalmanagedagent.RuntimeApprovalResolutionInput) error {
@@ -247,7 +247,7 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	}
 }
 
-func TestManagedAgentExecutionHTTPServerDownloadsPersistedArtifactCandidate(t *testing.T) {
+func TestManagedAgentExecutionHTTPServerDownloadsVisibleArtifactCandidate(t *testing.T) {
 	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 	candidate := runtimeprotocol.Message{
 		RequestID: "request-artifact", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7,
@@ -283,14 +283,29 @@ func TestManagedAgentExecutionHTTPServerDownloadsPersistedArtifactCandidate(t *t
 	if rejected.Code != http.StatusNotFound {
 		t.Fatalf("non-ArtifactCandidate status=%d body=%s", rejected.Code, rejected.Body.String())
 	}
+
+	store.execution.State = internalmanagedagent.ExecutionRunning
+	store.execution.Messages = nil
+	progress := terminal
+	progress.MessageType = "Progress"
+	runner.messages = []runtimeprotocol.Message{progress, candidate}
+	activeRequest := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/1/artifact", nil)
+	activeRequest.Header.Set("Authorization", "Bearer access-token")
+	activeRequest.Header.Set("X-Request-ID", "request-active-download")
+	activeResponse := httptest.NewRecorder()
+	handler.ServeHTTP(activeResponse, activeRequest)
+	if activeResponse.Code != http.StatusOK || activeResponse.Body.String() != "diff bytes" || runner.artifactInput.Message.MessageType != "ArtifactCandidate" {
+		t.Fatalf("active status=%d body=%q input=%#v", activeResponse.Code, activeResponse.Body.String(), runner.artifactInput)
+	}
 }
 
-func TestManagedAgentExecutionHTTPServerExposesAndResolvesActiveInteractions(t *testing.T) {
+func TestManagedAgentExecutionHTTPServerExposesActiveTranscriptAndResolvesInteractions(t *testing.T) {
 	verifier := &projectHTTPVerifierFake{}
 	now := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
 	store := &managedAgentExecutionStoreFake{execution: internalmanagedagent.ExecutionSnapshot{Scope: internalmanagedagent.Scope{TenantID: "tenant-alpha", ProjectID: "project-alpha"}, SessionID: "session-alpha", TurnID: "turn-alpha", ExecutionID: "execution-alpha", Generation: 7, State: internalmanagedagent.ExecutionRunning, Version: 3, CreatedAt: now, UpdatedAt: now}}
+	progress := runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7, CommandID: "turn-command", OccurredAt: now.Format(time.RFC3339Nano), MessageType: "Progress", Payload: map[string]any{"text": "working"}}
 	interaction := runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution-alpha", Generation: 7, CommandID: "turn-command", OccurredAt: now.Format(time.RFC3339Nano), MessageType: "InteractionRequest", Payload: map[string]any{"requestId": "codex:generation-7:approval:1", "interactionType": "approval", "summary": "Run command"}}
-	runner := &managedAgentExecutionRunnerFake{interactions: []runtimeprotocol.Message{interaction}}
+	runner := &managedAgentExecutionRunnerFake{messages: []runtimeprotocol.Message{progress, interaction}}
 	handler, err := NewManagedAgentExecutionHTTPServer(verifier, store, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -301,7 +316,7 @@ func TestManagedAgentExecutionHTTPServerExposesAndResolvesActiveInteractions(t *
 	get.Header.Set("X-Request-ID", "request-get")
 	got := httptest.NewRecorder()
 	handler.ServeHTTP(got, get)
-	if got.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.get" || !strings.Contains(got.Body.String(), `"messageType":"InteractionRequest"`) || !strings.Contains(got.Body.String(), `"requestId":"codex:generation-7:approval:1"`) {
+	if got.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.get" || !strings.Contains(got.Body.String(), `"messageType":"Progress"`) || !strings.Contains(got.Body.String(), `"text":"working"`) || !strings.Contains(got.Body.String(), `"messageType":"InteractionRequest"`) || !strings.Contains(got.Body.String(), `"requestId":"codex:generation-7:approval:1"`) {
 		t.Fatalf("get status=%d verification=%#v body=%s", got.Code, verifier.seen, got.Body.String())
 	}
 

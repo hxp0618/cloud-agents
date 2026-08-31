@@ -138,15 +138,18 @@ func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
 		{CommandID: "turn", MessageType: "Result", Payload: map[string]any{"text": "done"}},
 	}
 	index := 0
+	accepted := make([]runtimeprotocol.Message, 0, len(wire)-1)
 	collected, terminal, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		message := wire[index]
 		index++
 		return message, nil
 	}, "turn", func(message runtimeprotocol.Message) (bool, error) {
 		return message.CommandID == "interaction-1", nil
+	}, func(message runtimeprotocol.Message) {
+		accepted = append(accepted, message)
 	})
-	if err != nil || !reflect.DeepEqual(collected, wire[1:]) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(wire) {
-		t.Fatalf("messages=%#v terminal=%#v reads=%d err=%v", collected, terminal, index, err)
+	if err != nil || !reflect.DeepEqual(collected, wire[1:]) || !reflect.DeepEqual(accepted, wire[1:]) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(wire) {
+		t.Fatalf("messages=%#v accepted=%#v terminal=%#v reads=%d err=%v", collected, accepted, terminal, index, err)
 	}
 }
 
@@ -182,7 +185,8 @@ func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	if handled, err := coordinator.routeRuntimeMessage(key, active, "turn-command", approval); handled || err != nil {
 		t.Fatalf("register approval handled=%v err=%v", handled, err)
 	}
-	if got := coordinator.ActiveInteractions(reference); len(got) != 1 || got[0].Payload["requestId"] != approval.Payload["requestId"] {
+	coordinator.recordActiveRuntimeMessage(key, active, approval)
+	if got := coordinator.ActiveMessages(reference); len(got) != 1 || got[0].Payload["requestId"] != approval.Payload["requestId"] {
 		t.Fatalf("active approval = %#v", got)
 	}
 	resolved := make(chan error, 1)
@@ -210,6 +214,7 @@ func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	if _, err := coordinator.routeRuntimeMessage(key, active, "turn-command", userInput); err != nil {
 		t.Fatal(err)
 	}
+	coordinator.recordActiveRuntimeMessage(key, active, userInput)
 	answered := make(chan error, 1)
 	questionID := strings.Repeat("问", maxRuntimeInteractionRequestIDCharacters)
 	answerInput := RuntimeUserInputResolutionInput{RuntimeExecutionReference: reference, RequestID: "resolve-input", InteractionRequestID: "claude:generation-7:user-input:2", Answers: map[string][]string{questionID: {"one", "two"}}}
@@ -232,25 +237,27 @@ func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	if err := <-answered; err != nil {
 		t.Fatal(err)
 	}
-	if got := coordinator.ActiveInteractions(reference); len(got) != 0 {
-		t.Fatalf("resolved interactions = %#v", got)
+	if got := coordinator.ActiveMessages(reference); len(got) != 2 {
+		t.Fatalf("active transcript = %#v", got)
 	}
 }
 
 func TestReceiveRuntimeMessagesRejectsPublicLimits(t *testing.T) {
 	reads := 0
+	accepted := 0
 	messages, _, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		reads++
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress"}, nil
-	}, "turn", nil)
-	if err == nil || len(messages) != maxRuntimeExecutionMessages || reads != maxRuntimeExecutionMessages+1 {
-		t.Fatalf("count limit: messages=%d reads=%d err=%v", len(messages), reads, err)
+	}, "turn", nil, func(runtimeprotocol.Message) { accepted++ })
+	if err == nil || len(messages) != maxRuntimeExecutionMessages || accepted != maxRuntimeExecutionMessages || reads != maxRuntimeExecutionMessages+1 {
+		t.Fatalf("count limit: messages=%d accepted=%d reads=%d err=%v", len(messages), accepted, reads, err)
 	}
+	accepted = 0
 	messages, _, err = receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress", Payload: map[string]any{"text": strings.Repeat("x", runtimeprotocol.MaxMessageBytes)}}, nil
-	}, "turn", nil)
-	if err == nil || len(messages) != 0 {
-		t.Fatalf("byte limit: messages=%d err=%v", len(messages), err)
+	}, "turn", nil, func(runtimeprotocol.Message) { accepted++ })
+	if err == nil || len(messages) != 0 || accepted != 0 {
+		t.Fatalf("byte limit: messages=%d accepted=%d err=%v", len(messages), accepted, err)
 	}
 }
 

@@ -33,7 +33,7 @@ type managedAgentExecutionRunner interface {
 	Execute(context.Context, internalmanagedagent.VerifiedPrincipalSource, internalmanagedagent.DurableRuntimeExecutionInput) (internalmanagedagent.DurableRuntimeExecutionResult, error)
 	Interrupt(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.InterruptTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
 	Cancel(context.Context, *authn.VerifiedPrincipal, internalmanagedagent.CancelTurnInput) (internalmanagedagent.ExecutionTransitionResult, error)
-	ActiveInteractions(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message
+	ActiveMessages(internalmanagedagent.RuntimeExecutionReference) []runtimeprotocol.Message
 	ResolveApproval(context.Context, internalmanagedagent.RuntimeApprovalResolutionInput) error
 	ResolveUserInput(context.Context, internalmanagedagent.RuntimeUserInputResolutionInput) error
 	ReadArtifact(context.Context, internalmanagedagent.RuntimeArtifactReadInput) (internalmanagedagent.RuntimeArtifact, error)
@@ -244,10 +244,7 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 		writeManagedAgentSessionError(writer, status, code)
 		return
 	}
-	messages := append([]runtimeprotocol.Message(nil), execution.Messages...)
-	if execution.State == internalmanagedagent.ExecutionRunning {
-		messages = append(messages, server.runner.ActiveInteractions(runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation))...)
-	}
+	messages := server.visibleExecutionMessages(execution)
 	writeManagedAgentExecution(writer, http.StatusOK, requestID, internalmanagedagent.ExecutionTransitionResult{Execution: execution}, messages)
 }
 
@@ -263,13 +260,14 @@ func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.Resp
 		writeManagedAgentSessionError(writer, status, code)
 		return
 	}
-	if messageIndex < 0 || messageIndex >= len(execution.Messages) || execution.Messages[messageIndex].MessageType != "ArtifactCandidate" {
+	messages := server.visibleExecutionMessages(execution)
+	if messageIndex < 0 || messageIndex >= len(messages) || messages[messageIndex].MessageType != "ArtifactCandidate" {
 		writeManagedAgentSessionError(writer, http.StatusNotFound, "not_found")
 		return
 	}
 	artifact, err := server.runner.ReadArtifact(request.Context(), internalmanagedagent.RuntimeArtifactReadInput{
 		RuntimeExecutionReference: runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation),
-		Message:                   execution.Messages[messageIndex],
+		Message:                   messages[messageIndex],
 	})
 	if err != nil {
 		status, code := managedAgentExecutionErrorStatus(err)
@@ -285,6 +283,14 @@ func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.Resp
 	}
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(artifact.Data)
+}
+
+func (server *ManagedAgentExecutionHTTPServer) visibleExecutionMessages(execution internalmanagedagent.ExecutionSnapshot) []runtimeprotocol.Message {
+	messages := append([]runtimeprotocol.Message(nil), execution.Messages...)
+	if execution.State == internalmanagedagent.ExecutionRunning {
+		messages = append(messages, server.runner.ActiveMessages(runtimeExecutionReference(execution.Scope.TenantID, execution.Scope.ProjectID, execution.SessionID, execution.TurnID, execution.ExecutionID, execution.Generation))...)
+	}
+	return messages
 }
 
 func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {

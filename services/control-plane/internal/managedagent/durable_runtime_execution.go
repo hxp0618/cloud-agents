@@ -161,14 +161,13 @@ type activeDurableExecution struct {
 	stop                func()
 	externallyCancelled bool
 	send                func(context.Context, runtimeprotocol.Command) error
+	messages            []runtimeprotocol.Message
 	interactions        map[string]*activeRuntimeInteraction
-	interactionOrder    []string
 	controls            map[string]*activeRuntimeInteractionResolution
 	nextControl         uint64
 }
 
 type activeRuntimeInteraction struct {
-	message         runtimeprotocol.Message
 	interactionType string
 	resolvedPayload string
 	resolution      *activeRuntimeInteractionResolution
@@ -273,7 +272,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) stopActiveExecution(key d
 	}
 }
 
-func (coordinator *DurableRuntimeExecutionCoordinator) ActiveInteractions(reference RuntimeExecutionReference) []runtimeprotocol.Message {
+func (coordinator *DurableRuntimeExecutionCoordinator) ActiveMessages(reference RuntimeExecutionReference) []runtimeprotocol.Message {
 	key, err := durableRuntimeExecutionKey(reference)
 	if coordinator == nil || err != nil {
 		return nil
@@ -284,14 +283,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) ActiveInteractions(refere
 	if active == nil {
 		return nil
 	}
-	result := make([]runtimeprotocol.Message, 0, len(active.interactionOrder))
-	for _, requestID := range active.interactionOrder {
-		interaction := active.interactions[requestID]
-		if interaction != nil && interaction.resolvedPayload == "" {
-			result = append(result, interaction.message)
-		}
-	}
-	return result
+	return append([]runtimeprotocol.Message(nil), active.messages...)
 }
 
 func (coordinator *DurableRuntimeExecutionCoordinator) ReadArtifact(ctx context.Context, input RuntimeArtifactReadInput) (RuntimeArtifact, error) {
@@ -760,7 +752,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx co
 	if err := session.Send(ctx, start); err != nil {
 		return result, err
 	}
-	startMessages, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID, nil)
+	startMessages, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID, nil, nil)
 	if err != nil {
 		result.Messages = publicRuntimeMessages(startMessages)
 		return result, err
@@ -778,6 +770,8 @@ func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx co
 	}
 	messages, terminal, err := receiveRuntimeMessages(session.Receive, turn.CommandID, func(message runtimeprotocol.Message) (bool, error) {
 		return coordinator.routeRuntimeMessage(key, active, turn.CommandID, message)
+	}, func(message runtimeprotocol.Message) {
+		coordinator.recordActiveRuntimeMessage(key, active, message)
 	})
 	result.Messages = publicRuntimeMessages(messages)
 	result.Terminal = terminal
@@ -878,7 +872,7 @@ func boundedRuntimeIdentifier(base, suffix string) string {
 	return base + separator + suffix
 }
 
-func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), commandID string, route func(runtimeprotocol.Message) (bool, error)) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
+func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), commandID string, route func(runtimeprotocol.Message) (bool, error), accepted func(runtimeprotocol.Message)) ([]runtimeprotocol.Message, runtimeprotocol.Message, error) {
 	messages := make([]runtimeprotocol.Message, 0, maxRuntimeExecutionMessages)
 	totalBytes := 2
 	for {
@@ -886,7 +880,7 @@ func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), com
 		if err != nil {
 			return messages, runtimeprotocol.Message{}, err
 		}
-		if route != nil {
+		if message.CommandID != commandID && route != nil {
 			handled, routeErr := route(message)
 			if routeErr != nil {
 				return messages, message, routeErr
@@ -906,11 +900,31 @@ func receiveRuntimeMessages(receive func() (runtimeprotocol.Message, error), com
 		if err != nil || len(messages) == maxRuntimeExecutionMessages || totalBytes+len(encoded)+separatorBytes > runtimeprotocol.MaxMessageBytes {
 			return messages, message, errors.New("Runtime response transcript exceeds the public limit")
 		}
+		if route != nil {
+			handled, routeErr := route(message)
+			if routeErr != nil {
+				return messages, message, routeErr
+			}
+			if handled {
+				continue
+			}
+		}
 		totalBytes += len(encoded) + separatorBytes
 		messages = append(messages, message)
+		if accepted != nil {
+			accepted(message)
+		}
 		if message.MessageType == "Result" || message.MessageType == "Error" {
 			return messages, message, nil
 		}
+	}
+}
+
+func (coordinator *DurableRuntimeExecutionCoordinator) recordActiveRuntimeMessage(key durableExecutionKey, active *activeDurableExecution, message runtimeprotocol.Message) {
+	coordinator.activeMu.Lock()
+	defer coordinator.activeMu.Unlock()
+	if coordinator.active[key] == active {
+		active.messages = append(active.messages, publicRuntimeMessage(message))
 	}
 }
 
@@ -931,8 +945,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) routeRuntimeMessage(key d
 		if _, exists := active.interactions[requestID]; exists {
 			return false, errors.New("Runtime reused an interaction request id")
 		}
-		active.interactions[requestID] = &activeRuntimeInteraction{message: publicRuntimeMessage(message), interactionType: interactionType}
-		active.interactionOrder = append(active.interactionOrder, requestID)
+		active.interactions[requestID] = &activeRuntimeInteraction{interactionType: interactionType}
 		return false, nil
 	}
 	resolution := active.controls[message.CommandID]
