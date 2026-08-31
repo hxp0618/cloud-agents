@@ -23,6 +23,7 @@ import (
 	"time"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
+	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
@@ -423,9 +424,18 @@ func loadConfiguredVerifierConfigWith(path string, fetch func(string) ([]json.Ra
 		if err != nil {
 			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetch failed")
 		}
-		keys = make([]authConfigKey, len(remoteKeys))
-		for index, key := range remoteKeys {
-			keys[index] = authConfigKey{JWK: key, Enabled: true, NotBefore: input.NotBefore, NotAfter: input.ExpiresAt}
+		keys = make([]authConfigKey, 0, len(remoteKeys))
+		for _, key := range remoteKeys {
+			normalized, supported, err := normalizeRemoteJWK(key)
+			if err != nil {
+				return authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains an invalid key")
+			}
+			if supported {
+				keys = append(keys, authConfigKey{JWK: normalized, Enabled: true, NotBefore: input.NotBefore, NotAfter: input.ExpiresAt})
+			}
+		}
+		if len(keys) == 0 {
+			return authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains no supported RS256 key")
 		}
 	}
 	configuredKeys := make([]authn.ConfiguredVerifierKey, len(keys))
@@ -433,6 +443,68 @@ func loadConfiguredVerifierConfigWith(path string, fetch func(string) ([]json.Ra
 		configuredKeys[index] = authn.ConfiguredVerifierKey{JWK: key.JWK, Enabled: key.Enabled, NotBefore: key.NotBefore, NotAfter: key.NotAfter}
 	}
 	return authn.ConfiguredVerifierConfig{Issuer: input.Issuer, Audience: input.Audience, Generation: input.Generation, SecurityEpoch: input.SecurityEpoch, NotBefore: input.NotBefore, ExpiresAt: input.ExpiresAt, Keys: configuredKeys, Clock: time.Now}, nil
+}
+
+func normalizeRemoteJWK(raw json.RawMessage) (json.RawMessage, bool, error) {
+	fields, _, err := commonv1alpha1.DecodeJSONObjectWithSidecar(raw, []string{
+		"alg", "d", "dp", "dq", "e", "k", "key_ops", "kid", "kty", "n", "oth", "p", "q", "qi", "use",
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	var key struct {
+		Alg    string   `json:"alg"`
+		E      string   `json:"e"`
+		KeyOps []string `json:"key_ops"`
+		Kid    string   `json:"kid"`
+		Kty    string   `json:"kty"`
+		N      string   `json:"n"`
+		Use    string   `json:"use"`
+	}
+	if json.Unmarshal(raw, &key) != nil {
+		return nil, false, errors.New("JWKS key fields are invalid")
+	}
+	for _, name := range []string{"d", "dp", "dq", "k", "oth", "p", "q", "qi"} {
+		if _, present := fields[name]; present {
+			return nil, false, errors.New("JWKS key contains private material")
+		}
+	}
+	if key.Kty == "" {
+		return nil, false, errors.New("JWKS key type is invalid")
+	}
+	if key.Kty != "RSA" {
+		return nil, false, nil
+	}
+	if _, present := fields["alg"]; present && key.Alg == "" {
+		return nil, false, errors.New("JWKS key algorithm is invalid")
+	}
+	if key.Alg != "" && key.Alg != "RS256" {
+		return nil, false, nil
+	}
+	if _, present := fields["use"]; present && key.Use == "" {
+		return nil, false, errors.New("JWKS key use is invalid")
+	}
+	if key.Use != "" && key.Use != "sig" {
+		return nil, false, nil
+	}
+	if _, present := fields["key_ops"]; present {
+		if len(key.KeyOps) != 1 || key.KeyOps[0] != "verify" {
+			return nil, false, nil
+		}
+	}
+	if key.Kid == "" || key.N == "" || key.E == "" {
+		return nil, false, errors.New("JWKS RSA key is incomplete")
+	}
+	normalized, err := json.Marshal(struct {
+		Alg    string   `json:"alg"`
+		E      string   `json:"e"`
+		KeyOps []string `json:"key_ops"`
+		Kid    string   `json:"kid"`
+		Kty    string   `json:"kty"`
+		N      string   `json:"n"`
+		Use    string   `json:"use"`
+	}{Alg: "RS256", E: key.E, KeyOps: []string{"verify"}, Kid: key.Kid, Kty: "RSA", N: key.N, Use: "sig"})
+	return normalized, true, err
 }
 
 func fetchJWKS(rawURL string) ([]json.RawMessage, error) {

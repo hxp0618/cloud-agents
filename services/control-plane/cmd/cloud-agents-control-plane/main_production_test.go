@@ -4,12 +4,15 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 )
 
 func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
@@ -67,12 +70,43 @@ func TestLoadConfiguredVerifierConfigUsesJWKSURL(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	modulus := make([]byte, 256)
+	modulus[0], modulus[len(modulus)-1] = 0x80, 1
+	n := base64.RawURLEncoding.EncodeToString(modulus)
 	var fetched string
 	config, err := loadConfiguredVerifierConfigWith(path, func(rawURL string) ([]json.RawMessage, error) {
 		fetched = rawURL
-		return []json.RawMessage{json.RawMessage(`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB"}`)}, nil
+		return []json.RawMessage{
+			json.RawMessage(`{"kty":"EC","kid":"ec-key","crv":"P-256","x":"AQ","y":"AQ"}`),
+			json.RawMessage(`{"alg":"RS256","kty":"RSA","use":"sig","x5c":["certificate"],"n":"` + n + `","e":"AQAB","kid":"key-1","x5t":"thumbprint"}`),
+		}, nil
 	})
-	if err != nil || fetched != "https://issuer.example/jwks" || len(config.Keys) != 1 || string(config.Keys[0].JWK) != `{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB"}` || !config.Keys[0].Enabled || config.Keys[0].NotBefore != 100 || config.Keys[0].NotAfter != 200 {
+	wantJWK := `{"alg":"RS256","e":"AQAB","key_ops":["verify"],"kid":"key-1","kty":"RSA","n":"` + n + `","use":"sig"}`
+	if err != nil || fetched != "https://issuer.example/jwks" || len(config.Keys) != 1 || string(config.Keys[0].JWK) != wantJWK || !config.Keys[0].Enabled || config.Keys[0].NotBefore != 100 || config.Keys[0].NotAfter != 200 {
 		t.Fatalf("config=%#v fetched=%q err=%v", config, fetched, err)
+	}
+	if _, err := authn.NewConfiguredVerifier(config); err != nil {
+		t.Fatalf("normalized remote JWKS cannot initialize verifier: %v", err)
+	}
+}
+
+func TestLoadConfiguredVerifierConfigRejectsUnsafeJWKSKeys(t *testing.T) {
+	path := t.TempDir() + "/auth.json"
+	if err := os.WriteFile(path, []byte(`{"issuer":"https://issuer.example","audience":"https://api.example","jwksUrl":"https://issuer.example/jwks","generation":1,"securityEpoch":7,"notBefore":100,"expiresAt":200,"keys":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","d":"private"}`,
+		`{"kty":"RSA","kid":"key-1","\u006bid":"key-2","n":"AQ","e":"AQAB"}`,
+		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","key_ops":"verify"}`,
+		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","alg":"RS512"}`,
+		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","use":"enc"}`,
+		`{"kty":"RSA","kid":"key-1","n":"AQ","e":"AQAB","key_ops":["sign"]}`,
+	} {
+		if _, err := loadConfiguredVerifierConfigWith(path, func(string) ([]json.RawMessage, error) {
+			return []json.RawMessage{json.RawMessage(key)}, nil
+		}); err == nil {
+			t.Fatalf("accepted unsafe JWKS key: %s", key)
+		}
 	}
 }
