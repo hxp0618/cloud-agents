@@ -451,10 +451,12 @@ func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 	}
 	activeContext, activeCancel := context.WithCancel(context.Background())
 	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
-	_, unregister, err := coordinator.registerActiveExecution(key, activeCancel)
+	active, unregister, err := coordinator.registerActiveExecution(key, activeCancel)
 	if err != nil {
 		t.Fatal(err)
 	}
+	stopped := false
+	active.stop = func() { stopped = true }
 	_, err = coordinator.Cancel(context.Background(), nil, CancelTurnInput{
 		Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", TargetExecutionID: "execution", Generation: 7,
 		Mutation: Mutation{RequestID: "cancel-request", IdempotencyKey: "cancel-idem"},
@@ -466,6 +468,9 @@ func TestDurableRuntimeExecutionCancelSignalsActiveRuntime(t *testing.T) {
 	case <-activeContext.Done():
 	case <-time.After(time.Second):
 		t.Fatal("active runtime context was not cancelled")
+	}
+	if !stopped {
+		t.Fatal("active runtime stream was not stopped")
 	}
 	if !unregister() {
 		t.Fatal("active cancellation was not recorded")

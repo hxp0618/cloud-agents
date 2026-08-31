@@ -141,6 +141,7 @@ type durableExecutionKey struct {
 
 type activeDurableExecution struct {
 	cancel              context.CancelFunc
+	stop                func()
 	externallyCancelled bool
 	send                func(context.Context, runtimeprotocol.Command) error
 	interactions        map[string]*activeRuntimeInteraction
@@ -238,14 +239,19 @@ func (coordinator *DurableRuntimeExecutionCoordinator) stopActiveExecution(key d
 	coordinator.activeMu.Lock()
 	active := coordinator.active[key]
 	var cancel context.CancelFunc
+	var stop func()
 	if active != nil {
 		active.externallyCancelled = true
 		failActiveInteractionResolutions(active, context.Canceled)
 		cancel = active.cancel
+		stop = active.stop
 	}
 	coordinator.activeMu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if stop != nil {
+		stop()
 	}
 }
 
@@ -597,13 +603,15 @@ func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx co
 	if err != nil {
 		return result, err
 	}
-	defer func() { _ = session.CloseRequest(); _ = session.CloseResponse() }()
+	closeSession := func() { _ = session.CloseRequest(); _ = session.CloseResponse() }
+	defer closeSession()
 	coordinator.activeMu.Lock()
 	if coordinator.active[key] != active || active.externallyCancelled {
 		coordinator.activeMu.Unlock()
 		return result, context.Canceled
 	}
 	active.send = session.Send
+	active.stop = closeSession
 	coordinator.activeMu.Unlock()
 	command := func(commandType, commandID string, payload map[string]any) runtimeprotocol.Command {
 		return runtimeprotocol.Command{RequestID: boundedRuntimeIdentifier(input.RequestID, strings.ToLower(commandType)), Protocol: runtimeprotocol.Protocol{Major: runtimeprotocol.ProtocolMajor, Minor: runtimeprotocol.ProtocolMinor}, ExecutionID: input.ExecutionID, Generation: input.Generation, CommandType: commandType, CommandID: commandID, OccurredAt: input.OccurredAt.Format(time.RFC3339Nano), Payload: payload}
