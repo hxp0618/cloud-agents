@@ -91,9 +91,6 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.BindRuntime(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
 		t.Fatal(err)
 	}

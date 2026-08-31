@@ -46,7 +46,6 @@ const (
 	maxAuthConfigBytes                       = 1 << 20
 	maxProductionCABytes                     = 1 << 20
 	productionRuntimeMaxDuration             = 5 * time.Minute
-	productionWorkerBindTimeout              = 15 * time.Second
 	productionHTTPWriteGrace                 = 15 * time.Second
 	productionJWKSFetchTimeout               = 5 * time.Second
 	maxJWKSResponseBytes                     = 1 << 20
@@ -140,12 +139,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	workerSupervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: config.workerEndpoint, ExpectedWorkerIdentity: workerIdentity, ClientCertificate: workerClientCertificate, RootCAs: workerCAs, Clock: time.Now})
 	if err != nil {
 		return errors.New("worker transport configuration is invalid")
-	}
-	bindContext, cancelBind := context.WithTimeout(ctx, productionWorkerBindTimeout)
-	bindErr := workerSupervisor.BindRuntime(bindContext)
-	cancelBind()
-	if bindErr != nil {
-		return errors.New("worker Runtime is unavailable")
 	}
 	runtimeCoordinator, err := internalmanagedagent.NewDurableRuntimeExecutionCoordinator(internalmanagedagent.DurableRuntimeExecutionConfig{
 		Store: coordinationService, Supervisor: workerSupervisor, Clock: time.Now,
