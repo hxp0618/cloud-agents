@@ -8,6 +8,8 @@
     "turnId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "executionId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runtimeMode": { "enum": ["approval-required", "full-access"] },
+    "interactionMode": { "enum": ["default", "plan"] },
     "inputText": { "type": "string", "minLength": 1, "maxLength": 1048576 }
   }
 }

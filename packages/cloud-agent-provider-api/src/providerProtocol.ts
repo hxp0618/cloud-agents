@@ -1243,7 +1243,19 @@ function assertCompatibleProtocol(command: ProviderHostCommand): void {
 function readRunnerInput(value: unknown): RunnerInput {
   if (!isRecord(value)) throw new Error("runnerInput is required");
   const input = value as RunnerInput;
-  validateRunnerInput(input, { allowEmptyInputText: true });
+  try {
+    validateRunnerInput(input, { allowEmptyInputText: true });
+  } catch {
+    throw new ProtocolFailure({
+      code: "protocol_violation",
+      message: "runnerInput is invalid.",
+      retryable: false,
+      requiresNewExecution: true,
+      requiresUserAction: false,
+      canReconstructFromHistory: true,
+      canMoveWorker: true,
+    });
+  }
   return input;
 }
 

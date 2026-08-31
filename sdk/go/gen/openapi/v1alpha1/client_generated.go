@@ -155,10 +155,12 @@ type ManagedAgentTurnCreateRequest struct {
 	InputText string `json:"inputText"`
 }
 type ManagedAgentExecutionCreateRequest struct {
-	TurnID      string `json:"turnId"`
-	ExecutionID string `json:"executionId"`
-	Model       string `json:"model,omitempty"`
-	InputText   string `json:"inputText"`
+	TurnID          string `json:"turnId"`
+	ExecutionID     string `json:"executionId"`
+	Model           string `json:"model,omitempty"`
+	RuntimeMode     string `json:"runtimeMode,omitempty"`
+	InteractionMode string `json:"interactionMode,omitempty"`
+	InputText       string `json:"inputText"`
 }
 type ManagedAgentExecutionCancelRequest struct {
 	Generation uint64 `json:"generation"`
@@ -1521,6 +1523,12 @@ func encodeManagedAgentExecutionCreateRequest(value ManagedAgentExecutionCreateR
 		if err := common.ValidateString(value.Model, 1, 128, "/model"); err != nil {
 			return nil, err
 		}
+	}
+	if value.RuntimeMode != "" && value.RuntimeMode != "approval-required" && value.RuntimeMode != "full-access" {
+		return nil, common.ContractError("INVALID_RUNTIME_MODE", "/runtimeMode")
+	}
+	if value.InteractionMode != "" && value.InteractionMode != "default" && value.InteractionMode != "plan" {
+		return nil, common.ContractError("INVALID_INTERACTION_MODE", "/interactionMode")
 	}
 	if err := common.ValidateString(value.InputText, 1, 1<<20, "/inputText"); err != nil {
 		return nil, err

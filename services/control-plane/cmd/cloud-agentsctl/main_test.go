@@ -38,6 +38,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"tenant", "get", "--help"}, expected: "usage: cloud-agentsctl [global flags] tenant get [flags]"},
 		{args: []string{"project", "create", "--help"}, expected: "-organization-id string"},
 		{args: []string{"membership", "create", "-h"}, expected: "-subject-issuer string"},
+		{args: []string{"execution", "execute", "help"}, expected: "-runtime-mode string"},
 		{args: []string{"execution", "resolve-user-input", "help"}, expected: "-answers-json string"},
 	} {
 		var stdout bytes.Buffer

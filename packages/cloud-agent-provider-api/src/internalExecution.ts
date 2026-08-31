@@ -719,6 +719,20 @@ export function validateRunnerInput(
   ) {
     throw new Error("execution.generation must be a positive integer");
   }
+  if (
+    input.workload.runtimeMode !== undefined &&
+    input.workload.runtimeMode !== "approval-required" &&
+    input.workload.runtimeMode !== "full-access"
+  ) {
+    throw new Error("workload.runtimeMode is invalid");
+  }
+  if (
+    input.workload.interactionMode !== undefined &&
+    input.workload.interactionMode !== "default" &&
+    input.workload.interactionMode !== "plan"
+  ) {
+    throw new Error("workload.interactionMode is invalid");
+  }
   const snapshot = input.workload.resumeSnapshot;
   if (snapshot !== undefined && snapshot !== null) {
     if (!isRecord(snapshot) || snapshot.version !== 1) {

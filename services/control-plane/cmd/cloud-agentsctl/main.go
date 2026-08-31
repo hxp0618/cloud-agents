@@ -205,12 +205,14 @@ func run(args []string, stdout io.Writer) error {
 			value, err = client.ListManagedAgentExecutions(ctx, options.tenant, options.project, options.session, options.requestID, pageSize, pageToken)
 		}
 	case "execution execute":
-		var model, inputText string
+		var model, runtimeMode, interactionMode, inputText string
 		if err = parseActionFlags("execution execute", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&model, "model", "", "model identifier")
+			set.StringVar(&runtimeMode, "runtime-mode", "", "runtime permission mode: approval-required or full-access")
+			set.StringVar(&interactionMode, "interaction-mode", "", "interaction mode: default or plan")
 			set.StringVar(&inputText, "input", "", "turn input text")
 		}); err == nil {
-			value, err = client.ExecuteManagedAgent(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCreateRequest{TurnID: options.turn, ExecutionID: options.execution, Model: model, InputText: inputText})
+			value, err = client.ExecuteManagedAgent(ctx, options.tenant, options.project, options.session, options.requestID, options.idempotencyKey, openapi.ManagedAgentExecutionCreateRequest{TurnID: options.turn, ExecutionID: options.execution, Model: model, RuntimeMode: runtimeMode, InteractionMode: interactionMode, InputText: inputText})
 		}
 	case "execution get":
 		if err = parseActionFlags("execution get", actionArgs, nil); err == nil {

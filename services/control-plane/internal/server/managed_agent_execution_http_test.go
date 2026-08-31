@@ -171,7 +171,7 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions", strings.NewReader(`{"turnId":"turn-alpha","executionId":"execution-alpha","model":"gpt-test","inputText":"hello"}`))
+	request := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/executions", strings.NewReader(`{"turnId":"turn-alpha","executionId":"execution-alpha","model":"gpt-test","runtimeMode":"approval-required","interactionMode":"plan","inputText":"hello"}`))
 	request.Header.Set("Authorization", "Bearer access-token")
 	request.Header.Set("X-Request-ID", "request-alpha")
 	request.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
@@ -180,7 +180,7 @@ func TestManagedAgentExecutionHTTPServerExecutesAndReadsByTurn(t *testing.T) {
 	if response.Code != http.StatusOK || verifier.seen.RequiredPermission != "projects.act" {
 		t.Fatalf("execute status=%d verification=%#v body=%s", response.Code, verifier.seen, response.Body.String())
 	}
-	if runner.input.TurnID != "turn-alpha" || runner.input.ExecutionID != "execution-alpha" || runner.input.Model != "gpt-test" || runner.input.Mutation.IdempotencyKey == "" || !strings.Contains(response.Body.String(), `"kind":"Execution"`) {
+	if runner.input.TurnID != "turn-alpha" || runner.input.ExecutionID != "execution-alpha" || runner.input.Model != "gpt-test" || runner.input.RuntimeMode != "approval-required" || runner.input.InteractionMode != "plan" || runner.input.Mutation.IdempotencyKey == "" || !strings.Contains(response.Body.String(), `"kind":"Execution"`) {
 		t.Fatalf("execute input=%#v body=%s", runner.input, response.Body.String())
 	}
 
@@ -307,7 +307,7 @@ func TestManagedAgentExecutionHTTPServerAcceptsMaximumEscapedInput(t *testing.T)
 	request.Header.Set("Idempotency-Key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9EX")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || runner.input.InputText != inputText {
+	if response.Code != http.StatusOK || runner.input.InputText != inputText || runner.input.RuntimeMode != "full-access" || runner.input.InteractionMode != "default" {
 		t.Fatalf("status=%d inputBytes=%d body=%s", response.Code, len(runner.input.InputText), response.Body.String())
 	}
 }
@@ -363,6 +363,8 @@ func TestManagedAgentExecutionHTTPServerRejectsInvalidExecuteInputs(t *testing.T
 		{name: "empty input", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":""}`},
 		{name: "empty model", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","model":"","inputText":"hello"}`},
 		{name: "null model", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","model":null,"inputText":"hello"}`},
+		{name: "runtime mode", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","runtimeMode":"always-allow","inputText":"hello"}`},
+		{name: "interaction mode", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","interactionMode":"chat","inputText":"hello"}`},
 		{name: "unknown field", body: `{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","extra":true}`},
 		{name: "duplicate field", body: `{"turnId":"turn-alpha","turnId":"turn-beta","executionId":"execution-alpha","inputText":"hello"}`},
 	}

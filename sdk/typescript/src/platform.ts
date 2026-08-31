@@ -294,6 +294,8 @@ export type ManagedAgentExecutionCreateRequest = Readonly<{
   turnId: string;
   executionId: string;
   model?: string;
+  runtimeMode?: "approval-required" | "full-access";
+  interactionMode?: "default" | "plan";
   inputText: string;
 }>;
 export type ManagedAgentExecutionCancelRequest = Readonly<{ generation: number }>;
@@ -1830,6 +1832,18 @@ export function encodeManagedAgentExecutionCreateRequest(
     inputText: boundedString(value.inputText, 1, 1048576, "/inputText"),
   };
   if (value.model !== undefined) result.model = boundedString(value.model, 1, 128, "/model");
+  if (value.runtimeMode !== undefined)
+    result.runtimeMode = enumValue(
+      value.runtimeMode,
+      ["approval-required", "full-access"] as const,
+      "/runtimeMode",
+    );
+  if (value.interactionMode !== undefined)
+    result.interactionMode = enumValue(
+      value.interactionMode,
+      ["default", "plan"] as const,
+      "/interactionMode",
+    );
   return JSON.stringify(result);
 }
 export function encodeManagedAgentExecutionCancelRequest(

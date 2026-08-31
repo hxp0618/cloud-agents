@@ -147,7 +147,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentExecutionRequest{}, []string{"turnId", "executionId", "model", "inputText"}, []string{"turnId", "executionId", "inputText"})
+	fields, err := decodeManagedAgentJSON(request.Body, &managedAgentExecutionRequest{}, []string{"turnId", "executionId", "model", "runtimeMode", "interactionMode", "inputText"}, []string{"turnId", "executionId", "inputText"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
@@ -175,6 +175,22 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 			return
 		}
 	}
+	runtimeMode := "full-access"
+	if _, present := fields["runtimeMode"]; present {
+		runtimeMode, err = managedAgentStringField(fields, "runtimeMode", "/runtimeMode", 1, 32)
+		if err != nil || runtimeMode != "approval-required" && runtimeMode != "full-access" {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
+	interactionMode := "default"
+	if _, present := fields["interactionMode"]; present {
+		interactionMode, err = managedAgentStringField(fields, "interactionMode", "/interactionMode", 1, 16)
+		if err != nil || interactionMode != "default" && interactionMode != "plan" {
+			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
+			return
+		}
+	}
 	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
@@ -195,7 +211,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 	})
 	result, err := server.runner.Execute(request.Context(), principalSource, internalmanagedagent.DurableRuntimeExecutionInput{
 		Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: sessionID,
-		TurnID: turnID, ExecutionID: executionID, Model: model, InputText: inputText,
+		TurnID: turnID, ExecutionID: executionID, Model: model, RuntimeMode: runtimeMode, InteractionMode: interactionMode, InputText: inputText,
 		Mutation: internalmanagedagent.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
 	})
 	if err != nil {
@@ -319,10 +335,12 @@ func runtimeExecutionReference(tenantID, projectID, sessionID, turnID, execution
 }
 
 type managedAgentExecutionRequest struct {
-	TurnID      string `json:"turnId"`
-	ExecutionID string `json:"executionId"`
-	Model       string `json:"model,omitempty"`
-	InputText   string `json:"inputText"`
+	TurnID          string `json:"turnId"`
+	ExecutionID     string `json:"executionId"`
+	Model           string `json:"model,omitempty"`
+	RuntimeMode     string `json:"runtimeMode,omitempty"`
+	InteractionMode string `json:"interactionMode,omitempty"`
+	InputText       string `json:"inputText"`
 }
 
 type managedAgentExecutionCancelBody struct {

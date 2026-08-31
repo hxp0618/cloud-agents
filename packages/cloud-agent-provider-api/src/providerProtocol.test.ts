@@ -372,6 +372,31 @@ describe("Provider Host Protocol v2", () => {
     },
   );
 
+  it.each([
+    ["runtimeMode", "always-allow"],
+    ["interactionMode", "chat"],
+  ])("rejects invalid workload %s", async (field, value) => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+    const runnerInput = remoteRunnerInput();
+    const result = await handle(
+      command(
+        "StartSession",
+        { runnerInput: { ...runnerInput, workload: { ...runnerInput.workload, [field]: value } } },
+        `invalid-${field}`,
+      ),
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      commandId: `invalid-${field}`,
+      messageType: "Error",
+      error: { code: "protocol_violation", message: "runnerInput is invalid." },
+    });
+  });
+
   it.each(["StartSession", "ResumeSession"] as const)(
     "fails closed for %s when the Runtime version is incompatible",
     async (commandType) => {

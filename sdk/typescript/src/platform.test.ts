@@ -296,7 +296,14 @@ describe("generated platform JSON models", () => {
       "session-alpha",
       "request-alpha",
       "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
-      { turnId: "turn-alpha", executionId: "execution-alpha", model: "codex", inputText: "hello" },
+      {
+        turnId: "turn-alpha",
+        executionId: "execution-alpha",
+        model: "codex",
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+        inputText: "hello",
+      },
     );
     await client.getManagedAgentExecution(
       "tenant-alpha",
@@ -381,7 +388,7 @@ describe("generated platform JSON models", () => {
       "POST /v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha:resolveUserInput",
     ]);
     expect(seen[0]?.body).toBe(
-      '{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex"}',
+      '{"turnId":"turn-alpha","executionId":"execution-alpha","inputText":"hello","model":"codex","runtimeMode":"approval-required","interactionMode":"plan"}',
     );
     expect(seen[3]?.body).toBe('{"generation":1}');
     expect(seen[4]?.body).toBe('{"generation":1}');

@@ -52,13 +52,15 @@ type DurableRuntimeExecutionConfig struct {
 }
 
 type DurableRuntimeExecutionInput struct {
-	Scope       Scope
-	SessionID   string
-	TurnID      string
-	ExecutionID string
-	Model       string
-	InputText   string
-	Mutation    Mutation
+	Scope           Scope
+	SessionID       string
+	TurnID          string
+	ExecutionID     string
+	Model           string
+	RuntimeMode     string
+	InteractionMode string
+	InputText       string
+	Mutation        Mutation
 }
 
 type DurableRuntimeExecutionResult struct {
@@ -78,6 +80,8 @@ type RuntimeTurnInput struct {
 	ProviderKind         string
 	ProviderResumeCursor string
 	Model                string
+	RuntimeMode          string
+	InteractionMode      string
 	InputText            string
 	OccurredAt           time.Time
 }
@@ -394,8 +398,14 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 	if principalSource == nil {
 		return DurableRuntimeExecutionResult{}, ErrDurableRuntimeExecutionUnavailable
 	}
+	if input.RuntimeMode == "" {
+		input.RuntimeMode = "full-access"
+	}
+	if input.InteractionMode == "" {
+		input.InteractionMode = "default"
+	}
 	now := coordinator.now().UTC()
-	if now.IsZero() || input.Scope.validate() != nil || input.SessionID == "" || input.TurnID == "" || input.ExecutionID == "" || input.InputText == "" || input.Mutation.validate() != nil {
+	if now.IsZero() || input.Scope.validate() != nil || input.SessionID == "" || input.TurnID == "" || input.ExecutionID == "" || input.RuntimeMode != "approval-required" && input.RuntimeMode != "full-access" || input.InteractionMode != "default" && input.InteractionMode != "plan" || input.InputText == "" || input.Mutation.validate() != nil {
 		return DurableRuntimeExecutionResult{}, ErrInvalidInput
 	}
 	if input.Mutation.RequestID == "" || input.Mutation.IdempotencyKey == "" || coordinator.fencingGeneration == 0 || coordinator.fencingLeaseID == "" || len(coordinator.fencingToken) == 0 {
@@ -473,7 +483,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		Scope: input.Scope, SessionID: input.SessionID, TurnID: input.TurnID,
 		RequestID: input.Mutation.RequestID, ExecutionID: input.ExecutionID, Generation: coordinator.fencingGeneration,
 		Fencing:            &workerv1alpha1.FencingProof{LeaseId: coordinator.fencingLeaseID, Generation: coordinator.fencingGeneration, Token: append([]byte(nil), coordinator.fencingToken...)},
-		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, ProviderResumeCursor: session.ProviderResumeCursor, Model: input.Model, InputText: input.InputText, OccurredAt: now,
+		WorkspaceDirectory: coordinator.workspaceDirectory, ProviderKind: session.ProviderKind, ProviderResumeCursor: session.ProviderResumeCursor, Model: input.Model, RuntimeMode: input.RuntimeMode, InteractionMode: input.InteractionMode, InputText: input.InputText, OccurredAt: now,
 	})
 	if err != nil {
 		if unregister() {
@@ -620,7 +630,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx co
 		"workspaceDirectory":     paths.workspaceDirectory,
 		"runtimeOutputDirectory": paths.runtimeOutputDirectory,
 		"providerStateDirectory": paths.providerStateDirectory,
-		"workload":               map[string]any{"provider": input.ProviderKind, "model": input.Model, "inputText": ""},
+		"workload":               map[string]any{"provider": input.ProviderKind, "model": input.Model, "runtimeMode": input.RuntimeMode, "interactionMode": input.InteractionMode, "inputText": ""},
 		"execution":              map[string]any{"id": input.ExecutionID},
 	}
 	sessionCommand, sessionSuffix := "StartSession", "start"
