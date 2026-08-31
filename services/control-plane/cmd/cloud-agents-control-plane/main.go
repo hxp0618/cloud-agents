@@ -331,8 +331,12 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer func() { _ = os.Remove(config.localTokenFile) }()
 	refreshContext, stopTokenRefresh := context.WithCancel(ctx)
-	defer stopTokenRefresh()
 	tokenRefreshErrors := refreshLocalTokenFile(refreshContext, verifier, authn.LocalTokenClaims{TenantID: config.localTenantID, Subject: config.localSubject}, config.localTokenFile, localTokenRefreshInterval)
+	defer func() {
+		stopTokenRefresh()
+		for range tokenRefreshErrors {
+		}
+	}()
 	claimHTTPServer, err := server.NewLocalProjectClaimHTTPServer(verifier, claimServer)
 	if err != nil {
 		return errors.New("local HTTP server is unavailable")
@@ -790,6 +794,7 @@ func replaceLocalTokenFile(path, token string) error {
 func refreshLocalTokenFile(ctx context.Context, verifier *authn.LocalVerifier, claims authn.LocalTokenClaims, path string, interval time.Duration) <-chan error {
 	errorsChannel := make(chan error, 1)
 	go func() {
+		defer close(errorsChannel)
 		if ctx == nil || interval <= 0 {
 			errorsChannel <- errors.New("local token refresh failed")
 			return

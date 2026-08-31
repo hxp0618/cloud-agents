@@ -199,4 +199,8 @@ func TestRefreshLocalTokenFileAtomicallyReplacesToken(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	cancel()
+	for refreshErr := range errorsChannel {
+		t.Fatal(refreshErr)
+	}
 }
