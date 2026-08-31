@@ -28,7 +28,7 @@ jobs:
       - run: sh scripts/test-platform-go-products.sh
       - run: bun run platform:sdk:consumers
       - run: bun run typecheck
-      - run: bun run --filter '@synara/*' test
+      - run: bun run --filter '@cloud-agents/*' test
       - run: bunx vitest run scripts/lib/platform-go-modules.test.ts scripts/lib/platform-release.test.ts
       - run: bun run build
       - run: bun run secret:scan

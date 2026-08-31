@@ -4,7 +4,7 @@ import {
   createCloudAgentStdioClient,
   type CloudAgentStdioClient,
   type CloudAgentStdioClientOptions,
-} from "@synara/cloud-agent-runtime";
+} from "@cloud-agents/cloud-agent-runtime";
 
 import sourceManifest from "../manifest.json";
 
@@ -27,7 +27,7 @@ export function assertCloudAgentDistributionManifest(
   }
   const runtime = asRecord(manifest.runtime);
   if (
-    runtime?.package !== "@synara/cloud-agent-runtime" ||
+    runtime?.package !== "@cloud-agents/cloud-agent-runtime" ||
     typeof runtime.version !== "string" ||
     !isExactSemver(runtime.version)
   ) {
@@ -44,7 +44,7 @@ export function assertCloudAgentDistributionManifest(
       typeof provider.kind !== "string" ||
       !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u.test(provider.kind) ||
       typeof provider.package !== "string" ||
-      !provider.package.startsWith("@synara/cloud-agent-provider-") ||
+      !provider.package.startsWith("@cloud-agents/cloud-agent-provider-") ||
       typeof provider.version !== "string" ||
       !isExactSemver(provider.version) ||
       kinds.has(provider.kind)

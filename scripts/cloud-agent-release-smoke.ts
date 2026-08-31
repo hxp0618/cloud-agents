@@ -35,13 +35,13 @@ type PackedBinConformanceReport = {
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const requireModule = createRequire(import.meta.url);
 const packageDirectories: ReadonlyArray<readonly [CloudAgentPublicPackageName, string]> = [
-  ["@synara/cloud-agent-protocol", "packages/cloud-agent-protocol"],
-  ["@synara/cloud-agent-provider-api", "packages/cloud-agent-provider-api"],
-  ["@synara/cloud-agent-runtime", "packages/cloud-agent-runtime"],
-  ["@synara/cloud-agent-provider-codex", "packages/cloud-agent-provider-codex"],
-  ["@synara/cloud-agent-provider-claude", "packages/cloud-agent-provider-claude"],
-  ["@synara/cloud-agent-testkit", "packages/cloud-agent-testkit"],
-  ["@synara/cloud-agent-distribution", "packages/cloud-agent-distribution"],
+  ["@cloud-agents/cloud-agent-protocol", "packages/cloud-agent-protocol"],
+  ["@cloud-agents/cloud-agent-provider-api", "packages/cloud-agent-provider-api"],
+  ["@cloud-agents/cloud-agent-runtime", "packages/cloud-agent-runtime"],
+  ["@cloud-agents/cloud-agent-provider-codex", "packages/cloud-agent-provider-codex"],
+  ["@cloud-agents/cloud-agent-provider-claude", "packages/cloud-agent-provider-claude"],
+  ["@cloud-agents/cloud-agent-testkit", "packages/cloud-agent-testkit"],
+  ["@cloud-agents/cloud-agent-distribution", "packages/cloud-agent-distribution"],
 ];
 
 const options = parseCloudAgentReleaseSmokeOptions(process.argv.slice(2), repositoryRoot);
@@ -207,7 +207,7 @@ function runExternalNode24Smoke(
   const packagesByName = new Map(packages.map((item) => [item.name, item]));
   let packedBinConformance: PackedBinConformanceReport | undefined;
   for (const target of CLOUD_AGENT_PUBLIC_PACKAGES) {
-    const externalRoot = mkdtempSync(join(tmpdir(), "synara-cloud-agent-external-smoke-"));
+    const externalRoot = mkdtempSync(join(tmpdir(), "cloud-agents-external-smoke-"));
     try {
       writeFileSync(
         join(externalRoot, "package.json"),
@@ -241,21 +241,21 @@ function runExternalNode24Smoke(
         `const specifiers = ${JSON.stringify(specifiers)};`,
         "for (const specifier of specifiers) require(specifier);",
       ];
-      if (target === "@synara/cloud-agent-distribution") {
+      if (target === "@cloud-agents/cloud-agent-distribution") {
         esmSmoke.push(
-          'const distribution = await import("@synara/cloud-agent-distribution");',
-          'const schemas = await import("@synara/cloud-agent-distribution/schemas");',
+          'const distribution = await import("@cloud-agents/cloud-agent-distribution");',
+          'const schemas = await import("@cloud-agents/cloud-agent-distribution/schemas");',
           "const runtime = distribution.createDefaultCloudAgentRuntime();",
           'if (JSON.stringify(runtime.providerKinds) !== JSON.stringify(["claudeAgent", "codex"])) throw new Error("ESM registry allowlist mismatch");',
           'const claude = await runtime.describe("claudeAgent");',
           'if (!claude.runtime.available || !claude.runtime.compatible || claude.runtime.version !== "0.3.207") throw new Error("ESM Claude SDK descriptor mismatch");',
-          'if (schemas.CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id !== "https://schemas.synara.dev/cloud-agent/envelope-v2.schema.json") throw new Error("ESM schema export mismatch");',
+          'if (schemas.CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id !== "https://schemas.cloud-agents.dev/cloud-agent/envelope-v2.schema.json") throw new Error("ESM schema export mismatch");',
         );
         cjsSmoke.push(
-          'const distribution = require("@synara/cloud-agent-distribution");',
-          'const schemas = require("@synara/cloud-agent-distribution/schemas");',
+          'const distribution = require("@cloud-agents/cloud-agent-distribution");',
+          'const schemas = require("@cloud-agents/cloud-agent-distribution/schemas");',
           'if (JSON.stringify(distribution.createDefaultCloudAgentRuntime().providerKinds) !== JSON.stringify(["claudeAgent", "codex"])) throw new Error("CJS registry allowlist mismatch");',
-          'if (schemas.CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id !== "https://schemas.synara.dev/cloud-agent/envelope-v2.schema.json") throw new Error("CJS schema export mismatch");',
+          'if (schemas.CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id !== "https://schemas.cloud-agents.dev/cloud-agent/envelope-v2.schema.json") throw new Error("CJS schema export mismatch");',
         );
       }
       writeFileSync(join(externalRoot, "smoke.mjs"), esmSmoke.join("\n"));
@@ -264,7 +264,7 @@ function runExternalNode24Smoke(
       run(process.execPath, ["smoke.cjs"], externalRoot);
       runExternalTypeScriptSmoke(externalRoot, specifiers);
 
-      if (target === "@synara/cloud-agent-distribution") {
+      if (target === "@cloud-agents/cloud-agent-distribution") {
         packedBinConformance = runDistributionBinSmoke(externalRoot);
       }
     } finally {
@@ -279,11 +279,11 @@ function runExternalPnpm11Smoke(
   candidateDirectory: string,
   packages: ReadonlyArray<PackedCloudAgentPackage>,
 ): void {
-  const externalRoot = mkdtempSync(join(tmpdir(), "synara-cloud-agent-pnpm-smoke-"));
+  const externalRoot = mkdtempSync(join(tmpdir(), "cloud-agents-pnpm-smoke-"));
   try {
     const packagesByName = new Map(packages.map((item) => [item.name, item]));
     const dependencies = Object.fromEntries(
-      cloudAgentTarballClosure("@synara/cloud-agent-distribution").map((name) => {
+      cloudAgentTarballClosure("@cloud-agents/cloud-agent-distribution").map((name) => {
         const item = packagesByName.get(name);
         if (!item) throw new Error(`pnpm smoke is missing tarball ${name}.`);
         return [name, `file:${join(candidateDirectory, item.filename)}`];
@@ -318,9 +318,9 @@ function runExternalPnpm11Smoke(
       ],
       externalRoot,
     );
-    assertInstalledCloudAgentClosure(externalRoot, "@synara/cloud-agent-distribution");
+    assertInstalledCloudAgentClosure(externalRoot, "@cloud-agents/cloud-agent-distribution");
     const lock = readFileSync(join(externalRoot, "pnpm-lock.yaml"), "utf8");
-    if (/registry\.npmjs\.org\/@synara(?:%2f|\/)/iu.test(lock)) {
+    if (/registry\.npmjs\.org\/@cloud-agents(?:%2f|\/)/iu.test(lock)) {
       throw new Error("pnpm resolved an unpublished Cloud Agent package through npm.");
     }
   } finally {
@@ -429,7 +429,7 @@ function runDistributionBinSmoke(externalRoot: string): PackedBinConformanceRepo
   const distributionRoot = join(
     externalRoot,
     "node_modules",
-    "@synara",
+    "@cloud-agents",
     "cloud-agent-distribution",
   );
   const distribution = requireModule(join(distributionRoot, "dist", "index.cjs")) as {
@@ -517,7 +517,7 @@ function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): voi
   );
   const distributionTarball = join(
     options.outputDirectory,
-    packedPackages.find((item) => item.name === "@synara/cloud-agent-distribution")!.filename,
+    packedPackages.find((item) => item.name === "@cloud-agents/cloud-agent-distribution")!.filename,
   );
   const manifest = readTarballJSON(distributionTarball, "package/manifest.json");
   if (manifest.releaseState !== "source" || manifest.releaseDigest !== null) {
@@ -525,12 +525,12 @@ function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): voi
       "Source Distribution manifest must remain releaseState=source with null digest.",
     );
   }
-  if (manifest.distributionVersion !== versions["@synara/cloud-agent-distribution"]) {
+  if (manifest.distributionVersion !== versions["@cloud-agents/cloud-agent-distribution"]) {
     throw new Error("Distribution manifest version does not match packed bits.");
   }
   if (
     !isRecord(manifest.runtime) ||
-    manifest.runtime.version !== versions["@synara/cloud-agent-runtime"]
+    manifest.runtime.version !== versions["@cloud-agents/cloud-agent-runtime"]
   ) {
     throw new Error("Distribution manifest Runtime version does not match packed bits.");
   }
@@ -541,8 +541,8 @@ function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): voi
     return provider;
   });
   const expected = [
-    ["codex", "@synara/cloud-agent-provider-codex"],
-    ["claudeAgent", "@synara/cloud-agent-provider-claude"],
+    ["codex", "@cloud-agents/cloud-agent-provider-codex"],
+    ["claudeAgent", "@cloud-agents/cloud-agent-provider-claude"],
   ] as const;
   if (manifestProviders.length !== expected.length) {
     throw new Error("Distribution manifest Provider allowlist contains an unexpected entry.");
@@ -567,7 +567,7 @@ function validateDistributionManifest(manifests: ReadonlyArray<JSONRecord>): voi
 
 function distributionArtifactDigests(): Readonly<Record<string, string>> {
   const distribution = packedPackages.find(
-    (item) => item.name === "@synara/cloud-agent-distribution",
+    (item) => item.name === "@cloud-agents/cloud-agent-distribution",
   );
   if (!distribution) throw new Error("Packed Cloud Agent Distribution is missing.");
   const tarball = join(options.outputDirectory, distribution.filename);
@@ -598,8 +598,8 @@ function assertNoLegacyProviderFacade(
   packageName: CloudAgentPublicPackageName,
 ): void {
   if (
-    packageName !== "@synara/cloud-agent-provider-codex" &&
-    packageName !== "@synara/cloud-agent-provider-claude"
+    packageName !== "@cloud-agents/cloud-agent-provider-codex" &&
+    packageName !== "@cloud-agents/cloud-agent-provider-claude"
   ) {
     return;
   }
@@ -610,7 +610,7 @@ function assertNoLegacyProviderFacade(
     const source = run("tar", ["-xOf", tarball, path], repositoryRoot);
     if (
       source.includes("createLegacyProviderPlugin") ||
-      source.includes("@synara/cloud-agent-runtime/legacy-provider-host")
+      source.includes("@cloud-agents/cloud-agent-runtime/legacy-provider-host")
     ) {
       throw new Error(
         `${packageName} still executes through the legacy Provider facade (${path}).`,
@@ -623,7 +623,7 @@ function assertPhysicalPackageBoundary(
   tarball: string,
   packageName: CloudAgentPublicPackageName,
 ): void {
-  if (packageName !== "@synara/cloud-agent-runtime") return;
+  if (packageName !== "@cloud-agents/cloud-agent-runtime") return;
   const paths = run("tar", ["-tf", tarball], repositoryRoot).split("\n").filter(Boolean);
   const forbidden = paths.find((path) =>
     /^package\/src\/(?:claudeAgentSdkRuntime|codexAppServerRuntime|codexPostToolUseProvenance|providerHost|legacyProviderHost)\./u.test(

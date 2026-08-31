@@ -31,7 +31,7 @@ describe("terminal event helpers", () => {
   });
 
   it("labels cwd relative to the canonical workspace without exposing outside parents", () => {
-    const directory = mkdtempSync(join(tmpdir(), "synara-terminal-paths-"));
+    const directory = mkdtempSync(join(tmpdir(), "cloud-agents-terminal-paths-"));
     const workspace = join(directory, "workspace");
     const workspaceAlias = join(directory, "workspace-alias");
     const nested = join(workspace, "apps", "provider-host");

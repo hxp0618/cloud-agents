@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   CLOUD_AGENT_CAPABILITY_IDS,
   type CloudAgentCommandEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   type CloudAgentProviderDescriptor,
   type CloudAgentProviderPluginV1,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 
 import { createCloudAgentRuntime } from "./runtime";
 

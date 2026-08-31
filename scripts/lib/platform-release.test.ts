@@ -353,7 +353,7 @@ describe("platform release", () => {
       string,
       unknown
     >;
-    expect(manifest.name).toBe("@synara/cloud-agent-platform-sdk");
+    expect(manifest.name).toBe("@cloud-agents/cloud-agent-platform-sdk");
     expect(manifest.version).toBe(version);
     expect(manifest.private).toBeUndefined();
     expect(manifest.scripts).toBeUndefined();

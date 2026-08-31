@@ -5,7 +5,7 @@ import {
   CLOUD_AGENT_PROTOCOL_VERSION as PROVIDER_HOST_PROTOCOL_VERSION,
   type CloudAgentCommandEnvelope as ProviderHostCommandEnvelope,
   type CloudAgentMessageEnvelope as ProviderHostMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
@@ -83,15 +83,15 @@ describe("Provider Host Protocol v2", () => {
     const claudeDisabled = providerHostDescriptor("claudeAgent", { environment: {} });
     const codexEnabled = providerHostDescriptor("codex", {
       environment: {
-        SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: " codex, claudeAgent ",
+        CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: " codex, claudeAgent ",
       },
       runtimeVersionProbe: compatibleCodexProbe,
     });
     const claudeEnabled = providerHostDescriptor("claudeAgent", {
-      environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent" },
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent" },
     });
     const cursor = providerHostDescriptor("cursor", {
-      environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "cursor" },
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "cursor" },
     });
 
     expect(codexDisabled.capabilityDescriptor.releasePolicy).toEqual({
@@ -110,7 +110,7 @@ describe("Provider Host Protocol v2", () => {
   it("uses Codex CLI and Claude bundle metadata as independent Runtime sources", () => {
     const codex = enabledDescriptorForProvider("codex");
     const claude = providerHostDescriptor("claudeAgent", {
-      environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent" },
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent" },
       runtimeVersion: "0.3.207",
       runtimeVersionProbe: () => {
         throw new Error("Claude descriptor must not execute the Codex or Claude CLI probe.");
@@ -147,7 +147,7 @@ describe("Provider Host Protocol v2", () => {
 
   it("uses package build metadata instead of ambient build-version environment", () => {
     const descriptor = providerHostDescriptor("cursor", {
-      environment: { SYNARA_PROVIDER_HOST_BUILD_VERSION: "ambient-build-must-not-win" },
+      environment: { HOST_PROVIDER_BUILD_VERSION: "ambient-build-must-not-win" },
     });
 
     expect(descriptor.hostBuildVersion).toBe(providerHostPackage.version);
@@ -200,7 +200,7 @@ describe("Provider Host Protocol v2", () => {
       emit: (message) => emitted.push(message),
       descriptorForProvider: (provider) =>
         providerHostDescriptor(provider, {
-          environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "cursor" },
+          environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "cursor" },
           runtimeVersionProbe: compatibleCodexProbe,
         }),
     });
@@ -1416,7 +1416,7 @@ function compatibleCodexProbe(): ProviderVersionProbeResult {
 function enabledDescriptorForProvider(provider: ProviderHostProviderKind) {
   return providerHostDescriptor(provider, {
     environment: {
-      SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex,claudeAgent",
+      CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex,claudeAgent",
     },
     runtimeVersionProbe: compatibleCodexProbe,
     runtimeVersion: "0.3.207",
@@ -1426,7 +1426,7 @@ function enabledDescriptorForProvider(provider: ProviderHostProviderKind) {
 function codexDescriptorFactory(probe: ProviderVersionProbeResult) {
   return (provider: ProviderHostProviderKind) =>
     providerHostDescriptor(provider, {
-      environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
       runtimeVersionProbe: () => probe,
     });
 }

@@ -1,9 +1,7 @@
-import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./compatEnvironment";
+import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./environment";
 
 export const PROVIDER_OUTER_SANDBOX_PROFILE_ENV =
-  CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile.name;
-export const LEGACY_PROVIDER_OUTER_SANDBOX_PROFILE_ENV =
-  CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile.legacyName;
+  CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile;
 
 export const PROVIDER_OUTER_SANDBOX_PROFILES = [
   "kubernetes-restricted-v1",

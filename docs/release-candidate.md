@@ -1,6 +1,6 @@
 # Release candidate boundary
 
-The RC versions are `@synara/cloud-agent-runtime@0.2.0-rc.1` and `0.1.0-rc.1` for the other six packages. All internal edges are exact peer pins so hosts can install the coordinated GitHub tarball closure without an npm publication or an exotic-subdependency override.
+The RC versions are `@cloud-agents/cloud-agent-runtime@0.2.0-rc.1` and `0.1.0-rc.1` for the other six packages. All internal edges are exact peer pins so hosts can install the coordinated GitHub tarball closure without an npm publication or an exotic-subdependency override.
 
 The Runtime, Provider, Distribution, and Testkit packages intentionally retain dual ESM/CJS output for the compatibility window. Their build commands allow tsdown's generic "prefer ESM" warning while the external pack/install smoke verifies both formats.
 

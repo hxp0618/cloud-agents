@@ -1,11 +1,11 @@
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import type { CloudAgentProviderPluginV1 } from "@synara/cloud-agent-provider-api";
+import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
   CLOUD_AGENT_ENVIRONMENT,
   writeCloudAgentEnvironment,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 import {
   createProviderPlugin,
   hasAuthoritativeResumeData,
@@ -21,13 +21,12 @@ import {
   type RunnerCredential,
   type RunnerInput,
   type RunnerMessage,
-} from "@synara/cloud-agent-provider-api/internal";
+} from "@cloud-agents/cloud-agent-provider-api/internal";
 import { startCodexAppServerRun } from "./codexAppServerRuntime";
 import { buildInlineCodexToolPolicyHookCommand } from "./codexPostToolUseProvenance";
 
 export {
   CLOUD_AGENT_CODEX_NO_TOOL_OPERATION_ENV,
-  CODEX_NO_TOOL_OPERATION_ENV,
   CODEX_TOOL_POLICY_HOOK_ARGUMENT,
   buildCodexToolPolicyHookCommand,
   codexPostToolUseProvenanceHookResponse,
@@ -36,7 +35,7 @@ export {
   runCodexNoToolAwarePolicyHook,
 } from "./codexPostToolUseProvenance";
 export {
-  LEGACY_PROVIDER_PROVENANCE_IDENTITY,
+  CLOUD_AGENT_PROVIDER_PROVENANCE_IDENTITY,
   providerPendingUntrustedToolResultContext,
   providerUntrustedToolResultContext,
   type ProviderProvenanceIdentity,
@@ -160,10 +159,10 @@ function writeControlledCodexConfig(root: string, environment: NodeJS.ProcessEnv
   writeFileSync(
     temporaryPath,
     [
-      'model_provider = "synara_controlled"',
+      'model_provider = "cloud_agents_controlled"',
       "",
-      "[model_providers.synara_controlled]",
-      'name = "Synara controlled Credential"',
+      "[model_providers.cloud_agents_controlled]",
+      'name = "Cloud Agents controlled Credential"',
       `base_url = ${JSON.stringify(baseUrl)}`,
       'env_key = "OPENAI_API_KEY"',
       'wire_api = "responses"',

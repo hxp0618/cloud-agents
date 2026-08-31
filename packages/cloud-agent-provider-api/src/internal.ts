@@ -1,4 +1,4 @@
-export * from "./compatEnvironment";
+export * from "./environment";
 export * from "./interactionRequestId";
 export * from "./internalExecution";
 export * from "./providerOuterSandbox";

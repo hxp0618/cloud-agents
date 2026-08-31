@@ -18,7 +18,7 @@ import {
   type CloudAgentError as ProviderHostError,
   type CloudAgentMessageEnvelope as ProviderHostMessageEnvelope,
   type CloudAgentProviderCapabilityCatalogEntry as ProviderCapabilityCatalogEntry,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import {
   hasAuthoritativeResumeData,
   validateRunnerInput,
@@ -30,7 +30,7 @@ import {
   type ProviderRunExecutor,
 } from "./internalExecution";
 import { normalizeRuntimeEventV2 } from "./runtimeEventV2";
-import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./compatEnvironment";
+import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./environment";
 
 const HOST_BUILD_VERSION = "0.1.0-rc.1";
 const SUSPEND_TURN_CHECKPOINT_PROTOCOL = "provider-host-suspend-terminal-v1";

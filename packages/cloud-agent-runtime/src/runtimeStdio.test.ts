@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
 
-import { CLOUD_AGENT_CAPABILITY_IDS } from "@synara/cloud-agent-protocol";
+import { CLOUD_AGENT_CAPABILITY_IDS } from "@cloud-agents/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   type CloudAgentWorkspaceBinding,
   type CloudAgentProviderDescriptor,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 import { describe, expect, it } from "vitest";
 
 import { createCloudAgentRuntime } from "./runtime";
@@ -536,7 +536,7 @@ describe("runCloudAgentRuntimeStdio", () => {
     const running = runCloudAgentRuntimeStdio(runtime, {
       source: Readable.from(source()),
       output: output.stream,
-      environment: { SYNARA_PROVIDER_CREDENTIAL_FD: "3" },
+      environment: { CLOUD_AGENT_PROVIDER_CREDENTIAL_FD: "3" },
     });
     while (validationFailures.length < 4) {
       await new Promise<void>((resolve) => setImmediate(resolve));

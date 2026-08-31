@@ -1,6 +1,7 @@
 export const PROVIDER_CONTENT_TRUST_POLICY_VERSION = "2026-07-28.2";
-export const PROVIDER_CONTENT_TRUST_POLICY_MARKER = `[Synara provider content trust policy ${PROVIDER_CONTENT_TRUST_POLICY_VERSION}]`;
-export const PROVIDER_UNTRUSTED_CONTENT_SCHEMA_VERSION = "synara.provider-untrusted-content.v1";
+export const PROVIDER_CONTENT_TRUST_POLICY_MARKER = `[Cloud Agents provider content trust policy ${PROVIDER_CONTENT_TRUST_POLICY_VERSION}]`;
+export const PROVIDER_UNTRUSTED_CONTENT_SCHEMA_VERSION =
+  "cloud_agent.provider-untrusted-content.v1";
 
 export const PROVIDER_CONTENT_TRUST_POLICY = [
   PROVIDER_CONTENT_TRUST_POLICY_MARKER,
@@ -45,7 +46,7 @@ function metadata(toolName: string) {
 }
 
 export function providerUntrustedToolResultEnvelope(toolName: string, content: unknown) {
-  return { __synaraUntrustedContent: metadata(toolName), content: content ?? null };
+  return { __cloudAgentUntrustedContent: metadata(toolName), content: content ?? null };
 }
 
 export function providerUntrustedToolFailureContext(toolName: string): string {

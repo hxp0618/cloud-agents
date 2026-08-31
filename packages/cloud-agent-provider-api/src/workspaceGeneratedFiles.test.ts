@@ -11,8 +11,8 @@ import {
 
 describe("Workspace generated files", () => {
   it("emits each Provider-observed regular file once without exposing physical paths", async () => {
-    const workspace = mkdtempSync(join(tmpdir(), "synara-generated-files-"));
-    const outside = mkdtempSync(join(tmpdir(), "synara-generated-files-outside-"));
+    const workspace = mkdtempSync(join(tmpdir(), "cloud-agents-generated-files-"));
+    const outside = mkdtempSync(join(tmpdir(), "cloud-agents-generated-files-outside-"));
     const messages: RunnerMessage[] = [];
     try {
       mkdirSync(join(workspace, "reports"), { recursive: true });
@@ -57,7 +57,7 @@ describe("Workspace generated files", () => {
   });
 
   it("normalizes only bounded Workspace-relative non-VCS paths", () => {
-    const workspace = join(tmpdir(), "synara-generated-files-root");
+    const workspace = join(tmpdir(), "cloud-agents-generated-files-root");
 
     expect(workspaceGeneratedFileRelativePath(workspace, join(workspace, "nested", "a.txt"))).toBe(
       join("nested", "a.txt"),

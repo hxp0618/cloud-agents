@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export const CLOUD_AGENT_PUBLIC_PACKAGES = [
-  "@synara/cloud-agent-protocol",
-  "@synara/cloud-agent-provider-api",
-  "@synara/cloud-agent-runtime",
-  "@synara/cloud-agent-provider-codex",
-  "@synara/cloud-agent-provider-claude",
-  "@synara/cloud-agent-testkit",
-  "@synara/cloud-agent-distribution",
+  "@cloud-agents/cloud-agent-protocol",
+  "@cloud-agents/cloud-agent-provider-api",
+  "@cloud-agents/cloud-agent-runtime",
+  "@cloud-agents/cloud-agent-provider-codex",
+  "@cloud-agents/cloud-agent-provider-claude",
+  "@cloud-agents/cloud-agent-testkit",
+  "@cloud-agents/cloud-agent-distribution",
 ] as const;
 
 export type CloudAgentPublicPackageName = (typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number];
@@ -29,24 +29,24 @@ const PUBLIC_PACKAGE_SET = new Set<string>(CLOUD_AGENT_PUBLIC_PACKAGES);
 const CLAUDE_AGENT_SDK = "@anthropic-ai/claude-agent-sdk";
 const CLAUDE_AGENT_SDK_VERSION = "0.3.207";
 const EXPECTED_INTERNAL_DEPENDENCIES = {
-  "@synara/cloud-agent-protocol": [],
-  "@synara/cloud-agent-provider-api": ["@synara/cloud-agent-protocol"],
-  "@synara/cloud-agent-runtime": [
-    "@synara/cloud-agent-protocol",
-    "@synara/cloud-agent-provider-api",
+  "@cloud-agents/cloud-agent-protocol": [],
+  "@cloud-agents/cloud-agent-provider-api": ["@cloud-agents/cloud-agent-protocol"],
+  "@cloud-agents/cloud-agent-runtime": [
+    "@cloud-agents/cloud-agent-protocol",
+    "@cloud-agents/cloud-agent-provider-api",
   ],
-  "@synara/cloud-agent-provider-codex": ["@synara/cloud-agent-provider-api"],
-  "@synara/cloud-agent-provider-claude": ["@synara/cloud-agent-provider-api"],
-  "@synara/cloud-agent-testkit": [
-    "@synara/cloud-agent-protocol",
-    "@synara/cloud-agent-provider-api",
+  "@cloud-agents/cloud-agent-provider-codex": ["@cloud-agents/cloud-agent-provider-api"],
+  "@cloud-agents/cloud-agent-provider-claude": ["@cloud-agents/cloud-agent-provider-api"],
+  "@cloud-agents/cloud-agent-testkit": [
+    "@cloud-agents/cloud-agent-protocol",
+    "@cloud-agents/cloud-agent-provider-api",
   ],
-  "@synara/cloud-agent-distribution": [
-    "@synara/cloud-agent-protocol",
-    "@synara/cloud-agent-provider-api",
-    "@synara/cloud-agent-runtime",
-    "@synara/cloud-agent-provider-codex",
-    "@synara/cloud-agent-provider-claude",
+  "@cloud-agents/cloud-agent-distribution": [
+    "@cloud-agents/cloud-agent-protocol",
+    "@cloud-agents/cloud-agent-provider-api",
+    "@cloud-agents/cloud-agent-runtime",
+    "@cloud-agents/cloud-agent-provider-codex",
+    "@cloud-agents/cloud-agent-provider-claude",
   ],
 } as const satisfies Readonly<
   Record<CloudAgentPublicPackageName, ReadonlyArray<CloudAgentPublicPackageName>>
@@ -81,11 +81,11 @@ export function cloudAgentStableImportSpecifiers(
   target: CloudAgentPublicPackageName,
 ): ReadonlyArray<string> {
   switch (target) {
-    case "@synara/cloud-agent-provider-api":
+    case "@cloud-agents/cloud-agent-provider-api":
       return [target, `${target}/internal`];
-    case "@synara/cloud-agent-runtime":
+    case "@cloud-agents/cloud-agent-runtime":
       return [target, `${target}/node`];
-    case "@synara/cloud-agent-distribution":
+    case "@cloud-agents/cloud-agent-distribution":
       return [target, `${target}/schemas`, `${target}/schemas/cloud-agent-envelope-v2`];
     default:
       return [target];
@@ -139,7 +139,7 @@ export function validatePackedCloudAgentManifest(manifest: JSONRecord): void {
   }
   if (manifest.private === true) throw new Error(`${name} is still private.`);
   if (
-    name === "@synara/cloud-agent-runtime" &&
+    name === "@cloud-agents/cloud-agent-runtime" &&
     isRecord(manifest.exports) &&
     manifest.exports["./legacy-provider-host"] !== undefined
   ) {
@@ -155,7 +155,7 @@ export function validatePackedCloudAgentManifest(manifest: JSONRecord): void {
       if (LOCAL_PROTOCOL.test(specifier)) {
         throw new Error(`${name} ${section}.${dependency} uses local protocol ${specifier}.`);
       }
-      if (dependency.startsWith("@synara/") && !PUBLIC_PACKAGE_SET.has(dependency)) {
+      if (dependency.startsWith("@cloud-agents/") && !PUBLIC_PACKAGE_SET.has(dependency)) {
         throw new Error(`${name} depends on unpublished private package ${dependency}.`);
       }
       if (PUBLIC_PACKAGE_SET.has(dependency) && !EXACT_SEMVER.test(specifier)) {
@@ -237,7 +237,7 @@ export function validatePackedCloudAgentSet(manifests: ReadonlyArray<JSONRecord>
     for (const section of DEPENDENCY_SECTIONS) {
       const sdkVersion = dependencyRecord(manifest[section])[CLAUDE_AGENT_SDK];
       if (sdkVersion === undefined) continue;
-      if (name !== "@synara/cloud-agent-provider-claude") {
+      if (name !== "@cloud-agents/cloud-agent-provider-claude") {
         throw new Error(`${name} must not carry the Claude Agent SDK.`);
       }
       if (section !== "dependencies") {
@@ -251,7 +251,7 @@ export function validatePackedCloudAgentSet(manifests: ReadonlyArray<JSONRecord>
     }
   }
   const claudeDependencies = dependencyRecord(
-    byName.get("@synara/cloud-agent-provider-claude")!.dependencies,
+    byName.get("@cloud-agents/cloud-agent-provider-claude")!.dependencies,
   );
   if (claudeDependencies[CLAUDE_AGENT_SDK] !== CLAUDE_AGENT_SDK_VERSION) {
     throw new Error(

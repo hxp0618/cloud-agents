@@ -19,14 +19,14 @@ import {
   managedCodexAppServerArguments,
 } from "./codexAppServerRuntime";
 import { CODEX_TOOL_POLICY_HOOK_ARGUMENT } from "./codexPostToolUseProvenance";
-import type { RunnerMessage } from "@synara/cloud-agent-provider-api/internal";
-import { PROVIDER_OUTER_SANDBOX_PROFILE_ENV } from "@synara/cloud-agent-provider-api/internal";
+import type { RunnerMessage } from "@cloud-agents/cloud-agent-provider-api/internal";
+import { PROVIDER_OUTER_SANDBOX_PROFILE_ENV } from "@cloud-agents/cloud-agent-provider-api/internal";
 import { startCodexProviderRun as startProviderHostRun } from "./index";
 
 process.env[PROVIDER_OUTER_SANDBOX_PROFILE_ENV] = "single-tenant-trusted-v1";
 
 const CONTROLLED_PROVIDER_PROXY = "http://proxy.example.test:8080";
-const TEST_CODEX_TOOL_POLICY_HOOK_COMMAND = `'/usr/local/bin/node' '/opt/synara/provider-host/index.mjs' ${CODEX_TOOL_POLICY_HOOK_ARGUMENT}`;
+const TEST_CODEX_TOOL_POLICY_HOOK_COMMAND = `'/usr/local/bin/node' '/opt/cloud-agents/provider-host/index.mjs' ${CODEX_TOOL_POLICY_HOOK_ARGUMENT}`;
 
 describe("Codex app-server runtime", () => {
   it("disables repository or user configured MCP servers in managed runs", () => {
@@ -163,7 +163,7 @@ describe("Codex app-server runtime", () => {
         join(providerStateDirectory, "codex-home", "config.toml"),
         "utf8",
       );
-      expect(config).toContain('model_provider = "synara_controlled"');
+      expect(config).toContain('model_provider = "cloud_agents_controlled"');
       expect(config).toContain('base_url = "http://provider-fault.example.test/v1"');
       expect(config).toContain('env_key = "OPENAI_API_KEY"');
       expect(config).toContain("requires_openai_auth = false");
@@ -235,14 +235,14 @@ describe("Codex app-server runtime", () => {
       await expect(run.result).resolves.toMatchObject({ output: { text: "file generated" } });
       const artifacts = messages.filter((message) => message.type === "artifact");
       const generatedFile = readFileSync(
-        join(directory, ".synara-stage3-acceptance", "generated-file.txt"),
+        join(directory, ".cloud-agents-stage3-acceptance", "generated-file.txt"),
         "utf8",
       );
       expect(artifacts, JSON.stringify({ generatedFile, messages }, null, 2)).toEqual([
         {
           type: "artifact",
           artifact: {
-            path: join(".synara-stage3-acceptance", "generated-file.txt"),
+            path: join(".cloud-agents-stage3-acceptance", "generated-file.txt"),
             kind: "generated_file",
             contentType: "application/octet-stream",
             sourceRoot: "workspace",
@@ -1214,9 +1214,10 @@ async function withFakeCodex(
     | "credential-environment",
   run: (directory: string, tracePath: string, environment: NodeJS.ProcessEnv) => Promise<void>,
 ): Promise<void> {
-  const directory = mkdtempSync(join(tmpdir(), "synara-codex-app-server-"));
+  const directory = mkdtempSync(join(tmpdir(), "cloud-agents-codex-app-server-"));
   const executable = join(directory, "codex");
   const tracePath = join(directory, "trace.log");
+  writeFileSync(join(directory, "package.json"), '{"type":"commonjs"}\n', "utf8");
   writeFileSync(executable, fakeCodexSource(scenario, tracePath, directory), "utf8");
   chmodSync(executable, 0o700);
   const environment: NodeJS.ProcessEnv = {
@@ -1229,23 +1230,23 @@ async function withFakeCodex(
     TERM: "xterm-256color",
     SECRET: "ordinary-secret",
     HOST_SECRET: "host-secret",
-    SYNARA_AUTH_TOKEN: "auth-secret",
-    SYNARA_WORKER_REGISTRATION_TOKEN: "worker-secret",
-    SYNARA_LEASE_TOKEN: "lease-secret",
-    SYNARA_CONTROL_PLANE_URL: "https://control.example.test",
+    HOST_AUTH_TOKEN: "auth-secret",
+    HOST_WORKER_REGISTRATION_TOKEN: "worker-secret",
+    HOST_LEASE_TOKEN: "lease-secret",
+    HOST_CONTROL_PLANE_URL: "https://control.example.test",
     OPENAI_API_KEY: "ambient-openai-secret",
     ANTHROPIC_API_KEY: "ambient-anthropic-secret",
     AWS_ACCESS_KEY_ID: "aws-key",
     AWS_SECRET_ACCESS_KEY: "aws-secret",
     GITHUB_TOKEN: "github-secret",
     GH_TOKEN: "gh-secret",
-    DATABASE_URL: "postgres://user:secret@db/synara",
+    DATABASE_URL: "postgres://user:secret@db/cloud-agents",
     PGPASSWORD: "postgres-secret",
     MINIO_ROOT_PASSWORD: "minio-secret",
     GOOGLE_APPLICATION_CREDENTIALS: "/host/gcp-credential.json",
     AZURE_CLIENT_SECRET: "azure-secret",
     HTTP_PROXY: "http://ambient-user:ambient-secret@proxy.example.test",
-    SYNARA_PROVIDER_HTTP_PROXY: CONTROLLED_PROVIDER_PROXY,
+    CLOUD_AGENT_PROVIDER_HTTP_PROXY: CONTROLLED_PROVIDER_PROXY,
     SSH_AUTH_SOCK: "/host/agent.sock",
     NODE_OPTIONS: "--require=/host/inject-secrets.js",
   };
@@ -1318,10 +1319,10 @@ if (!process.env.PATH) process.exit(91);
 for (const name of ${JSON.stringify([
     "SECRET",
     "HOST_SECRET",
-    "SYNARA_AUTH_TOKEN",
-    "SYNARA_WORKER_REGISTRATION_TOKEN",
-    "SYNARA_LEASE_TOKEN",
-    "SYNARA_CONTROL_PLANE_URL",
+    "HOST_AUTH_TOKEN",
+    "HOST_WORKER_REGISTRATION_TOKEN",
+    "HOST_LEASE_TOKEN",
+    "HOST_CONTROL_PLANE_URL",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
     "ANTHROPIC_API_KEY",
@@ -1334,7 +1335,7 @@ for (const name of ${JSON.stringify([
     "MINIO_ROOT_PASSWORD",
     "GOOGLE_APPLICATION_CREDENTIALS",
     "AZURE_CLIENT_SECRET",
-    "SYNARA_PROVIDER_HTTP_PROXY",
+    "CLOUD_AGENT_PROVIDER_HTTP_PROXY",
     "SSH_AUTH_SOCK",
     "NODE_OPTIONS",
   ])}) {
@@ -1393,7 +1394,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       } else if (resumeAttempt === 2) {
         const history = message.params?.history;
         const prompt = history?.[0]?.content?.[0]?.text ?? "";
-        if (message.params?.threadId !== "thread-missing" || history?.length !== 1 || history?.[0]?.type !== "message" || history?.[0]?.role !== "user" || history?.[0]?.content?.[0]?.type !== "input_text" || !prompt.includes("<synara_resume_snapshot_json>") || !prompt.includes("Focused tests passed")) process.exit(11);
+        if (message.params?.threadId !== "thread-missing" || history?.length !== 1 || history?.[0]?.type !== "message" || history?.[0]?.role !== "user" || history?.[0]?.content?.[0]?.type !== "input_text" || !prompt.includes("<cloud_agent_resume_snapshot_json>") || !prompt.includes("Focused tests passed")) process.exit(11);
         send({ id: message.id, result: { thread: { id: "thread-rebuilt" }, model: "gpt-test" } });
       } else process.exit(12);
     } else if (scenario === "resume-rebuild") send({ id: message.id, error: { code: -2, message: "missing thread: native-resume-secret" } });
@@ -1431,7 +1432,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     if (message.params?.collaborationMode?.settings?.developer_instructions !== expectedDeveloperInstructions) process.exit(8);
     if (scenario === "resume-rebuild") {
       const prompt = message.params?.input?.[0]?.text ?? "";
-      if (!prompt.includes("<synara_resume_snapshot_json>") || !prompt.includes("Focused tests passed") || !prompt.includes("<current_user>\\ncontinue\\n</current_user>")) process.exit(3);
+      if (!prompt.includes("<cloud_agent_resume_snapshot_json>") || !prompt.includes("Focused tests passed") || !prompt.includes("<current_user>\\ncontinue\\n</current_user>")) process.exit(3);
     }
     send({ id: message.id, result: { turn: { id: "turn-1", items: [], status: "inProgress", error: null } } });
     if (scenario === "approval") {
@@ -1449,12 +1450,12 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       complete("resumed");
     } else if (scenario === "resume-with-recovery-metadata") {
       const prompt = message.params?.input?.[0]?.text ?? "";
-      if (!prompt.includes("<synara_agent_memory_json>")) process.exit(13);
+      if (!prompt.includes("<cloud_agent_agent_memory_json>")) process.exit(13);
       if (!prompt.includes('"memoryKey":"instructions"')) process.exit(14);
-      if (!prompt.includes("<synara_resume_snapshot_json>")) process.exit(15);
+      if (!prompt.includes("<cloud_agent_resume_snapshot_json>")) process.exit(15);
       if (!prompt.includes('"requestId":"approval-suspended"')) process.exit(16);
       if (!prompt.includes("<current_user>\\ncontinue from the suspended approval\\n</current_user>")) process.exit(17);
-      if (prompt.includes("<synara_transcript>")) process.exit(18);
+      if (prompt.includes("<cloud_agent_transcript>")) process.exit(18);
       if (prompt.includes("prior native question") || prompt.includes("prior native answer")) process.exit(19);
       complete("resumed with metadata");
     } else if (scenario === "resume-rebuild") {
@@ -1491,7 +1492,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       complete("terminal incomplete");
     } else if (scenario === "generated-file") {
       const path = require("node:path");
-      const generatedDirectory = path.join(process.cwd(), ".synara-stage3-acceptance");
+      const generatedDirectory = path.join(process.cwd(), ".cloud-agents-stage3-acceptance");
       const generatedPath = path.join(generatedDirectory, "generated-file.txt");
       fs.mkdirSync(generatedDirectory, { recursive: true });
       fs.writeFileSync(generatedPath, "generated by Codex\\n");

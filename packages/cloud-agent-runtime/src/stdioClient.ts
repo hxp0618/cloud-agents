@@ -14,12 +14,12 @@ import {
   validateCloudAgentMessageEnvelope,
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import {
   CLOUD_AGENT_ENVIRONMENT,
   readCloudAgentEnvironment,
   writeCloudAgentEnvironment,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 
 const CLOUD_AGENT_MAX_IN_FLIGHT_COMMANDS = 128;
 const CLOUD_AGENT_CREDENTIAL_CHILD_FD = 3;

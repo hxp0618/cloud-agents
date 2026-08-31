@@ -1,5 +1,5 @@
 {
-  "name": "@synara/cloud-agent-provider-api",
+  "name": "@cloud-agents/cloud-agent-provider-api",
   "version": "0.1.0-rc.1",
   "description": "Host-neutral Cloud Agent provider plugin ABI",
   "homepage": "https://github.com/hxp0618/cloud-agents#readme",
@@ -65,7 +65,7 @@
     "vitest": "4.1.10"
   },
   "peerDependencies": {
-    "@synara/cloud-agent-protocol": "0.1.0-rc.1"
+    "@cloud-agents/cloud-agent-protocol": "0.1.0-rc.1"
   },
   "engines": {
     "node": ">=20.3.0"

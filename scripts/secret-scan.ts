@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -20,7 +20,8 @@ const gitGrepPattern = String.raw`-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY----
 const findings: Array<{ revision: string; path: string; line: number; rule: string }> = [];
 
 for (const path of lines(run("git", ["ls-files", "--cached", "--others", "--exclude-standard"]))) {
-  scan("worktree", path, readFileSync(resolve(root, path)));
+  const absolutePath = resolve(root, path);
+  if (existsSync(absolutePath)) scan("worktree", path, readFileSync(absolutePath));
 }
 const revisions = secretScanRevisions();
 // ponytail: one argv entry per revision; batch the history if it ever approaches ARG_MAX.

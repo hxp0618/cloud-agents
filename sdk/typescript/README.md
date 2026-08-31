@@ -1,4 +1,4 @@
-# `@synara/cloud-agent-platform-sdk`
+# `@cloud-agents/cloud-agent-platform-sdk`
 
 This directory builds the generated TypeScript client for the independent Cloud
 Agents Control Plane. The workspace package stays private to prevent accidental
@@ -8,7 +8,7 @@ with the release version.
 The current output contains generated common identity models, generated JSON
 contract models and clients, plus generated proto3 messages and ConnectRPC
 service descriptors. The JSON clients include `createHTTPClient(baseURL,
-bearerToken)` from `@synara/cloud-agent-platform-sdk/platform`; it uses the
+bearerToken)` from `@cloud-agents/cloud-agent-platform-sdk/platform`; it uses the
 native `fetch`, refuses redirects, and limits response bodies to 2 MiB. Injected
 transports remain available for tests and custom environments.
 

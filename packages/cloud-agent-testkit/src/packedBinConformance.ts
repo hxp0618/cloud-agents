@@ -6,7 +6,7 @@ import {
   assertCloudAgentMessageEnvelope,
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 
 export type CloudAgentPackedBinConformanceReport = {
   readonly passed: ReadonlyArray<string>;
@@ -64,10 +64,9 @@ export function runCloudAgentPackedBinConformance(input: {
       environment: {
         ...input.environment,
         CLOUD_AGENT_CODEX_NO_TOOL_OPERATION: "1",
-        SYNARA_CODEX_NO_TOOL_OPERATION: "1",
       },
     },
-    ["--synara-codex-tool-policy-hook"],
+    ["--cloud-agent-codex-tool-policy-hook"],
     noToolInput,
   );
   if (noTool.status !== 0 || !noTool.stdout.includes('"permissionDecision":"deny"')) {

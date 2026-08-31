@@ -3,7 +3,7 @@ import {
   assertCloudAgentMessageEnvelope,
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   assertCloudAgentProviderDescriptor,
@@ -11,7 +11,7 @@ import {
   type CloudAgentProviderDescriptor,
   type CloudAgentProviderPluginV1,
   type CloudAgentProviderSession,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 
 export interface CloudAgentRuntimeV1 {
   readonly abiVersion: typeof CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION;

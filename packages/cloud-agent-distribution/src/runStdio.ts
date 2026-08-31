@@ -1,7 +1,7 @@
 import type { Readable, Writable } from "node:stream";
 
-import { buildCodexToolPolicyHookCommand } from "@synara/cloud-agent-provider-codex";
-import { runCloudAgentRuntimeStdio } from "@synara/cloud-agent-runtime";
+import { buildCodexToolPolicyHookCommand } from "@cloud-agents/cloud-agent-provider-codex";
+import { runCloudAgentRuntimeStdio } from "@cloud-agents/cloud-agent-runtime";
 
 import { CLOUD_AGENT_DISTRIBUTION_MANIFEST, createDefaultCloudAgentRuntime } from "./index";
 

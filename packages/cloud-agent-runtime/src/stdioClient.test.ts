@@ -7,7 +7,7 @@ import { PassThrough } from "node:stream";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { CloudAgentCommandEnvelope } from "@synara/cloud-agent-protocol";
+import type { CloudAgentCommandEnvelope } from "@cloud-agents/cloud-agent-protocol";
 
 import { createCloudAgentStdioClient } from "./stdioClient";
 
@@ -431,26 +431,14 @@ readline.createInterface({ input: process.stdin }).once("line", (line) => {
     }
   });
 
-  it("rejects an environment override that conflicts with credentialFd mapping", () => {
+  it("rejects a portable environment override that conflicts with credentialFd mapping", () => {
     expect(() =>
       createCloudAgentStdioClient({
         command: process.execPath,
         credentialFd: 7,
-        environment: { SYNARA_PROVIDER_CREDENTIAL_FD: "7" },
+        environment: { CLOUD_AGENT_PROVIDER_CREDENTIAL_FD: "7" },
       }),
     ).toThrow("conflicting CLOUD_AGENT_PROVIDER_CREDENTIAL_FD override");
-  });
-
-  it("fails closed when portable and legacy credential metadata conflict", () => {
-    expect(() =>
-      createCloudAgentStdioClient({
-        command: process.execPath,
-        environment: {
-          CLOUD_AGENT_PROVIDER_CREDENTIAL_FD: "3",
-          SYNARA_PROVIDER_CREDENTIAL_FD: "7",
-        },
-      }),
-    ).toThrow("Conflicting CLOUD_AGENT_PROVIDER_CREDENTIAL_FD");
   });
 });
 

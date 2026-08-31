@@ -1,7 +1,7 @@
 {
-  "name": "@synara/cloud-agent-provider-codex",
+  "name": "@cloud-agents/cloud-agent-provider-codex",
   "version": "0.1.0-rc.1",
-  "description": "Host-neutral Codex provider plugin for the Synara Cloud Agent runtime",
+  "description": "Host-neutral Codex provider plugin for the Cloud Agents Runtime",
   "homepage": "https://github.com/hxp0618/cloud-agents#readme",
   "bugs": {
     "url": "https://github.com/hxp0618/cloud-agents/issues"
@@ -53,7 +53,7 @@
     "vitest": "4.1.10"
   },
   "peerDependencies": {
-    "@synara/cloud-agent-provider-api": "0.1.0-rc.1"
+    "@cloud-agents/cloud-agent-provider-api": "0.1.0-rc.1"
   },
   "engines": {
     "node": ">=24.18.1 <25"

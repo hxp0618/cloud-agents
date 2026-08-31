@@ -1,4 +1,4 @@
-import type { CloudAgentProviderPluginV1 } from "@synara/cloud-agent-provider-api";
+import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
   createProviderPlugin,
   hasAuthoritativeResumeData,
@@ -13,7 +13,7 @@ import {
   type RunnerInput,
   type RunnerMessage,
   type ProviderRunController,
-} from "@synara/cloud-agent-provider-api/internal";
+} from "@cloud-agents/cloud-agent-provider-api/internal";
 
 import { startClaudeAgentSdkRun, type ClaudeQueryFactory } from "./claudeAgentSdkRuntime";
 

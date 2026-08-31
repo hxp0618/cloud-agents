@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.synara.dev/cloud-agent/envelope-v2.schema.json",
+  "$id": "https://schemas.cloud-agents.dev/cloud-agent/envelope-v2.schema.json",
   "title": "Cloud Agent Protocol v2 envelope",
   "oneOf": [{ "$ref": "#/$defs/command" }, { "$ref": "#/$defs/message" }],
   "$defs": {

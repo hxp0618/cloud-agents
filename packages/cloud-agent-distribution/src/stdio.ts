@@ -2,7 +2,7 @@
 import {
   CODEX_TOOL_POLICY_HOOK_ARGUMENT,
   runCodexNoToolAwarePolicyHook,
-} from "@synara/cloud-agent-provider-codex";
+} from "@cloud-agents/cloud-agent-provider-codex";
 
 import { runDefaultCloudAgentRuntimeStdio } from "./runStdio";
 

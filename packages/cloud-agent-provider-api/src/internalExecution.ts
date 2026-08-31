@@ -6,8 +6,8 @@ import type { TerminalRedactor } from "./terminalEvents";
 import {
   CLOUD_AGENT_ENVIRONMENT,
   readCloudAgentEnvironment,
-  type CloudAgentEnvironmentAlias,
-} from "./compatEnvironment";
+  type CloudAgentEnvironmentName,
+} from "./environment";
 
 export type RunnerInput = {
   execution: { id: string; generation?: number };
@@ -140,14 +140,8 @@ export type CloudAgentHostIdentity = {
 };
 
 export const CLOUD_AGENT_GENERIC_HOST_IDENTITY: CloudAgentHostIdentity = Object.freeze({
-  displayName: "Portable Cloud",
+  displayName: "Cloud Agents",
   namespace: "cloud_agent",
-});
-
-/** Compatibility default retained for existing Synara prompt consumers. */
-export const SYNARA_LEGACY_HOST_IDENTITY: CloudAgentHostIdentity = Object.freeze({
-  displayName: "Synara",
-  namespace: "synara",
 });
 
 export type ProviderRunExecutor = (
@@ -326,35 +320,35 @@ function selectProviderProcessEnvironment(source: NodeJS.ProcessEnv): NodeJS.Pro
     }),
   );
   for (const proxy of CONTROLLED_PROVIDER_PROXY_ENVIRONMENT) {
-    const value = compatibleValue(values, proxy.source);
+    const value = configuredValue(values, proxy.source);
     if (value === undefined) continue;
-    const normalized = normalizeProviderProxy(value, proxy.source.name, proxy.allowedProtocols);
+    const normalized = normalizeProviderProxy(value, proxy.source, proxy.allowedProtocols);
     if (normalized) environment[proxy.target] = normalized;
   }
-  const noProxyValue = compatibleValue(values, CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source);
+  const noProxyValue = configuredValue(values, CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source);
   if (noProxyValue !== undefined) {
     const normalized = normalizeProviderNoProxy(
       noProxyValue,
-      CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source.name,
+      CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.source,
     );
     if (normalized) environment[CONTROLLED_PROVIDER_NO_PROXY_ENVIRONMENT.target] = normalized;
   }
   for (const config of CONTROLLED_PROVIDER_PACKAGE_ENVIRONMENT) {
-    const value = compatibleValue(values, config.source);
+    const value = configuredValue(values, config.source);
     if (value === undefined) continue;
     if (containsLineControl(value) || !isAbsolute(value)) {
-      throw new Error(`${config.source.name} is invalid`);
+      throw new Error(`${config.source} is invalid`);
     }
     environment[config.target] = value;
   }
   return environment;
 }
 
-function compatibleValue(
+function configuredValue(
   values: ReadonlyMap<string, string>,
-  alias: CloudAgentEnvironmentAlias,
+  name: CloudAgentEnvironmentName,
 ): string | undefined {
-  return readCloudAgentEnvironment(Object.fromEntries(values), alias);
+  return readCloudAgentEnvironment(Object.fromEntries(values), name);
 }
 
 function normalizeProviderProxy(
@@ -506,7 +500,7 @@ export function hasResumeSupplementalMetadata(
 
 export function reconstructedPrompt(
   input: RunnerInput,
-  identity: CloudAgentHostIdentity = SYNARA_LEGACY_HOST_IDENTITY,
+  identity: CloudAgentHostIdentity = CLOUD_AGENT_GENERIC_HOST_IDENTITY,
 ): string {
   const host = normalizedHostIdentity(identity);
   const promptMessages = recoveryPromptMessages(input);
@@ -522,7 +516,7 @@ export function reconstructedPrompt(
 
 export function nativeResumeContinuationPrompt(
   input: RunnerInput,
-  identity: CloudAgentHostIdentity = SYNARA_LEGACY_HOST_IDENTITY,
+  identity: CloudAgentHostIdentity = CLOUD_AGENT_GENERIC_HOST_IDENTITY,
 ): string | undefined {
   if (!hasResumeSupplementalMetadata(input.workload, input.memoryDocuments)) return undefined;
   const host = normalizedHostIdentity(identity);

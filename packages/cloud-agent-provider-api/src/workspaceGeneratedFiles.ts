@@ -83,7 +83,7 @@ export class WorkspaceGeneratedFileCollector {
           provider: this.options.provider,
           message:
             `Provider reported more than ${MAX_EMITTED_GENERATED_FILES} durable Workspace file changes; ` +
-            "Synara limited standalone generated-file Artifacts while preserving the complete Workspace through its Checkpoint.",
+            "Cloud Agents limited standalone generated-file Artifacts while preserving the complete Workspace through its Checkpoint.",
         },
       });
     }

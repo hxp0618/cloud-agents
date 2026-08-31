@@ -7,7 +7,7 @@ import {
   CLOUD_AGENT_RUNTIME_EVENT_TYPES as PROVIDER_RUNTIME_EVENT_TYPES,
   CLOUD_AGENT_RUNTIME_EVENT_VERSION as PROVIDER_RUNTIME_EVENT_VERSION,
   type CloudAgentRuntimeEventType as ProviderRuntimeEventType,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 
 import type { RunnerMessage } from "./internalExecution";
 

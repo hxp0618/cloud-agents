@@ -10,15 +10,15 @@ import {
   type CloudAgentCommandEnvelope,
   type CloudAgentErrorCode,
   type CloudAgentMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import type {
   CloudAgentHostServices,
   CloudAgentProviderSession,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 import {
   CLOUD_AGENT_ENVIRONMENT,
   readCloudAgentEnvironment,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 
 import { createBoundedNdjsonWriter } from "./ndjsonWriter";
 import type { CloudAgentRuntimeV1 } from "./runtime";

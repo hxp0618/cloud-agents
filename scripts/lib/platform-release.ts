@@ -204,7 +204,7 @@ export function buildPlatformTypeScriptSDKPackage(root: string, version: string)
   const source = JSON.parse(
     readFileSync(resolve(root, "sdk/typescript/package.json"), "utf8"),
   ) as Record<string, unknown>;
-  if (source.name !== "@synara/cloud-agent-platform-sdk") {
+  if (source.name !== "@cloud-agents/cloud-agent-platform-sdk") {
     throw new Error("TypeScript SDK package identity is invalid.");
   }
   const manifest = {

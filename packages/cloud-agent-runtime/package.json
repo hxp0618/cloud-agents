@@ -1,5 +1,5 @@
 {
-  "name": "@synara/cloud-agent-runtime",
+  "name": "@cloud-agents/cloud-agent-runtime",
   "version": "0.2.0-rc.1",
   "description": "Portable Cloud Agent runtime and Provider Host Protocol v2 implementation",
   "homepage": "https://github.com/hxp0618/cloud-agents#readme",
@@ -66,8 +66,8 @@
     "vitest": "4.1.10"
   },
   "peerDependencies": {
-    "@synara/cloud-agent-protocol": "0.1.0-rc.1",
-    "@synara/cloud-agent-provider-api": "0.1.0-rc.1"
+    "@cloud-agents/cloud-agent-protocol": "0.1.0-rc.1",
+    "@cloud-agents/cloud-agent-provider-api": "0.1.0-rc.1"
   },
   "engines": {
     "node": ">=24.18.1 <25"

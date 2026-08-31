@@ -1,4 +1,4 @@
-import { CLOUD_AGENT_RUNTIME_EVENT_VERSION } from "@synara/cloud-agent-protocol";
+import { CLOUD_AGENT_RUNTIME_EVENT_VERSION } from "@cloud-agents/cloud-agent-protocol";
 import { describe, expect, it } from "vitest";
 
 import { normalizeRuntimeEventV2 } from "./runtimeEventV2";

@@ -1,7 +1,7 @@
 import {
   CLOUD_AGENT_CAPABILITY_IDS,
   CLOUD_AGENT_TEXT_GENERATION_TASKS,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 
 export type ValidatedCloudAgentProviderDescriptor = {
   readonly abiVersion: 1;

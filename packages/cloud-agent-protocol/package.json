@@ -1,5 +1,5 @@
 {
-  "name": "@synara/cloud-agent-protocol",
+  "name": "@cloud-agents/cloud-agent-protocol",
   "version": "0.1.0-rc.1",
   "description": "App-neutral Cloud Agent protocol constants and plain JavaScript/TypeScript types",
   "homepage": "https://github.com/hxp0618/cloud-agents#readme",

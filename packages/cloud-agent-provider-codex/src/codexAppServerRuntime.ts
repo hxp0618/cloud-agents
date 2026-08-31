@@ -35,7 +35,7 @@ import {
   type TerminalRedactor,
   TurnDiffCollector,
   WorkspaceGeneratedFileCollector,
-} from "@synara/cloud-agent-provider-api/internal";
+} from "@cloud-agents/cloud-agent-provider-api/internal";
 
 type JsonRpcId = string | number;
 
@@ -214,8 +214,8 @@ class CodexAppServerRuntime {
     try {
       await this.sendRequest("initialize", {
         clientInfo: {
-          name: "synara_desktop",
-          title: "Synara Provider Host",
+          name: "cloud_agents",
+          title: "Cloud Agents Provider Host",
           version: "0.2.0",
         },
         capabilities: {

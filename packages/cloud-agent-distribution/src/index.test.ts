@@ -18,7 +18,7 @@ describe("cloud-agent distribution", () => {
     expect(runtime.providerKinds).toEqual(["claudeAgent", "codex"]);
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.protocol).toBe("2.3");
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.runtime).toEqual({
-      package: "@synara/cloud-agent-runtime",
+      package: "@cloud-agents/cloud-agent-runtime",
       version: "0.2.0-rc.1",
     });
     expect(CLOUD_AGENT_DISTRIBUTION_MANIFEST.releaseDigest).toBeNull();
@@ -52,7 +52,7 @@ describe("cloud-agent distribution", () => {
       cloudAgentEnvelopeV2: "./schemas/cloud-agent-envelope-v2",
     });
     expect(CLOUD_AGENT_ENVELOPE_V2_SCHEMA.$id).toBe(
-      "https://schemas.synara.dev/cloud-agent/envelope-v2.schema.json",
+      "https://schemas.cloud-agents.dev/cloud-agent/envelope-v2.schema.json",
     );
     expect(Object.isFrozen(CLOUD_AGENT_ENVELOPE_V2_SCHEMA)).toBe(true);
   });

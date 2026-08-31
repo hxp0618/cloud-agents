@@ -1,4 +1,4 @@
-# `@synara/cloud-agent-runtime`
+# `@cloud-agents/cloud-agent-runtime`
 
 The default entrypoint exposes the app-neutral Runtime registry, stdio runtime
 transport, and stdio client.

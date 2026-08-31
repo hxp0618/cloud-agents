@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "dev.cloud-agent.portable-runtime",
   "displayName": "Cloud Agent Portable Runtime",
-  "legacyIdentity": { "id": "com.synara.cloud-agent", "displayName": "Synara Cloud Agent" },
   "distributionVersion": "0.1.0-rc.1",
   "releaseState": "source",
   "protocol": "2.3",
@@ -10,16 +9,16 @@
   "runtimeEvent": 2,
   "runtimeEventVersions": { "minimum": 2, "maximum": 2 },
   "providerPluginAbi": 1,
-  "runtime": { "package": "@synara/cloud-agent-runtime", "version": "0.2.0-rc.1" },
+  "runtime": { "package": "@cloud-agents/cloud-agent-runtime", "version": "0.2.0-rc.1" },
   "providers": [
     {
       "kind": "codex",
-      "package": "@synara/cloud-agent-provider-codex",
+      "package": "@cloud-agents/cloud-agent-provider-codex",
       "version": "0.1.0-rc.1"
     },
     {
       "kind": "claudeAgent",
-      "package": "@synara/cloud-agent-provider-claude",
+      "package": "@cloud-agents/cloud-agent-provider-claude",
       "version": "0.1.0-rc.1"
     }
   ],

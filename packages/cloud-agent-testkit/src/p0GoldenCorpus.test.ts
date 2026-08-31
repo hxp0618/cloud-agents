@@ -7,7 +7,7 @@ import {
   type CloudAgentMessageEnvelope,
   validateCloudAgentCommandEnvelope,
   validateCloudAgentMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 
 import { assertCloudAgentTranscript } from "./index";
 

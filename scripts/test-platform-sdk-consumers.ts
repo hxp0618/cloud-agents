@@ -23,7 +23,7 @@ const go = toolchainRoot ? join(toolchainRoot, "go") : "go";
 const packageVersion = "0.0.0-a3.2";
 const version = `v${packageVersion}`;
 const modulePath = "github.com/hxp0618/cloud-agents/sdk/go";
-const sdkPackage = "@synara/cloud-agent-platform-sdk";
+const sdkPackage = "@cloud-agents/cloud-agent-platform-sdk";
 const npmPackages = [
   {
     name: "@bufbuild/protobuf",
@@ -144,7 +144,7 @@ function packTypeScriptSDK(root: string): Artifact {
   run(bun, ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
   const output = join(root, "typescript-pack");
   mkdirSync(output, { recursive: true });
-  const filename = `synara-cloud-agent-platform-sdk-${packageVersion}.tgz`;
+  const filename = `cloud-agents-cloud-agent-platform-sdk-${packageVersion}.tgz`;
   const path = join(output, filename);
   writeFileSync(path, buildPlatformTypeScriptSDKPackage(repositoryRoot, packageVersion));
   return artifact(path);

@@ -15,7 +15,7 @@ import {
 
 function packed(
   name: (typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number],
-  version = name === "@synara/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
+  version = name === "@cloud-agents/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
 ): PackedCloudAgentPackage {
   return {
     name,
@@ -36,41 +36,41 @@ function validManifests(): TestManifest[] {
   const versions = Object.fromEntries(
     CLOUD_AGENT_PUBLIC_PACKAGES.map((name) => [
       name,
-      name === "@synara/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
+      name === "@cloud-agents/cloud-agent-runtime" ? "0.2.0-rc.1" : "0.1.0-rc.1",
     ]),
   ) as Record<(typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number], string>;
   const peerDependencies = {
-    "@synara/cloud-agent-protocol": {},
-    "@synara/cloud-agent-provider-api": {
-      "@synara/cloud-agent-protocol": versions["@synara/cloud-agent-protocol"],
+    "@cloud-agents/cloud-agent-protocol": {},
+    "@cloud-agents/cloud-agent-provider-api": {
+      "@cloud-agents/cloud-agent-protocol": versions["@cloud-agents/cloud-agent-protocol"],
     },
-    "@synara/cloud-agent-runtime": {
-      "@synara/cloud-agent-protocol": versions["@synara/cloud-agent-protocol"],
-      "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
+    "@cloud-agents/cloud-agent-runtime": {
+      "@cloud-agents/cloud-agent-protocol": versions["@cloud-agents/cloud-agent-protocol"],
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
     },
-    "@synara/cloud-agent-provider-codex": {
-      "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
+    "@cloud-agents/cloud-agent-provider-codex": {
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
     },
-    "@synara/cloud-agent-provider-claude": {
-      "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
+    "@cloud-agents/cloud-agent-provider-claude": {
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
     },
-    "@synara/cloud-agent-testkit": {
-      "@synara/cloud-agent-protocol": versions["@synara/cloud-agent-protocol"],
-      "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
+    "@cloud-agents/cloud-agent-testkit": {
+      "@cloud-agents/cloud-agent-protocol": versions["@cloud-agents/cloud-agent-protocol"],
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
     },
-    "@synara/cloud-agent-distribution": {
-      "@synara/cloud-agent-protocol": versions["@synara/cloud-agent-protocol"],
-      "@synara/cloud-agent-provider-api": versions["@synara/cloud-agent-provider-api"],
-      "@synara/cloud-agent-runtime": versions["@synara/cloud-agent-runtime"],
-      "@synara/cloud-agent-provider-codex": versions["@synara/cloud-agent-provider-codex"],
-      "@synara/cloud-agent-provider-claude": versions["@synara/cloud-agent-provider-claude"],
+    "@cloud-agents/cloud-agent-distribution": {
+      "@cloud-agents/cloud-agent-protocol": versions["@cloud-agents/cloud-agent-protocol"],
+      "@cloud-agents/cloud-agent-provider-api": versions["@cloud-agents/cloud-agent-provider-api"],
+      "@cloud-agents/cloud-agent-runtime": versions["@cloud-agents/cloud-agent-runtime"],
+      "@cloud-agents/cloud-agent-provider-codex": versions["@cloud-agents/cloud-agent-provider-codex"],
+      "@cloud-agents/cloud-agent-provider-claude": versions["@cloud-agents/cloud-agent-provider-claude"],
     },
   } satisfies Record<(typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number], Record<string, string>>;
   return CLOUD_AGENT_PUBLIC_PACKAGES.map((name) => ({
     name,
     version: versions[name],
     dependencies:
-      name === "@synara/cloud-agent-provider-claude"
+      name === "@cloud-agents/cloud-agent-provider-claude"
         ? { "@anthropic-ai/claude-agent-sdk": "0.3.207" }
         : {},
     peerDependencies: peerDependencies[name],
@@ -100,38 +100,38 @@ function replacePeerDependencies(
 describe("Cloud Agent packed release validation", () => {
   it("isolates every package import to its exact transitive tarball closure", () => {
     const expected = {
-      "@synara/cloud-agent-protocol": ["@synara/cloud-agent-protocol"],
-      "@synara/cloud-agent-provider-api": [
-        "@synara/cloud-agent-protocol",
-        "@synara/cloud-agent-provider-api",
+      "@cloud-agents/cloud-agent-protocol": ["@cloud-agents/cloud-agent-protocol"],
+      "@cloud-agents/cloud-agent-provider-api": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
       ],
-      "@synara/cloud-agent-runtime": [
-        "@synara/cloud-agent-protocol",
-        "@synara/cloud-agent-provider-api",
-        "@synara/cloud-agent-runtime",
+      "@cloud-agents/cloud-agent-runtime": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-runtime",
       ],
-      "@synara/cloud-agent-provider-codex": [
-        "@synara/cloud-agent-protocol",
-        "@synara/cloud-agent-provider-api",
-        "@synara/cloud-agent-provider-codex",
+      "@cloud-agents/cloud-agent-provider-codex": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-provider-codex",
       ],
-      "@synara/cloud-agent-provider-claude": [
-        "@synara/cloud-agent-protocol",
-        "@synara/cloud-agent-provider-api",
-        "@synara/cloud-agent-provider-claude",
+      "@cloud-agents/cloud-agent-provider-claude": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-provider-claude",
       ],
-      "@synara/cloud-agent-testkit": [
-        "@synara/cloud-agent-protocol",
-        "@synara/cloud-agent-provider-api",
-        "@synara/cloud-agent-testkit",
+      "@cloud-agents/cloud-agent-testkit": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-testkit",
       ],
-      "@synara/cloud-agent-distribution": [
-        "@synara/cloud-agent-protocol",
-        "@synara/cloud-agent-provider-api",
-        "@synara/cloud-agent-runtime",
-        "@synara/cloud-agent-provider-codex",
-        "@synara/cloud-agent-provider-claude",
-        "@synara/cloud-agent-distribution",
+      "@cloud-agents/cloud-agent-distribution": [
+        "@cloud-agents/cloud-agent-protocol",
+        "@cloud-agents/cloud-agent-provider-api",
+        "@cloud-agents/cloud-agent-runtime",
+        "@cloud-agents/cloud-agent-provider-codex",
+        "@cloud-agents/cloud-agent-provider-claude",
+        "@cloud-agents/cloud-agent-distribution",
       ],
     } satisfies Record<
       (typeof CLOUD_AGENT_PUBLIC_PACKAGES)[number],
@@ -143,39 +143,39 @@ describe("Cloud Agent packed release validation", () => {
   });
 
   it("imports stable public subpaths in the isolated target environment", () => {
-    expect(cloudAgentStableImportSpecifiers("@synara/cloud-agent-provider-api")).toEqual([
-      "@synara/cloud-agent-provider-api",
-      "@synara/cloud-agent-provider-api/internal",
+    expect(cloudAgentStableImportSpecifiers("@cloud-agents/cloud-agent-provider-api")).toEqual([
+      "@cloud-agents/cloud-agent-provider-api",
+      "@cloud-agents/cloud-agent-provider-api/internal",
     ]);
-    expect(cloudAgentStableImportSpecifiers("@synara/cloud-agent-runtime")).toEqual([
-      "@synara/cloud-agent-runtime",
-      "@synara/cloud-agent-runtime/node",
+    expect(cloudAgentStableImportSpecifiers("@cloud-agents/cloud-agent-runtime")).toEqual([
+      "@cloud-agents/cloud-agent-runtime",
+      "@cloud-agents/cloud-agent-runtime/node",
     ]);
-    expect(cloudAgentStableImportSpecifiers("@synara/cloud-agent-distribution")).toEqual([
-      "@synara/cloud-agent-distribution",
-      "@synara/cloud-agent-distribution/schemas",
-      "@synara/cloud-agent-distribution/schemas/cloud-agent-envelope-v2",
+    expect(cloudAgentStableImportSpecifiers("@cloud-agents/cloud-agent-distribution")).toEqual([
+      "@cloud-agents/cloud-agent-distribution",
+      "@cloud-agents/cloud-agent-distribution/schemas",
+      "@cloud-agents/cloud-agent-distribution/schemas/cloud-agent-envelope-v2",
     ]);
   });
 
   it("rejects local protocols and unpublished private dependencies", () => {
     expect(() =>
       validatePackedCloudAgentManifest({
-        name: "@synara/cloud-agent-runtime",
+        name: "@cloud-agents/cloud-agent-runtime",
         version: "0.2.0",
-        dependencies: { "@synara/cloud-agent-protocol": "workspace:*" },
+        dependencies: { "@cloud-agents/cloud-agent-protocol": "workspace:*" },
       }),
     ).toThrow(/local protocol/);
     expect(() =>
       validatePackedCloudAgentManifest({
-        name: "@synara/cloud-agent-runtime",
+        name: "@cloud-agents/cloud-agent-runtime",
         version: "0.2.0",
-        dependencies: { "@synara/contracts": "0.0.0" },
+        dependencies: { "@cloud-agents/contracts": "0.0.0" },
       }),
     ).toThrow(/unpublished private package/);
     expect(() =>
       validatePackedCloudAgentManifest({
-        name: "@synara/cloud-agent-runtime",
+        name: "@cloud-agents/cloud-agent-runtime",
         version: "0.2.0",
         exports: { "./legacy-provider-host": "./dist/legacyProviderHost.mjs" },
       }),
@@ -187,24 +187,24 @@ describe("Cloud Agent packed release validation", () => {
     expect(() => validatePackedCloudAgentSet(manifests)).not.toThrow();
     expect(() =>
       validatePackedCloudAgentSet(
-        replacePeerDependencies(manifests, "@synara/cloud-agent-distribution", {
-          ...manifests.find((manifest) => manifest.name === "@synara/cloud-agent-distribution")!
+        replacePeerDependencies(manifests, "@cloud-agents/cloud-agent-distribution", {
+          ...manifests.find((manifest) => manifest.name === "@cloud-agents/cloud-agent-distribution")!
             .peerDependencies,
-          "@synara/cloud-agent-runtime": "^0.2.0",
+          "@cloud-agents/cloud-agent-runtime": "^0.2.0",
         }),
       ),
     ).toThrow(/exact semver/);
   });
 
   it.each([
-    ["Runtime to Provider", "@synara/cloud-agent-runtime", "@synara/cloud-agent-provider-codex"],
-    ["Runtime to Distribution", "@synara/cloud-agent-runtime", "@synara/cloud-agent-distribution"],
-    ["Runtime to Testkit", "@synara/cloud-agent-runtime", "@synara/cloud-agent-testkit"],
-    ["Provider API to Runtime", "@synara/cloud-agent-provider-api", "@synara/cloud-agent-runtime"],
+    ["Runtime to Provider", "@cloud-agents/cloud-agent-runtime", "@cloud-agents/cloud-agent-provider-codex"],
+    ["Runtime to Distribution", "@cloud-agents/cloud-agent-runtime", "@cloud-agents/cloud-agent-distribution"],
+    ["Runtime to Testkit", "@cloud-agents/cloud-agent-runtime", "@cloud-agents/cloud-agent-testkit"],
+    ["Provider API to Runtime", "@cloud-agents/cloud-agent-provider-api", "@cloud-agents/cloud-agent-runtime"],
     [
       "Protocol to Provider API",
-      "@synara/cloud-agent-protocol",
-      "@synara/cloud-agent-provider-api",
+      "@cloud-agents/cloud-agent-protocol",
+      "@cloud-agents/cloud-agent-provider-api",
     ],
   ] as const)("rejects an extra %s internal edge", (_label, source, target) => {
     const manifests = validManifests();
@@ -225,8 +225,8 @@ describe("Cloud Agent packed release validation", () => {
     const manifests = validManifests();
     expect(() =>
       validatePackedCloudAgentSet(
-        replacePeerDependencies(manifests, "@synara/cloud-agent-runtime", {
-          "@synara/cloud-agent-protocol": "0.1.0-rc.1",
+        replacePeerDependencies(manifests, "@cloud-agents/cloud-agent-runtime", {
+          "@cloud-agents/cloud-agent-protocol": "0.1.0-rc.1",
         }),
       ),
     ).toThrow(/internal dependencies must be exactly/);
@@ -237,9 +237,9 @@ describe("Cloud Agent packed release validation", () => {
     expect(() =>
       validatePackedCloudAgentSet(
         manifests.map((manifest) =>
-          manifest.name === "@synara/cloud-agent-runtime"
+          manifest.name === "@cloud-agents/cloud-agent-runtime"
             ? Object.assign({}, manifest, {
-                optionalDependencies: { "@synara/cloud-agent-provider-codex": "0.1.0" },
+                optionalDependencies: { "@cloud-agents/cloud-agent-provider-codex": "0.1.0" },
               })
             : manifest,
         ),
@@ -248,9 +248,9 @@ describe("Cloud Agent packed release validation", () => {
     expect(() =>
       validatePackedCloudAgentSet(
         manifests.map((manifest) =>
-          manifest.name === "@synara/cloud-agent-provider-api"
+          manifest.name === "@cloud-agents/cloud-agent-provider-api"
             ? Object.assign({}, manifest, {
-                dependencies: { "@synara/cloud-agent-runtime": "0.2.0-rc.1" },
+                dependencies: { "@cloud-agents/cloud-agent-runtime": "0.2.0-rc.1" },
               })
             : manifest,
         ),
@@ -259,9 +259,9 @@ describe("Cloud Agent packed release validation", () => {
     expect(() =>
       validatePackedCloudAgentSet(
         manifests.map((manifest) =>
-          manifest.name === "@synara/cloud-agent-testkit"
+          manifest.name === "@cloud-agents/cloud-agent-testkit"
             ? Object.assign({}, manifest, {
-                devDependencies: { "@synara/cloud-agent-provider-codex": "0.1.0" },
+                devDependencies: { "@cloud-agents/cloud-agent-provider-codex": "0.1.0" },
               })
             : manifest,
         ),
@@ -272,7 +272,7 @@ describe("Cloud Agent packed release validation", () => {
   it("requires the exact Claude Agent SDK production dependency", () => {
     const manifests = validManifests();
     const claude = manifests.find(
-      (manifest) => manifest.name === "@synara/cloud-agent-provider-claude",
+      (manifest) => manifest.name === "@cloud-agents/cloud-agent-provider-claude",
     )!;
     expect(() =>
       validatePackedCloudAgentSet(

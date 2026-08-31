@@ -1,6 +1,9 @@
-import { createClaudeProvider } from "@synara/cloud-agent-provider-claude";
-import { createCodexProvider } from "@synara/cloud-agent-provider-codex";
-import { createCloudAgentRuntime, createCloudAgentStdioClient } from "@synara/cloud-agent-runtime";
+import { createClaudeProvider } from "@cloud-agents/cloud-agent-provider-claude";
+import { createCodexProvider } from "@cloud-agents/cloud-agent-provider-codex";
+import {
+  createCloudAgentRuntime,
+  createCloudAgentStdioClient,
+} from "@cloud-agents/cloud-agent-runtime";
 
 import manifest from "../manifest.json";
 

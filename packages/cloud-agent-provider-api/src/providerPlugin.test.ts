@@ -7,11 +7,11 @@ import { describe, expect, it } from "vitest";
 import {
   CLOUD_AGENT_PROTOCOL_VERSION,
   type CloudAgentCommandEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import type {
   CloudAgentCredentialLease,
   CloudAgentHostServices,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 
 import { createProviderPlugin, type ProviderPluginOptions } from "./providerPlugin";
 import type {
@@ -482,7 +482,7 @@ function testPlugin(overrides: TestPluginOverrides = { startRun: unavailableExec
     providerKind: "codex",
     displayName: "Codex",
     descriptor: {
-      environment: { SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
       runtimeVersionProbe: () => ({ available: true, output: "codex-cli 0.150.1" }),
     },
     ...overrides,

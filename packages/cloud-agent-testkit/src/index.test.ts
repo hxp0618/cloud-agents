@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { CLOUD_AGENT_CAPABILITY_IDS } from "@synara/cloud-agent-protocol";
+import { CLOUD_AGENT_CAPABILITY_IDS } from "@cloud-agents/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   type CloudAgentProviderDescriptor,
-} from "@synara/cloud-agent-provider-api";
+} from "@cloud-agents/cloud-agent-provider-api";
 
 import {
   assertCloudAgentDescriptor,

@@ -21,8 +21,8 @@ vi.mock("./codexAppServerRuntime", () => ({
 import { createCodexProvider } from "./index";
 import { startCodexAppServerRun } from "./codexAppServerRuntime";
 
-process.env.SYNARA_PROVIDER_OUTER_SANDBOX_PROFILE = "single-tenant-trusted-v1";
-process.env.SYNARA_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS = "codex";
+process.env.CLOUD_AGENT_PROVIDER_OUTER_SANDBOX_PROFILE = "single-tenant-trusted-v1";
+process.env.CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS = "codex";
 
 describe("createCodexProvider", () => {
   it("publishes a host-neutral ABI descriptor", async () => {
@@ -84,7 +84,7 @@ describe("createCodexProvider", () => {
       expect(generateResult.messageType).toBe("Result");
       const call = vi.mocked(startCodexAppServerRun).mock.calls.at(-1)?.[0];
       expect(call?.toolPolicyHookCommand).toContain(" -e ");
-      expect(call?.environment.SYNARA_CODEX_NO_TOOL_OPERATION).toBe("1");
+      expect(call?.environment.CLOUD_AGENT_CODEX_NO_TOOL_OPERATION).toBe("1");
       expect((await session.events[Symbol.asyncIterator]().next()).value).toBeDefined();
     } finally {
       await session.close();

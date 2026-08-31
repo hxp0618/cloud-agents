@@ -1,5 +1,5 @@
 {
-  "name": "@synara/cloud-agent-testkit",
+  "name": "@cloud-agents/cloud-agent-testkit",
   "version": "0.1.0-rc.1",
   "description": "Host-neutral Cloud Agent protocol and provider conformance helpers",
   "homepage": "https://github.com/hxp0618/cloud-agents#readme",
@@ -54,8 +54,8 @@
     "vitest": "4.1.10"
   },
   "peerDependencies": {
-    "@synara/cloud-agent-protocol": "0.1.0-rc.1",
-    "@synara/cloud-agent-provider-api": "0.1.0-rc.1"
+    "@cloud-agents/cloud-agent-protocol": "0.1.0-rc.1",
+    "@cloud-agents/cloud-agent-provider-api": "0.1.0-rc.1"
   },
   "engines": {
     "node": ">=24.18.1 <25"

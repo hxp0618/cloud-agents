@@ -4,7 +4,7 @@ Portable Cloud Agent protocol, provider APIs, runtime, provider implementations,
 
 The repository is being rebuilt around a host-neutral JavaScript/stdio ABI. Synara and T3 Code are future consumers/integrations; they retain their own orchestration, workspace, VCS, checkpoint, UI, and lifecycle authority outside this product.
 
-The seven packages keep their `@synara/cloud-agent-*` names for first-RC wire and import compatibility. That namespace does not make the repository depend on the Synara application root: the workspace contains no Turbo, Effect, Synara Control Plane, or T3-private dependency.
+The seven Runtime packages and the public Control Plane SDK use the independent `@cloud-agents/*` namespace. They do not depend on a Synara application root or T3-private package.
 
 ## Runtime baseline
 
@@ -15,9 +15,9 @@ The seven packages keep their `@synara/cloud-agent-*` names for first-RC wire an
 
 `createCloudAgentStdioClient` keeps ambient environment inheritance by default for compatibility. New hosts should set `extendEnvironment: false` and explicitly provide the minimal child environment. Async `subscribe` listeners are receipt barriers: the client waits for each returned promise before delivering the next frame or resolving the terminal command.
 
-Portable `CLOUD_AGENT_*` environment names take precedence over legacy `SYNARA_*` names. If both names are supplied with different values, the runtime fails closed. Credential metadata written to a child is temporarily written under both names with the same value.
+Runtime and Provider configuration uses only the `CLOUD_AGENT_*` environment namespace.
 
-The coordinated RC keeps every internal package edge as an exact peer pin. Consumers install the required tarball closure as top-level GitHub Release URLs from `cloud-agent-candidate.lock.json`; no unpublished `@synara/*` package is resolved through npm, and no package-manager security switch needs to be relaxed.
+The coordinated RC keeps every internal package edge as an exact peer pin. Consumers install the required tarball closure as top-level GitHub Release URLs from `cloud-agent-candidate.lock.json`; no unpublished `@cloud-agents/*` package is resolved through npm, and no package-manager security switch needs to be relaxed.
 
 ## Local development
 

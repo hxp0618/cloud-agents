@@ -3,9 +3,9 @@ import type {
   CloudAgentCommandEnvelope,
   CloudAgentMessageEnvelope,
   CloudAgentTextGenerationTask,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 
-export * from "./compatEnvironment";
+export * from "./environment";
 export * from "./descriptorValidator";
 
 export const CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION = 1 as const;

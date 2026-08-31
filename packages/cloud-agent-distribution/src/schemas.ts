@@ -1,4 +1,4 @@
-import cloudAgentEnvelopeV2Schema from "@synara/cloud-agent-protocol/schemas/cloud-agent-envelope-v2.schema.json" with { type: "json" };
+import cloudAgentEnvelopeV2Schema from "@cloud-agents/cloud-agent-protocol/schemas/cloud-agent-envelope-v2.schema.json" with { type: "json" };
 
 export const CLOUD_AGENT_ENVELOPE_V2_SCHEMA = deepFreeze(cloudAgentEnvelopeV2Schema);
 

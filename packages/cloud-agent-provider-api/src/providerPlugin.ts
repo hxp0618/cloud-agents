@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type {
   CloudAgentCommandEnvelope,
   CloudAgentMessageEnvelope,
-} from "@synara/cloud-agent-protocol";
+} from "@cloud-agents/cloud-agent-protocol";
 import {
   CLOUD_AGENT_PROVIDER_PLUGIN_ABI_VERSION,
   type CloudAgentHostServices,
@@ -21,6 +21,7 @@ import {
   type ProviderRunExecutor,
   type RunnerInput,
 } from "./internalExecution";
+import { CLOUD_AGENT_ENVIRONMENT } from "./environment";
 
 export type PortableProviderKind = string;
 
@@ -42,12 +43,7 @@ export interface ProviderPluginOptions {
 
 const DEFAULT_CLOSE_TASK_TIMEOUT_MS = 5_000;
 
-/**
- * Compatibility adapter used while the Provider Host v2 implementation is
- * moved out of the historical Synara package. The returned plugin exposes
- * only the app-neutral Provider Plugin ABI; wire-compatible RunnerInput details remain
- * behind Cloud Agent command payloads and are not added to the public ABI.
- */
+/** Creates a Provider Plugin ABI adapter around the internal Provider Host protocol. */
 export function createProviderPlugin(options: ProviderPluginOptions): CloudAgentProviderPluginV1 {
   const descriptor = () => providerHostDescriptor(options.providerKind, options.descriptor);
   const plugin: CloudAgentProviderPluginV1 = {
@@ -70,7 +66,9 @@ export function createProviderPlugin(options: ProviderPluginOptions): CloudAgent
       try {
         if (signal?.aborted) throw new Error("Cloud Agent Provider session creation was aborted.");
         const credential = credentialLease
-          ? readRunnerCredential({ SYNARA_PROVIDER_CREDENTIAL_FD: String(credentialLease.fd) })
+          ? readRunnerCredential({
+              [CLOUD_AGENT_ENVIRONMENT.providerCredentialFd]: String(credentialLease.fd),
+            })
           : null;
         let queueOverflowReported = false;
         const events = new AsyncMessageQueue<CloudAgentMessageEnvelope>(isTerminalMessage, () => {

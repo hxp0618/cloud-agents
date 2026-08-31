@@ -1,5 +1,5 @@
 {
-  "name": "@synara/cloud-agent-platform-sdk",
+  "name": "@cloud-agents/cloud-agent-platform-sdk",
   "version": "0.0.0-a3.2",
   "private": true,
   "description": "Cloud Agents Platform TypeScript SDK",

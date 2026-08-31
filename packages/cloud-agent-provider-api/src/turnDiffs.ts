@@ -60,7 +60,7 @@ export class TurnDiffCollector {
 
     if (sizeBytes > DIFF_ARTIFACT_MAX_BYTES) {
       this.warn(
-        `Provider reported a ${sizeBytes}-byte Turn Diff, above Synara's ${DIFF_ARTIFACT_MAX_BYTES}-byte standalone Diff Artifact limit; the Workspace Checkpoint remains authoritative.`,
+        `Provider reported a ${sizeBytes}-byte Turn Diff, above Cloud Agents's ${DIFF_ARTIFACT_MAX_BYTES}-byte standalone Diff Artifact limit; the Workspace Checkpoint remains authoritative.`,
       );
       return;
     }

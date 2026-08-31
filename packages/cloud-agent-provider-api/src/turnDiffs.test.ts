@@ -26,7 +26,7 @@ describe("Turn Diff collector", () => {
   });
 
   it("writes one large Diff beneath the bound Runtime Output Root", async () => {
-    const runtimeOutputDirectory = mkdtempSync(join(tmpdir(), "synara-turn-diff-"));
+    const runtimeOutputDirectory = mkdtempSync(join(tmpdir(), "cloud-agents-turn-diff-"));
     const messages: RunnerMessage[] = [];
     try {
       const collector = new TurnDiffCollector({
