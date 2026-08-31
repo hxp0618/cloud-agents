@@ -479,10 +479,7 @@ func (coordinator *DurableRuntimeExecutionCoordinator) Execute(ctx context.Conte
 		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, runtimeResult.FailureCode, err)
 	}
 	if runtimeResult.Terminal.MessageType == "Error" {
-		code := "runtime_failed"
-		if runtimeResult.Terminal.Error != nil && ValidRuntimeErrorCode(runtimeResult.Terminal.Error.Code) {
-			code = runtimeResult.Terminal.Error.Code
-		}
+		code := runtimeFailureCode(runtimeResult.Terminal, "runtime_failed")
 		return coordinator.fail(principalSource, input, started, runtimeResult.Messages, code, errors.New(code))
 	}
 	terminal := publicRuntimeMessage(runtimeResult.Terminal)
@@ -628,11 +625,15 @@ func (coordinator *DurableRuntimeExecutionCoordinator) executeRuntimeTurn(ctx co
 	if err := session.Send(ctx, start); err != nil {
 		return result, err
 	}
-	_, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID, nil)
+	startMessages, terminal, err := receiveRuntimeMessages(session.Receive, start.CommandID, nil)
 	if err != nil {
+		result.Messages = publicRuntimeMessages(startMessages)
 		return result, err
 	}
 	if terminal.MessageType == "Error" {
+		result.Messages = publicRuntimeMessages(startMessages)
+		result.Terminal = terminal
+		result.FailureCode = runtimeFailureCode(terminal, result.FailureCode)
 		return result, errors.New("Runtime StartSession failed")
 	}
 	turn := command("SendTurn", boundedRuntimeIdentifier(input.RequestID, "turn"), map[string]any{"inputText": input.InputText})
@@ -690,6 +691,13 @@ func publicRuntimeMessages(messages []runtimeprotocol.Message) []runtimeprotocol
 		result[index] = publicRuntimeMessage(message)
 	}
 	return result
+}
+
+func runtimeFailureCode(message runtimeprotocol.Message, fallback string) string {
+	if message.MessageType == "Error" && message.Error != nil && ValidRuntimeErrorCode(message.Error.Code) {
+		return message.Error.Code
+	}
+	return fallback
 }
 
 func deriveRuntimeWorkspacePaths(base string, scope Scope, sessionID, turnID, executionID string) (runtimeWorkspacePaths, error) {

@@ -150,6 +150,17 @@ func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
 	}
 }
 
+func TestRuntimeFailureCodeUsesOnlyPublicStableCodes(t *testing.T) {
+	terminal := runtimeprotocol.Message{MessageType: "Error", Error: &runtimeprotocol.Error{Code: "capability_unsupported"}}
+	if got := runtimeFailureCode(terminal, "runtime_start_failed"); got != "capability_unsupported" {
+		t.Fatalf("Runtime failure code = %q", got)
+	}
+	terminal.Error.Code = "INVALID_CODE!"
+	if got := runtimeFailureCode(terminal, "runtime_start_failed"); got != "runtime_start_failed" {
+		t.Fatalf("invalid Runtime failure code = %q", got)
+	}
+}
+
 func TestRuntimeInteractionsResolveOnTheActiveStream(t *testing.T) {
 	reference := RuntimeExecutionReference{Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7}
 	key, err := durableRuntimeExecutionKey(reference)
