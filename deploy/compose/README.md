@@ -1,11 +1,18 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000029.tar` into a directory, then run Compose
-from its `deploy/compose` directory with an env file copied from `.env.example`.
-Set `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
+Extract `cloud-agents-deployment-000029.tar` into a directory and copy
+`deploy/compose/.env.example` to a deployment-owned env file. Set
+`CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
 The bootstrap profile provisions the fixed Compose database roles in one
-transaction and fails closed on existing role drift:
+transaction and fails closed on existing role drift. Start the complete stack
+from any directory with:
+
+```sh
+sh /path/to/extracted/deploy/compose/cloud-agents-up.sh /path/to/.env
+```
+
+The script performs these existing steps in order:
 
 1. Run `docker compose --env-file .env --profile bootstrap run --rm bootstrap`
    once with an isolated unswitched superuser URL.
@@ -13,7 +20,7 @@ transaction and fails closed on existing role drift:
    once to migrate the database and create the initial tenant, organization, and `tenant.admin`
    membership for the configured authenticated subject. Exact retries are safe; conflicting
    retries fail without partial changes.
-3. Run `docker compose --env-file .env up --build`.
+3. Run `docker compose --env-file .env up --build` and remain attached.
 
 Create a consistent custom-format logical backup without writing it inside a
 container:

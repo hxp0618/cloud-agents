@@ -109,6 +109,7 @@ describe("platform release", () => {
       "deploy/bootstrap/roles.sql",
       "deploy/compose/.env.example",
       "deploy/compose/README.md",
+      "deploy/compose/cloud-agents-up.sh",
       "deploy/compose/docker-compose.yml",
       "deploy/compose/provision.sql",
       "deploy/compose/runtime.env.example",
@@ -182,6 +183,7 @@ describe("platform release", () => {
 
   it("packages an atomic Compose database authority bootstrap", () => {
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
+    const up = readFileSync("deploy/compose/cloud-agents-up.sh", "utf8");
     expect(compose).toContain("command:\n      - >-\n        exec psql");
     expect(compose).toContain("--single-transaction");
     expect(compose).toContain("/deploy/compose/provision.sql");
@@ -190,6 +192,11 @@ describe("platform release", () => {
     const environment = readFileSync("deploy/compose/.env.example", "utf8");
     expect(environment).toContain("postgresql://cloud_agents_runtime_login:");
     expect(environment).not.toContain("postgresql://cloud_agents_runtime:");
+    expect(up).toContain("set -eu");
+    expect(up).toContain("--profile bootstrap run --rm bootstrap");
+    expect(up).toContain("--profile tenant-bootstrap run --rm tenant-bootstrap");
+    expect(up).toContain('exec docker compose --env-file "$environment_file"');
+    expect(up.trimEnd().endsWith("up --build")).toBe(true);
   });
 
   it("backs up and atomically restores an empty Compose database", () => {
