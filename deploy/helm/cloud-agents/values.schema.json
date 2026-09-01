@@ -92,9 +92,14 @@
     "deploymentTargets": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kubernetesCredentialSecretName"],
+      "required": ["kubernetesCredentialSecretName", "sshCredentialSecretName"],
       "properties": {
         "kubernetesCredentialSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "sshCredentialSecretName": {
           "type": "string",
           "maxLength": 253,
           "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"

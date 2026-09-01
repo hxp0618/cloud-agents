@@ -31,6 +31,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,6 +48,7 @@ const (
 	productionWorkspaceEnvironment             = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
 	productionDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
 	productionKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
+	productionSSHCredentialsEnvironment        = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
 	productionAdmissionLeaseEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID"
 	productionAdmissionGenerationEnvironment   = "CLOUD_AGENTS_PLATFORM_ADMISSION_GENERATION"
 	productionAdmissionTokenEnvironment        = "CLOUD_AGENTS_PLATFORM_ADMISSION_TOKEN"
@@ -76,6 +78,7 @@ type productionConfig struct {
 	workspaceDirectory    string
 	dockerCredentials     string
 	kubernetesCredentials string
+	sshCredentials        string
 	admissionLeaseID      string
 	admissionGeneration   uint64
 	admissionToken        []byte
@@ -237,7 +240,14 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("Kubernetes target credential directory is invalid")
 		}
 	}
-	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber)
+	var sshProber *sshtarget.CredentialDirectory
+	if config.sshCredentials != "" {
+		sshProber, err = sshtarget.NewCredentialDirectory(config.sshCredentials)
+		if err != nil {
+			return errors.New("SSH target credential directory is invalid")
+		}
+	}
+	deploymentTargetServer, err := server.NewDeploymentTargetHTTPServer(verifier, coordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("deployment target HTTP server is unavailable")
 	}
@@ -404,6 +414,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	workspaceDirectory := set.String("workspace-directory", "", "Runtime workspace directory on the Worker")
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
+	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
 	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
@@ -432,8 +443,9 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(workspaceDirectory, productionWorkspaceEnvironment)
 	fill(dockerCredentials, productionDockerCredentialsEnvironment)
 	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
+	fill(sshCredentials, productionSSHCredentialsEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials {
+	if strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -462,7 +474,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, dockerCredentials: *dockerCredentials, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 

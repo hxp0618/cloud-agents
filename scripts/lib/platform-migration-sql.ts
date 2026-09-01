@@ -242,6 +242,7 @@ export function classifyMigrationStatement(
         "000022",
         "000023",
         "000028",
+        "000036",
       ]).has(migrationId) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -379,6 +380,12 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:transition_membership(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text)",
           ],
         ],
+        [
+          "000036",
+          [
+            "function:unquoted:cloud_agents/unquoted:register_deployment_target_v2(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
       if (!expectedReplacements?.includes(targetIdentity)) reject(tokens);
     }
@@ -450,7 +457,7 @@ export function classifyMigrationStatement(
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
       const dropDeploymentTargetKindConstraint =
-        migrationId === "000035" &&
+        new Set(["000035", "000036"]).has(migrationId) &&
         targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_targets" &&
         subcommand.join("\0") === ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_KIND"].join("\0");
       if (

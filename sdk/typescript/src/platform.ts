@@ -261,7 +261,7 @@ export type EnvironmentLeasePage = Readonly<{
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
-  targetKind: "docker" | "kubernetes";
+  targetKind: "docker" | "kubernetes" | "ssh";
   endpoint: string;
   credentialRef: string;
 }>;
@@ -273,7 +273,7 @@ export type DeploymentTarget = Readonly<{
   spec: Readonly<{
     projectRef: NamespaceRef;
     generation: number;
-    targetKind: "docker" | "kubernetes";
+    targetKind: "docker" | "kubernetes" | "ssh";
     endpoint: string;
     credentialRef: string;
     observedPhase: "unprobed" | "probing" | "ready" | "unavailable";
@@ -891,6 +891,30 @@ function deploymentTargetEndpoint(value: unknown, path: string): string {
   }
   return text;
 }
+function registeredTargetEndpoint(
+  value: unknown,
+  kind: "docker" | "kubernetes" | "ssh",
+  path: string,
+): string {
+  const text = boundedString(value, 7, 2048, path);
+  try {
+    const parsed = new URL(text);
+    if (
+      parsed.protocol !== (kind === "ssh" ? "ssh:" : "https:") ||
+      parsed.hostname === "" ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.search !== "" ||
+      parsed.hash !== "" ||
+      parsed.pathname !== "/"
+    )
+      error("INVALID_TARGET_ENDPOINT", path);
+  } catch (cause) {
+    if (cause instanceof JSONContractError) throw cause;
+    error("INVALID_TARGET_ENDPOINT", path);
+  }
+  return text;
+}
 function workerSPIFFEID(value: unknown, path: string): string {
   const text = boundedString(value, 10, 2048, path);
   try {
@@ -1258,11 +1282,16 @@ export function decodeDeploymentTargetRegisterRequest(
     ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
     ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
   );
+  const targetKind = enumValue(
+    source.targetKind,
+    ["docker", "kubernetes", "ssh"] as const,
+    "/targetKind",
+  );
   return Object.freeze({
     targetId: identifier(source.targetId, "/targetId"),
     targetName: identifier(source.targetName, "/targetName"),
-    targetKind: enumValue(source.targetKind, ["docker", "kubernetes"] as const, "/targetKind"),
-    endpoint: deploymentTargetEndpoint(source.endpoint, "/endpoint"),
+    targetKind,
+    endpoint: registeredTargetEndpoint(source.endpoint, targetKind, "/endpoint"),
     credentialRef: identifier(source.credentialRef, "/credentialRef"),
   });
 }
@@ -1806,14 +1835,19 @@ export function decodeDeploymentTarget(value: unknown): DeploymentTarget {
         stableErrorCode !== ""))
   )
     error("INVALID_PROBE_STATE", "/spec");
+  const targetKind = enumValue(
+    spec.targetKind,
+    ["docker", "kubernetes", "ssh"] as const,
+    "/spec/targetKind",
+  );
   const target = {
     ...root,
     kind: "DeploymentTarget" as const,
     spec: Object.freeze({
       projectRef: namespace(spec.projectRef, "project", "/spec/projectRef"),
       generation: integer(spec.generation, 1, Number.MAX_SAFE_INTEGER, "/spec/generation"),
-      targetKind: enumValue(spec.targetKind, ["docker", "kubernetes"] as const, "/spec/targetKind"),
-      endpoint: deploymentTargetEndpoint(spec.endpoint, "/spec/endpoint"),
+      targetKind,
+      endpoint: registeredTargetEndpoint(spec.endpoint, targetKind, "/spec/endpoint"),
       credentialRef: identifier(spec.credentialRef, "/spec/credentialRef"),
       observedPhase: phase,
       apiVersion,

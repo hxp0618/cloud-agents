@@ -8,8 +8,8 @@
   "properties": {
     "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "targetName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
-    "targetKind": { "enum": ["docker", "kubernetes"] },
-    "endpoint": { "type": "string", "format": "uri", "pattern": "^https://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
+    "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
+    "endpoint": { "type": "string", "format": "uri", "pattern": "^(?:https|ssh)://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
     "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
   }
 }

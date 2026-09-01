@@ -109,8 +109,8 @@ func run(args []string, stdout io.Writer) error {
 		var targetName, kind, targetEndpoint, credentialRef string
 		if err = parseActionFlags("target register", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&targetName, "target-name", "", "deployment target name")
-			set.StringVar(&kind, "kind", "", "target kind (docker or kubernetes)")
-			set.StringVar(&targetEndpoint, "target-endpoint", "", "target HTTPS endpoint")
+			set.StringVar(&kind, "kind", "", "target kind (docker, kubernetes, or ssh)")
+			set.StringVar(&targetEndpoint, "target-endpoint", "", "target HTTPS or SSH endpoint")
 			set.StringVar(&credentialRef, "credential-ref", "", "deployment-owned credential reference")
 		}); err == nil {
 			value, err = client.RegisterDeploymentTarget(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.DeploymentTargetRegisterRequest{TargetID: options.target, TargetName: targetName, TargetKind: kind, Endpoint: targetEndpoint, CredentialRef: credentialRef})

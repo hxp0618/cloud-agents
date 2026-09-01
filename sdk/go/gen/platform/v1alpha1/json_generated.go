@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -1205,6 +1206,20 @@ func validDeploymentTargetEndpoint(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil && (parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
 }
+func validRegisteredTargetEndpoint(kind, value string) bool {
+	if kind != "ssh" {
+		return validDeploymentTargetEndpoint(value)
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || len(value) > 2048 || parsed.Scheme != "ssh" || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
+		return false
+	}
+	if parsed.Port() == "" {
+		return true
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	return err == nil && port > 0 && port <= 65535
+}
 func validWorkerSPIFFEID(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && len(value) <= 2048 && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
@@ -1226,11 +1241,11 @@ func DecodeDeploymentTargetRegisterRequestJSON(data []byte) (DeploymentTargetReg
 		return DeploymentTargetRegisterRequest{}, err
 	}
 	kind, err := fieldString(fields, "targetKind", "/targetKind")
-	if err != nil || kind != "docker" && kind != "kubernetes" {
+	if err != nil || kind != "docker" && kind != "kubernetes" && kind != "ssh" {
 		return DeploymentTargetRegisterRequest{}, common.ContractError("INVALID_TARGET_KIND", "/targetKind")
 	}
 	endpoint, err := fieldString(fields, "endpoint", "/endpoint")
-	if err != nil || !validDeploymentTargetEndpoint(endpoint) {
+	if err != nil || !validRegisteredTargetEndpoint(kind, endpoint) {
 		return DeploymentTargetRegisterRequest{}, common.ContractError("INVALID_TARGET_ENDPOINT", "/endpoint")
 	}
 	credential, err := fieldString(fields, "credentialRef", "/credentialRef")
@@ -1302,11 +1317,11 @@ func DecodeDeploymentTargetJSON(data []byte) (DeploymentTarget, error) {
 		return DeploymentTarget{}, common.ContractError("INVALID_GENERATION", "/spec/generation")
 	}
 	kind, err := fieldString(spec, "targetKind", "/spec/targetKind")
-	if err != nil || kind != "docker" && kind != "kubernetes" {
+	if err != nil || kind != "docker" && kind != "kubernetes" && kind != "ssh" {
 		return DeploymentTarget{}, common.ContractError("INVALID_TARGET_KIND", "/spec/targetKind")
 	}
 	endpoint, err := fieldString(spec, "endpoint", "/spec/endpoint")
-	if err != nil || !validDeploymentTargetEndpoint(endpoint) {
+	if err != nil || !validRegisteredTargetEndpoint(kind, endpoint) {
 		return DeploymentTarget{}, common.ContractError("INVALID_TARGET_ENDPOINT", "/spec/endpoint")
 	}
 	credential, err := fieldString(spec, "credentialRef", "/spec/credentialRef")

@@ -28,6 +28,14 @@ func TestDeploymentTargetValidationAndDigests(t *testing.T) {
 	if err := input.Validate("tenant-alpha"); err != nil {
 		t.Fatalf("Kubernetes target validation: %v", err)
 	}
+	input.Kind, input.Endpoint = "ssh", "ssh://ssh.example.test:22"
+	if err := input.Validate("tenant-alpha"); err != nil {
+		t.Fatalf("SSH target validation: %v", err)
+	}
+	input.Endpoint = "https://ssh.example.test:22"
+	if err := input.Validate("tenant-alpha"); err == nil {
+		t.Fatal("SSH target accepted an HTTPS endpoint")
+	}
 }
 
 func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {

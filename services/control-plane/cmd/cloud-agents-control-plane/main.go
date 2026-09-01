@@ -36,6 +36,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 	"github.com/jackc/pgx/v5"
@@ -49,6 +50,7 @@ const (
 	localRuntimeWorkspaceEnvironment      = "CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY"
 	localDockerCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY"
 	localKubernetesCredentialsEnvironment = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
+	localSSHCredentialsEnvironment        = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
 	localTokenRefreshInterval             = 4 * time.Minute
 )
 
@@ -244,6 +246,7 @@ type controlPlaneConfig struct {
 	workspaceDirectory    string
 	dockerCredentials     string
 	kubernetesCredentials string
+	sshCredentials        string
 }
 
 type localRuntimeWorkerHealth struct {
@@ -424,7 +427,14 @@ func run(ctx context.Context, args []string) error {
 			return errors.New("local Kubernetes target credential directory is invalid")
 		}
 	}
-	deploymentTargetHTTPServer, err := server.NewDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber)
+	var sshProber *sshtarget.CredentialDirectory
+	if config.sshCredentials != "" {
+		sshProber, err = sshtarget.NewCredentialDirectory(config.sshCredentials)
+		if err != nil {
+			return errors.New("local SSH target credential directory is invalid")
+		}
+	}
+	deploymentTargetHTTPServer, err := server.NewDeploymentTargetHTTPServer(verifierAdapter, coordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("local deployment target HTTP server is unavailable")
 	}
@@ -574,6 +584,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	workspaceDirectory := set.String("workspace-directory", "", "workspace passed to the local Runtime")
 	dockerCredentials := set.String("docker-credentials-directory", "", "deployment-owned Docker mTLS credential directory")
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
+	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return controlPlaneConfig{}, errors.New("invalid control-plane configuration")
 	}
@@ -581,7 +592,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 	if resolvedDatabaseURL == "" && getenv != nil {
 		resolvedDatabaseURL = getenv(databaseURLEnvironment)
 	}
-	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials, resolvedKubernetesCredentials := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials, *kubernetesCredentials
+	resolvedWorkerEndpoint, resolvedWorkerTokenFile, resolvedWorkspaceDirectory, resolvedDockerCredentials, resolvedKubernetesCredentials, resolvedSSHCredentials := *workerEndpoint, *workerTokenFile, *workspaceDirectory, *dockerCredentials, *kubernetesCredentials, *sshCredentials
 	if getenv != nil {
 		if resolvedWorkerEndpoint == "" {
 			resolvedWorkerEndpoint = getenv(localRuntimeWorkerEndpointEnvironment)
@@ -598,11 +609,14 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		if resolvedKubernetesCredentials == "" {
 			resolvedKubernetesCredentials = getenv(localKubernetesCredentialsEnvironment)
 		}
+		if resolvedSSHCredentials == "" {
+			resolvedSSHCredentials = getenv(localSSHCredentialsEnvironment)
+		}
 	}
 	if *localTokenFile != "" && (strings.TrimSpace(*localTokenFile) != *localTokenFile || strings.HasSuffix(*localTokenFile, string(os.PathSeparator))) {
 		return controlPlaneConfig{}, errInvalidTokenFilePath
 	}
-	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
+	if strings.TrimSpace(resolvedWorkerEndpoint) != resolvedWorkerEndpoint || strings.TrimSpace(resolvedWorkerTokenFile) != resolvedWorkerTokenFile || strings.TrimSpace(resolvedWorkspaceDirectory) != resolvedWorkspaceDirectory || strings.TrimSpace(resolvedDockerCredentials) != resolvedDockerCredentials || strings.TrimSpace(resolvedKubernetesCredentials) != resolvedKubernetesCredentials || strings.TrimSpace(resolvedSSHCredentials) != resolvedSSHCredentials || (resolvedWorkerEndpoint == "") != (resolvedWorkerTokenFile == "") {
 		return controlPlaneConfig{}, errInvalidRuntimeConfig
 	}
 	return controlPlaneConfig{
@@ -616,6 +630,7 @@ func parseControlPlaneConfig(args []string, getenv func(string) string) (control
 		workspaceDirectory:    resolvedWorkspaceDirectory,
 		dockerCredentials:     resolvedDockerCredentials,
 		kubernetesCredentials: resolvedKubernetesCredentials,
+		sshCredentials:        resolvedSSHCredentials,
 	}, nil
 }
 

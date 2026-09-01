@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ type ProbeStart struct {
 func (input RegisterInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || invalidIdentifier(input.Scope.ProjectID) ||
 		invalidIdentifier(input.TargetID) || invalidIdentifier(input.TargetName) || !validKind(input.Kind) ||
-		!validEndpoint(input.Endpoint) || invalidIdentifier(input.CredentialRef) {
+		!validEndpoint(input.Kind, input.Endpoint) || invalidIdentifier(input.CredentialRef) {
 		return ErrInvalidInput
 	}
 	return validateMutation(input.Mutation)
@@ -119,7 +120,7 @@ func (completion ProbeCompletion) Validate(tenantID string) error {
 func (snapshot Snapshot) Validate() error {
 	if invalidIdentifier(snapshot.Scope.TenantID) || invalidIdentifier(snapshot.Scope.ProjectID) ||
 		invalidIdentifier(snapshot.TargetID) || invalidIdentifier(snapshot.TargetName) || !validKind(snapshot.Kind) ||
-		!validEndpoint(snapshot.Endpoint) || invalidIdentifier(snapshot.CredentialRef) || snapshot.Generation < 1 ||
+		!validEndpoint(snapshot.Kind, snapshot.Endpoint) || invalidIdentifier(snapshot.CredentialRef) || snapshot.Generation < 1 ||
 		snapshot.ResourceVersion < 1 || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
 		return ErrInvalidInput
 	}
@@ -142,13 +143,26 @@ func (snapshot Snapshot) Validate() error {
 	return nil
 }
 
-func validEndpoint(value string) bool {
+func validEndpoint(kind, value string) bool {
 	parsed, err := url.Parse(value)
-	return err == nil && len(value) <= 2048 && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
-		(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == "" && parsed.Opaque == ""
+	scheme := "https"
+	if kind == "ssh" {
+		scheme = "ssh"
+	}
+	if err != nil || len(value) > 2048 || parsed.Scheme != scheme || parsed.Hostname() == "" || parsed.User != nil ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
+		return false
+	}
+	if kind != "ssh" || parsed.Port() == "" {
+		return true
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	return err == nil && port > 0 && port <= 65535
 }
 
-func validKind(value string) bool { return value == "docker" || value == "kubernetes" }
+func validKind(value string) bool {
+	return value == "docker" || value == "kubernetes" || value == "ssh"
+}
 
 func invalidIdentifier(value string) bool {
 	return commonv1alpha1.ValidateIdentifier(value, "/value") != nil

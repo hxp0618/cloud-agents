@@ -725,6 +725,47 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
+  it("classifies SSH deployment target registration", () => {
+    const bytes = readFileSync(
+      resolve(root, "services/control-plane/migrations/000036_register_ssh_deployment_targets.sql"),
+    );
+    const statements = splitPostgresStatements(bytes);
+    const classifications = statements.map((statement) =>
+      classifyMigrationStatement(statement, "000036"),
+    );
+    expect(classifications.map(({ command }) => command)).toEqual([
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "GRANT",
+    ]);
+
+    const catalog = JSON.parse(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/product/000036/catalog/schema-000036.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
+    };
+    expect(catalog.source_descriptors.at(-1)).toEqual({
+      migration_id: "000036",
+      sql_sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      statements: statements.map((statement, index) => ({
+        index,
+        start: statement.start,
+        end: statement.end,
+        sha256: statement.sha256,
+        classification: classifications[index],
+      })),
+    });
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

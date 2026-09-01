@@ -1,6 +1,6 @@
 # Independent Cloud Agents Compose deployment
 
-Extract `cloud-agents-deployment-000035.tar` into a directory and copy
+Extract `cloud-agents-deployment-000036.tar` into a directory and copy
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
@@ -113,6 +113,17 @@ PVC using the namespace's default StorageClass, and a LoadBalancer Service.
 the target Secret containing the existing tenant Provider credential envelope.
 Helm installations can mount the same flat file layout from the Secret named by
 `deploymentTargets.kubernetesCredentialSecretName`.
+
+For an SSH deployment target, point `CLOUD_AGENTS_SSH_CREDENTIALS_DIR` at a
+deployment-owned directory. Each `credentialRef` selects three flat files:
+`<credentialRef>.user`, `<credentialRef>.key`, and
+`<credentialRef>.host-key.pub`. The user is an identifier, the private key must
+not be group/world-readable, and the host-key file contains the pinned OpenSSH
+public host key. Register the host as `ssh://host[:port]`; userinfo is rejected.
+The Control Plane uses these files only for the authenticated probe and never
+returns their contents in target state, events, logs, or errors. Helm
+installations can mount the same layout from
+`deploymentTargets.sshCredentialSecretName`.
 
 After a target is ready, run `cloud-agentsctl ... target cleanup
 --expected-generation GENERATION` to remove stale managed Deployments, Services,

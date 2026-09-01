@@ -32,6 +32,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 		productionWorkspaceEnvironment:             "/workspace",
 		productionDockerCredentialsEnvironment:     "/etc/cloud-agents/docker-targets",
 		productionKubernetesCredentialsEnvironment: "/etc/cloud-agents/kubernetes-targets",
+		productionSSHCredentialsEnvironment:        "/etc/cloud-agents/ssh-targets",
 		productionAdmissionLeaseEnvironment:        "runtime-lease",
 		productionAdmissionGenerationEnvironment:   "7",
 		productionAdmissionTokenEnvironment:        "runtime-token",
@@ -42,7 +43,7 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
+	if config.listen != "127.0.0.1:9443" || config.database == "" || config.authPath == "" || config.tlsCert != "/tmp/cert" || config.tlsKey != "/tmp/key" || config.workerEndpoint != "https://worker:8091" || config.dockerCredentials != "/etc/cloud-agents/docker-targets" || config.kubernetesCredentials != "/etc/cloud-agents/kubernetes-targets" || config.sshCredentials != "/etc/cloud-agents/ssh-targets" || config.admissionGeneration != 7 || !bytes.Equal(config.admissionToken, []byte("runtime-token")) || config.maxConcurrentRequests != defaultProductionMaxConcurrentRequests {
 		t.Fatalf("config = %#v", config)
 	}
 	for _, invalid := range []string{"0", "10001"} {
@@ -56,6 +57,9 @@ func TestParseProductionConfigRequiresTLSAndUsesEnvironment(t *testing.T) {
 	}
 	if _, err := parseProductionConfig(append(append([]string{}, args...), "--kubernetes-credentials-directory", " /tmp/kubernetes-targets"), getenv); err == nil {
 		t.Fatal("accepted invalid Kubernetes credential directory")
+	}
+	if _, err := parseProductionConfig(append(append([]string{}, args...), "--ssh-credentials-directory", " /tmp/ssh-targets"), getenv); err == nil {
+		t.Fatal("accepted invalid SSH credential directory")
 	}
 }
 

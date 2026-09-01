@@ -55,7 +55,7 @@ func TestDeploymentTargetHTTPProbesKubernetesTarget(t *testing.T) {
 		Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}}
 	verifier := &projectHTTPVerifierFake{}
-	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, credentials)
+	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, credentials, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC)
 	verifier := &projectHTTPVerifierFake{}
 	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{Generation: 1, ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now}}
-	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, nil)
+	handler, err := NewDeploymentTargetHTTPServer(verifier, store, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,19 +139,19 @@ func TestDeploymentTargetHTTPRegisterGetAndSettledProbe(t *testing.T) {
 		handler.ServeHTTP(response, value)
 		return response
 	}
-	created := request(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets", `{"targetId":"docker-alpha","targetName":"docker-alpha","targetKind":"docker","endpoint":"https://docker.example.test:2376","credentialRef":"docker-alpha"}`, "request-register", "register-key-123456")
+	created := request(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets", `{"targetId":"ssh-alpha","targetName":"ssh-alpha","targetKind":"ssh","endpoint":"ssh://ssh.example.test:22","credentialRef":"ssh-alpha"}`, "request-register", "register-key-123456")
 	if created.Code != http.StatusCreated || store.register != 1 || verifier.seen.RequiredPermission != "projects.act" {
 		t.Fatalf("register status=%d calls=%d verification=%#v body=%s", created.Code, store.register, verifier.seen, created.Body.String())
 	}
 	if _, err := openapiv1alpha1.DecodeDeploymentTargetResponseJSON(created.Body.Bytes()); err != nil {
 		t.Fatalf("register response contract: %v", err)
 	}
-	got := request(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha", "", "request-get", "")
+	got := request(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha", "", "request-get", "")
 	if got.Code != http.StatusOK || store.get != 1 || verifier.seen.RequiredPermission != "projects.get" {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
 	}
-	probed := request(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/docker-alpha:probe", `{"expectedGeneration":1}`, "request-probe", "probe-key-12345678")
-	if probed.Code != http.StatusOK || store.begin != 1 || store.complete != 1 || verifier.calls != 4 || store.completion.Succeeded || store.completion.StableErrorCode != "docker-probe-unconfigured" || !strings.Contains(probed.Body.String(), `"observedPhase":"unavailable"`) {
+	probed := request(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets/ssh-alpha:probe", `{"expectedGeneration":1}`, "request-probe", "probe-key-12345678")
+	if probed.Code != http.StatusOK || store.begin != 1 || store.complete != 1 || verifier.calls != 4 || store.completion.Succeeded || store.completion.StableErrorCode != "ssh-probe-unconfigured" || !strings.Contains(probed.Body.String(), `"observedPhase":"unavailable"`) {
 		t.Fatalf("probe status=%d begin=%d complete=%d verifier=%d completion=%#v body=%s", probed.Code, store.begin, store.complete, verifier.calls, store.completion, probed.Body.String())
 	}
 	if strings.Contains(probed.Body.String(), "PRIVATE KEY") {

@@ -75,6 +75,10 @@ spec:
             - name: CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY
               value: /run/cloud-agents/kubernetes-target-credentials
             {{- end }}
+            {{- if .Values.deploymentTargets.sshCredentialSecretName }}
+            - name: CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY
+              value: /run/cloud-agents/ssh-target-credentials
+            {{- end }}
             - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
               value: /workspace
             - name: CLOUD_AGENTS_PLATFORM_ADMISSION_LEASE_ID
@@ -130,6 +134,11 @@ spec:
               mountPath: /run/cloud-agents/kubernetes-target-credentials
               readOnly: true
             {{- end }}
+            {{- if .Values.deploymentTargets.sshCredentialSecretName }}
+            - name: ssh-target-credentials
+              mountPath: /run/cloud-agents/ssh-target-credentials
+              readOnly: true
+            {{- end }}
       volumes:
         - name: auth
           secret:
@@ -153,4 +162,9 @@ spec:
         - name: kubernetes-target-credentials
           secret:
             secretName: {{ .Values.deploymentTargets.kubernetesCredentialSecretName }}
+        {{- end }}
+        {{- if .Values.deploymentTargets.sshCredentialSecretName }}
+        - name: ssh-target-credentials
+          secret:
+            secretName: {{ .Values.deploymentTargets.sshCredentialSecretName }}
         {{- end }}

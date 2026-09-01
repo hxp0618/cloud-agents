@@ -118,11 +118,13 @@ mkdir -p "$smoke_directory/deployment" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/workspace" \
   "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/kubernetes-target-credentials" \
+  "$smoke_directory/ssh-target-credentials" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0755 "$smoke_directory" "$smoke_directory/control-plane-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" \
   "$smoke_directory/docker-target-credentials" "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/kubernetes-target-credentials" \
+  "$smoke_directory/ssh-target-credentials" \
   "$smoke_directory/target-worker-credentials" "$smoke_directory/target-provider-credentials"
 chmod 0777 "$smoke_directory/workspace"
 tar -xf "$1" -C "$smoke_directory/deployment"
@@ -309,6 +311,7 @@ const values = [
   `CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR=${state}/provider-credentials`,
   `CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR=${state}/docker-target-credentials`,
   `CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR=${state}/kubernetes-target-credentials`,
+  `CLOUD_AGENTS_SSH_CREDENTIALS_DIR=${state}/ssh-target-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR=${state}/control-plane-tls`,
   `CLOUD_AGENTS_WORKER_TLS_DIR=${state}/worker-tls`,
   "CLOUD_AGENTS_WORKER_ENDPOINT=https://worker:8091",

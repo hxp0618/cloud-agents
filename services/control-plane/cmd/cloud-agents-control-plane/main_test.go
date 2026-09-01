@@ -32,11 +32,12 @@ func TestParseControlPlaneConfigAcceptsLocalRuntimeBridge(t *testing.T) {
 		"--worker-endpoint", "http://127.0.0.1:8091", "--worker-token-file", "/tmp/cloud-agents-worker.token", "--workspace-directory", "/tmp/workspace",
 		"--docker-credentials-directory", "/tmp/docker-targets",
 		"--kubernetes-credentials-directory", "/tmp/kubernetes-targets",
+		"--ssh-credentials-directory", "/tmp/ssh-targets",
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" || config.dockerCredentials != "/tmp/docker-targets" || config.kubernetesCredentials != "/tmp/kubernetes-targets" {
+	if config.workerEndpoint != "http://127.0.0.1:8091" || config.workerTokenFile != "/tmp/cloud-agents-worker.token" || config.workspaceDirectory != "/tmp/workspace" || config.dockerCredentials != "/tmp/docker-targets" || config.kubernetesCredentials != "/tmp/kubernetes-targets" || config.sshCredentials != "/tmp/ssh-targets" {
 		t.Fatalf("config = %#v", config)
 	}
 }

@@ -60,6 +60,7 @@ controlPlane:
 
 deploymentTargets:
   kubernetesCredentialSecretName: ""
+  sshCredentialSecretName: ""
 
 worker:
   replicas: 1

@@ -17,6 +17,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
 )
 
@@ -35,13 +36,14 @@ type DeploymentTargetHTTPServer struct {
 	store            deploymentTargetStore
 	dockerProber     *dockertarget.CredentialDirectory
 	kubernetesProber *kubernetestarget.CredentialDirectory
+	sshProber        *sshtarget.CredentialDirectory
 }
 
-func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, dockerProber *dockertarget.CredentialDirectory, kubernetesProber *kubernetestarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
+func NewDeploymentTargetHTTPServer(verifier AccessTokenVerifier, store deploymentTargetStore, dockerProber *dockertarget.CredentialDirectory, kubernetesProber *kubernetestarget.CredentialDirectory, sshProber *sshtarget.CredentialDirectory) (*DeploymentTargetHTTPServer, error) {
 	if verifier == nil || store == nil {
 		return nil, errors.New("deployment target HTTP server configuration is invalid")
 	}
-	return &DeploymentTargetHTTPServer{verifier: verifier, store: store, dockerProber: dockerProber, kubernetesProber: kubernetesProber}, nil
+	return &DeploymentTargetHTTPServer{verifier: verifier, store: store, dockerProber: dockerProber, kubernetesProber: kubernetesProber, sshProber: sshProber}, nil
 }
 
 func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -277,6 +279,15 @@ func (server *DeploymentTargetHTTPServer) probe(writer http.ResponseWriter, requ
 			completion.Succeeded, completion.APIVersion, completion.EngineVersion = true, result.APIVersion, result.EngineVersion
 			completion.OS, completion.Arch = result.OS, result.Architecture
 		}
+	case "ssh":
+		if server.sshProber == nil {
+			completion.StableErrorCode = "ssh-probe-unconfigured"
+		} else if result, probeErr := server.sshProber.Probe(request.Context(), started.Target.Endpoint, started.Target.CredentialRef); probeErr != nil {
+			completion.StableErrorCode = sshTargetProbeErrorCode(probeErr)
+		} else {
+			completion.Succeeded, completion.APIVersion, completion.EngineVersion = true, result.APIVersion, result.EngineVersion
+			completion.OS, completion.Arch = result.OS, result.Architecture
+		}
 	}
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
@@ -388,6 +399,23 @@ func kubernetesTargetProbeErrorCode(err error) string {
 		return "kubernetes-response-invalid"
 	default:
 		return "kubernetes-target-unavailable"
+	}
+}
+
+func sshTargetProbeErrorCode(err error) string {
+	switch {
+	case errors.Is(err, sshtarget.ErrInvalidEndpoint):
+		return "ssh-endpoint-invalid"
+	case errors.Is(err, sshtarget.ErrInvalidDirectory):
+		return "ssh-probe-unconfigured"
+	case errors.Is(err, sshtarget.ErrHostKeyMismatch):
+		return "ssh-host-key-mismatch"
+	case errors.Is(err, sshtarget.ErrCredentialUnavailable), errors.Is(err, sshtarget.ErrCredentialInvalid):
+		return "ssh-credential-unavailable"
+	case errors.Is(err, sshtarget.ErrInvalidResponse):
+		return "ssh-response-invalid"
+	default:
+		return "ssh-target-unavailable"
 	}
 }
 
