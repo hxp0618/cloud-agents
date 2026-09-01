@@ -429,6 +429,65 @@ describe("postgresql-lex-v1 bootstrap", () => {
     );
   });
 
+  it("classifies environment lease target binding", () => {
+    const bytes = readFileSync(
+      resolve(
+        root,
+        "services/control-plane/migrations/000031_bind_environment_leases_to_targets.sql",
+      ),
+    );
+    const sql = bytes.toString("utf8");
+    expect(sql).toContain("AND target.observed_phase = 'ready'\n        FOR SHARE;");
+    expect(sql).not.toContain("AND target.observed_phase = 'ready'\n        FOR KEY SHARE;");
+    const statements = splitPostgresStatements(bytes);
+    const classifications = statements.map((statement) =>
+      classifyMigrationStatement(statement, "000031"),
+    );
+    expect(classifications.map(({ command }) => command)).toEqual([
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "GRANT",
+    ]);
+
+    const catalog = JSON.parse(
+      readFileSync(
+        resolve(
+          root,
+          "services/control-plane/migrations/product/000031/catalog/schema-000031.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
+      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+    };
+    expect(catalog.source_descriptors.at(-1)).toEqual({
+      migration_id: "000031",
+      sql_sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      statements: statements.map((statement, index) => ({
+        index,
+        start: statement.start,
+        end: statement.end,
+        sha256: statement.sha256,
+        classification: classifications[index],
+      })),
+    });
+    expect(catalog.declared_object_identities).toContainEqual(
+      expect.objectContaining({
+        kind: "function",
+        identity: expect.objectContaining({ name: "create_managed_host_environment_lease_v2" }),
+      }),
+    );
+  });
+
   it("admits only the exact generated-profile operation-effect partial index", () => {
     const statements = splitPostgresStatements(
       readFileSync(

@@ -19,27 +19,29 @@ type ManagedHostEnvironmentLeasePage struct {
 }
 
 type managedHostEnvironmentLeasePageRow struct {
-	TenantID        string    `json:"tenant_id"`
-	ProjectID       string    `json:"project_uid"`
-	LeaseID         string    `json:"lease_uid"`
-	LeaseName       string    `json:"lease_name"`
-	ReleaseDigest   string    `json:"release_digest"`
-	Generation      int64     `json:"generation"`
-	DesiredPhase    string    `json:"desired_phase"`
-	ObservedPhase   string    `json:"observed_phase"`
-	CleanupPhase    string    `json:"cleanup_phase"`
-	EnvironmentID   string    `json:"environment_id"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	ResourceVersion int64     `json:"resource_version"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	TenantID         string    `json:"tenant_id"`
+	ProjectID        string    `json:"project_uid"`
+	LeaseID          string    `json:"lease_uid"`
+	LeaseName        string    `json:"lease_name"`
+	ReleaseDigest    string    `json:"release_digest"`
+	TargetID         *string   `json:"deployment_target_uid"`
+	TargetGeneration *int64    `json:"deployment_target_generation"`
+	Generation       int64     `json:"generation"`
+	DesiredPhase     string    `json:"desired_phase"`
+	ObservedPhase    string    `json:"observed_phase"`
+	CleanupPhase     string    `json:"cleanup_phase"`
+	EnvironmentID    string    `json:"environment_id"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	ResourceVersion  int64     `json:"resource_version"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 const (
-	createManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, generation,
+	createManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
     desired_phase, observed_phase, cleanup_phase, environment_id, expires_at, resource_version, created_at, updated_at
-FROM cloud_agents.create_managed_host_environment_lease_v1($1, $2, $3, $4, $5, $6, $7, $8)`
-	getManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, generation,
+FROM cloud_agents.create_managed_host_environment_lease_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	getManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, deployment_target_uid, deployment_target_generation, generation,
     desired_phase, observed_phase, cleanup_phase, environment_id, expires_at, resource_version, created_at, updated_at
 FROM cloud_agents.managed_host_environment_leases
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND lease_uid = $2`
@@ -49,8 +51,9 @@ WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND leas
 	listManagedHostEnvironmentLeasesSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(environment_lease)
     ORDER BY environment_lease.lease_uid), '[]'::jsonb)
 FROM (
-    SELECT tenant_id, project_uid, lease_uid, lease_name, release_digest, generation,
-        desired_phase, observed_phase, cleanup_phase, environment_id, expires_at,
+	    SELECT tenant_id, project_uid, lease_uid, lease_name, release_digest,
+	        deployment_target_uid, deployment_target_generation, generation,
+	        desired_phase, observed_phase, cleanup_phase, environment_id, expires_at,
         resource_version, created_at, updated_at
     FROM cloud_agents.managed_host_environment_leases
     WHERE tenant_id = cloud_agents.require_tenant_id()
@@ -59,9 +62,14 @@ FROM (
     ORDER BY lease_uid
     LIMIT $3
 ) AS environment_lease`
-	terminateManagedHostEnvironmentLeaseSQL = `SELECT lease_uid, lease_name, release_digest, generation,
-    desired_phase, observed_phase, cleanup_phase, environment_id, expires_at, resource_version, created_at, updated_at
-FROM cloud_agents.terminate_managed_host_environment_lease_v1($1, $2, $3, $4, $5, $6)`
+	terminateManagedHostEnvironmentLeaseSQL = `SELECT transition.lease_uid, transition.lease_name, transition.release_digest,
+	    lease.deployment_target_uid, lease.deployment_target_generation, transition.generation,
+	    transition.desired_phase, transition.observed_phase, transition.cleanup_phase, transition.environment_id,
+	    transition.expires_at, transition.resource_version, transition.created_at, transition.updated_at
+FROM cloud_agents.terminate_managed_host_environment_lease_v1($1, $2, $3, $4, $5, $6) AS transition
+JOIN cloud_agents.managed_host_environment_leases AS lease
+    ON lease.tenant_id = cloud_agents.require_tenant_id() AND lease.project_uid = $2
+    AND lease.lease_uid = transition.lease_uid`
 )
 
 func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
@@ -89,8 +97,8 @@ func (service *DurableCoordinationService) CreateManagedHostEnvironmentLease(
 		transactionErr := service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 			return executeVerifiedRBACOperation(ctx, handle, operation, authz.ScopeRef{Level: authz.ScopeProject, ID: input.Scope.ProjectID}, func() error {
 				return scanManagedHostEnvironmentLease(handle.transaction.queryRow(ctx, createManagedHostEnvironmentLeaseSQL,
-					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest, input.TTLSeconds,
-					input.Mutation.IdempotencyKey, digest), input.Scope, &result)
+					input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest,
+					input.TargetID, input.ExpectedTargetGeneration, input.TTLSeconds, input.Mutation.IdempotencyKey, digest), input.Scope, &result)
 			})
 		})
 		return mapVerifiedCoordinationAuthorizationError(transactionErr)
@@ -185,12 +193,18 @@ func decodeManagedHostEnvironmentLeasePageRows(raw []byte, tenantID, projectID s
 	}
 	leases := make([]internalmanagedhost.Snapshot, 0, len(rows))
 	for _, row := range rows {
+		if (row.TargetID == nil) != (row.TargetGeneration == nil) {
+			return ManagedHostEnvironmentLeasePage{}, ErrCoordinationResultDrift
+		}
 		snapshot := internalmanagedhost.Snapshot{
 			Scope:   internalmanagedhost.Scope{TenantID: row.TenantID, ProjectID: row.ProjectID},
 			LeaseID: row.LeaseID, LeaseName: row.LeaseName, ReleaseDigest: row.ReleaseDigest,
 			Generation: row.Generation, DesiredPhase: row.DesiredPhase, ObservedPhase: row.ObservedPhase,
 			CleanupPhase: row.CleanupPhase, EnvironmentID: row.EnvironmentID, ExpiresAt: row.ExpiresAt,
 			ResourceVersion: row.ResourceVersion, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		}
+		if row.TargetID != nil && row.TargetGeneration != nil {
+			snapshot.TargetID, snapshot.TargetGeneration = *row.TargetID, *row.TargetGeneration
 		}
 		if row.TenantID != tenantID || row.ProjectID != projectID || snapshot.Validate() != nil {
 			return ManagedHostEnvironmentLeasePage{}, ErrCoordinationResultDrift
@@ -247,12 +261,20 @@ func scanManagedHostEnvironmentLease(row rowScanner, scope internalmanagedhost.S
 	if row == nil || result == nil {
 		return ErrCoordinationResultDrift
 	}
-	if err := row.Scan(&result.LeaseID, &result.LeaseName, &result.ReleaseDigest, &result.Generation,
+	var targetID *string
+	var targetGeneration *int64
+	if err := row.Scan(&result.LeaseID, &result.LeaseName, &result.ReleaseDigest, &targetID, &targetGeneration, &result.Generation,
 		&result.DesiredPhase, &result.ObservedPhase, &result.CleanupPhase, &result.EnvironmentID,
 		&result.ExpiresAt, &result.ResourceVersion, &result.CreatedAt, &result.UpdatedAt); err != nil {
 		return err
 	}
+	if (targetID == nil) != (targetGeneration == nil) {
+		return ErrCoordinationResultDrift
+	}
 	result.Scope = scope
+	if targetID != nil && targetGeneration != nil {
+		result.TargetID, result.TargetGeneration = *targetID, *targetGeneration
+	}
 	if err := result.Validate(); err != nil {
 		return fmt.Errorf("%w: managed host environment lease projection", ErrCoordinationResultDrift)
 	}

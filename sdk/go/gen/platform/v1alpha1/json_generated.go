@@ -171,23 +171,27 @@ type RBACMutationResult struct {
 	State           string `json:"state"`
 }
 type EnvironmentLeaseCreateRequest struct {
-	LeaseID       string `json:"leaseId"`
-	LeaseName     string `json:"leaseName"`
-	ReleaseDigest string `json:"releaseDigest"`
-	TTLSeconds    int64  `json:"ttlSeconds"`
+	LeaseID                  string `json:"leaseId"`
+	LeaseName                string `json:"leaseName"`
+	ReleaseDigest            string `json:"releaseDigest"`
+	TargetID                 string `json:"targetId"`
+	ExpectedTargetGeneration int64  `json:"expectedTargetGeneration"`
+	TTLSeconds               int64  `json:"ttlSeconds"`
 }
 type EnvironmentLeaseTerminateRequest struct {
 	ExpectedGeneration int64 `json:"expectedGeneration"`
 }
 type EnvironmentLeaseSpec struct {
-	ProjectRef    common.ProjectRef `json:"projectRef"`
-	Generation    int64             `json:"generation"`
-	DesiredPhase  string            `json:"desiredPhase"`
-	ObservedPhase string            `json:"observedPhase"`
-	CleanupPhase  string            `json:"cleanupPhase"`
-	EnvironmentID string            `json:"environmentId"`
-	ReleaseDigest string            `json:"releaseDigest"`
-	ExpiresAt     string            `json:"expiresAt"`
+	ProjectRef       common.ProjectRef `json:"projectRef"`
+	Generation       int64             `json:"generation"`
+	DesiredPhase     string            `json:"desiredPhase"`
+	ObservedPhase    string            `json:"observedPhase"`
+	CleanupPhase     string            `json:"cleanupPhase"`
+	EnvironmentID    string            `json:"environmentId"`
+	ReleaseDigest    string            `json:"releaseDigest"`
+	TargetID         string            `json:"targetId,omitempty"`
+	TargetGeneration int64             `json:"targetGeneration,omitempty"`
+	ExpiresAt        string            `json:"expiresAt"`
 }
 type EnvironmentLease struct {
 	ResourceBase
@@ -264,7 +268,7 @@ func resourceResponseShape(kind string) common.ResponseShape {
 	case "RoleBinding":
 		spec = map[string]common.ResponseShape{"tenantRef": resourceTenantRefResponseShape, "subject": resourceSubjectResponseShape, "roleName": common.ScalarResponseShape(), "roleVersion": common.ScalarResponseShape(), "scope": resourceScopeResponseShape, "state": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "CloudEnvironmentLease":
-		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
+		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "desiredPhase": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "cleanupPhase": common.ScalarResponseShape(), "environmentId": common.ScalarResponseShape(), "releaseDigest": common.ScalarResponseShape(), "targetId": common.ScalarResponseShape(), "targetGeneration": common.ScalarResponseShape(), "expiresAt": common.ScalarResponseShape()}
 	case "DeploymentTarget":
 		spec = map[string]common.ResponseShape{"projectRef": resourceTenantRefResponseShape, "generation": common.ScalarResponseShape(), "targetKind": common.ScalarResponseShape(), "endpoint": common.ScalarResponseShape(), "credentialRef": common.ScalarResponseShape(), "observedPhase": common.ScalarResponseShape(), "apiVersion": common.ScalarResponseShape(), "engineVersion": common.ScalarResponseShape(), "os": common.ScalarResponseShape(), "architecture": common.ScalarResponseShape(), "stableErrorCode": common.ScalarResponseShape(), "lastProbeAt": common.ScalarResponseShape()}
 	default:
@@ -915,7 +919,7 @@ func EncodeRBACMutationResultResponseJSON(value common.ResponseEnvelope[RBACMuta
 }
 
 func DecodeEnvironmentLeaseCreateRequestJSON(data []byte) (EnvironmentLeaseCreateRequest, error) {
-	fields, err := common.DecodeStrictObject(data, []string{"leaseId", "leaseName", "releaseDigest", "ttlSeconds"}, []string{"leaseId", "leaseName", "releaseDigest", "ttlSeconds"})
+	fields, err := common.DecodeStrictObject(data, []string{"leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"}, []string{"leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"})
 	if err != nil {
 		return EnvironmentLeaseCreateRequest{}, err
 	}
@@ -931,6 +935,14 @@ func DecodeEnvironmentLeaseCreateRequestJSON(data []byte) (EnvironmentLeaseCreat
 	if err != nil {
 		return EnvironmentLeaseCreateRequest{}, err
 	}
+	targetID, err := fieldString(fields, "targetId", "/targetId")
+	if err != nil {
+		return EnvironmentLeaseCreateRequest{}, err
+	}
+	targetGeneration, err := fieldInt64(fields, "expectedTargetGeneration", "/expectedTargetGeneration")
+	if err != nil || targetGeneration < 1 {
+		return EnvironmentLeaseCreateRequest{}, common.ContractError("INVALID_GENERATION", "/expectedTargetGeneration")
+	}
 	ttl, err := fieldInt64(fields, "ttlSeconds", "/ttlSeconds")
 	if err != nil || ttl < 60 || ttl > 86400 {
 		return EnvironmentLeaseCreateRequest{}, common.ContractError("INVALID_TTL", "/ttlSeconds")
@@ -941,10 +953,13 @@ func DecodeEnvironmentLeaseCreateRequestJSON(data []byte) (EnvironmentLeaseCreat
 	if err := common.ValidateIdentifier(name, "/leaseName"); err != nil {
 		return EnvironmentLeaseCreateRequest{}, err
 	}
+	if err := common.ValidateIdentifier(targetID, "/targetId"); err != nil {
+		return EnvironmentLeaseCreateRequest{}, err
+	}
 	if !strings.HasPrefix(digest, "sha256:") || len(digest) != 71 {
 		return EnvironmentLeaseCreateRequest{}, common.ContractError("INVALID_RELEASE_DIGEST", "/releaseDigest")
 	}
-	return EnvironmentLeaseCreateRequest{LeaseID: id, LeaseName: name, ReleaseDigest: digest, TTLSeconds: ttl}, nil
+	return EnvironmentLeaseCreateRequest{LeaseID: id, LeaseName: name, ReleaseDigest: digest, TargetID: targetID, ExpectedTargetGeneration: targetGeneration, TTLSeconds: ttl}, nil
 }
 func EncodeEnvironmentLeaseCreateRequestJSON(value EnvironmentLeaseCreateRequest) ([]byte, error) {
 	raw, err := json.Marshal(value)
@@ -986,7 +1001,7 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 	if err != nil {
 		return EnvironmentLease{}, err
 	}
-	spec, err := strictSpec(fields["spec"], []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "expiresAt"}, []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "expiresAt"})
+	spec, err := strictSpec(fields["spec"], []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "targetId", "targetGeneration", "expiresAt"}, []string{"projectRef", "generation", "desiredPhase", "observedPhase", "cleanupPhase", "environmentId", "releaseDigest", "expiresAt"})
 	if err != nil {
 		return EnvironmentLease{}, err
 	}
@@ -1021,6 +1036,23 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 	if err != nil || !strings.HasPrefix(release, "sha256:") || len(release) != 71 {
 		return EnvironmentLease{}, common.ContractError("INVALID_RELEASE_DIGEST", "/spec/releaseDigest")
 	}
+	targetID := ""
+	targetGeneration := int64(0)
+	_, hasTargetID := spec["targetId"]
+	_, hasTargetGeneration := spec["targetGeneration"]
+	if hasTargetID != hasTargetGeneration {
+		return EnvironmentLease{}, common.ContractError("INVALID_TARGET_BINDING", "/spec/targetId")
+	}
+	if hasTargetID {
+		targetID, err = fieldString(spec, "targetId", "/spec/targetId")
+		if err != nil || common.ValidateIdentifier(targetID, "/spec/targetId") != nil {
+			return EnvironmentLease{}, common.ContractError("INVALID_IDENTIFIER", "/spec/targetId")
+		}
+		targetGeneration, err = fieldInt64(spec, "targetGeneration", "/spec/targetGeneration")
+		if err != nil || targetGeneration < 1 {
+			return EnvironmentLease{}, common.ContractError("INVALID_GENERATION", "/spec/targetGeneration")
+		}
+	}
 	expires, err := fieldString(spec, "expiresAt", "/spec/expiresAt")
 	if err != nil {
 		return EnvironmentLease{}, err
@@ -1028,7 +1060,7 @@ func DecodeEnvironmentLeaseJSON(data []byte) (EnvironmentLease, error) {
 	if err := common.ValidateDateTime(expires, "/spec/expiresAt"); err != nil {
 		return EnvironmentLease{}, err
 	}
-	return EnvironmentLease{ResourceBase: base, Spec: EnvironmentLeaseSpec{ProjectRef: project, Generation: generation, DesiredPhase: desired, ObservedPhase: observed, CleanupPhase: cleanup, EnvironmentID: environmentID, ReleaseDigest: release, ExpiresAt: expires}}, nil
+	return EnvironmentLease{ResourceBase: base, Spec: EnvironmentLeaseSpec{ProjectRef: project, Generation: generation, DesiredPhase: desired, ObservedPhase: observed, CleanupPhase: cleanup, EnvironmentID: environmentID, ReleaseDigest: release, TargetID: targetID, TargetGeneration: targetGeneration, ExpiresAt: expires}}, nil
 }
 func DecodeEnvironmentLeaseResponseJSON(data []byte) (common.ResponseEnvelope[EnvironmentLease], error) {
 	fields, sidecar, err := strictResource(data, "CloudEnvironmentLease")

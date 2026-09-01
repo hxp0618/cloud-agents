@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
 func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
@@ -692,7 +694,11 @@ func TestRunRBACMutations(t *testing.T) {
 
 func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
 	const releaseDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-	const responseBody = `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"CloudEnvironmentLease","metadata":{"uid":"lease-alpha","name":"lease-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"desiredPhase":"active","observedPhase":"provisioning","cleanupPhase":"none","environmentId":"lease-alpha","releaseDigest":"` + releaseDigest + `","expiresAt":"2026-08-29T09:00:00Z"}}`
+	const responseBody = `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"CloudEnvironmentLease","metadata":{"uid":"lease-alpha","name":"lease-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-29T08:00:00Z","updatedAt":"2026-08-29T08:00:00Z"},"spec":{"projectRef":{"namespace":"cloud-agents","kind":"project","id":"project-alpha"},"generation":1,"desiredPhase":"active","observedPhase":"provisioning","cleanupPhase":"none","environmentId":"lease-alpha","releaseDigest":"` + releaseDigest + `","targetId":"docker-alpha","targetGeneration":1,"expiresAt":"2026-08-29T09:00:00Z"}}`
+	decoded, err := platform.DecodeEnvironmentLeaseResponseJSON([]byte(responseBody))
+	if err != nil || decoded.Value.Spec.TargetID != "docker-alpha" || decoded.Value.Spec.TargetGeneration != 1 {
+		t.Fatalf("decode target binding: value=%#v err=%v", decoded.Value.Spec, err)
+	}
 	tests := []struct {
 		name        string
 		globalArgs  []string
@@ -705,13 +711,13 @@ func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
 	}{
 		{
 			name:        "create",
-			globalArgs:  []string{"--idempotency-key", "lease-create-key-1234"},
-			actionArgs:  []string{"environment-lease", "create", "--name", "lease-alpha", "--release-digest", releaseDigest, "--ttl-seconds", "3600"},
+			globalArgs:  []string{"--idempotency-key", "lease-create-key-1234", "--target", "docker-alpha"},
+			actionArgs:  []string{"environment-lease", "create", "--name", "lease-alpha", "--release-digest", releaseDigest, "--expected-target-generation", "1", "--ttl-seconds", "3600"},
 			method:      http.MethodPost,
 			path:        "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases",
 			status:      http.StatusCreated,
 			idempotency: "lease-create-key-1234",
-			bodyParts:   []string{`"leaseId":"lease-alpha"`, `"leaseName":"lease-alpha"`, `"releaseDigest":"` + releaseDigest + `"`, `"ttlSeconds":3600`},
+			bodyParts:   []string{`"leaseId":"lease-alpha"`, `"leaseName":"lease-alpha"`, `"releaseDigest":"` + releaseDigest + `"`, `"targetId":"docker-alpha"`, `"expectedTargetGeneration":1`, `"ttlSeconds":3600`},
 		},
 		{
 			name:       "get",
@@ -751,7 +757,7 @@ func TestRunEnvironmentLeaseLifecycle(t *testing.T) {
 			args = append(args, test.actionArgs...)
 			var stdout bytes.Buffer
 			if err := run(args, &stdout); err != nil {
-				t.Fatal(err)
+				t.Fatalf("run: %v request_body=%s args=%v", err, gotBody, args)
 			}
 			for _, part := range test.bodyParts {
 				if !strings.Contains(gotBody, part) {

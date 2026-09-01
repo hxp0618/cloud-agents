@@ -21,6 +21,8 @@
         "cleanupPhase": { "enum": ["none", "pending", "revoking", "reaping", "complete", "blocked"] },
         "environmentId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
         "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+        "targetGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
         "expiresAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       }
     }
@@ -28,6 +30,7 @@
   "x-cloud-agents-semantic-constraints": [
     "metadata.tenantRef.id == spec.projectRef.id is not required; projectRef is checked against the route project",
     "spec.environmentId is server-controlled",
+    "spec.targetId and spec.targetGeneration are both absent only for leases created before target binding was introduced",
     "create returns desiredPhase=active, observedPhase=provisioning, cleanupPhase=none",
     "bounded termination returns desiredPhase=terminated, observedPhase=terminated, cleanupPhase=complete"
   ]

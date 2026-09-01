@@ -220,6 +220,8 @@ export type EnvironmentLeaseCreateRequest = Readonly<{
   leaseId: string;
   leaseName: string;
   releaseDigest: `sha256:${string}`;
+  targetId: string;
+  expectedTargetGeneration: number;
   ttlSeconds: number;
 }>;
 export type EnvironmentLeaseTerminateRequest = Readonly<{ expectedGeneration: number }>;
@@ -235,6 +237,8 @@ export type EnvironmentLease = Readonly<{
     cleanupPhase: "none" | "pending" | "revoking" | "reaping" | "complete" | "blocked";
     environmentId: string;
     releaseDigest: `sha256:${string}`;
+    targetId?: string;
+    targetGeneration?: number;
     expiresAt: string;
   }>;
 }>;
@@ -1128,13 +1132,20 @@ export function encodeRoleBindingRevokeRequest(value: RoleBindingRevokeRequest):
 export function decodeEnvironmentLeaseCreateRequest(value: unknown): EnvironmentLeaseCreateRequest {
   const source = strictRecord(
     value,
-    ["leaseId", "leaseName", "releaseDigest", "ttlSeconds"],
-    ["leaseId", "leaseName", "releaseDigest", "ttlSeconds"],
+    ["leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"],
+    ["leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"],
   );
   return Object.freeze({
     leaseId: identifier(source.leaseId, "/leaseId"),
     leaseName: identifier(source.leaseName, "/leaseName"),
     releaseDigest: digest(source.releaseDigest, "/releaseDigest") as `sha256:${string}`,
+    targetId: identifier(source.targetId, "/targetId"),
+    expectedTargetGeneration: integer(
+      source.expectedTargetGeneration,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      "/expectedTargetGeneration",
+    ),
     ttlSeconds: integer(source.ttlSeconds, 60, 86400, "/ttlSeconds"),
   });
 }
@@ -1504,6 +1515,8 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
       "cleanupPhase",
       "environmentId",
       "releaseDigest",
+      "targetId",
+      "targetGeneration",
       "expiresAt",
     ],
     [
@@ -1518,6 +1531,9 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
     ],
     "/spec",
   );
+  const hasTargetId = Object.hasOwn(spec, "targetId");
+  const hasTargetGeneration = Object.hasOwn(spec, "targetGeneration");
+  if (hasTargetId !== hasTargetGeneration) error("INVALID_TARGET_BINDING", "/spec/targetId");
   return Object.freeze({
     ...root,
     kind: "CloudEnvironmentLease",
@@ -1541,6 +1557,17 @@ export function decodeEnvironmentLease(value: unknown): EnvironmentLease {
       ),
       environmentId: identifier(spec.environmentId, "/spec/environmentId"),
       releaseDigest: digest(spec.releaseDigest, "/spec/releaseDigest") as `sha256:${string}`,
+      ...(hasTargetId
+        ? {
+            targetId: identifier(spec.targetId, "/spec/targetId"),
+            targetGeneration: integer(
+              spec.targetGeneration,
+              1,
+              Number.MAX_SAFE_INTEGER,
+              "/spec/targetGeneration",
+            ),
+          }
+        : {}),
       expiresAt: dateTime(spec.expiresAt, "/spec/expiresAt"),
     }),
   });
@@ -3536,7 +3563,9 @@ export class Client {
     if (
       result.value.metadata.tenantRef.id !== tenantId ||
       result.value.metadata.uid !== body.leaseId ||
-      result.value.spec.projectRef.id !== projectId
+      result.value.spec.projectRef.id !== projectId ||
+      result.value.spec.targetId !== body.targetId ||
+      result.value.spec.targetGeneration !== body.expectedTargetGeneration
     )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;

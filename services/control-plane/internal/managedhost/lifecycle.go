@@ -31,10 +31,11 @@ type Scope struct{ TenantID, ProjectID string }
 type Mutation struct{ RequestID, IdempotencyKey string }
 
 type CreateEnvironmentLeaseInput struct {
-	Scope                             Scope
-	LeaseID, LeaseName, ReleaseDigest string
-	TTLSeconds                        int64
-	Mutation                          Mutation
+	Scope                                Scope
+	LeaseID, LeaseName, ReleaseDigest    string
+	TargetID                             string
+	TTLSeconds, ExpectedTargetGeneration int64
+	Mutation                             Mutation
 }
 
 type TerminateEnvironmentLeaseInput struct {
@@ -45,19 +46,20 @@ type TerminateEnvironmentLeaseInput struct {
 }
 
 type Snapshot struct {
-	Scope                                     Scope
-	LeaseID, LeaseName, ReleaseDigest         string
-	Generation                                int64
-	DesiredPhase, ObservedPhase, CleanupPhase string
-	EnvironmentID                             string
-	ExpiresAt, CreatedAt, UpdatedAt           time.Time
-	ResourceVersion                           int64
+	Scope                                       Scope
+	LeaseID, LeaseName, ReleaseDigest, TargetID string
+	Generation, TargetGeneration                int64
+	DesiredPhase, ObservedPhase, CleanupPhase   string
+	EnvironmentID                               string
+	ExpiresAt, CreatedAt, UpdatedAt             time.Time
+	ResourceVersion                             int64
 }
 
 func (input CreateEnvironmentLeaseInput) Validate(tenantID string) error {
 	if input.Scope.TenantID != tenantID || !validIdentifier(input.Scope.ProjectID) ||
 		!validIdentifier(input.LeaseID) || !validIdentifier(input.LeaseName) ||
-		!validDigest(input.ReleaseDigest) || input.TTLSeconds < MinTTLSeconds || input.TTLSeconds > MaxTTLSeconds {
+		!validDigest(input.ReleaseDigest) || !validIdentifier(input.TargetID) ||
+		input.ExpectedTargetGeneration < 1 || input.TTLSeconds < MinTTLSeconds || input.TTLSeconds > MaxTTLSeconds {
 		return ErrInvalidInput
 	}
 	return validateMutation(input.Mutation)
@@ -76,9 +78,9 @@ func CreateMutationDigest(input CreateEnvironmentLeaseInput) (string, error) {
 		return "", err
 	}
 	return digest(struct {
-		Operation, TenantID, ProjectID, LeaseID, LeaseName, ReleaseDigest string
-		TTLSeconds                                                        int64
-	}{"environment-lease.create", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest, input.TTLSeconds}), nil
+		Operation, TenantID, ProjectID, LeaseID, LeaseName, ReleaseDigest, TargetID string
+		TTLSeconds, ExpectedTargetGeneration                                        int64
+	}{"environment-lease.create", input.Scope.TenantID, input.Scope.ProjectID, input.LeaseID, input.LeaseName, input.ReleaseDigest, input.TargetID, input.TTLSeconds, input.ExpectedTargetGeneration}), nil
 }
 
 func TerminateMutationDigest(input TerminateEnvironmentLeaseInput) (string, error) {
@@ -133,6 +135,8 @@ func (snapshot Snapshot) Validate() error {
 	if !validIdentifier(snapshot.Scope.TenantID) || !validIdentifier(snapshot.Scope.ProjectID) ||
 		!validIdentifier(snapshot.LeaseID) || !validIdentifier(snapshot.LeaseName) ||
 		!validDigest(snapshot.ReleaseDigest) || !validIdentifier(snapshot.EnvironmentID) ||
+		(snapshot.TargetID == "") != (snapshot.TargetGeneration == 0) ||
+		snapshot.TargetID != "" && (!validIdentifier(snapshot.TargetID) || snapshot.TargetGeneration < 1) ||
 		snapshot.Generation < 1 || snapshot.ResourceVersion < 1 || snapshot.ExpiresAt.IsZero() ||
 		snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() ||
 		!validPhase(snapshot.DesiredPhase, "active", "terminated") ||

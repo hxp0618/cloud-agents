@@ -4,11 +4,13 @@
   "title": "EnvironmentLeaseCreateRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["leaseId", "leaseName", "releaseDigest", "ttlSeconds"],
+  "required": ["leaseId", "leaseName", "releaseDigest", "targetId", "expectedTargetGeneration", "ttlSeconds"],
   "properties": {
     "leaseId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "leaseName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "releaseDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "targetId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "expectedTargetGeneration": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
     "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 }
   }
 }

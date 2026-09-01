@@ -30,6 +30,8 @@ func (fake *managedHostEnvironmentLeaseStoreFake) CreateManagedHostEnvironmentLe
 	fake.snapshot.LeaseID = input.LeaseID
 	fake.snapshot.LeaseName = input.LeaseName
 	fake.snapshot.ReleaseDigest = input.ReleaseDigest
+	fake.snapshot.TargetID = input.TargetID
+	fake.snapshot.TargetGeneration = input.ExpectedTargetGeneration
 	return fake.snapshot, nil
 }
 
@@ -79,8 +81,8 @@ func TestManagedHostEnvironmentLeaseHTTPServerLifecycleRoutes(t *testing.T) {
 		handler.ServeHTTP(response, request)
 		return response
 	}
-	created := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases", `{"leaseId":"lease-alpha","leaseName":"default","releaseDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","ttlSeconds":3600}`, "request-create", "create-key-123456")
-	if created.Code != http.StatusCreated || store.create != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(created.Body.String(), `"observedPhase":"provisioning"`) {
+	created := request(http.MethodPost, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases", `{"leaseId":"lease-alpha","leaseName":"default","releaseDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","targetId":"docker-alpha","expectedTargetGeneration":1,"ttlSeconds":3600}`, "request-create", "create-key-123456")
+	if created.Code != http.StatusCreated || store.create != 1 || verifier.seen.RequiredPermission != "projects.act" || !strings.Contains(created.Body.String(), `"observedPhase":"provisioning"`) || !strings.Contains(created.Body.String(), `"targetId":"docker-alpha"`) {
 		t.Fatalf("create status=%d calls=%d verification=%#v body=%s", created.Code, store.create, verifier.seen, created.Body.String())
 	}
 	got := request(http.MethodGet, "/v1/managed-host/tenants/tenant-alpha/projects/project-alpha/environment-leases/lease-alpha", "", "request-get", "")

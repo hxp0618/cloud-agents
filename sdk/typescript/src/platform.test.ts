@@ -150,6 +150,8 @@ describe("generated platform JSON models", () => {
             cleanupPhase: "none",
             environmentId: "lease-alpha",
             releaseDigest: `sha256:${"a".repeat(64)}`,
+            targetId: "docker-alpha",
+            targetGeneration: 1,
             expiresAt: "2026-08-31T09:00:00Z",
           },
         },

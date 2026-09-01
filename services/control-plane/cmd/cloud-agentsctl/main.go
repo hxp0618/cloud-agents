@@ -469,17 +469,22 @@ func run(args []string, stdout io.Writer) error {
 		}
 	case "environment-lease create":
 		var flags struct {
-			name          string
-			releaseDigest string
-			ttlSeconds    int64
+			name                     string
+			releaseDigest            string
+			expectedTargetGeneration int64
+			ttlSeconds               int64
 		}
 		if err = parseActionFlags("environment-lease create", actionArgs, func(set *flag.FlagSet) {
 			set.StringVar(&flags.name, "name", "", "lease name")
 			set.StringVar(&flags.releaseDigest, "release-digest", "", "release artifact digest")
+			set.Int64Var(&flags.expectedTargetGeneration, "expected-target-generation", 0, "deployment target fencing generation")
 			set.Int64Var(&flags.ttlSeconds, "ttl-seconds", 0, "lease lifetime in seconds")
-		}); err == nil {
+		}); err == nil && flags.expectedTargetGeneration <= 0 {
+			err = errors.New("--expected-target-generation must be greater than zero")
+		} else if err == nil {
 			value, err = client.CreateManagedHostEnvironmentLease(ctx, options.tenant, options.project, options.requestID, options.idempotencyKey, platform.EnvironmentLeaseCreateRequest{
-				LeaseID: options.lease, LeaseName: flags.name, ReleaseDigest: flags.releaseDigest, TTLSeconds: flags.ttlSeconds,
+				LeaseID: options.lease, LeaseName: flags.name, ReleaseDigest: flags.releaseDigest, TargetID: options.target,
+				ExpectedTargetGeneration: flags.expectedTargetGeneration, TTLSeconds: flags.ttlSeconds,
 			})
 		}
 	case "environment-lease get":
@@ -796,7 +801,7 @@ func requiresLease(command, action string) bool {
 	return command == "environment-lease" && action != "list"
 }
 func requiresTarget(command, action string) bool {
-	return command == "target" && action != "preflight"
+	return command == "target" && action != "preflight" || command == "environment-lease" && action == "create"
 }
 func requiresIdempotency(command, action string) bool {
 	return (command == "target" && (action == "register" || action == "probe")) || (command == "project" && action == "create") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt")) || (command == "environment-lease" && (action == "create" || action == "terminate"))

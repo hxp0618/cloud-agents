@@ -185,6 +185,18 @@ func productRunnerBindingSelector(version string) generatedRunnerBindingSelector
 			migrationCount:     30,
 		}
 	}
+	if version == "000031" {
+		return generatedRunnerBindingSelector{
+			selectorID: "product-000031", schemaHead: "000031",
+			manifestPath:      "services/control-plane/migrations/product/000031/manifest.json",
+			manifestSizeBytes: 74193, manifestRawDigest: "sha256:48a98df2339343823ddd958fa14dafb43138d952cd8250e420c8d80bb1d8ed39",
+			manifestDigest:        "sha256:ebc20fce01ec3db360af8c1591c0e01deb454a110e686623f1ce8244d9306a3f",
+			schemaBundlePath:      "services/control-plane/migrations/product/000031/schema-bundle.json",
+			schemaBundleSizeBytes: 50094, schemaBundleRawDigest: "sha256:f03a428d0bbabc9b33558bf229ec17ba6ff43a8a13e062f1cd1b49ff6b2f2920",
+			schemaBundleDigest: "sha256:a47d3801661e6fd638c825642d8e94a929bce879590c953a371eac8e76e79315",
+			migrationCount:     31,
+		}
+	}
 	return generatedRunnerBindingSelector{
 		selectorID: "product-000017", schemaHead: "000017",
 		manifestPath:      "services/control-plane/migrations/product/000017/manifest.json",
